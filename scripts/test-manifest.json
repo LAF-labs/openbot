@@ -166,6 +166,7 @@
   "app/tests/trial-banner.test.ts",
   "app/tests/turn-failure.test.ts",
   "app/tests/turn-retry.test.tsx",
+  "app/tests/unsent-messages.test.tsx",
   "app/tests/use-now.test.tsx",
   "app/tests/version-line.test.tsx",
   "server/tests/account-lifecycle.integration.test.ts",

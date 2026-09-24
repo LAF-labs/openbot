@@ -80,6 +80,17 @@ const DEVICE_SCOPED = [
    * to the tool call, not to this card.
    */
   "lib/approvals.ts",
+  /*
+   * A message this device sent and the server never received (`composer/outbox.ts`, UI/UX audit
+   * 0.5.3, item 6).
+   *
+   * A DECISION, and the argument is that there is nowhere else it CAN be. The server is the thing
+   * that did not get it; this device is the only place those words exist. It is not a second
+   * conversation: it is drawn in the account's one conversation as not sent, it is sent into that
+   * conversation under the id it was typed with — the server's store takes a known id as the same
+   * message — and it is forgotten the moment the server has it. Nothing a Bot does reads it.
+   */
+  "components/channels/composer/outbox.ts",
 ];
 
 /**

@@ -52,6 +52,7 @@ const QUESTION = "지금 몇 시야";
 const ANSWER = "오후 2시 10분경입니다.";
 
 const failed = '[data-testid="transcript-stopped"]';
+const unsentLine = '[data-testid="transcript-unsent"]';
 
 const userMessages = (messages: readonly WireMessage[] = []) =>
   messages.filter((message) => message.role === "user");
@@ -62,7 +63,7 @@ const bubblesSaying = (host: HTMLElement, words: string) =>
     ...host.querySelectorAll('[role="log"] [data-slot="bubble-content"]'),
   ].filter((bubble) => bubble.textContent?.trim() === words).length;
 
-describe("다시 시도 after the server could not be reached", () => {
+describe("다시 보내기 after the server could not be reached", () => {
   test("asks the same message again, once, and the answer lands under it", async () => {
     const { stashFirstMessage } = await import(
       "../src/components/channels/transcript-messages"
@@ -83,27 +84,31 @@ describe("다시 시도 after the server could not be reached", () => {
       api: server.api,
     });
 
+    /*
+     * The server never got it, so it is kept on this device and drawn as not sent — not as a
+     * failed turn, and not as the model's fault (UI/UX audit 0.5.3, item 6).
+     */
     await view.waitFor(
-      () => view.host.querySelector(failed) !== null,
-      "the failure line under the question",
+      () => view.host.querySelector(unsentLine) !== null,
+      "the not-sent line under the question",
       8000,
     );
-    const line = view.host.querySelector(failed);
-    // The server is what was missing, and the line says so — not that the model failed.
-    expect(line?.textContent).toContain("Cannot reach the server.");
+    const line = view.host.querySelector(unsentLine);
+    expect(line?.textContent).toContain("Not sent");
     expect(line?.textContent).not.toContain(
       "The Bot could not reach its model.",
     );
-    expect(ko["Cannot reach the server."]).toBe("서버에 닿지 못했습니다.");
-    const retry = [...(line?.querySelectorAll("button") ?? [])].find(
-      (button) => button.textContent === "Try again",
+    expect(view.host.querySelector(failed)).toBeNull();
+    expect(ko["Not sent"]).toBe("보내지 못함");
+    const again = [...(line?.querySelectorAll("button") ?? [])].find(
+      (button) => button.textContent === "Send again",
     );
-    expect(retry).toBeDefined();
+    expect(again).toBeDefined();
 
-    await view.click(retry as Element);
+    await view.click(again as Element);
     await view.waitFor(
       () => server.runs.length === 2 && bubblesSaying(view.host, ANSWER) === 1,
-      "the answer to the retried question",
+      "the answer to the question sent again",
       8000,
     );
 
@@ -112,8 +117,9 @@ describe("다시 시도 after the server could not be reached", () => {
     expect(asked.map((message) => message.content)).toEqual([QUESTION]);
     // THE THREAD THE SERVER RECEIVES ON THE RETRY: the question once, under the id it already had.
     expect(userMessages(second?.messages)).toEqual(asked);
-    // And the person sees it once, with the answer, and no line saying it went unanswered.
+    // And the person sees it once, with the answer, and nothing saying it went unsent.
     expect(bubblesSaying(view.host, QUESTION)).toBe(1);
+    expect(view.host.querySelector(unsentLine)).toBeNull();
     expect(view.host.querySelector(failed)).toBeNull();
     await view.unmount();
   });

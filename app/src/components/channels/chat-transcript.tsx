@@ -62,6 +62,8 @@ import {
   withBrowsingTasks,
 } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
+import { useResent, useUnsent } from "./composer/outbox";
+import { useIsOnline } from "@/components/layout/connection-notice";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -292,6 +294,66 @@ function TurnFailed({
           variant="ghost"
         >
           {t("Try again")}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A message that never reached the server, kept on this device (`composer/outbox.ts`).
+ *
+ * MEASURED 2026-09-24 (UI/UX audit 0.5.3, item 6): sent with the server down, "오늘 마감 체크리스트
+ * 써 줘" got a red line and a button, was not sent when the server came back, and was gone without
+ * a trace after a reload. Now it stays where it was typed, saying it was not sent and what happens
+ * next, with a way to send it now.
+ *
+ * Under the person's own bubble, on their side: this is about their message, not the Bot's answer.
+ * A status, not an alert — it is a fact about the message that stays true until it is sent.
+ */
+function Unsent({
+  autoTried,
+  isOnline,
+  isSending,
+  onSend,
+}: {
+  /** Its one automatic try has been spent; the next send is the person's. */
+  autoTried: boolean;
+  isOnline: boolean;
+  isSending: boolean;
+  onSend?: (() => void) | undefined;
+}) {
+  const why = !isOnline
+    ? t("Check your internet connection.")
+    : autoTried
+      ? null
+      : t("It goes once by itself when the connection is back.");
+  return (
+    <div
+      className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 py-1"
+      data-testid="transcript-unsent"
+      role="status"
+    >
+      <IconAlertTriangle
+        aria-hidden="true"
+        className="size-4 shrink-0 text-warning"
+      />
+      <span className="text-muted-foreground text-sm">
+        {isSending
+          ? t("Sending again…")
+          : why
+            ? `${t("Not sent")} · ${why}`
+            : t("Not sent")}
+      </span>
+      {onSend && !isSending ? (
+        <Button
+          className="h-6 px-2 text-xs"
+          onClick={onSend}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {t("Send again")}
         </Button>
       ) : null}
     </div>
@@ -937,6 +999,12 @@ export function ChatTranscript({
    */
   /** Any tool call in this tab waiting on a person. Subscribed, so it clears the moment it does. */
   const awaitingAnswer = useSyncExternalStore(watchQuestions, anyQuestionOpen);
+  /** What this device kept because the server never got it, and what went again by itself. */
+  const unsentById = new Map(
+    useUnsent(channelId).map((message) => [message.id, message]),
+  );
+  const resent = useResent();
+  const isOnline = useIsOnline();
 
   const lastItem = items.at(-1);
   /**
@@ -1205,6 +1273,26 @@ export function ChatTranscript({
                       text={item.text}
                     />
                   </MessageScrollerItem>
+                  {item.role === "user" && unsentById.has(item.id) ? (
+                    <Unsent
+                      autoTried={unsentById.get(item.id)?.autoTried === true}
+                      isOnline={isOnline}
+                      // Whatever turn is running carries it: every send takes what was kept.
+                      isSending={busy}
+                      onSend={
+                        onRetry
+                          ? () => onRetry({ id: item.id, text: item.text })
+                          : undefined
+                      }
+                    />
+                  ) : item.role === "user" && resent.has(item.id) ? (
+                    <p
+                      className="py-1 text-right text-muted-foreground text-xs"
+                      role="status"
+                    >
+                      {t("Sent when the connection came back.")}
+                    </p>
+                  ) : null}
                   {
                     /*
                      * OUTSIDE THE SCROLLER ITEM, like the separators above it: a failure is not a

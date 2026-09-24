@@ -2560,4 +2560,13 @@ export const ko: Record<string, string> = {
   "The Bot stopped partway through. Try again and it answers from the start.":
     "봇이 잠깐 멈췄어요. 다시 시도하면 처음부터 답해요.",
   "Received up to here": "여기까지 받았어요",
+  "Not sent": "보내지 못함",
+  "Check your internet connection.": "인터넷 연결을 확인해 주세요.",
+  "It goes once by itself when the connection is back.":
+    "연결이 돌아오면 한 번 저절로 보내요.",
+  "Send again": "다시 보내기",
+  "Sending again…": "다시 보내는 중…",
+  "Sent when the connection came back.": "다시 연결돼서 보냈어요.",
+  "The internet connection is down. Check your connection.":
+    "인터넷 연결이 끊겼어요. 연결을 확인해 주세요.",
 };

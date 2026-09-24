@@ -167,4 +167,40 @@ describe("the connection notice", () => {
     expect(shell.host.textContent).toBe("");
     await shell.unmount();
   });
+
+  /*
+   * UI/UX audit 0.5.3, item 6: a shop whose Wi-Fi dropped was told the SERVER was gone and to
+   * wait, when the thing to check was on their own side of the counter.
+   */
+  test("says to check the internet when this device itself is offline", async () => {
+    const OFFLINE = "The internet connection is down. Check your connection.";
+    let isOnline = true;
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => isOnline,
+    });
+    try {
+      const shell = await mountedShell();
+      await shell.act(() => sockets[0]?.onopen?.());
+      expect(shell.host.textContent).toBe("");
+
+      await shell.act(() => {
+        isOnline = false;
+        window.dispatchEvent(new Event("offline"));
+      });
+      expect(shell.host.textContent).toContain(OFFLINE);
+      expect(shell.host.textContent).not.toContain(SAID);
+      expect(ko[OFFLINE]).toBe("인터넷 연결이 끊겼어요. 연결을 확인해 주세요.");
+
+      await shell.act(() => {
+        isOnline = true;
+        window.dispatchEvent(new Event("online"));
+      });
+      expect(shell.host.textContent).toBe("");
+      await shell.unmount();
+    } finally {
+      // The own property goes, and the browser's own `onLine` is what the next test reads.
+      delete (navigator as { onLine?: boolean }).onLine;
+    }
+  });
 });

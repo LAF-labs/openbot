@@ -7,6 +7,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
+import {
+  claimAutoSend,
+  forgetUnsent,
+  keepUnsent,
+  noteResent,
+  readUnsent,
+  type UnsentMessage,
+  useUnsent,
+} from "@/components/channels/composer/outbox";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import {
@@ -36,6 +45,8 @@ import {
   type ChannelActivity,
   channelActivity,
   isSocketLost,
+  SOCKET_RECONNECTED,
+  socketState,
 } from "@/lib/channels/use-channel-events";
 import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
@@ -320,6 +331,13 @@ export function ChannelChat({
   /** Message id to the moment this tab sent it, for separators the server has not stamped yet. */
   const [sentAt, setSentAt] = useState<Record<string, string>>({});
   const awaitingReply = useRef(false);
+  /**
+   * The person's messages the turn in flight carries that the server may not have yet: kept on this
+   * device if the run never reaches it, forgotten the moment it plainly has (`composer/outbox.ts`).
+   */
+  const sending = useRef<Omit<UnsentMessage, "autoTried">[]>([]);
+  /** What this device kept because the server never got it, drawn in the thread until it does. */
+  const unsent = useUnsent(channel.id);
 
   /*
    * TWO DIFFERENT FACTS ABOUT ONE TURN, AND NEITHER OF THEM IS `agent.isRunning`.
@@ -408,6 +426,26 @@ export function ChannelChat({
      * `transcriptMessages` draws user and assistant turns, so this never appears on screen — the
      * chip is what says a skill was used, and it stays visible in the message they sent.
      */
+    /*
+     * WHAT WAS KEPT GOES FIRST. A message this device kept because the server never got it, and
+     * that a reload left outside the thread, would otherwise sit below this one forever — drawn
+     * after it and never sent. It goes in front, where it was typed, and leaves with this turn.
+     */
+    const present = new Set(agent.messages.map((message) => message.id));
+    const kept = readUnsent(channel.id).filter(
+      (message) => !present.has(message.id),
+    );
+    for (const message of kept) {
+      for (const instruction of message.instructions) {
+        agent.addMessage({
+          content: instruction,
+          id: crypto.randomUUID(),
+          role: "system",
+        });
+      }
+      agent.addMessage({ content: message.text, id: message.id, role: "user" });
+    }
+
     for (const instruction of skillInstructions) {
       agent.addMessage({
         content: instruction,
@@ -430,13 +468,24 @@ export function ChannelChat({
      * is why these are merged UNDER the stored times rather than over them.
      */
     const messageId = crypto.randomUUID();
-    setSentAt((held) => ({ ...held, [messageId]: new Date().toISOString() }));
+    const at = new Date().toISOString();
+    setSentAt((held) => ({ ...held, [messageId]: at }));
     agent.addMessage({
       content: trimmed,
       id: messageId,
       role: "user",
     });
     report(trimmed, null);
+    // What would be kept on this device if the server never gets it (`composer/outbox.ts`).
+    sending.current = [
+      ...kept.map(({ id, text, instructions, at: keptAt }) => ({
+        id,
+        text,
+        instructions,
+        at: keptAt,
+      })),
+      { id: messageId, text: trimmed, instructions: skillInstructions, at },
+    ];
 
     await run();
   };
@@ -482,6 +531,11 @@ export function ChannelChat({
    * answer would land under the wrong question.
    */
   const retry = async ({ id, text }: RetriedMessage) => {
+    // Never reached the server: sent again from what this device kept, rather than retried.
+    if (readUnsent(channel.id).some((message) => message.id === id)) {
+      await resend(false);
+      return;
+    }
     const way = retryWay(agent.messages, id);
     if (way === null) return;
     /*
@@ -505,6 +559,64 @@ export function ChannelChat({
       await untilReady();
       setRunError(null);
       awaitingReply.current = true;
+      // The server stored this question when its first run began; there is nothing to keep.
+      sending.current = [];
+      await run();
+    } finally {
+      turnsNow.current -= 1;
+      setTurnsInFlight((count) => count - 1);
+    }
+  };
+
+  /**
+   * Send again what this device kept because the server never got it (UI/UX audit 0.5.3, item 6).
+   *
+   * All of it, as one turn, under the ids it was first sent with: the server's store treats a
+   * message it already holds as that message, so a copy that did arrive after all is not stored
+   * twice. `automatic` is the one try made by itself when the connection comes back; it claims the
+   * messages first, so a second tab of the same conversation hearing the same reconnect sends
+   * nothing, and a message that fails again waits for the person.
+   *
+   * A reload found these in storage and not in the thread, so they are put back into it first —
+   * with the skill instructions they were sent with, in front of them, as `deliver` does.
+   */
+  const resend = async (automatic: boolean) => {
+    if (turnsNow.current > 0) return;
+    const messages = automatic
+      ? claimAutoSend(channel.id)
+      : [...readUnsent(channel.id)];
+    if (messages.length === 0) return;
+    stopBeforeRun.current = false;
+    turnsNow.current += 1;
+    setTurnsInFlight((count) => count + 1);
+    try {
+      await untilReady();
+      setRunError(null);
+      awaitingReply.current = true;
+      const present = new Set(agent.messages.map((message) => message.id));
+      for (const message of messages) {
+        if (present.has(message.id)) continue;
+        for (const instruction of message.instructions) {
+          agent.addMessage({
+            content: instruction,
+            id: crypto.randomUUID(),
+            role: "system",
+          });
+        }
+        agent.addMessage({
+          content: message.text,
+          id: message.id,
+          role: "user",
+        });
+        setSentAt((held) => ({ ...held, [message.id]: message.at }));
+      }
+      sending.current = messages.map(({ id, text, instructions, at }) => ({
+        id,
+        text,
+        instructions,
+        at,
+      }));
+      if (automatic) noteResent(messages.map((message) => message.id));
       await run();
     } finally {
       turnsNow.current -= 1;
@@ -539,7 +651,23 @@ export function ChannelChat({
     const fail = (code: string) => {
       if (!awaitingReply.current) return;
       awaitingReply.current = false;
-      setRunError(code);
+      /*
+       * THE ONE FAILURE THAT CAN LOSE WHAT SOMEBODY TYPED. The server stores a person's words when
+       * a run begins, so every other failure left them stored; this one means the run never reached
+       * it. They are kept on this device and drawn as not sent, which says it instead of the red
+       * line — two lines under one message saying the same thing would be one too many.
+       */
+      if (
+        code === "laf:turn_server_unreachable" &&
+        sending.current.length > 0
+      ) {
+        for (const message of sending.current) keepUnsent(channel.id, message);
+        sending.current = [];
+        setRunError(null);
+      } else {
+        heard();
+        setRunError(code);
+      }
       /*
        * The server has just written the failure into the run ledger, and the person's own message
        * has just been stamped. Both were only ever asked for on a turn that SUCCEEDED, which is
@@ -547,6 +675,17 @@ export function ChannelChat({
        */
       void refreshTimesRef.current();
       void refreshFailuresRef.current();
+    };
+    /*
+     * The run reached the server, which stored the thread it carried: nothing of it is unsent any
+     * more, including a message kept earlier that went along with a later one.
+     */
+    const heard = () => {
+      sending.current = [];
+      forgetUnsent(
+        channel.id,
+        agent.messages.map((message) => message.id),
+      );
     };
     /*
      * The Bot's words had started to arrive in this turn: an assistant message with words after
@@ -586,10 +725,18 @@ export function ChannelChat({
             answerStarted: answerStarted(),
           }),
         ),
+      /*
+       * The run began on the server, which stores the person's words as it does: what was kept
+       * has arrived, so it stops saying "다시 보내는 중" for the whole length of the answer.
+       */
+      onRunStartedEvent: () => {
+        if (awaitingReply.current) heard();
+      },
       onRunFinishedEvent: () => {
         const wasOurs = awaitingReply.current;
         awaitingReply.current = false;
         if (!wasOurs) return;
+        heard();
 
         const reply = [...agent.messages]
           .reverse()
@@ -670,6 +817,41 @@ export function ChannelChat({
   sayRef.current = say;
   const retryRef = useRef(retry);
   retryRef.current = retry;
+  const resendRef = useRef(resend);
+  resendRef.current = resend;
+
+  /*
+   * THE CONNECTION CAME BACK: WHAT WAS KEPT GOES, ONCE, BY ITSELF.
+   *
+   * Two ways it comes back. The socket reconnects under an open conversation. Or the person
+   * reloads — or the 서버에 닿지 못했습니다 screen sends them back here — and the conversation
+   * opens with something kept and a server that answered the page, which is the connection back.
+   * Once the history is in, so the kept words land after what the thread already holds.
+   */
+  useEffect(() => {
+    const onBack = () => {
+      if (readUnsent(channel.id).length > 0) void resendRef.current(true);
+    };
+    socketState.addEventListener(SOCKET_RECONNECTED, onBack);
+    // A device that was offline for a moment may never have lost the socket; its network is back.
+    window.addEventListener("online", onBack);
+    return () => {
+      socketState.removeEventListener(SOCKET_RECONNECTED, onBack);
+      window.removeEventListener("online", onBack);
+    };
+  }, [channel.id]);
+  useEffect(() => {
+    let current = true;
+    void joinGatePromise.then(() => {
+      if (!current || isSocketLost() || navigator.onLine === false) return;
+      if (readUnsent(channel.id).some((message) => !message.autoTried)) {
+        void resendRef.current(true);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [joinGatePromise, channel.id]);
 
   /**
    * Component buttons speak as user turns without forcing every transcript card to re-render.
@@ -723,13 +905,15 @@ export function ChannelChat({
    * tabs would draw the same conversation with two different sets of separators.
    */
   const stored = storedTimes.data?.times;
-  const messageTimes = useMemo(
-    () =>
-      Object.keys(sentAt).length === 0
-        ? (stored ?? EMPTY_TIMES)
-        : { ...sentAt, ...(stored ?? {}) },
-    [sentAt, stored],
-  );
+  const messageTimes = useMemo(() => {
+    // A message kept on this device has no stamp on the server; the moment it was sent is its time.
+    const kept = Object.fromEntries(
+      unsent.map((message) => [message.id, message.at]),
+    );
+    return Object.keys(sentAt).length === 0 && unsent.length === 0
+      ? (stored ?? EMPTY_TIMES)
+      : { ...kept, ...sentAt, ...(stored ?? {}) };
+  }, [sentAt, stored, unsent]);
   /**
    * Message id to failure code, which is the shape the transcript draws from — without the ones a
    * retry has since answered, which the server's record keeps (`standingFailures`).
@@ -751,7 +935,24 @@ export function ChannelChat({
    * chunk of a reply. A copy costs one pass over the thread's references per render, and it makes
    * "the messages changed" true exactly when this component has rendered because they did.
    */
-  const thread = [...transcriptMessages(agent.messages, seed)];
+  const inThread = new Set(agent.messages.map((message) => message.id));
+  const thread = [
+    ...transcriptMessages(agent.messages, seed),
+    /*
+     * What this device kept and the thread does not hold — after a reload, since the server never
+     * had it to replay. Drawn where it was typed, at the end, as not sent (`ChatTranscript`), until
+     * a send puts it into the thread for real.
+     */
+    ...unsent
+      .filter((message) => !inThread.has(message.id))
+      .map(
+        (message): Message => ({
+          content: message.text,
+          id: message.id,
+          role: "user",
+        }),
+      ),
+  ];
 
   /*
    * The task the Bot is doing in its browser, told to the banner and the header, and each task's
