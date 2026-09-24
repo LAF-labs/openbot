@@ -18,6 +18,7 @@ import {
   type OverviewSite,
 } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import { type BusinessSite, BUSINESS_SITES } from "@/lib/sites/catalogue";
 import {
   checkSiteConnection,
@@ -40,6 +41,12 @@ import {
  * made. The picker at the top chooses who DRIVES the login, not where the session lands; asking on
  * each row would be fifteen copies of one decision, and the choice is remembered so a person does
  * not re-pick it every time they open this screen.
+ *
+ * AND A PERSON HAS ONE BOT (2026-09-24, "봇은 하나다"), so this screen stopped talking as though
+ * there were several (0.5.3 audit, item 9): measured, it asked "어느 봇이 열까요? [수달 ▾]" of a
+ * person with one Bot. The picker is drawn only for an account from before that day that still has
+ * several, and every sentence is written to be true either way — Korean does not have to say
+ * whether 봇 is one or five.
  */
 
 /** Where a site's row is, before anything the person just did. */
@@ -233,7 +240,7 @@ export const SiteRows = ({
        Said as a fact, with the thing to do next, rather than as an error. */
     return (
       <p className="mt-4 text-muted-foreground text-sm">
-        {t("Make a Bot first — a site is connected on the browser they share.")}
+        {t("Make your Bot first — a site is connected on its browser.")}
       </p>
     );
   }
@@ -255,12 +262,12 @@ export const SiteRows = ({
         /*
          * NOT "on {name}'s browser" ANY MORE. There is one browser on this account and every Bot
          * signs in through it (2026-09-16), so naming the Bot on the row said the login was that
-         * Bot's — and the next question a person asks is which of their five they have to run the
-         * routine on. The Bot that last looked is still in the row; it is just not what the sentence
-         * is about.
+         * Bot's. Nor "every Bot shares it" since 2026-09-24, when a person came to have one. The Bot
+         * that last looked is still in the row, as who looked and when.
          */
-        text: t("Connected · every Bot shares it · {name} last looked {date}", {
+        text: t("Connected · {name} last looked {date}", {
           name: nameOf(row?.botId ?? null),
+          josa: josa(nameOf(row?.botId ?? null), "이/가"),
           date: asDate(row?.lastSeenAt ?? null),
         }),
         tone: "good",
@@ -285,30 +292,33 @@ export const SiteRows = ({
   return (
     <>
       {/*
-       * WHICH BOT OPENS IT, NOT WHOSE BROWSER IT IS. The picker still matters — somebody has to
-       * drive, and the audit row is keyed on whoever did — but it stopped being a choice about where
-       * the login lands the day the profile became the account's.
+       * WHICH BOT OPENS IT, NOT WHOSE BROWSER IT IS. The picker still matters to an account with
+       * several — somebody has to drive, and the audit row is keyed on whoever did — but it stopped
+       * being a choice about where the login lands the day the profile became the account's. With
+       * one Bot it is a question with one answer, so it is not asked.
        */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <span className="text-muted-foreground text-sm">
-          {t("Which Bot should open it?")}
-        </span>
-        <Select onValueChange={handleChoose} value={bot?.id ?? ""}>
-          <SelectTrigger
-            aria-label={t("Which Bot should open it?")}
-            className="w-56"
-          >
-            <SelectValue>{bot?.name ?? ""}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {bots.map((one) => (
-              <SelectItem key={one.id} value={one.id}>
-                {one.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      {bots.length > 1 ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <span className="text-muted-foreground text-sm">
+            {t("Which Bot should open it?")}
+          </span>
+          <Select onValueChange={handleChoose} value={bot?.id ?? ""}>
+            <SelectTrigger
+              aria-label={t("Which Bot should open it?")}
+              className="w-56"
+            >
+              <SelectValue>{bot?.name ?? ""}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {bots.map((one) => (
+                <SelectItem key={one.id} value={one.id}>
+                  {one.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       <div className="mt-4 rounded-lg border border-border bg-card">
         {BUSINESS_SITES.map((site) => {
@@ -330,7 +340,7 @@ export const SiteRows = ({
               {...(state !== "not_connected"
                 ? {
                     confirmText: t(
-                      "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.",
+                      "Turn this site off? The Bot will stop using it. Its browser stays signed in until you log out on the site itself.",
                     ),
                   }
                 : {})}

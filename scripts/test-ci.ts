@@ -376,13 +376,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` (written, granted, read and deleted by a Korean name; kept composed; still refused
  * where it cannot be called). Each floor rises by exactly what was added.
  *
+ * RAISED 2026-09-24 with 0.5.3's package B, the Bot's computer: the words over the black frame, a
+ * picture that does not come said after five seconds with 다시 연결 (the pane and the socket, the
+ * socket let go of, the schedule a reopened pane starts from), the whole-window sheet a person drives
+ * on and Escape as 다 했어요, no "이 작업 가르치기" while the Bot asks for help, no "제어" on any of
+ * those screens, 다시 켜기 on a site that could not open, and the site rows said for one Bot.
+ * Fourteen tests to `app`; its floor rises by exactly that, as the paragraphs above did.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 2477, roots: ["server"] },
-  { name: "app", floor: 1129, roots: ["app"] },
+  { name: "app", floor: 1143, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

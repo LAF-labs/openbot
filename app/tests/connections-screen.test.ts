@@ -215,10 +215,10 @@ describe("what the switch starts", () => {
         "Disconnect this? The Bot will not be able to use this account any more.",
       ],
       [
-        // Plural, since 2026-09-16: one browser profile per deployment, so turning a site off stops
-        // every Bot using it and the shared browser stays signed in for all of them.
+        // Plural from 2026-09-16 (one browser profile per deployment) until 2026-09-24, when a person
+        // came to have one Bot. The Korean says 봇 without a number, true for an older account too.
         "components/connections/site-rows.tsx",
-        "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.",
+        "Turn this site off? The Bot will stop using it. Its browser stays signed in until you log out on the site itself.",
       ],
     ] as const) {
       expect(read(file)).toContain(confirmation);
@@ -261,6 +261,38 @@ describe("what the switch starts", () => {
     expect(ko["Turn it on again"]).toBe("다시 켜기");
     // Not for an address the Bot may not open: pressing again would only be refused again.
     expect(sites).not.toMatch(/kind === "refused"\) setRetryable/);
+  });
+});
+
+/**
+ * ONE BOT, SAID AS ONE (0.5.3 audit, item 9).
+ *
+ * Measured 2026-09-24 on a deployment with one Bot, 수달: the screen asked "어느 봇이 열까요?
+ * [수달 ▾]" — a question with one answer — and its sentences spoke of "봇들이 함께 쓰는 브라우저".
+ */
+describe("the site rows with one Bot", () => {
+  const sites = read("components/connections/site-rows.tsx");
+
+  test("draw the Bot picker only for an account that still has several", () => {
+    expect(sites).toMatch(/bots\.length > 1 \?/);
+    expect(sites).toContain('t("Which Bot should open it?")');
+  });
+
+  test("say nothing that needs more than one Bot to be true", () => {
+    const korean = [...sites.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)].map(
+      (match) => ko[match[1] as string] ?? `(no Korean) ${match[1]}`,
+    );
+    expect(korean.filter((line) => line.startsWith("(no Korean)"))).toEqual([]);
+    // The picker's own question is the one exception, and it is drawn only for several.
+    expect(
+      korean.filter(
+        (line) =>
+          /봇들|모든 봇|여러 봇/.test(line) || line === "어느 봇이 열까요?",
+      ),
+    ).toEqual(["어느 봇이 열까요?", "어느 봇이 열까요?"]);
+    expect(ko["Connected · {name} last looked {date}"]).toBe(
+      "연결됨 · {name}{josa} {date}에 확인",
+    );
   });
 });
 

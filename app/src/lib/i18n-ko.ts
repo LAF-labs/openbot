@@ -2522,4 +2522,11 @@ export const ko: Record<string, string> = {
     "지금까지 {count}단계. 끝나면 '다 했어요'를 눌러 주세요.",
   "Press Do it myself before clicking or typing on the page.":
     "페이지를 누르거나 입력하려면 먼저 '직접 하기'를 눌러 주세요.",
+  // 연결 화면 — 봇은 하나다. 봇이 여럿인 옛 계정에도 참인 말로 쓴다(한국어는 수를 말하지 않아도 된다).
+  "Make your Bot first — a site is connected on its browser.":
+    "먼저 봇을 만들어 주세요. 사이트 연결은 봇의 브라우저에 로그인하는 일이에요.",
+  "Connected · {name} last looked {date}":
+    "연결됨 · {name}{josa} {date}에 확인",
+  "Turn this site off? The Bot will stop using it. Its browser stays signed in until you log out on the site itself.":
+    "이 사이트를 끌까요? 봇이 더 이상 쓰지 않아요. 사이트에서 직접 로그아웃하기 전까지 봇의 브라우저에는 로그인이 남아 있어요.",
 };
