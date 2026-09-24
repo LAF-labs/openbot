@@ -13,6 +13,16 @@ import {
 
 export const COMMAND_TRIGGER = "/";
 
+/**
+ * A `/name` at the start of a sent message: the skill it was sent with, and the rest after it.
+ *
+ * The name's letters are the skills' own (`SKILL_SLUG_PATTERN`, shared/tools/skills.ts), Korean
+ * included since 0.5.3 — `/리뷰답장` is a skill, and the a–z pattern this replaced left it drawn as
+ * plain text in the conversation and asked again without its instruction.
+ */
+export const LEADING_SKILL =
+  /^\/([\p{Ll}\p{Lo}\p{Nd}][\p{Ll}\p{Lo}\p{Nd}-]*)(\s|$)/u;
+
 export type ComposerDraft = {
   /** Plain text, with chips flattened back to `/command`. */
   text: string;

@@ -150,6 +150,7 @@
   "app/tests/sign-in-refusals.test.ts",
   "app/tests/sign-via.test.ts",
   "app/tests/site-catalogue.test.ts",
+  "app/tests/skill-chip.test.tsx",
   "app/tests/skill-korean.test.tsx",
   "app/tests/skills-page.test.tsx",
   "app/tests/status-regions.test.tsx",

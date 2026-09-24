@@ -15,6 +15,7 @@
  * coverage test cannot see: `app/tests/browsing-card-title.test.ts` walks the table instead.
  */
 import { siteForUrl } from "@shared/sites/catalogue";
+import { LEADING_SKILL } from "@/components/channels/composer/draft";
 import { t } from "@/lib/i18n";
 
 /**
@@ -96,7 +97,7 @@ export function taskOf(
   if (!asked) return null;
   let text = (asked.split("\n").find((line) => line.trim()) ?? "").trim();
   text = text.split(/(?<=[.?!])\s+/)[0] ?? text;
-  text = text.replace(/^\/[a-z0-9][a-z0-9-]*\s+/, "");
+  text = text.replace(LEADING_SKILL, "");
   if (site) {
     const at = /^(.{1,24}?)(?:\s*(?:홈페이지|사이트|앱))?에서\s+/.exec(text);
     const squash = (value: string) => value.replace(/\s+/g, "").toLowerCase();

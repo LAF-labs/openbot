@@ -61,7 +61,7 @@ import {
   unsettledFrom,
   withBrowsingTasks,
 } from "./chat-messages";
-import type { QueuedMessage } from "./composer";
+import { LEADING_SKILL, type QueuedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { useIsOnline } from "@/components/layout/connection-notice";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -153,7 +153,7 @@ function splitSkillChip(
   text: string,
   commandNames: string,
 ): { chip: string; rest: string } | null {
-  const match = /^\/([a-z0-9][a-z0-9-]*)(\s|$)/.exec(text);
+  const match = LEADING_SKILL.exec(text);
   if (!match) {
     return null;
   }

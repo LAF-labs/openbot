@@ -7,6 +7,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
+import { LEADING_SKILL } from "@/components/channels/composer/draft";
 import { DraftScope } from "@/components/channels/composer/prefill";
 import {
   claimAutoSend,
@@ -546,7 +547,7 @@ export function ChannelChat({
      * below the half answer it did not finish.
      */
     if (way === "ask-again") {
-      const skill = /^\/([a-z0-9][a-z0-9-]*)(\s|$)/.exec(text)?.[1];
+      const skill = LEADING_SKILL.exec(text)?.[1];
       const prompt = skillCommands.find(
         (command) => command.name === skill,
       )?.prompt;
