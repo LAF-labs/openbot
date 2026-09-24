@@ -38,7 +38,7 @@ import {
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
-import { retriesInPlace, type StandingFailure } from "@/lib/channels/retry";
+import { retryWay, type StandingFailure } from "@/lib/channels/retry";
 import {
   type FailureGroup,
   repeatedFailureLine,
@@ -116,11 +116,15 @@ type ChatTranscriptProps = {
   /**
    * Ask the same thing again. Absent draws the failure line with nothing to press.
    *
-   * THE ID TRAVELS WITH THE WORDS, AND THE BUTTON IS DRAWN ONLY WHERE THE ID CAN BE REUSED. It used
-   * to hand back the text alone, which the caller could only send as a new message: the same
-   * question stored twice, measured 2026-09-10. Now it is offered only under a question nobody has
-   * asked past (`retriesInPlace`), and pressing it runs the thread again with that message where it
-   * is — so there is no press anywhere that can say a question twice.
+   * THE ID TRAVELS WITH THE WORDS. It used to hand back the text alone, which the caller could only
+   * send as a new message: the same question stored twice, measured 2026-09-10. Now the caller
+   * reruns the thread with that message where it is whenever it can, and says the words again only
+   * where the Bot has already answered part of it (`retryWay`) — which is a second asking, and is
+   * stored as one.
+   *
+   * Offered under the last failure whoever's words it is under (UI/UX audit 0.5.3, item 5): the
+   * person's question, or the half answer the Bot got out before it stopped. Never under a question
+   * somebody has asked past, and never under a routine's heading, which nobody asked.
    */
   onRetry?: (message: RetriedMessage) => void;
 };
@@ -582,6 +586,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   id,
   joinedNext = false,
   joinedPrev = false,
+  partial = false,
   rateable = false,
   role,
   text,
@@ -592,6 +597,12 @@ const TranscriptMessage = memo(function TranscriptMessage({
   delay: number;
   /** The message's own id: what a rating of it is keyed by. */
   id: string;
+  /**
+   * The half of an answer a turn that failed got out: faded, and said to be only that. Without it
+   * two words sat above the failure line looking like the whole reply — measured 2026-09-24,
+   * "가게 마감" as a heading and nothing under it.
+   */
+  partial?: boolean;
   /** A finished answer, as opposed to one still being written. See `unsettledFrom`. */
   rateable?: boolean;
   /** The message below is from the same speaker, with no tool line between them. */
@@ -620,7 +631,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
            */}
           <Bubble
             align={align}
-            className="chat-prose"
+            className={partial ? "chat-prose opacity-60" : "chat-prose"}
             joinedNext={joinedNext}
             joinedPrev={joinedPrev}
             variant={isUser ? "user" : "agent"}
@@ -664,6 +675,11 @@ const TranscriptMessage = memo(function TranscriptMessage({
               )}
             </BubbleContent>
           </Bubble>
+          {partial ? (
+            <p className="mt-1 text-muted-foreground text-xs">
+              {t("Received up to here")}
+            </p>
+          ) : null}
           {/*
            * COPYING A REPLY WAS SELECT-AND-DRAG, OR NOTHING.
            *
@@ -940,7 +956,34 @@ export function ChatTranscript({
    * is running that a second press would race. See `retriesInPlace`.
    */
   const retryable = (messageId: string) =>
-    !busy && retriesInPlace(messages, messageId);
+    !busy && retryWay(messages, messageId) !== null;
+  /** The person's own messages by id: what a failure under the Bot's half answer asks again. */
+  const askedById = new Map(
+    items.flatMap((item) =>
+      item.kind === "text" && item.role === "user"
+        ? [[item.id, item.text] as const]
+        : [],
+    ),
+  );
+  /** 다시 시도 for this question, or nothing to press when it cannot be asked again. */
+  const retryFor = (askedId: string | undefined) => {
+    if (!onRetry || askedId === undefined) return undefined;
+    const text = askedById.get(askedId);
+    if (text === undefined || !retryable(askedId)) return undefined;
+    return () => onRetry({ id: askedId, text });
+  };
+  /**
+   * The half answer a turn that just failed left, if it left one: the Bot's words after the last
+   * question, above the failure line. Drawn faded, with "여기까지 받았어요", like a stored one.
+   */
+  const lastAskedAt = lastAsked ? items.indexOf(lastAsked) : -1;
+  const liveHalfAnswerId =
+    stoppedCode &&
+    lastItem?.kind === "text" &&
+    lastItem.role === "assistant" &&
+    items.indexOf(lastItem) > lastAskedAt
+      ? lastItem.id
+      : null;
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
@@ -1146,8 +1189,15 @@ export function ChatTranscript({
                       commandNames={commandNames}
                       delay={delays.delayFor(item.id, index, items.length)}
                       id={item.id}
+                      partial={
+                        item.role === "assistant" &&
+                        (failures[item.id]?.askedId !== undefined ||
+                          item.id === liveHalfAnswerId)
+                      }
                       rateable={
-                        item.role === "assistant" && index < settledBefore
+                        item.role === "assistant" &&
+                        index < settledBefore &&
+                        failures[item.id]?.askedId === undefined
                       }
                       joinedNext={continues(items[index + 1], item.role)}
                       joinedPrev={continues(items[index - 1], item.role)}
@@ -1165,6 +1215,7 @@ export function ChatTranscript({
                      * say so twice — the server's record and this tab's own view of the same failure.
                      */
                     failures[item.id] &&
+                    !failures[item.id].askedAgain &&
                     !(stoppedCode && item.id === lastItem?.id) &&
                     /*
                      * And not while the question it is under is being asked again. The failure
@@ -1176,21 +1227,18 @@ export function ChatTranscript({
                       <TurnFailed
                         code={failures[item.id].code}
                         group={failures[item.id].group}
-                        onRetry={
+                        onRetry={retryFor(
                           /*
-                           * Only under the person's own words. A routine that did not finish
-                           * leaves the Bot's heading with the failure under it (routines/deliver.ts
-                           * on the server), and "try again" there would send that heading back
-                           * as if the person had typed it. The routine runs again at its next
-                           * slot; nothing here can hurry it.
+                           * The person's own words: the question itself, or the one the server
+                           * says this half answer was answering. Never a routine's heading: the
+                           * server names no question for a run nobody asked, and "try again"
+                           * there would send that heading back as if the person had typed it.
+                           * The routine runs again at its next slot; nothing here can hurry it.
                            */
-                          onRetry &&
-                          item.kind === "text" &&
-                          item.role === "user" &&
-                          retryable(item.id)
-                            ? () => onRetry({ id: item.id, text: item.text })
-                            : undefined
-                        }
+                          item.role === "user"
+                            ? item.id
+                            : failures[item.id].askedId,
+                        )}
                       />
                     ) : null
                   }
@@ -1218,11 +1266,7 @@ export function ChatTranscript({
             ) : stoppedCode ? (
               <TurnFailed
                 code={stoppedCode}
-                onRetry={
-                  onRetry && lastAsked && retryable(lastAsked.id)
-                    ? () => onRetry({ id: lastAsked.id, text: lastAsked.text })
-                    : undefined
-                }
+                onRetry={retryFor(lastAsked?.id)}
               />
             ) : waitingOnFirstToken ? (
               <Thinking />

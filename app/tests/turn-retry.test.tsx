@@ -18,6 +18,9 @@ import {
 import {
   answering,
   channelServer,
+  type RunInput,
+  sse,
+  THREAD_ID,
   type WireMessage,
 } from "./support/channel-server";
 
@@ -248,6 +251,166 @@ describe("다시 시도 under a failure the server recorded", () => {
     );
     // Still true that it went unanswered — and the only way to ask it now would be to say it twice.
     expect(view.buttonNamed("Try again")).toBeUndefined();
+    await view.unmount();
+  });
+});
+
+/** A run that gets part of an answer out and then loses the Bot, as agent-bot dying mid-reply does. */
+function halfThenGone(words: string) {
+  return ({ runId }: RunInput) =>
+    sse([
+      { type: "RUN_STARTED", threadId: THREAD_ID, runId },
+      {
+        type: "TEXT_MESSAGE_START",
+        messageId: `msg_${runId}`,
+        role: "assistant",
+      },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: `msg_${runId}`, delta: words },
+      {
+        type: "RUN_ERROR",
+        message: "Unable to connect. Is the computer able to access the url?",
+      },
+    ]);
+}
+
+/*
+ * MEASURED 2026-09-24 (UI/UX audit 0.5.3, item 5): agent-bot stopped two seconds into a reply, and
+ * "가게 마감" sat over "봇이 답하지 않았습니다. 지금 꺼져 있을 수 있습니다" with nothing to press, then
+ * and after a reload. The button was drawn only under the person's own words, and with half an
+ * answer in between, the failure is under the Bot's.
+ */
+describe("다시 시도 under the half of an answer", () => {
+  const HALF = "가게 마감";
+  const STOPPED =
+    "The Bot stopped partway through. Try again and it answers from the start.";
+
+  test("says what arrived is only part, and asks the question again below it", async () => {
+    const { stashFirstMessage } = await import(
+      "../src/components/channels/transcript-messages"
+    );
+    const channelId = "channel_retry-half-live";
+    stashFirstMessage(channelId, QUESTION);
+    const server = channelServer({
+      channelId,
+      runs: [halfThenGone(HALF), answering(ANSWER)],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => view.host.querySelector(failed) !== null,
+      "the failure line under the half answer",
+      8000,
+    );
+    // The Bot was reached — it said something — so "it did not answer" is not what is said.
+    expect(view.host.querySelector(failed)?.textContent).toContain(STOPPED);
+    expect(view.host.textContent).toContain("Received up to here");
+    expect(ko[STOPPED]).toBe(
+      "봇이 잠깐 멈췄어요. 다시 시도하면 처음부터 답해요.",
+    );
+
+    await view.click(view.buttonNamed("Try again") as Element);
+    await view.waitFor(
+      () => server.runs.length === 2 && bubblesSaying(view.host, ANSWER) === 1,
+      "the answer to the question asked again",
+      8000,
+    );
+    // Asked again as what it is — a second asking, below the half answer — and not run over the
+    // Bot's own half sentence, which not every provider accepts at the end of a thread.
+    const asked = userMessages(server.runs[1]?.messages);
+    expect(asked.map((message) => message.content)).toEqual([
+      QUESTION,
+      QUESTION,
+    ]);
+    expect(new Set(asked.map((message) => message.id)).size).toBe(2);
+    expect(view.host.querySelector(failed)).toBeNull();
+    // What arrived the first time is still there. That it stays marked as only part comes from
+    // the server's record of the failure, which this stub does not keep — the next test reads it.
+    expect(bubblesSaying(view.host, HALF)).toBe(1);
+    await view.unmount();
+  });
+
+  test("is there after a reload, from what the server recorded", async () => {
+    const channelId = "channel_retry-half-stored";
+    const question = { id: "q-half", role: "user", content: QUESTION };
+    const half = { id: "a-half", role: "assistant", content: HALF };
+    const server = channelServer({
+      channelId,
+      history: [question, half],
+      failures: [
+        {
+          messageId: half.id,
+          code: "laf:turn_bot_dropped",
+          askedId: question.id,
+          at: "2026-09-24T10:21:32.000Z",
+        },
+      ],
+      runs: [answering(ANSWER)],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => view.buttonNamed("Try again") !== undefined,
+      "the stored failure and its button",
+      8000,
+    );
+    expect(view.host.textContent).toContain("Received up to here");
+
+    await view.click(view.buttonNamed("Try again") as Element);
+    await view.waitFor(
+      () => bubblesSaying(view.host, ANSWER) === 1,
+      "the answer",
+      8000,
+    );
+    expect(
+      userMessages(server.runs[0]?.messages).map((message) => message.content),
+    ).toEqual([QUESTION, QUESTION]);
+    // Asked again below it: the record of the half answer stays, and the red line goes.
+    expect(view.host.querySelector(failed)).toBeNull();
+    expect(view.host.textContent).toContain("Received up to here");
+    await view.unmount();
+  });
+
+  test("offers nothing under a routine's heading, which nobody asked", async () => {
+    const channelId = "channel_retry-routine";
+    const server = channelServer({
+      channelId,
+      history: [
+        {
+          id: "q-earlier",
+          role: "user",
+          content: "오늘 날짜만 한 줄로 알려줘",
+        },
+        {
+          id: "a-earlier",
+          role: "assistant",
+          content: "오늘은 9월 24일입니다.",
+        },
+        { id: "routine-head", role: "assistant", content: "**아침 브리핑**" },
+      ],
+      // The server names no question for a run on a clock.
+      failures: [
+        {
+          messageId: "routine-head",
+          code: "laf:turn_timed_out",
+          at: "2026-09-24T07:30:00.000Z",
+        },
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => view.host.querySelector(failed) !== null,
+      "the routine's failure line",
+      8000,
+    );
+    expect(view.buttonNamed("Try again")).toBeUndefined();
+    expect(view.host.textContent).not.toContain("Received up to here");
     await view.unmount();
   });
 });

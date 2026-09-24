@@ -69,6 +69,17 @@ export const TURN_FAILURE_CODES = {
   /** The question cost what one question may (agent-bot's token budget). Carrying on is a new one. */
   budgetSpent: "laf:turn_budget_spent",
   /**
+   * The Bot had started answering and then went away — its process stopped mid-answer.
+   *
+   * MEASURED 2026-09-24 by killing agent-bot two seconds into a reply: the ledger held the same
+   * "Unable to connect" a Bot that never answered at all leaves, and the screen said "봇이 답하지
+   * 않았습니다. 지금 꺼져 있을 수 있습니다" under the half of a reply it HAD sent. The difference is
+   * in the thread, not the error: this run wrote the Bot's words before it failed. Not
+   * `streamCut`, which is the model's stream stopping while the Bot kept running; this is the Bot
+   * itself, and asking again starts the answer over rather than finishing it.
+   */
+  botDropped: "laf:turn_bot_dropped",
+  /**
    * A free trial's day was spent before this run started, so it never left the server
    * (`usage/daily-budget.ts`). Not a fault and not the question: the day opens again at midnight in
    * Seoul, which is the one thing worth telling somebody about to ask again.
@@ -86,6 +97,15 @@ export type TurnFailure = {
   code: TurnFailureCode;
   /** When the run gave up, ISO-8601. */
   at: string;
+  /**
+   * The person's message this run was answering, when the failure is keyed to something else — the
+   * half of an answer the Bot got out before it failed. What 다시 시도 asks again.
+   *
+   * Absent when the failure is under the question itself, which already is that message, and for
+   * a routine's run, which nobody asked: its failure is under the routine's heading, and "try
+   * again" there would send somebody else's words as if the person had typed them.
+   */
+  askedId?: string;
   /**
    * When this line stands for a routine failing the same way over and over: how many times, when
    * last, and whether the person acknowledged it or a success closed it. The repeats themselves
@@ -220,6 +240,7 @@ export function createTurnFailureReader(database: Database) {
         status: lafThreadRuns.status,
         error: lafThreadRuns.error,
         finishedAt: lafThreadRuns.finishedAt,
+        origin: lafThreadRuns.origin,
       })
       .from(lafThreadRuns)
       .where(
@@ -250,6 +271,32 @@ export function createTurnFailureReader(database: Database) {
       .selectDistinctOn([lafThreadMessages.runId], {
         runId: lafThreadMessages.runId,
         messageId: sql<string>`${lafThreadMessages.message} ->> 'id'`,
+        role: sql<string>`${lafThreadMessages.message} ->> 'role'`,
+        /*
+         * Whether the Bot had said anything in this run: an assistant turn with words, rather than
+         * one that only called tools. The fact that tells a Bot that went away mid-answer from one
+         * that never answered, when both left the same error behind.
+         */
+        spoke: sql<boolean>`coalesce(length(btrim(${lafThreadMessages.message} ->> 'content')), 0) > 0`,
+        /*
+         * The person's message the run was answering: the newest one at or before the run's last
+         * row. A retry runs again over a question an earlier run wrote, so it is not always one of
+         * this run's own rows.
+         */
+        /*
+         * The outer row is named by its table, not through the column objects: interpolated here,
+         * drizzle writes a bare "thread_id", which inside the subquery means `asked`'s own — every
+         * thread's newest question, measured in this file's test.
+         */
+        askedId: sql<string | null>`(
+          select asked.message ->> 'id'
+          from laf_thread_messages asked
+          where asked.thread_id = laf_thread_messages.thread_id
+            and asked.seq <= laf_thread_messages.seq
+            and asked.message ->> 'role' = 'user'
+          order by asked.seq desc
+          limit 1
+        )`,
       })
       .from(lafThreadMessages)
       .where(
@@ -261,26 +308,47 @@ export function createTurnFailureReader(database: Database) {
       )
       .orderBy(desc(lafThreadMessages.runId), desc(lafThreadMessages.seq));
 
-    const messageOfRun = new Map(
-      lastOfRun.map((row) => [row.runId, row.messageId]),
-    );
+    const lastMessageOfRun = new Map(lastOfRun.map((row) => [row.runId, row]));
     // The groups whose one line is one of these. Read beside the ledger, not instead of it.
     const groups = await failureGroupsMarkedAt(database, runIds);
 
     const failures: TurnFailure[] = [];
     for (const run of failed) {
-      const messageId = messageOfRun.get(run.runId);
+      const last = lastMessageOfRun.get(run.runId);
       // A run that failed before it wrote anything has no message to draw under, and inventing a
       // place for it would put the line under somebody else's question.
-      if (!messageId) continue;
+      if (!last?.messageId) continue;
       const group = groups.get(run.runId);
+      /*
+       * A person's turn only. A routine's failure is keyed to the heading its failure path writes
+       * (`routines/deliver.ts`) — words in the Bot's name, but not the Bot answering — and reading
+       * those as a Bot that spoke called every unreachable routine one that stopped partway.
+       */
+      const underAnswer =
+        run.origin === "chat" && last.role === "assistant" && last.spoke;
+      const classified =
+        run.status === "unknown"
+          ? TURN_FAILURE_CODES.interrupted
+          : classifyTurnFailure(run.error);
       failures.push({
         at: (run.finishedAt ?? new Date()).toISOString(),
+        /*
+         * The Bot had spoken, so it was reached: "the Bot did not answer" under its own words is
+         * not true, and neither is the generic sentence. See `botDropped`.
+         */
         code:
-          run.status === "unknown"
-            ? TURN_FAILURE_CODES.interrupted
-            : classifyTurnFailure(run.error),
-        messageId,
+          underAnswer &&
+          (classified === TURN_FAILURE_CODES.unreachable ||
+            classified === TURN_FAILURE_CODES.unknown)
+            ? TURN_FAILURE_CODES.botDropped
+            : classified,
+        messageId: last.messageId,
+        ...(run.origin === "chat" &&
+        last.role !== "user" &&
+        last.askedId &&
+        last.askedId !== last.messageId
+          ? { askedId: last.askedId }
+          : {}),
         ...(group ? { group } : {}),
       });
     }

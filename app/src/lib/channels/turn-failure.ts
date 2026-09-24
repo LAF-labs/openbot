@@ -24,6 +24,7 @@ import { activeLocale, t } from "@/lib/i18n";
  * no ledger row for that turn — the process that writes the ledger was the thing that was down.
  */
 export const TURN_FAILURE_CODES = [
+  "laf:turn_bot_dropped",
   "laf:turn_budget_spent",
   "laf:turn_daily_budget_reached",
   "laf:turn_failed",
@@ -62,6 +63,8 @@ export type TurnFailure = {
   messageId: string;
   code: string;
   at: string;
+  /** The person's message the failed run was answering, when the failure is under something else. */
+  askedId?: string;
   group?: FailureGroup;
 };
 
@@ -109,6 +112,14 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
    */
   "laf:turn_budget_spent":
     "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
+  /*
+   * The Bot had started answering and went away — its process stopped partway (measured
+   * 2026-09-24 by killing agent-bot mid-reply). It was reached, so "the Bot did not answer" is not
+   * true under half an answer; and a retry starts over rather than finishing it, which is what the
+   * person needs to know before pressing.
+   */
+  "laf:turn_bot_dropped":
+    "The Bot stopped partway through. Try again and it answers from the start.",
   /*
    * A free trial's day is spent, so the server refused the run before it left (self-serve contract
    * §4.6). The same words `stopped-turn.ts` uses, one Korean entry for both.
@@ -184,9 +195,29 @@ export function turnFailureSentence(code: string): string {
  */
 export function liveTurnFailureCode(
   reported: unknown,
-  { connectionLost = false }: { connectionLost?: boolean } = {},
+  {
+    connectionLost = false,
+    answerStarted = false,
+  }: { connectionLost?: boolean; answerStarted?: boolean } = {},
 ): TurnFailureCode {
   if (connectionLost) return "laf:turn_server_unreachable";
+  const code = classifyLive(reported);
+  /*
+   * The Bot's words had started to arrive, so it was reached: an endpoint that went away now is a
+   * Bot that stopped partway, not one that is not running — the server reads its ledger the same
+   * way (`botDropped` in server/src/channels/turn-failures.ts), and the sentence must not change
+   * across a reload.
+   */
+  if (
+    answerStarted &&
+    (code === "laf:turn_unreachable" || code === "laf:turn_failed")
+  ) {
+    return "laf:turn_bot_dropped";
+  }
+  return code;
+}
+
+function classifyLive(reported: unknown): TurnFailureCode {
   const said = (
     reported instanceof Error
       ? reported.message

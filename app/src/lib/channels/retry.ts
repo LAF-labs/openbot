@@ -62,16 +62,59 @@ export function retriesInPlace(
   return true;
 }
 
+/**
+ * How a question can be asked again, if it can: in place (`retriesInPlace`), or by saying its
+ * words again as a new message — or not at all.
+ *
+ * SAYING IT AGAIN IS THE HONEST RETRY ONCE THE BOT HAS SPOKEN. MEASURED 2026-09-24 (UI/UX audit,
+ * item 5): agent-bot stopped two seconds into a reply, and "가게 마감" sat above "봇이 답하지
+ * 않았습니다" with nothing to press — the button was drawn only under the person's own words, and
+ * with half an answer in between the failure is under the Bot's. Running in place is still refused
+ * there, for the reason above. But the thread already holds the half answer, and the person asking
+ * again after it is what happened — so it is sent as what it is, a new message, and the store keeps
+ * both: the question, what the Bot got out, and the question again.
+ *
+ * Only for the last question: under one somebody has asked past, the thread has moved on, and the
+ * answer would land under the wrong question.
+ */
+export type RetryWay = "in-place" | "ask-again";
+
+export function retryWay(
+  messages: readonly ThreadMessage[],
+  messageId: string,
+): RetryWay | null {
+  if (retriesInPlace(messages, messageId)) return "in-place";
+  const at = messages.findIndex((message) => message.id === messageId);
+  if (at === -1 || messages[at]?.role !== "user") return null;
+  const askedSince = messages
+    .slice(at + 1)
+    .some((later) => later.role === "user");
+  return askedSince ? null : "ask-again";
+}
+
 /** A failed turn as `GET /api/channels/:id/failures` reports it. */
 export type StoredFailure = {
   messageId: string;
   code: string;
   at: string;
+  /** The person's message the run was answering, when the failure is under the Bot's half answer. */
+  askedId?: string;
   group?: FailureGroup;
 };
 
-/** What the transcript draws under one message: the code, and the group it stands for, if any. */
-export type StandingFailure = { code: string; group?: FailureGroup };
+/**
+ * What the transcript draws under one message: the code, and the group it stands for, if any.
+ *
+ * `askedId` marks a failure under the Bot's half answer, which is drawn faded with "여기까지
+ * 받았어요", and `askedAgain` one the person has since asked past — the half answer keeps its mark,
+ * and the red line goes, because the question has been asked again below it.
+ */
+export type StandingFailure = {
+  code: string;
+  group?: FailureGroup;
+  askedId?: string;
+  askedAgain?: boolean;
+};
 
 /**
  * The stored failures that still stand, as the transcript draws them: message id to failure.
@@ -89,8 +132,9 @@ export type StandingFailure = { code: string; group?: FailureGroup };
  * A reply with no stamp yet is one that arrived after the stamps were read, which is after every
  * failure that read could know about.
  *
- * A failure under anything else — a routine's heading, the half-answer a stalled turn left — stands:
- * nothing is retried there, so nothing can have superseded it.
+ * A failure under a routine's heading stands: nothing is retried there, so nothing can have
+ * superseded it. One under the half answer a turn left stands until the person asks again after it
+ * (`askedAgain`), which is how 다시 시도 retries it (`retryWay`).
  *
  * Nothing is reported until `times` has been read: without the stamps a superseded line cannot be
  * told from a standing one, and a red line that appears and then vanishes is worse than one that
@@ -106,14 +150,25 @@ export function standingFailures(
   const position = new Map(
     messages.map((message, index) => [message.id, index]),
   );
-  const drawn = (failure: StoredFailure): StandingFailure =>
-    failure.group
-      ? { code: failure.code, group: failure.group }
-      : { code: failure.code };
+  const drawn = (failure: StoredFailure): StandingFailure => ({
+    code: failure.code,
+    ...(failure.group ? { group: failure.group } : {}),
+    ...(failure.askedId ? { askedId: failure.askedId } : {}),
+  });
   for (const failure of failures) {
     const at = position.get(failure.messageId);
     if (at === undefined || messages[at]?.role !== "user") {
-      standing[failure.messageId] = drawn(failure);
+      /*
+       * Under the Bot's half answer: superseded by the person asking again after it — which is
+       * what 다시 시도 there does — and never by anything else, since nothing else answers it.
+       */
+      const askedAgain =
+        failure.askedId !== undefined &&
+        at !== undefined &&
+        messages.slice(at + 1).some((later) => later.role === "user");
+      standing[failure.messageId] = askedAgain
+        ? { ...drawn(failure), askedAgain: true }
+        : drawn(failure);
       continue;
     }
     const failedAt = Date.parse(failure.at);

@@ -54,6 +54,35 @@ describe("turn failure sentences", () => {
 });
 
 describe("liveTurnFailureCode", () => {
+  /*
+   * MEASURED 2026-09-24: agent-bot killed two seconds into a reply left the same "Unable to
+   * connect" a Bot that never answered leaves, and the screen said the Bot "did not answer" under
+   * the half of an answer it had sent.
+   */
+  it("says the Bot stopped partway once its words had started to arrive", () => {
+    const measured =
+      "Unable to connect. Is the computer able to access the url?";
+    expect(liveTurnFailureCode(measured, { answerStarted: true })).toBe(
+      "laf:turn_bot_dropped",
+    );
+    expect(liveTurnFailureCode(undefined, { answerStarted: true })).toBe(
+      "laf:turn_bot_dropped",
+    );
+    // Before any words it is still a Bot that is not answering.
+    expect(liveTurnFailureCode(measured)).toBe("laf:turn_unreachable");
+    // The model's own stream cutting out is a different fact, and keeps its own sentence.
+    expect(
+      liveTurnFailureCode("laf:provider_stream_cut", { answerStarted: true }),
+    ).toBe("laf:turn_stream_cut");
+    // And with the server gone, that is still what is said.
+    expect(
+      liveTurnFailureCode(measured, {
+        answerStarted: true,
+        connectionLost: true,
+      }),
+    ).toBe("laf:turn_server_unreachable");
+  });
+
   it("places the two failures actually measured on this screen", () => {
     expect(
       liveTurnFailureCode(

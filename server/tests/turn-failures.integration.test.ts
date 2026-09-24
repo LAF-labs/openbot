@@ -345,4 +345,132 @@ describe("turn failures for a thread", () => {
     const { channel } = await createChannel(owner);
     expect(await readFailures(channel.threadId)).toEqual([]);
   });
+
+  /*
+   * MEASURED 2026-09-24 (UI/UX audit 0.5.3, item 5): agent-bot killed two seconds into a reply left
+   * "Unable to connect" in the ledger — the same words a Bot that never answered leaves — and the
+   * run's last row was the Bot's half answer, "## 가게 마감". The screen said the Bot "did not
+   * answer" under words it had sent, and had no question to ask again.
+   */
+  test("calls a Bot that went away mid-answer that, and names the question it was answering", async () => {
+    const owner = await createUser();
+    const { agentId, channel } = await createChannel(owner);
+    const failed = await recordTurn(channel.threadId, agentId, owner.id, 1, {
+      status: "error",
+      error: "Unable to connect. Is the computer able to access the url?",
+    });
+    const halfId = randomUUID();
+    await database.insert(lafThreadMessages).values({
+      threadId: channel.threadId,
+      seq: 2,
+      runId: failed.runId,
+      message: { id: halfId, role: "assistant", content: "## 가게 마감" },
+    });
+
+    const [failure] = await readFailures(channel.threadId);
+
+    expect(failure?.messageId).toBe(halfId);
+    expect(failure?.code).toBe(TURN_FAILURE_CODES.botDropped);
+    expect(failure?.askedId).toBe(failed.messageId);
+  });
+
+  test("a turn that only called tools before it failed was not an answer", async () => {
+    const owner = await createUser();
+    const { agentId, channel } = await createChannel(owner);
+    const failed = await recordTurn(channel.threadId, agentId, owner.id, 1, {
+      status: "error",
+      error: "Unable to connect. Is the computer able to access the url?",
+    });
+    await database.insert(lafThreadMessages).values({
+      threadId: channel.threadId,
+      seq: 2,
+      runId: failed.runId,
+      message: { id: randomUUID(), role: "assistant", content: "" },
+    });
+
+    const [failure] = await readFailures(channel.threadId);
+
+    expect(failure?.code).toBe(TURN_FAILURE_CODES.unreachable);
+    expect(failure?.askedId).toBe(failed.messageId);
+  });
+
+  test("names no question for a routine's run, which nobody asked", async () => {
+    const owner = await createUser();
+    const { agentId, channel } = await createChannel(owner);
+    // An earlier turn that went fine: the nearest question, and not the routine's.
+    await recordTurn(channel.threadId, agentId, owner.id, 1, {
+      status: "done",
+    });
+    const runId = randomUUID();
+    createdRunIds.push(runId);
+    await database.insert(lafThreadRuns).values({
+      runId,
+      threadId: channel.threadId,
+      agentId,
+      userId: owner.id,
+      status: "error",
+      origin: "routine",
+      startedAt: new Date(),
+      finishedAt: new Date(Date.now() + 5),
+      error: "The run did not finish in time.",
+    });
+    const headingId = randomUUID();
+    await database.insert(lafThreadMessages).values({
+      threadId: channel.threadId,
+      seq: 2,
+      runId,
+      message: { id: headingId, role: "assistant", content: "**아침 브리핑**" },
+    });
+
+    const [failure] = await readFailures(channel.threadId);
+
+    expect(failure?.messageId).toBe(headingId);
+    expect(failure?.code).toBe(TURN_FAILURE_CODES.timedOut);
+    expect(failure).not.toHaveProperty("askedId");
+  });
+
+  test("a routine that never reached its Bot did not stop partway: its heading is not an answer", async () => {
+    const owner = await createUser();
+    const { agentId, channel } = await createChannel(owner);
+    const runId = randomUUID();
+    createdRunIds.push(runId);
+    await database.insert(lafThreadRuns).values({
+      runId,
+      threadId: channel.threadId,
+      agentId,
+      userId: owner.id,
+      status: "error",
+      origin: "routine",
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      error: "fetch failed: ECONNREFUSED 127.0.0.1:4200",
+    });
+    await database.insert(lafThreadMessages).values({
+      threadId: channel.threadId,
+      seq: 1,
+      runId,
+      message: {
+        id: randomUUID(),
+        role: "assistant",
+        content: "**재고 확인**",
+      },
+    });
+
+    const [failure] = await readFailures(channel.threadId);
+
+    expect(failure?.code).toBe(TURN_FAILURE_CODES.unreachable);
+  });
+
+  test("names no question when the failure is under the question itself", async () => {
+    const owner = await createUser();
+    const { agentId, channel } = await createChannel(owner);
+    await recordTurn(channel.threadId, agentId, owner.id, 1, {
+      status: "error",
+      error: "Unable to connect. Is the computer able to access the url?",
+    });
+
+    const [failure] = await readFailures(channel.threadId);
+
+    expect(failure).not.toHaveProperty("askedId");
+  });
 });

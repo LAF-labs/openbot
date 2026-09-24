@@ -2557,4 +2557,7 @@ export const ko: Record<string, string> = {
   "Korea Meteorological Administration": "기상청",
   Government24: "정부24",
   Korail: "코레일",
+  "The Bot stopped partway through. Try again and it answers from the start.":
+    "봇이 잠깐 멈췄어요. 다시 시도하면 처음부터 답해요.",
+  "Received up to here": "여기까지 받았어요",
 };

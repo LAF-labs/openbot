@@ -24,7 +24,7 @@ import {
   channelFailuresQueryOptions,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
-import { retriesInPlace, standingFailures } from "@/lib/channels/retry";
+import { retryWay, standingFailures } from "@/lib/channels/retry";
 import {
   loadThreadHistory,
   mergeStoredHistory,
@@ -477,12 +477,27 @@ export function ChannelChat({
    * again with the question where it is, under the id the server's store already holds, which it
    * treats as a re-arrival of that row rather than a second one (`lib/channels/retry.ts`).
    *
-   * The transcript draws the button only where that is possible. A press that arrives after the
-   * thread moved on — a routine landing in the second between render and click — does nothing,
-   * because the only other way to ask is the duplicate.
+   * The transcript draws the button only where the question can be asked again at all
+   * (`retryWay`). A press that arrives after the person asked something else does nothing: the
+   * answer would land under the wrong question.
    */
-  const retry = async ({ id }: RetriedMessage) => {
-    if (!retriesInPlace(agent.messages, id)) return;
+  const retry = async ({ id, text }: RetriedMessage) => {
+    const way = retryWay(agent.messages, id);
+    if (way === null) return;
+    /*
+     * The Bot had answered part of it before it stopped (UI/UX audit 0.5.3, item 5). Run in place,
+     * the provider would be handed a thread ending in the Bot's own half sentence, so the question
+     * is asked again — the words, and the skill it was asked with — as what it is: a second asking,
+     * below the half answer it did not finish.
+     */
+    if (way === "ask-again") {
+      const skill = /^\/([a-z0-9][a-z0-9-]*)(\s|$)/.exec(text)?.[1];
+      const prompt = skillCommands.find(
+        (command) => command.name === skill,
+      )?.prompt;
+      await say(text, prompt ? [prompt] : []);
+      return;
+    }
     stopBeforeRun.current = false;
     turnsNow.current += 1;
     setTurnsInFlight((count) => count + 1);
@@ -533,6 +548,26 @@ export function ChannelChat({
       void refreshTimesRef.current();
       void refreshFailuresRef.current();
     };
+    /*
+     * The Bot's words had started to arrive in this turn: an assistant message with words after
+     * the person's last one. What tells a Bot that stopped partway from one that never answered,
+     * when both end in the same error (`liveTurnFailureCode`).
+     */
+    const answerStarted = () => {
+      const messages = agent.messages;
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (message?.role === "user") return false;
+        if (
+          message?.role === "assistant" &&
+          typeof message.content === "string" &&
+          message.content.trim()
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
     const subscription = agent.subscribe?.({
       // Both surfaces fall back to the same sentence, from the same place, so a person who uses
       // both is not told two different things about the same silence.
@@ -541,10 +576,16 @@ export function ChannelChat({
         fail(
           liveTurnFailureCode(event?.message, {
             connectionLost: isSocketLost(),
+            answerStarted: answerStarted(),
           }),
         ),
       onRunFailed: ({ error }) =>
-        fail(liveTurnFailureCode(error, { connectionLost: isSocketLost() })),
+        fail(
+          liveTurnFailureCode(error, {
+            connectionLost: isSocketLost(),
+            answerStarted: answerStarted(),
+          }),
+        ),
       onRunFinishedEvent: () => {
         const wasOurs = awaitingReply.current;
         awaitingReply.current = false;
