@@ -1,4 +1,10 @@
-import { IconBrowser, IconChevronDown } from "@tabler/icons-react";
+import {
+  IconBrowser,
+  IconChevronDown,
+  IconClockX,
+  IconShieldCheck,
+  IconShieldX,
+} from "@tabler/icons-react";
 import { Fragment, useId, useState, useSyncExternalStore } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
@@ -6,7 +12,13 @@ import { ToolLine } from "@/components/channels/tool-line";
 import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
-import { questionOn, watchQuestions } from "@/lib/approvals";
+import {
+  type ApprovalDecision,
+  decisionOn,
+  decisionPhrase,
+  questionOn,
+  watchQuestions,
+} from "@/lib/approvals";
 import {
   endingOf,
   pictureStepOf,
@@ -200,12 +212,44 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
                     refused={line.refused}
                     running={line.running}
                   />
+                  <StepDecision toolCallId={step.id} />
                 </Fragment>
               );
             })
           : null}
       </div>
     </>
+  );
+}
+
+const DECIDED_ICONS: Record<ApprovalDecision["outcome"], typeof IconClockX> = {
+  allowed: IconShieldCheck,
+  declined: IconShieldX,
+  unanswered: IconClockX,
+};
+
+/**
+ * What the person answered about this step, in the list of what the Bot did, where it happened.
+ *
+ * The approval card above the card folds into this same line once it is answered (package C,
+ * `approval-request.tsx`); a turn is one card now, and a person reading 한 일 back should see "거부함
+ * · toss.im에서 ‘비즈니스’ 누르기" beside the click it was about, not only in a stack above the card.
+ * The words are the approvals' own (`decisionPhrase`), so the two lines cannot say different things.
+ */
+function StepDecision({ toolCallId }: { toolCallId: string }) {
+  const decision = useSyncExternalStore(watchQuestions, () =>
+    decisionOn(toolCallId),
+  );
+  if (!decision) return null;
+  const Icon = DECIDED_ICONS[decision.outcome];
+  const said = decisionPhrase(decision);
+  return (
+    <p className="flex items-start gap-1.5 py-0.5 pl-5 text-muted-foreground text-xs">
+      <Icon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <span className="min-w-0 wrap-break-word">
+        {t(said.key, said.params)}
+      </span>
+    </p>
   );
 }
 
