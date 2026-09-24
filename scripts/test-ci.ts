@@ -405,7 +405,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * accent (every palette's button label, text, tint and ring at AA in both themes, the neutral
  * control before there is a Bot, the words around it), and thirteen for the header's pill (the
  * person's turn before the work, the turn's phase read from its thread, the phase store, the
- * labels in Korean). The floor rises by exactly that.
+ * labels in Korean), and six for the one-Bot sidebar (the Bot at the top as the way to its
+ * profile, its conversation as the one row, the nav under it, the rail's names, and on a phone
+ * the sheet and the button that opens it). The floor rises by exactly that.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -413,7 +415,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 2524, roots: ["server"] },
-  { name: "app", floor: 1210, roots: ["app"] },
+  { name: "app", floor: 1216, roots: ["app"] },
   { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
   { name: "root", floor: 380, roots: ["tests", "agent-bot"] },
 ] as const;

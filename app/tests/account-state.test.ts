@@ -91,6 +91,16 @@ const DEVICE_SCOPED = [
    * message — and it is forgotten the moment the server has it. Nothing a Bot does reads it.
    */
   "components/channels/composer/outbox.ts",
+  /*
+   * The Bot's colour from the last load, so `index.html` can paint the accent before React runs
+   * (`lib/avatar/accent.ts`, 2026-09-24).
+   *
+   * A DECISION, and the argument is that it is a cache of an account-wide answer, never an answer of
+   * its own. The colour is the Bot's seed, on the server, the same on every device; this copy lives
+   * only for the moment between the first paint and the Bots list answering, and the list overwrites
+   * it the moment it does. Wrong, it is one frame of the previous colour. Nothing a Bot does reads it.
+   */
+  "lib/avatar/accent.ts",
 ];
 
 /**

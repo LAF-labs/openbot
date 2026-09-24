@@ -332,15 +332,13 @@ describe("the sidebar", () => {
     expect(rows(view)).toEqual(["/channel/c-1"]);
     const text = nav(view).textContent ?? "";
     expect(text).toContain("초롱");
-    for (const label of [
-      "Bot profile",
-      "Routines",
-      "Skills",
-      "Connections",
-      "Help",
-    ]) {
+    for (const label of ["Routines", "Skills", "Connections", "Help"]) {
       expect(text).toContain(label);
     }
+    // The profile is the Bot itself, at the top of the column (2026-09-24), not a second link.
+    expect(
+      nav(view).querySelector('a[href^="/agents"]')?.getAttribute("aria-label"),
+    ).toContain("Bot profile");
     // The list heading is for an account with several; the roster's own furniture is gone.
     expect(text).not.toContain("Your Bots");
     expect(nav(view).querySelector('input[type="search"]')).toBeNull();

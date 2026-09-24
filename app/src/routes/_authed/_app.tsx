@@ -46,7 +46,7 @@ function RouteComponent() {
        * the column's ground and a fixed width, so the page beside it does not jump sideways.
        */}
       <SectionBoundary
-        className="h-full w-70 max-w-[40vw] shrink-0 border-border border-r bg-sidebar"
+        className="h-full w-70 max-w-[40vw] shrink-0 border-border border-r bg-sidebar max-md:hidden"
         queryKeys={ROSTER_QUERIES}
         section="sidebar"
       >

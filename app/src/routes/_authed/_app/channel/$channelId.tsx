@@ -14,6 +14,7 @@ import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { LiveView } from "@/components/computer/live-view";
 import { useControl } from "@/components/computer/use-control";
 import { DetailPanel } from "@/components/layout/detail-panel";
+import { MobileNavButton } from "@/components/layout/mobile-nav-button";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
@@ -192,6 +193,7 @@ function RouteComponent() {
        * a toolbar the conversation is filed under.
        */}
       <BotHeader
+        leading={<MobileNavButton className="-ml-1" />}
         actions={
           <>
             {/*

@@ -2601,4 +2601,7 @@ export const ko: Record<string, string> = {
   "Next routines": "다음 루틴",
   "No routines coming up.": "예정된 루틴이 없어요.",
   "See all routines": "루틴 모두 보기",
+  Conversation: "대화",
+  "Open the menu": "메뉴 열기",
+  "Close the menu": "메뉴 닫기",
 };

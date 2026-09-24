@@ -91,13 +91,10 @@ const ALLOWED: Record<string, Record<string, number>> = {
     "components/agents/agent-profile.tsx": 1,
     // Was 5. The height went first, because `--sand-row-height` finally has a name: `h-row`.
     "components/app-sidebar/bot-row.tsx": 4,
-    "components/app-sidebar/bot-sidebar.tsx": 9,
     "components/avatar/bot-avatar-picker.tsx": 1,
     "components/channels/chat-transcript.tsx": 3,
     "components/channels/composer/composer.tsx": 6,
     "components/layout/shell-titlebar.tsx": 2,
-    "routes/_authed/_app/channel/$channelId.tsx": 1,
-    "routes/_authed/_app/channel/new.tsx": 2,
   },
   ring: {},
 };

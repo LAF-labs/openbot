@@ -9,6 +9,7 @@ import { BotHeader } from "@/components/channels/bot-header";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { seedMessage } from "@/components/channels/transcript-messages";
+import { MobileNavButton } from "@/components/layout/mobile-nav-button";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isFirstConversation, pickFirstTasks } from "@/lib/agents/first-tasks";
@@ -136,6 +137,7 @@ function FirstConversation({ botId }: { botId: string }) {
     <div className="flex h-full flex-col">
       {/* The same header a conversation has, so the first message does not move anything. */}
       <BotHeader
+        leading={<MobileNavButton className="-ml-1" />}
         actions={
           <Link
             aria-label={t("Bot profile")}

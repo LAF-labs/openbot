@@ -20,7 +20,7 @@ import { json, mount, routerAt, unmountAll } from "./support/mount";
  * string `"(min-width: 64rem)"` somewhere in the file — which passes on a column that reads the
  * breakpoint and never uses it, and on a width constant nothing is ever set to. So `BotSidebar` is
  * mounted here against a stub server and a stub `matchMedia`, and what is asserted is what the
- * column does: its inline width at each viewport, the button that appears below `lg` and what it
+ * column does: its width class at each viewport, the button that appears below `lg` and what it
  * does when pressed, the query the component actually subscribed to, and one `Link` per row.
  *
  * THE BREAKPOINT IS THE STUB'S RECORD, NOT THE FILE'S. `lg` is 1024px because a media query
@@ -119,17 +119,17 @@ const agent = (id: string, name: string) => ({
  * person has one Bot now; an account like this keeps them all, and the sidebar is how it reaches
  * them. The room is not listed — rooms were removed.
  */
-function server() {
+function server(
+  bots = [
+    agent("bot-1", "초롱"),
+    agent("bot-2", "두리"),
+    agent("bot-3", "세모"),
+  ],
+) {
   globalThis.fetch = stubFetch(async (input) => {
     const url = String(input);
     if (url === "/api/agents") {
-      return json({
-        agents: [
-          agent("bot-1", "초롱"),
-          agent("bot-2", "두리"),
-          agent("bot-3", "세모"),
-        ],
-      });
+      return json({ agents: bots });
     }
     if (url === "/api/agents?hidden=true") return json({ agents: [] });
     if (url === "/api/agents/working") return json({ working: [] });
@@ -207,9 +207,11 @@ const PATHS = [
   "/sign",
 ];
 
-async function roster(options: { wide?: boolean } = {}) {
+async function roster(
+  options: { wide?: boolean; bots?: ReturnType<typeof agent>[] } = {},
+) {
   viewport.wide = options.wide ?? true;
-  server();
+  server(options.bots);
   const { QueryClient, QueryClientProvider } = await import(
     "@tanstack/react-query"
   );
@@ -232,7 +234,9 @@ async function roster(options: { wide?: boolean } = {}) {
   return {
     ...view,
     column,
-    width: () => column().style.width,
+    /** The column's width, which is a class: `w-sidebar` open, `w-16` as a rail. */
+    width: () =>
+      classes(column()).find((cls) => cls === "w-sidebar" || cls === "w-16"),
     rows: () => [...column().querySelectorAll<HTMLAnchorElement>("ul a")],
     rowNamed: (name: string) =>
       [...column().querySelectorAll<HTMLAnchorElement>("ul a")].find(
@@ -241,9 +245,7 @@ async function roster(options: { wide?: boolean } = {}) {
           row.getAttribute("aria-label")?.startsWith(name),
       ),
     footerLinks: () => [
-      ...column().querySelectorAll<HTMLAnchorElement>(
-        ":scope > div:last-child a",
-      ),
+      ...column().querySelectorAll<HTMLAnchorElement>("[data-sidebar-nav] a"),
     ],
     toggle: () =>
       column().querySelector<HTMLButtonElement>(
@@ -269,10 +271,10 @@ const classes = (element: Element | null | undefined) =>
 describe("the roster collapses to a rail", () => {
   test("the full column above lg, 64px below it", async () => {
     const wide = await roster({ wide: true });
-    expect(wide.width()).toBe("var(--sand-sidebar-width)");
+    expect(wide.width()).toBe("w-sidebar");
     await wide.unmount();
     const narrow = await roster({ wide: false });
-    expect(narrow.width()).toBe("4rem");
+    expect(narrow.width()).toBe("w-16");
   });
 
   test("reads the same breakpoint Tailwind's lg compiles to", async () => {
@@ -290,9 +292,9 @@ describe("the roster collapses to a rail", () => {
   test("a window dragged across lg moves the column", async () => {
     const view = await roster({ wide: true });
     await view.resizeTo(false);
-    expect(view.width()).toBe("4rem");
+    expect(view.width()).toBe("w-16");
     await view.resizeTo(true);
-    expect(view.width()).toBe("var(--sand-sidebar-width)");
+    expect(view.width()).toBe("w-sidebar");
   });
 
   test("and it notices a resize even when the media query's own event never comes", async () => {
@@ -307,7 +309,7 @@ describe("the roster collapses to a rail", () => {
     await act(async () => {
       window.dispatchEvent(new Event("resize"));
     });
-    expect(view.width()).toBe("var(--sand-sidebar-width)");
+    expect(view.width()).toBe("w-sidebar");
   });
 
   test("the person can open the full list at a narrow width too", async () => {
@@ -318,7 +320,7 @@ describe("the roster collapses to a rail", () => {
     expect(ko["Expand the sidebar"]).toBeTruthy();
 
     if (expand) await view.press(expand);
-    expect(view.width()).toBe("var(--sand-sidebar-width)");
+    expect(view.width()).toBe("w-sidebar");
     const collapse = view.toggle();
     expect(collapse?.getAttribute("aria-label")).toBe("Collapse the sidebar");
     expect(collapse?.getAttribute("aria-expanded")).toBe("true");
@@ -327,7 +329,7 @@ describe("the roster collapses to a rail", () => {
     expect(view.column().textContent).toContain("Your Bots");
 
     if (collapse) await view.press(collapse);
-    expect(view.width()).toBe("4rem");
+    expect(view.width()).toBe("w-16");
     expect(view.column().textContent).not.toContain("Your Bots");
   });
 
@@ -336,18 +338,15 @@ describe("the roster collapses to a rail", () => {
     expect(view.toggle()).toBeNull();
   });
 
-  test("the width is the one value in the column, and the rows carry none", async () => {
+  test("the column and everything in it carry no inline style", async () => {
     /*
-     * TAILWIND CLASSES ONLY, WITH ONE EXPLAINED EXCEPTION: `--sand-sidebar-width` written into a
-     * class is `w-[var(--sand-…)]`, a raw palette variable in a class string, which is what
-     * `design-tokens.test.ts` counts as drift. So the width stays a value on the column, and it is
-     * the ONLY inline style between the column and its rows.
+     * TAILWIND CLASSES ONLY. The width used to be the one exception, written as a style because
+     * `w-[var(--sand-sidebar-width)]` is the raw-variable escape `design-tokens.test.ts` counts. It
+     * has a name now (`w-sidebar`, from `--spacing-sidebar`), so the exception is gone.
      */
     const view = await roster();
-    expect(view.column().getAttribute("style")).toBe(
-      "width: var(--sand-sidebar-width);",
-    );
-    const styled = [...view.column().querySelectorAll("li, a, ul, nav > div")]
+    expect(view.column().hasAttribute("style")).toBe(false);
+    const styled = [...view.column().querySelectorAll("*")]
       .filter((element) => element.hasAttribute("style"))
       .map((element) => element.tagName);
     expect(styled).toEqual([]);
@@ -489,5 +488,106 @@ describe("the roster speaks the app's language", () => {
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),
     ).toEqual(labels);
+  });
+});
+
+describe("one Bot: who it is, then the conversation, then where else to go", () => {
+  const one = () => [agent("bot-1", "초롱")];
+
+  test("the Bot is at the top, and pressing it opens its profile", async () => {
+    const view = await roster({ bots: one() });
+    const identity = view
+      .column()
+      .querySelector<HTMLAnchorElement>('a[href^="/agents"]');
+    expect(identity?.getAttribute("href")).toBe("/agents?agent=bot-1");
+    expect(identity?.textContent).toContain("초롱");
+    // What it is doing, in a word, under the name — the header's word.
+    expect(identity?.getAttribute("aria-label")).toBe(
+      "초롱 · Ready. Bot profile",
+    );
+    // And it is not a row of a list: the list is the conversation.
+    expect(identity?.closest("ul")).toBeNull();
+  });
+
+  test("its conversation is one row, to its channel, with the last line and the unread mark", async () => {
+    const view = await roster({ bots: one() });
+    const rows = view.rows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute("href")).toBe("/channel/ch-1");
+    expect(rows[0]?.textContent).toContain("Conversation");
+    expect(rows[0]?.textContent).toContain("3 orders are sorted, take a look");
+    expect(rows[0]?.querySelector(".sr-only")?.textContent).toBe("Unread");
+  });
+
+  test("the nav has no second way to the profile, and sits right under the conversation", async () => {
+    const view = await roster({ bots: one() });
+    expect(view.footerLinks().map((link) => link.textContent)).toEqual([
+      "Routines",
+      "Skills",
+      "Connections",
+      "Help",
+    ]);
+    // In the scrolling part with the Bot, not pushed to the bottom beside the account.
+    expect(
+      view.column().querySelector("[data-sidebar-nav]")?.parentElement
+        ?.className,
+    ).toContain("overflow-y-auto");
+  });
+
+  test("the rail keeps a name on the face and on the conversation", async () => {
+    const view = await roster({ bots: one(), wide: false });
+    const identity = view
+      .column()
+      .querySelector<HTMLAnchorElement>('a[href^="/agents"]');
+    expect(identity?.getAttribute("aria-label")).toBe("초롱 · Ready");
+    expect(view.rows()[0]?.getAttribute("aria-label")).toBe(
+      "Conversation · Unread",
+    );
+  });
+});
+
+describe("on a phone the column is a sheet, out only when asked for", () => {
+  test("put away until the menu opens it, and then the whole column with its words", async () => {
+    const view = await roster({ wide: false });
+    expect(classes(view.column())).toContain("max-md:invisible");
+    expect(classes(view.column())).toContain("max-md:-translate-x-full");
+
+    const { openMobileNav } = await import("../src/lib/mobile-nav");
+    const { act } = await import("react");
+    await act(async () => openMobileNav());
+    await view.settle();
+    expect(classes(view.column())).toContain("max-md:translate-x-0");
+    expect(classes(view.column())).not.toContain("max-md:invisible");
+    // Narrow, and still the full column: the sheet is there to be read, not squinted at.
+    expect(view.width()).toBe("w-sidebar");
+    expect(view.column().textContent).toContain("Your Bots");
+    // The press outside it and the X in it both put it away; so does Escape.
+    expect(
+      view.host.querySelectorAll('button[aria-label="Close the menu"]'),
+    ).toHaveLength(2);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    await view.settle();
+    expect(classes(view.column())).toContain("max-md:invisible");
+    expect(ko["Open the menu"]).toBe("메뉴 열기");
+    expect(ko["Close the menu"]).toBe("메뉴 닫기");
+  });
+
+  test("the menu button draws only where there is a sidebar to open", async () => {
+    const { MobileNavButton } = await import(
+      "../src/components/layout/mobile-nav-button"
+    );
+    const alone = await mount(<MobileNavButton />);
+    expect(alone.host.querySelector("button")).toBeNull();
+    await alone.unmount();
+
+    const view = await roster();
+    const withSidebar = await mount(<MobileNavButton />);
+    expect(
+      withSidebar.host.querySelector("button")?.getAttribute("aria-label"),
+    ).toBe("Open the menu");
+    await withSidebar.unmount();
+    await view.unmount();
   });
 });
