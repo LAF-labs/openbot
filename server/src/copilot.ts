@@ -8,11 +8,13 @@ import {
   DEFAULT_TIME_ZONE,
   notepadOf,
   type PromptMode,
+  type PromptPerson,
   type PromptSkill,
   promptModeOf,
   type RoutineNote,
 } from "../../shared/prompt";
 import type { ShopProfile } from "../../shared/shop/catalogue";
+import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "./audit";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
@@ -121,6 +123,12 @@ export type AgentStandingProfile = {
    * thing every endpoint understands.
    */
   shop?: ShopProfile;
+  /**
+   * The person's clock and place as they were last kept (`agents/person-context.ts`): the zone and
+   * language their device last reported, the place they set or said. A chat run's own device
+   * overrides the clock in the middleware below; a routine, which has no device, reads these.
+   */
+  person?: PromptPerson;
 };
 
 /*
@@ -166,6 +174,8 @@ export function botPromptMessage(
     timeZone: string;
     /** A routine's notepad, as the run forwarded it. The composer draws it in routine mode only. */
     notepad?: readonly RoutineNote[];
+    /** The person as this run knows them: the profile's, with the device's clock over it. */
+    person?: PromptPerson;
   },
 ): StandingRoleMessage {
   return {
@@ -181,6 +191,9 @@ export function botPromptMessage(
       ...(profile.memories ? { memories: profile.memories } : {}),
       ...(profile.skills ? { skills: profile.skills } : {}),
       ...(options.notepad?.length ? { notepad: options.notepad } : {}),
+      ...((options.person ?? profile.person)
+        ? { person: options.person ?? profile.person }
+        : {}),
     }),
   };
 }
@@ -450,6 +463,17 @@ function remoteAgentWithPrompt(
        * this seam cannot tell a routine's run from a browser's — and drawn for a routine only.
        */
       notepad: notepadOf(forwarded),
+      /*
+       * WHOSE CLOCK. The device a chat run was sent from says its zone and language on the run
+       * (`forwardedProps.device`, from the app's `Intl`), and that is what "지금 몇 시야" is asking
+       * about — not this VM's clock and not the deployment's. It goes over what the person's last
+       * session kept, which is all a routine has. A zone this runtime does not know was dropped by
+       * `deviceOf`, so a bad value falls back rather than throwing in the middle of a run.
+       *
+       * The place is never taken from the run: it is the person's, kept on the account and changed
+       * through their own session (`account/whereabouts.ts`), like the shop.
+       */
+      person: { ...agent.profile.person, ...deviceOf(forwarded) },
     });
     return next.run({
       ...input,

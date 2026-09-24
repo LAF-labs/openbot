@@ -58,11 +58,13 @@
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type BrowserContext, chromium, type Page } from "playwright";
+import type { Coordinates } from "../../shared/whereabouts";
 import { isBotId } from "./authorisation";
 import { keepChildProcesses } from "./child-processes";
 import { deploymentEgress, deploymentEgressLabel } from "./egress";
 import { log } from "./log";
 import { titleOf } from "./page-text";
+import { samePlace, type Whereabouts } from "./whereabouts";
 
 /** The viewport, which is what a person's click coordinates are relative to. */
 export const VIEWPORT = { width: 1280, height: 800 };
@@ -570,7 +572,21 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     startedAt: string;
     /** The browser process, for the close that has to end it. See closeAndWait. */
     pid: number | null;
+    /** The zone it was started on, which cannot change while it runs. See whereabouts.ts. */
+    timeZone: string;
+    /** The place it is showing sites right now, null for none. */
+    geolocation: Coordinates | null;
   } | null = null;
+
+  /**
+   * Where the person is, as the server last said (whereabouts.ts). Read by every launch, so the
+   * browser a Bot's first call starts is already on the person's clock and in their place.
+   */
+  const wanted: {
+    timeZone: string | undefined;
+    geolocation: Coordinates | null;
+  } = { timeZone: undefined, geolocation: null };
+  const wantedZone = (): string => wanted.timeZone ?? botTimeZone();
 
   /** The launch in flight, so a cold computer is started once however many Bots ask at once. */
   let starting: Promise<BrowserContext> | null = null;
@@ -713,13 +729,18 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       const dir = profileDirectory();
       await sweepLocks(dir);
       const proxy = deploymentEgress(process.env);
+      // Read once, so the browser is started on exactly what `shared` below says it was started on.
+      const timeZone = wantedZone();
+      const geolocation = wanted.geolocation;
       const context = await chromium.launchPersistentContext(dir, {
         args: LAUNCH_ARGS,
         // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
         chromiumSandbox: true,
         viewport: VIEWPORT,
         locale: LOCALE,
-        timezoneId: botTimeZone(),
+        // The person's clock and place, not the VM's (whereabouts.ts). No place, no permission.
+        timezoneId: timeZone,
+        ...(geolocation ? { geolocation, permissions: ["geolocation"] } : {}),
         userAgent: botUserAgent(chromiumVersion),
         // A download with nowhere to go is refused by Chromium before anything here hears about
         // it, so this is the switch that makes 세금계산서 PDF a thing a Bot can fetch at all. Where
@@ -752,6 +773,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         context,
         startedAt: new Date().toISOString(),
         pid: await browserPidOf(context),
+        timeZone,
+        geolocation,
       };
       /*
        * A TAB A SITE OPENED BELONGS TO THE BOT WHOSE CLICK OPENED IT.
@@ -1071,6 +1094,46 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
      */
     liveBots(): string[] {
       return [...live.keys()];
+    },
+
+    /**
+     * Follow where the person is, as one call said it (whereabouts.ts).
+     *
+     * The place moves at once on a running browser. The zone cannot — Playwright fixes it when the
+     * context is created — so a browser nobody has a tab in is closed here and the call that brought
+     * the change starts the next one on the right clock; a browser a Bot is working in keeps its zone
+     * until its tabs close or it idles out. Called before every Bot route, so almost every call finds
+     * nothing moved and returns without touching the browser.
+     */
+    async follow(said: Whereabouts): Promise<void> {
+      if (said.timeZone !== undefined) wanted.timeZone = said.timeZone;
+      if (said.geolocation !== undefined) wanted.geolocation = said.geolocation;
+      const running = shared;
+      if (!running || starting) return;
+      if (!samePlace(running.geolocation, wanted.geolocation)) {
+        const place = wanted.geolocation;
+        try {
+          if (place) {
+            await running.context.setGeolocation(place);
+            await running.context.grantPermissions(["geolocation"]);
+          } else {
+            // Nothing else is ever granted on this context, so clearing takes only the place.
+            await running.context.clearPermissions();
+            await running.context.setGeolocation(null);
+          }
+          running.geolocation = place;
+          log.info("browser_place_followed", { place: place !== null });
+        } catch (error) {
+          // The next call tries again: `running.geolocation` still says what the browser shows.
+          log.warn("browser_place_follow_failed", { reason: error });
+        }
+      }
+      // A Bot's tab, not a Bot's entry in `live`: a tab a site closed leaves the entry behind.
+      const anybodyIn = [...owners.keys()].some((page) => !page.isClosed());
+      if (running.timeZone !== wantedZone() && !anybodyIn) {
+        log.info("browser_zone_followed", { restarted: true });
+        await closeBrowser();
+      }
     },
   };
 

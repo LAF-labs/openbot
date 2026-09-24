@@ -1,3 +1,9 @@
+import {
+  GEOLOCATION_HEADER,
+  geolocationHeaderOf,
+  TIME_ZONE_HEADER,
+} from "../../../shared/whereabouts";
+import type { BrowserWhereabouts } from "../account/whereabouts";
 import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
   ActionResult,
@@ -50,6 +56,18 @@ export type ComputerClientOptions = {
   allowPrivateHosts?: boolean;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  /**
+   * Where the person a Bot works for is, told to the browser on every call that names the Bot.
+   *
+   * The browser runs on a cloud VM, and a site reads the VM's zone and address as its visitor's —
+   * which is how a Bot came to report 네이버's guess of the VM's place (제주시) as its owner's. So
+   * every call carries the owner's zone and coarse coordinates as headers beside `x-openbot-bot-id`,
+   * and the computer follows them (`agent-computer/src/whereabouts.ts`). On every call rather than
+   * pushed once, so a computer that restarted is told again by the next thing anybody does.
+   *
+   * Absent — or answering null — sends no header, and the computer keeps what it last had.
+   */
+  whereaboutsFor?: (botId: string) => Promise<BrowserWhereabouts | null>;
 };
 
 /*
@@ -358,6 +376,12 @@ export function createComputerClient(options: ComputerClientOptions) {
         throw new BotIdRefusedError();
       }
 
+      // A lookup that fails sends nothing: the computer keeps what it last had, and the click goes on.
+      const whereabouts =
+        botId && options.whereaboutsFor
+          ? await options.whereaboutsFor(botId).catch(() => null)
+          : null;
+
       let response: Response;
       try {
         response = await doFetch(`${base}${path}`, {
@@ -368,6 +392,14 @@ export function createComputerClient(options: ComputerClientOptions) {
             ...(init?.headers as Record<string, string> | undefined),
             ...(botId ? { "x-openbot-bot-id": botId } : {}),
             ...(token ? { "x-openbot-computer-token": token } : {}),
+            ...(whereabouts
+              ? {
+                  [TIME_ZONE_HEADER]: whereabouts.timeZone,
+                  [GEOLOCATION_HEADER]: geolocationHeaderOf(
+                    whereabouts.coordinates,
+                  ),
+                }
+              : {}),
           },
           /*
            * Both reasons to give up. The timeout protects the server from a computer that

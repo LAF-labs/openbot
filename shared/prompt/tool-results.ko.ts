@@ -392,6 +392,13 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:routine_paused": "그 루틴을 멈췄다.",
   "laf:routine_resumed": "그 루틴을 다시 돌린다.",
   "laf:remembered": "기억했다. 다음 대화에서도 이것을 알고 있다.",
+  // 위치는 기억 목록이 아니라 내 가게의 가게 위치 칸에 간다 — 사장님이 거기서 보고 지운다.
+  "laf:place_saved":
+    "사장님 가게 위치로 저장했다. 다음 대화와 루틴부터 이 곳 기준으로 하고, 사장님은 내 가게 화면에서 보고 바꿀 수 있다. 지금 하던 일을 이 곳 기준으로 이어서 해라.",
+  "laf:place_invalid":
+    "그 위치는 저장되지 않았다. 시·구까지만 짧게 적어라(예: 서울 강남구) — 번지, 도로명, 문장은 빼고.",
+  "laf:place_unsaved":
+    "위치를 저장하지 못했다. 한 번만 다시 시도하고, 또 안 되면 사장님께 내 가게 화면의 가게 위치에 적어 달라고 말해라. 지금 하던 일은 들은 곳 기준으로 이어서 해도 된다.",
   "laf:profile_no_fields":
     "바꿀 것을 하나도 주지 않아서 아무것도 바뀌지 않았다.",
   "laf:profile_invalid":

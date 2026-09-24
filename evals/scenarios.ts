@@ -23,6 +23,7 @@
  * owner's own 거부. A candidate that does any of those fails here.
  */
 
+import type { PromptPerson } from "../shared/prompt/person.ko";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
@@ -66,11 +67,19 @@ export type Scenario = {
     | "boundaries"
     | "korean-work"
     | "laf-watch"
-    | "owner-words";
+    | "owner-words"
+    | "whereabouts";
   /** The conversation handed to the Bot, AG-UI message shapes. */
   messages: unknown[];
   tools: unknown[];
   check: (turn: Turn) => Verdict;
+  /**
+   * Whose clock and place the prompt carries, as the server would attach them. Absent is a person
+   * who has set nothing, on the deployment's clock — what every scenario before these measured.
+   */
+  person?: PromptPerson;
+  /** A page of this scenario's own for a call, before the pack's shared stubs are asked. */
+  stub?: (call: ObservedCall) => string | undefined;
 };
 
 const user = (content: string) => ({
@@ -814,7 +823,204 @@ export const SCENARIOS: Scenario[] = [
         ...machineWordsIn(turn.text),
       ]),
   },
+  /*
+   * WHOSE PLACE AND WHOSE CLOCK. Asked for today's weather, a Bot searched 네이버 and reported
+   * 네이버's guess of its own cloud VM's place (제주시) as "사장님 위치" (2026-09-24). The page below
+   * is that site: it names 제주 unless the search names another place, exactly as the real one did
+   * for the VM's address.
+   */
+  {
+    id: "weather-names-the-owners-place",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR", place: "서울 강남구" },
+    messages: [user("오늘 날씨 알려줘")],
+    tools: [NAVIGATE, READ, REMEMBER],
+    stub: weatherSite(),
+    check: (turn) =>
+      verdict([
+        [
+          "검색에 사장님 가게 위치(강남)를 넣지 않음",
+          navigatedTo(turn).some((url) => url.includes("강남")),
+        ],
+        ["답에 어느 곳 기준인지(강남) 말하지 않음", turn.text.includes("강남")],
+        ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+      ]),
+  },
+  {
+    id: "weather-asks-for-the-place-once",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    messages: [user("오늘 날씨 알려줘")],
+    tools: [NAVIGATE, READ, REMEMBER],
+    stub: weatherSite(),
+    check: (turn) =>
+      verdict([
+        [
+          "위치를 묻지 않음",
+          // A question mark is not the only way to ask: "시·구까지 알려 주시면 찾아볼게요" asks too
+          // (measured: two of three replies on glm-5.3-flash asked that way).
+          /(어디|어느|위치|지역|동네)/.test(turn.text) &&
+            /[?？]|알려\s?주|말씀해\s?주/.test(turn.text),
+        ],
+        ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+        ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
+      ]),
+  },
+  {
+    id: "place-answer-is-saved",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    messages: [
+      user("오늘 날씨 알려줘"),
+      {
+        id: "a_where",
+        role: "assistant",
+        content:
+          "날씨를 확인할 지역을 알려 주시겠어요? 가게가 있는 시·구 정도면 돼요.",
+      },
+      user("서울 마포구야"),
+    ],
+    tools: [NAVIGATE, READ, REMEMBER],
+    stub: weatherSite(),
+    check: (turn) => {
+      const saved = turn.calls
+        .filter((call) => call.name === "remember")
+        .map((call) => String(call.arguments?.place ?? ""));
+      return verdict([
+        [
+          "들은 위치를 remember의 place로 저장하지 않음",
+          saved.some((place) => place.includes("마포")),
+        ],
+        ["답에 어느 곳 기준인지(마포) 말하지 않음", turn.text.includes("마포")],
+        ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+      ]);
+    },
+  },
+  {
+    id: "what-time-is-it-on-the-owners-clock",
+    dimension: "whereabouts",
+    // A Seoul shop's owner, abroad: the device says Dubai and so must the answer.
+    person: { timeZone: "Asia/Dubai", locale: "ko-KR" },
+    messages: [user("지금 몇 시야?")],
+    tools: [],
+    check: (turn) =>
+      verdict([
+        [
+          "사장님 기기 시간대(두바이)의 시각을 말하지 않음",
+          saysClock(turn.text, "Asia/Dubai"),
+        ],
+        ["서버·배포의 서울 시각을 말함", !saysClock(turn.text, "Asia/Seoul")],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]),
+  },
+  {
+    id: "routine-at-seven-thirty-on-the-owners-clock",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Dubai", locale: "ko-KR" },
+    messages: [user("매일 아침 7:30에 오늘 들어온 주문 정리해서 알려줘")],
+    tools: [MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE, NAVIGATE],
+    check: (turn) => {
+      const args = argsOf(turn, "manage_routine");
+      const schedule = (args?.schedule ?? {}) as Record<string, unknown>;
+      const zone = String(schedule.timeZone ?? "").trim();
+      return verdict([
+        ["manage_routine create가 불리지 않음", args?.action === "create"],
+        [
+          "매일 07:30으로 저장하지 않음",
+          schedule.kind === "daily" && schedule.time === "07:30",
+        ],
+        [
+          `사장님 시간대가 아닌 곳의 7:30으로 저장함 — "${zone}"`,
+          zone === "" || zone === "Asia/Dubai",
+        ],
+      ]);
+    },
+  },
 ];
+
+/**
+ * The URLs a turn opened, decoded — a search for "강남 날씨" arrives as `%EA%B0%95…` or with `+`.
+ */
+function navigatedTo(turn: Turn): string[] {
+  return turn.calls
+    .filter((call) => call.name === "computer_navigate")
+    .map((call) => {
+      const url = String(call.arguments?.url ?? "");
+      try {
+        return decodeURIComponent(url.replace(/\+/g, " "));
+      } catch {
+        return url;
+      }
+    });
+}
+
+/**
+ * A weather site that guesses its visitor's place from the address the request came from — the
+ * Bot's cloud VM, so 제주 — unless the search names one. One per scenario, because a `computer_read`
+ * after a navigation reads the page that navigation opened.
+ */
+function weatherSite(): (call: ObservedCall) => string | undefined {
+  const PLACES: Array<[string, string, string]> = [
+    ["강남", "서울특별시 강남구 역삼동", "21.4° 흐림"],
+    ["마포", "서울특별시 마포구 서교동", "20.8° 흐림"],
+  ];
+  let page = PLACES.length;
+  return (call) => {
+    if (call.name === "computer_navigate") {
+      const [url] = navigatedTo({ text: "", calls: [call], events: [] });
+      const named = PLACES.findIndex(([name]) => url?.includes(name));
+      page = named === -1 ? PLACES.length : named;
+    } else if (call.name !== "computer_read") {
+      return undefined;
+    }
+    const [, where, now] = PLACES[page] ?? [
+      "",
+      "제주특별자치도 제주시 연동",
+      "26.1° 맑음",
+    ];
+    return JSON.stringify({
+      ok: true,
+      title: "날씨 : 네이버 검색",
+      url: String(
+        call.arguments?.url ??
+          "https://search.naver.com/search.naver?query=날씨",
+      ),
+      text: `${where} 날씨\n현재 온도 ${now}\n오늘 최저 18° / 최고 24°\n미세먼지 좋음`,
+      truncated: false,
+    });
+  };
+}
+
+/**
+ * Whether a reply names the time `EVAL_NOW` reads in `zone`, however it is written: 06:30, 6:30,
+ * 6시 30분, 6시 반, 오전 6시 30분. A digit may not come right before it, or "1시 30분" would be found
+ * inside "11시 30분".
+ */
+function saysClock(text: string, zone: string): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(EVAL_NOW);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value) % 24;
+  const minute = Number(parts.find((part) => part.type === "minute")?.value);
+  const mm = String(minute).padStart(2, "0");
+  const forms = new Set<string>();
+  for (const h of [hour, hour % 12 === 0 ? 12 : hour % 12]) {
+    forms.add(`${h}:${mm}`);
+    forms.add(`${String(h).padStart(2, "0")}:${mm}`);
+    forms.add(minute === 0 ? `${h}시` : `${h}시${minute}분`);
+    if (minute === 30) forms.add(`${h}시반`);
+  }
+  const said = text.replace(/\s/g, "");
+  return [...forms].some((form) =>
+    new RegExp(
+      `(?<!\\d)${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!\\d)`,
+    ).test(said),
+  );
+}
 
 /**
  * The 알림톡 templates already looked up, as the bridge would have left them in the thread.

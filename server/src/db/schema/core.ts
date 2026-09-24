@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  doublePrecision,
   index,
   pgEnum,
   pgTable,
@@ -91,6 +92,25 @@ export const users = pgTable("users", {
    */
   businessKind: text("business_kind"),
   dailyPlaces: text("daily_places").array().notNull().default([]),
+  /**
+   * The person's clock and place, which are not the Bot's: its browser runs on a cloud VM whose
+   * address, zone and place a website reads as the visitor's (a Bot once told its owner the weather
+   * "in 제주시, 사장님 위치", from the VM's address). `account/whereabouts.ts` writes them;
+   * `agents/person-context.ts` tells every run and `computer/client.ts` tells the Bot's browser.
+   *
+   *   time_zone / locale     what the person's device reported the last time the app was opened. A
+   *                          routine runs with no device present, so this is the clock it reads.
+   *   place                  a city or district, from 내 가게 or said in a conversation. One line.
+   *   place_lat / place_lon  from the device, with the person's permission, two decimals (~1 km).
+   *
+   * COARSE, BY CONSTRUCTION: a place longer than forty characters is refused and coordinates are
+   * rounded before they are written (`shared/whereabouts.ts`). Null is "not known", never a default.
+   */
+  timeZone: text("time_zone"),
+  locale: text("locale"),
+  place: text("place"),
+  placeLatitude: doublePrecision("place_lat"),
+  placeLongitude: doublePrecision("place_lon"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

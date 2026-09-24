@@ -1,5 +1,6 @@
 import { CopilotKitProvider } from "@copilotkit/react-core/v2";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import { deviceClock } from "@/lib/whereabouts/queries";
 import { ActiveBotProvider } from "./active-bot";
 import { ComputerTools } from "./computer-tools";
 import { GalleryTools } from "./gallery-tools";
@@ -23,8 +24,20 @@ import { SkillTools } from "./skill-tools";
  * runtime rather than returning it).
  */
 export function CopilotProvider({ children }: { children: ReactNode }) {
+  /*
+   * THIS DEVICE'S CLOCK, ON EVERY RUN. `properties` is what CopilotKit forwards as every run's
+   * `forwardedProps`, and the server's middleware reads `device` off it to tell the Bot the time where
+   * the person is (`server/src/copilot.ts`) — not the VM's, and not the deployment's default. Read
+   * once per mount, in state, so a re-render does not hand CopilotKit a new object each time. The
+   * account keeps a copy for the runs with no device (`_authed.tsx`, `reportDevice`).
+   */
+  const [properties] = useState(() => ({ device: deviceClock() }));
   return (
-    <CopilotKitProvider runtimeUrl="/api/copilotkit" credentials="include">
+    <CopilotKitProvider
+      credentials="include"
+      properties={properties}
+      runtimeUrl="/api/copilotkit"
+    >
       {/* Computer tools target the Bot declared by the mounted surface. */}
       <ActiveBotProvider>
         <ComputerTools />

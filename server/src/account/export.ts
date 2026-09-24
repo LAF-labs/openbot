@@ -133,6 +133,19 @@ export function createAccountExport(database: Database): AccountExport {
             // Bot on every run. The row as it stands, so a key the catalogue has since dropped
             // leaves with them too rather than being tidied away on the way out.
             shop: { kind: person.businessKind, places: person.dailyPlaces },
+            // Their clock and place, told to every run and to the Bot's browser: theirs to see.
+            whereabouts: {
+              timeZone: person.timeZone,
+              locale: person.locale,
+              place: person.place,
+              coordinates:
+                person.placeLatitude === null || person.placeLongitude === null
+                  ? null
+                  : {
+                      latitude: person.placeLatitude,
+                      longitude: person.placeLongitude,
+                    },
+            },
             createdAt: person.createdAt,
             updatedAt: person.updatedAt,
             roles: roles.map((row) => row.role),

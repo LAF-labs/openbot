@@ -27,6 +27,7 @@ import { CHAT_KO } from "./mode/chat.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
 import { copula } from "./particles";
+import { clockOwnerText, type PromptPerson, placeText } from "./person.ko";
 import { shopText } from "./shop.ko";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
@@ -40,6 +41,7 @@ export {
   type RoutineNote,
 } from "./notepad.ko";
 export { copula } from "./particles";
+export { clockOwnerText, type PromptPerson, placeText } from "./person.ko";
 export { shopText } from "./shop.ko";
 export { type PromptSkill, skillIndexText } from "./skill-index";
 export { TOOL_RESULT_KO } from "./tool-results.ko";
@@ -92,7 +94,12 @@ export function resolveTimeZone(name?: string | null): string {
  * 매 실행마다 서버 시계에서 새로 계산한다 — 부팅 때 한 번 계산해 두면 그 배포는 영원히 그날에
  * 산다.
  */
-export function nowLine(now: Date, timeZone = DEFAULT_TIME_ZONE): string {
+export function nowLine(
+  now: Date,
+  timeZone = DEFAULT_TIME_ZONE,
+  /** 누구의 시계인가(`person.ko.ts`), 마침표 앞에. 배포의 시계면 빈 문자열이다. */
+  owner = "",
+): string {
   const zone = resolveTimeZone(timeZone);
   const parts = new Intl.DateTimeFormat("ko-KR", {
     timeZone: zone,
@@ -108,7 +115,7 @@ export function nowLine(now: Date, timeZone = DEFAULT_TIME_ZONE): string {
     parts.find((part) => part.type === type)?.value ?? "";
   // `hour12: false`는 자정을 24로 그리는 엔진이 있다. 24:00은 같은 날의 00:00이다.
   const hour = String(Number(at("hour")) % 24).padStart(2, "0");
-  return `지금은 ${at("year")}-${at("month")}-${at("day")} (${at("weekday")}) ${hour}:${at("minute")} ${ZONE_LABELS[zone] ?? zone}다.`;
+  return `지금은 ${at("year")}-${at("month")}-${at("day")} (${at("weekday")}) ${hour}:${at("minute")} ${ZONE_LABELS[zone] ?? zone}다${owner}.`;
 }
 
 /**
@@ -146,6 +153,11 @@ export type ComposePromptInput = {
   skills?: readonly PromptSkill[];
   /** 루틴의 메모장. 루틴 모드에서만 실린다 — 다른 자리에서 온 것은 그리지 않는다. */
   notepad?: readonly RoutineNote[];
+  /**
+   * 사장님의 시간대·언어·위치(`person.ko.ts`). 시간대가 있으면 시계는 그것으로 읽힌다 — 위의
+   * `timeZone`은 사장님의 것을 모를 때 쓰는 배포의 시간대다.
+   */
+  person?: PromptPerson;
 };
 
 /** 이번 실행의 자리에만 해당하는 부분. */
@@ -208,6 +220,11 @@ export function composePrompt(input: ComposePromptInput): string {
      */
     shopText(input.shop),
     /*
+     * 위치 — 가게 줄 바로 뒤. 둘 다 사장님의 것이고 드물게 바뀌므로 캐시가 읽는 앞부분에 선다.
+     * 모를 때도 한 줄이 선다: 모른다고 말해야 봇이 사이트의 짐작으로 빈칸을 메우지 않는다.
+     */
+    placeText(input.person, mode),
+    /*
      * 기억은 직무에 섞지 않고 따로 세운다. 직무는 사람이 정한 것이고 기억은 봇이 알아낸 것,
      * 즉 틀릴 수 있는 쪽이다. 둘이 어긋날 때 어느 쪽이 어느 쪽인지 봇이 구별할 수 있어야 한다.
      * "지시가 아니라 기억"이라는 말은 남는다 — 기억에 적힌 문장이 명령으로 읽히면 그것은
@@ -228,7 +245,11 @@ export function composePrompt(input: ComposePromptInput): string {
      */
     mode === "routine" ? notepadText(input.notepad ?? []) : "",
     // Last, on purpose: the one line that changes every minute. See the module comment.
-    nowLine(input.now, input.timeZone),
+    nowLine(
+      input.now,
+      input.person?.timeZone ?? input.timeZone,
+      clockOwnerText(input.person),
+    ),
   ]
     .filter(Boolean)
     .join("\n\n");

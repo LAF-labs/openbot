@@ -142,15 +142,23 @@ export const REMEMBER: SelfTool = {
     // 서버가 지시문 모양을 거절한다(laf:memory_looks_like_instruction). 어떻게 쓰면 통과하는지 한 줄.
     "지시가 아니라 사실로 적는다: '항상 존댓말을 써라'가 아니라 '사장님은 존댓말을 선호한다'. " +
     "비밀번호, 카드번호, 로그인 칸에 입력된 값은 적지 않는다.",
-  parameters: object(
-    {
-      fact: {
-        type: "string",
-        description: "기억할 한 가지를, 미래의 너에게 쓰는 짧은 문장으로",
-      },
+  /*
+   * `place` — 사장님이 말한 가게 위치. 기억 목록이 아니라 내 가게 화면의 가게 위치 칸에 저장되고,
+   * 사장님이 거기서 보고 지운다. 새 툴이 아니라 이 툴의 칸인 이유는 사다리다: 위치도 "이 사람에
+   * 대해 오래 참인 사실"이고, 칸 하나가 매 턴 드는 값은 툴 하나보다 작다. 기억 목록에 문장으로
+   * 두면 설정 화면이 그것을 보여 주지도 지우지도 못하고, 번지까지 적힌 문장이 그대로 남는다.
+   */
+  parameters: object({
+    fact: {
+      type: "string",
+      description: "기억할 한 가지를, 미래의 너에게 쓰는 짧은 문장으로",
     },
-    ["fact"],
-  ),
+    place: {
+      type: "string",
+      description:
+        "사장님이 가게(일하는 곳) 위치를 말했을 때만, 시·구까지(예: 서울 강남구). 번지·도로명은 빼고, 이것을 줄 때는 fact를 비운다",
+    },
+  }),
 };
 
 export const SELF_TOOLS: readonly SelfTool[] = [

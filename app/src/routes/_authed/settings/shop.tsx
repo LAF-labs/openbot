@@ -5,6 +5,7 @@ import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
 import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
+import { ShopLocation } from "@/components/shop/shop-location";
 import {
   DailyPlacePicker,
   DailyPlacePickerSkeleton,
@@ -95,7 +96,7 @@ const ShopSettings = () => {
   return (
     <PageShell
       description={t(
-        "What kind of business this is and where you work every day. Every Bot reads it before it starts, and no Bot can change it.",
+        "What kind of business this is, where you work every day, and where the shop is. Your Bot reads all of it before it starts. Only the location can also be saved from a conversation.",
       )}
       title={t("My shop")}
     >
@@ -180,6 +181,13 @@ const ShopSettings = () => {
           {!problem && isSaved ? t("Saved") : null}
         </LiveRegion>
       </div>
+
+      {/*
+       * Below the save above rather than inside it: the location is kept on its own, by its own
+       * press, because the Bot can also save it from a conversation — one Save for both would put
+       * a place the Bot just heard back to whatever this screen was showing.
+       */}
+      <ShopLocation />
     </PageShell>
   );
 };

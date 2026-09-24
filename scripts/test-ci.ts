@@ -391,15 +391,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * stopped partway from one never reached, and naming the question — never a routine's). Each floor
  * rises by exactly what was added.
  *
+ * RAISED 2026-09-24 with the person's clock and place ("날짜, 시간, 위치는 사용자의 정보를"): forty-
+ * two to `server` (the three doors and what they refuse and never log, the run told the device's
+ * zone over the kept one over the deployment's, the place never taken from a run's props, the
+ * headers every computer call carries, the store on a real row, a routine written and fired at 07:30
+ * on the person's zone, the export), five to `app` (가게 위치 shown, saved on its own press, cleared,
+ * refused in the surface's words, and the device button drawn in a tab and not in the shell), seven
+ * to `agent-computer` (a real Chromium on the person's zone and place, following a new place at once
+ * and a new zone at the next start) and twenty-five to `root` (the place line, the clock line, what a
+ * place may be). Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2482, roots: ["server"] },
-  { name: "app", floor: 1179, roots: ["app"] },
-  { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
-  { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2524, roots: ["server"] },
+  { name: "app", floor: 1184, roots: ["app"] },
+  { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
+  { name: "root", floor: 380, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

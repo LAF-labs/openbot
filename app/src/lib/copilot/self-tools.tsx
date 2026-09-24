@@ -17,6 +17,7 @@ import { AGENT_REFUSALS } from "@/lib/agents/mutations";
 import { agentKeys } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
+import { keepPlace } from "@/lib/whereabouts/queries";
 import { useActiveBotHolder, useDeclaredBotId } from "./active-bot";
 
 /**
@@ -582,9 +583,11 @@ export function SelfTools() {
   useFrontendTool({
     name: REMEMBER.name,
     description: REMEMBER.description,
-    parameters: asStandardSchema<{ fact: string }>(REMEMBER.parameters),
+    parameters: asStandardSchema<{ fact?: string; place?: string }>(
+      REMEMBER.parameters,
+    ),
     handler: async (
-      args: { fact: string },
+      args: { fact?: string; place?: string },
       call: { toolCall?: { id?: string } } = {},
     ) => {
       const botId = bot.current;
@@ -598,6 +601,36 @@ export function SelfTools() {
           failed,
         );
 
+      /*
+       * A PLACE GOES TO 내 가게, NOT TO THE MEMORY LIST. The person's shop location is one field they
+       * can see and clear on 내 가게, and the Bot's browser follows it; a sentence in the memory list
+       * could be neither shown there nor cleared from there. Saved through the person's own session,
+       * checked and kept coarse by the server (`account/whereabouts.ts`).
+       */
+      if (args.place?.trim()) {
+        const kept = await keepPlace(
+          { place: args.place, coordinates: null },
+          queryClient,
+        );
+        if (!kept.ok) {
+          note(
+            kept.code === "laf:place_invalid"
+              ? t(
+                  "That place was not saved. Only a city and district can be kept.",
+                )
+              : t("That was not saved. Try again."),
+            true,
+          );
+          return answer(kept.code);
+        }
+        noteFor(call)({
+          done: t("Saved the shop's location"),
+          doing: t("Remembering"),
+          note: kept.whereabouts.place ?? args.place,
+        });
+        return answer("laf:place_saved");
+      }
+
       if (!botId) {
         note(t("There is no Bot to remember this."), true);
         return answer("laf:no_bot_here");
@@ -609,7 +642,7 @@ export function SelfTools() {
           method: "POST",
           credentials: "include",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ content: args.fact }),
+          body: JSON.stringify({ content: args.fact ?? "" }),
         },
       );
       if (!response.ok) {
@@ -629,13 +662,13 @@ export function SelfTools() {
             ? t("A secret was not written down.")
             : refusal
               ? t(refusal)
-              : args.fact,
+              : (args.fact ?? ""),
           true,
         );
         return answer(code);
       }
 
-      note(args.fact);
+      note(args.fact ?? "");
       // The Bot's own screen lists these, and it is open while somebody is talking to it.
       await queryClient.invalidateQueries({
         queryKey: agentKeys.memories(botId),
@@ -648,7 +681,11 @@ export function SelfTools() {
       return (
         <ToolLine
           failed={entry?.failed === true}
-          label={running ? t("Remembering") : t("Remembered something")}
+          label={
+            running
+              ? t("Remembering")
+              : (entry?.done ?? t("Remembered something"))
+          }
           running={running}
         >
           {entry?.note ? <p>{entry.note}</p> : null}

@@ -131,6 +131,11 @@ export type RoutineServiceOptions = {
    * `parseSchedule`). Routines already stored keep the zone they have.
    */
   timeZone?: string;
+  /**
+   * The zone the person's device last reported, which a schedule naming none is written in before
+   * the deployment's. See `RoutineStore.personZone`.
+   */
+  personZone?: (userId: string) => Promise<string | null>;
   now?: () => Date;
   runTimeoutMs?: number;
   /**
@@ -174,6 +179,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
     database,
     now,
     timeZone: resolveTimeZone(options.timeZone),
+    ...(options.personZone ? { personZone: options.personZone } : {}),
   };
   const firing: Firing = { database, now, routine };
   const ticker = createRoutineTicker({

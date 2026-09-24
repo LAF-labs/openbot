@@ -37,6 +37,7 @@ import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
 import { fact } from "./respond";
 import { withoutTypedAddresses } from "./typed-values";
+import { whereaboutsOf } from "./whereabouts";
 
 /** Every route that names a Bot, by `METHOD /path`. A method the table does not list is a 404. */
 const BOT_ROUTES = new Map<string, BotRoute>([
@@ -156,6 +157,13 @@ export function computerFetch(computer: Computer) {
 
     const route = BOT_ROUTES.get(`${request.method} ${url.pathname}`);
     if (route) {
+      /*
+       * WHERE THE PERSON IS, BEFORE ANYTHING OPENS A PAGE. The server names its Bot's owner's zone
+       * and coarse place on every call (whereabouts.ts), so the browser this call may be about to
+       * start — or the page it is about to load — is on their clock and in their place, not the
+       * VM's. A call that says nothing leaves the browser as it was.
+       */
+      await computer.profiles.follow(whereaboutsOf(request.headers));
       /*
        * AND NO ADDRESS LEAVES CARRYING WHAT A PERSON TYPED. A form sent by GET puts its boxes in the
        * address it lands on, and that address rode out on every answer after it (audit R3-03). The

@@ -241,8 +241,6 @@ export const ko: Record<string, string> = {
   Instagram: "인스타그램",
   "Toss Payments": "토스페이먼츠",
   "My shop": "내 가게",
-  "What kind of business this is and where you work every day. Every Bot reads it before it starts, and no Bot can change it.":
-    "어떤 일을 하는지, 매일 어디서 일하는지 적어 두는 곳이에요. 모든 봇이 일을 시작하기 전에 읽고, 봇이 바꿀 수는 없어요.",
   "What you do": "하는 일",
   "Places you use every day": "매일 쓰는 곳",
   "Your Bots look there first, and ask you to connect any that are not connected yet.":
@@ -2569,4 +2567,24 @@ export const ko: Record<string, string> = {
   "Sent when the connection came back.": "다시 연결돼서 보냈어요.",
   "The internet connection is down. Check your connection.":
     "인터넷 연결이 끊겼어요. 연결을 확인해 주세요.",
+  // ctx
+  "What kind of business this is, where you work every day, and where the shop is. Your Bot reads all of it before it starts. Only the location can also be saved from a conversation.":
+    "어떤 일을 하는지, 매일 어디서 일하는지, 가게가 어디 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 가게 위치만 대화에서도 저장될 수 있어요.",
+  "Shop location": "가게 위치",
+  "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, the Bot asks you once when it needs one and saves your answer here.":
+    "가게가 있는 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 봇의 서버가 있는 곳이 아니라 이 곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
+  "City and district": "시·구",
+  "e.g. Seoul Gangnam-gu": "예: 서울 강남구",
+  "This device's location, around {latitude}, {longitude}":
+    "이 기기 위치: 위도 {latitude}, 경도 {longitude} 부근",
+  "Use this device's location": "이 기기 위치 쓰기",
+  "Finding this device…": "이 기기 위치 찾는 중…",
+  "Clear the location": "위치 지우기",
+  "Save the location": "위치 저장",
+  "Location was not allowed on this device.":
+    "이 기기에서 위치 사용을 허락하지 않았어요.",
+  "This device did not say where it is.": "이 기기의 위치를 알 수 없었어요.",
+  "That place was not saved. Only a city and district can be kept.":
+    "위치를 저장하지 못했어요. 시·구까지만 적을 수 있어요.",
+  "Saved the shop's location": "가게 위치를 저장했습니다",
 };

@@ -4,8 +4,13 @@ import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
 import { createShopStore } from "./account/shop";
+import {
+  createBrowserWhereabouts,
+  createWhereaboutsStore,
+} from "./account/whereabouts";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createAgentMemoryStore } from "./agents/memory-store";
+import { withPersonContext } from "./agents/person-context";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -178,11 +183,26 @@ const agentMemoryStore = createAgentMemoryStore(database);
 // Every Bot on the deployment shares the one computer at `baseUrl` and its one browser profile, by
 // decision (docs/laf/deployment-model.md). Built before the Bot store, which hands a deleted Bot's
 // computer to it.
+/**
+ * The person's clock and place: written through their own session (`PUT /api/me/device` when the
+ * app opens, `PUT`/`DELETE /api/me/place` from 내 가게 and the Bot's `remember`), read by every run
+ * below and by the Bot's browser on every call to the computer. A change forgets the browser's held
+ * copy, so a place saved on 내 가게 reaches the very next click.
+ */
+const whereaboutsStore = createWhereaboutsStore(database, (userId) =>
+  browserWhereabouts.forget(userId),
+);
+const browserWhereabouts = createBrowserWhereabouts({
+  ownerOf: botOwnerLookup(database),
+  read: whereaboutsStore.read,
+  fallbackZone: config.botTimeZone,
+});
 const computerClient = config.computer
   ? createComputerClient({
       baseUrl: config.computer.baseUrl,
       allowPrivateHosts: config.computer.allowPrivateHosts,
       ...(config.computer.token ? { token: config.computer.token } : {}),
+      whereaboutsFor: browserWhereabouts.forBot,
     })
   : undefined;
 const agentProfileStore = createAgentProfileStore(
@@ -299,9 +319,13 @@ const roleRepository = createRoleRepository(database);
 const shopStore = createShopStore(database);
 // What each Bot IS, then what skills it holds — by name and one line, for the prompt's index — then
 // the shop it works for, which is the person's and the same for every Bot they have.
-const loadAgentsForActor = withShopProfile(
-  withGrantedSkills(createRuntimeAgentLoader(database, agentVault), database),
-  shopStore.read,
+// And last, the person's clock and place, which every run — a routine at 07:30 included — reads.
+const loadAgentsForActor = withPersonContext(
+  withShopProfile(
+    withGrantedSkills(createRuntimeAgentLoader(database, agentVault), database),
+    shopStore.read,
+  ),
+  whereaboutsStore.read,
 );
 /**
  * Who is still let in, for the sessions already issued (auth/session-revocation.ts).
@@ -616,8 +640,9 @@ const routineService = createRoutineService({
   deliver: createRoutineDelivery(database, announceFinished),
   deliverFailure: markRoutineFailure,
   tools: unattendedTools,
-  // The clock the Bots are told the time in, so a routine a Bot makes without a zone runs on it.
+  // The clock a routine made without a zone runs on: the person's device's, else the deployment's.
   timeZone: config.botTimeZone,
+  personZone: async (userId) => (await whereaboutsStore.read(userId)).timeZone,
   // A routine runs as its author; one the sign-in list no longer admits is run by no door.
   admission,
   work: workInFlight,
@@ -804,6 +829,8 @@ const app = createApp(
   // The shop answers: `/api/me` carries them and `PUT /api/me/shop` is their one door. The same
   // store every run reads through `loadAgentsForActor` above.
   shopStore,
+  // The person's clock and place: `/api/me` carries them and three doors change them.
+  whereaboutsStore,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

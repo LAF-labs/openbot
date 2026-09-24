@@ -132,7 +132,10 @@ async function runOnce(
    * from one fixed clock (`EVAL_NOW`), so a run that straddles midnight does not judge one date
    * against a prompt carrying another.
    */
-  const messages: unknown[] = [systemMessageFor("chat"), ...scenario.messages];
+  const messages: unknown[] = [
+    systemMessageFor("chat", scenario.person),
+    ...scenario.messages,
+  ];
   const allEvents: StreamEvent[] = [];
   let totalTokens: number | null = null;
   let promptTokens: number | null = null;
@@ -216,7 +219,10 @@ async function runOnce(
         id: `t_${call.id}`,
         role: "tool",
         toolCallId: call.id,
-        content: answered.get(call.id) ?? stubResult(call.name),
+        content:
+          answered.get(call.id) ??
+          scenario.stub?.(call) ??
+          stubResult(call.name),
       });
     }
   }

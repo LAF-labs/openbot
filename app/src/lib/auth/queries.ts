@@ -1,6 +1,8 @@
 import type { ShopProfile } from "@shared/shop/catalogue";
+import type { Whereabouts } from "@shared/whereabouts";
 import { queryOptions } from "@tanstack/react-query";
 import { parseShop } from "@/lib/shop/catalogue";
+import { parseWhereabouts } from "@/lib/whereabouts/parse";
 import { SESSION_REVOKED } from "./session-revoked";
 
 export type AuthenticatedUser = {
@@ -29,6 +31,11 @@ export type AuthenticatedUser = {
    * (`today-usage-render.test.tsx`, merged beside this) — and would break the next one too.
    */
   shop?: ShopProfile;
+  /**
+   * The person's clock and place, as the server keeps them: the zone this device last reported, and
+   * the place set on 내 가게 or said to the Bot. Optional for the same reason `shop` is.
+   */
+  whereabouts?: Whereabouts;
 };
 
 /**
@@ -204,8 +211,12 @@ async function currentUser(): Promise<CurrentUserResult> {
   }
 
   const body = (await response.json()) as {
-    user: Omit<AuthenticatedUser, "consentRequired" | "shop"> & {
+    user: Omit<
+      AuthenticatedUser,
+      "consentRequired" | "shop" | "whereabouts"
+    > & {
       shop?: unknown;
+      whereabouts?: unknown;
     };
     deployment?: Partial<Omit<Deployment, "trial">> & { trial?: unknown };
     /** Two facts and no verdict; the verdict is drawn here. Absent when nothing records it. */
@@ -219,6 +230,7 @@ async function currentUser(): Promise<CurrentUserResult> {
     ...body.user,
     // Read forgivingly: a deployment that keeps no answers sends no key, and that is no answer.
     shop: parseShop(body.user.shop),
+    whereabouts: parseWhereabouts(body.user.whereabouts),
     consentRequired:
       body.consent !== undefined &&
       body.consent.version !== body.consent.current,

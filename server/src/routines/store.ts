@@ -18,6 +18,7 @@ import {
   type StoredSchedule,
   scheduleOf,
 } from "./schedule";
+import { isKnownTimeZone } from "./zoned-clock";
 
 /**
  * The routines a person keeps: made, listed, edited, paused, re-armed and deleted — every verb
@@ -93,11 +94,34 @@ export type RoutineStore = {
   database: Database;
   now: () => Date;
   /**
-   * The zone a new daily routine is written in when it names none: the deployment's,
-   * `config.botTimeZone`. See `parseSchedule`.
+   * The zone a new daily routine is written in when it names none and the person's device never
+   * reported one: the deployment's, `config.botTimeZone`. See `parseSchedule` and `zoneFor`.
    */
   timeZone: string;
+  /**
+   * The zone the person's device last reported (`account/whereabouts.ts`), or null.
+   *
+   * THE PERSON'S CLOCK BEFORE THE DEPLOYMENT'S. "매일 아침 7시 반" is half past seven where the person
+   * is — the zone the Bot was told the time in on the run that made the routine, which is this one
+   * (`copilot.ts`) — and a person in Dubai with a deployment on Seoul's clock would otherwise get
+   * their briefing at 02:30. Absent in the suites that drive a routine alone.
+   */
+  personZone?: (userId: string) => Promise<string | null>;
 };
+
+/**
+ * The zone a schedule that names none is written in: the person's, else the deployment's.
+ *
+ * A read that fails is the deployment's zone, not a refused routine: the person asked for a routine
+ * and the zone they did not name is the one fact here that has a default.
+ */
+async function zoneFor(
+  store: RoutineStore,
+  actor: AgentActor,
+): Promise<string> {
+  const personal = await store.personZone?.(actor.id).catch(() => null);
+  return personal && isKnownTimeZone(personal) ? personal : store.timeZone;
+}
 
 type RoutineRow = typeof lafRoutines.$inferSelect;
 
@@ -176,7 +200,7 @@ export async function createRoutine(
   actor: AgentActor,
   input: RoutineInput,
 ) {
-  const schedule = parseSchedule(input.schedule, store.timeZone);
+  const schedule = parseSchedule(input.schedule, await zoneFor(store, actor));
   const name = input.name.trim();
   const instruction = input.instruction.trim();
   refuseBlank(name, instruction);
@@ -367,7 +391,7 @@ export async function updateRoutine(
   const schedule =
     change.schedule === undefined
       ? undefined
-      : parseSchedule(change.schedule, store.timeZone);
+      : parseSchedule(change.schedule, await zoneFor(store, actor));
 
   const row = await mine(database, actor, id);
   const at = store.now();

@@ -16,6 +16,7 @@ import {
   composePrompt,
   DEFAULT_TIME_ZONE,
   type PromptMode,
+  type PromptPerson,
   promptSkeleton,
 } from "../shared/prompt";
 import { BRIDGE_TOOLS } from "../shared/tools/bridge";
@@ -56,8 +57,16 @@ export const EVAL_MEMORIES = [
   "택배는 우체국을 쓴다.",
 ];
 
-/** The system message for one scenario, exactly as the server's middleware would build it. */
-export function systemMessageFor(mode: PromptMode = "chat") {
+/**
+ * The system message for one scenario, exactly as the server's middleware would build it.
+ *
+ * `person` is the scenario's owner — their device's zone, their place — as the middleware attaches
+ * it from the run and the account. Absent is somebody who has set nothing.
+ */
+export function systemMessageFor(
+  mode: PromptMode = "chat",
+  person?: PromptPerson,
+) {
   return {
     id: "laf-prompt:eval_bot",
     role: "system" as const,
@@ -68,6 +77,7 @@ export function systemMessageFor(mode: PromptMode = "chat") {
       bot: EVAL_BOT,
       standingRole: EVAL_STANDING_ROLE,
       memories: EVAL_MEMORIES,
+      ...(person ? { person } : {}),
     }),
   };
 }

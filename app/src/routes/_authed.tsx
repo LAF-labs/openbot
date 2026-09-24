@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ShellConnectionCheck } from "../components/help/connection-check-dialog";
@@ -9,6 +10,7 @@ import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
+import { reportDevice } from "../lib/whereabouts/queries";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: async ({ context, location }) => {
@@ -73,6 +75,15 @@ function AuthedShell() {
   useSessionGate();
   // In the desktop shell, a `target="_blank"` link has nowhere to go; hand it to the browser.
   useEffect(handleShellLinks, []);
+  /*
+   * THIS DEVICE'S CLOCK, KEPT ON THE ACCOUNT, once per open. A chat run carries the device's zone
+   * itself (`lib/copilot/provider.tsx`); a routine at 07:30 runs with no device present and reads
+   * the zone the person was last in, which is this.
+   */
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    void reportDevice(queryClient);
+  }, [queryClient]);
 
   return (
     <>

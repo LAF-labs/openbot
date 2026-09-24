@@ -4,6 +4,10 @@ import { buildOf } from "../../shared/log";
 import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
 import { type AccountService, createAccountRoutes } from "./account/routes";
 import { createShopRoutes, type ShopStore } from "./account/shop";
+import {
+  createWhereaboutsRoutes,
+  type WhereaboutsStore,
+} from "./account/whereabouts";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -389,6 +393,11 @@ export function createApp(
    * rather than a save that kept nothing. See account/shop.ts.
    */
   shop?: ShopStore,
+  /**
+   * The person's clock and place (account/whereabouts.ts). Absent, `/api/me` says nothing about
+   * them and none of their three doors is mounted.
+   */
+  whereabouts?: WhereaboutsStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -643,8 +652,17 @@ export function createApp(
      * every screen waits on must not fall over for one optional fact.
      */
     const answered = shop ? await shop.read(actor.id).catch(() => null) : null;
+    // The person's own place and clock, for 내 가게 to show and clear. The same failure rule.
+    const where = whereabouts
+      ? await whereabouts.read(actor.id).catch(() => null)
+      : null;
     return context.json({
-      user: { ...actor, onboarded, ...(answered ? { shop: answered } : {}) },
+      user: {
+        ...actor,
+        onboarded,
+        ...(answered ? { shop: answered } : {}),
+        ...(where ? { whereabouts: where } : {}),
+      },
       deployment: { ...(await capabilities()), ...trial },
       ...(consent
         ? {
@@ -1088,6 +1106,11 @@ export function createApp(
 
   // The shop answers' one door, for the first run and Settings alike. See account/shop.ts.
   if (shop) app.route("/api", createShopRoutes(shop, requireUser));
+
+  // The device's clock and the shop's place. See account/whereabouts.ts.
+  if (whereabouts) {
+    app.route("/api", createWhereaboutsRoutes(whereabouts, requireUser));
+  }
 
   // A person writing to the operator. Under its own prefix: it is neither about the account nor
   // about a Bot, and a message to whoever runs the product should not read as either. The build and
