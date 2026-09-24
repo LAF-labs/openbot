@@ -50,7 +50,29 @@ export type FrameMessage = {
   data: string;
   width: number;
   height: number;
+  /**
+   * Which site this is a picture of, or null for a browser sent nowhere (`about:blank`).
+   *
+   * THE HOST AND NOTHING ELSE OF THE ADDRESS. The surface needs two facts: the site to name above
+   * the picture, and whether there is a page at all — a closed tab comes back as a fresh blank one
+   * (`profiles.page`), and the live view closes rather than draw a white box. A path or a query can
+   * carry what a person typed into a form sent by GET, and this socket does not pass the filter
+   * every HTTP answer passes (`typed-values.ts`), so none of it is sent.
+   */
+  site: string | null;
 };
+
+/** An address's host; null for no page; the scheme alone for a browser's own page. */
+export function siteOf(address: string): string | null {
+  const trimmed = address.trim();
+  if (trimmed === "" || trimmed === "about:blank") return null;
+  try {
+    const url = new URL(trimmed);
+    return url.host || url.protocol.replace(/:$/, "") || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Chrome's virtual key codes, for the keys that need one.
@@ -130,6 +152,7 @@ export async function startScreencast(
       data,
       width: metadata.deviceWidth,
       height: metadata.deviceHeight,
+      site: siteOf(page.url()),
     });
   });
 

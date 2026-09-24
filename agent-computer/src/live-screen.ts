@@ -95,6 +95,28 @@ async function applyInput(
   }
 }
 
+/**
+ * EVERY SOCKET WATCHING A BOT'S SCREEN, OLDEST FIRST — AND THE CAST GOES TO THE LAST ONE STILL OPEN.
+ *
+ * Opening is slow (a page to find, a cast to start) and two opens can overlap: React mounts the live
+ * view twice in development, and a person who closes the view and opens it again does the same by
+ * hand. Whichever finished starting last used to become the viewer, and any socket's close stopped
+ * whichever viewer was current — so the socket on its way out took the cast with it, and the one that
+ * stayed showed a frozen picture and dropped every click and key without a word (measured
+ * 2026-09-24, taking the wheel from the live view: the page never saw a keystroke).
+ *
+ * Now the newest open socket is the viewer however the starts interleave, a socket only ever stops
+ * its own cast, and when the viewer closes, the socket opened before it takes the picture back.
+ */
+const watching = new WeakMap<BotSession, ServerWebSocket<StreamData>[]>();
+/** How each socket takes the cast back when the one opened after it closes. */
+const resumes = new WeakMap<ServerWebSocket<StreamData>, () => void>();
+/** Each socket's follow timer, kept apart from the viewer so a displaced socket's can be stopped. */
+const follows = new WeakMap<
+  ServerWebSocket<StreamData>,
+  ReturnType<typeof setInterval>
+>();
+
 export function liveScreen({
   profiles,
   sessions,
@@ -102,6 +124,14 @@ export function liveScreen({
   return {
     async open(ws) {
       const session = sessions.sessionFor(ws.data.botId);
+      // Before anything is awaited, so the order is the order the sockets arrived in.
+      watching.set(session, [...(watching.get(session) ?? []), ws]);
+      const isNewest = () => watching.get(session)?.at(-1) === ws;
+      // How many are watching, never who: enough to see an overlap in the log.
+      log.info("screen_opened", {
+        bot: ws.data.botId,
+        watching: watching.get(session)?.length ?? 0,
+      });
       try {
         await stopViewer(session);
 
@@ -110,7 +140,7 @@ export function liveScreen({
           try {
             ws.send(JSON.stringify(frame));
           } catch {
-            void stopViewer(session);
+            if (session.viewer?.socket === ws) void stopViewer(session);
           }
         };
 
@@ -121,25 +151,45 @@ export function liveScreen({
         let casting: Page | undefined;
         const attach = async () => {
           const target = await profiles.page(ws.data.botId);
-          if (target === casting) return;
+          if (
+            !isNewest() ||
+            (target === casting && session.viewer?.socket === ws)
+          ) {
+            return;
+          }
           const previous = session.viewer;
           const cast = await startScreencast(target, send);
+          // A newer socket opened while this cast was starting: that one is the viewer.
+          if (!isNewest()) {
+            await cast.stop().catch(() => undefined);
+            return;
+          }
           casting = target;
           session.viewer = {
             socket: ws,
             cast,
             page: target,
-            follow: previous?.follow,
+            follow: follows.get(ws),
           };
           // The old cast stops after the replacement is running, so the screen does not go blank.
           await previous?.cast.stop().catch(() => undefined);
         };
+        const follow = () => {
+          clearInterval(follows.get(ws));
+          // Closed while it was still starting: nothing to follow for, and nothing would stop it.
+          if (!watching.get(session)?.includes(ws)) return;
+          const timer = setInterval(() => {
+            void attach().catch(() => undefined);
+          }, FOLLOW_INTERVAL_MS);
+          follows.set(ws, timer);
+          if (session.viewer?.socket === ws) session.viewer.follow = timer;
+        };
+        resumes.set(ws, () => {
+          void attach().then(follow, () => undefined);
+        });
 
         await attach();
-        const follow = setInterval(() => {
-          void attach().catch(() => undefined);
-        }, FOLLOW_INTERVAL_MS);
-        if (session.viewer) session.viewer.follow = follow;
+        follow();
       } catch (error) {
         log.error("screen_not_started", { bot: ws.data.botId, reason: error });
         ws.send(screenError("laf:screen_not_started"));
@@ -149,7 +199,9 @@ export function liveScreen({
 
     async message(ws, raw) {
       const session = sessions.sessionFor(ws.data.botId);
-      if (!session.viewer) return;
+      // Only the socket being cast to drives. One that another viewer displaced is looking at a
+      // picture that stopped; its clicks would land on a page it no longer sees.
+      if (session.viewer?.socket !== ws) return;
       let message: InputMessage;
       try {
         message = JSON.parse(String(raw)) as InputMessage;
@@ -169,7 +221,24 @@ export function liveScreen({
     },
 
     async close(ws) {
-      await stopViewer(sessions.sessionFor(ws.data.botId));
+      const session = sessions.sessionFor(ws.data.botId);
+      clearInterval(follows.get(ws));
+      follows.delete(ws);
+      resumes.delete(ws);
+      const rest = (watching.get(session) ?? []).filter((open) => open !== ws);
+      watching.set(session, rest);
+      const wasViewer = session.viewer?.socket === ws;
+      log.info("screen_closed", {
+        bot: ws.data.botId,
+        wasViewer,
+        watching: rest.length,
+      });
+      // Its own cast, never whoever's is current.
+      if (!wasViewer) return;
+      await stopViewer(session);
+      // Somebody is still watching: the socket opened before this one gets the picture back.
+      const next = rest.at(-1);
+      if (next) resumes.get(next)?.();
     },
   };
 }
