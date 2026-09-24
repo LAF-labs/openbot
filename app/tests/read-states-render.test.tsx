@@ -221,6 +221,81 @@ describe("a Bot's profile", () => {
     );
     expect(view.host.querySelector('[data-read-state="failed"]')).toBeNull();
   });
+
+  /*
+   * THE PAGE AROUND THE PROFILE READS THE BOT LIST TOO (2026-09-24), and read it its own way:
+   * TanStack's `isError`, which is true after a refresh fails over a list already read. The page
+   * then drew "could not be loaded" in place of the profile on screen.
+   */
+  const page = (answer: () => Response) =>
+    mountApp({
+      path: "/agents?agent=agent-1",
+      api: (request) => {
+        if (request.pathname === "/api/agents" && request.url.search === "") {
+          return answer();
+        }
+        if (request.pathname === "/api/agents/agent-1") {
+          return json({ agent: BOT });
+        }
+        if (request.pathname === "/api/agents/agent-1/memories") {
+          return json({ memories: [] });
+        }
+        return undefined;
+      },
+    });
+  const nameField = (host: Element) =>
+    [...host.querySelectorAll("main input")].some(
+      (field) => (field as HTMLInputElement).value === "Sprout",
+    );
+
+  test("a Bot list that fails to refresh leaves the profile on screen, with nothing said over it", async () => {
+    let failing = false;
+    const view = await page(() =>
+      failing ? refused("laf:internal", 500) : json({ agents: [BOT] }),
+    );
+    await view.waitFor(() => nameField(view.host), "the profile");
+
+    failing = true;
+    await startRefetch(view, agentKeys.list());
+    await view.settle(200);
+    expect(nameField(view.host)).toBe(true);
+    expect(view.host.textContent).not.toContain(
+      "Your Bot could not be loaded.",
+    );
+  });
+
+  test("a Bot list that could not be read says so with 다시 시도, and a press brings the profile", async () => {
+    let failing = true;
+    const view = await page(() =>
+      failing ? refused("laf:internal", 500) : json({ agents: [BOT] }),
+    );
+    const main = () => view.host.querySelector("main");
+    await view.waitFor(
+      () =>
+        (main()?.textContent ?? "").includes("Your Bot could not be loaded."),
+      "the failure line",
+    );
+    failing = false;
+    const again = tryAgainIn(main());
+    if (!again) throw new Error("the page offered no way to ask again");
+    await view.click(again);
+    await view.waitFor(() => nameField(view.host), "the profile to arrive");
+    expect(main()?.textContent).not.toContain("Your Bot could not be loaded.");
+  });
+
+  test("a Bot list this account may not read says so, and offers nothing to press", async () => {
+    const view = await page(() => refused("laf:no_access", 403));
+    const main = () => view.host.querySelector("main");
+    await view.waitFor(
+      () =>
+        (main()?.textContent ?? "").includes(
+          "This account cannot see this here.",
+        ),
+      "the unavailable line",
+    );
+    expect(tryAgainIn(main()) === undefined).toBe(true);
+    expect(main()?.querySelector('[data-read-state="failed"]')).toBeNull();
+  });
 });
 
 describe("routines", () => {

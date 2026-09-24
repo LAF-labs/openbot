@@ -3,11 +3,13 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { PageShell } from "@/components/layout/page-shell";
-import { Button } from "@/components/ui/button";
+import { ReadNotice } from "@/components/layout/read-states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
+import { readLineOf } from "@/lib/read-line";
+import { settledOf } from "@/lib/reading";
 
 /** `.catch({})` so a malformed `?agent=` is dropped rather than throwing out of the router. */
 const agentsSearchSchema = z
@@ -34,39 +36,42 @@ function BotProfileScreen() {
   const { agent } = Route.useSearch();
   const mine = useMyBots();
   const { data: channels } = useQuery(channelListQueryOptions());
+  const { reading } = mine;
+  const settled = settledOf(reading);
 
-  if (mine.isError) {
-    return (
-      <PageShell title={t("Bot profile")}>
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-destructive text-sm" role="alert">
-            {t("Your Bot could not be loaded.")}
-          </p>
-          <Button onClick={() => mine.refetch()} size="sm" variant="outline">
-            {t("Try again")}
-          </Button>
-        </div>
-      </PageShell>
-    );
-  }
-  if (!mine.bots) {
-    return (
-      <PageShell title={t("Bot profile")}>
-        <Skeleton aria-hidden className="h-64 w-full max-w-md rounded-2xl" />
-      </PageShell>
-    );
-  }
+  // A claim made only on an answer — this one, or the last one when refreshing it failed.
+  if (settled?.state === "empty") return <Navigate replace to="/welcome" />;
 
-  const bot =
-    mine.bots.find((candidate) => candidate.id === agent) ??
-    primaryBot(mine.bots, channels);
-  if (!bot) return <Navigate replace to="/welcome" />;
+  const bot = settled
+    ? (settled.data.find((candidate) => candidate.id === agent) ??
+      primaryBot(settled.data, channels))
+    : undefined;
 
   return (
     <PageShell title={t("Bot profile")}>
-      <div className="w-full max-w-md">
-        {/* Keyed on the Bot: the pane's own state is about one Bot and must not carry to the next. */}
-        <AgentProfile agentId={bot.id} className="p-0" key={bot.id} />
+      <div className="flex w-full max-w-md flex-col gap-3">
+        {/*
+         * Only while there is no Bot to show. Once one is picked, the profile below reads it on its
+         * own and says its own line; the list failing to refresh changes nothing it draws.
+         */}
+        <ReadNotice
+          line={
+            settled
+              ? null
+              : readLineOf(reading, {
+                  failed: t("Your Bot could not be loaded."),
+                  notHere: t("Bots are not offered here."),
+                })
+          }
+          onRetry={() => mine.refetch()}
+        />
+        {reading.state === "loading" ? (
+          <Skeleton aria-hidden className="h-64 w-full rounded-2xl" />
+        ) : null}
+        {bot ? (
+          // Keyed on the Bot: the pane's own state is about one Bot and must not carry to the next.
+          <AgentProfile agentId={bot.id} className="p-0" key={bot.id} />
+        ) : null}
       </div>
     </PageShell>
   );

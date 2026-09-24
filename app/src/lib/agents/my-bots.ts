@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ChannelSummary } from "@/lib/channels/queries";
+import { type Reading, useReading } from "@/lib/reading";
 import { type AgentProfile, agentListQueryOptions } from "./queries";
 
 /**
@@ -17,6 +18,8 @@ import { type AgentProfile, agentListQueryOptions } from "./queries";
 export type MyBots = {
   /** Undefined until the roster has answered. Hidden ones after the rest, each in server order. */
   bots: AgentProfile[] | undefined;
+  /** The one judgement a screen should draw from (`lib/reading.ts`); `empty` is a person with none. */
+  reading: Reading<AgentProfile[]>;
   isPending: boolean;
   isError: boolean;
   refetch: () => void;
@@ -47,8 +50,28 @@ export function useMyBots(): MyBots {
    */
   const hidden = useQuery(agentListQueryOptions(true));
   const settled = visible.data !== undefined && !hidden.isPending;
+  const bots = settled ? mineOf(visible.data, hidden.data) : undefined;
+  /*
+   * THE SAME FACTS, READ THE ONE WAY (`lib/reading.ts`). `isError` above is TanStack's, and it is
+   * true after a refresh fails over a roster already read — the Bot's profile page drew "could not
+   * be loaded" in place of a profile it had on screen, offered 다시 시도 to a session that had been
+   * signed out, and pulsed a skeleton all afternoon on a first read parked offline. The roster's
+   * status stands for both lists: the hidden one is waited for, then taken as best-effort.
+   */
+  const reading = useReading<AgentProfile[]>({
+    status:
+      visible.status === "error"
+        ? "error"
+        : bots === undefined
+          ? "pending"
+          : "success",
+    fetchStatus: visible.fetchStatus,
+    data: bots,
+    error: visible.error,
+  });
   return {
-    bots: settled ? mineOf(visible.data, hidden.data) : undefined,
+    bots,
+    reading,
     isPending: !settled && !visible.isError,
     isError: visible.isError,
     refetch: () => {
