@@ -1,5 +1,6 @@
 import { IconBrowser, IconPlayerStopFilled, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { hostOf } from "@/lib/computer/browsing";
 import { dismissTask, useBrowsingNow } from "@/lib/computer/browsing-now";
@@ -17,16 +18,26 @@ const THUMBNAIL_EVERY_MS = 2_000;
  * A small live picture, the site, what it is doing in plain words, and a stop. Pressing the picture
  * or the words opens the live screen; the X puts the banner away for this task, and the next task
  * brings its own. This is what took the place of the screen opening by itself at every step.
+ *
+ * IT FAILS ALONE, AS A LINE. It sits inside the conversation's seam, above the transcript's, so a
+ * banner that threw took the transcript and the composer — and whatever was half typed in it —
+ * with it, over a strip that only says what the Bot is doing.
  */
-export function BrowsingBanner({
-  botId,
-  onStop,
-  isStoppable,
-}: {
+export function BrowsingBanner(props: BannerProps) {
+  return (
+    <SectionBoundary className="shrink-0" layout="line" section="computer">
+      <Banner {...props} />
+    </SectionBoundary>
+  );
+}
+
+type BannerProps = {
   botId: string;
   onStop: () => void;
   isStoppable: boolean;
-}) {
+};
+
+function Banner({ botId, onStop, isStoppable }: BannerProps) {
   const now = useBrowsingNow();
   const task = now.task?.botId === botId ? now.task : null;
   const isShown = task !== null && !now.dismissed.has(task.taskId);

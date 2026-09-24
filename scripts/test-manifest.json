@@ -55,6 +55,7 @@
   "app/tests/bot-profile.test.ts",
   "app/tests/browsing-tasks.test.ts",
   "app/tests/bundle-graph.test.ts",
+  "app/tests/card-seams.test.tsx",
   "app/tests/channel-events-socket.test.tsx",
   "app/tests/channel-refusals.test.ts",
   "app/tests/component-functions.test.ts",

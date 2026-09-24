@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
 import { ToolLine } from "@/components/channels/tool-line";
+import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import {
   endingOf,
@@ -29,12 +30,7 @@ import { t } from "@/lib/i18n";
  * Bot's browser as it is now, which is where the newest task left it and nowhere an older card was.
  * When the live screen has looked and found no page, the newest card says so instead.
  */
-export function BrowsingCard({
-  item,
-  channelId,
-  isOpen,
-  isNewest,
-}: {
+type BrowsingCardProps = {
   item: BrowsingItem;
   /** Where the kept picture is read from. Absent on a screen with no channel: no picture. */
   channelId: string | undefined;
@@ -42,7 +38,38 @@ export function BrowsingCard({
   isOpen: boolean;
   /** The last task in the conversation: the one the live screen would show. */
   isNewest: boolean;
-}) {
+};
+
+export function BrowsingCard(props: BrowsingCardProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      {/*
+       * A question about any step of the task, above the card and not inside the folded list: a
+       * person deciding whether to allow a click must not have to unfold anything to find the
+       * buttons. Each renders nothing unless that exact call raised a question.
+       *
+       * And outside the card's seam below, so a card that failed to draw does not take with it the
+       * one question the Bot is waiting on.
+       */}
+      {props.item.steps.map((step) => (
+        <ApprovalRequest key={step.id} toolCallId={step.id} />
+      ))}
+      {/*
+       * THE CARD FAILS ALONE. It draws from browser calls while they are still arriving, and with
+       * no seam of its own a card that threw took the whole transcript with it. The seam adds no
+       * element while the card is well, so the card and its steps stay children of this column.
+       */}
+      <SectionBoundary
+        className="max-w-md rounded-2xl border"
+        section="computer"
+      >
+        <TaskCard {...props} />
+      </SectionBoundary>
+    </div>
+  );
+}
+
+function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const stepsId = useId();
   const botId = useDeclaredBotId();
@@ -63,15 +90,7 @@ export function BrowsingCard({
   );
 
   return (
-    <div className="flex flex-col gap-2">
-      {/*
-       * A question about any step of the task, above the card and not inside the folded list: a
-       * person deciding whether to allow a click must not have to unfold anything to find the
-       * buttons. Each renders nothing unless that exact call raised a question.
-       */}
-      {item.steps.map((step) => (
-        <ApprovalRequest key={step.id} toolCallId={step.id} />
-      ))}
+    <>
       <div className="flex max-w-md gap-3 rounded-2xl border p-2.5">
         {canView ? (
           <button
@@ -148,7 +167,7 @@ export function BrowsingCard({
             })
           : null}
       </div>
-    </div>
+    </>
   );
 }
 
