@@ -24,6 +24,11 @@
 
 import { mkdirSync } from "node:fs";
 import { runAgent } from "../agent-bot/src/index";
+import {
+  type CompletionProvider,
+  liveProvider,
+} from "../agent-bot/src/provider";
+import { resolveTimeZone } from "../shared/prompt";
 import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
@@ -53,6 +58,28 @@ const RUNS = Math.max(
 );
 /** A reasoning model can sit before its first token; the product's own stall guard allows this order of patience. */
 const SCENARIO_TIMEOUT_MS = 180_000;
+
+/**
+ * `EVAL_PROVIDER=z-ai` pins every request to one OpenRouter provider, with no fallbacks.
+ *
+ * Unpinned, OpenRouter routes the model over thirty-odd endpoints and a verdict is partly about
+ * which ones it drew: measured 2026-09-25, the same harness sent a bridged Gmail call right 4 of 4
+ * times on Z.AI and on Relace and 2 of 4 on Wafer, which sent the arguments empty. Pinning makes
+ * two verdicts about two harnesses comparable; unpinned is what production gets.
+ */
+const PINNED: CompletionProvider | null = process.env.EVAL_PROVIDER?.trim()
+  ? (request, options) =>
+      liveProvider(
+        {
+          ...request,
+          provider: {
+            only: [process.env.EVAL_PROVIDER?.trim()],
+            allow_fallbacks: false,
+          },
+        } as typeof request,
+        options,
+      )
+  : null;
 
 if (!process.env.OPENAI_API_KEY) {
   console.error(
@@ -133,7 +160,11 @@ async function runOnce(
    * against a prompt carrying another.
    */
   const messages: unknown[] = [
-    systemMessageFor("chat", scenario.person),
+    systemMessageFor(
+      scenario.mode ?? "chat",
+      scenario.person,
+      scenario.frozenAt,
+    ),
     ...scenario.messages,
   ];
   const allEvents: StreamEvent[] = [];
@@ -142,28 +173,38 @@ async function runOnce(
 
   for (let turn = 1; turn <= MAX_TURNS; turn++) {
     const runId = `eval_${scenario.id}_${attempt}_t${turn}_${Date.now()}`;
-    const response = await runAgent({
-      threadId: `thread_eval_${scenario.id}_${attempt}`,
-      runId,
-      messages,
-      tools: arm?.tools ?? scenario.tools,
-      context: [],
-      state: {},
-      /*
-       * THE PRODUCT'S SHAPE, NOT AN EMPTY ONE. Every Bot a person creates carries an effort and
-       * its default is `balanced` (coworker schema), which agent-bot turns into a reasoning
-       * setting on the wire. An eval that sent nothing was certifying a run no customer has:
-       * caught the day glm-5.3-flash was judged, when the Korean-arithmetic scenarios failed on
-       * the empty shape — a verdict about a run that does not exist in the product. Until the eval
-       * sends what production sends, "the model cannot do the work" and "the eval was not running
-       * the product" are indistinguishable. EVAL_EFFORT overrides for comparisons.
-       */
-      forwardedProps: {
-        effort: process.env.EVAL_EFFORT ?? "balanced",
-        // The measurement arm only. Production never sends it; the default is the bridge.
-        ...(arm && !arm.deferral ? { toolDeferral: "off" } : {}),
-      },
-    } as never);
+    const response = await runAgent(
+      {
+        threadId: `thread_eval_${scenario.id}_${attempt}`,
+        runId,
+        messages,
+        tools: arm?.tools ?? scenario.tools,
+        context: [],
+        state: {},
+        /*
+         * THE PRODUCT'S SHAPE, NOT AN EMPTY ONE. Every Bot a person creates carries an effort and
+         * its default is `balanced` (coworker schema), which agent-bot turns into a reasoning
+         * setting on the wire. An eval that sent nothing was certifying a run no customer has:
+         * caught the day glm-5.3-flash was judged, when the Korean-arithmetic scenarios failed on
+         * the empty shape — a verdict about a run that does not exist in the product. Until the eval
+         * sends what production sends, "the model cannot do the work" and "the eval was not running
+         * the product" are indistinguishable. EVAL_EFFORT overrides for comparisons.
+         */
+        forwardedProps: {
+          effort: process.env.EVAL_EFFORT ?? "balanced",
+          /*
+           * The person's zone, resolved, as the server's middleware forwards it — what the `now`
+           * tool reads the clock in. Without it a Dubai owner's "지금 몇 시야" would read Seoul.
+           */
+          timeZone: resolveTimeZone(
+            scenario.person?.timeZone ?? EVAL_TIME_ZONE,
+          ),
+          // The measurement arm only. Production never sends it; the default is the bridge.
+          ...(arm && !arm.deferral ? { toolDeferral: "off" } : {}),
+        },
+      } as never,
+      PINNED ?? liveProvider,
+    );
     const body = await Promise.race([
       response.text(),
       new Promise<never>((_, reject) =>
@@ -380,6 +421,7 @@ if (process.env.EVAL_DEFERRAL !== "0") {
 
 const report = {
   model: MODEL,
+  provider: process.env.EVAL_PROVIDER?.trim() || null,
   baseUrl: process.env.OPENAI_BASE_URL
     ? new URL(process.env.OPENAI_BASE_URL).host
     : "api.openai.com",

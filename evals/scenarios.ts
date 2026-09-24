@@ -36,7 +36,14 @@ import {
   textOf,
   usageOf,
 } from "./lib";
-import { EVAL_NOW, EVAL_TIME_ZONE } from "./prompt";
+import {
+  reminderBlock,
+  routineRunLine,
+  withReminder,
+} from "../shared/prompt/context.ko";
+import type { PromptMode } from "../shared/prompt/index";
+import { zonedParts } from "../shared/prompt/zone";
+import { EVAL_NOW, EVAL_TIME_ZONE, withReminderFor } from "./prompt";
 import {
   CLICK,
   LIST_FILES,
@@ -80,6 +87,14 @@ export type Scenario = {
   person?: PromptPerson;
   /** A page of this scenario's own for a call, before the pack's shared stubs are asked. */
   stub?: (call: ObservedCall) => string | undefined;
+  /** Where the run happens. Absent is a chat. */
+  mode?: PromptMode;
+  /**
+   * When the epoch whose system message this conversation carries was frozen. Absent is now; an
+   * earlier one is a long-lived conversation, where what changed since rides on the person's
+   * message as a reminder (`withReminderFor`).
+   */
+  frozenAt?: Date;
 };
 
 const user = (content: string) => ({
@@ -904,15 +919,199 @@ export const SCENARIOS: Scenario[] = [
     person: { timeZone: "Asia/Dubai", locale: "ko-KR" },
     messages: [user("지금 몇 시야?")],
     tools: [],
+    /*
+     * The minute is no longer in the prompt (it re-billed the whole conversation every minute,
+     * agent-harness-review §4.3): the Bot reads it with `now`, which agent-bot answers in the
+     * zone the run forwards. So the answer is checked against the clock as it was while the
+     * scenario ran, not against the eval's start.
+     */
+    check: (turn) =>
+      verdict([
+        ["now 툴로 시각을 보지 않음", called(turn, "now")],
+        [
+          "사장님 기기 시간대(두바이)의 시각을 말하지 않음",
+          saysClockNearNow(turn.text, "Asia/Dubai"),
+        ],
+        [
+          "서버·배포의 서울 시각을 말함",
+          !saysClockNearNow(turn.text, "Asia/Seoul"),
+        ],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]),
+  },
+  /*
+   * THE DATE FROM THE CONTEXT LAYER. "오늘/이번 주" are the person's date, which the epoch's layer
+   * carries (`shared/prompt/context.ko.ts`) — no tool call needed, and none should be made for it.
+   */
+  {
+    id: "todays-weekday",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    messages: [user("오늘 무슨 요일이야?")],
+    tools: [],
+    check: (turn) => {
+      const { weekday } = zonedParts(EVAL_NOW, "Asia/Seoul");
+      return verdict([
+        [
+          `오늘 요일(${weekday}요일)을 말하지 않음`,
+          turn.text.includes(`${weekday}요일`),
+        ],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]);
+    },
+  },
+  {
+    id: "this-weeks-friday",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    messages: [user("이번 주 금요일이 며칠이야?")],
+    tools: [],
+    check: (turn) => {
+      const friday = fridayOfThisWeek(EVAL_NOW, "Asia/Seoul");
+      const said = turn.text.replace(/\s/g, "");
+      return verdict([
+        [
+          `이번 주 금요일(${friday.month}월 ${friday.day}일)을 못 셈`,
+          said.includes(`${friday.month}월${friday.day}일`) ||
+            said.includes(`${friday.month}/${friday.day}`),
+        ],
+        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+      ]);
+    },
+  },
+  /*
+   * A LONG-LIVED CONVERSATION'S NEW DAY. The layer was frozen two days ago and still says so; the
+   * person's first message of today carries the date reminder, and today is the reminder's date.
+   */
+  {
+    id: "new-day-by-reminder",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    frozenAt: new Date(EVAL_NOW.getTime() - 2 * 86_400_000),
+    messages: [
+      user(
+        withReminderFor(
+          "오늘 며칠이야? 날짜만 말해줘.",
+          {
+            person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+            at: new Date(EVAL_NOW.getTime() - 2 * 86_400_000),
+          },
+          { person: { timeZone: "Asia/Seoul", locale: "ko-KR" }, at: EVAL_NOW },
+        ),
+      ),
+    ],
+    tools: [],
+    check: (turn) => {
+      const today = zonedParts(EVAL_NOW, "Asia/Seoul");
+      const frozen = zonedParts(
+        new Date(EVAL_NOW.getTime() - 2 * 86_400_000),
+        "Asia/Seoul",
+      );
+      const md = (date: string) => {
+        const [, month, day] = date.split("-").map(Number);
+        return `${month}월${day}일`;
+      };
+      const said = turn.text.replace(/\s/g, "");
+      return verdict([
+        [
+          `알림의 오늘(${today.date})을 말하지 않음`,
+          said.includes(md(today.date)) || said.includes(today.date),
+        ],
+        [
+          `얼린 맥락의 옛 날짜(${frozen.date})를 오늘이라고 함`,
+          !said.includes(md(frozen.date)),
+        ],
+        ["알림을 받았다고 떠벌림", !/알림/.test(turn.text)],
+      ]);
+    },
+  },
+  /*
+   * A PLACE CHANGED MID-EPOCH reaches the Bot at once: the layer still names the old place, the
+   * reminder on the message names the new one, and the search must use the new one.
+   */
+  {
+    id: "moved-place-by-reminder",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR", place: "서울 강남구" },
+    messages: [
+      user(
+        withReminderFor(
+          "오늘 날씨 알려줘",
+          {
+            person: {
+              timeZone: "Asia/Seoul",
+              locale: "ko-KR",
+              place: "서울 강남구",
+            },
+            at: EVAL_NOW,
+          },
+          {
+            person: {
+              timeZone: "Asia/Seoul",
+              locale: "ko-KR",
+              place: "서울 마포구",
+            },
+            at: EVAL_NOW,
+          },
+        ),
+      ),
+    ],
+    tools: [NAVIGATE, READ, REMEMBER],
+    stub: weatherSite(),
     check: (turn) =>
       verdict([
         [
-          "사장님 기기 시간대(두바이)의 시각을 말하지 않음",
-          saysClock(turn.text, "Asia/Dubai"),
+          "검색에 바뀐 위치(마포)를 넣지 않음",
+          navigatedTo(turn).some((url) => url.includes("마포")),
         ],
-        ["서버·배포의 서울 시각을 말함", !saysClock(turn.text, "Asia/Seoul")],
-        ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+        [
+          "옛 위치(강남)로 찾음",
+          !navigatedTo(turn).some((url) => url.includes("강남")),
+        ],
+        ["답에 어느 곳 기준인지(마포) 말하지 않음", turn.text.includes("마포")],
       ]),
+  },
+  /*
+   * A ROUTINE KNOWS WHEN IT RUNS. Its instruction carries the run's reminder — scheduled for 07:30,
+   * started a minute later — and a report titled with the date and the time must use them.
+   */
+  {
+    id: "routine-knows-its-run",
+    dimension: "whereabouts",
+    mode: "routine",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+    messages: [
+      user(
+        withReminder(
+          "오늘 아침 보고의 제목만 한 줄로 써줘. 형식: '<월>월 <일>일 (<요일>) <예약 시각> 아침 보고'",
+          reminderBlock([
+            routineRunLine({
+              startedAt: new Date(
+                scheduledAt(EVAL_NOW, "07:30", "Asia/Seoul").getTime() + 60_000,
+              ),
+              scheduledFor: scheduledAt(EVAL_NOW, "07:30", "Asia/Seoul"),
+              timeZone: "Asia/Seoul",
+            }),
+          ]),
+        ),
+      ),
+    ],
+    tools: [],
+    check: (turn) => {
+      const today = zonedParts(EVAL_NOW, "Asia/Seoul");
+      const [, month, day] = today.date.split("-").map(Number);
+      const said = turn.text.replace(/\s/g, "");
+      return verdict([
+        [
+          `실행 날짜(${month}월 ${day}일)가 제목에 없음`,
+          said.includes(`${month}월${day}일`),
+        ],
+        [
+          "예약 시각(07:30)이 제목에 없음",
+          said.includes("07:30") || said.includes("7:30"),
+        ],
+      ]);
+    },
   },
   {
     id: "routine-at-seven-thirty-on-the-owners-clock",
@@ -997,13 +1196,13 @@ function weatherSite(): (call: ObservedCall) => string | undefined {
  * 6시 30분, 6시 반, 오전 6시 30분. A digit may not come right before it, or "1시 30분" would be found
  * inside "11시 30분".
  */
-function saysClock(text: string, zone: string): boolean {
+function saysClock(text: string, zone: string, at: Date = EVAL_NOW): boolean {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,
     hourCycle: "h23",
     hour: "2-digit",
     minute: "2-digit",
-  }).formatToParts(EVAL_NOW);
+  }).formatToParts(at);
   const hour = Number(parts.find((part) => part.type === "hour")?.value) % 24;
   const minute = Number(parts.find((part) => part.type === "minute")?.value);
   const mm = String(minute).padStart(2, "0");
@@ -1020,6 +1219,44 @@ function saysClock(text: string, zone: string): boolean {
       `(?<!\\d)${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!\\d)`,
     ).test(said),
   );
+}
+
+/**
+ * Whether a reply names a minute the clock read in `zone` while the scenario ran — the `now` tool
+ * reads the clock when it is called, so the answer is checked against the last few minutes, not
+ * the eval's start. Called by the check right after the scenario's turn.
+ */
+function saysClockNearNow(text: string, zone: string): boolean {
+  const now = Date.now();
+  for (let back = 0; back <= 4; back += 1) {
+    if (saysClock(text, zone, new Date(now - back * 60_000))) return true;
+  }
+  return false;
+}
+
+/** This week's Friday (the week from Monday) in `zone`, as month and day. */
+function fridayOfThisWeek(
+  at: Date,
+  zone: string,
+): { month: number; day: number } {
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const today = weekdays.indexOf(zonedParts(at, zone).weekday);
+  const fromMonday = (today + 6) % 7;
+  const friday = new Date(at.getTime() + (4 - fromMonday) * 86_400_000);
+  const [, month, day] = zonedParts(friday, zone).date.split("-").map(Number);
+  return { month: month ?? 0, day: day ?? 0 };
+}
+
+/** The instant a daily routine at `hhmm` in `zone` was due on the day `at` falls on there. */
+function scheduledAt(at: Date, hhmm: string, zone: string): Date {
+  const { date } = zonedParts(at, zone);
+  // The zone's offset on that day, from what the clock reads there at UTC midnight.
+  const midnightUtc = new Date(`${date}T00:00:00Z`);
+  const [hours, minutes] = zonedParts(midnightUtc, zone).time.split(":");
+  const offsetMinutes = Number(hours) * 60 + Number(minutes);
+  const signed =
+    offsetMinutes > 12 * 60 ? offsetMinutes - 24 * 60 : offsetMinutes;
+  return new Date(new Date(`${date}T${hhmm}:00Z`).getTime() - signed * 60_000);
 }
 
 /**

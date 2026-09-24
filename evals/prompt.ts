@@ -14,13 +14,18 @@
 import { createHash } from "node:crypto";
 import {
   composePrompt,
+  contextFactsFor,
   DEFAULT_TIME_ZONE,
   type PromptMode,
   type PromptPerson,
   promptSkeleton,
+  reminderBlock,
+  reminderLines,
+  withReminder,
 } from "../shared/prompt";
 import { BRIDGE_TOOLS } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import { NOW_TOOL } from "../shared/tools/now";
 import { SELF_TOOLS } from "../shared/tools/self";
 
 /**
@@ -66,13 +71,19 @@ export const EVAL_MEMORIES = [
 export function systemMessageFor(
   mode: PromptMode = "chat",
   person?: PromptPerson,
+  /**
+   * When the epoch this message was frozen in began. `EVAL_NOW` for a conversation that starts
+   * now; earlier for one whose layer is days old, where what changed since arrives as a reminder
+   * on the person's message — which is how production sends a long-lived conversation.
+   */
+  frozenAt: Date = EVAL_NOW,
 ) {
   return {
     id: "laf-prompt:eval_bot",
     role: "system" as const,
     content: composePrompt({
       mode,
-      now: EVAL_NOW,
+      now: frozenAt,
       timeZone: EVAL_TIME_ZONE,
       bot: EVAL_BOT,
       standingRole: EVAL_STANDING_ROLE,
@@ -80,6 +91,47 @@ export function systemMessageFor(
       ...(person ? { person } : {}),
     }),
   };
+}
+
+/** What the context layer says, for a person at a moment — what a reminder compares. */
+export function factsFor(
+  mode: PromptMode,
+  person: PromptPerson | undefined,
+  at: Date,
+) {
+  return contextFactsFor({
+    mode,
+    now: at,
+    timeZone: EVAL_TIME_ZONE,
+    bot: EVAL_BOT,
+    standingRole: EVAL_STANDING_ROLE,
+    memories: EVAL_MEMORIES,
+    ...(person ? { person } : {}),
+  });
+}
+
+/**
+ * A person's message as production sends it after something changed mid-epoch: the words, then
+ * the reminder the conversation store appends (`server/src/context/conversations.ts`), built by
+ * the same functions — so the eval measures the words a Bot is actually shown.
+ */
+export function withReminderFor(
+  content: string,
+  from: { mode?: PromptMode; person?: PromptPerson; at: Date },
+  to: { person?: PromptPerson; at: Date },
+  extra: readonly string[] = [],
+): string {
+  const mode = from.mode ?? "chat";
+  return withReminder(
+    content,
+    reminderBlock([
+      ...reminderLines(
+        factsFor(mode, from.person, from.at),
+        factsFor(mode, to.person, to.at),
+      ),
+      ...extra,
+    ]),
+  );
 }
 
 const sha256 = (text: string) =>
@@ -105,5 +157,5 @@ export const PROMPT_HASH = sha256(
  * `remember`'s description.
  */
 export const CATALOGUE_HASH = sha256(
-  JSON.stringify([...COMPUTER_TOOLS, ...SELF_TOOLS, ...BRIDGE_TOOLS]),
+  JSON.stringify([...COMPUTER_TOOLS, ...SELF_TOOLS, ...BRIDGE_TOOLS, NOW_TOOL]),
 );
