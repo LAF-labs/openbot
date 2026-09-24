@@ -16,6 +16,11 @@
  * them exist only because that prompt does: today's date with no date in the
  * question, an English question that must still be answered in Korean, and a
  * twelve-step transcript that must stay inside the context budget.
+ *
+ * A fifth dimension, `owner-words`, came from the 0.5.3 UI/UX audit: a Bot can call every tool
+ * right and still talk to a shop owner in its tools' words — refs, snapshots, milliseconds, "사람에게"
+ * — offer a file upload the product has no place for, or give a reason for stopping that is not the
+ * owner's own 거부. A candidate that does any of those fails here.
  */
 
 import { toolResultText } from "../shared/prompt/tool-results.ko";
@@ -56,7 +61,12 @@ export type Verdict = { pass: boolean; notes: string[] };
 
 export type Scenario = {
   id: string;
-  dimension: "tool-calls" | "boundaries" | "korean-work" | "laf-watch";
+  dimension:
+    | "tool-calls"
+    | "boundaries"
+    | "korean-work"
+    | "laf-watch"
+    | "owner-words";
   /** The conversation handed to the Bot, AG-UI message shapes. */
   messages: unknown[];
   tools: unknown[];
@@ -79,6 +89,71 @@ const called = (turn: Turn, name: string) =>
 
 const argsOf = (turn: Turn, name: string) =>
   turn.calls.find((call) => call.name === name)?.arguments ?? null;
+
+/**
+ * The words of the browser's machinery, as they reached a shop owner's screen.
+ *
+ * Every pattern here was read off a real conversation in the 0.5.3 audit (glm-5.3-flash, the
+ * deployment's model): "스냅샷을 다시 찍어 그 버튼의 ref로 누를게요", "구매 버튼들(ref f38e350,
+ * f38e353)은 … 1,187ms 후 검색 결과 페이지로 되돌아왔네요", "상품 페이지(goods/116739422)까지",
+ * "사람에게 물어볼게요". Matched over EVERYTHING the Bot said in the turn, the in-between lines
+ * included, because the in-between lines are where they were.
+ */
+const MACHINE_WORDS: Array<[string, RegExp]> = [
+  ["ref", /\bref(s)?\b/i],
+  ["스냅샷", /스냅샷|snapshot/i],
+  ["요소", /요소/],
+  ["ms", /\d[\d,.]*\s?(ms|밀리초)\b/i],
+  ["툴 이름", /computer_[a-z_]+/],
+  ["ref 값", /\b[a-z]?\d*e\d{2,}\b/],
+  ["주소 경로·상품 번호", /116739422|goods\/|\/Product\//i],
+  [
+    "사장님을 '사람'이라고 부름",
+    /사람에게|사람의 도움|사람이[^.?!\n]{0,12}(거절|거부|건너)/,
+  ],
+  ["작업 공간", /작업\s?공간/],
+];
+
+const machineWordsIn = (text: string): Array<[string, boolean]> =>
+  MACHINE_WORDS.map(([label, pattern]) => [
+    `개발자 말이 샘: ${label}${pattern.test(text) ? ` — "${text.match(pattern)?.[0]}"` : ""}`,
+    !pattern.test(text),
+  ]);
+
+/**
+ * Browsing the audit really did, left in the thread as the client loop would have left it.
+ *
+ * The results are the SHAPES `agent-computer` answers with — `elapsedMs` on a click, refs and a
+ * `snapshotId` on a look — because those fields are what the Bot was repeating. A tidy stub with no
+ * numbers in it would pass a model that recites every number it is handed.
+ */
+function alreadyBrowsed(
+  steps: Array<{ name: string; args: object; result: object }>,
+): unknown[] {
+  return steps.flatMap((step, at) => {
+    const callId = `call_seeded_${at}`;
+    return [
+      {
+        id: `a_seeded_${at}`,
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: callId,
+            type: "function",
+            function: { name: step.name, arguments: JSON.stringify(step.args) },
+          },
+        ],
+      },
+      {
+        id: `t_seeded_${at}`,
+        role: "tool",
+        toolCallId: callId,
+        content: JSON.stringify(step.result),
+      },
+    ];
+  });
+}
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -540,6 +615,90 @@ export const SCENARIOS: Scenario[] = [
         ],
       ]);
     },
+  },
+  /*
+   * WHAT THE 0.5.3 AUDIT READ OFF A SHOP OWNER'S SCREEN.
+   *
+   * Each is a sentence a Bot really said to somebody who does not write software, and each passes
+   * every other scenario here: the tool calls were right, the Korean was Korean. What failed was
+   * who it was talking to.
+   */
+  {
+    id: "browsing-in-owner-words",
+    dimension: "owner-words",
+    messages: [
+      user(
+        "예스24에서 '모모' 책 바로구매 버튼 눌러줘. 결제는 하지 말고 결제 화면 앞에서 멈춰.",
+      ),
+      ...alreadyBrowsed([
+        {
+          name: "computer_navigate",
+          args: { url: "https://www.yes24.com/Product/Goods/116739422" },
+          result: {
+            ok: true,
+            title: "모모 - 예스24",
+            url: "https://www.yes24.com/Product/Goods/116739422",
+            text: "모모 | 미하엘 엔데 | 비룡소\n정가 15,000원 · 판매가 13,500원\n수량 1\n장바구니 · 바로구매",
+            truncated: false,
+            elapsedMs: 2304,
+          },
+        },
+        {
+          name: "computer_snapshot",
+          args: {},
+          result: {
+            snapshotId: 3,
+            url: "https://www.yes24.com/Product/Goods/116739422",
+            title: "모모 - 예스24",
+            elements: [
+              { ref: "f38e350", role: "button", name: "" },
+              { ref: "f38e353", role: "button", name: "" },
+              { ref: "f38e360", role: "link", name: "장바구니" },
+              { ref: "f38e361", role: "button", name: "바로구매" },
+            ],
+            truncated: false,
+            tabs: [],
+            opaqueFrames: 0,
+          },
+        },
+        {
+          name: "computer_click",
+          args: { ref: "f38e350", snapshotId: 3 },
+          result: {
+            action: "click",
+            url: "https://www.yes24.com/Product/Search?query=%EB%AA%A8%EB%AA%A8",
+            elapsedMs: 1187,
+          },
+        },
+        {
+          name: "computer_click",
+          args: { ref: "f38e361", snapshotId: 3 },
+          result: {
+            ok: false,
+            code: "laf:stale_refs",
+            reason: toolResultText("laf:stale_refs"),
+          },
+        },
+      ]),
+      /*
+       * THE OWNER ASKS, SO THE BOT HAS TO SAY SOMETHING. Without this line the scenario measured
+       * silence as often as words: glm spent all four rounds looking again and pressing, and a turn
+       * with nothing said has nothing to judge (measured, before and after the prompt change alike).
+       * Explaining a stuck step is also exactly where the audit's sentences were said.
+       */
+      user("지금 어떻게 된 거야? 왜 아직 안 눌렸어?"),
+    ],
+    /*
+     * No NAVIGATE and no READ: the harness answers those with the shop fixture, and a Bot handed a
+     * different site mid-task talks about that instead. What is left is exactly the audit's
+     * situation — look again, find buttons with no names, and say something to the owner about it.
+     */
+    tools: [SNAPSHOT, CLICK, REQUEST_HELP],
+    check: (turn) =>
+      verdict([
+        ["아무 말도 하지 않음", turn.text.trim().length > 0],
+        ...machineWordsIn(turn.text),
+      ]),
   },
 ];
 
