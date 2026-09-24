@@ -7,7 +7,10 @@ import { BotAvatarPicker } from "@/components/avatar/bot-avatar-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
 import { ReadNotice } from "@/components/layout/read-states";
-import { NotificationPermission } from "@/components/notifications/notification-permission";
+import {
+  NotificationPermission,
+  noticeWindowNote,
+} from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
@@ -750,8 +753,9 @@ function AutoReviewCard({
       <section className="flex flex-col gap-1 rounded-xl bg-muted p-3">
         <h2 className="font-medium text-base">{t("Do not ask me about")}</h2>
         <p className="text-muted-foreground text-sm">
+          {/* Not "this deployment's model": neither word is one a shop owner uses (0.5.3, item 10). */}
           {t(
-            "This deployment's model cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.",
+            "Your Bot cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.",
           )}
         </p>
         <p className="rounded-lg bg-background px-3 py-2 text-pretty text-sm">
@@ -873,9 +877,7 @@ function NotifyCard({
           })}
         </p>
         {notify ? (
-          <NotificationPermission
-            grantedNote={t("Only while a tab is open.")}
-          />
+          <NotificationPermission grantedNote={noticeWindowNote()} />
         ) : null}
         {preferences.error ? (
           <p className="pt-1 text-destructive text-sm" role="alert">

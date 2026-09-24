@@ -10,6 +10,23 @@ import {
 import { inShell } from "@/lib/notifications/shell";
 
 /**
+ * When a notice can arrive, said in the words of wherever this page is running.
+ *
+ * Both lines that said it — the Settings row and a Bot's own switch — said "only while a tab is
+ * open", and in the installed app, which is the surface this product leads with, there is no tab:
+ * the audit read that sentence inside the PC app (0.5.3 item 10). What is true in the shell is
+ * what the code does: closing the window only hides it, the page keeps listening, and quitting the
+ * app from the tray or the platform's own Quit ends the process and every notice with it. Whether a
+ * notice reaches somebody while the window is hidden has not been measured on a device, so the
+ * sentence promises the running app and nothing about the window.
+ */
+export function noticeWindowNote(): string {
+  return inShell()
+    ? t("While the app is running. Quitting the app stops them.")
+    : t("Only while a tab is open.");
+}
+
+/**
  * The one place the browser is asked, and the one place its answer is explained.
  *
  * `notify` is on for every Bot by default, which is right — a Bot you added is one you want to hear
@@ -111,7 +128,10 @@ export function NotificationPermission({
           {t("Turn on notifications")}
         </Button>
         <p className="text-muted-foreground text-sm">
-          {t("Your browser is blocking notifications for this site.")}
+          {/* The installed app has no site and no browser to blame; its switch is the computer's. */}
+          {inShell()
+            ? t("This computer has notifications turned off for this app.")
+            : t("Your browser is blocking notifications for this site.")}
         </p>
         <p className="text-muted-foreground text-sm">
           {inShell()

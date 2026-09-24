@@ -136,6 +136,7 @@
   "app/tests/settings-shop.test.tsx",
   "app/tests/shell-bridge.test.ts",
   "app/tests/shell-links.test.ts",
+  "app/tests/shell-notice-words.test.ts",
   "app/tests/shop-copy.test.ts",
   "app/tests/shop-suggestions.test.ts",
   "app/tests/sidebar-rail.test.tsx",

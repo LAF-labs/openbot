@@ -871,8 +871,8 @@ export const ko: Record<string, string> = {
   "Hand back to the Bot": "봇에게 제어 돌려주기",
   "Held for this deployment and never shown again once saved.":
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않습니다.",
-  "How {product} looks and behaves for you. These apply to your account alone, on every deployment you sign in to.":
-    "{product}의 모양과 동작 — 내 계정에만 적용되며, 로그인하는 모든 배포에서 유지됩니다.",
+  "How {product} looks and behaves on this device.":
+    "{product}의 모양과 동작입니다. 이 기기에서만 바뀝니다.",
   "Install skill": "스킬 설치",
   Instructions: "지시문",
   "It may never": "절대 허용 안 함",
@@ -1029,14 +1029,19 @@ export const ko: Record<string, string> = {
   "{count} items in the workspace": "작업 공간에 항목 {count}개",
   "{name}'s screen": "{name}의 화면",
   "Only while a tab is open.": "탭이 열려 있는 동안에만 알립니다.",
+  "While the app is running. Quitting the app stops them.":
+    "앱이 켜져 있는 동안에만 오고, 앱을 종료하면 오지 않습니다.",
   "Your browser is blocking notifications for this site.":
     "브라우저가 이 사이트의 알림을 차단하고 있습니다.",
+  "This computer has notifications turned off for this app.":
+    "이 컴퓨터 설정에서 이 앱의 알림이 꺼져 있습니다.",
   "Turn on notifications": "알림 켜기",
   "On for this browser.": "이 브라우저에서 켜져 있습니다.",
+  "On for this app.": "이 앱에서 켜져 있습니다.",
   "Notifications cannot be turned on here.":
     "이 환경에서는 알림을 켤 수 없습니다.",
-  "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.":
-    "보고 있지 않은 방에서 봇이 말하면 알려줍니다. 탭이 열려 있는 동안에만 — 모두 닫히면 아무것도 오지 않습니다.",
+  "Tell me when my Bot speaks in a conversation I am not looking at.":
+    "보고 있지 않은 대화에서 봇이 말하면 알려 줍니다.",
   "{name} needs you": "{name}{josa} 기다립니다",
   "{count} things it can act on": "움직일 수 있는 것 {count}개",
   "The live picture was cut off. Reconnecting…":
@@ -1103,8 +1108,8 @@ export const ko: Record<string, string> = {
   "Why this is changing": "바꾸는 이유",
   "Changing this needs a reason, which is kept in the audit trail.":
     "이 설정을 바꾸려면 이유를 적어야 하고, 그 이유는 감사 기록에 남습니다.",
-  "This deployment's model cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.":
-    "지금은 이 배포의 모델이 이 문장을 읽어내지 못해, 여기 적은 내용이 적용되지 않고 모든 행동을 물어봅니다. 내용은 그대로 보관되며, 모델이 답할 수 있게 되면 저절로 다시 동작합니다.",
+  "Your Bot cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.":
+    "지금은 봇이 이 문장을 읽지 못해서, 여기 적은 내용이 적용되지 않고 모든 행동을 물어봅니다. 내용은 그대로 보관되며, 다시 읽을 수 있게 되면 저절로 다시 동작합니다.",
   "Saying no stops it being asked again for a while.":
     "거절하면 같은 행동은 한동안 다시 묻지 않고 거절됩니다.",
   "Saying no is remembered: the same action is refused for the next half hour instead of being asked about again.":

@@ -9,7 +9,10 @@ import {
   PageShell,
 } from "@/components/layout/page-shell";
 import { LegalLinks } from "@/components/legal/legal-links";
-import { NotificationPermission } from "@/components/notifications/notification-permission";
+import {
+  NotificationPermission,
+  noticeWindowNote,
+} from "@/components/notifications/notification-permission";
 import { TodayUsageSection } from "@/components/settings/today-usage";
 import { VersionLine } from "@/components/settings/version-line";
 import { useTheme } from "@/components/theme-provider";
@@ -34,6 +37,7 @@ import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { appConfig } from "@/lib/generated/application-config";
 import { type Locale, localeSetting, setLocaleSetting, t } from "@/lib/i18n";
+import { inShell } from "@/lib/notifications/shell";
 import type { ThemePreference } from "@/lib/theme";
 
 export const Route = createFileRoute("/_authed/settings/")({
@@ -118,10 +122,17 @@ function RouteComponent() {
    */
   return (
     <PageShell
-      description={t(
-        "How {product} looks and behaves for you. These apply to your account alone, on every deployment you sign in to.",
-        { product: appConfig.brand.productName },
-      )}
+      /*
+       * "ON THIS DEVICE", BECAUSE THAT IS WHERE THEY ARE KEPT. The sentence here was upstream's and
+       * promised "your account alone, on every deployment you sign in to" — a developer's word on
+       * the first line of the screen (0.5.3 audit, item 10), and not even true: the language and
+       * the appearance are written to this browser's storage (`lib/i18n.ts`, `theme-provider.tsx`)
+       * and notifications are this browser's or this app's permission. None of them follows the
+       * account to another machine.
+       */
+      description={t("How {product} looks and behaves on this device.", {
+        product: appConfig.brand.productName,
+      })}
       title={t("Preferences")}
     >
       {/*
@@ -285,13 +296,21 @@ function RouteComponent() {
           <Item size="sm">
             <ItemContent>
               <ItemTitle>{t("Notifications")}</ItemTitle>
+              {/*
+               * A conversation, not a room: rooms went with several Bots (2026-09-24). And the
+               * second sentence is the environment's own — "while a tab is open" was being read
+               * inside the installed app, which has no tabs (0.5.3 audit, item 10).
+               */}
               <ItemDescription>
                 {t(
-                  "Tell me when a Bot speaks in a room I am not reading. Only while a tab is open — nothing arrives once they are all closed.",
-                )}
+                  "Tell me when my Bot speaks in a conversation I am not looking at.",
+                )}{" "}
+                {noticeWindowNote()}
               </ItemDescription>
               <NotificationPermission
-                grantedNote={t("On for this browser.")}
+                grantedNote={
+                  inShell() ? t("On for this app.") : t("On for this browser.")
+                }
                 unsupportedNote={t("Notifications cannot be turned on here.")}
               />
             </ItemContent>
