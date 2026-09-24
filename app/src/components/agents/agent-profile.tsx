@@ -152,16 +152,21 @@ export function AgentProfile({
   const profile = settled.data;
 
   /*
-   * A NEUTRAL TILE, WITH THE COLOUR IN THE CHARACTER. The face carries its own ground; painting
-   * the tile the same colour behind it just spread one Bot's hue over the panel.
+   * THE FACE ON A SOFT WASH OF ITS OWN COLOUR, NOT IN A GREY BOX (UI/UX audit 0.5.3, item 21).
+   *
+   * It sat in a 4:3 grey tile that was also, invisibly, the button to change it — "얼굴 바꾸기"
+   * showed only on hover, which a phone has none of. Now the face stands on its own and the words
+   * to change it are a button under it, always there. The wash is the accent at 10%, so the
+   * profile shows the colour the rest of the app has taken from this face.
    */
-  const banner = (
-    <span
-      aria-hidden="true"
-      className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)]"
-    >
-      <span className="inline-flex overflow-hidden rounded-[32px] transition-transform duration-200 group-hover:scale-[1.03]">
-        <Mascot seed={profile.avatarSeed} size={128} />
+  const face = (
+    <span className="relative flex items-center justify-center py-2">
+      <span
+        aria-hidden="true"
+        className="absolute size-36 rounded-full bg-primary/10 blur-2xl"
+      />
+      <span className="relative">
+        <Mascot seed={profile.avatarSeed} size={112} />
       </span>
     </span>
   );
@@ -189,28 +194,17 @@ export function AgentProfile({
          * The face is the control. A Bot the deployment shipped is not editable here at all — the
          * server refuses — so it offers nothing it cannot deliver.
          */}
+        {face}
         {profile.canManage ? (
-          <button
-            aria-label={t("Change the face")}
-            className={`group relative w-full overflow-hidden rounded-2xl border border-border transition hover:border-ring/40 ${focusRing}`}
+          <Button
             onClick={() => setPickingFace(true)}
-            type="button"
+            size="sm"
+            variant="outline"
           >
-            {banner}
-            {/*
-             * The label appears on hover AND on keyboard focus, over the bottom of the tile, in the
-             * theme's own ground and ink so it reads on the near-white tile in light mode too.
-             */}
-            <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-background via-background/80 to-transparent px-2 pt-6 pb-2 text-foreground text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-              <IconPencil className="size-3.5" />
-              {t("Change the face")}
-            </span>
-          </button>
-        ) : (
-          <span className="group w-full overflow-hidden rounded-2xl border border-border">
-            {banner}
-          </span>
-        )}
+            <IconPencil />
+            {t("Change the face")}
+          </Button>
+        ) : null}
         <BotAvatarPicker
           onOpenChange={setPickingFace}
           // Left open on purpose: one press applies, 완료 closes.
@@ -335,20 +329,31 @@ function NameField({
       <label className="sr-only" htmlFor={labelId}>
         {t("Name")}
       </label>
-      <Input
-        className={`h-auto border-transparent bg-transparent px-2 py-1 text-center font-semibold text-2xl leading-tight tracking-tight shadow-none hover:border-border focus-visible:bg-muted/60 md:text-2xl ${focusRing}`}
-        id={labelId}
-        maxLength={80}
-        onBlur={() => void commit()}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          // The Enter that accepts a Korean syllable is not the Enter that finishes the name.
-          if (isImeKey(event)) return;
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") setDraft(name);
-        }}
-        value={draft}
-      />
+      {/*
+       * A FIELD THAT LOOKS LIKE ONE. It was a heading until pressed — no edge, no pencil — and
+       * nobody could tell the name could be changed here (item 21). A faint edge and a pencil say so
+       * without turning the Bot's name into a form row.
+       */}
+      <div className="relative w-full">
+        <Input
+          className={`h-auto border-border/70 bg-transparent px-9 py-1 text-center font-semibold text-2xl leading-tight tracking-tight shadow-none hover:border-border focus-visible:bg-muted/60 md:text-2xl ${focusRing}`}
+          id={labelId}
+          maxLength={80}
+          onBlur={() => void commit()}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            // The Enter that accepts a Korean syllable is not the Enter that finishes the name.
+            if (isImeKey(event)) return;
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") setDraft(name);
+          }}
+          value={draft}
+        />
+        <IconPencil
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+      </div>
       {/* Mounted with the field, so 저장됨 is heard when it is said (`LiveRegion`). */}
       <LiveRegion as="p" className="text-muted-foreground text-xs">
         {saved ? t("Saved") : null}

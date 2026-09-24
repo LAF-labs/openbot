@@ -74,21 +74,18 @@ const RULES: readonly Rule[] = [
  */
 const ALLOWED: Record<string, Record<string, number>> = {
   radius: {
-    "components/agents/agent-profile.tsx": 1,
     "components/channels/composer/composer.tsx": 1,
     "components/gallery/cards.tsx": 1,
     "components/gallery/charts.tsx": 2,
   },
   type: {
     "components/gallery/cards.tsx": 1,
-    "routes/_authed/_app/channel/new.tsx": 4,
     "routes/_authed/_app/index.tsx": 4,
   },
   shadow: {
     "components/channels/composer/composer.tsx": 2,
   },
   sand: {
-    "components/agents/agent-profile.tsx": 1,
     // Was 5. The height went first, because `--sand-row-height` finally has a name: `h-row`.
     "components/app-sidebar/bot-row.tsx": 4,
     "components/avatar/bot-avatar-picker.tsx": 1,
