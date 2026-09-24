@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { parseFirstTaskPress } from "../../server/src/agents/first-task";
 import {
   ACCOUNT_FIRST_TASKS,
+  COMPUTER_FIRST_TASK,
   FIRST_TASK_COUNT,
   FIRST_TASK_PRESSED,
   type FirstTask,
@@ -28,6 +29,7 @@ import type {
 } from "../src/lib/connections/queries";
 import { ko } from "../src/lib/i18n-ko";
 import { CATALOGUE_COPY } from "../src/lib/plugins/catalogue-copy";
+import { BUSINESS_KINDS } from "../src/lib/shop/catalogue";
 import { BUSINESS_SITES } from "../src/lib/sites/catalogue";
 import { stubFetch } from "./support/fetch";
 
@@ -89,7 +91,7 @@ const generic = (pattern: WorkPatternId): string => {
   if (!found) throw new Error(`no connection-free sentence for ${pattern}`);
   return found.sentence;
 };
-const holidays = generic("schedule");
+const weather = generic("schedule");
 const introductions = generic("reputation");
 const opening = generic("night-watch");
 const refund = generic("enquiries");
@@ -113,7 +115,7 @@ describe("which chips are offered", () => {
       name: "nothing connected: four sentences that need nothing, then the way to connect",
       state: overview(),
       expected: [
-        ask(holidays),
+        ask(weather),
         ask(introductions),
         ask(opening),
         ask(refund),
@@ -129,7 +131,7 @@ describe("which chips are offered", () => {
           kind: "site",
           id: "naver-smartplace",
         }),
-        ask(holidays),
+        ask(weather),
         ask(opening),
         ask(refund),
       ],
@@ -138,7 +140,7 @@ describe("which chips are offered", () => {
       name: "a site that needs a login again is not offered at all",
       state: overview([site("naver-smartplace", "needs_login")]),
       expected: [
-        ask(holidays),
+        ask(weather),
         ask(introductions),
         ask(opening),
         ask(refund),
@@ -149,7 +151,7 @@ describe("which chips are offered", () => {
       name: "a site the Bot has never been signed into is not offered either",
       state: overview([site("baemin-ceo", "not_connected")]),
       expected: [
-        ask(holidays),
+        ask(weather),
         ask(introductions),
         ask(opening),
         ask(refund),
@@ -167,7 +169,7 @@ describe("which chips are offered", () => {
           kind: "account",
           id: "gmail",
         }),
-        ask(holidays),
+        ask(weather),
         ask(introductions),
         ask(opening),
       ],
@@ -194,7 +196,7 @@ describe("which chips are offered", () => {
         ],
       ),
       expected: [
-        ask(holidays),
+        ask(weather),
         ask(introductions),
         ask(opening),
         ask(refund),
@@ -218,7 +220,7 @@ describe("which chips are offered", () => {
     );
     expect(sentencesOf(tasks)).toEqual([
       firstPrompt("cafe24-admin"),
-      holidays,
+      weather,
       introductions,
       opening,
     ]);
@@ -339,7 +341,7 @@ describe("what a press reports", () => {
       agentId: "bot-1",
       kind: "ask",
       pattern: "schedule",
-      sentence: holidays,
+      sentence: weather,
       via: { kind: "site", id: "naver-smartplace" },
       hint: "schedule",
     };
@@ -350,7 +352,7 @@ describe("what a press reports", () => {
     await Promise.resolve();
 
     expect(seen).toEqual([detail]);
-    expect(JSON.stringify(seen)).not.toContain(ko[holidays] ?? "\x00");
+    expect(JSON.stringify(seen)).not.toContain(ko[weather] ?? "\x00");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.url).toBe("/api/me/first-task");
     expect(sent[0]?.init.method).toBe("POST");
@@ -362,8 +364,8 @@ describe("what a press reports", () => {
       hint: "schedule",
     });
     // Neither the key nor its Korean: the keys beside it already name the sentence exactly.
-    expect(String(sent[0]?.init.body)).not.toContain(holidays);
-    expect(String(sent[0]?.init.body)).not.toContain(ko[holidays] ?? "\x00");
+    expect(String(sent[0]?.init.body)).not.toContain(weather);
+    expect(String(sent[0]?.init.body)).not.toContain(ko[weather] ?? "\x00");
     expect(firstTaskPressBody(detail)).not.toHaveProperty("sentence");
   });
 
@@ -455,7 +457,7 @@ describe("what a press reports", () => {
 
 describe("the routine chip", () => {
   test("repeats the first sentence that asks something", () => {
-    expect(routineSentence(pickFirstTasks(overview()))).toBe(holidays);
+    expect(routineSentence(pickFirstTasks(overview()))).toBe(weather);
     expect(
       routineSentence(pickFirstTasks(overview([site("baemin-ceo")]))),
     ).toBe(firstPrompt("baemin-ceo"));
@@ -583,8 +585,8 @@ describe("the words", () => {
     const screen = [
       "Try one of these first",
       "Connect a site",
-      "Get a report every morning at 7:30",
-      "The first sentence above, asked every morning at 7:30, answered in this conversation.",
+      "Get “{task}” every morning at 7:30",
+      "Your Bot is asked this every morning at 7:30 and answers in this conversation.",
       "Morning report",
       "Making the routine…",
       "The routine is made.",
@@ -609,5 +611,49 @@ describe("the words", () => {
     ].map((task) => task.sentence)) {
       expect(ko[sentence]).toMatch(/줘$/);
     }
+  });
+});
+
+/*
+ * 0.5.3 audit, item 12: with nothing connected, all four chips were writing — the one thing this
+ * product does that a chat window does not, going to a site and coming back, was on none of them.
+ */
+describe("the Bot's computer is on the row", () => {
+  const nothing = overview();
+
+  test("with nothing connected, the lookup leads — and it is the one the 7:30 chip repeats", () => {
+    const tasks = pickFirstTasks(nothing);
+    expect(tasks[0]).toEqual({
+      kind: "ask",
+      ...COMPUTER_FIRST_TASK,
+      via: null,
+    });
+    expect(routineSentence(tasks)).toBe(COMPUTER_FIRST_TASK.sentence);
+    expect(ko[COMPUTER_FIRST_TASK.sentence]).toContain("네이버");
+  });
+
+  test("whatever the shop's kind of work puts first, one chip goes out on the computer", () => {
+    for (const kind of BUSINESS_KINDS) {
+      const tasks = pickFirstTasks(nothing, {
+        shop: { kind: kind.id, places: [] },
+      });
+      expect(
+        tasks.some(
+          (task) =>
+            task.kind === "ask" &&
+            task.sentence === COMPUTER_FIRST_TASK.sentence,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test("a connected site already is one, so nothing is swapped out for the lookup", () => {
+    const tasks = pickFirstTasks(overview([site("naver-smartplace")]));
+    expect(tasks[0]).toEqual(
+      ask(firstPrompt("naver-smartplace"), {
+        kind: "site",
+        id: "naver-smartplace",
+      }),
+    );
   });
 });

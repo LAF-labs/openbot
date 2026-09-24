@@ -63,6 +63,48 @@ export const FirstTaskChips = ({
 
   const chip = `rounded-full border border-border bg-card px-3 py-1.5 text-sm transition-colors hover:border-ring/40 hover:bg-muted/60 disabled:opacity-50 ${focusRing}`;
 
+  /*
+   * THE WAY TO 연결 IS A LINK, NOT A CHIP. It was drawn in the row with the same pill as the
+   * sentences, and every other pill in that row asks the Bot something where you are; this one
+   * left the conversation for Settings (0.5.3 audit, item 12). A press that does something other
+   * than what its neighbours do has to look different. A place the person picked still leads — it
+   * is the one act that makes the sentences under it this shop's — but as a line above the row, and
+   * the general one sits under it.
+   */
+  const connectLink = (task: Extract<FirstTask, { kind: "connect" }>) => (
+    <Link
+      className={`self-start text-muted-foreground text-sm underline underline-offset-2 hover:text-foreground ${focusRing}`}
+      key={`connect:${task.place ?? ""}`}
+      onClick={() =>
+        /*
+         * Reported as the connect chip it has always been. Which place it named is not on the wire:
+         * the fleet counts presses by catalogue keys it already validates, and a new field there is
+         * a contract change for a fact the insights do not ask about.
+         */
+        reportFirstTaskPressed({
+          agentId: agent.id,
+          kind: "connect",
+          pattern: null,
+          sentence: null,
+          via: null,
+          hint: null,
+        })
+      }
+      to="/settings/connected-accounts"
+    >
+      {/*
+       * A place the person picked is named, in their own word for it: "배달의민족 연결하기" is an
+       * errand somebody recognises as theirs, "사이트 연결하기" is a chore.
+       */}
+      {task.place
+        ? t("Connect {place}", {
+            place: t(dailyPlaceById(task.place)?.name ?? task.place),
+          })
+        : t("Connect a site")}
+    </Link>
+  );
+  const connects = tasks.filter((task) => task.kind === "connect");
+
   return (
     <section
       aria-label={t("Try one of these first")}
@@ -71,40 +113,10 @@ export const FirstTaskChips = ({
       <p className="text-muted-foreground text-xs">
         {t("Try one of these first")}
       </p>
+      {connects.filter((task) => task.place).map(connectLink)}
       <div className="flex flex-wrap gap-1.5">
         {tasks.map((task) =>
-          task.kind === "connect" ? (
-            <Link
-              className={chip}
-              key={`connect:${task.place ?? ""}`}
-              onClick={() =>
-                /*
-                 * Reported as the connect chip it has always been. Which place it named is not on
-                 * the wire: the fleet counts presses by catalogue keys it already validates, and a
-                 * new field there is a contract change for a fact the insights do not ask about.
-                 */
-                reportFirstTaskPressed({
-                  agentId: agent.id,
-                  kind: "connect",
-                  pattern: null,
-                  sentence: null,
-                  via: null,
-                  hint: null,
-                })
-              }
-              to="/settings/connected-accounts"
-            >
-              {/*
-               * A place the person picked is named, in their own word for it: "배달의민족
-               * 연결하기" is an errand somebody recognises as theirs, "사이트 연결하기" is a chore.
-               */}
-              {task.place
-                ? t("Connect {place}", {
-                    place: t(dailyPlaceById(task.place)?.name ?? task.place),
-                  })
-                : t("Connect a site")}
-            </Link>
-          ) : (
+          task.kind === "connect" ? null : (
             <button
               className={chip}
               disabled={disabled}
@@ -166,13 +178,20 @@ export const FirstTaskChips = ({
                 }}
                 type="button"
               >
+                {/*
+                 * WHAT ARRIVES, NAMED ON THE CHIP. It said "매일 아침 7:30에 보고받기" over "위의 첫
+                 * 문장을 매일 아침 7:30에 물어보고", and which sentence was "the first one above" took
+                 * a second reading to find (0.5.3 audit, item 12). The sentence itself is the name.
+                 */}
                 {makeRoutine.isPending
                   ? t("Making the routine…")
-                  : t("Get a report every morning at 7:30")}
+                  : t("Get “{task}” every morning at 7:30", {
+                      task: t(sentence),
+                    })}
               </button>
               <p className="text-muted-foreground text-xs">
                 {t(
-                  "The first sentence above, asked every morning at 7:30, answered in this conversation.",
+                  "Your Bot is asked this every morning at 7:30 and answers in this conversation.",
                 )}
               </p>
               <LiveRegion
@@ -186,6 +205,7 @@ export const FirstTaskChips = ({
           )}
         </>
       ) : null}
+      {connects.filter((task) => !task.place).map(connectLink)}
     </section>
   );
 };

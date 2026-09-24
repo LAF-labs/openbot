@@ -1906,8 +1906,8 @@ export const ko: Record<string, string> = {
    * 읽히므로 first-tasks.test.ts가 표를 직접 훑는다.
    */
   "Try one of these first": "이런 일부터 시켜 보세요",
-  "Tell me today's date and this week's public holidays.":
-    "오늘 날짜와 이번 주 공휴일 알려줘",
+  "Look up today's weather on Naver and tell me.":
+    "네이버에서 오늘 날씨 찾아서 알려줘",
   "Write three short introductions for our shop.":
     "우리 가게 소개 문구 세 가지 써줘",
   "Make a checklist for opening up tomorrow morning.":
@@ -1933,9 +1933,9 @@ export const ko: Record<string, string> = {
   "Connect a site": "사이트 연결하기",
   "Connect {place}": "{place} 연결하기",
   // 네 번째 칩. 첫 문장을 그대로 매일 아침 루틴으로 건다 — 같은 대화에 답이 온다.
-  "Get a report every morning at 7:30": "매일 아침 7:30에 보고받기",
-  "The first sentence above, asked every morning at 7:30, answered in this conversation.":
-    "위의 첫 문장을 매일 아침 7:30에 물어보고, 이 대화에 답합니다.",
+  "Get “{task}” every morning at 7:30": "‘{task}’ 매일 아침 7:30에 받기",
+  "Your Bot is asked this every morning at 7:30 and answers in this conversation.":
+    "매일 아침 7:30에 봇에게 이 부탁을 하고, 답은 이 대화로 옵니다.",
   "Morning report": "아침 보고",
   "Making the routine…": "루틴 만드는 중…",
   "The routine is made.": "루틴을 만들었습니다",

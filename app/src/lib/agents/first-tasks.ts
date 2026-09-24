@@ -31,7 +31,7 @@ import { BUSINESS_SITES } from "@/lib/sites/catalogue";
  * overview says `connected` — `needs_login` is a session that has lapsed and is exactly the case
  * the chip must not be drawn for — and an OAuth account only while it says `connected` rather than
  * `needs_reconnect`. With nothing connected, the chips are sentences a Bot can answer from its own
- * head, plus one that goes to the 연결 screen.
+ * head or from one public page on its own computer, plus a way to the 연결 screen.
  *
  * THE ROLE IS A HINT, NOT A FILTER. A Bot whose card says 리뷰 답변 leads with a reviews sentence,
  * but the other three chips are still three other kinds of work: the card was pressed a minute ago
@@ -85,19 +85,36 @@ type Sentence = { pattern: WorkPatternId; sentence: string };
 export const FIRST_TASK_COUNT = 4;
 
 /**
+ * The one first task that goes out on the Bot's own computer: a public page, no login.
+ *
+ * ALL FOUR CHIPS USED TO BE WRITING. With nothing connected the row was 날짜·공휴일, 소개 문구,
+ * 오픈 체크리스트 and 환불 답장 — things any chat window does — and the one thing this product does
+ * that a chat window does not, going to a site and coming back with what it says, was on none of
+ * them (0.5.3 audit, item 12). The same audit typed a Naver weather request by hand and it finished
+ * in three seconds with its card. So the schedule sentence is that lookup, and `pickFirstTasks`
+ * keeps it in the row whenever nothing else there would open the Bot's computer.
+ *
+ * Weather and not holidays, too: this is also the sentence the 7:30 chip repeats every morning, and
+ * a public-holiday list asked daily answers the same thing seven days running.
+ */
+export const COMPUTER_FIRST_TASK: Sentence = {
+  pattern: "schedule",
+  sentence: "Look up today's weather on Naver and tell me.",
+};
+
+/**
  * One sentence per pattern that a Bot can answer with nothing connected at all.
  *
  * In the order they are offered when nothing narrows it: the first four are what somebody with
  * nothing connected sees, so they are the four that are worth having beside anything.
  *
- * Every one of them is answerable from the model's own head in one turn — no site, no account, no
- * file. A sentence here that needs something the Bot does not have is a first task that fails.
+ * Every one of them is answerable in one turn with nothing connected — no account, no login, no
+ * file. The first goes to a public page on the Bot's own computer, which every Bot has; the rest
+ * come from the model's own head. A sentence here that needs something the Bot does not have is a
+ * first task that fails.
  */
 export const NO_CONNECTION_TASKS: readonly Sentence[] = [
-  {
-    pattern: "schedule",
-    sentence: "Tell me today's date and this week's public holidays.",
-  },
+  COMPUTER_FIRST_TASK,
   {
     pattern: "reputation",
     sentence: "Write three short introductions for our shop.",
@@ -323,6 +340,24 @@ export function pickFirstTasks(
   };
   const padding = [...NO_CONNECTION_TASKS].sort((a, b) => tier(a) - tier(b));
   for (const task of padding) offer(task, null);
+
+  /*
+   * One chip on the Bot's computer, whatever the shop's order did to the row. A connected site's
+   * prompt already is one; otherwise the lowest padding chip gives its place to the lookup. Only a
+   * padding chip: a sentence something connected made answerable outranks a demonstration.
+   */
+  const onTheComputer = picked.some(
+    (task) =>
+      task.kind === "ask" &&
+      (task.via?.kind === "site" ||
+        task.sentence === COMPUTER_FIRST_TASK.sentence),
+  );
+  const lastPadding = picked.findLastIndex(
+    (task) => task.kind === "ask" && task.via === null,
+  );
+  if (!onTheComputer && lastPadding >= 0) {
+    picked[lastPadding] = { kind: "ask", ...COMPUTER_FIRST_TASK, via: null };
+  }
 
   /*
    * A picked place nothing connects yet goes FIRST — the one act that turns the sentences after it

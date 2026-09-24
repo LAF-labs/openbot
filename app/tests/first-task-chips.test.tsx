@@ -50,7 +50,7 @@ const tasks: FirstTask[] = [
   {
     kind: "ask",
     pattern: "schedule",
-    sentence: "Tell me today's date and this week's public holidays.",
+    sentence: "Look up today's weather on Naver and tell me.",
     via: null,
   },
   {
@@ -73,6 +73,12 @@ const tasks: FirstTask[] = [
   },
   { kind: "connect" },
 ];
+
+/** The routine chip names the sentence it repeats: the first ask in the row. */
+const routineLabel = (t: typeof import("../src/lib/i18n").t) =>
+  t("Get “{task}” every morning at 7:30", {
+    task: t("Look up today's weather on Naver and tell me."),
+  });
 
 async function mounted(props: {
   disabled?: boolean;
@@ -157,7 +163,7 @@ describe("the first-task chips", () => {
     for (const task of tasks) {
       if (task.kind === "ask") expect(labels).toContain(t(task.sentence));
     }
-    expect(labels).toContain(t("Get a report every morning at 7:30"));
+    expect(labels).toContain(routineLabel(t));
     // Four sentences and the routine chip: five buttons, plus the connect link makes six.
     expect(view.buttons()).toHaveLength(5);
     const connect = view
@@ -166,6 +172,34 @@ describe("the first-task chips", () => {
         link.getAttribute("href")?.startsWith("/settings/connected-accounts"),
       );
     expect(connect?.textContent).toBe(t("Connect a site"));
+  });
+
+  /*
+   * 0.5.3 audit, item 12: "사이트 연결하기" was a pill in the row of things to ask, and it left the
+   * conversation; "위의 첫 문장을 매일 아침 7:30에" had to be read twice to find which sentence.
+   */
+  test("the general way to 연결 comes after everything that asks, and is not a pill", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const view = await mounted({ onAsk: () => {} });
+    const pressable = [...view.host.querySelectorAll("a, button")];
+    const connect = pressable.find(
+      (element) => element.textContent === t("Connect a site"),
+    );
+    expect(connect?.tagName).toBe("A");
+    expect(pressable.at(-1)).toBe(connect);
+    expect(connect?.className).not.toContain("rounded-full");
+  });
+
+  test("the routine chip says which sentence arrives at 7:30, and it is the first one", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const view = await mounted({ onAsk: () => {} });
+    const routine = view
+      .buttons()
+      .find((button) => button.textContent?.includes("7:30"));
+    expect(routine?.textContent).toContain(
+      t("Look up today's weather on Naver and tell me."),
+    );
+    expect(view.host.textContent).not.toContain("위의 첫 문장");
   });
 
   test("a picked place that is not connected is named on its own chip, first, and goes to 연결", async () => {
@@ -268,7 +302,7 @@ describe("the first-task chips", () => {
     });
     const sentences = view
       .buttons()
-      .filter((button) => button.textContent !== "매일 아침 7:30에 보고받기");
+      .filter((button) => !button.textContent?.includes("7:30"));
     for (const button of sentences.slice(0, 4)) {
       expect(button.disabled).toBe(true);
       await view.press(button);
@@ -301,10 +335,7 @@ describe("the first-task chips", () => {
       const view = await mounted({ onAsk: () => {} });
       const routine = view
         .buttons()
-        .find(
-          (button) =>
-            button.textContent === t("Get a report every morning at 7:30"),
-        );
+        .find((button) => button.textContent === routineLabel(t));
       if (!routine) throw new Error("the routine chip is not on screen");
       await view.press(routine);
       await view.settle(50);
@@ -325,7 +356,7 @@ describe("the first-task chips", () => {
       expect(requests[1]?.body).toEqual({
         agentId: "bot-1",
         name: t("Morning report"),
-        instruction: t("Tell me today's date and this week's public holidays."),
+        instruction: t("Look up today's weather on Naver and tell me."),
         schedule: {
           kind: "daily",
           time: "07:30",
