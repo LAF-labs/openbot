@@ -80,7 +80,15 @@ const ORIGIN_KEY: &str = "origin";
 /// together by `tests/desktop-shell.test.ts` rather than kept in step by hand.
 const FLEET_DOMAIN: &str = "agent.laf-co.com";
 
-/// The development server, the one address outside the fleet this shell will open.
+/// The development server, the one address outside the fleet a DEVELOPMENT build will open.
+///
+/// ABSENT FROM A RELEASE BUILD. An address on the person's own machine is not the fleet: anything
+/// that can listen on port 3010 — a program they installed, a script somebody talked them into
+/// running — would be served in this window as their deployment and handed the badge, the notices
+/// and the links out. So the constant only exists with `debug_assertions`, which makes a release
+/// path that still reads it a compile error rather than something a review has to catch, and its
+/// grant is `capabilities/dev.json`, which only `tauri.dev.conf.json` applies.
+#[cfg(debug_assertions)]
 const DEV_ORIGIN: &str = "http://localhost:3010";
 
 /// How long the destination of a notice is worth honouring.
@@ -122,7 +130,8 @@ fn configured_origin(app: &tauri::AppHandle) -> String {
             tauri::WebviewUrl::External(url) => Some(url.to_string()),
             _ => None,
         })
-        .unwrap_or_else(|| DEV_ORIGIN.to_string());
+        // The front door, never the development server: a release build knows no other address.
+        .unwrap_or_else(|| format!("https://{FLEET_DOMAIN}"));
     // Normalised to a bare origin so it compares with what the window reports and with what was
     // remembered: `Url::to_string` adds the trailing slash that an origin does not carry.
     fleet_origin(&declared).unwrap_or(declared)
@@ -139,6 +148,7 @@ fn configured_origin(app: &tauri::AppHandle) -> String {
 fn fleet_origin(candidate: &str) -> Option<String> {
     let url = tauri::Url::parse(candidate).ok()?;
     let serialized = url.origin().ascii_serialization();
+    #[cfg(debug_assertions)]
     if serialized == DEV_ORIGIN {
         return Some(serialized);
     }
@@ -1083,7 +1093,7 @@ mod tests {
     /// are refused with no error anywhere — the failure this whole file is arranged around. The
     /// refusals below are each a way a suffix check would have said yes.
     #[test]
-    fn only_the_fleet_and_the_development_server_can_be_opened() {
+    fn only_the_fleet_can_be_opened() {
         for (candidate, expected) in [
             (ORIGIN, "https://agent.laf-co.com"),
             // Serialised as a bare origin, whatever shape it arrived in: this is compared against
@@ -1093,7 +1103,6 @@ mod tests {
                 "https://mystore.agent.laf-co.com/channel/7?x=1#y",
                 "https://mystore.agent.laf-co.com",
             ),
-            ("http://localhost:3010/approve/a", "http://localhost:3010"),
         ] {
             assert_eq!(
                 fleet_origin(candidate).as_deref(),
@@ -1121,6 +1130,21 @@ mod tests {
             "",
         ] {
             assert!(fleet_origin(refused).is_none(), "should refuse {refused}");
+        }
+    }
+
+    /// A release build opens nothing on the person's own machine; a development build opens the
+    /// development server, and only that one address.
+    ///
+    /// Asserted per profile because the same line is right in one and a hole in the other:
+    /// `cargo test` checks the development answer, `cargo test --release` the one people install.
+    #[test]
+    fn the_development_server_is_opened_only_by_a_development_build() {
+        let opened = fleet_origin("http://localhost:3010/approve/a");
+        if cfg!(debug_assertions) {
+            assert_eq!(opened.as_deref(), Some("http://localhost:3010"));
+        } else {
+            assert!(opened.is_none(), "a release build opened the development server");
         }
     }
 }

@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dev",
+  "description": "The same grant as `default`, to the development server alone, and in a development launch only. `tauri.conf.json` names `default` in `app.security.capabilities`, so a release build embeds that one and not this file; `tauri.dev.conf.json` names both. The list has to stay explicit: an empty one means every file in this directory, this one included. It used to be two lines in `default.json`, which put `http://localhost:3010` in every installed app — anything that could listen on that port on somebody's machine would have been treated as their deployment and handed the shell's commands. The permissions repeat `default`'s exactly (tests/desktop-shell.test.ts reads them together), so a development launch exercises what people install.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:3010/*", "http://localhost:3010"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-focus",
+    "notification:default",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-set-badge-label",
+    "allow-set-badge",
+    "allow-open-external",
+    "allow-post-notice"
+  ]
+}

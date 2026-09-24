@@ -8,9 +8,7 @@
       "https://agent.laf-co.com/*",
       "https://agent.laf-co.com",
       "https://*.agent.laf-co.com/*",
-      "https://*.agent.laf-co.com",
-      "http://localhost:3010/*",
-      "http://localhost:3010"
+      "https://*.agent.laf-co.com"
     ]
   },
   "permissions": [

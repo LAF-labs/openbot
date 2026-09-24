@@ -16,6 +16,15 @@ there once and is walked to their own deployment, so one build opens every
 store instead of a binary per customer. `tauri.dev.conf.json` points the same
 window at `http://localhost:3010` for development.
 
+That address exists in a development build only. A release build trusts
+nothing on the person's own machine: `DEV_ORIGIN` in `lib.rs` is compiled out
+without `debug_assertions`, the csp in `tauri.conf.json` does not name it, and
+its grant is `capabilities/dev.json`, which `tauri.conf.json` leaves out of
+`app.security.capabilities` and only `tauri.dev.conf.json` adds. Keep that list
+explicit — an empty one means every file in `capabilities/`, the dev grant
+included. Until 2026-09-24 the grant sat in `default.json`, so any process
+listening on port 3010 would have been treated as the person's deployment.
+
 Changing it is TWO values, and they must move together: the window's `url`,
 and `remote.urls` in `capabilities/default.json`. Change only the first and
 everything appears to work — the window loads, the app runs — while the badge,

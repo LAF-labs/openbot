@@ -20,9 +20,21 @@ type WindowConfig = {
   titleBarStyle?: string;
 };
 type TauriConfig = {
-  app?: { windows?: WindowConfig[] };
+  app?: {
+    windows?: WindowConfig[];
+    security?: { csp?: string | null; capabilities?: string[] };
+  };
   plugins?: { "deep-link"?: { desktop?: { schemes?: string[] } } };
 };
+type Capability = {
+  identifier: string;
+  windows: string[];
+  remote: { urls: string[] };
+  permissions: string[];
+};
+
+const RELEASE_CONFIG = "desktop/src-tauri/tauri.conf.json";
+const DEV_CONFIG = "desktop/src-tauri/tauri.dev.conf.json";
 
 function windowOrigins(path: string): string[] {
   const windows = json<TauriConfig>(path).app?.windows ?? [];
@@ -31,32 +43,116 @@ function windowOrigins(path: string): string[] {
     .filter((url): url is string => !!url);
 }
 
+function capability(identifier: string): Capability {
+  return json<Capability>(`desktop/src-tauri/capabilities/${identifier}.json`);
+}
+
+/**
+ * The capabilities a build embeds, which is the config's list and not the directory.
+ *
+ * `tauri dev` merges `tauri.dev.conf.json` over `tauri.conf.json` (RFC 7396: an object merges, an
+ * array is replaced), and tauri-codegen embeds exactly the identifiers `app.security.capabilities`
+ * names — or, when that list is empty, EVERY file in `capabilities/`. Read the same way here.
+ */
+function embeddedCapabilities(build: "release" | "dev"): Capability[] {
+  const release = json<TauriConfig>(RELEASE_CONFIG).app?.security?.capabilities;
+  const dev = json<TauriConfig>(DEV_CONFIG).app?.security?.capabilities;
+  const named = (build === "dev" ? (dev ?? release) : release) ?? [];
+  // Asserted rather than assumed: an empty list is not "none", it is all of them.
+  expect(named.length).toBeGreaterThan(0);
+  return named.map(capability);
+}
+
+function grantOf(build: "release" | "dev"): string[] {
+  return embeddedCapabilities(build).flatMap((granted) => granted.remote.urls);
+}
+
+function devOrigin(): string {
+  const found = read("desktop/src-tauri/src/lib.rs").match(
+    /const DEV_ORIGIN: &str = "([^"]+)"/,
+  );
+  expect(found?.[1]).toBeTruthy();
+  return found?.[1] ?? "";
+}
+
 /**
  * The shell's origin is two values, and changing one without the other fails silently.
  *
- * `tauri.conf.json` says where the window goes. `capabilities/default.json` says whether the page
+ * `tauri.conf.json` says where the window goes. The capabilities it embeds say whether the page
  * there may ask the shell for anything. Move the first alone and the window still loads, the app
  * still works, and notifications and the badge stop — the bridge feature-detects, so nothing
  * errors. `lib.rs` warns about this in prose at the top of the file; this is the same warning in a
- * form that fails a build.
+ * form that fails a build. Each config is read against the grant IT embeds: the development window
+ * against the development set, the deployed one against what people install.
  */
 test("every origin the shell can open is granted the shell's capabilities", () => {
-  const granted = json<{ remote: { urls: string[] } }>(
-    "desktop/src-tauri/capabilities/default.json",
-  ).remote.urls;
-
-  const origins = [
-    ...windowOrigins("desktop/src-tauri/tauri.conf.json"),
-    ...windowOrigins("desktop/src-tauri/tauri.dev.conf.json"),
+  const pairs = [
+    ...windowOrigins(RELEASE_CONFIG).map(
+      (origin) => [origin, "release"] as const,
+    ),
+    ...windowOrigins(DEV_CONFIG).map((origin) => [origin, "dev"] as const),
   ];
 
   // The deployed origin and the development one. Asserted so an empty read cannot pass as agreement.
-  expect(origins.length).toBeGreaterThanOrEqual(2);
+  expect(pairs.length).toBeGreaterThanOrEqual(2);
 
-  for (const origin of origins) {
-    expect(granted).toContain(origin);
-    expect(granted).toContain(`${origin}/*`);
+  for (const [origin, build] of pairs) {
+    expect(grantOf(build)).toContain(origin);
+    expect(grantOf(build)).toContain(`${origin}/*`);
   }
+});
+
+/**
+ * WHAT PEOPLE INSTALL TRUSTS NOTHING ON THEIR OWN MACHINE.
+ *
+ * `http://localhost:3010` used to sit in `capabilities/default.json` and in the csp, so every
+ * installed app would have treated whatever listened on that port as the person's deployment and
+ * let it call the badge, the notices and the link opener. It is now the development build's alone:
+ * `DEV_ORIGIN` exists only under `debug_assertions`, its grant is `capabilities/dev.json`, and only
+ * `tauri.dev.conf.json` names that file. Measured 2026-09-24: `strings` on a `cargo build
+ * --release` binary finds no `localhost:3010`; a debug build with the development config merged in
+ * carries the dev grant.
+ */
+test("a release build grants nothing on the person's own machine, and a development build still reaches its server", () => {
+  const release = grantOf("release");
+  expect(release.length).toBeGreaterThan(0);
+  for (const url of release) {
+    expect(url.startsWith("https://")).toBe(true);
+    expect(url).not.toMatch(/localhost|127\.0\.0\.1|\[::1\]/);
+  }
+  expect(
+    embeddedCapabilities("release").map((granted) => granted.identifier),
+  ).not.toContain("dev");
+
+  const development = devOrigin();
+  expect(grantOf("dev")).toContain(development);
+  expect(grantOf("dev")).toContain(`${development}/*`);
+
+  // The constant is compiled out of a release build, so any release path still reading it is a
+  // compile error — the compiler holds the rest of this, as long as the attribute stays on it.
+  expect(read("desktop/src-tauri/src/lib.rs")).toMatch(
+    /#\[cfg\(debug_assertions\)\]\s*const DEV_ORIGIN: &str/,
+  );
+
+  // The release workflow builds with the deployed config and nothing merged over it.
+  expect(read(".github/workflows/release.yml")).not.toContain("tauri.dev.conf");
+});
+
+/**
+ * The development grant is the deployed one pointed somewhere else, or a development launch is not
+ * testing what people install: a command that works in `bun run dev` and is refused in the bundle
+ * is exactly the silent failure `build.rs` describes.
+ */
+test("the development capability grants what the deployed one does, to the development server alone", () => {
+  const deployed = capability("default");
+  const development = capability("dev");
+  const origin = devOrigin();
+
+  expect(development.permissions).toEqual(deployed.permissions);
+  expect(development.windows).toEqual(deployed.windows);
+  expect([...development.remote.urls].sort()).toEqual(
+    [origin, `${origin}/*`].sort(),
+  );
 });
 
 /**
@@ -70,28 +166,22 @@ test("every origin the shell can open is granted the shell's capabilities", () =
  * and nothing is logged anywhere. So the rule's two constants are read here against the grant.
  */
 test("every domain the shell may reopen is granted the shell's capabilities", () => {
-  const granted = json<{ remote: { urls: string[] } }>(
-    "desktop/src-tauri/capabilities/default.json",
-  ).remote.urls;
-
   const shell = read("desktop/src-tauri/src/lib.rs");
-  const constant = (name: string): string => {
-    const found = shell.match(new RegExp(`const ${name}: &str = "([^"]+)"`));
-    // Asserted rather than assumed: a renamed constant would otherwise leave nothing to compare,
-    // and a test that compares nothing passes.
-    expect(found?.[1]).toBeTruthy();
-    return found?.[1] ?? "";
-  };
-  const domain = constant("FLEET_DOMAIN");
-  const development = constant("DEV_ORIGIN");
+  const found = shell.match(/const FLEET_DOMAIN: &str = "([^"]+)"/);
+  // Asserted rather than assumed: a renamed constant would otherwise leave nothing to compare, and
+  // a test that compares nothing passes.
+  expect(found?.[1]).toBeTruthy();
+  const domain = found?.[1] ?? "";
 
-  for (const origin of [
-    `https://${domain}`,
-    `https://*.${domain}`,
-    development,
-  ]) {
-    expect(granted).toContain(origin);
-    expect(granted).toContain(`${origin}/*`);
+  // The fleet in what people install; the development server only where `fleet_origin` can say yes
+  // to it, which is a development build.
+  for (const [origin, build] of [
+    [`https://${domain}`, "release"],
+    [`https://*.${domain}`, "release"],
+    [devOrigin(), "dev"],
+  ] as const) {
+    expect(grantOf(build)).toContain(origin);
+    expect(grantOf(build)).toContain(`${origin}/*`);
   }
 });
 
@@ -281,15 +371,30 @@ test("the shell's csp names its own page's script by hash and holds the front do
   expect(shellPolicy.get("script-src")).toEqual(["'self'", hash]);
 
   // The page's one job is to reach the deployment: the fleet's entry, every deployment under it,
-  // the development origin, and Tauri's own bridge.
+  // and Tauri's own bridge. The development server only in a development launch, whose config
+  // carries the same policy with that one source added — merged over this one, since a string
+  // cannot be patched, so the copy is held to it here rather than by hand.
   const reaches = shellPolicy.get("connect-src") ?? [];
-  const shellOrigin = json<TauriConfig>("desktop/src-tauri/tauri.conf.json").app
-    ?.windows?.[0]?.url as string;
-  const devOrigin = json<TauriConfig>("desktop/src-tauri/tauri.dev.conf.json")
-    .app?.windows?.[0]?.url as string;
+  const shellOrigin = json<TauriConfig>(RELEASE_CONFIG).app?.windows?.[0]
+    ?.url as string;
+  const developmentOrigin = json<TauriConfig>(DEV_CONFIG).app?.windows?.[0]
+    ?.url as string;
   expect(reaches).toContain(shellOrigin);
-  expect(reaches).toContain(devOrigin);
   expect(reaches).toContain("ipc:");
+  expect(reaches).not.toContain(developmentOrigin);
+
+  const developmentCsp = json<TauriConfig>(DEV_CONFIG).app?.security?.csp;
+  expect(typeof developmentCsp).toBe("string");
+  const developmentPolicy = directivesOf(developmentCsp as string);
+  expect(developmentPolicy.get("connect-src")).toEqual([
+    ...reaches,
+    developmentOrigin,
+  ]);
+  expect(
+    new Map([...developmentPolicy].filter(([name]) => name !== "connect-src")),
+  ).toEqual(
+    new Map([...shellPolicy].filter(([name]) => name !== "connect-src")),
+  );
 
   // The same floor in both places.
   for (const policy of [shellPolicy, caddyPolicy]) {
