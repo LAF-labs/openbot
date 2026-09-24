@@ -68,7 +68,7 @@ async function codeOf(response: Response, fallback: string): Promise<string> {
     : fallback;
 }
 
-type RoutineArgs = {
+export type RoutineArgs = {
   action?: "create" | "list" | "update" | "delete";
   name?: string;
   /** Which routine, for update and delete: its id, or its exact name. See `findRoutine`. */
@@ -493,20 +493,26 @@ export function SelfTools() {
       args: RoutineArgs,
       call: { toolCall?: { id?: string } } = {},
     ) => routineAction(args, bot.current, noteFor(call), queryClient),
-    render: ({ status, toolCallId }) => {
+    render: ({ args, status, toolCallId }) => {
       const entry = changes.current.get(toolCallId ?? "");
       const running = status !== "complete";
       /*
        * The line says what the Bot did. One tool does several things, and saying "saved a routine"
        * while it deleted one is the kind of small lie that makes a person stop reading these lines.
+       * The entry lives only in this tab's memory, so after a reload the line is drawn from the
+       * action the Bot asked for: a Bot that only listed its routines read "Changed a routine"
+       * until 2026-09-24.
        */
+      const fallback = routineLineFor(
+        (args as RoutineArgs | undefined)?.action,
+      );
       const label = entry
         ? running
           ? entry.doing
           : entry.done
         : running
-          ? t("Changing a routine")
-          : t("Changed a routine");
+          ? fallback.doing
+          : fallback.done;
       return (
         <ToolLine
           failed={entry?.failed === true}
@@ -614,4 +620,24 @@ export function SelfTools() {
   });
 
   return null;
+}
+
+/** What a routine line says when this tab did not see the call happen (after a reload). */
+export function routineLineFor(action: RoutineArgs["action"] | undefined): {
+  doing: string;
+  done: string;
+} {
+  switch (action) {
+    case "list":
+      return {
+        doing: t("Looking at its routines"),
+        done: t("Looked at its routines"),
+      };
+    case "create":
+      return { doing: t("Saving a routine"), done: t("Saved a routine") };
+    case "delete":
+      return { doing: t("Deleting a routine"), done: t("Deleted a routine") };
+    default:
+      return { doing: t("Changing a routine"), done: t("Changed a routine") };
+  }
 }
