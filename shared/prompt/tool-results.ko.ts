@@ -85,10 +85,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "페이지가 아직 열리는 중이라(다음 주소로 넘어가는 중) 지금은 그 화면의 내용을 읽을 수 없다. 브라우저가 고장 난 것이 아니다. 방금 누른 링크나 버튼을 다시 누르지 말고, computer_read나 computer_snapshot으로 한 번 더 확인해라. 여러 번 확인해도 계속 열리는 중이면 그 사이트가 답하지 않는다고 사장님께 말해라.",
 
   "laf:downloaded":
-    "파일이 네 작업 공간 downloads/ 아래에 저장됐다. path에 경로가 있고 computer_read_file로 열 수 있다.",
+    "파일이 네 컴퓨터의 downloads/ 폴더에 저장됐다. path에 경로가 있고 computer_read_file로 열 수 있다.",
 
   "laf:download_too_large":
-    "내려받은 파일이 작업 공간 한도보다 커서 저장하지 않고 지웠다. 그 파일은 사장님이 직접 받아야 한다고 말해라.",
+    "내려받은 파일이 네 컴퓨터 폴더에 둘 수 있는 크기보다 커서 저장하지 않고 지웠다. 그 파일은 사장님이 직접 받아야 한다고 말해라.",
 
   "laf:download_failed":
     "파일을 내려받다가 실패해서 저장된 것이 없다. 다시 눌러 보거나, 안 되면 사장님께 말해라.",
@@ -706,7 +706,7 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:skill_incomplete":
     "스킬에 명령·제목·지시문 중 빠진 것이 있어서 저장하지 않았다. 빠진 것을 채워 달라고 말해라.",
   "laf:skill_slug_invalid":
-    "스킬 명령은 영어 소문자·숫자·하이픈으로 2~40자여야 해서 저장하지 않았다. 명령을 고쳐 달라고 말해라.",
+    "스킬 명령은 한글·영어 소문자·숫자와 하이픈으로 2~40자여야 하고 띄어쓰기나 '/'는 넣을 수 없어서 저장하지 않았다. 명령을 고쳐 달라고 말해라.",
   "laf:skill_not_yours":
     "그 스킬은 다른 사람의 것이라 사장님이 고치거나 봇에 줄 수 없다. 다시 시도하지 말고 그대로 알려라.",
   "laf:skill_belongs_to_deployment":

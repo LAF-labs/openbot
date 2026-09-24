@@ -63,9 +63,9 @@ function lockScreenLine(text: string): string {
  * surface on the other end of a webhook to own the words.
  */
 const HEADLINES: Record<NotificationKind, string> = {
-  "approval.requested": "[LAF] 봇이 당신을 기다립니다",
+  "approval.requested": "[LAF] 봇이 사장님 승인을 기다려요",
   "approval.expired": "[LAF] 승인 요청이 시간이 지나 닫혔습니다",
-  "run.needs_you": "[LAF] 봇이 당신의 손을 기다립니다",
+  "run.needs_you": "[LAF] 봇이 사장님 도움을 기다려요",
   "run.finished": "[LAF] 봇이 일을 마쳤습니다",
   "run.failed": "[LAF] 봇이 끝내지 못했습니다",
   "routine.paused": "[LAF] 결과를 한동안 보지 않은 루틴을 멈췄습니다",

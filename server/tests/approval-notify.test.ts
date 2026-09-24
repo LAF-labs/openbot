@@ -37,7 +37,7 @@ describe("approval notifications", () => {
       const frame = frames[0] as Record<string, unknown>;
       expect(frame.kind).toBe("approval.requested");
       expect(frame.approvalId).toBe(pending.id);
-      expect(String(frame.headline)).toContain("기다립니다");
+      expect(String(frame.headline)).toContain("사장님 승인을 기다려요");
     } finally {
       server.stop(true);
     }

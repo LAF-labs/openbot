@@ -1,7 +1,7 @@
 /** 한국어 사전 — 영어 원문이 키다. 항목이 없으면 영어로 그대로 나온다. */
 export const ko: Record<string, string> = {
   ", reported by the Bot itself": " — 봇이 스스로 알린 내용",
-  "1 item in the workspace": "작업 공간에 항목 1개",
+  "1 item in the workspace": "봇 폴더에 항목 1개",
   "A Bot carrying one offers it in the composer as /name.":
     "스킬을 가진 봇은 입력창에서 /이름으로 불러낼 수 있습니다.",
   "A Bot carrying this offers /{slug} in its composer.":
@@ -15,8 +15,8 @@ export const ko: Record<string, string> = {
     "페이지가 다른 이름을 붙인 비밀번호 칸은 잡히지 않습니다. 규칙은 라벨을 봅니다.",
   "A person allowed it": "사람이 허용함",
   "A person connected their own account": "사람이 자기 계정을 연결함",
-  "A person declined it": "사람이 거절함",
-  "A person declined that": "사람이 거절함",
+  "A person declined it": "사장님이 거부함",
+  "A person declined that": "사장님이 거부함",
   "A letter was pressed as a key": "글자를 키처럼 눌렀음",
   "A person has the computer": "사람이 컴퓨터를 잡고 있음",
   "A person pressed stop": "사람이 정지를 누름",
@@ -112,7 +112,7 @@ export const ko: Record<string, string> = {
   "Send a KakaoTalk notification": "알림톡 보내기",
   "Overwrite cells in a sheet": "시트 칸 덮어쓰기",
   "It wants to list what is in the workspace.":
-    "작업 공간에 무엇이 있는지 보려 합니다.",
+    "봇 폴더에 무엇이 있는지 보려 합니다.",
   "It wants to list what is in {path}.":
     "{path} 안에 무엇이 있는지 보려 합니다.",
   "It wants to write to the file {path}.": "{path} 파일을 쓰려 합니다.",
@@ -466,7 +466,7 @@ export const ko: Record<string, string> = {
     "매 실행마다 {header} 헤더로 전송되며, 자격증명 금고에 보관됩니다. 비워 두면 현재 키가 유지됩니다.",
   "Sign in to {product}": "{product} 로그인",
   "Skills and tools installed for the whole workspace.":
-    "작업 공간 전체에 설치된 스킬과 도구.",
+    "내 LAF Agent 전체에 설치된 스킬과 도구.",
   "Skip to the conversation": "대화로 건너뛰기",
   "Cannot reach the server.": "서버에 닿지 못했습니다.",
   "The connection to the server was lost. Reconnecting…":
@@ -1026,7 +1026,7 @@ export const ko: Record<string, string> = {
   "Approve as it now is": "지금 상태로 승인",
   "{action}, blocked": "{action} — 차단됨",
   "{action}, didn't work": "{action} — 실패",
-  "{count} items in the workspace": "작업 공간에 항목 {count}개",
+  "{count} items in the workspace": "봇 폴더에 항목 {count}개",
   "{name}'s screen": "{name}의 화면",
   "Only while a tab is open.": "탭이 열려 있는 동안에만 알립니다.",
   "While the app is running. Quitting the app stops them.":
@@ -1363,7 +1363,7 @@ export const ko: Record<string, string> = {
   "Sign in once at the service and your Bot works with your own account.":
     "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일합니다.",
   "You sign in once on a Bot's own browser, hand it back, and it stays signed in.":
-    "봇의 브라우저에서 한 번 로그인하고 돌려주면, 그대로 로그인 상태가 유지됩니다.",
+    "봇의 브라우저에서 한 번 로그인하고 '다 했어요'를 누르면, 그대로 로그인 상태가 유지됩니다.",
   "Finish giving permission in the browser that opened.":
     "열린 브라우저에서 동의를 마치는 중…",
   "Type your shop's name, then press Connect.":
@@ -2100,7 +2100,7 @@ export const ko: Record<string, string> = {
     "규칙을 저장하지 못해 적용하지 않았습니다. 이전 경계가 그대로 적용되고 있습니다.",
   "The boundary could not be read. Nothing was changed.":
     "경계 설정을 읽지 못해 아무것도 바뀌지 않았습니다.",
-  "That path is outside the workspace": "작업 공간 밖의 경로",
+  "That path is outside the workspace": "봇 폴더 밖의 경로",
   "The Bot's request was incomplete": "봇의 요청에 빠진 값이 있음",
   "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",
   "The Bot's computer did not answer in time":
@@ -2129,8 +2129,8 @@ export const ko: Record<string, string> = {
   "Nothing is at that path": "그 경로에 아무것도 없음",
   "A folder where a file was meant, or the other way round":
     "파일과 폴더를 바꿔 가리킴",
-  "Too large for the workspace": "작업 공간에 넣기엔 너무 큼",
-  "The workspace could not do it": "작업 공간에서 실패함",
+  "Too large for the workspace": "봇 폴더에 넣기엔 너무 큼",
+  "The workspace could not do it": "봇 폴더에서 실패함",
   // 로그인이 거절됐을 때 로그인 화면이 하는 말 — better-auth의 영어 대신, 코드마다 한 문장.
   "Too many sign-in attempts in a row. Wait a few seconds and try again.":
     "로그인을 연달아 너무 많이 시도했습니다. 몇 초 뒤에 다시 시도해 주세요.",
@@ -2270,7 +2270,7 @@ export const ko: Record<string, string> = {
   "A click or keystroke did not reach the page":
     "클릭이나 키 입력이 페이지에 닿지 않음",
   "The page opened a dialog": "페이지가 알림창을 띄움",
-  "A file was saved to the workspace": "파일을 작업 공간에 저장함",
+  "A file was saved to the workspace": "파일을 봇 폴더에 저장함",
   "A download was too large to keep": "내려받은 파일이 너무 커서 저장하지 않음",
   "A download could not be saved": "내려받은 파일을 저장하지 못함",
   "A request for a secret was lost when the computer restarted":
@@ -2449,7 +2449,7 @@ export const ko: Record<string, string> = {
   "reading the file {path}": "파일 {path} 읽기",
   "writing to the file {path}": "파일 {path}에 쓰기",
   "listing what is in {path}": "{path}에 무엇이 있는지 보기",
-  "listing what is in the workspace": "작업 공간에 무엇이 있는지 보기",
+  "listing what is in the workspace": "봇 폴더에 무엇이 있는지 보기",
   "uploading the file {path} to {host}": "{host}에 파일 {path} 올리기",
   "uploading the file {path}": "파일 {path} 올리기",
   "using “{tool}” on {server}": "{server}의 ‘{tool}’ 쓰기",

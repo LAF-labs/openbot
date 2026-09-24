@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
+import { siteNameOf } from "@/components/computer/task-title";
 import {
   openBrowsingTask,
   toVisibleChatItems,
@@ -332,7 +333,9 @@ describe("what the card and the banner say", () => {
     const running = [
       step("computer_navigate", { url: "https://weather.naver.com" }),
     ];
-    expect(doingNow(running)).toContain("weather.naver.com");
+    // The site as people call it, like the card title — not the host (0.5.3 audit, item 13).
+    expect(doingNow(running)).toContain(siteNameOf("weather.naver.com"));
+    expect(doingNow(running)).not.toContain("weather.naver.com");
     const between = [
       step("computer_navigate", { url: "https://a.example" }, { ok: true }),
     ];

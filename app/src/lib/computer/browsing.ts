@@ -10,6 +10,7 @@
  *
  * Pure, so the grouping, the sites and the sentences are tested without a browser.
  */
+import { siteNameOf } from "@/components/computer/task-title";
 import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
 
@@ -248,7 +249,10 @@ export function doingNow(steps: readonly BrowsingStep[]): string {
   const host = hostOf(argsOf(last.args).url);
   switch (last.name) {
     case "computer_navigate":
-      return host ? t("Opening {site}", { site: host }) : t("Opening a page");
+      // The site as people call it (네이버), as the card title does, not its host.
+      return host
+        ? t("Opening {site}", { site: siteNameOf(host) })
+        : t("Opening a page");
     case "computer_read":
     case "computer_snapshot":
       return t("Reading the page");

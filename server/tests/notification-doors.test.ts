@@ -82,7 +82,7 @@ describe("the webhook door", () => {
       const frame = frames[0] ?? {};
       expect(frame.kind).toBe("approval.requested");
       expect(frame.approvalId).toBe("approval-1");
-      expect(String(frame.headline)).toContain("기다립니다");
+      expect(String(frame.headline)).toContain("사장님 승인을 기다려요");
       // The one new field: which row this is about, so a receiver can say so back.
       expect(frame.notificationId).toBe("notification-1");
     } finally {
