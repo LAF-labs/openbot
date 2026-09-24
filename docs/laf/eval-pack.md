@@ -132,7 +132,7 @@ Hermes Agent가 288회로 쟀다(`evals/core_tool_deferral`): 핵심 툴만 남�
 
 그래서 규칙은 하나다(`shared/tools/bridge.ts`): **미뤄지는 것은 연결된 서비스의
 툴뿐이다.** 서버가 `mcp__<서버>__<툴>`로 짓는 이름이 그 표식이고, 컴퓨터 툴·자기
-툴·방의 `send_message`·`ask_coworker`·사람에게 손을 내미는 두 툴은 절대 미루지
+툴·사람에게 손을 내미는 두 툴은 절대 미루지
 않는다(`tests/tool-bridge.test.ts`가 이름 하나하나 확인한다). `tool_call`은
 `agent-bot`이 **실제 툴 이름과 인자로 바꿔** 와이어에 싣는다 — 표면과 무인
 실행기는 직접 부른 것과 구별할 수 없고, 같은 `settle`, 같은 감사 행, 같은 가드

@@ -12,7 +12,6 @@ import {
   type RetriedMessage,
 } from "@/components/channels/chat-transcript";
 import {
-  type AgentOption,
   type CommandOption,
   Composer,
   type ComposerDraft,
@@ -20,8 +19,6 @@ import {
   type QueuedMessage,
   reduceQueue,
 } from "@/components/channels/composer";
-import type { ChatSpeaker } from "@/components/channels/chat-messages";
-import type { ReceiptFace } from "@/components/channels/room-receipt";
 import { UsageNotice } from "@/components/channels/usage-notice";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
@@ -32,21 +29,14 @@ export function ConversationView({
   messages,
   messageTimes,
   readWindow,
-  speakers,
-  working,
-  receipts,
-  liveReceipt,
-  onAskAgain,
   busy = false,
   notice,
-  agents = [],
   commands,
   disabled = false,
   pending = false,
   stoppedCode,
   failures,
   onRetry,
-  retryKeepsReplies = false,
   stoppable,
   queueWhileBusy = false,
   emptyState,
@@ -60,20 +50,9 @@ export function ConversationView({
   messageTimes?: Readonly<Record<string, string>>;
   /** Where this person's reading stopped and resumed (ISO-8601), for the "unread" line. */
   readWindow?: { from: string; until: string };
-  /** Message id to the Bot that said it, for a room with several. See ChatTranscript. */
-  speakers?: Readonly<Record<string, ChatSpeaker>>;
-  /** The room member that has the floor and has not said anything yet. See ChatTranscript. */
-  working?: { id?: string; name: string; avatarSeed?: string };
-  /** A room's read receipts, by the message each turn ended on. See ChatTranscript. */
-  receipts?: Readonly<Record<string, readonly ReceiptFace[]>>;
-  /** The message whose receipt belongs to the turn still running. See ChatTranscript. */
-  liveReceipt?: string;
-  /** Ask members that could not answer, again. See ChatTranscript. */
-  onAskAgain?: (questionId: string, memberIds: string[]) => void;
   busy?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
   notice?: ReactNode;
-  agents?: readonly AgentOption[];
   /**
    * The `/` menu for this Bot's granted skills, supplied by the route that owns grant loading.
    */
@@ -100,8 +79,6 @@ export function ConversationView({
   failures?: Readonly<Record<string, StandingFailure>>;
   /** Ask one of them again. The transcript hands back the message that got no answer. */
   onRetry?: (message: RetriedMessage) => void;
-  /** A room, where a retry keeps the replies some members already gave. See `ChatTranscript`. */
-  retryKeepsReplies?: boolean;
   /**
    * There is a run for Stop to abort, which is a narrower fact than `pending` and is the honest one
    * to draw a Stop button from. Defaults to `pending` for a caller with no gap between the two.
@@ -287,11 +264,6 @@ export function ConversationView({
             messages={messages}
             {...(messageTimes ? { messageTimes } : {})}
             {...(readWindow ? { readWindow } : {})}
-            {...(speakers ? { speakers } : {})}
-            {...(working ? { working } : {})}
-            {...(receipts ? { receipts } : {})}
-            {...(liveReceipt ? { liveReceipt } : {})}
-            {...(onAskAgain ? { onAskAgain } : {})}
             onRemoveQueued={(id) => {
               apply({ id, type: "remove" });
             }}
@@ -299,7 +271,6 @@ export function ConversationView({
             {...(stoppedCode ? { stoppedCode } : {})}
             {...(failures ? { failures } : {})}
             {...(onRetry ? { onRetry } : {})}
-            retryKeepsReplies={retryKeepsReplies}
           />
         </SectionBoundary>
       </div>
@@ -316,7 +287,6 @@ export function ConversationView({
         <UsageNotice />
         {notice}
         <Composer
-          agents={agents}
           {...(commands ? { commands } : {})}
           className="w-full mt-auto"
           compact

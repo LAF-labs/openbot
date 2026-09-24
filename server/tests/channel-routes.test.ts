@@ -44,7 +44,7 @@ function channel(overrides: Partial<AgentChannel> = {}): AgentChannel {
   return {
     id: "channel-1",
     name: "Assistant channel",
-    agentIds: ["agent-1", "agent-2"],
+    agentIds: ["agent-1"],
     threadId: "thread-1",
     active: true,
     ...overrides,
@@ -138,16 +138,27 @@ describe("channel input parser", () => {
     expect(parseChannelInput({ agentIds })).toMatchObject({ ok: false, code });
   });
 
-  test("trims, sorts, and whitelists channel input", () => {
+  test("trims and whitelists channel input", () => {
     expect(
       parseChannelInput({
-        agentIds: [" agent-2 ", "agent-1"],
+        agentIds: [" agent-1 "],
         id: "forged-channel",
         name: "forged name",
         threadId: "forged-thread",
         active: false,
       }),
-    ).toEqual({ ok: true, value: { agentIds: ["agent-1", "agent-2"] } });
+    ).toEqual({ ok: true, value: { agentIds: ["agent-1"] } });
+  });
+
+  /*
+   * ONE BOT A CONVERSATION. Rooms were removed on 2026-09-24, and nothing can run a conversation
+   * of two any more, so asking for one is refused with its own code rather than created empty.
+   */
+  test("refuses a conversation with more than one Bot in it", () => {
+    expect(parseChannelInput({ agentIds: ["agent-1", "agent-2"] })).toEqual({
+      ok: false,
+      code: "laf:channel_one_bot",
+    });
   });
 });
 
@@ -177,16 +188,32 @@ describe("channel routes", () => {
     const created = await app.request("http://laf.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agentIds: [" agent-2 ", "agent-1"] }),
+      body: JSON.stringify({ agentIds: [" agent-1 "] }),
     });
     const fetched = await app.request("http://laf.test/channel-1");
 
     expect(created.status).toBe(201);
     expect(fetched.status).toBe(200);
     expect(store.calls).toEqual([
-      ["create", actor, ["agent-1", "agent-2"]],
+      ["create", actor, ["agent-1"]],
       ["get", actor, "channel-1"],
     ]);
+  });
+
+  test("answers a request for two Bots with the fact, and asks the store nothing", async () => {
+    const store = fakeStore();
+    const response = await appFor(store).request("http://laf.test/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentIds: ["agent-1", "agent-2"] }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toEqual({
+      error: "laf:channel_one_bot",
+      code: "laf:channel_one_bot",
+    });
+    expect(store.calls).toEqual([]);
   });
 
   test("returns only the channel DTO for create and get", async () => {

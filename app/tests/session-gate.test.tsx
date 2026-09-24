@@ -50,7 +50,7 @@ describe("a session that ends while the app is open", () => {
   test("lands on the door, carrying where the person was", async () => {
     let over = false;
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: ({ pathname }) =>
         over && pathname !== "/api/me"
           ? json(
@@ -61,7 +61,7 @@ describe("a session that ends while the app is open", () => {
     });
     const unwatch = await watchingTheSession();
     try {
-      expect(view.router.state.location.pathname).toBe("/agents");
+      expect(view.router.state.location.pathname).toBe("/skills");
 
       // The session ends. The next screen the person opens asks the server for its data.
       over = true;
@@ -93,7 +93,7 @@ describe("a session that ends while the app is open", () => {
   test("a server fault on the same screen is not a session ending", async () => {
     let failing = false;
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: ({ pathname }) =>
         failing && pathname !== "/api/me"
           ? json({ error: "boom" }, 500)
@@ -113,7 +113,7 @@ describe("a session that ends while the app is open", () => {
 
   test("a 401 from somewhere that is not this deployment's API moves nothing", async () => {
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: ({ url }) =>
         url.origin !== "http://localhost:3110"
           ? json({ error: "not yours" }, 401)
@@ -123,7 +123,7 @@ describe("a session that ends while the app is open", () => {
     try {
       await fetch("https://images.example/api/avatar.png");
       await view.settle(100);
-      expect(view.router.state.location.pathname).toBe("/agents");
+      expect(view.router.state.location.pathname).toBe("/skills");
     } finally {
       unwatch();
       await view.unmount();
@@ -146,7 +146,7 @@ describe("a session taken away", () => {
 
   test("a reload lands on the door, saying the access was taken away", async () => {
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: ({ pathname }) =>
         pathname === "/api/me" ? json(REVOKED, 401) : undefined,
     });
@@ -176,12 +176,12 @@ describe("a session taken away", () => {
   test("while the app is open, the next request takes the person to the door, saying so", async () => {
     let removed = false;
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: () => (removed ? json(REVOKED, 401) : undefined),
     });
     const unwatch = await watchingTheSession();
     try {
-      expect(view.router.state.location.pathname).toBe("/agents");
+      expect(view.router.state.location.pathname).toBe("/skills");
 
       // An administrator removes them. The next screen they open asks the server for its data.
       removed = true;
@@ -209,7 +209,7 @@ describe("a session taken away", () => {
 describe("a 403 from /api/me", () => {
   test("says the account's access was taken away, not that the server is down", async () => {
     const view = await mountApp({
-      path: "/agents",
+      path: "/skills",
       api: ({ pathname }) =>
         pathname === "/api/me"
           ? json({ error: "laf:no_access", code: "laf:no_access" }, 403)

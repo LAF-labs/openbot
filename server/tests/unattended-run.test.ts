@@ -449,33 +449,7 @@ describe("what the run reports", () => {
 });
 
 describe("what the Bot remembers going in", () => {
-  test("history sits ahead of the instruction, and nothing else is added", async () => {
-    const agent = fakeAgent([
-      { id: "a-reply", role: "assistant", content: "ok" },
-    ]);
-    await runUnattended(agent, "It's your turn.", {
-      toolkit: { tools: [], execute: async () => ({ ok: false }) },
-      timeoutMs: 1_000,
-      mode: "room",
-      history: [
-        { id: "h1", role: "user", content: "다음 주 일정 정리해줘" },
-        { id: "h2", role: "assistant", content: "회의가 세 건 있어요." },
-      ],
-    });
-    // The model's own reply is appended by the fake; everything before it is what the loop set.
-    const seen = agent.messages
-      .filter((message) => message.id !== "a-reply")
-      .map((message) => [message.role, message.content]);
-    expect(seen).toEqual([
-      ["user", "다음 주 일정 정리해줘"],
-      ["assistant", "회의가 세 건 있어요."],
-      ["user", "It's your turn."],
-    ]);
-    // And the endpoint is told it is a room, which is what selects the room prompt.
-    expect(agent.forwardedProps).toEqual({ mode: "room" });
-  });
-
-  test("a routine carries none", async () => {
+  test("a routine carries no history: the instruction is the whole of it", async () => {
     const agent = fakeAgent([
       { id: "a-reply", role: "assistant", content: "ok" },
     ]);

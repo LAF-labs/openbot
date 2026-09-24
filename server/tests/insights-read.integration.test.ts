@@ -863,9 +863,11 @@ describe("what the insights read counts, against the product's own tables", () =
     const limits = after.limits;
     expect(limits?.botsPerPersonMax).toBeGreaterThanOrEqual(5);
     expect(limits?.routinesPerPersonMax).toBeGreaterThanOrEqual(20);
+    // Both people: the cap is one Bot since 2026-09-24, so u2's one is at it and u1's five — a
+    // roster from before the cap came down — are past it and still counted.
     expect(
       (limits?.peopleAtBotCap ?? 0) - (before.limits?.peopleAtBotCap ?? 0),
-    ).toBe(1);
+    ).toBe(2);
     expect(
       (limits?.peopleAtRoutineCap ?? 0) -
         (before.limits?.peopleAtRoutineCap ?? 0),

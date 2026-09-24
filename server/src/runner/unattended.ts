@@ -22,12 +22,7 @@
  * had never been given.
  */
 import { randomUUID } from "node:crypto";
-import type {
-  AbstractAgent,
-  AgentSubscriber,
-  Message,
-  Tool,
-} from "@ag-ui/client";
+import type { AbstractAgent, Message, Tool } from "@ag-ui/client";
 import type { PromptMode, RoutineNote } from "../../../shared/prompt";
 import {
   noteTexts,
@@ -54,7 +49,7 @@ export type ToolExecutor = (
   name: string,
   args: Record<string, unknown>,
   /**
-   * The call being executed. A room needs its id: the browser draws the message under it.
+   * The call being executed.
    *
    * `approvalId` is an answer a person has ALREADY given, presented for the call it was given for.
    * The same contract the browser keeps (`withApproval` in `lib/copilot/computer-tools.tsx`) and
@@ -96,36 +91,16 @@ export type UnattendedRunOptions = {
   /**
    * Where this run is happening, forwarded to the endpoint so the prompt can be composed for it.
    *
-   * A routine is told nobody is watching; a room turn is told how a room works. Same loop either
-   * way, which is the point of one parameter rather than a second loop — but the WORDS are no
-   * longer passed in from here. They live in `shared/prompt/mode`, composed by the one middleware
-   * every run path already goes through, so a Bot cannot be told one thing in a room and another
-   * in a routine by two files that never read each other.
+   * A routine is told nobody is watching. The WORDS are not passed in from here: they live in
+   * `shared/prompt/mode`, composed by the one middleware every run path already goes through.
    */
-  mode: Extract<PromptMode, "room" | "routine">;
+  mode: Extract<PromptMode, "routine">;
   /**
    * Where a routine left off (`routines/notepad.ts`), forwarded beside the mode for the same reason
    * the mode is: the words it is said in are composed by the prompt middleware, and this loop only
    * carries the facts. The middleware draws it for a routine and for nothing else.
    */
   notepad?: readonly RoutineNote[];
-  /**
-   * What the Bot remembers going in, placed between the situation note and the instruction.
-   *
-   * A routine has none: it is a standing order, not a conversation. A room turn carries the tail
-   * of the Bot's own conversation with the person (`rooms/private-history.ts`), which is what lets
-   * it answer "did you finish that?" in a room the way it would in private.
-   */
-  history?: Message[];
-  /**
-   * Somebody watching the model's events as they arrive.
-   *
-   * A room turn relays them to the browser so a person sees the Bot typing. Merged UNDER the loop's
-   * own two handlers on purpose: the loop reads `onRunErrorEvent` and `onRunFinishedEvent` to tell
-   * a stream that failed from one that simply ended, and a watcher that shadowed either would take
-   * that away silently.
-   */
-  watch?: AgentSubscriber;
   /**
    * A person's stop — `모두 멈추기` (`stop-all.ts`) — for work nobody is watching.
    *
@@ -185,17 +160,6 @@ class RunDeadline extends UnattendedRunError {
     super("The run did not finish in time.", steps);
     this.name = "RunDeadline";
   }
-}
-
-/**
- * Whether a run ended on its own deadline — the clock, and not the model or a person.
- *
- * A room asks, because words a member had finished writing when the clock ran out are kept rather
- * than dropped (`rooms/member-turn.ts`). The model's own timeout is a different fact: its stream was
- * cut by its provider, and what it had written is whatever the provider let through.
- */
-export function isRunDeadline(error: unknown): boolean {
-  return error instanceof RunDeadline;
 }
 
 /** The fact a stopped run ends on — in the error, the ledger and a routine's receipt alike. */
@@ -308,7 +272,6 @@ export async function runUnattended(
   let settledAhead = 0;
 
   target.setMessages([
-    ...(options.history ?? []),
     { id: randomUUID(), role: "user", content: instruction },
   ]);
 
@@ -391,7 +354,6 @@ export async function runUnattended(
           },
         },
         {
-          ...options.watch,
           onRunErrorEvent: ({ event }) => {
             failure = event.message || "no reason was given";
             return {};
@@ -788,14 +750,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             /*
              * The USER ID, not the label. A `user-oauth` server answers with the asker's own
              * grant, and the grant is keyed on `users.id` — a label here would refuse every such
-             * call for want of a connection that actually exists. Rooms and routines both put the
-             * person's id in `actor.id`.
+             * call for want of a connection that actually exists. A routine puts the person's id in
+             * `actor.id`.
              */
             actorId: actor.id,
-            // The same conversation and the same delegation marker the computer's tools carry,
-            // so a call to somebody else's server is settled in the same terms as a click.
+            // The same conversation the computer's tools carry, so a call to somebody else's
+            // server is settled in the same terms as a click.
             ...(actor.threadId ? { threadId: actor.threadId } : {}),
-            ...(actor.delegated ? { delegated: actor.delegated } : {}),
             ...(approvalId ? { approvalId } : {}),
           });
           return { ok: !result.isError, text: result.text };

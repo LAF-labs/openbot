@@ -3,13 +3,12 @@ import { AGENT_REFUSALS } from "../src/lib/agents/mutations";
 import { ko } from "../src/lib/i18n-ko";
 
 /**
- * The agents API's refusals, which the roster and the new-Bot form render straight into the screen.
+ * The agents API's refusals, which the profile and the first run render straight into the screen.
  *
- * The sixth Bot was refused with the server's own sentence — "This account's computer seats five
- * Bots, and all five seats are taken." — English, in a Korean product, with the number written into
- * the prose while `BOT_SEATS_PER_ACCOUNT` is a setting a deployment can change. The server sends a
- * fact code and the seat count now and this table owns the words, which puts `t()` on a variable and
- * so out of `i18n-coverage.test.ts`'s sight; the table is checked in and finite, so it is walked.
+ * The sixth Bot was once refused with the server's own sentence — "This account's computer seats
+ * five Bots, and all five seats are taken." — English, in a Korean product. The server sends a fact
+ * code and this table owns the words, which puts `t()` on a variable and so out of
+ * `i18n-coverage.test.ts`'s sight; the table is checked in and finite, so it is walked.
  */
 describe("the agents refusal copy", () => {
   test("every refusal in the table has Korean", () => {
@@ -42,11 +41,16 @@ describe("the agents refusal copy", () => {
     expect([...codes].sort()).toEqual(Object.keys(AGENT_REFUSALS).sort());
   });
 
-  test("the seat count reaches the sentence", () => {
-    // The whole point of the code: the number comes from the deployment, not from the prose. A
-    // template that lost its placeholder would render "이 계정의 봇 자리 개가 모두 찼습니다".
-    const sentence = AGENT_REFUSALS["laf:seats_full"] as string;
-    expect(sentence).toContain("{seats}");
-    expect(ko[sentence]).toContain("{seats}");
+  /*
+   * ONE BOT A PERSON (2026-09-24). The refusal of a second is a fact with no number beside it —
+   * there is nothing to count — and its words say what to do instead, since the only way to reach
+   * it from this surface is a stale tab.
+   */
+  test("a second Bot is refused in Korean, without a count, pointing at the profile", () => {
+    const sentence = AGENT_REFUSALS["laf:account_has_bot"] as string;
+    expect(sentence).toBeString();
+    expect(sentence).not.toContain("{");
+    expect(ko[sentence]).toContain("프로필");
+    expect(AGENT_REFUSALS).not.toHaveProperty("laf:seats_full");
   });
 });

@@ -20,7 +20,6 @@ import {
   parseOptions,
   parseRestoreTable,
   renderEnv,
-  ROOM_SPEECH_TOOL,
   restoreFailures,
   type Snapshot,
   scrubbedEnvironment,
@@ -530,49 +529,9 @@ describe("a local run's images", () => {
 describe("the fake model", () => {
   const offered = [
     { type: "function", function: { name: "computer_navigate" } },
-    { type: "function", function: { name: ROOM_SPEECH_TOOL } },
   ];
 
-  test("speaks in a room through the room's tool, then ends the turn in prose", () => {
-    const first = answerTo(
-      {
-        stream: true,
-        tools: offered,
-        messages: [{ role: "system" }, { role: "user" }],
-      },
-      "확인했습니다. X1",
-      4,
-    );
-    expect(first.kind).toBe("stream");
-    const chunks = first.kind === "stream" ? first.choices : [];
-    const call = JSON.stringify(chunks);
-    expect(call).toContain(ROOM_SPEECH_TOOL);
-    expect(call).toContain("call_upgrade_e2e_4");
-    const argumentsText = chunks
-      .flatMap(
-        (chunk) =>
-          (chunk.delta?.tool_calls as
-            | { function?: { arguments?: string } }[]
-            | undefined) ?? [],
-      )
-      .map((toolCall) => toolCall.function?.arguments ?? "")
-      .join("");
-    expect(JSON.parse(argumentsText)).toEqual({ text: "확인했습니다. X1" });
-
-    const after = answerTo(
-      {
-        stream: true,
-        tools: offered,
-        messages: [{ role: "user" }, { role: "assistant" }, { role: "tool" }],
-      },
-      "확인했습니다. X1",
-      5,
-    );
-    expect(JSON.stringify(after)).not.toContain(ROOM_SPEECH_TOOL);
-    expect(JSON.stringify(after)).toContain("확인했습니다. X1");
-  });
-
-  test("answers everywhere else in prose, and a one-question JSON call with a refusal", () => {
+  test("answers in prose, and a one-question JSON call with a refusal", () => {
     const routine = answerTo(
       {
         stream: true,
@@ -580,7 +539,6 @@ describe("the fake model", () => {
         messages: [{ role: "user" }],
       },
       "P",
-      0,
     );
     expect(routine).toEqual({
       kind: "stream",
@@ -589,7 +547,7 @@ describe("the fake model", () => {
         { delta: {}, finish_reason: "stop" },
       ],
     });
-    expect(answerTo({ stream: false }, "P", 1)).toEqual({
+    expect(answerTo({ stream: false }, "P")).toEqual({
       kind: "status",
       status: 503,
     });

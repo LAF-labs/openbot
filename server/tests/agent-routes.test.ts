@@ -7,6 +7,7 @@ import {
   MemoryFullError,
 } from "../src/agents/memory-store";
 import {
+  AccountHasBotError,
   AgentNotFoundError,
   AgentNotManageableError,
   type AgentProfileStore,
@@ -86,10 +87,6 @@ function fakeStore(
     async update(receivedActor, id, input) {
       calls.push(["update", receivedActor, id, input]);
       return profile({ id, ...input });
-    },
-    async duplicate(receivedActor, id) {
-      calls.push(["duplicate", receivedActor, id]);
-      return profile({ id: `${id}-copy` });
     },
     async setHidden(receivedActor, id, hidden) {
       calls.push(["setHidden", receivedActor, id, hidden]);
@@ -237,7 +234,6 @@ describe("agent lifecycle routes", () => {
       ["/agent-1"],
       ["/", { method: "POST", body: JSON.stringify(validInput) }],
       ["/agent-1", { method: "PATCH", body: JSON.stringify(validInput) }],
-      ["/agent-1/duplicate", { method: "POST" }],
       ["/agent-1/hide", { method: "POST" }],
       ["/agent-1/unhide", { method: "POST" }],
       ["/agent-1", { method: "DELETE" }],
@@ -289,9 +285,6 @@ describe("agent lifecycle routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
-    const duplicated = await app.request("http://laf.test/agent-1/duplicate", {
-      method: "POST",
-    });
     const hidden = await app.request("http://laf.test/agent-1/hide", {
       method: "POST",
     });
@@ -306,7 +299,6 @@ describe("agent lifecycle routes", () => {
     expect(detail.status).toBe(200);
     expect(created.status).toBe(201);
     expect(updated.status).toBe(200);
-    expect(duplicated.status).toBe(201);
     expect(hidden.status).toBe(204);
     expect(unhidden.status).toBe(204);
     expect(deleted.status).toBe(204);
@@ -315,7 +307,6 @@ describe("agent lifecycle routes", () => {
       ["get", actor, "agent-1"],
       ["create", actor, validInput],
       ["update", actor, "agent-1", validInput],
-      ["duplicate", actor, "agent-1"],
       ["setHidden", actor, "agent-1", true],
       ["setHidden", actor, "agent-1", false],
       ["softDelete", actor, "agent-1"],
@@ -528,6 +519,31 @@ describe("agent lifecycle routes", () => {
     });
   });
 
+  /*
+   * ONE BOT A PERSON (2026-09-24). The store refuses the second in the transaction that counts the
+   * first; the route answers with the fact and nothing else — no seat count, since there is nothing
+   * to count — and the surface says it in Korean (`AGENT_REFUSALS["laf:account_has_bot"]`).
+   */
+  test("refuses a second Bot with its own code, a 409 and no number", async () => {
+    const store = fakeStore({
+      create: async () => {
+        throw new AccountHasBotError();
+      },
+    });
+
+    const response = await appFor(store).request("http://laf.test/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "둘째" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await json(response)).toEqual({
+      error: "laf:account_has_bot",
+      code: "laf:account_has_bot",
+    });
+  });
+
   // A fact code, twice: the surface owns the words (`AGENT_REFUSALS`), so nothing prose crosses.
   test.each([
     [new AgentNotFoundError("agent-1"), 404, "laf:agent_not_found"],
@@ -552,7 +568,7 @@ describe("agent lifecycle routes", () => {
 
   test("rethrows unexpected errors to the outer Hono error handler", async () => {
     const store = fakeStore({
-      duplicate: async () => {
+      setHidden: async () => {
         throw new Error("database disconnected");
       },
     });
@@ -563,7 +579,7 @@ describe("agent lifecycle routes", () => {
       context.json({ sentinel: error.message }, 599 as UnofficialStatusCode),
     );
 
-    const response = await app.request("http://laf.test/agent-1/duplicate", {
+    const response = await app.request("http://laf.test/agent-1/hide", {
       method: "POST",
     });
 
@@ -753,90 +769,6 @@ describe("the auto-review instruction", () => {
 });
 
 /**
- * WHICH PRESET A BOT WAS SHAPED FROM (`agent_profiles.preset_id`).
- *
- * The intro card writes a preset's translated title and role, and the key beside them is the only
- * part of the choice that can still be counted once the language has changed — laf-control's
- * `insights` counts it. So what matters here is the shape that reaches the column (a catalogue key,
- * never words) and who can write it: the person's own replacing PATCH, and never the merging
- * `/profile` a Bot's `update_profile` calls.
- */
-describe("the preset a Bot was shaped from", () => {
-  test("goes through as a catalogue key on the replacing input", () => {
-    const parsed = parseAgentInput({
-      name: "Review Watch",
-      presetId: "review-replies",
-    });
-    expect(parsed).toEqual({
-      ok: true,
-      value: {
-        name: "Review Watch",
-        title: "",
-        roleDescription: "",
-        endpoint: undefined,
-        auth: undefined,
-        presetId: "review-replies",
-      },
-    });
-  });
-
-  test("absent leaves it alone, which is every caller but the preset press", () => {
-    const parsed = parseAgentInput({ name: "Analyst" });
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.value).not.toHaveProperty("presetId");
-  });
-
-  test.each([
-    ["words", "리뷰 답변 담당"],
-    ["an address", "owner@laf.test"],
-    ["capitals", "Review-Replies"],
-    ["a dot", "reviews.v2"],
-    ["forty-one characters", "a".repeat(41)],
-    ["a number", 7],
-    ["null", null],
-    ["an empty string", ""],
-  ])("anything that is not a key is refused by code: %s", (_label, value) => {
-    const parsed = parseAgentInput({
-      name: "Analyst",
-      presetId: value,
-    });
-    expect(parsed).toEqual({ ok: false, code: "laf:agent_preset_invalid" });
-  });
-
-  test("the person's own PATCH carries it to the store", async () => {
-    const store = fakeStore();
-    const response = await appFor(store).request("/agent-1", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: "Review Watch",
-        title: "리뷰 답변",
-        roleDescription: "새 리뷰마다 답을 준비한다.",
-        presetId: "review-replies",
-      }),
-    });
-    expect(response.status).toBe(200);
-    const update = store.calls.find(([method]) => method === "update");
-    const input = update?.[3] as CreateAgentInput | undefined;
-    expect(input?.presetId).toBe("review-replies");
-  });
-
-  test("a Bot's own tool cannot set it, and saying it changes nothing rather than failing", async () => {
-    const store = fakeStore();
-    const response = await appFor(store).request("/agent-1/profile", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "정산 담당", presetId: "settlement" }),
-    });
-    expect(response.status).toBe(200);
-    const update = store.calls.find(([method]) => method === "update");
-    const input = update?.[3] as Record<string, unknown>;
-    expect(input.title).toBe("정산 담당");
-    expect(input).not.toHaveProperty("presetId");
-  });
-});
-
-/**
  * WHAT A BOT WRITES INTO ITS PROFILE IS ONE LINE, AND NOT A PROMPT.
  *
  * The description is rendered into every later system message as a paragraph of its own
@@ -927,14 +859,7 @@ function appWithMemory(memoryStore: AgentMemoryStore) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.route(
     "/",
-    createAgentRoutes(
-      fakeStore(),
-      requireUser,
-      false,
-      undefined,
-      undefined,
-      memoryStore,
-    ),
+    createAgentRoutes(fakeStore(), requireUser, false, undefined, memoryStore),
   );
   return app;
 }

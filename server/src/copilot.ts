@@ -8,8 +8,8 @@ import {
   DEFAULT_TIME_ZONE,
   notepadOf,
   type PromptMode,
-  promptModeOf,
   type PromptSkill,
+  promptModeOf,
   type RoutineNote,
 } from "../../shared/prompt";
 import type { ShopProfile } from "../../shared/shop/catalogue";
@@ -86,11 +86,15 @@ type AgentRunInput = Parameters<AbstractAgent["run"]>[0];
 type AgentMessage = AgentRunInput["messages"][number];
 export type StandingRoleMessage = Extract<AgentMessage, { role: "system" }>;
 
-/** The durable part of a coworker: who it is and what its standing job is. */
+/**
+ * The durable part of a Bot: who it is and what it has been asked to keep doing.
+ *
+ * No `title` since 2026-09-24: a Bot's profile is its name and its face, and a column nobody can see
+ * or edit must not tell the Bot what it is (shared/prompt/index.ts, `PromptBot`).
+ */
 export type AgentStandingProfile = {
   id: string;
   name: string;
-  title: string;
   roleDescription: string;
   /**
    * What this Bot has learned about the person it is answering, oldest first.
@@ -171,7 +175,7 @@ export function botPromptMessage(
       mode: options.mode,
       now: options.now,
       timeZone: options.timeZone,
-      bot: { id: profile.id, name: profile.name, title: profile.title },
+      bot: { id: profile.id, name: profile.name },
       standingRole: profile.roleDescription,
       ...(profile.shop ? { shop: profile.shop } : {}),
       ...(profile.memories ? { memories: profile.memories } : {}),
@@ -201,7 +205,6 @@ type RuntimeAgentRow = {
   name: string;
   type: "built_in" | "remote_ag_ui";
   configuration: unknown;
-  title: string;
   roleDescription: string;
   /** Absent on a row read by something that does not select it; `balanced` is the column's default. */
   effort?: AgentEffort;
@@ -241,7 +244,6 @@ export function registeredAgentFromRow(
         profile: {
           id: row.id,
           name: row.name,
-          title: row.title,
           roleDescription: row.roleDescription,
           ...(row.memories ? { memories: row.memories } : {}),
         },

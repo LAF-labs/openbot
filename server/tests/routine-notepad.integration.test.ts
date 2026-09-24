@@ -191,7 +191,6 @@ function deployment(bot: { botId: string }, script: Script, withLane = false) {
             profile: {
               id: bot.botId,
               name: "리뷰봇",
-              title: "리뷰 담당",
               roleDescription: "스토어 리뷰에 답글 초안을 쓴다.",
             },
             effort: "balanced",

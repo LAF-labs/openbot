@@ -50,7 +50,6 @@ function person(trial?: Record<string, unknown>): CurrentUser {
     deployment: {
       effort: true,
       autoReview: true,
-      seats: 5,
       ...(trial
         ? {
             trial: {

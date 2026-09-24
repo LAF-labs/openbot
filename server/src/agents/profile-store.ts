@@ -1,5 +1,5 @@
 import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
+import { BOTS_PER_ACCOUNT } from "../computer/assignment";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import {
@@ -47,7 +47,6 @@ export type AgentProfileStore = {
     id: string,
     input: CreateAgentInput,
   ): Promise<AgentProfile>;
-  duplicate(actor: AgentActor, id: string): Promise<AgentProfile>;
   setHidden(actor: AgentActor, id: string, hidden: boolean): Promise<void>;
   /**
    * Change any of this person's preferences for a Bot, leaving the ones not named alone.
@@ -107,30 +106,25 @@ export class AgentNotManageableError extends Error {
 }
 
 /**
- * The account's computer has no seat left for another Bot.
+ * This account already has its Bot.
  *
- * The cap is a fact about the computer, not about the roster table: an account gets one virtual
- * computer and a fixed number of Bots share it (assignment.ts). It is enforced here, where a Bot
- * comes to exist, because a sixth Bot must fail to be created — not get created and then fail to
- * reach a computer, which would look like an outage instead of a limit.
+ * A person has one Bot (docs/laf/deployment-model.md, "봇은 하나다", 2026-09-24). It is enforced
+ * here, where a Bot comes to exist, because a second Bot must fail to be created — not get created
+ * and then fail to reach a computer, which would look like an outage instead of a rule.
  *
- * A FACT CODE AND A NUMBER, NOT A SENTENCE. This threw "…seats five Bots, and all five seats are
- * taken" — English, on a Korean screen, with the five written into the prose while
- * `BOT_SEATS_PER_ACCOUNT` is a setting a deployment can change. Both halves were wrong in the same
- * place. The server sends what happened and how many seats there are; the surface owns the words,
- * the way `ROUTINE_REFUSALS` already does (app/src/lib/routines/queries.ts).
+ * A FACT CODE, NOT A SENTENCE, and since the cap stopped being a setting, not a number either. It
+ * was `laf:seats_full` with the seat count beside it, for a surface that said "all five seats are
+ * taken"; a count of one has nothing to say that the code does not. The surface owns the words
+ * (`AGENT_REFUSALS` in app/src/lib/agents/mutations.ts).
  */
-export class RosterFullError extends Error {
-  readonly code = "laf:seats_full";
-  // 409 rather than 400: the request was well-formed, the account is simply full.
+export class AccountHasBotError extends Error {
+  readonly code = "laf:account_has_bot";
+  // 409 rather than 400: the request was well-formed, the account simply has its Bot.
   readonly status = 409;
-  /** The number, beside the code, so the surface can say how many. */
-  readonly facts: { seats: number };
 
-  constructor(readonly seats: number) {
-    super(`This account's computer seats ${seats} Bots, and all are taken.`);
-    this.name = "RosterFullError";
-    this.facts = { seats };
+  constructor() {
+    super("This account already has its Bot.");
+    this.name = "AccountHasBotError";
   }
 }
 
@@ -289,8 +283,12 @@ async function lockProfileReadRow(executor: DatabaseExecutor, id: string) {
  * transaction reads a table the first has already added to; released by the transaction ending,
  * whichever way it ends. Two owner ids that hash alike cost one of them a wait and nothing else.
  *
+ * THE SAME TRANSACTION IS WHERE ONE BOT IS ENFORCED (2026-09-24). The seat count came down from
+ * five to one; nothing else here moved. An account that already had several keeps them — this
+ * counts them and refuses the next, it never takes one away.
+ *
  * THIS PERSON'S BOTS. A deployment belongs to one account (docs/laf/deployment-model.md), so the
- * five seats are that person's. It counted every undeleted profile in the deployment. Measured on a
+ * seats are that person's. It counted every undeleted profile in the deployment. Measured on a
  * development machine: five profiles, two of them this person's, and their sixth Bot refused with
  * "all five seats are taken" — the other three were Bots a package had shipped, owned by nobody,
  * quietly holding seats. A leftover account's Bots are counted against the leftover, so they do not
@@ -318,7 +316,7 @@ async function reserveSeat(
       ),
     );
   if (Number(seated?.count ?? 0) >= seats) {
-    throw new RosterFullError(seats);
+    throw new AccountHasBotError();
   }
 }
 
@@ -342,12 +340,13 @@ export function createAgentProfileStore(
    */
   vault?: { store: CredentialStore; encryptionKey: string },
   /**
-   * How many Bots this account's computer seats. Defaults to the product number.
+   * How many Bots one account may have. Defaults to the product number, which is one.
    *
-   * Injected so the cap can be tested for what it is — the rule that a sixth Bot must fail to
-   * exist — without the test needing five real Bots to be absent from a shared database first.
+   * Injected so the cap can be tested for what it is — the rule that the Bot past it must fail to
+   * exist — and so a test can seat an account the way it looked before the cap came down to one,
+   * which is the only way to make the legacy roster a test has to prove is still reachable.
    */
-  seats: number = MAX_BOTS_PER_COMPUTER,
+  seats: number = BOTS_PER_ACCOUNT,
   /**
    * What is done with a deleted Bot's computer once its row is gone.
    *
@@ -431,7 +430,6 @@ export function createAgentProfileStore(
           ...(input.autoReview === undefined
             ? {}
             : { autoReview: input.autoReview }),
-          ...(input.presetId === undefined ? {} : { presetId: input.presetId }),
         });
 
         const profile = await findAccessibleProfile(transaction, actor, id);
@@ -496,10 +494,6 @@ export function createAgentProfileStore(
               ...(input.autoReview === undefined
                 ? {}
                 : { autoReview: input.autoReview }),
-              // Absent leaves it alone — which is every caller but the intro card's preset press.
-              ...(input.presetId === undefined
-                ? {}
-                : { presetId: input.presetId }),
               updatedAt,
             })
             .where(eq(agentProfiles.agentId, id));
@@ -510,51 +504,6 @@ export function createAgentProfileStore(
         },
         { isolationLevel: "read committed" },
       );
-    },
-
-    duplicate(actor, id) {
-      return database.transaction(async (transaction) => {
-        const source = await findAccessibleProfile(transaction, actor, id);
-        if (!source) throw new AgentNotFoundError(id);
-
-        await reserveSeat(transaction, actor.id, seats);
-
-        const duplicateId = newAgentId();
-        await transaction.insert(agents).values({
-          id: duplicateId,
-          name: source.name,
-          type: "remote_ag_ui",
-          configuration: managedConfiguration,
-        });
-        await transaction.insert(agentProfiles).values({
-          agentId: duplicateId,
-          ownerUserId: actor.id,
-          title: source.title,
-          roleDescription: source.roleDescription,
-          avatarSeed: source.avatarSeed,
-          // A copy is the same colleague again, which includes how long it takes to answer.
-          effort: source.effort,
-          /*
-           * NOT COPIED: `autoReview`, a standing permission to act without being seen —
-           * inheriting it silently would make "Duplicate" a way to widen a boundary by pressing a
-           * button labelled something else. Nor `presetId`, for a plainer reason: it records what a
-           * person picked, and nobody picked anything for the copy. Carried over, every duplicate
-           * would count as one more person choosing that kind of work.
-           *
-           * The copy is the copier's, and `ownerUserId` above is now the whole of who may see it:
-           * duplicating somebody else's Bot is not a thing that can happen, because finding one to
-           * duplicate is not a thing that can happen.
-           */
-        });
-
-        const duplicate = await findAccessibleProfile(
-          transaction,
-          actor,
-          duplicateId,
-        );
-        if (!duplicate) throw new AgentNotFoundError(duplicateId);
-        return duplicate;
-      });
     },
 
     setHidden(actor, id, hidden) {

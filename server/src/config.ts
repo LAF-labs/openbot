@@ -56,8 +56,9 @@ export type VariableSource = "operator" | "compose" | "development" | "retired";
  * Every environment variable this server reads, and where a deployment's value comes from.
  *
  * A new variable is added here first: the helpers below take only these names, so a read of one
- * that is not declared does not compile. The one exception is `BOT_SEATS_PER_ACCOUNT`, which
- * `computer/assignment.ts` still reads for itself while that directory is being split.
+ * that is not declared does not compile. There is no exception left: `BOT_SEATS_PER_ACCOUNT`, the
+ * last variable read anywhere else (`computer/assignment.ts`), went on 2026-09-24 when a person
+ * came to have one Bot and the number stopped being a setting.
  */
 export const ENVIRONMENT = {
   // What the process cannot start without, and where it listens.

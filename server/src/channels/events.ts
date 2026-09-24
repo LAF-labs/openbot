@@ -43,10 +43,6 @@ export type ChannelEventHub = {
   /**
    * Close every connection a person holds, because their sessions were ended — struck off the
    * sign-in list, or removed by an administrator (`auth/session-revocation.ts`).
-   *
-   * Not only a nicety for a tidy socket list. A room turn works out who hears it ONCE, when it starts
-   * (`rooms/service.ts`), so somebody removed mid-turn was still sent every frame of the Bot's answer
-   * in a room they had just been taken out of, for as long as the turn ran.
    */
   closeFor(userId: string): number;
   /**
@@ -56,8 +52,8 @@ export type ChannelEventHub = {
    * committed. See the note at the top on what NOTIFY used to guarantee about that.
    */
   deliver(event: ChannelActivityEvent): void;
-  /** Fan one room frame out. A turn produces one every few tokens, so it never goes near a write. */
-  deliverRoom(frame: { memberIds: string[] } & Record<string, unknown>): void;
+  /** Fan one frame that is not a roster patch out — a notification, addressed on the frame. */
+  deliverFrame(frame: { memberIds: string[] } & Record<string, unknown>): void;
   connectionCount(userId: string): number;
 };
 
@@ -100,7 +96,7 @@ export function createChannelEventHub(): ChannelEventHub {
       return held.size;
     },
 
-    deliverRoom(frame) {
+    deliverFrame(frame) {
       const payload = JSON.stringify(frame);
       for (const userId of frame.memberIds) {
         for (const send of connections.get(userId)?.keys() ?? []) {

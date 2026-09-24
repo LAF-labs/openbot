@@ -3,8 +3,7 @@
  */
 import type { Context } from "hono";
 import { AgentNotFoundError } from "../agents/profile-store";
-import { RoomError } from "../rooms/service";
-import { ChannelMembershipError, ChannelNotFoundError } from "./errors";
+import { ChannelNotFoundError } from "./errors";
 import type { ChannelRefusal } from "./routes";
 
 /** The body every channel refusal is answered with: the code, twice, and no sentence. */
@@ -23,9 +22,7 @@ export function refusal(code: ChannelRefusal) {
 export function mapRefusal(context: Context, error: unknown): Response {
   if (
     error instanceof AgentNotFoundError ||
-    error instanceof ChannelNotFoundError ||
-    error instanceof ChannelMembershipError ||
-    error instanceof RoomError
+    error instanceof ChannelNotFoundError
   ) {
     return context.json({ error: error.code, code: error.code }, error.status);
   }

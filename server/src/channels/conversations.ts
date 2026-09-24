@@ -22,7 +22,7 @@ const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
 const MAX_CHANNEL_NAME_CODE_POINTS = 120;
 
 /**
- * A room is named after who is in it, the way a messaging thread is, and cut to fit a roster row.
+ * A conversation is named after who is in it — its Bot — and cut to fit a roster row.
  *
  * Cut by code points rather than UTF-16 units, so a name ending in an emoji is never split in half.
  */
@@ -67,8 +67,8 @@ export function createConversation(
        * the transaction, after the profile lock above, so two sends racing from two tabs cannot
        * each decide there is no channel and make one.
        *
-       * Only for one Bot. A group of several is a different conversation every time it is
-       * assembled, and nothing in the product returns to one yet.
+       * A request names one Bot: the route refuses more (`laf:channel_one_bot`) since rooms were
+       * removed on 2026-09-24. The list shape is what the store has always taken.
        */
       const soleAgentId = agentIds.length === 1 ? agentIds[0] : undefined;
       if (soleAgentId) {

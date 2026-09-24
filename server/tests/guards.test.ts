@@ -119,9 +119,8 @@ describe("server authorization", () => {
       // app talking to a server that has not been told reads it the same way the package defaults —
       // and each of these decides whether a control is drawn at all, so a wrong answer here is a
       // control that saves and reaches nothing.
-      // `seats` is the third: how many Bots this person's computer holds, so the roster can say
-      // "내 봇 3/5" rather than leaving somebody to meet the cap by being refused by it.
-      deployment: { effort: true, autoReview: true, seats: 5 },
+      // No seat count: a person has one Bot since 2026-09-24, and nothing on the surface counts.
+      deployment: { effort: true, autoReview: true },
     });
   });
 
@@ -165,7 +164,7 @@ describe("a session whose person the deployment no longer admits", () => {
     sessions: ReturnType<typeof admission>["admission"],
   ) => {
     const args: Parameters<typeof createApp> = [config, auth, roles];
-    args[44] = sessions;
+    args[41] = sessions;
     return createApp(...args);
   };
 

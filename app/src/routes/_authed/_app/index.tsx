@@ -1,239 +1,67 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
-import { NewBotButton } from "@/components/agents/new-bot-button";
-import { RosterStrip } from "@/components/agents/roster-strip";
-import { Composer, toAgentOptions } from "@/components/channels/composer";
-import { UsageNotice } from "@/components/channels/usage-notice";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { agentListQueryOptions } from "@/lib/agents/queries";
-import { useStartChannel } from "@/lib/channels/start";
+import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
+import { channelListQueryOptions } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
-import { useSkillCommands } from "@/lib/plugins/skill-commands";
-import { useNow } from "@/lib/use-now";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: RouteComponent,
 });
 
 /**
- * The greeting knows what time it is, and nothing else.
+ * HOME IS THE CONVERSATION WITH THE BOT (2026-09-24).
  *
- * Local hours, because "good morning" at somebody's 3pm is worse than no greeting: the whole point
- * of the line is that the product noticed.
+ * Home was a greeting over a row of faces and a box that asked which of them to send to, with `@`
+ * to reach another or two for a room. A person has one Bot now and everything happens by talking
+ * to it, so the first screen is that conversation: this resolves which one and goes there. A Bot
+ * that has never been spoken to has no channel yet and opens on the compose screen, which makes
+ * the channel with the first message.
  *
- * Handed the time rather than reading it: read while rendering, the React Compiler kept the first
- * greeting for as long as Home stayed open, so a morning visit still said good morning at night.
- */
-function greeting(now: Date): string {
-  const hour = now.getHours();
-  if (hour < 6) return t("Working late?");
-  if (hour < 12) return t("Good morning");
-  if (hour < 18) return t("Good afternoon");
-  return t("Good evening");
-}
-
-/**
- * Home leads with the team.
- *
- * The Bots are the product, so the first screen is their faces, not a form. Picking a face aims
- * the composer; `@` in the text still overrides, exactly as it does everywhere else, and the line
- * under the composer says out loud where the message will land — a message that silently reaches
- * somebody you did not choose is the kind of surprise that costs trust the first time it happens.
+ * A person with no Bot at all — the only way is deleting the one they had — is sent to make one.
  */
 function RouteComponent() {
-  const {
-    data: agents,
-    isPending,
-    isError,
-    refetch,
-  } = useQuery(agentListQueryOptions());
-  const roster = agents ?? [];
-  const queryClient = useQueryClient();
-  const { start, pending } = useStartChannel();
-  const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const now = useNow();
+  const mine = useMyBots();
+  const channels = useQuery(channelListQueryOptions());
 
-  const selected = roster.find((agent) => agent.id === selectedId) ?? roster[0];
-  const skillCommands = useSkillCommands(selected?.id ?? "");
-
-  /**
-   * THE BOX TAKES TYPING FROM THE FIRST PAINT, AND THAT IS WHAT KEEPS KOREAN WHOLE.
-   *
-   * `disabled={!selected}` read as "there is nobody to send to", but until the roster answers
-   * there is nobody to send to YET, which is a different sentence. Measured 2026-09-21 against the
-   * built app with 300 ms on the API calls — a deployment is not localhost: the box appeared at
-   * 140 ms with `contenteditable="false"` and turned editable, and took the caret, at 179 ms on a
-   * warm local server and hundreds of milliseconds later over a network. A person who opens the
-   * app and starts typing types into that window, and the first thing they type is lost — with a
-   * Korean IME it is worse than lost: the composition has nowhere to live, so "오" arrives as the
-   * two jamo "ㅇㅗ", which is exactly what was reported. Driven through CDP the same way, flipping
-   * the box from disabled to enabled mid-syllable split it every time and nothing else did.
-   *
-   * So the box is disabled only once the roster has ANSWERED and has nobody in it — the screen
-   * that then says "No Bots on your team yet" — and never flips under somebody's hands on the way
-   * to a team that does exist.
-   */
-  const nobodyToSendTo = !isPending && !selected;
-
-  return (
-    /*
-     * NO TOP MARGIN, OR "CENTRED" IS A LIE BY EXACTLY THAT MARGIN. `justify-center` was already
-     * here, and `mt-8` was pushing the whole block 32px down inside it: measured at 1280x1080 the
-     * greeting had 420px above it and the composer 388px below. The margin is the kind of thing
-     * that gets added to nudge a block that was never centred, survives the fix that centres it,
-     * and then quietly reads as a mistake on the one screen a person opens every day.
-     */
-    <div className="flex w-full flex-1 flex-col items-center justify-center p-4">
-      <div className="flex flex-col items-center">
-        <h1 className="text-center font-semibold text-[26px] tracking-tight">
-          {greeting(now)}
-        </h1>
-        <p className="mt-1 text-center text-[13px] text-muted-foreground">
-          {t("What should the team take off your hands?")}
+  if (mine.isError) {
+    return (
+      <div className="flex w-full flex-1 flex-col items-center justify-center gap-3 p-4">
+        <p className="text-[13px] text-destructive" role="alert">
+          {t("Your Bot could not be loaded.")}
         </p>
+        <Button onClick={() => mine.refetch()} size="sm" variant="outline">
+          {t("Try again")}
+        </Button>
       </div>
+    );
+  }
 
-      {/*
-       * THE ROW HOLDS ITS PLACE WHILE THE TEAM LOADS. Rendering nothing until the roster arrives
-       * dropped the composer up the screen and then shoved it back down, on the one screen a person
-       * sees every time they open the app.
-       */}
-      {isPending ? (
-        <div
-          className="mt-7 flex max-w-2xl flex-wrap items-start justify-center gap-1"
-          aria-hidden
-        >
-          {[0, 1, 2, 3].map((slot) => (
-            <div
-              key={slot}
-              className="flex w-[76px] flex-col items-center gap-1.5 p-2"
-            >
-              <Skeleton className="size-12 rounded-full" />
-              <Skeleton className="h-3 w-12" />
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {isError ? (
-        <div className="mt-7 flex flex-col items-center gap-2">
-          <p className="text-[13px] text-destructive" role="alert">
-            {t("Your team could not be loaded.")}
-          </p>
-          <Button onClick={() => void refetch()} size="sm" variant="outline">
-            {t("Try again")}
-          </Button>
-        </div>
-      ) : null}
-
-      {roster.length > 0 ? (
-        <div className="mt-7">
-          <RosterStrip
-            onSelect={setSelectedId}
-            roster={roster}
-            selectedId={selected?.id}
-          />
-        </div>
-      ) : null}
-
-      {/*
-       * A DEAD END OTHERWISE. With no Bots the row did not render, so neither did the "new agent"
-       * tile inside it, and the composer below is disabled with nothing to aim at: the first screen
-       * of an empty account was a box that would not take a message and no way onward.
-       */}
-      {!isPending && !isError && roster.length === 0 ? (
-        <div className="mt-7 flex flex-col items-center gap-3">
-          {/* One face where a roster would be, so the empty screen still has somebody on it. */}
-          <BotAvatar className="opacity-80" seed="s:blob.blue" size={48} />
-          <p className="text-center text-[13px] text-muted-foreground">
-            {t("No Bots on your team yet.")}
-          </p>
-          <NewBotButton size="sm" variant="outline" />
-        </div>
-      ) : null}
-
-      <div className="mt-6 flex w-full flex-col items-center">
-        {/* The day's allowance, above the box a question is started in — as in a conversation. */}
-        <div className="w-full max-w-2xl">
-          <UsageNotice />
-        </div>
-        <Composer
-          agents={toAgentOptions(agents)}
-          className="w-full max-w-2xl"
-          /*
-           * THE SAME PILL AS IN A CONVERSATION.
-           *
-           * This was the tall variant: a box that opened at four lines and held ninety pixels of
-           * empty space under a one-line placeholder, on the screen a person sees every time they
-           * open the app. One composer, one shape — the box you start a conversation in should not
-           * be a different object from the box you continue it in.
-           */
-          compact
-          // The chosen Bot's real granted skills, the way a channel does it. Home used to inherit
-          // the placeholder list, so `/` here offered a command no Bot had.
-          commands={skillCommands}
-          disabled={nobodyToSendTo}
-          onSubmit={async (draft) => {
-            /*
-             * A channel is pinned to its coworkers for the life of its thread.
-             *
-             * The roster is waited for rather than read, because the box now accepts a message
-             * before the roster has answered (see `nobodyToSendTo`). `ensureQueryData` returns the
-             * cached list at once when there is one and joins the request in flight otherwise — a
-             * `return` here would drop the message, since the composer clears the box before
-             * awaiting this and only puts it back if it throws.
-             */
-            const named = [...draft.agentIds];
-            const ids =
-              named.length > 0
-                ? named
-                : [
-                    selected?.id ??
-                      (
-                        await queryClient.ensureQueryData(
-                          agentListQueryOptions(),
-                        )
-                      )[0]?.id,
-                  ].filter((id): id is string => Boolean(id));
-            if (ids.length === 0) return;
-
-            setError(null);
-            try {
-              await start(ids, draft.text);
-            } catch (caught) {
-              setError(
-                caught instanceof Error
-                  ? caught.message
-                  : t("Could not start the conversation."),
-              );
-              throw caught;
-            }
-          }}
-          pending={pending}
-        />
-        {selected ? (
-          <p className="mt-2 w-full max-w-2xl text-center text-muted-foreground text-xs">
-            {t("Goes to {name}.", { name: selected.name })} {/*
-             * The line says what `@` can now do, because otherwise nobody would find it: naming
-             * two colleagues here opens a room with both of them in it, which is what a channel
-             * with more than one Bot is.
-             */}
-            {t("Type @ to reach somebody else, or two for a room with both.")}
-          </p>
-        ) : null}
-        {error ? (
-          <p
-            className="mt-2 w-full max-w-2xl text-destructive text-sm"
-            role="alert"
-          >
-            {error}
-          </p>
-        ) : null}
+  /*
+   * The conversations are waited for too, unless they failed: a Bot that HAS a conversation must
+   * open on it rather than on an empty compose screen that would look like the history was gone.
+   */
+  if (!mine.bots || (channels.isPending && !channels.isError)) {
+    return (
+      <div aria-hidden className="flex w-full flex-1 flex-col gap-3 p-6">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-16 w-2/3" />
       </div>
-    </div>
+    );
+  }
+
+  const bot = primaryBot(mine.bots, channels.data);
+  if (!bot) return <Navigate replace to="/welcome" />;
+
+  const conversation = conversationOf(bot.id, channels.data);
+  return conversation ? (
+    <Navigate
+      params={{ channelId: conversation.id }}
+      replace
+      to="/channel/$channelId"
+    />
+  ) : (
+    <Navigate replace search={{ agent: bot.id }} to="/channel/new" />
   );
 }

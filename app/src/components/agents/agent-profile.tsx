@@ -1,28 +1,20 @@
-import { IconDots, IconPencil } from "@tabler/icons-react";
+import { IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { AgentFields } from "@/components/agents/agent-fields";
 import { Mascot } from "@/components/agents/mascot";
-import { MascotPicker } from "@/components/agents/mascot-picker";
+import { BotAvatarPicker } from "@/components/avatar/bot-avatar-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
 import { ReadNotice } from "@/components/layout/read-states";
 import { NotificationPermission } from "@/components/notifications/notification-permission";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { focusRing } from "@/components/ui/focus";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AUTO_REVIEW_EXAMPLES } from "@/lib/agents/auto-review";
-import { type BotMenuItem, botMenuItems } from "@/lib/agents/bot-menu";
 import {
   AGENT_EFFORTS,
   type AgentEffort,
@@ -30,15 +22,11 @@ import {
 } from "@/lib/agents/effort-label";
 import {
   deleteAgentMutationOptions,
-  duplicateAgentMutationOptions,
   setAgentEffortMutationOptions,
-  setAgentHiddenMutationOptions,
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
-import { useSeats } from "@/lib/agents/new-bot";
 import {
-  type AgentProfile as AgentProfileRecord,
   agentKeys,
   agentMemoriesQueryOptions,
   agentQueryOptions,
@@ -46,6 +34,7 @@ import {
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
+import { isImeKey } from "@/lib/ime";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
 import { readLineOf } from "@/lib/read-line";
@@ -54,31 +43,15 @@ import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
 
 /**
- * The shape of the profile, not a generic one.
- *
- * It still drew the round 80px avatar this panel stopped using when the mascot banner landed, so
- * the placeholder and the thing it stood in for disagreed about the whole top of the screen: a
- * circle became a full-width band, and everything under it moved.
+ * The shape of the profile, not a generic one: the face's tile, then the name.
  */
 function ProfileSkeleton() {
   return (
     <>
       <header className="flex flex-col items-center gap-3">
         <Skeleton className="h-[132px] w-full rounded-2xl" />
-        <div className="flex w-full flex-col items-center gap-1.5">
-          <Skeleton className="h-7 w-44" />
-          <Skeleton className="h-4 w-28" />
-        </div>
-        <div className="flex gap-1.5">
-          <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-5 w-24 rounded-full" />
-        </div>
+        <Skeleton className="h-9 w-full" />
       </header>
-      <div className="grid gap-2">
-        <Skeleton className="h-3 w-10" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-2/3" />
-      </div>
       <div className="flex flex-col gap-2">
         <Skeleton className="h-9 w-full" />
         <Skeleton className="h-9 w-full" />
@@ -88,43 +61,50 @@ function ProfileSkeleton() {
   );
 }
 
-export function AgentProfile({ agentId }: { agentId: string }) {
+/**
+ * A BOT'S PROFILE IS ITS NAME AND ITS FACE (2026-09-24).
+ *
+ * The owner: "프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀 수 있음). 무슨
+ * 일을 시킬건지도 적지 않는다." The job title under the name, the "how it works" paragraph and the
+ * row of kinds of work to pick from are gone from here and from every other screen: what the Bot
+ * is for is settled by talking to it. The rows still hold what older Bots were given, and the
+ * server still accepts them; nothing on the surface writes or shows them.
+ *
+ * WHAT STAYS BELOW THE NAME IS NOT PROFILE, IT IS HOW THE BOT BEHAVES: how hard it thinks, what it
+ * may do without asking, what it remembers, the skills it holds, and whether it may notify. None of
+ * those can be set by chatting — the one about asking must never be (CLAUDE.md, "Never let a Bot
+ * write the rule that decides whether it gets asked about") — so they keep their controls.
+ */
+export function AgentProfile({
+  agentId,
+  className = "p-8 pt-6",
+}: {
+  agentId: string;
+  /** The pane's own padding. The profile page sits inside a page that already has one. */
+  className?: string;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  // State is keyed by coworker id because this panel can remain open while its target changes.
+  // State is keyed by the Bot's id because this panel can remain open while its target changes.
   const [pickingFace, setPickingFace] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
-  const isEditing = editingId === agentId;
   const isConfirmingDelete = confirmingDeleteId === agentId;
 
   const agent = useQuery(agentQueryOptions(agentId));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
-  const duplicateAgent = useMutation(
-    duplicateAgentMutationOptions(queryClient),
-  );
-  const setHidden = useMutation(setAgentHiddenMutationOptions(queryClient));
   const deleteAgent = useMutation(deleteAgentMutationOptions(queryClient));
-  const seats = useSeats();
 
   /*
-   * A REFRESH THAT FAILED USED TO TAKE THE WHOLE PROFILE WITH IT. `agent.error` was checked before
-   * the data, so a Bot already on screen — its face, its settings, a half-written instruction —
-   * was replaced by one red line the first time a refetch met a dropped connection. Measured on
-   * 2026-09-18: away to 루틴 and back with the refetch refused, and the pane read only
-   * "봇을 불러오지 못했습니다", with nothing to press. What was read stays now, under a quiet line.
+   * A REFRESH THAT FAILED USED TO TAKE THE WHOLE PROFILE WITH IT. What was read stays now, under a
+   * quiet line (measured 2026-09-18).
    */
   const reading = useReading(agent, {
     // The same answer for "deleted" and "not yours", on purpose (`server/src/agents/routes.ts`).
     unavailable: { "laf:agent_not_found": "not_allowed" },
   });
   const settled = settledOf(reading);
-  /*
-   * ONE PANE AROUND EVERY STATE, ITS NOTICE FIRST, so the line is mounted before it speaks: the pane
-   * opens on a skeleton, and whatever the read comes to is said in a region already there.
-   */
   const notice = (
     <ReadNotice
       className="py-0"
@@ -142,7 +122,7 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   );
   if (!settled) {
     return (
-      <div className="flex w-full flex-col gap-6 p-8 pt-6">
+      <div className={`flex w-full flex-col gap-6 ${className}`}>
         {notice}
         {reading.state === "loading" ? <ProfileSkeleton /> : null}
       </div>
@@ -150,47 +130,45 @@ export function AgentProfile({ agentId }: { agentId: string }) {
   }
 
   const profile = settled.data;
-  // Not the delete's: that one is said inside its dialog, which stays open until it succeeds.
-  const actionError = duplicateAgent.error ?? setHidden.error;
 
   /*
-   * A NEUTRAL TILE, WITH THE COLOUR IN THE CHARACTER.
-   *
-   * This was a full-bleed band in the Bot's own colour, 132px of saturation across the top of a
-   * pane that is otherwise text and controls — the loudest thing on any screen in the product, on
-   * the screen with the least to say. The face already carries its ground; painting the tile the
-   * same colour behind it just spread one Bot's hue over the panel.
-   *
-   * Grok stands its bot mark on `bg/subtle` and lets the mark be the only colour, which is also
-   * what makes two Bots' profiles look like the same product rather than like two themes.
+   * A NEUTRAL TILE, WITH THE COLOUR IN THE CHARACTER. The face carries its own ground; painting
+   * the tile the same colour behind it just spread one Bot's hue over the panel.
    */
   const banner = (
     <span
       aria-hidden="true"
       className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-[var(--sand-bg-subtle)]"
     >
-      {/*
-       * Clipped to a squircle, because the art carries its own square ground. Standing it on a
-       * neutral tile without this traded a full-bleed colour band for a hard colour block — the
-       * same problem at a smaller size. Every other place the face appears already clips it.
-       */}
       <span className="inline-flex overflow-hidden rounded-[32px] transition-transform duration-200 group-hover:scale-[1.03]">
         <Mascot seed={profile.avatarSeed} size={128} />
       </span>
     </span>
   );
 
+  /*
+   * A PATCH replaces the fields it carries, so the ones the parser requires go back unchanged —
+   * the title and the description included, which nothing here shows but an older Bot may hold.
+   * `endpoint` is deliberately absent: an absent one leaves the stored configuration alone.
+   */
+  const save = (patch: { name?: string; avatarSeed?: string }) =>
+    updateAgent.mutateAsync({
+      agentId,
+      input: {
+        name: profile.name,
+        roleDescription: profile.roleDescription,
+        title: profile.title,
+        ...patch,
+      },
+    });
+
   return (
-    <div className="flex w-full flex-col gap-6 p-8 pt-6">
+    <div className={`flex w-full flex-col gap-6 ${className}`}>
       {notice}
       <header className="flex flex-col items-center gap-3 text-center">
         {/*
-         * The face is the control, where there is one to press. A pencil beside it would be a second
-         * thing to find, and the only edit anybody wants to make to a picture is to change it.
-         *
-         * A Bot the deployment shipped is not editable here at all — the server refuses, because its
-         * row has to keep agreeing with the tenant package it came from. Its face is chosen in that
-         * package, so this offers nothing it cannot deliver.
+         * The face is the control. A Bot the deployment shipped is not editable here at all — the
+         * server refuses — so it offers nothing it cannot deliver.
          */}
         {profile.canManage ? (
           <button
@@ -201,22 +179,8 @@ export function AgentProfile({ agentId }: { agentId: string }) {
           >
             {banner}
             {/*
-             * THE ONLY THING THAT SAID THIS WAS A BUTTON WAS THE CURSOR.
-             *
-             * A 190px drawing with a hairline round it looks like a picture of the Bot, because that
-             * is what it is everywhere else in the product. The label appears on hover AND on
-             * keyboard focus — `group-focus-visible` — so it is not a mouse-only affordance, and it
-             * sits over the bottom of the tile rather than beside it, where it would push the name
-             * down the pane for everybody who already knows.
-             */}
-            {/*
-             * Token colours, not a black fade with white glyphs, because this tile is not a
-             * photograph. Its ground is `--sand-bg-subtle` — near-white in light mode — and the
-             * face is a flat shape that leaves most of it showing, so a 45% black scrim put white
-             * `text-xs` on light grey: the verification walk's own screenshot of the hover has the
-             * label barely there. `from-background` under `text-foreground` gives each theme its
-             * own ground and ink, and the `via` stop keeps the band at least 80% solid behind the
-             * text before it fades into the tile.
+             * The label appears on hover AND on keyboard focus, over the bottom of the tile, in the
+             * theme's own ground and ink so it reads on the near-white tile in light mode too.
              */}
             <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-background via-background/80 to-transparent px-2 pt-6 pb-2 text-foreground text-xs opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
               <IconPencil className="size-3.5" />
@@ -228,147 +192,28 @@ export function AgentProfile({ agentId }: { agentId: string }) {
             {banner}
           </span>
         )}
-        <MascotPicker
+        <BotAvatarPicker
           onOpenChange={setPickingFace}
-          onSelect={async (avatarSeed) => {
-            /*
-             * A PATCH replaces the fields it carries, so the ones the parser requires go back
-             * unchanged: picking a face must not quietly rename a Bot or make a private one public.
-             *
-             * `endpoint` is deliberately absent. It is optional, an absent one leaves the stored
-             * configuration alone, and sending the current one back would fail validation on any
-             * deployment that forbids private hosts — the address is already saved and already
-             * working, but it is re-checked as if it had just been typed.
-             */
-            await updateAgent.mutateAsync({
-              agentId,
-              input: {
-                avatarSeed,
-                name: profile.name,
-                roleDescription: profile.roleDescription,
-                title: profile.title,
-              },
-            });
-            // Left open on purpose — see `bot-intro-card.tsx`. One press applies; 완료 closes.
-          }}
+          // Left open on purpose: one press applies, 완료 closes.
+          onSelect={(avatarSeed) => save({ avatarSeed })}
           open={pickingFace}
           pending={updateAgent.isPending}
           seed={profile.avatarSeed}
         />
 
-        {/*
-         * THE NAME AND THE JOB, AND EDITING THEM IS A MENU ITEM.
-         *
-         * The whole pane used to be the form: a name field, a title field, a role field, a
-         * "who can see this Bot" select and — for anybody the deployment counts as an
-         * administrator, which on a one-person deployment is the shop owner — an AG-UI endpoint and
-         * a bearer token. Six controls in a 320px column, above the settings that are actually
-         * looked at. The select is gone for good now: a Bot is the account's that made it, so there
-         * was never a second answer for it to collect.
-         */}
-        {isEditing ? (
-          <AgentFields
-            defaultValues={{ name: profile.name, title: profile.title }}
-            error={updateAgent.error}
-            onCancel={() => setEditingId(null)}
-            onSubmit={async (values) => {
-              await updateAgent.mutateAsync({
-                agentId,
-                input: {
-                  name: values.name,
-                  roleDescription: profile.roleDescription,
-                  title: values.title,
-                },
-              });
-              setEditingId(null);
-            }}
+        {profile.canManage ? (
+          /* Keyed on the stored name, so a rename saved elsewhere replaces what the field shows. */
+          <NameField
+            key={`${agentId}:${profile.name}`}
+            name={profile.name}
+            onSave={(name) => save({ name })}
           />
         ) : (
-          <>
-            <div className="flex w-full flex-col items-center gap-0.5">
-              <h1 className="w-full text-balance font-semibold text-2xl leading-tight tracking-tight">
-                {profile.name}
-              </h1>
-              {profile.title ? (
-                <p className="w-full text-balance text-muted-foreground text-sm">
-                  {profile.title}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="flex w-full items-center gap-2">
-              <Button
-                className="flex-1 text-sm!"
-                onClick={async () => {
-                  await navigate({
-                    search: { agent: agentId },
-                    to: "/channel/new",
-                  });
-                }}
-              >
-                {t("Start channel")}
-              </Button>
-              <BotMenu
-                items={botMenuItems(profile, seats)}
-                name={profile.name}
-                onChoose={async (id) => {
-                  if (id === "edit") {
-                    setEditingId(agentId);
-                    return;
-                  }
-                  if (id === "face") {
-                    setPickingFace(true);
-                    return;
-                  }
-                  if (id === "delete") {
-                    setConfirmingDeleteId(agentId);
-                    return;
-                  }
-                  if (id === "duplicate") {
-                    const copy = await duplicateAgent.mutateAsync(agentId);
-                    await navigate({
-                      search: { agent: copy.id },
-                      to: "/agents",
-                    });
-                    return;
-                  }
-                  await setHidden.mutateAsync({
-                    agentId,
-                    hidden: !profile.hidden,
-                  });
-                  // Hiding the Bot whose profile is open leaves the pane pointed at something the
-                  // roster behind it no longer lists.
-                  if (!profile.hidden)
-                    await navigate({ search: {}, to: "/agents" });
-                }}
-              />
-            </div>
-          </>
+          <h1 className="w-full text-balance font-semibold text-2xl leading-tight tracking-tight">
+            {profile.name}
+          </h1>
         )}
       </header>
-
-      {actionError ? (
-        <p className="text-destructive text-sm" role="alert">
-          {actionError.message}
-        </p>
-      ) : null}
-
-      {profile.canManage ? (
-        <WorkStyleCard
-          agentId={agentId}
-          profile={profile}
-          roleDescription={profile.roleDescription}
-        />
-      ) : profile.roleDescription ? (
-        <section className="grid gap-2">
-          <h2 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            {t("How it works")}
-          </h2>
-          <p className="whitespace-pre-wrap text-pretty text-sm">
-            {profile.roleDescription}
-          </p>
-        </section>
-      ) : null}
 
       {/* Above notifications: how the Bot works comes before how it reaches you. */}
       {profile.canManage ? (
@@ -390,12 +235,22 @@ export function AgentProfile({ agentId }: { agentId: string }) {
       />
 
       {/*
-       * ASKED IN A DIALOG, NOT IN A SECOND BUTTON AT THE BOTTOM OF THE PANE.
-       *
-       * Delete used to sit under Duplicate and Hide in a stack of four full-width buttons, with the
-       * destructive one last and its confirmation replacing it in place — so the press that deletes
-       * a Bot landed where the press that asked about it had just been.
+       * LAST, QUIET, AND ASKED IN A DIALOG. With one Bot, deleting it is starting again: the next
+       * screen is the first run, which makes a new one.
        */}
+      {profile.canManage ? (
+        <div className="flex justify-center">
+          <Button
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setConfirmingDeleteId(agentId)}
+            size="sm"
+            variant="ghost"
+          >
+            {t("Delete this Bot")}
+          </Button>
+        </div>
+      ) : null}
+
       <ConfirmDialog
         confirmLabel={t("Delete")}
         description={t(
@@ -403,15 +258,15 @@ export function AgentProfile({ agentId }: { agentId: string }) {
         )}
         onConfirm={async () => {
           await deleteAgent.mutateAsync(agentId);
-          await navigate({ search: {}, to: "/agents" });
+          await navigate({ to: "/" });
         }}
         onOpenChange={(next) => {
           if (!next) setConfirmingDeleteId(null);
         }}
-        // Deleted elsewhere while this was open: the roster goes on without it, and so does the pane.
+        // Deleted elsewhere while this was open: the app goes on without it.
         onStale={() => {
           void queryClient.invalidateQueries({ queryKey: agentKeys.all });
-          void navigate({ search: {}, to: "/agents" });
+          void navigate({ to: "/" });
         }}
         open={isConfirmingDelete}
         recheck={() => botDeleteRecheck(agentId)}
@@ -425,156 +280,69 @@ export function AgentProfile({ agentId }: { agentId: string }) {
 }
 
 /**
- * EVERYTHING YOU CAN DO TO A BOT, IN ONE PLACE, WITH ITS CONSEQUENCES WRITTEN DOWN.
+ * The name, as a field that saves when it is left.
  *
- * The four verbs used to be four full-width buttons stacked down the pane, in this order: start a
- * conversation, duplicate, hide, delete. Three of the four are rare and one of them is permanent,
- * and the sentence explaining what Hide does only appeared AFTER it had been pressed.
- *
- * So: one primary verb outside, the rest behind ⋯, and each one says what it does under its own
- * name. Duplicate spends a seat, which is the thing nobody knew, so it says which seat.
+ * Saved on blur and on Enter, the way the card on a new Bot's first conversation used to save it —
+ * a name is one word, and a Save button beside one word is a second thing to find. Escape puts the
+ * stored name back. An empty or unchanged name saves nothing.
  */
-function BotMenu({
-  items,
+function NameField({
   name,
-  onChoose,
+  onSave,
 }: {
-  items: BotMenuItem[];
   name: string;
-  onChoose: (id: BotMenuItem["id"]) => Promise<void> | void;
+  onSave: (name: string) => Promise<unknown>;
 }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            aria-label={t("Actions for {name}", { name })}
-            size="icon"
-            variant="outline"
-          >
-            <IconDots />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuGroup>
-          {items.map((item) => (
-            <DropdownMenuItem
-              className="flex-col items-start gap-0"
-              disabled={item.disabled}
-              key={item.id}
-              onClick={() => void onChoose(item.id)}
-              variant={item.destructive ? "destructive" : "default"}
-            >
-              <span>{item.label}</span>
-              {/*
-               * THE EXPLANATION IS IN THE MENU, NOT AFTER THE PRESS. Hide's sentence used to appear
-               * under the button once the Bot was already hidden, which is the one moment somebody
-               * has stopped needing it; Duplicate never said anything at all about the seat it was
-               * about to spend.
-               */}
-              <span
-                className={
-                  item.destructive
-                    ? "text-xs opacity-80"
-                    : "text-muted-foreground text-xs"
-                }
-              >
-                {item.description}
-              </span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
- * WHAT THIS BOT IS FOR, IN THE OWNER'S OWN WORDS.
- *
- * The standing instruction the model is given on every run. It is the one field on this pane worth
- * a paragraph, and it used to be the third input of a five-field form — saved by a button that
- * said "Save changes" and then said nothing at all, so the only way to know it had worked was to
- * close the pane and open it again.
- *
- * A PATCH, with the fields the parser requires sent back unchanged, and `endpoint` deliberately
- * absent — the same rule the face picker follows.
- */
-function WorkStyleCard({
-  agentId,
-  profile,
-  roleDescription,
-}: {
-  agentId: string;
-  profile: AgentProfileRecord;
-  roleDescription: string;
-}) {
-  const queryClient = useQueryClient();
-  const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
-  const [draft, setDraft] = useState(roleDescription);
+  const [draft, setDraft] = useState(name);
+  const [problem, setProblem] = useState<string | null>(null);
   const [saved, flashSaved] = useSavedFlash();
   const labelId = useId();
-  const dirty = draft.trim() !== roleDescription.trim();
+
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next || next === name) {
+      setDraft(name);
+      return;
+    }
+    setProblem(null);
+    await onSave(next).then(
+      () => flashSaved(),
+      (caught: unknown) =>
+        setProblem(
+          caught instanceof Error
+            ? caught.message
+            : t("That was not saved. Try again."),
+        ),
+    );
+  };
 
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-      <div className="flex flex-col gap-0.5">
-        <h2 className="font-medium text-base" id={labelId}>
-          {t("How it works")}
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          {t(
-            "What you want it to do, and how. It reads this before every job. Leaving it empty is fine — it will ask.",
-          )}
-        </p>
-      </div>
-      <Textarea
-        aria-labelledby={labelId}
+    <div className="flex w-full flex-col items-center gap-1">
+      <label className="sr-only" htmlFor={labelId}>
+        {t("Name")}
+      </label>
+      <Input
+        className={`h-auto border-transparent bg-transparent px-2 py-1 text-center font-semibold text-2xl leading-tight tracking-tight shadow-none hover:border-border focus-visible:bg-muted/60 md:text-2xl ${focusRing}`}
+        id={labelId}
+        maxLength={80}
+        onBlur={() => void commit()}
         onChange={(event) => setDraft(event.target.value)}
-        placeholder={t(
-          "Review receipts, categorize expenses, and prepare reimbursement reports.",
-        )}
-        rows={4}
+        onKeyDown={(event) => {
+          // The Enter that accepts a Korean syllable is not the Enter that finishes the name.
+          if (isImeKey(event)) return;
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") setDraft(name);
+        }}
         value={draft}
       />
-      {dirty ? (
-        <div className="flex gap-2">
-          <Button
-            disabled={updateAgent.isPending}
-            onClick={async () => {
-              await updateAgent.mutateAsync({
-                agentId,
-                input: {
-                  name: profile.name,
-                  roleDescription: draft.trim(),
-                  title: profile.title,
-                },
-              });
-              flashSaved();
-            }}
-            size="sm"
-          >
-            {updateAgent.isPending ? t("Saving…") : t("Save")}
-          </Button>
-          <Button
-            disabled={updateAgent.isPending}
-            onClick={() => setDraft(roleDescription)}
-            size="sm"
-            variant="outline"
-          >
-            {t("Cancel")}
-          </Button>
-        </div>
-      ) : null}
-      {/* Mounted with the card, so 저장됨 is heard when it is said (`LiveRegion`). */}
-      <LiveRegion as="p" className="text-muted-foreground text-sm">
+      {/* Mounted with the field, so 저장됨 is heard when it is said (`LiveRegion`). */}
+      <LiveRegion as="p" className="text-muted-foreground text-xs">
         {saved ? t("Saved") : null}
       </LiveRegion>
-      <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
-        {updateAgent.error?.message}
+      <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
+        {problem}
       </LiveRegion>
-    </section>
+    </div>
   );
 }
 

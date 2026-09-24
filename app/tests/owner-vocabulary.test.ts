@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { AGENT_REFUSALS } from "../src/lib/agents/mutations";
-import { AGENT_PRESETS, WORK_PATTERNS } from "../src/lib/agents/presets";
+import { WORK_PATTERNS } from "../src/lib/agents/work-patterns";
 import {
   BOT_AVATAR_PALETTES,
   BOT_AVATAR_SHAPES,
@@ -101,14 +101,16 @@ const BEHIND_AN_ADMIN_GATE = new Set([
 /**
  * Strings read through `t(variable)` on an owner screen, listed because a regex cannot find them.
  *
- * `AGENT_PRESETS`, `ROUTINE_REFUSALS` and `AGENT_REFUSALS` are imported whole; these are the ones
+ * `WORK_PATTERNS`, `ROUTINE_REFUSALS` and `AGENT_REFUSALS` are imported whole; these are the ones
  * that live inline in a component and have no export to walk.
  */
 const READ_BY_VARIABLE = [
   // bot-sidebar.tsx FOOTER_LINKS
+  "Bot profile",
   "Routines",
   "Skills",
-  "Bots",
+  "Connections",
+  "Help",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -153,16 +155,10 @@ function ownerKorean(): [string, string][] {
     const korean = ko[key];
     if (korean) sentences.push([korean, "read through t(variable)"]);
   }
-  for (const preset of AGENT_PRESETS) {
-    for (const value of [preset.name, preset.title, preset.roleDescription]) {
-      const korean = ko[value];
-      if (korean) sentences.push([korean, `presets.ts: ${preset.id}`]);
-    }
-  }
   for (const pattern of WORK_PATTERNS) {
     for (const value of [pattern.name, pattern.connection]) {
       const korean = ko[value];
-      if (korean) sentences.push([korean, `presets.ts: ${pattern.id}`]);
+      if (korean) sentences.push([korean, `work-patterns.ts: ${pattern.id}`]);
     }
   }
   for (const table of [ROUTINE_REFUSALS, AGENT_REFUSALS]) {
@@ -173,8 +169,8 @@ function ownerKorean(): [string, string][] {
   }
   /*
    * The face picker's two rows. Every one of these is read
-   * through `t(option.name)`, which the regex above cannot see — the same blind spot the presets
-   * have, and the same answer.
+   * through `t(option.name)`, which the regex above cannot see — the same blind spot the work
+   * patterns have, and the same answer.
    */
   for (const table of [BOT_AVATAR_SHAPES, BOT_AVATAR_PALETTES]) {
     for (const option of table) {

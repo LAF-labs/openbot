@@ -116,7 +116,11 @@ const agent = (id: string, name: string, title: string) => ({
   mine: true,
 });
 
-/** Three colleagues, two of them with a conversation, and one room. */
+/**
+ * An account from before 2026-09-24: three Bots, two of them with a conversation, and a room. A
+ * person has one Bot now; an account like this keeps them all, and the sidebar is how it reaches
+ * them. The room is not listed — rooms were removed — and a Bot's job title is not drawn.
+ */
 function server() {
   globalThis.fetch = stubFetch(async (input) => {
     const url = String(input);
@@ -321,12 +325,12 @@ describe("the roster collapses to a rail", () => {
     expect(collapse?.getAttribute("aria-label")).toBe("Collapse the sidebar");
     expect(collapse?.getAttribute("aria-expanded")).toBe("true");
     expect(ko["Collapse the sidebar"]).toBeTruthy();
-    // The search field came back with the words.
-    expect(view.column().querySelector("input[type=search]")).not.toBeNull();
+    // The list's heading came back with the words: this account still has several.
+    expect(view.column().textContent).toContain("Your Bots");
 
     if (collapse) await view.press(collapse);
     expect(view.width()).toBe("4rem");
-    expect(view.column().querySelector("input[type=search]")).toBeNull();
+    expect(view.column().textContent).not.toContain("Your Bots");
   });
 
   test("above lg there is no toggle, because there is nothing to give back", async () => {
@@ -362,7 +366,6 @@ describe("the roster collapses to a rail", () => {
       "초롱 · Unread",
       "두리",
       "세모",
-      "초롱, 두리",
     ]);
     for (const row of rows) {
       expect(row.dataset.slot).toBe("tooltip-trigger");
@@ -372,32 +375,28 @@ describe("the roster collapses to a rail", () => {
 });
 
 describe("one row layout", () => {
-  test("every row is one Link, and a room row is the colleague row's markup", async () => {
+  test("every row is one Link to the Bot's own conversation, and a room from before is not a row", async () => {
     const view = await roster();
     const items = [...view.column().querySelectorAll("ul > li")];
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(3);
     for (const item of items) {
       expect(item.querySelectorAll("a")).toHaveLength(1);
       expect(item.querySelectorAll("button")).toHaveLength(0);
     }
-    // One frame for a colleague and for a room: literally the same class list, not a copy. 두리's
-    // row rather than 초롱's, because the row you are in also wears the router's `active`.
-    const colleague = view.rowNamed("두리");
-    const room = view.rowNamed("초롱, 두리");
-    expect(room?.className).toBe(colleague?.className as string);
     expect(view.rowNamed("초롱")?.getAttribute("href")).toBe("/channel/ch-1");
-    expect(room?.getAttribute("href")).toBe("/channel/ch-3");
+    expect(view.rowNamed("두리")?.getAttribute("href")).toBe("/channel/ch-2");
     // A Bot nobody has spoken to yet leads to the compose screen for it.
     expect(view.rowNamed("세모")?.getAttribute("href")).toBe(
       "/channel/new?agent=bot-3",
     );
+    expect(view.rowNamed("초롱, 두리")).toBeUndefined();
   });
 
-  test("that layout is name, last line and time, ordered by who spoke last", async () => {
+  test("that layout is name, last line and time", async () => {
     const view = await roster();
     expect(
       view.rows().map((row) => row.querySelector(".text-base")?.textContent),
-    ).toEqual(["초롱", "두리", "세모", "초롱, 두리"]);
+    ).toEqual(["초롱", "두리", "세모"]);
     const first = view.rowNamed("초롱");
     expect(first?.textContent).toContain("3 orders are sorted, take a look");
     expect(first?.querySelector(".tabular-nums")?.textContent).toBe(
@@ -410,11 +409,11 @@ describe("one row layout", () => {
     expect(first?.getAttribute("data-status")).toBe("active");
   });
 
-  test("a colleague's time is coalesced the way a room's is", async () => {
+  test("a conversation's time is when it was last spoken in, or when it began", async () => {
     /*
-     * The same `coalesce(last_message_at, created_at)` the server uses for a room, so two kinds of
-     * row are never one with a time and one without. 두리's room has no message yet and still has
-     * a time; 세모 has no room at all, and no time is the only honest answer for that.
+     * The server's own `coalesce(last_message_at, created_at)`. 두리's conversation has no message
+     * yet and still has a time; 세모 has no conversation at all, and no time is the only honest
+     * answer for that.
      */
     const view = await roster();
     const weekday = (iso: string) =>
@@ -425,24 +424,14 @@ describe("one row layout", () => {
     expect(
       view.rowNamed("세모")?.querySelector(".tabular-nums")?.textContent,
     ).toBe("");
-    expect(
-      view.rowNamed("초롱, 두리")?.querySelector(".tabular-nums")?.textContent,
-    ).toBe(
-      new Date(daysAgo(10)).toLocaleDateString(activeLocale, {
-        month: "numeric",
-        day: "numeric",
-      }),
-    );
   });
 
-  test("a room with nothing said in it still has a second line", async () => {
+  test("a Bot's job title is not drawn under its name — the profile is a name and a face", async () => {
+    // "리뷰 담당" is what an older Bot's row said before anything had been said to it. The title
+    // stays in the row it was saved in; nothing draws it (2026-09-24).
     const view = await roster();
-    expect(view.rowNamed("초롱, 두리")?.textContent).toContain(
-      "2 Bots in this room",
-    );
-    expect(ko["{count} Bots in this room"]).toBeTruthy();
-    // And a Bot with no conversation yet shows its standing role there.
-    expect(view.rowNamed("두리")?.textContent).toContain("리뷰 담당");
+    expect(view.rowNamed("두리")?.textContent).not.toContain("리뷰 담당");
+    expect(view.rowNamed("초롱")?.textContent).not.toContain("주문 담당");
   });
 });
 
@@ -461,43 +450,26 @@ describe("the roster's controls", () => {
     expect(bare).toEqual([]);
   });
 
-  test("the + button is named and tipped", async () => {
+  test("there is no way to start another conversation, search a roster or tidy one away", async () => {
     const view = await roster();
-    const plus = view
-      .column()
-      .querySelector('a[aria-label="Start a new channel"]');
-    expect(plus?.getAttribute("href")).toBe("/channel/new");
-    expect((plus as HTMLElement | null)?.dataset.slot).toBe("tooltip-trigger");
-    expect(ko["Start a new channel"]).toBeTruthy();
+    expect(
+      view.column().querySelector('a[aria-label="Start a new channel"]'),
+    ).toBeNull();
+    expect(view.column().querySelector("input[type=search]")).toBeNull();
+    expect(
+      view.column().querySelector('button[aria-label="Show hidden Bots"]'),
+    ).toBeNull();
   });
 
-  test("the Bots nav item is people, not a lightning bolt", async () => {
-    // A lightning bolt named no part of this product; the page it opens is a list of colleagues.
+  test("the profile nav item is the Bot's own, not a list of people", async () => {
     const view = await roster();
-    const bots = view
+    const profile = view
       .footerLinks()
       .find((link) => link.getAttribute("href") === "/agents");
-    expect(bots?.querySelector("svg.tabler-icon-users")).not.toBeNull();
-    expect(view.column().querySelector(".tabler-icon-bolt")).toBeNull();
-  });
-
-  test("a roster that filtered to nothing is not an empty roster", async () => {
-    const view = await roster();
-    const search = view
-      .column()
-      .querySelector<HTMLInputElement>("input[type=search]");
-    expect(search).not.toBeNull();
-    // A label, not a placeholder: the placeholder disappears the moment somebody types.
     expect(
-      view.column().querySelector(`label[for="${search?.id}"]`)?.textContent,
-    ).toBe("Search your team");
-    if (search) await view.type(search, "두리");
-    expect(
-      view.rows().map((row) => row.querySelector(".text-base")?.textContent),
-    ).toEqual(["두리", "초롱, 두리"]);
-    if (search) await view.type(search, "없는 이름");
-    expect(view.rows()).toHaveLength(0);
-    expect(view.column().textContent).toContain("Nobody matches that.");
+      profile?.querySelector("svg.tabler-icon-user-circle"),
+    ).not.toBeNull();
+    expect(view.column().querySelector(".tabler-icon-users")).toBeNull();
   });
 });
 
@@ -511,12 +483,18 @@ describe("the roster speaks the app's language", () => {
     // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
     const view = await roster();
     const labels = view.footerLinks().map((link) => link.textContent);
-    expect(labels).toEqual(["Routines", "Skills", "Bots", "Help"]);
+    expect(labels).toEqual([
+      "Bot profile",
+      "Routines",
+      "Skills",
+      "Connections",
+      "Help",
+    ]);
     for (const label of labels) {
       expect(ko[label as string]).toBeTruthy();
     }
     await view.unmount();
-    // In the rail the same four words move into the labels.
+    // In the rail the same five words move into the labels.
     const rail = await roster({ wide: false });
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),

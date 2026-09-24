@@ -15,8 +15,6 @@ import {
   lafThreadMessages,
   users,
 } from "../src/db/schema";
-import { HISTORY_ROWS, readPrivateHistory } from "../src/rooms/private-history";
-import { ROOM_READ_ROWS, readRoomLines } from "../src/rooms/transcript";
 import { appendMessages, THREAD_READ_WINDOW } from "../src/runner/thread-store";
 
 /**
@@ -155,28 +153,5 @@ describe("a turn over a long conversation", () => {
       .limit(1)
       .offset(LENGTH);
     expect(last?.seq).toBe(LENGTH + 1);
-  }, 60_000);
-
-  test("a room member's prompt and its private history read their windows too", async () => {
-    const roomMark = sent.length;
-    const lines = await readRoomLines(
-      database,
-      THREAD,
-      new Map([[BOT, "Bot"]]),
-      "사장님",
-    );
-    expect(lines.length).toBeGreaterThan(0);
-    expect(await mostRowsReadSince(roomMark)).toBeLessThanOrEqual(
-      ROOM_READ_ROWS,
-    );
-
-    const privateMark = sent.length;
-    const recalled = await readPrivateHistory(database, PERSON, BOT);
-    expect(recalled.length).toBe(12);
-    // The newest thing said is in it, so the window is the tail and not an arbitrary slice.
-    expect(recalled.at(-1)?.content).toBe("오늘은?");
-    expect(await mostRowsReadSince(privateMark)).toBeLessThanOrEqual(
-      HISTORY_ROWS,
-    );
   }, 60_000);
 });

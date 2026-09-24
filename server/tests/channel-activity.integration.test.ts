@@ -28,6 +28,9 @@ const database = createDatabase(databaseUrl, TEST_POOL);
 const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
+  undefined,
+  // Seats for several Bots of one person's, which is the account from before 2026-09-24 that keeps them.
+  10,
 );
 const store = createChannelStore(
   database,

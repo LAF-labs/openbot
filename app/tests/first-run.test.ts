@@ -40,7 +40,7 @@ function seeded(answers: Onboarding[]) {
         onboarded: answer.onboarded,
         consentRequired: false,
         shop: { kind: null, places: [] },
-        deployment: { effort: true, autoReview: true, seats: 5 },
+        deployment: { effort: true, autoReview: true },
       };
     },
   };

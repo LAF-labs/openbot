@@ -345,13 +345,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * hand on what it does not know). Measured at server 2,702 / app 1,263 / agent-computer 260 / root
  * 367; `server` re-raised to 3% under, the other three did not grow.
  *
+ * LOWERED 2026-09-24: rooms and multi-Bot removed 2026-09-24 on the owner's order ("봇은 하나다",
+ * docs/laf/deployment-model.md). A person has one Bot, so the rooms, one Bot asking another, the
+ * participants menu, `@` naming another Bot, duplicating a Bot and the preset gallery went with
+ * their tests. main stood at about server 2,719 / app 1,285 (the two read-receipt commits after the
+ * paragraph above added seventeen and twenty-two without raising a floor); this tree measures
+ * server 2,539 / app 1,122 / agent-computer 261 / root 364. The old floor minus what was removed
+ * would be 2,440 and 1,062, looser than a fresh 3% here, so both go to 3% under what this tree
+ * measures instead — lower than that would forgive a file that threw on import in the same change.
+ * `agent-computer` and `root` keep theirs; root lost three with the room's checks (the upgrade check's
+ * room turn, the room's tool in the bridge) and is still above its floor.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2620, roots: ["server"] },
-  { name: "app", floor: 1225, roots: ["app"] },
+  { name: "server", floor: 2462, roots: ["server"] },
+  { name: "app", floor: 1088, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

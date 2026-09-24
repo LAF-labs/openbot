@@ -9,8 +9,9 @@ import { resolve } from "node:path";
  * itself all print on their own account, and a `console.error("…", error)` somewhere nobody
  * grepped prints the error object whole. So this starts the two processes an operator reads —
  * the API server and `agent-bot` — as subprocesses, points the Bot service at a fake provider
- * served from this file, drives one turn through the API the way a room or a coworker call would,
- * and then reads every byte both processes wrote.
+ * served from this file, drives one turn through the API the way a routine's "run now" does, and
+ * then reads every byte both processes wrote. (It drove one Bot asking another until 2026-09-24,
+ * when a person came to have one Bot and that route went.)
  *
  * Three canaries, placed where a leak would carry them:
  *
@@ -280,7 +281,34 @@ function running(): { bot: Captured; server: Captured } {
   return { bot, server };
 }
 
+/** What this file made on the running server, deleted by it while the server can still delete. */
+const made: string[] = [];
+const routines: string[] = [];
+
+/**
+ * Deletes what this file made, and forgets it, so a second call does nothing.
+ *
+ * Called before the last test tells both processes to stop, and again from `afterAll` for a run
+ * that never got that far. Until 2026-09-24 this was only an `afterAll`, which runs after that
+ * test has stopped the server: every delete failed into its `catch` and each run left its Bots
+ * behind, which nobody saw while a person had five seats and the first run after they had one did.
+ */
+async function deleteWhatWasMade(): Promise<void> {
+  if (!api) return;
+  for (const id of routines.splice(0)) {
+    await fetch(`${api}/api/routines/${id}`, { method: "DELETE" }).catch(
+      () => null,
+    );
+  }
+  for (const id of made.splice(0)) {
+    await fetch(`${api}/api/agents/${id}`, { method: "DELETE" }).catch(
+      () => null,
+    );
+  }
+}
+
 afterAll(async () => {
+  await deleteWhatWasMade();
   provider?.stop(true);
   // `LOG_HYGIENE_DUMP=1 bun test …` prints what both processes wrote, which is the quickest way to
   // read a whole turn's worth of lines when changing what a line says.
@@ -302,32 +330,54 @@ function everything(): { text: string; lines: Line[] } {
   return { text: lines.map((line) => line.raw).join("\n"), lines };
 }
 
-const askerName = `Log canary asker ${Date.now()}`;
-const answererName = `Log canary answerer ${Date.now()}`;
-const made: string[] = [];
+/** How this file names its Bots, so a later run can tell its own leftovers from anybody else's. */
+const BOT_NAME_PREFIX = "Log canary ";
 
-async function makeBot(name: string): Promise<string> {
+/**
+ * The development person's one Bot, made here for this run.
+ *
+ * A person has one Bot (2026-09-24), and the development actor is one person shared by every test
+ * that runs without sign-in, so a Bot this file left behind would have this one refused — and
+ * reusing it would send the turn to the address of an `agent-bot` that died with an earlier run.
+ * So this file's own leftovers, and only those, go first: an earlier run whose teardown never ran,
+ * or a tree from before the teardown was put in order (above).
+ */
+async function theBot(): Promise<string> {
+  const { agents } = await json<{
+    agents: { id: string; name: string; mine: boolean }[];
+  }>("/api/agents");
+  for (const leftover of agents.filter(
+    (agent) => agent.mine && agent.name.startsWith(BOT_NAME_PREFIX),
+  )) {
+    const deleted = await fetch(`${api}/api/agents/${leftover.id}`, {
+      method: "DELETE",
+    });
+    expect(deleted.ok).toBe(true);
+  }
   const { agent } = await json<{ agent: { id: string } }>("/api/agents", {
     method: "POST",
     body: JSON.stringify({
-      name,
-      title: "Log hygiene",
-      roleDescription:
-        "Made by log-hygiene.integration.test.ts. Safe to delete.",
+      name: `${BOT_NAME_PREFIX}${Date.now()}`,
+      title: "",
+      roleDescription: "",
     }),
   });
   made.push(agent.id);
   return agent.id;
 }
 
-afterAll(async () => {
-  if (!api) return;
-  for (const id of made) {
-    await fetch(`${api}/api/agents/${id}`, { method: "DELETE" }).catch(
-      () => null,
-    );
-  }
-});
+/** One turn, server-side: a routine carrying the canary, run now, and what the run recorded. */
+async function runOnce(routineId: string) {
+  await fetch(`${api}/api/routines/${routineId}/run`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  const { runs } = await json<{
+    runs: { ok?: boolean; answer?: string; error?: string }[];
+  }>(`/api/routines/${routineId}/runs`);
+  return runs[0];
+}
 
 describe("a running deployment's log", () => {
   test("the Bot service and the API server boot, each against the fake provider and nothing of this shell", async () => {
@@ -356,8 +406,6 @@ describe("a running deployment's log", () => {
       OPENAI_API_KEY: CANARY_KEY,
       OPENAI_BASE_URL: providerUrl,
       BOT_MODEL: MODEL,
-      // Room for this file's two Bots beside whatever else the shared test database holds.
-      BOT_SEATS_PER_ACCOUNT: "50",
       AUDIT_RETENTION_DAYS: "0",
       IMAGE_TAG,
     });
@@ -370,39 +418,39 @@ describe("a running deployment's log", () => {
 
   test("carries a whole turn through the API and the Bot service without the key, the message or the provider's words", async () => {
     const { bot } = running();
-    const asker = await makeBot(askerName);
-    const answerer = await makeBot(answererName);
-
-    // The turn: one Bot asks another, which runs the answerer through the runtime, through
-    // `agent-bot`, to the fake provider and back. The answer is the proof that it went the whole way.
-    const { answer } = await json<{ answer: string }>(
-      `/api/agents/${answerer}/ask`,
+    const botId = await theBot();
+    const { routine } = await json<{ routine: { id: string } }>(
+      "/api/routines",
       {
         method: "POST",
-        body: JSON.stringify({ message: CANARY_MESSAGE, from: asker }),
+        body: JSON.stringify({
+          agentId: botId,
+          name: `Log canary ${Date.now()}`,
+          instruction: CANARY_MESSAGE,
+          schedule: { kind: "interval", minutes: 1440 },
+        }),
       },
     );
-    expect(answer).toContain(REPLY);
+    routines.push(routine.id);
+
+    // The turn: the routine's "run now", which runs the Bot through the runtime, through
+    // `agent-bot`, to the fake provider and back. The answer is the proof that it went the whole way.
+    const answered = await runOnce(routine.id);
+    expect(answered?.answer).toContain(REPLY);
     expect(providerSawKey).toBe(true);
     const finished = await bot.event("run_finished");
     expect(typeof finished.tools).toBe("number");
 
     // The refusal: the same turn again, answered with a 429 whose body names a vendor.
     providerMode = "rate_limit";
-    const refused = await fetch(`${api}/api/agents/${answerer}/ask`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: CANARY_MESSAGE, from: asker }),
-    });
-    // Whatever the route answers with — a 502, or a 200 saying the coworker said nothing — it is
-    // not the answer, and it is not the provider's sentence either.
-    const refusedBody = await refused.text();
-    expect(refusedBody).not.toContain(REPLY);
-    expect(refusedBody).not.toContain(CANARY_VENDOR);
+    const refused = await runOnce(routine.id);
+    // Whatever the run recorded, it is not the answer, and it is not the provider's sentence.
+    expect(JSON.stringify(refused)).not.toContain(REPLY);
+    expect(JSON.stringify(refused)).not.toContain(CANARY_VENDOR);
     const failed = await bot.event("run_failed");
     expect(failed.reason).toBe("provider_rate_limited");
     expect(failed.code).toBe("laf:model_rate_limited");
-    expect(failed.bot).toBe(answerer);
+    expect(failed.bot).toBe(botId);
 
     const { text, lines } = everything();
 
@@ -451,6 +499,7 @@ describe("a running deployment's log", () => {
 
   test("says why it stopped when it is told to", async () => {
     const { bot, server } = running();
+    await deleteWhatWasMade();
     for (const captured of [server, bot]) {
       captured.process.kill("SIGTERM");
       const stopped = await captured.event("shutdown", 15_000);

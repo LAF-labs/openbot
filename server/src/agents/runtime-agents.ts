@@ -124,7 +124,6 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
         name: agents.name,
         type: agents.type,
         configuration: agents.configuration,
-        title: agentProfiles.title,
         roleDescription: agentProfiles.roleDescription,
         // The one model setting a Bot carries into its own run. See RegisteredRemoteAgent.effort.
         effort: agentProfiles.effort,

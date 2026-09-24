@@ -30,6 +30,9 @@ const shops = createShopStore(database);
 const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
+  undefined,
+  // Seats for the two Bots an account from before 2026-09-24 may still have.
+  10,
 );
 const loadAgents = withShopProfile(
   createRuntimeAgentLoader(database),

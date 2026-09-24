@@ -48,7 +48,6 @@ import { eq, inArray } from "drizzle-orm";
 import { createAccountDeletion } from "../src/account/deletion";
 import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
-import { createCoworkerCall } from "../src/agents/coworker-call";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
@@ -96,8 +95,6 @@ import { readApprovalMetrics } from "../src/notifications/approval-metrics";
 import { createNotificationOutbox } from "../src/notifications/outbox";
 import { createPartnerRuntime } from "../src/plugins/partners";
 import { createPluginStore } from "../src/plugins/store";
-import { createThreadMessageReader } from "../src/rooms/messages";
-import { RoomError } from "../src/rooms/service";
 import { createRoutineService } from "../src/routines/service";
 import { createSuggestionDismissalStore } from "../src/routines/suggestions";
 import { createMessageTimeReader } from "../src/runner/message-times";
@@ -302,10 +299,6 @@ function deployment() {
     database,
     resolveAgents: async () => ({ [BOT_A]: instantBot }),
   });
-  /** The real room service refuses a room the person is not in the same way; see `roomOf`. */
-  const noSuchRoom = () => {
-    throw new RoomError("laf:channel_not_found", 404);
-  };
 
   const app = createApp(
     config,
@@ -333,12 +326,9 @@ function deployment() {
     createSandboxedStore(database, auditStore),
     threadIdentity,
     approvals,
-    createCoworkerCall({ resolveAgents: async () => ({}), auditStore }),
     routineService,
     createMessageTimeReader(database),
     createWorkingReader(database),
-    { post: async () => noSuchRoom(), stop: async () => noSuchRoom() },
-    createThreadMessageReader(database),
     standing,
     true,
     createDemonstrationRecorder(),
@@ -675,7 +665,7 @@ afterAll(async () => {
   await database
     .delete(lafRoutines)
     .where(inArray(lafRoutines.createdById, PEOPLE_IDS));
-  // The sweep made a room for A and one for the administrator (`POST /api/channels`, 201).
+  // The sweep made a conversation for A and one for the administrator (`POST /api/channels`, 201).
   const rooms = await database
     .select({ id: channelMemberships.channelId })
     .from(channelMemberships)
@@ -688,7 +678,7 @@ afterAll(async () => {
       ),
     );
   }
-  // And duplicated a Bot for each of them. Everything owned by the three goes with the seeded
+  // And may have made a Bot for each of them. Everything owned by the three goes with the seeded
   // rows, so nothing this file made outlives it.
   const owned = await database
     .select({ id: agentProfiles.agentId })
@@ -842,7 +832,6 @@ const A_ALLOWED = [
   // 계속 돌리기 on it, and 다시 켜기 on its Bot's routines the unread rule paused.
   "POST /api/routines/:id/keep-running",
   "POST /api/routines/resume",
-  "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
   // Answering the question their own Bot raised — a No, on a real question. It was an
@@ -892,10 +881,9 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "DELETE /api/agents/:agentId",
   "GET /api/agents/:agentId",
   "GET /api/agents/:agentId/memories",
-  "POST /api/agents/:agentId/duplicate",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
-  // A room made around A's Bot, and the intro chip pressed on it: both take the id in a body.
+  // A conversation made around A's Bot, and the intro chip pressed on it: both take the id in a body.
   "POST /api/channels",
   "POST /api/me/first-task",
   // A standing instruction planted on it, and the verbs that manage one.
@@ -965,7 +953,7 @@ describe("the matrix", () => {
   /*
    * The measurement is a test rather than a hook so it can have its own clock: four people over
    * every route is several hundred requests, a few of which really do something (a routine runs,
-   * a Bot is duplicated), and the default five seconds a hook gets is not a bound anybody chose.
+   * a Bot is made), and the default five seconds a hook gets is not a bound anybody chose.
    */
   test("is measured: every route, by every person", async () => {
     matrix = await measure();

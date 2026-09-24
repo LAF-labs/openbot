@@ -92,7 +92,6 @@ function appWith(role: "admin" | "user", routineDatabase: Database = database) {
     // The routine routes are mounted beside the thread routes, so this is what mounts them.
     createThreadIdentity(`boundary-${run}`),
     undefined, // approvals
-    undefined, // coworkerCall
     routineService,
   );
 }

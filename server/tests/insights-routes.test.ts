@@ -185,7 +185,7 @@ describe("the mount", () => {
       signedInAdmin,
       adminRoles,
     ];
-    if (options.reader !== false) args[43] = async () => REPORT;
+    if (options.reader !== false) args[40] = async () => REPORT;
     return createApp(...args);
   }
 

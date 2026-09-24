@@ -87,21 +87,21 @@ describe("where the documents are linked from", () => {
     expect(read("routes/_authed/settings/index.tsx")).toContain("<LegalLinks");
   });
 
-  test("the consent sentence is on the FIRST welcome screen, with both links", () => {
+  test("the consent sentence is on the first-run screen, with both links", () => {
+    // One screen since 2026-09-24 (a name and a face), and the sentence sits under its one button.
     const welcome = read("routes/_authed/welcome.tsx");
-    const hello = welcome.indexOf('step === "hello" ? (');
-    const create = welcome.indexOf(") : (", hello);
-    expect(hello).toBeGreaterThan(-1);
-    expect(create).toBeGreaterThan(hello);
-    const firstScreen = welcome.slice(hello, create);
-    expect(firstScreen).toContain("<ConsentLine");
+    const form = welcome.slice(welcome.indexOf("function FirstRunForm"));
+    expect(form).toContain("<ConsentLine");
+    expect(form.indexOf("<ConsentLine")).toBeGreaterThan(
+      form.indexOf('type="submit"'),
+    );
 
     const line = read("components/legal/consent-line.tsx");
     expect(line).toContain('to="/legal/terms"');
     expect(line).toContain('to="/legal/privacy"');
   });
 
-  test("다음 on the first screen is what records the agreement", () => {
+  test("시작하기 on the first-run screen is what records the agreement", () => {
     // The sentence says continuing means agreeing; the button that continues has to be the one
     // that writes the stamp, or the stamp records an act the sentence never named.
     const welcome = read("routes/_authed/welcome.tsx");

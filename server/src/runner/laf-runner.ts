@@ -40,7 +40,7 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import type { WorkInFlight } from "./in-flight";
-import { type RunLedger, RUN_ORIGINS, type RunOrigin } from "./run-ledger";
+import { RUN_ORIGINS, type RunLedger, type RunOrigin } from "./run-ledger";
 import { redactSecretTyping } from "./secret-redaction";
 import {
   appendMessages,
@@ -294,7 +294,11 @@ export type InterruptedRun = {
   threadId: string | null;
   agentId: string | null;
   userId: string | null;
-  origin: RunOrigin;
+  /**
+   * As the column holds it, which includes the `room` and `handoff` a run from before 2026-09-24 can
+   * carry — `RunOrigin` is what is written now, not everything that was.
+   */
+  origin: (typeof lafThreadRuns.$inferSelect)["origin"];
   /** A routine's name, for a run that was one. */
   label: string | null;
 };
@@ -849,6 +853,10 @@ export async function reportInterruptedRuns(input: {
   for (const run of input.runs) {
     // A run with nobody to tell, or no Bot to name, is still reconciled; it is just not news.
     if (!run.agentId || !run.userId) continue;
+    // Nor a room's turn or one Bot answering another, from the process before rooms were removed
+    // (2026-09-24): the screen that would have shown it is gone, so there is nowhere to point.
+    const origin = RUN_ORIGINS.find((known) => known === run.origin);
+    if (!origin) continue;
     let channelId: string | undefined;
     if (run.origin === "routine" && run.label && input.markRoutine) {
       try {
@@ -889,7 +897,7 @@ export async function reportInterruptedRuns(input: {
       userId: run.userId,
       ...(channelId ? { channelId } : {}),
       run: {
-        origin: run.origin,
+        origin,
         ...(run.label ? { label: run.label } : {}),
         code: TURN_FAILURE_CODES.interrupted,
       },

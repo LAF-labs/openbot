@@ -92,8 +92,12 @@ export const agentProfiles = pgTable(
      */
     autoReview: text("auto_review").notNull().default(""),
     /**
-     * Which preset this Bot was shaped from, by catalogue key (`app/src/lib/agents/presets.ts`),
-     * or null for a Bot nobody picked one for.
+     * Which preset this Bot was shaped from, by catalogue key, or null for a Bot nobody picked one
+     * for.
+     *
+     * NOTHING WRITES IT SINCE 2026-09-24. The presets and the card that offered them were removed
+     * when a Bot's profile became its name and face; the column keeps what earlier presses wrote,
+     * and `insights` still reads those. Dropping it is a migration somebody decides on.
      *
      * WHY A COLUMN, when the preset writes nothing else a person could not have typed: the intro
      * card PATCHes a preset's TRANSLATED title and role and then the preset is gone, so "which of

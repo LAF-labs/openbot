@@ -2,7 +2,6 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import type {
-  AgentOption,
   CommandOption,
   ComposerDraft,
 } from "../src/components/channels/composer";
@@ -43,10 +42,6 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
-const AGENTS: readonly AgentOption[] = [
-  { id: "bot-1", name: "초롱", description: "가게 비서" },
-  { id: "bot-2", name: "달수", description: "회계" },
-];
 const COMMANDS: readonly CommandOption[] = [
   { id: "daily-report", name: "daily-report", kind: "chip" },
 ];
@@ -117,12 +112,11 @@ function composeSyllable(editor: HTMLElement, steps: string[], commit: string) {
 
 /** What a screen hands down, before and after its queries answer. */
 type Sources = {
-  agents: readonly AgentOption[];
   commands: readonly CommandOption[];
 };
 
-const NOTHING_YET: Sources = { agents: [], commands: [] };
-const ARRIVED: Sources = { agents: AGENTS, commands: COMMANDS };
+const NOTHING_YET: Sources = { commands: [] };
+const ARRIVED: Sources = { commands: COMMANDS };
 
 async function mounted() {
   const { act } = await import("react");
@@ -136,7 +130,6 @@ async function mounted() {
       null,
       createElement(Composer, {
         // New arrays every render, the way a screen that maps a query result hands them down.
-        agents: sources.agents.map((agent) => ({ ...agent })),
         commands: sources.commands.map((command) => ({ ...command })),
         compact: true,
         onSubmit: (draft: ComposerDraft) => {

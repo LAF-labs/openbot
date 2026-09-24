@@ -10,10 +10,7 @@ import {
 import { ko } from "../src/lib/i18n-ko";
 import {
   APP_DOM_TIMEOUT_MS,
-  type ApiRequest,
-  agentFixture,
   installAppDom,
-  json,
   mountApp,
   removeAppDom,
   unmountApps,
@@ -251,129 +248,6 @@ describe("다시 시도 under a failure the server recorded", () => {
     );
     // Still true that it went unanswered — and the only way to ask it now would be to say it twice.
     expect(view.buttonNamed("Try again")).toBeUndefined();
-    await view.unmount();
-  });
-});
-
-/** A room with two members, its stored transcript and failures, and what its turn route received. */
-function room(options: {
-  channelId: string;
-  messages: WireMessage[];
-  times: Record<string, string>;
-  failures: { messageId: string; code: string; at: string }[];
-}) {
-  const posted: { messageId?: string; text?: string }[] = [];
-  const base = `/api/channels/${options.channelId}`;
-  const api = ({ pathname, method, body }: ApiRequest) => {
-    if (pathname === "/api/agents") {
-      return json({
-        agents: [
-          agentFixture({ id: "bot-a", name: "초롱" }),
-          agentFixture({ id: "bot-b", name: "두리" }),
-        ],
-      });
-    }
-    if (pathname === base) {
-      return json({
-        channel: {
-          id: options.channelId,
-          name: "초롱, 두리",
-          agentIds: ["bot-a", "bot-b"],
-          threadId: `thread-${options.channelId}`,
-          active: true,
-        },
-      });
-    }
-    if (pathname === `${base}/messages`) {
-      return json({ messages: options.messages });
-    }
-    if (pathname === `${base}/message-times`) {
-      return json({ times: options.times, speakers: {} });
-    }
-    if (pathname === `${base}/failures`) {
-      return json({ failures: options.failures });
-    }
-    if (pathname === `${base}/read`) {
-      return json({ previousReadAt: null, readAt: new Date().toISOString() });
-    }
-    if (pathname === `${base}/room-turn` && method === "POST") {
-      posted.push(body as { messageId?: string; text?: string });
-      return json({ turnId: "turn-2", messageId: "q-room", epoch: 2 }, 202);
-    }
-    return undefined;
-  };
-  return { api, posted };
-}
-
-describe("다시 시도 in a room", () => {
-  const question = { id: "q-room", role: "user", content: QUESTION };
-
-  test("posts the turn again under the stored message's own id", async () => {
-    const server = room({
-      channelId: "channel_retry-room",
-      messages: [question],
-      times: { "q-room": "2026-09-10T05:18:00.000Z" },
-      failures: [
-        {
-          messageId: "q-room",
-          code: "laf:turn_model_failed",
-          at: "2026-09-10T05:18:30.000Z",
-        },
-      ],
-    });
-    const view = await mountApp({
-      path: "/channel/channel_retry-room",
-      api: server.api,
-    });
-    await view.waitFor(
-      () => view.buttonNamed("Try again") !== undefined,
-      "the room's stored failure and its button",
-      8000,
-    );
-
-    await view.click(view.buttonNamed("Try again") as Element);
-    await view.waitFor(() => server.posted.length === 1, "the room turn", 8000);
-
-    // The same row, asked again — not the same words under a new id.
-    expect(server.posted[0]).toMatchObject({
-      messageId: "q-room",
-      text: QUESTION,
-    });
-    expect(bubblesSaying(view.host, QUESTION)).toBe(1);
-    await view.unmount();
-  });
-
-  test("keeps the failure beside a member that did answer during the failed turn", async () => {
-    // 초롱 answered at :10 and 두리 did not; the turn ended in error at :30. That line is still true.
-    const server = room({
-      channelId: "channel_retry-room-partial",
-      messages: [
-        question,
-        { id: "a-chorong", role: "assistant", content: "오후 2시 10분입니다." },
-      ],
-      times: {
-        "q-room": "2026-09-10T05:18:00.000Z",
-        "a-chorong": "2026-09-10T05:18:10.000Z",
-      },
-      failures: [
-        {
-          messageId: "q-room",
-          code: "laf:turn_model_failed",
-          at: "2026-09-10T05:18:30.000Z",
-        },
-      ],
-    });
-    const view = await mountApp({
-      path: "/channel/channel_retry-room-partial",
-      api: server.api,
-    });
-    await view.waitFor(
-      () => view.host.querySelector(failed) !== null,
-      "the partial failure",
-      8000,
-    );
-    // And in a room it can be asked again in place: the member that answered stays answered.
-    expect(view.buttonNamed("Try again")).toBeDefined();
     await view.unmount();
   });
 });

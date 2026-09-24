@@ -4,8 +4,6 @@ import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
 import { createAccountExport } from "./account/export";
 import { createShopStore } from "./account/shop";
-import { createCoworkerCall } from "./agents/coworker-call";
-import { recordCoworkerExchange } from "./agents/coworker-exchange";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -82,9 +80,6 @@ import { createPublicDataRuntime } from "./plugins/public-data-rest";
 import { lookupOver } from "./plugins/shared-clients";
 import { allLiveBots } from "./plugins/skills-and-grants";
 import { createPluginStore } from "./plugins/store";
-import { createThreadMessageReader } from "./rooms/messages";
-import { createRoomService } from "./rooms/service";
-import { createApprovalWaiter } from "./rooms/wait-for-approval";
 import {
   createRoutineDelivery,
   createRoutineFailureDelivery,
@@ -271,11 +266,11 @@ const notificationOutbox = createDeploymentOutbox({
   fleetNotifier,
   admission,
 });
-/** A routine or a room turn that finished while nobody was connected to hear it. See in-app.ts. */
+/** A routine that finished while nobody was connected to hear it. See in-app.ts. */
 const noticeFinished = createFinishedNotice(channelEvents, notificationOutbox);
 /**
  * A finished turn's roster row, on every open tab — and a notification for a person who has no tab
- * at all. The same announcement for a routine's answer and a room's, so the two cannot drift.
+ * at all.
  */
 const announceFinished = (event: ChannelActivityEvent) => {
   channelEvents.deliver(event);
@@ -384,9 +379,6 @@ const sandboxedStore = createSandboxedStore(database, bootAuditStore);
 // A Map in this process, which is where a pending question belongs: one process
 // per VM by decision (docs/laf/deployment-model.md), a question is about a live
 // browser session and a live turn, and a restart is an honest withdrawal of it.
-// It is also what lets the room be TOLD an answer instead of asking every second
-// — see `waitFor`.
-//
 // `onExpire` is the one ending of a question that writes no row anywhere else:
 // ten minutes with nobody answering. It is what makes "the notification was
 // never delivered" and "somebody said no" different facts in the list.
@@ -584,15 +576,6 @@ const resolveAgentsFor = (actor: AgentActor) =>
     runMeter,
   );
 
-// One Bot asking another: the same loader, model and keys the runtime uses.
-const coworkerCall = createCoworkerCall({
-  resolveAgents: resolveAgentsFor,
-  auditStore: bootAuditStore,
-  ledger: runLedger,
-  recordExchange: recordCoworkerExchange(database, agentProfileStore),
-  work: workInFlight,
-});
-
 /**
  * One thing at a time per Bot, shared by everything that drives one server-side.
  *
@@ -716,35 +699,11 @@ const app = createApp(
   threadIdentity,
   // Where a person answers what the boundary stopped to ask, whichever half of the product asked.
   approvals,
-  // One Bot asking another, over the same loader and keys the runtime itself uses.
-  coworkerCall,
   routineService,
   // When each message was first seen. Read from the snapshot column directly — see message-times.
   createMessageTimeReader(database),
   // What is running for a person right now, from the same ledger chat and routines both write.
   createWorkingReader(database),
-  /*
-   * A room's turn, run here rather than in the browser. Every dependency is the one a routine
-   * already uses — the same agents, the same tools, the same ledger, the same lane — so a Bot in a
-   * room is governed exactly as a Bot on a schedule is.
-   */
-  createRoomService({
-    database,
-    lane: botLane,
-    ledger: runLedger,
-    resolveAgents: resolveAgentsFor,
-    tools: unattendedTools,
-    emit: (frame) => channelEvents.deliverRoom(frame),
-    // The roster row on every OTHER tab, after the message that moved it has committed — and a
-    // notification for a member who has no tab at all. See `createFinishedNotice`.
-    announce: announceFinished,
-    // A room holds while the person answers, because in a room the person is there. See the module.
-    awaitApproval: createApprovalWaiter(approvals),
-    // Each member's turn on the trail: which round, why it spoke, what came of it.
-    auditStore: bootAuditStore,
-    work: workInFlight,
-  }),
-  createThreadMessageReader(database),
   standingApprovals,
   tenantPackage.model.supportsEffort,
   demonstrations,

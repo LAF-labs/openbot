@@ -93,7 +93,6 @@ describe("who writes the answers", () => {
       ...sources(join(root, "agent-bot/src")),
       ...sources(join(root, "server/src/runner")),
       ...sources(join(root, "server/src/routines")),
-      ...sources(join(root, "server/src/rooms")),
       ...sources(join(root, "server/src/agents")).filter(
         (path) => !path.endsWith("shop-context.ts"),
       ),

@@ -10,7 +10,8 @@ import { t } from "@/lib/i18n";
  * conversation must be read once, not once from each side.
  */
 
-export type WorkKind = "chat" | "room" | "routine" | "handoff";
+/** Two since 2026-09-24, when rooms and one Bot answering another were removed. */
+export type WorkKind = "chat" | "routine";
 
 /**
  * The fact a stopped run is recorded under — a routine's receipt carries it where a failure's
@@ -19,12 +20,7 @@ export type WorkKind = "chat" | "room" | "routine" | "handoff";
 export const RUN_STOPPED = "laf:run_stopped";
 
 /** The kinds in the order the dialog lists them. The server's `WORK_KINDS`, as the surface sees it. */
-export const WORK_KINDS: readonly WorkKind[] = [
-  "chat",
-  "room",
-  "routine",
-  "handoff",
-];
+export const WORK_KINDS: readonly WorkKind[] = ["chat", "routine"];
 
 export type WorkCounts = Record<WorkKind, number>;
 
@@ -47,12 +43,10 @@ export type StopAllOutcome = { stopped: WorkCounts; notStopped: WorkCounts };
  */
 export const WORK_LINES: Record<WorkKind, string> = {
   chat: "Conversations: {count}",
-  room: "Rooms: {count}",
   routine: "Routines: {count}",
-  handoff: "Bots helping another Bot: {count}",
 };
 
-const none = (): WorkCounts => ({ chat: 0, room: 0, routine: 0, handoff: 0 });
+const none = (): WorkCounts => ({ chat: 0, routine: 0 });
 
 /** A count off the wire: a whole number or nothing, so a malformed answer never reads as work. */
 function countsOf(value: unknown): WorkCounts {
@@ -187,7 +181,7 @@ export type Pressed = { reached: boolean; outcome: StopAllOutcome };
  * while this window was still waiting for the reply, and the conversation drew "답을 받지
  * 못했습니다." in red under a turn the person had stopped. A conversation's own Stop marks the reply
  * as no longer expected before it reaches the server; stopping it here first keeps that order. Then
- * the server stops everything else — other windows' conversations, rooms, routines, coworkers.
+ * the server stops everything else — other windows' conversations and the routines.
  *
  * A server that does not answer is reported as such, with whatever this window stopped still said.
  */

@@ -27,17 +27,17 @@ import type {
 /**
  * The frame, as the page receives it.
  *
- * `kind: "notification"` is the discriminator, in the same position the room frames put theirs
- * (`rooms/frames.ts`), because the socket's other traffic — the roster's activity event — is
+ * `kind: "notification"` is the discriminator, because the socket's other traffic — the roster's
+ * activity event — is
  * recognised by having no `kind` at all. A frame the page does not recognise must be ignorable, and
  * a frame that got spread onto a roster row would put `approvalId` on something the sidebar draws.
  *
  * `event` is the outbox kind rather than a second `kind`, so the two words are never confused: one
  * says what sort of frame this is on the wire, the other says what happened.
  *
- * Declared again in `app/src/lib/notifications/outbox.ts`, deliberately and for the reason the room
- * frames are: the app's tsconfig includes only its own `src`, and a type that resolved across that
- * boundary today would break the first time somebody tightened the include.
+ * Declared again in `app/src/lib/notifications/outbox.ts`, deliberately: the app's tsconfig includes
+ * only its own `src`, and a type that resolved across that boundary today would break the first
+ * time somebody tightened the include.
  */
 export type NotificationFrame = {
   kind: "notification";
@@ -81,7 +81,7 @@ export function notificationFrame(
 /** What this door needs of the hub, which is two of its four methods. */
 export type NotificationSockets = Pick<
   ChannelEventHub,
-  "deliverRoom" | "connectionCount"
+  "deliverFrame" | "connectionCount"
 >;
 
 export function createSocketAdapter(
@@ -91,9 +91,9 @@ export function createSocketAdapter(
     name: "socket",
     deliver: async (record) => {
       if (hub.connectionCount(record.userId) === 0) return false;
-      // `deliverRoom` is the hub's fan-out for a frame that is not a roster patch; it takes the
+      // `deliverFrame` is the hub's fan-out for a frame that is not a roster patch; it takes the
       // recipients on the frame itself. One person here, because a notification is addressed.
-      hub.deliverRoom({
+      hub.deliverFrame({
         memberIds: [record.userId],
         ...notificationFrame(record),
       });

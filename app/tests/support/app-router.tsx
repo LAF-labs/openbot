@@ -146,7 +146,7 @@ function shellAnswer(
   if (pathname === "/api/me") {
     return json({
       user: { ...CURRENT_USER, role, onboarded: true },
-      deployment: { effort: true, autoReview: true, seats: 5 },
+      deployment: { effort: true, autoReview: true },
     });
   }
   if (pathname === "/api/agents") return json({ agents: [] });

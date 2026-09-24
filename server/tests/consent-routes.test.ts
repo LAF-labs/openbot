@@ -45,7 +45,7 @@ function consentStore(version: string | null) {
  */
 function surface(store?: ConsentStore) {
   const args: Parameters<typeof createApp> = [config, signedIn, roles];
-  args[40] = store;
+  args[37] = store;
   return createApp(...args);
 }
 
@@ -121,7 +121,7 @@ describe("POST /api/me/consent", () => {
       api: { getSession: async () => null },
     };
     const args: Parameters<typeof createApp> = [config, noSession, roles];
-    args[40] = consentStore(null).store;
+    args[37] = consentStore(null).store;
 
     const response = await createApp(...args).request(
       "http://laf.local/api/me/consent",

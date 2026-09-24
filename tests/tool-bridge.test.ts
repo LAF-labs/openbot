@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { SEND_MESSAGE } from "../server/src/rooms/send-message";
 import {
   BRIDGE_TOOLS,
   bridgeTools,
@@ -106,13 +105,10 @@ describe("what is never deferred", () => {
     ]);
   });
 
-  test("every self tool, the room's voice, and asking a coworker", () => {
+  test("every self tool", () => {
     for (const tool of SELF_TOOLS) {
       expect(exposureOf(tool.name)).toBe("core");
     }
-    expect(exposureOf(SEND_MESSAGE)).toBe("core");
-    // Registered in `app/src/lib/copilot/coworker-tools.tsx` under this literal name.
-    expect(exposureOf("ask_coworker")).toBe("core");
   });
 
   test("the bridge itself", () => {

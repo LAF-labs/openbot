@@ -51,7 +51,7 @@ function surface(
   session: Parameters<typeof createApp>[1] = signedIn,
 ) {
   const args: Parameters<typeof createApp> = [config, session, roles];
-  args[47] = store;
+  args[44] = store;
   return createApp(...args);
 }
 

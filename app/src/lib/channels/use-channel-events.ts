@@ -9,7 +9,6 @@ import {
   notificationFrames,
 } from "@/lib/notifications/outbox";
 import { type ChannelSummary, channelKeys } from "./queries";
-import { isRoomFrame, type RoomFrame } from "./room-frames";
 
 /**
  * Keep the roster live.
@@ -41,22 +40,11 @@ export const CHANNEL_ACTIVITY = "channel-activity";
 export type ChannelActivity = ChannelActivityEvent;
 
 /**
- * The second thing the same socket carries: a room turn, as it runs on the server.
- *
- * Its own target, beside the activity one, because the two have different listeners with different
- * rules: the roster and the solo room read activity, the group room reads frames, and a listener
- * that had to tell the two apart by shape would be the place the next deploy breaks.
- */
-export const roomFrames = new EventTarget();
-export const ROOM_FRAME = "room-frame";
-
-/**
  * The socket came back after having been away.
  *
- * Frames are not replayed, so anything that happened while it was gone is simply missing — and the
- * one that matters is `room.done`, because a room whose turn never ended keeps its composer
- * disabled and there is nothing the person can do about it. Screens that hold live state listen for
- * this and resync. Not fired on the first connection: there is nothing to have missed.
+ * Frames are not replayed, so anything that happened while it was gone is simply missing. Screens
+ * that hold live state listen for this and resync. Not fired on the first connection: there is
+ * nothing to have missed.
  */
 export const socketState = new EventTarget();
 export const SOCKET_RECONNECTED = "socket-reconnected";
@@ -148,21 +136,10 @@ function openConnection(queryClient: QueryClient): Connection {
         return;
       }
       /*
-       * Switched on `kind` BEFORE the roster patch. A room frame is not an activity event, and
-       * spreading it onto a roster row would put `text` and `turnId` on an object the sidebar
-       * renders. A frame with no `kind` is the activity event this handler has always taken, so
-       * the two halves can deploy independently.
-       */
-      if (isRoomFrame(parsed)) {
-        roomFrames.dispatchEvent(
-          new CustomEvent<RoomFrame>(ROOM_FRAME, { detail: parsed }),
-        );
-        return;
-      }
-      /*
-       * The third kind: the notification outbox saying something is waiting for this person.
-       * Checked here for the same reason a room frame is — anything not recognised falls through
-       * to the roster patch below, which would spread `approvalId` onto a row the sidebar draws.
+       * Switched on `kind` BEFORE the roster patch: the notification outbox saying something is
+       * waiting for this person. Spread onto a roster row, it would put `approvalId` on an object
+       * the sidebar draws. A frame with no `kind` is the activity event this handler has always
+       * taken.
        */
       if (isNotificationFrame(parsed)) {
         /*
@@ -176,6 +153,14 @@ function openConnection(queryClient: QueryClient): Connection {
             detail: parsed,
           }),
         );
+        return;
+      }
+      /*
+       * ANY OTHER `kind` IS DROPPED, NOT PATCHED IN. A room's turn used to arrive as frames of its
+       * own; rooms were removed on 2026-09-24, and a server from before that still running behind
+       * a tab from after it must not have a room frame spread onto a roster row.
+       */
+      if (typeof parsed === "object" && parsed !== null && "kind" in parsed) {
         return;
       }
       const activity = parsed as ChannelActivityEvent;

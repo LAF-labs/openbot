@@ -5,16 +5,19 @@ import { type AgentEffort, type AgentProfile, agentKeys } from "./queries";
 /**
  * What the agents API can refuse, in this surface's own words.
  *
- * The seat refusal used to arrive as "This account's computer seats five Bots, and all five seats
- * are taken." — an English sentence on a Korean screen, with the five written into the prose while
- * `BOT_SEATS_PER_ACCOUNT` is a setting. The server sends a fact code and the number now; this table
- * owns the sentence, which puts `t()` on a variable and so out of `i18n-coverage.test.ts`'s sight.
- * The table is checked in and finite, so `agent-refusals.test.ts` walks it — the same pair
- * `ROUTINE_REFUSALS` and `routines-copy.test.ts` make.
+ * The server sends a fact code and never a sentence; this table owns the sentence, which puts
+ * `t()` on a variable and so out of `i18n-coverage.test.ts`'s sight. The table is checked in and
+ * finite, so `agent-refusals.test.ts` walks it — the same pair `ROUTINE_REFUSALS` and
+ * `routines-copy.test.ts` make.
  */
 export const AGENT_REFUSALS: Record<string, string> = {
-  "laf:seats_full":
-    "All {seats} Bot seats on this account are taken. Delete one to make room.",
+  /*
+   * ONE BOT A PERSON (2026-09-24). It was `laf:seats_full`, with the count, for "all five seats are
+   * taken"; one has nothing to count. Reached only by a request nothing on this surface makes any
+   * more — there is no button for a second Bot — but a second tab left open on the first run can.
+   */
+  "laf:account_has_bot":
+    "You already have your Bot. Change its name or face on its profile instead.",
   /*
    * The rest are the codes `/profile` and `/memories` answer with. A Bot's own tool is their usual
    * caller, but this app posts to `/profile` too — the effort buttons do — so a person can reach
@@ -51,8 +54,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_auto_review_too_long":
     "That instruction can be up to 1,000 characters.",
   "laf:agent_auth_header_invalid": "That header name cannot be used.",
-  "laf:agent_preset_invalid":
-    "That kind of work cannot be picked. Try another.",
   /*
    * The refusals the store and the memory and coworker routes throw, which used to reach the roster
    * and the ask box as the server's own English — "Agent not found.", "You do not have permission
@@ -63,9 +64,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_protected": "This Bot came with the app and cannot be changed.",
   "laf:memory_not_found": "That memory is no longer there.",
   "laf:preference_invalid": "That setting could not be changed. Try again.",
-  "laf:coworker_from_required": "Say which Bot is asking.",
-  "laf:coworker_unavailable":
-    "This deployment cannot have one Bot ask another.",
 };
 
 export type AgentInput = {
@@ -85,12 +83,6 @@ export type AgentInput = {
    * Bot's own tool posts to, and this is the one field a Bot must never be able to write.
    */
   autoReview?: string;
-  /**
-   * Which preset a press on the intro card picked, by its catalogue key — the one record of that
-   * choice once the translated title and role have been written (`agent_profiles.preset_id`).
-   * Omitted by every other caller, which leaves whatever is stored alone.
-   */
-  presetId?: string;
 };
 
 /**
@@ -131,7 +123,6 @@ async function agentRequest(
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       code?: string;
-      seats?: number;
     } | null;
     const known = body?.code ? AGENT_REFUSALS[body.code] : undefined;
     /*
@@ -140,9 +131,7 @@ async function agentRequest(
      * screen; a code this table has no words for gets the general sentence instead.
      */
     throw new Error(
-      known
-        ? t(known, { seats: body?.seats ?? "" })
-        : t("That did not go through. Try again."),
+      known ? t(known) : t("That did not go through. Try again."),
     );
   }
   return response;
@@ -196,18 +185,6 @@ export function setAgentEffortMutationOptions(queryClient: QueryClient) {
         await agentRequest(`/api/agents/${variables.agentId}/profile`, {
           method: "POST",
           body: { effort: variables.effort },
-        }),
-      ),
-    onSuccess: () => invalidateAgents(queryClient),
-  });
-}
-
-export function duplicateAgentMutationOptions(queryClient: QueryClient) {
-  return mutationOptions({
-    mutationFn: async (agentId: string) =>
-      agentFrom(
-        await agentRequest(`/api/agents/${agentId}/duplicate`, {
-          method: "POST",
         }),
       ),
     onSuccess: () => invalidateAgents(queryClient),

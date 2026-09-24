@@ -2,7 +2,6 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createElement, useLayoutEffect } from "react";
 import type {
-  AgentOption,
   CommandOption,
   ComposerDraft,
 } from "../src/components/channels/composer";
@@ -44,14 +43,12 @@ afterAll(async () => {
 
 /** What the screen passes once its queries have answered. */
 type Sources = {
-  agents: readonly AgentOption[];
   commands: readonly CommandOption[];
   disabled: boolean;
 };
 
-const NOTHING_YET: Sources = { agents: [], commands: [], disabled: false };
+const NOTHING_YET: Sources = { commands: [], disabled: false };
 const ARRIVED: Sources = {
-  agents: [{ id: "bot-1", name: "초롱", description: "가게 비서" }],
   commands: [{ id: "daily-report", name: "daily-report", kind: "chip" }],
   disabled: false,
 };
@@ -205,7 +202,6 @@ async function mounted() {
       onCommitted?.();
     });
     return createElement(Composer, {
-      agents: sources.agents,
       commands: sources.commands,
       compact: true,
       disabled: sources.disabled,

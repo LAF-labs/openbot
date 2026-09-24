@@ -12,38 +12,14 @@ import { Hono } from "hono";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
 import { mapRefusal, refusal } from "./refusals";
-import type {
-  ChannelStore,
-  ReadMessageTimes,
-  ReadThreadMessages,
-} from "./types";
+import type { ChannelStore, ReadMessageTimes } from "./types";
 
 export function createTranscriptRoutes(
   store: ChannelStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   readMessageTimes: ReadMessageTimes | undefined,
-  readThreadMessages: ReadThreadMessages | undefined,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
-
-  /*
-   * The room's transcript, read from the snapshot column directly.
-   *
-   * NOT the runtime's `/api/copilotkit/threads/:id/messages`: that route answers from what a run
-   * put through the runner, and a room's messages are written by the server rather than by a run —
-   * so a room read that way showed an empty screen.
-   */
-  routes.get("/:channelId/messages", requireUser, (context) =>
-    fromVisibleThread(
-      context,
-      store,
-      context.var.actor,
-      context.req.param("channelId"),
-      async (threadId) => ({
-        messages: readThreadMessages ? await readThreadMessages(threadId) : [],
-      }),
-    ),
-  );
 
   /**
    * The questions in this channel that never got an answer.
@@ -72,25 +48,12 @@ export function createTranscriptRoutes(
       async (threadId) => {
         const marks = readMessageTimes
           ? await readMessageTimes(threadId)
-          : { times: {}, speakers: {}, receipts: {} };
+          : { times: {}, speakers: {} };
         /*
-         * No backfill for rows written before speakers were recorded. It used to fill them in with
-         * the room's first member — true of how the old code ran, but recomputed on every request
-         * against the CURRENT membership, so adding a Bot whose id sorts first relabelled the whole
-         * pre-attribution history to somebody who was not in the room when it was said.
-         * `attribute()` refuses to guess a speaker for exactly this reason; this now refuses too,
-         * and an old message simply carries no name.
+         * No backfill for rows written before speakers were recorded: `attribute()` refuses to guess
+         * a speaker, this refuses too, and an old message simply carries no name.
          */
-        /*
-         * And who read each room question and stayed quiet, or could not answer it — the receipt a
-         * room turn leaves on the person's message (`recordRoomReceipts`). Beside the stamps rather
-         * than in the messages, for the reason the stamps are: it is ours, not something said.
-         */
-        return {
-          times: marks.times,
-          speakers: marks.speakers,
-          receipts: marks.receipts ?? {},
-        };
+        return { times: marks.times, speakers: marks.speakers };
       },
     ),
   );

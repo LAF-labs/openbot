@@ -2,12 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
 import type { CallPreview, PendingApproval } from "../src/computer/approvals";
 import { presentable } from "../src/computer/approvals";
-import { relayApprovals, type RoomQuestion } from "../src/rooms/approval-relay";
 import {
   type LoopAgent,
   outcomeOfError,
   runUnattended,
-  type ToolOutcome,
 } from "../src/runner/unattended";
 import * as cafe24 from "../src/plugins/cafe24-rest";
 import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
@@ -421,7 +419,7 @@ describe("the preview on its way to a person", () => {
     expect(presentable(PREVIEWED).preview).toEqual(PREVIEWED.preview);
     const paused = new PluginNeedsApprovalError(PREVIEWED);
     expect(paused.preview).toEqual(PREVIEWED.preview);
-    // A room's member runs unattended: the same facts reach its card.
+    // An unattended run carries the same facts on its outcome.
     expect(outcomeOfError(paused).preview).toEqual(PREVIEWED.preview);
   });
 
@@ -489,34 +487,5 @@ describe("the preview on its way to a person", () => {
     // …and not handed the card's copy of its own mail.
     expect("preview" in read).toBe(false);
     expect(String(answer?.content)).not.toContain("friend@example.com");
-  });
-
-  test("reaches the room's card, and a shape the relay cannot vouch for does not", async () => {
-    const announced: RoomQuestion[] = [];
-    const asked = (preview: unknown): ToolOutcome => ({
-      ...outcomeOfError(new PluginNeedsApprovalError(PREVIEWED)),
-      preview,
-    });
-    for (const preview of [
-      PREVIEWED.preview,
-      "friend@example.com",
-      [{ field: "recipients", values: "friend@example.com" }],
-    ]) {
-      const relayed = relayApprovals(
-        { tools: [], execute: async () => asked(preview) },
-        {
-          memberId: "bot_preview",
-          announce: (question) => {
-            announced.push(question);
-          },
-        },
-      );
-      await relayed.execute("mcp__gmail__send_message", MAIL, { id: "c1" });
-    }
-    expect(announced.map((question) => question.preview)).toEqual([
-      PREVIEWED.preview,
-      undefined,
-      undefined,
-    ]);
   });
 });

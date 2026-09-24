@@ -206,6 +206,9 @@ export const channels = pgTable("channels", {
   /**
    * Which room turn is current, counted up by every message a person posts into the room.
    *
+   * NOTHING READS OR WRITES IT SINCE 2026-09-24, when rooms were removed. It keeps the numbers the
+   * rooms left; dropping it is a migration somebody decides on.
+   *
    * A ROOM TURN CAN OUTLIVE ITS QUESTION. Several Bots answering in rounds takes a minute, and in
    * that minute the person can say something else — at which point everything still running is
    * answering a question that has been superseded. Every checkpoint in the turn compares this

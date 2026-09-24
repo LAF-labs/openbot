@@ -4,9 +4,11 @@
 
 LAF Agent is a **fork of CopilotKit's OpenBot** (`CopilotKit/openbot`, MIT),
 turned into an everyday agent for people who do not write software — small
-business owners, in Korean first. A deployment belongs to one person, who makes
-up to five Bots, each starting with nothing set, and shapes them by talking to
-them.
+business owners, in Korean first. A deployment belongs to one person, who has
+**one Bot**: its profile is a name and a face, changed any time, and everything
+else — what it is for included — is settled by talking to it (2026-09-24,
+`docs/laf/deployment-model.md` "봇은 하나다"). Rooms and Bots asking each other
+were removed that day and live in git history.
 
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no
@@ -23,9 +25,10 @@ the two, the shell wins. An earlier local-agent client (`LAF-labs/prime`) was re
 
 ## The deployment decides the architecture
 
-**One VM per person.** However many Bots somebody makes, they share that one
-VM. Read `docs/laf/deployment-model.md` before arguing with any design here —
-it is the decision record, and it is why:
+**One VM per person**, and one Bot on it. An account from before 2026-09-24 that
+has several keeps them all, sharing that one VM. Read
+`docs/laf/deployment-model.md` before arguing with any design here — it is the
+decision record, and it is why:
 
 - **One API server process per VM.** No replicas behind a balancer.
 - **In-process state is correct, not a shortcut.** The approval registry, the
@@ -37,7 +40,8 @@ it is the decision record, and it is why:
 - **One account per deployment, enforced in code.** Production refuses to
   start unless the sign-in lines name exactly one address; sign-in refuses a
   second person in every environment; an account the list no longer admits acts
-  on nothing, unattended paths included. The seats are that person's five Bots.
+  on nothing, unattended paths included. The seat is that person's one Bot —
+  a second is refused (`laf:account_has_bot`) in the transaction that counts it.
   The invariant is the deployment's, not the VM's: a deployment may one day be a
   slot on shared hardware.
 
@@ -54,7 +58,7 @@ AG-UI, Playwright (the Bot's browser).
 
 ```
 app/              React SPA
-server/           Hono API, boundaries, rooms, routines, the computer gateway
+server/           Hono API, boundaries, routines, the computer gateway
 agent-bot/        The AG-UI endpoint every Bot a person creates runs on
 agent-computer/   The Bot's browser (Playwright), in a container
 desktop/          Tauri shell — a window onto the origin, no product logic
@@ -133,7 +137,7 @@ Only Bots a package shipped are `built_in`. Everything anybody makes is
 `remote_ag_ui`, answered by `agent-bot`. **Wiring a per-Bot behaviour into the
 built-in configuration reaches nothing anybody will ever use.** Per-run settings
 travel as AG-UI `forwardedProps` through the middleware in `copilot.ts`, which
-is the one seam every path goes through — chat, rooms and routines alike.
+is the one seam every path goes through — chat and routines alike.
 
 ### The computer reads the Bot from a header
 
@@ -151,7 +155,7 @@ Every user-facing string goes through `t()` from `@/lib/i18n`, English as the
 key, with the Korean entry added in `i18n-ko.ts` in the same change.
 `app/tests/i18n-coverage.test.ts` enforces it — but **only for literal
 `t("…")`**. `t(someVariable)` is invisible to it, so a table of strings read
-that way needs its own test walking the table (see `agent-presets.test.ts`).
+that way needs its own test walking the table (see `agent-refusals.test.ts`).
 
 Server prose does not cross to the surface. The server sends facts; the surface
 owns the words.
@@ -213,7 +217,7 @@ with each other: clean up your rows, scope every cleanup to what the test
 created — an unscoped `delete(table)` once erased every routine in the database
 — and never assume a row exists because the app put it there. A suite that
 passes only on the machine it was written on is the failure mode
-(`room-transcript.integration.test.ts` had exactly that), and it is now the
+(a room-transcript integration test had exactly that), and it is now the
 normal case, since the test database starts empty.
 
 ### The React Compiler compiles the app

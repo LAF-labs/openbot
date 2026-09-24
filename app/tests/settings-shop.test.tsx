@@ -57,7 +57,7 @@ function server(options: { shop: unknown; refuse?: boolean }) {
     if (pathname === "/api/me") {
       return json({
         user: { ...CURRENT_USER, role: "user", onboarded: true, shop: held },
-        deployment: { effort: true, autoReview: true, seats: 5 },
+        deployment: { effort: true, autoReview: true },
       });
     }
     if (pathname === "/api/me/shop" && method === "PUT") {

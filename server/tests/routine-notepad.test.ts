@@ -61,7 +61,6 @@ async function botThroughAgentBot(
         profile: {
           id: "agent_reviews",
           name: "리뷰봇",
-          title: "",
           roleDescription: "리뷰에 답글 초안을 쓴다.",
         },
         effort: "balanced",
@@ -429,7 +428,7 @@ describe("what the next run reads", () => {
     expect(at('id "R-1002"')).toBeLessThan(at("지금은 2026-09-14"));
 
     // Anywhere else, a notepad that arrived is not drawn: it is not that run's to read.
-    for (const mode of ["chat", "room", "coworker"] as const) {
+    for (const mode of ["chat"] as const) {
       expect(composePrompt({ ...input, mode })).not.toContain("R-1002");
     }
     // And a routine with nothing noted reads nothing about a notepad.

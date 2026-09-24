@@ -217,7 +217,6 @@ Settings worth knowing:
 | `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.               |
 | `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                                            |
 | `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                                                       |
-| `BOT_SEATS_PER_ACCOUNT`              | Bots one person may have. Five.                                                                     |
 | `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.                                       |
 | `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                               |
 

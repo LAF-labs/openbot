@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { WORK_PATTERNS } from "../src/lib/agents/presets";
+import { WORK_PATTERNS } from "../src/lib/agents/work-patterns";
 import { ko } from "../src/lib/i18n-ko";
 import {
   BUSINESS_SITES,

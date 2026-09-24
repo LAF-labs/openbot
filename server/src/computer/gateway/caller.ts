@@ -98,13 +98,4 @@ export type ActionActor = {
   userId?: string;
   /** The conversation the action was raised from, when it was raised from one. See THREAD_HEADER. */
   threadId?: string;
-  /**
-   * Set when the turn is one Bot answering another with nobody watching.
-   *
-   * Nothing sets it today: a coworker answering a question runs with no tools at all
-   * (`agents/coworker-call.ts`), so no action of its reaches here. It is the seam for the day
-   * that changes, and `settle` refuses an `ask` under it rather than opening a question nobody
-   * will see.
-   */
-  delegated?: { callerId: string };
 };

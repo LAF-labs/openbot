@@ -9,10 +9,8 @@ import {
 } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
-  createContext,
   Fragment,
   memo,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -54,19 +52,9 @@ import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useNow } from "@/lib/use-now";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { AnswerRatingControls } from "./answer-rating";
-import {
-  type ChatSpeaker,
-  toVisibleChatItems,
-  unsettledFrom,
-} from "./chat-messages";
+import { toVisibleChatItems, unsettledFrom } from "./chat-messages";
 import type { QueuedMessage } from "./composer";
-import {
-  type ReceiptFace,
-  RoomReceipt,
-  roomFaceLayoutId,
-} from "./room-receipt";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -90,38 +78,6 @@ type ChatTranscriptProps = {
    * reply that arrives after `until` was watched arrive, and is not something anybody missed.
    */
   readWindow?: { from: string; until: string };
-  /**
-   * Message id to the Bot that said it — name and face — for a room where more than one answers.
-   *
-   * Per message rather than one name for the room, because a group room's turns are not all the
-   * same Bot's: the name comes from what the server recorded for that message. Empty in a room
-   * with one Bot, whose name is in the header and does not need repeating over every bubble.
-   */
-  speakers?: Readonly<Record<string, ChatSpeaker>>;
-  /**
-   * The colleague that has the floor in a room and has not said anything yet, with its face.
-   *
-   * Absent on every screen with one Bot, where the thinking line already covers the only gap
-   * there is. See `MemberWorking` for the gap it covers in a room. `id` is what lets its face travel
-   * into the turn's receipt when it finishes without a word (`RoomReceipt`).
-   */
-  working?: { id?: string; name: string; avatarSeed?: string };
-  /**
-   * A room's read receipts: the id of the message a turn ended on, to the members that read the
-   * question and stayed quiet, or could not answer it. Placed by `placeReceipts`
-   * (lib/channels/room-receipts.ts). Absent on every screen with one Bot.
-   *
-   * NOT MERGED INTO THE MESSAGES, for the reason failures are not: nobody said it, and a room's
-   * members are shown the room by what was said.
-   */
-  receipts?: Readonly<Record<string, readonly ReceiptFace[]>>;
-  /** The message whose receipt belongs to the turn still running, whose faces may still move. */
-  liveReceipt?: string;
-  /**
-   * Ask these members the question again. Offered only where the question can be asked again in
-   * place — the same rule as 다시 시도 (`retriesInPlace`) — so asking again never says it twice.
-   */
-  onAskAgain?: (questionId: string, memberIds: string[]) => void;
   /**
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
@@ -160,14 +116,6 @@ type ChatTranscriptProps = {
    * is — so there is no press anywhere that can say a question twice.
    */
   onRetry?: (message: RetriedMessage) => void;
-  /**
-   * A room: the members that did answer may sit between a failed question and a retry of it.
-   *
-   * A room turn is composed by the server from the whole transcript, so running it again with some
-   * members' replies already there is what a retry means. A conversation with one Bot is run from its
-   * messages as they stand, and a half-answer at the end is not something to run from.
-   */
-  retryKeepsReplies?: boolean;
 };
 
 /** What a press of 다시 시도 hands back: the failed message as it is in the thread. */
@@ -224,62 +172,6 @@ function Thinking() {
     <p className="tool-line-running text-muted-foreground text-sm">
       {t("Thinking")}
     </p>
-  );
-}
-
-/**
- * Whose name it is, wherever a room says who is talking.
- *
- * One string and not two: the line over a colleague's turn and the line saying a colleague is
- * working are the same label, so they have to be the same size — and 12px is off the type scale
- * (`app/tests/design-tokens.test.ts`), which is a budget of one, not a licence to repeat it.
- */
-const SPEAKER_NAME = "text-[12px] text-muted-foreground leading-4";
-
-/**
- * A colleague in a room has the floor and has not said anything yet.
- *
- * THE ROOM WENT DEAD BETWEEN MEMBERS. `Thinking` above is drawn only while the last thing in the
- * conversation is the person's own message, which in a room is true exactly once — before the
- * first reply. Every member after that read the room, waited for its Bot's lane and did whatever
- * work it chose, for up to five minutes, with nothing at all on the screen. A person watching that
- * has no way to tell a room that is working from a room that has stopped.
- *
- * The name and the face rather than a sentence with the name inside it: a Korean sentence about a
- * name somebody else chose needs a particle this surface would have to guess at, and "재고봇 /
- * 생각하는 중" says the same thing without inventing grammar.
- */
-function MemberWorking({
-  id,
-  name,
-  seed,
-}: {
-  id?: string;
-  name: string;
-  seed?: string;
-}) {
-  const reduceMotion = useReducedMotion();
-  return (
-    <div className="flex items-center gap-1.5 py-1 pl-1">
-      {seed ? (
-        /*
-         * The same shared-layout id the receipt gives this member's face, so when it finishes
-         * without a word the face moves from here into the receipt instead of vanishing here and
-         * appearing there. See `RoomReceipt`.
-         */
-        <motion.span
-          className="inline-flex"
-          layoutId={id && !reduceMotion ? roomFaceLayoutId(id) : undefined}
-        >
-          <BotAvatar seed={seed} size={18} state="working" />
-        </motion.span>
-      ) : null}
-      <span className={SPEAKER_NAME}>{name}</span>
-      {/* Not a live region: the transcript's always-mounted one says it. Same as `Thinking`. */}
-      <p className="tool-line-running text-muted-foreground text-sm">
-        {t("Thinking")}
-      </p>
-    </div>
   );
 }
 
@@ -620,74 +512,6 @@ function Arriving({
 }
 
 /**
- * A room's read receipts, handed to the one message each belongs under.
- *
- * THROUGH CONTEXT, BECAUSE THE MESSAGE IS MEMOISED ON PRIMITIVES. The receipt has to sit inside the
- * message — beside the bubble it belongs to — and the faces are an array rebuilt on every frame of a
- * streaming turn. Handed down as a prop they would re-render every message that carries one on
- * every chunk; read here, only `AnchoredReceipt` does, and it is a lookup that draws nothing for
- * every message but the few a turn ended on.
- */
-const ReceiptSlot = createContext<{
-  receipts: Readonly<Record<string, readonly ReceiptFace[]>>;
-  /** The message whose receipt belongs to the turn still running, while it runs. */
-  live: string | undefined;
-  askAgainUnder: (
-    anchorId: string,
-  ) => ((memberIds: string[]) => void) | undefined;
-} | null>(null);
-
-/** The receipt of the turn that ended on this message, if one did. See `RoomReceipt`. */
-function AnchoredReceipt({
-  anchorId,
-  placement,
-}: {
-  anchorId: string;
-  placement: "beside" | "under";
-}) {
-  const slot = useContext(ReceiptSlot);
-  const faces = slot?.receipts[anchorId];
-  if (!slot || !faces?.length) return null;
-  const onAskAgain = slot.askAgainUnder(anchorId);
-  return (
-    <RoomReceipt
-      faces={faces}
-      live={slot.live === anchorId}
-      placement={placement}
-      {...(onAskAgain ? { onAskAgain } : {})}
-    />
-  );
-}
-
-/**
- * A Bot's bubble with the turn's receipt beside its lower right corner, the way a messenger puts a
- * read mark beside the bubble it belongs to.
- *
- * MEASURED, THE OTHER WAY ROUND: drawn at the column's right edge under a Bot's reply — which sits
- * on the left — the receipt landed directly above the person's NEXT message, and read as a mark on
- * that message rather than on the turn it closed. A row, so the bubble keeps measuring its width
- * against the whole column (a shrink-to-fit parent would halve its `max-w`), and `items-end`, so
- * the faces sit on the bubble's bottom edge with no gap between them and it.
- */
-function BesideBubble({
-  anchorId,
-  receipt,
-  children,
-}: {
-  anchorId: string;
-  receipt: boolean;
-  children: React.ReactNode;
-}) {
-  if (!receipt) return children;
-  return (
-    <div className="flex items-end gap-1.5" data-slot="bubble-receipt-row">
-      {children}
-      <AnchoredReceipt anchorId={anchorId} placement="beside" />
-    </div>
-  );
-}
-
-/**
  * One drawn message, and it is memoised on PRIMITIVES ON PURPOSE.
  *
  * A streamed answer changes `messages` on every chunk, and `toVisibleChatItems` builds fresh objects
@@ -708,17 +532,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
   joinedNext = false,
   joinedPrev = false,
   rateable = false,
-  receipt = false,
   role,
-  speaker,
-  speakerSeed,
   text,
 }: {
-  /**
-   * A room turn ended on this message and left a receipt (`AnchoredReceipt` draws it). A flag and
-   * not the faces, for the memo: see `ReceiptSlot`.
-   */
-  receipt?: boolean;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
@@ -732,10 +548,6 @@ const TranscriptMessage = memo(function TranscriptMessage({
   /** The message above is. */
   joinedPrev?: boolean;
   role: "user" | "assistant";
-  /** The Bot's name, drawn above the first bubble of each of its turns. See ChatTranscriptProps. */
-  speaker?: string;
-  /** That Bot's face, drawn beside the name. Absent draws the name alone, as it always did. */
-  speakerSeed?: string;
   text: string;
 }) {
   const isUser = role === "user";
@@ -746,30 +558,6 @@ const TranscriptMessage = memo(function TranscriptMessage({
     <MessageRow align={align}>
       <MessageContent>
         <Arriving delay={delay}>
-          {!isUser && speaker && !joinedPrev && (
-            /*
-             * WHO IS TALKING, WITH A FACE ON IT.
-             *
-             * This was a 12px grey name and nothing else, over bubbles that are identical for
-             * every Bot in the room — so a room of three read as a set of minutes with the
-             * speaker's name typed above each paragraph, which is exactly what it looked like.
-             * The faces are already drawn on the room's empty state, in the participants menu and
-             * beside the room in the sidebar; the one place they were missing is the place a
-             * person actually reads the conversation.
-             *
-             * `paused`: a face in the transcript is a label, not a status. `BotAvatar` is a frame
-             * loop, and a scrolled-back room would otherwise be running one per turn on screen to
-             * animate something that finished saying its sentence ten minutes ago.
-             */
-            <span
-              className={`mb-1 flex items-center gap-1.5 pl-1 ${SPEAKER_NAME}`}
-            >
-              {speakerSeed ? (
-                <BotAvatar paused seed={speakerSeed} size={18} />
-              ) : null}
-              {speaker}
-            </span>
-          )}
           {/* The chat measure: what a Bot says and what a person typed read at one size. */}
           {/*
            * BOTH SIDES GET A BUBBLE.
@@ -779,60 +567,52 @@ const TranscriptMessage = memo(function TranscriptMessage({
            * the Bot the grey bubble and the person the near-black one, and that symmetry is what
            * makes the transcript read as a conversation between two parties.
            */}
-          <BesideBubble anchorId={id} receipt={!isUser && receipt}>
-            <Bubble
-              align={align}
-              className="chat-prose"
-              joinedNext={joinedNext}
-              joinedPrev={joinedPrev}
-              variant={isUser ? "user" : "agent"}
-            >
-              <BubbleContent>
-                {isUser ? (
-                  // A person's own message is shown exactly as they typed it. Rendering it as markdown
-                  // would silently reformat what they said, and an asterisk in a sentence is not
-                  // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
-                  // the thing that was already a chip in the composer as a chip here too, so the
-                  // transcript shows a skill was used rather than a slash that was typed.
-                  <span className="whitespace-pre-wrap">
-                    {invoked ? (
-                      <>
-                        {/*
-                         * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
-                         * thing was invoked before it says which one. `inline-flex` with
-                         * `align-middle` rather than a block: this sits mid-sentence, and a badge that
-                         * breaks the line it is in reads as a separate message.
-                         */}
-                        <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
-                          <IconBox className="size-3 shrink-0" />/{invoked.chip}
-                        </span>
-                        {invoked.rest}
-                      </>
-                    ) : (
-                      text
-                    )}
-                  </span>
-                ) : (
-                  /*
-                   * A Bot's prose is markdown, and it arrives in pieces.
-                   *
-                   * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
-                   * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
-                   * plain markdown parser draws that as literal asterisks and backticks until the
-                   * closing token arrives, so the answer visibly rewrites itself as it lands. This
-                   * closes them for the duration.
-                   */
-                  <Streamdown components={markdownComponents}>
-                    {text}
-                  </Streamdown>
-                )}
-              </BubbleContent>
-            </Bubble>
-          </BesideBubble>
-          {isUser && receipt ? (
-            // Nobody answered: under the person's own message, on its side of the column.
-            <AnchoredReceipt anchorId={id} placement="under" />
-          ) : null}
+          <Bubble
+            align={align}
+            className="chat-prose"
+            joinedNext={joinedNext}
+            joinedPrev={joinedPrev}
+            variant={isUser ? "user" : "agent"}
+          >
+            <BubbleContent>
+              {isUser ? (
+                // A person's own message is shown exactly as they typed it. Rendering it as markdown
+                // would silently reformat what they said, and an asterisk in a sentence is not
+                // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
+                // the thing that was already a chip in the composer as a chip here too, so the
+                // transcript shows a skill was used rather than a slash that was typed.
+                <span className="whitespace-pre-wrap">
+                  {invoked ? (
+                    <>
+                      {/*
+                       * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
+                       * thing was invoked before it says which one. `inline-flex` with
+                       * `align-middle` rather than a block: this sits mid-sentence, and a badge that
+                       * breaks the line it is in reads as a separate message.
+                       */}
+                      <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
+                        <IconBox className="size-3 shrink-0" />/{invoked.chip}
+                      </span>
+                      {invoked.rest}
+                    </>
+                  ) : (
+                    text
+                  )}
+                </span>
+              ) : (
+                /*
+                 * A Bot's prose is markdown, and it arrives in pieces.
+                 *
+                 * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
+                 * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
+                 * plain markdown parser draws that as literal asterisks and backticks until the
+                 * closing token arrives, so the answer visibly rewrites itself as it lands. This
+                 * closes them for the duration.
+                 */
+                <Streamdown components={markdownComponents}>{text}</Streamdown>
+              )}
+            </BubbleContent>
+          </Bubble>
           {/*
            * COPYING A REPLY WAS SELECT-AND-DRAG, OR NOTHING.
            *
@@ -996,13 +776,6 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 /** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
-/** The same, for a room with one Bot, where no bubble carries a name. */
-const EMPTY_SPEAKERS: Readonly<Record<string, ChatSpeaker>> = Object.freeze({});
-
-/** The same, for every screen that is not a room: no turn there leaves a receipt. */
-const EMPTY_RECEIPTS: Readonly<Record<string, readonly ReceiptFace[]>> =
-  Object.freeze({});
-
 /**
  * The line that says "you had read up to here".
  *
@@ -1051,13 +824,8 @@ function TimeSeparator({ at }: { at: Date }) {
 function continues(
   neighbour: ReturnType<typeof toVisibleChatItems>[number] | undefined,
   role: "user" | "assistant",
-  /** The speaker of the message being drawn. Two Bots in one room are not one run. */
-  speaker: string | undefined,
 ): boolean {
-  if (neighbour?.kind !== "text" || neighbour.role !== role) return false;
-  // Joined bubbles suppress the name line, so joining two colleagues' replies would put the
-  // second Bot's words under the first Bot's name with nothing to say otherwise.
-  return neighbour.speaker === speaker;
+  return neighbour?.kind === "text" && neighbour.role === role;
 }
 
 export function ChatTranscript({
@@ -1067,14 +835,8 @@ export function ChatTranscript({
   messageTimes = EMPTY_TIMES,
   messages,
   readWindow,
-  speakers = EMPTY_SPEAKERS,
-  working,
-  receipts = EMPTY_RECEIPTS,
-  liveReceipt,
-  onAskAgain,
   onRemoveQueued,
   onRetry,
-  retryKeepsReplies = false,
   queued = EMPTY_QUEUE,
   stoppedCode,
   failures = EMPTY_FAILURES,
@@ -1096,7 +858,7 @@ export function ChatTranscript({
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,
    * which is where the 25x came from.
    */
-  const items = toVisibleChatItems(messages, messageTimes, speakers);
+  const items = toVisibleChatItems(messages, messageTimes);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1127,17 +889,7 @@ export function ChatTranscript({
    * is running that a second press would race. See `retriesInPlace`.
    */
   const retryable = (messageId: string) =>
-    !busy &&
-    retriesInPlace(messages, messageId, { keepsReplies: retryKeepsReplies });
-  /**
-   * 다시 묻기 under a receipt: the members that could not answer, asked the question again — only
-   * where 다시 시도 could be, and for the same reason. Every face on one receipt shares its question.
-   */
-  const askAgainUnder = (anchorId: string) => {
-    const questionId = receipts[anchorId]?.[0]?.questionId;
-    if (!onAskAgain || !questionId || !retryable(questionId)) return undefined;
-    return (memberIds: string[]) => onAskAgain(questionId, memberIds);
-  };
+    !busy && retriesInPlace(messages, messageId);
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
@@ -1267,12 +1019,9 @@ export function ChatTranscript({
                 ? t("Waiting for your answer")
                 : stoppedCode
                   ? null
-                  : working
-                    ? // Who is working, not only that somebody is: in a room that is the fact.
-                      t("{name} is thinking", { name: working.name })
-                    : waitingOnFirstToken
-                      ? t("Thinking")
-                      : null}
+                  : waitingOnFirstToken
+                    ? t("Thinking")
+                    : null}
             </LiveRegion>
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
@@ -1306,7 +1055,7 @@ export function ChatTranscript({
                   <MessageScrollerItem
                     className={
                       // A row that opens a sitting already has the separator's 8px above it.
-                      continues(items[index - 1], item.role, item.speaker) &&
+                      continues(items[index - 1], item.role) &&
                       !separators.has(item.id)
                         ? "py-0.5"
                         : "py-0.5 pt-3"
@@ -1322,22 +1071,9 @@ export function ChatTranscript({
                       rateable={
                         item.role === "assistant" && index < settledBefore
                       }
-                      joinedNext={continues(
-                        items[index + 1],
-                        item.role,
-                        item.speaker,
-                      )}
-                      joinedPrev={continues(
-                        items[index - 1],
-                        item.role,
-                        item.speaker,
-                      )}
-                      receipt={Boolean(receipts[item.id]?.length)}
+                      joinedNext={continues(items[index + 1], item.role)}
+                      joinedPrev={continues(items[index - 1], item.role)}
                       role={item.role}
-                      {...(item.speaker ? { speaker: item.speaker } : {})}
-                      {...(item.speakerSeed
-                        ? { speakerSeed: item.speakerSeed }
-                        : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>
@@ -1410,16 +1146,6 @@ export function ChatTranscript({
                     : undefined
                 }
               />
-            ) : working ? (
-              /*
-               * Before the plain thinking line, because it says the same thing with who it is
-               * about. A room's very first member matches both: this one is the better answer.
-               */
-              <MemberWorking
-                name={working.name}
-                {...(working.id ? { id: working.id } : {})}
-                {...(working.avatarSeed ? { seed: working.avatarSeed } : {})}
-              />
             ) : waitingOnFirstToken ? (
               <Thinking />
             ) : null}
@@ -1447,15 +1173,5 @@ export function ChatTranscript({
     </MessageScrollerProvider>
   );
 
-  return (
-    <ReceiptSlot.Provider
-      value={{
-        receipts,
-        live: busy ? liveReceipt : undefined,
-        askAgainUnder,
-      }}
-    >
-      {view}
-    </ReceiptSlot.Provider>
-  );
+  return view;
 }

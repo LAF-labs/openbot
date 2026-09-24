@@ -5,11 +5,9 @@ import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import { ChannelAvatar } from "@/components/channels/avatar";
+import { AgentAvatar } from "@/components/channels/avatar";
 import { BotPanel } from "@/components/channels/bot-panel";
 import { ChannelChat } from "@/components/channels/channel-chat";
-import { ParticipantsMenu } from "@/components/channels/participants-menu";
-import { GroupChat } from "@/components/channels/group-chat";
 import { useNeedsYou } from "@/components/computer/needs-you";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -111,7 +109,11 @@ function RouteComponent() {
    * thing as a group's profile.
    */
   const agentId = channel.data?.agentIds[0];
-  const isGroup = (channel.data?.agentIds.length ?? 0) > 1;
+  /*
+   * A room from before 2026-09-24: several Bots, one conversation. Rooms were removed and nothing
+   * can run one; its messages stay where they are and this screen says so (`ChannelBody`).
+   */
+  const isRoom = (channel.data?.agentIds.length ?? 0) > 1;
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
   /*
@@ -237,12 +239,7 @@ function RouteComponent() {
                * colour, and at 20 the accessory is three pixels of noise — measured beside the
                * 14px title it sits next to, 24 is where the shape starts reading as a shape.
                */}
-              <ChannelAvatar
-                participantIds={channel.data?.agentIds ?? []}
-                // The header is on the page's own ground, not the sidebar's. See ChannelAvatar.
-                ringClassName="ring-background"
-                size={24}
-              />
+              <AgentAvatar agentId={agentId} size={24} />
             </motion.div>
             <motion.span
               animate={
@@ -275,21 +272,13 @@ function RouteComponent() {
                * tall to say nothing new.
                */}
               <span className="truncate font-semibold text-base">
-                {isGroup
+                {isRoom
                   ? (channel.data?.name ?? t("Channel"))
                   : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))}
               </span>
             </motion.span>
           </div>
           <div className="flex flex-row gap-1.5">
-            {/*
-             * ONLY IN A ROOM. A one-to-one conversation has one member and the header already
-             * says who it is; a menu offering to take them out of it would offer a room of one,
-             * which the server refuses and which nothing in the product wants.
-             */}
-            {isGroup && channel.data ? (
-              <ParticipantsMenu channel={channel.data} />
-            ) : null}
             <Button
               aria-label={
                 needsYou
@@ -379,16 +368,6 @@ function ChannelBody({
     );
   }
 
-  /*
-   * A ROOM WITH SEVERAL BOTS OPENS, AND THE FIRST MEMBER ANSWERS — UNTIL SOMEBODY NAMES ANOTHER.
-   *
-   * This used to be a dead end: a sentence saying multi-coworker channels were not supported, on a
-   * channel the server had happily created, named and listed. The transcript is the same
-   * transcript; what a group needs is a rule for whose turn it is, and it is now two rules. An `@`
-   * mention names the Bot the message is for and the room asks that one. Nothing named falls back
-   * to this default, which stays the room's first member so that opening a room twice does not get
-   * two different Bots — `agentIds` comes back in a stable order (sorted by id, server-side).
-   */
   const defaultAgentId = channel.agentIds[0];
   if (!defaultAgentId) {
     return (
@@ -399,14 +378,19 @@ function ChannelBody({
   }
 
   /*
-   * A ROOM IS WATCHED; A CONVERSATION IS DRIVEN.
-   *
-   * A channel with several Bots runs its turn on the server and this screen only listens
-   * (`GroupChat`). A channel with one Bot keeps the browser-driven path, which streams for free
-   * and needs no relay. Both are keyed on the channel so nothing leaks between rooms.
+   * A ROOM FROM BEFORE 2026-09-24. Rooms were removed with the decision that a person has one Bot
+   * (docs/laf/deployment-model.md, "봇은 하나다"), and the screen that ran one went with them. What
+   * was said in it is not deleted — the rows are where they were — and this says so rather than
+   * opening it as a conversation with its first member, which it never was.
    */
   if (channel.agentIds.length > 1) {
-    return <GroupChat channel={channel} key={channel.id} />;
+    return (
+      <p className="p-8 text-muted-foreground text-sm">
+        {t(
+          "Conversations with several Bots can no longer be opened. Nothing in it was deleted.",
+        )}
+      </p>
+    );
   }
 
   return (

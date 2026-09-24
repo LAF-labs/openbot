@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { agentFormSchema } from "@/lib/agents/form";
 import { agentKeys } from "@/lib/agents/queries";
 import { channelKeys } from "@/lib/channels/queries";
 
@@ -14,92 +13,5 @@ describe("coworker query keys", () => {
       "detail",
       "channel_1",
     ]);
-  });
-});
-
-describe("coworker form validation", () => {
-  /**
-   * A NAME IS THE WHOLE OF WHAT IS REQUIRED, and this is the test that was missing.
-   *
-   * The schema demanded a title and a role description that the server has always taken as
-   * optional and that no screen in the product has ever asked for. Every Bot made in the last
-   * redesign has both empty — so opening one and changing its name failed validation on two fields
-   * nobody could see, and the form simply refused to submit.
-   */
-  test("a name alone saves", () => {
-    const parsed = agentFormSchema.safeParse({
-      name: "초롱",
-      title: "",
-      roleDescription: "",
-      endpoint: "",
-      authValue: "",
-    });
-
-    expect(parsed.success).toBe(true);
-  });
-
-  test("accepts the fields a person fills in", () => {
-    expect(
-      agentFormSchema.parse({
-        name: "  Expense Manager  ",
-        title: "Finance Operations",
-        roleDescription: "Review receipts and prepare reimbursement reports.",
-        endpoint: "",
-        authValue: "",
-      }).name,
-    ).toBe("Expense Manager");
-  });
-
-  test("an endpoint is optional, and must look like a web address", () => {
-    const valid = {
-      name: "Expense Manager",
-      title: "Finance Operations",
-      roleDescription: "Review receipts.",
-      authValue: "",
-    };
-    // Empty means the Bot in the box, which is what most people want first time.
-    expect(agentFormSchema.safeParse({ ...valid, endpoint: "" }).success).toBe(
-      true,
-    );
-    expect(
-      agentFormSchema.safeParse({
-        ...valid,
-        endpoint: "https://agents.example.com/ag-ui",
-      }).success,
-    ).toBe(true);
-    // Shape only. WHETHER an address is allowed is the server's decision, because it depends on the
-    // deployment and a check that lives in a browser is a check an attacker skips.
-    expect(
-      agentFormSchema.safeParse({ ...valid, endpoint: "not a url" }).success,
-    ).toBe(false);
-  });
-
-  test("rejects what the server would reject", () => {
-    const valid = {
-      name: "Expense Manager",
-      title: "Finance Operations",
-      roleDescription: "Review receipts.",
-      endpoint: "",
-      authValue: "",
-    };
-
-    expect(agentFormSchema.safeParse({ ...valid, name: "   " }).success).toBe(
-      false,
-    );
-    expect(
-      agentFormSchema.safeParse({ ...valid, name: "n".repeat(81) }).success,
-    ).toBe(false);
-    expect(
-      agentFormSchema.safeParse({ ...valid, title: "t".repeat(121) }).success,
-    ).toBe(false);
-    expect(
-      agentFormSchema.safeParse({
-        ...valid,
-        roleDescription: "r".repeat(1001),
-      }).success,
-    ).toBe(false);
-    // A "who can see this" field used to be here and be rejected for anything but public/private.
-    // The form no longer collects one: a Bot is the account's that made it.
-    expect("visibility" in agentFormSchema.shape).toBe(false);
   });
 });

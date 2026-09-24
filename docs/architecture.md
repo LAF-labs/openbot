@@ -125,7 +125,7 @@ A question expires after ten minutes either way.
 
 `agent-computer` requires `COMPUTER_TOKEN` and permits only `/health` without it. Docker Compose binds it to `127.0.0.1:4100`.
 
-Every Bot of an account shares the computer at `AGENT_COMPUTER_URL` — the account's desk, by decision (`server/src/computer/assignment.ts`). Files, logins and browser sessions carry between Bots; the boundary is the gateway in front of the computer, not the roster. Five Bots per person, `BOT_SEATS_PER_ACCOUNT`, enforced where a Bot is created so a sixth fails to exist rather than existing and failing to reach a computer.
+Every Bot of an account shares the computer at `AGENT_COMPUTER_URL` — the account's desk, by decision (`server/src/computer/assignment.ts`). Files, logins and browser sessions carry between Bots; the boundary is the gateway in front of the computer, not the roster. One Bot per person (2026-09-24, `docs/laf/deployment-model.md`), enforced where a Bot is created so a second fails to exist rather than existing and failing to reach a computer.
 
 Within the one container every Bot shares one Chromium profile, one per deployment, so a site one
 Bot signed into is signed in for all of them; each Bot keeps only its own tabs. Which Bot a request

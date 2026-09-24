@@ -137,7 +137,7 @@ const ID_FIELDS: Readonly<Record<string, OwnedKind>> = {
   botId: "bot",
   agent: "bot",
   agentId: "bot",
-  // A room's member is a Bot (`rooms/service.ts`).
+  // A room's member was a Bot. Rooms went on 2026-09-24; a bundle's older lines still say so.
   member: "bot",
   run: "run",
   runId: "run",

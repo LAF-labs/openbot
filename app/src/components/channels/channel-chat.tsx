@@ -6,16 +6,13 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatSpeaker } from "@/components/channels/chat-messages";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
-import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
   seedMessage,
   takeFirstMessage,
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
-import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
   recordChannelActivityMutationOptions,
   setChannelReadMutationOptions,
@@ -53,9 +50,6 @@ const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
 
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
-
-/** The same, for a room with one Bot: nothing to name, and one identity to hand down. */
-const EMPTY_SPEAKERS: Readonly<Record<string, ChatSpeaker>> = Object.freeze({});
 
 /**
  * One channel's conversation with one coworker.
@@ -97,9 +91,7 @@ export function ChannelChat({
 
   // The core attaches the frontend tool registry; direct agent runs do not.
   const { copilotkit } = useCopilotKit();
-  // Mentions are scoped to the channel's permitted agents.
   const queryClient = useQueryClient();
-  const { data: agentProfiles } = useQuery(agentListQueryOptions());
   // Declared here, not beside its use: the run subscriber below holds a ref to its refetch.
   const storedTimes = useQuery(messageTimesQueryOptions(channel.id));
   /*
@@ -703,12 +695,6 @@ export function ChannelChat({
   );
 
   /*
-   * No names on the bubbles. This is a conversation with ONE Bot, whose name is in the header; a
-   * room with several — the only place a bubble needs a name — never reaches this component.
-   */
-  const speakers = EMPTY_SPEAKERS;
-
-  /*
    * A NEW ARRAY ON EVERY RENDER, BECAUSE THE AGENT'S NEVER IS.
    *
    * Everything under this component is compiled, and compiled code keeps what it drew while its
@@ -727,10 +713,6 @@ export function ChannelChat({
    * wrote. Neither reads the agent's messages, which is the one thing this component must never
    * cache.
    */
-  const agentOptions = useMemo(
-    () => toAgentOptions(agentProfiles, channel.agentIds),
-    [agentProfiles, channel.agentIds],
-  );
   /**
    * Stop through the core so the abort signal reaches frontend tools; `say` repairs any
    * unanswered tool call before the next turn.
@@ -743,7 +725,6 @@ export function ChannelChat({
   return (
     <ConversationProvider ask={askFromComponent}>
       <ConversationView
-        agents={agentOptions}
         /*
          * The TURN, not the wire — the same fact `pending` uses, and for the reason this file's own
          * note above already gives. `agent.isRunning` stays false for the second and a half while
@@ -759,7 +740,6 @@ export function ChannelChat({
         // Readiness is handled by `say`; deletion is the only disabled-chat state.
         disabled={!channel.active}
         messageTimes={messageTimes}
-        speakers={speakers}
         {...(readWindow ? { readWindow } : {})}
         messages={thread}
         notice={
@@ -773,16 +753,6 @@ export function ChannelChat({
         }
         onSubmit={async (draft) => {
           /*
-           * `draft.agentIds` IS READ BY NOBODY HERE, AND THAT IS THE ANSWER RATHER THAN AN OMISSION.
-           *
-           * A channel is pinned to its coworker for the life of its thread, and a channel with more
-           * than one never reaches this component — the route sends it to `GroupChat`. So the one
-           * name `@` can produce here is the name of the Bot already answering: the mention menu is
-           * built from `channel.agentIds` (`agentOptions` above), which in a one-to-one conversation
-           * holds exactly that Bot. Naming a second colleague is not refused here because it cannot
-           * be typed here; to put a question to two Bots, start it from Home, where `@` offers the
-           * whole team and naming two of them opens a room with both.
-           *
            * `commandIds` are the `/` chips that survived into the send, in the order they were
            * typed. Resolved against the same list the menu was built from, so a chip left over
            * from a skill that has since been revoked resolves to nothing rather than to a stale

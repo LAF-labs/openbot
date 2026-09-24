@@ -61,14 +61,9 @@ export type ThreadMarks = {
   times: Record<string, string>;
   /** Message id to the id of the Bot that said it. Only assistant messages carry one. */
   speakers: Record<string, string>;
-  /**
-   * A room's question to member id to how that member's part in its turn came out — the receipt
-   * under the turn. Unchecked here; `heardOf` in `room-receipts.ts` reads it.
-   */
-  receipts: Record<string, unknown>;
 };
 
-const NO_MARKS: ThreadMarks = { times: {}, speakers: {}, receipts: {} };
+const NO_MARKS: ThreadMarks = { times: {}, speakers: {} };
 
 /**
  * When each message in a channel was first seen, and which Bot said it.
@@ -76,8 +71,7 @@ const NO_MARKS: ThreadMarks = { times: {}, speakers: {}, receipts: {} };
  * A separate request from the transcript, because the transcript does not come from us — it comes
  * out of CopilotKit's agent, whose message shape is a fixed whitelist that drops any field we add.
  * Fetched once when a channel opens; messages that arrive after that are stamped on arrival by the
- * browser, which is the same clock to within a round trip, and attributed by the room's own record
- * of which Bot the turn was sent to.
+ * browser, which is the same clock to within a round trip.
  */
 export function messageTimesQueryOptions(channelId: string) {
   return queryOptions({
@@ -94,7 +88,6 @@ export function messageTimesQueryOptions(channelId: string) {
       return {
         times: body.times ?? {},
         speakers: body.speakers ?? {},
-        receipts: body.receipts ?? {},
       };
     },
     // What the server records about a message never changes once written, so a refetch buys nothing.

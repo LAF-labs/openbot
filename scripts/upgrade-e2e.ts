@@ -10,9 +10,11 @@
  *  1. Stands a deployment up from the FROM tag's deploy bundle the way a VM is stood up:
  *     `docker create` / `docker cp` the bundle, write a `.env` with this run's own secrets,
  *     `docker compose pull`, `docker compose up -d`, wait for the honest /health.
- *  2. Seeds it through the front door as a signed-in person — two Bots, a room with a few messages
- *     answered by a fake model, a routine that has run, the Bot's browser opened once, a site
- *     connection, and the trail all of that leaves — then photographs every table.
+ *  2. Seeds it through the front door as a signed-in person — their one Bot, a routine that has run
+ *     against a fake model and delivered into the Bot's conversation, the Bot's browser opened once,
+ *     a site connection, and the trail all of that leaves — then photographs every table. (It
+ *     seeded two Bots and a room until 2026-09-24, when a person came to have one Bot and rooms were
+ *     removed; a FROM build that still had them would accept either, a TO build refuses both.)
  *  3. Re-extracts the TO tag's bundle over the directory, as `laf upgrade` does, sets the TO tag in
  *     `.env` — the one place a version is chosen — and runs `scripts/upgrade.sh` as written, while
  *     `/`, `/health` and `/api/capabilities` are asked every 0.25 s from outside.
@@ -61,7 +63,6 @@ import { dirname, join, resolve } from "node:path";
 import { Glob } from "bun";
 import {
   type Behaviour,
-  calls,
   says,
   startFakeProvider,
 } from "../agent-bot/tests/fake-provider";
@@ -685,47 +686,21 @@ export function localOverride(services: readonly string[]): string {
 
 // --- the model -----------------------------------------------------------------------------------
 
-/** The one tool a Bot speaks in a room through (`server/src/rooms/send-message.ts`). */
-export const ROOM_SPEECH_TOOL = "send_message";
-
 /**
- * What the fake model answers a request with.
- *
- * Prose, except in a room. A room member's plain text is "private scratch space nobody reads": the
- * only way to say something the room can see is a `send_message` call, and a member that ends its
- * turn without one has stayed silent (measured: the first run of this, answering prose, left a room
- * with no answers for two minutes). So a request that offers that tool and has not yet had it
- * answered gets the call; the request after the tool's result — the loop asking the member what
- * else it has — gets the phrase as prose, which ends the turn.
+ * What the fake model answers a request with: the phrase, as prose.
  *
  * A request that is not a stream is somebody's one-question JSON call (the server's auto-review
  * probe, measured at boot): answered with a refusal, which that caller already reads as "this model
  * cannot", rather than with an event stream it would fail to parse.
+ *
+ * It used to answer a room member with a `send_message` call first, because a member's plain text
+ * was scratch space nobody read. Rooms were removed on 2026-09-24.
  */
 export function answerTo(
   body: Record<string, unknown>,
   phrase: string,
-  ordinal: number,
 ): Behaviour {
   if (body.stream !== true) return { kind: "status", status: 503 };
-  const offered = Array.isArray(body.tools)
-    ? (body.tools as { function?: { name?: unknown } }[]).some(
-        (tool) => tool.function?.name === ROOM_SPEECH_TOOL,
-      )
-    : false;
-  const messages = Array.isArray(body.messages)
-    ? (body.messages as { role?: unknown }[])
-    : [];
-  if (offered && messages.at(-1)?.role !== "tool") {
-    return {
-      kind: "stream",
-      choices: calls(
-        `call_upgrade_e2e_${ordinal}`,
-        ROOM_SPEECH_TOOL,
-        JSON.stringify({ text: phrase }),
-      ),
-    };
-  }
   return { kind: "stream", choices: says(phrase) };
 }
 
@@ -1095,7 +1070,7 @@ async function main(): Promise<number> {
   let phrase = `확인했습니다. 업그레이드 전 ${nonce}`;
   // The script reads the request it answers: the fake records each one before asking the script.
   const fake = startFakeProvider((ordinal) =>
-    answerTo(fake.requests[ordinal]?.body ?? {}, phrase, ordinal),
+    answerTo(fake.requests[ordinal]?.body ?? {}, phrase),
   );
   const fakePort = Number(new URL(fake.url).port);
 
@@ -1550,87 +1525,19 @@ async function main(): Promise<number> {
       body: "{}",
     });
 
-    const createBot = async (name: string, title: string, role: string) => {
-      const body = await expectOk(`the Bot ${name}`, "/api/agents", {
-        method: "POST",
-        body: JSON.stringify({
-          name,
-          title,
-          roleDescription: role,
-          visibility: "private",
-        }),
-      });
-      return (body.agent as { id: string }).id;
-    };
-    const orders = await createBot(
-      "주문 담당",
-      "주문 정리",
-      "스마트스토어 주문을 정리하고 요약합니다.",
-    );
-    const reviews = await createBot(
-      "리뷰 담당",
-      "리뷰 확인",
-      "새 리뷰를 읽고 답이 필요한 것을 알려 줍니다.",
-    );
-
-    const channel = (
-      await expectOk("the room", "/api/channels", {
-        method: "POST",
-        body: JSON.stringify({ agentIds: [orders, reviews] }),
-      })
-    ).channel as { id: string };
-    const assistantMessages = async () => {
-      const body = await expectOk(
-        "the transcript",
-        `/api/channels/${channel.id}/messages`,
-      );
-      return (body.messages as { role?: string }[]).filter(
-        (message) => message.role === "assistant",
-      ).length;
-    };
-    for (const text of [
-      "오늘 들어온 주문이랑 새 리뷰 정리해 주세요.",
-      "답이 필요한 리뷰는 몇 개예요?",
-    ]) {
-      const before = await assistantMessages();
-      await expectOk(
-        "a message in the room",
-        `/api/channels/${channel.id}/room-turn`,
-        {
+    // Their one Bot. A name and nothing else, the way the first run makes it now.
+    const orders = (
+      (
+        await expectOk("the Bot", "/api/agents", {
           method: "POST",
-          body: JSON.stringify({ text }),
-        },
-      );
-      // Settled: the Bots have answered and nothing new has arrived for three seconds.
-      let last = before;
-      let quietSince = Date.now();
-      await until(
-        "the room's answers",
-        120_000,
-        async () => {
-          const count = await assistantMessages();
-          if (count !== last) {
-            last = count;
-            quietSince = Date.now();
-          }
-          return count > before && Date.now() - quietSince > 3000
-            ? count
-            : null;
-        },
-        500,
-      ).catch((error) => {
-        const tools = fake.requests.map((request) =>
-          Array.isArray(request.body.tools)
-            ? (request.body.tools as { function?: { name?: string } }[])
-                .map((tool) => tool.function?.name)
-                .join(",")
-            : "-",
-        );
-        throw new Error(
-          `${error instanceof Error ? error.message : String(error)} ${last} answer(s) in the transcript; the model was asked ${fake.requests.length} time(s), offered tools per request: ${JSON.stringify(tools).slice(0, 600)}`,
-        );
-      });
-    }
+          body: JSON.stringify({
+            name: "주문 담당",
+            title: "",
+            roleDescription: "",
+          }),
+        })
+      ).agent as { id: string }
+    ).id;
 
     const routine = (
       await expectOk("the routine", "/api/routines", {
@@ -1698,7 +1605,7 @@ async function main(): Promise<number> {
     const trailRows = (trail.events as unknown[] | undefined)?.length ?? 0;
     report.time("seed through the front door", seeding());
     console.log(
-      `   two Bots, a room with ${await assistantMessages()} answers, a routine that ran, a browser opened, a site connection, ${trailRows} trail rows on the first page; the fake model was asked ${fake.requests.length} time(s)`,
+      `   one Bot, a routine that ran, a browser opened, a site connection, ${trailRows} trail rows on the first page; the fake model was asked ${fake.requests.length} time(s)`,
     );
 
     // --- the upgrade -----------------------------------------------------------------------------

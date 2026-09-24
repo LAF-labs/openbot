@@ -72,16 +72,6 @@ export type SettleInput = {
    * work outside any — a routine — where neither applies.
    */
   threadId?: string | undefined;
-  /**
-   * Set when this turn is one Bot answering another, with no person watching it.
-   *
-   * A boundary that wants a person cannot be satisfied here: there is nobody to open a question
-   * in front of, and the Bot's own instruction is not eyes. So an `ask` in a delegated turn is
-   * refused with `laf:ask_in_delegated_turn` rather than asked — unless a person already answered
-   * the wider question with a standing allowance, which is their deliberate decision about that
-   * named tool and is honoured wherever the Bot is.
-   */
-  delegated?: { callerId: string } | undefined;
   /** The caller's own policy verdict, evaluated against the caller's own context. */
   policyVerdict: PolicyDecision;
   /**
@@ -213,19 +203,6 @@ export async function settle(
           scopeKeyOf(input.allowance),
           { threadId: input.threadId },
         )) ?? null);
-
-  /*
-   * NOBODY IS WATCHING A DELEGATED TURN, so nothing below this line can happen in one.
-   *
-   * A question would sit in the registry with no surface to draw it on, and the instruction would
-   * be a model answering for a model with nobody having seen either. What a person already decided
-   * about this named thing — a presented answer, an allowance — has been read above and stands;
-   * everything from here on needs eyes, and this turn has none. The refusal names the fact so the
-   * caller can say what it could not do and who would have to do it.
-   */
-  if (input.delegated && !presented?.ok && !already) {
-    return { outcome: "refused", code: "laf:ask_in_delegated_turn" };
-  }
 
   /*
    * The owner's own sentence, asked about this action, and only after the cheap answers.

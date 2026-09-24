@@ -143,7 +143,7 @@ describe("where the shop line sits in the prompt", () => {
       mode: options.mode ?? "chat",
       now: at,
       timeZone: "Asia/Seoul",
-      bot: { id: "bot-1", name: "초롱", title: "리뷰 답변" },
+      bot: { id: "bot-1", name: "초롱" },
       standingRole: "새 리뷰에 답글 초안을 쓴다.",
       memories: options.memories ?? ["일요일은 쉰다."],
       skills: [{ slug: "재고정리", summary: "재고를 센다" }],
@@ -175,10 +175,7 @@ describe("where the shop line sits in the prompt", () => {
     expect(withShop.replace(`${shopText(food)}\n\n`, "")).toBe(without);
   });
 
-  test.each(["chat", "room", "routine", "coworker"] as const)(
-    "reaches a %s run too",
-    (mode) => {
-      expect(compose({ mode, shop: food })).toContain(shopText(food));
-    },
-  );
+  test.each(["chat", "routine"] as const)("reaches a %s run too", (mode) => {
+    expect(compose({ mode, shop: food })).toContain(shopText(food));
+  });
 });

@@ -16,7 +16,9 @@ import {
 } from "../src/components/ui/page-header";
 import {
   APP_DOM_TIMEOUT_MS,
+  agentFixture,
   installAppDom,
+  json,
   mountApp,
   removeAppDom,
   unmountApps,
@@ -185,12 +187,20 @@ describe("the three sibling pages", () => {
    * the shell has a heading without the shell's token.
    */
   for (const [name, path] of [
-    ["Bots", "/agents"],
+    // The Bot's profile since 2026-09-24; it was "Bots", a gallery of several.
+    ["Bot profile", "/agents"],
     ["Routines", "/routines"],
     ["Skills", "/skills"],
   ] as const) {
     test(`${name} has one title, and it is the shell's`, async () => {
-      const view = await mountApp({ path });
+      const view = await mountApp({
+        path,
+        // A person with their Bot: with none, every screen sends them to make one.
+        api: ({ pathname }) =>
+          pathname === "/api/agents"
+            ? json({ agents: [agentFixture({ id: "bot-1", name: "초롱" })] })
+            : undefined,
+      });
       try {
         const main = view.main();
         const titles = [...(main?.querySelectorAll("h1") ?? [])];

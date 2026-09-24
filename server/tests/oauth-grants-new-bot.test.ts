@@ -257,9 +257,18 @@ describe("what a Bot made after the connect is handed", () => {
     const userId = await createUser();
     const before = await createBotThrough(app, userId);
     await connectSheets(store, userId);
-    const after = await createBotThrough(app, userId);
-
     expect(await heldThrough(app, userId, before)).toEqual(SHEETS_REFS);
+
+    /*
+     * ONE BOT A PERSON (2026-09-24): the Bot made after is the one made after deleting the first —
+     * the only way a person comes to make a second. It must be handed what the first was.
+     */
+    signIn(userId);
+    const deleted = await app.request(`http://laf.test/api/agents/${before}`, {
+      method: "DELETE",
+    });
+    expect(deleted.status).toBe(204);
+    const after = await createBotThrough(app, userId);
     expect(await heldThrough(app, userId, after)).toEqual(SHEETS_REFS);
 
     // And the trail names the second Bot once per tool, by the deployment: nobody pressed

@@ -9,9 +9,8 @@
  * 7–23% 줄고 정확도는 그대로였다. 딱 하나 퇴보한 것이 **사람에게 묻는 툴**을 숨겼을 때였다
  * — 구조화된 질문이 산문으로 무너졌다(18/18 → 7/18). 그래서 여기서 갈리는 규칙은 하나다:
  *
- * **미뤄지는 것은 연결된 서비스의 툴뿐이다.** 컴퓨터 툴, 자기 툴, 방의 `send_message`, 동료에게
- * 묻는 툴, 그리고 사람에게 손을 내미는 툴(`computer_request_help`, `computer_request_secret`)은
- * 절대 미루지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
+ * **미뤄지는 것은 연결된 서비스의 툴뿐이다.** 컴퓨터 툴, 자기 툴, 그리고 사람에게 손을 내미는
+ * 툴(`computer_request_help`, `computer_request_secret`)은 절대 미루지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
  *
  * 플래그는 이름에 있다. 서버가 연결된 서비스의 툴 이름을 지을 때 `mcp__<서버>__<툴>`로 짓고
  * (`server/src/plugins/store.ts`의 `toolNameFor`, 접두사는 여기서 읽는다), AG-UI 와이어의

@@ -116,7 +116,8 @@ describe("what reaches the model", () => {
     expect(system).toHaveLength(1);
     const prompt = system[0]?.content ?? "";
     expect(prompt).toContain("이 배포의 언어는 한국어다");
-    expect(prompt).toContain("너는 미소, 가게 운영 도우미다.");
+    // The name, and no job title after it: the profile is a name and a face (2026-09-24).
+    expect(prompt).toContain("너는 미소다.");
     expect(prompt).toContain("주문과 영수증을 챙긴다.");
     expect(prompt).toContain("일요일은 쉰다.");
     // And the conversation is behind it, unchanged.
@@ -164,11 +165,10 @@ describe("what reaches the model", () => {
   });
 
   test("the mode a caller forwarded, which is what selects the prompt", async () => {
-    const room =
-      (await requestFor(true, { mode: "room" })).messages?.find(
+    const routine =
+      (await requestFor(true, { mode: "routine" })).messages?.find(
         (message) => message.role === "system",
       )?.content ?? "";
-    expect(room).toContain("send_message");
-    expect(room).toContain("끝까지 미소로 있는다");
+    expect(routine).toContain("화면 앞에는 아무도 없다");
   });
 });

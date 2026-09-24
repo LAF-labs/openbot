@@ -40,7 +40,7 @@
 import { type SQL, sql } from "drizzle-orm";
 import { BUSINESS_SITES } from "../../../shared/sites/catalogue";
 import { WORK_PATTERN_IDS } from "../agents/first-task";
-import { MAX_BOTS_PER_COMPUTER } from "../computer/assignment";
+import { BOTS_PER_ACCOUNT } from "../computer/assignment";
 import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
@@ -184,7 +184,7 @@ export function insightStatements(options: {
   const limits = sql`
     SELECT ((
       SELECT jsonb_build_object('botsPerPersonMax', coalesce(max(n), 0),
-                                'peopleAtBotCap', count(*) FILTER (WHERE n >= ${MAX_BOTS_PER_COMPUTER}::int))
+                                'peopleAtBotCap', count(*) FILTER (WHERE n >= ${BOTS_PER_ACCOUNT}::int))
         FROM (SELECT count(*) AS n FROM agent_profiles
                WHERE deleted_at IS NULL AND owner_user_id IS NOT NULL
                GROUP BY owner_user_id) bots

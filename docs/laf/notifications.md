@@ -22,7 +22,7 @@
   없었다.
 - **화면이 자기 탭만 알았다.** 앱은 "봇이 기다린다"를 *그 질문이 열린 탭*에서
   알아냈다. 사람이 직접 클릭해서 생긴 질문에는 맞고, 아침 7시 루틴이 연 질문이나
-  서버에서 도는 룸 턴이 연 질문에는 **아무 데도 닿지 않았다.**
+  서버에서 돌던 룸 턴(2026-09-24에 룸과 함께 지워졌다)이 연 질문에는 **아무 데도 닿지 않았다.**
 - **KPI를 잴 데가 없었다.** §5.7이 말하는 "야간 승인 해소 시간"을 계산할 근거 행이
   없었다.
 
@@ -35,7 +35,7 @@
 | `approval.requested` | 경계가 멈춰서 사람에게 물을 때 | 승인 레지스트리 데코레이터(`notifications/notify.ts`) |
 | `approval.expired` | 10분 동안 아무도 답하지 않았을 때 | 레지스트리의 만료 청소(`computer/approvals.ts` `onExpire`) |
 | `run.needs_you` | 봇이 도움이나 비밀값을 부탁할 때 | 감사 행 `computer.help_requested`·`computer.secret_requested`를 듣는 데코레이터(`notifications/from-audit.ts`) |
-| `run.finished` | 루틴이나 룸 턴이 **아무도 접속해 있지 않은 사이에** 끝났을 때 | 룸·루틴의 전달 알림(`notifications/in-app.ts` `createFinishedNotice`) |
+| `run.finished` | 루틴이 **아무도 접속해 있지 않은 사이에** 끝났을 때 | 루틴의 전달 알림(`notifications/in-app.ts` `createFinishedNotice`) |
 | `run.failed` | 루틴 런이 `RUN_ERROR`·시간 초과로 끝났을 때, 그리고 서버가 도중에 다시 시작되어 런이 `unknown`으로 정산됐을 때 | 감사 행 `routine.ran`(`ok: false`)을 듣는 같은 데코레이터(`notifications/from-audit.ts`); 부팅 정산은 `runner/laf-runner.ts`의 `reportInterruptedRuns` |
 | `routine.paused` | 어떤 봇과의 대화방을 마지막으로 연 뒤로 그 봇의 루틴 결과가 세 번 이상 쌓이고 가장 오래된 것이 일주일을 넘겨, 결과를 보낸 루틴들이 멈췄을 때. 멈춤 한 번에 한 행이다. 행은 `subject` 대신 `pause: { reason, routineIds, count, unread, since }`와 결과가 기다리는 대화방의 `channelId`를 싣는다. 소켓과 웹훅으로만 나가고 알림톡 서식은 없다. 표면은 조용한 알림(끝났을 때와 같은 종류)으로 "결과를 한동안 보지 않으셔서 루틴 {n}개를 멈췄어요"라고 쓰고, 이 알림이 오면 루틴 목록을 다시 읽는다(`docs/laf/routines.md` "Paused for going unread") | 감사 행 `routine.paused_unread`를 듣는 같은 데코레이터(`notifications/from-audit.ts`); 그 행은 루틴 시계의 멈춤 규칙이 쓴다(`routines/unread.ts`) |
 | `support.feedback` | 사람이 문의·의견 칸에 글을 써서 보냈을 때. **받는 쪽이 사람이 아니라 운영자**다 — 사람에게 닿는 문(소켓·버즈 웹훅·알림톡)에는 주지 않고 `LAF_ALERT_WEBHOOK_URL`(함대의 알림 웹훅) 문에만 준다(`NotificationAdapter.accepts`). 본인의 목록(`GET /api/me/notifications`)에도 나오지 않는다. 글 자체는 `laf_feedback`에 있고, 이 행은 "누구에게 전해졌나"만이다 | `POST /api/support/feedback`(`support/routes.ts`) |
@@ -203,6 +203,7 @@ GET /api/admin/metrics/approvals?days=30   (관리 메뉴 — 이 배포의 한 
   `routine.ran` 감사 행이 `ok: false`와 함께 누구에게 알릴지(`actor`), 실패의 사실
   코드(`failure`), 표시된 대화방(`channelId`)을 싣고, 아웃박스 감시가 그것을 행으로
   만든다. 서버가 도중에 다시 시작된 런은 부팅이 `unknown`으로 정산하면서 같은 행을
-  `laf:turn_interrupted`로 쓴다. 룸 턴의 실패는 여전히 룸 소켓의 프레임이 맡는다.
+  `laf:turn_interrupted`로 쓴다. (룸 턴의 실패를 맡던 룸 소켓의 프레임은 2026-09-24에 룸과
+  함께 지워졌다.)
 - **관리 화면의 네 숫자.** API와 이 문서까지가 이번 범위다. 감사 화면은 동시에 다른
   작업이 만지고 있어 건드리지 않았다.

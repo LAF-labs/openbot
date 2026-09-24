@@ -1,6 +1,5 @@
 export { Composer, type ComposerProps } from "./composer";
 export {
-  AGENT_TRIGGER,
   COMMAND_TRIGGER,
   type CommandKind,
   type CommandOption,
@@ -13,4 +12,3 @@ export {
   reduceQueue,
 } from "./queue";
 export { PLACEHOLDER_COMMANDS } from "./sources";
-export { type AgentOption, toAgentOptions } from "./triggers";

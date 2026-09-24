@@ -61,7 +61,8 @@ describe("the roster, broken under an open window", () => {
 
     let channels: unknown[] = [];
     const view = await mountApp({
-      path: "/",
+      // Not "/": that is the Bot's conversation now, a screen of its own with its own runtime.
+      path: "/help",
       api: ({ method, pathname }) => {
         if (pathname === "/api/channels") return json({ channels });
         if (pathname === "/api/agents") {
@@ -75,7 +76,7 @@ describe("the roster, broken under an open window", () => {
         return undefined;
       },
     });
-    const roster = () => view.host.querySelector('nav[aria-label="Your team"]');
+    const roster = () => view.host.querySelector('nav[aria-label="Your Bot"]');
     const failedRoster = () =>
       view.host.querySelector('[data-failed-section="sidebar"]');
     await view.waitFor(() => roster() !== null, "the roster");
@@ -100,23 +101,21 @@ describe("the roster, broken under an open window", () => {
     expect(failedRoster()?.querySelector('[role="alert"]')?.textContent).toBe(
       "This part of the screen ran into an unexpected problem.",
     );
-    // Home, beside it, is still drawn.
-    expect(view.main()?.textContent).toContain(
-      "What should the team take off your hands?",
-    );
+    // The page beside it is still drawn.
+    expect(view.main()?.textContent).toContain("Help");
     await view.waitFor(() => reports.length === 1, "the report");
     expect(reports[0]).toMatchObject({
       section: "sidebar",
-      route: "/",
+      route: "/help",
       kind: "TypeError",
       build: "edge",
       surface: "shell",
     });
 
     // And the rest of the window still goes places: the page beside the roster changes.
-    await view.navigate("/help");
-    expect(routeTemplateOf(view.router)).toBe("/help");
-    expect(view.main()?.textContent).toContain("Help");
+    await view.navigate("/skills");
+    expect(routeTemplateOf(view.router)).toBe("/skills");
+    expect(view.main()?.textContent).toContain("Skills");
     // The route changed, so the roster tried again — on the same broken answer, and failed again,
     // from the same place, which is not a second report.
     expect(failedRoster()).not.toBeNull();
@@ -163,7 +162,7 @@ describe("the roster, broken under an open window", () => {
       queryKey: ["routines"],
       brokenBody: { routines: [null] },
       goodBody: { routines: [] },
-      stillThere: 'nav[aria-label="Your team"]',
+      stillThere: 'nav[aria-label="Your Bot"]',
     },
     {
       path: "/settings/connected-accounts",

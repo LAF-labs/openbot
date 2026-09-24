@@ -453,28 +453,6 @@ export type ApprovalRegistry = {
    * no about one button carries on with the rest of its work.
    */
   recentlyDeclined: (botId: string, fingerprint: string) => Promise<boolean>;
-  /**
-   * Hold until this question is answered, or until there is nothing left to wait for.
-   *
-   * The answered approval, or null — expired, spent, never open here, the wait abandoned, or the
-   * bound run out. Null is one reason on purpose, the same way `answer` reports one: a caller does
-   * the same thing with all of them, which is carry on without a grant.
-   *
-   * THIS IS WHY THE QUESTIONS ARE IN THIS PROCESS. The room used to ask `pending` once a second for
-   * two minutes — a hundred and twenty list-builds and, while the registry was a table, a hundred
-   * and twenty DELETE + SELECT pairs — to learn something that happened in the same process, in a
-   * function it could simply have been told about. One process means the answer arrives on the same
-   * heap the question is waiting on, so a promise settles at the moment somebody presses the button
-   * rather than up to a second later.
-   *
-   * `timeoutMs` is the caller's bound and defaults to what is left of the question's own ten
-   * minutes, so nothing waits on a question that can no longer be answered.
-   */
-  waitFor: (
-    botId: string,
-    approvalId: string,
-    options?: { signal?: AbortSignal; timeoutMs?: number },
-  ) => Promise<PendingApproval | null>;
 };
 
 /**
@@ -536,41 +514,17 @@ export function createApprovalRegistry(
   const open = new Map<string, PendingApproval>();
 
   /**
-   * Who is holding for each question, so an answer can be handed to them rather than found.
-   *
-   * A set per question rather than one waiter, because a room turn and a chat turn can be waiting
-   * on the same id — and because a waiter that walked away has to be able to remove itself without
-   * taking anybody else's wait with it.
-   */
-  const waiting = new Map<
-    string,
-    Set<(answered: PendingApproval | null) => void>
-  >();
-
-  /** Hand every holder of this question its ending, once. */
-  const settle = (id: string, answered: PendingApproval | null) => {
-    const holders = waiting.get(id);
-    if (!holders) return;
-    waiting.delete(id);
-    for (const hand of holders) hand(answered);
-  };
-
-  /**
    * Drop what has run out, on every read.
    *
    * On read rather than on a timer, because a timer keeps a process alive and adds a thing that can
    * be forgotten in a test; nothing here matters until somebody looks, and everything that looks
    * sweeps first.
-   *
-   * A waiter is told, because from where it is standing an expiry and an answer are the same event:
-   * the question it was holding for is over.
    */
   const sweep = () => {
     const at = now();
     for (const [id, approval] of open) {
       if (Date.parse(approval.expiresAt) <= at) {
         open.delete(id);
-        settle(id, null);
         // Only the ones nobody answered. An answered question that was never spent expires too, and
         // announcing that as "nobody was reached" would be false about the one case where somebody
         // definitely was.
@@ -636,8 +590,6 @@ export function createApprovalRegistry(
       open.set(id, answered);
       // A No outlives the question it answered. See DECLINE_STICKS_MS.
       if (!granted) declines.record(approval.botId, approval.fingerprint);
-      // Whoever is holding for this hears it here, in the same tick the person's answer landed.
-      settle(id, answered);
       return { ok: true, approval: answered };
     },
 
@@ -659,60 +611,10 @@ export function createApprovalRegistry(
       // make "yes" mean "yes, as often as you like", which is not what anybody pressing Allow on one
       // button thinks they are agreeing to.
       open.delete(id);
-      // Nobody should still be holding for a question that was answered before it was spent, but a
-      // wait that outlived its answer must not outlive the question itself.
-      settle(id, null);
       return { ok: true, approval };
     },
 
     recentlyDeclined: async (botId, fingerprint) =>
       declines.stands(botId, fingerprint),
-
-    waitFor: async (botId, approvalId, options = {}) => {
-      sweep();
-      const approval = open.get(approvalId);
-      // Gone, or another Bot's: the same nothing an expiry leaves behind, reported the same way.
-      if (!approval || approval.botId !== botId) return null;
-      if (approval.granted !== undefined) return approval;
-      if (options.signal?.aborted) return null;
-
-      /*
-       * The bound. The caller's, or what is left of the question's own ten minutes — never
-       * unbounded, because a promise nobody ever settles is a turn that never ends.
-       *
-       * A real timer rather than the injected clock: this is the backstop, and the paths that
-       * actually end a wait (an answer, a sweep, an abort) are all events. A test that moves a fake
-       * clock and reads the registry sweeps, and the sweep settles the wait.
-       */
-      const bound =
-        options.timeoutMs ??
-        Math.max(0, Date.parse(approval.expiresAt) - now());
-
-      const holders =
-        waiting.get(approvalId) ??
-        new Set<(answered: PendingApproval | null) => void>();
-      waiting.set(approvalId, holders);
-
-      return new Promise<PendingApproval | null>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const hand = (answered: PendingApproval | null) => {
-          if (timer) clearTimeout(timer);
-          options.signal?.removeEventListener("abort", abandon);
-          // This set, not whatever the map holds now: `settle` drops the map entry before handing
-          // anything out, and a later waiter may already have put a fresh set in its place.
-          holders.delete(hand);
-          if (holders.size === 0 && waiting.get(approvalId) === holders) {
-            waiting.delete(approvalId);
-          }
-          resolve(answered);
-        };
-        const abandon = () => hand(null);
-
-        holders.add(hand);
-        timer = setTimeout(abandon, bound);
-        timer.unref?.();
-        options.signal?.addEventListener("abort", abandon, { once: true });
-      });
-    },
   };
 }

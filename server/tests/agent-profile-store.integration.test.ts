@@ -2,12 +2,12 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import {
+  AccountHasBotError,
   AgentNotFoundError,
   AgentNotManageableError,
   type AgentProfileStore,
   createAgentProfileStore,
   ProtectedAgentError,
-  RosterFullError,
 } from "../src/agents/profile-store";
 import type {
   AgentActor,
@@ -19,10 +19,8 @@ import {
   agentPreferences,
   agentProfiles,
   agents,
-  channelAgents,
   channels,
   deploymentPackages,
-  channelThreads,
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
@@ -556,13 +554,12 @@ describe("agent profile store integration", () => {
     for (const attempt of [
       () => store.update(admin, source.agentId, input),
       () => store.softDelete(admin, source.agentId),
-      () => store.duplicate(admin, source.agentId),
       () => store.setHidden(admin, source.agentId, true),
       () => store.setPreferences(admin, source.agentId, { pinned: true }),
     ]) {
       await expect(attempt()).rejects.toBeInstanceOf(AgentNotFoundError);
     }
-    // And the Bot is untouched: a refused duplicate must not have spent one of anybody's seats.
+    // And the Bot is untouched.
     const [profile] = await database
       .select()
       .from(agentProfiles)
@@ -572,89 +569,6 @@ describe("agent profile store integration", () => {
       ownerUserId: owner.id,
       title: source.title,
     });
-  });
-
-  test("duplicates a profile as a caller-owned agent with copied presentation fields", async () => {
-    const owner = await createUser();
-    const source = await createProfileFixture({
-      owner,
-      name: "Source Name",
-      title: "Source Title",
-      roleDescription: "Source role.",
-      avatarSeed: "source-avatar",
-    });
-    await store.setHidden(owner, source.agentId, true);
-
-    const duplicate = await store.duplicate(owner, source.agentId);
-
-    expect(duplicate.id).toMatch(
-      /^agent_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
-    expect(duplicate).toMatchObject({
-      name: source.name,
-      title: source.title,
-      roleDescription: source.roleDescription,
-      avatarSeed: source.avatarSeed,
-      ownerUserId: owner.id,
-      systemOwned: false,
-      hidden: false,
-      deletedAt: null,
-    });
-    expect(duplicate.id).not.toBe(source.agentId);
-    createdAgentIds.push(duplicate.id);
-    const duplicatePreferences = await database
-      .select()
-      .from(agentPreferences)
-      .where(eq(agentPreferences.agentId, duplicate.id));
-    expect(duplicatePreferences).toHaveLength(0);
-  });
-
-  test("duplicates no channel membership or Intelligence mapping from the source", async () => {
-    const owner = await createUser();
-    const source = await createProfileFixture({ owner });
-    const channelId = id("channel");
-    await database.insert(channels).values({
-      id: channelId,
-      name: "Source channel",
-      description: "Links source agent to Intelligence.",
-    });
-    await database.insert(channelAgents).values({
-      channelId,
-      agentId: source.agentId,
-    });
-    await database.insert(channelThreads).values({
-      userId: owner.id,
-      channelId,
-      threadId: id("thread"),
-    });
-    createdChannelIds.push(channelId);
-
-    const duplicate = await store.duplicate(owner, source.agentId);
-    createdAgentIds.push(duplicate.id);
-
-    const sourceMappings = await database
-      .select()
-      .from(channelAgents)
-      .innerJoin(
-        channelThreads,
-        eq(channelAgents.channelId, channelThreads.channelId),
-      )
-      .where(eq(channelAgents.agentId, source.agentId));
-    const duplicateMappings = await database
-      .select()
-      .from(channelAgents)
-      .innerJoin(
-        channelThreads,
-        eq(channelAgents.channelId, channelThreads.channelId),
-      )
-      .where(eq(channelAgents.agentId, duplicate.id));
-    const duplicateChannelAgents = await database
-      .select()
-      .from(channelAgents)
-      .where(eq(channelAgents.agentId, duplicate.id));
-    expect(sourceMappings).not.toHaveLength(0);
-    expect(duplicateChannelAgents).toHaveLength(0);
-    expect(duplicateMappings).toHaveLength(0);
   });
 
   test("soft deletes a profile from reads and lists while retaining its raw rows", async () => {
@@ -736,105 +650,76 @@ describe("agent profile store integration", () => {
 });
 
 /**
- * `agent_profiles.preset_id`: which preset a person picked for a Bot, as the row the fleet counts.
+ * One Bot a person (2026-09-24; it was five).
  *
- * Read back from the column rather than from the profile, because the column is what laf-control's
- * `insights` reads and the profile does not carry it — a count that depended on a field the store
- * forgot to write would be green here and zero on every VM.
- */
-describe("the preset a Bot was shaped from", () => {
-  const presetOf = async (agentId: string) => {
-    const [row] = await database
-      .select({ presetId: agentProfiles.presetId })
-      .from(agentProfiles)
-      .where(eq(agentProfiles.agentId, agentId));
-    return row?.presetId;
-  };
-
-  test("is written on create when one was picked, and is null for a blank Bot", async () => {
-    const owner = await createUser();
-    const picked = await store.create(owner, {
-      name: `Preset ${randomUUID()}`,
-      title: "리뷰 답변",
-      roleDescription: "새 리뷰마다 답을 준비한다.",
-      presetId: "review-replies",
-    });
-    createdAgentIds.push(picked.id);
-    const blank = await store.create(owner, {
-      name: `Blank ${randomUUID()}`,
-      title: "",
-      roleDescription: "",
-    });
-    createdAgentIds.push(blank.id);
-
-    expect(await presetOf(picked.id)).toBe("review-replies");
-    expect(await presetOf(blank.id)).toBeNull();
-  });
-
-  test("the intro card's press sets it on a Bot made blank, and a later edit without it leaves it", async () => {
-    const owner = await createUser();
-    const bot = await store.create(owner, {
-      name: `Instant ${randomUUID()}`,
-      title: "",
-      roleDescription: "",
-    });
-    createdAgentIds.push(bot.id);
-
-    // The card: the translated words and the key, in one replacing PATCH.
-    await store.update(owner, bot.id, {
-      name: bot.name,
-      title: "정산 대조",
-      roleDescription: "그날 매출과 입금을 맞춰 본다.",
-      presetId: "settlement",
-    });
-    expect(await presetOf(bot.id)).toBe("settlement");
-
-    // The name field on the same card, a minute later: it sends no preset, and must not clear one.
-    await store.update(owner, bot.id, {
-      name: "정산이",
-      title: "정산 대조",
-      roleDescription: "그날 매출과 입금을 맞춰 본다.",
-    });
-    expect(await presetOf(bot.id)).toBe("settlement");
-
-    // A second chip pressed on the card is what the Bot was then made as.
-    await store.update(owner, bot.id, {
-      name: "정산이",
-      title: "재고 확인",
-      roleDescription: "떨어져 가는 것을 먼저 알려 준다.",
-      presetId: "stock",
-    });
-    expect(await presetOf(bot.id)).toBe("stock");
-  });
-
-  test("a duplicate does not inherit it: nobody picked anything for the copy", async () => {
-    const owner = await createUser();
-    const source = await store.create(owner, {
-      name: `Source ${randomUUID()}`,
-      title: "리뷰",
-      roleDescription: "리뷰를 본다.",
-      presetId: "reviews",
-    });
-    createdAgentIds.push(source.id);
-
-    const copy = await store.duplicate(owner, source.id);
-    createdAgentIds.push(copy.id);
-
-    expect(copy.title).toBe("리뷰");
-    expect(await presetOf(source.id)).toBe("reviews");
-    expect(await presetOf(copy.id)).toBeNull();
-  });
-});
-
-/**
- * The computer seats five.
- *
- * An account gets one virtual computer and up to five Bots share it (computer/assignment.ts), so
- * the sixth Bot must fail to be created — not exist and then fail to reach a computer. The seat
- * count is whatever the deployment already holds plus what this test seeds, because the shipped
- * package Bots sit at the same desk as everybody else.
+ * The Bot past the cap must fail to be created — not exist and then fail to reach a computer. The
+ * cap is injected where a test needs an account the way it looked before it came down to one, and
+ * the product number is what `createAgentProfileStore` uses when nothing is passed.
  */
 describe("the seat cap", () => {
+  test("a person makes one Bot, and the second is refused with its own code", async () => {
+    const owner = await createUser();
+    const oneBot = createAgentProfileStore(database, managedAgentAgUiUrl);
+
+    const first = await oneBot.create(owner, {
+      name: `First ${randomUUID()}`,
+      title: "",
+      roleDescription: "",
+    });
+    createdAgentIds.push(first.id);
+
+    const second = oneBot.create(owner, {
+      name: `Second ${randomUUID()}`,
+      title: "",
+      roleDescription: "",
+    });
+    await expect(second).rejects.toBeInstanceOf(AccountHasBotError);
+    await expect(second).rejects.toMatchObject({
+      code: "laf:account_has_bot",
+      status: 409,
+    });
+    // Refused before anything was written: still exactly the one.
+    const [held] = await database
+      .select({ count: count() })
+      .from(agentProfiles)
+      .where(
+        and(
+          eq(agentProfiles.ownerUserId, owner.id),
+          isNull(agentProfiles.deletedAt),
+        ),
+      );
+    expect(Number(held?.count)).toBe(1);
+  });
+
+  /*
+   * THE TRIAL CUSTOMER'S CASE. An account that had several Bots before the cap came down keeps
+   * every one of them — listed, readable, editable — and is refused only the next.
+   */
+  test("an account that already has several keeps them all, and is refused only a new one", async () => {
+    const owner = await createUser();
+    const oneBot = createAgentProfileStore(database, managedAgentAgUiUrl);
+    const older = await createProfileFixture({ owner });
+    const newer = await createProfileFixture({ owner });
+
+    const listed = (await oneBot.list(owner)).map((profile) => profile.id);
+    expect(listed).toContain(older.agentId);
+    expect(listed).toContain(newer.agentId);
+
+    const renamed = await oneBot.update(owner, newer.agentId, {
+      name: "둘째 봇",
+      title: newer.title,
+      roleDescription: newer.roleDescription,
+    });
+    expect(renamed.name).toBe("둘째 봇");
+
+    await expect(
+      oneBot.create(owner, { name: "셋째", title: "", roleDescription: "" }),
+    ).rejects.toBeInstanceOf(AccountHasBotError);
+    expect((await oneBot.list(owner)).map((profile) => profile.id)).toEqual(
+      expect.arrayContaining([older.agentId, newer.agentId]),
+    );
+  });
+
   test("refuses the Bot that would need one seat too many, and seats one after a deletion", async () => {
     /*
      * A FRESH PERSON, so the count starts at nothing.
@@ -862,7 +747,9 @@ describe("the seat cap", () => {
       title: "One Too Many",
       roleDescription: "Should never come to exist.",
     };
-    await expect(capped.create(owner, input)).rejects.toThrow(RosterFullError);
+    await expect(capped.create(owner, input)).rejects.toThrow(
+      AccountHasBotError,
+    );
 
     // A freed seat is a usable seat: soft-delete one and the same create goes through.
     const [freed] = seeded;
@@ -1021,7 +908,7 @@ describe("the seat cap", () => {
     );
     for (const outcome of outcomes) {
       if (outcome.status === "rejected") {
-        expect(outcome.reason).toBeInstanceOf(RosterFullError);
+        expect(outcome.reason).toBeInstanceOf(AccountHasBotError);
       }
     }
     // The table agrees, which is the assertion that survives a change of error type.
@@ -1037,17 +924,6 @@ describe("the seat cap", () => {
           title: "Racing For The Last Seat",
           roleDescription: "Only one of these may come to exist.",
         }),
-    );
-
-    expectExactlyOneSeated(outcomes, held, seats);
-  });
-
-  test("duplicate races the same lock, not a copy of the check", async () => {
-    // The count was copy-pasted into `duplicate`, comment and all; a fix applied to `create` alone
-    // would leave the same hole open to anybody pressing Duplicate twice.
-    const { held, outcomes, seats } = await raceForTheLastSeat(
-      4,
-      (store, owner, sourceAgentId) => store.duplicate(owner, sourceAgentId),
     );
 
     expectExactlyOneSeated(outcomes, held, seats);

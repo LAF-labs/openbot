@@ -97,7 +97,6 @@ async function mounted(props: {
       createElement(FirstTaskChips, {
         agent,
         disabled: props.disabled ?? false,
-        hint: null,
         onAsk: props.onAsk,
         tasks: props.tasks ?? tasks,
       }),

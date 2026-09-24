@@ -203,7 +203,6 @@ services:
       # flagship model — ten to thirty seconds per yes/no, in front of somebody waiting.
       REVIEW_MODEL: ${REVIEW_MODEL:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
-      BOT_SEATS_PER_ACCOUNT: ${BOT_SEATS_PER_ACCOUNT:-}
       COMPUTER_REPEAT_WINDOW_MS: ${COMPUTER_REPEAT_WINDOW_MS:-}
       AGENT_COMPUTER_POLICY: ${AGENT_COMPUTER_POLICY:-}
       # The zone the Bot is told the time in. Asia/Seoul unless a deployment says otherwise.

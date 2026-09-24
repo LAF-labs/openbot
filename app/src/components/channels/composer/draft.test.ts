@@ -2,10 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { chip, type Segment, text } from "prompt-area/helpers";
 import { applyCommandChips, type CommandOption, toDraft } from "./draft";
 
-function agent(id: string, name: string) {
-  return chip({ trigger: "@", value: id, displayText: name });
-}
-
 function command(id: string, name: string) {
   return chip({ trigger: "/", value: id, displayText: name });
 }
@@ -13,42 +9,25 @@ function command(id: string, name: string) {
 describe("toDraft", () => {
   test("flattens chips back into the plain text sent to the runtime", () => {
     const draft = toDraft([
-      agent("knowledge", "Knowledge"),
+      command("search", "search"),
       text(" what changed last week?"),
     ]);
 
-    expect(draft.text).toBe("@Knowledge what changed last week?");
-    expect(draft.agentIds).toEqual(["knowledge"]);
+    expect(draft.text).toBe("/search what changed last week?");
     expect(draft.isEmpty).toBe(false);
   });
 
-  test("reports nobody when the message does not name one", () => {
-    expect(toDraft([text("hello")]).agentIds).toEqual([]);
-  });
-
-  test("keeps every Bot the message names, in the order they were typed", () => {
-    const draft = toDraft([
-      agent("knowledge", "Knowledge"),
-      text(" and "),
-      agent("computer", "Computer"),
-      text(" check this"),
-    ]);
-
-    expect(draft.agentIds).toEqual(["knowledge", "computer"]);
-    expect(draft.text).toBe("@Knowledge and @Computer check this");
-  });
-
-  test("counts a Bot named twice once", () => {
-    const draft = toDraft([
-      agent("knowledge", "Knowledge"),
-      text(" then "),
-      agent("knowledge", "Knowledge"),
-      text(" again"),
-    ]);
-
-    expect(draft.agentIds).toEqual(["knowledge"]);
-    // The repetition stays in the words: it is what the person wrote.
-    expect(draft.text).toBe("@Knowledge then @Knowledge again");
+  /*
+   * `@` names nobody since 2026-09-24: a person has one Bot. An `@` typed into a message is just a
+   * character, and the draft has no list of Bots to carry.
+   */
+  test("carries no list of Bots, and an @ in the words is only a character", () => {
+    const draft = toDraft([text("@초롱 이거 봐줘")]);
+    expect(draft).toEqual({
+      text: "@초롱 이거 봐줘",
+      commandIds: [],
+      isEmpty: false,
+    });
   });
 
   test("collects command chips in the order they were typed", () => {

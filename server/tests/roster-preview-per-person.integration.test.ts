@@ -15,7 +15,6 @@ import {
   lafThreadMessages,
   users,
 } from "../src/db/schema";
-import { appendRoomMessage } from "../src/rooms/transcript";
 import { createRoutineDelivery } from "../src/routines/deliver";
 import { TEST_POOL } from "./support/database";
 
@@ -39,6 +38,9 @@ const database = createDatabase(
 const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
+  undefined,
+  // Seats for a Bot per test for the same owner; one Bot a person is the product's number, not this file's.
+  10,
 );
 const announced: ChannelActivityEvent[] = [];
 const channelStore = createChannelStore(
@@ -131,8 +133,8 @@ describe("a roster line in a conversation two people are in", () => {
     expect(announced.map((event) => event.memberIds)).toEqual([[OWNER.id]]);
   });
 
-  test("a routine's answer and a room message land on the owner's line alone", async () => {
-    const { botId, channelId, ownerThread } = await sharedConversation();
+  test("a routine's answer lands on the owner's line alone", async () => {
+    const { botId, channelId } = await sharedConversation();
 
     await createRoutineDelivery(database)({
       agentId: botId,
@@ -142,15 +144,6 @@ describe("a roster line in a conversation two people are in", () => {
       at: new Date(),
     });
     expect((await lineFor(OWNER, channelId))?.lastMessage).toBe(SECRET);
-    expect((await lineFor(STAFF, channelId))?.lastMessage ?? null).toBeNull();
-
-    const room = await appendRoomMessage(database, {
-      channelId,
-      threadId: ownerThread,
-      agentId: botId,
-      text: `${SECRET} (방에서)`,
-    });
-    expect(room.activity?.memberIds).toEqual([OWNER.id]);
     expect((await lineFor(STAFF, channelId))?.lastMessage ?? null).toBeNull();
   });
 

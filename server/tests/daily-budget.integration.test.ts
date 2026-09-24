@@ -259,7 +259,6 @@ describe("what a chat turn costs, written once", () => {
           profile: {
             id: agentId,
             name: "미소",
-            title: "",
             roleDescription: "",
           },
           effort: "balanced",

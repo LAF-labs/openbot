@@ -22,7 +22,7 @@
  */
 
 /**
- * The eight work patterns, as `app/src/lib/agents/presets.ts` names them.
+ * The eight work patterns, as `app/src/lib/agents/work-patterns.ts` names them.
  *
  * Repeated here rather than imported because `shared/` cannot reach into `app/`. Pinned by a test
  * that compares the two lists, so a pattern renamed on one side fails rather than drifting.

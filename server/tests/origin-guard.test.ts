@@ -139,8 +139,6 @@ describe("the activity socket's origin check", () => {
         requireUser,
         createChannelEventHub(),
         undefined,
-        undefined,
-        undefined,
         trusted,
       ),
     );

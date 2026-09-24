@@ -45,15 +45,12 @@ const PERMANENT: Record<string, { reads: number; why: string }> = {
  * moving a read into `config.ts` lowers the count and passes, adding one fails. Delete an entry once
  * its file reads nothing.
  *
- * Only `computer/assignment.ts` reads anything — `BOT_SEATS_PER_ACCOUNT`, at module load, the one
- * variable `config.ts` does not declare yet. `channels/routes.ts` and `routines/service.ts` were
- * measured at zero and are named so that the split landing in them cannot bring a read along.
+ * `computer/assignment.ts` read `BOT_SEATS_PER_ACCOUNT` here until 2026-09-24, when the number
+ * stopped being a setting (one Bot a person) and its entry was deleted. `channels/routes.ts` and
+ * `routines/service.ts` were measured at zero and are named so that the split landing in them
+ * cannot bring a read along.
  */
 const TEMPORARY: Record<string, { reads: number; owner: string }> = {
-  "server/src/computer/assignment.ts": {
-    reads: 1,
-    owner: "the server/src/computer/** split",
-  },
   "server/src/channels/routes.ts": {
     reads: 0,
     owner: "the channels/routes.ts split",

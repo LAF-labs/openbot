@@ -1,8 +1,9 @@
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { buildOf } from "../../shared/log";
+import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
 import { type AccountService, createAccountRoutes } from "./account/routes";
-import type { CoworkerCall } from "./agents/coworker-call";
+import { createShopRoutes, type ShopStore } from "./account/shop";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -16,15 +17,13 @@ import {
   type RoleRepository,
   requireAdmin,
 } from "./auth/guards";
-import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
-import { createShopRoutes, type ShopStore } from "./account/shop";
 import type { OnboardingStore } from "./auth/onboarding";
-import type { SessionAdmission } from "./auth/session-revocation";
 import {
   isOriginExempt,
   originAllowed,
   originRefusalBody,
 } from "./auth/origin";
+import type { SessionAdmission } from "./auth/session-revocation";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -35,13 +34,12 @@ import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
-import { MAX_BOTS_PER_COMPUTER } from "./computer/assignment";
 import type { ComputerClient } from "./computer/client";
 import type { DemonstrationRecorder } from "./computer/demonstration";
-import type { ScreenViewAudit } from "./computer/screen-view";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
+import type { ScreenViewAudit } from "./computer/screen-view";
 import type { SiteConnectionStore } from "./computer/site-connections";
 import { createSiteRoutes } from "./computer/site-routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
@@ -194,13 +192,11 @@ export function createApp(
    * ten minutes and then reports that nobody answered.
    */
   approvals?: ApprovalRegistry,
-  /** One Bot asking another. Absent means the ask route answers 501 and everything else stands. */
-  coworkerCall?: CoworkerCall,
   /** Instructions on a clock. Absent leaves the routine surface unmounted. */
   routineService?: RoutineService,
   /**
    * When each message in a thread was first seen and which Bot said it: the date separators, and
-   * the name above a reply in a room where more than one Bot can answer.
+   * the name above a reply.
    *
    * A reader rather than the database, because this module takes services and never a connection.
    * Absent serves empty maps, and the transcript then draws no separators and no names — which is
@@ -219,25 +215,6 @@ export function createApp(
       startedAt: string;
     }>
   >,
-  /**
-   * Runs a room's turn on the server. Absent leaves the room routes unmounted, which is what a
-   * deployment without a model runtime should look like: rooms simply cannot answer.
-   */
-  roomService?: {
-    post: (input: {
-      actor: { id: string; role: "admin" | "user" };
-      actorLabel: string;
-      channelId: string;
-      threadId: string;
-      text: string;
-      messageId?: string;
-      addressedAgentIds?: string[];
-      personName: string;
-    }) => Promise<{ turnId: string; messageId: string; epoch: number }>;
-    stop: (actor: { id: string }, channelId: string) => Promise<void>;
-  },
-  /** A room's transcript, straight out of the snapshot column. */
-  readThreadMessages?: (threadId: string) => Promise<unknown[]>,
   /**
    * The questions a person has decided not to be asked again.
    *
@@ -471,12 +448,10 @@ export function createApp(
     effort: deploymentEffort !== false,
     autoReview: autoReviewCapable ? await autoReviewCapable() : true,
     /*
-     * How many Bots fit, so the roster can say "3/5" instead of leaving somebody to discover the
-     * cap by being refused. The same constant `reserveSeat` counts against, read from the same
-     * place — a surface that wrote five into its own prose would be wrong on any deployment that
-     * set `BOT_SEATS_PER_ACCOUNT` to anything else.
+     * NO `seats` ANY MORE. It told the roster how many Bots fit so it could say "3/5"; since
+     * 2026-09-24 a person has one Bot, the number is not a setting, and nothing on the surface
+     * counts (docs/laf/deployment-model.md, "봇은 하나다").
      */
-    seats: MAX_BOTS_PER_COMPUTER,
   });
 
   /*
@@ -953,7 +928,6 @@ export function createApp(
         // deployment must not. Passed from configuration rather than defaulted here, so "hosted and
         // permissive" cannot happen by forgetting something.
         config.computer?.allowPrivateHosts ?? false,
-        coworkerCall,
         // What the roster shows as busy, read from the one ledger every run path writes.
         readWorking,
         // What each Bot has learned, and the three endpoints that let a person read and undo it.
@@ -1006,8 +980,6 @@ export function createApp(
         requireUser,
         channelEvents,
         messageTimeReader,
-        roomService,
-        readThreadMessages,
         // Where the activity socket may be opened from. The same list every other check reads.
         config.trustedOrigins,
       ),

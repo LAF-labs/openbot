@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { AbstractAgent } from "@ag-ui/client";
-import { runAgentOnce } from "../src/agents/coworker-call";
 import type { AuditEventInput } from "../src/audit";
 import {
   classifyTurnFailure,
   TURN_FAILURE_CODES,
 } from "../src/channels/turn-failures";
 import { buildAgents, type RunMeter } from "../src/copilot";
+import { runAgentOnce } from "../src/routines/run-once";
 import { type ToolExecutor, runUnattended } from "../src/runner/unattended";
 import {
   DAILY_BUDGET_REACHED,
@@ -84,7 +84,6 @@ function shop(fetch: ReturnType<typeof endpoint>["fetch"], meter?: RunMeter) {
         profile: {
           id: BOT,
           name: "미소",
-          title: "가게 운영 도우미",
           roleDescription: "주문을 챙긴다.",
         },
         effort: "balanced",
@@ -166,21 +165,7 @@ describe("a run on a day the trial has spent", () => {
     );
   });
 
-  test("is refused in a room's turn the same way", async () => {
-    const { received, fetch } = endpoint();
-    const failure = await runUnattended(
-      shop(fetch, { dailyBudget: judge(true).budget }),
-      "방에서 한마디 해줘",
-      { toolkit: noTools, timeoutMs: 5_000, mode: "room" },
-    ).then(
-      () => null,
-      (error: unknown) => error as Error,
-    );
-    expect(received).toEqual([]);
-    expect(failure?.message).toContain(DAILY_BUDGET_REACHED);
-  });
-
-  test("is refused when one Bot asks another, which never reaches the endpoint either", async () => {
+  test("is refused in a routine's toolless run, which never reaches the endpoint either", async () => {
     const { received, fetch } = endpoint();
     await runAgentOnce(
       shop(fetch, { dailyBudget: judge(true).budget }),
@@ -225,11 +210,11 @@ describe("a run on a day with room left", () => {
 describe("what every run costs, on the trail the judge reads", () => {
   /*
    * MEASURED BY READING, THEN BY THIS TEST: until the seam wrote it, a `model.usage` row came only
-   * from the runner the chat endpoint drives. A routine, a room turn and a coworker call run their
-   * agent directly, and their `laf.model.usage` events were read by nobody — so the budget a trial is
-   * held to would have counted chat and nothing else.
+   * from the runner the chat endpoint drives. A routine runs its agent directly, and its
+   * `laf.model.usage` events were read by nobody — so the budget a trial is held to would have
+   * counted chat and nothing else.
    */
-  test("a routine, a room, a coworker and a chat turn each write one row per usage event", async () => {
+  test("a routine, a toolless routine and a chat turn each write one row per usage event", async () => {
     const rows: AuditEventInput[] = [];
     const { received, fetch } = endpoint();
     const agent = shop(fetch, {
@@ -241,18 +226,13 @@ describe("what every run costs, on the trail the judge reads", () => {
       timeoutMs: 5_000,
       mode: "routine",
     });
-    await runUnattended(agent, "방에서 한마디 해줘", {
-      toolkit: noTools,
-      timeoutMs: 5_000,
-      mode: "room",
-    });
     await runAgentOnce(agent, "재고 알려줘", 5_000);
     const copy = agent.clone();
     copy.threadId = "thread-chat";
     copy.setMessages([{ id: "ask", role: "user", content: "주문 확인해줘" }]);
     await copy.runAgent({ runId: "run-chat" });
 
-    expect(received).toHaveLength(4);
+    expect(received).toHaveLength(3);
     const usage = rows.filter((row) => row.eventType === "model.usage");
     expect(usage.map((row) => row.payload.runId)).toEqual(
       received.map((request) => request.runId),

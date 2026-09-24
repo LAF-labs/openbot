@@ -31,6 +31,9 @@ const database = createDatabase(databaseUrl, TEST_POOL);
 const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
+  undefined,
+  // Seats for several Bots of one person's, which is the account from before 2026-09-24 that keeps them.
+  10,
 );
 const store = createChannelStore(
   database,
@@ -158,20 +161,12 @@ describe("a Bot has one conversation", () => {
     expect(theirs.id).not.toBe(mine.id);
   });
 
-  test("a group is a new conversation every time it is assembled", async () => {
-    const owner = await createUser();
-    const first = await createAgent(owner, "Expense Manager");
-    const second = await createAgent(owner, "Knowledge");
-
-    const one = await store.create(owner, [first, second]);
-    createdChannelIds.push(one.id);
-    const two = await store.create(owner, [first, second]);
-    createdChannelIds.push(two.id);
-
-    expect(two.id).not.toBe(one.id);
-  });
-
-  test("a group with a Bot does not become that Bot's conversation", async () => {
+  /*
+   * A ROOM FROM BEFORE 2026-09-24 IS NOT EITHER BOT'S CONVERSATION. Rooms cannot be made any more
+   * (the route refuses two Bots), but an account that had them keeps the rows, and resolving a Bot's
+   * conversation must step over them rather than open the room as if it were the Bot's own.
+   */
+  test("a room from before with a Bot in it does not become that Bot's conversation", async () => {
     const owner = await createUser();
     const first = await createAgent(owner, "Expense Manager");
     const second = await createAgent(owner, "Knowledge");

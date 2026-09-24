@@ -90,8 +90,8 @@ exists.
 
 One unattended run per Bot at a time, through a lane shared with every other
 server-side path (`runner/bot-lane.ts`). An account has one virtual computer
-and its Bots share it, so a routine firing at seven and a room turn asking the
-same Bot a question would otherwise drive one browser at once — each one's
+and its Bot is one, so a routine firing at seven and a conversation turn asking
+the same Bot a question would otherwise drive one browser at once — each one's
 snapshot going stale under the other. The lane is shared rather than private
 to routines because two services each serialising against themselves would
 not see each other. A coworker being *asked* by another
@@ -344,7 +344,7 @@ Clear button that asks first and says what it costs. `GET
 writes `routine.notepad_cleared` (who, which routine, how many entries); one that
 removed nothing writes no row. There is no HTTP door that writes a notepad, the
 browser never registers `routine_note` (a chat turn that calls it is answered
-`laf:tool_unknown` inside `agent-bot`), and a room's toolkit does not carry it.
+`laf:tool_unknown` inside `agent-bot`).
 
 **What it costs, measured.** 2026-09-14, the real `agent-bot` with a recording
 fake provider (`routine-notepad.test.ts` keeps the bound):

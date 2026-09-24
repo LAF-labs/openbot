@@ -34,8 +34,8 @@ import { writeReceipt } from "./receipts";
  * The answer or the failure mark, the ledger's ending and the receipt now commit together, so a
  * restart finds one of two states and both are true: nothing delivered and the ledger still
  * `running`, which boot reports as the interruption it is; or the answer beside a settled
- * ledger row, which boot leaves alone. `rooms/service.ts` is the model: the writes inside the
- * transaction, the announcement after it commits (`channels/events.ts` on why a socket frame
+ * ledger row, which boot leaves alone. The writes inside the transaction, the announcement after
+ * it commits (`channels/events.ts` on why a socket frame
  * must never precede a commit), which is why a delivery returns its announcement instead of
  * making it.
  *

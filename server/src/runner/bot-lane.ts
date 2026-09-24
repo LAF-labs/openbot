@@ -2,10 +2,10 @@
  * One thing at a time, per Bot.
  *
  * Lifted out of the routine service, where it was written for a reason that is not the routine
- * service's alone: an account gets ONE virtual computer and up to five Bots share it, so two tool
- * loops on the same Bot drive one browser at once — each one's snapshot goes stale under the other,
- * and a click meant for one page lands on the other's. The routine tick is sequential, but Run now
- * is not the tick, a room turn is not either, and two of those can name the same Bot.
+ * service's alone: an account gets ONE virtual computer, so two tool loops on the same Bot drive one
+ * browser at once — each one's snapshot goes stale under the other, and a click meant for one page
+ * lands on the other's. The routine tick is sequential, but Run now is not the tick, and the two can
+ * name the same Bot.
  *
  * A promise chain rather than a lock: it costs nothing when there is no second caller, and it
  * cannot deadlock because nothing here waits on anything but the task in front of it.

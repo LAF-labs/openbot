@@ -39,6 +39,9 @@ const database = createDatabase(databaseUrl, TEST_POOL);
 const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
+  undefined,
+  // Seats for a Bot per test for the same owner; one Bot a person is the product's number, not this file's.
+  10,
 );
 const store = createChannelStore(
   database,

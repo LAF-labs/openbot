@@ -44,12 +44,6 @@ export type QueuedMessage = {
    * eventually runs rather than being silently dropped on the way through the queue.
    */
   commandIds: string[];
-  /**
-   * Everybody it named with `@`, for the same reason the chips are kept: a room with several Bots
-   * routes on this, and dropping it here would mean a correction typed mid-turn went to whoever
-   * happened to be answering rather than to the colleagues it was addressed to.
-   */
-  agentIds: readonly string[];
 };
 
 export type QueueAction =
@@ -101,16 +95,17 @@ export function reduceQueue(
         if (queue.length === 0) {
           return { queue, run: action.draft };
         }
-        const [now, later] = drainable([
-          ...queue,
-          {
-            id: action.id,
-            text: action.draft.text,
-            commandIds: [...action.draft.commandIds],
-            agentIds: [...action.draft.agentIds],
-          },
-        ]);
-        return { queue: later, run: joinQueued(now) };
+        return {
+          queue: [],
+          run: joinQueued([
+            ...queue,
+            {
+              id: action.id,
+              text: action.draft.text,
+              commandIds: [...action.draft.commandIds],
+            },
+          ]),
+        };
       }
       return {
         queue: [
@@ -119,7 +114,6 @@ export function reduceQueue(
             id: action.id,
             text: action.draft.text,
             commandIds: [...action.draft.commandIds],
-            agentIds: [...action.draft.agentIds],
           },
         ],
         run: null,
@@ -130,9 +124,7 @@ export function reduceQueue(
       if (queue.length === 0) {
         return { queue, run: null };
       }
-      // Only what is addressed to the same Bots drains now; the rest waits for the turn after.
-      const [now, later] = drainable(queue);
-      return { queue: later, run: joinQueued(now) };
+      return { queue: [], run: joinQueued(queue) };
     }
 
     case "remove": {
@@ -143,43 +135,6 @@ export function reduceQueue(
       };
     }
   }
-}
-
-/** The names in a message, as one comparable string. Order does not make a different audience. */
-/*
- * JSON rather than a join: ids are the person's to name but not the app's to trust the shape
- * of, and a separator that could appear inside one would make two different audiences compare
- * equal.
- */
-const audienceOf = (message: QueuedMessage): string =>
-  JSON.stringify([...message.agentIds].sort());
-
-/**
- * The front of the queue addressed to the SAME Bots, and whatever is left for the turn after.
- *
- * A message that names nobody belongs to the recipients in front of it — that is what a correction
- * is. A message that names somebody ELSE starts a new turn: two colleagues asked in one breath are
- * two questions, and joining them would put the first person's question in front of the second.
- *
- * "Somebody else" means a different audience, not a different name: "@초롱 @달수 …" followed by
- * "@달수 @초롱 …" is the same two people asked twice, so those join.
- */
-function drainable(
-  queue: readonly QueuedMessage[],
-): [QueuedMessage[], QueuedMessage[]] {
-  let audience: string | null = null;
-  for (const [at, message] of queue.entries()) {
-    if (message.agentIds.length === 0) continue;
-    const named = audienceOf(message);
-    if (audience === null) {
-      audience = named;
-      continue;
-    }
-    if (named !== audience) {
-      return [queue.slice(0, at), queue.slice(at)];
-    }
-  }
-  return [[...queue], []];
 }
 
 /**
@@ -195,18 +150,6 @@ function drainable(
 function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
   return {
     text: queue.map((message) => message.text).join("\n"),
-    /*
-     * ONE AUDIENCE, AND `drainable` HAS ALREADY GUARANTEED IT.
-     *
-     * Three corrections typed in three breaths are one instruction, and a message with no `@` in
-     * that burst is part of the same thought — so the names anywhere in the slice are the names.
-     * Two DIFFERENT audiences are not: merging "@analyst check the numbers" with "@assistant book
-     * the room" would send both sentences to the assistant, which is the very thing the room's
-     * turn-taking refuses to do. `drainable` splits the queue there, so this only ever joins
-     * messages meant for the same people.
-     */
-    agentIds:
-      queue.find((message) => message.agentIds.length > 0)?.agentIds ?? [],
     // The same skill queued twice is still one instruction. Sending it twice would put the same
     // paragraph in front of the Bot two times and say nothing new by doing it.
     commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],

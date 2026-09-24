@@ -202,7 +202,7 @@ function deployment() {
     undefined,
     // 17: the plugin store, which mounts `/api/plugins` and, with the runtime below, `/api/partners`.
     store,
-    // 18-37: everything between the plugin store and the partner runtime, none of it on this path.
+    // 18-34: everything between the plugin store and the partner runtime, none of it on this path.
     // A miscount lands a store in a slot of another type and fails to typecheck, which is the check.
     undefined,
     undefined,
@@ -221,10 +221,7 @@ function deployment() {
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 38: the partner runtime.
+    // 35: the partner runtime.
     partners,
   );
   return { app, store, partners };
@@ -294,9 +291,18 @@ describe("what a Bot made after the connect is handed", () => {
     const userId = await createUser();
     const before = await createBotThrough(app, userId);
     await connectThrough(app, userId);
-    const after = await createBotThrough(app, userId);
-
     expect(await heldBy(store, before)).toEqual(REFS);
+
+    /*
+     * ONE BOT A PERSON (2026-09-24): the Bot made after is the one made after deleting the first —
+     * the only way a person comes to make a second. It must be handed what the first was.
+     */
+    signIn(userId);
+    const deleted = await app.request(`http://laf.test/api/agents/${before}`, {
+      method: "DELETE",
+    });
+    expect(deleted.status).toBe(204);
+    const after = await createBotThrough(app, userId);
     expect(await heldBy(store, after)).toEqual(REFS);
 
     // And the trail names the second Bot once per tool, by the deployment: nobody pressed

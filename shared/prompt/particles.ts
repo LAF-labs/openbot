@@ -28,22 +28,3 @@ function hasFinalConsonant(word: string): boolean {
 export function copula(word: string): string {
   return hasFinalConsonant(word) ? "이다" : "다";
 }
-
-/**
- * "…이" 또는 "…가". 주격 조사.
- *
- * 방에서 동료를 불러낼 때 쓴다 — "재고봇이 너를 불렀다"(`server/src/rooms/prompt.ts`). 봇이
- * 자기 차례에 읽는 첫 문장이라, 한쪽으로 굳히면 이름 절반이 "매출봇가 너를 불렀다"가 된다.
- */
-export function asSubject(word: string): string {
-  return hasFinalConsonant(word) ? "이" : "가";
-}
-
-/** "…으로" 또는 "…로". ㄹ 받침은 "로"를 쓴다. */
-export function asRole(word: string): string {
-  const last = word.trim().at(-1) ?? "";
-  const code = last.codePointAt(0) ?? 0;
-  const isHangulSyllable = code >= 0xac00 && code <= 0xd7a3;
-  const rieul = isHangulSyllable && (code - 0xac00) % 28 === 8;
-  return hasFinalConsonant(word) && !rieul ? "으로" : "로";
-}

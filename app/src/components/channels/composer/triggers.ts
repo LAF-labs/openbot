@@ -1,43 +1,7 @@
 import type { TriggerConfig, TriggerSuggestion } from "prompt-area/helpers";
-import { commandTrigger, mentionTrigger } from "prompt-area/helpers";
+import { commandTrigger } from "prompt-area/helpers";
 import { t } from "@/lib/i18n";
-import { AGENT_TRIGGER, COMMAND_TRIGGER, type CommandOption } from "./draft";
-
-/**
- * The composer's trigger registry.
- *
- * Adding a trigger means adding a factory here and passing its source down; composer rendering stays
- * independent of trigger semantics.
- */
-
-export type AgentOption = {
-  id: string;
-  name: string;
-  description?: string;
-};
-
-/**
- * Narrows the agent roster to mention options, scoped to a channel's permitted agents when
- * `permittedIds` is given.
- *
- * Takes a structural shape so the composer stays independent of the queries module.
- */
-export function toAgentOptions(
-  profiles: readonly { id: string; name: string; title?: string }[] | undefined,
-  permittedIds?: readonly string[],
-): AgentOption[] {
-  if (!profiles) {
-    return [];
-  }
-  const permitted = permittedIds ? new Set(permittedIds) : null;
-  return profiles
-    .filter((profile) => !permitted || permitted.has(profile.id))
-    .map((profile) => ({
-      id: profile.id,
-      name: profile.name,
-      description: profile.title,
-    }));
-}
+import { COMMAND_TRIGGER, type CommandOption } from "./draft";
 
 function matches(query: string, ...fields: (string | undefined)[]): boolean {
   if (!query) {
@@ -60,31 +24,6 @@ function matches(query: string, ...fields: (string | undefined)[]): boolean {
  * the moment a menu asks, the list can change as often as it likes and the trigger never has to.
  */
 export type OptionsReader<T> = () => readonly T[];
-
-/**
- * `@` selects the agent that answers this message.
- *
- * `reopenOnChipClick` keeps an inserted mention editable without deleting and retyping.
- */
-export function agentTrigger(
-  agents: OptionsReader<AgentOption>,
-): TriggerConfig {
-  return mentionTrigger({
-    char: AGENT_TRIGGER,
-    accessibilityLabel: "agent",
-    reopenOnChipClick: true,
-    emptyMessage: t("No Bots in this conversation"),
-    onSearch: (query): TriggerSuggestion[] =>
-      agents()
-        .filter((agent) => matches(query, agent.name, agent.description))
-        .map((agent) => ({
-          value: agent.id,
-          label: agent.name,
-          description: agent.description,
-        })),
-    onSelect: (suggestion) => suggestion.label,
-  });
-}
 
 /**
  * `/` is restricted to the start of a line, so a URL or a date in the middle of a sentence never
@@ -112,11 +51,9 @@ export function slashCommandTrigger(
 }
 
 export function buildTriggers({
-  agents,
   commands,
 }: {
-  agents: OptionsReader<AgentOption>;
   commands: OptionsReader<CommandOption>;
 }): TriggerConfig[] {
-  return [agentTrigger(agents), slashCommandTrigger(commands)];
+  return [slashCommandTrigger(commands)];
 }

@@ -9,12 +9,11 @@
  * A retry is the same question asked again, so it is the thread run again with that question where
  * it already is, under the id the store already holds. `appendMessages` (server, runner/
  * thread-store.ts) treats a message id it holds as an edit of that row and never as a second one,
- * which is what makes this the whole fix rather than half of one. A room reaches the same store
- * through `room-turn` with the message's own id.
+ * which is what makes this the whole fix rather than half of one.
  */
 import type { FailureGroup } from "./turn-failure";
 
-/** The part of a message these rules read. An AG-UI message has it, and so does a room's. */
+/** The part of a message these rules read. An AG-UI message has it. */
 export type ThreadMessage = {
   id: string;
   role: string;
@@ -39,20 +38,16 @@ function hasWords(content: unknown): boolean {
  * ask it — sending the words again — is exactly the duplicate this exists to stop. So there is no
  * button there at all: the line still says the question went unanswered, which stays true.
  *
- * What may sit between the question and the end differs by surface, which is `keepsReplies`:
- *
- *  - In a conversation with one Bot (the default), tool traffic only — an assistant turn that called
- *    tools and said nothing, and the results. That is the run's own continuation, and running again
- *    from it is what every browser action already does. A turn that had started to ANSWER in words
- *    is not retried in place: the provider would be handed a conversation ending in the Bot's own
- *    half-sentence, which OpenAI-compatible endpoints do not all accept.
- *  - In a room, any member's reply. A room turn is composed by the server from the whole transcript
- *    (`readRoomLines`), so a member that answered stays answered and the one that failed speaks.
+ * What may sit between the question and the end is tool traffic only — an assistant turn that
+ * called tools and said nothing, and the results. That is the run's own continuation, and running
+ * again from it is what every browser action already does. A turn that had started to ANSWER in
+ * words is not retried in place: the provider would be handed a conversation ending in the Bot's
+ * own half-sentence, which OpenAI-compatible endpoints do not all accept. (A room took any
+ * member's reply here too, until rooms were removed on 2026-09-24.)
  */
 export function retriesInPlace(
   messages: readonly ThreadMessage[],
   messageId: string,
-  { keepsReplies = false }: { keepsReplies?: boolean } = {},
 ): boolean {
   const at = messages.findIndex((message) => message.id === messageId);
   if (at === -1 || messages[at]?.role !== "user") return false;
@@ -60,7 +55,7 @@ export function retriesInPlace(
     // Skill instructions `say` puts in front of the words; they are never the thread moving on.
     if (later.role === "system") continue;
     if (later.role === "user") return false;
-    if (keepsReplies || later.role === "tool") continue;
+    if (later.role === "tool") continue;
     if (later.role === "assistant" && !hasWords(later.content)) continue;
     return false;
   }
@@ -90,7 +85,7 @@ export type StandingFailure = { code: string; group?: FailureGroup };
  * So a failure under a QUESTION is superseded by a reply to that question the server stamped after
  * the failure — anything but the person's own words and system rows, between the question and the
  * next thing the person asked. A reply stamped before it is one the failed turn itself produced —
- * the member of a room that did answer while another did not — and the failure stands beside it.
+ * — and the failure stands beside it.
  * A reply with no stamp yet is one that arrived after the stamps were read, which is after every
  * failure that read could know about.
  *

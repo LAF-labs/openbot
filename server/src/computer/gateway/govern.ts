@@ -306,7 +306,6 @@ export function createGovern(options: {
           ? { presentedApprovalId: subject.approvalId }
           : {}),
         ...(actor.threadId ? { threadId: actor.threadId } : {}),
-        ...(actor.delegated ? { delegated: actor.delegated } : {}),
         policyVerdict: decision,
       },
       {

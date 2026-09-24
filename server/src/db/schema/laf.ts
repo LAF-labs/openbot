@@ -195,9 +195,8 @@ export const lafThreadRuns = pgTable(
  * The Grok Bot field review (2026-08) put routines as the one capability their community leans on
  * that this product lacked. Ours is a sentence, deliberately: "check the smartstore reviews and
  * summarize the new ones" is a routine somebody can write, read back, and edit, where a recorded
- * screen session is a routine only its recorder understands. The Bot runs it server-side with no
- * tools in the room (coworker-call.ts), so a routine can think and write, and cannot yet click —
- * the browser-driving version arrives when tool execution moves off the browser (pivot P2).
+ * screen session is a routine only its recorder understands. The Bot runs it server-side, with the
+ * same tools a conversation has (`runner/unattended.ts`).
  *
  * `nextRunAt` is the whole scheduler. A tick claims a due routine by advancing `nextRunAt` in one
  * conditional UPDATE, so two server processes ticking over the same table cannot both run it: one

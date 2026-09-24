@@ -173,9 +173,9 @@ against rather than taking them on faith:
   body, naming the vendor, the catalogue name and URLs), the response `headers`, the `error` body
   again, and the stack. The comment beside it said the full error "goes to this service's own
   log, where an operator reads it and no customer does" — true, and the log is what gets pasted.
-- `server/src/rooms/service.ts` logged a failed member turn the same way, and the errors that
-  reach it include Drizzle's — statement and bound parameters, which for a transcript append is
-  the room's message array.
+- The room service (removed 2026-09-24 with rooms) logged a failed member turn the same way, and
+  the errors that reached it included Drizzle's — statement and bound parameters, which for a
+  transcript append was the room's message array.
 - A server started against an unmigrated database died with Bun's own report of the uncaught
   exception: `update "laf_thread_runs" set "status" = $1 …` with its values, on stderr.
 - Seven shapes of line across three services: bare sentences (`agent-bot listening on http://…`),

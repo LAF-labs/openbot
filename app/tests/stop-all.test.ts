@@ -29,7 +29,7 @@ import {
  * the kind of number that makes a stop button untrustworthy.
  */
 
-const none = { chat: 0, room: 0, routine: 0, handoff: 0 };
+const none = { chat: 0, routine: 0 };
 
 describe("what is running, as the dialog counts it", () => {
   test("a conversation both the server and this window know about is one", () => {
@@ -48,7 +48,7 @@ describe("what is running, as the dialog counts it", () => {
   });
 
   test("totals every kind", () => {
-    expect(totalOf({ chat: 1, room: 2, routine: 3, handoff: 4 })).toBe(10);
+    expect(totalOf({ chat: 1, routine: 3 })).toBe(4);
     expect(totalOf(none)).toBe(0);
   });
 });
@@ -171,10 +171,11 @@ describe("one press", () => {
 
 describe("the words", () => {
   test("list only what there was, in the order the kinds are drawn", () => {
-    expect(workBreakdown({ chat: 2, room: 0, routine: 1, handoff: 0 })).toEqual(
-      [WORK_LINES.chat, WORK_LINES.routine],
-    );
-    expect(WORK_KINDS).toEqual(["chat", "room", "routine", "handoff"]);
+    expect(workBreakdown({ chat: 2, routine: 1 })).toEqual([
+      WORK_LINES.chat,
+      WORK_LINES.routine,
+    ]);
+    expect(WORK_KINDS).toEqual(["chat", "routine"]);
   });
 
   test("every kind has Korean that keeps its count", () => {
@@ -186,7 +187,7 @@ describe("the words", () => {
 
 describe("the fact a stopped routine is recorded under", () => {
   test("is the one the server writes", async () => {
-    // Read off the server's source, like the coworker walk: importing the loop would pull in the
+    // Read off the server's source: importing the loop would pull in the
     // computer gateway and everything under it for one string.
     const loop = await Bun.file(
       new URL("../../server/src/runner/unattended.ts", import.meta.url),
@@ -200,7 +201,8 @@ describe("what the server answered, read defensively", () => {
   test("a count that is not a count reads as none, and never as the whole answer failing", () => {
     expect(
       parseRunning({
-        running: { chat: 1, room: "2", routine: -1 },
+        // `room` is a kind this surface no longer knows: dropped, never counted.
+        running: { chat: 1, room: 2, routine: -1 },
         chats: ["thread-1", 5],
       }),
     ).toEqual({ running: { ...none, chat: 1 }, chats: ["thread-1"] });

@@ -15,7 +15,6 @@ const riskRow = {
   id: "risk",
   name: "Risk",
   type: "remote_ag_ui" as const,
-  title: "Risk & Compliance",
   roleDescription: "Investigate policies and controls.",
 };
 
@@ -45,7 +44,6 @@ describe("registered Copilot agents", () => {
       profile: {
         id: "risk",
         name: "Risk",
-        title: "Risk & Compliance",
         roleDescription: "Investigate policies and controls.",
       },
       // A remote Bot carries it too, and that is the whole point: every Bot anybody creates is one.
@@ -67,7 +65,6 @@ describe("registered Copilot agents", () => {
         id: "general-assistant",
         name: "General Assistant",
         type: "built_in",
-        title: "Everyday Work",
         roleDescription: "Help with everyday work.",
         configuration: { systemPrompt: "Be helpful." },
       }),
@@ -172,7 +169,6 @@ describe("the composed prompt", () => {
   const profile = {
     id: "agent_expense",
     name: "Expense Manager",
-    title: "Finance Operations",
     roleDescription: "Review receipts and prepare reimbursement reports.",
   };
   const at = new Date("2026-09-02T13:40:00Z");
@@ -187,9 +183,8 @@ describe("the composed prompt", () => {
     expect(message.id).toBe("laf-prompt:agent_expense");
     expect(message.role).toBe("system");
     expect(message.content).toContain(BASE_KO);
-    expect(message.content).toContain(
-      "너는 Expense Manager, Finance Operations이다.",
-    );
+    // "Manager"는 받침으로 읽힌다(`particles.ts`) — 이름이 고르는 조사 그대로.
+    expect(message.content).toContain("너는 Expense Manager이다.");
     expect(message.content).toContain(profile.roleDescription);
     expect(message.content).toContain("사람이 화면 앞에서 지켜보는 대화다");
   });
@@ -228,24 +223,30 @@ describe("the composed prompt", () => {
   /**
    * THE PARTICLE FOLLOWS THE NAME, and this was wrong on a running server.
    *
-   * Read off the wire on 2026-09-03: "너는 비서, 영수증·경비 보고 담당다." The name and the title
-   * are values a person typed, so the copula cannot be written into the template — half the Bots
-   * in the world end in a consonant and the other half do not. A Bot whose very first line is
-   * clumsy Korean is the opposite of what this product sells.
+   * Read off the wire on 2026-09-03: "너는 비서, 영수증·경비 보고 담당다." The name is a value a
+   * person typed, so the copula cannot be written into the template — half the Bots in the world end
+   * in a consonant and the other half do not. A Bot whose very first line is clumsy Korean is the
+   * opposite of what this product sells. (The title that line also carried is no longer read; see
+   * the next test.)
    */
   test("ends the identity line with the particle the name takes", () => {
-    expect(composed({ title: "영수증·경비 보고 담당" }).content).toContain(
-      "너는 Expense Manager, 영수증·경비 보고 담당이다.",
-    );
-    expect(composed({ title: "가게 운영 도우미" }).content).toContain(
-      "너는 Expense Manager, 가게 운영 도우미다.",
-    );
-    expect(composed({ title: "  ", name: "미소" }).content).toContain(
-      "너는 미소다.",
-    );
-    expect(composed({ title: "  ", name: "비서실장" }).content).toContain(
+    expect(composed({ name: "미소" }).content).toContain("너는 미소다.");
+    expect(composed({ name: "비서실장" }).content).toContain(
       "너는 비서실장이다.",
     );
+  });
+
+  /**
+   * THE PROFILE IS A NAME AND A FACE (2026-09-24). A title a Bot carries from before is a column
+   * nobody can see or edit any more, so it must not be what the Bot is told it is.
+   */
+  test("does not read a title, even one the row still has", () => {
+    const content = botPromptMessage(
+      { ...profile, title: "리뷰 담당" } as typeof profile,
+      { mode: "chat", now: at, timeZone: "Asia/Seoul" },
+    ).content;
+    expect(content).toContain("너는 Expense Manager이다.");
+    expect(content).not.toContain("리뷰 담당");
   });
 
   /**
@@ -272,10 +273,28 @@ describe("the composed prompt", () => {
     expect(hangul).toBeGreaterThan(500);
   });
 
-  test("tells a Bot with no job that it has none, rather than dropping the line", () => {
+  /**
+   * NO JOB IS THE NORMAL CASE NOW. A person has one Bot and writes down nothing about what it is
+   * for, so the paragraph an empty job reads is the one most Bots read on every run. It used to
+   * say "you were just made, introduce yourself and ask what to do" — true for a moment, and
+   * false on the hundredth conversation, where it had the Bot introducing itself again.
+   */
+  test("tells a Bot with no job that its work is whatever it is asked, not that it is new", () => {
     const message = composed({ roleDescription: "  " });
-    expect(message.content).toContain("아직 아무도 말해 주지 않았다");
+    expect(message.content).toContain("정해 둔 직무는 없다");
+    expect(message.content).toContain("대화로 맡기는 일이 곧 네 일이다");
     expect(message.content).toContain("update_profile");
+    expect(message.content).not.toContain("방금 만들어졌");
+    expect(message.content).not.toContain("자신을 소개");
+  });
+
+  test("a routine with no job is told to do what it was given, and not to write a job down", () => {
+    const routine = botPromptMessage(
+      { ...profile, roleDescription: "" },
+      { mode: "routine", now: at, timeZone: "Asia/Seoul" },
+    ).content;
+    expect(routine).toContain("정해 둔 직무는 없다");
+    expect(routine).not.toContain("update_profile로 네 설명에");
   });
 
   test("keeps what it worked out apart from what it was told", () => {
@@ -333,15 +352,6 @@ describe("the composed prompt", () => {
     expect(routine).toContain("부탁할 상대가 지금 없다");
   });
 
-  test("tells a coworker there are no tools in the room", () => {
-    const coworker = botPromptMessage(profile, {
-      mode: "coworker",
-      now: at,
-      timeZone: "Asia/Seoul",
-    }).content;
-    expect(coworker).toContain("툴이 하나도 없다");
-  });
-
   // Where the zone comes from — `BOT_TIME_ZONE`, and a bad one shrugged off — is config.ts's now,
   // and `config.test.ts` says so.
 });
@@ -350,7 +360,6 @@ describe("what reaches the endpoint", () => {
   const profile = {
     id: "agent_expense",
     name: "Expense Manager",
-    title: "Finance Operations",
     roleDescription: "Review receipts.",
   };
 
@@ -419,16 +428,23 @@ describe("what reaches the endpoint", () => {
     const agents = buildAgents([remoteAgent(endpoint.url)], model);
     const agent = agents.agent_expense;
 
-    agent?.setMessages([userMessage("Your turn.")]);
-    await agent?.runAgent({ forwardedProps: { mode: "room" } } as never);
-    const room = firstSystemMessage(endpoint.requests.at(-1));
-    expect(room).toContain("send_message");
+    agent?.setMessages([userMessage("Check the orders.")]);
+    await agent?.runAgent({ forwardedProps: { mode: "routine" } } as never);
+    const routine = firstSystemMessage(endpoint.requests.at(-1));
+    expect(routine).toContain("화면 앞에는 아무도 없다");
 
     agent?.setMessages([userMessage("Sort these.")]);
     await agent?.runAgent();
     const chat = firstSystemMessage(endpoint.requests.at(-1));
-    expect(chat).not.toContain("send_message");
+    expect(chat).not.toContain("화면 앞에는 아무도 없다");
     expect(chat).toContain("사람이 화면 앞에서 지켜보는 대화다");
+
+    // A mode that was removed — a room's, a coworker's — is an unknown one, and unknown is chat.
+    agent?.setMessages([userMessage("Your turn.")]);
+    await agent?.runAgent({ forwardedProps: { mode: "room" } } as never);
+    expect(firstSystemMessage(endpoint.requests.at(-1))).toContain(
+      "사람이 화면 앞에서 지켜보는 대화다",
+    );
   });
 
   test("resolves a deleted coworker as a tombstone that never reaches its endpoint", async () => {
@@ -525,7 +541,7 @@ describe("the shop line on every run", () => {
     return { ...agent, profile: { ...agent.profile, shop } };
   };
 
-  test.each(["chat", "room", "routine", "coworker"] as const)(
+  test.each(["chat", "routine"] as const)(
     "reaches the endpoint on a %s run",
     async (mode) => {
       await using endpoint = fakeAgUiEndpoint();
@@ -590,7 +606,6 @@ function remoteAgent(
   endpoint: string,
   overrides: {
     name?: string;
-    title?: string;
     roleDescription?: string;
     effort?: "quick" | "balanced" | "thorough";
   } = {},
@@ -603,7 +618,6 @@ function remoteAgent(
     profile: {
       id: "agent_expense",
       name: overrides.name ?? "Expense Manager",
-      title: overrides.title ?? "Finance Operations",
       roleDescription: overrides.roleDescription ?? "Review receipts.",
     },
     effort: overrides.effort ?? ("balanced" as const),
@@ -666,7 +680,6 @@ function fakeAgUiEndpoint() {
 describe("a remote Bot's run", () => {
   const risk = remoteAgent("http://risk.internal/ag-ui", {
     name: "Risk",
-    title: "Risk & Compliance",
     effort: "thorough",
   });
 

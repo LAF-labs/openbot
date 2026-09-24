@@ -95,15 +95,6 @@ export type CreateAgentInput = Pick<
    */
   autoReview?: string;
   /**
-   * The preset a person picked for this Bot, by catalogue key. See `agentProfiles.presetId`.
-   *
-   * Absent leaves it alone, like the face: the edit form does not show it and must not clear it.
-   * There is no way to clear one — a Bot shaped from a preset and then retitled by hand was still
-   * made from it. Only a person's own press reaches here; `POST /:agentId/profile`, which a Bot's
-   * `update_profile` calls, never passes it on.
-   */
-  presetId?: string;
-  /**
    * A key this agent sits behind, if any.
    *
    * Write-only. It goes to the vault and is never read back to a person: the edit form shows that a

@@ -198,7 +198,6 @@ export function createCallPath(
     botId: string;
     actorId: string;
     threadId: string | undefined;
-    delegated: { callerId: string } | undefined;
     ref: string;
     serverId: string;
     toolName: string;
@@ -238,7 +237,6 @@ export function createCallPath(
           ? { presentedApprovalId: question.approvalId }
           : {}),
         ...(question.threadId ? { threadId: question.threadId } : {}),
-        ...(question.delegated ? { delegated: question.delegated } : {}),
         policyVerdict: question.verdict,
         forcedAsk: question.forcedAsk,
       },
@@ -351,8 +349,6 @@ export function createCallPath(
       actorId: string;
       /** The conversation the call was raised from, so an answer can be for it. See gateway.ts. */
       threadId?: string | undefined;
-      /** One Bot answering another, with nobody watching. See `ActionActor.delegated`. */
-      delegated?: { callerId: string } | undefined;
       /**
        * Whether this person governs the whole deployment.
        *
@@ -698,7 +694,6 @@ export function createCallPath(
               botId: input.botId,
               actorId: input.actorId,
               threadId: input.threadId,
-              delegated: input.delegated,
               ref: input.ref,
               serverId,
               toolName,

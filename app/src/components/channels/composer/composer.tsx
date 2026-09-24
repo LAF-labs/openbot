@@ -21,7 +21,7 @@ import {
   toDraft,
 } from "./draft";
 import { PLACEHOLDER_COMMANDS } from "./sources";
-import { type AgentOption, buildTriggers } from "./triggers";
+import { buildTriggers } from "./triggers";
 
 const MAX_HEIGHT_PX = 220;
 /**
@@ -34,25 +34,20 @@ const MAX_HEIGHT_PX = 220;
 const COMPACT_MIN_HEIGHT_PX = 26;
 const COMPACT_MAX_HEIGHT_PX = 104;
 
-/**
- * One identity for "nobody to mention". `agents = []` in the parameter list is a NEW array on
- * every render, which is how a caller that passed nothing at all still handed the editor a fresh
- * trigger list each time the screen redrew — see `sources` below.
- */
-const EMPTY_AGENTS: readonly AgentOption[] = [];
-
 type Sources = {
-  agents: readonly AgentOption[];
   commands: readonly CommandOption[];
 };
 
 /**
- * What the menus read when they open: the latest agent and command lists, in a box.
+ * What the `/` menu reads when it opens: the latest command list, in a box.
+ *
+ * There was an `@` menu beside it, of Bots to address, until 2026-09-24: a person has one Bot and
+ * there is nobody else to name.
  *
  * A box rather than a ref only so that the React Compiler compiles the composer. It refuses any
  * function that reads a ref being handed to code that runs while rendering — which `buildTriggers`
  * is, though all it does with the readers is keep them for later — and there is no way to tell it
- * that they are called only when somebody types `@` or `/`. The box behaves as the ref did: a
+ * that it is called only when somebody types `/`. The box behaves as the ref did: a
  * layout effect writes it after every commit, before any keystroke can open a menu, and nothing
  * that is drawn reads it.
  */
@@ -69,11 +64,9 @@ function createSources(initial: Sources) {
 export type ComposerProps = {
   className?: string;
   compact?: boolean;
-  /** Agents that `@` can address. Empty means the mention menu reports an empty channel. */
-  agents?: readonly AgentOption[];
   commands?: readonly CommandOption[];
   /**
-   * Receives the whole draft rather than a string, so a mention or a command reaches the caller as
+   * Receives the whole draft rather than a string, so a command reaches the caller as
    * structured data instead of something it would have to re-parse out of the text.
    */
   onSubmit?: (draft: ComposerDraft) => void | Promise<void>;
@@ -122,7 +115,6 @@ export type ComposerProps = {
 export function Composer({
   className,
   compact = false,
-  agents = EMPTY_AGENTS,
   commands = PLACEHOLDER_COMMANDS,
   onSubmit,
   onQueue,
@@ -157,16 +149,12 @@ export function Composer({
    * the trigger list nor the change handler ever changes identity. The effect then re-runs only when
    * `value` does, and a render caused by `value` is never behind the editor's record of it.
    */
-  const [sources] = useState(() => createSources({ agents, commands }));
+  const [sources] = useState(() => createSources({ commands }));
   useLayoutEffect(() => {
-    sources.write({ agents, commands });
+    sources.write({ commands });
   });
   const triggers = useMemo(
-    () =>
-      buildTriggers({
-        agents: () => sources.read().agents,
-        commands: () => sources.read().commands,
-      }),
+    () => buildTriggers({ commands: () => sources.read().commands }),
     [sources],
   );
   const draft = useMemo(() => toDraft(value), [value]);

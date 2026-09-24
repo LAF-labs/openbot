@@ -83,12 +83,12 @@ function deploymentWith(admitted: Person[]) {
   const args: Parameters<typeof createApp> = [config, auth, roles];
   // `accountService` and, last, `sessionAdmission` — by position; the compiler holds each index to
   // its type, so a wrong one does not build.
-  args[34] = {
+  args[31] = {
     exporter: createAccountExport(database),
     deletion: createAccountDeletion({ database, sessions: revocation }),
     auditStore: createAuditStore(database),
   };
-  args[44] = revocation;
+  args[41] = revocation;
   const app = createApp(...args);
   const actors = createRequestActors({
     devNoAuth: false,

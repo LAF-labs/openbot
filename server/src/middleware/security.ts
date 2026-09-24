@@ -119,7 +119,6 @@ export function doorFor(method: string, pathname: string): Door | undefined {
     }
     return undefined;
   }
-  if (/^\/api\/channels\/[^/]+\/room-turn\/?$/.test(path)) return "message";
   if (/^\/api\/routines\/[^/]+\/trigger\/?$/.test(path)) return "trigger";
   return undefined;
 }

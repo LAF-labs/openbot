@@ -2,10 +2,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { describeFailure, NOT_FOUND } from "../failure-text";
-import { isCatalogueKey } from "../insights/catalogue-key";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
-import { type CoworkerCall, CoworkerCallError } from "./coworker-call";
 import { checkAgentEndpoint } from "./endpoint";
 import {
   type AgentMemoryStore,
@@ -15,14 +13,14 @@ import {
   MemoryFullError,
 } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
-import { profileTextOf } from "./profile-text";
 import {
+  AccountHasBotError,
   AgentNotFoundError,
   AgentNotManageableError,
   type AgentProfileStore,
   ProtectedAgentError,
-  RosterFullError,
 } from "./profile-store";
+import { profileTextOf } from "./profile-text";
 import {
   AGENT_EFFORTS,
   type AgentActor,
@@ -48,8 +46,7 @@ export type AgentInputRefusal =
   | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
-  | "laf:agent_auth_header_invalid"
-  | "laf:agent_preset_invalid";
+  | "laf:agent_auth_header_invalid";
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
@@ -63,7 +60,6 @@ type AgentInputObject = {
   avatarSeed?: unknown;
   effort?: unknown;
   autoReview?: unknown;
-  presetId?: unknown;
   auth?: unknown;
 };
 
@@ -163,20 +159,11 @@ export function parseAgentInput(
   if (typeof autoReview !== "string") return autoReview;
 
   /*
-   * Which preset a person picked, when the press that sent this was one. A catalogue key and never
-   * the preset's words: those arrive as the title and the role, translated, and this is what stays
-   * countable after the language changes (`agentProfiles.presetId`). Refused rather than dropped
-   * when it is not key-shaped, because the only sender is our own intro card, and a card that sent
-   * something else is a bug worth a 400 rather than a pick that silently goes uncounted.
+   * NO `presetId` SINCE 2026-09-24. The one sender was the new Bot's card, pressing one of a row of
+   * ready-made kinds of work; the card and the presets went when a Bot's profile became its name and
+   * face. A body that still carries one is read as it always was by the part that matters — the
+   * field is simply not a field any more, like any other key this parser does not know.
    */
-  let presetId: string | undefined;
-  if (input.presetId !== undefined) {
-    if (!isCatalogueKey(input.presetId)) {
-      return { ok: false, code: "laf:agent_preset_invalid" };
-    }
-    presetId = input.presetId;
-  }
-
   // The key is optional and write-only. An absent field leaves an existing key alone; sending one
   // replaces it. There is no way to read one back, here or anywhere.
   let auth: { header: string; value: string } | undefined;
@@ -210,7 +197,6 @@ export function parseAgentInput(
       // somebody does on purpose. `optionalBoundedText` answers "" for an absent field too, so the
       // presence check is on the input rather than on what came back.
       ...(input.autoReview === undefined ? {} : { autoReview }),
-      ...(presetId === undefined ? {} : { presetId }),
     },
   };
 }
@@ -224,8 +210,6 @@ export function createAgentRoutes(
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   /** Whether this deployment may talk to its own network. True on a laptop, false when hosted. */
   allowPrivateHosts = false,
-  /** One Bot asking another. Absent when the deployment has no runtime to run the coworker on. */
-  coworkerCall?: CoworkerCall,
   /**
    * Which of a person's Bots are mid-run. Absent answers "none", which is the right degraded
    * behaviour: a roster that cannot reach the ledger should look calm, not broken.
@@ -399,73 +383,6 @@ export function createAgentRoutes(
   });
 
   /**
-   * One Bot asks another, and waits for the answer.
-   *
-   * `from` names the calling Bot for the trail and the self-call check; it is not authorisation —
-   * the person driving the caller is the actor, and requireUser already named them. The coworker
-   * runs server-side with no tools, so this cannot chain (see coworker-call.ts).
-   */
-  routes.post("/:agentId/ask", requireUser, async (context) => {
-    if (!coworkerCall) {
-      return context.json(
-        {
-          error: "laf:coworker_unavailable",
-          code: "laf:coworker_unavailable",
-        },
-        501,
-      );
-    }
-    const body = (await context.req.json().catch(() => null)) as {
-      message?: unknown;
-      from?: unknown;
-      depth?: unknown;
-    } | null;
-    const message = typeof body?.message === "string" ? body.message : "";
-    const from = typeof body?.from === "string" ? body.from : "";
-    if (!from) {
-      return context.json(
-        {
-          error: "laf:coworker_from_required",
-          code: "laf:coworker_from_required",
-        },
-        400,
-      );
-    }
-    /*
-     * How deep the asker already is. The browser's tool never says, and is depth 0: a Bot a
-     * person is driving. A caller that is itself a delegated run says so and is refused — a
-     * claim of depth can only ever refuse the claimant, so it is not a thing worth lying about.
-     */
-    const depth =
-      typeof body?.depth === "number" && Number.isFinite(body.depth)
-        ? Math.max(0, Math.floor(body.depth))
-        : 0;
-    try {
-      const answer = await coworkerCall.ask(
-        context.var.actor,
-        from,
-        context.req.param("agentId"),
-        message,
-        { depth },
-      );
-      return context.json({ answer });
-    } catch (error) {
-      if (error instanceof CoworkerCallError) {
-        /*
-         * The code and its numbers, never the sentence. The sentence was written for the asking
-         * MODEL, and the browser's tool builds the model's text and the person's line from these
-         * (`app/src/lib/copilot/coworker-tools.tsx`); a 502's sentence was the provider's own.
-         */
-        return context.json(
-          { ...error.facts, error: error.code, code: error.code },
-          error.status,
-        );
-      }
-      throw error;
-    }
-  });
-
-  /**
    * A Bot rewriting its own profile.
    *
    * The product model is that a Bot is a name, a description and a face, and that what it becomes
@@ -560,10 +477,6 @@ export function createAgentRoutes(
            * helpful. It is edited on the profile screen by a person, through PATCH, and nowhere
            * else. Sending it here changes nothing rather than failing, because a Bot being told
            * "no" is a Bot that tries again in another shape.
-           *
-           * NOR IS `presetId`. It is the record of what a person picked the Bot to be, and a Bot
-           * rewriting its own job must not rewrite that record on the way — the count it feeds is
-           * what people chose, not what their Bots became.
            */
         },
         allowPrivateHosts,
@@ -756,18 +669,6 @@ export function createAgentRoutes(
     },
   );
 
-  routes.post("/:agentId/duplicate", requireUser, async (context) => {
-    try {
-      const agent = await store.duplicate(
-        context.var.actor,
-        context.req.param("agentId"),
-      );
-      return context.json({ agent: agentDto(context.var.actor, agent) }, 201);
-    } catch (error) {
-      return mapStoreError(context, error);
-    }
-  });
-
   routes.post("/:agentId/hide", requireUser, async (context) => {
     try {
       await store.setHidden(
@@ -923,14 +824,8 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
  * answers `laf:internal` and logs the route without the parameters.
  */
 function mapStoreError(context: Context, error: unknown): Response {
-  if (error instanceof RosterFullError) {
-    // The seat count travels beside the code so the surface can say how full; the words are its.
-    return context.json(
-      { error: error.code, code: error.code, seats: error.seats },
-      error.status,
-    );
-  }
   if (
+    error instanceof AccountHasBotError ||
     error instanceof AgentNotFoundError ||
     error instanceof AgentNotManageableError ||
     error instanceof ProtectedAgentError

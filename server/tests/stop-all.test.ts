@@ -10,7 +10,7 @@ import { testEnvironment } from "./support/environment";
  * `모두 멈추기`: everything a person has going on, on their own Bots, stopped by one press.
  *
  * What is pinned here is the door, not the stopping — each run path's own stop is tested where it
- * lives (`chat-stop`, `room-stop`, `routine-stop`, `coworker-stop`). The door has four promises:
+ * lives (`chat-stop`, `routine-stop`). The door has four promises:
  * it reaches only the person's own work on Bots the ownership rule lets them drive; it answers what
  * it stopped, by kind; it says out loud what it found and could not stop, rather than counting it as
  * stopped; and the press is on the trail whether or not anything was running.
@@ -46,7 +46,7 @@ function surface(stopAll: ReturnType<typeof createStopAll> | undefined) {
     signedIn,
     roles,
   ];
-  args[46] = stopAll;
+  args[43] = stopAll;
   return createApp(...args);
 }
 
@@ -81,9 +81,7 @@ function harness() {
 
 const counts = (partial: Partial<Record<string, number>> = {}) => ({
   chat: 0,
-  room: 0,
   routine: 0,
-  handoff: 0,
   ...partial,
 });
 
@@ -92,13 +90,11 @@ describe("what is running, before anything is stopped", () => {
     const { work, app } = harness();
     work.track(going({ kind: "chat", threadId: "thread-1" }).work);
     work.track(going({ kind: "routine" }).work);
-    work.track(going({ kind: "room", agentId: null, threadId: "room-1" }).work);
-    work.track(going({ kind: "handoff", agentId: "bot-2" }).work);
 
     const response = await app.request("http://laf.local/api/me/running");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      running: counts({ chat: 1, room: 1, routine: 1, handoff: 1 }),
+      running: counts({ chat: 1, routine: 1 }),
       chats: ["thread-1"],
     });
   });
@@ -207,7 +203,7 @@ describe("stopping everything", () => {
   test("a stop that throws is a stop that did not happen", async () => {
     const { work, app } = harness();
     work.track(
-      going({ kind: "room", agentId: null }, async () => {
+      going({ kind: "routine" }, async () => {
         throw new Error("the database is down");
       }).work,
     );
@@ -215,7 +211,7 @@ describe("stopping everything", () => {
       method: "POST",
     });
     expect(await response.json()).toMatchObject({
-      notStopped: counts({ room: 1 }),
+      notStopped: counts({ routine: 1 }),
     });
   });
 
@@ -282,7 +278,7 @@ describe("the door itself", () => {
       },
       roles,
     ];
-    args[46] = createStopAll({ work });
+    args[43] = createStopAll({ work });
     const app = createApp(...args);
     const chat = going({ kind: "chat" });
     work.track(chat.work);

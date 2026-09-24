@@ -319,14 +319,12 @@ describe("three doors have a rate", () => {
     expect(doorFor("POST", "/api/copilotkit/x/agent/bot-1/run/")).toBe(
       "message",
     );
-    expect(doorFor("POST", "/api/channels/c1/room-turn")).toBe("message");
     expect(doorFor("POST", "/api/routines/r1/trigger")).toBe("trigger");
     // Not doors: a read, a stop, a connect, and the routes beside them.
     expect(doorFor("GET", "/api/copilotkit/agent/bot-1/run")).toBeUndefined();
     expect(
       doorFor("POST", "/api/copilotkit/agent/bot-1/connect"),
     ).toBeUndefined();
-    expect(doorFor("POST", "/api/channels/c1/room-turn/stop")).toBeUndefined();
     expect(doorFor("POST", "/api/routines/r1/run")).toBeUndefined();
     expect(doorFor("POST", "/api/auth/sign-out")).toBeUndefined();
   });
@@ -383,25 +381,6 @@ describe("three doors have a rate", () => {
     expect((await send("better-auth.session_token=B.sig")).status).not.toBe(
       429,
     );
-  });
-
-  test("sending a message in a room is the same door", async () => {
-    const application = app();
-    const turn = () =>
-      application.request(`${ORIGIN}/api/channels/c1/room-turn`, {
-        method: "POST",
-        headers: from("203.0.113.11", {
-          cookie: "better-auth.session_token=R",
-        }),
-      });
-    for (
-      let attempt = 0;
-      attempt < RATE_LIMITS.message.perSession;
-      attempt += 1
-    ) {
-      expect((await turn()).status).not.toBe(429);
-    }
-    expect((await turn()).status).toBe(429);
   });
 
   test("the anonymous trigger: per token, and per address", async () => {

@@ -1,11 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent } from "@ag-ui/client";
 import { eq } from "drizzle-orm";
-import {
-  CoworkerCallError,
-  createCoworkerCall,
-} from "../src/agents/coworker-call";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
@@ -140,7 +135,6 @@ describe("runtime agent loading", () => {
       profile: {
         id: profile.id,
         name: "Expense Manager",
-        title: "Finance Operations",
         roleDescription:
           "Review receipts, categorize expenses, and prepare reimbursement reports.",
         memories: [],
@@ -154,9 +148,8 @@ describe("runtime agent loading", () => {
   /**
    * The roster a turn runs against, which is where "cannot see it" becomes "cannot use it".
    *
-   * Every path that is not a REST read comes through here: the browser's own turn, a room's
-   * members (rooms/service.ts), a routine's Bot (routines/run.ts) and one Bot asking another
-   * (agents/coworker-call.ts) all resolve their agents from this loader for a named actor. An
+   * Every path that is not a REST read comes through here: the browser's own turn and a routine's
+   * Bot (routines/run.ts) resolve their agents from this loader for a named actor. An
    * administrator whose roster was unfiltered here had every private Bot on the deployment mounted
    * as a runnable agent on every turn they took.
    */
@@ -187,53 +180,6 @@ describe("runtime agent loading", () => {
     expect(ownersRoster).toContain(mine.id);
     expect(ownersRoster).toContain(shipped.id);
     expect(ownersRoster).not.toContain(theirs.id);
-  });
-
-  /**
-   * One Bot asking another, against the real loader rather than a stubbed roster.
-   *
-   * `coworker-call.test.ts` hands `resolveAgents` a fixed map, so it can say what the call does
-   * with a roster and nothing about which roster a person gets — the same gap that let the
-   * live-screen socket open on a public Bot while its unit test stayed green (audit A8). This is
-   * the by-id half: the asking Bot names the target in the request, so the refusal has to come
-   * from the target's absence from THIS actor's roster and not from a list nobody consulted.
-   */
-  test("a coworker nobody may see cannot be asked by id either", async () => {
-    const owner = await createUser();
-    const administrator = await createUser("admin");
-    const theirs = await createCoworker(owner);
-    const asking = await createCoworker(administrator, { name: "제 것" });
-    const call = createCoworkerCall({
-      resolveAgents: async (actor) => {
-        const loaded = await loadAgents(actor);
-        return Object.fromEntries(
-          loaded.map((agent) => [agent.id, agent as unknown as AbstractAgent]),
-        );
-      },
-    });
-
-    const attempt = call.ask(
-      administrator,
-      asking.id,
-      theirs.id,
-      "오늘 정산 얼마였어?",
-    );
-
-    await expect(attempt).rejects.toMatchObject({
-      code: "laf:coworker_not_found",
-      status: 404,
-    });
-    // The id is in the refusal because the ASKING MODEL is given it back verbatim, and it must not
-    // also carry the Bot's name or title — that is the leak, one refusal later.
-    await attempt.catch((error: unknown) => {
-      expect(error).toBeInstanceOf(CoworkerCallError);
-      expect((error as CoworkerCallError).message).not.toContain(
-        "Expense Manager",
-      );
-      expect((error as CoworkerCallError).message).not.toContain(
-        "Finance Operations",
-      );
-    });
   });
 
   test("mounts a coworker the deployment ships for everybody signed in", async () => {

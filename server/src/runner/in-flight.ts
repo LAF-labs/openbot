@@ -3,7 +3,7 @@
  *
  * WHY A SECOND RECORD BESIDE THE LEDGER. `laf_thread_runs` says a run is going on; it cannot stop
  * one. What can is in memory, held by whatever started the run — the vendored runner's copy of a
- * chat's agent, the controller a room turn or a routine was handed — and none of it could be reached
+ * chat's agent, the controller a routine was handed — and none of it could be reached
  * from anywhere but the code that made it. So every run path says here what it has started, with
  * the function that stops it, for as long as it is going on. `모두 멈추기` reads this and nothing
  * else (`stop-all.ts`).
@@ -13,16 +13,21 @@
  * — boot has already written its ledger row off as `unknown`.
  */
 
-/** The kinds of work a person can have going on, in the order the surface lists them. */
-export const WORK_KINDS = ["chat", "room", "routine", "handoff"] as const;
+/**
+ * The kinds of work a person can have going on, in the order the surface lists them.
+ *
+ * Two since 2026-09-24: a room's turn and one Bot answering another went with rooms when a person
+ * came to have one Bot (docs/laf/deployment-model.md, "봇은 하나다").
+ */
+export const WORK_KINDS = ["chat", "routine"] as const;
 
 export type WorkKind = (typeof WORK_KINDS)[number];
 
 export type Work = {
   kind: WorkKind;
-  /** The person it is being done for: whose conversation, room, routine or question it is. */
+  /** The person it is being done for: whose conversation or routine it is. */
   userId: string | null;
-  /** The Bot doing it. Null for a room's turn, which belongs to the room rather than to one Bot. */
+  /** The Bot doing it. */
   agentId: string | null;
   /** The conversation, for a chat: the thread is what the window that pressed Stop holds. */
   threadId?: string | null;

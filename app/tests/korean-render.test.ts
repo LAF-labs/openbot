@@ -9,16 +9,16 @@ import { join } from "node:path";
  * either not tested or tested by walking source. `support/korean-render.tsx` renders them in a
  * process of its own, with Korean chosen before anything loads, and hands back what was shown.
  *
- * A BOT'S NAME TAKES THE PARTICLE ITS LAST SOUND ASKS FOR — ON THE LOCK SCREEN, IN THE ROOM, AND ON
- * THE PAGE THE NOTICE OPENS.
+ * A BOT'S NAME TAKES THE PARTICLE ITS LAST SOUND ASKS FOR — ON THE LOCK SCREEN AND ON THE PAGE THE
+ * NOTICE OPENS.
  *
  * MEASURED 2026-09-10 (audit A4, finding 7): "닻이(가) 기다립니다" went to the OS notification centre,
  * the first sentence a person reads from this product outside its window, and "{name}이(가) 답을
- * 기다리고 있어요" sat on a room's approval card. `lib/josa.ts` had existed since W3b for exactly this;
- * the two entries carrying a Bot's name were left out of it.
+ * 기다리고 있어요" sat on a room's approval card (rooms were removed on 2026-09-24). `lib/josa.ts` had
+ * existed since W3b for exactly this; the entries carrying a Bot's name were left out of it.
  *
- * Read: the titles the real notification hook raised from the outbox, the room's approval cards,
- * and the heading of `/approve/:id`.
+ * Read: the titles the real notification hook raised from the outbox, and the heading of
+ * `/approve/:id`.
  *
  * AND THE ROSTER'S TIMES ARE KOREAN ON A MACHINE THAT IS NOT. `toLocaleTimeString()` with no
  * argument answers in the machine's locale, so a Korean app on an en-US machine printed "Sat" and
@@ -44,7 +44,6 @@ let rendering: Promise<Rendered> | undefined;
 
 type Rendered = {
   notices: string[];
-  cards: string[];
   headings: string[];
   times: string[];
 };
@@ -87,17 +86,9 @@ describe("a Bot's name in Korean", () => {
     // The notices arrive oldest first; which name comes first is not the point.
     expect([...shown.notices].sort()).toEqual([...titles].sort());
     expect(shown.headings).toEqual(titles);
-    expect(shown.cards).toHaveLength(NAMES.length);
-    NAMES.forEach(([name, particle], index) => {
-      expect(
-        shown.cards[index]?.startsWith(
-          `${name}${particle} 답을 기다리고 있어요:`,
-        ),
-      ).toBe(true);
-    });
 
     // And nothing anywhere still spells the form letter, or leaves a slot unfilled.
-    for (const text of [...shown.notices, ...shown.cards, ...shown.headings]) {
+    for (const text of [...shown.notices, ...shown.headings]) {
       expect(text).not.toContain("(가)");
       expect(text).not.toContain("{josa}");
     }

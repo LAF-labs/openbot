@@ -38,7 +38,6 @@ export const EVAL_TIME_ZONE = DEFAULT_TIME_ZONE;
 export const EVAL_BOT = {
   id: "eval_bot",
   name: "미소",
-  title: "가게 운영 도우미",
 };
 
 export const EVAL_STANDING_ROLE =
@@ -85,8 +84,8 @@ const sha256 = (text: string) =>
  * enforceable because these two numbers are in the report.
  */
 export const PROMPT_HASH = sha256(
-  (["chat", "room", "routine", "coworker"] as const)
-    .map((mode) => promptSkeleton(mode, EVAL_BOT.name))
+  (["chat", "routine"] as const)
+    .map((mode) => promptSkeleton(mode))
     .join("\n\n---\n\n"),
 );
 

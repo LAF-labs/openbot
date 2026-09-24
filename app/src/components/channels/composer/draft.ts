@@ -11,46 +11,21 @@ import {
  * Pure boundary between prompt-area segments and LAF Agent's message draft model.
  */
 
-export const AGENT_TRIGGER = "@";
 export const COMMAND_TRIGGER = "/";
 
 export type ComposerDraft = {
-  /** Plain text, with chips flattened back to `@Agent` / `/command`. */
+  /** Plain text, with chips flattened back to `/command`. */
   text: string;
-  /**
-   * Everybody this message names with `@`, in the order they were typed. Empty lets the
-   * conversation pick — its one coworker, or, in a room, everybody in it.
-   *
-   * IT WAS ONE, AND ONE WAS A LIE THE SURFACE TOLD ABOUT ITSELF. `enforceSingleAgent` used to
-   * DELETE every mention chip but the last one as you typed, so naming two colleagues in a room
-   * silently unnamed the first — while the server has taken a list the whole time
-   * (`rooms/orchestrator.ts`: "Who the person named — chips and @-mentions, as ids. Empty means
-   * everybody"). The block was entirely on this side.
-   *
-   * Deleting those chips was also the one thing in this composer that rewrote the editor's DOM in
-   * the middle of a keystroke, which is how a Korean syllable being assembled gets thrown away
-   * (see `composer.tsx`). Nothing rewrites segments for mentions now: what was typed stays typed,
-   * and the repetition is resolved here, on the way out.
-   */
-  agentIds: readonly string[];
   /** Commands that survive into the sent message, in the order they were typed. */
   commandIds: string[];
   isEmpty: boolean;
 };
 
 export function toDraft(segments: Segment[]): ComposerDraft {
-  const agentChips = getChipsByTrigger(segments, AGENT_TRIGGER);
   const commandChips = getChipsByTrigger(segments, COMMAND_TRIGGER);
 
   return {
     text: segmentsToPlainText(segments).trim(),
-    /*
-     * The same Bot named twice is one recipient. "@초롱 …, @초롱 다시 봐줘" is one person saying one
-     * colleague's name twice, not a request to run the turn twice; the server refuses a duplicate
-     * outright when a channel is created from this (`channels/input.ts`), so a repeat reaching it
-     * would come back as a refusal on a message that reads perfectly well.
-     */
-    agentIds: [...new Set(agentChips.map((chip) => chip.value))],
     commandIds: commandChips.map((chip) => chip.value),
     isEmpty: isSegmentsEmpty(segments),
   };

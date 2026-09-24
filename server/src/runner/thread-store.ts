@@ -2,8 +2,8 @@
  * The one conversation store: every message this deployment holds is written here and read here.
  *
  * There used to be three writers and two disciplines on one jsonb array. `laf-runner.ts` rewrote
- * the whole array from an in-memory mirror merged with the client's copy; `rooms/transcript.ts` and
- * `routines/deliver.ts` appended with `jsonb || jsonb`. An append that landed between the runner's
+ * the whole array from an in-memory mirror merged with the client's copy; the room transcript (removed
+ * 2026-09-24) and `routines/deliver.ts` appended with `jsonb || jsonb`. An append that landed between the runner's
  * read and its overwrite was simply gone, the mirror the overwrite was built from had to be glued
  * back into step after every append (`adoptSnapshot`), a turn cost a rewrite of the entire
  * conversation, and boot read every thread's full history into memory. Three message type
@@ -40,12 +40,9 @@ import { redactSecretTyping } from "./secret-redaction";
  * `lafRedacted` says this row is not what arrived: a `computer_type` argument was taken out of it
  * because the boundary refused the typing as a secret. See `secret-redaction.ts`.
  *
- * `lafRoomReceipts` is on a person's message in a room: member id to how that member's part in the
- * turn it started came out (`rooms/outcomes.ts`). Written by the room when the turn ends
- * (`recordRoomReceipts`), never by a client, and kept across a re-arrival of the same message — see
- * `appendMessages`. It is the room's own record of who read the question and stayed quiet, which the
- * transcript draws as a receipt; the text of the message is untouched by it, and the members are
- * shown the room by its text alone (`readRoomLines`).
+ * A person's message in a room written before 2026-09-24 may also carry `lafRoomReceipts`: which
+ * members read it and how their part came out. Rooms are gone and nothing reads or writes the key
+ * any more; it is left in the rows it is in, like everything else a room wrote.
  *
  * This is the ONLY definition. There were three (`StampedMessage` twice, `StoredMessage` once).
  */
@@ -53,7 +50,6 @@ export type StoredMessage = Message & {
   lafAt?: string;
   lafAgentId?: string;
   lafRedacted?: boolean;
-  lafRoomReceipts?: Record<string, string>;
 };
 
 /**
@@ -364,29 +360,17 @@ export async function appendMessages(
         });
         continue;
       }
-      /*
-       * A ROOM'S RECEIPTS OUTLIVE THE QUESTION BEING ASKED AGAIN. 다시 묻기 re-sends the person's
-       * message under its own id, which lands here as an edit of the row — and the copy that arrives
-       * never carries what the room wrote onto it, so the members that had already read it and
-       * stayed quiet vanished from the record the moment one colleague was asked again. The room
-       * merges the new turn's outcomes over these when that turn ends.
-       */
-      const receipts = previous.message.lafRoomReceipts;
-      const edited: StoredMessage =
-        receipts && !message.lafRoomReceipts
-          ? { ...message, lafRoomReceipts: receipts }
-          : message;
-      if (canonical(previous.message) === canonical(edited)) continue;
+      if (canonical(previous.message) === canonical(message)) continue;
       await transaction
         .update(lafThreadMessages)
-        .set({ message: edited as unknown as Record<string, unknown> })
+        .set({ message: message as unknown as Record<string, unknown> })
         .where(
           and(
             eq(lafThreadMessages.threadId, threadId),
             eq(lafThreadMessages.seq, previous.seq),
           ),
         );
-      stored.set(message.id, { seq: previous.seq, message: edited });
+      stored.set(message.id, { seq: previous.seq, message });
     }
     if (fresh.size > 0) {
       await transaction.insert(lafThreadMessages).values([...fresh.values()]);
@@ -440,16 +424,9 @@ export type MessageTimes = Record<string, string>;
 /** Message id to the id of the Bot that said it, for every message that carries one. */
 export type MessageSpeakers = Record<string, string>;
 
-/**
- * A person's message in a room to how each member's part in the turn it started came out: member
- * id to outcome (`rooms/outcomes.ts`). Only messages a room turn has ended on carry one.
- */
-export type MessageReceipts = Record<string, Record<string, string>>;
-
 export type ThreadMarks = {
   times: MessageTimes;
   speakers: MessageSpeakers;
-  receipts: MessageReceipts;
 };
 
 /**
@@ -468,7 +445,6 @@ export function createMessageMarkReader(database: Database) {
         id: sql<string | null>`${lafThreadMessages.message} ->> 'id'`,
         at: sql<string | null>`${lafThreadMessages.message} ->> 'lafAt'`,
         by: sql<string | null>`${lafThreadMessages.message} ->> 'lafAgentId'`,
-        receipts: sql<unknown>`${lafThreadMessages.message} -> 'lafRoomReceipts'`,
       })
       .from(lafThreadMessages)
       .where(eq(lafThreadMessages.threadId, threadId))
@@ -476,34 +452,13 @@ export function createMessageMarkReader(database: Database) {
 
     const times: MessageTimes = {};
     const speakers: MessageSpeakers = {};
-    const receipts: MessageReceipts = {};
     for (const row of rows) {
       if (!row.id) continue;
       if (row.at) times[row.id] = row.at;
       if (row.by) speakers[row.id] = row.by;
-      const heard = receiptsOf(row.receipts);
-      if (heard) receipts[row.id] = heard;
     }
-    return { times, speakers, receipts };
+    return { times, speakers };
   };
-}
-
-/** A stored receipts object, as strings only — the screen checks each outcome against its own list. */
-function receiptsOf(value: unknown): Record<string, string> | null {
-  // The driver hands a jsonb expression back parsed; a string is the same object, once removed.
-  if (typeof value === "string") {
-    try {
-      return receiptsOf(JSON.parse(value));
-    } catch {
-      return null;
-    }
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const heard: Record<string, string> = {};
-  for (const [memberId, outcome] of Object.entries(value)) {
-    if (typeof outcome === "string") heard[memberId] = outcome;
-  }
-  return Object.keys(heard).length > 0 ? heard : null;
 }
 
 /** What `listThreads` needs, without reading a single message body. */

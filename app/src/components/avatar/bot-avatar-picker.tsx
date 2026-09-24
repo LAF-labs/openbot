@@ -31,6 +31,11 @@ import { pressOnce } from "@/lib/press";
  * the rows is the only face in the dialog that is allowed to move.
  *
  * One press applies — the contract every face picker here has had — and 완료 closes.
+ *
+ * TWO FRAMES, ONE CHOOSER (2026-09-24). The first run asks for a face before the Bot exists, so
+ * there is nothing to apply a press to yet and no dialog to put it in: the chooser is its own
+ * component, drawn inline there with the choice held on the screen, and in the dialog here with
+ * each press saved.
  */
 
 const withAxis = (
@@ -87,6 +92,55 @@ const Row = ({
   </fieldset>
 );
 
+/** The preview, the shuffle and the two rows — everything but the frame around them. */
+export function BotAvatarChooser({
+  seed,
+  onSelect,
+  disabled,
+}: {
+  seed: string | undefined;
+  onSelect: (seed: string) => void;
+  disabled?: boolean;
+}) {
+  const params = botAvatarParams(seed);
+  return (
+    <div
+      aria-busy={disabled ? "true" : undefined}
+      className="flex flex-col gap-4"
+    >
+      <div className="flex flex-col items-center gap-3">
+        <BotAvatar seed={seed} size={128} state="curious" />
+        <Button
+          disabled={disabled}
+          onClick={() => onSelect(randomBotAvatarSeed())}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {t("Another face")}
+        </Button>
+      </div>
+
+      <Row
+        axis="shape"
+        label={t("Shape")}
+        onSelect={onSelect}
+        options={BOT_AVATAR_SHAPES}
+        params={params}
+        pending={disabled}
+      />
+      <Row
+        axis="palette"
+        label={t("Colour")}
+        onSelect={onSelect}
+        options={BOT_AVATAR_PALETTES}
+        params={params}
+        pending={disabled}
+      />
+    </div>
+  );
+}
+
 export const BotAvatarPicker = ({
   open,
   onOpenChange,
@@ -101,7 +155,6 @@ export const BotAvatarPicker = ({
   onSelect: (seed: string) => Promise<unknown>;
   pending?: boolean;
 }) => {
-  const params = botAvatarParams(seed);
   /*
    * WHAT A CHOICE CAME TO, SAID HERE. A face that did not save was said nowhere: the press's
    * promise rejected into the console, and the preview simply stayed as it was — which looks
@@ -140,40 +193,11 @@ export const BotAvatarPicker = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div
-          aria-busy={isBusy ? "true" : undefined}
-          className="flex flex-col gap-4"
-        >
-          <div className="flex flex-col items-center gap-3">
-            <BotAvatar seed={seed} size={128} state="curious" />
-            <Button
-              disabled={isBusy}
-              onClick={() => void handleSelect(randomBotAvatarSeed())}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {t("Another face")}
-            </Button>
-          </div>
-
-          <Row
-            axis="shape"
-            label={t("Shape")}
-            onSelect={(chosen) => void handleSelect(chosen)}
-            options={BOT_AVATAR_SHAPES}
-            params={params}
-            pending={isBusy}
-          />
-          <Row
-            axis="palette"
-            label={t("Colour")}
-            onSelect={(chosen) => void handleSelect(chosen)}
-            options={BOT_AVATAR_PALETTES}
-            params={params}
-            pending={isBusy}
-          />
-        </div>
+        <BotAvatarChooser
+          disabled={isBusy}
+          onSelect={(chosen) => void handleSelect(chosen)}
+          seed={seed}
+        />
 
         <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
           {failure}

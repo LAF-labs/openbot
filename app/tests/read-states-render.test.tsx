@@ -80,10 +80,10 @@ describe("the roster", () => {
         failing ? refused("laf:internal", 500) : json({ agents: [BOT] }),
       ),
     });
-    const nav = () => view.host.querySelector('nav[aria-label="Your team"]');
+    const nav = () => view.host.querySelector('nav[aria-label="Your Bot"]');
     await view.waitFor(
       () =>
-        (nav()?.textContent ?? "").includes("Your Bots could not be loaded."),
+        (nav()?.textContent ?? "").includes("Your Bot could not be loaded."),
       "the roster's failure line",
     );
     expect(nav()?.textContent).not.toContain("No Bots yet.");
@@ -106,13 +106,17 @@ describe("the roster", () => {
     ).toEqual([""]);
   });
 
-  test("an empty roster says so, with the way to make the first Bot", async () => {
+  /*
+   * NO "아직 봇이 없습니다" AND NO 새 봇 (2026-09-24). A person has one Bot, and somebody with none
+   * is sent to the first run to make it; the sidebar has nothing to offer about making another.
+   */
+  test("with no Bot, the sidebar draws no row and no way to make one", async () => {
     const view = await mountApp({ path: "/skills" });
-    const notice = view.host.querySelector(
-      'nav[aria-label="Your team"] [data-roster-notice="empty"]',
-    );
-    expect(notice?.textContent).toContain("No Bots yet.");
-    expect(notice?.textContent).toContain("New Bot");
+    const nav = view.host.querySelector('nav[aria-label="Your Bot"]');
+    expect(nav).not.toBeNull();
+    expect(nav?.querySelectorAll("ul a")).toHaveLength(0);
+    expect(nav?.textContent).not.toContain("New Bot");
+    expect(nav?.querySelector("[data-roster-notice]")).toBeNull();
   });
 });
 
@@ -144,7 +148,9 @@ describe("a Bot's profile", () => {
   test("a deployment with no memory store says so — not 'nothing yet', and nothing to press", async () => {
     const view = await profile(() => refused("laf:not_found", 404));
     await view.waitFor(
-      () => card(view.host)?.querySelector("[data-read-state]") !== null,
+      // `?? null`: with no card on screen yet, `undefined !== null` would read as settled.
+      () =>
+        (card(view.host)?.querySelector("[data-read-state]") ?? null) !== null,
       "the memories card to settle",
     );
     const memories = card(view.host);
@@ -159,7 +165,8 @@ describe("a Bot's profile", () => {
     const view = await profile(() => refused("laf:internal", 500));
     await view.waitFor(
       () =>
-        card(view.host)?.querySelector('[data-read-state="failed"]') !== null,
+        (card(view.host)?.querySelector('[data-read-state="failed"]') ??
+          null) !== null,
       "the memories card's failure line",
     );
     const memories = card(view.host);
@@ -184,9 +191,10 @@ describe("a Bot's profile", () => {
       () => json({ memories: [] }),
       () => (failing ? refused("laf:internal", 500) : json({ agent: BOT })),
     );
+    // The name is a field you can change now (2026-09-24), not a heading.
     const profileName = () =>
-      [...view.host.querySelectorAll("h1")].some(
-        (heading) => heading.textContent === "Sprout",
+      [...view.host.querySelectorAll("main input")].some(
+        (field) => (field as HTMLInputElement).value === "Sprout",
       );
     await view.waitFor(profileName, "the profile");
 

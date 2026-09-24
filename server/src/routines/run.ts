@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
-import { runAgentOnce } from "../agents/coworker-call";
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
@@ -25,6 +24,7 @@ import {
   withNotepad,
 } from "./notepad";
 import { lastReport } from "./receipts";
+import { runAgentOnce } from "./run-once";
 import { reportRun } from "./run-report";
 import {
   type RunToSettle,
@@ -35,9 +35,8 @@ import {
 /**
  * One run of a routine: the Bot asked, the answer settled, the trail told.
  *
- * The shape of a run is the same server-side run a coworker being asked gets (`runAgentOnce`), or
- * with tools the unattended loop (`runner/unattended.ts`), because they are the same act on a
- * different trigger. The order is the whole design: the ledger opens before anything else, the
+ * The shape of a run is the unattended loop (`runner/unattended.ts`), or without tools the one
+ * toolless run (`run-once.ts`). The order is the whole design: the ledger opens before anything else, the
  * record commits in one transaction (`settlement.ts`), the roster hears about it only after that
  * commit, and the trail row that rings a failure's bell comes last (`run-report.ts`).
  */
@@ -45,7 +44,7 @@ import {
 /**
  * How long a routine's run may take, tools included.
  *
- * Longer than a coworker answer: nobody is waiting on screen. And long enough for a reasoning
+ * Long, because nobody is waiting on screen. And long enough for a reasoning
  * model, whose turns were measured at 50–75 seconds each — three minutes was four turns, and an
  * "open two pages and compare" routine was reaching the deadline on its way to the answer. This
  * is not the guard against a hung Bot: the stall watchdog (AGENT_STALL_TIMEOUT_MS) is, and it ends
@@ -325,8 +324,7 @@ async function askTheBot(
   let notepad: NotepadDraft | null = null;
   /*
    * STOPPED, NOT FAILED — decided by the signal this run was handed rather than by what the stop
-   * threw on its way out. The loop throws its own `RunStopped`, the toolless path a coworker's
-   * refusal, and a stop that landed mid-write could surface as anything; the signal is the one
+   * threw on its way out. The loop throws its own `RunStopped`, the toolless path its own, and a stop that landed mid-write could surface as anything; the signal is the one
    * witness that a person asked for it.
    */
   const stopped = (steps: Attempt["steps"]): Attempt => ({
@@ -408,14 +406,13 @@ async function askTheBot(
       };
     }
     /*
-     * No tools, no notepad: this run is composed as a coworker's (`runAgentOnce`), is offered no
-     * `routine_note` to write with, and is shown no notepad to read.
+     * No tools, no notepad: this run (`run-once.ts`) is offered no `routine_note` to write with,
+     * and is shown no notepad to read.
      */
     const answer = await runAgentOnce(
       target,
       instruction,
       options.runTimeoutMs,
-      undefined,
       signal,
     );
     return {

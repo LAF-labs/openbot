@@ -19,7 +19,7 @@ import { polled } from "@/lib/polling";
  */
 export type WorkingRun = {
   agentId: string;
-  /** `chat` | `routine` | `handoff` | `wake`. */
+  /** `chat` | `routine` | `wake` — and `handoff` or `room` on a run from before 2026-09-24. */
   origin: string;
   /** What it is doing, when somebody wrote it down — a routine's name. */
   label: string | null;
@@ -62,8 +62,6 @@ export function workingQueryOptions() {
 export function workingLabel(run: WorkingRun): string {
   if (run.label) return run.label;
   if (run.origin === "routine") return t("Running a routine");
-  if (run.origin === "handoff") return t("Helping another Bot");
   if (run.origin === "wake") return t("Following something up");
-  if (run.origin === "room") return t("In a room");
   return t("Working…");
 }

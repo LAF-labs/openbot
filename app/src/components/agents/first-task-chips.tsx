@@ -7,7 +7,6 @@ import {
   reportFirstTaskPressed,
   routineSentence,
 } from "@/lib/agents/first-tasks";
-import type { WorkPatternId } from "@/lib/agents/presets";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
@@ -34,15 +33,12 @@ import { dailyPlaceById } from "@/lib/shop/catalogue";
 export const FirstTaskChips = ({
   agent,
   disabled,
-  hint,
   onAsk,
   tasks,
 }: {
   agent: AgentProfile;
   /** A first message is already on its way; a second chip must not start a second channel. */
   disabled: boolean;
-  /** What the Bot's card suggested, recorded beside each press so the two can be compared. */
-  hint: WorkPatternId | null;
   onAsk: (sentence: string) => void;
   tasks: readonly FirstTask[];
 }) => {
@@ -91,7 +87,7 @@ export const FirstTaskChips = ({
                   pattern: null,
                   sentence: null,
                   via: null,
-                  hint,
+                  hint: null,
                 })
               }
               to="/settings/connected-accounts"
@@ -118,7 +114,7 @@ export const FirstTaskChips = ({
                   pattern: task.pattern,
                   sentence: task.sentence,
                   via: task.via,
-                  hint,
+                  hint: null,
                 });
                 // The Korean, not the key: the Bot is asked in the person's own language.
                 onAsk(t(task.sentence));
@@ -154,7 +150,7 @@ export const FirstTaskChips = ({
                   pattern: leading.pattern,
                   sentence,
                   via: leading.via,
-                  hint,
+                  hint: null,
                 });
                 makeRoutine.mutate(t(sentence));
               }}

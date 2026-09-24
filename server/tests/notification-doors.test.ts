@@ -156,7 +156,7 @@ describe("the in-app door", () => {
     const sent: Array<Record<string, unknown>> = [];
     const adapter = createSocketAdapter({
       connectionCount: () => 0,
-      deliverRoom: (frame) => sent.push(frame),
+      deliverFrame: (frame) => sent.push(frame),
     });
 
     expect(await adapter.deliver(RECORD)).toBe(false);
@@ -169,7 +169,7 @@ describe("the in-app door", () => {
     const sent: Array<Record<string, unknown>> = [];
     const adapter = createSocketAdapter({
       connectionCount: () => 2,
-      deliverRoom: (frame) => sent.push(frame),
+      deliverFrame: (frame) => sent.push(frame),
     });
 
     expect(await adapter.deliver(RECORD)).toBe(true);

@@ -29,12 +29,7 @@ export type ChannelSummary = AgentChannel & {
 export type ReadMessageTimes = (threadId: string) => Promise<{
   times: Record<string, string>;
   speakers: Record<string, string>;
-  /** A room's question to how each member's part in its turn came out. See rooms/outcomes. */
-  receipts?: Record<string, Record<string, string>>;
 }>;
-
-/** A room's transcript, straight out of the snapshot column. See rooms/messages. */
-export type ReadThreadMessages = (threadId: string) => Promise<unknown[]>;
 
 /** What a client that ran an agent reports back about the message it just saw. */
 export type ChannelActivity = {
@@ -72,26 +67,6 @@ export type ChannelStore = {
     channelId: string,
     activity: ChannelActivity,
   ): Promise<void>;
-  /**
-   * Put another Bot into an existing conversation, or take one out.
-   *
-   * OPTIONAL, like `failuresFor` below and for the same reason: every fake store in the suite keeps
-   * compiling, and a deployment without them serves 404 on the routes rather than a 500.
-   *
-   * There was no way to do either. A room's membership was decided once, when it was created, and
-   * a person who wanted a fourth colleague in the conversation had to start a new room and lose
-   * everything said in the old one.
-   */
-  addParticipant?: (
-    actor: AgentActor,
-    channelId: string,
-    agentId: string,
-  ) => Promise<AgentChannel>;
-  removeParticipant?: (
-    actor: AgentActor,
-    channelId: string,
-    agentId: string,
-  ) => Promise<AgentChannel>;
   /**
    * The turns in this thread that ended without an answer.
    *

@@ -163,43 +163,6 @@ host.remove();
 // Taken now: the approval page below opens a question, and the shell's own listener announces it.
 const notices = [...titles];
 
-// --- the room's approval cards -----------------------------------------------------------------
-
-const { RoomApprovals } = await import(
-  "../../src/components/channels/room-approvals"
-);
-const cardsHost = document.createElement("div");
-document.body.append(cardsHost);
-const cardsRoot = createRoot(cardsHost);
-await act(async () => {
-  cardsRoot.render(
-    // Under a query client, as in the app: a card asks who is looking before it names Boundaries.
-    createElement(
-      QueryClientProvider,
-      { client: new QueryClient() },
-      createElement(RoomApprovals, {
-        approvals: bots.map((bot, index) => ({
-          approvalId: `room-${index}`,
-          memberId: bot.id,
-          memberName: bot.name,
-          subject: OPENING_A_PAGE,
-          rule: "browser.host == 'example.com'",
-          expiresAt: "",
-        })),
-        onAnswered: () => {},
-      }),
-    ),
-  );
-});
-await settle(50);
-const cards = [...cardsHost.querySelectorAll("p")]
-  .map((paragraph) => paragraph.textContent ?? "")
-  .filter((text) => text.includes("답을 기다리고"));
-await act(async () => {
-  cardsRoot.unmount();
-});
-cardsHost.remove();
-
 // --- the page a notice lands on ----------------------------------------------------------------
 
 globalThis.fetch = realFetch;
@@ -247,7 +210,8 @@ const now = Date.now();
 const hoursAgo = (hours: number) =>
   new Date(now - hours * 3_600_000).toISOString();
 const rosterView = await mountApp({
-  path: "/",
+  // Not "/": that opens the Bot's conversation, which needs a runtime this render has not got.
+  path: "/help",
   api: ({ pathname }) => {
     if (pathname === "/api/agents") {
       return json({
@@ -291,7 +255,5 @@ const times = [
 ].map((time) => time.textContent ?? "");
 await rosterView.unmount();
 
-console.log(
-  `KOREAN_RENDER ${JSON.stringify({ notices, cards, headings, times })}`,
-);
+console.log(`KOREAN_RENDER ${JSON.stringify({ notices, headings, times })}`);
 process.exit(0);

@@ -1,13 +1,12 @@
 /**
  * `모두 멈추기`: everything a person has going on, on their own Bots, stopped by one press.
  *
- * Somebody with five Bots working at once had no single way to make them all stop when something
- * looked wrong: Stop lived inside one conversation, a room had its own, and a routine at seven in
- * the morning had none at all. This reads what every run path has listed as going on
+ * Somebody whose Bot was working in a conversation and on a routine at once had no single way to
+ * make it all stop when something looked wrong: Stop lived inside one conversation, and a routine
+ * at seven in the morning had none at all. This reads what every run path has listed as going on
  * (`in-flight.ts`) and asks each piece to stop in its own way — a chat's stream aborted and its next
- * browser step not carried on (`laf-runner.ts`), a room's member cut mid-thought (`rooms/service.ts`),
- * a routine aborted or never started if it was still queued (`routines/run.ts`), a coworker's answer
- * abandoned (`agents/coworker-call.ts`).
+ * browser step not carried on (`laf-runner.ts`), a routine aborted or never started if it was still
+ * queued (`routines/run.ts`).
  *
  * WHAT IT DOES NOT DO, ON PURPOSE:
  *

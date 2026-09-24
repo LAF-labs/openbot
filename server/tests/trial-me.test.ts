@@ -58,7 +58,7 @@ function surface(environment: Record<string, string>, budget?: DailyBudget) {
     signedIn,
     roles,
   ];
-  args[45] = budget;
+  args[42] = budget;
   return createApp(...args);
 }
 

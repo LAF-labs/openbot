@@ -114,7 +114,7 @@ describe("channel event hub", () => {
     );
 
     expect(hub.closeFor("removed")).toBe(2);
-    hub.deliverRoom({ memberIds: ["removed", "owner"], delta: "…" });
+    hub.deliverFrame({ memberIds: ["removed", "owner"], delta: "…" });
 
     expect(closed).toEqual(["removed:tab-a", "removed:tab-b"]);
     expect(removed).toEqual([]);

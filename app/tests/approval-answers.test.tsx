@@ -12,10 +12,8 @@ import * as approvals from "../src/lib/approvals";
 import { ko } from "../src/lib/i18n-ko";
 import {
   APP_DOM_TIMEOUT_MS,
-  agentFixture,
   installAppDom,
   json,
-  mountApp,
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
@@ -31,11 +29,11 @@ import { mount, unmountAll } from "./support/mount";
  *   - on a conversation's line the card drew its buttons anyway, and `answerApproval` read the 403
  *     as "not gone", so the card said "답을 기록하지 못했습니다. 다시 시도해 주세요." — in front of
  *     a refusal that would be given again however often it was pressed;
- *   - in a room, `mayAnswer` hid every card from anybody who was not an administrator, "deliberately
- *     so" — and the member Bot waited out its ten minutes with nothing on screen.
+ *   - in a room (removed 2026-09-24), `mayAnswer` hid every card from anybody who was not an
+ *     administrator — and the member Bot waited out its ten minutes with nothing on screen.
  *
  * The server asks ownership alone now. Here: what an answer's outcome is, the words for each, the
- * line card answered by a `user`, and the room's card drawn for the room's one person.
+ * line card answered by a `user`.
  */
 
 beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
@@ -83,7 +81,7 @@ function answering(
           role,
           onboarded: true,
         },
-        deployment: { effort: true, autoReview: true, seats: 5 },
+        deployment: { effort: true, autoReview: true },
       });
     }
     if (init?.method === "POST" && url.pathname.startsWith("/api/approvals/")) {
@@ -298,143 +296,5 @@ describe("the card on a conversation's line", () => {
     expect(card.alert()).toBe("That answer could not be recorded. Try again.");
     // Nothing was recorded, so the question is still there to answer.
     expect(card.button("Allow once")).toBeDefined();
-  });
-});
-
-describe("a room's waiting questions", () => {
-  const ROOM = "channel_room-1";
-  const OTHER = "agent_4b9d2c1e-0000-4000-8000-00000000b0b0";
-
-  test("are drawn for the person the room belongs to, whatever their role, and answered in place", async () => {
-    const posts: Array<{ path: string; body: unknown }> = [];
-    const view = await mountApp({
-      path: `/channel/${ROOM}`,
-      role: "user",
-      api: ({ method, pathname, path, body }) => {
-        if (path === "/api/agents") {
-          return json({
-            agents: [
-              agentFixture({ id: BOT, name: "초롱" }),
-              agentFixture({ id: OTHER, name: "두리" }),
-            ],
-          });
-        }
-        if (path === "/api/agents?hidden=true") return json({ agents: [] });
-        const base = `/api/channels/${ROOM}`;
-        if (pathname === base) {
-          return json({
-            channel: {
-              id: ROOM,
-              name: "초롱, 두리",
-              agentIds: [BOT, OTHER],
-              threadId: "thread-room-1",
-              active: true,
-            },
-          });
-        }
-        if (pathname === `${base}/messages`) return json({ messages: [] });
-        if (pathname === `${base}/message-times`) {
-          return json({ times: {}, speakers: {} });
-        }
-        if (pathname === `${base}/failures`) return json({ failures: [] });
-        if (pathname === `${base}/read`) {
-          return json({
-            previousReadAt: null,
-            readAt: new Date().toISOString(),
-          });
-        }
-        if (method === "GET" && pathname === `/api/approvals/${BOT}`) {
-          return json({
-            approvals: posts.length
-              ? []
-              : [
-                  {
-                    id: APPROVAL,
-                    botId: BOT,
-                    rule: "browser.host == 'smartstore.naver.com'",
-                    subject: OPENING_A_PAGE,
-                    requestedAt: new Date().toISOString(),
-                    expiresAt: new Date(Date.now() + 600_000).toISOString(),
-                  },
-                ],
-          });
-        }
-        if (method === "POST" && pathname.startsWith("/api/approvals/")) {
-          posts.push({ path: pathname, body });
-          return json({ id: APPROVAL, botId: BOT, granted: true });
-        }
-        return undefined;
-      },
-    });
-    await view.waitFor(
-      () => view.buttonNamed("Allow once") !== undefined,
-      "the room's waiting question",
-    );
-
-    // The question, named for the member that asked it.
-    expect(view.main()?.textContent).toContain(
-      "초롱 is waiting for your answer: It wants to open smartstore.naver.com.",
-    );
-    const allow = view.buttonNamed("Allow once");
-    if (!allow) throw new Error("no Allow once");
-    await view.click(allow);
-    await view.waitFor(
-      () => view.buttonNamed("Allow once") === undefined,
-      "the answered card to come down",
-    );
-
-    expect(posts).toEqual([
-      {
-        path: `/api/approvals/${BOT}/${APPROVAL}`,
-        body: { granted: true, tier: "once" },
-      },
-    ]);
-    await view.unmount();
-  });
-
-  test("do not send somebody who cannot open Boundaries there to take an allowance back", async () => {
-    const { createElement } = await import("react");
-    const { QueryClient, QueryClientProvider } = await import(
-      "@tanstack/react-query"
-    );
-    const { RoomApprovals } = await import(
-      "../src/components/channels/room-approvals"
-    );
-    const footnote = async (role: "user" | "admin") => {
-      answering(role, () => json({}));
-      const view = await mount(
-        createElement(
-          QueryClientProvider,
-          { client: new QueryClient() },
-          createElement(RoomApprovals, {
-            approvals: [
-              {
-                approvalId: APPROVAL,
-                memberId: BOT,
-                memberName: "초롱",
-                subject: OPENING_A_PAGE,
-                rule: "browser.host == 'smartstore.naver.com'",
-                expiresAt: "",
-                scope: { kind: "host", value: "smartstore.naver.com" },
-              },
-            ],
-            onAnswered: () => {},
-          }),
-        ),
-      );
-      await view.settle(50);
-      const text = view.host.textContent ?? "";
-      await view.unmount();
-      return text;
-    };
-
-    const asUser = await footnote("user");
-    expect(asUser).toContain(
-      "the other covers every one like it until somebody takes it back.",
-    );
-    expect(asUser).not.toContain("Boundaries");
-
-    const asAdmin = await footnote("admin");
-    expect(asAdmin).toContain("until you take it back in Boundaries.");
   });
 });

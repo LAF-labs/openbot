@@ -326,8 +326,8 @@ LAF_DAILY_TOKEN_BUDGET=3000000           # what one Seoul day may spend, across 
 
 All four or none: `LAF_PLAN=trial` with any of the others missing or malformed
 refuses to start by name, and so does any of the three without it. On a trial
-the app draws a countdown on every signed-in screen, and every run — chat, a
-room, a routine, one Bot asking another — is judged before it leaves: once the
+the app draws a countdown on every signed-in screen, and every run — chat or a
+routine — is judged before it leaves: once the
 day's `model.usage` rows reach the budget, the run is refused with
 `laf:daily_budget_reached`, which the screen says in Korean, until midnight in
 Seoul. The judgement is made when a run starts, so a day can overrun by what the
@@ -622,8 +622,8 @@ a program. It stands a deployment up the way a VM is stood up: the FROM tag's
 bundle extracted, a `.env` with the run's own secrets (production in every way
 the server checks — no `LAF_DEV_NO_AUTH`, a declared sign-in provider, keys in
 their real shapes), `pull`, `up -d`, the honest `/health`. It seeds it through
-the front door as a signed-in person — two Bots, a room with a few messages, a
-routine that has run, the Bot's browser opened once, a site connection, and the
+the front door as a signed-in person — their one Bot, a routine that has run
+and delivered into its conversation, the Bot's browser opened once, a site connection, and the
 trail all of that leaves — and photographs every table. Then it re-extracts the
 TO tag's bundle over the directory as `laf upgrade` does, sets the TO tag in
 `.env` as a person moving a VM must, and runs `scripts/upgrade.sh` as written,
@@ -658,9 +658,7 @@ it pulled or built, and puts back a tag a pull moved.
 Three things are stood in for, each the one thing a run cannot have. The model
 is a fake the driver serves (`agent-bot/tests/fake-provider.ts`), reached from
 the containers at `host.docker.internal` or, on Linux, the default bridge's
-gateway; in a room it speaks through `send_message`, because a room member's
-plain text is heard by nobody — the first run answered in prose and waited two
-minutes on a silent room. The person is a session row carrying better-auth's own
+gateway, and answers in prose. The person is a session row carrying better-auth's own
 cookie signature, the way the integration tests stand one up: the only real way
 in is OAuth. The site connection is a row, because the only route that writes
 one reads a Bot's browser signed into the real 스마트스토어.

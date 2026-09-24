@@ -134,8 +134,9 @@ Bot"이었고, 그 근거는 "두 봇이 프로파일을 공유하면 '이 봇�
    남긴다) 어느 문으로도 돌지 않고, 실패로 적히지도 누구에게 알려지지도 않는다
    (`server/src/routines/run.ts`). 알림함은 허용되지 않는 사람에게 가는 행을 **어떤
    문(소켓·웹훅·알림톡)에도 내놓지 않고** 행으로만 남긴다
-   (`server/src/notifications/outbox.ts`). 룸의 턴과 봇끼리 묻기는 로그인한 사람이
-   시작하므로 요청마다의 검사(`auth/guards.ts`)가 이미 막는다. 명단에서 빠진 사람의 세션을
+   (`server/src/notifications/outbox.ts`). 대화의 턴은 로그인한 사람이 시작하므로 요청마다의
+   검사(`auth/guards.ts`)가 이미 막는다(룸의 턴과 봇끼리 묻기는 2026-09-24에 지워졌다). 명단에서
+   빠진 사람의 세션을
    끝내는 것은 그대로 `auth/session-revocation.ts`다.
 4. **계정 삭제** — `server/src/account/deletion.ts` `keepsTheProfile`. 공용 브라우저는
    **허용되는 사람이 떠날 때**, 또는 **허용되는 계정이 하나도 남지 않을 때**(마지막 계정
@@ -160,6 +161,63 @@ Bot"이었고, 그 근거는 "두 봇이 프로파일을 공유하면 '이 봇�
 `laf member`를 은퇴시키는 것은 그 저장소의 일이다. 그리고 탈퇴 알림의
 `remainingAccounts`는 여전히 `users` 행 전부를 세므로, 남은 계정이 있는 배포는 주인이
 떠나도 0이 되지 않는다.
+
+## 봇은 하나다 (2026-09-24)
+
+결정: 김기범, 2026-09-24.
+
+> "봇 1개로 하자. 프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀 수 있음).
+> 무슨 일을 시킬건지도 적지 않는다. 그냥 모든걸 채팅으로 처리한다."
+
+같은 날 이어서: "그냥 지금 모두 지워. 필요없는 코드 다 삭제하고 Muse 방식에 집중해."
+
+**무엇이 바뀌었는가.**
+
+1. **좌석은 1이다(5에서).** `server/src/computer/assignment.ts`의 `BOTS_PER_ACCOUNT = 1`. 둘째
+   봇은 좌석을 세던 바로 그 트랜잭션(`reserveSeat`, `agents/profile-store.ts`, 계정별 advisory
+   lock)에서 거절되고, 거절은 숫자 없는 사실 코드 `laf:account_has_bot`(409)다 — 표면이
+   한국어로 말한다(`AGENT_REFUSALS`). `laf:seats_full`과 좌석 수를 바꾸던
+   `BOT_SEATS_PER_ACCOUNT`는 없어졌다: 둘째 봇을 만들 화면이 없는데 API만 다섯을 받는 설정은
+   저장만 되고 아무 데도 닿지 않는 컨트롤이다. `/api/me`의 `deployment.seats`도 없다. 봇
+   복제(`POST /api/agents/:id/duplicate`)는 봇을 하나 더 만드는 길이라 지웠다.
+2. **첫 실행은 화면 하나다.** 이름(미리 채워짐)과 얼굴 고르기, 그리고 시작하기 — 약관 동의
+   문장은 그 버튼 아래에 있고 같은 누름이 기록한다(`app/src/routes/_authed/welcome.tsx`).
+   업종과 매일 쓰는 곳을 묻던 두 화면은 첫 실행에서 빠졌고 설정 → 내 가게에 그대로 있다.
+   시작하기를 누르면 곧바로 그 봇과의 대화다. 홈(`/`)이 곧 그 대화다.
+3. **프로필에 역할 칸이 없다.** 직함(`title`), 설명(`roleDescription`), 프리셋(`preset_id`)을
+   쓰는 화면이 없고, 보여 주는 곳도 없다(사이드바의 "리뷰 담당" 같은 부제 포함). 프로필은
+   이름과 얼굴이며 언제든 바꿀 수 있다. 그 아래에 남은 것 — 생각의 깊이, 묻지 않을 것, 기억,
+   스킬, 알림 — 은 역할이 아니라 봇이 어떻게 일하는지이고, 대화로 바꿀 수 없는 것(특히 묻지
+   않을 것: 봇이 자기 경계를 쓰면 안 된다)이라 남겼다. **열은 지우지 않았다** — 지우면
+   마이그레이션이다. 서버는 프리셋을 더 받지 않고, 프롬프트는 직함을 더 읽지 않는다(볼 수도
+   고칠 수도 없는 칸이 봇에게 "너는 무엇이다"라고 말하면 안 된다). 설명은 사람이 대화로 맡긴
+   상시 직무를 봇이 `update_profile`로 적어 두는 자리로 남는다. 비어 있는 것이 평상시라서,
+   빈 직무의 문단은 "너는 방금 만들어졌다, 자기소개하고 무엇을 도울지 물어라"에서 "정해 둔
+   직무는 없다, 이 사람이 대화로 맡기는 일이 곧 네 일이다"로 바뀌었다
+   (`shared/prompt/index.ts` `unassignedRoleText`).
+4. **룸과 봇끼리 묻기는 지웠다.** 서버의 `rooms/` 전체, 룸·참여자 라우트, 룸 프레임과 룸
+   프롬프트, `ask_coworker`와 `/api/agents/:id/ask`, 위임 턴의 표식, 앱의 그룹 대화·참여자
+   메뉴·`@` 호명·받는 봇 칸·새 봇 버튼·프리셋 모음. git이 기억한다. 대화 만들기는 봇 둘 이상을
+   `laf:channel_one_bot`으로 거절한다.
+5. **이미 봇이 여럿인 계정은 아무것도 잃지 않는다.** 행은 하나도 지우거나 숨기지 않는다. 그런
+   계정의 사이드바에만 "내 봇들" 목록이 나오고(숨긴 봇 포함), 각 봇은 자기 1:1 대화를 연다.
+   그 밖의 모든 것은 봇 하나처럼 동작한다. 예전 룸 대화의 주소를 열면 더는 열 수 없고 내용은
+   지워지지 않았다고 말한다 — 행(`channels`, `channel_agents`, `laf_thread_messages`)은 그대로다.
+
+**무엇이 바뀌지 않았는가.**
+
+- **배포 하나에 계정 하나.** 위 절 그대로, 코드가 강제한다.
+- **브라우저 프로필은 배포의 것이다.** 봇이 하나여도 프로필은 배포에 하나다. 여러 봇이 남은
+  계정에서는 위 절의 설명이 그대로 맞다.
+- **봇별 거버넌스.** 정책 신원, 승인, 반복 카운트, 자격증명, 감사는 여전히 봇에 걸린다
+  (`computer/assignment.ts`). `x-openbot-bot-id`도 그대로 필수다.
+
+**남은 데이터.** 지운 코드가 쓰던 테이블은 없다 — 룸은 대화와 같은 표(`channels`,
+`channel_memberships`, `channel_agents`, `channel_threads`, `laf_thread_messages`)를 썼다. 다음은
+더 쓰이지 않거나 옛 행에만 남는 것이며, 지우는 것은 사람이 정할 마이그레이션이다:
+`agent_profiles.title`·`preset_id`(읽는 곳: 내보내기와 insights), 룸 메시지의 `lafRoomReceipts`
+키, `laf_run_origin`의 `room`·`handoff`, 감사 행 종류 `coworker.asked`·`room.member_turn`(옛 행을
+관리 화면이 이름 붙여 보여 준다), `channels.room_turn_epoch`.
 
 ## 이 결정이 코드에 갖는 의미
 
@@ -198,20 +256,17 @@ gateway 스냅샷 캐시)는 미봉책이 아니라 **이 결정에 의해 옳�
   턴에 같은 경계에 닿으면 다시 묻는다. 질문을 DB에 남겨 두지 않는 이유: 그 질문은
   이미 죽은 런의 fingerprint에 묶여 있어, 살아남아도 아무 행동에도 쓸 수 없다.
 - 붙는 No — 같은 파일의 `createDeclineMemory`. 30분, `(botId, fingerprint)` 키.
-- 승인 대기자 — 같은 파일의 `waitFor`. 룸의 턴이 쥐고 있는 프로미스이며,
-  `rooms/wait-for-approval.ts`가 이것 하나로 폴링을 대체했다(브라우저 쪽
-  `app/src/lib/approvals.ts`의 HTTP 폴링은 그대로 — 브라우저는 서버의 프로미스를
-  기다릴 수 없다).
 - repeat 카운트와 임계 보고 표식 — `server/src/computer/repeat.ts`의 중첩 Map
   (봇당 64키, 256봇 상한). 임계 감사 행 자체는 `recordAuditEvent`로 DB에 남는다.
 - gateway 스냅샷 캐시 — `server/src/computer/gateway.ts` (upstream도 "next"라고
   밝힌 그 캐시).
-- 채널·룸 소켓과 전달 — `server/src/channels/events.ts`의 `ChannelEventHub`.
+- 채널 소켓과 전달 — `server/src/channels/events.ts`의 `ChannelEventHub`.
   **커밋 후에 전달한다**: 트랜잭션을 쥔 쪽이 트랜잭션이 끝난 뒤 `deliver`를
   부른다(NOTIFY가 공짜로 주던 보장을 코드가 대신 진다).
 - OAuth `state` 1회용 집합 — `server/src/plugins/` (§5.4 b, 별도 작업).
-- 봇 레인·룸 레인 — `server/src/runner/bot-lane.ts`. 한 계정에 브라우저가
-  하나이므로 한 프로세스 안의 큐로 충분하다.
+- 봇 레인 — `server/src/runner/bot-lane.ts`. 한 계정에 브라우저가
+  하나이므로 한 프로세스 안의 큐로 충분하다. (승인 대기자 `waitFor`와 룸 레인은 룸과 함께
+  2026-09-24에 지워졌다.)
 - 가입 확인 줄 — `server/src/auth/admission.ts`의 `keepArrival`. 같은 순간의 첫 가입
   둘 중 하나만 남기는 직렬화(2026-09-16). 줄은 가입 한 번 동안만 살고, 재시작하면
   비어 있을 뿐 잃는 것이 없다. 프로세스가 둘이 되는 날에는 DB 쪽 잠금이 필요하다.

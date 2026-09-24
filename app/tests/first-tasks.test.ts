@@ -14,14 +14,12 @@ import {
   NO_CONNECTION_TASKS,
   pickFirstTasks,
   reportFirstTaskPressed,
-  roleHint,
   routineSentence,
 } from "../src/lib/agents/first-tasks";
 import {
-  AGENT_PRESETS,
   WORK_PATTERNS,
   type WorkPatternId,
-} from "../src/lib/agents/presets";
+} from "../src/lib/agents/work-patterns";
 import type { ChannelSummary } from "../src/lib/channels/queries";
 import type {
   ConnectionsOverview,
@@ -39,8 +37,8 @@ import { stubFetch } from "./support/fetch";
  * word of it has Korean in the owner's register.
  *
  * The chips are read through `t(task.sentence)`, which `i18n-coverage.test.ts` cannot see, so the
- * tables are walked here the way `agent-presets.test.ts` walks the presets. The selection is a pure
- * function of the overview and the hint, so the connection states are a table too.
+ * tables are walked here. The selection is a pure function of the overview and the shop, so the
+ * connection states are a table too.
  */
 
 const site = (
@@ -109,7 +107,6 @@ describe("which chips are offered", () => {
   const cases: {
     name: string;
     state: Pick<ConnectionsOverview, "sites" | "accounts">;
-    hint?: WorkPatternId;
     expected: unknown[];
   }[] = [
     {
@@ -124,35 +121,9 @@ describe("which chips are offered", () => {
       ],
     },
     {
-      name: "nothing connected and a role: that kind of work leads, the rest keep their order",
-      state: overview(),
-      hint: "settlement",
-      expected: [
-        ask(generic("settlement")),
-        ask(holidays),
-        ask(introductions),
-        ask(opening),
-        { kind: "connect" },
-      ],
-    },
-    {
       name: "one connected site: its first prompt leads, padded with OTHER kinds of work",
       state: overview([site("naver-smartplace")]),
       // 스마트플레이스 is reviews, so the reviews sentence (소개 문구) is not one of the padding.
-      expected: [
-        ask(firstPrompt("naver-smartplace"), {
-          kind: "site",
-          id: "naver-smartplace",
-        }),
-        ask(holidays),
-        ask(opening),
-        ask(refund),
-      ],
-    },
-    {
-      name: "a role already spoken for by a connected site does not get a second chip",
-      state: overview([site("naver-smartplace")]),
-      hint: "reputation",
       expected: [
         ask(firstPrompt("naver-smartplace"), {
           kind: "site",
@@ -232,10 +203,10 @@ describe("which chips are offered", () => {
     },
   ];
 
-  for (const { name, state, hint, expected } of cases) {
+  for (const { name, state, expected } of cases) {
     test(name, () => {
       // `unknown`: the expectation mixes matchers and literals, which `toEqual<FirstTask[]>` refuses.
-      expect(pickFirstTasks(state, { hint }) as unknown).toEqual(expected);
+      expect(pickFirstTasks(state) as unknown).toEqual(expected);
     });
   }
 
@@ -294,19 +265,6 @@ describe("which chips are offered", () => {
     expect(pickFirstTasks(state)).toEqual(first);
   });
 
-  test("a role moves its connected site to the front of the same set", () => {
-    const state = overview([site("hometax"), site("naver-smartstore")]);
-    const tasks = pickFirstTasks(state, { hint: "paperwork" });
-    expect(sentencesOf(tasks).slice(0, 2)).toEqual([
-      firstPrompt("hometax"),
-      firstPrompt("naver-smartstore"),
-    ]);
-    // The same four sentences either way; only the order answers to the hint.
-    expect(new Set(sentencesOf(tasks))).toEqual(
-      new Set(sentencesOf(pickFirstTasks(state))),
-    );
-  });
-
   test("the connect chip is offered only when nothing is connected", () => {
     expect(
       pickFirstTasks(overview([site("yogiyo-ceo")])).some(
@@ -328,50 +286,6 @@ describe("which chips are offered", () => {
       // Plus the routine chip drawn beside them: 5 or 6 on screen.
       expect(tasks.length).toBeGreaterThanOrEqual(FIRST_TASK_COUNT);
       expect(tasks.length).toBeLessThanOrEqual(FIRST_TASK_COUNT + 1);
-    }
-  });
-});
-
-describe("the role hint", () => {
-  test("an empty card says nothing", () => {
-    expect(roleHint({ title: "", roleDescription: "" })).toBeNull();
-    expect(roleHint({ title: "  ", roleDescription: "" })).toBeNull();
-  });
-
-  test("every preset is recognised by its Korean title, its English title, or its role", () => {
-    for (const preset of AGENT_PRESETS) {
-      const korean = ko[preset.title] ?? "";
-      expect(korean).not.toBe("");
-      expect(roleHint({ title: korean, roleDescription: "" })).toBe(
-        preset.pattern,
-      );
-      expect(roleHint({ title: preset.title, roleDescription: "" })).toBe(
-        preset.pattern,
-      );
-      expect(
-        roleHint({
-          title: "",
-          roleDescription: ko[preset.roleDescription] ?? "",
-        }),
-      ).toBe(preset.pattern);
-    }
-  });
-
-  test("a card written by hand is read by its words", () => {
-    const cases: [string, WorkPatternId | null][] = [
-      ["리뷰 답변 담당", "reputation"],
-      ["매일 아침 정산 확인", "settlement"],
-      ["손님 문의 응대", "enquiries"],
-      ["예약 관리", "schedule"],
-      ["재고 확인과 발주", "stock"],
-      ["세금계산서와 영수증 정리", "paperwork"],
-      ["밤새 주문 지켜보기", "night-watch"],
-      ["나가기 전에 검토", "approval"],
-      ["Reviews and replies", "reputation"],
-      ["커피 잘 내리기", null],
-    ];
-    for (const [title, expected] of cases) {
-      expect(roleHint({ title, roleDescription: "" })).toBe(expected);
     }
   });
 });
@@ -480,7 +394,7 @@ describe("what a press reports", () => {
    * THE TETHER TO THE SERVER. The route checks every field against the catalogue it names
    * (`server/src/agents/first-task.ts`), and a chip the screen can draw that the route refuses is a
    * press that silently never counts — a green chip test and a zero on every VM. So every chip
-   * `pickFirstTasks` can produce, for every hint and with everything or nothing connected, is put
+   * `pickFirstTasks` can produce, with everything or nothing connected, is put
    * through the route's own parser.
    */
   test("every chip the screen can draw is a press the server accepts", () => {
@@ -490,52 +404,52 @@ describe("what a press reports", () => {
     );
     const agentId = "agent_1f2e3d4c-aaaa-4bbb-8ccc-123456789abc";
     let checked = 0;
-    for (const hint of [null, ...WORK_PATTERNS.map((pattern) => pattern.id)]) {
-      for (const connected of [overview(), everything]) {
-        const tasks = pickFirstTasks(connected, { hint, count: 64 });
-        const leading = tasks.find((task) => task.kind === "ask");
-        const presses: FirstTaskPressed[] = tasks.map((task) =>
-          task.kind === "connect"
-            ? {
-                agentId,
-                kind: "connect",
-                pattern: null,
-                sentence: null,
-                via: null,
-                hint,
-              }
-            : {
-                agentId,
-                kind: "ask",
-                pattern: task.pattern,
-                sentence: task.sentence,
-                via: task.via,
-                hint,
-              },
-        );
-        if (leading?.kind === "ask") {
-          presses.push({
-            agentId,
-            kind: "routine",
-            pattern: leading.pattern,
-            sentence: leading.sentence,
-            via: leading.via,
-            hint,
-          });
-        }
-        for (const press of presses) {
-          const parsed = parseFirstTaskPress(firstTaskPressBody(press));
-          expect([press.kind, press.pattern, press.via, parsed.ok]).toEqual([
-            press.kind,
-            press.pattern,
-            press.via,
-            true,
-          ]);
-          checked += 1;
-        }
+    for (const connected of [overview(), everything]) {
+      const tasks = pickFirstTasks(connected, { count: 64 });
+      const leading = tasks.find((task) => task.kind === "ask");
+      const presses: FirstTaskPressed[] = tasks.map((task) =>
+        task.kind === "connect"
+          ? {
+              agentId,
+              kind: "connect",
+              pattern: null,
+              sentence: null,
+              via: null,
+              hint: null,
+            }
+          : {
+              agentId,
+              kind: "ask",
+              pattern: task.pattern,
+              sentence: task.sentence,
+              via: task.via,
+              hint: null,
+            },
+      );
+      if (leading?.kind === "ask") {
+        presses.push({
+          agentId,
+          kind: "routine",
+          pattern: leading.pattern,
+          sentence: leading.sentence,
+          via: leading.via,
+          hint: null,
+        });
+      }
+      for (const press of presses) {
+        const parsed = parseFirstTaskPress(firstTaskPressBody(press));
+        expect([press.kind, press.pattern, press.via, parsed.ok]).toEqual([
+          press.kind,
+          press.pattern,
+          press.via,
+          true,
+        ]);
+        checked += 1;
       }
     }
-    expect(checked).toBeGreaterThan(100);
+    // Thirty-eight measured 2026-09-24: every chip, with nothing and with everything connected. It was
+    // over a hundred while the same set was walked once per role hint, which went with the role.
+    expect(checked).toBeGreaterThan(30);
   });
 });
 

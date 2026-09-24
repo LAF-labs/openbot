@@ -1,13 +1,10 @@
 import {
-  AGENT_PRESETS,
-  shopWorkOrder,
+  shopPatternOrder,
   WORK_PATTERNS,
   type WorkPatternId,
-} from "@/lib/agents/presets";
-import type { AgentProfile } from "@/lib/agents/queries";
+} from "@/lib/agents/work-patterns";
 import type { ChannelSummary } from "@/lib/channels/queries";
 import type { ConnectionsOverview } from "@/lib/connections/queries";
-import { ko } from "@/lib/i18n-ko";
 import { routineRequest } from "@/lib/routines/queries";
 import {
   dailyPlaceById,
@@ -91,8 +88,7 @@ export const FIRST_TASK_COUNT = 4;
  * One sentence per pattern that a Bot can answer with nothing connected at all.
  *
  * In the order they are offered when nothing narrows it: the first four are what somebody with
- * nothing connected sees, so they are the four that are worth having beside anything. A role hint
- * moves its own pattern's sentence to the front and leaves the rest in this order.
+ * nothing connected sees, so they are the four that are worth having beside anything.
  *
  * Every one of them is answerable from the model's own head in one turn — no site, no account, no
  * file. A sentence here that needs something the Bot does not have is a first task that fails.
@@ -177,92 +173,17 @@ type Candidate = Sentence & { via: NonNullable<FirstTaskAsk["via"]> };
 type FirstTaskAsk = Extract<FirstTask, { kind: "ask" }>;
 
 /**
- * Words on a Bot's card that say which kind of work it is for.
+ * The eight patterns: the shop's first, then the rest in their own order.
  *
- * For the card somebody typed themselves. A preset is matched exactly (below); this is for
- * "리뷰 답변 담당" written by hand. Substrings, lower-cased, walked in the patterns' own order, the
- * first hit wins. Deliberately short: "주문" is orders to a shop and purchase orders to a
- * supplier, and "답변" is a reply to a review as much as to an enquiry, so neither is on any
- * list, and a card that matches nothing simply gets the general four.
+ * The Bot's own card came first until 2026-09-24 — a reviews Bot for a restaurant wanted reviews
+ * before the restaurant's settlement. A Bot has no card saying what it is for any more; the shop is
+ * the one thing that says what this person's work is.
  */
-const ROLE_WORDS: Readonly<Record<WorkPatternId, readonly string[]>> = {
-  "night-watch": ["야간", "밤새", "당직", "감시", "overnight", "watch"],
-  approval: ["결재", "승인", "검토", "approv", "before it goes out"],
-  settlement: ["정산", "매출", "입금", "장부", "settlement", "reconcil"],
-  enquiries: ["문의", "응대", "enquir", "inquir"],
-  schedule: [
-    "예약",
-    "일정",
-    "스케줄",
-    "근무",
-    "booking",
-    "appointment",
-    "calendar",
-    "schedule",
-  ],
-  stock: ["재고", "발주", "stock", "inventory"],
-  reputation: ["리뷰", "후기", "평판", "review"],
-  paperwork: [
-    "서류",
-    "영수증",
-    "세금",
-    "세무",
-    "계약",
-    "receipt",
-    "tax",
-    "paperwork",
-    "filing",
-  ],
-};
-
-/**
- * The kind of work a Bot's card says it is for, or null when the card says nothing.
- *
- * A preset first. The intro card writes `t(preset.title)` and `t(preset.roleDescription)` onto the
- * profile, so the profile holds whichever language `t()` spoke that day — and the person may have
- * changed language since. Both forms the product has ever written are compared: the English key and
- * its Korean, read from the table directly rather than through `t()`, so the answer does not depend
- * on today's locale. Then the words, for a card written by hand.
- */
-export function roleHint(
-  profile: Pick<AgentProfile, "title" | "roleDescription">,
-): WorkPatternId | null {
-  const title = profile.title.trim();
-  const role = profile.roleDescription.trim();
-  if (!title && !role) return null;
-
-  for (const preset of AGENT_PRESETS) {
-    const titles = [preset.title, ko[preset.title]];
-    const roles = [preset.roleDescription, ko[preset.roleDescription]];
-    if ((title && titles.includes(title)) || (role && roles.includes(role))) {
-      return preset.pattern;
-    }
-  }
-
-  const text = `${title} ${role}`.toLowerCase();
-  for (const pattern of WORK_PATTERNS) {
-    if (ROLE_WORDS[pattern.id].some((word) => text.includes(word))) {
-      return pattern.id;
-    }
-  }
-  return null;
-}
-
-/**
- * The eight patterns: the hinted one first, then the shop's, then the rest in their own order.
- *
- * The Bot's own card outranks the shop: it is about THIS Bot, and a person who made a reviews Bot
- * for a restaurant wants reviews first, not the restaurant's settlement.
- */
-function patternOrder(
-  hint: WorkPatternId | null,
-  shopPatterns: readonly WorkPatternId[],
-): WorkPatternId[] {
+function patternOrder(shopPatterns: readonly WorkPatternId[]): WorkPatternId[] {
   const order: WorkPatternId[] = [];
   const add = (id: WorkPatternId) => {
     if (!order.includes(id)) order.push(id);
   };
-  if (hint) add(hint);
   for (const id of shopPatterns) add(id);
   for (const pattern of WORK_PATTERNS) add(pattern.id);
   return order;
@@ -342,21 +263,19 @@ function connectedCandidates(
 /**
  * The chips for this Bot, in the order they are drawn.
  *
- * DETERMINISTIC ON PURPOSE. The preset chips on the intro card are dealt at random and held in
- * state; these are not, because the same person opening the same screen twice should see the same
- * four, and because the routine chip repeats the first one — a sentence that moved between reloads
- * would make "the same sentence, every morning" a lie.
+ * DETERMINISTIC ON PURPOSE: the same person opening the same screen twice should see the same
+ * four, and the routine chip repeats the first one — a sentence that moved between reloads would
+ * make "the same sentence, every morning" a lie.
  *
- * One pattern at a time: the eight patterns are walked with the hinted one first, and the first
- * connected sentence under each is taken, then a second round for whatever is left. Four chips
- * that are all reviews read as a product about reviews. The same sentence is never offered twice,
- * whichever door it came through. What is still short is filled from the connection-free table,
- * the hinted pattern's sentence first; with nothing connected at all, the connect chip follows.
+ * One pattern at a time: the eight patterns are walked in the shop's order, and the first connected
+ * sentence under each is taken, then a second round for whatever is left. Four chips that are all
+ * reviews read as a product about reviews. The same sentence is never offered twice, whichever
+ * door it came through. What is still short is filled from the connection-free table; with nothing
+ * connected at all, the connect chip follows.
  */
 export function pickFirstTasks(
   overview: Pick<ConnectionsOverview, "sites" | "accounts">,
   options: {
-    hint?: WorkPatternId | null;
     count?: number;
     /** What the person answered about the business. Absent or empty changes nothing. */
     shop?: ShopProfile;
@@ -364,8 +283,8 @@ export function pickFirstTasks(
 ): FirstTask[] {
   const count = options.count ?? FIRST_TASK_COUNT;
   const shop = options.shop ?? EMPTY_SHOP;
-  const shopPatterns = shopWorkOrder(shop).patterns;
-  const order = patternOrder(options.hint ?? null, shopPatterns);
+  const shopPatterns = shopPatternOrder(shop);
+  const order = patternOrder(shopPatterns);
   const candidates = connectedCandidates(overview, shop.places);
 
   const picked: FirstTask[] = [];
@@ -389,17 +308,15 @@ export function pickFirstTasks(
   }
 
   /*
-   * Padding, in tiers and otherwise in table order (`sort` is stable): the hinted pattern's
-   * sentence, then the shop's kinds of work in the shop's own order, then the patterns nothing
-   * above covers yet, then the ones something does. A review site connected and 소개 문구 beside it
-   * is half a row about reviews; the hint leads only when no connected chip already speaks for it.
+   * Padding, in tiers and otherwise in table order (`sort` is stable): the shop's kinds of work in
+   * the shop's own order, then the patterns nothing above covers yet, then the ones something does.
+   * A review site connected and 소개 문구 beside it is half a row about reviews.
    */
   const covered = new Set(
     picked.map((task) => (task.kind === "ask" ? task.pattern : null)),
   );
   const tier = (task: Sentence) => {
     if (covered.has(task.pattern)) return 3;
-    if (task.pattern === options.hint) return 0;
     const inShop = shopPatterns.indexOf(task.pattern);
     // Within the shop tier, the shop's own order: 1.0 for its first kind of work, under 2 for its last.
     return inShop < 0 ? 2 : 1 + inShop / (shopPatterns.length + 1);
@@ -466,7 +383,11 @@ export type FirstTaskPressed = {
   /** The English key of the sentence, or null for the connect chip. */
   sentence: string | null;
   via: FirstTaskAsk["via"];
-  /** What the Bot's card suggested, so the two can be compared later. */
+  /**
+   * What the Bot's card suggested, so the two could be compared later. Always null since
+   * 2026-09-24, when the card stopped saying what a Bot is for; kept on the wire because the
+   * server's insight reads it and older rows carry one.
+   */
   hint: WorkPatternId | null;
 };
 
