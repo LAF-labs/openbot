@@ -87,6 +87,8 @@ export function HelpCard({
   return (
     <div
       className={`flex max-w-md flex-col gap-2 rounded-2xl border p-3 text-sm ${isWaiting ? "border-warning/60" : ""}`}
+      // How the header's drawer finds the request it lists, while it is one.
+      data-waiting-card={isWaiting ? "help" : undefined}
     >
       {/*
        * THE ASK IS HEARD WHEN THE BOT STARTS WAITING. The card is drawn as the call begins and only

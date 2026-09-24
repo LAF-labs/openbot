@@ -2593,4 +2593,12 @@ export const ko: Record<string, string> = {
   "Busy working": "일하는 중",
   Answering: "답하는 중",
   Ready: "대기 중",
+  "{status}. See what the Bot is doing": "{status}. 봇이 하는 일 보기",
+  Now: "지금",
+  "Nothing going on right now.": "지금 하는 일은 없어요.",
+  "Nothing is waiting for you.": "기다리는 일이 없어요.",
+  "Show me": "보기",
+  "Next routines": "다음 루틴",
+  "No routines coming up.": "예정된 루틴이 없어요.",
+  "See all routines": "루틴 모두 보기",
 };

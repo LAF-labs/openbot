@@ -7,6 +7,7 @@ import { FirstTaskChips } from "@/components/agents/first-task-chips";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { BotHeader } from "@/components/channels/bot-header";
 import { ConversationView } from "@/components/channels/conversation-view";
+import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -148,6 +149,9 @@ function FirstConversation({ botId }: { botId: string }) {
         agentId={botId}
         avatarSeed={bot?.avatarSeed}
         name={bot?.name}
+        pill={(presence) => (
+          <PresenceDrawer botId={botId} presence={presence} />
+        )}
       />
       <ConversationView
         // Commands must be loaded before the first channel message is sent.

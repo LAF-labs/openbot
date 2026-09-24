@@ -132,7 +132,11 @@ export function ApprovalRequest({
      * the comment at the top of this file rejects interrupting on purpose. Polite says it at the
      * next natural break, which is what a question in a conversation deserves.
      */
-    <div className="rounded-md border border-border bg-card px-3 py-2">
+    // `data-waiting-card` is how the header's drawer finds this card to take the person to it.
+    <div
+      className="rounded-md border border-border bg-card px-3 py-2"
+      data-waiting-card={toolCallId}
+    >
       <div aria-atomic="true" aria-live="polite" className="sr-only">
         {t("Waiting for your answer: {question}", { question })}
       </div>
