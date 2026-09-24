@@ -2508,4 +2508,7 @@ export const ko: Record<string, string> = {
 
   // 0.5.3 B — 봇의 컴퓨터: 넘겨받기와 실시간 화면, 사이트 연결.
   "Turn it on again": "다시 켜기",
+  Reconnect: "다시 연결",
+  "The picture has not come through for five seconds.":
+    "화면이 5초 넘게 오지 않고 있어요.",
 };

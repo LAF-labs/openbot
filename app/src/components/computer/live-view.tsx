@@ -257,6 +257,10 @@ export function LiveView({ botId }: { botId: string }) {
             <span className="text-pretty text-white/80">
               {screenProblemText(problem)}
             </span>
+            {/*
+             * 다시 연결, named for what it does: a new socket, which the computer makes the one it
+             * casts to (`agent-computer/src/live-screen.ts`), from the first step of the schedule.
+             */}
             <Button
               onClick={() => {
                 hasPicture.current = false;
@@ -267,7 +271,7 @@ export function LiveView({ botId }: { botId: string }) {
               size="sm"
               variant="outline"
             >
-              {t("Try again")}
+              {t("Reconnect")}
             </Button>
           </span>
         ) : null}

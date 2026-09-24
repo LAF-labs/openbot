@@ -5,9 +5,12 @@ import {
   beforeAll,
   describe,
   expect,
+  jest,
   test,
 } from "bun:test";
 import { createElement } from "react";
+import { SCREEN_STALL_MS } from "../src/components/computer/live-screen";
+import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
 
 /**
@@ -164,6 +167,40 @@ describe("a screen problem over the black frame", () => {
       between.push(node.className);
     }
     expect(between.join(" ")).not.toMatch(/text-muted-foreground|bg-muted/);
+    await view.unmount();
+  });
+});
+
+describe("a picture that does not come (0.5.3 audit, item 14)", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("stops being 'connecting' after five seconds: it says why, and 다시 연결 opens a new socket", async () => {
+    jest.useFakeTimers();
+    const view = await mountedView();
+    await view.act(() => sockets[0]?.open());
+    expect(view.host.textContent).toContain("Connecting to the screen…");
+
+    await view.act(() => {
+      jest.advanceTimersByTime(SCREEN_STALL_MS + 10);
+    });
+    const reason = "The picture has not come through for five seconds.";
+    expect(view.drawn(reason)).toBeDefined();
+    expect(ko[reason]).toBe("화면이 5초 넘게 오지 않고 있어요.");
+    expect(view.host.textContent).not.toContain("Connecting to the screen…");
+
+    const reconnect = [...view.host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reconnect",
+    );
+    expect(reconnect).toBeDefined();
+    const opened = sockets.length;
+    await view.act(() => {
+      reconnect?.click();
+    });
+    // A new stream, at once: the computer casts to the newest socket.
+    expect(sockets.length).toBe(opened + 1);
+    expect(view.drawn(reason)).toBeUndefined();
     await view.unmount();
   });
 });

@@ -5,9 +5,15 @@ import {
   beforeAll,
   describe,
   expect,
+  jest,
   test,
 } from "bun:test";
 import { createElement } from "react";
+import {
+  LIVE_SCREEN_RETRY,
+  SCREEN_STALL_MS,
+} from "../src/components/computer/live-screen";
+import { SCREEN_STALLED } from "../src/lib/computer/screen-problems";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
 
@@ -127,13 +133,26 @@ async function mountedScreen(driving: boolean) {
 
 const SAID = "The live picture was cut off. Reconnecting…";
 
+/**
+ * One frame, as the computer sends it. Its picture does not decode here, which is fine: a frame is
+ * counted as the stream working before it is decoded.
+ */
+const FRAME = JSON.stringify({
+  type: "frame",
+  data: "bm90LWEtanBlZw==",
+  width: 1280,
+  height: 800,
+  site: "www.naver.com",
+});
+
 describe("the live screen's socket", () => {
-  test("reconnects after a drop, with a line on screen until it does", async () => {
+  test("reconnects after a drop, with a line on screen until the picture is back", async () => {
     const screen = await mountedScreen(false);
     expect(sockets.length).toBe(1);
     expect(sockets[0]?.url).toContain("/api/computers/bot-1/stream");
 
     await screen.act(() => sockets[0]?.open());
+    await screen.act(() => sockets[0]?.onmessage?.({ data: FRAME }));
     expect(screen.canvas().dataset.connected).toBe("true");
     expect(screen.status()).toBeNull();
     // Mounted before it has anything to say, so the cut is announced when it comes.
@@ -153,6 +172,12 @@ describe("the live screen's socket", () => {
     expect(sockets.length).toBe(2);
     await screen.act(() => sockets[1]?.open());
     expect(screen.canvas().dataset.connected).toBe("true");
+    /*
+     * Still said: a socket that opens is not a picture. The audit's stuck screen was exactly a
+     * socket that opened and sent nothing (item 14), so the line goes with the first frame.
+     */
+    expect(screen.status()).toBe(SAID);
+    await screen.act(() => sockets[1]?.onmessage?.({ data: FRAME }));
     expect(screen.status()).toBeNull();
     await screen.unmount();
   });
@@ -210,6 +235,131 @@ describe("the live screen's socket", () => {
     expect(sockets[0]?.isClosed).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(sockets.length).toBe(1);
+  });
+
+  test("a socket let go of while it was opening says nothing more", async () => {
+    /*
+     * React mounts every effect twice in development, and the pane does the same by hand when it is
+     * closed and opened again: the first socket is closed before it has opened, and a browser then
+     * fires its `error`. Only `onclose` used to be cleared, so that error reached the pane as "the
+     * live screen could not be reached" over the socket that had replaced it (measured 2026-09-24).
+     */
+    const screen = await mountedScreen(false);
+    const first = sockets[0];
+    await screen.unmount();
+    expect(first?.onerror).toBeNull();
+    expect(first?.onopen).toBeNull();
+    expect(first?.onmessage).toBeNull();
+    expect(screen.problems).toEqual([]);
+  });
+
+  test("opening the screen again starts from the first step of the schedule", async () => {
+    // The audit's "패널을 열 때 재시도 대기 시간을 초기화한다": the wait lives with the pane that grew
+    // it, so a pane opened after an outage asks at once, however long the last one had backed off.
+    jest.useFakeTimers();
+    const before = await mountedScreen(false);
+    for (let failed = 0; failed < 5; failed += 1) {
+      const socket = sockets.at(-1);
+      await before.act(() => socket?.onerror?.());
+      await before.act(() => socket?.close());
+      await before.act(() => {
+        jest.advanceTimersByTime(LIVE_SCREEN_RETRY.firstMs * 2 ** failed + 10);
+      });
+    }
+    expect(sockets.length).toBe(6);
+    await before.unmount();
+    const after = await mountedScreen(false);
+    expect(sockets.length).toBe(7);
+    await after.unmount();
+    jest.useRealTimers();
+  });
+});
+
+/**
+ * A PICTURE THAT DOES NOT COME IS SAID, WITH SOMETHING TO PRESS (0.5.3 audit, item 14).
+ *
+ * "화면에 연결하는 중…" stayed up for over twenty seconds on a socket that had opened and sent nothing
+ * — two opens in three against the computer image from before `d1ad9e74` — and a picture cut off by
+ * a server restart came back eleven seconds after the server did. Neither said anything a person
+ * could act on.
+ */
+describe("a picture that does not come", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("is said as a code after five seconds of an open socket and no frame", async () => {
+    jest.useFakeTimers();
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    expect(screen.problems).toEqual([null]);
+    await screen.act(() => {
+      jest.advanceTimersByTime(SCREEN_STALL_MS - 100);
+    });
+    expect(screen.problems).toEqual([null]);
+    await screen.act(() => {
+      jest.advanceTimersByTime(200);
+    });
+    expect(screen.problems).toEqual([null, SCREEN_STALLED]);
+    await screen.unmount();
+  });
+
+  test("and not when a frame came first", async () => {
+    jest.useFakeTimers();
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    await screen.act(() => sockets[0]?.onmessage?.({ data: FRAME }));
+    await screen.act(() => {
+      jest.advanceTimersByTime(SCREEN_STALL_MS * 2);
+    });
+    expect(screen.problems).toEqual([null]);
+    await screen.unmount();
+  });
+
+  test("a socket that fails to open is said as that, not as a picture that is late", async () => {
+    jest.useFakeTimers();
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.onerror?.());
+    await screen.act(() => {
+      jest.advanceTimersByTime(SCREEN_STALL_MS + 100);
+    });
+    expect(screen.problems).toEqual(["laf:screen_unreachable"]);
+    await screen.unmount();
+  });
+
+  test("a picture cut off for five seconds offers 다시 연결, which asks at once", async () => {
+    jest.useFakeTimers();
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    await screen.act(() => sockets[0]?.onmessage?.({ data: FRAME }));
+    // The server goes away, and the schedule backs off while it is gone.
+    await screen.act(() => sockets[0]?.close());
+    for (let failed = 0; failed < 4; failed += 1) {
+      await screen.act(() => {
+        jest.advanceTimersByTime(LIVE_SCREEN_RETRY.firstMs * 2 ** failed + 10);
+      });
+      const socket = sockets.at(-1);
+      await screen.act(() => socket?.close());
+    }
+    const reconnect = () =>
+      [...screen.host.querySelectorAll("button")].find(
+        (button) => button.textContent === "Reconnect",
+      );
+    expect(screen.status()).toBe(SAID);
+    expect(reconnect()).toBeDefined();
+    expect(ko.Reconnect).toBe("다시 연결");
+
+    // Pressed, a socket opens now — not at the end of an eight-second wait.
+    const opened = sockets.length;
+    await screen.act(() => {
+      reconnect()?.click();
+    });
+    expect(sockets.length).toBe(opened + 1);
+    await screen.act(() => sockets.at(-1)?.open());
+    await screen.act(() => sockets.at(-1)?.onmessage?.({ data: FRAME }));
+    expect(screen.status()).toBeNull();
+    expect(reconnect()).toBeUndefined();
+    await screen.unmount();
   });
 });
 

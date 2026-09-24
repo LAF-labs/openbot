@@ -44,15 +44,25 @@ export const SCREEN_PROBLEM_SAID: Record<string, string> = {
   "laf:take_control_first":
     "Take control before clicking or typing on the page.",
   "laf:input_not_applied": "That click or keystroke did not reach the page.",
-  // The pane's own two, for an answer that carried no code at all.
+  // The pane's own three: an answer that carried no code at all, and a picture that never came.
   "laf:screen_unavailable": "The screen could not be shown.",
   "laf:screen_unreachable": "The live screen could not be reached.",
+  "laf:screen_stalled": "The picture has not come through for five seconds.",
 };
 
 /** The route answered, or the socket sent an error, without saying which. */
 export const SCREEN_UNAVAILABLE = "laf:screen_unavailable";
 /** The socket itself failed: nothing was said because nothing connected. */
 export const SCREEN_UNREACHABLE = "laf:screen_unreachable";
+/**
+ * Nothing failed and nothing arrived: no frame within `SCREEN_STALL_MS` of asking for one.
+ *
+ * The one the 0.5.3 audit found (item 14): a socket that opened, or never finished opening, and
+ * then sent no picture left "화면에 연결하는 중…" up for twenty seconds and more, with no reason
+ * and nothing to press. Measured 2026-09-24 in two of three opens against a computer image from
+ * before `d1ad9e74`, where the socket on its way out stopped the newer socket's cast.
+ */
+export const SCREEN_STALLED = "laf:screen_stalled";
 
 /**
  * The sentence for a code.
