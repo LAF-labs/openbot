@@ -1,4 +1,9 @@
-import { IconClockX, IconShieldCheck, IconShieldX } from "@tabler/icons-react";
+import {
+  IconClockX,
+  IconShieldCheck,
+  IconShieldQuestion,
+  IconShieldX,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import {
@@ -7,6 +12,14 @@ import {
 } from "@/components/channels/allowance-label";
 import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
+import {
+  chatCard,
+  chatCardChip,
+  chatCardMeta,
+  chatCardPadding,
+  chatCardTitle,
+  chatCardWaiting,
+} from "@/components/ui/card-surface";
 import {
   type AllowanceScope,
   type ApprovalDecision,
@@ -25,6 +38,7 @@ import {
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { useCountdown } from "@/lib/use-countdown";
+import { cn } from "@/lib/utils";
 
 /**
  * A transcript line that grew buttons, for the one action a boundary wanted a person to see.
@@ -134,21 +148,40 @@ export function ApprovalRequest({
      */
     // `data-waiting-card` is how the header's drawer finds this card to take the person to it.
     <div
-      className="rounded-md border border-border bg-card px-3 py-2"
+      className={cn(
+        chatCard,
+        chatCardPadding,
+        chatCardWaiting,
+        "flex flex-col",
+      )}
       data-waiting-card={toolCallId}
     >
       <div aria-atomic="true" aria-live="polite" className="sr-only">
         {t("Waiting for your answer: {question}", { question })}
       </div>
-      <p className="text-sm" id={questionId}>
-        {question}
-      </p>
+      {/*
+       * THE SAME HEAD AS THE HELP CARD: what it is about, and whose turn it is, in amber. Two cards
+       * that both wait on the person used to look nothing alike — a flat box here, a rounded amber
+       * one there — so "the Bot is waiting on me" was two different pictures.
+       */}
+      <div className="flex items-start gap-2">
+        <IconShieldQuestion
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-warning"
+        />
+        <p className={cn(chatCardTitle, "min-w-0 flex-1")} id={questionId}>
+          {question}
+        </p>
+        <span className={cn(chatCardChip, "bg-warning/12 text-warning")}>
+          {t("Your turn")}
+        </span>
+      </div>
       {/*
        * WHY, IN WORDS, WHERE THE RULE USED TO BE. The rule's own text is still here for whoever
        * wrote it, folded under 자세히 at the bottom; see `whyAskedPhrase`.
        */}
       {why ? (
-        <p className="mt-0.5 text-muted-foreground text-xs">
+        <p className={cn(chatCardMeta, "mt-0.5 ps-6")}>
           {t(why.key, why.params)}
         </p>
       ) : null}
@@ -161,7 +194,7 @@ export function ApprovalRequest({
             : undefined
         }
       />
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 ps-6">
         <Button
           // Described by the question rather than wrapped in a group role: "Allow" on its own says
           // nothing about what is being allowed.
@@ -229,7 +262,7 @@ export function ApprovalRequest({
        * reason the screen never mentioned.
        */}
       {timeLeft ? (
-        <p className="mt-1 text-muted-foreground text-xs tabular-nums">
+        <p className="mt-1 ps-6 text-muted-foreground text-xs tabular-nums">
           {timeLeft}
         </p>
       ) : null}
@@ -240,7 +273,7 @@ export function ApprovalRequest({
        * needs to see which one it was; closed, because that is not the question being asked.
        */}
       {asking.rule && mayEditBoundaries ? (
-        <details className="mt-1.5 text-muted-foreground text-xs">
+        <details className="mt-1.5 ps-6 text-muted-foreground text-xs">
           <summary className="w-fit cursor-pointer select-none">
             {t("Details")}
           </summary>
@@ -251,7 +284,7 @@ export function ApprovalRequest({
         </details>
       ) : null}
       {problem ? (
-        <p className="mt-2 text-destructive text-xs" role="alert">
+        <p className="mt-2 ps-6 text-destructive text-xs" role="alert">
           {problem}
         </p>
       ) : null}
@@ -303,7 +336,9 @@ function ButtonsExplained({
    */
   parts.push(t("Deny: the same thing is refused without asking for a while."));
   return (
-    <p className="mt-1.5 text-muted-foreground text-xs">{parts.join(" ")}</p>
+    <p className="mt-1.5 ps-6 text-muted-foreground text-xs">
+      {parts.join(" ")}
+    </p>
   );
 }
 

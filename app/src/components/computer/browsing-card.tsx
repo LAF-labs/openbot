@@ -13,6 +13,11 @@ import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import {
+  chatCard,
+  chatCardMeta,
+  chatCardTitle,
+} from "@/components/ui/card-surface";
+import {
   type ApprovalDecision,
   decisionOn,
   decisionPhrase,
@@ -31,6 +36,7 @@ import { frameAddress, useFrameVersion } from "@/lib/computer/last-frame";
 import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
 import { plainLine, plainText, taskTitle } from "./task-title";
 
@@ -75,10 +81,7 @@ export function BrowsingCard(props: BrowsingCardProps) {
        * no seam of its own a card that threw took the whole transcript with it. The seam adds no
        * element while the card is well, so the card and its steps stay children of this column.
        */}
-      <SectionBoundary
-        className="max-w-md rounded-2xl border"
-        section="computer"
-      >
+      <SectionBoundary className={chatCard} section="computer">
         <TaskCard {...props} />
       </SectionBoundary>
     </div>
@@ -115,7 +118,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
 
   return (
     <>
-      <div className="flex max-w-md gap-3 rounded-2xl border p-2.5">
+      <div className={cn(chatCard, "flex gap-3 p-2.5")}>
         {canView ? (
           <button
             aria-label={t("View the Bot's screen")}
@@ -130,7 +133,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {/* Two lines, not one: at 375px one line held the site and three words of the task. */}
-          <p className="line-clamp-2 break-words font-medium text-sm">
+          <p className={cn(chatCardTitle, "line-clamp-2 break-words")}>
             {title ?? t("The Bot's browser")}
           </p>
           {/*
@@ -138,7 +141,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
            * words. The rest of what it said is under 한 일, where it was said.
            */}
           {latest ? (
-            <p className="truncate text-muted-foreground text-xs">
+            <p className={cn(chatCardMeta, "truncate")}>
               {plainLine(latest.text)}
             </p>
           ) : null}
@@ -147,7 +150,14 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
            * is the one number about it that means nothing to them.
            */}
           <p
-            className={`text-xs ${isAsking ? "font-medium text-foreground" : ending === "blocked" ? "text-warning" : "text-muted-foreground"}`}
+            className={cn(
+              "text-xs",
+              isAsking
+                ? "font-medium text-warning"
+                : ending === "blocked"
+                  ? "text-warning"
+                  : "text-muted-foreground",
+            )}
           >
             {isAsking ? t("Your turn") : endingText(ending)}
           </p>

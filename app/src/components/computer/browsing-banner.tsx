@@ -79,7 +79,7 @@ function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
     <>
       {announcement}
       <div className="shrink-0 px-4 pt-1 pb-2">
-        <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border bg-background py-1.5 pr-1.5 pl-1.5 shadow-xs">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-card">
           <button
             aria-label={t("View the Bot's screen")}
             className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left"

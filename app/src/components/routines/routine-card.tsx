@@ -9,7 +9,14 @@ import {
 import { savingFailure } from "@/components/routines/saving-failure";
 import { useRoutineSwitch } from "@/components/routines/use-routine-switch";
 import { Button } from "@/components/ui/button";
+import {
+  chatCard,
+  chatCardMeta,
+  chatCardPadding,
+  chatCardTitle,
+} from "@/components/ui/card-surface";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import {
   type Routine,
   routineListQueryOptions,
@@ -126,17 +133,18 @@ function FullCard({ routine }: { routine: Routine }) {
   return (
     <section
       aria-label={t("Routine {name}", { name: routine.name })}
-      className="flex max-w-md flex-col gap-2 rounded-2xl border border-border bg-card p-3"
+      className={cn(chatCard, chatCardPadding, "flex flex-col gap-2")}
     >
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-2">
+        {/* The Bot's colour: a routine is the Bot's own work, on a schedule. */}
         <IconClock
           aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+          className="mt-0.5 size-4 shrink-0 text-link"
         />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {/* Wrapped, never cut: at 375 the name is the part the person is checking. */}
-          <p className="wrap-break-word font-medium text-sm">{routine.name}</p>
-          <p className="text-muted-foreground text-xs">
+          <p className={cn(chatCardTitle, "wrap-break-word")}>{routine.name}</p>
+          <p className={chatCardMeta}>
             {scheduleLabel(routine)} · {next}
           </p>
           {routine.summary ? (
@@ -144,7 +152,7 @@ function FullCard({ routine }: { routine: Routine }) {
           ) : null}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 ps-6.5">
+      <div className="flex flex-wrap items-center gap-2 ps-6">
         <Button
           disabled={toggle.isPending}
           onClick={() => toggle.mutate(!routine.enabled)}
@@ -173,7 +181,7 @@ function FullCard({ routine }: { routine: Routine }) {
         ) : null}
       </div>
       {toggle.isError ? (
-        <p className="ps-6.5 text-destructive text-xs" role="alert">
+        <p className="ps-6 text-destructive text-xs" role="alert">
           {savingFailure(toggle.error)}
         </p>
       ) : null}

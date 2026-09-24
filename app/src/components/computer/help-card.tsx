@@ -2,6 +2,13 @@ import { IconHandStop } from "@tabler/icons-react";
 import { useId, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
+import {
+  chatCard,
+  chatCardChip,
+  chatCardPadding,
+  chatCardTitle,
+  chatCardWaiting,
+} from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
 import { outcomeOf } from "@/lib/computer/browsing";
 import { skipHelp } from "@/lib/computer/help-skips";
@@ -10,6 +17,7 @@ import {
   useScreenPanelViewport,
 } from "@/lib/computer/screen-panel";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { pokeControl } from "./control-poll";
 import {
   readControl,
@@ -86,7 +94,12 @@ export function HelpCard({
 
   return (
     <div
-      className={`flex max-w-md flex-col gap-2 rounded-2xl border p-3 text-sm ${isWaiting ? "border-warning/60" : ""}`}
+      className={cn(
+        chatCard,
+        chatCardPadding,
+        "flex flex-col gap-2 text-sm",
+        isWaiting && chatCardWaiting,
+      )}
       // How the header's drawer finds the request it lists, while it is one.
       data-waiting-card={isWaiting ? "help" : undefined}
     >
@@ -102,7 +115,7 @@ export function HelpCard({
           : null}
       </LiveRegion>
       <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5 font-medium">
+        <span className={cn(chatCardTitle, "flex min-w-0 items-center gap-2")}>
           <IconHandStop
             aria-hidden="true"
             className={`size-4 shrink-0 ${isWaiting ? "text-warning" : "text-muted-foreground"}`}
@@ -114,18 +127,23 @@ export function HelpCard({
           </span>
         </span>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${isWaiting ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground"}`}
+          className={cn(
+            chatCardChip,
+            isWaiting
+              ? "bg-warning/12 text-warning"
+              : "bg-muted text-muted-foreground",
+          )}
         >
           {ending ? endingLabel(ending) : t("Needs you")}
         </span>
       </div>
 
-      {said ? <p className="text-pretty">{said}</p> : null}
+      {said ? <p className="text-pretty ps-6">{said}</p> : null}
 
       {/* The masked box: only while the computer is actually waiting for this value. */}
       {kind === "secret" && isWaiting && control?.secretWanted ? (
         <form
-          className="flex flex-col gap-1.5"
+          className="flex flex-col gap-1.5 ps-6"
           onSubmit={async (event) => {
             event.preventDefault();
             if (!secret || isSending) return;
@@ -180,14 +198,14 @@ export function HelpCard({
       ) : null}
 
       {/* Mounted with the card, so taking the wheel is heard when it is said (`LiveRegion`). */}
-      <LiveRegion as="p" className="text-muted-foreground text-xs">
+      <LiveRegion as="p" className="ps-6 text-muted-foreground text-xs">
         {isWaiting && isDriving
           ? t("You have the browser. Press I'm done when you are finished.")
           : null}
       </LiveRegion>
 
       {isWaiting ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 ps-6">
           {/* On a wide screen only: driving a page by touch has not been measured yet. */}
           {isWide && !isDriving ? (
             <Button
