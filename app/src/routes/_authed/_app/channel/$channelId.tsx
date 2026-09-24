@@ -270,8 +270,13 @@ function RouteComponent() {
                 </>
               ) : null}
             </Button>
+            {/*
+             * Named for what it opens, the Bot's profile — the same words the sidebar uses for it.
+             * "이 대화의 봇" was from when a conversation could hold several Bots and this picked
+             * which (UI/UX audit 0.5.3, item 9); a person has one.
+             */}
             <Button
-              aria-label={t("Bot in this conversation")}
+              aria-label={t("Bot profile")}
               aria-pressed={isSettingsOpen}
               className={isSettingsOpen ? "bg-foreground/5" : undefined}
               disabled={agentId === undefined}
