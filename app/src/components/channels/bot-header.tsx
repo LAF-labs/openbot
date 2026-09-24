@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
-import { LiveRegion } from "@/components/layout/live-region";
 import { useBotMood } from "@/lib/agents/bot-mood";
 import type { Presence } from "@/lib/agents/presence";
 import { t } from "@/lib/i18n";
@@ -90,10 +89,12 @@ export function BotHeader({
       {actions ? (
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
       ) : null}
-      {/* Said once when it changes, not read out of the header on every visit. */}
-      <LiveRegion className="sr-only">
-        {presence.tone === "quiet" ? null : t(presence.label)}
-      </LiveRegion>
+      {/*
+       * NOT A LIVE REGION, ON PURPOSE. The word changes at every step of a turn — 생각 중, 일하는 중,
+       * 답하는 중 — and the two changes that matter are already said where they happen: the approval
+       * card and the help card each announce themselves, politely. Announcing the pill too would say
+       * every step twice. The word is in the pill's name for whoever moves to it.
+       */}
     </header>
   );
 }
