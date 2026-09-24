@@ -533,7 +533,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
           onPaste={handlePaste}
           onCompositionEnd={handleCompositionEnd}
           aria-label={t(
-            "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.",
+            "The Bot's screen. You are doing it yourself: click and type here. Tab leaves, and Escape is the same as I'm done.",
           )}
         />
       ) : null}

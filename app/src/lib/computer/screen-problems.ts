@@ -41,8 +41,9 @@ export const SCREEN_PROBLEM_SAID: Record<string, string> = {
     "The Bot's computer and this server are different versions.",
   // The live-screen socket, `agent-computer`'s `{type:"error"}` messages.
   "laf:screen_not_started": "The live picture could not be started.",
+  // Named by the button that does it: "제어를 가져오세요" named an act no button on the screen says.
   "laf:take_control_first":
-    "Take control before clicking or typing on the page.",
+    "Press Do it myself before clicking or typing on the page.",
   "laf:input_not_applied": "That click or keystroke did not reach the page.",
   // The pane's own three: an answer that carried no code at all, and a picture that never came.
   "laf:screen_unavailable": "The screen could not be shown.",

@@ -21,6 +21,45 @@ export type ControlState = {
   secretInto?: { host: string; element: { role: string; name: string } };
 };
 
+/**
+ * WHAT A TAKE OR A RELEASE WAS ANSWERED, TOLD TO EVERY VIEW OF THAT COMPUTER AT ONCE.
+ *
+ * The views learn who holds the wheel from one shared poll (`control-poll.ts`), which reads once a
+ * second at most. So 직접 하기 came back "human" and the screen went on being the pane for up to a
+ * second more — measured 2026-09-24 at 803 ms between the press and the sheet, with the button back
+ * to reading 직접 하기 in between, which is an invitation to press it again. The answer to the press
+ * IS the new state; `useControl` starts from the last one and hears each one as it comes.
+ */
+const answered = new Map<string, ControlState>();
+const answerListeners = new Map<string, Set<(state: ControlState) => void>>();
+
+/** The last state this tab was told for a computer, by a press or by the poll. */
+export function lastControlState(computerId: string): ControlState | null {
+  return answered.get(computerId) ?? null;
+}
+
+/** Remember a state read by the poll, so a view mounted next does not start from nothing. */
+export function rememberControlState(
+  computerId: string,
+  state: ControlState,
+): void {
+  answered.set(computerId, state);
+}
+
+/** Hear every take or release answered for one computer. Returns the unsubscribe. */
+export function onControlAnswered(
+  computerId: string,
+  listener: (state: ControlState) => void,
+): () => void {
+  const listeners = answerListeners.get(computerId) ?? new Set();
+  listeners.add(listener);
+  answerListeners.set(computerId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) answerListeners.delete(computerId);
+  };
+}
+
 async function callControl(
   computerId: string,
   path: string,
@@ -31,7 +70,12 @@ async function callControl(
     ...init,
   });
   if (!response.ok) return null;
-  return (await response.json()) as ControlState;
+  const state = (await response.json()) as ControlState;
+  answered.set(computerId, state);
+  for (const listener of answerListeners.get(computerId) ?? []) {
+    listener(state);
+  }
+  return state;
 }
 
 /**

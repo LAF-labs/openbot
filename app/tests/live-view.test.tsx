@@ -8,17 +8,24 @@ import {
   jest,
   test,
 } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { SCREEN_STALL_MS } from "../src/components/computer/live-screen";
+import { forgetScreenPanelViewport } from "../src/lib/computer/screen-panel";
+import { SCREEN_PROBLEM_SAID } from "../src/lib/computer/screen-problems";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
+
+const COMPONENTS = join(import.meta.dir, "../src/components");
 
 /**
  * THE BOT'S SCREEN AS A PERSON SEES IT: THE PANE, NOT THE SOCKET UNDER IT.
  *
  * `live-screen.test.tsx` holds the socket. This holds what the pane draws around it — the words over
- * the black frame when there is no picture — because that is where the 0.5.3 audit found it failing
- * with every test green (`~/laf/docs/uiux-audit-0.5.3.md` §2, item 15).
+ * the black frame when there is no picture, the wait that has to end in a reason, and the sheet a
+ * person drives on — because that is where the 0.5.3 audit found it failing with every test green
+ * (`~/laf/docs/uiux-audit-0.5.3.md` §2, items 4, 14 and 15).
  */
 
 let sockets: FakeSocket[] = [];
@@ -57,6 +64,9 @@ let control: Record<string, unknown> = {
   requested: false,
 };
 
+/** Every take and release the view asked for, in order. */
+let presses: string[] = [];
+
 let originalFetch: typeof fetch;
 
 beforeAll(() => {
@@ -78,11 +88,33 @@ beforeAll(() => {
       removeListener() {},
       dispatchEvent: () => true,
     }) as unknown as MediaQueryList) as typeof window.matchMedia;
+  /*
+   * The window `screen-panel.ts` keeps is module state, read once and then only on `resize`: a
+   * file run earlier in this process leaves its own width behind, and a narrow one offers no 직접
+   * 하기. Measured: both driving cases failed in the whole suite and passed alone. Forgotten again
+   * after this file, so this file's PC width is not left behind for the next one either.
+   */
+  forgetScreenPanelViewport();
   originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetch(async (url) => {
     const path = String(url);
     if (path.includes("/demonstration")) {
       return Response.json({ demonstration: null });
+    }
+    // A press answers with the state it made, as the computer's routes do.
+    if (path.endsWith("/control/take")) {
+      presses.push("take");
+      control = { ...control, holder: "human", requested: false };
+      return Response.json(control);
+    }
+    if (path.endsWith("/control/release")) {
+      presses.push("release");
+      control = {
+        holder: "bot",
+        since: "2026-09-24T00:01:00Z",
+        requested: false,
+      };
+      return Response.json(control);
     }
     if (path.includes("/control")) return Response.json(control);
     return new Response(null, { status: 404 });
@@ -91,16 +123,42 @@ beforeAll(() => {
 
 afterAll(async () => {
   globalThis.fetch = originalFetch;
+  forgetScreenPanelViewport();
   await GlobalRegistrator.unregister();
 });
 
-afterEach(() => {
+/**
+ * Views a case left mounted because it failed before unmounting them. Left alone, their
+ * subscriptions outlive this file's window, and the next file's first store write reaches a React
+ * root with no `window` under it (measured: `screen-panel.test.ts` failed on `window.event`).
+ */
+const mounted = new Set<{ unmount: () => void }>();
+
+afterEach(async () => {
+  const { act } = await import("react");
+  for (const root of mounted) {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  mounted.clear();
+  document.body.replaceChildren();
   sockets = [];
+  presses = [];
   control = {
     holder: "bot",
     since: "2026-09-24T00:00:00Z",
     requested: false,
   };
+  // What this tab last heard is module state (`take-the-wheel.ts`); each case starts from the Bot's.
+  const { rememberControlState } = await import(
+    "../src/components/computer/take-the-wheel"
+  );
+  rememberControlState("bot-1", {
+    holder: "bot",
+    since: "2026-09-24T00:00:00Z",
+    requested: false,
+  });
 });
 
 async function mountedView() {
@@ -113,6 +171,7 @@ async function mountedView() {
   await act(async () => {
     root.render(createElement(LiveView, { botId: "bot-1" }));
   });
+  mounted.add(root);
   return {
     host,
     act: async (body: () => void | Promise<void>) => {
@@ -120,6 +179,14 @@ async function mountedView() {
         await body();
       });
     },
+    /** The whole-window sheet, which is portalled to `<body>` and so is not inside `host`. */
+    sheet: () =>
+      document.body.querySelector('[role="dialog"]') as HTMLElement | null,
+    /** A button anywhere on the page, by its words. */
+    button: (words: string) =>
+      [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent === words,
+      ),
     /** The sentence as drawn, not the screen reader's hidden copy of it. */
     drawn: (sentence: string) =>
       [...host.querySelectorAll("span, p")].find(
@@ -129,6 +196,7 @@ async function mountedView() {
           !node.classList.contains("sr-only"),
       ) as HTMLElement | undefined,
     unmount: async () => {
+      mounted.delete(root);
       await act(async () => {
         root.unmount();
       });
@@ -202,5 +270,111 @@ describe("a picture that does not come (0.5.3 audit, item 14)", () => {
     expect(sockets.length).toBe(opened + 1);
     expect(view.drawn(reason)).toBeUndefined();
     await view.unmount();
+  });
+});
+
+/**
+ * 직접 하기 GIVES THE PAGE THE WHOLE WINDOW (0.5.3 audit, item 4).
+ *
+ * Measured 2026-09-24 in a 1280px window: taking over left the Bot's 1280px page in the side pane at
+ * 43% — a login's boxes a few millimetres tall — while the 연결 screen's sign-in drew the same page
+ * at 87% in an overlay of its own, and called the same act "제어 돌려주기". Both are one sheet now.
+ */
+describe("somebody driving on a wide window", () => {
+  test("is given the whole window the moment the take is answered, and Escape is 다 했어요", async () => {
+    const view = await mountedView();
+    // Watching: the pane, with 직접 하기 in it, and no sheet.
+    expect(view.sheet()).toBeNull();
+    const take = view.button("Take over");
+    expect(take).toBeDefined();
+
+    // Pressed. The answer IS the new state: no waiting for the next read of the shared loop.
+    await view.act(async () => {
+      take?.click();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(presses).toEqual(["take"]);
+    const sheet = view.sheet();
+    expect(sheet).not.toBeNull();
+    expect(sheet?.getAttribute("aria-modal")).toBe("true");
+    // Outside the pane, over everything: portalled to <body>, and the page is drawn inside it.
+    expect(view.host.contains(sheet)).toBe(false);
+    expect(sheet?.querySelector("canvas")).not.toBeNull();
+    expect(view.host.querySelector("canvas")).toBeNull();
+    expect(sheet?.textContent).toContain(
+      "You have the browser. Press I'm done when you are finished.",
+    );
+    expect(view.button("I'm done")).toBeDefined();
+
+    // Escape is the same press as 다 했어요, and the sheet goes once the wheel is back.
+    await view.act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", cancelable: true }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(presses).toEqual(["take", "release"]);
+    expect(view.sheet()).toBeNull();
+    // Back in the pane, watching.
+    expect(view.host.querySelector("canvas")).not.toBeNull();
+    await view.unmount();
+  });
+
+  test("does not offer to teach while the Bot is asking for help", async () => {
+    // A captcha or a code sent to a phone is not a task anybody can show a Bot how to do.
+    control = { ...control, requested: true, reason: "캡차를 풀어 주세요" };
+    const asked = await mountedView();
+    await asked.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(asked.button("Teach a task")).toBeUndefined();
+    expect(asked.button("Take over")).toBeDefined();
+    await asked.unmount();
+
+    control = {
+      holder: "bot",
+      since: "2026-09-24T00:00:00Z",
+      requested: false,
+    };
+    const quiet = await mountedView();
+    await quiet.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(quiet.button("Teach a task")).toBeDefined();
+    await quiet.unmount();
+  });
+});
+
+/**
+ * ONE PAIR OF WORDS FOR ONE ACT: 직접 하기, then 다 했어요.
+ *
+ * Walked over every sentence the Bot's screen, its sheet, the request for help, teaching and the
+ * sign-in handoff say — the screen-problem table too, which is read through a variable — so "제어"
+ * cannot come back on any of them through a new key.
+ */
+describe("the words for taking over", () => {
+  test("no sentence on these screens says 제어", () => {
+    const keys = [
+      "computer/live-view.tsx",
+      "computer/live-screen.tsx",
+      "computer/help-card.tsx",
+      "computer/teach-a-task.tsx",
+      "sites/handoff.tsx",
+    ].flatMap((file) =>
+      [
+        ...readFileSync(join(COMPONENTS, file), "utf8").matchAll(
+          /\bt\(\s*"((?:[^"\\]|\\.)*)"/g,
+        ),
+      ].map((match) => match[1] as string),
+    );
+    expect(keys.length).toBeGreaterThan(20);
+    const said = [...keys, ...Object.values(SCREEN_PROBLEM_SAID)].map(
+      (key) => `${key} → ${ko[key] ?? "(no Korean)"}`,
+    );
+    expect(said.filter((line) => line.includes("(no Korean)"))).toEqual([]);
+    expect(said.filter((line) => line.includes("제어"))).toEqual([]);
+    expect(ko["I'm done"]).toBe("다 했어요");
+    expect(ko["Take over"]).toBe("직접 하기");
+    expect(ko["Do it myself"]).toBe("직접 하기");
   });
 });

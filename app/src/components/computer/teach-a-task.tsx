@@ -130,7 +130,7 @@ export function TeachATask({
            */}
           <strong className="font-medium">{t("Recording")}</strong>{" "}
           <span className="text-muted-foreground">
-            {t("{count} steps so far. Hand back when you are done.", {
+            {t("{count} steps so far. Press I'm done when you are finished.", {
               count: String(recording.steps.length),
             })}
           </span>

@@ -2511,4 +2511,15 @@ export const ko: Record<string, string> = {
   Reconnect: "다시 연결",
   "The picture has not come through for five seconds.":
     "화면이 5초 넘게 오지 않고 있어요.",
+  // 넘겨받기는 "직접 하기 → 다 했어요" 한 쌍이다. "제어"라는 말은 쓰지 않는다.
+  "Log in on {name}, then press I'm done.":
+    "{name}에 로그인한 뒤 '다 했어요'를 눌러 주세요.",
+  "Escape does the same as I'm done": "Esc를 눌러도 '다 했어요'와 같아요",
+  "Handing it to you…": "넘겨받는 중…",
+  "The Bot's screen. You are doing it yourself: click and type here. Tab leaves, and Escape is the same as I'm done.":
+    "봇의 화면이에요. 여기서 직접 누르고 입력하세요. Tab으로 빠져나가고, Esc를 누르면 '다 했어요'와 같아요.",
+  "{count} steps so far. Press I'm done when you are finished.":
+    "지금까지 {count}단계. 끝나면 '다 했어요'를 눌러 주세요.",
+  "Press Do it myself before clicking or typing on the page.":
+    "페이지를 누르거나 입력하려면 먼저 '직접 하기'를 눌러 주세요.",
 };

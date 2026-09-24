@@ -140,9 +140,14 @@ describe("the panes read the table, not the wire", () => {
      * sign-in handoff does the same. Checked against the code, not a comment: this once passed on a
      * card because a comment in it quoted the call.
      */
-    for (const source of [view, handoff]) {
-      expect(source).toContain("screenProblemText(problem)");
-      expect(source).not.toMatch(/\{problem\}/);
-    }
+    expect(view).toContain("screenProblemText(problem)");
+    expect(view).not.toMatch(/\{problem\}/);
+    /*
+     * Since 0.5.3 the handoff draws no screen of its own: it is the live view's sheet
+     * (`DrivingScreen`), so what it says about the picture is what the live view says.
+     */
+    expect(handoff).toContain("<DrivingScreen");
+    expect(handoff).not.toContain("<LiveScreen");
+    expect(handoff).not.toMatch(/\{problem\}/);
   });
 });

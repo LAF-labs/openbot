@@ -57,6 +57,11 @@ export const DEFAULT_SCREEN_PANEL: ScreenPanel = {
  * login is exactly where a mis-click costs something. The conversation keeps `ROOM_FOR_THE_REST`,
  * because the request for help with its "다 했어요" is in it; the screen takes the rest, up to what
  * a page needs.
+ *
+ * On a wide window that is now the pane BEHIND the driving: since 0.5.3 the page itself is driven on
+ * a sheet over the whole window (`DrivingScreen` in `live-view.tsx`), because even this width drew
+ * a 1280px login at 43% in a 1280px window (audit item 4). The pane keeps it so that nothing
+ * jumps under the sheet, and settles back to the chosen size when the wheel is handed back.
  */
 export const DRIVING_MAX_WIDTH = 1_040;
 
@@ -201,6 +206,17 @@ function readViewport(): Viewport {
 function viewportSnapshot(): Viewport {
   viewport ??= readViewport();
   return viewport;
+}
+
+/**
+ * Test seam: forget the window this module read, so the next reader asks its own.
+ *
+ * The value is read once and then only on `resize`, which is right for a tab and wrong for a test
+ * process, where every file brings a window of its own: measured 2026-09-24, a file drawn at PC
+ * width left the next file's 375px sheet reading as a column.
+ */
+export function forgetScreenPanelViewport(): void {
+  viewport = null;
 }
 
 const WIDE_VIEWPORT: Viewport = { isWide: true, viewportWidth: 0 };
