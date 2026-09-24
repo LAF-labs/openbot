@@ -439,6 +439,50 @@ function createFirstPaintDelays() {
 }
 
 /**
+ * Decide, once per message, whether the scroller may anchor on it: only a person's own message,
+ * sent while this transcript was open.
+ *
+ * THE JUMP THIS PREVENTS, measured 2026-09-24 on a 28-message conversation after a reload. The
+ * scroller (`@shadcn/react/message-scroller`) scrolls to an anchor it has not handled whenever the
+ * list's children change and their COUNT does not — its reading of that is "an optimistic message
+ * was swapped for the real one". It marks an anchor handled only when the anchor arrives after the
+ * first paint, so every user message in the restored history stayed unhandled. The first tool card
+ * of the next turn replaces the "생각하는 중" line — one child out, one in, the count unchanged —
+ * and the scroller took the OLDEST user message as the swapped one: `scrollTop` went from 2616 to 2
+ * and the reader was thrown back to the start of the conversation. Any same-count swap did it: a
+ * failure line clearing as a card arrived, a tool line becoming a browsing card.
+ *
+ * So the history is never an anchor. A message is one only if it is first seen after the transcript
+ * settled (the same instant `createFirstPaintDelays` uses, for the same reason: history arrives
+ * asynchronously) and as the newest item — which is what sending one looks like. Stored history
+ * merged in later lands above what is already on screen, never as the newest, so it is not
+ * mistaken for a send. What an anchor is FOR is untouched: the message somebody just sent is
+ * scrolled to the top with the previous answer peeking above it.
+ *
+ * Frozen per id like the delays: `scrollAnchor` becomes a DOM attribute the scroller reads at every
+ * change, and one that flipped on an old message would re-open exactly this hole.
+ */
+export function createAnchorDecider() {
+  const decided = new Map<string, boolean>();
+  let settled = false;
+
+  return {
+    settle() {
+      settled = true;
+    },
+    isAnchor(id: string, isUserMessage: boolean, isNewest: boolean): boolean {
+      const known = decided.get(id);
+      if (known !== undefined) {
+        return known;
+      }
+      const anchor = settled && isUserMessage && isNewest;
+      decided.set(id, anchor);
+      return anchor;
+    },
+  };
+}
+
+/**
  * A turn arriving in the transcript.
  *
  * WHY IT ANIMATES AT ALL: a message currently pops into existence at full opacity, and the eye has
@@ -942,6 +986,7 @@ export function ChatTranscript({
    * of the transcript, without reading a ref while rendering, which the React Compiler refuses.
    */
   const [delays] = useState(createFirstPaintDelays);
+  const [anchors] = useState(createAnchorDecider);
 
   /*
    * Settled AFTER the render that first had items, not on mount: history arrives asynchronously, so
@@ -952,8 +997,9 @@ export function ChatTranscript({
   useEffect(() => {
     if (hasItems) {
       delays.settle();
+      anchors.settle();
     }
-  }, [hasItems, delays]);
+  }, [hasItems, delays, anchors]);
 
   /*
    * Which items open a new sitting, decided in one pass rather than per row.
@@ -1089,7 +1135,11 @@ export function ChatTranscript({
                         : "py-0.5 pt-3"
                     }
                     messageId={item.id}
-                    scrollAnchor={item.role === "user"}
+                    scrollAnchor={anchors.isAnchor(
+                      item.id,
+                      item.role === "user",
+                      index === items.length - 1,
+                    )}
                   >
                     <TranscriptMessage
                       channelId={channelId}
