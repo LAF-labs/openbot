@@ -717,7 +717,7 @@ export function ChannelChat({
    * last picture kept when it ends. From the same copy the transcript draws, so the banner and the
    * card under it name the same task.
    */
-  useBrowsingTasks({
+  const openTask = useBrowsingTasks({
     channelId: channel.id,
     botId: runtimeAgentId,
     messages: thread,
@@ -747,6 +747,7 @@ export function ChannelChat({
       <ConversationView
         banner={
           <BrowsingBanner
+            asked={openTask?.asked}
             botId={runtimeAgentId}
             isStoppable={agent.isRunning || runsInFlight > 0}
             onStop={handleStop}

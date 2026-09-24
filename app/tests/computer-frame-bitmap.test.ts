@@ -131,14 +131,20 @@ const strip = (name: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
+/*
+ * The poll's picture is painted in `live-thumbnail.tsx` since 0.5.3 (UI/UX audit, item 13): the
+ * banner and the card of a task still running both show it, from one poll, so the painting moved
+ * out of the banner into the piece they share.
+ */
 describe("both views of one computer decode the same way", () => {
   test("neither builds a data URL of a screenshot any more", () => {
     expect(strip("browsing-banner.tsx")).not.toContain("data:image");
+    expect(strip("live-thumbnail.tsx")).not.toContain("data:image");
     expect(strip("live-screen.tsx")).not.toContain("data:image");
   });
 
   test("both go through this module", () => {
-    for (const file of ["browsing-banner.tsx", "live-screen.tsx"]) {
+    for (const file of ["live-thumbnail.tsx", "live-screen.tsx"]) {
       expect(strip(file)).toContain("./frame-bitmap");
       expect(strip(file)).toContain("decodeFrame(");
       expect(strip(file)).toContain("paintFrame(");
@@ -152,13 +158,13 @@ describe("both views of one computer decode the same way", () => {
     expect(module).toContain("charCodeAt(i)");
   });
 
-  test("the banner paints before it says there is a picture", () => {
+  test("the thumbnail paints before it says there is a picture", () => {
     // Otherwise the canvas is revealed empty for a whole poll interval where the picture is about
     // to be — the same blank the old code used `preloadFrame` to avoid.
-    const banner = strip("browsing-banner.tsx");
-    expect(banner.indexOf("paintFrame(canvas, bitmap)")).toBeGreaterThan(0);
-    expect(banner.indexOf("paintFrame(canvas, bitmap)")).toBeLessThan(
-      banner.indexOf("setHasPicture(true)"),
+    const thumbnail = strip("live-thumbnail.tsx");
+    expect(thumbnail.indexOf("paintFrame(canvas, bitmap)")).toBeGreaterThan(0);
+    expect(thumbnail.indexOf("paintFrame(canvas, bitmap)")).toBeLessThan(
+      thumbnail.indexOf("setHasPicture(true)"),
     );
   });
 });

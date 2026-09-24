@@ -1,11 +1,12 @@
 import { IconBrowser, IconChevronDown } from "@tabler/icons-react";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useState, useSyncExternalStore } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
 import { ToolLine } from "@/components/channels/tool-line";
 import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
+import { questionOn, watchQuestions } from "@/lib/approvals";
 import {
   endingOf,
   pictureStepOf,
@@ -15,9 +16,11 @@ import {
 } from "@/lib/computer/browsing";
 import { useBrowsingNow } from "@/lib/computer/browsing-now";
 import { frameAddress, useFrameVersion } from "@/lib/computer/last-frame";
-import { setScreenOpen } from "@/lib/computer/screen-panel";
+import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
+import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
+import { plainLine, plainText, taskTitle } from "./task-title";
 
 /**
  * ONE BROWSING TASK, AS ONE CARD: WHERE THE BOT WENT, WHAT IT DID, AND WHAT IT LAST SAW.
@@ -75,16 +78,23 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   const stepsId = useId();
   const botId = useDeclaredBotId();
   const now = useBrowsingNow();
-  const sites = sitesOf(item.steps);
   const ending = endingOf(item.steps, isOpen);
+  /*
+   * A step of this task is waiting on the person — an approval above the card. Subscribed, so the
+   * card says so the moment it is asked and stops the moment it is answered.
+   */
+  const isAsking = useSyncExternalStore(watchQuestions, () =>
+    item.steps.some((step) => questionOn(step.id) !== undefined),
+  );
   const pictureStep = isOpen ? null : pictureStepOf(item.steps);
   const isPageGone = botId !== undefined && now.pageGoneFor === botId;
   const canView = isNewest && botId !== undefined && !isPageGone;
-  const count = item.steps.length;
+  const title = taskTitle(sitesOf(item.steps), item.asked);
   const latest = item.notes.at(-1);
 
   const picture = (
     <TaskPicture
+      botId={botId}
       channelId={channelId}
       isOpen={isOpen}
       toolCallId={pictureStep}
@@ -107,8 +117,9 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
           <div className="shrink-0">{picture}</div>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="truncate font-medium text-sm">
-            {sites.length > 0 ? sites.join(" · ") : t("The Bot's browser")}
+          {/* Two lines, not one: at 375px one line held the site and three words of the task. */}
+          <p className="line-clamp-2 break-words font-medium text-sm">
+            {title ?? t("The Bot's browser")}
           </p>
           {/*
            * The newest thing the Bot said while doing this, one line: what it is up to, in its own
@@ -116,15 +127,17 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
            */}
           {latest ? (
             <p className="truncate text-muted-foreground text-xs">
-              {latest.text.split("\n")[0]}
+              {plainLine(latest.text)}
             </p>
           ) : null}
+          {/*
+           * No count of steps. "완료 · 3단계" asked somebody to care how many calls a task took, which
+           * is the one number about it that means nothing to them.
+           */}
           <p
-            className={`text-xs ${ending === "running" ? "text-muted-foreground" : ending === "blocked" ? "text-warning" : "text-muted-foreground"}`}
+            className={`text-xs ${isAsking ? "font-medium text-foreground" : ending === "blocked" ? "text-warning" : "text-muted-foreground"}`}
           >
-            {endingText(ending)}
-            {" · "}
-            {count === 1 ? t("1 step") : t("{count} steps", { count })}
+            {isAsking ? t("Your turn") : endingText(ending)}
           </p>
           <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
             {canView ? (
@@ -176,7 +189,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
                         className="my-1 whitespace-pre-wrap break-words border-l-2 pl-2 text-muted-foreground text-sm"
                         key={note.id}
                       >
-                        {note.text}
+                        {plainText(note.text)}
                       </p>
                     ))}
                   <ToolLine
@@ -196,31 +209,37 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   );
 }
 
+/**
+ * How the task stands, in three words a person uses — 끝남, 멈춤 — plus 하는 중 while it runs.
+ * 사장님 차례 is decided above, from a question on one of its steps.
+ */
 function endingText(ending: TaskEnding): string {
   switch (ending) {
     case "running":
       return t("Working on it");
     case "done":
-      return t("Done");
+      return t("Finished");
     case "stopped":
-      return t("Stopped");
     case "blocked":
-      return t("Got stuck");
+      return t("Halted");
   }
 }
 
 /**
- * The task's last picture, or a quiet browser mark where there is none.
+ * The task's picture: the page as it is now while the task runs, its last picture once it ended, or
+ * a quiet browser mark where there is none.
  *
- * None is normal: a task still running has not ended, a task from before pictures were kept never
- * had one, and one that ended while a person held the wheel was deliberately not taken. Keyed by the
- * version this tab kept, so a card that asked a moment too early asks again once it is there.
+ * None is normal for an ended task: one from before pictures were kept never had one, and one that
+ * ended while a person held the wheel was deliberately not taken. Keyed by the version this tab
+ * kept, so a card that asked a moment too early asks again once it is there.
  */
 function TaskPicture({
+  botId,
   channelId,
   toolCallId,
   isOpen,
 }: {
+  botId: string | undefined;
   channelId: string | undefined;
   toolCallId: string | null;
   isOpen: boolean;
@@ -232,7 +251,9 @@ function TaskPicture({
         aria-hidden="true"
         className={`size-5 text-muted-foreground/60 ${isOpen ? "animate-pulse" : ""}`}
       />
-      {channelId && toolCallId ? (
+      {isOpen ? (
+        <RunningPicture botId={botId} />
+      ) : channelId && toolCallId ? (
         <FrameImage
           key={version}
           src={`${frameAddress(channelId, toolCallId)}?v=${version}`}
@@ -240,6 +261,16 @@ function TaskPicture({
       ) : null}
     </span>
   );
+}
+
+/**
+ * The page now, from the poll the banner reads (`live-thumbnail.tsx`), so the card of a task being
+ * done shows what the banner above it shows instead of an empty frame. Paused with the banner's
+ * while the live screen is open.
+ */
+function RunningPicture({ botId }: { botId: string | undefined }) {
+  const { isOpen: isScreenOpen } = useScreenPanel();
+  return <FrameCanvas frame={useLiveFrame(botId, isScreenOpen)} />;
 }
 
 function FrameImage({ src }: { src: string }) {

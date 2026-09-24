@@ -134,8 +134,8 @@ describe("a browsing card", () => {
     expect(failed[0]?.querySelector('[role="alert"]')?.textContent).toBe(
       "This part of the screen ran into an unexpected problem.",
     );
-    // The card beside it is still there, site and all.
-    expect(view.host.textContent).toContain("weather.naver.com");
+    // The card beside it is still there, site and all — by the name a person calls it.
+    expect(view.host.textContent).toContain("Naver Weather");
     expect(view.host.textContent).not.toContain(PASSWORD);
 
     expect(reports).toHaveLength(1);

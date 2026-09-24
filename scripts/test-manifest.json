@@ -54,6 +54,7 @@
   "app/tests/bot-avatar.test.ts",
   "app/tests/bot-notifications.test.ts",
   "app/tests/bot-profile.test.ts",
+  "app/tests/browsing-card-title.test.ts",
   "app/tests/browsing-tasks.test.ts",
   "app/tests/bundle-graph.test.ts",
   "app/tests/card-seams.test.tsx",
