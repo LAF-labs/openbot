@@ -1,5 +1,5 @@
 import { IconBrowser, IconChevronDown } from "@tabler/icons-react";
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
 import { ToolLine } from "@/components/channels/tool-line";
@@ -81,6 +81,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   const isPageGone = botId !== undefined && now.pageGoneFor === botId;
   const canView = isNewest && botId !== undefined && !isPageGone;
   const count = item.steps.length;
+  const latest = item.notes.at(-1);
 
   const picture = (
     <TaskPicture
@@ -109,6 +110,15 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
           <p className="truncate font-medium text-sm">
             {sites.length > 0 ? sites.join(" · ") : t("The Bot's browser")}
           </p>
+          {/*
+           * The newest thing the Bot said while doing this, one line: what it is up to, in its own
+           * words. The rest of what it said is under 한 일, where it was said.
+           */}
+          {latest ? (
+            <p className="truncate text-muted-foreground text-xs">
+              {latest.text.split("\n")[0]}
+            </p>
+          ) : null}
           <p
             className={`text-xs ${ending === "running" ? "text-muted-foreground" : ending === "blocked" ? "text-warning" : "text-muted-foreground"}`}
           >
@@ -154,18 +164,30 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
         id={stepsId}
       >
         {isExpanded
-          ? item.steps.map((step) => {
+          ? item.steps.map((step, index) => {
               const line = stepLine(step);
               return (
-                <ToolLine
-                  detail={line.detail}
-                  failed={line.failed}
-                  key={step.id}
-                  kind="browser"
-                  label={line.label}
-                  refused={line.refused}
-                  running={line.running}
-                />
+                <Fragment key={step.id}>
+                  {/* What the Bot said before this step, where it said it. */}
+                  {item.notes
+                    .filter((note) => note.after === index)
+                    .map((note) => (
+                      <p
+                        className="my-1 whitespace-pre-wrap break-words border-l-2 pl-2 text-muted-foreground text-sm"
+                        key={note.id}
+                      >
+                        {note.text}
+                      </p>
+                    ))}
+                  <ToolLine
+                    detail={line.detail}
+                    failed={line.failed}
+                    kind="browser"
+                    label={line.label}
+                    refused={line.refused}
+                    running={line.running}
+                  />
+                </Fragment>
               );
             })
           : null}

@@ -100,25 +100,103 @@ describe("which calls make one task", () => {
     expect(task?.kind === "browse" ? task.steps.length : 0).toBe(3);
   });
 
-  test("what the Bot says between two stretches of browsing splits them into two tasks", () => {
+  /*
+   * MEASURED 2026-09-24 (UI/UX audit, item 1): the model this deployment runs says a line before
+   * nearly every call, and each line used to cut the task — ten cards for one 바로구매 on 예스24.
+   * Captured the same day on this stack: "서울, 부산, 제주 날씨" drew two cards with the Bot's
+   * "서울 확인 완료, 제주 확인 완료. 부산 결과가 잘려서 다시 열어…" between them.
+   */
+  test("one turn is one card: what the Bot says between its calls goes inside it", () => {
     const items = itemsOf([
+      said("user", "서울, 부산 날씨 알려줘"),
+      said("assistant", "서울부터 열어 볼게요."),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://search.naver.com/?query=서울날씨" },
+        result: { ok: true },
+      }),
+      said("assistant", "서울 확인했어요. 부산으로 갈게요."),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://search.naver.com/?query=부산날씨" },
+        result: { ok: true },
+      }),
+      ...calls({ name: "computer_read", result: { ok: true } }),
+      said("assistant", "부산은 맑아요."),
+      ...calls({ name: "computer_snapshot", result: { ok: true } }),
+      said("assistant", "서울 22도, 부산 24도예요."),
+    ]);
+    // The question, the first sentence, ONE card, the answer.
+    expect(items.map((item) => item.kind)).toEqual([
+      "text",
+      "text",
+      "browse",
+      "text",
+    ]);
+    const task = items[2];
+    if (task?.kind !== "browse") throw new Error("no card");
+    expect(task.steps).toHaveLength(4);
+    expect(task.asked).toBe("서울, 부산 날씨 알려줘");
+    // Each line kept, and kept where it was said: before the second step, and before the fourth.
+    expect(task.notes.map((note) => [note.text, note.after])).toEqual([
+      ["서울 확인했어요. 부산으로 갈게요.", 1],
+      ["부산은 맑아요.", 3],
+    ]);
+    expect(items.at(-1)).toMatchObject({ text: "서울 22도, 부산 24도예요." });
+  });
+
+  test("a sentence after the card stays a bubble until another call claims it", () => {
+    const first = [
+      said("user", "날씨"),
       ...calls({
         name: "computer_navigate",
         args: { url: "https://a.example" },
         result: { ok: true },
       }),
       said("assistant", "첫 페이지를 봤어요. 다음으로 갈게요."),
+    ];
+    // Until the next call it may be the answer, and the answer is a bubble.
+    expect(itemsOf(first).map((item) => item.kind)).toEqual([
+      "text",
+      "browse",
+      "text",
+    ]);
+    const later = itemsOf([
+      ...first,
       ...calls({
         name: "computer_navigate",
         args: { url: "https://b.example" },
         result: { ok: true },
       }),
     ]);
+    expect(later.map((item) => item.kind)).toEqual(["text", "browse"]);
+    // And the card is the same card: its identity, its key and its place do not move.
+    expect(later[1]?.id).toBe(itemsOf(first)[1]?.id);
+  });
+
+  test("the person's next message is a new turn, and a new card", () => {
+    const items = itemsOf([
+      said("user", "예스24에서 소년이 온다 찾아줘"),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://yes24.com" },
+        result: { ok: true },
+      }),
+      said("assistant", "찾았어요."),
+      said("user", "가격도 봐 줘"),
+      ...calls({ name: "computer_read", result: { ok: true } }),
+    ]);
     expect(items.map((item) => item.kind)).toEqual([
+      "text",
       "browse",
+      "text",
       "text",
       "browse",
     ]);
+    const second = items[4];
+    expect(second?.kind === "browse" ? second.asked : null).toBe(
+      "가격도 봐 줘",
+    );
   });
 
   test("a request for a person is a card of its own and ends the task before it", () => {
@@ -177,8 +255,32 @@ describe("which task is still open", () => {
     expect(openBrowsingTask(browsing(), false)).toBeNull();
   });
 
-  test("anything after it means the Bot moved on", () => {
-    const items = [...browsing(), ...itemsOf([said("assistant", "맑아요")])];
+  test("the Bot's own words after it keep it open, so the banner does not blink at every line", () => {
+    const items = itemsOf([
+      said("user", "날씨"),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://weather.example" },
+        result: { ok: true },
+      }),
+      said("assistant", "읽어 볼게요"),
+    ]);
+    expect(openBrowsingTask(items, true)?.kind).toBe("browse");
+    expect(openBrowsingTask(items, false)).toBeNull();
+  });
+
+  test("a request for a person after it means the Bot moved on", () => {
+    const items = itemsOf([
+      said("user", "로그인해서 봐 줘"),
+      ...calls(
+        {
+          name: "computer_navigate",
+          args: { url: "https://nid.naver.com/login" },
+          result: { ok: true },
+        },
+        { name: "computer_request_help", args: { reason: "로그인해 주세요" } },
+      ),
+    ]);
     expect(openBrowsingTask(items, true)).toBeNull();
   });
 });

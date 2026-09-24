@@ -110,6 +110,7 @@ describe("a browsing card", () => {
             kind: "browse",
             id: "task-fine",
             steps: [step("call-1", "https://weather.naver.com/")],
+            notes: [],
           }}
         />
         <BrowsingCard
@@ -120,6 +121,7 @@ describe("a browsing card", () => {
             kind: "browse",
             id: "task-broken",
             steps: [brokenStep("call-2")],
+            notes: [],
           }}
         />
       </div>,

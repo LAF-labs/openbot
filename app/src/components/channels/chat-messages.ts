@@ -23,7 +23,15 @@ export type VisibleChatItem =
     };
 
 /**
- * A browsing task: calls to the Bot's browser in a row, drawn as one card (`browsing-card.tsx`).
+ * Something the Bot said while it was in the middle of a browsing task, kept inside the task's card.
+ *
+ * `after` is how many of the task's steps came before it, so the card's list of what it did can put
+ * the sentence back where it was said.
+ */
+export type BrowsingNote = { id: string; text: string; after: number };
+
+/**
+ * A browsing task: the browser calls of one turn, drawn as one card (`browsing-card.tsx`).
  *
  * `id` is the first call's, so the card keeps its identity — and its React key, and its place in the
  * scroller — while the task grows under it.
@@ -32,22 +40,44 @@ export type BrowsingItem = {
   kind: "browse";
   id: string;
   steps: BrowsingStep[];
+  /** What the Bot said between the steps, in order. The card's head shows the newest. */
+  notes: BrowsingNote[];
+  /** The person's words that started this turn: what the card's title says the task was for. */
+  asked?: string;
 };
 
 /** What the transcript draws, in order: said things, other tool calls, and browsing tasks. */
 export type TranscriptItem = VisibleChatItem | BrowsingItem;
 
 /**
- * Browser calls in a row, folded into one task.
+ * A turn's browser calls, folded into one task.
  *
- * A row is broken by anything else the transcript draws: a sentence from either side, a file saved,
- * a request for a person. What the Bot said between two stretches of browsing is the seam between
- * two things it did, and each gets its own card with its own last picture.
+ * MEASURED ON 2026-09-24 (UI/UX audit, item 1): one "바로구매" on 예스24 left TEN cards in the
+ * conversation, with ten lines of the Bot talking to itself between them, and the answer two screens
+ * further down. The rule was that anything drawn between two calls split them, and the model this
+ * deployment runs says a line before nearly every call — so a card was one or two calls long, and a
+ * task that went well looked like a pile of attempts.
+ *
+ * So what the Bot says between two stretches of browsing in the same turn goes INTO the card, as a
+ * line of what it did, and the card keeps growing. What it said before its first call ("찾아볼게요")
+ * and after its last (the answer) stay in the conversation as bubbles, because those are the two
+ * things a person reads. A sentence after the card is a bubble until another call arrives, since
+ * until then it may be the answer.
+ *
+ * Still broken by the things that are not the Bot talking: the person's next message (a new turn),
+ * a request for a person (a card of its own, which ends the task in front of it — see `browsing.ts`),
+ * or any other drawn tool, which did something in between that is not browsing and would be hidden
+ * inside a browser's card.
  */
 export function withBrowsingTasks(
   items: readonly VisibleChatItem[],
 ): TranscriptItem[] {
   const out: TranscriptItem[] = [];
+  /** The task this turn is still adding to, if nothing but the Bot's words has come after it. */
+  let task: BrowsingItem | null = null;
+  /** The Bot's sentences since that task's last step, drawn as bubbles until a call claims them. */
+  let trailing: Extract<VisibleChatItem, { kind: "text" }>[] = [];
+  let asked: string | undefined;
   for (const item of items) {
     if (
       item.kind === "tool" &&
@@ -59,32 +89,64 @@ export function withBrowsingTasks(
         args: item.toolCall.function.arguments,
         ...(item.result === undefined ? {} : { result: item.result }),
       };
-      const last = out.at(-1);
-      if (last?.kind === "browse") {
-        last.steps.push(step);
+      if (task) {
+        // The sentences were the last things pushed, so they come off the end in one cut.
+        out.length -= trailing.length;
+        for (const said of trailing) {
+          task.notes.push({
+            id: said.id,
+            text: said.text,
+            after: task.steps.length,
+          });
+        }
+        trailing = [];
+        task.steps.push(step);
       } else {
-        out.push({ kind: "browse", id: step.id, steps: [step] });
+        task = {
+          kind: "browse",
+          id: step.id,
+          steps: [step],
+          notes: [],
+          ...(asked ? { asked } : {}),
+        };
+        out.push(task);
       }
       continue;
     }
+    if (task && item.kind === "text" && item.role === "assistant") {
+      trailing.push(item);
+      out.push(item);
+      continue;
+    }
+    if (item.kind === "text" && item.role === "user") asked = item.text;
+    task = null;
+    trailing = [];
     out.push(item);
   }
   return out;
 }
 
 /**
- * The task still being done: the last thing in the transcript, while a turn is running.
+ * The task still being done, while a turn is running: the last card, when nothing but the Bot's own
+ * words has come after it.
  *
- * Anything drawn after it — a sentence, a request for help — means the Bot has moved on, and a turn
- * that is over has no task open whatever it ended on.
+ * Those words may be the answer or may be the next line of the task (`withBrowsingTasks`), and until
+ * the turn is over nothing says which — so the card stays open through them rather than closing and
+ * opening again at every sentence, which blinked the banner and the header's mark with each one.
+ * Anything else after it — a request for help, the person's next message — means the Bot has moved
+ * on, and a turn that is over has no task open whatever it ended on.
  */
 export function openBrowsingTask(
   items: readonly TranscriptItem[],
   busy: boolean,
 ): BrowsingItem | null {
   if (!busy) return null;
-  const last = items.at(-1);
-  return last?.kind === "browse" ? last : null;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind === "browse") return item;
+    if (item?.kind !== "text" || item.role !== "assistant") return null;
+  }
+  return null;
 }
 
 /** A tool result, as it arrives, its own message, pointing back at the call it answers. */
