@@ -247,8 +247,14 @@ export function LiveView({ botId }: { botId: string }) {
           </span>
         ) : null}
         {problem ? (
-          <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted p-4 text-center text-sm">
-            <span className="text-muted-foreground">
+          /*
+           * LIGHT WORDS, BECAUSE THE FRAME IS BLACK IN BOTH THEMES. This was `bg-muted` with
+           * `text-muted-foreground`, and in the light theme those are a 9% grey veil and 60%
+           * near-black: measured rgba(20,20,20,.6) over the black frame, a sentence nobody could
+           * read above the one button that would have fixed it.
+           */
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-sm">
+            <span className="text-pretty text-white/80">
               {screenProblemText(problem)}
             </span>
             <Button

@@ -248,6 +248,20 @@ describe("what the switch starts", () => {
     expect(sites).toContain("handleRetryCheck");
     expect(ko["The browser's state could not be read."]).toContain("다시 확인");
   });
+
+  test("a switch that could not reach the browser offers to be pressed again", () => {
+    /*
+     * The 0.5.3 audit (item 15): "봇의 브라우저에 닿지 못했습니다." and nothing else, under a switch
+     * that had already gone back off. Measured 2026-09-24 with the computer stopped and started
+     * again: the row now carries 다시 켜기, and pressing it opened the login page.
+     */
+    const sites = read("components/connections/site-rows.tsx");
+    expect(sites).toContain('opened.kind === "unreachable"');
+    expect(sites).toContain('t("Turn it on again")');
+    expect(ko["Turn it on again"]).toBe("다시 켜기");
+    // Not for an address the Bot may not open: pressing again would only be refused again.
+    expect(sites).not.toMatch(/kind === "refused"\) setRetryable/);
+  });
 });
 
 describe("what the screen is allowed to say", () => {

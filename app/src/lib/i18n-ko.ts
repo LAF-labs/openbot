@@ -2505,4 +2505,7 @@ export const ko: Record<string, string> = {
     "자주 시키는 일을 이름 붙여 저장해 두는 곳이에요. 대화창에 /와 이름(예: /리뷰답장)을 치면 적어 둔 대로 봇이 해요.",
   "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.":
     "아직 저장한 일이 없어요. 새 리뷰에 정중한 답글 쓰기처럼 자주 시키는 일을 저장해 보세요.",
+
+  // 0.5.3 B — 봇의 컴퓨터: 넘겨받기와 실시간 화면, 사이트 연결.
+  "Turn it on again": "다시 켜기",
 };

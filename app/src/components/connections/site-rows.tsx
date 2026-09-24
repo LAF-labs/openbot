@@ -96,6 +96,16 @@ export const SiteRows = ({
   const [notes, setNotes] = useState<Record<string, string | null>>({});
   /** The site whose check could not be read, so the retry knows what to ask about again. */
   const [unread, setUnread] = useState<string | null>(null);
+  /**
+   * The site whose switch did not get as far as the login page, for a reason pressing it again can
+   * fix: the browser did not answer, or the wheel was not handed over.
+   *
+   * The row used to say "봇의 브라우저에 닿지 못했습니다." and stop there, with the switch already
+   * back off — nothing on it said the next thing to do was to press that same switch again. Not
+   * offered for a refused address or one waiting on somebody's permission: pressing again would
+   * only be refused again.
+   */
+  const [retryable, setRetryable] = useState<string | null>(null);
 
   const bot = bots.find((one) => one.id === chosenBotId) ?? bots[0];
   const byId = new Map(sites.map((site) => [site.id, site]));
@@ -119,10 +129,12 @@ export const SiteRows = ({
       if (!bot) return;
       say(site.id, null);
       setUnread(null);
+      setRetryable(null);
       setOpening(site.id);
       const opened = await openSite(bot.id, site.loginUrl);
       if (!opened.ok) {
         say(site.id, refusalText(opened));
+        if (opened.kind === "unreachable") setRetryable(site.id);
         setOpening(null);
         return;
       }
@@ -138,6 +150,7 @@ export const SiteRows = ({
           site.id,
           t("The browser could not be handed over. Please try again."),
         );
+        setRetryable(site.id);
         setOpening(null);
         return;
       }
@@ -324,13 +337,24 @@ export const SiteRows = ({
             >
               {unread === site.id ? (
                 <Button
-                  className="mt-2"
+                  className="mt-2 self-start"
                   onClick={() => void handleRetryCheck(site)}
                   size="sm"
                   type="button"
                   variant="outline"
                 >
                   {t("Check again")}
+                </Button>
+              ) : null}
+              {retryable === site.id && opening !== site.id ? (
+                <Button
+                  className="mt-2 self-start"
+                  onClick={() => void handleOpen(site)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {t("Turn it on again")}
                 </Button>
               ) : null}
             </ConnectionRow>
