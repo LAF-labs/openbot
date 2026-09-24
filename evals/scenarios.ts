@@ -576,15 +576,13 @@ export const SCENARIOS: Scenario[] = [
     ],
     tools: [...REALISTIC_TOOLSET],
     check: (turn) => {
-      const looked = turn.calls.some(
-        (call) => call.name === "tool_search" || call.name === "tool_describe",
-      );
+      const looked = turn.calls.some((call) => call.name === "tool_search");
       const send = turn.calls.find(
         (call) => call.name === "mcp__gmail__send_message",
       );
       return verdict([
         [
-          "다리(tool_search/tool_describe)를 거치지 않음 — 스키마에 없는 이름을 지어냈거나 아예 찾지 않았다",
+          "다리(tool_search)를 거치지 않음 — 스키마에 없는 이름을 지어냈거나 아예 찾지 않았다",
           looked,
         ],
         [

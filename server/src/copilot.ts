@@ -21,6 +21,7 @@ import {
 } from "../../shared/prompt";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import type { ShopProfile } from "../../shared/shop/catalogue";
+import { isDeferredToolName } from "../../shared/tools/bridge";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "./audit";
@@ -209,9 +210,12 @@ function composeInputOf(
     timeZone: string;
     notepad?: readonly RoutineNote[];
     person?: PromptPerson;
+    /** Every tool the run was handed; the deferred ones are named in the context layer. */
+    toolNames?: readonly string[];
   },
 ): ComposePromptInput {
   return {
+    ...(options.toolNames ? { toolNames: options.toolNames } : {}),
     mode: options.mode,
     now: options.now,
     timeZone: options.timeZone,
@@ -228,9 +232,14 @@ function composeInputOf(
 }
 
 /**
- * The tool list a run carries, as a fingerprint: by name, so the order the surface registered in
- * does not count — `agent-bot` sorts before sending (`deferral.ts`). A list that changes is a
- * different head of the prompt, so it is a new epoch.
+ * The tool list the MODEL is offered, as a fingerprint: by name, so the order the surface
+ * registered in does not count — `agent-bot` sorts before sending (`deferral.ts`). A list that
+ * changes is a different head of the prompt, so it is a new epoch.
+ *
+ * ONLY THE CORE TOOLS COUNT. What sits behind the bridge — a connected service's tools, the cards
+ * a Bot is allowed — is not on the list the model is sent (`shared/tools/bridge.ts`); it is named
+ * in the context layer and a change to it arrives as a reminder. Counting it here would open a new
+ * epoch, and re-bill the conversation, every time a person connected a service.
  */
 export function toolsFingerprint(
   tools:
@@ -242,6 +251,7 @@ export function toolsFingerprint(
     | undefined,
 ): string {
   const sorted = [...(tools ?? [])]
+    .filter((tool) => !isDeferredToolName(tool.name))
     .map((tool) => [tool.name, tool.description ?? "", tool.parameters ?? null])
     .sort(([a], [b]) =>
       String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0,
@@ -604,6 +614,7 @@ function remoteAgentWithPrompt(
        * through their own session (`account/whereabouts.ts`), like the shop.
        */
       person: { ...agent.profile.person, ...deviceOf(forwarded) },
+      toolNames: (input.tools ?? []).map((tool) => tool.name),
     });
     const facts = contextFactsFor(composing);
     const notepad = notepadLayerText(mode, composing.notepad);

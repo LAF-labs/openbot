@@ -1,38 +1,43 @@
 import {
   previewOf,
   spillPath,
-  TOOL_RESULT_PREVIEW,
+  TOOL_RESULT_CUT,
 } from "../../../shared/spillover";
 import { log } from "../log";
 import type { WriteFileInput, WriteFileResult } from "./schema";
 
 /**
- * Filing a long tool result on the Bot's computer, so the model is shown a preview instead.
+ * Cutting a long tool result once, where the server first sees it, and filing the whole of it on
+ * the Bot's computer.
  *
- * THE NARROW INTERNAL WRITE. It reaches the computer's file API directly, as the Bot, and never
+ * THE CUT IS A PURE FUNCTION OF THE RESULT (agent-harness-design row 8). What the model is shown
+ * for a result is decided by its length alone — whole at or under `TOOL_RESULT_CUT`, the head and
+ * the path over it — on the first run that carries it and on every run after, so a result is
+ * final when produced and the conversation behind it stays byte for byte what the provider cached.
+ * It used to be whole on the first run and a 1,500-character preview from the next, which rewrote
+ * every long result one step after the provider had cached it: a ten-step browsing question read
+ * 54% of its prompt from cache (eval:cache, 2026-09-25).
+ *
+ * THE NARROW INTERNAL WRITE. The whole is filed on the computer directly, as the Bot, and never
  * through the gateway: this is not the Bot acting, it is the runtime keeping what the Bot was
  * already handed, and a policy question or an audit row saying "the Bot wrote a file" would be a
  * lie about who did what. It writes to one directory (`.results/`), to a name made from the tool
- * call's id, and nothing else — reading the file back is `computer_read_file`, which IS governed,
- * so a deployment that restricts what a Bot may read restricts this too.
+ * call's id, and nothing else — reading the file back is `computer_read_file`, which IS governed.
  *
  * NOTHING TYPED REACHES THIS. A tool result is what the computer said back — a page's text, a
  * listing, an approval — and the results of typing carry no value by construction (`TypeInput`
  * is fingerprinted, `WriteFileResult` echoes no contents). The same rule as the audit trail and
  * the demonstration recorder: record that a thing happened and where, never what somebody typed.
  *
- * WHOLE THE FIRST TIME, A PREVIEW FROM THEN ON. The run that receives a result is the run that
- * needs it — the model just asked for that page — so it is forwarded whole while the write starts
- * in the background. Every later run resends the same result and only has to recognise it, and
- * that is where the preview and the path go. The write is in the background because AG-UI
- * middleware answers synchronously with an observable, and a preview that names a file the
- * computer has not yet confirmed would be a promise the model cannot cash: the preview is only
- * ever shown once the write has come back, and a failed write leaves the result whole.
+ * The write is in the background because AG-UI middleware answers synchronously with an
+ * observable; it lands in milliseconds, long before a model has read the preview and asked for the
+ * file. A failed write is logged and tried again the next time the result is seen — the preview
+ * does not change on its account, because a preview that depended on the write would be a result
+ * rewritten under the cache.
  *
  * IN-PROCESS STATE, ON PURPOSE. What is on file is remembered here rather than asked of the
- * computer on every run (a `list` per tool message per run would cost more than the tokens it
- * saves). One server process per VM, see docs/laf/deployment-model.md; a restart forgets and
- * refiles once, which is idempotent.
+ * computer on every run. One server process per VM, see docs/laf/deployment-model.md; a restart
+ * forgets and refiles once, which is idempotent.
  */
 
 /** The one method this needs of the computer client, so a test can hand in a recorder. */
@@ -44,8 +49,8 @@ export type ResultFiler = {
 
 export type ResultSpill = {
   /**
-   * What the endpoint is shown for one tool result: the text itself while it is short or not yet
-   * on file, the preview and the path once it is.
+   * What the endpoint is shown for one tool result: the text itself while it is within the bound,
+   * the head and the path when it is over — the same answer every time it is asked.
    */
   forModel(botId: string, toolCallId: string, text: string): string;
   /** Resolves once every write started so far has landed or failed. For tests and shutdown. */
@@ -96,15 +101,16 @@ export function createResultSpill(
 
   return {
     forModel(botId, toolCallId, text) {
-      if (text.length <= TOOL_RESULT_PREVIEW) return text;
+      if (text.length <= TOOL_RESULT_CUT) return text;
       const path = spillPath(toolCallId);
       const key = `${botId}\n${path}`;
-      if (onFile.has(key)) return previewOf(text, path);
       const lastFailure = failedAt.get(key);
       const coolingDown =
         lastFailure !== undefined && Date.now() - lastFailure < RETRY_AFTER_MS;
-      if (!inFlight.has(key) && !coolingDown) file(key, botId, path, text);
-      return text;
+      if (!onFile.has(key) && !inFlight.has(key) && !coolingDown) {
+        file(key, botId, path, text);
+      }
+      return previewOf(text, path);
     },
 
     async settled() {

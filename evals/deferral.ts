@@ -28,7 +28,7 @@ import { listTools as driveTools } from "../server/src/plugins/google-drive-rest
 import { listTools as sheetsTools } from "../server/src/plugins/google-sheets-rest";
 import type { McpTool } from "../server/src/plugins/mcp";
 import { toolNameFor } from "../server/src/plugins/store";
-import type { WireTool } from "../shared/tools/bridge";
+import { BRIDGE_TOOLS, type WireTool } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { SELF_TOOLS } from "../shared/tools/self";
 
@@ -84,9 +84,9 @@ export type SchemaMeasure = {
   deferred: number;
   /** Bytes of tool schema on the wire to the model, bridge off. */
   bytes: number;
-  /** The same, bridge on: core tools plus the three bridge tools. */
+  /** The same, bridge on: core tools plus the two bridge tools. */
   bytesDeferred: number;
-  /** What the three bridge tools themselves cost, in bytes. */
+  /** What the two bridge tools themselves cost, in bytes. */
   bytesBridge: number;
   /**
    * The same two, in characters.
@@ -113,7 +113,7 @@ export function measureSchema(tools: readonly WireTool[]): SchemaMeasure {
     deferred: on.deferred.length,
     bytes: schemaBytesOf(off.provider),
     bytesDeferred,
-    bytesBridge: bytesDeferred - schemaBytesOf(on.withoutBridge),
+    bytesBridge: schemaBytesOf(BRIDGE_TOOLS),
     chars: charsOf(off.provider),
     charsDeferred: charsOf(on.provider),
   };
@@ -160,7 +160,7 @@ export async function schemaTable(): Promise<string[]> {
     `  ${"chars".padEnd(14)}${n(schema.chars).padStart(16)}${n(schema.charsDeferred).padStart(14)}${savingOf(schema.chars, schema.charsDeferred).padStart(12)}`,
     `  ${"tools".padEnd(14)}${String(schema.tools).padStart(16)}${`${schema.tools - schema.deferred} + 3`.padStart(14)}${`${schema.deferred} behind`.padStart(12)}`,
     "",
-    `  the three bridge tools themselves: ${n(schema.bytesBridge)} B`,
+    `  the two bridge tools themselves: ${n(schema.bytesBridge)} B`,
     "  prompt tokens per scenario, with and without: `bun run eval:model` (the model half needs a key)",
   );
   return lines;

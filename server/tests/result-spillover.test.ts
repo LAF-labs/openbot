@@ -1,20 +1,21 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { HttpAgent } from "@ag-ui/client";
-import { spillLine, TOOL_RESULT_PREVIEW } from "../../shared/spillover";
+import { spillLine, TOOL_RESULT_CUT } from "../../shared/spillover";
 import type { WriteFileInput } from "../src/computer/schema";
 import { createResultSpill } from "../src/computer/spillover";
 import { buildAgents } from "../src/copilot";
 
 /**
- * A long tool result goes on file, and the model is shown a preview and the path.
+ * A tool result over the bound is cut once, where it is first seen, and goes on file whole.
  *
  * Two things are measured: what the computer was actually asked to write (the whole text, once,
- * under `.results/`, as the Bot), and what the endpoint is actually sent on the wire on the run
- * after — driven through the agent's own fetch, the way the effort test is, because the request
- * that leaves is what matters and the middleware is free to be renamed.
+ * under `.results/`, as the Bot), and what the endpoint is actually sent on the wire — on the run
+ * that received the result and on the run after, which must be the same bytes — driven through the
+ * agent's own fetch, because the request that leaves is what matters.
  */
 
-const PAGE = "가".repeat(6_000);
+/** A file read over the bound. A page's text (6,000) is well within it. */
+const PAGE = "가".repeat(25_000);
 
 function recorder(fail = false) {
   const writes: Array<WriteFileInput & { botId: string }> = [];
@@ -35,32 +36,39 @@ function recorder(fail = false) {
 }
 
 describe("filing a long tool result", () => {
-  test("leaves a short result alone and writes nothing", async () => {
+  test("leaves a result within the bound alone, a whole page included, and writes nothing", async () => {
     const { writes, client } = recorder();
     const spill = createResultSpill(client);
-    const short = "가".repeat(TOOL_RESULT_PREVIEW);
-    expect(spill.forModel("bot-1", "call_1", short)).toBe(short);
+    const page = "가".repeat(6_000);
+    const bound = "가".repeat(TOOL_RESULT_CUT);
+    expect(spill.forModel("bot-1", "call_1", page)).toBe(page);
+    expect(spill.forModel("bot-1", "call_2", bound)).toBe(bound);
     await spill.settled();
     expect(writes).toEqual([]);
   });
 
-  test("shows the whole the first time, files it once, then shows the preview", async () => {
+  /**
+   * FINAL WHEN PRODUCED. The first run that carries a long result is shown exactly what every
+   * later run is shown — it used to be the whole on the first and a preview from the next, which
+   * rewrote the result one step after the provider cached it.
+   */
+  test("cuts a long result the first time it is seen, the same way every time, and files it once", async () => {
     const { writes, client } = recorder();
     const spill = createResultSpill(client);
 
-    // The run that received the result is the run that needs it.
-    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(PAGE);
+    const first = spill.forModel("bot-1", "call_1", PAGE);
+    expect(first.startsWith("가".repeat(TOOL_RESULT_CUT))).toBe(true);
+    expect(first.endsWith(spillLine(".results/call_1.txt", PAGE.length))).toBe(
+      true,
+    );
     await spill.settled();
     expect(writes).toEqual([
       { botId: "bot-1", path: ".results/call_1.txt", contents: PAGE },
     ]);
 
-    // Every run after resends the same result; it is recognised, not refiled.
-    const shown = spill.forModel("bot-1", "call_1", PAGE);
-    expect(shown.startsWith("가".repeat(TOOL_RESULT_PREVIEW))).toBe(true);
-    expect(shown.endsWith(spillLine(".results/call_1.txt"))).toBe(true);
-    expect(shown.length).toBeLessThan(TOOL_RESULT_PREVIEW + 100);
-    spill.forModel("bot-1", "call_1", PAGE);
+    // Every run after resends the same result: the same bytes, and nothing refiled.
+    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(first);
+    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(first);
     await spill.settled();
     expect(writes).toHaveLength(1);
   });
@@ -75,20 +83,21 @@ describe("filing a long tool result", () => {
   });
 
   /**
-   * A preview names a file. If the file is not there the preview is a promise the model cannot
-   * cash — it reads "there is no file at .results/…" and has lost the page as well. So a failed
-   * write leaves the result whole, and says so in the log an operator reads.
+   * A failed write does not change what the model is shown: a cut that depended on the write would
+   * be a result rewritten under the cache the moment the computer came back. It is said in the log
+   * an operator reads, and tried again later.
    */
-  test("never shows a preview for a file the computer did not confirm", async () => {
+  test("a failed write is logged, and the result is shown the same way regardless", async () => {
     const { client } = recorder(true);
     const logged: string[] = [];
     const spill = createResultSpill(client, {
       log: (line) => logged.push(line),
     });
 
-    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(PAGE);
+    const first = spill.forModel("bot-1", "call_1", PAGE);
     await spill.settled();
-    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(PAGE);
+    expect(spill.forModel("bot-1", "call_1", PAGE)).toBe(first);
+    expect(first.length).toBeLessThan(PAGE.length);
     expect(logged).toHaveLength(1);
     expect(logged[0]).toContain(".results/call_1.txt");
     // The failure is named, the page is not: a log line is not a place for page text.
@@ -171,12 +180,14 @@ describe("what a remote Bot is sent about a filed result", () => {
     }>;
   }
 
-  test("forwards the whole result on the run that received it, then the preview", async () => {
+  test("sends the same cut result on the run that received it and on every run after", async () => {
     const { writes, client } = recorder();
     const spill = createResultSpill(client);
 
     const first = await messagesSentBy(spill);
-    expect(first.find((m) => m.toolCallId === "call_1")?.content).toBe(PAGE);
+    const sent = first.find((m) => m.toolCallId === "call_1")?.content ?? "";
+    expect(sent.startsWith("가".repeat(TOOL_RESULT_CUT))).toBe(true);
+    expect(sent).toContain(".results/call_1.txt");
     await spill.settled();
     // Filed as this Bot, from the middleware, with nothing else asked of the computer.
     expect(writes).toEqual([
@@ -184,10 +195,7 @@ describe("what a remote Bot is sent about a filed result", () => {
     ]);
 
     const again = await messagesSentBy(spill);
-    const filed = again.find((m) => m.toolCallId === "call_1")?.content ?? "";
-    expect(filed.startsWith("가".repeat(TOOL_RESULT_PREVIEW))).toBe(true);
-    expect(filed).toContain('computer_read_file(".results/call_1.txt")');
-    expect(filed.length).toBeLessThan(TOOL_RESULT_PREVIEW + 100);
+    expect(again.find((m) => m.toolCallId === "call_1")?.content).toBe(sent);
     // The short one beside it is untouched, on both runs.
     expect(again.find((m) => m.toolCallId === "call_2")?.content).toBe("짧다");
     // And the prompt still comes first: the spill changes tool messages and nothing else.

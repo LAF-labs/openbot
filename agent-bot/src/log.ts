@@ -27,6 +27,24 @@ export function runErrorCodeOf(error: unknown): string {
   return "laf:model_failed";
 }
 
+/**
+ * Whether a request that failed before a byte arrived is worth sending once more, now.
+ *
+ * A server error or a dropped connection, yes: the next attempt is usually answered. A 429 never —
+ * a provider refusing wants waiting, and asking again at once is how one refusal became three
+ * (CLAUDE.md, "Failures are not all the same failure"). Anything else with a status is a request
+ * the provider will refuse the same way again. The OpenAI SDK used to decide this on its own,
+ * twice, silently (`./provider`).
+ */
+export function isRetryable(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status === undefined) {
+    const name = error instanceof Error ? error.name : "";
+    return name === "APIConnectionError";
+  }
+  return status === 408 || (status >= 500 && status <= 599);
+}
+
 /** The HTTP status a provider's error carries, whatever client shape it arrived in. */
 export function statusOf(error: unknown): number | undefined {
   const status =

@@ -140,7 +140,6 @@ describe("a routine reaching Gmail through the bridge", () => {
       "computer_navigate",
       "now",
       "tool_call",
-      "tool_describe",
       "tool_search",
     ]);
 

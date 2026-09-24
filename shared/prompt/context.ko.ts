@@ -64,6 +64,11 @@ export type ContextFacts = {
   memories: string[];
   /** 스킬 목록(`skill-index.ts`). 없으면 빈 글. */
   skills: string;
+  /**
+   * 다리 뒤의 도구들, 이름만(`deferredToolsText`). 없으면 빈 글. 툴 목록이 아니라 여기 있는 것은
+   * 서비스를 연결해도 프롬프트의 머리가 바뀌지 않게 하려는 것이다(`shared/tools/bridge.ts`).
+   */
+  tools: string;
 };
 
 /** 저장된 JSON을 사실로. 모르는 칸은 빈 값이다 — 알림이 한 번 더 나갈 뿐 틀리지는 않는다. */
@@ -87,6 +92,7 @@ export function knownFacts(value: unknown): ContextFacts {
       ? row.memories.filter((item): item is string => typeof item === "string")
       : [],
     skills: text("skills"),
+    tools: text("tools"),
   };
 }
 
@@ -130,6 +136,7 @@ export function contextLayerText(
     clockText(facts),
     memoriesText(facts.memories),
     facts.skills,
+    facts.tools,
     notepad,
   ]
     .filter(Boolean)
@@ -194,6 +201,13 @@ export function reminderLines(
       current.skills
         ? `받은 스킬이 바뀌었다. ${current.skills}`
         : "받은 스킬이 이제 없다.",
+    );
+  }
+  if (current.tools !== known.tools) {
+    lines.push(
+      current.tools
+        ? `쓸 수 있는 도구가 바뀌었다. ${current.tools}`
+        : "목록 밖의 도구는 이제 없다. tool_search로 찾을 것도 없다.",
     );
   }
   const before = new Set(known.memories.map(flat));
@@ -263,6 +277,8 @@ export type ContextFactsInput = {
   place: string;
   memories?: readonly string[];
   skills: string;
+  /** 다리 뒤의 도구들, 그려진 글로. 없으면 빈 글. */
+  tools?: string;
   person?: PromptPerson;
 };
 
@@ -283,5 +299,27 @@ export function contextFactsOf(input: ContextFactsInput): ContextFacts {
       .map((memory) => memory.trim())
       .filter(Boolean),
     skills: input.skills,
+    tools: input.tools ?? "",
   };
+}
+
+/**
+ * 한 요청에만 덧붙는 알림 — "이제 답하라". 요청의 맨 끝에 붙고 대화에 남지 않는다.
+ *
+ * Claude Code의 계획 모드가 툴 목록을 바꾸지 않고 알림과 툴로 모드를 바꾸는 것처럼, 봇의 마지막
+ * 한 번도 툴을 거두는 대신 이 말을 덧붙인다(`agent-bot/src/run.ts`). 툴을 거두면 프롬프트의 머리가
+ * 바뀌어 대화 전부가 캐시에서 떨어졌다. 맨 끝에 붙으니 그 앞은 한 바이트도 바뀌지 않는다.
+ */
+export const ANSWER_NOW_KO = {
+  /** 질문의 단계나 비용 한도를 다 썼을 때. */
+  budget:
+    "이 질문에 쓸 수 있는 단계나 비용을 다 썼다. 도구는 더 부르지 말고, 지금까지 찾아낸 것으로 사장님께 답해라. 다 끝내지 못한 것이 있으면 무엇이 남았는지 말해라.",
+  /** tool_search를 거듭하고도 행동하지 않았을 때. */
+  lookups:
+    "도구 찾기는 이만 한다. 찾은 도구로 지금 행동하거나, 알맞은 도구가 없으면 그 일은 지금 할 수 없다고 사장님께 말해라.",
+} as const;
+
+/** "이제 답하라"를 알림으로 감싼 글. */
+export function answerNowText(kind: keyof typeof ANSWER_NOW_KO): string {
+  return reminderBlock([ANSWER_NOW_KO[kind]]);
 }

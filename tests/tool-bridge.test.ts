@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   BRIDGE_TOOLS,
-  bridgeTools,
   DEFERRED_TOOL_PREFIX,
-  describeResultText,
+  deferredToolsText,
   exposureOf,
   familiesOf,
   isBridgeToolName,
+  isDeferredToolName,
   oneLine,
   resolveDeferred,
   SEARCH_LIMIT,
@@ -113,7 +113,7 @@ describe("what is never deferred", () => {
 
   test("the bridge itself", () => {
     for (const tool of BRIDGE_TOOLS) {
-      expect(exposureOf(tool.name)).toBe("core");
+      expect(isDeferredToolName(tool.name)).toBe(false);
       expect(isBridgeToolName(tool.name)).toBe(true);
     }
   });
@@ -150,7 +150,7 @@ describe("tool_search", () => {
     expect(first("list orders")).toBe("mcp__cafe24__list_orders");
   });
 
-  test("returns at most eight, each with a one-line description", () => {
+  test("returns at most five, each with a one-line description", () => {
     const hits = searchTools(CONNECTED, "목록 나열 읽는다 본다 시트 주문 메일");
     expect(hits.length).toBeLessThanOrEqual(SEARCH_LIMIT);
     expect(hits.length).toBeGreaterThan(0);
@@ -173,15 +173,38 @@ describe("tool_search", () => {
   });
 });
 
-describe("tool_describe", () => {
-  test("hands back the whole schema by exact name", () => {
-    const described = JSON.parse(
-      describeResultText(CONNECTED, "mcp__gmail__send_message"),
-    ) as { name: string; parameters: { properties: Record<string, unknown> } };
-    expect(described.name).toBe("mcp__gmail__send_message");
-    expect(Object.keys(described.parameters.properties)).toEqual([
+describe("what tool_search hands back", () => {
+  const schemas = (text: string) =>
+    text
+      .split("\n")
+      .slice(1)
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            name: string;
+            parameters: { properties: Record<string, unknown> };
+          },
+      );
+
+  test("the whole schema of every match, as Claude Code's ToolSearch does", () => {
+    const [found] = schemas(searchResultText(CONNECTED, "메일 보내줘"));
+    expect(found?.name).toBe("mcp__gmail__send_message");
+    expect(Object.keys(found?.parameters.properties ?? {})).toEqual([
       "to",
       "subject",
+    ]);
+  });
+
+  test("select: picks tools by the names the context layer lists", () => {
+    const found = schemas(
+      searchResultText(
+        CONNECTED,
+        "select:mcp__cafe24__read_order, mcp__gmail__send_message",
+      ),
+    );
+    expect(found.map((tool) => tool.name)).toEqual([
+      "mcp__cafe24__read_order",
+      "mcp__gmail__send_message",
     ]);
   });
 
@@ -197,9 +220,12 @@ describe("tool_describe", () => {
   });
 
   test("an unknown name is answered with the nearest names", () => {
-    const text = describeResultText(CONNECTED, "mcp__gmail__send");
-    expect(text).toContain("없다");
-    expect(text).toContain("mcp__gmail__send_message");
+    const unknown = unwrapToolCall(CONNECTED, { name: "mcp__gmail__send" });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) {
+      expect(unknown.text).toContain("없다");
+      expect(unknown.text).toContain("mcp__gmail__send_message");
+    }
   });
 });
 
@@ -266,15 +292,45 @@ describe("the words around the bridge", () => {
     expect(familiesOf(["mcp__acme-crm__list"])).toEqual(["acme-crm"]);
   });
 
-  test("tool_search's description names what is connected this run", () => {
-    const search = bridgeTools(CONNECTED).find(
-      (tool) => tool.name === "tool_search",
-    );
-    expect(search?.description).toContain(
-      "지메일, 구글 시트, 카페24, 카카오 알림톡",
-    );
-    const bare = BRIDGE_TOOLS.find((tool) => tool.name === "tool_search");
-    expect(bare?.description).toContain("연결된 서비스는 없다");
+  /*
+   * THE BRIDGE'S WORDS NEVER DEPEND ON WHAT IS CONNECTED. They used to name this run's services,
+   * so connecting one changed the tool list — the head of the prompt — and re-billed the whole
+   * conversation. What is behind the bridge is named in the context layer instead.
+   */
+  test("the two bridge tools are static: search and call, nothing about this run", () => {
+    expect(BRIDGE_TOOLS.map((tool) => tool.name)).toEqual([
+      "tool_search",
+      "tool_call",
+    ]);
+    const words = JSON.stringify(BRIDGE_TOOLS);
+    expect(words).not.toContain("지금 연결된 서비스");
+  });
+
+  test("the context layer names what is behind the bridge, by name, grouped and sorted", () => {
+    const names = [
+      "showBarChart",
+      ...CONNECTED.map((tool) => tool.name).reverse(),
+      "computer_navigate",
+      "remember",
+      "tool_search",
+    ];
+    const text = deferredToolsText(names);
+    expect(text).toBe(deferredToolsText([...names].reverse()));
+    expect(text).toContain("- 지메일: mcp__gmail__create_draft,");
+    expect(text).toContain("- 화면에 띄우는 카드: showBarChart");
+    // Core tools and the bridge are on the tool list itself, not here.
+    expect(text).not.toContain("computer_navigate");
+    expect(text).not.toContain("remember");
+    expect(text).not.toContain("- 도구");
+    expect(deferredToolsText(["computer_navigate", "now"])).toBe("");
+  });
+
+  test("a card from the gallery is deferred like a connected service", () => {
+    expect(exposureOf("showBarChart")).toBe("deferred");
+    expect(exposureOf("askChoice")).toBe("deferred");
+    expect(isDeferredToolName("skill_view")).toBe(false);
+    expect(isDeferredToolName("routine_note")).toBe(false);
+    expect(isDeferredToolName("now")).toBe(false);
   });
 
   test("a one-line description is the first sentence, bounded", () => {

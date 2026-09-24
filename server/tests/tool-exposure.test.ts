@@ -10,6 +10,7 @@ import {
   REALISTIC_TOOLSET,
 } from "../../evals/deferral";
 import {
+  BRIDGE_TOOLS,
   DEFERRED_TOOL_PREFIX,
   exposureOf,
   FAMILY_LABELS_KO,
@@ -109,17 +110,23 @@ describe("what the bridge saves on the product's whole schema", () => {
     expect(measured.bytesBridge).toBeLessThan(2_000);
   });
 
-  test("a Bot with nothing connected pays nothing for the bridge", () => {
+  /*
+   * A Bot with nothing connected carries the bridge too, and that is the point: the list is the
+   * head of the prompt, so the bridge appearing with the first connected service re-billed the
+   * whole conversation. Two static tools on every request cost less than that one miss.
+   */
+  test("a Bot with nothing connected is offered exactly what one with everything is", () => {
     const core = REALISTIC_TOOLSET.filter(
       (tool) => !isDeferredToolName(tool.name),
     );
-    const exposed = exposeTools(core, true);
-    // No bridge: the same tools, in one sorted order, plus `now`, which every run carries.
-    const carried = sortedTools([...core, NOW_TOOL]);
-    expect(exposed.provider).toEqual(carried);
-    expect(exposed.provider.some((tool) => isBridgeToolName(tool.name))).toBe(
-      false,
+    const none = exposeTools(core, true);
+    const all = exposeTools(REALISTIC_TOOLSET, true);
+    expect(JSON.stringify(none.provider)).toBe(JSON.stringify(all.provider));
+    expect(none.provider.filter((tool) => isBridgeToolName(tool.name))).toEqual(
+      sortedTools([...BRIDGE_TOOLS]),
     );
-    expect(schemaBytesOf(exposed.provider)).toBe(schemaBytesOf(carried));
+    expect(schemaBytesOf(none.provider)).toBe(
+      schemaBytesOf(sortedTools([...core, NOW_TOOL, ...BRIDGE_TOOLS])),
+    );
   });
 });

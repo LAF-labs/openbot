@@ -80,7 +80,7 @@ export function callsOf(events: StreamEvent[]): ObservedCall[] {
 /**
  * The calls the Bot service answered itself, by id, with what it said.
  *
- * A bridge lookup (`tool_search`, `tool_describe` — `shared/tools/bridge.ts`) comes back inside the
+ * A bridge lookup (`tool_search` — `shared/tools/bridge.ts`) comes back inside the
  * run as a TOOL_CALL_RESULT, and the client files it as an ordinary tool message. The harness's
  * client loop has to do the same, or it would answer a call that already has an answer.
  */

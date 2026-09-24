@@ -1,5 +1,5 @@
 /**
- * 연결된 서비스의 툴은 스키마에서 빼고, 다리 세 개로 닿게 한다.
+ * 핵심 목록 밖의 툴은 스키마에서 빼고, 다리 둘(`tool_search`, `tool_call`)로 닿게 한다.
  *
  * 봇 하나의 스키마에는 늘 서른여섯 개쯤이 실린다: 컴퓨터 툴 열넷, 자기 툴 셋, 그리고 연결된
  * 서비스마다 그 서비스의 툴 전부 — 구글 시트 넷, 지메일 넷, 캘린더 둘, 비즈니스 프로필 셋,
@@ -9,19 +9,37 @@
  * 7–23% 줄고 정확도는 그대로였다. 딱 하나 퇴보한 것이 **사람에게 묻는 툴**을 숨겼을 때였다
  * — 구조화된 질문이 산문으로 무너졌다(18/18 → 7/18). 그래서 여기서 갈리는 규칙은 하나다:
  *
- * **미뤄지는 것은 연결된 서비스의 툴뿐이다.** 컴퓨터 툴, 자기 툴, 그리고 사람에게 손을 내미는
- * 툴(`computer_request_help`, `computer_request_secret`)은 절대 미루지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
+ * **스키마에 실리는 것은 고정된 핵심 목록뿐이다** — 이 저장소의 카탈로그(`shared/tools`)에 있는
+ * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `now`, 그리고 다리 둘. 그 밖의 모든 것은 다리
+ * 뒤에 선다: 연결된 서비스의 툴(`mcp__<서버>__<툴>`), 화면 카드(갤러리), 배포가 만든 컴포넌트.
+ * 사람에게 손을 내미는 툴(`computer_request_help`, `computer_request_secret`)은 핵심 목록에 있으니
+ * 절대 미뤄지지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
  *
- * 플래그는 이름에 있다. 서버가 연결된 서비스의 툴 이름을 지을 때 `mcp__<서버>__<툴>`로 짓고
- * (`server/src/plugins/store.ts`의 `toolNameFor`, 접두사는 여기서 읽는다), AG-UI 와이어의
- * `Tool`은 이름·설명·스키마 셋뿐이라 그 접두사가 `agent-bot`까지 살아남는 유일한 표식이다.
- * 카탈로그 객체에 필드를 하나 더 두면 와이어에서 떨어져 나가 두 곳이 어긋난다.
+ * 왜 목록이 고정되는가 (Claude Code를 따른다, `~/laf/docs/agent-harness-design.md` 5행). 툴은
+ * 프롬프트의 머리다 — GLM의 템플릿은 툴을 시스템 메시지보다 앞에 그린다 — 그래서 툴 하나가 생기거나
+ * 사라지면 그 뒤의 대화 전부가 캐시에서 떨어진다. 다리는 전에는 첫 서비스가 연결될 때 나타났고,
+ * `tool_search`의 설명에 연결된 서비스 이름이 들어 있었고, 화면 카드는 봇에 허용될 때마다 목록에
+ * 들고 났다 — 셋 다 머리를 바꿨다. 이제 다리는 연결된 것이 없어도 늘 있고, 설명은 정적이다. 무엇이
+ * 다리 뒤에 있는지는 Claude Code가 미뤄 둔 툴을 알리는 방식 그대로 이름만, 맥락 층과 알림으로 간다
+ * (`deferredToolsText`, `shared/prompt/context.ko.ts`).
  *
- * 다리는 아무것도 더하지 않고 아무것도 숨기지 않는다. `tool_search`와 `tool_describe`는 봇이
- * 이미 받은 목록을 되읽는 것뿐이고, `tool_call`은 `agent-bot`이 **실제 툴 이름과 인자로 바꿔서**
- * 와이어에 싣는다 — 표면과 무인 실행기는 직접 부른 것과 구별할 수 없고, 같은 `settle`, 같은
- * 감사 행(실제 툴 이름으로), 같은 가드 바닥을 지난다. 다리 자체는 서버에 닿지 않는다.
+ * 다리는 아무것도 더하지 않고 아무것도 숨기지 않는다. `tool_search`는 봇이 이미 받은 목록을
+ * 되읽어 맞는 툴의 스키마 전부를 대화에 돌려주고(Claude Code의 ToolSearch처럼), `tool_call`은
+ * `agent-bot`이 **실제 툴 이름과 인자로 바꿔서** 와이어에 싣는다 — 표면과 무인 실행기는 직접 부른
+ * 것과 구별할 수 없고, 같은 `settle`, 같은 감사 행(실제 툴 이름으로), 같은 가드 바닥을 지난다.
+ * 다리 자체는 서버에 닿지 않는다.
+ *
+ * 채택할 오픈소스를 먼저 찾았다(2026-09-25). OpenAI의 `tool_search`/`defer_loading`은 Responses
+ * API의 서버 쪽 기능(gpt-5.4 이상)이고, OpenAI Agents SDK의 ToolSearchTool은 그것에 기댄다 —
+ * `/v1/chat/completions`로 GLM을 부르는 이 스택에는 닿지 않는다. LangGraph의 bigtool은 요청마다
+ * 툴 목록을 바꾸는 방식이라 이 파일이 막으려는 바로 그것이다. opencode의 모델 무관 툴 검색은 아직
+ * 제안(issue #49645)이다. 그래서 Hermes Agent의 다리를 따른 이 작은 구현을 유지한다.
  */
+import { COMPUTER_TOOLS } from "./computer";
+import { NOW_TOOL_NAME } from "./now";
+import { ROUTINE_NOTE } from "./routine-note";
+import { SELF_TOOLS } from "./self";
+import { SKILL_VIEW } from "./skills";
 import type { JsonSchema } from "./standard-schema";
 
 /** 스키마에 실리는가(`core`), 다리로만 닿는가(`deferred`). */
@@ -35,8 +53,22 @@ export type ToolExposure = "core" | "deferred";
  */
 export const DEFERRED_TOOL_PREFIX = "mcp__";
 
+/**
+ * 스키마에 늘 실리는 이름들 — 이 저장소의 카탈로그가 정한다.
+ *
+ * 표면이나 루틴이 무엇을 등록했든 이 목록에 없는 이름은 다리 뒤에 선다. 목록이 코드에 있으니 목록이
+ * 바뀌는 것은 배포이고, 배포는 하네스 판(`HARNESS_VERSION`)과 함께 새 에포크를 연다.
+ */
+export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...COMPUTER_TOOLS.map((tool) => tool.name),
+  ...SELF_TOOLS.map((tool) => tool.name),
+  SKILL_VIEW.name,
+  ROUTINE_NOTE.name,
+  NOW_TOOL_NAME,
+]);
+
 export function isDeferredToolName(name: string): boolean {
-  return name.startsWith(DEFERRED_TOOL_PREFIX);
+  return !CORE_TOOL_NAMES.has(name) && !isBridgeToolName(name);
 }
 
 export function exposureOf(name: string): ToolExposure {
@@ -71,7 +103,7 @@ export function splitExposure<T extends { name: string }>(
 
 /** `mcp__gmail__send_message` → `gmail`. 접두사가 없으면 null. */
 export function serverKeyOf(name: string): string | null {
-  if (!isDeferredToolName(name)) return null;
+  if (!name.startsWith(DEFERRED_TOOL_PREFIX)) return null;
   const rest = name.slice(DEFERRED_TOOL_PREFIX.length);
   const at = rest.indexOf("__");
   return at > 0 ? rest.slice(0, at) : rest || null;
@@ -79,7 +111,7 @@ export function serverKeyOf(name: string): string | null {
 
 /** `mcp__gmail__send_message` → `send_message`. 접두사가 없으면 이름 그대로. */
 export function bareNameOf(name: string): string {
-  if (!isDeferredToolName(name)) return name;
+  if (!name.startsWith(DEFERRED_TOOL_PREFIX)) return name;
   const rest = name.slice(DEFERRED_TOOL_PREFIX.length);
   const at = rest.indexOf("__");
   return at > 0 ? rest.slice(at + 2) : rest;
@@ -105,7 +137,16 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
   },
 );
 
-/** 미뤄진 툴 이름들이 속한 서비스들, 처음 나온 순서로, 한국어로. */
+/** 연결된 서비스가 아닌 것(화면 카드, 배포가 만든 컴포넌트)을 한데 부르는 이름. */
+export const SCREEN_FAMILY_KO = "화면에 띄우는 카드";
+
+/** 미뤄진 툴 하나가 속한 무리의 한국어 이름. */
+function familyOf(name: string): string {
+  const key = serverKeyOf(name);
+  return key ? (FAMILY_LABELS_KO[key] ?? key) : SCREEN_FAMILY_KO;
+}
+
+/** 미뤄진 툴 이름들이 속한 서비스들, 처음 나온 순서로, 한국어로. 화면 카드는 세지 않는다. */
 export function familiesOf(names: readonly string[]): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
@@ -118,32 +159,50 @@ export function familiesOf(names: readonly string[]): string[] {
   return labels;
 }
 
-/**
- * 이번 실행에 실제로 연결된 서비스들을 말하는 한 줄.
- *
- * `tool_search`의 설명에 실린다 — 모델이 "찾을 것이 있는가"를 판단하는 바로 그 자리. 프롬프트가
- * 아니라 툴 설명인 이유: `agent-bot`은 자기 프롬프트를 갖지 않는다는 규칙이 있고, 스키마는 그
- * 서비스의 것이다.
- */
+/** 이번 실행에 실제로 연결된 서비스들을 말하는 한 줄. 검색이 빈손일 때의 답에 쓴다. */
 export function deferredFamiliesLine(names: readonly string[]): string {
   const families = familiesOf(names);
   if (families.length === 0) return "지금 연결된 서비스는 없다.";
   return `지금 연결된 서비스: ${families.join(", ")}.`;
 }
 
+/**
+ * 다리 뒤에 무엇이 있는지, 맥락 층에 그려질 글로 — Claude Code가 미뤄 둔 툴을 알리는 방식 그대로
+ * 이름만, 무리별로, 이름순으로.
+ *
+ * 툴 목록이 아니라 맥락 층에 서는 이유: 이것은 사람이 서비스를 연결하거나 카드를 허용할 때 바뀌고,
+ * 툴 목록이 바뀌면 대화 전부가 캐시에서 떨어진다. 맥락 층은 에포크마다 얼고, 에포크 중에 바뀌면
+ * 사장님의 새 메시지 끝에 알림으로 간다(`reminderLines`). 이름순인 것은 표면이 등록한 순서가 같은
+ * 목록을 다른 글로 만들지 않게 하려는 것이다. 없으면 빈 글 — 층에 줄을 세우지 않는다.
+ */
+export function deferredToolsText(names: readonly string[]): string {
+  const deferred = [...new Set(names.filter(isDeferredToolName))].sort();
+  if (deferred.length === 0) return "";
+  const groups = new Map<string, string[]>();
+  for (const name of deferred) {
+    const family = familyOf(name);
+    groups.set(family, [...(groups.get(family) ?? []), name]);
+  }
+  return [
+    `목록에 없는 도구도 쓸 수 있다. 아래는 이름뿐이니, 쓰기 전에 ${TOOL_SEARCH}로 스키마를 받고 ${TOOL_CALL}로 부른다:`,
+    ...[...groups.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([family, members]) => `- ${family}: ${members.join(", ")}`),
+  ].join("\n");
+}
+
 /* ------------------------------------------------------------------------------------------ */
-/* 다리 세 개                                                                                  */
+/* 다리 둘                                                                                    */
 /* ------------------------------------------------------------------------------------------ */
 
 export const TOOL_SEARCH = "tool_search";
-export const TOOL_DESCRIBE = "tool_describe";
 export const TOOL_CALL = "tool_call";
 
-export const BRIDGE_TOOL_NAMES = [
-  TOOL_SEARCH,
-  TOOL_DESCRIBE,
-  TOOL_CALL,
-] as const;
+/**
+ * 다리는 둘이다: 찾기와 부르기. `tool_describe`가 셋째로 있었지만, Claude Code의 ToolSearch처럼
+ * 찾기가 스키마 전부를 돌려주면 따로 볼 일이 없다 — 한 라운드와 매 턴의 툴 하나가 준다.
+ */
+export const BRIDGE_TOOL_NAMES = [TOOL_SEARCH, TOOL_CALL] as const;
 export type BridgeToolName = (typeof BRIDGE_TOOL_NAMES)[number];
 
 export function isBridgeToolName(name: string): name is BridgeToolName {
@@ -161,69 +220,51 @@ const object = (
   required: readonly string[] = [],
 ): JsonSchema => ({ type: "object", properties, required });
 
-/** 한 번에 돌려주는 최대 개수. 여덟이면 한 서비스의 툴 전부가 들어가고, 그 이상은 목록이다. */
-export const SEARCH_LIMIT = 8;
-
-const SEARCH_DESCRIPTION =
-  "연결된 서비스(지메일, 구글 시트, 캘린더, 카페24, 알림톡 같은 것)의 도구를 찾는다. 하려는 일을 한국어나 영어로 적으면 맞는 도구의 이름과 한 줄 설명이 돌아온다. 그 다음 tool_describe로 인자를 확인하고 tool_call로 부른다.";
+/** 한 번에 돌려주는 최대 개수. 스키마 전부가 오므로 다섯이면 한 서비스의 쓸 만한 것은 다 온다. */
+export const SEARCH_LIMIT = 5;
 
 /**
- * 다리 셋의 정의. `tool_search`의 설명에는 이번 실행에 실제로 연결된 서비스가 덧붙는다 —
- * 정적인 사본은 `BRIDGE_TOOLS`이고, 실행마다 이것을 부른다.
+ * 다리 둘의 정의 — 정적이다. 어느 봇의 어느 대화에서도 바이트까지 같다.
+ *
+ * 설명에 이번 실행에 연결된 서비스가 덧붙던 것을 뺐다: 서비스 하나를 연결하면 툴 목록의 글이
+ * 바뀌었고, 툴 목록은 프롬프트의 머리다. 무엇이 연결돼 있는지는 맥락 층이 말한다
+ * (`deferredToolsText`).
  */
-export function bridgeTools(deferred: readonly WireTool[]): BridgeTool[] {
-  return [
-    {
-      name: TOOL_SEARCH,
-      description: `${SEARCH_DESCRIPTION} ${deferredFamiliesLine(deferred.map((tool) => tool.name))}`,
-      parameters: object(
-        {
-          query: {
-            type: "string",
-            description:
-              "하려는 일. 예: '메일 보내기', '시트에 행 추가', 'list orders'",
-          },
+export const BRIDGE_TOOLS: readonly BridgeTool[] = [
+  {
+    name: TOOL_SEARCH,
+    description:
+      "목록에 없는 도구(연결된 서비스 — 지메일, 구글 시트, 캘린더, 카페24, 알림톡 같은 것 — 와 화면에 띄우는 카드)를 찾아 그 스키마 전부를 받는다. 하려는 일을 한국어나 영어로 적거나, 맥락에 적힌 이름을 'select:이름1,이름2'로 적는다. 받은 스키마대로 tool_call로 부른다.",
+    parameters: object(
+      {
+        query: {
+          type: "string",
+          description:
+            "하려는 일, 또는 select:이름. 예: '메일 보내기', '시트에 행 추가', 'select:mcp__gmail__send_message'",
         },
-        ["query"],
-      ),
-    },
-    {
-      name: TOOL_DESCRIBE,
-      description:
-        "tool_search가 알려준 도구 하나의 인자 스키마 전부를 본다. 인자가 확실하지 않을 때 tool_call 전에 부른다.",
-      parameters: object(
-        {
-          name: {
-            type: "string",
-            description: "tool_search가 돌려준 도구 이름 그대로",
-          },
+      },
+      ["query"],
+    ),
+  },
+  {
+    name: TOOL_CALL,
+    description:
+      "tool_search로 스키마를 받은 도구를 부른다. 직접 부른 것과 똑같이 실행되고, 사람의 승인이 필요한 일은 똑같이 승인을 거친다.",
+    parameters: object(
+      {
+        name: {
+          type: "string",
+          description: "부를 도구 이름. tool_search가 돌려준 이름 그대로",
         },
-        ["name"],
-      ),
-    },
-    {
-      name: TOOL_CALL,
-      description:
-        "tool_search로 찾은 도구를 부른다. 직접 부른 것과 똑같이 실행되고, 사람의 승인이 필요한 일은 똑같이 승인을 거친다.",
-      parameters: object(
-        {
-          name: {
-            type: "string",
-            description: "부를 도구 이름. tool_search가 돌려준 이름 그대로",
-          },
-          args: {
-            type: "object",
-            description: "그 도구의 인자. tool_describe가 보여준 스키마대로",
-          },
+        args: {
+          type: "object",
+          description: "그 도구의 인자. tool_search가 돌려준 스키마대로",
         },
-        ["name", "args"],
-      ),
-    },
-  ];
-}
-
-/** 연결된 서비스가 무엇인지 모른 채의 정적 정의. 카탈로그 해시와 테스트가 쓴다. */
-export const BRIDGE_TOOLS: readonly BridgeTool[] = bridgeTools([]);
+      },
+      ["name", "args"],
+    ),
+  },
+];
 
 /* ------------------------------------------------------------------------------------------ */
 /* 찾기                                                                                        */
@@ -293,6 +334,12 @@ const ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   status: ["상태"],
   상태: ["status"],
   배송: ["status", "ship"],
+  chart: ["차트", "그래프"],
+  차트: ["chart"],
+  그래프: ["chart"],
+  표: ["record", "metrics"],
+  선택지: ["choice"],
+  승인: ["approval"],
 });
 
 /** 한국어 조사. 검색어 토큰 끝에 붙은 것 하나를 뗀다 — "시트에" → "시트". 긴 것부터. */
@@ -498,45 +545,55 @@ export function resolveDeferred(
 
 const hitLine = (hit: SearchHit) => `- ${hit.name}: ${hit.description}`;
 
-/** `tool_search`의 답. 못 찾았을 때는 무엇이 연결돼 있는지를 말한다 — 지어내지 말라고. */
+/** `select:a,b` 꼴의 검색어가 고른 이름들. 그 꼴이 아니면 null. */
+function selectedNames(query: string): string[] | null {
+  const match = /^\s*select\s*:(.*)$/is.exec(query);
+  if (!match) return null;
+  return (match[1] ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/** 툴 하나의 스키마 전부, 한 줄 JSON으로. 모델이 tool_call의 인자를 쓰는 근거다. */
+function schemaLine(tool: WireTool): string {
+  return JSON.stringify({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters ?? { type: "object", properties: {} },
+  });
+}
+
+/**
+ * `tool_search`의 답: 맞는 툴의 스키마 전부 — Claude Code의 ToolSearch가 `<functions>`를 돌려주듯.
+ * 이 답은 툴 결과로 대화에 남으니, 같은 대화에서 다시 찾을 필요가 없다. 못 찾았을 때는 무엇이
+ * 연결돼 있는지를 말한다 — 지어내지 말라고.
+ */
 export function searchResultText(
   deferred: readonly WireTool[],
   query: string,
 ): string {
-  const hits = searchTools(deferred, query);
-  if (hits.length > 0) {
+  const selected = selectedNames(query);
+  const found = selected
+    ? selected
+        .map((name) => resolveDeferred(deferred, name))
+        .filter((tool): tool is WireTool => tool !== null)
+    : searchTools(deferred, query)
+        .map((hit) => deferred.find((tool) => tool.name === hit.name))
+        .filter((tool): tool is WireTool => tool !== undefined);
+  if (found.length > 0) {
     return [
-      `'${query}'에 맞는 도구 ${hits.length}개. 인자는 tool_describe로 확인하고 tool_call로 부른다.`,
-      ...hits.map(hitLine),
+      `'${query}'에 맞는 도구 ${found.length}개, 스키마 전부. 이 스키마대로 tool_call로 부른다.`,
+      ...found.map(schemaLine),
     ].join("\n");
   }
   return [
-    `'${query}'에 맞는 연결된 서비스 도구가 없다.`,
+    `'${query}'에 맞는 도구가 없다.`,
     deferredFamiliesLine(deferred.map((tool) => tool.name)),
     deferred.length > 0
-      ? "다른 말로 다시 찾아 본다. 그래도 없으면 그 일은 연결된 서비스로는 할 수 없다고 사람에게 말한다."
-      : "그 일은 연결된 서비스로는 할 수 없다고 사람에게 말한다.",
+      ? "다른 말로 다시 찾아 본다. 그래도 없으면 그 일은 지금 쓸 수 있는 도구로는 할 수 없다고 사람에게 말한다."
+      : "그 일은 지금 쓸 수 있는 도구로는 할 수 없다고 사람에게 말한다.",
   ].join("\n");
-}
-
-/** `tool_describe`의 답: 스키마 전부. 없는 이름에는 비슷한 이름을 같이 준다. */
-export function describeResultText(
-  deferred: readonly WireTool[],
-  name: string,
-): string {
-  const tool = resolveDeferred(deferred, name);
-  if (tool) {
-    return JSON.stringify(
-      {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-      null,
-      2,
-    );
-  }
-  return unknownToolText(deferred, name);
 }
 
 function unknownToolText(deferred: readonly WireTool[], name: string): string {

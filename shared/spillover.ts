@@ -1,23 +1,31 @@
 import { toolResultText } from "./prompt/tool-results.ko";
 
 /**
- * A long tool result, kept whole on the Bot's own computer and shown to the model as a preview.
+ * A tool result too long to carry whole, cut ONCE — where it is produced — and kept whole on the
+ * Bot's own computer.
  *
- * A page's readable text comes back up to 6,000 characters and the whole conversation is resent
- * on every run, so each long result is paid for again on every turn after the one that needed it.
- * The server files the whole of it under the Bot's workspace (`server/src/computer/spillover.ts`)
- * and, from the next run on, forwards the first {@link TOOL_RESULT_PREVIEW} characters and the
- * path — the model reads the rest with `computer_read_file` when it actually wants it. Hermes
- * Agent does the same at 1,500 characters; the figure is theirs.
+ * CUT AT CREATION, NEVER AGAIN (agent-harness-design row 8, Claude Code's rule: old history is
+ * never rewritten; a large output is cut when it is produced). The server used to file every result
+ * over 1,500 characters and show the model a preview "from the next run on", and agent-bot cut
+ * every result older than the newest four to 500 characters — so each step of a browsing task
+ * rewrote a result the provider had cached one step earlier. Measured on 2026-09-25: a ten-step
+ * browsing question read 54–59% of its prompt from cache after its first request. Now the cut is a
+ * pure function of the result: the same text is shown the same way on the first run and every run
+ * after, and the conversation behind it stays a prefix the provider already holds.
  *
- * In `shared/` because two services read the same line: the server writes it, and `agent-bot`
- * has to recognise it when it trims older results, so the path survives the trim.
+ * THE BOUND IS WHAT ONE STEP NEEDS WHOLE. A page's readable text is at most 6,000 characters
+ * (`agent-computer`) and a snapshot of 200 elements about 20,000; the model is working from exactly
+ * those, so they pass. What is over is a file read (up to 64,000), and for that the head the model
+ * sees is the bound itself, with the whole on file. Context pressure from many whole results is
+ * relieved at compaction, which starts an epoch (`server/src/context/compaction.ts`).
+ *
+ * In `shared/` because the words are the model's: the server writes the line, the eval reads it.
  */
 
-/** How much of a filed result the model is still shown. */
-export const TOOL_RESULT_PREVIEW = 1_500;
+/** Longer than this, a result is cut when it is first seen. */
+export const TOOL_RESULT_CUT = 20_000;
 
-/** Where the whole of a filed result lands, relative to the Bot's workspace. */
+/** Where the whole of a cut result lands, relative to the Bot's workspace. */
 export const RESULTS_DIRECTORY = ".results";
 
 /**
@@ -31,35 +39,15 @@ export function spillPath(toolCallId: string): string {
   return `${RESULTS_DIRECTORY}/${safe || "result"}.txt`;
 }
 
-/** The line that closes a preview and names the file. The model reads it, so its words are the table's. */
-export function spillLine(path: string): string {
+/** The line that closes a cut result and names the file. The model reads it, so its words are the table's. */
+export function spillLine(path: string, total: number): string {
   return toolResultText("laf:tool_result_spilled")
-    .replace("{chars}", TOOL_RESULT_PREVIEW.toLocaleString("en-US"))
+    .replace("{chars}", TOOL_RESULT_CUT.toLocaleString("en-US"))
+    .replace("{total}", total.toLocaleString("en-US"))
     .replace("{path}", path);
 }
 
-/** A filed result as the model sees it: the head, and where the whole of it is. */
+/** A cut result as the model sees it — on every request, from the first: the head, and where the whole is. */
 export function previewOf(text: string, path: string): string {
-  return `${text.slice(0, TOOL_RESULT_PREVIEW)}\n${spillLine(path)}`;
-}
-
-/** The call that names the file, wherever the table's words around it may move. */
-const SPILL_CALL = new RegExp(
-  `computer_read_file\\("${RESULTS_DIRECTORY.replace(".", "\\.")}/[^"\\n]+"\\)`,
-);
-
-/**
- * The spill line at the end of a tool result, if it carries one — so a later trim can keep it.
- *
- * The last line, tested on its own. This used to be one regex over the whole result —
- * `\n?([^\n]*computer_read_file…[^\n]*)$` — and a tool result is JSON, whose newlines are
- * escaped, so the whole result is one line and the regex retried it from every position: measured
- * at 19 ms for a 6,000-character page and 200 ms for a 20,000-character file, per older result,
- * per request. A long browsing transcript spent seconds on that before the model saw a byte, and
- * `agent-bot` now also rebuilds the requests a question has already made to count what it cost.
- * The same answer in 0.05 ms.
- */
-export function spillLineOf(text: string): string | null {
-  const last = text.slice(text.lastIndexOf("\n") + 1);
-  return SPILL_CALL.test(last) ? last : null;
+  return `${text.slice(0, TOOL_RESULT_CUT)}\n${spillLine(path, text.length)}`;
 }

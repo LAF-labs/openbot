@@ -1,5 +1,6 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
+import { answerNowText } from "../../shared/prompt/context.ko";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { nowResultText } from "../../shared/tools/now";
 import {
@@ -23,7 +24,7 @@ import {
   stepsSinceLastAsk,
   TOOL_LOOP_LIMIT,
 } from "./guards";
-import { log, runErrorCodeOf, runFailureOf } from "./log";
+import { isRetryable, log, runErrorCodeOf, runFailureOf } from "./log";
 import {
   type CompletionProvider,
   liveProvider,
@@ -82,8 +83,8 @@ const HEARTBEAT_MS = 15_000;
  * The backstop on requests per run.
  *
  * Every way back to the model inside a run is bounded on its own — four lookup rounds
- * (`MAX_BRIDGE_ROUNDS`), two recoveries (`MAX_TOOL_RECOVERIES`), one loop warning, one round with no
- * tools once the budget is spent — so a run makes nine requests at the very most, not counting the
+ * (`MAX_BRIDGE_ROUNDS`), two recoveries (`MAX_TOOL_RECOVERIES`), one loop warning, one round told to answer
+ * once the budget is spent — so a run makes nine requests at the very most, not counting the
  * one retry an empty answer gets. This is the number a later change that adds another way back
  * cannot run past, and a run that reaches it ends as the loop it is.
  */
@@ -274,10 +275,9 @@ async function runRounds(context: RunContext): Promise<void> {
   /**
    * What this run added on its own — lookups, facts, and the calls they answer — after the
    * conversation as it arrived. In the transcript's own shape rather than the provider's, so
-   * each round converts them WITH the rest (see `toProviderMessages`): a lookup's answer is a
-   * tool result like any other, weighed against the same turn budget and cut by the same rule
-   * once it ages. Kept in the provider's shape and appended after the conversion, it would
-   * have ridden past the budget uncounted.
+   * each round converts them WITH the rest (see `toProviderMessages`), in the same order and the
+   * same bytes the surface will file them in — so the run after this one sends them as a prefix
+   * the provider has already cached.
    */
   const inRun: TranscriptMessage[] = [];
   const effort = reasoningEffortOf(input, MODEL);
@@ -288,9 +288,10 @@ async function runRounds(context: RunContext): Promise<void> {
   /** Calls this run answered with `laf:tool_loop`. One warning; a second is the run's end. */
   let loopAnswers = 0;
   /**
-   * The question has cost what it may, and the model has been told. Its next request is offered
-   * no tools at all, so it can only speak — the same last turn a routine gets when its steps run
-   * out — and a call it makes anyway ends the run.
+   * The question has cost what it may, and the model has been told. Its next request carries the
+   * same tools and one more message at its very end, saying to answer now — and a call it makes
+   * anyway ends the run. It used to be offered no tools at all, which changed the head of the
+   * prompt and re-billed the whole conversation on the very request that was over budget.
    */
   let mustSpeak = false;
   /**
@@ -314,20 +315,27 @@ async function runRounds(context: RunContext): Promise<void> {
     /*
      * THE TRANSCRIPT IS CONVERTED ONCE PER ROUND, NOT ONCE PER TURN.
      *
-     * The system message it starts with carries the Bot's memory as the server snapshotted
-     * it for this run, and the tool results in it are trimmed against one budget. The retry
-     * an empty answer gets is the same round asked again, so it is sent the same transcript —
-     * converting it inside each turn would let the two attempts of one round disagree
-     * about what was cut. A new round IS a different transcript: the lookups the last one
-     * answered are in it now, counted against the budget and cut like every other result.
+     * The retry an empty answer gets is the same round asked again, so it is sent the same
+     * transcript. A new round IS a different transcript: the lookups the last one answered are
+     * in it now, appended after everything the provider already has.
+     *
+     * THE TOOLS ARE THE SAME EVERY ROUND. The last word — "answer now" once the question is spent,
+     * "act now" once the lookups are — is a reminder appended to the end of this one request
+     * (Claude Code's plan mode is a tool and a reminder, never a different tool list). It is not
+     * part of the transcript: the next run sends the conversation without it, which is the same
+     * prefix up to where it stood.
      */
     const transcript = [...input.messages, ...inRun];
-    const messages = toProviderMessages(transcript);
-    const tools = mustSpeak
-      ? undefined
-      : toProviderTools(
-          round < MAX_BRIDGE_ROUNDS ? exposed.provider : exposed.withoutBridge,
-        );
+    const nudge = mustSpeak
+      ? answerNowText("budget")
+      : round >= MAX_BRIDGE_ROUNDS
+        ? answerNowText("lookups")
+        : null;
+    const messages = [
+      ...toProviderMessages(transcript),
+      ...(nudge ? [{ role: "user" as const, content: nudge }] : []),
+    ];
+    const tools = toProviderTools(exposed.provider);
     /** Which bound, if any, the question had already met before this request was made. */
     const overBudget =
       stepsBefore + round >= MAX_QUESTION_STEPS
@@ -335,7 +343,7 @@ async function runRounds(context: RunContext): Promise<void> {
         : costBefore + costInRun >= MAX_QUESTION_COST_USD
           ? QUESTION_MAX_COST
           : null;
-    const request = () =>
+    const send = () =>
       runTurn({
         provider: context.provider,
         model: MODEL,
@@ -363,6 +371,26 @@ async function runRounds(context: RunContext): Promise<void> {
                 ? null
                 : "unknown",
       });
+    /*
+     * ONE RETRY, OURS AND SAID. A server error or a dropped connection before a byte arrived is sent
+     * once more; a 429 never is (`isRetryable`). The SDK used to do this itself, twice, silently —
+     * and on OpenRouter each silent retry was a fresh routing decision, a way off the endpoint that
+     * held the conversation's cache without anything saying so. Nothing reached the wire before the
+     * failure, so the second attempt cannot leave half an answer in front of it.
+     */
+    const request = async () => {
+      try {
+        return await send();
+      } catch (error) {
+        if (!isRetryable(error)) throw error;
+        log.warn("provider_retrying", {
+          bot: botId,
+          run: input.runId,
+          reason: runFailureOf(error),
+        });
+        return send();
+      }
+    };
     let turn = await request();
 
     /*
@@ -534,12 +562,12 @@ async function runRounds(context: RunContext): Promise<void> {
       const call = record as ToolCallRecord & { id: string; name: string };
 
       /*
-       * OFFERED NO TOOLS, AND ASKED FOR ONE ANYWAY. The model was told the question had cost what
-       * it may and given a request with no tools to answer in; some models call one out of habit.
-       * It gets the same fact, nothing runs, and the run is over — a second round with no tools
-       * would say what this one did.
+       * TOLD TO ANSWER, AND ASKED FOR A TOOL ANYWAY. The model was told the question had cost what
+       * it may, in a reminder at the end of this request; some models call one out of habit. It
+       * gets the same fact, nothing runs, and the run is over — another round would say what this
+       * one did.
        */
-      if (mustSpeak && tools === undefined) {
+      if (mustSpeak && nudge !== null) {
         const spent = spentOn ?? QUESTION_MAX_STEPS;
         answer(call, spent, call.started && !call.held);
         endsOn = spent;

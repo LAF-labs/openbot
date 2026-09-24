@@ -3,16 +3,15 @@ import { toolResultText } from "../shared/prompt/tool-results.ko";
 import {
   previewOf,
   spillLine,
-  spillLineOf,
   spillPath,
-  TOOL_RESULT_PREVIEW,
+  TOOL_RESULT_CUT,
 } from "../shared/spillover";
 
 /**
- * The line two services agree on: the server writes it under a preview, and `agent-bot` has to
- * find it again at the end of a result it is trimming, or the path is lost with the cut.
+ * The line under a cut result: the server writes it once, where the result is first seen, and the
+ * model reads it on every request after — so it must be exactly the same text each time.
  */
-describe("a filed tool result", () => {
+describe("a cut tool result", () => {
   test("is named by its tool call, in the one directory, with only safe characters", () => {
     expect(spillPath("call_abc-123")).toBe(".results/call_abc-123.txt");
     // A provider's id is not trusted to be a file name: nothing in it may mean a path.
@@ -23,30 +22,32 @@ describe("a filed tool result", () => {
     );
   });
 
-  test("the preview is the head, then the line naming the file", () => {
-    const text = "가".repeat(TOOL_RESULT_PREVIEW + 100);
+  test("shows the head up to the bound, then the line naming the file", () => {
+    const text = "가".repeat(TOOL_RESULT_CUT + 100);
     const shown = previewOf(text, ".results/call_1.txt");
-    expect(shown.startsWith("가".repeat(TOOL_RESULT_PREVIEW))).toBe(true);
-    expect(shown).not.toContain("가".repeat(TOOL_RESULT_PREVIEW + 1));
-    expect(shown.endsWith(spillLine(".results/call_1.txt"))).toBe(true);
+    expect(shown.startsWith("가".repeat(TOOL_RESULT_CUT))).toBe(true);
+    expect(shown).not.toContain("가".repeat(TOOL_RESULT_CUT + 1));
+    expect(shown.endsWith(spillLine(".results/call_1.txt", text.length))).toBe(
+      true,
+    );
   });
 
-  test("the line says how much was shown and where the rest is, in the table's words", () => {
-    const line = spillLine(".results/call_1.txt");
+  test("is the same bytes however many times it is cut", () => {
+    const text = `${"본문 ".repeat(9_000)}끝`;
+    expect(previewOf(text, ".results/c.txt")).toBe(
+      previewOf(text, ".results/c.txt"),
+    );
+  });
+
+  test("the line says how much was shown, how much there was and where, in the table's words", () => {
+    const line = spillLine(".results/call_1.txt", 64_000);
     expect(line).toBe(
-      '[앞 1,500자] … 전체는 computer_read_file(".results/call_1.txt")',
+      "[너무 길어 앞 20,000자만 보인다. 전체 64,000자는 작업 공간의 .results/call_1.txt에 있다.]",
     );
     // Filled in, not left as a template.
     expect(line).not.toContain("{chars}");
+    expect(line).not.toContain("{total}");
     expect(line).not.toContain("{path}");
     expect(toolResultText("laf:tool_result_spilled")).toContain("{path}");
-  });
-
-  test("the line is found again at the end of a result, and nowhere else", () => {
-    const line = spillLine(".results/call_9.txt");
-    expect(spillLineOf(`${"본문".repeat(10)}\n${line}`)).toBe(line);
-    expect(spillLineOf("본문만 있다")).toBeNull();
-    // Mentioned in the middle of a page is not the same as filed.
-    expect(spillLineOf(`${line}\n그리고 그 뒤에 더 있다`)).toBeNull();
   });
 });

@@ -113,7 +113,7 @@ export function knownToolNames(
   const names = new Set((tools ?? []).map((tool) => tool.name));
   // Answered by this service on every run (`./deferral`), whatever the caller handed.
   names.add(NOW_TOOL_NAME);
-  if (exposed.deferred.length > 0) {
+  if (exposed.bridged) {
     for (const name of BRIDGE_TOOL_NAMES) names.add(name);
   }
   return names;

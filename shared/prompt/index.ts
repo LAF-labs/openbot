@@ -38,6 +38,7 @@ import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
 import { type PromptPerson, placeText } from "./person.ko";
 import { shopText } from "./shop.ko";
+import { deferredToolsText } from "../tools/bridge";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO } from "./base.ko";
@@ -54,6 +55,8 @@ export {
   reminderLines,
   routineRunLine,
   withReminder,
+  ANSWER_NOW_KO,
+  answerNowText,
 } from "./context.ko";
 export {
   NOTEPAD_MAX_BYTES,
@@ -128,6 +131,11 @@ export type ComposePromptInput = {
    * `timeZone`은 사장님의 것을 모를 때 쓰는 배포의 시간대다.
    */
   person?: PromptPerson;
+  /**
+   * 이번 실행이 받은 툴 이름 전부. 다리 뒤에 설 것만 맥락 층에 이름으로 그려진다
+   * (`deferredToolsText`) — 핵심 툴은 툴 목록에 이미 있다.
+   */
+  toolNames?: readonly string[];
 };
 
 /** 이번 실행의 자리에만 해당하는 부분. */
@@ -195,6 +203,7 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
     place: placeText(input.person, input.mode),
     ...(input.memories ? { memories: input.memories } : {}),
     skills: skillIndexText(input.skills ?? []),
+    tools: deferredToolsText(input.toolNames ?? []),
     ...(input.person ? { person: input.person } : {}),
   });
 }

@@ -358,6 +358,42 @@ describe("a new epoch, when the head of the prompt breaks anyway", () => {
     expect(forwarded.epoch).toMatchObject({ reason: "tools_changed" });
   });
 
+  /*
+   * CONNECTING A SERVICE IS NOT A NEW EPOCH (agent-harness-design row 5). Its tools wait behind
+   * the bridge, so the tool list — the head of the prompt — does not move; what is behind the
+   * bridge is named in the context layer, and a change to it is a reminder on the person's next
+   * message, the way Claude Code announces a deferred tool.
+   */
+  test("connecting a service keeps the head of the prompt and arrives as a reminder", async () => {
+    const store = createConversationStore();
+    const first = await run(store, conversation("안녕"));
+    const connected = await run(store, conversation("안녕", "메일 보내줘"), {
+      tools: [
+        ...TOOLS,
+        {
+          name: "mcp__gmail__send_message",
+          description: "메일을 보낸다. (gmail)",
+          parameters: {},
+        },
+        { name: "showBarChart", description: "막대그래프", parameters: {} },
+      ],
+    });
+    expect(JSON.stringify(connected.request.tools)).toBe(
+      JSON.stringify(first.request.tools),
+    );
+    expect(system(connected.request)).toBe(system(first.request));
+    expect(connected.forwarded.epoch).toMatchObject({
+      reason: "conversation_start",
+    });
+    expect(lastUser(connected.request)).toContain("쓸 수 있는 도구가 바뀌었다");
+    expect(lastUser(connected.request)).toContain(
+      "- 지메일: mcp__gmail__send_message",
+    );
+    expect(lastUser(connected.request)).toContain(
+      "- 화면에 띄우는 카드: showBarChart",
+    );
+  });
+
   test("the compaction hook starts one on the next run", async () => {
     const store = createConversationStore();
     await run(store, conversation("안녕"));

@@ -14,8 +14,14 @@
  * 서버에서만 읽는다(`node:crypto`). 앱이 부르는 모듈에서 이것을 가져오면 안 된다.
  */
 import { createHash } from "node:crypto";
+import {
+  BRIDGE_TOOLS,
+  CORE_TOOL_NAMES,
+  deferredToolsText,
+} from "../tools/bridge";
 import { NOW_TOOL } from "../tools/now";
 import {
+  answerNowText,
   type ContextFacts,
   contextLayerText,
   reminderBlock,
@@ -36,6 +42,7 @@ const FIXTURE: ContextFacts = {
   day: "2026-09-25 (금)",
   memories: ["택배는 우체국을 쓴다."],
   skills: "- /재고정리 — 재고를 정리한다",
+  tools: deferredToolsText(["mcp__gmail__send_message", "showBarChart"]),
 };
 
 const MOVED: ContextFacts = {
@@ -45,6 +52,7 @@ const MOVED: ContextFacts = {
   timeZone: "Asia/Dubai",
   day: "2026-09-26 (토)",
   memories: ["주말에는 쉰다."],
+  tools: deferredToolsText(["mcp__cafe24__list_orders"]),
 };
 
 export const HARNESS_VERSION = createHash("sha256")
@@ -61,6 +69,10 @@ export const HARNESS_VERSION = createHash("sha256")
         timeZone: "Asia/Seoul",
       }),
       NOW_TOOL,
+      BRIDGE_TOOLS,
+      [...CORE_TOOL_NAMES],
+      answerNowText("budget"),
+      answerNowText("lookups"),
     ]),
     "utf8",
   )

@@ -392,7 +392,7 @@ export async function runUnattended(
     const added = target.messages.slice(before);
     /*
      * A CALL THE BOT SERVICE ANSWERED ITSELF. The bridge's lookups (`tool_search`,
-     * `tool_describe` — `shared/tools/bridge.ts`) come back inside the same run with their result,
+     * `shared/tools/bridge.ts`) come back inside the same run with their result,
      * as a tool message the client files beside the call. They are through by definition, and
      * `unanswered` below will not hand them back — so they go FIRST in the record, and the open
      * calls after them sit at exactly the indexes `pending` will use. Without that split, the

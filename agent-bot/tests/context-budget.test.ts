@@ -1,23 +1,21 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type OpenAI from "openai";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
-import { previewOf, spillLine } from "../../shared/spillover";
 
 /**
  * What this service does to a transcript before it hands it to a model, and what it says about a
  * turn that did not come back whole.
  *
- * ALL FOUR OF THESE WERE MISSING, and none of them was visible from a green gate:
+ * THESE WERE MISSING, and none of them was visible from a green gate:
  *
- * - Every message went through verbatim. A page's readable text comes back up to 6,000 characters,
- *   so ten steps of browsing put forty to sixty thousand tokens of Korean page text in front of the
- *   model — most of it pages it had already finished with, paid for again on every turn.
  * - `finish_reason: "length"` was never read, so an answer cut off mid-sentence was delivered as a
  *   finished one and the person had no way to know there had been more.
  * - An empty completion — a reasoning model that spent its whole budget deliberating — ended the
  *   run with RUN_FINISHED and no text, which every reader downstream takes for a Bot that chose to
  *   say nothing. In a room that is a legitimate silence; in a chat it is a Bot ignoring you.
  * - There was no request timeout at all.
+ *
+ * And one thing that was here and is gone on purpose: a cut of older tool results, which rewrote
+ * the conversation under the provider's cache on every step (see "the transcript" below).
  */
 
 type Chunk = {
@@ -90,79 +88,19 @@ async function turnFor(
   return { requests, events };
 }
 
-/** A page under the turn budget four times over, so the count rule can be seen on its own. */
-const PAGE = "가".repeat(3_000);
-/** A page at the computer's own limit. Four of these are over the turn budget together. */
+/** A page at the computer's own limit. */
 const LONG_PAGE = "가".repeat(6_000);
 
-const TURN_BUDGET = 20_000;
-
-describe("the context budget", () => {
-  test("keeps the last four tool results whole and cuts the ones before them", async () => {
-    const messages = [
-      { id: "u1", role: "user", content: "창고 열두 개 확인해줘" },
-      ...Array.from({ length: 12 }, (_, at) => toolResult(`c${at}`, PAGE)),
-    ];
-    const { requests } = await turnFor(messages, [said("네.")]);
-
-    const tools = (requests[0]?.messages ?? []).filter(
-      (message) => message.role === "tool",
-    );
-    expect(tools).toHaveLength(12);
-
-    const marker = toolResultText("laf:tool_result_trimmed");
-    // The last four are what the model is still working from.
-    for (const kept of tools.slice(-4)) {
-      expect(kept.content).not.toContain(marker);
-      expect(kept.content.length).toBeGreaterThan(3_000);
-    }
-    // The eight before them are recognisable and no longer expensive.
-    for (const cut of tools.slice(0, -4)) {
-      expect(cut.content).toContain(marker);
-      expect(cut.content.length).toBeLessThan(700);
-    }
-  });
-
+describe("the transcript", () => {
   /**
-   * CUT, AND SAID TO BE CUT.
+   * EVERY RESULT GOES THROUGH EXACTLY AS IT ARRIVED (agent-harness-design row 8).
    *
-   * A silent truncation reads to the model as "that page did not say anything about it", which is
-   * a confident wrong answer rather than a missing one — the same lesson the coworker answer's
-   * visible `[truncated: …]` records.
+   * This service used to keep the newest four whole and cut the rest to 500 characters, then cut
+   * the whole ones again against a 20,000-character budget — so each step of a browsing task
+   * rewrote a result the provider had cached one step before, and 54% of the prompt was read from
+   * cache (eval:cache, 2026-09-25). A result is cut once, at creation, by the server.
    */
-  test("says that an older result was cut, rather than shortening it quietly", async () => {
-    const messages = [
-      { id: "u1", role: "user", content: "확인해줘" },
-      ...Array.from({ length: 6 }, (_, at) => toolResult(`c${at}`, PAGE)),
-    ];
-    const { requests } = await turnFor(messages, [said("네.")]);
-    const first = (requests[0]?.messages ?? []).find(
-      (message) => message.role === "tool",
-    );
-    expect(first?.content).toContain("잘렸다");
-  });
-
-  test("leaves a short transcript exactly as it arrived", async () => {
-    const messages = [
-      { id: "u1", role: "user", content: "확인해줘" },
-      toolResult("c1", PAGE),
-      toolResult("c2", PAGE),
-    ];
-    const { requests } = await turnFor(messages, [said("네.")]);
-    const tools = (requests[0]?.messages ?? []).filter(
-      (message) => message.role === "tool",
-    );
-    expect(tools.every((tool) => tool.content.length > 3_000)).toBe(true);
-  });
-
-  /**
-   * THE COUNT WAS NEVER A WEIGHT.
-   *
-   * Four whole pages at the computer's limit are 24,000 characters, and a file read can be
-   * 64,000 on its own. Over the turn budget the oldest of the whole ones go too — never the
-   * newest, which is the result the model just asked for.
-   */
-  test("trims the oldest of the whole ones too, until the turn is under budget", async () => {
+  test("forwards every tool result as it arrived, however old and however many", async () => {
     const messages = [
       { id: "u1", role: "user", content: "창고 열두 개 확인해줘" },
       ...Array.from({ length: 12 }, (_, at) => toolResult(`c${at}`, LONG_PAGE)),
@@ -171,60 +109,34 @@ describe("the context budget", () => {
     const tools = (requests[0]?.messages ?? []).filter(
       (message) => message.role === "tool",
     );
-    const marker = toolResultText("laf:tool_result_trimmed");
-
-    const total = tools.reduce((sum, tool) => sum + tool.content.length, 0);
-    expect(total).toBeLessThanOrEqual(TURN_BUDGET);
-    // Two whole pages fit under the budget beside ten trimmed ones; a third does not.
-    for (const kept of tools.slice(-2)) {
-      expect(kept.content.length).toBeGreaterThan(6_000);
-    }
-    for (const cut of tools.slice(0, -2)) {
-      expect(cut.content).toContain(marker);
-    }
-  });
-
-  test("never cuts the newest result, even one over the budget on its own", async () => {
-    const messages = [
-      { id: "u1", role: "user", content: "파일 읽어줘" },
-      toolResult("c1", LONG_PAGE),
-      toolResult("c2", "가".repeat(25_000)),
-    ];
-    const { requests } = await turnFor(messages, [said("네.")]);
-    const tools = (requests[0]?.messages ?? []).filter(
-      (message) => message.role === "tool",
-    );
-    expect(tools[1]?.content.length).toBeGreaterThan(25_000);
-    // The one before it paid for the excess instead.
-    expect(tools[0]?.content).toContain(
-      toolResultText("laf:tool_result_trimmed"),
-    );
+    expect(tools).toHaveLength(12);
+    tools.forEach((tool, at) => {
+      expect(tool.content).toBe(
+        (messages[at + 1] as { content: string }).content,
+      );
+    });
   });
 
   /**
-   * A result the server has already filed ends in the line naming its file. When it ages past the
-   * cut, that line is what survives — a trim that lost the path would turn a result the model can
-   * still read whole into one it cannot.
+   * THE PREFIX PROPERTY ITSELF: what a request sent is sent again, byte for byte, at the front of
+   * the next one. That is what a provider's prefix cache reads, and what the old cut broke.
    */
-  test("keeps the line naming a filed result's file when it trims the result", async () => {
-    const filed = previewOf(
-      JSON.stringify({ ok: true, text: LONG_PAGE }),
-      ".results/c0.txt",
-    );
-    const messages = [
+  test("a later request begins with exactly the bytes the earlier one sent", async () => {
+    const early = [
       { id: "u1", role: "user", content: "확인해줘" },
-      { id: "t_c0", role: "tool", toolCallId: "c0", content: filed },
-      ...Array.from({ length: 5 }, (_, at) => toolResult(`c${at + 1}`, PAGE)),
+      ...Array.from({ length: 4 }, (_, at) => toolResult(`c${at}`, LONG_PAGE)),
     ];
-    const { requests } = await turnFor(messages, [said("네.")]);
-    const first = (requests[0]?.messages ?? []).find(
-      (message) => message.role === "tool",
+    const late = [
+      ...early,
+      ...Array.from({ length: 4 }, (_, at) => toolResult(`d${at}`, LONG_PAGE)),
+    ];
+    const first = await turnFor(early, [said("네.")]);
+    const second = await turnFor(late, [said("네.")]);
+    const sent = JSON.stringify(first.requests[0]?.messages ?? []);
+    const again = JSON.stringify(
+      (second.requests[0]?.messages ?? []).slice(0, early.length),
     );
-    expect(first?.content.endsWith(spillLine(".results/c0.txt"))).toBe(true);
-    expect(first?.content).not.toContain(
-      toolResultText("laf:tool_result_trimmed"),
-    );
-    expect(first?.content.length).toBeLessThan(700);
+    expect(again).toBe(sent);
   });
 
   /** The prompt is the server's. This service adds nothing of its own in front of it. */

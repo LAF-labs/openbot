@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { ANSWER_NOW_KO } from "../../shared/prompt/context.ko";
 
 /**
  * A Bot that keeps calling tools and never answers, bounded far below the browser's hundred.
@@ -350,13 +351,18 @@ describe("the same call over and over", () => {
 });
 
 describe("a question that keeps costing", () => {
-  /** A model that reads a different page every time, and speaks only when it has no tools. */
+  /** Whether this request ends in the reminder to answer now. */
+  const toldToAnswer = (request: Request) =>
+    String(request.messages.at(-1)?.content ?? "").includes(
+      ANSWER_NOW_KO.budget,
+    );
+  /** A model that reads a different page every time, and speaks only when told to answer. */
   const reader = (ordinal: number, request: Request) =>
-    request.tools
-      ? calls(`c${ordinal}`, "computer_read", { page: ordinal })
-      : said("지금까지 읽은 것으로 답한다.");
+    toldToAnswer(request)
+      ? said("지금까지 읽은 것으로 답한다.")
+      : calls(`c${ordinal}`, "computer_read", { page: ordinal });
 
-  test("is told its steps are spent, offered no tools, answers — and the run ends on the bound", async () => {
+  test("is told its steps are spent, keeps its tools, answers — and the run ends on the bound", async () => {
     const { MAX_QUESTION_STEPS, QUESTION_MAX_STEPS } = await import(
       "../src/guards"
     );
@@ -366,9 +372,18 @@ describe("a question that keeps costing", () => {
     expect(requests).toHaveLength(MAX_QUESTION_STEPS + 2);
     expect(runs).toBe(MAX_QUESTION_STEPS + 1);
     expect(codesOf(events)).toEqual([QUESTION_MAX_STEPS]);
-    // The last request is the one with no tools, and it was answered in words.
-    expect(requests.at(-1)?.tools).toBeUndefined();
-    expect(requests.at(-2)?.tools).toBeDefined();
+    /*
+     * The last request keeps the same tools — withdrawing them changed the head of the prompt and
+     * re-billed the conversation on the request that was already over budget — and ends in the
+     * reminder to answer, which it was, in words.
+     */
+    const lastRequest = requests.at(-1);
+    const previous = requests.at(-2);
+    expect(JSON.stringify(lastRequest?.tools)).toBe(
+      JSON.stringify(previous?.tools),
+    );
+    expect(lastRequest && toldToAnswer(lastRequest)).toBe(true);
+    expect(previous && toldToAnswer(previous)).toBe(false);
     expect(transcript.at(-1)?.content).toBe("지금까지 읽은 것으로 답한다.");
     // The answer stays, and the record says why the question stopped: error_max_turns.
     expect(events.at(-1)).toMatchObject({
@@ -396,9 +411,9 @@ describe("a question that keeps costing", () => {
     // The server says the question has already cost all but three cents; each request costs two.
     const { requests, events } = await driveLoop(
       (ordinal, request) =>
-        request.tools
-          ? costing(`c${ordinal}`, "computer_read", { page: ordinal }, 0.02)
-          : said("여기까지 알아낸 것."),
+        toldToAnswer(request)
+          ? said("여기까지 알아낸 것.")
+          : costing(`c${ordinal}`, "computer_read", { page: ordinal }, 0.02),
       TOOLS,
       {
         forwardedProps: {
@@ -415,7 +430,7 @@ describe("a question that keeps costing", () => {
     });
   });
 
-  test("a model that asks for a tool when it was offered none ends the run on the fact", async () => {
+  test("a model that asks for a tool after it was told to answer ends the run on the fact", async () => {
     const { MAX_QUESTION_STEPS, QUESTION_MAX_STEPS } = await import(
       "../src/guards"
     );

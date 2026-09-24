@@ -7,9 +7,10 @@ import { answerBridgeCall } from "../src/deferral";
  *
  * A Bot's schema used to carry every tool of every service the person had connected — thirty-six
  * or so, most of them paid for on every turn and used on none. Now the connected-service tools sit
- * behind three bridge tools, and these pin what that changes and what it must NOT change:
+ * behind two bridge tools, and these pin what that changes and what it must NOT change:
  *
- * - the model is offered the core tools and the bridge, never a connected service's own tool;
+ * - the model is offered the core tools and the bridge, never a connected service's own tool —
+ *   and the same list whatever is connected, because the list is the head of the prompt;
  * - a lookup is answered inside the run and put on the wire, so the transcript says the Bot looked;
  * - `tool_call` reaches the surface AS THE REAL CALL, in the real name, under the same id — the
  *   surface cannot tell it from a direct call, which is what keeps the boundary path identical;
@@ -204,7 +205,6 @@ describe("what the model is offered", () => {
       "now",
       "remember",
       "tool_call",
-      "tool_describe",
       "tool_search",
     ]);
   });
@@ -238,23 +238,40 @@ describe("what the model is offered", () => {
     expect(nows[0]?.function.description).not.toBe("다른 now");
   });
 
-  test("tool_search says which services are connected this run", async () => {
-    const { requests } = await runFor([...CORE, ...CONNECTED], [said("네.")]);
-    const search = requests[0]?.tools?.find(
-      (entry) => entry.function.name === "tool_search",
+  /*
+   * CONNECTING A SERVICE CHANGES NOTHING AT THE HEAD OF THE PROMPT (agent-harness-design row 5).
+   * The bridge used to appear with the first connected service, and `tool_search`'s description
+   * named the services connected this run — either way, a person connecting Gmail re-billed the
+   * whole conversation. The list is now the same bytes with nothing, one or every service.
+   */
+  test("the same list, byte for byte, whatever is connected", async () => {
+    const none = await runFor(CORE, [said("네.")]);
+    const some = await runFor(
+      [...CORE, ...CONNECTED.slice(0, 1)],
+      [said("네.")],
     );
-    expect(search?.function.description).toContain("지메일");
-    expect(search?.function.description).toContain("구글 시트");
-  });
-
-  test("everything as it came when there is nothing to defer", async () => {
-    const { requests } = await runFor(CORE, [said("네.")]);
-    expect(namesOf(requests[0])).toEqual([
+    const all = await runFor([...CORE, ...CONNECTED], [said("네.")]);
+    const sent = JSON.stringify(none.requests[0]?.tools);
+    expect(JSON.stringify(some.requests[0]?.tools)).toBe(sent);
+    expect(JSON.stringify(all.requests[0]?.tools)).toBe(sent);
+    expect(namesOf(none.requests[0])).toEqual([
       "computer_navigate",
       "computer_request_help",
       "now",
       "remember",
+      "tool_call",
+      "tool_search",
     ]);
+  });
+
+  test("a card from the gallery waits behind the bridge like a connected service", async () => {
+    const card = {
+      name: "showBarChart",
+      description: "막대그래프를 그린다.",
+      parameters: { type: "object", properties: {} },
+    };
+    const { requests } = await runFor([...CORE, card], [said("네.")]);
+    expect(namesOf(requests[0])).not.toContain("showBarChart");
   });
 
   /** The measurement arm of the eval. Production never sends it. */
@@ -331,22 +348,24 @@ describe("a lookup", () => {
     expect(assistant?.content).toBe("잠깐 찾아볼게요.");
   });
 
-  test("tool_describe hands back the whole schema", async () => {
+  test("tool_search hands back the whole schema, so no describe round is needed", async () => {
     const { events } = await runFor(
       [...CORE, ...CONNECTED],
       [
         calls([
           {
             id: "c1",
-            name: "tool_describe",
-            args: { name: "mcp__gmail__send_message" },
+            name: "tool_search",
+            args: { query: "select:mcp__gmail__send_message" },
           },
         ]),
         said("알겠다."),
       ],
     );
     const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
-    const described = JSON.parse(String(result?.content)) as {
+    const described = JSON.parse(
+      String(result?.content).split("\n")[1] ?? "{}",
+    ) as {
       name: string;
       parameters: { properties: Record<string, unknown> };
     };
@@ -476,8 +495,8 @@ describe("tool_call", () => {
           { id: "c1", name: "computer_navigate", args: { url: "https://a" } },
           {
             id: "c2",
-            name: "tool_describe",
-            args: { name: "mcp__gmail__send_message" },
+            name: "tool_search",
+            args: { query: "select:mcp__gmail__send_message" },
           },
         ]),
       ],
@@ -487,7 +506,7 @@ describe("tool_call", () => {
     const starts = events
       .filter((event) => event.type === "TOOL_CALL_START")
       .map((event) => event.toolCallName);
-    expect(starts).toEqual(["computer_navigate", "tool_describe"]);
+    expect(starts).toEqual(["computer_navigate", "tool_search"]);
   });
 });
 
@@ -523,15 +542,27 @@ describe("what the bridge leaves alone", () => {
       [lookup(), lookup(), lookup(), lookup(), said("찾지 못했다.")],
     );
     expect(requests).toHaveLength(5);
-    for (const request of requests.slice(0, 4)) {
-      expect(namesOf(request)).toContain("tool_search");
+    /*
+     * The last round keeps the SAME tools — withdrawing the bridge changed the head of the prompt
+     * — and is told to act by a reminder at the very end of that one request.
+     */
+    const listed = JSON.stringify(requests[0]?.tools);
+    for (const request of requests) {
+      expect(JSON.stringify(request.tools)).toBe(listed);
     }
-    // The last round: core tools only, so the model can only speak or act.
-    expect(namesOf(requests[4])).toEqual([
-      "computer_navigate",
-      "computer_request_help",
-      "now",
-      "remember",
-    ]);
+    const lastOf = (request: (typeof requests)[number] | undefined) =>
+      (request?.messages ?? []).at(-1) as
+        | { role: string; content: string }
+        | undefined;
+    for (const request of requests.slice(0, 4)) {
+      expect(lastOf(request)?.content).not.toContain("<알림>");
+    }
+    expect(lastOf(requests[4])?.role).toBe("user");
+    expect(lastOf(requests[4])?.content).toContain("도구 찾기는 이만 한다");
+    // Appended, never inserted: everything before it is the round before, byte for byte.
+    const before = JSON.stringify(requests[3]?.messages);
+    expect(JSON.stringify((requests[4]?.messages ?? []).slice(0, -3))).toBe(
+      before,
+    );
   });
 });
