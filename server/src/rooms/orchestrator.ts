@@ -31,7 +31,11 @@ import {
   type SpeakReason,
   WIND_DOWN_SLOTS,
 } from "./prompt";
-import { speakersForRound, type TurnLine } from "./turn-taking";
+import {
+  speakersForRound,
+  type TurnLine,
+  whyNobodyIsNext,
+} from "./turn-taking";
 
 /** What a member is asked with: who, whether to wrap up, and why it is being asked at all. */
 export type MemberAsk = {
@@ -85,6 +89,8 @@ export type RoomTurnOutcome = {
   ended:
     | "silent-round"
     | "nobody-named"
+    /** Nobody named but two members calling each other back past `CALLS_PER_PAIR`. */
+    | "back-and-forth"
     | "rounds"
     | "full"
     | "superseded"
@@ -110,11 +116,15 @@ export async function runRoomTurn(
       said,
     });
     if (speaking.length === 0) {
-      // Nobody in the room at all on the first round; nobody named on a later one.
+      // Nobody in the room at all on the first round; nobody named on a later one, or nobody but
+      // a pair going back and forth.
       return {
         posted,
         rounds,
-        ended: round === 0 ? "alone" : "nobody-named",
+        ended:
+          round === 0
+            ? "alone"
+            : whyNobodyIsNext({ members: deps.members, said }),
       };
     }
 

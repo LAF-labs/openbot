@@ -338,12 +338,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * at server 2,691 / app 1,263 / agent-computer 261 / root 367. `app` goes to 3% under that, which
  * supersedes the two floors the branches carried; the other three did not grow.
  *
+ * RAISED 2026-09-24, with the room's cap on calling back: two Bots may call each other and call
+ * back once a turn, and the next call between them pulls nobody in and ends the turn as
+ * `back-and-forth`. Eleven tests to `server` (the cap, the call back it allows, a third member it
+ * does not stop, the end reason, the orchestrator around it, and the room line telling a Bot not to
+ * hand on what it does not know). Measured at server 2,702 / app 1,263 / agent-computer 260 / root
+ * 367; `server` re-raised to 3% under, the other three did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2609, roots: ["server"] },
+  { name: "server", floor: 2620, roots: ["server"] },
   { name: "app", floor: 1225, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },

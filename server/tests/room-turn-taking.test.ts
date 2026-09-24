@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CALLS_PER_PAIR,
   mentionsIn,
   speakersForRound,
   type TurnLine,
+  whyNobodyIsNext,
 } from "../src/rooms/turn-taking";
 
 /**
@@ -262,5 +264,119 @@ describe("who speaks in a round", () => {
     expect(
       speakersForRound({ members: [], round: 0, addressedIds: [], said: [] }),
     ).toEqual([]);
+  });
+});
+
+/*
+ * TWO BOTS WITHOUT THE DATA HANDED IT TO EACH OTHER UNTIL THE ROUND CAP. Measured 2026-09-21 and
+ * 2026-09-23 against the deployment's model, three runs out of three: asked why sales fell with no
+ * figures in the room, 재고봇 and 매출봇 named each other every round — each "do you have it?"
+ * was a naming, and a naming is what continues the room. A call and a call back are a
+ * conversation; the second call back is the same missing thing going round again.
+ */
+describe("calling each other back", () => {
+  const roster = [
+    { id: "sales", name: "매출봇" },
+    { id: "stock", name: "재고봇" },
+    { id: "review", name: "리뷰봇" },
+  ];
+  const line = (agentId: string, text: string): TurnLine => ({
+    agentId,
+    text,
+  });
+  const next = (said: TurnLine[]) =>
+    speakersForRound({ members: roster, round: 1, addressedIds: [], said });
+
+  test("a call and one call back are a conversation: A→B→A is answered", () => {
+    const said = [
+      line("stock", "@매출봇 상품별 매출 알려 주실 수 있나요?"),
+      line("sales", "@재고봇 아직 못 뽑았어요. 재고 쪽은 어때요?"),
+    ];
+    expect(next(said)).toEqual([
+      { member: roster[1], reason: "named", namedBy: "sales" },
+    ]);
+  });
+
+  test("the second call back between the same two pulls nobody in, and says why", () => {
+    // The measured run, up to where it starts to repeat.
+    const said = [
+      line("stock", "@매출봇 상품별로 내려 주실 수 있나요?"),
+      line("sales", "@재고봇 아직 메뉴별 수치는 못 뽑았어요."),
+      line(
+        "stock",
+        "@매출봇 자료가 다들 없는 상태라 지금은 맞춰 볼 수가 없네요.",
+      ),
+    ];
+    expect(CALLS_PER_PAIR).toBe(2);
+    expect(next(said)).toEqual([]);
+    expect(whyNobodyIsNext({ members: roster, said })).toBe("back-and-forth");
+  });
+
+  test("a turn where nobody named anybody still ends as nobody-named", () => {
+    const said = [
+      line("stock", "재고 자료가 없어요. 재고 현황 주시면 볼게요."),
+      line("sales", "매출 자료도 없어요. 주시면 정리할게요."),
+    ];
+    expect(next(said)).toEqual([]);
+    expect(whyNobodyIsNext({ members: roster, said })).toBe("nobody-named");
+  });
+
+  test("a call answered in full is not a call left hanging", () => {
+    // A→B→A, and A answered without calling again: settled, not stopped.
+    const said = [
+      line("stock", "@매출봇 상품별 매출 알려 주실 수 있나요?"),
+      line("sales", "@재고봇 라떼가 제일 많이 빠졌어요. 우유 재고는요?"),
+      line("stock", "우유는 이틀 치 남았어요."),
+    ];
+    expect(next(said)).toEqual([]);
+    expect(whyNobodyIsNext({ members: roster, said })).toBe("nobody-named");
+  });
+
+  test("a call to a third member still continues the room, past a pair that is spent", () => {
+    const said = [
+      line("stock", "@매출봇 상품별 매출 있어요?"),
+      line("sales", "@재고봇 없어요. 재고는요?"),
+      line("stock", "@매출봇 저도 없어요. 리뷰봇님은 최근 불만 본 거 있어요?"),
+    ];
+    // 매출봇 is not pulled back in; 리뷰봇, asked for the first time, is.
+    expect(next(said)).toEqual([
+      { member: roster[2], reason: "named", namedBy: "stock" },
+    ]);
+  });
+
+  test("a spent pair does not stop a third member bringing either of them back", () => {
+    const said = [
+      line("stock", "@매출봇 상품별 매출 있어요?"),
+      line("sales", "@재고봇 없어요. 재고는요?"),
+      line("stock", "@매출봇 저도 없어요."),
+      line("review", "@매출봇 배달 매출만 따로 볼 수 있어요?"),
+    ];
+    expect(next(said)).toEqual([
+      { member: roster[0], reason: "named", namedBy: "review" },
+    ]);
+  });
+
+  test("naming the same colleague twice before it answers is one call, not a call back", () => {
+    // Two messages in a row from 재고봇, both to 매출봇: 매출봇 has not called back yet.
+    const said = [
+      line("stock", "@매출봇 상품별 매출 있어요?"),
+      line("stock", "매출봇님, 특히 라떼 쪽이요."),
+      line("sales", "@재고봇 라떼 310잔이에요. 우유는 넉넉해요?"),
+    ];
+    expect(next(said)).toEqual([
+      { member: roster[1], reason: "named", namedBy: "sales" },
+    ]);
+  });
+
+  test("a follow-up the same way after an answer is still the one call", () => {
+    // 재고봇 asks, 매출봇 answers without calling back, 재고봇 asks more: nothing has reversed.
+    const said = [
+      line("stock", "@매출봇 상품별 매출 있어요?"),
+      line("sales", "라떼 310잔, 아메리카노 420잔이에요."),
+      line("stock", "@매출봇 바닐라라떼는요?"),
+    ];
+    expect(next(said)).toEqual([
+      { member: roster[0], reason: "named", namedBy: "stock" },
+    ]);
   });
 });

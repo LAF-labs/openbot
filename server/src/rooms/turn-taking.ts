@@ -20,6 +20,14 @@
  * addressing that colleague wherever it sits. A name buried in prose with no such particle
  * ("민수가 말한 대로") does not: that is talking about somebody, not to them, and pulling a Bot in
  * every time it is mentioned is the every-Bot-every-round behaviour by another route.
+ *
+ * TWO BOTS MAY CALL EACH OTHER TWICE A TURN: THE CALL AND THE CALL BACK. Naming is what keeps a
+ * room talking, so the more two Bots defer to each other the longer the room ran. Measured
+ * 2026-09-21 and again 2026-09-23 against the deployment's model: asked why sales fell and given no
+ * figures, 매출봇 and 재고봇 spent every round asking each other for the figures neither had —
+ * "@매출봇 상품별로 내려 주실 수 있나요?", "@재고봇 아직 메뉴별 수치는 못 뽑았는데",
+ * "@매출봇 자료가 다들 없는 상태라" — three runs out of three, until the round cap ended it. See
+ * `CALLS_PER_PAIR`.
  */
 import { rotate, type SpeakReason } from "./prompt";
 
@@ -172,6 +180,86 @@ function nameAt(text: string, from: number, name: string): boolean {
 }
 
 /**
+ * How many calls two members may make to each other in one turn and still be answered: A calls B,
+ * B calls A back. The next call between them — the second call back — pulls nobody in.
+ *
+ * A CALL IS COUNTED WHEN THE DIRECTION CHANGES, not per line. A Bot that names a colleague in two
+ * messages in a row, or asks it a follow-up after it answered, is still making the one call — the
+ * colleague has not called back. What this ends is the exchange that reverses and reverses again,
+ * which is two Bots handing the same missing thing to each other. Each pair is counted on its own,
+ * so a call to a third member is a first call and is answered as one.
+ */
+export const CALLS_PER_PAIR = 2;
+
+/**
+ * Which members each line pulls in, once the pair cap has been applied, and which it would have.
+ *
+ * Walked in order because the cap is about order: whether a naming is a call, a call back or one
+ * too many depends on what the pair said to each other before it.
+ */
+function callsIn(
+  members: readonly Nameable[],
+  said: readonly TurnLine[],
+): { pulls: string[]; spent: string[] }[] {
+  /** Per unordered pair: who called last, and how many times the direction has changed. */
+  const pairs = new Map<string, { last: string; calls: number }>();
+  return said.map((line) => {
+    const pulls: string[] = [];
+    const spent: string[] = [];
+    for (const id of mentionsIn(line.text, members)) {
+      if (id === line.agentId) continue;
+      const key = [line.agentId, id].sort().join("\u0000");
+      const pair = pairs.get(key) ?? { last: "", calls: 0 };
+      if (pair.last !== line.agentId) {
+        pair.last = line.agentId;
+        pair.calls += 1;
+      }
+      pairs.set(key, pair);
+      (pair.calls > CALLS_PER_PAIR ? spent : pulls).push(id);
+    }
+    return { pulls, spent };
+  });
+}
+
+/**
+ * The members a colleague has called and who have not answered since, with who called them last.
+ *
+ * `countingSpent` counts the calls the pair cap refused as well, which is what tells a room that
+ * settled apart from one that was stopped going back and forth.
+ */
+function pending<T extends Nameable>(
+  members: readonly T[],
+  said: readonly TurnLine[],
+  countingSpent: boolean,
+): { member: T; namedBy: string }[] {
+  const calls = callsIn(members, said);
+  const out: { member: T; namedBy: string }[] = [];
+  for (const member of members) {
+    let namedAt = -1;
+    let namedBy: string | undefined;
+    let spokeAt = -1;
+    for (const [index, line] of said.entries()) {
+      if (line.agentId === member.id) {
+        spokeAt = index;
+        continue;
+      }
+      const call = calls[index];
+      if (
+        call?.pulls.includes(member.id) ||
+        (countingSpent && call?.spent.includes(member.id))
+      ) {
+        namedAt = index;
+        namedBy = line.agentId;
+      }
+    }
+    if (namedAt !== -1 && namedBy !== undefined && spokeAt < namedAt) {
+      out.push({ member, namedBy });
+    }
+  }
+  return out;
+}
+
+/**
  * Who speaks in this round, in the order they speak.
  *
  * ROUND 0 is the person's: the members they named, or everybody when they named nobody — the
@@ -181,7 +269,8 @@ function nameAt(text: string, from: number, name: string): boolean {
  * LATER ROUNDS are the colleagues': a member speaks only if another member named it in a line
  * said this turn, and it has not spoken since that line. A member naming itself pulls nobody in.
  * A member that answered and was named again afterwards is asked again; one that was named and
- * answered is not, until it is named again.
+ * answered is not, until it is named again. A naming past `CALLS_PER_PAIR` between the same two
+ * members pulls nobody in.
  *
  * THE ORDER ROTATES by round, over the roster's order, so the same Bot does not open every round
  * — whoever speaks first sets the frame for everybody after.
@@ -207,24 +296,25 @@ export function speakersForRound<T extends Nameable>(input: {
     return rotate(speakers, round);
   }
 
-  const speakers: Speaker<T>[] = [];
-  for (const member of members) {
-    let namedAt = -1;
-    let namedBy: string | undefined;
-    let spokeAt = -1;
-    for (const [index, line] of said.entries()) {
-      if (line.agentId === member.id) {
-        spokeAt = index;
-        continue;
-      }
-      if (mentionsIn(line.text, members).includes(member.id)) {
-        namedAt = index;
-        namedBy = line.agentId;
-      }
-    }
-    if (namedAt !== -1 && namedBy !== undefined && spokeAt < namedAt) {
-      speakers.push({ member, reason: "named", namedBy });
-    }
-  }
+  const speakers: Speaker<T>[] = pending(members, said, false).map(
+    ({ member, namedBy }) => ({ member, reason: "named", namedBy }),
+  );
   return rotate(speakers, round);
+}
+
+/**
+ * Why a round after the first has nobody to ask.
+ *
+ * `back-and-forth` when a colleague would still be answering but for `CALLS_PER_PAIR`: the turn
+ * did not settle, it was stopped from going round again. `nobody-named` otherwise. Kept apart
+ * because they are different findings about a room — the first is two Bots deferring to each
+ * other, and read as the second it looks like a conversation that ended well.
+ */
+export function whyNobodyIsNext(input: {
+  members: readonly Nameable[];
+  said: readonly TurnLine[];
+}): "nobody-named" | "back-and-forth" {
+  return pending(input.members, input.said, true).length > 0
+    ? "back-and-forth"
+    : "nobody-named";
 }

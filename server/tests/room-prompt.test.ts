@@ -93,6 +93,34 @@ describe("what a Bot is shown of the room", () => {
     expect(prompt).not.toContain("이번 차례에 다시 말할 수 있는");
   });
 
+  test("a Bot that lacks something says so and asks the person, rather than handing it to a colleague", () => {
+    /*
+     * MEASURED 2026-09-21 and 2026-09-23 against the real model: asked why sales fell with no
+     * figures in the room, 매출봇 and 재고봇 asked each other for them every round the cap allowed.
+     * Calling a colleague was the only way on the prompt taught, so it was what a Bot with nothing
+     * did. `turn-taking.ts` caps the calling back; this line is the reason not to start.
+     */
+    const conduct = roomKo("매출봇");
+    const line = conduct
+      .split("\n")
+      .find((each) => each.includes("모르는 것을 동료에게 넘기지 않는다"));
+    expect(line).toBeDefined();
+    expect(line).toContain("없는 자료는 없다고 한 번만 말하고");
+    expect(line).toContain("사람에게 한 번 묻고 멈춘다");
+    expect(line).toContain("그 동료만 아는 것이 있을 때뿐이다");
+    // Written in the person's words, not the room's: nothing here for a Bot to echo back.
+    expect(line).not.toMatch(/차례|바퀴|지목/);
+
+    // Every rule it sits beside is still there, the call that carries the room on included.
+    expect(conduct).toContain(
+      "동료에게 물을 것이 있으면 보내는 말 안에서 `@이름`으로 부른다.",
+    );
+    expect(conduct).toContain("사람에게 보내는 말에는 쓰지 않는다");
+    expect(conduct).toContain(
+      "보탤 것이 없으면 send_message 없이 차례를 끝낸다",
+    );
+  });
+
   test("a Bot's own line is marked as its own, so it does not answer itself", () => {
     const prompt = roomTurnPrompt({
       room: { name: "출시 준비" },

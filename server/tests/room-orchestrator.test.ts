@@ -132,6 +132,45 @@ describe("how a room turn ends", () => {
     expect(it.ids()).toEqual(["a"]);
   });
 
+  /*
+   * Two members with nothing, each asking the other for it: measured on the deployment's model,
+   * that ran every round the cap allowed. A calls B, B calls A back, A calls B again — and the
+   * last call pulls nobody in, so the turn ends a round early and says why.
+   */
+  test("two members calling each other back end the turn as back-and-forth", async () => {
+    const it = spy((member) =>
+      member.id === "a"
+        ? ["@B 자료 있어요?"]
+        : member.id === "b"
+          ? ["@A 저도 없어요, 있어요?"]
+          : [],
+    );
+    const outcome = await runRoomTurn(it.deps);
+
+    // Round 0: a calls B, b calls A back, c has nothing. Round 1: a, called back, calls B again.
+    expect(it.ids()).toEqual(["a", "b", "c", "a"]);
+    expect(outcome.ended).toBe("back-and-forth");
+    expect(outcome.rounds).toBe(2);
+    expect(outcome.posted).toBe(3);
+  });
+
+  test("a call to a third member still carries the turn on past a spent pair", async () => {
+    // `call` counts every ask in the turn: a is asked first (1) and fourth (4), c third and fifth.
+    const it = spy((member, call) => {
+      if (member.id === "a") {
+        return call === 1 ? ["@B 자료 있어요?"] : ["@B @C 둘 다 봐 주세요"];
+      }
+      if (member.id === "b") return ["@A 저도 없어요"];
+      return call > 3 ? ["리뷰는 괜찮아요"] : [];
+    });
+    const outcome = await runRoomTurn(it.deps);
+
+    // B is not pulled back in by a's third call to it; C, asked for the first time, is.
+    expect(it.ids()).toEqual(["a", "b", "c", "a", "c"]);
+    expect(it.asked.at(-1)?.namedBy).toBe("a");
+    expect(outcome.ended).toBe("rounds");
+  });
+
   test("the one Bot the person named speaks, and the turn ends unless it names a colleague", async () => {
     const quiet = spy(() => ["네, 확인했습니다"], { addressedIds: ["b"] });
     expect((await runRoomTurn(quiet.deps)).ended).toBe("nobody-named");
