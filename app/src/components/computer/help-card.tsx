@@ -1,5 +1,6 @@
 import { IconHandStop } from "@tabler/icons-react";
 import { useId, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { outcomeOf } from "@/lib/computer/browsing";
@@ -87,6 +88,17 @@ export function HelpCard({
     <div
       className={`flex max-w-md flex-col gap-2 rounded-2xl border p-3 text-sm ${isWaiting ? "border-warning/60" : ""}`}
     >
+      {/*
+       * THE ASK IS HEARD WHEN THE BOT STARTS WAITING. The card is drawn as the call begins and only
+       * turns into a request once the call is waiting on somebody; the pill that says so changed
+       * without a sound, the way a permission question did before `approval-request.tsx` spoke.
+       * Polite, for the same reason as there: a question waits for a natural break.
+       */}
+      <LiveRegion className="sr-only">
+        {isWaiting
+          ? `${kind === "secret" ? t("The Bot needs a value it must not see") : t("The Bot needs your help")}${said ? `: ${said}` : ""}`
+          : null}
+      </LiveRegion>
       <div className="flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5 font-medium">
           <IconHandStop
@@ -158,17 +170,19 @@ export function HelpCard({
               "This goes straight to the page. It is not shown in the conversation and the Bot never receives it.",
             )}
           </p>
-          {secretProblem ? (
-            <p className="text-destructive text-xs">{secretProblem}</p>
-          ) : null}
+          {/* Mounted with the box, so a value that did not go through is heard as it is said. */}
+          <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
+            {secretProblem}
+          </LiveRegion>
         </form>
       ) : null}
 
-      {isWaiting && isDriving ? (
-        <p className="text-muted-foreground text-xs">
-          {t("You have the browser. Press I'm done when you are finished.")}
-        </p>
-      ) : null}
+      {/* Mounted with the card, so taking the wheel is heard when it is said (`LiveRegion`). */}
+      <LiveRegion as="p" className="text-muted-foreground text-xs">
+        {isWaiting && isDriving
+          ? t("You have the browser. Press I'm done when you are finished.")
+          : null}
+      </LiveRegion>
 
       {isWaiting ? (
         <div className="flex flex-wrap gap-2">

@@ -1,5 +1,6 @@
 import { IconBrowser, IconPlayerStopFilled, IconX } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { hostOf } from "@/lib/computer/browsing";
@@ -49,53 +50,69 @@ function Banner({ botId, onStop, isStoppable }: BannerProps) {
    */
   const [pictureSite, setPictureSite] = useState<string | null>(null);
 
-  if (!task || !isShown) return null;
+  /*
+   * WHAT THE BOT IS DOING IS HEARD, NOT ONLY SEEN. The banner arrives with the task and its line
+   * changes at every step, and neither was a live region, so somebody who cannot see the strip was
+   * never told the Bot had gone to a site at all. The region is mounted before the banner is and
+   * outlives it, so the first step is heard as well as the rest; put away with X, it falls quiet.
+   */
+  const announcement = (
+    <LiveRegion className="sr-only">
+      {task && isShown ? task.doing : null}
+    </LiveRegion>
+  );
+
+  // One shape whether or not there is a banner: a region re-created with its words is not heard.
+  if (!task || !isShown) return <>{announcement}</>;
 
   const where = task.sites.at(-1) ?? pictureSite;
 
   return (
-    <div className="shrink-0 px-4 pt-1 pb-2">
-      <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border bg-background py-1.5 pr-1.5 pl-1.5 shadow-xs">
-        <button
-          aria-label={t("View the Bot's screen")}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left"
-          onClick={() => setScreenOpen(true)}
-          type="button"
-        >
-          <Thumbnail
-            botId={botId}
-            isPaused={isScreenOpen}
-            onSite={setPictureSite}
-          />
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate font-medium text-sm">
-              {where ?? t("The Bot's browser")}
-            </span>
-            <span className="truncate text-muted-foreground text-xs">
-              {task.doing}
-            </span>
-          </span>
-        </button>
-        {isStoppable ? (
-          <Button
-            aria-label={t("Stop the Bot")}
-            onClick={onStop}
-            size="icon-sm"
-            variant="destructive"
+    <>
+      {announcement}
+      <div className="shrink-0 px-4 pt-1 pb-2">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border bg-background py-1.5 pr-1.5 pl-1.5 shadow-xs">
+          <button
+            aria-label={t("View the Bot's screen")}
+            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left"
+            onClick={() => setScreenOpen(true)}
+            type="button"
           >
-            <IconPlayerStopFilled />
+            <Thumbnail
+              botId={botId}
+              isPaused={isScreenOpen}
+              onSite={setPictureSite}
+            />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate font-medium text-sm">
+                {where ?? t("The Bot's browser")}
+              </span>
+              <span className="truncate text-muted-foreground text-xs">
+                {task.doing}
+              </span>
+            </span>
+          </button>
+          {isStoppable ? (
+            <Button
+              aria-label={t("Stop the Bot")}
+              onClick={onStop}
+              size="icon-sm"
+              variant="destructive"
+            >
+              <IconPlayerStopFilled />
+            </Button>
+          ) : null}
+          <Button
+            aria-label={t("Hide this for this task")}
+            onClick={() => dismissTask(task.taskId)}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <IconX />
           </Button>
-        ) : null}
-        <Button
-          aria-label={t("Hide this for this task")}
-          onClick={() => dismissTask(task.taskId)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <IconX />
-        </Button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

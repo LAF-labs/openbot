@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -520,16 +521,25 @@ export const ConnectOutcome = ({
     if (connected !== "failed") onConnected?.(connected);
   }, [connected, outcome, onClear, onConnected]);
 
-  if (outcome === null) return null;
-  return outcome === "failed" ? (
-    <p className="mt-4 text-destructive text-sm" role="alert">
-      {t(
-        "The connection did not finish, and nothing was saved. Please try again.",
-      )}
-    </p>
-  ) : (
-    <p className="mt-4 text-muted-foreground text-sm" role="status">
-      {t("Connected to {name}.", { name: titleFor(outcome) })}
-    </p>
+  /*
+   * Both lines mounted before the outcome is known (`LiveRegion`). The outcome is set by the effect
+   * above, a render after this mounts, so a line drawn only then arrived with its region and the
+   * way back from a consent screen was silent.
+   */
+  return (
+    <>
+      <LiveRegion as="p" className="mt-4 text-destructive text-sm" tone="alert">
+        {outcome === "failed"
+          ? t(
+              "The connection did not finish, and nothing was saved. Please try again.",
+            )
+          : null}
+      </LiveRegion>
+      <LiveRegion as="p" className="mt-4 text-muted-foreground text-sm">
+        {outcome !== null && outcome !== "failed"
+          ? t("Connected to {name}.", { name: titleFor(outcome) })
+          : null}
+      </LiveRegion>
+    </>
   );
 };

@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
 import { ToolLine } from "@/components/channels/tool-line";
+import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import {
@@ -124,11 +125,13 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
               >
                 {t("View screen")}
               </Button>
-            ) : isNewest && isPageGone && !isOpen ? (
-              <span className="text-muted-foreground text-xs">
-                {t("No page is open now. The picture is the last one.")}
-              </span>
             ) : null}
+            {/* Mounted with the card, so the page going away is heard when it is said. */}
+            <LiveRegion as="span" className="text-muted-foreground text-xs">
+              {!canView && isNewest && isPageGone && !isOpen
+                ? t("No page is open now. The picture is the last one.")
+                : null}
+            </LiveRegion>
             <Button
               aria-controls={stepsId}
               aria-expanded={isExpanded}

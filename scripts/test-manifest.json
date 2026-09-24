@@ -143,6 +143,7 @@
   "app/tests/sign-via.test.ts",
   "app/tests/site-catalogue.test.ts",
   "app/tests/skills-page.test.tsx",
+  "app/tests/status-regions.test.tsx",
   "app/tests/stop-all.test.ts",
   "app/tests/stopped-turn.test.ts",
   "app/tests/take-the-wheel.test.ts",

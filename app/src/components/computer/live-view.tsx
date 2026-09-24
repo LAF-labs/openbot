@@ -179,6 +179,14 @@ export function LiveView({ botId }: { botId: string }) {
 
   return (
     <div className="flex flex-col gap-3 px-4 pt-1 pb-6">
+      {/*
+       * Why the screen is not showing, heard as well as drawn. The sentence below is drawn over the
+       * picture only once there is a problem, and a line drawn with its words is not read out; this
+       * one is mounted with the view (`LiveRegion`) and hidden, since the drawn one is the one seen.
+       */}
+      <LiveRegion className="sr-only" tone="alert">
+        {problem ? screenProblemText(problem) : null}
+      </LiveRegion>
       <div className="flex min-h-7 items-center justify-between gap-2">
         <p className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
           <span

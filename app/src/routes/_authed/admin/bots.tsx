@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import { Mascot } from "@/components/agents/mascot";
+import { LiveRegion } from "@/components/layout/live-region";
 import {
   PageEmpty,
   PageSection,
@@ -186,18 +187,21 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
               {testing ? t("Testing…") : t("Test")}
             </Button>
           </div>
-          {connection ? (
-            <p
-              className={`text-sm ${connection.ok ? "text-muted-foreground" : "text-destructive"}`}
-              role="status"
-            >
-              {connection.ok
-                ? t("It answered: {events}", {
-                    events: connection.events.join(", "),
-                  })
-                : connection.reason}
-            </p>
-          ) : (
+          {/*
+           * Mounted before 테스트 is pressed (`LiveRegion`): drawn only once the answer came, the
+           * result arrived with its region and was not read out. A refusal is an alert.
+           */}
+          <LiveRegion as="p" className="text-muted-foreground text-sm">
+            {connection?.ok
+              ? t("It answered: {events}", {
+                  events: connection.events.join(", "),
+                })
+              : null}
+          </LiveRegion>
+          <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+            {connection && !connection.ok ? connection.reason : null}
+          </LiveRegion>
+          {connection ? null : (
             <p className="text-muted-foreground text-sm">
               {t(
                 "Leave empty to use the built-in Bot. Anything that speaks AG-UI works. This server dials your agent, so an agent on your own machine has to be reachable from here.",

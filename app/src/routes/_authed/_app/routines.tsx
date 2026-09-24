@@ -33,6 +33,7 @@ import {
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { failureSentence } from "@/lib/press";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { routineDeleteRecheck } from "@/lib/rechecks";
@@ -371,19 +372,24 @@ function RoutineRow({ routine }: { routine: Routine }) {
       {/*
        * 지금 실행 SAID NOTHING. It opened the history panel and the row sat there — the request can
        * take a minute, and for that minute the press looked like it had missed.
+       *
+       * Mounted with the row, so what it says is heard (`LiveRegion`): drawn only once pressed, the
+       * line arrived with its region and 실행 중… was never read out.
        */}
-      {runNow.isPending || runNow.isSuccess || runNow.isError ? (
-        <p
-          className={`px-4 pb-3 text-xs ${runNow.isError ? "text-destructive" : "text-muted-foreground"}`}
-          role="status"
-        >
-          {runNow.isPending
-            ? t("Running now…")
-            : runNow.isError
-              ? runNow.error.message
-              : t("Started. The answer lands below.")}
-        </p>
-      ) : null}
+      <LiveRegion as="p" className="px-4 pb-3 text-muted-foreground text-xs">
+        {runNow.isPending
+          ? t("Running now…")
+          : runNow.isSuccess
+            ? t("Started. The answer lands below.")
+            : null}
+      </LiveRegion>
+      <LiveRegion
+        as="p"
+        className="px-4 pb-3 text-destructive text-xs"
+        tone="alert"
+      >
+        {runNow.isError ? failureSentence(runNow.error) : null}
+      </LiveRegion>
       {/*
        * A routine and every run it ever made, gone on one click of a small grey icon next to a
        * switch. It is the only irreversible thing on this page and it asked nothing.

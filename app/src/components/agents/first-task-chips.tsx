@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { LiveRegion } from "@/components/layout/live-region";
 import { focusRing } from "@/components/ui/focus";
 import {
   type FirstTask,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/agents/first-tasks";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
+import { failureSentence } from "@/lib/press";
 import { routineKeys } from "@/lib/routines/queries";
 import { dailyPlaceById } from "@/lib/shop/catalogue";
 
@@ -127,51 +129,62 @@ export const FirstTaskChips = ({
         )}
       </div>
       {sentence && leading?.kind === "ask" ? (
-        makeRoutine.isSuccess ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            {t("The routine is made.")}
-            {" · "}
-            <Link
-              className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
-              to="/routines"
-            >
-              {t("See it on Routines")}
-            </Link>
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1">
-            <button
-              className={`${chip} self-start`}
-              disabled={makeRoutine.isPending}
-              onClick={() => {
-                reportFirstTaskPressed({
-                  agentId: agent.id,
-                  kind: "routine",
-                  pattern: leading.pattern,
-                  sentence,
-                  via: leading.via,
-                  hint: null,
-                });
-                makeRoutine.mutate(t(sentence));
-              }}
-              type="button"
-            >
-              {makeRoutine.isPending
-                ? t("Making the routine…")
-                : t("Get a report every morning at 7:30")}
-            </button>
-            <p className="text-muted-foreground text-xs">
-              {t(
-                "The first sentence above, asked every morning at 7:30, answered in this conversation.",
-              )}
-            </p>
-            {makeRoutine.error ? (
-              <p className="text-destructive text-xs" role="alert">
-                {makeRoutine.error.message}
-              </p>
+        <>
+          {/*
+           * Mounted with the chip it answers, so 루틴을 만들었습니다 is heard when it is said: drawn
+           * only on success, the line arrived with its region and was never read out.
+           */}
+          <LiveRegion as="p" className="text-sm text-muted-foreground">
+            {makeRoutine.isSuccess ? (
+              <>
+                {t("The routine is made.")}
+                {" · "}
+                <Link
+                  className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+                  to="/routines"
+                >
+                  {t("See it on Routines")}
+                </Link>
+              </>
             ) : null}
-          </div>
-        )
+          </LiveRegion>
+          {makeRoutine.isSuccess ? null : (
+            <div className="flex flex-col gap-1">
+              <button
+                className={`${chip} self-start`}
+                disabled={makeRoutine.isPending}
+                onClick={() => {
+                  reportFirstTaskPressed({
+                    agentId: agent.id,
+                    kind: "routine",
+                    pattern: leading.pattern,
+                    sentence,
+                    via: leading.via,
+                    hint: null,
+                  });
+                  makeRoutine.mutate(t(sentence));
+                }}
+                type="button"
+              >
+                {makeRoutine.isPending
+                  ? t("Making the routine…")
+                  : t("Get a report every morning at 7:30")}
+              </button>
+              <p className="text-muted-foreground text-xs">
+                {t(
+                  "The first sentence above, asked every morning at 7:30, answered in this conversation.",
+                )}
+              </p>
+              <LiveRegion
+                as="p"
+                className="text-destructive text-xs"
+                tone="alert"
+              >
+                {makeRoutine.error ? failureSentence(makeRoutine.error) : null}
+              </LiveRegion>
+            </div>
+          )}
+        </>
       ) : null}
     </section>
   );
