@@ -249,16 +249,30 @@ test("every row that reserves the title bar's height can move the window", () =>
     ?.windows?.[0]?.titleBarStyle;
   expect(style).toBe("Overlay");
 
-  for (const path of [
+  // The reservation and the handle on the same element: the attribute has to sit inside the tag
+  // that opened with that height, before that tag closes. The sidebar's row is `h-titlebar` — the
+  // 44px as a name since 2026-09-24, where it used to be spelled `h-[var(--sand-titlebar-block)]`.
+  const sidebarRow = read(
     "app/src/components/app-sidebar/bot-sidebar.tsx",
+  ).match(/<div[^>]*\bh-titlebar\b[^>]*>/);
+  expect(sidebarRow?.[0]).toContain("data-tauri-drag-region");
+
+  /*
+   * The conversation's header is the Bot's presence now (`bot-header.tsx`), 56px rather than 44 —
+   * and Tauri drags only from an element that carries the attribute ITSELF, not from its children,
+   * so the header, the face-and-name group and the name each carry it. Both conversation screens
+   * draw that header.
+   */
+  const header = read("app/src/components/channels/bot-header.tsx");
+  expect(header.match(/<header[^>]*>/)?.[0]).toContain(
+    "data-tauri-drag-region",
+  );
+  expect(header.match(/<h1[^>]*>/)?.[0]).toContain("data-tauri-drag-region");
+  for (const path of [
     "app/src/routes/_authed/_app/channel/$channelId.tsx",
+    "app/src/routes/_authed/_app/channel/new.tsx",
   ]) {
-    // The reservation and the handle on the same element: the attribute has to sit inside the tag
-    // that opened with that height, before that tag closes.
-    const opened = read(path).match(
-      /<div[^>]*h-\[var\(--sand-titlebar-block\)\][^>]*>/,
-    );
-    expect(opened?.[0]).toContain("data-tauri-drag-region");
+    expect(read(path)).toContain("<BotHeader");
   }
 });
 
