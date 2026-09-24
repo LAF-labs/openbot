@@ -1,8 +1,11 @@
 import { IconX } from "@tabler/icons-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { SectionBoundary } from "@/components/layout/section-boundary";
+import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
+import { useScreenPanelViewport } from "@/lib/computer/screen-panel";
 import { t } from "@/lib/i18n";
 
 /**
@@ -68,6 +71,24 @@ export function DetailPanel({
 }) {
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
+  const { isWide } = useScreenPanelViewport();
+  const isSheet = isSheetWhenNarrow && !isWide;
+  const isModal = isSheet && open;
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+
+  /*
+   * A SHEET OVER THE WHOLE WINDOW IS A MODAL (docs/laf/dialogs.md). Below `lg` the Bot's screen
+   * covers everything, and it kept none of what that promises: Tab and a screen reader walked out
+   * of it into the rail and the conversation hidden under it, focus stayed on the covered button
+   * that opened it, and closing it dropped focus on `<body>`. So while it is a sheet it is drawn
+   * outside the app's root, which goes inert under it, its first focus is the way out — the one
+   * safe control it always has — and focus goes back to the opener when it closes.
+   */
+  useOverlayModal(isModal);
+  useEffect(() => {
+    if (isModal) closeRef.current?.focus();
+  }, [isModal]);
 
   /*
    * ESCAPE CLOSES IT. Every dialog in the app does; this pane, which is where a profile, a form and
@@ -87,97 +108,107 @@ export function DetailPanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  const pane = (
+    <motion.div
+      animate={{ width: open ? detailWidth : 0 }}
+      aria-labelledby={isModal ? titleId : undefined}
+      aria-modal={isModal ? true : undefined}
+      role={isModal ? "dialog" : undefined}
+      /*
+       * AN OVERLAY UNTIL THERE IS ROOM FOR A COLUMN.
+       *
+       * The pane is 320px, or whatever the caller asked for, and the app shell already spends
+       * 340px on the rail — so at a 900px window a profile or a Bot's screen left about 160px of
+       * conversation beside it, which is not a conversation. Below `lg` it lays over the main
+       * column instead; the card inside it already carries its own background and a left
+       * hairline, which is exactly how an overlay should read.
+       */
+      className={`${isSheetWhenNarrow ? "fixed z-50" : "absolute z-20"} inset-y-0 right-0 shrink-0 overflow-hidden lg:static lg:z-auto`}
+      // No entry animation on first paint: URL-opened panels should appear as initial state.
+      initial={false}
+      transition={{
+        duration: shouldReduceMotion ? 0 : ANIMATION_DURATION_SECONDS,
+        ease: EASE_OUT,
+      }}
+    >
+      <div
+        className="flex h-full flex-col bg-sidebar border-l border-border"
+        style={{ width: detailWidth }}
+      >
+        {/*
+         * Rendered for the whole animation, so the way out is available immediately — but `inert`
+         * while closed. The pane collapses to zero width and keeps its markup, so the close button
+         * stayed in the tab order: tabbing across a screen with no visible panel landed on an
+         * invisible control that closed something already closed.
+         */}
+        <div
+          className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2"
+          inert={!open}
+        >
+          <div
+            className="flex min-w-0 w-full items-center gap-1.5"
+            id={titleId}
+          >
+            {title}
+          </div>
+          <div className="flex flex-row gap-1.5">
+            <Button
+              aria-label={t("Close")}
+              onClick={onClose}
+              ref={closeRef}
+              variant="ghost"
+              size="icon"
+            >
+              <IconX className="size-4.5" />
+            </Button>
+          </div>
+        </div>
+        {/*
+         * Unmount while closed so dismissed form state and detail queries do not remain active —
+         * but not on the first frame of closing. The content used to vanish the instant `open`
+         * went false while the pane spent 300ms collapsing behind it, so a close read as the
+         * panel emptying and then folding an empty strip. AnimatePresence holds it for a fade
+         * that finishes well inside that collapse, and the unmount still happens.
+         */}
+        <AnimatePresence>
+          {open ? (
+            <motion.div
+              animate={{ opacity: 1, transform: "translateY(0px)" }}
+              className="flex-1 min-h-0 overflow-y-auto"
+              exit={{ opacity: 0 }}
+              initial={{
+                opacity: 0,
+                transform: shouldReduceMotion
+                  ? "none"
+                  : CONTENT_ENTRANCE_OFFSET,
+              }}
+              transition={{
+                delay: shouldReduceMotion ? 0 : CONTENT_ENTRANCE_DELAY_SECONDS,
+                duration: CONTENT_ENTRANCE_SECONDS,
+                ease: EASE_OUT,
+              }}
+            >
+              {/*
+               * INSIDE THE PANE, BELOW ITS CLOSE BUTTON. Everything that opens here — a Bot's
+               * profile, its screen and routines — fails without taking the column beside it,
+               * and the way out stays drawn above the failure. Here rather than at each caller,
+               * so a pane nobody has written yet is covered too.
+               */}
+              <SectionBoundary className="min-h-40" section="detail">
+                {detail}
+              </SectionBoundary>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className="relative flex h-full min-h-0">
       <div className="flex flex-1 min-w-0 flex-col">{children}</div>
-      <motion.div
-        animate={{ width: open ? detailWidth : 0 }}
-        /*
-         * AN OVERLAY UNTIL THERE IS ROOM FOR A COLUMN.
-         *
-         * The pane is 320px, or whatever the caller asked for, and the app shell already spends
-         * 340px on the rail — so at a 900px window a profile or a Bot's screen left about 160px of
-         * conversation beside it, which is not a conversation. Below `lg` it lays over the main
-         * column instead; the card inside it already carries its own background and a left
-         * hairline, which is exactly how an overlay should read.
-         */
-        className={`${isSheetWhenNarrow ? "fixed z-50" : "absolute z-20"} inset-y-0 right-0 shrink-0 overflow-hidden lg:static lg:z-auto`}
-        // No entry animation on first paint: URL-opened panels should appear as initial state.
-        initial={false}
-        transition={{
-          duration: shouldReduceMotion ? 0 : ANIMATION_DURATION_SECONDS,
-          ease: EASE_OUT,
-        }}
-      >
-        <div
-          className="flex h-full flex-col bg-sidebar border-l border-border"
-          style={{ width: detailWidth }}
-        >
-          {/*
-           * Rendered for the whole animation, so the way out is available immediately — but `inert`
-           * while closed. The pane collapses to zero width and keeps its markup, so the close button
-           * stayed in the tab order: tabbing across a screen with no visible panel landed on an
-           * invisible control that closed something already closed.
-           */}
-          <div
-            className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2"
-            inert={!open}
-          >
-            <div className="flex min-w-0 w-full items-center gap-1.5">
-              {title}
-            </div>
-            <div className="flex flex-row gap-1.5">
-              <Button
-                aria-label={t("Close")}
-                onClick={onClose}
-                variant="ghost"
-                size="icon"
-              >
-                <IconX className="size-4.5" />
-              </Button>
-            </div>
-          </div>
-          {/*
-           * Unmount while closed so dismissed form state and detail queries do not remain active —
-           * but not on the first frame of closing. The content used to vanish the instant `open`
-           * went false while the pane spent 300ms collapsing behind it, so a close read as the
-           * panel emptying and then folding an empty strip. AnimatePresence holds it for a fade
-           * that finishes well inside that collapse, and the unmount still happens.
-           */}
-          <AnimatePresence>
-            {open ? (
-              <motion.div
-                animate={{ opacity: 1, transform: "translateY(0px)" }}
-                className="flex-1 min-h-0 overflow-y-auto"
-                exit={{ opacity: 0 }}
-                initial={{
-                  opacity: 0,
-                  transform: shouldReduceMotion
-                    ? "none"
-                    : CONTENT_ENTRANCE_OFFSET,
-                }}
-                transition={{
-                  delay: shouldReduceMotion
-                    ? 0
-                    : CONTENT_ENTRANCE_DELAY_SECONDS,
-                  duration: CONTENT_ENTRANCE_SECONDS,
-                  ease: EASE_OUT,
-                }}
-              >
-                {/*
-                 * INSIDE THE PANE, BELOW ITS CLOSE BUTTON. Everything that opens here — a Bot's
-                 * profile, its screen and routines — fails without taking the column beside it,
-                 * and the way out stays drawn above the failure. Here rather than at each caller,
-                 * so a pane nobody has written yet is covered too.
-                 */}
-                <SectionBoundary className="min-h-40" section="detail">
-                  {detail}
-                </SectionBoundary>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      </motion.div>
+      {/* Outside the app's root while it is a sheet, which `useOverlayModal` makes inert. */}
+      {isSheet ? createPortal(pane, document.body) : pane}
     </div>
   );
 }

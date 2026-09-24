@@ -30,7 +30,7 @@ export type RatingScenario = {
   /** False is a deployment without the rating route: every read of it is a 404. */
   ratingsRoute: boolean;
   /** What to do once the controls are up. */
-  steps: "rate" | "reopen" | "none";
+  steps: "rate" | "reopen" | "none" | "offline";
   /** What to write under 아쉬워요, for the `rate` steps. */
   note: string;
 };
@@ -55,6 +55,8 @@ export type RatingShown = {
   popoverClosed: boolean | null;
   pressedAfterDown: { up: boolean; down: boolean } | null;
   pressedAfterUpAgain: { up: boolean; down: boolean } | null;
+  /** The alert under the answer once a 좋아요 that never reached the server came back. */
+  offlineAlert: string | null;
 };
 
 export const RATED_CHANNEL = "channel_rating-render";
@@ -109,6 +111,8 @@ const view = await mountApp({
     }
     if (pathname === `${ratingsPath}/${ANSWER_ID}` && method === "PUT") {
       puts.push(body);
+      // What a browser does with a request that got no answer at all.
+      if (scenario.steps === "offline") throw new TypeError("Failed to fetch");
       const sent = body as {
         rating: "up" | "down";
         reason?: string;
@@ -181,6 +185,7 @@ const shown: RatingShown = {
   popoverClosed: null,
   pressedAfterDown: null,
   pressedAfterUpAgain: null,
+  offlineAlert: null,
 };
 
 const statusUnderAnswer = () =>
@@ -243,6 +248,15 @@ if (scenario.steps === "rate") {
   shown.pressedAfterUpAgain = pressed();
 } else if (scenario.steps === "reopen") {
   await openPopover();
+} else if (scenario.steps === "offline") {
+  const alertUnderAnswer = () =>
+    [...(answerRow()?.querySelectorAll('[role="alert"]') ?? [])]
+      .map((alert) => alert.textContent ?? "")
+      .join(" ")
+      .trim();
+  await view.click(button(answerRow(), "좋아요") as Element);
+  await view.waitFor(() => alertUnderAnswer() !== "", "the failed 좋아요");
+  shown.offlineAlert = alertUnderAnswer();
 }
 
 await view.unmount();

@@ -11,6 +11,9 @@ import { type RefObject, useLayoutEffect } from "react";
  * `inert` on the app's root is what `aria-modal` promised — nothing behind can be focused, pressed
  * or read while the overlay is up — and the overlays are portalled to `<body>`, outside it.
  *
+ * Since 2026-09-24 the Bot's screen is the side pane (`detail-panel.tsx`), a sheet over the whole
+ * window below `lg` and only then a modal; the sign-in handoff is still an overlay of its own.
+ *
  * A LAYOUT EFFECT, because of whose effect runs first. The live screen focuses its keyboard field in
  * a passive effect as it mounts, and the children's passive effects run before this component's;
  * read there, "what was focused" is the overlay's own field, not the button that opened it. Layout
@@ -18,11 +21,7 @@ import { type RefObject, useLayoutEffect } from "react";
  */
 export function useOverlayModal(
   isOpen: boolean,
-  /**
-   * Where focus goes when the opener is gone by the time the overlay closes. The Bot's screen is
-   * opened from 전체 크기로 열기 while somebody drives, and handing back is what takes that button
-   * away; its own picture is always there.
-   */
+  /** Where focus goes when the opener is gone by the time the overlay closes. */
   fallback?: RefObject<HTMLElement | null>,
 ): void {
   useLayoutEffect(() => {

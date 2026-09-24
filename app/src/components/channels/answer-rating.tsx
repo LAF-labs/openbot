@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { t } from "@/lib/i18n";
+import { failureSentence } from "@/lib/press";
 import {
   ANSWER_NOTE_MAX_LENGTH,
   ANSWER_RATING_REASONS,
@@ -294,7 +295,8 @@ export const AnswerRatingControls = ({
               className="text-destructive text-xs"
               tone="alert"
             >
-              {down.error?.message}
+              {/* Never `.message`: a request with no answer is the browser's "Failed to fetch". */}
+              {down.error ? failureSentence(down.error) : null}
             </LiveRegion>
             <div className="flex justify-end gap-2">
               <Button
@@ -328,7 +330,7 @@ export const AnswerRatingControls = ({
         className="px-1 text-destructive text-xs"
         tone="alert"
       >
-        {up.error?.message}
+        {up.error ? failureSentence(up.error) : null}
       </LiveRegion>
     </div>
   );

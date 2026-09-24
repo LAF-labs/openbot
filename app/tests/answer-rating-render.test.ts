@@ -41,6 +41,18 @@ async function render(scenario: RatingScenario): Promise<RatingShown> {
 }
 
 describe("rating an answer", () => {
+  test("a 좋아요 that never reached the server says so in Korean, not in the browser's words", async () => {
+    const shown = await render({
+      stored: [],
+      ratingsRoute: true,
+      steps: "offline",
+      note: "",
+    });
+    expect(shown.offlineAlert).toBe(
+      "서버에 닿지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    );
+  });
+
   test("좋아요, then 아쉬워요 with a reason and a note, then 좋아요 again — each drawn once the server has it", async () => {
     const note = "어제 매출을 알려 줬어요";
     const shown = await render({

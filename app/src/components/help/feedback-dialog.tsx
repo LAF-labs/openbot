@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { activeLocale, t } from "@/lib/i18n";
+import { failureSentence } from "@/lib/press";
 import {
   lastConnectionCheck,
   subscribeToConnectionCheck,
@@ -299,7 +300,11 @@ export function FeedbackDialog({
                   >
                     {hasGatherFailed ? (
                       <>
-                        {gather.error?.message}{" "}
+                        {/*
+                         * Through `failureSentence`, never `.message`: a request that got no answer
+                         * rejects with the browser's own "Failed to fetch", in English.
+                         */}
+                        {failureSentence(gather.error)}{" "}
                         <button
                           className="underline underline-offset-2"
                           onClick={() => gather.mutate()}
@@ -329,7 +334,7 @@ export function FeedbackDialog({
         )}
         {/* Outside the form, which goes when the receipt comes: this line is the box's, not the form's. */}
         <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
-          {receipt ? null : send.error?.message}
+          {receipt || !send.error ? null : failureSentence(send.error)}
         </LiveRegion>
         <DialogFooter>
           {receipt ? (

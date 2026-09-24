@@ -3,7 +3,8 @@
 Written 2026-09-18, before the audit that applied it. A dialog in this app is anything that
 takes the screen and asks for an answer: the Base UI dialog in `app/src/components/ui/dialog.tsx`,
 `ConfirmDialog` on top of it, and the two full-screen overlays drawn by hand — the Bot's screen
-and the sign-in handoff. They are held to one list, because a person learns what a dialog does
+as a sheet over the whole window below `lg` (the side pane, `detail-panel.tsx`, since
+2026-09-24), and the sign-in handoff. They are held to one list, because a person learns what a dialog does
 once and expects the next one to do the same.
 
 ## The checklist
@@ -81,8 +82,10 @@ for a failure.
   `app/src/lib/rechecks.ts`.
 - The two overlays drawn by hand use `useOverlayModal`: the app's root is inert while one is up,
   and focus goes back to the opener — or to a fallback the overlay names, when the opener left.
-  Their Escape listens in the capture phase: a window listener added earlier (the side pane's)
-  would otherwise read `defaultPrevented` before the overlay set it, and close too.
+  The handoff's Escape listens in the capture phase: a window listener added earlier (the side
+  pane's) would otherwise read `defaultPrevented` before the overlay set it, and close too. The
+  side pane, when it is the sheet, is portalled out of the root it makes inert, and its first
+  focus is its ×.
 - `app/tests/support/confirm-dialog-render.tsx` presses the real popup in a process of its own and
   tries every way out while it runs; `confirm-dialog.test.tsx` holds what it finds.
 
