@@ -356,13 +356,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `agent-computer` and `root` keep theirs; root lost three with the room's checks (the upgrade check's
  * room turn, the room's tool in the bridge) and is still above its floor.
  *
+ * RAISED 2026-09-24 with the code-quality pass (seams for the Bot's browser banner and cards, a
+ * screen error's components and the tool card's report, the profile page's reading, the sheet as a
+ * modal, status regions): eleven tests to `app`, eight to `server` (the component list's refusals).
+ * Measured at server 2,558 / app 1,108 / agent-computer 266 / root 364. A fresh 3% under would lower
+ * both, so each floor rises by exactly what was added; the other two did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2462, roots: ["server"] },
-  { name: "app", floor: 1088, roots: ["app"] },
+  { name: "server", floor: 2470, roots: ["server"] },
+  { name: "app", floor: 1099, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
