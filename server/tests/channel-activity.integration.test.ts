@@ -79,7 +79,6 @@ async function createUser(): Promise<AgentActor> {
 async function createAgent(owner: AgentActor, name = "Expense Manager") {
   const profile = await profileStore.create(owner, {
     name,
-    title: "Finance Operations",
     roleDescription: "Review receipts.",
   });
   createdAgentIds.push(profile.id);

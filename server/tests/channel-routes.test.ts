@@ -487,7 +487,6 @@ async function createPersistentAgent(options: {
   await database.insert(agentProfiles).values({
     agentId,
     ownerUserId: options.owner.id,
-    title: `${options.name} title`,
     roleDescription: `${options.name} role description`,
     avatarSeed: agentId,
   });

@@ -73,7 +73,6 @@ beforeAll(async () => {
       .values({
         agentId: id,
         ownerUserId: owner,
-        title: id,
         roleDescription: "For a test.",
         avatarSeed: id,
       })

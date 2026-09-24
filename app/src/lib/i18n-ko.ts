@@ -148,7 +148,6 @@ export const ko: Record<string, string> = {
   "Nobody answered in time": "아무도 답하지 않음",
   "Nothing yet. What it learns about you appears here.":
     "아직 없습니다. 봇이 알게 된 내용이 여기에 쌓입니다.",
-  "One Bot asked another": "봇이 다른 봇에게 요청함",
   "Paused until somebody reviews it": "검토할 때까지 멈춤",
   Refused: "거부됨",
   "Pick a Bot first.": "봇을 먼저 고르세요.",
@@ -218,7 +217,6 @@ export const ko: Record<string, string> = {
     "그냥 진행해도 되는 일을 적어 주세요. 나머지는 모두 물어봅니다.",
   "You said no to this recently": "최근에 아니라고 답함",
   name: "이름",
-  title: "직함",
   "what it is for": "무엇을 하는 봇인지",
   "Show more": "더 보기",
   "Show fewer": "접기",
@@ -445,7 +443,6 @@ export const ko: Record<string, string> = {
   "Opening Kakao…": "카카오 여는 중…",
   "Opening Naver…": "네이버 여는 중…",
   Paused: "일시정지",
-  Pinned: "고정됨",
   "Press Escape to hand back and close":
     "Esc를 누르면 제어를 돌려주고 닫습니다",
   "Published, so every Bot may use it": "게시됨 — 모든 봇이 쓸 수 있음",
@@ -606,8 +603,6 @@ export const ko: Record<string, string> = {
   // not say what would be accepted leaves somebody guessing at the one form everybody meets first.
   "A Bot needs a name, of 80 characters or fewer.":
     "봇에는 80자 이내의 이름이 필요합니다.",
-  "A job title can be up to 120 characters.":
-    "직함은 120자까지 쓸 수 있습니다.",
   "A description can be up to 1,000 characters.":
     "설명은 1,000자까지 쓸 수 있습니다.",
   "That address cannot be used.": "그 주소는 쓸 수 없습니다.",
@@ -1774,7 +1769,6 @@ export const ko: Record<string, string> = {
   "The boundary": "경계 설정",
   Isolation: "격리 방식",
   "Model usage": "모델 사용량",
-  "One Bot asking another": "봇 사이 요청",
   "A routine": "루틴",
   "A component": "컴포넌트",
   "A component's data": "컴포넌트 데이터",
@@ -1891,8 +1885,6 @@ export const ko: Record<string, string> = {
     "각 항목은 누군가 “항상” 또는 “이 대화 동안”으로 답한 질문입니다. 취소하거나 기한이 끝나기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용됩니다 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남습니다.",
 
   // 감사 표: 방에서 봇 하나가 차례를 가진 기록 — 몇 번째 바퀴였고, 왜 말했고, 무엇이 됐는지.
-  "A Bot took its turn in a room": "봇이 방에서 차례를 가짐",
-  "A room turn": "방의 차례",
 
   /*
    * 재시작이 거짓말하지 않는다. 서버가 도중에 다시 시작된 런은 대화방에 이 한 줄로 남고(루틴이면
@@ -2390,8 +2382,9 @@ export const ko: Record<string, string> = {
   "Your Bot could not be loaded.": "봇을 불러오지 못했어요.",
   "Delete this Bot": "이 봇 삭제",
   "Tell {name} what you need.": "{name}에게 필요한 일을 말해 보세요.",
-  "Conversations with several Bots can no longer be opened. Nothing in it was deleted.":
-    "여러 봇이 함께하던 대화는 이제 열 수 없어요. 대화 내용은 지워지지 않고 그대로 있어요.",
+  "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.":
+    "이 대화는 이제 없어요. 여러 봇이 함께하던 대화는 정리되면서 그 안의 내용도 함께 지워졌어요.",
+  "Go to your Bot": "내 봇과 대화하기",
   "You already have your Bot. Change its name or face on its profile instead.":
     "이미 봇이 있어요. 봇은 하나만 둘 수 있어요 — 이름이나 얼굴은 봇 프로필에서 바꿀 수 있어요.",
   "A conversation is with one Bot.": "대화는 봇 하나와 해요.",

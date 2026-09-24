@@ -1,6 +1,6 @@
 import { IconDeviceDesktop, IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect } from "react";
 import { z } from "zod";
@@ -11,10 +11,11 @@ import { LiveView } from "@/components/computer/live-view";
 import { useControl } from "@/components/computer/use-control";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SectionBoundary } from "@/components/layout/section-boundary";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { agentKeys, agentListQueryOptions } from "@/lib/agents/queries";
 import {
   type AgentChannel,
+  ChannelGoneError,
   channelKeys,
   channelQueryOptions,
 } from "@/lib/channels/queries";
@@ -100,28 +101,12 @@ function RouteComponent() {
   const navigate = Route.useNavigate();
   const isSettingsOpen = settings === true;
   const prefersReducedMotion = useReducedMotion();
-  /**
-   * Whose profile the settings pane edits, and — for a room with one Bot — whose name titles it.
-   *
-   * A room with several is titled by the ROOM: the sidebar row says "일상 비서, 지식" and a header
-   * that answered "일상 비서" would name one member of a conversation the list just named three
-   * people for. The pane still edits the Bot that speaks for the room, because there is no such
-   * thing as a group's profile.
-   */
+  /** Whose profile the settings pane edits, and whose name titles the conversation. */
   const agentId = channel.data?.agentIds[0];
-  /*
-   * A room from before 2026-09-24: several Bots, one conversation. Rooms were removed and nothing
-   * can run one; its messages stay where they are and this screen says so (`ChannelBody`).
-   */
-  const isRoom = (channel.data?.agentIds.length ?? 0) > 1;
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
   const panel = useScreenPanel();
-  /*
-   * Not for a room from before 2026-09-24: it has several Bots and no conversation to run, so there
-   * is no one browser for it to be the screen of.
-   */
-  const isWatching = panel.isOpen && agentId !== undefined && !isRoom;
+  const isWatching = panel.isOpen && agentId !== undefined;
   // Only while the screen is open: that is the one place a person can be holding the wheel from.
   const control = useControl(isWatching ? agentId : undefined, true);
   const screenWidth = useScreenPanelWidth(control?.holder === "human");
@@ -245,9 +230,7 @@ function RouteComponent() {
                * tall to say nothing new.
                */}
               <span className="truncate font-semibold text-base">
-                {isRoom
-                  ? (channel.data?.name ?? t("Channel"))
-                  : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))}
+                {headerAgent?.name ?? channel.data?.name ?? t("Channel")}
               </span>
             </motion.span>
           </div>
@@ -266,7 +249,7 @@ function RouteComponent() {
               }
               aria-pressed={isWatching}
               className={isWatching ? "bg-foreground/5" : undefined}
-              disabled={agentId === undefined || isRoom}
+              disabled={agentId === undefined}
               onClick={() => {
                 if (!isWatching) void showSettings(false);
                 setScreenOpen(!isWatching);
@@ -318,6 +301,7 @@ function RouteComponent() {
           channel={channel.data}
           isPending={channel.isPending}
           hasError={Boolean(channel.error)}
+          isGone={channel.error instanceof ChannelGoneError}
         />
       </SectionBoundary>
     </DetailPanel>
@@ -332,16 +316,41 @@ function ChannelBody({
   channel,
   isPending,
   hasError,
+  isGone,
 }: {
   channel: AgentChannel | undefined;
   isPending: boolean;
   hasError: boolean;
+  /** The server answered that this conversation does not exist, rather than failing to answer. */
+  isGone: boolean;
 }) {
   if (isPending) {
     return (
       <p className="p-8 text-sm text-muted-foreground">
         {t("Loading channel…")}
       </p>
+    );
+  }
+  /*
+   * A CONVERSATION THAT IS NOT THERE, most often a room from before 2026-09-24 — several Bots in
+   * one conversation. Rooms were removed with the decision that a person has one Bot
+   * (docs/laf/deployment-model.md, "봇은 하나다"), and migration 0047 deleted them with everything
+   * said in them, so its address now answers 404. That is not a failure to load, and saying so
+   * would send somebody pressing 다시 불러오기 at something that will never come back: this says
+   * what happened and where their Bot is instead.
+   */
+  if (isGone) {
+    return (
+      <div className="flex flex-col items-start gap-4 p-8">
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.",
+          )}
+        </p>
+        <Link className={buttonVariants({ variant: "secondary" })} to="/">
+          {t("Go to your Bot")}
+        </Link>
+      </div>
     );
   }
   if (hasError || !channel) {
@@ -357,22 +366,6 @@ function ChannelBody({
     return (
       <p className="p-8 text-muted-foreground text-sm">
         {t("This conversation has no Bot in it.")}
-      </p>
-    );
-  }
-
-  /*
-   * A ROOM FROM BEFORE 2026-09-24. Rooms were removed with the decision that a person has one Bot
-   * (docs/laf/deployment-model.md, "봇은 하나다"), and the screen that ran one went with them. What
-   * was said in it is not deleted — the rows are where they were — and this says so rather than
-   * opening it as a conversation with its first member, which it never was.
-   */
-  if (channel.agentIds.length > 1) {
-    return (
-      <p className="p-8 text-muted-foreground text-sm">
-        {t(
-          "Conversations with several Bots can no longer be opened. Nothing in it was deleted.",
-        )}
       </p>
     );
   }

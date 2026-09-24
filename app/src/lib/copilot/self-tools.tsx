@@ -398,31 +398,27 @@ export function SelfTools() {
     description: UPDATE_PROFILE.description,
     parameters: asStandardSchema<{
       name?: string;
-      title?: string;
       description?: string;
       effort?: AgentEffort;
     }>(UPDATE_PROFILE.parameters),
     handler: async (
       args: {
         name?: string;
-        title?: string;
         description?: string;
         effort?: AgentEffort;
       },
       call: { toolCall?: { id?: string } } = {},
     ) => {
-      const { name, description, title, effort } = args;
+      const { name, description, effort } = args;
       const remember = noteFor(call);
 
       const patch: Record<string, string> = {};
       if (name !== undefined) patch.name = name;
       if (description !== undefined) patch.roleDescription = description;
-      if (title !== undefined) patch.title = title;
       if (effort !== undefined) patch.effort = effort;
 
       const changed = [
         ...(name === undefined ? [] : [t("name")]),
-        ...(title === undefined ? [] : [t("title")]),
         ...(description === undefined ? [] : [t("what it is for")]),
         /*
          * The field, then the value it was set to. Its siblings are field names, so the bare label

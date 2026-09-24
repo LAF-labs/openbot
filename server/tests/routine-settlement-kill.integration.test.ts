@@ -129,7 +129,6 @@ async function morningRoutine() {
   const owner: AgentActor = { id, role: "user" };
   const profile = await profileStore.create(owner, {
     name: "아침봇",
-    title: "Coworker",
     roleDescription: "Reports every morning.",
   });
   made.agents.push(profile.id);

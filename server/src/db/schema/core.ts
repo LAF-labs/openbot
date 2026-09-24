@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  bigint,
   boolean,
   index,
   pgEnum,
@@ -203,22 +202,11 @@ export const channels = pgTable("channels", {
    * on the audit of 2026-09-10, where a leaver's last words stayed on the survivor's row. The
    * preview lives on `channel_threads` since migration 0038, beside the thread it previews.
    */
-  /**
-   * Which room turn is current, counted up by every message a person posts into the room.
-   *
-   * NOTHING READS OR WRITES IT SINCE 2026-09-24, when rooms were removed. It keeps the numbers the
-   * rooms left; dropping it is a migration somebody decides on.
-   *
-   * A ROOM TURN CAN OUTLIVE ITS QUESTION. Several Bots answering in rounds takes a minute, and in
-   * that minute the person can say something else — at which point everything still running is
-   * answering a question that has been superseded. Every checkpoint in the turn compares this
-   * number against the one it started with, so a newer message ends the older turn wherever it had
-   * got to. A column rather than a counter in memory because two server processes must not each
-   * believe their own turn is the current one.
+  /*
+   * `room_turn_epoch` WAS HERE, counting the turns of a room with several Bots in it, so a newer
+   * message could end an older turn wherever it had got to. Rooms were removed on 2026-09-24 and
+   * migration 0047 dropped the column along with the rooms' own rows.
    */
-  roomTurnEpoch: bigint("room_turn_epoch", { mode: "number" })
-    .notNull()
-    .default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -343,14 +331,14 @@ export const channelThreads = pgTable(
      *
      * Here and not on `channels`, because this row is the conversation: a channel with two people
      * in it holds two threads, and a preview stored once per channel showed each of them the
-     * other's last sentence. Written by the three things that append a message — the browser's
-     * report of a chat turn, a room turn, a routine's delivery — always for the thread the message
+     * other's last sentence. Written by the things that append a message — the browser's report
+     * of a chat turn, a routine's delivery — always for the thread the message
      * went into, and read by the roster through the same join it already makes on this table.
      * What has been SEEN stays on the membership, beside it.
      */
     lastMessage: text("last_message"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
-    /** Which Bot spoke, so a room with several can show the right one. Null for a person. */
+    /** Which Bot spoke last, for the face on the roster row. Null for a person. */
     lastMessageAgentId: text("last_message_agent_id").references(
       () => agents.id,
       { onDelete: "set null" },

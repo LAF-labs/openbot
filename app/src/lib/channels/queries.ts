@@ -123,6 +123,15 @@ export function channelFailuresQueryOptions(channelId: string) {
   });
 }
 
+/**
+ * The conversation is not there: the server answered 404, which is not the same as not reaching it.
+ *
+ * A class of its own so the screen can say the two differently, and so the 404 is not asked again —
+ * the answer will not change. Since migration 0047 it is also what the address of a room from
+ * before 2026-09-24 answers: rooms were deleted with everything said in them.
+ */
+export class ChannelGoneError extends Error {}
+
 export function channelQueryOptions(channelId: string) {
   return queryOptions({
     queryKey: channelKeys.detail(channelId),
@@ -130,8 +139,13 @@ export function channelQueryOptions(channelId: string) {
       const response = await fetch(`/api/channels/${channelId}`, {
         credentials: "include",
       });
+      if (response.status === 404) {
+        throw new ChannelGoneError(t("This conversation is no longer here."));
+      }
       if (!response.ok) throw new Error(t("Could not load this conversation."));
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
+    retry: (failures, error) =>
+      !(error instanceof ChannelGoneError) && failures < 1,
   });
 }

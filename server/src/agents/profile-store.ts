@@ -141,7 +141,6 @@ export class ProtectedAgentError extends Error {
 const joinedProjection = {
   id: agents.id,
   name: agents.name,
-  title: agentProfiles.title,
   roleDescription: agentProfiles.roleDescription,
   avatarSeed: agentProfiles.avatarSeed,
   effort: agentProfiles.effort,
@@ -149,7 +148,6 @@ const joinedProjection = {
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
   hiddenAt: agentPreferences.hiddenAt,
-  pinnedAt: agentPreferences.pinnedAt,
   notify: agentPreferences.notify,
   deletedAt: agentProfiles.deletedAt,
   configuration: agents.configuration,
@@ -189,7 +187,6 @@ function mapProfile(
   return {
     id: row.id,
     name: row.name,
-    title: row.title,
     roleDescription: row.roleDescription,
     avatarSeed: row.avatarSeed,
     effort: row.effort,
@@ -197,7 +194,6 @@ function mapProfile(
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
     hidden: row.hiddenAt !== null,
-    pinnedAt: row.pinnedAt,
     /*
      * Default ON for a Bot nobody has expressed an opinion about.
      *
@@ -218,7 +214,7 @@ function mapProfile(
  * The AG-UI address this coworker runs on, read back out of its stored configuration.
  *
  * Needed so an edit does not destroy it. The edit form is the same form as create, so without the
- * current endpoint to fill it with, saving a change of title would submit an empty endpoint and
+ * current endpoint to fill it with, saving a change of name would submit an empty endpoint and
  * convert an external agent back into the built-in one. That failure is silent and total: the Bot
  * keeps working, so nothing looks broken, and it is simply no longer their agent.
  */
@@ -418,7 +414,6 @@ export function createAgentProfileStore(
         await transaction.insert(agentProfiles).values({
           agentId: id,
           ownerUserId: actor.id,
-          title: input.title,
           roleDescription: input.roleDescription,
           // The face the person picked, not the id. `update()` always honoured this; `create()`
           // overwrote it with the agent id, so the mascot hashed that into SOME face and the person
@@ -483,7 +478,6 @@ export function createAgentProfileStore(
           await transaction
             .update(agentProfiles)
             .set({
-              title: input.title,
               roleDescription: input.roleDescription,
               // Absent leaves the face alone. See CreateAgentInput.avatarSeed.
               ...(input.avatarSeed === undefined
@@ -518,14 +512,12 @@ export function createAgentProfileStore(
         /*
          * Built from the keys the caller actually named, so `set` never carries a column the caller
          * did not ask about. Spreading a fixed object with undefined holes would have drizzle write
-         * NULL over a pin somebody set last week because this call was only about notifications.
+         * NULL over a Bot somebody hid last week because this call was only about notifications.
          */
         const now = new Date();
         const changes: Partial<typeof agentPreferences.$inferInsert> = {};
         if (patch.hidden !== undefined)
           changes.hiddenAt = patch.hidden ? now : null;
-        if (patch.pinned !== undefined)
-          changes.pinnedAt = patch.pinned ? now : null;
         if (patch.notify !== undefined) changes.notify = patch.notify;
         if (Object.keys(changes).length === 0) return;
 

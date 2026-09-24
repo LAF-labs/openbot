@@ -83,7 +83,6 @@ async function sharedConversation() {
   }
   const bot = await profileStore.create(OWNER, {
     name: "매출봇",
-    title: "Coworker",
     roleDescription: "Knows the numbers.",
   });
   madeBots.push(bot.id);

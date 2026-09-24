@@ -35,7 +35,6 @@ const actor = {
 
 const validInput: CreateAgentInput = {
   name: "Expense Manager",
-  title: "Finance Operations",
   roleDescription:
     "Review receipts, categorize expenses, and prepare reimbursement reports.",
 };
@@ -44,7 +43,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   return {
     id: "agent-1",
     name: validInput.name,
-    title: validInput.title,
     roleDescription: validInput.roleDescription,
     avatarSeed: "expense-manager",
     effort: "balanced",
@@ -52,7 +50,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     ownerUserId: actor.id,
     systemOwned: false,
     hidden: false,
-    pinnedAt: null,
     notify: true,
     deletedAt: null,
     endpoint: null,
@@ -144,8 +141,6 @@ describe("agent input parser", () => {
     ["name", 12, "laf:agent_name_invalid"],
     ["name", "   ", "laf:agent_name_invalid"],
     ["name", "n".repeat(81), "laf:agent_name_invalid"],
-    ["title", false, "laf:agent_title_too_long"],
-    ["title", "t".repeat(121), "laf:agent_title_too_long"],
     ["roleDescription", {}, "laf:agent_role_too_long"],
     ["roleDescription", "r".repeat(1001), "laf:agent_role_too_long"],
   ])("rejects invalid %s values", (field, value, code) => {
@@ -161,10 +156,6 @@ describe("agent input parser", () => {
    * thing, and all of them are allowed.
    */
   test.each([
-    ["title", undefined],
-    ["title", null],
-    ["title", "   "],
-    ["title", "\n\t"],
     ["roleDescription", undefined],
     ["roleDescription", null],
     ["roleDescription", "   "],
@@ -180,8 +171,6 @@ describe("agent input parser", () => {
   test.each([
     ["name", "n", "n"],
     ["name", ` ${"n".repeat(80)} `, "n".repeat(80)],
-    ["title", "t", "t"],
-    ["title", ` ${"t".repeat(120)} `, "t".repeat(120)],
     ["roleDescription", "r", "r"],
     ["roleDescription", ` ${"r".repeat(1000)} `, "r".repeat(1000)],
   ])("accepts and trims boundary %s values", (field, value, trimmed) => {
@@ -197,6 +186,8 @@ describe("agent input parser", () => {
     expect(
       parseAgentInput({
         name: "  Expense Manager  ",
+        // A field until 2026-09-24 and a column until migration 0047; an older client may still
+        // send it, and it is read like any other key the parser does not know.
         title: "  Finance Operations  ",
         roleDescription: "  Reviews receipts.  ",
         id: "forged-agent",
@@ -214,7 +205,6 @@ describe("agent input parser", () => {
       ok: true,
       value: {
         name: "Expense Manager",
-        title: "Finance Operations",
         roleDescription: "Reviews receipts.",
         endpoint: "https://agents.example.com/ag-ui",
         avatarSeed: "r2c6",
@@ -335,13 +325,11 @@ describe("agent lifecycle routes", () => {
         {
           id: "agent-1",
           name: validInput.name,
-          title: validInput.title,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
           hidden: false,
-          pinnedAt: null,
           notify: true,
           systemOwned: false,
           endpoint: null,
@@ -352,13 +340,11 @@ describe("agent lifecycle routes", () => {
         {
           id: "agent-2",
           name: validInput.name,
-          title: validInput.title,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
           hidden: false,
-          pinnedAt: null,
           notify: true,
           systemOwned: false,
           endpoint: null,
@@ -369,13 +355,11 @@ describe("agent lifecycle routes", () => {
         {
           id: "system-agent",
           name: validInput.name,
-          title: validInput.title,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
           effort: "balanced",
           autoReview: "",
           hidden: false,
-          pinnedAt: null,
           notify: true,
           systemOwned: true,
           endpoint: null,
@@ -502,7 +486,6 @@ describe("agent lifecycle routes", () => {
     // calls are [method, actor, input]
     expect(store.calls.at(0)?.[2]).toMatchObject({
       name: "새 봇",
-      title: "",
       roleDescription: "",
     });
   });
@@ -789,6 +772,8 @@ describe("what a Bot writes into its own profile", () => {
     const store = fakeStore();
     const response = await post(store, {
       name: "정산\t담당",
+      // Not a field since 2026-09-24: an older Bot's tool call may still carry one, and it goes
+      // nowhere.
       title: "정산\u2028매니저",
       roleDescription: "정산\r\n\r\n담당 봇.\u0000  매일 아침\n\n\n확인.",
     });
@@ -796,7 +781,7 @@ describe("what a Bot writes into its own profile", () => {
     const update = store.calls.find(([method]) => method === "update");
     const input = update?.[3] as Record<string, unknown>;
     expect(input.name).toBe("정산 담당");
-    expect(input.title).toBe("정산 매니저");
+    expect(input).not.toHaveProperty("title");
     expect(input.roleDescription).toBe("정산 담당 봇. 매일 아침 확인.");
   });
 

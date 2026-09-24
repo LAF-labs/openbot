@@ -180,7 +180,6 @@ describe("the first run", () => {
     ]);
     expect(made).toMatchObject({
       name: "미소",
-      title: "",
       roleDescription: "",
     });
     expect(
@@ -397,43 +396,44 @@ describe("the sidebar", () => {
 });
 
 describe("a room from before", () => {
-  test("says it can no longer be opened, and that nothing in it was deleted", async () => {
+  /*
+   * Migration 0047 deleted every room — a conversation with several Bots — with everything said in
+   * it, so its old address answers 404 now. The screen used to say nothing in one was deleted, which
+   * stopped being true that day; it says what happened and offers the way back to the Bot.
+   */
+  test("says group conversations were removed with what was said in them, and leads to the Bot", async () => {
+    let asked = 0;
     const view = await mountApp({
       path: "/channel/room-1",
       api: ({ pathname }) => {
         if (pathname === "/api/agents") {
           return json({
-            agents: [
-              agentFixture({ id: "bot-1", name: "초롱" }),
-              agentFixture({ id: "bot-2", name: "두리" }),
-            ],
+            agents: [agentFixture({ id: "bot-1", name: "초롱" })],
           });
         }
         if (pathname === "/api/channels/room-1") {
-          return json({
-            channel: {
-              id: "room-1",
-              name: "초롱, 두리",
-              agentIds: ["bot-1", "bot-2"],
-              threadId: "thread-room",
-              active: true,
-            },
-          });
+          asked += 1;
+          return json({ error: "laf:channel_not_found" }, 404);
         }
         return undefined;
       },
     });
+    const sentence =
+      "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.";
     await view.waitFor(
-      () =>
-        view.host.textContent?.includes(
-          "Conversations with several Bots can no longer be opened.",
-        ) === true,
+      () => view.host.textContent?.includes(sentence) === true,
       "the sentence",
     );
-    expect(
-      ko[
-        "Conversations with several Bots can no longer be opened. Nothing in it was deleted."
-      ],
-    ).toContain("지워지지 않고");
+    expect(view.host.textContent).not.toContain("Could not load this channel.");
+    expect(view.host.querySelector('a[href="/"]')?.textContent).toBe(
+      "Go to your Bot",
+    );
+    // A 404 is an answer, not a failure: the loader's read and the screen's own, and no retry of
+    // either — a retry would hold "Loading…" on the screen for a second first.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(asked).toBeLessThanOrEqual(2);
+    expect(ko[sentence]).toContain("지워졌어요");
+    expect(ko[sentence]).not.toContain("지워지지 않고");
+    expect(ko["Go to your Bot"]).toBe("내 봇과 대화하기");
   });
 });

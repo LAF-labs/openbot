@@ -1,8 +1,8 @@
 /**
  * What a Bot may write into its own profile, on its way to becoming part of every later prompt.
  *
- * `name`, `title` and `roleDescription` are rendered into the system message of every
- * conversation, room and routine the Bot ever runs (`shared/prompt/index.ts`) — the description as
+ * `name` and `roleDescription` are rendered into the system message of every conversation and
+ * routine the Bot ever runs (`shared/prompt/index.ts`) — the description as
  * a paragraph of its own, with nothing framing it, right under the line that says who the Bot is.
  * A page the Bot read can tell it to call `update_profile`, and the audit (A8, 2026-09-10) found
  * that write path took the text as sent: control characters, blank lines, a `system:` line. So a

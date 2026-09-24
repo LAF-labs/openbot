@@ -31,9 +31,8 @@ import { lafThreadRuns } from "../db/schema";
  * Exported as a value because one of the writers takes the origin off the wire and has to check it
  * against something (`laf-runner.ts`); a pg enum turns an unchecked string into a failed insert.
  *
- * The column also accepts `handoff` and `room`, which nothing writes since rooms and one Bot asking
- * another were removed (2026-09-24). They stay in the enum because rows from before carry them and
- * dropping an enum value is a migration somebody decides on, not a side effect of this list.
+ * The same three the enum holds. It held `handoff` and `room` too, until rooms and one Bot asking
+ * another were removed (2026-09-24); migration 0047 deleted their runs and rebuilt the type.
  */
 export const RUN_ORIGINS = ["chat", "routine", "wake"] as const;
 

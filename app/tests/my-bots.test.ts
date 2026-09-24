@@ -14,7 +14,6 @@ import type { ChannelSummary } from "../src/lib/channels/queries";
 const bot = (id: string, extra: Partial<AgentProfile> = {}): AgentProfile => ({
   id,
   name: id,
-  title: "",
   roleDescription: "",
   avatarSeed: `s:pebble.blue`,
   effort: "balanced",
@@ -22,7 +21,6 @@ const bot = (id: string, extra: Partial<AgentProfile> = {}): AgentProfile => ({
   endpoint: null,
   hasAuth: false,
   hidden: false,
-  pinnedAt: null,
   notify: true,
   systemOwned: false,
   canManage: true,

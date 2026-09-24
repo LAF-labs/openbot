@@ -1,12 +1,5 @@
-import { IconPin } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
-import {
-  memo,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { memo, useEffect, useRef, useSyncExternalStore } from "react";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import {
   Tooltip,
@@ -81,15 +74,12 @@ export const RosterUnreadDot = () => (
  * read surface in the product.
  */
 export const RosterRowLines = ({
-  afterName,
   isSubtitleLive = false,
   isUnread = false,
   name,
   subtitle,
   time,
 }: {
-  /** Sits on the name's baseline — in practice the pin glyph. */
-  afterName?: ReactNode;
   /**
    * Draw the preview at full contrast even when the row is read. What a Bot is doing right now is
    * not the same kind of sentence as what it said yesterday.
@@ -111,7 +101,6 @@ export const RosterRowLines = ({
       >
         {name}
       </span>
-      {afterName}
       <span className="ms-auto shrink-0 text-muted-foreground/80 text-xs tabular-nums">
         {time}
       </span>
@@ -151,7 +140,6 @@ export const BotRow = memo(function BotRow({
   isCompact = false,
   name,
   channelId,
-  pinned = false,
   subtitle,
   lastMessageAt,
   unread = false,
@@ -162,8 +150,6 @@ export const BotRow = memo(function BotRow({
   /** The 64px rail: the face alone, its name in a tooltip. */
   isCompact?: boolean;
   name: string;
-  /** Kept at the top of the roster by this person. Marked, or the order looks arbitrary. */
-  pinned?: boolean;
   /** The Bot has said something since this person last opened the room. */
   unread?: boolean;
   /**
@@ -263,19 +249,6 @@ export const BotRow = memo(function BotRow({
       {status}
       {face}
       <RosterRowLines
-        afterName={
-          /*
-           * A pin that moves a row without saying so reads as a list that shuffles itself. The
-           * glyph is the only thing on the row explaining why this one is above a Bot that spoke
-           * more recently.
-           */
-          pinned ? (
-            <IconPin
-              aria-label={t("Pinned")}
-              className="size-3 shrink-0 text-muted-foreground"
-            />
-          ) : undefined
-        }
         isSubtitleLive={Boolean(working)}
         isUnread={unread}
         name={name}

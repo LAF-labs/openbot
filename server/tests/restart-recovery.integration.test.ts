@@ -159,7 +159,6 @@ async function createOwner(): Promise<AgentActor> {
 async function createBotWithConversation(owner: AgentActor) {
   const profile = await profileStore.create(owner, {
     name: "아침봇",
-    title: "Coworker",
     roleDescription: "Reports every morning.",
   });
   agentIds.push(profile.id);

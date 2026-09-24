@@ -73,7 +73,6 @@ async function person(): Promise<AgentActor> {
 async function botOf(owner: AgentActor, name: string) {
   const profile = await profileStore.create(owner, {
     name,
-    title: "",
     roleDescription: "",
   });
   createdAgentIds.push(profile.id);

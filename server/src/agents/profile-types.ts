@@ -26,7 +26,6 @@ export type AgentActor = {
 export type AgentProfile = {
   id: string;
   name: string;
-  title: string;
   roleDescription: string;
   avatarSeed: string;
   effort: AgentEffort;
@@ -39,11 +38,6 @@ export type AgentProfile = {
   ownerUserId: string | null;
   systemOwned: boolean;
   hidden: boolean;
-  /**
-   * When this person pinned the Bot, or null. A time rather than a flag so pinned Bots hold a
-   * stable order among themselves instead of re-shuffling whenever one of them speaks.
-   */
-  pinnedAt: Date | null;
   /** Whether this person wants to hear from the Bot. Per-person, like `hidden`. */
   notify: boolean;
   deletedAt: Date | null;
@@ -56,13 +50,12 @@ export type AgentProfile = {
 /** Which of a person's preferences for a Bot to change. Absent means "leave it alone". */
 export type AgentPreferencePatch = {
   hidden?: boolean;
-  pinned?: boolean;
   notify?: boolean;
 };
 
 export type CreateAgentInput = Pick<
   AgentProfile,
-  "name" | "title" | "roleDescription"
+  "name" | "roleDescription"
 > & {
   /**
    * The AG-UI endpoint this Bot runs on, or undefined for the one in the box.

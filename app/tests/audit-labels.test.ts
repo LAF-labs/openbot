@@ -5,8 +5,10 @@ import {
   COMPUTER_FACTS,
   DECISIONS,
   DISCONNECT_REASONS,
+  decisionOf,
   EVENTS,
   FACTS,
+  OUTCOME_EVENT_TYPES,
   TOOLS,
   UNLABELLED_OUTCOMES,
 } from "../src/routes/_authed/admin/audit";
@@ -46,15 +48,32 @@ describe("the audit trail's labels", () => {
      * about. Every other type needs its own words, and this list is the explicit statement of that:
      * a type is either labelled or named here, never silently defaulted.
      */
-    const defaulted = new Set([
-      "computer.action_allowed",
-      "computer.action_refused",
-      "computer.action_failed",
-    ]);
     const unlabelled = auditEventTypes.filter(
-      (type) => !(type in DECISIONS) && !defaulted.has(type),
+      (type) => !(type in DECISIONS) && !OUTCOME_EVENT_TYPES.has(type),
     );
     expect(unlabelled).toEqual([]);
+  });
+
+  /*
+   * THE ROWS THE CODE OUTLIVED. The trail is append-only, so a type the server stopped writing —
+   * `coworker.asked` and `room.member_turn` since rooms and Bots asking each other were removed
+   * (2026-09-24) — keeps its rows after its label is gone. Such a row has no verdict to show; the
+   * fallback outcomes are the computer's own, and drawing one of these as "Allowed" is the exact
+   * inversion this file exists to prevent.
+   */
+  test("a type the surface no longer labels has no verdict, and is never called Allowed", () => {
+    for (const retired of ["coworker.asked", "room.member_turn"]) {
+      expect(auditEventTypes as readonly string[]).not.toContain(retired);
+      expect(retired in DECISIONS).toBe(false);
+      expect(retired in EVENTS).toBe(false);
+      expect(decisionOf(retired, false, false)).toBeUndefined();
+      expect(decisionOf(retired, false, true)).toBeUndefined();
+    }
+    expect(decisionOf("computer.action_allowed", false, false)).toBe("Allowed");
+    expect(decisionOf("computer.action_refused", true, false)).toBe("Blocked");
+    expect(decisionOf("computer.action_failed", false, true)).toBe(
+      "Did not happen",
+    );
   });
 
   test("a label never claims an ended access was a permission", () => {

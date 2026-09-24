@@ -224,7 +224,6 @@ beforeAll(async () => {
       .values({
         agentId: id,
         ownerUserId: id === strangersBot ? other : asker,
-        title: id,
         roleDescription: "",
         avatarSeed: id,
       })
@@ -823,7 +822,6 @@ describe("a Bot made after the connect", () => {
       .values({
         agentId: laterBot,
         ownerUserId: asker,
-        title: laterBot,
         roleDescription: "",
         avatarSeed: laterBot,
       })

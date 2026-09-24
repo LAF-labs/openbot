@@ -81,7 +81,6 @@ beforeAll(async () => {
     await database.insert(agentProfiles).values({
       agentId: one.botId,
       ownerUserId: one.id,
-      title: "Bookkeeping",
       roleDescription: "Keeps the books.",
       avatarSeed: one.botId,
     });

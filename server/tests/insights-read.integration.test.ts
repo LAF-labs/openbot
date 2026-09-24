@@ -32,11 +32,11 @@ import { TEST_POOL } from "./support/database";
  * (`tests/insights-sql.integration.test.ts`); this proves the VM's, on the tables the migrations
  * actually build, with the same scenarios — nearest-rank inputs grouped without loss, a night that
  * starts at 22:00 Seoul time, a step budget met at fourteen entries, a host mapped to a site and
- * never returned, a free-text failure reduced to a code — and the three things this VM adds: the
- * preset a Bot was made from, the first-task chips, the help page.
+ * never returned, a free-text failure reduced to a code — and the two things this VM adds: the
+ * first-task chips and the help page.
  *
  * AND THAT NOTHING PLANTED BESIDE A COUNTED ROW COMES BACK. Every seeded row carries content in the
- * columns next to what is counted — an email, a Bot's title, a routine's instruction, a failure's
+ * columns next to what is counted — an email, a Bot's role, a routine's instruction, a failure's
  * prose, a customer's own domain — and the whole answer is serialised and searched for each.
  *
  * WHY THE SEEDS LIVE IN 1999. `audit_events` is append-only and this database is shared by every
@@ -175,8 +175,8 @@ async function seed() {
   );
 
   /*
-   * Bots: u1 five live in the window — two from one preset, one from another, one with a preset that
-   * is not a key, one blank — and one deleted from a month before; u2 one from a month before.
+   * Bots: u1 five live in the window and one deleted from a month before; u2 one from a month
+   * before.
    */
   await database.insert(agents).values(
     ALL_BOTS.map((id) => ({
@@ -186,37 +186,25 @@ async function seed() {
       configuration: { endpoint: "http://bot.local/ag-ui" },
     })),
   );
-  const presets: Array<string | null> = [
-    "review-replies",
-    "review-replies",
-    "settlement",
-    "Bad Key!",
-    null,
-  ];
   await database.insert(agentProfiles).values([
-    ...U1_BOTS.map((agentId, index) => ({
+    ...U1_BOTS.map((agentId) => ({
       agentId,
       ownerUserId: u1,
-      title: `${OWNER_EMAIL} 비서`,
       roleDescription: "오늘 매출은 얼마인지 알려 줘",
       avatarSeed: "s:pebble.blue",
-      presetId: presets[index] ?? null,
       createdAt: at(1),
     })),
     {
       agentId: DELETED_BOT,
       ownerUserId: u1,
-      title: "",
       roleDescription: "",
       avatarSeed: "s:cloud.green",
-      presetId: "reviews",
       deletedAt: at(2),
       createdAt: daysAgo(30),
     },
     {
       agentId: U2_BOT,
       ownerUserId: u2,
-      title: "",
       roleDescription: "",
       avatarSeed: "s:cloud.green",
       createdAt: daysAgo(30),
@@ -531,7 +519,7 @@ async function seed() {
     values: {
       userId: string | null;
       status: "done" | "error" | "unknown" | "stopped";
-      origin: "chat" | "routine" | "wake" | "room";
+      origin: "chat" | "routine" | "wake";
       error?: string;
       startedAt?: Date;
     },
@@ -559,7 +547,7 @@ async function seed() {
     threadRun(RUN("run-u1-unknown"), {
       userId: u1,
       status: "unknown",
-      origin: "room",
+      origin: "wake",
     }),
     threadRun(RUN("run-u1-routine"), {
       userId: u1,
@@ -812,7 +800,7 @@ describe("what the insights read counts, against the product's own tables", () =
     }
   });
 
-  test("onboarding: Bots made, which preset they were made from, and the chips pressed on them", () => {
+  test("onboarding: Bots made, and the chips pressed on them", () => {
     // Live Bots have no window: u1's five and u2's one, over whatever the database already held.
     expect(
       (after.onboarding?.botsLive ?? 0) - (before.onboarding?.botsLive ?? 0),
@@ -820,11 +808,8 @@ describe("what the insights read counts, against the product's own tables", () =
 
     const onboarding = after.onboarding;
     expect(onboarding?.botsCreated).toBe(5);
-    // "Bad Key!" is not a key, and the deleted Bot was made before the window.
-    expect(onboarding?.fromPreset).toEqual({
-      "review-replies": 2,
-      settlement: 1,
-    });
+    // No `fromPreset` since migration 0047 dropped the column it counted.
+    expect(onboarding).not.toHaveProperty("fromPreset");
     expect(onboarding?.firstTaskPresses).toBe(6);
     expect(onboarding?.botsWithFirstTask).toBe(3);
     expect(onboarding?.firstTasks[0]).toEqual([
@@ -954,7 +939,7 @@ describe("what the insights read counts, against the product's own tables", () =
       [cellKey("routine", "uncoded", "routine", null)]: 1,
       [cellKey("stream", "laf:agent_stalled", "stream", null)]: 1,
       [cellKey("turn", "laf:model_rate_limited", "chat", null)]: 1,
-      [cellKey("turn", "laf:turn_interrupted", "room", null)]: 1,
+      [cellKey("turn", "laf:turn_interrupted", "wake", null)]: 1,
     });
   });
 
@@ -984,9 +969,8 @@ describe("what the insights read counts, against the product's own tables", () =
     ]);
     expect(after.people?.turnsByOrigin).toEqual({
       chat: 4,
-      room: 1,
       routine: 1,
-      wake: 1,
+      wake: 2,
     });
     expect(after.people?.tokensByOrigin).toEqual({ chat: 2800, server: 46 });
   });

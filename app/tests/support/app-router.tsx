@@ -120,7 +120,6 @@ export function agentFixture(
   overrides: Partial<AgentProfile> & { id: string; name: string },
 ): AgentProfile {
   return {
-    title: "",
     roleDescription: "",
     avatarSeed: `s:${overrides.id}`,
     effort: "balanced",
@@ -128,7 +127,6 @@ export function agentFixture(
     endpoint: "http://bot.local",
     hasAuth: false,
     hidden: false,
-    pinnedAt: null,
     notify: true,
     systemOwned: false,
     canManage: true,

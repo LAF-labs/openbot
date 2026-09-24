@@ -136,7 +136,6 @@ async function botWithConversation(openedAt: Date | null = daysAgo(30)) {
   const owner = await ownerOfItsOwn();
   const bot = await profiles.create(owner, {
     name: "리뷰봇",
-    title: "리뷰 담당",
     roleDescription: "가게 리뷰를 챙긴다.",
   });
   madeBots.push({ botId: bot.id, owner });
@@ -427,7 +426,6 @@ describe("what does not count as a pile", () => {
     const owner = await ownerOfItsOwn();
     const bot = await profiles.create(owner, {
       name: "대화 없는 봇",
-      title: "",
       roleDescription: "",
     });
     madeBots.push({ botId: bot.id, owner });

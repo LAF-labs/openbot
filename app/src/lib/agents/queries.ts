@@ -19,7 +19,6 @@ export const AGENT_EFFORTS: readonly AgentEffort[] = [
 export type AgentProfile = {
   id: string;
   name: string;
-  title: string;
   roleDescription: string;
   avatarSeed: string;
   /**
@@ -43,14 +42,6 @@ export type AgentProfile = {
   /** Whether a key is set for it. Never the key itself. */
   hasAuth: boolean;
   hidden: boolean;
-  /**
-   * When this person pinned the Bot, ISO-8601, or null.
-   *
-   * A time rather than a flag so pinned Bots keep a stable order among themselves — sorting them by
-   * activity like everything else would re-shuffle the pinned group on every message, which is the
-   * one thing a pin exists to prevent.
-   */
-  pinnedAt: string | null;
   /** Whether this person wants to hear from the Bot. Per-person, like `hidden`. */
   notify: boolean;
   systemOwned: boolean;

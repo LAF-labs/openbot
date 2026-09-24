@@ -32,15 +32,11 @@ const object = (
 export const UPDATE_PROFILE: SelfTool = {
   name: "update_profile",
   description:
-    "네가 **무엇인지**를 바꾼다: 네 이름, 직함, 무엇을 하는 봇인지, 얼마나 깊이 생각하는지. " +
+    "네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지, 얼마나 깊이 생각하는지. " +
     "'앞으로 X를 맡아줘', '이제부터 네가 X를 해' 처럼 너에게 맡겨진 일은 네 직무이므로, 기억할 것처럼 들려도 여기다. " +
     "바뀌는 것만 보낸다. 이것은 너를 고치고 다른 누구도 고치지 않는다.",
   parameters: object({
     name: { type: "string", description: "네 새 이름" },
-    title: {
-      type: "string",
-      description: "짧은 역할 이름. 예: '재무 운영'",
-    },
     description: {
       type: "string",
       description: "네가 무엇을 하는 봇인지 한두 문장. 상시 직무로 쓴다",

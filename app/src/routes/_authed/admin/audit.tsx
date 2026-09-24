@@ -267,6 +267,7 @@ function Row({
     // A deleted Bot whose browser could not be wiped: its logins are still on the volume.
     event.eventType === "computer.reset_failed" ||
     stalled;
+  const verdict = decisionOf(event.eventType, refused, failed);
   const silence = stalled ? silenceOf(payload) : null;
 
   return (
@@ -374,14 +375,7 @@ function Row({
           }
         >
           {/* The map is data; it is translated where it is drawn, English as the key. */}
-          {t(
-            DECISIONS[event.eventType] ??
-              (refused
-                ? UNLABELLED_OUTCOMES[0]
-                : failed
-                  ? UNLABELLED_OUTCOMES[1]
-                  : UNLABELLED_OUTCOMES[2]),
-          )}
+          {verdict ? t(verdict) : "-"}
         </span>
         {/* Refusal reasons mirror the conversation-facing reason. */}
         {(event.eventType === "component.refused" ||
@@ -547,6 +541,37 @@ export const UNLABELLED_OUTCOMES = [
   "Allowed",
 ] as const;
 
+/** The three event types the fallback above was written about: the computer's own outcomes. */
+export const OUTCOME_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "computer.action_allowed",
+  "computer.action_refused",
+  "computer.action_failed",
+]);
+
+/**
+ * The last column's words for a row: its label, the computer's own outcome, or nothing.
+ *
+ * NOTHING, FOR A TYPE THIS SURFACE NO LONGER KNOWS. The trail is append-only and outlives the code
+ * that wrote it: `coworker.asked` and `room.member_turn` rows stay after rooms and Bots asking each
+ * other were removed (2026-09-24), and their labels went with the code. Falling through to the
+ * outcomes would draw such a row as "Allowed", the one word an audit row must never say by accident;
+ * a dash says only that there is no verdict to show, and the middle column still names the type.
+ */
+export function decisionOf(
+  eventType: string,
+  refused: boolean,
+  failed: boolean,
+): string | undefined {
+  const labelled = DECISIONS[eventType];
+  if (labelled) return labelled;
+  if (!OUTCOME_EVENT_TYPES.has(eventType)) return undefined;
+  return refused
+    ? UNLABELLED_OUTCOMES[0]
+    : failed
+      ? UNLABELLED_OUTCOMES[1]
+      : UNLABELLED_OUTCOMES[2];
+}
+
 export const DECISIONS: Record<string, string> = {
   "bot.declined": "The Bot declined",
   // Not a refusal, so not the refusal colour: nothing was blocked. The Bot was asked and never
@@ -617,8 +642,6 @@ export const DECISIONS: Record<string, string> = {
   "mcp.account_connected": "A person connected their own account",
   "mcp.account_disconnected": "An account is no longer connected",
 
-  "coworker.asked": "One Bot asked another",
-  "room.member_turn": "A Bot took its turn in a room",
   "routine.ran": "A routine ran",
   // A window let go, not a run that failed. "Skipped" and not "Missed": the deployment decided this,
   // and a row that reads as an accident hides the decision. `routine.skipped` is the name rows were
@@ -936,8 +959,6 @@ export const EVENTS: Record<string, string> = {
   "computer.policy_changed": "The boundary",
   "computer.isolation_loaded": "Isolation",
   "model.usage": "Model usage",
-  "coworker.asked": "One Bot asking another",
-  "room.member_turn": "A room turn",
   "routine.ran": "A routine",
   "routine.skipped": "A routine",
   "routine.skipped_missed": "A routine",

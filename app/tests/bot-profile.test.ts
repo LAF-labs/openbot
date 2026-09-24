@@ -35,7 +35,7 @@ describe("the profile's identity", () => {
     expect(identity()).toContain("<NameField");
     expect(identity()).toContain("<BotAvatarPicker");
     // What the Bot is for is not asked, not shown and not offered as a list to pick from.
-    expect(source()).not.toContain("profile.title}");
+    expect(source()).not.toContain("profile.title");
     expect(source()).not.toContain("WorkStyleCard");
     expect(source()).not.toContain("How it works");
     expect(source()).not.toContain("preset");
@@ -46,13 +46,15 @@ describe("the profile's identity", () => {
 
   test("a save carries the fields it is not changing, through the replacing PATCH", () => {
     /*
-     * A PATCH replaces what it carries: renaming a Bot must not clear a description an older Bot
-     * still holds, and picking a face must not rename it. `endpoint` stays out — an address already
-     * saved and working is re-validated as if it had just been typed.
+     * A PATCH replaces what it carries: renaming a Bot must not clear a description it wrote for
+     * itself, and picking a face must not rename it. `endpoint` stays out — an address already
+     * saved and working is re-validated as if it had just been typed. No title: there is no such
+     * field since 2026-09-24, nor a column since migration 0047.
      */
     const save = identity().slice(identity().indexOf("const save = "));
-    expect(save).toContain("roleDescription: profile.roleDescription");
-    expect(save).toContain("title: profile.title");
+    const saveCall = save.slice(0, save.indexOf("\n\n"));
+    expect(saveCall).toContain("roleDescription: profile.roleDescription");
+    expect(saveCall).not.toContain("title");
     expect(save).toContain("updateAgent.mutateAsync");
     expect(identity()).not.toContain("endpoint:");
   });

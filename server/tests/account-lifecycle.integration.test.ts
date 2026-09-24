@@ -107,7 +107,6 @@ async function makePerson(label: string): Promise<Person> {
   await database.insert(agentProfiles).values({
     agentId: botId,
     ownerUserId: id,
-    title: "Bookkeeping",
     roleDescription: "Keeps the books.",
     avatarSeed: "seed",
   });
@@ -345,11 +344,11 @@ describe("the export", () => {
     expect(
       (document.bots as Array<{ id: string }>).map((bot) => bot.id),
     ).toEqual([leaver.botId]);
-    // The preset a Bot was made from is held about it, so it leaves with it — null, here, as a key.
-    expect((document.bots as Array<Record<string, unknown>>)[0]).toHaveProperty(
-      "presetId",
-      null,
-    );
+    // The profile is a name and a face since 2026-09-24; the job title and the preset a Bot was
+    // made from are columns no more (migration 0047), so neither is a key of what leaves either.
+    const [bot] = document.bots as Array<Record<string, unknown>>;
+    expect(bot).not.toHaveProperty("title");
+    expect(bot).not.toHaveProperty("presetId");
     expect(
       (document.memories as Array<{ content: string }>)[0]?.content,
     ).toContain("closes on Sundays");

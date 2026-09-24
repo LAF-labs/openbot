@@ -330,6 +330,13 @@
       "when": 1790216993960,
       "tag": "0046_message_frame",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790231799912,
+      "tag": "0047_drop_multi_bot_leftovers",
+      "breakpoints": true
     }
   ]
 }

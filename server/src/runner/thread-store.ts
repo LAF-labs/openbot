@@ -40,9 +40,9 @@ import { redactSecretTyping } from "./secret-redaction";
  * `lafRedacted` says this row is not what arrived: a `computer_type` argument was taken out of it
  * because the boundary refused the typing as a secret. See `secret-redaction.ts`.
  *
- * A person's message in a room written before 2026-09-24 may also carry `lafRoomReceipts`: which
- * members read it and how their part came out. Rooms are gone and nothing reads or writes the key
- * any more; it is left in the rows it is in, like everything else a room wrote.
+ * A room's messages also carried `lafRoomReceipts`, which members read one and how their part came
+ * out. Rooms were removed on 2026-09-24 and migration 0047 deleted their rows and took the key off
+ * any message still holding it.
  *
  * This is the ONLY definition. There were three (`StampedMessage` twice, `StoredMessage` once).
  */
@@ -56,8 +56,7 @@ export type StoredMessage = Message & {
  * Anything that can run a statement: the pool, or a transaction already open around it.
  *
  * `transaction` is in the list because the append has to hold a lock across two statements, and a
- * caller who is already inside a transaction (the room's post, which bumps the turn epoch in the
- * same breath) must not have a second one opened underneath it.
+ * caller who is already inside a transaction must not have a second one opened underneath it.
  */
 export type Executor = Pick<
   Database,

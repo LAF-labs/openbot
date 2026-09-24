@@ -207,7 +207,6 @@ describe("the route error boundary", () => {
     await database.insert(agentProfiles).values({
       agentId: BOT,
       ownerUserId: PERSON,
-      title: "Boundary",
       roleDescription: "Loses a race.",
       avatarSeed: BOT,
     });

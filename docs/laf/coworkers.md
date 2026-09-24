@@ -185,8 +185,10 @@ says so and stops.
 ## Rooms
 
 Rooms — one conversation with several Bots in it, run on the server — were
-removed on 2026-09-24 when a person came to have one Bot. They live in git
-history; the rows a room wrote are kept (`deployment-model.md`, "봇은 하나다").
+removed on 2026-09-24 when a person came to have one Bot. The code lives in
+version control. The rows a room wrote were kept that morning and deleted that
+afternoon by migration 0047, with everything said in them; the audit trail
+keeps its record of them (`deployment-model.md`, "봇은 하나다").
 
 ## The app's icon
 

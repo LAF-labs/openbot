@@ -33,7 +33,6 @@ const BOT = "agent_1f2e3d4c-aaaa-4bbb-8ccc-123456789abc";
 const visibleProfile = (id: string): AgentProfile => ({
   id,
   name: "초롱",
-  title: "",
   roleDescription: "",
   avatarSeed: "s:pebble.blue",
   effort: "balanced",
@@ -41,7 +40,6 @@ const visibleProfile = (id: string): AgentProfile => ({
   ownerUserId: PERSON.id,
   systemOwned: false,
   hidden: false,
-  pinnedAt: null,
   notify: true,
   deletedAt: null,
   endpoint: null,

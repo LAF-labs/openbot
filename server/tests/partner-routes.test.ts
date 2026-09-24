@@ -85,7 +85,6 @@ async function createBot(userId: string, hidden = false): Promise<string> {
   await database.insert(agentProfiles).values({
     agentId: botId,
     ownerUserId: userId,
-    title: "Test",
     roleDescription: "For a grant to land on.",
     avatarSeed: "seed",
   });

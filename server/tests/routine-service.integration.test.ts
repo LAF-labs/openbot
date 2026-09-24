@@ -964,7 +964,6 @@ describe("whose routine it is", () => {
     await database.insert(agentProfiles).values({
       agentId,
       ownerUserId: owner.id,
-      title: "Morning",
       roleDescription: "Opens the shop.",
       avatarSeed: agentId,
     });

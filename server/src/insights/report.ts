@@ -49,8 +49,11 @@ export type FirstTaskCell = [
 export type OnboardingInsight = {
   botsLive: number;
   botsCreated: number;
-  /** Bots created in the window from a preset, by the preset's catalogue key. */
-  fromPreset: Record<string, number>;
+  /*
+   * `fromPreset` — Bots made from each ready-made kind of work — was here until migration 0047
+   * dropped `agent_profiles.preset_id` (2026-09-24). laf-control never named it, so no reader of
+   * this body misses it.
+   */
   /** First-task chips pressed in the window. */
   firstTaskPresses: number;
   /** How many Bots those presses were on. */

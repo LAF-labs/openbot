@@ -348,7 +348,6 @@ describe("LAF Agent database schema", () => {
         hasDefault: false,
         primary: false,
       },
-      { name: "title", notNull: true, hasDefault: false, primary: false },
       {
         name: "role_description",
         notNull: true,
@@ -375,15 +374,6 @@ describe("LAF Agent database schema", () => {
         name: "auto_review",
         notNull: true,
         hasDefault: true,
-        primary: false,
-      },
-      {
-        // Which preset a person picked, by catalogue key. Nullable and without a default: every Bot
-        // that existed before the column was made by nobody's pick, and a guess would be a fact
-        // nobody recorded. Written by the person's create or PATCH, never by `update_profile`.
-        name: "preset_id",
-        notNull: false,
-        hasDefault: false,
         primary: false,
       },
       {
@@ -431,13 +421,6 @@ describe("LAF Agent database schema", () => {
       },
       {
         name: "hidden_at",
-        sqlType: "timestamp with time zone",
-        notNull: false,
-        hasDefault: false,
-        primary: false,
-      },
-      {
-        name: "pinned_at",
         sqlType: "timestamp with time zone",
         notNull: false,
         hasDefault: false,

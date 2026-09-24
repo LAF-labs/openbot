@@ -98,7 +98,6 @@ async function conversation(label: string): Promise<Fixture> {
   await database.insert(agentProfiles).values({
     agentId: bot,
     ownerUserId: person,
-    title: "매출",
     roleDescription: "매출을 알려 줍니다.",
     avatarSeed: "seed",
   });

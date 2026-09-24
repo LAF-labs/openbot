@@ -250,7 +250,6 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
                   endpoint: endpoint.trim(),
                   name: agent.name,
                   roleDescription: agent.roleDescription,
-                  title: agent.title,
                   ...(authValue.trim()
                     ? {
                         auth: {

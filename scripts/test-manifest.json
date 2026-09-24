@@ -228,6 +228,7 @@
   "server/tests/diagnostics-feedback.integration.test.ts",
   "server/tests/diagnostics-screen-errors.test.ts",
   "server/tests/diagnostics.test.ts",
+  "server/tests/drop-multi-bot-leftovers.integration.test.ts",
   "server/tests/effort-on-the-wire.integration.test.ts",
   "server/tests/error-codes.test.ts",
   "server/tests/events-probe.test.ts",

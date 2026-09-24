@@ -62,7 +62,6 @@ async function createUser() {
 async function createCoworker(owner: AgentActor) {
   const profile = await profileStore.create(owner, {
     name: "Expense Manager",
-    title: "Finance Operations",
     roleDescription: "Keep the books straight.",
   });
   createdAgentIds.push(profile.id);

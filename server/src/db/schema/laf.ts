@@ -82,14 +82,14 @@ export const lafThreadMessages = pgTable(
   ],
 );
 
-/** What started a run. A pg enum, so a client that invents one is refused rather than recorded. */
-export const runOrigin = pgEnum("laf_run_origin", [
-  "chat",
-  "routine",
-  "wake",
-  "handoff",
-  "room",
-]);
+/**
+ * What started a run. A pg enum, so a client that invents one is refused rather than recorded.
+ *
+ * `handoff` (one Bot asking another) and `room` were values too, until rooms and Bots asking each
+ * other were removed on 2026-09-24; migration 0047 deleted the runs that carried them and rebuilt
+ * the type without them.
+ */
+export const runOrigin = pgEnum("laf_run_origin", ["chat", "routine", "wake"]);
 
 /**
  * How a run ended, or that it has not.

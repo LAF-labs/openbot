@@ -40,7 +40,6 @@ import {
 export type AgentInputRefusal =
   | "laf:agent_input_not_object"
   | "laf:agent_name_invalid"
-  | "laf:agent_title_too_long"
   | "laf:agent_role_too_long"
   | "laf:agent_endpoint_refused"
   | "laf:agent_avatar_invalid"
@@ -54,7 +53,6 @@ type AgentInputParseResult =
 
 type AgentInputObject = {
   name?: unknown;
-  title?: unknown;
   roleDescription?: unknown;
   endpoint?: unknown;
   avatarSeed?: unknown;
@@ -82,18 +80,15 @@ export function parseAgentInput(
   if (typeof name !== "string") return name;
 
   /*
-   * OPTIONAL, BOTH OF THEM. A bot starts with nothing set and can become anything; forcing a job
-   * description out of somebody before they have met the bot is the shape we just removed from the
-   * deployment package. A bot with no description opens by asking what it is for
+   * OPTIONAL. A bot starts with nothing set and can become anything; forcing a job description out
+   * of somebody before they have met the bot is the shape we just removed from the deployment
+   * package. A bot with no description is told the work is whatever the person hands over in chat
    * (see `composePrompt`), which is the honest version of an empty field.
+   *
+   * NO `title` SINCE 2026-09-24, and no column for one since migration 0047. A body that still
+   * carries one — an older app, a script — is read as it always was by everything that matters: the
+   * key is simply not a field any more, like any other key this parser does not know.
    */
-  const title = optionalBoundedText(
-    input.title,
-    120,
-    "laf:agent_title_too_long",
-  );
-  if (typeof title !== "string") return title;
-
   const roleDescription = optionalBoundedText(
     input.roleDescription,
     1000,
@@ -187,7 +182,6 @@ export function parseAgentInput(
     ok: true,
     value: {
       name,
-      title,
       roleDescription,
       endpoint,
       auth,
@@ -439,14 +433,13 @@ export function createAgentRoutes(
       }
 
       /*
-       * ONE LINE EACH, AND NOT A PROMPT. These three become part of every later system message
+       * ONE LINE EACH, AND NOT A PROMPT. These two become part of every later system message
        * (`shared/prompt/index.ts`), and this endpoint is the one a page reaches by telling the Bot
        * to call `update_profile`. See profile-text.ts.
        */
       const name = profileTextOf(patch.name);
-      const title = profileTextOf(patch.title);
       const roleDescription = profileTextOf(patch.roleDescription);
-      if (!name.ok || !title.ok || !roleDescription.ok) {
+      if (!name.ok || !roleDescription.ok) {
         // The code and not the text: echoing what was refused would deliver it after all.
         return context.json(
           {
@@ -461,7 +454,6 @@ export function createAgentRoutes(
       const merged = parseAgentInput(
         {
           name: name.value ?? current.name,
-          title: title.value ?? current.title,
           roleDescription: roleDescription.value ?? current.roleDescription,
           ...(patch.avatarSeed === undefined
             ? {}
@@ -762,7 +754,10 @@ function optionalBoundedText(
 }
 
 /**
- * A preference patch: only the three known keys, each strictly boolean.
+ * A preference patch: only the two known keys, each strictly boolean.
+ *
+ * `pinned` was a third, until a person came to have one Bot (2026-09-24): it ordered a roster of
+ * several, and migration 0047 dropped the column. Sent alone now, it is a patch that names nothing.
  *
  * An empty patch is rejected rather than treated as a no-op, because the only way to send one is a
  * caller that meant to change something and named it wrong — answering 204 would report success
@@ -778,7 +773,7 @@ function parsePreferencePatch(
   }
   const object = body as Record<string, unknown>;
   const value: AgentPreferencePatch = {};
-  for (const key of ["hidden", "pinned", "notify"] as const) {
+  for (const key of ["hidden", "notify"] as const) {
     const raw = object[key];
     if (raw === undefined) continue;
     if (typeof raw !== "boolean") {
@@ -796,14 +791,11 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
   return {
     id: agent.id,
     name: agent.name,
-    title: agent.title,
     roleDescription: agent.roleDescription,
     avatarSeed: agent.avatarSeed,
     effort: agent.effort,
     autoReview: agent.autoReview,
     hidden: agent.hidden,
-    // ISO, not a boolean: the roster sorts pinned Bots among themselves by when they were pinned.
-    pinnedAt: agent.pinnedAt?.toISOString() ?? null,
     notify: agent.notify,
     systemOwned: agent.systemOwned,
     // Published so the edit form can show it. Safe to expose: it is an address the person supplied,

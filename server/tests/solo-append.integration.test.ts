@@ -91,7 +91,6 @@ async function createUser(): Promise<AgentActor> {
 async function createBot(owner: AgentActor, name: string) {
   const profile = await profileStore.create(owner, {
     name,
-    title: "Coworker",
     roleDescription: "Answers questions.",
   });
   agentIds.push(profile.id);

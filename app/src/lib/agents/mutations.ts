@@ -46,7 +46,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
    */
   "laf:agent_input_not_object": "That change could not be read. Try again.",
   "laf:agent_name_invalid": "A Bot needs a name, of 80 characters or fewer.",
-  "laf:agent_title_too_long": "A job title can be up to 120 characters.",
   "laf:agent_role_too_long": "A description can be up to 1,000 characters.",
   "laf:agent_endpoint_refused": "That address cannot be used.",
   "laf:agent_avatar_invalid": "That face cannot be used.",
@@ -68,7 +67,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
 
 export type AgentInput = {
   name: string;
-  title: string;
   roleDescription: string;
   /** Where this coworker runs. Empty means the Bot in the box. */
   endpoint?: string;
@@ -94,7 +92,6 @@ export type AgentInput = {
  */
 export type AgentProfilePatch = {
   name?: string;
-  title?: string;
   roleDescription?: string;
   avatarSeed?: string;
   effort?: AgentEffort;
@@ -103,7 +100,6 @@ export type AgentProfilePatch = {
 /** Which of this person's preferences for a Bot to change. Absent means "leave it alone". */
 export type AgentPreferencePatch = {
   hidden?: boolean;
-  pinned?: boolean;
   notify?: boolean;
 };
 

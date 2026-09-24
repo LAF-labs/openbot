@@ -94,14 +94,12 @@ async function createProfileFixture(options: {
   owner: AgentActor | null;
   packageId?: string;
   name?: string;
-  title?: string;
   roleDescription?: string;
   avatarSeed?: string;
   configuration?: Record<string, unknown>;
 }) {
   const agentId = id("seed-agent");
   const name = options.name ?? `Seed ${randomUUID()}`;
-  const title = options.title ?? "Seed Assistant";
   const roleDescription = options.roleDescription ?? "Helps test profiles.";
   const avatarSeed = options.avatarSeed ?? `avatar-${randomUUID()}`;
   await database.insert(agents).values({
@@ -117,11 +115,10 @@ async function createProfileFixture(options: {
   await database.insert(agentProfiles).values({
     agentId,
     ownerUserId: options.owner?.id ?? null,
-    title,
     roleDescription,
     avatarSeed,
   });
-  return { agentId, name, title, roleDescription, avatarSeed };
+  return { agentId, name, roleDescription, avatarSeed };
 }
 
 async function profileById(actor: AgentActor, agentId: string) {
@@ -323,7 +320,6 @@ describe("agent profile store integration", () => {
 
     const result = await store.update(owner, source.agentId, {
       name: "Renamed Assistant",
-      title: "Updated Title",
       roleDescription: "Updated role description.",
       id: "forged-id",
       // The endpoint IS editable. A service moves host, and the alternative is deleting the
@@ -341,7 +337,6 @@ describe("agent profile store integration", () => {
     expect(result).toMatchObject({
       id: source.agentId,
       name: "Renamed Assistant",
-      title: "Updated Title",
       roleDescription: "Updated role description.",
       ownerUserId: owner.id,
       avatarSeed: "r2c6",
@@ -365,7 +360,6 @@ describe("agent profile store integration", () => {
     });
     expect(profile).toMatchObject({
       ownerUserId: owner.id,
-      title: "Updated Title",
       roleDescription: "Updated role description.",
       avatarSeed: "r2c6",
       deletedAt: null,
@@ -396,7 +390,6 @@ describe("agent profile store integration", () => {
     const theirs = await createProfileFixture({ owner });
     const input: CreateAgentInput = {
       name: "Other Name",
-      title: "Other Title",
       roleDescription: "Other role.",
     };
 
@@ -425,7 +418,6 @@ describe("agent profile store integration", () => {
     });
     const input: CreateAgentInput = {
       name: "Protected Rename",
-      title: "Protected Title",
       roleDescription: "Protected role.",
     };
 
@@ -445,7 +437,6 @@ describe("agent profile store integration", () => {
     const source = await createProfileFixture({
       owner,
       name: "Original Name",
-      title: "Original Title",
       roleDescription: "Original role.",
     });
 
@@ -455,7 +446,6 @@ describe("agent profile store integration", () => {
       (namedStore) =>
         namedStore.update(owner, source.agentId, {
           name: "Racing Rename",
-          title: "Racing Title",
           roleDescription: "Racing role.",
         }),
     );
@@ -478,7 +468,6 @@ describe("agent profile store integration", () => {
     expect(profile).toMatchObject({
       deletedAt: null,
       roleDescription: source.roleDescription,
-      title: source.title,
     });
   });
 
@@ -528,13 +517,11 @@ describe("agent profile store integration", () => {
 
     const updated = await store.update(admin, source.agentId, {
       name: "Admin Rename",
-      title: "Admin Title",
       roleDescription: "Admin role update.",
     });
     expect(updated).toMatchObject({
       name: "Admin Rename",
       ownerUserId: admin.id,
-      title: "Admin Title",
     });
 
     await store.softDelete(admin, source.agentId);
@@ -547,7 +534,6 @@ describe("agent profile store integration", () => {
     const source = await createProfileFixture({ owner });
     const input: CreateAgentInput = {
       name: "Admin Rename",
-      title: "Admin Title",
       roleDescription: "Admin role update.",
     };
 
@@ -555,7 +541,7 @@ describe("agent profile store integration", () => {
       () => store.update(admin, source.agentId, input),
       () => store.softDelete(admin, source.agentId),
       () => store.setHidden(admin, source.agentId, true),
-      () => store.setPreferences(admin, source.agentId, { pinned: true }),
+      () => store.setPreferences(admin, source.agentId, { notify: false }),
     ]) {
       await expect(attempt()).rejects.toBeInstanceOf(AgentNotFoundError);
     }
@@ -567,7 +553,6 @@ describe("agent profile store integration", () => {
     expect(profile).toMatchObject({
       deletedAt: null,
       ownerUserId: owner.id,
-      title: source.title,
     });
   });
 
@@ -603,8 +588,8 @@ describe("agent profile store integration", () => {
     await expect(
       store.create(owner, {
         name,
-        title: null,
-        roleDescription: "This profile insert must fail.",
+        // NOT NULL, so the profile insert fails after the canonical row went in.
+        roleDescription: null,
       } as unknown as CreateAgentInput),
     ).rejects.toThrow();
     const rows = await database
@@ -618,7 +603,6 @@ describe("agent profile store integration", () => {
     const owner = await createUser();
     const input: CreateAgentInput = {
       name: `Created ${randomUUID()}`,
-      title: "Created Title",
       roleDescription: "Created role description.",
     };
 
@@ -627,7 +611,6 @@ describe("agent profile store integration", () => {
 
     expect(created).toMatchObject({
       name: input.name,
-      title: input.title,
       roleDescription: input.roleDescription,
       avatarSeed: created.id,
       ownerUserId: owner.id,
@@ -663,14 +646,12 @@ describe("the seat cap", () => {
 
     const first = await oneBot.create(owner, {
       name: `First ${randomUUID()}`,
-      title: "",
       roleDescription: "",
     });
     createdAgentIds.push(first.id);
 
     const second = oneBot.create(owner, {
       name: `Second ${randomUUID()}`,
-      title: "",
       roleDescription: "",
     });
     await expect(second).rejects.toBeInstanceOf(AccountHasBotError);
@@ -707,13 +688,12 @@ describe("the seat cap", () => {
 
     const renamed = await oneBot.update(owner, newer.agentId, {
       name: "둘째 봇",
-      title: newer.title,
       roleDescription: newer.roleDescription,
     });
     expect(renamed.name).toBe("둘째 봇");
 
     await expect(
-      oneBot.create(owner, { name: "셋째", title: "", roleDescription: "" }),
+      oneBot.create(owner, { name: "셋째", roleDescription: "" }),
     ).rejects.toBeInstanceOf(AccountHasBotError);
     expect((await oneBot.list(owner)).map((profile) => profile.id)).toEqual(
       expect.arrayContaining([older.agentId, newer.agentId]),
@@ -744,7 +724,6 @@ describe("the seat cap", () => {
 
     const input = {
       name: `Sixth ${randomUUID()}`,
-      title: "One Too Many",
       roleDescription: "Should never come to exist.",
     };
     await expect(capped.create(owner, input)).rejects.toThrow(
@@ -831,7 +810,6 @@ describe("the seat cap", () => {
 
     const created = await capped.create(owner, {
       name: `Mine ${randomUUID()}`,
-      title: "",
       roleDescription: "",
     });
     createdAgentIds.push(created.id);
@@ -921,7 +899,6 @@ describe("the seat cap", () => {
       (store, owner) =>
         store.create(owner, {
           name: `Racer ${randomUUID()}`,
-          title: "Racing For The Last Seat",
           roleDescription: "Only one of these may come to exist.",
         }),
     );

@@ -196,7 +196,6 @@ describe("channel activity delivery", () => {
 
     const profile = await profileStore.create(owner, {
       name: "Expense Manager",
-      title: "Finance Operations",
       roleDescription: "Review receipts.",
     });
     createdAgentIds.push(profile.id);

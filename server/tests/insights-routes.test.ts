@@ -34,7 +34,6 @@ const REPORT: InsightsReport = {
   onboarding: {
     botsLive: 2,
     botsCreated: 1,
-    fromPreset: { "review-replies": 1 },
     firstTaskPresses: 1,
     botsWithFirstTask: 1,
     firstTasks: [["ask", "schedule", null, null, null, 1]],

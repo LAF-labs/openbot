@@ -117,8 +117,7 @@ function FirstRunForm({ existing }: { existing: AgentProfile | undefined }) {
     const input: AgentInput = {
       name: trimmed,
       avatarSeed: seed,
-      // Kept as they are on a Bot that already had them: a PATCH replaces what it carries.
-      title: existing?.title ?? "",
+      // Kept as it is on a Bot that already had one: a PATCH replaces what it carries.
       roleDescription: existing?.roleDescription ?? "",
     };
     const outcome = await agreeToLegal(queryClient)

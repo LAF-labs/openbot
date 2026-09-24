@@ -1,6 +1,6 @@
 /**
- * The shape of a key from one of this product's own catalogues: a preset, a site, a routine
- * suggestion, a section of the guide. Lower-case letters and digits, hyphens inside, forty at most.
+ * The shape of a key from one of this product's own catalogues: a site, a routine suggestion, a
+ * section of the guide. Lower-case letters and digits, hyphens inside, forty at most.
  *
  * ONE SHAPE, BECAUSE THE FLEET HOLDS US TO IT. laf-control's `insights` re-checks every key a VM
  * hands back against exactly this (`core/insights.ts` `KEY`) and reads anything else as `other`, so

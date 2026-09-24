@@ -98,10 +98,9 @@ const TODAY = new Date(
   1,
 ).toISOString();
 
-const agent = (id: string, name: string, title: string) => ({
+const agent = (id: string, name: string) => ({
   id,
   name,
-  title,
   roleDescription: "",
   avatarSeed: id,
   effort: "balanced",
@@ -109,7 +108,6 @@ const agent = (id: string, name: string, title: string) => ({
   endpoint: null,
   hasAuth: false,
   hidden: false,
-  pinnedAt: null,
   notify: true,
   systemOwned: false,
   canManage: true,
@@ -119,7 +117,7 @@ const agent = (id: string, name: string, title: string) => ({
 /**
  * An account from before 2026-09-24: three Bots, two of them with a conversation, and a room. A
  * person has one Bot now; an account like this keeps them all, and the sidebar is how it reaches
- * them. The room is not listed — rooms were removed — and a Bot's job title is not drawn.
+ * them. The room is not listed — rooms were removed.
  */
 function server() {
   globalThis.fetch = stubFetch(async (input) => {
@@ -127,9 +125,9 @@ function server() {
     if (url === "/api/agents") {
       return json({
         agents: [
-          agent("bot-1", "초롱", "주문 담당"),
-          agent("bot-2", "두리", "리뷰 담당"),
-          agent("bot-3", "세모", ""),
+          agent("bot-1", "초롱"),
+          agent("bot-2", "두리"),
+          agent("bot-3", "세모"),
         ],
       });
     }
@@ -424,14 +422,6 @@ describe("one row layout", () => {
     expect(
       view.rowNamed("세모")?.querySelector(".tabular-nums")?.textContent,
     ).toBe("");
-  });
-
-  test("a Bot's job title is not drawn under its name — the profile is a name and a face", async () => {
-    // "리뷰 담당" is what an older Bot's row said before anything had been said to it. The title
-    // stays in the row it was saved in; nothing draws it (2026-09-24).
-    const view = await roster();
-    expect(view.rowNamed("두리")?.textContent).not.toContain("리뷰 담당");
-    expect(view.rowNamed("초롱")?.textContent).not.toContain("주문 담당");
   });
 });
 

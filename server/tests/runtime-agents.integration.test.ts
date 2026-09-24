@@ -73,7 +73,6 @@ async function createCoworker(
 ) {
   const profile = await profileStore.create(owner, {
     name: overrides.name ?? "Expense Manager",
-    title: "Finance Operations",
     roleDescription:
       "Review receipts, categorize expenses, and prepare reimbursement reports.",
   });
@@ -99,7 +98,6 @@ async function createDeploymentCoworker(name = "Deployment Helper") {
   await database.insert(agentProfiles).values({
     agentId,
     ownerUserId: null,
-    title: "For everybody here",
     roleDescription: "Shipped with the deployment.",
     avatarSeed: agentId,
   });
@@ -230,7 +228,6 @@ describe("runtime agent loading", () => {
 
     await profileStore.update(owner, profile.id, {
       name: "Expense Manager",
-      title: "Finance Operations",
       roleDescription: "Reconcile corporate card statements.",
     });
 

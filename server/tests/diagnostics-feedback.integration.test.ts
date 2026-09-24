@@ -128,7 +128,6 @@ async function seed(who: typeof A) {
   await database.insert(agentProfiles).values({
     agentId: who.bot,
     ownerUserId: who.id,
-    title: "Reviews",
     roleDescription: "Answers reviews.",
     avatarSeed: "seed",
   });

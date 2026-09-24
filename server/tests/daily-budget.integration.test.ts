@@ -124,7 +124,7 @@ describe("today's count", () => {
     await usageAt(seoul("2003-06-15T23:59:59.999"), 300);
     await usageAt(seoul("2003-06-16T00:00:00.000"), 4000);
     // A number with the same name on another row is not usage.
-    await usageAt(seoul("2003-06-15T12:00:00.000"), 50_000, "coworker.asked");
+    await usageAt(seoul("2003-06-15T12:00:00.000"), 50_000, "routine.ran");
     // A count that crossed a service boundary malformed is nothing, not a failed read.
     await usageAt(seoul("2003-06-15T13:00:00.000"), "many");
     await usageAt(seoul("2003-06-15T13:00:00.000"), -7);

@@ -1,5 +1,5 @@
 /**
- * Coworker tables: bots, skills, routines, bot-to-bot handoff.
+ * Coworker tables: bots, skills, routines.
  *
  * Split by owner so two people can add tables all day without touching the same lines. Add tables
  * here; never edit core.ts or computer.ts to do it.
@@ -60,7 +60,12 @@ export const agentProfiles = pgTable(
     ownerUserId: text("owner_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    title: text("title").notNull(),
+    /*
+     * NO `title` SINCE MIGRATION 0047 (2026-09-24). A Bot's profile is its name and its face; the
+     * job title went with the presets and the card that wrote it, and a column nobody can see or
+     * change must not go on telling the Bot what it is. `role_description` stays: it is where the
+     * Bot writes down, with `update_profile`, a standing job somebody handed it in chat.
+     */
     roleDescription: text("role_description").notNull(),
     avatarSeed: text("avatar_seed").notNull(),
     /**
@@ -91,26 +96,11 @@ export const agentProfiles = pgTable(
      * Empty means ask about everything the policy stops, which is the behaviour before this column.
      */
     autoReview: text("auto_review").notNull().default(""),
-    /**
-     * Which preset this Bot was shaped from, by catalogue key, or null for a Bot nobody picked one
-     * for.
-     *
-     * NOTHING WRITES IT SINCE 2026-09-24. The presets and the card that offered them were removed
-     * when a Bot's profile became its name and face; the column keeps what earlier presses wrote,
-     * and `insights` still reads those. Dropping it is a migration somebody decides on.
-     *
-     * WHY A COLUMN, when the preset writes nothing else a person could not have typed: the intro
-     * card PATCHes a preset's TRANSLATED title and role and then the preset is gone, so "which of
-     * the eight kinds of work do people actually pick" — the first thing the launch plan says only
-     * customers can teach us — had no row anywhere to be counted from. The key is what laf-control's
-     * `insights` reads (`GET /api/admin/metrics/insights`), never the words it wrote.
-     *
-     * WRITTEN BY A PERSON'S OWN PRESS, NEVER BY THE BOT. The create and the replacing PATCH take it;
-     * `update_profile` cannot reach it, the same line `autoReview` draws — a Bot renaming itself
-     * must not rewrite the record of what it was made as. A duplicate does not inherit it: nobody
-     * picked anything for the copy.
+    /*
+     * NO `preset_id` SINCE MIGRATION 0047. It recorded which of the ready-made kinds of work a
+     * person pressed when making a Bot, for the fleet's count of which kinds people pick; the
+     * presets were removed on 2026-09-24 and nothing has written it since.
      */
-    presetId: text("preset_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -135,14 +125,10 @@ export const agentPreferences = pgTable(
       .notNull()
       .references(() => agents.id, { onDelete: "cascade" }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
-    /**
-     * When this person pinned the Bot, or null.
-     *
-     * A timestamp rather than a boolean so pinned Bots keep a stable order among themselves — the
-     * one you pinned first stays first, instead of the group re-shuffling on every message the way
-     * it would if pins sorted by activity like everything else.
+    /*
+     * NO `pinned_at` SINCE MIGRATION 0047. Pinning ordered a roster of several Bots; a person has
+     * one Bot since 2026-09-24, nothing could pin one after that, and nothing read the column.
      */
-    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     /**
      * Whether to notify this person when the Bot finishes or needs them.
      *

@@ -82,7 +82,6 @@ async function createUser(): Promise<AgentActor> {
 async function createAgent(owner: AgentActor, name: string) {
   const profile = await profileStore.create(owner, {
     name,
-    title: "Finance Operations",
     roleDescription: "Review receipts.",
   });
   createdAgentIds.push(profile.id);
@@ -106,7 +105,6 @@ async function createDeploymentAgent(name: string) {
   await database.insert(agentProfiles).values({
     agentId,
     ownerUserId: null,
-    title: "Finance Operations",
     roleDescription: "Review receipts.",
     avatarSeed: agentId,
   });

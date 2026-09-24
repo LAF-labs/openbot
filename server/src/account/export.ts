@@ -150,12 +150,10 @@ export function createAccountExport(database: Database): AccountExport {
             configuration: agents.configuration,
             createdAt: agents.createdAt,
             updatedAt: agents.updatedAt,
-            title: agentProfiles.title,
             roleDescription: agentProfiles.roleDescription,
             avatarSeed: agentProfiles.avatarSeed,
             effort: agentProfiles.effort,
             autoReview: agentProfiles.autoReview,
-            presetId: agentProfiles.presetId,
             deletedAt: agentProfiles.deletedAt,
           })
           .from(agents)
@@ -169,13 +167,10 @@ export function createAccountExport(database: Database): AccountExport {
         name: row.name,
         type: row.type,
         endpoint: endpointOf(row.configuration),
-        title: row.title,
         roleDescription: row.roleDescription,
         avatarSeed: row.avatarSeed,
         effort: row.effort,
         autoReview: row.autoReview,
-        // Which preset they picked for it, if any: the deployment holds it, so it leaves with them.
-        presetId: row.presetId,
         deletedAt: row.deletedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

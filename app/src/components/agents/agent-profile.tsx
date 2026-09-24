@@ -148,7 +148,7 @@ export function AgentProfile({
 
   /*
    * A PATCH replaces the fields it carries, so the ones the parser requires go back unchanged —
-   * the title and the description included, which nothing here shows but an older Bot may hold.
+   * the description included, which nothing here shows but the Bot may have written itself.
    * `endpoint` is deliberately absent: an absent one leaves the stored configuration alone.
    */
   const save = (patch: { name?: string; avatarSeed?: string }) =>
@@ -157,7 +157,6 @@ export function AgentProfile({
       input: {
         name: profile.name,
         roleDescription: profile.roleDescription,
-        title: profile.title,
         ...patch,
       },
     });
@@ -808,7 +807,6 @@ function AutoReviewCard({
                   autoReview: draft.trim(),
                   name: profile.name,
                   roleDescription: profile.roleDescription,
-                  title: profile.title,
                 },
               });
               flashSaved();

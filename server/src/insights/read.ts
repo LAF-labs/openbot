@@ -15,13 +15,13 @@
  * distrustful parser it already has, and the fleet's medians are still computed from raw cells
  * across VMs rather than averaged from medians that do not add. What this VM records that the SQL
  * there does not read yet rides as extra fields inside the section it belongs to (`onboarding`'s
- * presets and first-task chips, `support`'s help page and how answers were rated); a reader that
+ * first-task chips, `support`'s help page and how answers were rated); a reader that
  * does not know them ignores them, which is how that parser treats every field it does not name.
  *
  * §1-② OF THE FLEET'S OWN RULES HOLDS HERE WORD FOR WORD. These statements open the database that
  * holds people's conversations, so:
  *
- *  - no content column is named — a message, an answer, an instruction, a Bot's title or role, a
+ *  - no content column is named — a message, an answer, an instruction, a Bot's role, a
  *    routine's name, feedback's words, a label, an email;
  *  - free text that may carry a code (`laf_thread_runs.error`, an audit row's `failure`) is only
  *    matched against the code shape, and only the match leaves;
@@ -125,13 +125,6 @@ export function insightStatements(options: {
     SELECT jsonb_build_object(
       'botsLive', (SELECT count(*) FROM agent_profiles WHERE deleted_at IS NULL AND owner_user_id IS NOT NULL),
       'botsCreated', (SELECT count(*) FROM agent_profiles WHERE owner_user_id IS NOT NULL AND created_at >= ${since} AND created_at < ${to}),
-      'fromPreset', coalesce((
-        SELECT jsonb_object_agg(preset_id, n)
-          FROM (SELECT preset_id, count(*) AS n
-                  FROM agent_profiles
-                 WHERE owner_user_id IS NOT NULL AND created_at >= ${since} AND created_at < ${to} AND preset_id ~ ${CATALOGUE_KEY_SOURCE}
-                 GROUP BY preset_id) keyed
-      ), '{}'::jsonb),
       'firstTaskPresses', (SELECT count(*) FROM audit_events
                             WHERE event_type = 'onboarding.first_task_pressed' AND created_at >= ${since} AND created_at < ${to}),
       'botsWithFirstTask', (SELECT count(DISTINCT target_id) FROM audit_events

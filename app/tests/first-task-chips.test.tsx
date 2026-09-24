@@ -43,7 +43,6 @@ afterAll(async () => {
 const agent = {
   id: "bot-1",
   name: "초롱",
-  title: "",
   roleDescription: "",
 } as AgentProfile;
 
