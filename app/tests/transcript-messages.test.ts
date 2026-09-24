@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  forgetFirstMessage,
+  peekFirstMessage,
   seedMessage,
   stashFirstMessage,
-  takeFirstMessage,
   transcriptMessages,
 } from "../src/components/channels/transcript-messages";
 
@@ -41,24 +42,28 @@ describe("seedMessage", () => {
 describe("the first-message stash", () => {
   test("hands the message to the channel that was just created", () => {
     stashFirstMessage("channel_a", "hello");
-    expect(takeFirstMessage("channel_a")).toBe("hello");
+    expect(peekFirstMessage("channel_a")).toBe("hello");
   });
 
-  test("gives it up only once", () => {
-    // Take-once prevents remounts from resending the first message.
+  test("is still there for a render drawn again, and gone once the conversation is drawn", () => {
+    // A render React threw away read it once already; the one it draws instead must find it too.
     stashFirstMessage("channel_b", "hello");
-    takeFirstMessage("channel_b");
-    expect(takeFirstMessage("channel_b")).toBeNull();
+    peekFirstMessage("channel_b");
+    expect(peekFirstMessage("channel_b")).toBe("hello");
+    // Forgotten after the draw, so a remount cannot send it again.
+    forgetFirstMessage("channel_b");
+    expect(peekFirstMessage("channel_b")).toBeNull();
   });
 
   test("has nothing for a channel that was opened normally", () => {
-    expect(takeFirstMessage("channel_never_stashed")).toBeNull();
+    expect(peekFirstMessage("channel_never_stashed")).toBeNull();
   });
 
   test("keeps two channels' messages apart", () => {
     stashFirstMessage("channel_c", "for c");
     stashFirstMessage("channel_d", "for d");
-    expect(takeFirstMessage("channel_d")).toBe("for d");
-    expect(takeFirstMessage("channel_c")).toBe("for c");
+    forgetFirstMessage("channel_d");
+    expect(peekFirstMessage("channel_d")).toBeNull();
+    expect(peekFirstMessage("channel_c")).toBe("for c");
   });
 });

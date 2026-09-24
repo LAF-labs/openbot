@@ -26,8 +26,14 @@ export function seedMessage(text: string, id: string): Message {
  *
  * A module-level map rather than router state because `HistoryState` is an empty interface and
  * typing a value into it means augmenting `@tanstack/history`, which is not a dependency of this
- * app. It also earns something router state would not give: taking is destructive, so a component
- * that mounts twice cannot send the same message twice.
+ * app. It also earns something router state would not give: it is forgotten once a conversation
+ * that read it is on screen, so a component that mounts twice cannot send the same message twice.
+ *
+ * READ WHILE DRAWING, FORGOTTEN ONLY ONCE DRAWN. It used to be taken — read and deleted in one
+ * call — inside the conversation's first render. A render React throws away does not keep what it
+ * read, and React throws one away whenever something inside it fails: measured 2026-09-24, with the
+ * browser banner failing on the new conversation's first draw, the banner's seam caught it, and the
+ * render React drew again found nothing here — the first message somebody typed was never sent.
  *
  * Deliberately not persisted. A reload finds nothing here, which is correct, by then the message
  * is in the thread and arrives through the normal replay.
@@ -38,9 +44,12 @@ export function stashFirstMessage(channelId: string, text: string): void {
   firstMessages.set(channelId, text);
 }
 
-/** Read the pending first message and forget it. Null for a channel opened any other way. */
-export function takeFirstMessage(channelId: string): string | null {
-  const text = firstMessages.get(channelId) ?? null;
+/** The pending first message, left in place. Null for a channel opened any other way. */
+export function peekFirstMessage(channelId: string): string | null {
+  return firstMessages.get(channelId) ?? null;
+}
+
+/** Forget the first message: called once the conversation that read it has been drawn. */
+export function forgetFirstMessage(channelId: string): void {
   firstMessages.delete(channelId);
-  return text;
 }

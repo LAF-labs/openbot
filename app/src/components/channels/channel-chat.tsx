@@ -10,8 +10,9 @@ import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import {
+  forgetFirstMessage,
+  peekFirstMessage,
   seedMessage,
-  takeFirstMessage,
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import {
@@ -167,9 +168,14 @@ export function ChannelChat({
    * agent has its own messages because joining a fresh thread can temporarily empty the agent.
    */
   const [seed] = useState<Message | null>(() => {
-    const pending = takeFirstMessage(channel.id);
+    // Left in place while drawing: a render thrown away reads it again (`transcript-messages.ts`).
+    const pending = peekFirstMessage(channel.id);
     return pending ? seedMessage(pending, crypto.randomUUID()) : null;
   });
+  // Forgotten once this conversation is drawn, so a later mount cannot send it again.
+  useEffect(() => {
+    forgetFirstMessage(channel.id);
+  }, [channel.id]);
 
   /** Cleared by the send-on-mount effect without restarting it. */
   const seedRef = useRef(seed);
