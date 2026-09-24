@@ -73,10 +73,15 @@ describe("a room's transcript", () => {
    * turn now ends with a receipt: faces, not a sentence, under the turn's last bubble — and a
    * member that could not answer is drawn as needing help, with a way to ask it again.
    */
-  test("a settled turn leaves faces under its last bubble, with the words in the label", async () => {
+  test("a settled turn leaves faces beside its last bubble, with the words in the label", async () => {
     const { receipt } = await drawn();
 
+    /*
+     * Beside the Bot's own bubble, in the same row. At the column's right edge it sat directly
+     * above the person's next message and read as that message's mark (measured 2026-09-24).
+     */
     expect(receipt.under).toBe("매출은 12% 올랐어요.");
+    expect(receipt.placement).toBe("beside");
     expect(receipt.faces).toEqual(["failed", "passed"]);
     expect(receipt.label).toBe("재고봇 · 읽었어요, 리뷰봇 · 답하지 못했어요");
     // No sentence in the flow: the only words on the row are the button's.
@@ -89,5 +94,14 @@ describe("a room's transcript", () => {
     expect(receipt.askAgain).toBe("리뷰봇에게 다시 묻기");
     expect(receipt.asked).toEqual(["review"]);
     expect(receipt.askAgainWhileBusy).toBe(false);
+  });
+
+  test("when nobody answered, the receipt sits under the person's own message", async () => {
+    const { receipt } = await drawn();
+
+    expect(receipt.silentPlacement).toEqual({
+      placement: "under",
+      question: "지난주 어땠어?",
+    });
   });
 });

@@ -4,7 +4,9 @@ import {
   heardOf,
   placeReceipts,
   receiptTurns,
+  withoutReceiptTurns,
 } from "../src/lib/channels/room-receipts";
+import { standingFailures } from "../src/lib/channels/retry";
 
 /**
  * WHERE A ROOM TURN'S RECEIPT GOES. Measured 2026-09-21: a Bot that chose not to speak looked as
@@ -126,6 +128,42 @@ describe("which turns the receipt speaks for", () => {
     );
     // A reply the timeout harvest kept is whole; a red "took too long" under it would say otherwise.
     expect([...covered]).toEqual(["q1", "a1", "a2"]);
+  });
+});
+
+describe("a reply the timeout harvest kept", () => {
+  /*
+   * Measured 2026-09-24: 리뷰봇's run hit its deadline with a finished message, which was delivered
+   * (`member-turn.ts`). Its run ended in error with that reply as its last message, so the failures
+   * read keyed "the model took too long" to the reply — drawn in red under an answer that arrived.
+   */
+  const messages = [user("q1"), reply("late", "늦었지만 제 답은 이거예요.")];
+  const stored = [
+    {
+      messageId: "late",
+      code: "laf:turn_timed_out",
+      at: "2026-09-24T00:07:20.000Z",
+    },
+  ];
+  const times = {
+    q1: "2026-09-24T00:02:19.000Z",
+    late: "2026-09-24T00:07:19.000Z",
+  };
+
+  test("is an answer, not a failure, once the turn's receipt says so", () => {
+    const standing = standingFailures(stored, messages, times);
+    // The transcript's own rule alone keeps the line: a failure under a reply always stands.
+    expect(Object.keys(standing)).toEqual(["late"]);
+    expect(
+      withoutReceiptTurns(standing, messages, { q1: { review: "spoke" } }),
+    ).toEqual({});
+  });
+
+  test("a turn from before receipts keeps its line", () => {
+    const standing = standingFailures(stored, messages, times);
+    expect(Object.keys(withoutReceiptTurns(standing, messages, {}))).toEqual([
+      "late",
+    ]);
   });
 });
 

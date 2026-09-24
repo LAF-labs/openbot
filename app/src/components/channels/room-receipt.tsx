@@ -75,17 +75,17 @@ export function roomFaceLayoutId(memberId: string): string {
 export function RoomReceipt({
   faces,
   live = false,
-  delay = 0,
+  placement,
   onAskAgain,
 }: {
   faces: readonly ReceiptFace[];
   live?: boolean;
   /**
-   * The entrance delay of the message it sits under. Opening a room cascades the newest turns in
-   * (`createFirstPaintDelays`), and a receipt drawn at once sat alone at the bottom of an empty
-   * pane for the moment before the bubble it belongs to arrived — measured on the first reload.
+   * `beside` a Bot's bubble, on its bottom edge by the lower right corner; `under` the person's own
+   * message, on its side, when nobody answered. Always attached to the bubble it belongs to: at the
+   * column's edge it sat above the person's next message and read as that message's mark.
    */
-  delay?: number;
+  placement: "beside" | "under";
   /** Ask the members that could not answer, again. Absent draws no button — nothing can be asked. */
   onAskAgain?: (memberIds: string[]) => void;
 }) {
@@ -96,14 +96,23 @@ export function RoomReceipt({
   const shared = live && !reduceMotion;
 
   return (
+    /*
+     * Inside the message, so it arrives with it — the room's first paint cascades the newest turns
+     * in, and a receipt of its own sat alone in an empty pane before its bubble came. Its own fade is
+     * for the one that appears under a bubble already on screen, when a turn ends.
+     */
     <motion.div
       animate={{ opacity: 1 }}
-      className="flex justify-end pt-1 pr-1"
+      className={
+        placement === "beside"
+          ? "flex shrink-0 items-end pb-0.5"
+          : "flex justify-end pt-0.5 pr-1"
+      }
+      data-placement={placement}
       data-slot="room-receipt"
       initial={{ opacity: 0 }}
       transition={{
-        delay: reduceMotion ? 0 : delay + ENTRANCE_SECONDS,
-        duration: ENTRANCE_SECONDS,
+        duration: reduceMotion ? 0 : ENTRANCE_SECONDS,
         ease: EASE_OUT,
       }}
     >

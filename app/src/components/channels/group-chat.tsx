@@ -47,7 +47,7 @@ import {
   type Heard,
   heardFromList,
   placeReceipts,
-  receiptTurns,
+  withoutReceiptTurns,
 } from "@/lib/channels/room-receipts";
 import { normalizeStoredMessages } from "@/lib/channels/thread-history";
 import {
@@ -584,17 +584,29 @@ export function GroupChat({ channel }: { channel: AgentChannel }) {
      * A turn that left a receipt says member by member who could not answer, with a way to ask just
      * them again. The turn-wide line — "no answer came back" under the question even when two of
      * three answered, or under a member's whole reply when its run failed after it — would say it a
-     * second time, and less truly. See `receiptTurns`. Turns from before receipts keep it.
+     * second time, and less truly. Turns from before receipts keep it.
+     *
+     * The turn still running counts as soon as one member has settled: its receipt is being drawn
+     * from the frames, and a read of the failures that lands mid-turn — a window coming back into
+     * focus is enough — must not put a red line under a reply the receipt already accounts for.
      */
-    const covered = receiptTurns(room.messages, room.receipts);
-    for (const messageId of Object.keys(standing)) {
-      if (covered.has(messageId)) delete standing[messageId];
-    }
-    return standing;
+    const question = room.messages.findLast((m) => m.role === "user")?.id;
+    const live =
+      room.turnId !== null &&
+      question &&
+      Object.keys(room.turnSettled).length > 0
+        ? {
+            ...room.receipts,
+            [question]: { ...room.receipts[question], ...room.turnSettled },
+          }
+        : room.receipts;
+    return withoutReceiptTurns(standing, room.messages, live);
   }, [
     storedFailures.data,
     room.messages,
     room.receipts,
+    room.turnId,
+    room.turnSettled,
     marks.data,
     messageTimes,
   ]);

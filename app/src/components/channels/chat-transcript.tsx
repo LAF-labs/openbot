@@ -9,8 +9,10 @@ import {
 } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import {
+  createContext,
   Fragment,
   memo,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -618,6 +620,74 @@ function Arriving({
 }
 
 /**
+ * A room's read receipts, handed to the one message each belongs under.
+ *
+ * THROUGH CONTEXT, BECAUSE THE MESSAGE IS MEMOISED ON PRIMITIVES. The receipt has to sit inside the
+ * message — beside the bubble it belongs to — and the faces are an array rebuilt on every frame of a
+ * streaming turn. Handed down as a prop they would re-render every message that carries one on
+ * every chunk; read here, only `AnchoredReceipt` does, and it is a lookup that draws nothing for
+ * every message but the few a turn ended on.
+ */
+const ReceiptSlot = createContext<{
+  receipts: Readonly<Record<string, readonly ReceiptFace[]>>;
+  /** The message whose receipt belongs to the turn still running, while it runs. */
+  live: string | undefined;
+  askAgainUnder: (
+    anchorId: string,
+  ) => ((memberIds: string[]) => void) | undefined;
+} | null>(null);
+
+/** The receipt of the turn that ended on this message, if one did. See `RoomReceipt`. */
+function AnchoredReceipt({
+  anchorId,
+  placement,
+}: {
+  anchorId: string;
+  placement: "beside" | "under";
+}) {
+  const slot = useContext(ReceiptSlot);
+  const faces = slot?.receipts[anchorId];
+  if (!slot || !faces?.length) return null;
+  const onAskAgain = slot.askAgainUnder(anchorId);
+  return (
+    <RoomReceipt
+      faces={faces}
+      live={slot.live === anchorId}
+      placement={placement}
+      {...(onAskAgain ? { onAskAgain } : {})}
+    />
+  );
+}
+
+/**
+ * A Bot's bubble with the turn's receipt beside its lower right corner, the way a messenger puts a
+ * read mark beside the bubble it belongs to.
+ *
+ * MEASURED, THE OTHER WAY ROUND: drawn at the column's right edge under a Bot's reply — which sits
+ * on the left — the receipt landed directly above the person's NEXT message, and read as a mark on
+ * that message rather than on the turn it closed. A row, so the bubble keeps measuring its width
+ * against the whole column (a shrink-to-fit parent would halve its `max-w`), and `items-end`, so
+ * the faces sit on the bubble's bottom edge with no gap between them and it.
+ */
+function BesideBubble({
+  anchorId,
+  receipt,
+  children,
+}: {
+  anchorId: string;
+  receipt: boolean;
+  children: React.ReactNode;
+}) {
+  if (!receipt) return children;
+  return (
+    <div className="flex items-end gap-1.5" data-slot="bubble-receipt-row">
+      {children}
+      <AnchoredReceipt anchorId={anchorId} placement="beside" />
+    </div>
+  );
+}
+
+/**
  * One drawn message, and it is memoised on PRIMITIVES ON PURPOSE.
  *
  * A streamed answer changes `messages` on every chunk, and `toVisibleChatItems` builds fresh objects
@@ -638,11 +708,17 @@ const TranscriptMessage = memo(function TranscriptMessage({
   joinedNext = false,
   joinedPrev = false,
   rateable = false,
+  receipt = false,
   role,
   speaker,
   speakerSeed,
   text,
 }: {
+  /**
+   * A room turn ended on this message and left a receipt (`AnchoredReceipt` draws it). A flag and
+   * not the faces, for the memo: see `ReceiptSlot`.
+   */
+  receipt?: boolean;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
@@ -703,52 +779,60 @@ const TranscriptMessage = memo(function TranscriptMessage({
            * the Bot the grey bubble and the person the near-black one, and that symmetry is what
            * makes the transcript read as a conversation between two parties.
            */}
-          <Bubble
-            align={align}
-            className="chat-prose"
-            joinedNext={joinedNext}
-            joinedPrev={joinedPrev}
-            variant={isUser ? "user" : "agent"}
-          >
-            <BubbleContent>
-              {isUser ? (
-                // A person's own message is shown exactly as they typed it. Rendering it as markdown
-                // would silently reformat what they said, and an asterisk in a sentence is not
-                // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
-                // the thing that was already a chip in the composer as a chip here too, so the
-                // transcript shows a skill was used rather than a slash that was typed.
-                <span className="whitespace-pre-wrap">
-                  {invoked ? (
-                    <>
-                      {/*
-                       * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
-                       * thing was invoked before it says which one. `inline-flex` with
-                       * `align-middle` rather than a block: this sits mid-sentence, and a badge that
-                       * breaks the line it is in reads as a separate message.
-                       */}
-                      <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
-                        <IconBox className="size-3 shrink-0" />/{invoked.chip}
-                      </span>
-                      {invoked.rest}
-                    </>
-                  ) : (
-                    text
-                  )}
-                </span>
-              ) : (
-                /*
-                 * A Bot's prose is markdown, and it arrives in pieces.
-                 *
-                 * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
-                 * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
-                 * plain markdown parser draws that as literal asterisks and backticks until the
-                 * closing token arrives, so the answer visibly rewrites itself as it lands. This
-                 * closes them for the duration.
-                 */
-                <Streamdown components={markdownComponents}>{text}</Streamdown>
-              )}
-            </BubbleContent>
-          </Bubble>
+          <BesideBubble anchorId={id} receipt={!isUser && receipt}>
+            <Bubble
+              align={align}
+              className="chat-prose"
+              joinedNext={joinedNext}
+              joinedPrev={joinedPrev}
+              variant={isUser ? "user" : "agent"}
+            >
+              <BubbleContent>
+                {isUser ? (
+                  // A person's own message is shown exactly as they typed it. Rendering it as markdown
+                  // would silently reformat what they said, and an asterisk in a sentence is not
+                  // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
+                  // the thing that was already a chip in the composer as a chip here too, so the
+                  // transcript shows a skill was used rather than a slash that was typed.
+                  <span className="whitespace-pre-wrap">
+                    {invoked ? (
+                      <>
+                        {/*
+                         * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
+                         * thing was invoked before it says which one. `inline-flex` with
+                         * `align-middle` rather than a block: this sits mid-sentence, and a badge that
+                         * breaks the line it is in reads as a separate message.
+                         */}
+                        <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
+                          <IconBox className="size-3 shrink-0" />/{invoked.chip}
+                        </span>
+                        {invoked.rest}
+                      </>
+                    ) : (
+                      text
+                    )}
+                  </span>
+                ) : (
+                  /*
+                   * A Bot's prose is markdown, and it arrives in pieces.
+                   *
+                   * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
+                   * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
+                   * plain markdown parser draws that as literal asterisks and backticks until the
+                   * closing token arrives, so the answer visibly rewrites itself as it lands. This
+                   * closes them for the duration.
+                   */
+                  <Streamdown components={markdownComponents}>
+                    {text}
+                  </Streamdown>
+                )}
+              </BubbleContent>
+            </Bubble>
+          </BesideBubble>
+          {isUser && receipt ? (
+            // Nobody answered: under the person's own message, on its side of the column.
+            <AnchoredReceipt anchorId={id} placement="under" />
+          ) : null}
           {/*
            * COPYING A REPLY WAS SELECT-AND-DRAG, OR NOTHING.
            *
@@ -1150,7 +1234,7 @@ export function ChatTranscript({
     }
   }
 
-  return (
+  const view = (
     <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
       <MessageScroller>
         <MessageScrollerViewport>
@@ -1248,6 +1332,7 @@ export function ChatTranscript({
                         item.role,
                         item.speaker,
                       )}
+                      receipt={Boolean(receipts[item.id]?.length)}
                       role={item.role}
                       {...(item.speaker ? { speaker: item.speaker } : {})}
                       {...(item.speakerSeed
@@ -1292,21 +1377,6 @@ export function ChatTranscript({
                             ? () => onRetry({ id: item.id, text: item.text })
                             : undefined
                         }
-                      />
-                    ) : null
-                  }
-                  {
-                    /*
-                     * THE TURN'S RECEIPT, under the last thing said in it — outside the scroller item
-                     * for the reason the failure line is: it is not a message and must not be
-                     * measured, anchored, or handed back to the model as one.
-                     */
-                    receipts[item.id]?.length ? (
-                      <RoomReceipt
-                        delay={delays.delayFor(item.id, index, items.length)}
-                        faces={receipts[item.id] ?? []}
-                        live={busy && item.id === liveReceipt}
-                        onAskAgain={askAgainUnder(item.id)}
                       />
                     ) : null
                   }
@@ -1375,5 +1445,17 @@ export function ChatTranscript({
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
       </MessageScroller>
     </MessageScrollerProvider>
+  );
+
+  return (
+    <ReceiptSlot.Provider
+      value={{
+        receipts,
+        live: busy ? liveReceipt : undefined,
+        askAgainUnder,
+      }}
+    >
+      {view}
+    </ReceiptSlot.Provider>
   );
 }

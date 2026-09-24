@@ -48,8 +48,14 @@ export type RoomDrawn = {
   firstWaitLine: string | null;
   /** A settled turn with one quiet member and one that could not answer. */
   receipt: {
-    /** The text of the bubble it sits under. */
+    /** The text of the bubble it sits beside. */
     under: string | null;
+    /** Where it sits against that bubble; and where, when nobody answered at all. */
+    placement: string | null;
+    silentPlacement: {
+      placement: string | null;
+      question: string | null;
+    } | null;
     /** What the receipt is called, for a reader and on hover. */
     label: string | null;
     /** Faces drawn, by the outcome each carries. */
@@ -138,6 +144,8 @@ const drawn: RoomDrawn = {
   firstWaitLine: null,
   receipt: {
     under: null,
+    placement: null,
+    silentPlacement: null,
     label: null,
     faces: [],
     visibleText: "",
@@ -186,13 +194,16 @@ await draw({
   },
 });
 const receiptRow = host.querySelector("[data-slot='room-receipt']");
-const before = receiptRow?.previousElementSibling ?? null;
+// Beside the bubble it belongs to, in the same row — not at the column's edge on its own.
+const besideOf = receiptRow?.closest("[data-slot='bubble-receipt-row']");
 const askButton = [...(receiptRow?.querySelectorAll("button") ?? [])].find(
   (button) => (button.textContent ?? "").includes("다시 묻기"),
 );
 askButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 drawn.receipt = {
-  under: before?.querySelector("[data-slot='bubble']")?.textContent ?? null,
+  under: besideOf?.querySelector("[data-slot='bubble']")?.textContent ?? null,
+  placement: receiptRow?.getAttribute("data-placement") ?? null,
+  silentPlacement: null,
   label:
     receiptRow?.querySelector("button")?.getAttribute("aria-label") ?? null,
   faces: [...(receiptRow?.querySelectorAll("[data-outcome]") ?? [])].map(
@@ -217,6 +228,33 @@ drawn.receipt.askAgainWhileBusy = [
     .querySelector("[data-slot='room-receipt']")
     ?.querySelectorAll("button") ?? []),
 ].some((button) => (button.textContent ?? "").includes("다시 묻기"));
+
+// --- nobody answered at all: the receipt sits under the person's own message --------------------
+
+await draw({
+  busy: false,
+  messages: [messages[0]],
+  receipts: {
+    u1: [
+      {
+        memberId: "stock",
+        name: "재고봇",
+        avatarSeed: "stock-seed",
+        outcome: "passed",
+        questionId: "u1",
+      },
+    ],
+  },
+});
+const silentRow = host.querySelector("[data-slot='room-receipt']");
+drawn.receipt.silentPlacement = {
+  placement: silentRow?.getAttribute("data-placement") ?? null,
+  // The receipt is in the person's own message, right after its bubble.
+  question:
+    silentRow?.previousElementSibling?.getAttribute("data-slot") === "bubble"
+      ? (silentRow.previousElementSibling.textContent ?? null)
+      : null,
+};
 
 await act(async () => {
   root.unmount();

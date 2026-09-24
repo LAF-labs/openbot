@@ -122,6 +122,25 @@ export function receiptTurns(
 }
 
 /**
+ * The transcript's standing failures, less the ones a receipt already speaks for.
+ *
+ * One function for the live screen and the reloaded one, because they disagreed: a reply the
+ * timeout harvest kept is a member's run that ended in error with the reply as its last message, so
+ * the failures read put "the model took too long" under an answer that had arrived — on the screen
+ * that had the stored failures and not yet the receipt, and not on the one read after it.
+ */
+export function withoutReceiptTurns<Failure>(
+  standing: Readonly<Record<string, Failure>>,
+  messages: readonly Placed[],
+  receipts: Readonly<Record<string, Heard>>,
+): Record<string, Failure> {
+  const covered = receiptTurns(messages, receipts);
+  return Object.fromEntries(
+    Object.entries(standing).filter(([messageId]) => !covered.has(messageId)),
+  );
+}
+
+/**
  * Whether a reply has any words yet. A member's message is on screen from the moment it opens,
  * empty, and the transcript draws nothing for it until its first word — so a receipt anchored to
  * it would vanish for that moment and come back.
