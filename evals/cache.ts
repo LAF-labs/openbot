@@ -42,6 +42,7 @@ import {
   type CompletionProvider,
   liveProvider,
 } from "../agent-bot/src/provider";
+import { createResultSpill } from "../server/src/computer/spillover";
 import { createConversationStore } from "../server/src/context/conversations";
 import {
   BASE_KO,
@@ -86,6 +87,15 @@ const CHOSEN: readonly Arm[] = (process.env.EVAL_CACHE_ARMS ?? ARMS.join(","))
   .split(",")
   .map((name) => name.trim())
   .filter((name): name is Arm => (ARMS as readonly string[]).includes(name));
+/**
+ * Which cases run: the week-old conversation (`EVAL_CACHE_ARMS` picks its arms) and the browsing
+ * task. `EVAL_CACHE_CASES=browsing` with `EVAL_CACHE_ARMS=` runs the browsing task alone.
+ */
+const CASES = (process.env.EVAL_CACHE_CASES ?? "week,browsing")
+  .split(",")
+  .map((name) => name.trim());
+/** The share the browsing task must read from cache after its first request (harness phase 2). */
+const BROWSING_TARGET_SHARE = 0.9;
 /** A reasoning model can sit before its first token; the product's own stall guard allows this order of patience. */
 const TURN_TIMEOUT_MS = 180_000;
 /** The share the epoch arm must read from cache after its first turn. */
@@ -103,7 +113,7 @@ if (!MODEL) {
   );
   process.exit(1);
 }
-if (CHOSEN.length === 0) {
+if (CASES.includes("week") && CHOSEN.length === 0) {
   console.error(`EVAL_CACHE_ARMS names no arm. Known: ${ARMS.join(", ")}.`);
   process.exit(1);
 }
@@ -235,13 +245,351 @@ type TurnMeasure = {
 };
 
 type ArmMeasure = {
-  arm: Arm;
+  arm: Arm | "browsing";
   turns: TurnMeasure[];
   /** Cached over prompt on turns 2+, which is what the target is about. */
   laterShare: number | null;
   laterCostPerRequest: number | null;
   laterMedianLatencyMs: number | null;
+  /** Every request of the arm, the cold first one included. */
+  totalCostUsd: number;
 };
+
+/** One request through the real agent-bot loop, read back as the provider's usage. */
+async function requestOnce(input: {
+  turn: number;
+  threadId: string;
+  runId: string;
+  messages: unknown[];
+  tools: WireTool[];
+  provider: CompletionProvider;
+}): Promise<TurnMeasure> {
+  const { turn } = input;
+  const started = performance.now();
+  try {
+    const response = await runAgent(
+      {
+        threadId: input.threadId,
+        runId: input.runId,
+        messages: input.messages,
+        tools: input.tools,
+        context: [],
+        state: {},
+        forwardedProps: {
+          effort: process.env.EVAL_EFFORT ?? "balanced",
+          botId: EVAL_BOT.id,
+          timeZone: EVAL_TIME_ZONE,
+        },
+      } as never,
+      input.provider,
+    );
+    const body = await Promise.race([
+      response.text(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("turn timed out")), TURN_TIMEOUT_MS),
+      ),
+    ]);
+    const events = eventsOfSse(body);
+    // The run's FIRST request: the prefix measured is the one the conversation arrived with.
+    const usage = events.find(
+      (event) => event.type === "CUSTOM" && event.name === "laf.model.usage",
+    )?.value as Record<string, unknown> | undefined;
+    const error = events.find((event) => event.type === "RUN_ERROR");
+    const number = (key: string) =>
+      typeof usage?.[key] === "number" ? (usage[key] as number) : null;
+    return {
+      turn,
+      promptTokens: number("promptTokens"),
+      cachedPromptTokens: number("cachedPromptTokens"),
+      costUsd: number("costUsd"),
+      provider: typeof usage?.provider === "string" ? usage.provider : null,
+      latencyMs: Math.round(performance.now() - started),
+      problem: error
+        ? `RUN_ERROR: ${error.message ?? "unnamed"}`
+        : usage
+          ? null
+          : "no usage event",
+    };
+  } catch (error) {
+    return {
+      turn,
+      promptTokens: null,
+      cachedPromptTokens: null,
+      costUsd: null,
+      provider: null,
+      latencyMs: Math.round(performance.now() - started),
+      problem: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function printTurn(label: string, measure: TurnMeasure) {
+  console.log(
+    `  ${label.padEnd(8)} turn ${String(measure.turn).padStart(2)}` +
+      `  prompt ${String(measure.promptTokens ?? "—").padStart(6)}` +
+      `  cached ${String(measure.cachedPromptTokens ?? "—").padStart(6)}` +
+      `  $${measure.costUsd?.toFixed(5) ?? "—"}` +
+      `  ${String(measure.latencyMs).padStart(6)}ms  ${measure.provider ?? ""}` +
+      (measure.problem ? `  · ${measure.problem}` : ""),
+  );
+}
+
+/** Turns 2+ summed: the share read from cache, the dollars per request, the median latency. */
+function laterOf(turns: readonly TurnMeasure[]) {
+  const later = turns.filter(
+    (turn) =>
+      turn.turn > 1 &&
+      turn.promptTokens !== null &&
+      turn.cachedPromptTokens !== null,
+  );
+  const prompt = later.reduce((sum, turn) => sum + (turn.promptTokens ?? 0), 0);
+  const cached = later.reduce(
+    (sum, turn) => sum + (turn.cachedPromptTokens ?? 0),
+    0,
+  );
+  const costs = turns
+    .filter((turn) => turn.turn > 1)
+    .map((turn) => turn.costUsd)
+    .filter((cost): cost is number => cost !== null);
+  const latencies = later.map((turn) => turn.latencyMs).sort((a, b) => a - b);
+  return {
+    laterShare: prompt > 0 ? cached / prompt : null,
+    laterCostPerRequest: costs.length
+      ? costs.reduce((sum, cost) => sum + cost, 0) / costs.length
+      : null,
+    laterMedianLatencyMs: latencies.length
+      ? (latencies[Math.floor(latencies.length / 2)] ?? null)
+      : null,
+    totalCostUsd: turns.reduce((sum, turn) => sum + (turn.costUsd ?? 0), 0),
+  };
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The browsing task                                                                          */
+/* ------------------------------------------------------------------------------------------ */
+
+/**
+ * One question that takes ten steps in the Bot's browser, scripted.
+ *
+ * WHY SCRIPTED. The real-stack measurement of 2026-09-25 (docs/laf/eval-pack.md) drove the app with
+ * a headless browser and read 59.1% from cache after the first request, and named the cause: every
+ * step, the server's result filing (`computer/spillover.ts`) and agent-bot's cut of older results
+ * rewrote a tool result the provider had already cached. That is a property of the harness, not of
+ * which page the model chose to open, so the calls here are fixed and only the model's REQUEST is
+ * measured: after each step the model is asked to continue, its reply is dropped, and the script's
+ * next call and result are appended. Every run of this case sends the same conversation, and before
+ * and after a harness change differ only in what the harness does to it.
+ *
+ * The results pass through exactly what production passes them through: the server's filing (with
+ * a computer that files instantly, so the "preview from the next run" path is taken as soon as it
+ * would be in production) and the conversation store's epoch, then agent-bot.
+ */
+const BROWSING_QUESTION =
+  "주문 관리 들어가서 아직 발송 안 된 주문 확인하고, 20260046번 주문 상세 보고 고객 요청사항이랑 환불 사유 있는지 알려줘.";
+
+function elementsPage(step: number): string {
+  const elements = Array.from({ length: 48 }, (_, at) => ({
+    ref: `e${at + 1}`,
+    role: at % 5 === 0 ? "button" : at % 3 === 0 ? "textbox" : "link",
+    name: `${step}단계 ${at % 5 === 0 ? "주문 상세 보기" : at % 3 === 0 ? "검색어 입력" : `주문 ${20260040 + at}`}`,
+  }));
+  return JSON.stringify({
+    ok: true,
+    snapshotId: step,
+    url: "https://shop.example.test/admin/orders",
+    title: "미소상회 · 주문 관리",
+    elements,
+    truncated: false,
+    tabs: [
+      {
+        index: 0,
+        title: "미소상회 · 주문 관리",
+        url: "https://shop.example.test/admin/orders",
+        active: true,
+      },
+    ],
+  });
+}
+
+function pageResult(step: number, title: string, needle = ""): string {
+  return JSON.stringify({
+    ok: true,
+    url: `https://shop.example.test/admin/orders/${step}`,
+    title,
+    text: `${longPage(step, `PO-${3000 + step}`)}${needle ? `\n${needle}` : ""}`,
+  });
+}
+
+/** The ten steps: each call as the model would have written it, and what the computer said. */
+function browsingSteps(): Array<{
+  name: string;
+  args: Record<string, unknown>;
+  result: string;
+}> {
+  const detail =
+    "주문번호 20260046 · 고객 박지영 · 유자청 500g 1개 · 15,000원 · 결제완료\n고객 요청사항: 선물 포장 부탁드려요\n환불 사유: 없음";
+  return [
+    {
+      name: "computer_navigate",
+      args: { url: "https://shop.example.test/admin/orders" },
+      result: pageResult(1, "미소상회 · 주문 관리"),
+    },
+    { name: "computer_snapshot", args: {}, result: elementsPage(2) },
+    {
+      name: "computer_click",
+      args: { ref: "e6", snapshotId: 2 },
+      result: JSON.stringify({
+        ok: true,
+        url: "https://shop.example.test/admin/orders?status=unshipped",
+      }),
+    },
+    {
+      name: "computer_read",
+      args: {},
+      result: pageResult(4, "미발송 주문"),
+    },
+    { name: "computer_snapshot", args: {}, result: elementsPage(5) },
+    {
+      name: "computer_click",
+      args: { ref: "e11", snapshotId: 5 },
+      result: JSON.stringify({
+        ok: true,
+        url: "https://shop.example.test/admin/orders/20260046",
+      }),
+    },
+    {
+      name: "computer_read",
+      args: {},
+      result: pageResult(7, "주문 20260046", detail),
+    },
+    {
+      name: "computer_scroll",
+      args: { deltaY: 600 },
+      result: JSON.stringify({ ok: true }),
+    },
+    {
+      name: "computer_read",
+      args: {},
+      result: pageResult(9, "주문 20260046 (아래)"),
+    },
+    { name: "computer_snapshot", args: {}, result: elementsPage(10) },
+  ];
+}
+
+async function measureBrowsing(tools: WireTool[]): Promise<ArmMeasure> {
+  const nonce = randomUUID().slice(0, 8);
+  const offered = tools.map((tool, at) =>
+    at === 0
+      ? { ...tool, description: `${tool.description} [${nonce}]` }
+      : tool,
+  );
+  const threadId = `thread_cache_browsing_${nonce}`;
+  const store = createConversationStore();
+  // A computer that files at once: production's filing lands long before the next step's run.
+  const spill = createResultSpill({
+    forBot: () => ({
+      writeFile: async (input) => ({
+        path: input.path,
+        bytes: input.contents.length,
+        appended: false,
+      }),
+    }),
+  });
+  const pinned: CompletionProvider = (request, options) =>
+    liveProvider(
+      {
+        ...request,
+        ...(PROVIDER
+          ? { provider: { only: [PROVIDER], allow_fallbacks: false } }
+          : {}),
+      } as typeof request,
+      options,
+    );
+
+  const now = new Date();
+  const facts = contextFactsFor({
+    mode: "chat",
+    now,
+    timeZone: EVAL_TIME_ZONE,
+    bot: EVAL_BOT,
+    standingRole: EVAL_STANDING_ROLE,
+    memories: EVAL_MEMORIES,
+    person: { timeZone: EVAL_TIME_ZONE, locale: "ko-KR" },
+  });
+  const conversation: Array<Record<string, unknown>> = [
+    { id: "b_q", role: "user", content: BROWSING_QUESTION },
+  ];
+  const turns: TurnMeasure[] = [];
+  const steps = browsingSteps();
+  for (let at = 0; at < steps.length; at += 1) {
+    const step = steps[at];
+    if (!step) break;
+    const callId = `call_b${at}_${nonce}`;
+    conversation.push(
+      {
+        id: `b_a${at}`,
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: callId,
+            type: "function",
+            function: { name: step.name, arguments: JSON.stringify(step.args) },
+          },
+        ],
+      },
+      {
+        id: `b_t${at}`,
+        role: "tool",
+        toolCallId: callId,
+        content: step.result,
+      },
+    );
+    // The server's seam, as `copilot.ts` runs it: results filed, then the epoch.
+    const filed = conversation.map((message) =>
+      message.role === "tool"
+        ? {
+            ...message,
+            content: spill.forModel(
+              EVAL_BOT.id,
+              String(message.toolCallId),
+              String(message.content),
+            ),
+          }
+        : message,
+    );
+    const prepared = store.prepare({
+      threadId,
+      botId: EVAL_BOT.id,
+      mode: "chat",
+      messages: filed as never,
+      key: {
+        harness: HARNESS_VERSION,
+        model: MODEL,
+        effort: "balanced",
+        tools: nonce,
+      },
+      facts,
+      system: (told) => systemPromptText("chat", contextLayerText(told)),
+      now,
+    });
+    const measure = await requestOnce({
+      turn: at + 1,
+      threadId,
+      runId: `cache_browsing_s${at}_${Date.now()}`,
+      messages: [
+        { id: "laf-prompt:eval_bot", role: "system", content: prepared.system },
+        ...prepared.messages,
+      ],
+      tools: offered,
+      provider: pinned,
+    });
+    turns.push(measure);
+    printTurn("browsing", measure);
+    await spill.settled();
+  }
+  return { arm: "browsing", turns, ...laterOf(turns) };
+}
 
 async function measureArm(
   arm: Arm,
@@ -316,74 +664,16 @@ async function measureArm(
       ...(prepared?.messages ?? conversation),
     ];
 
-    const started = performance.now();
-    let measure: TurnMeasure;
-    try {
-      const response = await runAgent(
-        {
-          threadId,
-          runId: `cache_${arm}_t${turn}_${Date.now()}`,
-          messages,
-          tools: offered,
-          context: [],
-          state: {},
-          forwardedProps: {
-            effort: process.env.EVAL_EFFORT ?? "balanced",
-            botId: EVAL_BOT.id,
-            timeZone: EVAL_TIME_ZONE,
-          },
-        } as never,
-        pinned,
-      );
-      const body = await Promise.race([
-        response.text(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("turn timed out")),
-            TURN_TIMEOUT_MS,
-          ),
-        ),
-      ]);
-      const events = eventsOfSse(body);
-      const usage = events.find(
-        (event) => event.type === "CUSTOM" && event.name === "laf.model.usage",
-      )?.value as Record<string, unknown> | undefined;
-      const error = events.find((event) => event.type === "RUN_ERROR");
-      const number = (key: string) =>
-        typeof usage?.[key] === "number" ? (usage[key] as number) : null;
-      measure = {
-        turn,
-        promptTokens: number("promptTokens"),
-        cachedPromptTokens: number("cachedPromptTokens"),
-        costUsd: number("costUsd"),
-        provider: typeof usage?.provider === "string" ? usage.provider : null,
-        latencyMs: Math.round(performance.now() - started),
-        problem: error
-          ? `RUN_ERROR: ${error.message ?? "unnamed"}`
-          : usage
-            ? null
-            : "no usage event",
-      };
-    } catch (error) {
-      measure = {
-        turn,
-        promptTokens: null,
-        cachedPromptTokens: null,
-        costUsd: null,
-        provider: null,
-        latencyMs: Math.round(performance.now() - started),
-        problem: error instanceof Error ? error.message : String(error),
-      };
-    }
+    const measure = await requestOnce({
+      turn,
+      threadId,
+      runId: `cache_${arm}_t${turn}_${Date.now()}`,
+      messages,
+      tools: offered,
+      provider: pinned,
+    });
     turns.push(measure);
-    console.log(
-      `  ${arm.padEnd(7)} turn ${String(turn).padStart(2)}` +
-        `  prompt ${String(measure.promptTokens ?? "—").padStart(6)}` +
-        `  cached ${String(measure.cachedPromptTokens ?? "—").padStart(6)}` +
-        `  $${measure.costUsd?.toFixed(5) ?? "—"}` +
-        `  ${String(measure.latencyMs).padStart(6)}ms  ${measure.provider ?? ""}` +
-        (measure.problem ? `  · ${measure.problem}` : ""),
-    );
+    printTurn(arm, measure);
     // The scripted answer, so both arms carry the same history into the next turn.
     conversation.push({
       id: `r${turn}`,
@@ -392,32 +682,7 @@ async function measureArm(
     });
   }
 
-  const later = turns.filter(
-    (turn) =>
-      turn.turn > 1 &&
-      turn.promptTokens !== null &&
-      turn.cachedPromptTokens !== null,
-  );
-  const prompt = later.reduce((sum, turn) => sum + (turn.promptTokens ?? 0), 0);
-  const cached = later.reduce(
-    (sum, turn) => sum + (turn.cachedPromptTokens ?? 0),
-    0,
-  );
-  const costs = later
-    .map((turn) => turn.costUsd)
-    .filter((cost): cost is number => cost !== null);
-  const latencies = later.map((turn) => turn.latencyMs).sort((a, b) => a - b);
-  return {
-    arm,
-    turns,
-    laterShare: prompt > 0 ? cached / prompt : null,
-    laterCostPerRequest: costs.length
-      ? costs.reduce((sum, cost) => sum + cost, 0) / costs.length
-      : null,
-    laterMedianLatencyMs: latencies.length
-      ? (latencies[Math.floor(latencies.length / 2)] ?? null)
-      : null,
-  };
+  return { arm, turns, ...laterOf(turns) };
 }
 
 const tools = await toolsOf();
@@ -428,28 +693,39 @@ console.log(
 );
 
 const arms: ArmMeasure[] = [];
-for (const arm of CHOSEN) {
+for (const arm of CASES.includes("week") ? CHOSEN : []) {
   arms.push(await measureArm(arm, tools, history));
+}
+if (CASES.includes("browsing")) {
+  console.log(
+    `\nbrowsing: one question, ${browsingSteps().length} steps, each request measured\n`,
+  );
+  arms.push(await measureBrowsing(tools));
 }
 
 console.log("\nturns 2+:");
 for (const measured of arms) {
   console.log(
-    `  ${measured.arm.padEnd(7)} ${measured.laterShare === null ? "cache not reported" : `${(measured.laterShare * 100).toFixed(1)}% from cache`}` +
+    `  ${measured.arm.padEnd(8)} ${measured.laterShare === null ? "cache not reported" : `${(measured.laterShare * 100).toFixed(1)}% from cache`}` +
       `  $${measured.laterCostPerRequest?.toFixed(5) ?? "—"}/request` +
+      `  $${measured.totalCostUsd.toFixed(5)} in all` +
       `  median ${measured.laterMedianLatencyMs ?? "—"}ms`,
   );
 }
 
 const epoch = arms.find((measured) => measured.arm === "epoch");
+const browsing = arms.find((measured) => measured.arm === "browsing");
 const pass =
-  epoch === undefined ||
-  (epoch.laterShare !== null && epoch.laterShare >= TARGET_SHARE);
+  (epoch === undefined ||
+    (epoch.laterShare !== null && epoch.laterShare >= TARGET_SHARE)) &&
+  (browsing === undefined ||
+    (browsing.laterShare !== null &&
+      browsing.laterShare >= BROWSING_TARGET_SHARE));
 const answered = arms.every((measured) =>
   measured.turns.every((turn) => turn.problem === null),
 );
 console.log(
-  `\nverdict: ${pass && answered ? "PASS" : "FAIL"} (epoch arm ≥ ${TARGET_SHARE * 100}% from cache on turns 2+)`,
+  `\nverdict: ${pass && answered ? "PASS" : "FAIL"} (epoch arm ≥ ${TARGET_SHARE * 100}%, browsing ≥ ${BROWSING_TARGET_SHARE * 100}% from cache on requests 2+)`,
 );
 
 const report = {
