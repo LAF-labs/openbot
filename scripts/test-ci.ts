@@ -383,13 +383,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * those screens, 다시 켜기 on a site that could not open, and the site rows said for one Bot.
  * Fourteen tests to `app`; its floor rises by exactly that, as the paragraphs above did.
  *
+ * RAISED 2026-09-24 with the conversation's record (UI/UX audit 0.5.3, package A: items 1, 13, 5,
+ * 6, 9 and the receiving half of 8): thirty-six tests to `app` (one card per turn and what the Bot
+ * said inside it, the card's and the banner's names, the half answer and 다시 시도 under it, a
+ * message the server never got kept and sent again, the offline line, `?draft=` in the composer, a
+ * Korean skill's chip, a step's answer in 한 일) and five to `server` (the ledger telling a Bot that
+ * stopped partway from one never reached, and naming the question — never a routine's). Each floor
+ * rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2477, roots: ["server"] },
-  { name: "app", floor: 1143, roots: ["app"] },
+  { name: "server", floor: 2482, roots: ["server"] },
+  { name: "app", floor: 1179, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;
