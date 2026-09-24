@@ -17,8 +17,9 @@
 /** Writing a skill, deleting one, and putting one on a Bot or taking it off. */
 export const SKILL_REFUSALS: Record<string, string> = {
   "laf:skill_incomplete": "A skill needs a command, a title and instructions.",
+  // Korean names are commands too since 2026-09-24 (`SKILL_SLUG_PATTERN`); the old sentence said not.
   "laf:skill_slug_invalid":
-    "A command is 2 to 40 lower-case letters, numbers and hyphens.",
+    "Letters (Korean too), numbers and hyphens, 2 to 40, with no spaces.",
   "laf:skill_not_yours":
     "That skill is somebody else's, so only they can change it or put it on a Bot.",
   "laf:skill_belongs_to_deployment":

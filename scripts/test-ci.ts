@@ -371,13 +371,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * tool's field and its size) and three to `server` (the line kept, cleared when the routine it
  * describes changes, and carried by the routes). Each floor rises by exactly what was added.
  *
+ * RAISED 2026-09-24 with Korean skill names (UI/UX audit 0.5.3, item 11): five tests to `app` (the
+ * shape, one spelling, the refusal's words, the / menu, the one-Bot grant on save) and three to
+ * `server` (written, granted, read and deleted by a Korean name; kept composed; still refused
+ * where it cannot be called). Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2474, roots: ["server"] },
-  { name: "app", floor: 1124, roots: ["app"] },
+  { name: "server", floor: 2477, roots: ["server"] },
+  { name: "app", floor: 1129, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

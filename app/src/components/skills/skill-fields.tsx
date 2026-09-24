@@ -1,4 +1,5 @@
 import { useForm } from "@tanstack/react-form";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -91,7 +92,12 @@ export function SkillFields({
                   onChange={(event) =>
                     field.handleChange(event.target.value.toLowerCase())
                   }
-                  placeholder="standup"
+                  /*
+                   * A shop's example, in the shop's language. It was "standup" — a developer's
+                   * morning meeting, as the first thing a shop owner read on this form (UI/UX
+                   * audit 0.5.3, item 11).
+                   */
+                  placeholder={t("review-reply")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -102,7 +108,9 @@ export function SkillFields({
                       ? t(
                           "A command cannot be changed. To rename a skill, write a new one and delete this.",
                         )
-                      : t("What you type after a slash, like /standup.")}
+                      : t(
+                          "The name you type after / in the conversation, like /review-reply. Korean works.",
+                        )}
                   </p>
                 )}
               </Field>
@@ -123,7 +131,7 @@ export function SkillFields({
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder={t("My standup skill")}
+                  placeholder={t("Replying to a review")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -147,9 +155,7 @@ export function SkillFields({
                   name={field.name}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder={t(
-                    "Turns yesterday's work into a standup update",
-                  )}
+                  placeholder={t("A polite reply draft for a new review")}
                   value={field.state.value}
                 />
                 {isInvalid ? (
@@ -183,7 +189,7 @@ export function SkillFields({
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
                   placeholder={t(
-                    "Summarise what I did yesterday from the channel, then list what is left.",
+                    "For each new review, write a polite reply draft. If it is a complaint, apologise first, and end with the shop's name.",
                   )}
                   value={field.state.value}
                 />
@@ -192,7 +198,7 @@ export function SkillFields({
                 ) : (
                   <p className="text-muted-foreground text-xs">
                     {t(
-                      "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.",
+                      "When you use it, the Bot follows this. Write it the way you would ask the Bot.",
                     )}
                   </p>
                 )}
@@ -214,7 +220,7 @@ export function SkillFields({
 
       {error ? (
         <p className="mt-4 text-sm text-destructive" role="alert">
-          {error.message}
+          {savingFailure(error)}
         </p>
       ) : null}
 

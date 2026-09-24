@@ -166,8 +166,13 @@ function SkillsPage() {
             {t("New skill")}
           </Button>
         }
+        /*
+         * WHAT A SKILL IS FOR, BEFORE WHAT IT IS. "A named instruction you invoke with /" is how the
+         * feature works; what somebody running a shop wants to know is that this is where the things
+         * they ask for every week are kept (UI/UX audit 0.5.3, item 11).
+         */
         description={t(
-          "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.",
+          "Things you ask for often, saved under a name. Type / and the name in the conversation — /review-reply, say — and the Bot does it the way you wrote it.",
         )}
         title={t("Skills")}
       >
@@ -240,7 +245,9 @@ function SkillsPage() {
                 size={56}
               />
               <p className="text-center text-sm text-muted-foreground">
-                {t("No skills yet. Write one and any Bot you own can run it.")}
+                {t(
+                  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.",
+                )}
               </p>
               {/* The way to write one, where the sentence says to — not only in the header. */}
               {showCreate ? null : (

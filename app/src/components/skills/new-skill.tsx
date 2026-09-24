@@ -1,8 +1,10 @@
+import { skillSlugOf } from "@shared/tools/skills";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { SkillFields } from "@/components/skills/skill-fields";
 import { pageTitleClass } from "@/components/ui/page-header";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -21,6 +23,15 @@ export function NewSkill() {
   const navigate = useNavigate();
   const { data: plugins } = useQuery(pluginsPageQueryOptions());
   const { data: me } = useQuery(currentUserQueryOptions());
+  /*
+   * WITH ONE BOT, THE SKILL GOES ON IT WHEN IT IS SAVED. A skill reaches the `/` menu only through
+   * a grant (`skill-agents.tsx`), and the grant was a second trip — open the skill again, press the
+   * Bot's name — that nobody who had just written "/리뷰답장" knew to make, so the skill they saved
+   * did nothing (UI/UX audit 0.5.3, items 9 and 11). With several Bots the choice is still theirs.
+   */
+  const { data: agents } = useQuery(agentListQueryOptions());
+  const owned = (agents ?? []).filter((agent) => agent.mine);
+  const onlyBot = owned.length === 1 ? owned[0] : undefined;
   /*
    * A SLUG YOU ALREADY OWN OVERWRITES THE SKILL BEHIND IT.
    *
@@ -55,9 +66,32 @@ export function NewSkill() {
           ),
         );
       }
-      return response.json();
+      const saved: unknown = await response.json();
+      if (onlyBot) {
+        const granted = await fetch("/api/plugins/grants", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            kind: "skill",
+            // What the server kept: it stores the command composed (NFC), as the form may not have.
+            ref: skillSlugOf(values.slug),
+            agentId: onlyBot.id,
+          }),
+        }).catch(() => null);
+        if (!granted?.ok) {
+          // Said as what happened: the skill is there and the Bot does not have it yet.
+          throw new Error(
+            t(
+              "The skill was saved, but {name} could not be given it. Open it from the list and press {name}.",
+              { name: onlyBot.name },
+            ),
+          );
+        }
+      }
+      return saved;
     },
-    onSuccess: () =>
+    onSettled: () =>
       queryClient.invalidateQueries({ queryKey: pluginKeys.all }),
   });
 
@@ -67,9 +101,14 @@ export function NewSkill() {
         {/* h2: the page behind this panel already has the page's one h1. */}
         <h2 className={pageTitleClass}>{t("New skill")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t(
-            "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.",
-          )}
+          {onlyBot
+            ? t(
+                "Something you ask {name} for often, saved under a name. {name} gets it when you save, and nobody else sees it.",
+                { name: onlyBot.name },
+              )
+            : t(
+                "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.",
+              )}
         </p>
       </header>
 
@@ -77,7 +116,7 @@ export function NewSkill() {
         defaultValues={emptySkillForm}
         error={clash ?? createSkill.error}
         onSubmit={async (values) => {
-          const slug = values.slug.trim();
+          const slug = skillSlugOf(values.slug);
           const mine = (plugins?.skills ?? []).some(
             (skill) => skill.ownerUserId === me?.id && skill.slug === slug,
           );

@@ -48,6 +48,8 @@ const sharedBot = `agent_shared_${suite}`;
 const aliceSkill = `alice-skill-${suite}`;
 const bobSkill = `bob-skill-${suite}`;
 const deploymentSkill = `deployment-skill-${suite}`;
+/** A command in the language the person writes in. `suite` is hex, so it stays a valid name. */
+const koreanSkill = `리뷰답장${suite}`;
 
 beforeAll(async () => {
   for (const [id, email] of [
@@ -102,6 +104,8 @@ afterAll(async () => {
         bobSkill,
         deploymentSkill,
         `written-${suite}`,
+        koreanSkill,
+        `${koreanSkill}-풀어쓴`,
       ]),
     );
   await database
@@ -605,5 +609,69 @@ describe("what a person may do over HTTP", () => {
     expect(slugs).toContain(aliceSkill);
     expect(slugs).toContain(deploymentSkill);
     expect(slugs).not.toContain(bobSkill);
+  });
+});
+
+/**
+ * A COMMAND IN KOREAN, end to end (UI/UX audit 0.5.3, item 11).
+ *
+ * "/리뷰답장" was refused by the route's `^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$` — and by the form first
+ * — so the one place a shop owner saves "the thing I ask for every week" turned them away on its
+ * first screen. Written, granted, read by the Bot and deleted, all under the Korean name, and kept
+ * in one spelling however the Hangul arrived.
+ */
+describe("a command in Korean", () => {
+  const post = (slug: string) =>
+    asAlice().request("/skills", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug,
+        title: "리뷰 답장 쓰기",
+        instructions: "새 리뷰마다 정중한 답글 초안을 써 줘.",
+      }),
+    });
+
+  test("is written, put on a Bot, read by name, and deleted", async () => {
+    expect((await post(koreanSkill)).status).toBe(200);
+    expect(await store.skillOwner(koreanSkill)).toBe(alice);
+
+    const granted = await asAlice().request(
+      "/grants",
+      grantBody(koreanSkill, aliceBot),
+    );
+    expect(granted.status).toBe(200);
+    // The Bot names it the way the prompt listed it, with or without the slash.
+    const viewed = await store.viewSkill({
+      slug: `/${koreanSkill}`,
+      agentId: aliceBot,
+      actorId: alice,
+    });
+    expect(viewed.allowed).toBe(true);
+
+    const removed = await asAlice().request(
+      `/skills/${encodeURIComponent(koreanSkill)}`,
+      { method: "DELETE" },
+    );
+    expect(removed.status).toBe(200);
+    expect(await store.skillOwner(koreanSkill)).toBeUndefined();
+  });
+
+  test("is kept composed, however the Hangul arrived", async () => {
+    const typed = `${koreanSkill}-풀어쓴`;
+    // Pasted from a Mac file name: the same letters, decomposed into jamo.
+    expect((await post(typed.normalize("NFD"))).status).toBe(200);
+    expect(await store.skillOwner(typed)).toBe(alice);
+    expect(await store.skillOwner(typed.normalize("NFD"))).toBeUndefined();
+  });
+
+  test("still refuses what cannot be typed after a slash, or called back", async () => {
+    for (const slug of ["리뷰 답장", "리뷰/답장", "Review", "-리뷰", "리"]) {
+      const response = await post(slug);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        code: "laf:skill_slug_invalid",
+      });
+    }
   });
 });

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { SKILL_SLUG_PATTERN, skillSlugOf } from "../../../shared/tools/skills";
 import type { AppVariables } from "../auth/guards";
 import {
   ADMIN_REQUIRED,
@@ -72,7 +73,7 @@ export const CUSTOM_SERVER_INCOMPLETE = "laf:custom_server_incomplete";
 export const OAUTH_CLIENT_ID_REQUIRED = "laf:oauth_client_id_required";
 /** A skill saved without a slug, a title or instructions. */
 export const SKILL_INCOMPLETE = "laf:skill_incomplete";
-/** A slug that is not lower-case letters, numbers and hyphens, two to forty. */
+/** A slug that is not letters (Korean included), numbers and hyphens, two to forty. */
 export const SKILL_SLUG_INVALID = "laf:skill_slug_invalid";
 /** A grant or a revoke that does not say what kind, which one and for which Bot. */
 export const GRANT_INCOMPLETE = "laf:grant_incomplete";
@@ -976,7 +977,13 @@ export function createPluginRoutes(
         400,
       );
     }
-    if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(body.slug)) {
+    /*
+     * Korean names since 2026-09-24: "/리뷰답장" was refused here, and the form refused it first
+     * (UI/UX audit 0.5.3, item 11). One rule for both, in `shared/tools/skills.ts`, and the slug
+     * is kept in NFC so a name pasted in decomposed Hangul is the same name as one typed.
+     */
+    body.slug = skillSlugOf(body.slug);
+    if (!SKILL_SLUG_PATTERN.test(body.slug)) {
       return context.json(
         { error: SKILL_SLUG_INVALID, code: SKILL_SLUG_INVALID },
         400,

@@ -2478,4 +2478,31 @@ export const ko: Record<string, string> = {
   "Name, e.g. Weekly sales summary": "이름 (예: 주간 매출 요약)",
   "The internet connection is down, so this was not saved.":
     "인터넷 연결이 끊겨 저장하지 못했어요.",
+  /*
+   * 스킬(감사 0.5.3 항목 11, 9·15의 스킬 부분). 자주 시키는 일이라는 설명, 가게 일로 바꾼 예시,
+   * 한글 명령, 봇이 하나일 때의 문장.
+   */
+  "review-reply": "리뷰답장",
+  "The name you type after / in the conversation, like /review-reply. Korean works.":
+    "대화창에서 / 뒤에 치는 이름이에요. 예: /리뷰답장 (한글도 돼요)",
+  "Replying to a review": "리뷰 답장 쓰기",
+  "A polite reply draft for a new review": "새 리뷰에 정중한 답글 초안",
+  "For each new review, write a polite reply draft. If it is a complaint, apologise first, and end with the shop's name.":
+    "새로 달린 리뷰마다 정중한 답글 초안을 써 줘. 불만이 담긴 리뷰에는 먼저 사과하고, 끝에 가게 이름을 넣어 줘.",
+  "When you use it, the Bot follows this. Write it the way you would ask the Bot.":
+    "부르면 봇이 이대로 따라요. 봇에게 부탁하듯 적어 주세요.",
+  "Letters (Korean too), numbers and hyphens, 2 to 40, with no spaces.":
+    "글자(한글 포함)·숫자·하이픈으로 2~40자, 띄어쓰기 없이 적어 주세요.",
+  "{name} has it: type /{slug} in the conversation.":
+    "{name}에게 줬어요. 대화창에 /{slug} 하고 치면 돼요.",
+  "{name} does not have it yet. Press the name to give it.":
+    "아직 {name}에게 주지 않았어요. 이름을 누르면 줘요.",
+  "Something you ask {name} for often, saved under a name. {name} gets it when you save, and nobody else sees it.":
+    "{name}에게 자주 시키는 일을 이름 붙여 저장해요. 저장하면 {name}에게 바로 주고, 다른 사람에게는 보이지 않아요.",
+  "The skill was saved, but {name} could not be given it. Open it from the list and press {name}.":
+    "스킬은 저장했지만 {name}에게 주지 못했어요. 목록에서 스킬을 열어 이름 버튼을 눌러 주세요.",
+  "Things you ask for often, saved under a name. Type / and the name in the conversation — /review-reply, say — and the Bot does it the way you wrote it.":
+    "자주 시키는 일을 이름 붙여 저장해 두는 곳이에요. 대화창에 /와 이름(예: /리뷰답장)을 치면 적어 둔 대로 봇이 해요.",
+  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.":
+    "아직 저장한 일이 없어요. 새 리뷰에 정중한 답글 쓰기처럼 자주 시키는 일을 저장해 보세요.",
 };

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { savingFailure } from "@/components/routines/saving-failure";
 import { Button } from "@/components/ui/button";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
@@ -59,9 +60,18 @@ export function SkillAgents({
       queryClient.invalidateQueries({ queryKey: pluginKeys.all }),
   });
 
+  /*
+   * ONE BOT, ONE SENTENCE. With the one Bot a person has (2026-09-24), "봇" over a row of one name
+   * and "이걸 가진 봇은…" were the multi-Bot page talking to somebody with nothing to choose between
+   * (UI/UX audit 0.5.3, item 9). The same button, said as what it does for that Bot.
+   */
+  const onlyBot = mine.length === 1 ? mine[0] : undefined;
+
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">{t("Bots")}</h2>
+      <h2 className="text-sm font-medium">
+        {onlyBot ? t("Your Bot") : t("Bots")}
+      </h2>
       {mine.length === 0 ? (
         <p className="text-muted-foreground text-xs">
           {t("You do not own a Bot to put this on yet.")}
@@ -96,13 +106,24 @@ export function SkillAgents({
             })}
           </div>
           <p className="text-muted-foreground text-xs">
-            {t("A Bot carrying this offers /{slug} in its composer.", { slug })}
+            {onlyBot
+              ? held.has(onlyBot.id)
+                ? t("{name} has it: type /{slug} in the conversation.", {
+                    name: onlyBot.name,
+                    slug,
+                  })
+                : t("{name} does not have it yet. Press the name to give it.", {
+                    name: onlyBot.name,
+                  })
+              : t("A Bot carrying this offers /{slug} in its composer.", {
+                  slug,
+                })}
           </p>
         </>
       )}
       {toggle.error ? (
         <p className="text-destructive text-xs" role="alert">
-          {toggle.error.message}
+          {savingFailure(toggle.error)}
         </p>
       ) : null}
     </div>

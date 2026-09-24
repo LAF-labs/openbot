@@ -42,7 +42,9 @@ afterAll(async () => {
   await removeAppDom();
 });
 
-const NONE_YET = "No skills yet. Write one and any Bot you own can run it.";
+// A shop's example since 2026-09-24 (UI/UX audit 0.5.3, item 11), not "any Bot you own".
+const NONE_YET =
+  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.";
 const FAILED = "Your skills could not be loaded.";
 
 function skill(

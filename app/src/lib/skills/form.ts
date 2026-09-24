@@ -1,3 +1,4 @@
+import { SKILL_SLUG_PATTERN } from "@shared/tools/skills";
 import { z } from "zod";
 import { t } from "@/lib/i18n";
 
@@ -8,18 +9,20 @@ import { t } from "@/lib/i18n";
  * accepted, and a rejection is shown next to the field that caused it rather than as a failed
  * request with a sentence at the top of the page.
  *
- * The slug pattern is `routes.ts`'s, character for character: lower-case letters, digits and
- * hyphens, starting and ending on an alphanumeric, 2 to 40 long. Loosening it here would only move
- * the refusal later, to a place where it reads as the save being broken.
+ * The slug pattern is the server's own, imported rather than copied (`shared/tools/skills.ts`):
+ * letters — Korean among them, since 2026-09-24 — digits and hyphens, starting and ending on a
+ * letter or digit, 2 to 40 long. Loosening it here would only move the refusal later, to a place
+ * where it reads as the save being broken.
  */
 export const skillFormSchema = z.object({
   slug: z
     .string()
     .trim()
     .min(1, t("A command is required."))
+    // Decomposed Hangul passes too (its jamo are letters), and the server keeps it composed.
     .regex(
-      /^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/,
-      t("Lower-case letters, numbers and hyphens, 2 to 40 characters."),
+      SKILL_SLUG_PATTERN,
+      t("Letters (Korean too), numbers and hyphens, 2 to 40, with no spaces."),
     ),
   title: z
     .string()
