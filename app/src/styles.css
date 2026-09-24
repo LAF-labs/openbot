@@ -45,69 +45,94 @@ html {
    */
   --spacing: 4px;
 
-  --text-xs: 11px;
-  --text-xs--line-height: 16px;
-  --text-xs--letter-spacing: 0.005em;
+  /*
+   * THE SCALE IS SET FOR KOREAN (2026-09-24), still six rungs with the same names.
+   *
+   * Grok's scale was measured for Latin: 11px captions and a 1.4 line under 14px body. Hangul is a
+   * square block with no ascenders to lean on, so at 11px a caption like "10분 남음" is a smudge, and
+   * at 1.4 two lines of a Bot's Korean touch. The floor is 12px, and every line height is about 1.5
+   * of its size — what Korean interfaces settle on. Nothing moves to a new rung: a `text-xs` is still
+   * a caption, it is just one a person can read.
+   */
+  --text-xs: 12px;
+  --text-xs--line-height: 17px;
   --text-sm: 13px;
-  --text-sm--line-height: 18px;
+  --text-sm--line-height: 19px;
   --text-base: 14px;
-  --text-base--line-height: 20px;
+  --text-base--line-height: 21px;
   --text-lg: 17px;
-  --text-lg--line-height: 24px;
-  --text-lg--letter-spacing: -0.008em;
+  --text-lg--line-height: 25px;
+  --text-lg--letter-spacing: -0.01em;
   --text-xl: 22px;
-  --text-xl--line-height: 28px;
-  --text-xl--letter-spacing: -0.012em;
+  --text-xl--line-height: 30px;
+  --text-xl--letter-spacing: -0.015em;
   --text-2xl: 26px;
-  --text-2xl--line-height: 32px;
-  --text-2xl--letter-spacing: -0.015em;
+  --text-2xl--line-height: 34px;
+  --text-2xl--letter-spacing: -0.02em;
 }
 
 :root {
   /*
-   * The measure a person reads and the measure they type, at one size — and that size is 14/20,
-   * the same step as the UI root. The bubble is not a document; making its prose bigger than the
+   * The measure a person reads and the measure they type, at one size — and that size is 14, the
+   * same step as the UI root. The bubble is not a document; making its prose bigger than the
    * interface around it is what made this transcript read like a web page instead of a chat.
+   *
+   * The LINE is a step looser than the UI's 21: a Bot's answer is paragraphs of Hangul, and 22px is
+   * where two lines of it stop touching.
    */
   --chat-font-size: 14px;
-  --chat-line-height: 20px;
+  --chat-line-height: 22px;
 
-  /* ---- the raw palette, light ---- */
+  /*
+   * ---- the raw palette, light ----
+   *
+   * CALMER THAN GROK'S, ON PURPOSE (2026-09-24). The measured values were pure neutrals at the two
+   * extremes: #070707 ink on #fcfcfc, and the person's own bubble a black slab. For a person reading
+   * this all day that is glare, not clarity. The greys now carry a trace of blue-grey (the ink is
+   * #17191c, the fills lean cool) and the darkest surfaces step back from black — every text pair
+   * still clears AA, which `app/tests/accent-contrast.test.ts` measures rather than trusts.
+   */
   --sand-bg-base: #fcfcfc;
-  --sand-bg-subtle: #f7f7f7;
-  --sand-bg-elevated: #fcfcfc;
-  --sand-text-primary: #141414;
-  --sand-text-secondary: #14141499;
-  --sand-text-tertiary: #14141466;
+  --sand-bg-subtle: #f6f7f8;
+  --sand-bg-elevated: #ffffff;
+  --sand-text-primary: #17191c;
+  --sand-text-secondary: #17191ca3;
+  --sand-text-tertiary: #17191c6b;
   --sand-text-on-primary: #fcfcfc;
   /*
    * WHITE IN BOTH THEMES, and that is not an oversight.
    *
    * `text/on-primary` inverts with the theme because it sits on the primary FILL, which inverts
    * too. `text/on-color` sits on a coloured surface that stays dark in both — the person's own
-   * bubble is #070707 in light and #5a5a5a in dark, and dark text on #5a5a5a is unreadable. Using
-   * the inverting token here is what made every message a person sent illegible in dark mode.
+   * bubble is dark grey in light and a lighter grey in dark, and dark text on the second is
+   * unreadable. Using the inverting token here is what made every message a person sent illegible in
+   * dark mode.
    */
   --sand-text-on-color: #fcfcfc;
-  --sand-border-subtle: #1414140d;
-  --sand-border-weak: #1414141a;
-  --sand-border-default: #14141426;
-  --sand-border-focus: #14141466;
-  --sand-fill-primary: #070707;
-  --sand-fill-primary-hover: #2f2f2f;
-  --sand-fill-secondary: #77777717;
-  --sand-fill-secondary-hover: #7777772b;
-  --sand-fill-ghost-hover: #77777717;
-  --sand-fill-ghost-selected: #7777772b;
-  --sand-fill-elevated: #fcfcfc;
-  --sand-fill-bubble-agent: #eeeeee;
-  --sand-fill-bubble-user: #070707;
+  --sand-border-subtle: #17191c0d;
+  --sand-border-weak: #17191c1a;
+  --sand-border-default: #17191c26;
+  --sand-border-focus: #17191c66;
+  --sand-fill-primary: #17191c;
+  --sand-fill-primary-hover: #33363b;
+  --sand-fill-secondary: #71788217;
+  --sand-fill-secondary-hover: #7178822b;
+  --sand-fill-ghost-hover: #71788214;
+  --sand-fill-ghost-selected: #71788226;
+  --sand-fill-elevated: #ffffff;
+  --sand-fill-bubble-agent: #f0f1f3;
+  --sand-fill-bubble-user: #26292e;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #0c64c1;
   --sand-shadow-composer:
     0 2px 8px -1px #0000000d, 0 1px 2px #00000008, 0 0 0 1px #e4e4e40a;
   --sand-shadow-popover:
     0 10px 20px -3px #0000001a, 0 4px 6px -4px #0000001a, 0 0 0 1px #e4e4e40a;
+  /*
+   * The third elevation: a card in the conversation. Lower than a popover — it is part of the page,
+   * not over it — and like the other two it is a hairline and nothing else in the dark.
+   */
+  --sand-shadow-card: 0 1px 2px #17191c0a, 0 2px 6px -2px #17191c0d;
 
   /* ---- geometry, identical on web and desktop ---- */
   --sand-hairline: 0.5px;
@@ -121,6 +146,26 @@ html {
   --sand-bubble-radius-joined: 6px;
   --sand-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
+  /*
+   * ---- the Bot's colour, as the app's accent ----
+   *
+   * THE COLOUR A PERSON PICKED FOR THE FACE IS THE COLOUR OF EVERYTHING THEY CAN PRESS (2026-09-24).
+   * `data-accent` on <html> names the palette (`lib/avatar/accent.ts` sets it from the Bot's seed,
+   * and index.html puts the last one back before the first paint); the blocks at the end of this
+   * sheet map it to four values per theme. Until there is a Bot — signing in, making one — there is
+   * no `data-accent`, and these defaults are the neutral near-black control the app always had.
+   *
+   * The face's own colour is never used as-is. #FF781C with white on it is 2.9:1; the value here is
+   * the same hue and chroma moved in OKLCH lightness until white text on it clears 4.6:1 in light,
+   * and dark text 4.6:1 in dark, and until the same value as text clears 4.6:1 on every surface it
+   * can sit on — the page, the sidebar, a card and the Bot's own bubble. So one value is the button,
+   * the ring and the link at once. `app/tests/accent-contrast.test.ts` recomputes every pair.
+   */
+  --bot-accent: var(--sand-fill-primary);
+  --bot-accent-hover: var(--sand-fill-primary-hover);
+  --bot-accent-foreground: var(--sand-text-on-primary);
+  --bot-accent-ink: var(--sand-text-accent);
+
   /* ---- the shadcn names every existing component already reads ---- */
   --background: var(--sand-bg-base);
   --foreground: var(--sand-text-primary);
@@ -129,12 +174,11 @@ html {
   --popover: var(--sand-bg-elevated);
   --popover-foreground: var(--sand-text-primary);
   /*
-   * Grok's filled control is near-black, not a hue — the accent blue is reserved for links, focus
-   * and the one dot that says a Bot needs you. That is why the send button reads as a control and
-   * not as an advertisement.
+   * The filled control is the Bot's colour, deepened until it reads as a control and not an
+   * advertisement — see `--bot-accent` above. Before a Bot exists it is Grok's near-black.
    */
-  --primary: var(--sand-fill-primary);
-  --primary-foreground: var(--sand-text-on-primary);
+  --primary: var(--bot-accent);
+  --primary-foreground: var(--bot-accent-foreground);
   --secondary: var(--sand-fill-secondary);
   --secondary-foreground: var(--sand-text-primary);
   --muted: var(--sand-fill-secondary);
@@ -142,11 +186,15 @@ html {
   --accent: var(--sand-fill-ghost-hover);
   --accent-foreground: var(--sand-text-primary);
   --destructive: #c21d2e;
-  --success: #009957;
-  --warning: #c27400;
+  --success: #007d45;
+  /*
+   * #c27400 was 3.5:1 on the page, and it is the colour of "도움 필요" and "사장님 확인 필요" —
+   * words, which want 4.5. Same amber, deeper.
+   */
+  --warning: #9a5b00;
   --border: var(--sand-border-weak);
   --input: var(--sand-border-default);
-  --ring: var(--sand-border-focus);
+  --ring: var(--bot-accent);
   --chart-1: #1084fe;
   --chart-2: #00bca6;
   --chart-3: #9159fe;
@@ -155,12 +203,12 @@ html {
   --radius: 10px;
   --sidebar: var(--sand-bg-subtle);
   --sidebar-foreground: var(--sand-text-primary);
-  --sidebar-primary: var(--sand-fill-primary);
-  --sidebar-primary-foreground: var(--sand-text-on-primary);
+  --sidebar-primary: var(--bot-accent);
+  --sidebar-primary-foreground: var(--bot-accent-foreground);
   --sidebar-accent: var(--sand-fill-ghost-selected);
   --sidebar-accent-foreground: var(--sand-text-primary);
   --sidebar-border: var(--sand-border-weak);
-  --sidebar-ring: var(--sand-border-focus);
+  --sidebar-ring: var(--bot-accent);
 }
 
 .dark {
@@ -168,31 +216,35 @@ html {
    * Dark is not the light palette darkened. The greys are alpha over the ground, the accent keeps
    * its hue, and every shadow token goes fully transparent — depth in the dark theme comes from a
    * hairline ring, never from a shadow that has nothing to fall on.
+   *
+   * The ground is #0f1012, not #070707: text at #f2f3f5 on true black is the halation a long read
+   * in a dark room makes worse, and a sidebar two steps up from black has somewhere to sit.
    */
-  --sand-bg-base: #070707;
-  --sand-bg-subtle: #111111;
-  --sand-bg-elevated: #181818;
-  --sand-text-primary: #fcfcfc;
-  --sand-text-secondary: #fcfcfc99;
-  --sand-text-tertiary: #fcfcfc66;
-  --sand-text-on-primary: #141414;
-  --sand-border-subtle: #fcfcfc0d;
-  --sand-border-weak: #fcfcfc1a;
-  --sand-border-default: #fcfcfc26;
-  --sand-border-focus: #fcfcfc66;
-  --sand-fill-primary: #fafafa;
-  --sand-fill-primary-hover: #d5d5d5;
-  --sand-fill-secondary: #7777772c;
-  --sand-fill-secondary-hover: #77777752;
-  --sand-fill-ghost-hover: #7777772c;
-  --sand-fill-ghost-selected: #77777752;
-  --sand-fill-elevated: #2f2f2f;
-  --sand-fill-bubble-agent: #262626;
-  --sand-fill-bubble-user: #5a5a5a;
+  --sand-bg-base: #0f1012;
+  --sand-bg-subtle: #151619;
+  --sand-bg-elevated: #1b1c20;
+  --sand-text-primary: #f2f3f5;
+  --sand-text-secondary: #f2f3f5a3;
+  --sand-text-tertiary: #f2f3f56b;
+  --sand-text-on-primary: #17191c;
+  --sand-border-subtle: #f2f3f50f;
+  --sand-border-weak: #f2f3f51a;
+  --sand-border-default: #f2f3f526;
+  --sand-border-focus: #f2f3f566;
+  --sand-fill-primary: #f2f3f5;
+  --sand-fill-primary-hover: #d4d6da;
+  --sand-fill-secondary: #8a90992e;
+  --sand-fill-secondary-hover: #8a909952;
+  --sand-fill-ghost-hover: #8a909926;
+  --sand-fill-ghost-selected: #8a909942;
+  --sand-fill-elevated: #2a2c31;
+  --sand-fill-bubble-agent: #222428;
+  --sand-fill-bubble-user: #3a3d44;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #459ffe;
   --sand-shadow-composer: 0 0 0 var(--sand-hairline) var(--sand-border-weak);
   --sand-shadow-popover: 0 0 0 var(--sand-hairline) var(--sand-border-default);
+  --sand-shadow-card: 0 0 #0000;
 
   --destructive: #ff5667;
   --success: #38d591;
@@ -215,11 +267,17 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  /* Korean falls back to the platform's own faces; keep-all stops mid-word
-   * line breaks, which Korean headings otherwise do freely. */
-  font-family:
-    Inter, "Apple SD Gothic Neo", "Pretendard Variable", Pretendard,
-    "Noto Sans KR", "Malgun Gothic", ui-sans-serif, system-ui, sans-serif;
+  /*
+   * ONE STACK — `html`'s `font-sans`, inherited — and keep-all so Korean does not break mid-word.
+   *
+   * There were two: this rule said `Inter, "Apple SD Gothic Neo", …` and `html` said `"Inter
+   * Variable", sans-serif`. The bundled face registers as "Inter Variable", so the body's `Inter`
+   * matched only on a machine that happened to have Inter installed — everywhere else the whole app,
+   * Latin and digits included, was drawn in Apple SD Gothic Neo while the one element carrying
+   * `font-sans` got Inter. Now Latin and digits are the bundled Inter and Hangul is the platform's
+   * own face (Apple SD Gothic Neo, Malgun Gothic), with Pretendard first for whoever has it — it is
+   * Inter's metrics with Hangul, which is the pairing this stack approximates. No network font.
+   */
   word-break: keep-all;
 }
 
@@ -239,7 +297,9 @@ body {
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Inter Variable", sans-serif;
+  --font-sans:
+    "Pretendard Variable", Pretendard, "Inter Variable", "Apple SD Gothic Neo",
+    "Malgun Gothic", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -290,10 +350,18 @@ body {
   --color-bubble-user: var(--sand-fill-bubble-user);
   /* Deliberately does NOT invert with the theme; see the note on --sand-text-on-color. */
   --color-on-color: var(--sand-text-on-color);
-  --color-primary-hover: var(--sand-fill-primary-hover);
-  /* The blue spent only on the dot that says a Bot needs you, and on links. */
+  --color-primary-hover: var(--bot-accent-hover);
+  /*
+   * The blue spent only on the dot that says a Bot needs you. It stays blue whatever the Bot's
+   * colour: a signal drawn on the face in the face's own colour would be invisible.
+   */
   --color-mark: var(--sand-fill-accent);
-  --color-link: var(--sand-text-accent);
+  /*
+   * Links are the Bot's colour as TEXT (`--bot-accent-ink`) — readable on the page, a card and the
+   * Bot's own bubble — which is not the same promise as `text-primary`, the colour of a filled
+   * control, even where the accent table makes them one value.
+   */
+  --color-link: var(--bot-accent-ink);
   /* Grok's ladder is stated, not derived: 2 / 4 / 6 / 8 / 10 / 14 / 16 / 18. A multiplier off a
    * single --radius produced 22px and 26px corners this design does not have.
    *
@@ -342,9 +410,17 @@ body {
    * the theme rule — in dark, depth here is a hairline ring and NEVER a shadow, because a shadow has
    * nothing to fall on against #070707, and the token already encodes exactly that switch while
    * `shadow-md` does not. Naming them makes `shadow-popover` and `shadow-composer` the whole answer.
+   *
+   * A THIRD SINCE 2026-09-24, `shadow-card`: the browsing, approval, help and routine cards were four
+   * surfaces with four borders and no lift, and a card that sits in the conversation wants to read as
+   * a thing the Bot handed over. Same rule — a hairline and nothing else in the dark.
    */
   --shadow-popover: var(--sand-shadow-popover);
   --shadow-composer: var(--sand-shadow-composer);
+  --shadow-card: var(--sand-shadow-card);
+
+  /* The sidebar's width, as `w-sidebar`, so the column carries no inline style. */
+  --spacing-sidebar: var(--sand-sidebar-width);
 }
 
 @layer base {
