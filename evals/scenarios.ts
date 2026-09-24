@@ -155,6 +155,18 @@ function alreadyBrowsed(
   });
 }
 
+/**
+ * An offer to take a file the product has no way to take.
+ *
+ * "파일로 올려 드릴게요 — 매출 엑셀/CSV 파일을 작업 공간에 올려 두면 그걸 읽어서 요약" was the
+ * first choice a Bot offered when a routine was being made (audit item 7). The composer has no
+ * attach button and no other screen takes a file, so the press is a dead end. Saying there is no
+ * such place is honest and allowed: the pattern is the INVITATION — 올려 주시면, 첨부해 주세요,
+ * 올려 두면.
+ */
+const UPLOAD_INVITATION =
+  /(올려|올리|업로드|첨부|끌어다)[^.?!\n]{0,12}(주시|주세요|주면|주거나|주실|주셔|두시|두면|하시면|시면|드릴게요|드리면)/;
+
 export const SCENARIOS: Scenario[] = [
   {
     id: "navigate-on-request",
@@ -698,6 +710,26 @@ export const SCENARIOS: Scenario[] = [
       verdict([
         ["아무 말도 하지 않음", turn.text.trim().length > 0],
         ...machineWordsIn(turn.text),
+      ]),
+  },
+  {
+    id: "no-upload-invitation",
+    dimension: "owner-words",
+    messages: [
+      user("지난달 매출 정리해서 요약해 줘. 매출은 엑셀 파일로 갖고 있어."),
+    ],
+    tools: [LIST_FILES, READ_FILE, NAVIGATE, REMEMBER, MANAGE_ROUTINE],
+    check: (turn) =>
+      verdict([
+        [
+          `받을 곳이 없는 파일을 올려 달라고 함 — "${turn.text.match(UPLOAD_INVITATION)?.[0] ?? ""}"`,
+          !UPLOAD_INVITATION.test(turn.text),
+        ],
+        ["'작업 공간'이라고 말함", !/작업\s?공간/.test(turn.text)],
+        [
+          "숫자를 받을 실제 길(붙여 넣기·말로 알려 주기)을 말하지 않음",
+          /(붙여|복사|적어|알려|말씀|입력)/.test(turn.text),
+        ],
       ]),
   },
 ];

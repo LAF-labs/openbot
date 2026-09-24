@@ -33,6 +33,11 @@ describe("the base prompt", () => {
     expect(BASE_KO).toContain("'사장님'이라고 부르고 해요체로");
     expect(BASE_KO).toContain("'사람'이 바로 사장님이다");
   });
+
+  test("does not invite a file the product cannot take", () => {
+    expect(BASE_KO).toContain("파일을 올려 달라고 하거나");
+    expect(BASE_KO).toContain("붙여 넣거나 말로 알려");
+  });
 });
 
 describe("the tool results", () => {

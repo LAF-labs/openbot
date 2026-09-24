@@ -53,3 +53,30 @@ describe("browsing-in-owner-words", () => {
     expect(check(turn("  ")).pass).toBe(false);
   });
 });
+
+describe("no-upload-invitation", () => {
+  const check = scenario("no-upload-invitation").check;
+
+  test.each([
+    // Measured on the old prompt, three runs of three.
+    "매출 엑셀 파일을 이 대화에 올려 주시면 읽어서 요약해 드릴게요.",
+    "매출 엑셀 파일을 이 대화에 올려 주면 바로 정리해 줄게.",
+    "매출 엑셀 파일을 이 작업 공간에 올려 주시면 바로 요약해 드릴게요.",
+    "파일을 이 대화에 올려주거나 어디에 있는지 경로를 알려주면 바로 정리해서 요약할게.",
+    // The audit's own sentence.
+    "파일로 올려 드릴게요 — 매출 엑셀/CSV 파일을 올려 두면 그걸 읽어서 요약합니다.",
+    "엑셀 파일을 첨부해 주세요.",
+  ])("fails %s", (said) => {
+    expect(check(turn(said)).pass).toBe(false);
+  });
+
+  test("passes an honest no, with a way that exists", () => {
+    expect(
+      check(
+        turn(
+          "여기에는 아직 파일을 올릴 곳이 없어요. 엑셀에서 지난달 매출 표를 복사해 대화창에 붙여 넣어 주시면 바로 요약해 드릴게요.",
+        ),
+      ).pass,
+    ).toBe(true);
+  });
+});
