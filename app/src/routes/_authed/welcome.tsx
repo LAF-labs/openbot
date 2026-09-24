@@ -17,6 +17,7 @@ import { useMyBots } from "@/lib/agents/my-bots";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { agreeToLegal } from "@/lib/auth/consent";
 import { authKeys, currentUserQueryOptions } from "@/lib/auth/queries";
+import { useAccentPreview } from "@/lib/avatar/accent";
 import { randomBotAvatarSeed } from "@/lib/avatar/bot-avatar";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
@@ -98,6 +99,8 @@ function FirstRunForm({ existing }: { existing: AgentProfile | undefined }) {
   );
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The colour being picked is the colour of 시작하기 already: the choice shows what it changes.
+  useAccentPreview(seed);
   const nameId = useId();
   /*
    * A REF, NOT `saving`, for the reason this screen has always had one: two clicks in the same

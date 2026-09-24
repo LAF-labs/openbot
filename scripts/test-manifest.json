@@ -32,6 +32,7 @@
   "agent-computer/tests/workspace.test.ts",
   "app/src/components/channels/composer/draft.test.ts",
   "app/src/components/channels/composer/queue.test.ts",
+  "app/tests/accent-contrast.test.ts",
   "app/tests/account-copy.test.ts",
   "app/tests/account-state.test.ts",
   "app/tests/admin-computers.test.tsx",

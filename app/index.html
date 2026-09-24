@@ -29,6 +29,17 @@
         if (dark) {
           document.documentElement.classList.add("dark");
         }
+        // The Bot's colour, from the last load (src/lib/avatar/accent.ts), for the same reason:
+        // every button in the window repainted from near-black once the Bots list answered.
+        let accent = null;
+        try {
+          accent = window.localStorage.getItem("laf-accent");
+        } catch {
+          // Unreadable means the neutral control until the list answers.
+        }
+        if (accent && /^[a-z]+$/.test(accent)) {
+          document.documentElement.dataset.accent = accent;
+        }
       })();
     </script>
   </head>

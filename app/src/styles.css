@@ -715,3 +715,142 @@ body {
 .tool-line[open] .tool-line-chevron {
   transform: rotate(90deg);
 }
+
+/*
+ * THE BOT'S COLOUR, PER PALETTE AND PER THEME. See `--bot-accent` in `:root` for what the four
+ * values are for and how they were found; `app/tests/accent-contrast.test.ts` reads these blocks
+ * back and fails on any pair under AA, and on any palette in `lib/avatar/bot-avatar.ts` that has no
+ * block here. The hover is one OKLCH step further from the ground: darker in light, lighter in dark,
+ * so the text on it only ever gains contrast.
+ *
+ * Light carries white text on a deepened fill; dark carries dark text on a lifted one — the same
+ * inversion the neutral control has, so a coloured button in the dark reads as the white one did.
+ */
+:root[data-accent="brown"] {
+  --bot-accent: #8c643d;
+  --bot-accent-hover: #7a532c;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #8c643d;
+}
+:root[data-accent="red"] {
+  --bot-accent: #d40233;
+  --bot-accent-hover: #b6012a;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #d40233;
+}
+:root[data-accent="orange"] {
+  --bot-accent: #b14e01;
+  --bot-accent-hover: #974100;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #b14e01;
+}
+:root[data-accent="yellow"] {
+  --bot-accent: #966103;
+  --bot-accent-hover: #805200;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #966103;
+}
+:root[data-accent="green"] {
+  --bot-accent: #057c45;
+  --bot-accent-hover: #016839;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #057c45;
+}
+:root[data-accent="cyan"] {
+  --bot-accent: #05796d;
+  --bot-accent-hover: #01665b;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #05796d;
+}
+:root[data-accent="blue"] {
+  --bot-accent: #006bc9;
+  --bot-accent-hover: #025aaa;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #006bc9;
+}
+:root[data-accent="violet"] {
+  --bot-accent: #7f51cd;
+  --bot-accent-hover: #6e3eb9;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #7f51cd;
+}
+:root[data-accent="magenta"] {
+  --bot-accent: #c62281;
+  --bot-accent-hover: #af026f;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #c62281;
+}
+:root[data-accent="gray"] {
+  --bot-accent: #6c6c6c;
+  --bot-accent-hover: #5b5b5b;
+  --bot-accent-foreground: #ffffff;
+  --bot-accent-ink: #6c6c6c;
+}
+:root.dark[data-accent="brown"] {
+  --bot-accent: #af835c;
+  --bot-accent-hover: #c2956e;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #af835c;
+}
+:root.dark[data-accent="red"] {
+  --bot-accent: #fe474f;
+  --bot-accent-hover: #ff7573;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #fe474f;
+}
+:root.dark[data-accent="orange"] {
+  --bot-accent: #ed6004;
+  --bot-accent-hover: #ff7734;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #ed6004;
+}
+:root.dark[data-accent="yellow"] {
+  --bot-accent: #cb7802;
+  --bot-accent-hover: #df8b29;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #cb7802;
+}
+:root.dark[data-accent="green"] {
+  --bot-accent: #02a15c;
+  --bot-accent-hover: #2eb46e;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #02a15c;
+}
+:root.dark[data-accent="cyan"] {
+  --bot-accent: #009e8c;
+  --bot-accent-hover: #2eb19e;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #009e8c;
+}
+:root.dark[data-accent="blue"] {
+  --bot-accent: #308cfa;
+  --bot-accent-hover: #57a1ff;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #308cfa;
+}
+:root.dark[data-accent="violet"] {
+  --bot-accent: #9c71ff;
+  --bot-accent-hover: #ab8dff;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #9c71ff;
+}
+:root.dark[data-accent="magenta"] {
+  --bot-accent: #f7449b;
+  --bot-accent-hover: #ff6dad;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #f7449b;
+}
+:root.dark[data-accent="gray"] {
+  --bot-accent: #8c8c8c;
+  --bot-accent-hover: #9e9e9e;
+  --bot-accent-foreground: #0f1012;
+  --bot-accent-ink: #8c8c8c;
+}
+
+/*
+ * Selected text in the Bot's colour, thin enough that the ink over it keeps its contrast: at 22%
+ * over the lightest and the darkest ground the text pair stays above 7:1 in both themes.
+ */
+::selection {
+  background: color-mix(in oklab, var(--bot-accent) 22%, transparent);
+}

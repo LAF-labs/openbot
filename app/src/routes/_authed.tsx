@@ -7,6 +7,7 @@ import { SectionBoundary } from "../components/layout/section-boundary";
 import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
+import { useBotAccent } from "../lib/avatar/accent";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
@@ -73,6 +74,8 @@ function AuthedShell() {
   useChannelEvents();
   useBotNotifications();
   useSessionGate();
+  // The Bot's colour is the accent on every signed-in screen, Settings and Admin included.
+  useBotAccent();
   // In the desktop shell, a `target="_blank"` link has nowhere to go; hand it to the browser.
   useEffect(handleShellLinks, []);
   /*

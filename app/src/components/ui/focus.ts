@@ -18,6 +18,12 @@
  * `@media (forced-colors: active)` — and in a forced-colours theme a `box-shadow` ring is not
  * painted at all, so `outline-none` leaves somebody using Windows High Contrast with no focus
  * indicator anywhere in the app. The app already spelled it both ways.
+ *
+ * THE RING IS THE BOT'S COLOUR SINCE 2026-09-24 (`--ring` is `--bot-accent`), and that changed what
+ * carries the contrast. The old ring was a 50% halo of a 40% grey — about 1.3:1 against the page,
+ * a hint rather than an indicator. Now the part that must clear 3:1 is solid: the recoloured border
+ * on a control, the whole inset ring on a row. The halo around a control is 35% of the same colour,
+ * there to make the solid line findable, not to carry it.
  */
 
 /**
@@ -29,7 +35,7 @@
  * `focusRingInset` is the answer where there is none.
  */
 export const focusRing =
-  "outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35";
 
 /**
  * For a row inside a padded popup — a menu item, a combobox option, a listbox entry.
@@ -42,7 +48,7 @@ export const focusRing =
  * indicator, and on the keyboard it is the only thing telling somebody where they are.
  */
 export const focusRingInset =
-  "outline-hidden focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset";
+  "outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 /**
  * For a container that is focused THROUGH a child — a chips field.
@@ -51,7 +57,7 @@ export const focusRingInset =
  * ring on that input draws a rectangle in the middle of the box it belongs to.
  */
 export const focusRingWithin =
-  "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50";
+  "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/35";
 
 /**
  * The same ring again, for the buttons and links a Bot's own prose puts inside a bubble.
@@ -64,7 +70,7 @@ export const focusRingWithin =
  * runtime and no CSS at all, which is the failure mode where the ring simply stops existing.
  */
 export const focusRingNested =
-  "[button,a]:outline-hidden [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/50";
+  "[button,a]:outline-hidden [button,a]:focus-visible:border-ring [button,a]:focus-visible:ring-3 [button,a]:focus-visible:ring-ring/35";
 
 /**
  * CHOSEN. Not focused, and it lives here so it cannot be confused with focused again.
