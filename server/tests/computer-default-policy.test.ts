@@ -16,6 +16,7 @@ import {
   ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
+import { shippedAskRuleOf } from "../../shared/policy-rules";
 import { evaluateActionPolicy } from "../src/computer/policy";
 import type { SnapshotElement, SnapshotResult } from "../src/computer/schema";
 
@@ -321,6 +322,30 @@ describe("the lists the rules are built from", () => {
     expect(hosts.test("www.coupang.com")).toBe(false);
     expect(hosts.test("naver.com")).toBe(false);
     expect(hosts.test("kbstar.com.example.test")).toBe(false);
+  });
+
+  /*
+   * THE TEXT IS A CONTRACT WITH EVERY RUNNING DEPLOYMENT. A deployment's saved policy holds these
+   * strings as they were generated, and the approval card recognises a rule by equality with them
+   * (`shared/policy-rules.ts`) to say "돈이 오가는 사이트라서" instead of printing CEL. Reordering a
+   * list here would make every existing deployment's card fall back to "미리 정해 둔 규칙" — so the
+   * text is pinned, and a change to it has to be made on purpose.
+   */
+  test("are the text deployments already hold, and are recognised by the card", () => {
+    expect(DEFAULT_ACTION_POLICY.ask.map(shippedAskRuleOf)).toEqual([
+      "money_word",
+      "money_host",
+      "upload",
+      "repeat",
+    ]);
+    expect(DEFAULT_ACTION_POLICY.ask[0]).toBe(
+      'intent == "activate" && matches(element.name, "결제|송금|이체|출금|구매|주문|삭제|탈퇴|전송|보내기|발송|발행|승인|확정|pay|send|delete|confirm|submit order|transfer|checkout")',
+    );
+    expect(DEFAULT_ACTION_POLICY.ask[1]).toBe(
+      'intent == "activate" && matches(page.host, "(^|[.])(kbstar[.]com|shinhan[.]com|wooribank[.]com|hanabank[.]com|nonghyup[.]com|ibk[.]co[.]kr|kakaobank[.]com|tossbank[.]com|toss[.]im|kakaopay[.]com|naverpay[.]com|pay[.]naver[.]com|hometax[.]go[.]kr|self[.]baemin[.]com|wing[.]coupang[.]com)$")',
+    );
+    // The refusal is not a question, so the card never has to explain it.
+    expect(shippedAskRuleOf(DEFAULT_ACTION_POLICY.deny[0])).toBeNull();
   });
 
   test("match the words a person reads on a button, in either language", () => {

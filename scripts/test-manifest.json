@@ -40,6 +40,7 @@
   "app/tests/answer-rating-render.test.ts",
   "app/tests/answer-rating.test.ts",
   "app/tests/approval-answers.test.tsx",
+  "app/tests/approval-decision.test.tsx",
   "app/tests/approval-pause.test.ts",
   "app/tests/approval-preview.test.ts",
   "app/tests/approval-subject.test.ts",

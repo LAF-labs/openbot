@@ -2393,4 +2393,66 @@ export const ko: Record<string, string> = {
   "You already have your Bot. Change its name or face on its profile instead.":
     "이미 봇이 있어요. 봇은 하나만 둘 수 있어요 — 이름이나 얼굴은 봇 프로필에서 바꿀 수 있어요.",
   "A conversation is with one Bot.": "대화는 봇 하나와 해요.",
+
+  // 0.5.3 C
+  /*
+   * 승인 카드(감사 0.5.3 항목 3). 규칙 원문 대신 왜 묻는지를 사람 말로, 버튼마다 제 이름으로 무엇을
+   * 하는지, 그리고 답한 뒤에 남는 한 줄. 규칙 원문은 관리자에게만 “자세히” 안에 접어 둔다.
+   */
+  "Asked because it is a “{word}” button, and money may leave.":
+    "‘{word}’ 버튼이라 돈이 나갈 수 있어서 물어요.",
+  "Asked because it is a “{word}” button, and that may not be undone.":
+    "‘{word}’ 버튼이라 되돌릴 수 없을 수도 있어서 물어요.",
+  "Asked because it is a “{word}” button, and something may be sent out.":
+    "‘{word}’ 버튼이라 무언가가 밖으로 보내질 수 있어서 물어요.",
+  "Asked because it is a “{word}” button, where a person usually confirms.":
+    "‘{word}’ 버튼이라 사람이 직접 확인하는 자리여서 물어요.",
+  "Asked because the button may pay, send, delete or confirm something.":
+    "결제·전송·삭제·확정처럼 되돌리기 어려운 버튼일 수 있어서 물어요.",
+  "Asked because {host} is a site where money moves.":
+    "돈이 오가는 사이트({host})라서 물어요.",
+  "Asked because this is a site where money moves.":
+    "돈이 오가는 사이트라서 물어요.",
+  "Asked because it would hand one of the Bot's files to a website.":
+    "봇의 파일을 웹사이트에 올리려고 해서 물어요.",
+  "Asked because a rule set here says to.": "미리 정해 둔 규칙에 따라 물어요.",
+  "Allow once: just this.": "이번만 허용: 지금 이것만.",
+  "{button}: here only, and for a day at most.":
+    "{button}: 이 대화에서만, 길어야 하루.",
+  "{button}: not asked again until you cancel it in Admin.":
+    "{button}: 관리 화면에서 취소할 때까지 다시 묻지 않아요.",
+  "{button}: not asked again until somebody cancels it.":
+    "{button}: 누군가 취소할 때까지 다시 묻지 않아요.",
+  "Deny: the same thing is refused without asking for a while.":
+    "거부: 한동안 같은 일은 묻지 않고 막아요.",
+  Details: "자세히",
+  "The rule that asked:": "물어본 규칙:",
+  "Denied · {action}": "거부함 · {action}",
+  "No answer came, so it did not go ahead · {action}":
+    "답이 없어 하지 않음 · {action}",
+  "Always allowed · {action}": "항상 허용함 · {action}",
+  "Allowed for this conversation · {action}": "이 대화 동안 허용함 · {action}",
+  "Allowed · {action}": "허용함 · {action}",
+  "something this screen cannot name": "이 화면이 이름을 알 수 없는 일",
+  "pressing “{name}” on {host}": "{host}에서 ‘{name}’ 누르기",
+  "pressing “{name}”": "‘{name}’ 누르기",
+  "pressing something on {host}": "{host}에서 무언가 누르기",
+  "pressing something on the page": "열린 페이지에서 무언가 누르기",
+  "typing into “{name}” on {host}": "{host}의 ‘{name}’에 입력하기",
+  "typing into “{name}”": "‘{name}’에 입력하기",
+  "typing into a field on {host}": "{host}의 입력칸에 입력하기",
+  "typing into a field on the page": "열린 페이지의 입력칸에 입력하기",
+  "opening {host}{path}": "{host}{path} 열기",
+  "opening a page": "페이지 열기",
+  "looking at {host}": "{host} 보기",
+  "looking at the page": "열린 페이지 보기",
+  "reading the file {path}": "파일 {path} 읽기",
+  "writing to the file {path}": "파일 {path}에 쓰기",
+  "listing what is in {path}": "{path}에 무엇이 있는지 보기",
+  "listing what is in the workspace": "작업 공간에 무엇이 있는지 보기",
+  "uploading the file {path} to {host}": "{host}에 파일 {path} 올리기",
+  "uploading the file {path}": "파일 {path} 올리기",
+  "using “{tool}” on {server}": "{server}의 ‘{tool}’ 쓰기",
+  "doing something on {host}": "{host}에서 무언가 하기",
+  "doing something on the page": "열린 페이지에서 무언가 하기",
 };

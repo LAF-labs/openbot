@@ -362,13 +362,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * Measured at server 2,558 / app 1,108 / agent-computer 266 / root 364. A fresh 3% under would lower
  * both, so each floor rises by exactly what was added; the other two did not grow.
  *
+ * RAISED 2026-09-24 with the approval card's words (UI/UX audit 0.5.3, item 3): thirteen tests to
+ * `app` (why it asked, the line an answer leaves, the rule behind 자세히) and one to `server` (the
+ * shipped rules' text, pinned). Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2470, roots: ["server"] },
-  { name: "app", floor: 1099, roots: ["app"] },
+  { name: "server", floor: 2471, roots: ["server"] },
+  { name: "app", floor: 1112, roots: ["app"] },
   { name: "agent-computer", floor: 253, roots: ["agent-computer"] },
   { name: "root", floor: 355, roots: ["tests", "agent-bot"] },
 ] as const;

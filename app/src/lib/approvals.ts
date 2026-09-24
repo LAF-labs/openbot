@@ -18,6 +18,7 @@
  * IT IS ALSO WHERE THE QUESTION BECOMES A SENTENCE. The server sends what the action is; the words
  * are chosen here, once, for every card that asks. See `describeSubject`.
  */
+import { moneyWordIn, shippedAskRuleOf } from "@shared/policy-rules";
 import { type CallPreview, callPreviewOf } from "@/lib/call-preview";
 import { t } from "@/lib/i18n";
 import { serviceLabel, toolLabel } from "@/lib/plugins/tool-labels";
@@ -201,7 +202,7 @@ function objectParticle(word: string): string {
 }
 
 /** One sentence to say, as a dictionary key and the values that go into it. */
-type Phrase = { key: string; params: Record<string, string | number> };
+export type Phrase = { key: string; params: Record<string, string | number> };
 
 /**
  * THE WORDS FOR ONE QUESTION, chosen from the facts and never sent by a server.
@@ -392,6 +393,305 @@ export function describeSubject(subject: AskSubject): string {
 }
 
 /**
+ * WHY IT STOPPED TO ASK, in a person's words rather than in the rule's.
+ *
+ * The card used to print the expression that matched — `intent == "activate" && matches(page.host,
+ * "(^|[.])(kbstar[.]com|…)$")` — in monospace, beside a sentence that began "이 규칙 때문에". Nobody
+ * deciding whether a click on toss.im is fine reads CEL, so the one question the card most needed to
+ * answer — why is it asking me this — was answered in a language only an administrator reads (UI/UX
+ * audit 0.5.3, item 3). The expression is recognised against the shipped rules in
+ * `shared/policy-rules.ts`, by equality, and said as what that rule is for.
+ *
+ * Undefined where the question already says why — a repeat, or a tool that declared itself risky —
+ * so the card does not give two reasons for one stop. An expression this build did not write is an
+ * administrator's own rule, and is said to be exactly that rather than guessed at.
+ */
+export function whyAskedPhrase(
+  rule: string | null | undefined,
+  subject: AskSubject | undefined,
+): Phrase | undefined {
+  if (subject && subject.reason !== "policy_ask") return undefined;
+  switch (shippedAskRuleOf(rule)) {
+    case "money_word":
+      return moneyWordPhrase(subject?.element?.name);
+    case "money_host":
+      return subject?.host
+        ? {
+            key: "Asked because {host} is a site where money moves.",
+            params: { host: subject.host },
+          }
+        : {
+            key: "Asked because this is a site where money moves.",
+            params: {},
+          };
+    case "upload":
+      return {
+        key: "Asked because it would hand one of the Bot's files to a website.",
+        params: {},
+      };
+    default:
+      return { key: "Asked because a rule set here says to.", params: {} };
+  }
+}
+
+/**
+ * The money-word rule's reason, naming the word the card can find in the label — or the general
+ * reason when it finds none, since naming a word that is not on the button would be the card
+ * explaining a match it did not see.
+ */
+function moneyWordPhrase(label: string | undefined): Phrase {
+  const found = moneyWordIn(label);
+  const params = { word: found?.word ?? "" };
+  switch (found?.kind) {
+    case "money":
+      return {
+        key: "Asked because it is a “{word}” button, and money may leave.",
+        params,
+      };
+    case "irreversible":
+      return {
+        key: "Asked because it is a “{word}” button, and that may not be undone.",
+        params,
+      };
+    case "outward":
+      return {
+        key: "Asked because it is a “{word}” button, and something may be sent out.",
+        params,
+      };
+    case "confirm":
+      return {
+        key: "Asked because it is a “{word}” button, where a person usually confirms.",
+        params,
+      };
+    default:
+      return {
+        key: "Asked because the button may pay, send, delete or confirm something.",
+        params: {},
+      };
+  }
+}
+
+/**
+ * The action as a short noun phrase — "toss.im에서 ‘비즈니스’ 누르기" — for the line a decided card
+ * leaves behind.
+ *
+ * Not `describeSubject` cut short: that is a sentence about what the Bot WANTS, written to be
+ * answered, and after the answer it is the wrong tense. Walked for Korean by
+ * `approval-decision.test.ts`, for the reason `subjectPhrases` is walked by its own test.
+ */
+export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
+  if (!subject) {
+    return { key: "something this screen cannot name", params: {} };
+  }
+  const host = subject.host ?? "";
+  const name = subject.element?.name ?? "";
+  switch (subject.intent) {
+    case "activate":
+      if (name && host) {
+        return { key: "pressing “{name}” on {host}", params: { name, host } };
+      }
+      if (name) return { key: "pressing “{name}”", params: { name } };
+      return host
+        ? { key: "pressing something on {host}", params: { host } }
+        : { key: "pressing something on the page", params: {} };
+    case "type":
+      if (name && host) {
+        return {
+          key: "typing into “{name}” on {host}",
+          params: { name, host },
+        };
+      }
+      if (name) return { key: "typing into “{name}”", params: { name } };
+      return host
+        ? { key: "typing into a field on {host}", params: { host } }
+        : { key: "typing into a field on the page", params: {} };
+    case "navigate":
+      return host
+        ? {
+            key: "opening {host}{path}",
+            params: { host, path: subject.path ?? "" },
+          }
+        : { key: "opening a page", params: {} };
+    case "read":
+      return host
+        ? { key: "looking at {host}", params: { host } }
+        : { key: "looking at the page", params: {} };
+    case "read_file":
+      return {
+        key: "reading the file {path}",
+        params: { path: subject.file?.path ?? "" },
+      };
+    case "write_file":
+      return {
+        key: "writing to the file {path}",
+        params: { path: subject.file?.path ?? "" },
+      };
+    case "list_files": {
+      const path = subject.file?.path ?? "";
+      return path && path !== "."
+        ? { key: "listing what is in {path}", params: { path } }
+        : { key: "listing what is in the workspace", params: {} };
+    }
+    case "upload": {
+      const path = subject.file?.path ?? "";
+      return host
+        ? {
+            key: "uploading the file {path} to {host}",
+            params: { path, host },
+          }
+        : { key: "uploading the file {path}", params: { path } };
+    }
+    case "call_tool": {
+      const server = subject.tool?.server ?? "";
+      const tool = subject.tool?.name ?? "";
+      return {
+        key: "using “{tool}” on {server}",
+        params: {
+          tool: toolLabel(`${server}/${tool}`) ?? tool,
+          server: serviceLabel(server) ?? server,
+        },
+      };
+    }
+    default:
+      return host
+        ? { key: "doing something on {host}", params: { host } }
+        : { key: "doing something on the page", params: {} };
+  }
+}
+
+/**
+ * WHAT BECAME OF A QUESTION, kept so the card can fold into a line instead of vanishing.
+ *
+ * An answered card used to disappear from the conversation entirely: "Deny" left nothing behind,
+ * not a word, and "Allow" left nothing either — somebody scrolling back could not see what they had
+ * let their Bot do on a bank's site (UI/UX audit 0.5.3, item 3). The decision is held against the
+ * tool call, as the question was, and drawn in its place.
+ *
+ * `tier` is known only when this tab's card recorded the answer. A question answered somewhere else
+ * — another window, the page a notice opens — is learned from the server's record, which says
+ * whether it was allowed and not for how long, so the line then says "allowed" and nothing wider.
+ */
+export type ApprovalDecision = {
+  outcome: "allowed" | "declined" | "unanswered";
+  tier?: ApprovalTier;
+  subject?: AskSubject;
+};
+
+/** The line a decided card leaves behind, as one dictionary key and its values. */
+export function decisionPhrase(decision: ApprovalDecision): Phrase {
+  const said = actionNounPhrase(decision.subject);
+  const action = t(said.key, said.params);
+  if (decision.outcome === "declined") {
+    return { key: "Denied · {action}", params: { action } };
+  }
+  if (decision.outcome === "unanswered") {
+    return {
+      key: "No answer came, so it did not go ahead · {action}",
+      params: { action },
+    };
+  }
+  if (decision.tier === "always") {
+    return { key: "Always allowed · {action}", params: { action } };
+  }
+  if (decision.tier === "thread") {
+    return {
+      key: "Allowed for this conversation · {action}",
+      params: { action },
+    };
+  }
+  return { key: "Allowed · {action}", params: { action } };
+}
+
+/**
+ * Where the decisions are kept, so a reload does not take them away.
+ *
+ * In this browser's storage and nowhere else, which is an honest limit rather than a gap papered
+ * over: the server keeps a question in memory for its ten minutes and on purpose never in a table
+ * (`server/src/computer/approvals.ts`), and the transcript holds the tool call's result, not who
+ * answered what. So a card answered here still reads as answered after a reload here; on another
+ * device the step's own line ("사람이 거절함") is what remains. One person per deployment, so there
+ * is nobody else's decision in this store to show.
+ *
+ * Bounded, oldest out, so a year of questions does not grow the storage without end.
+ */
+const DECISIONS_KEY = "laf.approval-decisions.v1";
+const DECISIONS_KEPT = 200;
+
+let decided: Map<string, ApprovalDecision> | null = null;
+
+function decisions(): Map<string, ApprovalDecision> {
+  if (decided) return decided;
+  const read = new Map<string, ApprovalDecision>();
+  try {
+    const raw = globalThis.localStorage?.getItem(DECISIONS_KEY);
+    const rows: unknown = raw ? JSON.parse(raw) : [];
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!Array.isArray(row) || typeof row[0] !== "string") continue;
+      const decision = decisionOf(row[1]);
+      if (decision) read.set(row[0], decision);
+    }
+  } catch {
+    // Nothing to read, or nothing readable: the decisions made from now on are still drawn.
+  }
+  decided = read;
+  return read;
+}
+
+/** A stored decision, checked: storage is text an older build may have written. */
+function decisionOf(value: unknown): ApprovalDecision | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { outcome, tier, subject } = value as Record<string, unknown>;
+  if (
+    outcome !== "allowed" &&
+    outcome !== "declined" &&
+    outcome !== "unanswered"
+  ) {
+    return undefined;
+  }
+  const checked = askSubjectOf(subject);
+  return {
+    outcome,
+    ...(tier === "once" || tier === "thread" || tier === "always"
+      ? { tier }
+      : {}),
+    ...(checked ? { subject: checked } : {}),
+  };
+}
+
+function keepDecisions(held: Map<string, ApprovalDecision>): void {
+  try {
+    const rows = [...held].slice(-DECISIONS_KEPT);
+    globalThis.localStorage?.setItem(DECISIONS_KEY, JSON.stringify(rows));
+  } catch {
+    // Nowhere to keep it. The line still stands for as long as this tab is open.
+  }
+}
+
+/**
+ * The question on this tool call was decided: take the buttons down and leave the line.
+ *
+ * A decision already held for the call is kept rather than replaced — the card that recorded "for
+ * this conversation" knows more than the poll that later reads "allowed" off the server.
+ */
+export function decideQuestion(
+  toolCallId: string,
+  decision: ApprovalDecision,
+): void {
+  if (!toolCallId) return;
+  const held = decisions();
+  if (!held.has(toolCallId)) {
+    held.set(toolCallId, decision);
+    keepDecisions(held);
+  }
+  open.delete(toolCallId);
+  for (const watcher of watchers) watcher();
+}
+
+export function decisionOn(toolCallId: string): ApprovalDecision | undefined {
+  return decisions().get(toolCallId);
+}
+
+/**
  * A pause reply, read once, in one place.
  *
  * Two callers meet this shape — an acting call on the computer and a call to somebody else's server
@@ -453,6 +753,13 @@ export type OpenQuestion = {
 
 const open = new Map<string, OpenQuestion>();
 const watchers = new Set<() => void>();
+/**
+ * Every line an approval was ever drawn on in this tab, and what it was about — kept after the card
+ * closes. A card closes on a 409 the moment another window has answered, before this tab's wait has
+ * read that answer; the wait still has to find the line to leave the answer on. More than one line
+ * when the page a notice opens draws the same question beside the conversation's own card.
+ */
+const raised = new Map<string, Map<string, AskSubject | undefined>>();
 
 /**
  * Say that this tool call is waiting on an answer, so its line can draw the card.
@@ -464,6 +771,9 @@ const watchers = new Set<() => void>();
 export function openQuestion(toolCallId: string, question: OpenQuestion): void {
   if (!toolCallId) return;
   open.set(toolCallId, question);
+  const asking = raised.get(question.approvalId) ?? new Map();
+  asking.set(toolCallId, question.subject);
+  raised.set(question.approvalId, asking);
   for (const watcher of watchers) watcher();
 }
 
@@ -645,11 +955,33 @@ export async function waitForApproval(
       // Gone from a list we did read means it expired and was swept, which is the same outcome as
       // running out of patience here. A list we could NOT read says nothing, so it is not read as an
       // answer.
-      if (!mine) return "gave up";
-      if (mine.granted === true) return "granted";
-      if (mine.granted === false) return "declined";
+      if (!mine) return settled(approvalId, "unanswered", "gave up");
+      if (mine.granted === true) {
+        return settled(approvalId, "allowed", "granted");
+      }
+      if (mine.granted === false) {
+        return settled(approvalId, "declined", "declined");
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
   }
-  return "gave up";
+  return settled(approvalId, "unanswered", "gave up");
+}
+
+/**
+ * What the wait learned, left on the card's line before the wait hands its answer back.
+ *
+ * Here because this is where a question answered in ANOTHER window is first known about in this
+ * one — that card's press recorded nothing here, and without this the line would vanish as it used
+ * to. An answer this tab's own card gave is already held, with its tier, and is not overwritten.
+ */
+function settled<Answer>(
+  approvalId: string,
+  outcome: ApprovalDecision["outcome"],
+  answer: Answer,
+): Answer {
+  for (const [toolCallId, subject] of raised.get(approvalId) ?? []) {
+    decideQuestion(toolCallId, { outcome, ...(subject ? { subject } : {}) });
+  }
+  return answer;
 }

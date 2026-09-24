@@ -1,3 +1,4 @@
+import { IconClockX, IconShieldCheck, IconShieldX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import {
@@ -7,13 +8,19 @@ import {
 import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
 import {
+  type AllowanceScope,
+  type ApprovalDecision,
   type ApprovalTier,
   answerApproval,
   answerProblem,
   closeQuestion,
+  decideQuestion,
+  decisionOn,
+  decisionPhrase,
   describeSubject,
   questionOn,
   watchQuestions,
+  whyAskedPhrase,
 } from "@/lib/approvals";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
@@ -35,6 +42,10 @@ import { useCountdown } from "@/lib/use-countdown";
  * on the line of an action nobody is being asked about, and record their Allow against the wrong
  * one. The tool call that raised the question is the only thing that knows which one is its own, so
  * it is what says so.
+ *
+ * AND ONCE IT IS ANSWERED IT FOLDS INTO ONE LINE rather than vanishing. It used to disappear either
+ * way: after "거부" the conversation held no trace that anybody had been asked, and after "허용" no
+ * trace of what had been allowed (UI/UX audit 0.5.3, item 3).
  */
 export function ApprovalRequest({
   /** The tool call this line is reporting. Undefined before the SDK has named it. */
@@ -45,16 +56,19 @@ export function ApprovalRequest({
   const asking = useSyncExternalStore(watchQuestions, () =>
     questionOn(toolCallId ?? ""),
   );
+  const decided = useSyncExternalStore(watchQuestions, () =>
+    decisionOn(toolCallId ?? ""),
+  );
   const [answering, setAnswering] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /** Names the group, so the buttons announce what they are answering. */
   const questionId = useId();
   const timeLeft = useCountdown(asking?.expiresAt);
   /*
-   * Only an administrator can open the Boundaries page — it sends everybody else back to the home
-   * screen — so only an administrator is told that is where an allowance is taken back. The sentence
-   * was on every card, and for most people it named a page they cannot reach
-   * (docs/laf/redesign-2026-09.md §5.6(g)-6).
+   * Only an administrator can open the admin screens — they send everybody else back to the home
+   * screen — so only an administrator is told that is where an allowance is taken back, and only an
+   * administrator is offered the rule itself. On one VM per person that is usually the owner, which
+   * is why the rule sits behind 자세히 rather than on the card: the owner is not who it is written for.
    */
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const mayEditBoundaries = currentUser?.role === "admin";
@@ -71,7 +85,8 @@ export function ApprovalRequest({
       );
       setAnswering(false);
       if (!result.ok) {
-        // Expired, or answered in another tab: there is nothing here to press any more.
+        // Expired, or answered in another tab: there is nothing here to press any more. The wait
+        // that holds the tool call reads which it was and leaves that line (`lib/approvals.ts`).
         if (result.gone) {
           closeQuestion(toolCallId ?? "");
           setProblem(null);
@@ -82,16 +97,20 @@ export function ApprovalRequest({
         setProblem(answerProblem(result));
         return;
       }
-      // Taken down here rather than waiting for the call to notice, so the buttons stop being
-      // pressable the moment the answer lands. The Bot's turn is still on the server working out
-      // what to do with it.
-      closeQuestion(toolCallId ?? "");
+      // Folded here rather than waiting for the call to notice, so the buttons stop being pressable
+      // the moment the answer lands. The Bot's turn is still on the server working out what to do
+      // with it.
+      decideQuestion(toolCallId ?? "", {
+        outcome: granted ? "allowed" : "declined",
+        ...(granted ? { tier } : {}),
+        ...(asking.subject ? { subject: asking.subject } : {}),
+      });
       setProblem(null);
     },
     [asking, toolCallId],
   );
 
-  if (!asking) return null;
+  if (!asking) return decided ? <DecidedLine decision={decided} /> : null;
 
   /*
    * The words are chosen here from the facts the server sent, never sent as words. A subject this
@@ -101,6 +120,7 @@ export function ApprovalRequest({
   const question = asking.subject
     ? describeSubject(asking.subject)
     : t("It is waiting on an answer about something this screen cannot name.");
+  const why = whyAskedPhrase(asking.rule, asking.subject);
 
   return (
     /*
@@ -119,6 +139,15 @@ export function ApprovalRequest({
       <p className="text-sm" id={questionId}>
         {question}
       </p>
+      {/*
+       * WHY, IN WORDS, WHERE THE RULE USED TO BE. The rule's own text is still here for whoever
+       * wrote it, folded under 자세히 at the bottom; see `whyAskedPhrase`.
+       */}
+      {why ? (
+        <p className="mt-0.5 text-muted-foreground text-xs">
+          {t(why.key, why.params)}
+        </p>
+      ) : null}
       {/* What an outward call will send, so the yes is given about the call it is bound to. */}
       <CallPreviewList
         preview={asking.preview}
@@ -128,24 +157,6 @@ export function ApprovalRequest({
             : undefined
         }
       />
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        {asking.rule ? (
-          <span className="break-all font-mono text-muted-foreground text-xs">
-            {asking.rule}
-          </span>
-        ) : null}
-        {/*
-         * THE CLOCK, BECAUSE THE CARD LEAVES WITHOUT ONE OTHERWISE. Ten minutes after it was
-         * raised the question expires and the buttons stop working; before this there was nothing
-         * on the card that said so, and somebody who stepped away came back to a Bot that had
-         * given up for a reason the screen never mentioned.
-         */}
-        {timeLeft ? (
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {timeLeft}
-          </span>
-        ) : null}
-      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
           // Described by the question rather than wrapped in a group role: "Allow" on its own says
@@ -202,39 +213,119 @@ export function ApprovalRequest({
           {t("Deny")}
         </Button>
       </div>
-      <p className="mt-1.5 text-muted-foreground text-xs">
-        {asking.scope
-          ? mayEditBoundaries
-            ? t(
-                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
-              )
-            : // Same promise, no page named: Boundaries is admin-only and sends everybody else home.
-              t(
-                "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.",
-              )
-          : t(
-              "Asked because of this rule. Allowing covers this one action.",
-            )}{" "}
-        {/*
-         * The middle button's clock, said here because the button has no room for it: somebody
-         * deciding between "this conversation" and "always" is owed the day before they press.
-         */}
-        {asking.scope && asking.threadId
-          ? `${t("For this conversation means here only, and for a day at most.")} `
-          : null}
-        {/*
-         * SAID ON THE CARD, because it changes what the Deny button means. A no used to last until
-         * the Bot tried again, which could be seconds; now it stands, and somebody deciding needs
-         * to know that before they press it rather than afterwards. No new control — this is what
-         * the existing button already does.
-         */}
-        {t("Saying no stops it being asked again for a while.")}
-      </p>
+      <ButtonsExplained
+        hasThread={Boolean(asking.threadId)}
+        mayEditBoundaries={mayEditBoundaries}
+        scope={asking.scope}
+      />
+      {/*
+       * THE CLOCK, BECAUSE THE CARD LEAVES WITHOUT ONE OTHERWISE. Ten minutes after it was raised
+       * the question expires and the buttons stop working; before this there was nothing on the
+       * card that said so, and somebody who stepped away came back to a Bot that had given up for a
+       * reason the screen never mentioned.
+       */}
+      {timeLeft ? (
+        <p className="mt-1 text-muted-foreground text-xs tabular-nums">
+          {timeLeft}
+        </p>
+      ) : null}
+      {/*
+       * THE RULE ITSELF, FOR WHOEVER CAN CHANGE IT, FOLDED. It was the loudest thing on the card —
+       * a monospace line of CEL beside the buttons — and the person answering could neither read
+       * it nor edit it. Kept, because an administrator deciding whether a rule asks too often
+       * needs to see which one it was; closed, because that is not the question being asked.
+       */}
+      {asking.rule && mayEditBoundaries ? (
+        <details className="mt-1.5 text-muted-foreground text-xs">
+          <summary className="w-fit cursor-pointer select-none">
+            {t("Details")}
+          </summary>
+          <p className="mt-1">{t("The rule that asked:")}</p>
+          <code className="mt-0.5 block break-all font-mono">
+            {asking.rule}
+          </code>
+        </details>
+      ) : null}
       {problem ? (
         <p className="mt-2 text-destructive text-xs" role="alert">
           {problem}
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * WHAT EACH BUTTON DOES, BY ITS OWN NAME.
+ *
+ * The note used to say "이번만 허용은 이 행동 하나에만 적용되고, 다른 하나는 경계 설정에서 취소할
+ * 때까지 같은 종류를 모두 허용합니다" — "the other one" for a button that has a name, and a settings
+ * page an owner has never heard of (UI/UX audit 0.5.3, item 3). Each button present is named as it
+ * is written on it, and said in a phrase.
+ */
+function ButtonsExplained({
+  scope,
+  hasThread,
+  mayEditBoundaries,
+}: {
+  scope: AllowanceScope | undefined;
+  hasThread: boolean;
+  mayEditBoundaries: boolean;
+}) {
+  const parts = [t("Allow once: just this.")];
+  if (scope && hasThread) {
+    parts.push(
+      t("{button}: here only, and for a day at most.", {
+        button: duringLabel(scope),
+      }),
+    );
+  }
+  if (scope) {
+    parts.push(
+      mayEditBoundaries
+        ? t("{button}: not asked again until you cancel it in Admin.", {
+            button: alwaysLabel(scope),
+          })
+        : // Same promise, no page named: the admin screens send everybody else home.
+          t("{button}: not asked again until somebody cancels it.", {
+            button: alwaysLabel(scope),
+          }),
+    );
+  }
+  /*
+   * SAID ON THE CARD, because it changes what the Deny button means. A no used to last until the
+   * Bot tried again, which could be seconds; now it stands, and somebody deciding needs to know
+   * that before they press it rather than afterwards.
+   */
+  parts.push(t("Deny: the same thing is refused without asking for a while."));
+  return (
+    <p className="mt-1.5 text-muted-foreground text-xs">{parts.join(" ")}</p>
+  );
+}
+
+const DECIDED_ICONS: Record<ApprovalDecision["outcome"], typeof IconClockX> = {
+  allowed: IconShieldCheck,
+  declined: IconShieldX,
+  unanswered: IconClockX,
+};
+
+/**
+ * The card after it was answered: what was decided, about what, in one line.
+ *
+ * Muted and small, because it is a record rather than a question — the one thing the conversation
+ * still needs from it is that somebody scrolling back can see that a person was asked and what they
+ * said. It wraps rather than truncating: at 375 wide "toss.im에서 ‘비즈니스’ 누르기" is the part that
+ * would be cut, and it is the part that matters.
+ */
+function DecidedLine({ decision }: { decision: ApprovalDecision }) {
+  const Icon = DECIDED_ICONS[decision.outcome];
+  const said = decisionPhrase(decision);
+  return (
+    <p className="flex items-start gap-1.5 py-0.5 text-muted-foreground text-xs">
+      <Icon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+      <span className="min-w-0 wrap-break-word">
+        {t(said.key, said.params)}
+      </span>
+    </p>
   );
 }

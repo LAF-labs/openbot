@@ -66,6 +66,20 @@ const DEVICE_SCOPED = [
    * somebody who is looking at it and can press the other button.
    */
   "lib/computer/screen-panel.ts",
+  /*
+   * The line an answered approval card leaves — "거부함 · toss.im에서 ‘비즈니스’ 누르기"
+   * (`lib/approvals.ts`, UI/UX audit 0.5.3, item 3).
+   *
+   * A DECISION, and the argument is that there is no account-wide record to read it from, on
+   * purpose: the server keeps a question in memory for its ten minutes and never in a table
+   * (`server/src/computer/approvals.ts`), and the transcript keeps the tool call's result, not who
+   * answered what. So a device remembers what it saw answered. On another device the line is
+   * absent — which is how every device looked before it existed — and the step's own account-wide
+   * result ("사람이 거절함") is still there; it can be missing, never wrong, and nothing a Bot does
+   * reads it. Making it account-wide means the tool result carrying the answer, which is a change
+   * to the tool call, not to this card.
+   */
+  "lib/approvals.ts",
 ];
 
 /**

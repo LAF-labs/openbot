@@ -80,9 +80,9 @@ const FORBIDDEN: Record<string, string> = {
  *
  * Every exception here has to name the gate that hides it, and goes the moment the gate does.
  */
-const BEHIND_AN_ADMIN_GATE = new Set([
+const BEHIND_AN_ADMIN_GATE = new Set<string>([
   /*
-   * THREE EXCEPTIONS LEFT HERE, and their absence is the point.
+   * FOUR EXCEPTIONS LEFT HERE, and their absence is the point.
    *
    * The endpoint, its key and the sentence under them used to be exempted because `agent-fields.tsx`
    * hid them behind a 고급 disclosure that only rendered for `role === "admin"` — which on one VM
@@ -91,11 +91,9 @@ const BEHIND_AN_ADMIN_GATE = new Set([
    * `/admin/bots` now, which this walk does not read at all, so nothing needs excusing.
    */
   /*
-   * The approval card's footnote names the admin screen where a standing allowance is taken back,
-   * and the manual names it the same way ("관리 화면의 경계 설정"). Memo item 6 — that a non-admin
-   * cannot open it — is a separate change to `approval-request.tsx`, which owns this sentence.
+   * The fourth was the approval card's footnote, which named "경계 설정" to the owner answering. The
+   * card names the button and "관리 화면" now (UI/UX audit 0.5.3, item 3), so it needs no excuse.
    */
-  "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.",
 ]);
 
 /**
