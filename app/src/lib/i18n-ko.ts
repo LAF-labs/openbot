@@ -959,6 +959,9 @@ export const ko: Record<string, string> = {
   When: "언제",
   "Working…": "처리 중…",
   "Workspace skills": "워크스페이스 스킬",
+  "Built-in skills": "기본 스킬",
+  "They come built in, and your Bot reaches for one when a task needs it. Type / and the name to ask for one yourself.":
+    "처음부터 들어 있는 스킬이에요. 봇이 일에 맞춰 알아서 꺼내 쓰고, /와 이름을 치면 직접 시킬 수도 있어요.",
   "Write a component and watch it render as you type.":
     "컴포넌트를 작성하면서 그려지는 모습을 바로 확인합니다.",
   "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.":

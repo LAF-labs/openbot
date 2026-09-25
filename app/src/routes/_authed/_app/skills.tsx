@@ -35,7 +35,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
-import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
+import {
+  BUILT_IN_ORIGIN,
+  pluginKeys,
+  pluginsPageQueryOptions,
+} from "@/lib/plugins/queries";
 import { SKILL_REFUSALS } from "@/lib/plugins/refusals";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
@@ -134,7 +138,19 @@ function SkillsPage() {
   const settled = settledOf(reading);
   const skills = settled?.data.skills ?? [];
   const mine = skills.filter((skill) => skill.ownerUserId === me?.id);
-  const deployment = skills.filter((skill) => skill.ownerUserId === null);
+  /*
+   * THE PACKAGE'S OWN SKILLS APART FROM AN ADMINISTRATOR'S. MEASURED 2026-09-25: the three browsing
+   * skills LAF Agent ships sat under "워크스페이스 스킬 — 관리자가 모두를 위해 작성했습니다. 어느 봇이
+   * 지니는지는 관리에서 정합니다", on a deployment with one person and one Bot and no administrator
+   * but them, each with its summary — which is written for the model ("…&ssc=tab.blog.all, 글은
+   * m.blog.naver.com 주소로 읽는다") — printed as the row's description.
+   */
+  const builtIn = skills.filter(
+    (skill) => skill.ownerUserId === null && skill.origin === BUILT_IN_ORIGIN,
+  );
+  const deployment = skills.filter(
+    (skill) => skill.ownerUserId === null && skill.origin !== BUILT_IN_ORIGIN,
+  );
 
   return (
     <DetailPanel
@@ -349,6 +365,34 @@ function SkillsPage() {
             </PageRows>
           )}
         </PageSection>
+
+        {builtIn.length > 0 ? (
+          <PageSection
+            description={t(
+              "They come built in, and your Bot reaches for one when a task needs it. Type / and the name to ask for one yourself.",
+            )}
+            title={t("Built-in skills")}
+          >
+            <PageRows>
+              {builtIn.map((skill, index) => (
+                <StaggerItem index={index} key={skill.id}>
+                  <Item size="sm">
+                    <ItemContent>
+                      <ItemTitle>{skill.title}</ItemTitle>
+                      {/* The command only: the summary is the Bot's note to itself, not words for here. */}
+                      <ItemDescription>
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground/80 text-xs">
+                          /{skill.slug}
+                        </code>
+                      </ItemDescription>
+                    </ItemContent>
+                  </Item>
+                  {index !== builtIn.length - 1 && <Separator />}
+                </StaggerItem>
+              ))}
+            </PageRows>
+          </PageSection>
+        ) : null}
 
         {/*
          * NO MENU ON THESE ROWS, AND THAT IS THE POINT. A workspace skill belongs to the deployment,

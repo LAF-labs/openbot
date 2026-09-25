@@ -87,6 +87,9 @@ export type PluginServer = {
   withdrawn: WithdrawnGrant[];
 };
 
+/** `origin` of a skill the tenant package ships (`server/src/plugins/built-in-skills.ts`). */
+export const BUILT_IN_ORIGIN = "built_in";
+
 export type PluginSkill = {
   id: string;
   slug: string;

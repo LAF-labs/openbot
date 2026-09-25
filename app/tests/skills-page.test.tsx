@@ -233,6 +233,45 @@ describe("a skill's row", () => {
   });
 });
 
+describe("the skills the package ships", () => {
+  /*
+   * MEASURED 2026-09-25: the three browsing skills sat under "워크스페이스 스킬 — 관리자가 모두를 위해
+   * 작성했습니다" on a one-person deployment, each described by its note to the model.
+   */
+  const answer = () =>
+    json({
+      catalogue: [],
+      servers: [],
+      skills: [
+        skill({
+          slug: "네이버블로그",
+          title: "네이버 블로그 글 찾아 읽기",
+          summary: "블로그 검색은 search.naver.com …&ssc=tab.blog.all",
+          ownerUserId: null,
+          origin: "built_in",
+        }),
+        skill({ slug: "standup", title: "Standup notes", ownerUserId: null }),
+      ],
+    });
+
+  test("are listed as built in, by title and command, without the model's note", async () => {
+    const view = await skillsPage(answer);
+    const builtIn = view.section("Built-in skills");
+    expect(builtIn.textContent).toContain("네이버 블로그 글 찾아 읽기");
+    expect(builtIn.textContent).toContain("/네이버블로그");
+    expect(builtIn.textContent).not.toContain("search.naver.com");
+    expect(
+      builtIn.querySelector('button[aria-label^="Actions for"]'),
+    ).toBeNull();
+    // An administrator's skill stays where it was, and the package's is not among them.
+    const workspace = view.section("Workspace skills");
+    expect(workspace.textContent).toContain("Standup notes");
+    expect(workspace.textContent).not.toContain("네이버 블로그");
+    expect(ko["Built-in skills"]).toBe("기본 스킬");
+    await view.unmount();
+  });
+});
+
 describe("writing one", () => {
   test("happens in the panel beside the list, with its save kept on screen", async () => {
     /*
