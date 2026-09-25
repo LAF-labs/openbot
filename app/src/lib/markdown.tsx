@@ -33,13 +33,23 @@ export const markdownComponents = {
  * The fallback is the text itself: a tool result arriving before the renderer has is still worth
  * reading, and a blank where an answer just landed reads as the answer having failed.
  */
-const Streamdown = lazy(async () => {
-  const module = await import("streamdown");
-  return { default: module.Streamdown };
+const Renderer = lazy(async () => {
+  const [{ Streamdown }, { markdownPlugins }] = await Promise.all([
+    import("streamdown"),
+    import("@/lib/markdown-plugins"),
+  ]);
+  function Rendered({ children }: { children: string }) {
+    return (
+      <Streamdown components={markdownComponents} plugins={markdownPlugins}>
+        {children}
+      </Streamdown>
+    );
+  }
+  return { default: Rendered };
 });
 
 export const LazyMarkdown = ({ children }: { children: string }) => (
   <Suspense fallback={<span className="whitespace-pre-wrap">{children}</span>}>
-    <Streamdown components={markdownComponents}>{children}</Streamdown>
+    <Renderer>{children}</Renderer>
   </Suspense>
 );

@@ -105,6 +105,7 @@
   "app/tests/live-region.test.tsx",
   "app/tests/live-screen.test.tsx",
   "app/tests/live-view.test.tsx",
+  "app/tests/markdown-cjk.test.tsx",
   "app/tests/my-bots.test.ts",
   "app/tests/notification-outbox.test.ts",
   "app/tests/owner-vocabulary.test.ts",

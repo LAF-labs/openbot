@@ -52,6 +52,8 @@ export const LAZY_ONLY_PACKAGES = [
   "react-markdown",
   "marked",
   "shiki",
+  "remark-cjk-friendly",
+  "remark-cjk-friendly-gfm-strikethrough",
   "@copilotkit/react-core",
   "@copilotkit/core",
   "@copilotkit/runtime-client-gql",

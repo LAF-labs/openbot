@@ -51,6 +51,7 @@ import {
 import { copyText } from "@/lib/clipboard";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
+import { markdownPlugins } from "@/lib/markdown-plugins";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
@@ -801,7 +802,12 @@ const TranscriptMessage = memo(function TranscriptMessage({
                  * closing token arrives, so the answer visibly rewrites itself as it lands. This
                  * closes them for the duration.
                  */
-                <Streamdown components={markdownComponents}>{text}</Streamdown>
+                <Streamdown
+                  components={markdownComponents}
+                  plugins={markdownPlugins}
+                >
+                  {text}
+                </Streamdown>
               )}
             </BubbleContent>
           </Bubble>
