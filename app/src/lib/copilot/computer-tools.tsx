@@ -353,8 +353,15 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    ...fromCatalogue<Record<string, never>>("computer_read"),
-    handler: async () => callComputer(bot.current, "/read"),
+    ...fromCatalogue<{ whole?: boolean; from?: string }>("computer_read"),
+    // `whole`: every word on the page, not the article a reader view took out of it. `from`: from
+    // the first place those words appear, for what the extract's cap left out.
+    handler: async (input: { whole?: boolean; from?: string } = {}) => {
+      const query = new URLSearchParams();
+      if (input.whole) query.set("whole", "1");
+      if (input.from?.trim()) query.set("from", input.from.trim());
+      return callComputer(bot.current, query.size ? `/read?${query}` : "/read");
+    },
   });
 
   useFrontendTool({

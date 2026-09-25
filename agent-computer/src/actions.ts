@@ -12,7 +12,9 @@ import { holdToLabel } from "./label-hold";
 import { log } from "./log";
 import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json, RequestInvalidError } from "./respond";
-import { type BotSession, withNotes } from "./sessions";
+import { arrivalNote } from "./page-arrival";
+import { readSettledPageText, titleOf } from "./page-text";
+import { type BotSession, note, withNotes } from "./sessions";
 import { digestOf, keepOwn } from "./typed-values";
 
 export type ActionBody = {
@@ -38,6 +40,9 @@ export const ACTIONS = new Set(["/click", "/type", "/key", "/scroll"]);
  * it takes next describes the page it was already on. It then reports on the wrong screen entirely.
  */
 const POPUP_GRACE_MS = 150;
+
+/** How much longer a clicked link that has not gone anywhere is given to open its tab. */
+const LINK_TAB_WAIT_MS = 1_000;
 
 /**
  * Listen for a tab before the thing that might open one, and stop listening after it.
@@ -161,6 +166,59 @@ async function performAction(
   return { action: "scroll", deltaY, url: target.url() };
 }
 
+/**
+ * THE PAGE AN ACTION LANDED ON, IN THE SAME ANSWER.
+ *
+ * A click that opened an article answered `{action, ref, url}`, and the Bot's next request was
+ * always `computer_read` for the text: one more model round trip, with the whole conversation in
+ * front of it, on every link followed (measured 2026-09-25 on the blog task: click → snapshot →
+ * read → answer). Browser Use and Playwright MCP both hand the page's state back with the action;
+ * this hands back what `/navigate` does — title and text — and only when the action went somewhere:
+ * another address, or the tab a `target=_blank` link opened. A click that ticked a box costs nothing
+ * more.
+ *
+ * Never a reason for the action to fail: the action happened, and a page that cannot be read yet
+ * says so the way `/read` does, or says nothing.
+ */
+async function pageArrivedAt(
+  session: BotSession,
+  target: Page,
+  before: string,
+  opened: Page | undefined,
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    /*
+     * THE TAB THE ACTION OPENED, NOT THE ONE THE BOT IS HANDED NEXT. Adoption (`profiles.ts`) asks
+     * the browser for the new tab's opener first, so it lands a moment after the click returns;
+     * reading "the Bot's page" here read the old tab, measured on the blog search's
+     * `target=_blank` results. The opener is asked here too: a tab another Bot's click opened in the
+     * same instant is not this one's.
+     */
+    const tab =
+      opened && (await opened.opener().catch(() => null)) === target
+        ? opened
+        : undefined;
+    const now = tab ?? target;
+    if (now === target && now.url() === before) return undefined;
+    const extract = await readSettledPageText(now);
+    if (extract.arriving) {
+      note(session, arrivalNote(extract.arriving));
+      return { page: { url: now.url(), title: "", text: "" } };
+    }
+    return {
+      page: {
+        url: now.url(),
+        title: await titleOf(now),
+        text: extract.text,
+        ...(extract.truncated ? { truncated: true } : {}),
+        ...(extract.reader ? { reader: true } : {}),
+      },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /** `POST /click`, `/type`, `/key`, `/scroll`. */
 export const act: BotRoute = async (
   { request, url, botId, session },
@@ -173,18 +231,59 @@ export const act: BotRoute = async (
   try {
     session.control.assertBotMayAct();
     const target = await profiles.page(botId);
-    const detail = await performAction(
-      session,
-      target,
-      url.pathname,
-      body,
-      config.actionTimeoutMs,
-      // The caller going away is the stop signal: the surface aborts its request, the server
-      // aborts the one it made to this computer, and Bun aborts this one in turn.
-      request.signal,
-    );
+    const before = target.url();
+    let opened: Page | undefined;
+    let tabOpened = () => {};
+    const tab = new Promise<void>((resolve) => {
+      tabOpened = resolve;
+    });
+    const onOpened = (page: Page) => {
+      opened ??= page;
+      tabOpened();
+    };
+    target.context().on("page", onOpened);
+    let arrived: Record<string, unknown> | undefined;
+    let detail: Record<string, unknown>;
+    try {
+      detail = await performAction(
+        session,
+        target,
+        url.pathname,
+        body,
+        config.actionTimeoutMs,
+        // The caller going away is the stop signal: the surface aborts its request, the server
+        // aborts the one it made to this computer, and Bun aborts this one in turn.
+        request.signal,
+      );
+      /*
+       * A LINK THAT WENT NOWHERE YET MAY STILL OPEN A TAB. `watchForTab` gives a tab 150 ms, which
+       * the fixture needs 30 of; on a loaded machine Naver's blog result took longer, and the click
+       * answered as if nothing had opened while the tab arrived a moment later (measured 2026-09-25).
+       * Only a link is waited for, and only this long: a button that changes the page in place
+       * never pays it.
+       */
+      if (
+        !opened &&
+        target.url() === before &&
+        (body.element as { role?: unknown } | undefined)?.role === "link"
+      ) {
+        await Promise.race([
+          tab,
+          new Promise((resolve) => setTimeout(resolve, LINK_TAB_WAIT_MS)),
+        ]);
+      }
+      if (url.pathname !== "/scroll") {
+        arrived = await pageArrivedAt(session, target, before, opened);
+      }
+    } finally {
+      target.context().off("page", onOpened);
+    }
     return json(
-      withNotes(session, { ...detail, elapsedMs: Date.now() - startedAt }),
+      withNotes(session, {
+        ...detail,
+        ...(arrived ?? {}),
+        elapsedMs: Date.now() - startedAt,
+      }),
     );
   } catch (error) {
     /*

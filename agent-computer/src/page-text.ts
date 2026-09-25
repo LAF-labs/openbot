@@ -9,6 +9,7 @@
 import type { Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
+import { compactText, type FrameRead, readerScript } from "./reader";
 import { within } from "./within";
 
 /**
@@ -56,14 +57,61 @@ const FRAME_TEXT_WAIT_MS = 3_000;
 /** How long a title is waited for. A document answers in milliseconds, and a list of tabs waits for every one. */
 const TITLE_WAIT_MS = 1_000;
 
+/**
+ * How long the page's content must stop changing to count as arrived.
+ *
+ * NETWORK IDLE NEVER COMES ON THE PAGES THIS PRODUCT READS MOST. Measured 2026-09-25 in the image:
+ * Naver's search, weather and news section pages did not reach it in ten seconds (log beacons), so
+ * every `/navigate` there paid the whole three-second cap. The content had stopped changing long
+ * before — 1.2 to 1.6 s after `load` — and what was on the page then was what was on it three
+ * seconds later (Naver search 11,827 characters both times, news section 12,787, smartstore's
+ * rendered shell 1,403). The earlier of the two ends the wait, so a page that does go idle is read
+ * as soon as it does.
+ */
+const DOM_QUIET_MS = 500;
+
+/**
+ * Resolves once nothing in the document has changed for `quietMs`, or at `capMs`. Runs in the page;
+ * the observer is gone when it resolves.
+ */
+function quietInPage([quietMs, capMs]: [number, number]): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let timer = setTimeout(done, quietMs);
+    const cap = setTimeout(done, capMs);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(done, quietMs);
+    });
+    observer.observe(document, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+    function done() {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(cap);
+      resolve();
+    }
+  });
+}
+
 /** Let a page finish arriving. Never throws: every wait here is an optimisation, not a requirement. */
 export async function settle(target: Page): Promise<void> {
   await target
     .waitForLoadState("load", { timeout: LOAD_CAP_MS })
     .catch(() => undefined);
-  await target
+  const idle = target
     .waitForLoadState("networkidle", { timeout: NETWORK_IDLE_CAP_MS })
     .catch(() => undefined);
+  // A document that goes away while it is watched is no answer: the network's wait stands then.
+  const quiet = target
+    .evaluate(quietInPage, [DOM_QUIET_MS, NETWORK_IDLE_CAP_MS] as [
+      number,
+      number,
+    ])
+    .catch(() => idle);
+  await Promise.race([idle, quiet]);
 }
 
 /**
@@ -136,14 +184,22 @@ class DocumentSilentError extends Error {
   }
 }
 
-/** What one frame's rendered text is. */
-async function frameText(frame: Frame): Promise<string> {
-  return frame.evaluate(() => document.body?.innerText ?? "");
+/** What one frame's rendered text is: its article when it has one, all of it otherwise (`reader.ts`). */
+async function frameText(frame: Frame, whole: boolean): Promise<FrameRead> {
+  return frame.evaluate<FrameRead>(readerScript(whole));
 }
 
 export type PageText = {
   text: string;
   truncated: boolean;
+  /**
+   * The text is the page's article, not all of it (`reader.ts`). Said, because what Reader View
+   * leaves out — a price box beside the story, a button's caption — is sometimes the answer, and a
+   * Bot that knows the page was abridged can read it whole.
+   */
+  reader?: true;
+  /** `from` was asked for and is nowhere on the page, so the text starts at the top as usual. */
+  fromMissing?: true;
   /** The iframes that contributed, and the ones that would not. */
   frames?: { url: string; chars: number; code?: NoteCode }[];
   /**
@@ -177,13 +233,15 @@ function stillArriving(arrival: Arrival): PageText {
 async function readablePageText(
   target: Page,
   deadline: number,
+  whole: boolean,
+  from: string | undefined,
 ): Promise<PageText> {
   // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
   const main = await fromDocument(
     target,
     deadline - Date.now(),
-    frameText(target.mainFrame()).then(
-      (text) => ({ text }),
+    frameText(target.mainFrame(), whole).then(
+      (read) => ({ read }),
       (error: unknown) => ({ error }),
     ),
   );
@@ -197,30 +255,40 @@ async function readablePageText(
     .filter(({ url }) => url && url !== "about:blank");
   const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
   const texts = await Promise.all(
-    others.map(({ frame }) => within(wait, frameText(frame))),
+    others.map(({ frame }) => within(wait, frameText(frame, whole))),
   );
 
-  const pieces = [main.text];
+  const pieces = [main.read.text];
+  let reader = main.read.reader;
   const frames: NonNullable<PageText["frames"]> = [];
   others.forEach(({ url }, index) => {
-    const text = texts[index];
-    if (text === undefined) {
+    const read = texts[index];
+    if (read === undefined) {
       frames.push({ url, chars: 0, code: "laf:frame_opaque" });
       return;
     }
-    const trimmed = text.trim();
+    const trimmed = compactText(read.text);
     if (!trimmed) return;
+    reader ||= read.reader;
     pieces.push(trimmed);
     frames.push({ url, chars: trimmed.length });
   });
 
-  const collapsed = pieces
-    .join("\n\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const all = pieces.map(compactText).filter(Boolean).join("\n\n");
+  /*
+   * WHAT THE CAP LEFT OUT WAS OUT OF REACH. Scrolling does not change a page's text, and reading
+   * again read the same first 6,000 characters: measured on Naver's search for a product, where the
+   * advertisers' prices fill the top and the price comparison starts past the cap, the Bot scrolled,
+   * snapshotted and clicked for three steps and still answered with two products of three. `from`
+   * starts the extract at the words it names — a heading the Bot saw in the part it did get.
+   */
+  const at = from ? all.indexOf(from) : -1;
+  const collapsed = at > 0 ? all.slice(at) : all;
   return {
     text: collapsed.slice(0, TEXT_EXTRACT_LIMIT),
     truncated: collapsed.length > TEXT_EXTRACT_LIMIT,
+    ...(from && at < 0 ? { fromMissing: true as const } : {}),
+    ...(reader ? { reader: true as const } : {}),
     ...(frames.length ? { frames } : {}),
   };
 }
@@ -231,7 +299,7 @@ async function readablePageText(
  */
 export async function readSettledPageText(
   target: Page,
-  options: { settleFirst?: boolean } = {},
+  options: { settleFirst?: boolean; whole?: boolean; from?: string } = {},
 ): Promise<PageText> {
   const deadline = Date.now() + READ_DEADLINE_MS;
   if (options.settleFirst) await settle(target);
@@ -241,7 +309,12 @@ export async function readSettledPageText(
   }
   const attempt = async (): Promise<PageText> => {
     try {
-      return await readablePageText(target, deadline);
+      return await readablePageText(
+        target,
+        deadline,
+        options.whole === true,
+        options.from,
+      );
     } catch (error) {
       const arrival =
         error instanceof DocumentSilentError ? arrivalOf(target) : undefined;

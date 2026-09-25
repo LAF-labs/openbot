@@ -13,6 +13,9 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import { createProfiles } from "../src/profiles";
 import {
+  ARTICLE_COMMENT,
+  ARTICLE_MENU,
+  ARTICLE_STORY,
   DOWNLOAD_BODY,
   DOWNLOAD_NAME,
   FRAME_BUTTON,
@@ -243,6 +246,45 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     ).toBe(true);
   }, 30_000);
 
+  test("an article is read as its story, and whole when asked", async () => {
+    const opened = await post("/navigate", {
+      url: new URL("/article", fixture?.url).href,
+    });
+    expect(opened.status).toBe(200);
+    const story = String(opened.body.text ?? "");
+    expect(opened.body.reader).toBe(true);
+    expect(story).toContain(ARTICLE_STORY);
+    // The portal around it is what a reader view is for: the menu and the comments are gone.
+    expect(story).not.toContain(ARTICLE_MENU);
+    expect(story).not.toContain(ARTICLE_COMMENT);
+
+    const whole = await call("/read?whole=1");
+    expect(whole.body.reader).toBeUndefined();
+    expect(String(whole.body.text)).toContain(ARTICLE_MENU);
+    expect(String(whole.body.text)).toContain(ARTICLE_STORY);
+  }, 30_000);
+
+  test("a page that is not an article is read whole, as before", async () => {
+    const opened = await post("/navigate", { url: fixture?.url });
+    expect(opened.body.reader).toBeUndefined();
+  }, 30_000);
+
+  test("a thumbnail is a small JPEG, the picture a PNG", async () => {
+    await post("/navigate", { url: fixture?.url });
+    const full = await call("/screenshot");
+    const small = await call("/screenshot?format=jpeg&width=320&quality=50");
+    expect(full.body.mime).toBe("image/png");
+    expect(small.body.mime).toBe("image/jpeg");
+    const bytes = Buffer.from(String(small.body.base64), "base64");
+    // A JPEG's first bytes, and a picture far smaller than the viewport's PNG.
+    expect([...bytes.subarray(0, 2)]).toEqual([0xff, 0xd8]);
+    expect(bytes.length).toBeLessThan(
+      Buffer.from(String(full.body.base64), "base64").length / 3,
+    );
+    // The size the page is, whatever the picture's: what a click on it is measured against.
+    expect(small.body.width).toBe(1280);
+  }, 30_000);
+
   test("the snapshot lists the tabs and marks the password box", async () => {
     await post("/navigate", { url: fixture?.url });
     const shot = await snapshot();
@@ -274,6 +316,8 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
       snapshotId: shot.snapshotId,
     });
     expect(clicked.status).toBe(200);
+    // It went nowhere, so it carries no page: a click that changes the page in place costs nothing.
+    expect(clicked.body.page).toBeUndefined();
     const read = await call("/read");
     expect(String(read.body.text)).toContain(FRAME_CLICKED);
   }, 30_000);
@@ -286,6 +330,10 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
       snapshotId: shot.snapshotId,
     });
     expect(clicked.status).toBe(200);
+    // The tab it opened, read in the same answer — no `/read` round trip for the Bot (actions.ts).
+    const landed = clicked.body.page as { text?: string; url?: string };
+    expect(String(landed?.text)).toContain("주문 상세 화면");
+    expect(String(landed?.url)).toContain("/other");
 
     // The newest page is adopted, so what the Bot reads next is the tab that just opened.
     const after = await snapshot();

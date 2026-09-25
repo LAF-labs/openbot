@@ -23,10 +23,19 @@ import { snapshotPage } from "./snapshot";
  * "Submit order", the page becomes a confirmation, and it has no way to find out what the
  * confirmation said. "I clicked the button" is not an answer to what happened.
  */
-export const readPage: BotRoute = async ({ botId, session }, { profiles }) => {
+export const readPage: BotRoute = async (
+  { botId, session, url },
+  { profiles },
+) => {
   try {
     const target = await profiles.page(botId);
-    const extract = await readSettledPageText(target);
+    // `?whole=1`: every word, not the article Reader View took out (`reader.ts`). `?from=`: from
+    // the first place those words appear, for what an extract's cap left out.
+    const from = url.searchParams.get("from")?.trim();
+    const extract = await readSettledPageText(target, {
+      whole: url.searchParams.get("whole") === "1",
+      ...(from ? { from } : {}),
+    });
     if (extract.arriving) note(session, arrivalNote(extract.arriving));
     return json(
       withNotes(session, {
@@ -34,6 +43,8 @@ export const readPage: BotRoute = async ({ botId, session }, { profiles }) => {
         title: extract.arriving ? "" : await titleOf(target),
         text: extract.text,
         truncated: extract.truncated,
+        ...(extract.reader ? { reader: true } : {}),
+        ...(extract.fromMissing ? { fromMissing: true } : {}),
         ...(extract.frames ? { frames: extract.frames } : {}),
       }),
     );
@@ -97,14 +108,46 @@ async function pictureOfTab(target: Page): Promise<Buffer | undefined> {
   return pictureOf(target, PAINT_WAIT_MS);
 }
 
-export const screenshot: BotRoute = async ({ botId }, { profiles }) => {
+/**
+ * A small JPEG instead, when the caller only draws a thumbnail: `?format=jpeg&width=480&quality=60`.
+ *
+ * The panel's thumbnail asked for the full-viewport PNG every 2 s — 166–554 KB and 120–600 ms of the
+ * computer's one core each, for a picture drawn a few hundred pixels wide (performance audit,
+ * 2026-09-25). Chrome scales and encodes it itself (`clip.scale`), so nothing here decodes a pixel,
+ * and it is taken the way the screen is painted rather than through the document (`pictureOf`), so a
+ * page that is busy arriving does not hold it up.
+ */
+function thumbnailOptions(
+  url: URL,
+  viewport: { width: number; height: number },
+): Record<string, unknown> | undefined {
+  if (url.searchParams.get("format") !== "jpeg") return undefined;
+  const asked = Number(url.searchParams.get("width"));
+  const width = Number.isFinite(asked) && asked > 0 ? asked : viewport.width;
+  const scale = Math.min(1, Math.max(0.1, width / viewport.width));
+  const quality = Math.round(
+    Math.min(90, Math.max(20, Number(url.searchParams.get("quality")) || 60)),
+  );
+  return {
+    format: "jpeg",
+    quality,
+    clip: { x: 0, y: 0, ...viewport, scale },
+  };
+}
+
+export const screenshot: BotRoute = async ({ botId, url }, { profiles }) => {
   try {
     const target = await profiles.page(botId);
-    const buffer = await pictureOfTab(target);
-    if (!buffer) return fact("laf:browser_failed");
     const size = target.viewportSize() ?? { width: 1280, height: 800 };
+    const small = thumbnailOptions(url, size);
+    const buffer = small
+      ? await pictureOf(target, PAINT_WAIT_MS, small)
+      : await pictureOfTab(target);
+    if (!buffer) return fact("laf:browser_failed");
     return json({
       base64: buffer.toString("base64"),
+      // What the bytes are. Absent from an older computer, whose answer is always a PNG.
+      mime: small ? "image/jpeg" : "image/png",
       width: size.width,
       height: size.height,
       capturedAt: new Date().toISOString(),

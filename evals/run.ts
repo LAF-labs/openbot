@@ -136,7 +136,7 @@ function stubResult(name: string): string {
     });
   }
   if (name === "computer_snapshot")
-    return JSON.stringify({ snapshotId: 1, elements: [] });
+    return JSON.stringify({ snapshotId: 1, elements: "", count: 0 });
   return JSON.stringify({ ok: true });
 }
 

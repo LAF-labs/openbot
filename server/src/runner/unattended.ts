@@ -38,6 +38,7 @@ import {
   type ComputerGateway,
 } from "../computer/gateway";
 import { readFileInputOf } from "../computer/schema";
+import { snapshotForModel } from "../computer/snapshot-lines";
 import {
   PluginNeedsApprovalError,
   PluginRefusedError,
@@ -818,11 +819,23 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               ),
             };
           case "computer_read":
-            return { ok: true, ...withNotes(await gateway.read(botId)) };
+            return {
+              ok: true,
+              ...withNotes(
+                await gateway.read(botId, {
+                  whole: args.whole === true,
+                  ...(typeof args.from === "string" && args.from.trim()
+                    ? { from: args.from.trim() }
+                    : {}),
+                }),
+              ),
+            };
           case "computer_snapshot":
             return {
               ok: true,
-              ...withNotes(await gateway.snapshot(botId, { botId, actor })),
+              ...snapshotForModel(
+                withNotes(await gateway.snapshot(botId, { botId, actor })),
+              ),
             };
           case "computer_switch_tab": {
             if (typeof args.index !== "number") {

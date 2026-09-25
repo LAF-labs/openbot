@@ -42,6 +42,7 @@ import {
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
 import { readFileInputOf } from "./schema";
 import type { ScreenViewAudit } from "./screen-view";
+import { snapshotForModel } from "./snapshot-lines";
 import type { WriteUp } from "./write-up";
 
 /**
@@ -141,8 +142,18 @@ export function createComputerRoutes(
     requireBotAccess(),
     async (context) => {
       try {
+        // `?format=jpeg&width=…&quality=…`: the panel's thumbnail, a small JPEG rather than the PNG.
+        const width = Number(context.req.query("width"));
+        const quality = Number(context.req.query("quality"));
+        const thumbnail =
+          context.req.query("format") === "jpeg"
+            ? {
+                width: Number.isFinite(width) && width > 0 ? width : 480,
+                quality: Number.isFinite(quality) && quality > 0 ? quality : 60,
+              }
+            : undefined;
         return context.json(
-          await client.forBot(context.req.param("botId")).screenshot(),
+          await client.forBot(context.req.param("botId")).screenshot(thumbnail),
         );
       } catch (error) {
         return failed(context, error);
@@ -156,7 +167,14 @@ export function createComputerRoutes(
     requireBotAccess(),
     async (context) => {
       try {
-        return context.json(await gateway.read(context.req.param("botId")));
+        return context.json(
+          await gateway.read(context.req.param("botId"), {
+            whole: context.req.query("whole") === "1",
+            ...(context.req.query("from")
+              ? { from: context.req.query("from") }
+              : {}),
+          }),
+        );
       } catch (error) {
         return failed(context, error);
       }
@@ -218,18 +236,21 @@ export function createComputerRoutes(
     requireBotAccess(),
     async (context) => {
       try {
+        // Lines for the model, not objects (`snapshot-lines.ts`); the gateway kept the objects.
         return context.json(
-          await gateway.snapshot(botIdOf(context), {
-            botId: botIdOf(context),
-            // Who looked, for the row a look that could not see into a frame leaves. The same
-            // actor the navigate route above builds, for the same reason it builds it that way.
-            actor: {
-              id: context.var.actor.id,
-              ...(context.var.actor.email === DEV_ACTOR.email
-                ? {}
-                : { userId: context.var.actor.id }),
-            },
-          }),
+          snapshotForModel(
+            await gateway.snapshot(botIdOf(context), {
+              botId: botIdOf(context),
+              // Who looked, for the row a look that could not see into a frame leaves. The same
+              // actor the navigate route above builds, for the same reason it builds it that way.
+              actor: {
+                id: context.var.actor.id,
+                ...(context.var.actor.email === DEV_ACTOR.email
+                  ? {}
+                  : { userId: context.var.actor.id }),
+              },
+            }),
+          ),
         );
       } catch (error) {
         return failed(context, error);

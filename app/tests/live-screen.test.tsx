@@ -13,6 +13,7 @@ import {
   LIVE_SCREEN_RETRY,
   SCREEN_STALL_MS,
 } from "../src/components/computer/live-screen";
+import { encodeScreenFrame } from "../../shared/screen-frame";
 import { SCREEN_STALLED } from "../src/lib/computer/screen-problems";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
@@ -38,7 +39,8 @@ class FakeSocket {
   /** Everything the screen sent up the socket, parsed. */
   sent: Record<string, unknown>[] = [];
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
+  binaryType = "blob";
+  onmessage: ((event: { data: string | ArrayBuffer }) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
 
@@ -146,6 +148,25 @@ const FRAME = JSON.stringify({
 });
 
 describe("the live screen's socket", () => {
+  test("takes its pictures as bytes, and asks for them that way", async () => {
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    expect(sockets[0]?.binaryType).toBe("arraybuffer");
+    const bytes = encodeScreenFrame(
+      { type: "frame", width: 1280, height: 800, site: "www.naver.com" },
+      new Uint8Array([0xff, 0xd8, 0xff]),
+    );
+    const frame = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+    await screen.act(() => sockets[0]?.onmessage?.({ data: frame }));
+    // Counted as the stream working before its picture is decoded, as a text frame always was.
+    expect(screen.canvas().dataset.connected).toBe("true");
+    expect(screen.status()).toBeNull();
+    await screen.unmount();
+  });
+
   test("reconnects after a drop, with a line on screen until the picture is back", async () => {
     const screen = await mountedScreen(false);
     expect(sockets.length).toBe(1);

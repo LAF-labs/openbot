@@ -7,6 +7,13 @@ import { decodeFrame, paintFrame } from "./frame-bitmap";
 const THUMBNAIL_EVERY_MS = 2_000;
 
 /**
+ * A small JPEG, not the viewport's PNG: the thumbnail is drawn a few hundred pixels wide, and the PNG
+ * was 166–554 KB every 2 s (performance audit, 2026-09-25). 480 wide keeps it sharp at twice the
+ * pixel density of the widest place it is drawn.
+ */
+const THUMBNAIL_QUERY = "format=jpeg&width=480&quality=60";
+
+/**
  * THE BOT'S PAGE, SMALL, FOR EVERYTHING ON THE SCREEN THAT WANTS A GLANCE OF IT — FETCHED ONCE.
  *
  * MEASURED ON 2026-09-24 (UI/UX audit, item 13): the card of a task still being done was an empty
@@ -20,6 +27,8 @@ const THUMBNAIL_EVERY_MS = 2_000;
  */
 export type LiveFrame = {
   base64: string;
+  /** What the bytes are: a JPEG from a computer that makes thumbnails, a PNG from an older one. */
+  mime: string;
   /** The page it is of, without `www.`; null when it was not a web page. */
   site: string | null;
 };
@@ -43,12 +52,13 @@ function pollFor(botId: string): Poll {
 
 async function tick(botId: string, poll: Poll): Promise<void> {
   const response = await fetch(
-    `/api/computers/${encodeURIComponent(botId)}/screenshot`,
+    `/api/computers/${encodeURIComponent(botId)}/screenshot?${THUMBNAIL_QUERY}`,
     { credentials: "include" },
   ).catch(() => null);
   const shot = response?.ok
     ? ((await response.json().catch(() => null)) as {
         base64?: string;
+        mime?: string;
         url?: string;
       } | null)
     : null;
@@ -57,7 +67,11 @@ async function tick(botId: string, poll: Poll): Promise<void> {
     !isBlankAddress(shot.url) &&
     shot.base64 !== poll.frame?.base64
   ) {
-    poll.frame = { base64: shot.base64, site: hostOf(shot.url) };
+    poll.frame = {
+      base64: shot.base64,
+      mime: shot.mime ?? "image/png",
+      site: hostOf(shot.url),
+    };
     for (const watcher of poll.watchers) watcher();
   }
   // Nobody left watching: the loop ends here rather than asking once more for nobody.
@@ -112,11 +126,12 @@ export function FrameCanvas({ frame }: { frame: LiveFrame | null }) {
   const [hasPicture, setHasPicture] = useState(false);
   // The same page twice is the same string, and there is nothing to paint again.
   const base64 = frame?.base64;
+  const mime = frame?.mime ?? "image/png";
 
   useEffect(() => {
     if (!base64) return;
     let isGone = false;
-    void decodeFrame(base64, "image/png").then((bitmap) => {
+    void decodeFrame(base64, mime).then((bitmap) => {
       const canvas = canvasRef.current;
       if (bitmap && canvas && !isGone) {
         paintFrame(canvas, bitmap);
@@ -127,7 +142,7 @@ export function FrameCanvas({ frame }: { frame: LiveFrame | null }) {
     return () => {
       isGone = true;
     };
-  }, [base64]);
+  }, [base64, mime]);
 
   return (
     <canvas

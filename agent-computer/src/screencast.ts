@@ -13,6 +13,7 @@
  * Protocol.
  */
 import type { CDPSession, Page } from "playwright";
+import type { FrameHeader } from "../../shared/screen-frame";
 
 /** What the surface sends us. */
 export type InputMessage =
@@ -43,26 +44,25 @@ export type InputMessage =
     }
   | { type: "text"; text: string };
 
-/** What we send back. */
-export type FrameMessage = {
-  type: "frame";
-  /** Base64 JPEG. Chrome's own encoding; we do not re-encode. */
-  data: string;
-  width: number;
-  height: number;
-  /**
-   * Which site this is a picture of, or null for a browser sent nowhere (`about:blank`).
-   *
-   * THE HOST AND NOTHING ELSE OF THE ADDRESS. The surface needs two facts: the site to name above
-   * the picture, and whether there is a page at all — a closed tab comes back as a fresh blank one
-   * (`profiles.page`), and the live view closes rather than draw a white box. A path or a query can
-   * carry what a person typed into a form sent by GET, and this socket does not pass the filter
-   * every HTTP answer passes (`typed-values.ts`), so none of it is sent.
-   */
-  site: string | null;
+/**
+ * What a frame is before it goes on the wire (`shared/screen-frame.ts`): the header and Chrome's own
+ * JPEG bytes, which are never re-encoded.
+ */
+export type CastFrame = {
+  header: FrameHeader;
+  jpeg: Uint8Array;
 };
 
-/** An address's host; null for no page; the scheme alone for a browser's own page. */
+/**
+ * The site a frame is a picture of: an address's host; null for no page; the scheme alone for a
+ * browser's own page.
+ *
+ * THE HOST AND NOTHING ELSE OF THE ADDRESS. The surface needs two facts: the site to name above
+ * the picture, and whether there is a page at all — a closed tab comes back as a fresh blank one
+ * (`profiles.page`), and the live view closes rather than draw a white box. A path or a query can
+ * carry what a person typed into a form sent by GET, and this socket does not pass the filter
+ * every HTTP answer passes (`typed-values.ts`), so none of it is sent.
+ */
 export function siteOf(address: string): string | null {
   const trimmed = address.trim();
   if (trimmed === "" || trimmed === "about:blank") return null;
@@ -126,7 +126,12 @@ export type Screencast = {
  */
 export async function startScreencast(
   page: Page,
-  onFrame: (frame: FrameMessage) => void,
+  /**
+   * Handed each frame and the acknowledgement that asks Chrome for the next one. The caller acks when
+   * the frame has left — see `live-screen.ts` — which is the whole of the backpressure: Chrome sends
+   * nothing more until it is told the last one went.
+   */
+  onFrame: (frame: CastFrame, ack: () => void) => void,
   options: { maxWidth?: number; maxHeight?: number; quality?: number } = {},
 ): Promise<Screencast> {
   const client: CDPSession = await page.context().newCDPSession(page);
@@ -140,25 +145,46 @@ export async function startScreencast(
 
   client.on("Page.screencastFrame", (event: ScreencastFrame) => {
     const { data, sessionId, metadata } = event;
-    // Acknowledge every frame. Chrome will not send the next one until the current is acked, which is
-    // the backpressure that stops a slow client drowning in frames. Forgetting this is why a naive
-    // implementation delivers one frame and then appears to hang.
-    void client
-      .send("Page.screencastFrameAck", { sessionId })
-      .catch(() => undefined);
-    if (stopped) return;
-    onFrame({
-      type: "frame",
-      data,
-      width: metadata.deviceWidth,
-      height: metadata.deviceHeight,
-      site: siteOf(page.url()),
-    });
+    /*
+     * Every frame is acknowledged exactly once: Chrome will not send the next one until the current is
+     * acked, and forgetting is why a naive implementation delivers one frame and then appears to hang.
+     * It used to be acked here, before the frame was sent — so a slow viewer got no backpressure at
+     * all and Chrome ran at 25–30 fps whatever the socket could carry (performance audit, 2026-09-25).
+     */
+    let acked = false;
+    const ack = () => {
+      if (acked) return;
+      acked = true;
+      void client
+        .send("Page.screencastFrameAck", { sessionId })
+        .catch(() => undefined);
+    };
+    if (stopped) {
+      ack();
+      return;
+    }
+    onFrame(
+      {
+        header: {
+          type: "frame",
+          width: metadata.deviceWidth,
+          height: metadata.deviceHeight,
+          site: siteOf(page.url()),
+        },
+        jpeg: Buffer.from(data, "base64"),
+      },
+      ack,
+    );
   });
 
   await client.send("Page.startScreencast", {
     format: "jpeg",
-    quality: options.quality ?? 70,
+    /*
+     * 60, not 70, for a picture a person reads text off at the pane's size. Measured 2026-09-25 on
+     * Naver's home page while it scrolled: 131–137 KB a frame at 70 as base64 JSON, 86–95 KB at 60
+     * as bytes — most of that is the base64 going, the rest is this.
+     */
+    quality: options.quality ?? 60,
     maxWidth: options.maxWidth ?? 1280,
     maxHeight: options.maxHeight ?? 800,
     // One frame per change, not per interval. Chrome decides when something moved.

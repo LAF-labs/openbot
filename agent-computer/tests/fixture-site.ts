@@ -391,6 +391,24 @@ export const GET_FORM_BOX = { name: "간편 확인 값", x: 170, y: 115 } as con
 export const LANDED_TEXT = "접수되었습니다";
 
 /**
+ * A news article inside a portal's chrome, the shape of a Naver news page (`reader.ts`): a menu, the
+ * story, comments and a ranking rail. It says it is an article (`og:type`), and the story is well
+ * under four fifths of the page, so a reader view takes the story out.
+ */
+export const ARTICLE_STORY = "동네 가게들의 가을 매출이 지난해보다 늘었다";
+export const ARTICLE_MENU = "언론사별보기메뉴";
+export const ARTICLE_COMMENT = "댓글을작성하려면로그인";
+const ARTICLE_PARAGRAPH =
+  "지역 상권 조사에 따르면 올가을 골목 상권의 카드 결제액은 지난해 같은 기간보다 눈에 띄게 늘었고, 특히 음식점과 카페의 주말 매출이 크게 올랐다. 상인들은 날씨가 선선해지면서 나들이 손님이 늘어난 것을 가장 큰 이유로 꼽았다.";
+const ARTICLE_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta property="og:type" content="article"><title>가을 매출 기사</title></head><body>
+<nav><ul>${Array.from({ length: 40 }, (_, i) => `<li><a href="/n${i}">${ARTICLE_MENU} ${i}</a></li>`).join("")}</ul></nav>
+<article><h2>${ARTICLE_STORY}</h2>${Array.from({ length: 6 }, () => `<p>${ARTICLE_PARAGRAPH}</p>`).join("")}</article>
+<aside><section><h3>댓글</h3><p>${ARTICLE_COMMENT}</p></section>
+<ol>${Array.from({ length: 40 }, (_, i) => `<li><a href="/r${i}">많이 본 뉴스 제목 ${i} 번째 기사입니다</a></li>`).join("")}</ol></aside>
+<footer>© 포털</footer></body></html>`;
+
+/**
  * Serve it, and say where.
  *
  * Port 0, so two of these can run at once — the gate is run concurrently from more than one
@@ -465,6 +483,9 @@ export function serveFixture(port = 0) {
         return new Promise<Response>((resolve) => {
           late.add(resolve);
         });
+      }
+      if (path === "/article") {
+        return new Response(ARTICLE_HTML, { headers: html });
       }
       if (path === "/hanging-frame") {
         return new Response(HANGING_FRAME_HTML, { headers: html });

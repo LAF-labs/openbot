@@ -24,6 +24,7 @@
     "agent-computer": {
       "name": "agent-computer",
       "dependencies": {
+        "@mozilla/readability": "0.6.0",
         "playwright": "1.62.1",
         "yaml": "^2.9.0",
       },
@@ -466,6 +467,8 @@
     "@microsoft/agents-telemetry": ["@microsoft/agents-telemetry@1.7.2", "", { "dependencies": { "@microsoft/agents-activity": "1.7.2", "debug": "^4.4.3" }, "peerDependencies": { "@opentelemetry/api": "1", "@opentelemetry/api-logs": ">=0.214.0 <1" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs"] }, "sha512-iJBAm1MmCUaSoPE62GKp4OnlOSe+F+j8o/fwKuqiJEcedbgceTh6G5m8iqe/qDGwKSsBWuIu3Kt0comRrc140A=="],
 
     "@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.30.0", "", { "dependencies": { "@hono/node-server": "^1.19.9 || ^2.0.5", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA=="],
+
+    "@mozilla/readability": ["@mozilla/readability@0.6.0", "", {}, "sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

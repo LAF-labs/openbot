@@ -90,17 +90,21 @@ export async function keepLastFrame({
   const { state } = await readControl(botId).catch(() => ({ state: null }));
   if (state?.holder === "human" || state?.secretWanted) return false;
 
+  // Asked for at the size it is kept at: the computer scales and encodes it, and this tab decodes
+  // nothing. An older computer answers with the full PNG, which is shrunk here as it always was.
   const response = await fetch(
-    `/api/computers/${encodeURIComponent(botId)}/screenshot`,
+    `/api/computers/${encodeURIComponent(botId)}/screenshot?format=jpeg&width=${FRAME_WIDTH}&quality=${Math.round(FRAME_QUALITY * 100)}`,
     { credentials: "include" },
   ).catch(() => null);
   if (!response?.ok) return false;
   const shot = (await response.json().catch(() => null)) as {
     base64?: string;
+    mime?: string;
     url?: string;
   } | null;
   if (!shot?.base64 || isBlankAddress(shot.url)) return false;
-  const jpeg = await shrink(shot.base64);
+  const jpeg =
+    shot.mime === "image/jpeg" ? shot.base64 : await shrink(shot.base64);
   if (!jpeg) return false;
 
   for (let attempt = 0; attempt < KEEP_ATTEMPTS; attempt += 1) {

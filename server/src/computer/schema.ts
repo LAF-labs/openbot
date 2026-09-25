@@ -38,6 +38,8 @@ export type NavigateResult = {
   text: string;
   /** True when the page was longer than the extract, so the Bot can say so rather than guess. */
   truncated: boolean;
+  /** The text is the page's article, Reader View's cut of it (`agent-computer/src/reader.ts`). */
+  reader?: true;
   /**
    * The iframes whose text was merged in, and the ones that would not answer.
    *
@@ -59,8 +61,10 @@ export type NavigateResult = {
 };
 
 export type ScreenshotResult = {
-  /** PNG, base64. The transcript renders it; nothing else interprets it. */
+  /** The picture, base64. The transcript renders it; nothing else interprets it. */
   base64: string;
+  /** `image/jpeg` for a thumbnail asked for as one; a PNG otherwise, and from an older computer. */
+  mime?: string;
   width: number;
   height: number;
   capturedAt: string;
@@ -75,7 +79,13 @@ export type ScreenshotResult = {
 };
 
 /** The current page as text, without opening anything. Same shape as a navigation, minus the trip. */
-export type ReadResult = Omit<NavigateResult, "elapsedMs">;
+export type ReadResult = Omit<NavigateResult, "elapsedMs"> & {
+  /** `from` was asked for and is not on the page; the text starts at the top. */
+  fromMissing?: true;
+};
+
+/** How to read: the whole page rather than its article, and from which words on. */
+export type ReadOptions = { whole?: boolean; from?: string };
 
 /**
  * One thing on the page a Bot can act on.
@@ -227,6 +237,17 @@ export type ActionResult = {
   /** Where the page ended up, which is how a Bot notices that its click navigated. */
   url: string;
   elapsedMs: number;
+  /**
+   * The page the action went to, read as `/navigate` reads one — present only when it went somewhere
+   * (another address, or a tab it opened). Saves the `computer_read` that always followed.
+   */
+  page?: {
+    url: string;
+    title: string;
+    text: string;
+    truncated?: true;
+    reader?: true;
+  };
   /**
    * What the browser noticed while this ran.
    *

@@ -16,7 +16,12 @@ import type { Computer } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { log } from "./log";
 import { followTyping, inTurn, settleTyping } from "./person-typing";
-import { type InputMessage, startScreencast } from "./screencast";
+import { encodeScreenFrame } from "../../shared/screen-frame";
+import {
+  type CastFrame,
+  type InputMessage,
+  startScreencast,
+} from "./screencast";
 import type { BotSession } from "./sessions";
 
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
@@ -108,6 +113,69 @@ async function applyInput(
  * Now the newest open socket is the viewer however the starts interleave, a socket only ever stops
  * its own cast, and when the viewer closes, the socket opened before it takes the picture back.
  */
+/**
+ * The shortest time between two frames sent: at most ten a second. A person watching a Bot read a
+ * page, or clicking through a sign-in, is not helped by thirty; the bytes are what the VM's one core
+ * and the person's connection pay for (the audit's target is ~1 MB/s while a page animates).
+ */
+const FRAME_INTERVAL_MS = 100;
+
+/**
+ * The newest frame not yet sent, and the acknowledgements of every frame it stands for.
+ *
+ * WHY NOT JUST DELAY THE ACK. Chrome keeps two frames in flight, not one: acknowledging late alone
+ * still let 16 frames a second through (measured on Naver's home page while it scrolled). So a frame
+ * that comes too soon is held; a newer one replaces it — the picture a person needs is the latest —
+ * and Chrome hears nothing for either until the held one goes, which is what slows its encoder down.
+ * Held rather than dropped, so the last change on a page that then goes still is always shown.
+ */
+type Held = {
+  bytes: Uint8Array;
+  acks: (() => void)[];
+  timer?: ReturnType<typeof setTimeout>;
+};
+const held = new WeakMap<ServerWebSocket<StreamData>, Held>();
+const lastSent = new WeakMap<ServerWebSocket<StreamData>, number>();
+/** Acknowledgements waiting for the socket to take what it queued. */
+const draining = new WeakMap<ServerWebSocket<StreamData>, (() => void)[]>();
+
+/** Keep the newest frame and send it as soon as the interval, and the socket, allow. */
+function offer(
+  ws: ServerWebSocket<StreamData>,
+  bytes: Uint8Array,
+  ack: () => void,
+  failed: () => void,
+): void {
+  const frame = held.get(ws) ?? { bytes, acks: [] };
+  frame.bytes = bytes;
+  frame.acks.push(ack);
+  held.set(ws, frame);
+  if (frame.timer || draining.has(ws)) return;
+  const wait = FRAME_INTERVAL_MS - (Date.now() - (lastSent.get(ws) ?? 0));
+  frame.timer = setTimeout(() => flush(ws, failed), Math.max(0, wait));
+}
+
+function flush(ws: ServerWebSocket<StreamData>, failed: () => void): void {
+  const frame = held.get(ws);
+  if (!frame) return;
+  held.delete(ws);
+  let status: number;
+  try {
+    status = ws.send(frame.bytes);
+  } catch {
+    for (const ack of frame.acks) ack();
+    failed();
+    return;
+  }
+  lastSent.set(ws, Date.now());
+  // -1: queued behind what the socket has not sent yet. Chrome waits for the drain.
+  if (status === -1) {
+    draining.set(ws, frame.acks);
+    return;
+  }
+  for (const ack of frame.acks) ack();
+}
+
 const watching = new WeakMap<BotSession, ServerWebSocket<StreamData>[]>();
 /** How each socket takes the cast back when the one opened after it closes. */
 const resumes = new WeakMap<ServerWebSocket<StreamData>, () => void>();
@@ -135,14 +203,19 @@ export function liveScreen({
       try {
         await stopViewer(session);
 
-        const send = (frame: unknown) => {
-          // A closed socket starts a fresh cast on the next connection.
-          try {
-            ws.send(JSON.stringify(frame));
-          } catch {
+        /*
+         * BYTES, AT MOST TEN A SECOND, AND NONE INTO A SOCKET THAT IS BEHIND. Each frame is one
+         * binary message (`shared/screen-frame.ts`), sent no sooner than {@link FRAME_INTERVAL_MS}
+         * after the last (`offer`), and Chrome is told to go on only once it has gone — at the drain,
+         * if the socket queued it. Before, frames went as base64 JSON and were acknowledged before
+         * they were sent: 25–30 fps, ~123 KB each, 3.1–3.7 MB/s on a Naver page whatever the viewer
+         * could take (performance audit, 2026-09-25).
+         */
+        const send = (frame: CastFrame, ack: () => void) =>
+          offer(ws, encodeScreenFrame(frame.header, frame.jpeg), ack, () => {
+            // A closed socket starts a fresh cast on the next connection.
             if (session.viewer?.socket === ws) void stopViewer(session);
-          }
-        };
+          });
 
         /*
          * The cast follows the Bot's current page. Re-checking also handles a page being closed
@@ -220,8 +293,31 @@ export function liveScreen({
       await inTurn(session, () => applyInput(ws, session, message));
     },
 
+    drain(ws) {
+      const acks = draining.get(ws);
+      if (!acks) return;
+      draining.delete(ws);
+      for (const ack of acks) ack();
+      // What came while the socket was behind goes now, at the pace it would have.
+      const frame = held.get(ws);
+      if (frame && !frame.timer) {
+        const wait = FRAME_INTERVAL_MS - (Date.now() - (lastSent.get(ws) ?? 0));
+        frame.timer = setTimeout(
+          () => flush(ws, () => undefined),
+          Math.max(0, wait),
+        );
+      }
+    },
+
     async close(ws) {
       const session = sessions.sessionFor(ws.data.botId);
+      // Frames waiting on a socket that will never take them: let Chrome go on for whoever is next.
+      for (const ack of draining.get(ws) ?? []) ack();
+      draining.delete(ws);
+      const frame = held.get(ws);
+      clearTimeout(frame?.timer);
+      for (const ack of frame?.acks ?? []) ack();
+      held.delete(ws);
       clearInterval(follows.get(ws));
       follows.delete(ws);
       resumes.delete(ws);

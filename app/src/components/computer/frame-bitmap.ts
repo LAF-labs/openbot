@@ -38,6 +38,21 @@ export async function decodeFrame(
 }
 
 /** Paint a decoded frame, sizing the canvas to it so nothing is scaled twice. */
+/**
+ * A frame that arrived as bytes (`shared/screen-frame.ts`): no base64 to undo, which was the cost the
+ * measurements above were mostly about.
+ */
+export async function decodeFrameBytes(
+  bytes: Uint8Array,
+  type: string,
+): Promise<ImageBitmap | null> {
+  try {
+    return await createImageBitmap(new Blob([bytes as BlobPart], { type }));
+  } catch {
+    return null;
+  }
+}
+
 export function paintFrame(
   canvas: HTMLCanvasElement,
   bitmap: ImageBitmap,

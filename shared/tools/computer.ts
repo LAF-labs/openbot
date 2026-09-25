@@ -55,7 +55,7 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
   {
     name: "computer_navigate",
     description:
-      "네 컴퓨터에서 웹 페이지를 연다. 보라·열어라·확인해라·들어가 봐라는 말을 들으면 이것을 부른다. 페이지 제목과 읽을 수 있는 본문이 돌아오니, 사람에게 가서 직접 보라고 하지 말고 돌아온 내용으로 답한다.",
+      "네 컴퓨터에서 웹 페이지를 연다. 보라·열어라·확인해라·들어가 봐라는 말을 들으면 이것을 부른다. 페이지 제목과 읽을 수 있는 본문이 돌아오니, 사람에게 가서 직접 보라고 하지 말고 돌아온 내용으로 답한다. 기사·블로그 글은 본문만 추려 온다(reader). 검색은 검색창에 치지 말고 검색 결과 주소를 바로 연다.",
     parameters: object(
       {
         url: { type: "string", description: "https:// 를 포함한 전체 주소" },
@@ -66,19 +66,28 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
   {
     name: "computer_read",
     description:
-      "지금 열려 있는 페이지를 다시 읽는다. 아무것도 열지 않는다. 무언가를 누르거나 양식을 제출해서 페이지가 바뀐 뒤, 지금 무엇이 쓰여 있는지 확인할 때 쓴다.",
-    parameters: object({}),
+      "지금 열려 있는 페이지를 다시 읽는다. 아무것도 열지 않는다. 페이지가 바뀌었는데 결과에 page가 없었을 때, 또는 truncated로 잘린 뒷부분을 읽을 때 쓴다. 스크롤해도 읽히는 글은 같다.",
+    parameters: object({
+      from: {
+        type: "string",
+        description: "이 글자가 처음 나오는 곳부터 읽는다. 예: 네이버 가격비교",
+      },
+      whole: {
+        type: "boolean",
+        description: "본문만 추려 온(reader) 페이지를 빠짐없이 전부 읽는다",
+      },
+    }),
   },
   {
     name: "computer_snapshot",
     description:
-      "지금 페이지에서 손댈 수 있는 것들을 나열한다: 입력칸, 버튼, 링크, 체크박스. 각각 ref(e1 같은 것)와 라벨과 현재 값이 함께 온다. 클릭하거나 입력하기 **전에** 이것을 먼저 부르고, 돌아온 ref를 쓴다. 같이 온 snapshotId를 항상 그대로 돌려보낸다.",
+      "지금 페이지에서 손댈 수 있는 것들을 나열한다: 입력칸, 버튼, 링크, 체크박스. 한 줄에 하나씩 'ref 역할 이름 = 현재 값' 모양이다. 클릭하거나 입력하기 **전에** 이것을 먼저 부르고, 돌아온 ref를 쓴다. 같이 온 snapshotId를 항상 그대로 돌려보낸다.",
     parameters: object({}),
   },
   {
     name: "computer_click",
     description:
-      "페이지의 무언가를 누른다: 버튼, 링크, 체크박스, 라디오. 가장 최근 스냅샷의 ref와 그 snapshotId를 준다.",
+      "페이지의 무언가를 누른다: 버튼, 링크, 체크박스, 라디오. 가장 최근 스냅샷의 ref와 그 snapshotId를 준다. 눌러서 다른 페이지로 가면 그 페이지의 제목과 본문이 page로 함께 오니 다시 읽지 않는다.",
     parameters: object(REF, ["ref", "snapshotId"]),
   },
   {

@@ -58,7 +58,9 @@ export type ComputerOutcome = {
   url?: string;
   title?: string;
   entries?: unknown[];
-  elements?: unknown[];
+  /** Lines since `snapshot-lines.ts`; an array from an older server. */
+  elements?: unknown[] | string;
+  count?: number;
   element?: { role?: string; name?: string };
   tabs?: { title?: string; active?: boolean }[];
 };
@@ -182,9 +184,13 @@ export function stepLine(step: BrowsingStep): StepLine {
     case "computer_read":
       return { ...base, label: t("Read the page"), detail: why };
     case "computer_snapshot": {
-      const count = Array.isArray(outcome.elements)
-        ? outcome.elements.length
-        : 0;
+      // A number since the snapshot became lines (`snapshot-lines.ts`); an array from an older server.
+      const count =
+        typeof outcome.count === "number"
+          ? outcome.count
+          : Array.isArray(outcome.elements)
+            ? outcome.elements.length
+            : 0;
       return {
         ...base,
         label: t("Read the page"),

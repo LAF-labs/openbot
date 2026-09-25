@@ -57,12 +57,16 @@ const computer = Bun.serve<{ bot: string | null; token: string | null }>({
     open(ws) {
       computerSaw.push({ opened: ws.data });
       ws.send("frame-1");
+      // A picture, as the computer sends one now: bytes (`shared/screen-frame.ts`).
+      ws.send(PICTURE);
     },
     message(_ws, message) {
       computerSaw.push({ input: String(message) });
     },
   },
 });
+
+const PICTURE = new Uint8Array([0, 0, 0, 2, 123, 125, 0xff, 0xd8, 0xff]);
 
 const computerConfig = {
   baseUrl: `http://127.0.0.1:${computer.port}/`,
@@ -181,13 +185,18 @@ const openScreen = async (botId: string) => {
     { headers: { origin: ORIGIN, "x-test-actor": OWNER } } as never,
   );
   const frames: string[] = [];
-  socket.onmessage = (event) => frames.push(String(event.data));
+  const pictures: Uint8Array[] = [];
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (event) => {
+    if (typeof event.data === "string") frames.push(event.data);
+    else pictures.push(new Uint8Array(event.data as ArrayBuffer));
+  };
   await new Promise<void>((resolve, reject) => {
     socket.onopen = () => resolve();
     socket.onerror = () => reject(new Error("the screen did not open"));
   });
   await until(() => frames.length > 0);
-  return { socket, frames };
+  return { socket, frames, pictures };
 };
 
 describe("which requests are the live screen's", () => {
@@ -265,8 +274,12 @@ describe("the refusals, before anything is opened inward", () => {
 
 describe("an opened screen", () => {
   test("relays frames outward and input inward, to that Bot's computer with the token", async () => {
-    const { socket, frames } = await openScreen(BOT);
+    const { socket, frames, pictures } = await openScreen(BOT);
     expect(frames).toEqual(["frame-1"]);
+    // Bytes arrive as the same bytes. The relay turned every message into a string, which is what a
+    // binary frame cannot survive ("[object ArrayBuffer]").
+    await until(() => pictures.length > 0);
+    expect([...(pictures[0] ?? [])]).toEqual([...PICTURE]);
     // The Bot and the secret travel in the query, because an upgrade carries no custom header.
     expect(computerSaw[0]).toEqual({ opened: { bot: BOT, token: TOKEN } });
     // One row per socket, for the person who opened it.

@@ -171,10 +171,11 @@ async function openScreen(bot: string) {
   let frames = 0;
   /** Everything that came down the socket that was not a picture. */
   const said: string[] = [];
+  socket.binaryType = "arraybuffer";
   socket.addEventListener("message", (event) => {
-    const text = String(event.data);
-    if (text.startsWith('{"type":"frame"')) frames += 1;
-    else said.push(text);
+    // A picture is bytes (`shared/screen-frame.ts`); everything the computer says is text.
+    if (typeof event.data !== "string") frames += 1;
+    else said.push(event.data);
   });
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve());

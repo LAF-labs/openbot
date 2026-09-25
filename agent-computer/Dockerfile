@@ -12,6 +12,29 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f281
 # image also drops the apt layer that only existed because bun's installer needs unzip.
 COPY --from=oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 /usr/local/bin/bun /usr/local/bin/bun
 
+# A Korean typeface, which the base image does not carry. Its only CJK face is WenQuanYi Zen Hei, a
+# Chinese font with Hangul in it (`fc-list :lang=ko`, measured 2026-09-25), so every Korean page the
+# person watches on the live screen was drawn in it. Nanum Gothic is the face Korean sites name in
+# their CSS (`"나눔고딕", NanumGothic`), and at 10 MB it is a sixth of Noto CJK. Pinned to the one
+# version noble ships, like everything else in this file.
+#
+# Installed is not chosen: fontconfig still answered `fc-match :lang=ko` with WenQuanYi afterwards,
+# because both claim Korean. The rule puts Nanum Gothic first for Korean text, which is what Chromium
+# asks fontconfig when a Korean page's own font is not here (measured: NanumGothic after, WenQuanYi
+# before; Latin text keeps its own face).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends fonts-nanum=20200506-1 \
+  && rm -rf /var/lib/apt/lists/* \
+  && printf '%s\n' \
+    '<?xml version="1.0"?>' \
+    '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' \
+    '<fontconfig>' \
+    '  <match target="pattern">' \
+    '    <test name="lang" compare="contains"><string>ko</string></test>' \
+    '    <edit name="family" mode="prepend"><string>NanumGothic</string></edit>' \
+    '  </match>' \
+    '</fontconfig>' > /etc/fonts/local.conf
+
 WORKDIR /app
 
 # The repository's lockfile, filtered to this workspace. Installing without one resolved Playwright

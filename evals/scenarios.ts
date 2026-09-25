@@ -25,6 +25,7 @@
 
 import type { PromptPerson } from "../shared/prompt/person.ko";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
+import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
 import {
@@ -690,7 +691,7 @@ export const SCENARIOS: Scenario[] = [
         {
           name: "computer_snapshot",
           args: {},
-          result: {
+          result: snapshotForModel({
             snapshotId: 3,
             url: "https://www.yes24.com/Product/Goods/116739422",
             title: "모모 - 예스24",
@@ -703,7 +704,7 @@ export const SCENARIOS: Scenario[] = [
             truncated: false,
             tabs: [],
             opaqueFrames: 0,
-          },
+          }),
         },
         {
           name: "computer_click",
@@ -785,7 +786,7 @@ export const SCENARIOS: Scenario[] = [
         {
           name: "computer_snapshot",
           args: {},
-          result: {
+          result: snapshotForModel({
             snapshotId: 1,
             url: "https://toss.im/",
             title: "토스",
@@ -797,7 +798,7 @@ export const SCENARIOS: Scenario[] = [
             truncated: false,
             tabs: [],
             opaqueFrames: 0,
-          },
+          }),
         },
         {
           /*

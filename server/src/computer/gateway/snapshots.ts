@@ -9,7 +9,12 @@
 import type { AuditStore } from "../../audit";
 import { log } from "../../log";
 import type { ComputerClient } from "../client";
-import type { ReadResult, SnapshotElement, SnapshotResult } from "../schema";
+import type {
+  ReadOptions,
+  ReadResult,
+  SnapshotElement,
+  SnapshotResult,
+} from "../schema";
 import type { ActionActor } from "./caller";
 import { writeSnapshotRow } from "./trail";
 
@@ -151,8 +156,11 @@ export function createPageReads(deps: {
     return { ...result, elements };
   }
 
-  async function read(botId: string): Promise<ReadResult> {
-    const result = await as(botId).read();
+  async function read(
+    botId: string,
+    options: ReadOptions = {},
+  ): Promise<ReadResult> {
+    const result = await as(botId).read(options);
     snapshots.pageMoved(botId, result.url);
     return result;
   }

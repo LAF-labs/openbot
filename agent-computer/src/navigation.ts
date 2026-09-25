@@ -351,6 +351,7 @@ export const navigate: BotRoute = async (
             title: extract.arriving ? "" : await titleOf(target),
             text: extract.text,
             truncated: extract.truncated,
+            ...(extract.reader ? { reader: true } : {}),
             ...(extract.frames ? { frames: extract.frames } : {}),
             elapsedMs: Date.now() - startedAt,
           }),

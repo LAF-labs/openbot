@@ -164,6 +164,8 @@ export function fromDocument<T>(
 export async function pictureOf(
   page: Page,
   ms: number,
+  /** Chrome's own options for the picture; a full-size PNG when absent. */
+  options: Record<string, unknown> = { format: "png" },
 ): Promise<Buffer | undefined> {
   let session = followed.get(page)?.session;
   let own = false;
@@ -174,7 +176,7 @@ export async function pictureOf(
     }
     const shot = await within(
       ms,
-      session.send("Page.captureScreenshot", { format: "png" }),
+      session.send("Page.captureScreenshot", options),
     );
     return shot ? Buffer.from(shot.data, "base64") : undefined;
   } catch {

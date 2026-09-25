@@ -9,7 +9,8 @@ import {
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { pokeControl } from "./control-poll";
-import { decodeFrame, paintFrame } from "./frame-bitmap";
+import { decodeScreenFrame } from "@shared/screen-frame";
+import { decodeFrame, decodeFrameBytes, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
 
 /** The reconnect schedule: the roster socket's, so the two come back at the same pace. */
@@ -178,6 +179,8 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     const connect = () => {
       if (closed) return;
       socket = new WebSocket(url);
+      // Frames come as bytes (`shared/screen-frame.ts`); errors and the probe still come as text.
+      socket.binaryType = "arraybuffer";
       socketRef.current = socket;
       watchForPicture();
 
@@ -203,17 +206,25 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
           code?: string;
           /** The page's host only; null when there is no page (`agent-computer/src/screencast.ts`). */
           site?: string | null;
+          /** The picture itself, for a frame that came as bytes. */
+          jpeg?: Uint8Array;
         };
-        try {
-          message = JSON.parse(String(event.data));
-        } catch {
-          return;
+        if (event.data instanceof ArrayBuffer) {
+          const frame = decodeScreenFrame(event.data);
+          if (!frame) return;
+          message = { ...frame.header, jpeg: frame.jpeg };
+        } else {
+          try {
+            message = JSON.parse(String(event.data));
+          } catch {
+            return;
+          }
         }
         if (message.type === "error") {
           onProblem?.(message.code ?? SCREEN_UNAVAILABLE);
           return;
         }
-        if (message.type !== "frame" || !message.data) return;
+        if (message.type !== "frame" || !(message.jpeg || message.data)) return;
         // Counted before it is decoded: a frame is proof the stream works, whatever it shows.
         sawFrame();
 
@@ -237,7 +248,9 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
 
         // Drawn as a bitmap because input coordinates are measured against this canvas. The
         // decode itself moved into `frame-bitmap.ts`, which is also where the timings live.
-        const bitmap = await decodeFrame(message.data, "image/jpeg");
+        const bitmap = message.jpeg
+          ? await decodeFrameBytes(message.jpeg, "image/jpeg")
+          : await decodeFrame(message.data ?? "", "image/jpeg");
         // Ignore a single corrupt frame; the next frame replaces it.
         if (!bitmap) return;
         if (closed) {

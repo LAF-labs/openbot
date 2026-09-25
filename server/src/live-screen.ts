@@ -112,6 +112,12 @@ type ProbeData = { screenProbe: true };
 export const SCREEN_PROBE_FRAME = JSON.stringify({ type: "probe" });
 
 /**
+ * How far behind a viewer may fall before its pictures are dropped: about half a second of the live
+ * screen at the rate the computer now sends (~1 MB/s, `agent-computer/src/live-screen.ts`).
+ */
+const RELAY_BACKLOG_BYTES = 512 * 1024;
+
+/**
  * Bun takes exactly one WebSocket handler for the server, and two features need one: this proxies
  * the computer stream, and the channels push their activity through Hono's adapter. So the handler
  * dispatches on what the upgrade attached — a proxy socket carries `upstream`, a probe carries
@@ -331,12 +337,22 @@ export function createLiveScreen(input: {
         held.add(ws as ServerWebSocket<StreamData>);
         openByViewer.set(viewer, held);
         const inward = new WebSocket(ws.data.upstream);
+        // Frames are bytes (`shared/screen-frame.ts`) and go on as bytes. `String(event.data)` was
+        // right while they were JSON text, and would turn a binary frame into "[object ArrayBuffer]".
+        inward.binaryType = "arraybuffer";
         ws.data.inward = inward;
-        // Frames outward, input inward. Buffered by neither side: a frame the browser is too slow for
-        // should be dropped, not queued, because a stale frame is worse than a missing one.
+        /*
+         * Frames outward, input inward. A frame the browser is too slow for is dropped, not queued,
+         * because a stale frame is worse than a missing one — which this said and did not do: Bun
+         * queues whatever `send` cannot write at once, so a slow viewer's backlog grew without bound.
+         * A picture is dropped while the viewer is more than {@link RELAY_BACKLOG_BYTES} behind; text
+         * (an error, the probe) always goes.
+         */
         inward.onmessage = (event) => {
+          const isFrame = typeof event.data !== "string";
+          if (isFrame && ws.getBufferedAmount() > RELAY_BACKLOG_BYTES) return;
           try {
-            ws.send(String(event.data));
+            ws.send(event.data as string | ArrayBuffer);
           } catch {
             inward.close();
           }

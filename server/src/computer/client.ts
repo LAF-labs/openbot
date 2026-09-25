@@ -19,6 +19,7 @@ import type {
   NavigateResult,
   ReadFileInput,
   ReadFileResult,
+  ReadOptions,
   ReadResult,
   ScreenshotResult,
   ScrollInput,
@@ -551,13 +552,27 @@ export function createComputerClient(options: ComputerClientOptions) {
         return result;
       },
 
-      async screenshot(): Promise<ScreenshotResult> {
-        return (await call("/screenshot")) as ScreenshotResult;
+      /** The tab as a picture; with `thumbnail`, a small JPEG of it (`agent-computer`'s page-routes). */
+      async screenshot(thumbnail?: {
+        width: number;
+        quality: number;
+      }): Promise<ScreenshotResult> {
+        const asked = thumbnail
+          ? `/screenshot?format=jpeg&width=${thumbnail.width}&quality=${thumbnail.quality}`
+          : "/screenshot";
+        return (await call(asked)) as ScreenshotResult;
       },
 
-      /** The current page as text. No navigation, so no target check applies. */
-      async read(): Promise<ReadResult> {
-        return (await call("/read")) as ReadResult;
+      /**
+       * The current page as text. No navigation, so no target check applies. `whole`: not just its
+       * article; `from`: starting where those words first appear.
+       */
+      async read(options: ReadOptions = {}): Promise<ReadResult> {
+        const query = new URLSearchParams();
+        if (options.whole) query.set("whole", "1");
+        if (options.from) query.set("from", options.from);
+        const asked = query.size ? `/read?${query}` : "/read";
+        return (await call(asked)) as ReadResult;
       },
 
       async snapshot(): Promise<SnapshotResult> {
