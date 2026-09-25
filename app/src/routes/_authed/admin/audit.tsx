@@ -51,7 +51,7 @@ const FILTERS = [
      */
     label: "Asked a person",
     search:
-      "?eventType=approval.requested,approval.granted,approval.denied,approval.standing_granted,approval.standing_revoked",
+      "?eventType=approval.requested,approval.granted,approval.denied,approval.standing_granted,approval.standing_revoked,approval.decline_lifted",
   },
   {
     // Its own filter rather than a place in "Blocked". A Bot repeating itself has not been stopped by
@@ -610,6 +610,8 @@ export const DECISIONS: Record<string, string> = {
   // these as one more answered question.
   "approval.standing_granted": "A person stopped being asked about this",
   "approval.standing_revoked": "A person asked to be asked again",
+  // Not "allowed it": the No is taken back and the next attempt is asked about again.
+  "approval.decline_lifted": "A person took back their no",
 
   "component.granted": "Granted to this Bot",
   "component.revoked": "Taken away from this Bot",
@@ -949,6 +951,7 @@ export const EVENTS: Record<string, string> = {
   "approval.denied": "A question",
   "approval.standing_granted": "A standing allowance",
   "approval.standing_revoked": "A standing allowance",
+  "approval.decline_lifted": "A question",
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
   "computer.released": "The computer",

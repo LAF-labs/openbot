@@ -1060,6 +1060,7 @@ export const ko: Record<string, string> = {
   "Ask me again": "다시 묻게 하기",
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
+  "A person took back their no": "사장님이 거부를 거둠",
   "How hard it thinks": "얼마나 깊이 생각할지",
   "Thinking longer costs time. It is worth it on the hard ones.":
     "오래 생각하면 그만큼 시간이 걸립니다. 어려운 일에는 그럴 값어치가 있습니다.",
@@ -2378,6 +2379,11 @@ export const ko: Record<string, string> = {
   Details: "자세히",
   "The rule that asked:": "물어본 규칙:",
   "Denied · {action}": "거부함 · {action}",
+  "Will ask again next time · {action}":
+    "다음에 하려고 하면 다시 물어봐요 · {action}",
+  "Ask me again next time": "다시 물어보기",
+  "Takes back this no. Nothing is allowed: the Bot is asked again the next time it tries.":
+    "거부를 거둬요. 허용하는 건 아니에요. 봇이 다음에 하려고 하면 다시 물어봐요.",
   "No answer came, so it did not go ahead · {action}":
     "답이 없어 하지 않음 · {action}",
   "Always allowed · {action}": "항상 허용함 · {action}",

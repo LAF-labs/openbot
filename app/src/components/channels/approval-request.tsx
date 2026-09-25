@@ -32,6 +32,7 @@ import {
   decisionPhrase,
   describeSubject,
   questionOn,
+  reconsiderDecline,
   watchQuestions,
   whyAskedPhrase,
 } from "@/lib/approvals";
@@ -116,7 +117,9 @@ export function ApprovalRequest({
       // with it.
       decideQuestion(toolCallId ?? "", {
         outcome: granted ? "allowed" : "declined",
-        ...(granted ? { tier } : {}),
+        ...(granted
+          ? { tier }
+          : { approvalId: asking.approvalId, botId: asking.botId }),
         ...(asking.subject ? { subject: asking.subject } : {}),
       });
       setProblem(null);
@@ -124,7 +127,11 @@ export function ApprovalRequest({
     [asking, toolCallId],
   );
 
-  if (!asking) return decided ? <DecidedLine decision={decided} /> : null;
+  if (!asking) {
+    return decided ? (
+      <DecidedLine decision={decided} toolCallId={toolCallId ?? ""} />
+    ) : null;
+  }
 
   /*
    * The words are chosen here from the facts the server sent, never sent as words. A subject this
@@ -356,15 +363,63 @@ const DECIDED_ICONS: Record<ApprovalDecision["outcome"], typeof IconClockX> = {
  * said. It wraps rather than truncating: at 375 wide "toss.im에서 ‘비즈니스’ 누르기" is the part that
  * would be cut, and it is the part that matters.
  */
-function DecidedLine({ decision }: { decision: ApprovalDecision }) {
-  const Icon = DECIDED_ICONS[decision.outcome];
+function DecidedLine({
+  decision,
+  toolCallId,
+}: {
+  decision: ApprovalDecision;
+  toolCallId: string;
+}) {
+  const [isPressing, setIsPressing] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const Icon = decision.reconsidered
+    ? IconShieldQuestion
+    : DECIDED_ICONS[decision.outcome];
   const said = decisionPhrase(decision);
+  /*
+   * A No can be taken back while it stands — which is all the button does: the next attempt is asked
+   * about again (`reconsiderDecline`). Drawn only where the line knows which question it answered.
+   */
+  const mayReconsider =
+    decision.outcome === "declined" &&
+    !decision.reconsidered &&
+    decision.approvalId !== undefined &&
+    decision.botId !== undefined;
+
+  const handleReconsider = async () => {
+    setIsPressing(true);
+    const result = await reconsiderDecline(toolCallId, decision);
+    setIsPressing(false);
+    setProblem(result.ok ? null : answerProblem(result));
+  };
+
   return (
-    <p className="flex items-start gap-1.5 py-0.5 text-muted-foreground text-xs">
-      <Icon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
-      <span className="min-w-0 wrap-break-word">
-        {t(said.key, said.params)}
-      </span>
-    </p>
+    <div className="py-0.5 text-muted-foreground text-xs">
+      <p className="flex items-start gap-1.5">
+        <Icon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+        <span className="min-w-0 wrap-break-word">
+          {t(said.key, said.params)}
+        </span>
+        {mayReconsider ? (
+          <Button
+            className="-my-1 ms-auto h-6 shrink-0 px-2 text-xs"
+            disabled={isPressing}
+            onClick={() => void handleReconsider()}
+            size="sm"
+            title={t(
+              "Takes back this no. Nothing is allowed: the Bot is asked again the next time it tries.",
+            )}
+            variant="ghost"
+          >
+            {t("Ask me again next time")}
+          </Button>
+        ) : null}
+      </p>
+      {problem ? (
+        <p className="ps-5 text-destructive" role="alert">
+          {problem}
+        </p>
+      ) : null}
+    </div>
   );
 }

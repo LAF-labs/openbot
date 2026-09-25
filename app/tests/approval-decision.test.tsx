@@ -216,6 +216,7 @@ describe("every sentence the card can say has Korean", () => {
       keys.add(approvals.actionNounPhrase(subject).key);
       for (const decision of [
         { outcome: "declined" as const },
+        { outcome: "declined" as const, reconsidered: true },
         { outcome: "unanswered" as const },
         { outcome: "allowed" as const },
         { outcome: "allowed" as const, tier: "once" as const },
@@ -343,11 +344,65 @@ describe("the card", () => {
     await view.settle(50);
 
     expect(view.button("Deny")).toBeUndefined();
-    expect(view.text()).toBe("Denied · pressing “비즈니스” on toss.im");
+    expect(view.text()).toBe(
+      "Denied · pressing “비즈니스” on toss.imAsk me again next time",
+    );
     expect(approvals.decisionOn("call-deny")).toEqual({
       outcome: "declined",
+      approvalId: "approval-call-deny",
+      botId: BOT,
       subject: PRESSING_ON_TOSS,
     });
+  });
+
+  /*
+   * 다시 물어보기 (0.5.4 QA): the No stood for half an hour with nothing to press. Taking it back
+   * reaches the server's own route for that question, and the line then says what it did — nothing is
+   * allowed; the next attempt is asked about again.
+   */
+  test("a denied line takes its No back, and says the next attempt asks", async () => {
+    const posted: string[] = [];
+    globalThis.fetch = stubFetch(async (input, init) => {
+      const url = new URL(String(input), "http://localhost:3110/");
+      if (init?.method === "POST") posted.push(url.pathname);
+      if (url.pathname.endsWith("/reconsider")) return json({ lifted: true });
+      return json({ error: "laf:not_stubbed", code: "laf:not_stubbed" }, 404);
+    });
+    approvals.decideQuestion("call-reconsider", {
+      outcome: "declined",
+      approvalId: "approval-reconsider",
+      botId: BOT,
+      subject: PRESSING_ON_TOSS,
+    });
+    const { createElement } = await import("react");
+    const { QueryClient, QueryClientProvider } = await import(
+      "@tanstack/react-query"
+    );
+    const { ApprovalRequest } = await import(
+      "../src/components/channels/approval-request"
+    );
+    const line = await mount(
+      createElement(
+        QueryClientProvider,
+        { client: new QueryClient() },
+        createElement(ApprovalRequest, { toolCallId: "call-reconsider" }),
+      ),
+    );
+    await line.settle(30);
+    const again = [...line.host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Ask me again next time",
+    );
+    if (!again) throw new Error("the denied line drew no Ask me again");
+    await line.press(again);
+    await line.settle(30);
+
+    expect(posted).toEqual([
+      `/api/approvals/${BOT}/approval-reconsider/reconsider`,
+    ]);
+    expect(line.host.textContent).toBe(
+      "Will ask again next time · pressing “비즈니스” on toss.im",
+    );
+    expect(approvals.decisionOn("call-reconsider")?.reconsidered).toBe(true);
   });
 
   test("folds into a line that says how wide the yes was", async () => {

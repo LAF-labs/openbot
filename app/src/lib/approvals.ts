@@ -567,6 +567,14 @@ export type ApprovalDecision = {
   outcome: "allowed" | "declined" | "unanswered";
   tier?: ApprovalTier;
   subject?: AskSubject;
+  /**
+   * The question a No answered, and whose Bot: what 다시 물어보기 names when the person takes the
+   * No back (`reconsiderDecline`). Absent on a decision recorded before it was kept.
+   */
+  approvalId?: string;
+  botId?: string;
+  /** The person took this No back: the next attempt at the action is asked about again. */
+  reconsidered?: boolean;
 };
 
 /** The line a decided card leaves behind, as one dictionary key and its values. */
@@ -574,7 +582,9 @@ export function decisionPhrase(decision: ApprovalDecision): Phrase {
   const said = actionNounPhrase(decision.subject);
   const action = t(said.key, said.params);
   if (decision.outcome === "declined") {
-    return { key: "Denied · {action}", params: { action } };
+    return decision.reconsidered
+      ? { key: "Will ask again next time · {action}", params: { action } }
+      : { key: "Denied · {action}", params: { action } };
   }
   if (decision.outcome === "unanswered") {
     return {
@@ -632,7 +642,8 @@ function decisions(): Map<string, ApprovalDecision> {
 /** A stored decision, checked: storage is text an older build may have written. */
 function decisionOf(value: unknown): ApprovalDecision | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { outcome, tier, subject } = value as Record<string, unknown>;
+  const { outcome, tier, subject, approvalId, botId, reconsidered } =
+    value as Record<string, unknown>;
   if (
     outcome !== "allowed" &&
     outcome !== "declined" &&
@@ -647,6 +658,9 @@ function decisionOf(value: unknown): ApprovalDecision | undefined {
       ? { tier }
       : {}),
     ...(checked ? { subject: checked } : {}),
+    ...(typeof approvalId === "string" && approvalId ? { approvalId } : {}),
+    ...(typeof botId === "string" && botId ? { botId } : {}),
+    ...(reconsidered === true ? { reconsidered: true } : {}),
   };
 }
 
@@ -681,6 +695,54 @@ export function decideQuestion(
 
 export function decisionOn(toolCallId: string): ApprovalDecision | undefined {
   return decisions().get(toolCallId);
+}
+
+/**
+ * "다시 물어보기": take back a No before it runs out, from the line its card left.
+ *
+ * A No stands for half an hour after its question closed (`DECLINE_STICKS_MS` on the server), and
+ * the question itself is gone after ten minutes — so a person who changed their mind could not say
+ * so from the conversation, and the Bot was refused without asking (0.5.4 QA). This reopens nothing
+ * and allows nothing: the next time the Bot tries, it is asked about again, on a card of its own.
+ *
+ * A 409 is success here: no No of that question stands any more (it ran out, or a restart forgot
+ * it), which is the same fact — the next attempt asks.
+ */
+export async function reconsiderDecline(
+  toolCallId: string,
+  decision: ApprovalDecision,
+): Promise<ApprovalAnswerResult> {
+  if (!decision.approvalId || !decision.botId) {
+    return { ok: false, gone: false, retryable: false };
+  }
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/approvals/${encodeURIComponent(decision.botId)}/${encodeURIComponent(decision.approvalId)}/reconsider`,
+      { method: "POST", credentials: "include" },
+    );
+  } catch {
+    return { ok: false, gone: false, retryable: true };
+  }
+  if (response.ok || response.status === 409) {
+    const held = decisions();
+    held.set(toolCallId, { ...decision, reconsidered: true });
+    keepDecisions(held);
+    for (const watcher of watchers) watcher();
+    return { ok: true };
+  }
+  if (response.status >= 500) {
+    return { ok: false, gone: false, retryable: true };
+  }
+  const body = (await response.json().catch(() => null)) as {
+    code?: unknown;
+  } | null;
+  return {
+    ok: false,
+    gone: false,
+    retryable: false,
+    ...(typeof body?.code === "string" ? { code: body.code } : {}),
+  };
 }
 
 /**

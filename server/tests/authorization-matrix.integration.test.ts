@@ -837,6 +837,8 @@ const A_ALLOWED = [
   // Answering the question their own Bot raised — a No, on a real question. It was an
   // administrator's alone until 2026-09-16, which left a `user`'s Bot asking nobody at all.
   "POST /api/approvals/:botId/:approvalId",
+  // Taking their own No back (다시 물어보기): the same person as answering.
+  "POST /api/approvals/:botId/:approvalId/reconsider",
   "POST /api/channels",
   "POST /api/components/:name/call",
   "POST /api/components/:name/decision",
@@ -916,6 +918,7 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   // The questions its boundary raised — reading them and answering them — and what it may spend.
   "GET /api/approvals/:botId",
   "POST /api/approvals/:botId/:approvalId",
+  "POST /api/approvals/:botId/:approvalId/reconsider",
   "DELETE /api/plugins/grants",
   "POST /api/plugins/grants",
   "GET /api/plugins/for/:agentId",

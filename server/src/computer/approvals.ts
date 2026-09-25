@@ -453,6 +453,22 @@ export type ApprovalRegistry = {
    * no about one button carries on with the rest of its work.
    */
   recentlyDeclined: (botId: string, fingerprint: string) => Promise<boolean>;
+  /**
+   * The person taking their own No back, named by the question it answered.
+   *
+   * Without it a No could not be undone from the conversation: the question is closed once
+   * answered and gone ten minutes later, while its No stands for thirty, so a person who changed
+   * their mind watched the Bot be refused without being asked (0.5.4 QA). This reopens nothing and
+   * grants nothing — the next attempt at the action simply asks again, on a card of its own.
+   *
+   * By the approval's id, which the card that was answered holds, and on the Bot it was asked about.
+   * The declined question comes back for the trail; `ok: false` when no No of that question still
+   * stands — it ran out, it was already taken back, or this process never heard it.
+   */
+  liftDecline: (
+    id: string,
+    botId: string,
+  ) => Promise<{ ok: true; approval: PendingApproval } | { ok: false }>;
 };
 
 /**
@@ -464,21 +480,41 @@ export type ApprovalRegistry = {
  * asks again, and a person answers again — which is the behaviour a restart is allowed to have.
  */
 function createDeclineMemory(now: () => number, stickyMs: number) {
-  const until = new Map<string, number>();
+  /** The No, until when it stands, and the question it answered — which is how it is taken back. */
+  const until = new Map<
+    string,
+    { expires: number; approval: PendingApproval }
+  >();
   const key = (botId: string, fingerprint: string) =>
     `${botId}\u0000${fingerprint}`;
+  // Swept on read, like the questions themselves: nothing here matters until somebody looks.
+  const sweep = (at: number) => {
+    for (const [entry, decline] of until) {
+      if (decline.expires <= at) until.delete(entry);
+    }
+  };
 
   return {
-    record(botId: string, fingerprint: string) {
-      until.set(key(botId, fingerprint), now() + stickyMs);
+    record(approval: PendingApproval) {
+      until.set(key(approval.botId, approval.fingerprint), {
+        expires: now() + stickyMs,
+        approval,
+      });
     },
     stands(botId: string, fingerprint: string) {
       const at = now();
-      // Swept on read, like the questions themselves: nothing here matters until somebody looks.
-      for (const [entry, expires] of until) {
-        if (expires <= at) until.delete(entry);
+      sweep(at);
+      return (until.get(key(botId, fingerprint))?.expires ?? 0) > at;
+    },
+    lift(id: string, botId: string): PendingApproval | undefined {
+      sweep(now());
+      for (const [entry, decline] of until) {
+        if (decline.approval.id === id && decline.approval.botId === botId) {
+          until.delete(entry);
+          return decline.approval;
+        }
       }
-      return (until.get(key(botId, fingerprint)) ?? 0) > at;
+      return undefined;
     },
   };
 }
@@ -589,7 +625,7 @@ export function createApprovalRegistry(
       };
       open.set(id, answered);
       // A No outlives the question it answered. See DECLINE_STICKS_MS.
-      if (!granted) declines.record(approval.botId, approval.fingerprint);
+      if (!granted) declines.record(answered);
       return { ok: true, approval: answered };
     },
 
@@ -616,5 +652,10 @@ export function createApprovalRegistry(
 
     recentlyDeclined: async (botId, fingerprint) =>
       declines.stands(botId, fingerprint),
+
+    liftDecline: async (id, botId) => {
+      const approval = declines.lift(id, botId);
+      return approval ? { ok: true, approval } : { ok: false };
+    },
   };
 }

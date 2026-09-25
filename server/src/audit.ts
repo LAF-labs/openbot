@@ -174,6 +174,12 @@ export const auditEventTypes = [
    */
   "approval.standing_granted",
   "approval.standing_revoked",
+  /**
+   * A person taking back their own No before it ran out (`approval-routes.ts`, reconsider). Not a
+   * grant: the next attempt is asked about again. Its own row because it changes what the boundary
+   * does next, and "why was the Bot asked again after being told no" needs a row to find.
+   */
+  "approval.decline_lifted",
   // The computer itself being stopped or wiped. `reset` destroys every login on the one browser this
   // account's Bots share, which is both the recovery path and the most consequential button on the
   // admin page, so who pressed it and when is exactly the sort of thing an investigator needs and

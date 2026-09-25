@@ -372,6 +372,62 @@ describe("answering a question", () => {
     ).toBe("laf:declined_recently");
   });
 
+  /*
+   * "다시 물어보기" (0.5.4 QA): a No stood for thirty minutes after its question closed, and the
+   * person who changed their mind had nothing to press. Taking it back reopens nothing and allows
+   * nothing — the next attempt raises a fresh question.
+   */
+  test("a No taken back is asked about again, and nothing is allowed by it", async () => {
+    const { app, ask, rows, calls } = await surface();
+    const first = await ask("bot-1");
+    await answer(app)("bot-1", first.approvalId, false);
+
+    const lifted = await app.request(`/bot-1/${first.approvalId}/reconsider`, {
+      method: "POST",
+    });
+    expect(lifted.status).toBe(200);
+    const row = rows.at(-1);
+    expect(row?.eventType).toBe("approval.decline_lifted");
+    expect(row?.actorUserId).toBe(MANAGER.id);
+    expect(row?.payload.approval).toBe(first.approvalId);
+
+    // The next attempt asks: a new question, not the old one, and the action has not run.
+    const again = await ask("bot-1");
+    expect(again).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(again.approvalId).not.toBe(first.approvalId);
+    expect(calls).toEqual([]);
+    // The old question stays answered: its No cannot be turned into a yes.
+    expect((await answer(app)("bot-1", first.approvalId, true)).status).toBe(
+      409,
+    );
+  });
+
+  test("taking back a No that no longer stands is a conflict, and another Bot's is not here", async () => {
+    const { app, ask } = await surface();
+    const asked = await ask("bot-1");
+    // Never declined.
+    expect(
+      (
+        await app.request(`/bot-1/${asked.approvalId}/reconsider`, {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(409);
+    await answer(app)("bot-1", asked.approvalId, false);
+    // Named on another Bot of theirs: nothing of that question stands there.
+    expect(
+      (
+        await app.request(`/bot-2/${asked.approvalId}/reconsider`, {
+          method: "POST",
+        })
+      ).status,
+    ).toBe(409);
+    // Taken back once; the second time there is nothing left to take back.
+    const path = `/bot-1/${asked.approvalId}/reconsider`;
+    expect((await app.request(path, { method: "POST" })).status).toBe(200);
+    expect((await app.request(path, { method: "POST" })).status).toBe(409);
+  });
+
   test("an answer is spendable only on the action it was given for", async () => {
     const { app, ask, approvals } = await surface();
     const asked = await ask("bot-1");

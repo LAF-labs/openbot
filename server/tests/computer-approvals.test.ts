@@ -304,6 +304,28 @@ describe("a No that sticks", () => {
       await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
     ).toBe(false);
   });
+
+  test("is taken back by its own question, after the question has closed, on its own Bot", async () => {
+    const clock = { at: 1_000_000 };
+    const approvals = createApprovalRegistry({ now: () => clock.at });
+    const pending = await ask(approvals);
+    await answer(approvals, pending.id, "manager@example.test", false);
+    // Past the question's ten minutes: the question is gone, the No is not.
+    clock.at += 11 * 60_000;
+    expect(await approvals.pending(CLICK.botId)).toEqual([]);
+
+    expect((await approvals.liftDecline(pending.id, "research-bot")).ok).toBe(
+      false,
+    );
+    const lifted = await approvals.liftDecline(pending.id, CLICK.botId);
+    expect(lifted.ok && lifted.approval.granted).toBe(false);
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(false);
+    expect((await approvals.liftDecline(pending.id, CLICK.botId)).ok).toBe(
+      false,
+    );
+  });
 });
 
 describe("the fingerprint", () => {

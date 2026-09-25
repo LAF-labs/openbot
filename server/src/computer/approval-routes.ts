@@ -269,6 +269,47 @@ export function createApprovalRoutes(
     },
   );
 
+  /**
+   * "Ask me again": the person taking their own No back, from the line the answered card left.
+   *
+   * Nothing is reopened and nothing is granted. The No stood for thirty minutes after its question
+   * closed (DECLINE_STICKS_MS), so a person who changed their mind had no way to say so and the Bot
+   * was refused without asking; now the next attempt at the action raises a fresh question, which
+   * is answered on a card like any other. The same person as answering (`requireBotAccess`), and a
+   * row of its own, since it changes what the boundary does next.
+   */
+  routes.post(
+    "/:botId/:approvalId/reconsider",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const botId = context.req.param("botId") ?? "";
+      const record = context.var.actor;
+      const lifted = await approvals.liftDecline(
+        context.req.param("approvalId") ?? "",
+        botId,
+      );
+      // Ran out, already taken back, or forgotten by a restart: the next attempt asks either way.
+      if (!lifted.ok) {
+        return context.json(
+          {
+            error: "laf:decline_not_standing",
+            code: "laf:decline_not_standing",
+          },
+          409,
+        );
+      }
+      await recordAuditEvent(auditStore, {
+        eventType: "approval.decline_lifted",
+        targetType: lifted.approval.target.type,
+        targetId: lifted.approval.target.id,
+        ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
+        payload: payloadFor(lifted.approval, record.id),
+      });
+      return context.json({ lifted: true });
+    },
+  );
+
   return routes;
 }
 
