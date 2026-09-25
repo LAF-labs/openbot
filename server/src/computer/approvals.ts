@@ -30,7 +30,7 @@
  * the surface a person answers on decides which half of a Bot's work they can see.
  */
 import { createHash, randomUUID } from "node:crypto";
-import type { AllowanceScope } from "./standing-approvals";
+import type { AllowanceScope, AllowanceTier } from "./standing-approvals";
 
 /**
  * How long a question stays open.
@@ -317,6 +317,17 @@ export type PendingApproval = {
   expiresAt: string;
   /** Undefined until somebody answers. False is an answer, and a final one. */
   granted?: boolean;
+  /**
+   * How wide the yes was, when it was wider than this once — set in the same step as `granted`.
+   *
+   * MEASURED 2026-09-25: "toss.im 항상 허용" pressed, the standing row written, and the line read
+   * "허용함". The window waiting on the question reads `granted: true` off this record on its next
+   * poll, which can land before the press's own answer comes back, and the record did not say how
+   * wide. Every reader that learns the answer from here — that wait, and every other window of the
+   * conversation — now learns the tier with it. Only a tier this question could give: "always"
+   * needs a scope, "for this conversation" a thread, the same test the standing grant makes.
+   */
+  tier?: AllowanceTier;
   /** Who answered, recorded so the audit row credits the decision to a person rather than to a Bot. */
   answeredBy?: string;
 };
@@ -351,6 +362,7 @@ export type PresentedApproval = {
   requestedAt: string;
   expiresAt: string;
   granted?: boolean;
+  tier?: AllowanceTier;
   answeredBy?: string;
 };
 
@@ -378,6 +390,7 @@ export function presentable(
     requestedAt: approval.requestedAt,
     expiresAt: approval.expiresAt,
     ...(approval.granted === undefined ? {} : { granted: approval.granted }),
+    ...(approval.tier ? { tier: approval.tier } : {}),
     ...(approval.answeredBy ? { answeredBy: approval.answeredBy } : {}),
   };
 }
@@ -503,6 +516,8 @@ export type ApprovalRegistry = {
     botId: string,
     actor: string,
     granted: boolean,
+    /** The wider answer pressed, if any. Recorded only where the question could give it. */
+    tier?: AllowanceTier,
   ) => Promise<ApprovalAnswer>;
   /** Spend an approval on one action. Single use: a successful consumption removes it. */
   consume: (id: string, fingerprint: string) => Promise<ApprovalConsumption>;
@@ -683,7 +698,7 @@ export function createApprovalRegistry(
       return [...open.values()].filter((approval) => approval.botId === botId);
     },
 
-    answer: async (id, botId, actor, granted) => {
+    answer: async (id, botId, actor, granted, tier) => {
       sweep();
       const approval = open.get(id);
       // An answered question is not answerable again, whichever way it went. Otherwise a second
@@ -699,9 +714,11 @@ export function createApprovalRegistry(
       ) {
         return { ok: false, reason: "no longer open" };
       }
+      const given = granted ? tierGiven(approval, tier) : undefined;
       const answered: PendingApproval = {
         ...approval,
         granted,
+        ...(given ? { tier: given } : {}),
         answeredBy: actor,
       };
       open.set(id, answered);
@@ -780,4 +797,19 @@ export function createApprovalRegistry(
       return approval;
     },
   };
+}
+
+/**
+ * The wider answer a question can actually give: "always" where a scope was derived, "for this
+ * conversation" where it was also raised from one. Anything else is this once — the card did not
+ * offer it, and a request that asks anyway gets the once it did give rather than a standing
+ * allowance nobody was shown.
+ */
+export function tierGiven(
+  approval: Pick<PendingApproval, "scope" | "threadId">,
+  tier: AllowanceTier | undefined,
+): AllowanceTier | undefined {
+  if (!tier || !approval.scope) return undefined;
+  if (tier === "thread" && !approval.threadId) return undefined;
+  return tier;
 }

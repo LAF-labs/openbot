@@ -493,3 +493,75 @@ describe("which window carries a question's step on", () => {
     ).toBe(false);
   });
 });
+
+/*
+ * MEASURED 2026-09-25: "toss.im 항상 허용" pressed, the standing row written, and the card's line read
+ * "허용함". The window waiting on the question read `granted: true` off this record before the
+ * press's own answer came back, and the record did not say how wide the yes was.
+ */
+describe("how wide a yes was", () => {
+  async function askWide(
+    approvals: ReturnType<typeof registry>,
+    wide: { scope?: boolean; threadId?: string },
+  ) {
+    return await approvals.request({
+      botId: CLICK.botId,
+      actor: "someone@example.test",
+      rule: 'contains(element.name, "submit")',
+      subject: A_CLICK,
+      fingerprint: fingerprintOf(CLICK),
+      ...(wide.scope ? { scope: { kind: "host", value: "toss.im" } } : {}),
+      ...(wide.threadId ? { threadId: wide.threadId } : {}),
+      target: { type: "computer", id: CLICK.botId },
+    });
+  }
+
+  const answerWith = (
+    approvals: ReturnType<typeof registry>,
+    id: string,
+    granted: boolean,
+    tier: "always" | "thread",
+  ) => approvals.answer(id, CLICK.botId, "owner@example.test", granted, tier);
+
+  test("travels on the record with the yes, to every reader of it", async () => {
+    const approvals = registry();
+    const pending = await askWide(approvals, { scope: true });
+    const answered = await answerWith(approvals, pending.id, true, "always");
+    expect(answered.ok && answered.approval.tier).toBe("always");
+    const [read] = await approvals.pending(CLICK.botId);
+    expect(read && presentable(read)).toMatchObject({
+      granted: true,
+      tier: "always",
+    });
+  });
+
+  test("is only what the question could give", async () => {
+    const approvals = registry();
+    // No scope: nothing durable was derived, so "always" was never on the card.
+    const unscoped = await askWide(approvals, {});
+    const once = await answerWith(approvals, unscoped.id, true, "always");
+    expect(once.ok && once.approval.tier).toBeUndefined();
+    // No thread: "for this conversation" has nothing to bind to.
+    const threadless = await askWide(approvals, { scope: true });
+    const notThread = await answerWith(
+      approvals,
+      threadless.id,
+      true,
+      "thread",
+    );
+    expect(notThread.ok && notThread.approval.tier).toBeUndefined();
+    const threaded = await askWide(approvals, {
+      scope: true,
+      threadId: "thread-1",
+    });
+    const thread = await answerWith(approvals, threaded.id, true, "thread");
+    expect(thread.ok && thread.approval.tier).toBe("thread");
+  });
+
+  test("a No has no width", async () => {
+    const approvals = registry();
+    const pending = await askWide(approvals, { scope: true });
+    const answered = await answerWith(approvals, pending.id, false, "always");
+    expect(answered.ok && answered.approval.tier).toBeUndefined();
+  });
+});

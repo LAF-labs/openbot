@@ -512,6 +512,85 @@ describe("an answer given somewhere else", () => {
     });
   });
 
+  test("says how wide, when the server's record does", async () => {
+    approvals.openQuestion("call-wide-elsewhere", {
+      approvalId: "approval-wide-elsewhere",
+      botId: BOT,
+      subject: PRESSING_ON_TOSS,
+      rule: MONEY_HOST_RULE,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    globalThis.fetch = stubFetch(async () =>
+      json({
+        holding: true,
+        approval: {
+          id: "approval-wide-elsewhere",
+          botId: BOT,
+          rule: MONEY_HOST_RULE,
+          subject: PRESSING_ON_TOSS,
+          requestedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          granted: true,
+          tier: "always",
+          answeredBy: "owner-1",
+        },
+      }),
+    );
+    expect(
+      await approvals.waitForApproval(
+        BOT,
+        "approval-wide-elsewhere",
+        undefined,
+      ),
+    ).toBe("granted");
+    expect(approvals.decisionOn("call-wide-elsewhere")?.tier).toBe("always");
+  });
+
+  /*
+   * MEASURED 2026-09-25: "toss.im 항상 허용" pressed, a standing row written, and the line read
+   * "허용함" with no way back drawn. The wait read "allowed" off the server and wrote first; the
+   * press's own answer, knowing the tier, came back second and first writer won.
+   */
+  test("a yes the wait wrote first is completed by the press that knew how wide", () => {
+    approvals.decideQuestion("call-race", {
+      outcome: "allowed",
+      subject: PRESSING_ON_TOSS,
+    });
+    approvals.decideQuestion("call-race", {
+      outcome: "allowed",
+      tier: "always",
+      subject: PRESSING_ON_TOSS,
+    });
+    const decision = approvals.decisionOn("call-race");
+    expect(decision?.tier).toBe("always");
+    expect(decision && approvals.decisionPhrase(decision).key).toBe(
+      "Always allowed · {action}",
+    );
+    // And what a reload reads back is the same.
+    expect(window.localStorage.getItem("laf.approval-decisions.v1")).toContain(
+      '"call-race",{"outcome":"allowed","subject"',
+    );
+    const stored = JSON.parse(
+      window.localStorage.getItem("laf.approval-decisions.v1") ?? "[]",
+    ) as [string, approvals.ApprovalDecision][];
+    expect(stored.find(([id]) => id === "call-race")?.[1].tier).toBe("always");
+  });
+
+  test("completing is all it does: a No is not turned into a yes, nor a width into another", () => {
+    approvals.decideQuestion("call-no", { outcome: "declined" });
+    approvals.decideQuestion("call-no", { outcome: "allowed", tier: "always" });
+    expect(approvals.decisionOn("call-no")).toEqual({ outcome: "declined" });
+    approvals.decideQuestion("call-thread", {
+      outcome: "allowed",
+      tier: "thread",
+    });
+    approvals.decideQuestion("call-thread", {
+      outcome: "allowed",
+      tier: "always",
+    });
+    expect(approvals.decisionOn("call-thread")?.tier).toBe("thread");
+  });
+
   test("an answer nobody gave is said as that", async () => {
     approvals.openQuestion("call-nobody", {
       approvalId: "approval-nobody",

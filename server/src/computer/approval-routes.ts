@@ -185,6 +185,7 @@ export function createApprovalRoutes(
         botId,
         record.id,
         body.granted,
+        tierOf(body),
       );
       // Nothing is broken and there is nothing to fix: the question expired, or somebody else answered
       // it, most likely in another tab. A conflict rather than a fault.
@@ -234,7 +235,8 @@ export function createApprovalRoutes(
        * a request that asks anyway gets the once it did give and no allowance, rather than a
        * standing one it did not ask for.
        */
-      const tier = tierOf(body);
+      // Off the answered record, which kept only a tier this question could give (`tierGiven`).
+      const tier = answered.approval.tier;
       if (body.granted && tier && standing) {
         const scope = answered.approval.scope;
         const threadId = answered.approval.threadId;

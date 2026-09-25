@@ -222,6 +222,7 @@ export function watchStrandedSteps(deps: StepWatcherDeps): {
           const subject = askSubjectOf(record.subject);
           decideQuestion(toolCallId, {
             outcome: record.granted ? "allowed" : "declined",
+            ...(record.granted && record.tier ? { tier: record.tier } : {}),
             ...(subject ? { subject } : {}),
             approvalId,
             botId: deps.botId,

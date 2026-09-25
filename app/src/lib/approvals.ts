@@ -140,6 +140,8 @@ export type PendingApproval = {
   expiresAt: string;
   /** Absent while nobody has answered. False is an answer. */
   granted?: boolean;
+  /** How wide a yes was, when wider than this once. Set by the server with `granted`. */
+  tier?: Exclude<ApprovalTier, "once">;
   answeredBy?: string;
 };
 
@@ -573,9 +575,8 @@ export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
  * let their Bot do on a bank's site (UI/UX audit 0.5.3, item 3). The decision is held against the
  * tool call, as the question was, and drawn in its place.
  *
- * `tier` is known only when this tab's card recorded the answer. A question answered somewhere else
- * — another window, the page a notice opens — is learned from the server's record, which says
- * whether it was allowed and not for how long, so the line then says "allowed" and nothing wider.
+ * `tier` comes from the card that was pressed, or from the server's record, which carries it beside
+ * `granted` for a yes wider than this once. A yes with no tier on it was this once.
  */
 export type ApprovalDecision = {
   outcome: "allowed" | "declined" | "unanswered";
@@ -690,8 +691,11 @@ function keepDecisions(held: Map<string, ApprovalDecision>): void {
 /**
  * The question on this tool call was decided: take the buttons down and leave the line.
  *
- * A decision already held for the call is kept rather than replaced — the card that recorded "for
- * this conversation" knows more than the poll that later reads "allowed" off the server.
+ * A decision already held for the call is kept rather than replaced, with one exception: a yes
+ * held without its width is completed by one that has it. First writer used to win outright, and the
+ * wait holding the tool call — which reads "allowed" off the server a second at a time — could write
+ * before the "항상 허용" press's own answer came back, so a standing allowance was recorded, and
+ * drawn, as a one-time "허용함" with no way back offered (measured 2026-09-25 on toss.im).
  */
 export function decideQuestion(
   toolCallId: string,
@@ -699,8 +703,17 @@ export function decideQuestion(
 ): void {
   if (!toolCallId) return;
   const held = decisions();
-  if (!held.has(toolCallId)) {
+  const before = held.get(toolCallId);
+  if (!before) {
     held.set(toolCallId, decision);
+    keepDecisions(held);
+  } else if (
+    before.outcome === "allowed" &&
+    decision.outcome === "allowed" &&
+    !before.tier &&
+    decision.tier
+  ) {
+    held.set(toolCallId, { ...before, tier: decision.tier });
     keepDecisions(held);
   }
   open.delete(toolCallId);
@@ -1051,7 +1064,7 @@ export async function waitForApproval(
       if (held.state === "elsewhere") return "handed over";
       const mine = held.state === "holding" ? held.approval : undefined;
       if (mine?.granted === true) {
-        return settled(approvalId, "allowed", "granted");
+        return settled(approvalId, "allowed", "granted", mine.tier);
       }
       if (mine?.granted === false) {
         return settled(approvalId, "declined", "declined");
@@ -1196,15 +1209,20 @@ export function questionFromRecord(approval: PendingApproval): OpenQuestion {
  *
  * Here because this is where a question answered in ANOTHER window is first known about in this
  * one — that card's press recorded nothing here, and without this the line would vanish as it used
- * to. An answer this tab's own card gave is already held, with its tier, and is not overwritten.
+ * to. The tier is the server's, so a yes this wait reads first is recorded as wide as it was given.
  */
 function settled<Answer>(
   approvalId: string,
   outcome: ApprovalDecision["outcome"],
   answer: Answer,
+  tier?: ApprovalTier,
 ): Answer {
   for (const [toolCallId, subject] of raised.get(approvalId) ?? []) {
-    decideQuestion(toolCallId, { outcome, ...(subject ? { subject } : {}) });
+    decideQuestion(toolCallId, {
+      outcome,
+      ...(tier ? { tier } : {}),
+      ...(subject ? { subject } : {}),
+    });
   }
   return answer;
 }

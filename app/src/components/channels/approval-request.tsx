@@ -13,7 +13,6 @@ import {
 } from "@/components/channels/allowance-label";
 import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
 import {
   chatCard,
   chatCardChip,
@@ -22,6 +21,7 @@ import {
   chatCardTitle,
   chatCardWaiting,
 } from "@/components/ui/card-surface";
+import { focusRing } from "@/components/ui/focus";
 import {
   type AllowanceScope,
   type ApprovalDecision,
@@ -77,14 +77,6 @@ export function ApprovalRequest({
     decisionOn(toolCallId ?? ""),
   );
   const [answering, setAnswering] = useState(false);
-  /*
-   * WHICH BUTTON THIS CARD'S OWN PRESS WAS. The wait holding the tool call reads "allowed" off the
-   * server and can record the decision before this press's answer comes back — first writer wins
-   * (`decideQuestion`), and it knows no tier. Measured 2026-09-25: "toss.im 항상 허용" pressed, a
-   * standing row written, and the line read "허용함" with no way back drawn. The press knows better,
-   * so the line is told.
-   */
-  const [pressedTier, setPressedTier] = useState<ApprovalTier | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /** Names the group, so the buttons announce what they are answering. */
   const questionId = useId();
@@ -109,7 +101,6 @@ export function ApprovalRequest({
         tier,
       );
       setAnswering(false);
-      if (result.ok && granted) setPressedTier(tier);
       if (!result.ok) {
         // Expired, or answered in another tab: there is nothing here to press any more. The wait
         // that holds the tool call reads which it was and leaves that line (`lib/approvals.ts`).
@@ -140,14 +131,7 @@ export function ApprovalRequest({
 
   if (!asking) {
     return decided ? (
-      <DecidedLine
-        decision={
-          pressedTier && decided.outcome === "allowed" && !decided.tier
-            ? { ...decided, tier: pressedTier }
-            : decided
-        }
-        toolCallId={toolCallId ?? ""}
-      />
+      <DecidedLine decision={decided} toolCallId={toolCallId ?? ""} />
     ) : null;
   }
 
