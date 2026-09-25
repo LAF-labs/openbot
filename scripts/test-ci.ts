@@ -462,15 +462,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * skills listed as built in, a held wheel told apart from a question, and two card titles) and two
  * to `server` (the login check reading the page whole, a reader cut never judged). Each floor rises
  * by exactly what was added.
+ * RAISED 2026-09-25 with the defects that QA listed: five to `agent-computer` (a thumbnail as one
+ * screencast frame, beside the live screen and against the scaled screenshot it replaced), nine to
+ * `app` (a help card left by a reload, a No taken back, where a stored failure is drawn, a picture
+ * asked for only where one was kept) and five to `server` (the No taken back through the registry
+ * and the route, the kept pictures listed). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2643, roots: ["server"] },
-  { name: "app", floor: 1266, roots: ["app"] },
-  { name: "agent-computer", floor: 273, roots: ["agent-computer"] },
+  { name: "server", floor: 2648, roots: ["server"] },
+  { name: "app", floor: 1275, roots: ["app"] },
+  { name: "agent-computer", floor: 278, roots: ["agent-computer"] },
   { name: "root", floor: 415, roots: ["tests", "agent-bot"] },
 ] as const;
 
