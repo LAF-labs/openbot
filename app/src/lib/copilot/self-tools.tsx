@@ -696,20 +696,23 @@ export function SelfTools() {
       });
       return answer("laf:remembered");
     },
-    render: ({ status, toolCallId }) => {
+    render: ({ args, status, toolCallId, result }) => {
       const entry = changes.current.get(toolCallId ?? "");
       const running = status !== "complete";
+      // The entry lives in this tab's memory only; after a reload the line is read off the call.
+      const line =
+        entry ??
+        rememberLineFor(
+          args as { fact?: string; place?: string } | undefined,
+          result,
+        );
       return (
         <ToolLine
-          failed={entry?.failed === true}
-          label={
-            running
-              ? t("Remembering")
-              : (entry?.done ?? t("Remembered something"))
-          }
+          failed={line.failed === true}
+          label={running ? t("Remembering") : line.done}
           running={running}
         >
-          {entry?.note ? <p>{entry.note}</p> : null}
+          {line.note ? <p>{line.note}</p> : null}
         </ToolLine>
       );
     },
@@ -740,6 +743,29 @@ export function routineCallLanded(
     ] ?? ""
   ).split("{")[0];
   return Boolean(opening) && said.startsWith(opening ?? "");
+}
+
+/**
+ * What a `remember` line says when this tab did not see the call happen (after a reload).
+ *
+ * MEASURED 2026-09-25 (0.5.4 final QA): "서울 마포구야" answered, the line read "가게 위치를
+ * 저장했어요 · 서울 마포구"; after a reload the same call read "기억해 두었어요" with nothing under
+ * it, because the words lived only in this tab's memory. The call's own arguments and the code it
+ * answered say which of the two it was, and what was kept.
+ */
+export function rememberLineFor(
+  args: { fact?: string; place?: string } | undefined,
+  result: string | undefined,
+): { done: string; note?: string; failed?: boolean } {
+  const said = answerText(result);
+  if (args?.place?.trim()) {
+    return said === toolResultText("laf:place_saved")
+      ? { done: t("Saved the shop's location"), note: args.place.trim() }
+      : { done: t("Remembered something"), failed: Boolean(said) };
+  }
+  return said === toolResultText("laf:remembered") && args?.fact
+    ? { done: t("Remembered something"), note: args.fact }
+    : { done: t("Remembered something"), failed: Boolean(said) };
 }
 
 /** A tool result as the transcript keeps it: the handler's string, sometimes JSON-quoted once. */
