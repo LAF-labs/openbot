@@ -127,9 +127,23 @@ describe("how the last task ended", () => {
     ).toBeNull();
   });
 
-  test("nothing, for a step that finished and is being carried on", () => {
+  /*
+   * MEASURED 2026-09-25 (0.5.4 final QA): Stop pressed while the Bot was thinking between two steps
+   * — where it nearly always lands — offered no 이어서 하기. A thread that ends on answered steps with
+   * nothing said after them was cut off. While the turn is still going on (this window's run, or a
+   * step another window is carrying) the notice is not drawn at all: `CarryOnNotice` reads `busy`.
+   */
+  test("a turn cut off between two steps: the person's Stop", () => {
+    expect(taskStopOf([user, asked("c1"), result("c1", { ok: true })])).toEqual(
+      { reason: "stopped", unanswered: [] },
+    );
+  });
+
+  test("nothing, for a turn cut off by a failure: its own line says so", () => {
     expect(
-      taskStopOf([user, asked("c1"), result("c1", { ok: true })]),
+      taskStopOf([user, asked("c1"), result("c1", { ok: true })], {
+        failed: true,
+      }),
     ).toBeNull();
   });
 });

@@ -25,13 +25,14 @@ import {
   questionOn,
   watchQuestions,
 } from "@/lib/approvals";
+import { framedCallsQueryOptions } from "@/lib/channels/queries";
 import {
+  type CutOff,
   endingOf,
   pictureStepOf,
   sitesOf,
   stepLine,
 } from "@/lib/computer/browsing";
-import { framedCallsQueryOptions } from "@/lib/channels/queries";
 import { useBrowsingNow } from "@/lib/computer/browsing-now";
 import { frameAddress, useFrameVersion } from "@/lib/computer/last-frame";
 import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
@@ -40,8 +41,8 @@ import {
   type TaskState,
   taskStateLine,
 } from "@/lib/computer/task-state";
-import { useConversation } from "@/lib/copilot/conversation";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
+import { useConversation } from "@/lib/copilot/conversation";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
@@ -67,6 +68,8 @@ type BrowsingCardProps = {
   isOpen: boolean;
   /** The last task in the conversation: the one the live screen would show. */
   isNewest: boolean;
+  /** Its turn ended right after it, with nothing said: how (`CutOff`). */
+  cutOff?: CutOff;
 };
 
 export function BrowsingCard(props: BrowsingCardProps) {
@@ -95,7 +98,13 @@ export function BrowsingCard(props: BrowsingCardProps) {
   );
 }
 
-function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
+function TaskCard({
+  item,
+  channelId,
+  isOpen,
+  isNewest,
+  cutOff = null,
+}: BrowsingCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const stepsId = useId();
   const botId = useDeclaredBotId();
@@ -114,7 +123,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
    */
   const state: TaskState = isAsking
     ? { kind: "yourTurn" }
-    : endingOf(item.steps, isOpen);
+    : endingOf(item.steps, isOpen, cutOff);
   const pictureStep = isOpen ? null : pictureStepOf(item.steps);
   const version = useFrameVersion(pictureStep);
   const framed = useQuery({

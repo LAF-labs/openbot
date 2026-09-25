@@ -94,7 +94,14 @@ export type TaskStop = {
   unanswered: string[];
 };
 
-export function taskStopOf(messages: readonly Message[]): TaskStop | null {
+export function taskStopOf(
+  messages: readonly Message[],
+  /**
+   * The turn left a failure line. A turn cut off between two steps is the person's Stop only when
+   * it did not: one that failed there says so on its own line, with 다시 시도.
+   */
+  { failed = false }: { failed?: boolean } = {},
+): TaskStop | null {
   let index = messages.length - 1;
   // Past the step results at the end, to the message that asked for them.
   while (index >= 0 && messages[index]?.role === "tool") index -= 1;
@@ -107,7 +114,16 @@ export function taskStopOf(messages: readonly Message[]): TaskStop | null {
   const stopped = asked.toolCalls.some((call) =>
     isStoppedResult(resultOf(messages, call.id)),
   );
-  return stopped ? { reason: "stopped", unanswered: [] } : null;
+  if (stopped) return { reason: "stopped", unanswered: [] };
+  /*
+   * EVERY STEP ANSWERED AND NOTHING SAID AFTER: the turn ended while the Bot was thinking between
+   * two steps, which is where Stop nearly always lands — a step takes a second, the thinking many.
+   * MEASURED 2026-09-25 (0.5.4 final QA): Stop there left no 이어서 하기 at all.
+   */
+  const endsOnResults = messages.at(-1)?.role === "tool";
+  return endsOnResults && !failed
+    ? { reason: "stopped", unanswered: [] }
+    : null;
 }
 
 /** A step's result that says the person stopped it, as `computer-tools.tsx` hands it back. */

@@ -1188,7 +1188,17 @@ export function ChannelChat({
    * The last task ended in the middle of the Bot's work: a step that never came back, or one the
    * person stopped. Read from the agent's own thread — the copy drawn above drops tool results.
    */
-  const taskStop = taskStopOf(agent.messages);
+  const lastAskedAt = agent.messages.findLastIndex(
+    (message) => message.role === "user",
+  );
+  const taskStop = taskStopOf(agent.messages, {
+    failed:
+      runError !== null ||
+      Object.keys(failuresById).some((id) => {
+        const at = agent.messages.findIndex((message) => message.id === id);
+        return at >= 0 && at >= lastAskedAt;
+      }),
+  });
 
   return (
     <ConversationProvider ask={askFromComponent}>

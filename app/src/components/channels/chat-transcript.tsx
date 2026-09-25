@@ -62,8 +62,9 @@ import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
-  openBrowsingTask,
+  cutOffOf,
   failurePlaces,
+  openBrowsingTask,
   type TranscriptItem,
   toVisibleChatItems,
   unsettledFrom,
@@ -1524,6 +1525,12 @@ export function ChatTranscript({
                     >
                       <BrowsingCard
                         channelId={channelId}
+                        cutOff={cutOffOf(items, index, {
+                          busy,
+                          failed:
+                            failuresAfter.has(item.id) ||
+                            (Boolean(stoppedCode) && item.id === lastItem?.id),
+                        })}
                         isNewest={item.id === newestTaskId}
                         isOpen={item.id === openTaskId}
                         item={item}

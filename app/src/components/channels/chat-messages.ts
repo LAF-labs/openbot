@@ -1,5 +1,9 @@
 import type { Message, ToolCall } from "@ag-ui/core";
-import { BROWSING_TOOLS, type BrowsingStep } from "@/lib/computer/browsing";
+import {
+  BROWSING_TOOLS,
+  type BrowsingStep,
+  type CutOff,
+} from "@/lib/computer/browsing";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -147,6 +151,27 @@ export function openBrowsingTask(
     if (item?.kind !== "text" || item.role !== "assistant") return null;
   }
   return null;
+}
+
+/**
+ * Whether the card at `index` is a task its turn was cut off in: nothing came after it before the
+ * person's next message or the end of the thread, so the Bot never said what the task came to
+ * (`CutOff` in `lib/computer/browsing.ts`). Null for a card the Bot spoke after, and for the last
+ * card while a turn is still running — that one is open, not cut off.
+ */
+export function cutOffOf(
+  items: readonly TranscriptItem[],
+  index: number,
+  { busy, failed }: { busy: boolean; failed: boolean },
+): CutOff {
+  if (items[index]?.kind !== "browse") return null;
+  const next = items[index + 1];
+  if (next === undefined) {
+    if (busy) return null;
+  } else if (next.kind !== "text" || next.role !== "user") {
+    return null;
+  }
+  return failed ? "failed" : "stopped";
 }
 
 /** A tool result, as it arrives, its own message, pointing back at the call it answers. */

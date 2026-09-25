@@ -281,15 +281,32 @@ export type TaskEnding = { kind: "running" } | SharedEnding;
 export function endingOf(
   steps: readonly BrowsingStep[],
   isOpen: boolean,
+  cutOff: CutOff = null,
 ): TaskEnding {
   if (isOpen) return { kind: "running" };
-  return endingOfSteps(
+  const ending = endingOfSteps(
     steps.map((step) => ({
       name: step.name,
       facts: resultFactsOf(step.result),
     })),
   );
+  if (ending.kind !== "done" || cutOff === null) return ending;
+  return cutOff === "failed"
+    ? { kind: "failed", code: null }
+    : { kind: "stopped" };
 }
+
+/**
+ * A task whose turn ended right after its last step, with nothing said after it — the Bot was
+ * between steps when the turn ended. `failed` when the turn left a failure line, `stopped` when it
+ * did not (the owner pressed Stop, or sent something else over it), null when the Bot answered.
+ *
+ * MEASURED 2026-09-25 (0.5.4 final QA): Stop pressed while the Bot was thinking between two steps
+ * of a Naver News task left the card reading 끝남 — the last step had worked — while 오늘 read the
+ * same turn's ledger and said 멈춤, and no 이어서 하기 was offered. The steps alone cannot tell a
+ * finished task from one cut off between two of them; whether the Bot spoke after is the fact.
+ */
+export type CutOff = "stopped" | "failed" | null;
 
 /**
  * The call whose result carries the task's last picture: the last one that has a result.

@@ -4,6 +4,7 @@ import { SITE_REFUSED, UNANSWERED_RESULT } from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import {
+  cutOffOf,
   openBrowsingTask,
   toVisibleChatItems,
   withBrowsingTasks,
@@ -285,6 +286,80 @@ describe("which task is still open", () => {
       ),
     ]);
     expect(openBrowsingTask(items, true)).toBeNull();
+  });
+});
+
+/*
+ * MEASURED 2026-09-25 (0.5.4 final QA): Stop pressed while the Bot was thinking between two steps
+ * left the card reading 끝남 — its last step had worked — while 오늘 read the ledger and said 멈춤.
+ */
+describe("a task its turn was cut off in", () => {
+  const navigated = () =>
+    calls({
+      name: "computer_navigate",
+      args: { url: "https://news.naver.com" },
+      result: { ok: true },
+    });
+
+  test("is stopped when nothing came after it, and failed when the turn left a failure", () => {
+    const items = itemsOf([said("user", "뉴스"), ...navigated()]);
+    const card = items.findIndex((item) => item.kind === "browse");
+    const quiet = { busy: false, failed: false };
+    expect(cutOffOf(items, card, quiet)).toBe("stopped");
+    expect(cutOffOf(items, card, { ...quiet, failed: true })).toBe("failed");
+    const task = items[card];
+    if (task?.kind !== "browse") throw new Error("no card");
+    expect(endingOf(task.steps, false)).toEqual({ kind: "done" });
+    expect(endingOf(task.steps, false, "stopped")).toEqual({ kind: "stopped" });
+    expect(endingOf(task.steps, false, "failed")).toEqual({
+      kind: "failed",
+      code: null,
+    });
+  });
+
+  test("is cut off when the person's next message came straight after it", () => {
+    const items = itemsOf([
+      said("user", "뉴스"),
+      ...navigated(),
+      said("user", "멈추고 이걸로: 날씨"),
+    ]);
+    const card = items.findIndex((item) => item.kind === "browse");
+    expect(cutOffOf(items, card, { busy: false, failed: false })).toBe(
+      "stopped",
+    );
+  });
+
+  test("is not, once the Bot said what it came to, nor while the turn is running", () => {
+    const answered = itemsOf([
+      said("user", "뉴스"),
+      ...navigated(),
+      said("assistant", "기사 세 개예요."),
+    ]);
+    const card = answered.findIndex((item) => item.kind === "browse");
+    expect(cutOffOf(answered, card, { busy: false, failed: false })).toBeNull();
+    const running = itemsOf([said("user", "뉴스"), ...navigated()]);
+    expect(
+      cutOffOf(
+        running,
+        running.findIndex((item) => item.kind === "browse"),
+        { busy: true, failed: false },
+      ),
+    ).toBeNull();
+  });
+
+  test("a step that failed keeps its own ending", () => {
+    const task = step(
+      "computer_navigate",
+      { url: "https://x.example" },
+      {
+        ok: false,
+        code: "laf:navigation_failed",
+      },
+    );
+    expect(endingOf([task], false, "stopped")).toEqual({
+      kind: "failed",
+      code: "laf:navigation_failed",
+    });
   });
 });
 
