@@ -211,9 +211,16 @@ const LOCK_CLASS = 0x1af7;
  * what is genuinely new, not by the length of the conversation. The transcript itself is untouched;
  * the screen and the export still read all of it, once, when somebody opens it.
  *
- * 500 rows is hundreds of turns of headroom over the couple a live edit spans.
+ * 64 ROWS, NOT 500, AND ONLY THOSE ARE MERGED (2026-09-25). At 500 the window was the whole of a
+ * normal conversation, so every turn still parsed ~375 KB of jsonb and stamped, attributed and
+ * canonically compared every message the client handed back — twice, once as the run began and
+ * once as it finished — while the request waited to be forwarded to the Bot. The performance audit
+ * measured it (`~/laf/docs/performance-audit-2026-09.md` §2): 1.46–1.75 s at 470 messages. A live
+ * edit spans the previous run or two — a turn's own input plus what it produced, a few dozen rows
+ * at the most for a long browsing step — so 64 is still an order of magnitude of headroom, and an
+ * incoming message that is neither in it nor new is not looked at again at all.
  */
-export const THREAD_READ_WINDOW = 500;
+export const THREAD_READ_WINDOW = 64;
 
 /**
  * Which of these ids the thread does not hold, asked of the unique index rather than of the rows.
@@ -314,6 +321,16 @@ export async function appendMessages(
       ),
     ]);
 
+    /*
+     * APPEND-ONLY BEYOND THE WINDOW. What the window does not hold and the index says is stored is
+     * history, and history does not change: it is dropped here, before any of the per-message work
+     * below, rather than stamped, attributed, redacted and then skipped one by one. That per-message
+     * work over the whole history is what made the append cost as much as the conversation was long.
+     */
+    const relevant = incoming.filter(
+      (message) => stored.has(message.id) || unstored.has(message.id),
+    );
+
     const heldMessages = [...stored.values()].map((row) => row.message);
     const known = stampsOf(heldMessages);
     const speakers = speakersOf(heldMessages);
@@ -325,7 +342,7 @@ export async function appendMessages(
      */
     const merged = redactSecretTyping(
       attribute(
-        stamp(incoming, known, new Set(stored.keys()), at.toISOString()),
+        stamp(relevant, known, new Set(stored.keys()), at.toISOString()),
         speakers,
       ),
       heldMessages,
@@ -346,8 +363,6 @@ export async function appendMessages(
         continue;
       }
       const previous = stored.get(message.id);
-      // Stored already, just older than the window this append read: leave it where it is.
-      if (!previous && !unstored.has(message.id)) continue;
       if (!previous) {
         next += 1;
         fresh.set(message.id, {
