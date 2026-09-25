@@ -90,9 +90,13 @@ function server(options: {
   routines?: ReturnType<typeof routine>[];
 }) {
   const asked: string[] = [];
-  globalThis.fetch = stubFetch(async (input) => {
+  globalThis.fetch = stubFetch(async (input, init) => {
     const url = String(input);
-    asked.push(url);
+    asked.push(init?.method === "POST" ? `POST ${url}` : url);
+    // Starting a conversation for a Bot that has one answers with that one.
+    if (url === "/api/channels" && init?.method === "POST") {
+      return json({ channel: (options.channels ?? [conversation(at(1))])[0] });
+    }
     if (url === "/api/agents/bot-1/day") {
       return json({
         day: "2026-09-25",
@@ -267,6 +271,56 @@ describe("오늘", () => {
     const chips = [...fresh.host.querySelectorAll("section div button")];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.length).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("a first thing pressed is a first thing sent", () => {
+  /*
+   * MEASURED 2026-09-25: on a conversation that existed but was empty, the chip put its sentence in
+   * the composer, while on a fresh account the same press sent it. Starting a Bot's conversation
+   * lands on the one it has; that one was already on screen, so nothing mounted to read the stash.
+   */
+  test("on the empty conversation already on screen, the press sends the sentence there", async () => {
+    const { hearFirstMessages } = await import(
+      "../src/components/channels/transcript-messages"
+    );
+    const { takeOfferedDraft } = await import(
+      "../src/components/channels/composer/prefill"
+    );
+    const sent: string[] = [];
+    // What `ChannelChat` does while this conversation is on screen.
+    const stop = hearFirstMessages("ch-1", (text) => sent.push(text));
+    try {
+      const view = await day({ items: [], channels: [conversation(null)] });
+      await view.settle(60);
+      const chip =
+        view.host.querySelector<HTMLButtonElement>("section div button");
+      expect(chip).not.toBeNull();
+      const sentence = chip?.textContent ?? "";
+      chip?.click();
+      await view.settle(60);
+      expect(view.asked).toContain("POST /api/channels");
+      expect(sent).toEqual([sentence]);
+      expect(takeOfferedDraft("ch-1")).toBeNull();
+      expect(view.router.state.location.pathname).toBe("/channel/ch-1");
+    } finally {
+      stop();
+    }
+  });
+
+  test("with no conversation on screen, the sentence waits for the one that mounts", async () => {
+    const { peekFirstMessage, forgetFirstMessage } = await import(
+      "../src/components/channels/transcript-messages"
+    );
+    const view = await day({ items: [], channels: [conversation(null)] });
+    await view.settle(60);
+    const chip =
+      view.host.querySelector<HTMLButtonElement>("section div button");
+    const sentence = chip?.textContent ?? "";
+    chip?.click();
+    await view.settle(60);
+    expect(peekFirstMessage("ch-1")).toBe(sentence);
+    forgetFirstMessage("ch-1");
   });
 });
 

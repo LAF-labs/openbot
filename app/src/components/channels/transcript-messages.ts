@@ -40,8 +40,35 @@ export function seedMessage(text: string, id: string): Message {
  */
 const firstMessages = new Map<string, string>();
 
+/**
+ * The conversations on screen now, each ready to send a message handed to it.
+ *
+ * A stash is read only when a conversation MOUNTS, and starting a channel that already exists lands
+ * on that same channel. So a first message for the conversation already on screen — the sidebar's
+ * 오늘 chips on an empty one — was stashed, navigated to the page it was on, and never read: nothing
+ * mounted. The chip then put its sentence in the composer instead, which on a fresh account it sent.
+ * Measured 2026-09-25. A conversation on screen now takes it as it is stashed, and sends it.
+ */
+const listening = new Map<string, (text: string) => void>();
+
 export function stashFirstMessage(channelId: string, text: string): void {
+  const send = listening.get(channelId);
+  if (send) {
+    send(text);
+    return;
+  }
   firstMessages.set(channelId, text);
+}
+
+/** While a conversation is on screen, a first message stashed for it is sent by it. */
+export function hearFirstMessages(
+  channelId: string,
+  send: (text: string) => void,
+): () => void {
+  listening.set(channelId, send);
+  return () => {
+    if (listening.get(channelId) === send) listening.delete(channelId);
+  };
 }
 
 /** The pending first message, left in place. Null for a channel opened any other way. */

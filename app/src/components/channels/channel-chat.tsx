@@ -21,6 +21,7 @@ import { DraftScope } from "@/components/channels/composer/prefill";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
   forgetFirstMessage,
+  hearFirstMessages,
   peekFirstMessage,
   seedMessage,
   transcriptMessages,
@@ -915,6 +916,15 @@ export function ChannelChat({
 
     // Keep `seed` in state; transcriptMessages hides it as soon as agent messages exist.
   }, [joinGatePromise]);
+
+  // A first message started for this conversation while it is already on screen (a sidebar chip).
+  useEffect(
+    () =>
+      hearFirstMessages(channel.id, (text) => {
+        void sayRef.current(text);
+      }),
+    [channel.id],
+  );
 
   /*
    * WHEN EACH MESSAGE WAS SAID — FROM THE SERVER ONLY.

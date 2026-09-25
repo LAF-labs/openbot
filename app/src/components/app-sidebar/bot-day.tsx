@@ -5,9 +5,8 @@ import {
   IconMessageCircle,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
-import { offerDraft } from "@/components/channels/composer/prefill";
 import { useControl } from "@/components/computer/use-control";
 import { focusRing } from "@/components/ui/focus";
 import {
@@ -412,11 +411,6 @@ function FirstThings({
   const overview = useQuery(connectionsOverviewQueryOptions());
   const user = useQuery(currentUserQueryOptions());
   const { start, pending } = useStartChannel();
-  const channels = useQuery(channelListQueryOptions());
-  const existing = conversationOf(botId, channels.data);
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
   const tasks = overview.data
     ? pickFirstTasks(overview.data, { shop: user.data?.shop }).flatMap(
         (task) => (task.kind === "ask" ? [task] : []),
@@ -447,19 +441,12 @@ function FirstThings({
                 hint: null,
               });
               onLeave?.();
-              // The Korean, not the key: the Bot is asked in the person's own language.
-              const sentence = t(task.sentence);
               /*
-               * AN EMPTY CONVERSATION ALREADY ON SCREEN CANNOT TAKE A FIRST MESSAGE: it reads one only
-               * when it mounts (`channel-chat.tsx`), and `start` lands on the same conversation, so
-               * nothing mounts. Measured: a conversation whose first send was lost kept these chips,
-               * and a press created nothing. There the sentence goes into its composer instead.
+               * The Korean, not the key: the Bot is asked in the person's own language. Sent, on every
+               * screen: an empty conversation already on screen takes it as it is stashed
+               * (`hearFirstMessages`), where it used to land in the composer instead.
                */
-              if (existing && pathname === `/channel/${existing.id}`) {
-                offerDraft(existing.id, sentence);
-                return;
-              }
-              void start([botId], sentence).catch(() => undefined);
+              void start([botId], t(task.sentence)).catch(() => undefined);
             }}
             type="button"
           >
