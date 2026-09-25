@@ -11,14 +11,23 @@ import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentActor } from "../agents/profile-types";
 import type { AppVariables } from "../auth/guards";
+import type { ChannelEventHub } from "./events";
 import { isKeepableFrame } from "./frames";
 import { mapRefusal, refusal } from "./refusals";
 import type { ChannelStore, ReadMessageTimes } from "./types";
+
+/**
+ * The socket frame that says a task's picture was kept, with `channelId` and `toolCallId` beside it.
+ * The app's reader switches on it (`app/src/lib/channels/use-channel-events.ts`).
+ */
+export const FRAME_KEPT = "frame_kept";
 
 export function createTranscriptRoutes(
   store: ChannelStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   readMessageTimes: ReadMessageTimes | undefined,
+  /** Tells the person's other windows a picture was kept. Absent in tests that only want the row. */
+  events?: ChannelEventHub,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -120,6 +129,9 @@ export function createTranscriptRoutes(
    * next run's input — at once as a rule, and only with the person's next turn when the step was
    * stopped while its window was making it — and the surface asks again then. 404 is for a call
    * the thread does not hold, which asking again cannot change.
+   *
+   * Once kept, the person's other windows are told (`frame_kept`): a card they drew without a
+   * picture — they were not the window that ran the task — shows it without a reload.
    */
   routes.put("/:channelId/frames/:toolCallId", requireUser, async (context) => {
     const body = (await context.req.json().catch(() => null)) as {
@@ -146,6 +158,12 @@ export function createTranscriptRoutes(
         if (early) return context.json({ waiting: true }, 202);
         return context.json(refusal("laf:frame_not_found"), 404);
       }
+      events?.deliverFrame({
+        kind: FRAME_KEPT,
+        memberIds: [context.var.actor.id],
+        channelId: channel.id,
+        toolCallId,
+      });
       return context.body(null, 204);
     } catch (error) {
       return mapRefusal(context, error);

@@ -91,7 +91,7 @@ export function createChannelRoutes(
   routes.route("/", createRosterRoutes(store, requireUser, readMessageTimes));
   routes.route(
     "/",
-    createTranscriptRoutes(store, requireUser, readMessageTimes),
+    createTranscriptRoutes(store, requireUser, readMessageTimes, events),
   );
   routes.route("/", createConversationRoutes(store, requireUser));
 

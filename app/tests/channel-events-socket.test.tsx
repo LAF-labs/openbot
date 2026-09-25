@@ -1,5 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   afterAll,
   afterEach,
@@ -8,6 +6,8 @@ import {
   expect,
   test,
 } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, StrictMode } from "react";
 
 /**
@@ -101,6 +101,7 @@ async function mountedProbe(children: number) {
   });
 
   return {
+    client,
     unmount: async () => {
       await act(async () => {
         root.unmount();
@@ -184,5 +185,35 @@ describe("the roster's channel-events socket", () => {
     expect(sockets[1]?.isClosed).toBe(false);
 
     await second.unmount();
+  });
+
+  /*
+   * A PICTURE KEPT IN ANOTHER WINDOW (0.5.4 final QA): only the window that ran a task keeps its
+   * picture, and every other one drew the card from a list read before it existed — a placeholder
+   * until a reload. The server's `frame_kept` frame makes that conversation's list stale, and only
+   * that one's.
+   */
+  test("a picture kept elsewhere makes its conversation's list of pictures stale", async () => {
+    const { channelKeys } = await import("../src/lib/channels/queries");
+    const probe = await mountedProbe(1);
+    probe.client.setQueryData(channelKeys.framedCalls("ch-1"), new Set());
+    probe.client.setQueryData(channelKeys.framedCalls("ch-2"), new Set());
+    sockets.at(-1)?.onmessage?.({
+      data: JSON.stringify({
+        kind: "frame_kept",
+        memberIds: ["user-1"],
+        channelId: "ch-1",
+        toolCallId: "call-1",
+      }),
+    });
+    expect(
+      probe.client.getQueryState(channelKeys.framedCalls("ch-1"))
+        ?.isInvalidated,
+    ).toBe(true);
+    expect(
+      probe.client.getQueryState(channelKeys.framedCalls("ch-2"))
+        ?.isInvalidated,
+    ).toBe(false);
+    await probe.unmount();
   });
 });

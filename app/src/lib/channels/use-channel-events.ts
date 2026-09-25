@@ -67,6 +67,21 @@ export function isSocketLost(): boolean {
   return lost;
 }
 
+/**
+ * The conversation a task's picture was just kept in, from the server's `frame_kept` frame
+ * (`server/src/channels/transcript-routes.ts`), or null for any other frame.
+ *
+ * The window that ran the task keeps the picture; every other window drew that card from the list of
+ * kept pictures it read once, and showed the empty placeholder until a reload (0.5.4 final QA).
+ */
+export function frameKeptIn(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const frame = value as { kind?: unknown; channelId?: unknown };
+  return frame.kind === "frame_kept" && typeof frame.channelId === "string"
+    ? frame.channelId
+    : null;
+}
+
 const FIRST_RETRY_MS = 500;
 /**
  * The longest wait between attempts: the minute every poll in the app backs off to during an outage
@@ -157,6 +172,15 @@ function openConnection(queryClient: QueryClient): Connection {
             detail: parsed,
           }),
         );
+        return;
+      }
+      // A task's picture was kept: the cards and 오늘 that drew it without one ask again.
+      const framedIn = frameKeptIn(parsed);
+      if (framedIn) {
+        void queryClient.invalidateQueries({
+          queryKey: channelKeys.framedCalls(framedIn),
+        });
+        void queryClient.invalidateQueries({ queryKey: dayKeys.all });
         return;
       }
       /*

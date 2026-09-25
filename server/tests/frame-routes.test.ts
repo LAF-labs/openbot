@@ -150,6 +150,59 @@ describe("keeping and reading it", () => {
     ).toBe(404);
   });
 
+  /*
+   * THE OTHER WINDOWS HEAR OF IT (0.5.4 final QA): only the window that ran the task keeps the
+   * picture, and every other one drew the card from a list read before it existed.
+   */
+  test("a kept picture is told to the person's windows, and an early or missing one is not", async () => {
+    const frames: Record<string, unknown>[] = [];
+    const hub = {
+      register: () => () => {},
+      closeFor: () => 0,
+      deliver: () => {},
+      deliverFrame: (frame: Record<string, unknown>) => {
+        frames.push(frame);
+      },
+      connectionCount: () => 0,
+    };
+    const kept = new Map<string, string>();
+    const app = createChannelRoutes(
+      {
+        create: async () => channel("c"),
+        get: async (_actor, id) => (id === "mine" ? channel(id) : null),
+        list: async () => [],
+        setLastRead: async (_actor, _id, at) => ({ previous: null, at }),
+        recordActivity: async () => {},
+        keepFrame: async (threadId, toolCallId, frame) => {
+          if (toolCallId !== "call-9") return false;
+          kept.set(`${threadId}/${toolCallId}`, frame);
+          return true;
+        },
+        holdsCall: async (_threadId, toolCallId) => toolCallId === "not-yet",
+      },
+      requireUser,
+      hub,
+    );
+    expect(
+      (await app.request("/mine/frames/not-yet", put({ jpeg: JPEG }))).status,
+    ).toBe(202);
+    expect(
+      (await app.request("/mine/frames/never", put({ jpeg: JPEG }))).status,
+    ).toBe(404);
+    expect(frames).toEqual([]);
+    expect(
+      (await app.request("/mine/frames/call-9", put({ jpeg: JPEG }))).status,
+    ).toBe(204);
+    expect(frames).toEqual([
+      {
+        kind: "frame_kept",
+        memberIds: [actor.id],
+        channelId: "mine",
+        toolCallId: "call-9",
+      },
+    ]);
+  });
+
   test("a miss is not cached, so the picture shows once it is kept", async () => {
     const { app } = routes();
     const missing = await app.request("/mine/frames/call-1");
