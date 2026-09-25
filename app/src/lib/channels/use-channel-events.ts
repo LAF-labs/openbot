@@ -1,13 +1,14 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { dayKeys } from "@/lib/agents/day";
 import { workingKeys } from "@/lib/agents/working";
-import { OUTAGE_CAP_MS } from "@/lib/polling";
 import {
   isNotificationFrame,
   NOTIFICATION_FRAME,
   type NotificationFrame,
   notificationFrames,
 } from "@/lib/notifications/outbox";
+import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { type ChannelSummary, channelKeys } from "./queries";
 
 /**
@@ -123,6 +124,7 @@ function openConnection(queryClient: QueryClient): Connection {
       if (opened) {
         // And what the polls would have learned meanwhile, once rather than on their next tick.
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+        void queryClient.invalidateQueries({ queryKey: dayKeys.all });
         socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
       }
       opened = true;
@@ -148,6 +150,8 @@ function openConnection(queryClient: QueryClient): Connection {
          * (`lib/agents/working.ts`).
          */
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+        // And the Bot's day: a finished run, a failure, a question is a row in 오늘 (`lib/agents/day.ts`).
+        void queryClient.invalidateQueries({ queryKey: dayKeys.all });
         notificationFrames.dispatchEvent(
           new CustomEvent<NotificationFrame>(NOTIFICATION_FRAME, {
             detail: parsed,
@@ -215,8 +219,9 @@ function openConnection(queryClient: QueryClient): Connection {
        */
       if (activity.lastMessageAgentId) {
         void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
-        // A Bot that just spoke has, as a rule, just stopped working.
+        // A Bot that just spoke has, as a rule, just stopped working — and done something today.
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+        void queryClient.invalidateQueries({ queryKey: dayKeys.all });
       }
 
       channelActivity.dispatchEvent(

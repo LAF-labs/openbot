@@ -2606,4 +2606,16 @@ export const ko: Record<string, string> = {
   Conversation: "대화",
   "Open the menu": "메뉴 열기",
   "Close the menu": "메뉴 닫기",
+  // today
+  "Waiting on the owner": "기다리는 일",
+  "Up next": "다음",
+  "Show {count} more": "{count}개 더 보기",
+  "Remembered · {fact}": "기억함 · {fact}",
+  "Nothing new": "새 소식 없음",
+  "The last screen of this task": "이 작업의 마지막 화면",
+  "Nothing done yet today. Try handing over one of these.":
+    "아직 오늘 한 일이 없어요. 이런 걸 맡겨 보세요.",
+  "Approval needed · {subject}": "승인 필요 · {subject}",
+  "Help needed · {reason}": "도움 필요 · {reason}",
+  "Didn't finish": "끝내지 못함",
 };

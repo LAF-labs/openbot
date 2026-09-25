@@ -82,6 +82,8 @@ function MessageScrollerItem({
         // Do not use `content-visibility: auto`: short transcripts can reserve item height without
         // painting the message until a scroll/resize forces it.
         "min-w-0 shrink-0",
+        // A row somebody was just taken to from 오늘 (`chat-transcript.tsx`, `JumpToRow`) glows for a moment.
+        "rounded-xl transition-colors duration-700 data-[jumped=true]:bg-primary/10",
         className
       )}
       {...props}

@@ -1,12 +1,12 @@
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconBox,
   IconCheck,
   IconCopy,
 } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
@@ -18,9 +18,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Streamdown } from "streamdown";
+import { BrowsingCard } from "@/components/computer/browsing-card";
+import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { focusRing } from "@/components/ui/focus";
 import {
   MessageContent,
   MessageFooter,
@@ -36,6 +39,7 @@ import {
   useMessageScroller,
 } from "@/components/ui/message-scroller";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
+import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
@@ -44,15 +48,13 @@ import {
   repeatedFailureLine,
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
-import { focusRing } from "@/components/ui/focus";
+import { copyText } from "@/lib/clipboard";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
-import { copyText } from "@/lib/clipboard";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useNow } from "@/lib/use-now";
-import { BrowsingCard } from "@/components/computer/browsing-card";
 import { AnswerRatingControls } from "./answer-rating";
 import {
   openBrowsingTask,
@@ -63,7 +65,6 @@ import {
 } from "./chat-messages";
 import { LEADING_SKILL, type QueuedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
-import { useIsOnline } from "@/components/layout/connection-notice";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -452,6 +453,73 @@ function ScrollNewestQueuedIntoView({ newest }: { newest: string | null }) {
     }
     scrollToEnd();
   }, [newest, scrollToEnd]);
+
+  return null;
+}
+
+/**
+ * A row another part of the screen asked to be shown — 오늘's press (`lib/channels/jump.ts`).
+ *
+ * Taken the moment the row is in the document, and asked again whenever the list grows, because a
+ * press from another screen lands before this conversation's history does. Through the scroller's
+ * own jump, which it holds against the bottom-following that a plain `scrollIntoView` would lose
+ * to on the next arrival. A waiting card also gets the keyboard on its first button, the way the
+ * header's drawer has always done it.
+ */
+function JumpToRow({
+  channelId,
+  rows,
+}: {
+  channelId: string | undefined;
+  rows: number;
+}) {
+  const jump = usePendingJump(channelId);
+  const { scrollToMessage } = useMessageScroller();
+
+  useEffect(() => {
+    // Nothing drawn yet is a history still arriving: asked again when the list grows.
+    if (!jump || rows === 0) return;
+    const target = jump.waitingCard
+      ? [
+          ...document.querySelectorAll<HTMLElement>(
+            `[data-waiting-card="${CSS.escape(jump.waitingCard)}"]`,
+          ),
+        ].at(-1)
+      : jump.messageId
+        ? document.querySelector<HTMLElement>(
+            `[data-message-id="${CSS.escape(jump.messageId)}"]`,
+          )
+        : null;
+    if (!target) return;
+    settleJump(jump);
+    const row = target.closest<HTMLElement>("[data-message-id]");
+    const id = row?.dataset.messageId;
+    if (!id || !scrollToMessage(id, { align: "center", behavior: "smooth" })) {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    if (jump.waitingCard) {
+      target
+        .querySelector<HTMLElement>("button")
+        ?.focus({ preventScroll: true });
+      return;
+    }
+    /*
+     * Marked for a moment so the eye lands on it; the mark is the row's own `data-jumped` style. The
+     * unmarking is not this effect's cleanup: the list growing re-runs the effect, and a cleanup that
+     * cancelled the timer left the row glowing for good — measured, on the second press.
+     */
+    for (const marked of document.querySelectorAll("[data-jumped]")) {
+      marked.removeAttribute("data-jumped");
+    }
+    row?.setAttribute("data-jumped", "true");
+    setTimeout(() => row?.removeAttribute("data-jumped"), 2400);
+  }, [jump, rows, scrollToMessage]);
+
+  // A jump left for this conversation and never taken goes with it.
+  useEffect(() => {
+    if (!channelId) return;
+    return () => dropJump(channelId);
+  }, [channelId]);
 
   return null;
 }
@@ -1379,6 +1447,7 @@ export function ChatTranscript({
         </MessageScrollerViewport>
         <MessageScrollerButton />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
+        <JumpToRow channelId={channelId} rows={items.length} />
       </MessageScroller>
     </MessageScrollerProvider>
   );

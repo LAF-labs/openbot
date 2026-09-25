@@ -60,8 +60,12 @@ export function workingQueryOptions() {
  * kind of run it is, because "working" alone tells you nothing you did not already see.
  */
 export function workingLabel(run: WorkingRun): string {
-  if (run.label) return run.label;
-  if (run.origin === "routine") return t("Running a routine");
+  /*
+   * A routine's name only. A chat run carries a label too since 오늘 (the start of what the person
+   * typed, `run-ledger.ts`), and the roster row saying back the sentence the person just sent is not
+   * news about what the Bot is doing.
+   */
+  if (run.origin === "routine") return run.label || t("Running a routine");
   if (run.origin === "wake") return t("Following something up");
   return t("Working…");
 }

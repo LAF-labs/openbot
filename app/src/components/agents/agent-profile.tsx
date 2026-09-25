@@ -524,7 +524,11 @@ function MemoriesCard({ agentId }: { agentId: string }) {
 
   // One section in every state, the notice last in it: mounted before it speaks.
   return (
-    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
+    <section
+      className="flex scroll-mt-4 flex-col gap-2 rounded-xl bg-muted p-3 transition-shadow duration-700 data-[jumped=true]:ring-2 data-[jumped=true]:ring-primary/40"
+      // 오늘 links a learned fact here until 수첩 has its own page (`app-sidebar/bot-day.tsx`).
+      id="memories"
+    >
       {reading.state === "loading" ? (
         <>
           <Skeleton className="h-5 w-32" />

@@ -19,6 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { BotDay } from "@/components/app-sidebar/bot-day";
 import {
   BotRow,
   ROSTER_RAIL_ROW_CLASS,
@@ -84,7 +85,9 @@ import { cn } from "@/lib/utils";
  *  1. THE BOT. Its face, alive (the same presence as the conversation's header: working, waiting on
  *     the person, glad it finished), its name, and one word for what it is doing. Pressing it opens
  *     its profile — the only place its name and face change.
- *  2. THE CONVERSATION. One row: the last thing said, when, and whether it is unread.
+ *  2. THE CONVERSATION. One row: the last thing said, when, and whether it is unread — and under
+ *     it 오늘, what the Bot did today, what is waiting on the person and what is next
+ *     (`bot-day.tsx`), in the height that used to be empty.
  *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, right under it rather than pushed to the
  *     bottom, and the account below them all.
  *
@@ -696,6 +699,17 @@ export function BotSidebar() {
                   </BotRowMenu>
                 </li>
               </ul>
+              {/*
+               * 오늘: what the Bot did today, between its conversation and the links. Not in the
+               * rail, which has no room for a sentence — the face's dot already says something waits.
+               */}
+              {isRail ? null : (
+                <BotDay
+                  botId={only.agent.id}
+                  onLeave={closeMobileNav}
+                  placement="sidebar"
+                />
+              )}
             </>
           ) : null}
 

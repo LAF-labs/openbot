@@ -1,0 +1,153 @@
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { t } from "@/lib/i18n";
+import { clockLabel } from "@/lib/routines/queries";
+import { useNow } from "@/lib/use-now";
+import { workingQueryOptions } from "./working";
+
+/**
+ * 오늘: WHAT THE BOT DID TODAY, AS THE SERVER READ IT (`GET /api/agents/:agentId/day`).
+ *
+ * Facts only — a status, the person's own words, ids to jump to — so every word on the screen is
+ * this module's or the component's (`bot-day.tsx`), in Korean through `t()`.
+ *
+ * NO POLL OF ITS OWN. A hidden window turns a one-second poll into one frame a minute, and the
+ * things that change this list already arrive on the socket: a Bot speaking, a notification, a
+ * reconnect (`use-channel-events.ts` invalidates `dayKeys.all` on each). The one thing that never
+ * reaches the socket is a routine that answered `[SILENT]` — it says nothing, by design — so the
+ * working poll that already exists is watched instead: a run of this Bot's ending is a moment the
+ * day changed (`useDayFollowsWork`). And the window coming forward refetches, as every query does.
+ */
+
+export type DayRunStatus = "done" | "error" | "stopped" | "unknown" | "running";
+
+export type BotDayItem =
+  | {
+      kind: "chat";
+      runId: string;
+      at: string;
+      status: DayRunStatus;
+      label: string | null;
+      channelId: string | null;
+      messageId: string | null;
+      frameToolCallId: string | null;
+    }
+  | {
+      kind: "routine";
+      runId: string;
+      routineId: string | null;
+      at: string;
+      status: DayRunStatus;
+      name: string;
+      silent: boolean;
+      channelId: string | null;
+      messageId: string | null;
+    }
+  | { kind: "learned"; memoryId: string; at: string; head: string };
+
+export type BotDay = {
+  day: string;
+  zone: string;
+  items: BotDayItem[];
+  more: boolean;
+};
+
+export const dayKeys = {
+  all: ["agents", "day"] as const,
+  of: (botId: string, date: string) => ["agents", "day", botId, date] as const,
+};
+
+/**
+ * The device's calendar date, which is what turns the list over at midnight.
+ *
+ * The server counts the day in the person's home zone, which is the zone this device reports
+ * (`PUT /api/me/device`), so the date here moving is the day there moving. It is in the query's key:
+ * at 00:00 the key changes and the new day is asked for — no timer, `useNow` already ticks.
+ */
+export function deviceDate(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+export function dayQueryOptions(botId: string, date: string) {
+  return queryOptions({
+    queryKey: dayKeys.of(botId, date),
+    queryFn: async (): Promise<BotDay> => {
+      const response = await fetch(
+        `/api/agents/${encodeURIComponent(botId)}/day`,
+        { credentials: "include" },
+      );
+      if (!response.ok) {
+        throw new Error(`/api/agents/:id/day answered ${response.status}`);
+      }
+      return (await response.json()) as BotDay;
+    },
+    staleTime: 5_000,
+    // The PC shell's window coming forward is the moment somebody looks.
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** This Bot's day, refetched when anything it does ends. */
+export function useBotDay(botId: string) {
+  const now = useNow();
+  useDayFollowsWork(botId);
+  return useQuery(dayQueryOptions(botId, deviceDate(now)));
+}
+
+/**
+ * A run of this Bot's ending, seen by the working poll that is already running — the only sign a
+ * silent routine ever gives. Held in state rather than a ref so the compiler can see it.
+ */
+function useDayFollowsWork(botId: string): void {
+  const queryClient = useQueryClient();
+  const working = useQuery(workingQueryOptions());
+  const busy = (working.data ?? [])
+    .filter((run) => run.agentId === botId)
+    .map((run) => run.startedAt)
+    .sort()
+    .join(",");
+  const [seen, setSeen] = useState(busy);
+  useEffect(() => {
+    if (busy === seen) return;
+    setSeen(busy);
+    void queryClient.invalidateQueries({ queryKey: dayKeys.all });
+  }, [busy, seen, queryClient]);
+}
+
+/** "오전 7:30", on the day's own clock. */
+export function dayClock(iso: string, zone: string): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return "";
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(when);
+  } catch {
+    // A zone this browser does not know: the device's own clock is the next best.
+    parts = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(when);
+  }
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+  const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+  return clockLabel(`${hour}:${minute}`);
+}
+
+export type DayMark = { text: string; tone: "active" | "failed" };
+
+/** What a row is marked with, when it is anything but finished well. */
+export function dayMark(status: DayRunStatus): DayMark | null {
+  if (status === "error" || status === "unknown") {
+    return { text: t("Didn't finish"), tone: "failed" };
+  }
+  if (status === "stopped") return { text: t("Stopped"), tone: "failed" };
+  if (status === "running") return { text: t("Working…"), tone: "active" };
+  return null;
+}

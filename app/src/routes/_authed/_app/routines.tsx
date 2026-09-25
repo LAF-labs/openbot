@@ -41,6 +41,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { dayKeys } from "@/lib/agents/day";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
@@ -184,6 +185,8 @@ function RoutineRow({
       void queryClient.invalidateQueries({
         queryKey: routineKeys.notepad(routine.id),
       });
+      // And 오늘: a run that found nothing new says so nowhere else (`lib/agents/day.ts`).
+      void queryClient.invalidateQueries({ queryKey: dayKeys.all });
     },
   });
   /*
@@ -211,7 +214,11 @@ function RoutineRow({
   const openForm = () => void navigate({ search: { edit: routine.id } });
 
   return (
-    <div className="rounded-xl border border-border bg-card">
+    <div
+      className="scroll-mt-4 rounded-xl border border-border bg-card transition-shadow duration-700 data-[jumped=true]:ring-2 data-[jumped=true]:ring-primary/40"
+      // 오늘 and the drawer link here by this (`app-sidebar/bot-day.tsx`, `revealWhenDrawn`).
+      id={`routine-${routine.id}`}
+    >
       <div className="flex items-start gap-3 p-4">
         {/*
          * The routine's Bot, and the Bot's id when the roster has not answered yet — a face from
