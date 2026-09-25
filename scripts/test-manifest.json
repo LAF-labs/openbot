@@ -368,6 +368,7 @@
   "server/tests/routine-unread.integration.test.ts",
   "server/tests/run-ledger.integration.test.ts",
   "server/tests/run-outcome.test.ts",
+  "server/tests/runner-replay.test.ts",
   "server/tests/runtime-agents.integration.test.ts",
   "server/tests/sandboxed-components.integration.test.ts",
   "server/tests/schema.test.ts",

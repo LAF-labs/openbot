@@ -27,6 +27,7 @@
  */
 import type { AbstractAgent, BaseEvent, Message } from "@ag-ui/client";
 import {
+  type AgentRunnerConnectRequest,
   type AgentRunnerRunRequest,
   type AgentRunnerStopRequest,
   InMemoryAgentRunner,
@@ -40,6 +41,7 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import type { WorkInFlight } from "./in-flight";
+import { settleReplay } from "./replay";
 import {
   chatLabelOf,
   RUN_ORIGINS,
@@ -822,6 +824,18 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
    * through; the window is the microseconds between the middleware and the handler, and the thread
    * read below is keyed by thread id and therefore not exposed to it.
    */
+  /**
+   * A window joining a thread, shown its history with every past run closed rather than failed.
+   * See `replay.ts`: a stopped run's RUN_ERROR made every later window's join fail.
+   *
+   * Counted in the same tick the vendored `connect` compacts the same history, so exactly the
+   * replayed part is settled and a run still going on reaches the window untouched.
+   */
+  override connect(request: AgentRunnerConnectRequest) {
+    const replayed = this.getThreadEvents(request.threadId).length;
+    return settleReplay(super.connect(request), replayed);
+  }
+
   override listThreads(): InMemoryThread[] {
     const mine = this.listed ?? [];
     const allowed = new Set(mine.map((record) => record.id));
