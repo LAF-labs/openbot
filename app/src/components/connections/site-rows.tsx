@@ -2,7 +2,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { ConnectionRow } from "@/components/connections/connection-row";
 import { pokeControl } from "@/components/computer/control-poll";
-import { takeControl } from "@/components/computer/take-the-wheel";
+import {
+  releaseControl,
+  takeControl,
+} from "@/components/computer/take-the-wheel";
 import { Handoff } from "@/components/sites/handoff";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +61,9 @@ const refusalText = (outcome: OpenSiteOutcome): string => {
   if (outcome.ok) return "";
   if (outcome.kind === "refused") {
     return t("This Bot is not allowed to open that address.");
+  }
+  if (outcome.kind === "held") {
+    return t("Somebody is using this browser right now.");
   }
   if (outcome.kind === "awaiting") {
     return t("Somebody has to allow this before the page will open.");
@@ -138,7 +144,16 @@ export const SiteRows = ({
       setUnread(null);
       setRetryable(null);
       setOpening(site.id);
-      const opened = await openSite(bot.id, site.loginUrl);
+      let opened = await openSite(bot.id, site.loginUrl);
+      /*
+       * The wheel is still in this person's hands from a login overlay closed without 다 했어요.
+       * They are about to take it again for this one, so it is handed back first and the page
+       * asked for once more — the Bot cannot open a page while a person holds its browser.
+       */
+      if (!opened.ok && opened.kind === "held") {
+        await releaseControl(bot.id);
+        opened = await openSite(bot.id, site.loginUrl);
+      }
       if (!opened.ok) {
         say(site.id, refusalText(opened));
         if (opened.kind === "unreachable") setRetryable(site.id);

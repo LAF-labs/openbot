@@ -184,3 +184,27 @@ describe("what a failed connect is told to say", () => {
     expect(ko[connectFailureText("denied")]).toBe("연결이 취소됐습니다.");
   });
 });
+
+describe("opening a site's login page", () => {
+  /*
+   * MEASURED 2026-09-25: the window closed on the login overlay without 다 했어요, the person kept
+   * the wheel, and every later 연결 said "허락을 받아야 이 페이지가 열립니다" — a question nobody had
+   * asked. The computer said which it was all along; this read the status and not the code.
+   */
+  test("a person holding the browser is told apart from a question waiting", async () => {
+    const { openSite } = await import("../src/lib/sites/queries");
+    answering(409, {
+      error: "laf:human_has_control",
+      code: "laf:human_has_control",
+    });
+    expect(await openSite("agent_1", "https://ceo.baemin.com")).toEqual({
+      ok: false,
+      kind: "held",
+    });
+    answering(409, { code: "laf:approval_pending" });
+    expect(await openSite("agent_1", "https://ceo.baemin.com")).toEqual({
+      ok: false,
+      kind: "awaiting",
+    });
+  });
+});

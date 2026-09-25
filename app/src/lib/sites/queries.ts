@@ -27,7 +27,7 @@ export type SiteConnection = {
  */
 export type OpenSiteOutcome =
   | { ok: true }
-  | { ok: false; kind: "refused" | "awaiting" | "unreachable" };
+  | { ok: false; kind: "refused" | "awaiting" | "held" | "unreachable" };
 
 /**
  * Send the Bot's browser to a site's login page.
@@ -57,7 +57,21 @@ export async function openSite(
   }
   if (response.ok) return { ok: true };
   if (response.status === 403) return { ok: false, kind: "refused" };
-  if (response.status === 409) return { ok: false, kind: "awaiting" };
+  if (response.status === 409) {
+    /*
+     * A PERSON STILL HAS THE WHEEL, which is not the same as a question waiting. MEASURED
+     * 2026-09-25: the window closed on the login overlay without 다 했어요, the wheel stayed with the
+     * person, and every later 연결 said "허락을 받아야 이 페이지가 열립니다" — a permission nobody could
+     * give, for a browser the person themselves was holding.
+     */
+    const body = (await response.json().catch(() => null)) as {
+      code?: unknown;
+    } | null;
+    return {
+      ok: false,
+      kind: body?.code === "laf:human_has_control" ? "held" : "awaiting",
+    };
+  }
   return { ok: false, kind: "unreachable" };
 }
 
