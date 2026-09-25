@@ -46,6 +46,10 @@ function routes(overrides: Partial<ChannelStore> = {}) {
     recordActivity: async () => {},
     frameFor: async (threadId, toolCallId) =>
       kept.get(`${threadId}/${toolCallId}`) ?? null,
+    framedCalls: async (threadId) =>
+      [...kept.keys()]
+        .filter((key) => key.startsWith(`${threadId}/`))
+        .map((key) => key.slice(threadId.length + 1)),
     keepFrame: async (threadId, toolCallId, frame) => {
       if (toolCallId === "not-yet") return false;
       kept.set(`${threadId}/${toolCallId}`, frame);
@@ -135,6 +139,26 @@ describe("keeping and reading it", () => {
     const missing = await app.request("/mine/frames/call-1");
     expect(missing.status).toBe(404);
     expect(missing.headers.get("cache-control")).toBe("no-store");
+  });
+
+  /*
+   * THE LIST, SO A CARD ASKS ONLY WHERE THERE IS A PICTURE (0.5.4 QA): every ended card asked, and
+   * each task without one was a 404 in the console.
+   */
+  test("lists the calls with a kept picture, and only in a conversation of theirs", async () => {
+    const { app } = routes();
+    expect(await (await app.request("/mine/frames")).json()).toEqual({
+      toolCallIds: [],
+    });
+    await app.request("/mine/frames/call-1", put({ jpeg: JPEG }));
+    expect(await (await app.request("/mine/frames")).json()).toEqual({
+      toolCallIds: ["call-1"],
+    });
+    expect((await app.request("/theirs/frames")).status).toBe(404);
+    const bare = routes({ framedCalls: undefined });
+    expect(await (await bare.app.request("/mine/frames")).json()).toEqual({
+      toolCallIds: [],
+    });
   });
 
   test("a store without pictures answers every one as absent", async () => {

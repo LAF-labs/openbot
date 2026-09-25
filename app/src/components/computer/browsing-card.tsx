@@ -5,6 +5,7 @@ import {
   IconShieldCheck,
   IconShieldX,
 } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { Fragment, useId, useState, useSyncExternalStore } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import type { BrowsingItem } from "@/components/channels/chat-messages";
@@ -31,6 +32,7 @@ import {
   stepLine,
   type TaskEnding,
 } from "@/lib/computer/browsing";
+import { framedCallsQueryOptions } from "@/lib/channels/queries";
 import { useBrowsingNow } from "@/lib/computer/browsing-now";
 import { frameAddress, useFrameVersion } from "@/lib/computer/last-frame";
 import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
@@ -299,6 +301,17 @@ function TaskPicture({
   isOpen: boolean;
 }) {
   const version = useFrameVersion(toolCallId);
+  const framed = useQuery({
+    ...framedCallsQueryOptions(channelId ?? ""),
+    enabled: channelId !== undefined && !isOpen,
+  });
+  /*
+   * Asked for only where there is one: kept by this tab, or listed by the server. Every ended card
+   * used to ask, and a task with no picture was a 404 in the console each time (0.5.4 QA).
+   */
+  const hasFrame =
+    toolCallId !== null &&
+    (version > 0 || framed.data?.has(toolCallId) === true);
   return (
     <span className="relative flex aspect-[16/10] w-28 items-center justify-center overflow-hidden rounded-lg bg-muted sm:w-36">
       <IconBrowser
@@ -307,7 +320,7 @@ function TaskPicture({
       />
       {isOpen ? (
         <RunningPicture botId={botId} />
-      ) : channelId && toolCallId ? (
+      ) : channelId && toolCallId && hasFrame ? (
         <FrameImage
           key={version}
           src={`${frameAddress(channelId, toolCallId)}?v=${version}`}

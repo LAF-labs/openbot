@@ -47,6 +47,7 @@ export function createChannelStore(
     // Nothing is written for this; it joins the run ledger to the transcript. See `turn-failures`.
     failuresFor: createTurnFailureReader(database),
     frameFor: frames.frameFor,
+    framedCalls: frames.framedCalls,
     keepFrame: frames.keepFrame,
   };
 }

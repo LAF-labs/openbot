@@ -80,6 +80,15 @@ describe("the last picture of a task", () => {
     expect(await frames.frameFor(threadId, callId)).toBe(JPEG);
   });
 
+  test("is listed by its call, and only in its own thread", async () => {
+    const { threadId, callId } = await threadWithACall();
+    const other = await threadWithACall();
+    expect(await frames.framedCalls(threadId)).toEqual([]);
+    await frames.keepFrame(threadId, callId, JPEG);
+    expect(await frames.framedCalls(threadId)).toEqual([callId]);
+    expect(await frames.framedCalls(other.threadId)).toEqual([]);
+  });
+
   test("is not kept for a call the thread does not hold, nor in another thread", async () => {
     const { threadId, callId } = await threadWithACall();
     const other = await threadWithACall();

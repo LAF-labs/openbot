@@ -66,6 +66,25 @@ export function createTranscriptRoutes(
    * `no-store` on the miss: the picture is kept a moment after the card first asks, and a cached
    * absence would hide it until the cache forgot.
    */
+  /**
+   * Which of this channel's browsing tasks have a kept picture, by call id.
+   *
+   * The card asks for a picture only when this says there is one: every ended card used to ask, and
+   * every task that never kept one — from before pictures, or ended with a person at the wheel —
+   * was a 404 in the console (0.5.4 QA).
+   */
+  routes.get("/:channelId/frames", requireUser, (context) =>
+    fromVisibleThread(
+      context,
+      store,
+      context.var.actor,
+      context.req.param("channelId"),
+      async (threadId) => ({
+        toolCallIds: store.framedCalls ? await store.framedCalls(threadId) : [],
+      }),
+    ),
+  );
+
   routes.get("/:channelId/frames/:toolCallId", requireUser, async (context) => {
     try {
       const channel = await store.get(

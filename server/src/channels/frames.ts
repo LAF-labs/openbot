@@ -72,6 +72,30 @@ export function createFrameStore(database: Database) {
     },
 
     /**
+     * Which calls in the thread have a kept picture: the result rows with one, by their call.
+     *
+     * The ids and never the pictures, so a transcript learns which cards have one in a single read
+     * instead of asking once per card and being told 404 by most (0.5.4 QA: a console of 404s).
+     */
+    async framedCalls(threadId: string): Promise<string[]> {
+      const rows = await database
+        .select({
+          toolCallId: sql<
+            string | null
+          >`${lafThreadMessages.message} ->> 'toolCallId'`,
+        })
+        .from(lafThreadMessages)
+        .where(
+          and(
+            eq(lafThreadMessages.threadId, threadId),
+            sql`${lafThreadMessages.message} ->> 'role' = 'tool'`,
+            isNotNull(lafThreadMessages.frame),
+          ),
+        );
+      return rows.flatMap((row) => (row.toolCallId ? [row.toolCallId] : []));
+    },
+
+    /**
      * Keep a picture on a result. False when the thread holds no such result — yet: the result
      * arrives with the next run's input, and the surface asks again a moment later.
      *

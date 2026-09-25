@@ -82,6 +82,8 @@ export type ChannelStore = {
    * with no picture is what the transcript draws for one anyway.
    */
   frameFor?: (threadId: string, toolCallId: string) => Promise<string | null>;
+  /** The calls in a thread that have a kept picture, so the surface asks only for those. */
+  framedCalls?: (threadId: string) => Promise<string[]>;
   keepFrame?: (
     threadId: string,
     toolCallId: string,

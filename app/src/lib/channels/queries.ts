@@ -38,7 +38,42 @@ export const channelKeys = {
   failures: (channelId: string) => ["channels", "failures", channelId] as const,
   /** Every conversation's failures: what a failure group's acknowledgement changes, wherever it is drawn. */
   allFailures: () => ["channels", "failures"] as const,
+  framedCalls: (channelId: string) =>
+    ["channels", "framed-calls", channelId] as const,
 };
+
+const NO_FRAMES: ReadonlySet<string> = new Set();
+
+/**
+ * The browsing tasks in a channel that have a kept last picture, by call id.
+ *
+ * Read once per conversation so a card asks for its picture only when there is one: every ended
+ * card used to ask, and each task that never kept one answered 404 in the console (0.5.4 QA). A
+ * picture this tab keeps later is known here already (`useFrameVersion`), and a failed read is no
+ * pictures rather than an error.
+ */
+export function framedCallsQueryOptions(channelId: string) {
+  return queryOptions({
+    queryKey: channelKeys.framedCalls(channelId),
+    queryFn: async (): Promise<ReadonlySet<string>> => {
+      const response = await fetch(
+        `/api/channels/${encodeURIComponent(channelId)}/frames`,
+        { credentials: "include" },
+      ).catch(() => null);
+      if (!response?.ok) return NO_FRAMES;
+      const body = (await response.json().catch(() => null)) as {
+        toolCallIds?: unknown;
+      } | null;
+      return new Set(
+        Array.isArray(body?.toolCallIds)
+          ? body.toolCallIds.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : [],
+      );
+    },
+  });
+}
 
 export function channelListQueryOptions() {
   return queryOptions({
