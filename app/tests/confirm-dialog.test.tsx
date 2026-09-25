@@ -94,7 +94,7 @@ describe("a closed confirm dialog", () => {
     await view.render(
       createElement(ConfirmDialog, {
         confirmLabel: "삭제",
-        description: "되돌릴 수 없습니다.",
+        description: "되돌릴 수 없어요.",
         onConfirm: async () => {},
         onOpenChange: () => {},
         open: false,
@@ -196,7 +196,7 @@ describe("a confirm dialog, pressed", () => {
     // The failure, in the dialog, in the region that was waiting for it.
     expect(failing.alertMountedBeforeFailure).toBe(true);
     expect(failing.alertIsSameElement).toBe(true);
-    expect(failing.alert).toBe("그 봇은 더 이상 없습니다.");
+    expect(failing.alert).toBe("그 봇은 더 이상 없어요.");
     expect(failing.labelAfterFailure).toBe("다시 시도");
     expect(failing.openAfterFailure).toBe(true);
   }, 120_000);
@@ -212,7 +212,7 @@ describe("a confirm dialog, pressed", () => {
   test("a re-check that finds the thing gone sends nothing, says why, and leaves only 닫기", async () => {
     const { moot } = await renderedInKorean();
     expect(moot.actionsStarted).toBe(0);
-    expect(moot.status).toBe("이 봇은 이미 삭제되었습니다.");
+    expect(moot.status).toBe("이 봇은 이미 삭제되었어요.");
     expect(moot.buttons).toEqual(["닫기"]);
     expect(moot.focused).toBe("닫기");
   }, 120_000);

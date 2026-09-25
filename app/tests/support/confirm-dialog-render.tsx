@@ -135,7 +135,7 @@ async function opened(props: {
     const [open, setOpen] = useState(true);
     return createElement(ConfirmDialog, {
       confirmLabel: "삭제",
-      description: "되돌릴 수 없습니다.",
+      description: "되돌릴 수 없어요.",
       onConfirm: props.onConfirm,
       onOpenChange: (next: boolean) => {
         asked.push(next);
@@ -198,7 +198,7 @@ const openAfterEscapeOverlayAndX = dialog() !== null;
 const actionsStarted = failingStarted;
 
 await act(async () => {
-  failNow(new Error("그 봇은 더 이상 없습니다."));
+  failNow(new Error("그 봇은 더 이상 없어요."));
 });
 await settle(80);
 const alertAfter = dialog()?.querySelector('[role="alert"]') ?? null;
@@ -242,7 +242,7 @@ const moot = await opened({
   onConfirm: async () => {
     mootStarted += 1;
   },
-  recheck: async () => "이 봇은 이미 삭제되었습니다.",
+  recheck: async () => "이 봇은 이미 삭제되었어요.",
 });
 await press(named("삭제"));
 await settle(80);

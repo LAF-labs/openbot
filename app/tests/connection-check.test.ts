@@ -736,7 +736,7 @@ describe("the last result", () => {
  */
 describe("what 복사 copies", () => {
   const PASSWORD = "hunter2-비밀번호";
-  const SENTENCE = "비밀번호가 틀렸습니다 다시 입력하세요";
+  const SENTENCE = "비밀번호가 틀렸어요 다시 입력하세요";
   const TOKEN = "Bearer sk-live-0123456789";
 
   const SECRETS = [

@@ -271,6 +271,13 @@ async function card(toolCallId: string, rule: string) {
   const { ApprovalRequest } = await import(
     "../src/components/channels/approval-request"
   );
+  const {
+    createMemoryHistory,
+    createRootRoute,
+    createRoute,
+    createRouter,
+    RouterProvider,
+  } = await import("@tanstack/react-router");
   approvals.openQuestion(toolCallId, {
     approvalId: `approval-${toolCallId}`,
     botId: BOT,
@@ -288,7 +295,28 @@ async function card(toolCallId: string, rule: string) {
           defaultOptions: { queries: { retry: false } },
         }),
       },
-      createElement(ApprovalRequest, { toolCallId }),
+      /*
+       * Under a router, because the line an "always" folds into links to where it is taken back
+       * (the Bot's profile), and a link needs a router to resolve against.
+       */
+      createElement(RouterProvider, {
+        router: (() => {
+          const root = createRootRoute();
+          const here = createRoute({
+            getParentRoute: () => root,
+            path: "/",
+            component: () => createElement(ApprovalRequest, { toolCallId }),
+          });
+          const profile = createRoute({
+            getParentRoute: () => root,
+            path: "/agents",
+          });
+          return createRouter({
+            routeTree: root.addChildren([here, profile]),
+            history: createMemoryHistory({ initialEntries: ["/"] }),
+          });
+        })(),
+      }),
     ),
   );
   await view.settle(50);
@@ -307,8 +335,9 @@ describe("the card", () => {
       "Asked because toss.im is a site where money moves.",
     );
     expect(view.text()).toContain("Allow once: just this.");
+    // Where it is taken back, by name, for an owner whatever their role (ux-review-0.5.4 §1.7).
     expect(view.text()).toContain(
-      "Always allow toss.im: not asked again until somebody cancels it.",
+      "Always allow toss.im: not asked again until you take it back on the Bot's profile.",
     );
     expect(view.text()).toContain(
       "Deny: the same thing is refused without asking for a while.",
@@ -329,7 +358,7 @@ describe("the card", () => {
     expect(details?.open).toBe(false);
     expect(details?.textContent).toContain(MONEY_HOST_RULE);
     expect(view.text()).toContain(
-      "Always allow toss.im: not asked again until you cancel it in Admin.",
+      "Always allow toss.im: not asked again until you take it back on the Bot's profile.",
     );
     await view.unmount();
     approvals.closeQuestion("call-rule");
@@ -412,7 +441,14 @@ describe("the card", () => {
     if (!always) throw new Error("the card drew no Always allow");
     await view.press(always);
     await view.settle(50);
-    expect(view.text()).toBe("Always allowed · pressing “비즈니스” on toss.im");
+    expect(view.text()).toBe(
+      "Always allowed · pressing “비즈니스” on toss.imTake it back",
+    );
+    // The way back is a link to the list of standing permissions on the profile.
+    const back = [...view.host.querySelectorAll("a")].find(
+      (anchor) => anchor.textContent === "Take it back",
+    );
+    expect(back?.getAttribute("href")).toBe("/agents#allowances");
   });
 
   test("is kept where a reload can read it, without anything that was typed", () => {

@@ -81,9 +81,9 @@ describe("a live region", () => {
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toBe("");
 
-    await draw("전달되지 않았습니다. 다시 시도하세요.");
+    await draw("전달되지 않았어요. 다시 시도하세요.");
     expect(view.host.querySelector('[role="alert"]')).toBe(empty);
-    expect(empty?.textContent).toBe("전달되지 않았습니다. 다시 시도하세요.");
+    expect(empty?.textContent).toBe("전달되지 않았어요. 다시 시도하세요.");
     // Assertive is the alert's own; a status line never interrupts.
     expect(view.host.querySelector('[role="status"]')).toBeNull();
   });

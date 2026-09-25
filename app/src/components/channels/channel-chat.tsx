@@ -29,6 +29,7 @@ import {
 } from "@/components/channels/transcript-messages";
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import { turnPhaseOf, usePublishTurn } from "@/lib/agents/presence";
+import { agentQueryOptions } from "@/lib/agents/queries";
 import {
   recordChannelActivityMutationOptions,
   setChannelReadMutationOptions,
@@ -134,6 +135,8 @@ export function ChannelChat({
    * always been recorded — the app simply never asked. See server/src/channels/turn-failures.ts.
    */
   const storedFailures = useQuery(channelFailuresQueryOptions(channel.id));
+  /** The Bot's name, for the composer to say who the words go to. Cached by the sidebar already. */
+  const botName = useQuery(agentQueryOptions(runtimeAgentId)).data?.name;
 
   /*
    * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED.
@@ -1256,6 +1259,7 @@ export function ChannelChat({
             await say(draft.text, skillInstructions);
           }}
           onStop={handleStop}
+          placeholder={botName ? t("Ask {name}", { name: botName }) : undefined}
           /*
            * The turn, not the run. A browser action ends one run and starts another, and telling the
            * conversation it is idle in between is what would drain a parked correction into the

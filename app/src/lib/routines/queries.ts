@@ -51,29 +51,23 @@ export type RoutineRun = {
 };
 
 /**
- * One line for what a run did: "3 turns · 2 tools · 41s". Nothing for a run that has no record of
- * its turns, rather than a row of zeros that reads as a Bot that did nothing.
+ * One line for what a run did: "25s". Nothing for a run that has no record of its turns, rather
+ * than "0s", which reads as a Bot that did nothing.
+ *
+ * ONLY THE TIME. It said "2턴 · 도구 1개 · 25초", and a turn and a tool are the machinery's words:
+ * an owner reading their routine's history asks whether it worked and how long it took, and the
+ * line beside this one already says whether (ux-review-0.5.4 §2 item 18).
  */
 export function runShape(
   steps: RoutineRun["steps"],
   t: (text: string, params?: Record<string, string | number>) => string,
 ): string | null {
   if (!steps?.length) return null;
-  const tools = steps.reduce((total, step) => total + step.calls.length, 0);
   const seconds = Math.round(
     steps.reduce((total, step) => total + step.ms, 0) / 1000,
   );
-  // Whole sentences, not a number glued to a translated noun: Korean puts its counter after the
-  // number and English pluralises the noun, and "3 턴" was neither.
-  const parts = [
-    steps.length === 1
-      ? t("1 turn")
-      : t("{count} turns", { count: steps.length }),
-    tools === 1 ? t("1 tool") : t("{count} tools", { count: tools }),
-    // Through `t()` like the counts: glued on as `${seconds}s`, a Korean screen read "21s".
-    t("{seconds}s", { seconds }),
-  ];
-  return parts.join(" · ");
+  // Through `t()`: glued on as `${seconds}s`, a Korean screen read "21s".
+  return t("{seconds}s", { seconds });
 }
 
 /** One entry of a routine's notepad, as the server keeps it: what the next run reads, and when. */

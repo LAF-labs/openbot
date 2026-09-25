@@ -117,11 +117,11 @@ describe("the list area", () => {
 describe("a run's row", () => {
   test("a run that worked shows its answer", () => {
     expect(
-      runOutcome(run({ ok: true, answer: "오늘은 9월 18일입니다." })),
+      runOutcome(run({ ok: true, answer: "오늘은 9월 18일이에요." })),
     ).toEqual({
       label: "Ran",
       tone: "done",
-      text: "오늘은 9월 18일입니다.",
+      text: "오늘은 9월 18일이에요.",
     });
   });
 

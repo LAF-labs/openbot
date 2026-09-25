@@ -112,12 +112,12 @@ describe("failureSentence", () => {
   });
 
   test("an error of ours is its own message, and anything else is the general sentence", () => {
-    expect(failureSentence(new Error("저장하지 못했습니다."))).toBe(
-      "저장하지 못했습니다.",
+    expect(failureSentence(new Error("저장하지 못했어요."))).toBe(
+      "저장하지 못했어요.",
     );
     class Refused extends Error {}
-    expect(failureSentence(new Refused("이미 삭제되었습니다."))).toBe(
-      "이미 삭제되었습니다.",
+    expect(failureSentence(new Refused("이미 삭제되었어요."))).toBe(
+      "이미 삭제되었어요.",
     );
     expect(failureSentence(new Error("   "))).toBe(general);
     expect(failureSentence("a string")).toBe(general);

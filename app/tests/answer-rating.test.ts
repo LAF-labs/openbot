@@ -203,7 +203,7 @@ describe("what the screen reads back", () => {
 describe("which answers carry the controls", () => {
   const items = toVisibleChatItems([
     { id: "q1", role: "user", content: "어제 매출은?" },
-    { id: "a1", role: "assistant", content: "어제 매출은 98만 원입니다." },
+    { id: "a1", role: "assistant", content: "어제 매출은 98만 원이에요." },
     { id: "q2", role: "user", content: "오늘은?" },
     { id: "a2", role: "assistant", content: "오늘 매출은 1" },
   ]);

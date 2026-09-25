@@ -31,11 +31,11 @@ function render(markdown: string, mode: "streaming" | "static"): string {
 
 const CASES: [markdown: string, expected: string][] = [
   ["기온은 **23.5°**예요", "<p>기온은 <span>23.5°</span>예요</p>"],
-  ["**중요**합니다", "<p><span>중요</span>합니다</p>"],
+  ["**중요**해요", "<p><span>중요</span>해요</p>"],
   ["*기울임*이다", "<p><em>기울임</em>이다</p>"],
   ["*23.5°*예요", "<p><em>23.5°</em>예요</p>"],
   ["~~23.5°~~였어요", "<p><del>23.5°</del>였어요</p>"],
-  ["**「중요」**합니다", "<p><span>「중요」</span>합니다</p>"],
+  ["**「중요」**해요", "<p><span>「중요」</span>해요</p>"],
 ];
 
 describe("Korean emphasis", () => {

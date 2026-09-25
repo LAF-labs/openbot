@@ -184,7 +184,7 @@ describe("the live screen's socket", () => {
     expect(screen.canvas().dataset.connected).toBe("false");
     expect(screen.status()).toBe(SAID);
     expect(screen.region()).toBe(region);
-    expect(ko[SAID]).toBe("실시간 화면이 끊겼습니다 — 다시 잇는 중");
+    expect(ko[SAID]).toBe("실시간 화면이 끊겼어요 — 다시 잇는 중");
 
     // Half a second, the same first step the roster's socket takes, then a new socket.
     await screen.act(async () => {

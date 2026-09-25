@@ -199,7 +199,7 @@ if (scenario.via === "help") {
   await view.click(open);
 } else if (scenario.via === "unreachable") {
   await view.waitFor(
-    () => body.textContent?.includes("서버에 닿지 못했습니다.") === true,
+    () => body.textContent?.includes("서버에 닿지 못했어요.") === true,
     "the unreachable screen",
   );
   const open = buttonIn(view.host, "연결 점검");
@@ -215,7 +215,7 @@ if (scenario.via === "help") {
   });
   await view.waitFor(
     () =>
-      body.textContent?.includes("서버와 연결이 끊겼습니다") === true &&
+      body.textContent?.includes("서버와 연결이 끊겼어요") === true &&
       buttonIn(body, "연결 점검") !== undefined,
     "the lost-connection line",
   );
@@ -274,8 +274,7 @@ if (scenario.via === "feedback") {
     ?.querySelector("input");
   if (!box) throw new Error("진단 정보 같이 보내기 is not in the box");
   alsoSends =
-    body.textContent?.includes("마지막 연결 점검 결과도 함께 보냅니다.") ===
-    true;
+    body.textContent?.includes("마지막 연결 점검 결과도 함께 보내요.") === true;
   await view.click(box);
   await view.waitFor(
     () => body.querySelector('[data-testid="diagnostics-preview"]') !== null,

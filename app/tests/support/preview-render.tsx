@@ -84,7 +84,7 @@ const page = await mountApp({
               { field: "subject", values: ["9월 정산 안내"] },
               {
                 field: "text",
-                values: ["안녕하세요.\n9월 정산서를 보내 드립니다."],
+                values: ["안녕하세요.\n9월 정산서를 보내 드려요."],
                 cut: true,
               },
             ],

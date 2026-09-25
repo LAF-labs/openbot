@@ -264,7 +264,7 @@ describe("the Computers page", () => {
     // Two controls, both on the viewer's own row; the other row says why it has none, in Korean.
     expect(shown.buttons).toEqual(["이 봇의 탭 닫기", "초기화"]);
     expect(shown.rowTexts[1]).toContain(
-      "내 봇이 아니거나 삭제된 봇이라 여기서 탭을 닫거나 초기화할 수 없습니다.",
+      "내 봇이 아니거나 삭제된 봇이라 여기서 탭을 닫거나 초기화할 수 없어요.",
     );
 
     // The confirmation names what goes — every Bot's logins, not the row's — before anything is sent.
@@ -272,7 +272,7 @@ describe("the Computers page", () => {
     expect(shown.title).toBe("봇들이 함께 쓰는 컴퓨터를 초기화할까요?");
     expect(shown.description).toContain("봇 전부가");
     expect(shown.description).toContain("로그아웃");
-    expect(shown.description).toContain("되돌릴 수 없습니다");
+    expect(shown.description).toContain("되돌릴 수 없어요");
 
     // And once it is answered, exactly one reset, through the row's own Bot.
     expect(shown.resets).toEqual([`/api/computers/${BOT}/computers/reset`]);

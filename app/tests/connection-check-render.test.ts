@@ -78,7 +78,7 @@ describe("연결 점검 in the app", () => {
       ["봇 화면 실시간 연결", "pass"],
       ["기기 시계", "pass"],
     ]);
-    expect(shown.summary).toStartWith("문제가 보이지 않았습니다.");
+    expect(shown.summary).toStartWith("문제가 보이지 않았어요.");
     // Latency where it means something, and the fact where it does not.
     expect(row(shown, "server").detail).toMatch(/^\d+ms$/);
     expect(row(shown, "conversationSocket").detail).toMatch(/^\d+ms$/);
@@ -113,22 +113,22 @@ describe("연결 점검 in the app", () => {
       via: "notice",
     });
 
-    expect(shown.summary).toStartWith("9개 중 4개에서 문제가 보였습니다.");
+    expect(shown.summary).toStartWith("9개 중 4개에서 문제가 보였어요.");
     expect(row(shown, "server").state).toBe("pass");
     expect(row(shown, "botService")).toMatchObject({
       state: "fail",
       detail: "실패",
       advice:
-        "봇이 답하게 하는 서버가 응답하지 않아 지금은 봇이 답할 수 없습니다 — 이 기기 문제는 아니니 몇 분 뒤에 다시 점검해 주세요.",
+        "봇이 답하게 하는 서버가 응답하지 않아 지금은 봇이 답할 수 없어요 — 이 기기 문제는 아니니 몇 분 뒤에 다시 점검해 주세요.",
     });
     expect(row(shown, "conversationSocket").advice).toBe(
-      "일반 요청은 서버에 닿지만 실시간 연결은 닿지 않습니다 — 회사·학교 네트워크나 보안 프로그램이 막고 있을 수 있으니 휴대폰 핫스팟 같은 다른 네트워크로 해 보세요.",
+      "일반 요청은 서버에 닿지만 실시간 연결은 닿지 않아요 — 회사·학교 네트워크나 보안 프로그램이 막고 있을 수 있으니 휴대폰 핫스팟 같은 다른 네트워크로 해 보세요.",
     );
     expect(row(shown, "liveScreenSocket").advice).toBe(
-      "봇 화면도 같은 실시간 연결을 쓰니 위와 같습니다.",
+      "봇 화면도 같은 실시간 연결을 쓰니 위와 같아요.",
     );
     expect(row(shown, "clock").advice).toBe(
-      "이 기기의 시계가 서버보다 5분 빠릅니다 — 루틴 시각과 남은 시간이 어긋나 보이니 기기 설정에서 시간 자동 설정을 켜 주세요.",
+      "이 기기의 시계가 서버보다 5분 빨라요 — 루틴 시각과 남은 시간이 어긋나 보이니 기기 설정에서 시간 자동 설정을 켜 주세요.",
     );
 
     const copied = shown.copied ?? "";
@@ -152,7 +152,7 @@ describe("연결 점검 in the app", () => {
     expect(row(shown, "server")).toMatchObject({
       state: "fail",
       advice:
-        "주소는 답했지만 그 뒤의 앱 서버가 답하지 않았습니다 — 대개 저절로 풀리니 몇 분 뒤에 다시 점검해 주세요.",
+        "주소는 답했지만 그 뒤의 앱 서버가 답하지 않았어요 — 대개 저절로 풀리니 몇 분 뒤에 다시 점검해 주세요.",
     });
     for (const id of [
       "database",
@@ -165,7 +165,7 @@ describe("연결 점검 in the app", () => {
     ]) {
       expect(row(shown, id)).toMatchObject({
         state: "skip",
-        advice: "서버가 답하지 않아 확인하지 않았습니다.",
+        advice: "서버가 답하지 않아 확인하지 않았어요.",
       });
     }
     // Nothing behind a server that is not there is asked: no probe socket was opened.
@@ -189,7 +189,7 @@ describe("연결 점검 in the app", () => {
     expect(row(shown, "computer")).toMatchObject({
       state: "skip",
       detail: "건너뜀",
-      advice: "이 서버에는 봇의 컴퓨터가 없습니다.",
+      advice: "이 서버에는 봇의 컴퓨터가 없어요.",
     });
     expect(row(shown, "liveScreenSocket").state).toBe("skip");
     expect(shown.alsoSends).toBe(true);
@@ -202,6 +202,6 @@ describe("연결 점검 in the app", () => {
       shown.rows.map((each) => [each.id, each.state]),
     );
     expect(JSON.stringify(sent)).not.toMatch(/[가-힣]/);
-    expect(shown.preview).toContain("연결 점검문제가 보이지 않았습니다.");
+    expect(shown.preview).toContain("연결 점검문제가 보이지 않았어요.");
   }, 60_000);
 });

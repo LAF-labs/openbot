@@ -49,7 +49,7 @@ describe("rating an answer", () => {
       note: "",
     });
     expect(shown.offlineAlert).toBe(
-      "서버에 닿지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      "서버에 닿지 못했어요. 잠시 후 다시 시도해 주세요.",
     );
   });
 
@@ -66,7 +66,7 @@ describe("rating an answer", () => {
     expect(shown.controls).toEqual([
       { said: "오늘 매출 얼마야?", buttons: [] },
       {
-        said: "오늘 매출은 1,234,000원입니다.",
+        said: "오늘 매출은 1,234,000원이에요.",
         buttons: ["이 답장 복사", "좋아요", "아쉬워요"],
       },
     ]);
@@ -143,7 +143,7 @@ describe("rating an answer", () => {
 
     expect(shown.controls).toEqual([
       { said: "오늘 매출 얼마야?", buttons: [] },
-      { said: "오늘 매출은 1,234,000원입니다.", buttons: ["이 답장 복사"] },
+      { said: "오늘 매출은 1,234,000원이에요.", buttons: ["이 답장 복사"] },
     ]);
     expect(shown.puts).toEqual([]);
   }, 120_000);

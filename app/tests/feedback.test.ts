@@ -35,15 +35,15 @@ afterEach(() => {
 
 describe("what leaves the browser", () => {
   test("the words alone, trimmed, when the box is not ticked", () => {
-    expect(feedbackBody("  안 됩니다  ", null)).toEqual({ text: "안 됩니다" });
+    expect(feedbackBody("  안 돼요  ", null)).toEqual({ text: "안 돼요" });
   });
 
   test("the words, the path and the last failure code, when it is", () => {
     noteTurnFailure("laf:turn_rate_limited");
     const facts = screenFactsFor("/channel/abc", lastTurnFailure());
 
-    expect(feedbackBody("안 됩니다", facts)).toEqual({
-      text: "안 됩니다",
+    expect(feedbackBody("안 돼요", facts)).toEqual({
+      text: "안 돼요",
       screen: { route: "/channel/abc", failureCode: "laf:turn_rate_limited" },
     });
   });
@@ -97,7 +97,7 @@ describe("sending", () => {
   test("posts the body with the session, and hands back the server's facts", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const receipt = await sendFeedback(
-      "잘 쓰고 있습니다",
+      "잘 쓰고 있어요",
       null,
       stubFetch(async (url, init) => {
         calls.push({ url: String(url), init });
@@ -117,7 +117,7 @@ describe("sending", () => {
     expect(calls[0]?.init?.method).toBe("POST");
     expect(calls[0]?.init?.credentials).toBe("include");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
-      text: "잘 쓰고 있습니다",
+      text: "잘 쓰고 있어요",
     });
     expect(receipt).toEqual({
       id: "feedback-1",

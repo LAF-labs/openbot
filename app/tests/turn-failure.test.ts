@@ -181,7 +181,7 @@ describe("liveTurnFailureCode", () => {
     }
     expect(
       ko[TURN_FAILURE_SENTENCES["laf:turn_server_unreachable"] as string],
-    ).toBe("서버에 닿지 못했습니다.");
+    ).toBe("서버에 닿지 못했어요.");
   });
 
   it("reads a browser's own network failures as the server being gone", () => {

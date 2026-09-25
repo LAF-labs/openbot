@@ -5,6 +5,7 @@ import {
   IconShieldX,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import {
   alwaysLabel,
@@ -12,6 +13,7 @@ import {
 } from "@/components/channels/allowance-label";
 import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
+import { focusRing } from "@/components/ui/focus";
 import {
   chatCard,
   chatCardChip,
@@ -75,6 +77,14 @@ export function ApprovalRequest({
     decisionOn(toolCallId ?? ""),
   );
   const [answering, setAnswering] = useState(false);
+  /*
+   * WHICH BUTTON THIS CARD'S OWN PRESS WAS. The wait holding the tool call reads "allowed" off the
+   * server and can record the decision before this press's answer comes back — first writer wins
+   * (`decideQuestion`), and it knows no tier. Measured 2026-09-25: "toss.im 항상 허용" pressed, a
+   * standing row written, and the line read "허용함" with no way back drawn. The press knows better,
+   * so the line is told.
+   */
+  const [pressedTier, setPressedTier] = useState<ApprovalTier | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   /** Names the group, so the buttons announce what they are answering. */
   const questionId = useId();
@@ -99,6 +109,7 @@ export function ApprovalRequest({
         tier,
       );
       setAnswering(false);
+      if (result.ok && granted) setPressedTier(tier);
       if (!result.ok) {
         // Expired, or answered in another tab: there is nothing here to press any more. The wait
         // that holds the tool call reads which it was and leaves that line (`lib/approvals.ts`).
@@ -129,7 +140,14 @@ export function ApprovalRequest({
 
   if (!asking) {
     return decided ? (
-      <DecidedLine decision={decided} toolCallId={toolCallId ?? ""} />
+      <DecidedLine
+        decision={
+          pressedTier && decided.outcome === "allowed" && !decided.tier
+            ? { ...decided, tier: pressedTier }
+            : decided
+        }
+        toolCallId={toolCallId ?? ""}
+      />
     ) : null;
   }
 
@@ -259,7 +277,6 @@ export function ApprovalRequest({
       </div>
       <ButtonsExplained
         hasThread={Boolean(asking.threadId)}
-        mayEditBoundaries={mayEditBoundaries}
         scope={asking.scope}
       />
       {/*
@@ -310,11 +327,9 @@ export function ApprovalRequest({
 function ButtonsExplained({
   scope,
   hasThread,
-  mayEditBoundaries,
 }: {
   scope: AllowanceScope | undefined;
   hasThread: boolean;
-  mayEditBoundaries: boolean;
 }) {
   const parts = [t("Allow once: just this.")];
   if (scope && hasThread) {
@@ -324,16 +339,23 @@ function ButtonsExplained({
       }),
     );
   }
+  /*
+   * WHERE IT IS TAKEN BACK, AND A WAY THERE. This said "관리 화면에서 취소할 때까지" to an
+   * administrator and "누군가 취소할 때까지" to everybody else, and the admin page is CEL rules an
+   * owner cannot use — or, for an owner who is not an administrator, cannot open at all
+   * (ux-review-0.5.4 §1.7). The Bot's profile lists every standing permission with a button to take
+   * it back, and it is the owner's whatever their role. Named here and linked from the line the card
+   * folds into, not from the open question: leaving the conversation while the Bot waits on an
+   * answer is not something this card should invite.
+   */
   if (scope) {
     parts.push(
-      mayEditBoundaries
-        ? t("{button}: not asked again until you cancel it in Admin.", {
-            button: alwaysLabel(scope),
-          })
-        : // Same promise, no page named: the admin screens send everybody else home.
-          t("{button}: not asked again until somebody cancels it.", {
-            button: alwaysLabel(scope),
-          }),
+      t(
+        "{button}: not asked again until you take it back on the Bot's profile.",
+        {
+          button: alwaysLabel(scope),
+        },
+      ),
     );
   }
   /*
@@ -400,6 +422,19 @@ function DecidedLine({
         <span className="min-w-0 wrap-break-word">
           {t(said.key, said.params)}
         </span>
+        {decision.outcome === "allowed" && decision.tier === "always" ? (
+          /*
+           * Where this "always" is taken back, from the line that records it. It used to be the
+           * administrator's rules page, named and never linked (ux-review-0.5.4 §1.7).
+           */
+          <Link
+            className={`ms-auto shrink-0 underline underline-offset-2 hover:text-foreground ${focusRing}`}
+            hash="allowances"
+            to="/agents"
+          >
+            {t("Take it back")}
+          </Link>
+        ) : null}
         {mayReconsider ? (
           <Button
             className="-my-1 ms-auto h-6 shrink-0 px-2 text-xs"

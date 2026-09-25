@@ -129,7 +129,7 @@ const resets = () =>
 await view.waitFor(
   () =>
     named(main(), "초기화") !== undefined ||
-    (main()?.textContent ?? "").includes("목록을 불러오지 못했습니다"),
+    (main()?.textContent ?? "").includes("목록을 불러오지 못했어요"),
   "a row with its Reset button, or the page's load error",
 );
 await view.settle(30);

@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { ConnectionRow } from "@/components/connections/connection-row";
 import { pokeControl } from "@/components/computer/control-poll";
@@ -20,8 +20,14 @@ import {
   forgetSite,
   type OverviewSite,
 } from "@/lib/connections/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import {
+  EMPTY_SHOP,
+  siteIsForThisShop,
+  sitesInShopOrder,
+} from "@/lib/shop/catalogue";
 import { type BusinessSite, BUSINESS_SITES } from "@/lib/sites/catalogue";
 import {
   checkSiteConnection,
@@ -122,6 +128,27 @@ export const SiteRows = ({
 
   const bot = bots.find((one) => one.id === chosenBotId) ?? bots[0];
   const byId = new Map(sites.map((site) => [site.id, site]));
+  const { data: me } = useQuery(currentUserQueryOptions());
+  const shop = me?.shop ?? EMPTY_SHOP;
+  const [isShowingAll, setIsShowingAll] = useState(false);
+  /*
+   * THIS SHOP'S SITES FIRST, THE REST BEHIND 더 보기 (ux-review-0.5.4, item 20). Fifteen switches in
+   * catalogue order put 홈택스 above the delivery app a restaurant lives in. A site already
+   * connected is never folded away, whatever the shop said: a login the Bot is using is not a thing
+   * to hide. With nothing answered on 내 가게 there is no "this shop's" to lead with, and all are
+   * drawn as before.
+   */
+  const ordered = sitesInShopOrder(BUSINESS_SITES, shop);
+  const hasShop = ordered.some((site) => siteIsForThisShop(site.id, shop));
+  const shown =
+    isShowingAll || !hasShop
+      ? ordered
+      : ordered.filter(
+          (site) =>
+            siteIsForThisShop(site.id, shop) ||
+            stateOf(byId.get(site.id)) !== "not_connected",
+        );
+  const folded = ordered.length - shown.length;
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: connectionKeys.all });
@@ -336,7 +363,7 @@ export const SiteRows = ({
       ) : null}
 
       <div className="mt-4 rounded-lg border border-border bg-card">
-        {BUSINESS_SITES.map((site) => {
+        {shown.map((site) => {
           const row = byId.get(site.id);
           const state = stateOf(row);
           const tone = said(site, row);
@@ -386,6 +413,17 @@ export const SiteRows = ({
           );
         })}
       </div>
+      {folded > 0 ? (
+        <Button
+          className="mt-2"
+          onClick={() => setIsShowingAll(true)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          {t("Show {count} more", { count: folded })}
+        </Button>
+      ) : null}
 
       {handoff && bot ? (
         <Handoff

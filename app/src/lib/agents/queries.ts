@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import type { AskSubject } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
 import { refusedRequest } from "@/lib/refusals";
 
@@ -60,7 +61,51 @@ export const agentKeys = {
   list: (hidden = false) => ["agents", "list", { hidden }] as const,
   detail: (agentId: string) => ["agents", "detail", agentId] as const,
   memories: (agentId: string) => ["agents", "memories", agentId] as const,
+  allowances: (agentId: string) => ["agents", "allowances", agentId] as const,
 };
+
+/**
+ * A question the owner answered with "always" or "for this conversation", as the profile lists it.
+ *
+ * The server's `StandingApproval` minus the withdrawn and run-out ones, which the route never sends.
+ */
+export type AgentAllowance = {
+  id: string;
+  scopeKind: "host" | "file" | "tool";
+  scopeValue: string;
+  subject?: AskSubject;
+  grantedAt: string;
+  tier: "always" | "thread";
+  expiresAt?: string;
+};
+
+/**
+ * What the owner has told this Bot it need not ask about — read from the store the boundary itself
+ * consults — and whether that list is in force at all (`settleWithoutAsking`).
+ */
+export function agentAllowancesQueryOptions(agentId: string) {
+  return queryOptions({
+    queryKey: agentKeys.allowances(agentId),
+    queryFn: async (): Promise<{
+      allowances: AgentAllowance[];
+      inForce: boolean;
+    }> => {
+      const response = await fetch(
+        `/api/agents/${encodeURIComponent(agentId)}/allowances`,
+        { credentials: "include" },
+      );
+      if (!response.ok)
+        throw await refusedRequest(
+          response,
+          t("What you allowed could not be loaded."),
+        );
+      return (await response.json()) as {
+        allowances: AgentAllowance[];
+        inForce: boolean;
+      };
+    },
+  });
+}
 
 /** One thing a Bot has learned about the person reading the list. */
 export type AgentMemory = {

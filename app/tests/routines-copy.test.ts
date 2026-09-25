@@ -64,12 +64,13 @@ describe("a routine run's one line", () => {
       ko[source] ?? source,
     );
 
-  test("reads whole in Korean, the seconds included", () => {
+  test("reads in Korean, as the time it took", () => {
     const steps = [
       { ms: 12_400, text: 1, calls: [{ name: "computer_snapshot", ok: true }] },
       { ms: 8_900, text: 1, calls: [] },
     ];
 
-    expect(runShape(steps, korean)).toBe("2턴 · 도구 1개 · 21초");
+    // The time and nothing else: turns and tools are the machinery's words (ux-review-0.5.4, 18).
+    expect(runShape(steps, korean)).toBe("21초");
   });
 });

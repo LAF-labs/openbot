@@ -73,6 +73,58 @@ export function placesInOrder(kind: BusinessKindId | null): DailyPlace[] {
   ];
 }
 
+/**
+ * The sites on 연결, in the order this shop would reach for them.
+ *
+ * The screen drew fifteen identical switches in the catalogue's order, and the places the owner
+ * picked on 내 가게 as 매일 쓰는 곳 did not move them (ux-review-0.5.4, item 20). So: the places
+ * they picked, in the order they picked them; then the ones their kind of shop is likeliest to use;
+ * then everything else as the catalogue has it. A site reached by no place keeps its catalogue
+ * position among the rest — stable, so a row does not jump for a reason nobody can see.
+ */
+export function sitesInShopOrder<T extends { id: string }>(
+  sites: readonly T[],
+  shop: Pick<ShopProfile, "kind" | "places">,
+): T[] {
+  const picked = shop.places
+    .map((id) => DAILY_PLACES.find((place) => place.id === id))
+    .filter((place): place is DailyPlace => place !== undefined);
+  const leading =
+    BUSINESS_KINDS.find((entry) => entry.id === shop.kind)?.places ?? [];
+  const likely = placesInOrder(shop.kind).filter(
+    (place) => !picked.includes(place) && leading.includes(place.id),
+  );
+  const order = [...picked, ...likely];
+  const rank = (site: T) => {
+    const at = order.findIndex((place) =>
+      place.connections.some(
+        (door) => door.kind === "site" && door.id === site.id,
+      ),
+    );
+    return at === -1 ? order.length : at;
+  };
+  return sites
+    .map((site, index) => ({ site, index, rank: rank(site) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.site);
+}
+
+/** Whether a site is one this shop picked or is likely to use — what 연결 shows before 더 보기. */
+export function siteIsForThisShop(
+  siteId: string,
+  shop: Pick<ShopProfile, "kind" | "places">,
+): boolean {
+  const leading =
+    BUSINESS_KINDS.find((entry) => entry.id === shop.kind)?.places ?? [];
+  return DAILY_PLACES.some(
+    (place) =>
+      (shop.places.includes(place.id) || leading.includes(place.id)) &&
+      place.connections.some(
+        (door) => door.kind === "site" && door.id === siteId,
+      ),
+  );
+}
+
 /** Whether this deployment's overview has the door at all — connected or not. */
 function doorExists(door: PlaceConnection, overview: Overview): boolean {
   return door.kind === "site"

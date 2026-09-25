@@ -94,7 +94,7 @@ const server = channelServer({
     {
       id: ANSWER_ID,
       role: "assistant",
-      content: "오늘 매출은 1,234,000원입니다.",
+      content: "오늘 매출은 1,234,000원이에요.",
     },
   ],
 });

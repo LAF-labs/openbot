@@ -49,7 +49,7 @@ afterAll(async () => {
 });
 
 const QUESTION = "지금 몇 시야";
-const ANSWER = "오후 2시 10분경입니다.";
+const ANSWER = "오후 2시 10분경이에요.";
 
 const failed = '[data-testid="transcript-stopped"]';
 const unsentLine = '[data-testid="transcript-unsent"]';
@@ -146,7 +146,7 @@ describe("다시 시도 under a failure the server recorded", () => {
         {
           id: "a-earlier",
           role: "assistant",
-          content: "오늘은 9월 10일입니다.",
+          content: "오늘은 9월 10일이에요.",
         },
         question,
       ],
@@ -242,7 +242,7 @@ describe("다시 시도 under a failure the server recorded", () => {
       history: [
         question,
         { id: "q-later", role: "user", content: "그럼 내일은?" },
-        { id: "a-later", role: "assistant", content: "내일은 9월 11일입니다." },
+        { id: "a-later", role: "assistant", content: "내일은 9월 11일이에요." },
       ],
       failures: [failure],
     });
@@ -393,7 +393,7 @@ describe("다시 시도 under the half of an answer", () => {
         {
           id: "a-earlier",
           role: "assistant",
-          content: "오늘은 9월 24일입니다.",
+          content: "오늘은 9월 24일이에요.",
         },
         { id: "routine-head", role: "assistant", content: "**아침 브리핑**" },
       ],

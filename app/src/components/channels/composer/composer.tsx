@@ -66,6 +66,11 @@ function createSources(initial: Sources) {
 export type ComposerProps = {
   className?: string;
   compact?: boolean;
+  /**
+   * What the empty box says. "무엇이든 물어보세요" when nothing better is known; the conversation
+   * names its Bot ("빵순이에게 부탁하기"), which is who the words are about to reach.
+   */
+  placeholder?: string | undefined;
   commands?: readonly CommandOption[];
   /**
    * Receives the whole draft rather than a string, so a command reaches the caller as
@@ -124,6 +129,7 @@ export function Composer({
   disabled = false,
   pending = false,
   stoppable,
+  placeholder,
 }: ComposerProps) {
   const [value, setValue] = useState<Segment[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -408,7 +414,7 @@ export function Composer({
           minHeight={COMPACT_MIN_HEIGHT_PX}
           onChange={handleChange}
           onSubmit={submitDraft}
-          placeholder={t("Ask anything")}
+          placeholder={placeholder ?? t("Ask anything")}
           ref={promptAreaRef}
           triggers={triggers}
           value={value}
@@ -463,7 +469,7 @@ export function Composer({
             maxHeight={MAX_HEIGHT_PX}
             onChange={handleChange}
             onSubmit={submitDraft}
-            placeholder={t("Ask anything")}
+            placeholder={placeholder ?? t("Ask anything")}
             ref={promptAreaRef}
             triggers={triggers}
             value={value}

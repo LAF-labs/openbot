@@ -108,7 +108,7 @@ describe("the diagnostic details in the 문의·의견 box", () => {
       "2개",
       "agent_stream_stalled · 60초",
       "run_failed · laf:turn_unreachable · 1.2초",
-      "이름·코드·시간만 담깁니다.",
+      "이름·코드·시간만 담겨요.",
       "보내는 그대로 보기",
     ]) {
       expect({ said, shown: shown.preview.includes(said) }).toEqual({
@@ -139,8 +139,8 @@ describe("the diagnostic details in the 문의·의견 box", () => {
       expect(posted).not.toContain(inside);
     }
 
-    expect(shown.receipt).toContain("보냈습니다.");
-    expect(shown.receipt).toContain("진단 정보도 함께 보냈습니다.");
+    expect(shown.receipt).toContain("보냈어요.");
+    expect(shown.receipt).toContain("진단 정보도 함께 보냈어요.");
   }, 120_000);
 
   test("a part of the screen that failed and the window's connection check are both said in Korean, and sent as they are", async () => {
@@ -184,7 +184,7 @@ describe("the diagnostic details in the 문의·의견 box", () => {
     expect(shown.preview).toContain("3개");
     for (const said of [
       "연결 점검",
-      "2개 중 1개에서 문제가 보였습니다.",
+      "2개 중 1개에서 문제가 보였어요.",
       "봇 화면 실시간 연결",
     ]) {
       expect({ said, shown: shown.preview.includes(said) }).toEqual({
@@ -216,18 +216,18 @@ describe("the diagnostic details in the 문의·의견 box", () => {
     const shown = await render({
       bundles: [bundle(), newer],
       expireFirstSend: true,
-      message: "다시 보냅니다",
+      message: "다시 보내요",
     });
 
     expect(shown.refusal).toBe(
-      "보여 드린 뒤로 진단 정보가 바뀌었습니다. 다시 확인하고 보내 주세요.",
+      "보여 드린 뒤로 진단 정보가 바뀌었어요. 다시 확인하고 보내 주세요.",
     );
     expect(shown.gathered).toBe(2);
     expect(shown.previewAfterRefusal).toContain("laf:turn_rate_limited 1번");
     expect(shown.posts).toEqual([
-      { text: "다시 보냅니다", diagnostics: { id: "preview-1" } },
-      { text: "다시 보냅니다", diagnostics: { id: "preview-2" } },
+      { text: "다시 보내요", diagnostics: { id: "preview-1" } },
+      { text: "다시 보내요", diagnostics: { id: "preview-2" } },
     ]);
-    expect(shown.receipt).toContain("진단 정보도 함께 보냈습니다.");
+    expect(shown.receipt).toContain("진단 정보도 함께 보냈어요.");
   }, 120_000);
 });

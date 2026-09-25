@@ -166,7 +166,7 @@ describe("a session taken away", () => {
         8000,
       );
       expect(ko[SENTENCE]).toBe(
-        "이 계정의 권한이 회수되어 로그아웃되었습니다. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",
+        "이 계정의 권한이 회수되어 로그아웃되었어요. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",
       );
     } finally {
       await view.unmount();
@@ -224,7 +224,7 @@ describe("a 403 from /api/me", () => {
       expect(view.buttonNamed("Check again")).toBeDefined();
       expect(view.buttonNamed("Log out")).toBeDefined();
       expect(ko["This account no longer has access here."]).toBe(
-        "이 계정은 더 이상 여기에 들어올 수 없습니다.",
+        "이 계정은 더 이상 여기에 들어올 수 없어요.",
       );
     } finally {
       await view.unmount();

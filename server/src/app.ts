@@ -37,6 +37,7 @@ import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
 import { createSandboxedRoutes } from "./components/sandboxed-routes";
 import type { ComponentStore } from "./components/store";
+import { createAllowanceRoutes } from "./computer/allowance-routes";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
 import type { ComputerClient } from "./computer/client";
@@ -924,6 +925,19 @@ export function createApp(
                 });
             }
           : undefined,
+      ),
+    );
+  }
+
+  // What the owner has told their Bot it need not ask about, on the profile, and the way back.
+  if (standingApprovals && auditStore) {
+    app.route(
+      "/api/agents",
+      createAllowanceRoutes(
+        standingApprovals,
+        auditStore,
+        requireUser,
+        computerPolicy ? () => computerPolicy.get() : undefined,
       ),
     );
   }

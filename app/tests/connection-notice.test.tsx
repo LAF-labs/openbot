@@ -123,7 +123,7 @@ describe("the connection notice", () => {
     expect(notice?.textContent).toBe(SAID);
     // And the pill is drawn, with its one thing to press.
     expect(shell.host.textContent).toContain("Connection check");
-    expect(ko[SAID]).toBe("서버와 연결이 끊겼습니다 — 다시 잇는 중");
+    expect(ko[SAID]).toBe("서버와 연결이 끊겼어요 — 다시 잇는 중");
 
     // The reconnect is the socket's own backoff: half a second, then the next socket.
     await shell.act(async () => {

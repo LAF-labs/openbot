@@ -181,7 +181,7 @@ describe("what a failed connect is told to say", () => {
   test("declining is not phrased as a failure", () => {
     // Nobody did anything wrong, and "연결하지 못했습니다" in front of a person who pressed 취소
     // reads as the product being broken.
-    expect(ko[connectFailureText("denied")]).toBe("연결이 취소됐습니다.");
+    expect(ko[connectFailureText("denied")]).toBe("연결이 취소됐어요.");
   });
 });
 

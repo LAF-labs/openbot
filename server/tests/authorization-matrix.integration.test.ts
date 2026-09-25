@@ -821,6 +821,9 @@ const A_ALLOWED = [
   "DELETE /api/routines/:id/notepad",
   "GET /api/agents/:agentId",
   "GET /api/agents/:agentId/memories",
+  // What they told their Bot it need not ask about, on its profile (ux-review-0.5.4 §1.7). Theirs,
+  // whatever their role; the administrator is not the owner here and gets the 404.
+  "GET /api/agents/:botId/allowances",
   "GET /api/approvals/:botId",
   "GET /api/components/for-agent/:agentId",
   "GET /api/computers/:botId/control",
@@ -891,6 +894,8 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "DELETE /api/agents/:agentId",
   "GET /api/agents/:agentId",
   "GET /api/agents/:agentId/memories",
+  // What A told A's Bot it need not ask about: A's profile, not the operator's boundary page.
+  "GET /api/agents/:botId/allowances",
   "POST /api/agents/:agentId/hide",
   "POST /api/agents/:agentId/unhide",
   // A conversation made around A's Bot, and the intro chip pressed on it: both take the id in a body.

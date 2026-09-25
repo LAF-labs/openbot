@@ -162,14 +162,14 @@ if (scenario.expireFirstSend) {
   await view.waitFor(
     () =>
       [...body.querySelectorAll('[role="alert"]')].some((alert) =>
-        alert.textContent?.includes("진단 정보가 바뀌었습니다"),
+        alert.textContent?.includes("진단 정보가 바뀌었어요"),
       ),
     "the expired refusal",
   );
   refusal =
     [...body.querySelectorAll('[role="alert"]')]
       .map((alert) => alert.textContent ?? "")
-      .find((text) => text.includes("진단 정보가 바뀌었습니다")) ?? null;
+      .find((text) => text.includes("진단 정보가 바뀌었어요")) ?? null;
   await view.waitFor(
     () => gatheredSoFar() === 2 && previewText() !== null,
     "a new bundle to be gathered and shown",
@@ -181,14 +181,14 @@ if (scenario.expireFirstSend) {
 await view.waitFor(
   () =>
     [...body.querySelectorAll('[role="status"]')].some((status) =>
-      status.textContent?.includes("보냈습니다"),
+      status.textContent?.includes("보냈어요"),
     ),
   "the receipt",
 );
 const receipt =
   [...body.querySelectorAll('[role="status"]')]
     .map((status) => status.textContent ?? "")
-    .find((text) => text.includes("보냈습니다")) ?? "";
+    .find((text) => text.includes("보냈어요")) ?? "";
 
 const shown: FeedbackShown = {
   gatheredBeforeTick,

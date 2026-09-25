@@ -2,6 +2,7 @@ import { IconPencil } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { AllowancesCard } from "@/components/agents/allowances-card";
 import { Mascot } from "@/components/agents/mascot";
 import { BotAvatarPicker } from "@/components/avatar/bot-avatar-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
@@ -236,6 +237,9 @@ export function AgentProfile({
       {profile.canManage ? (
         <AutoReviewCard agentId={agentId} instruction={profile.autoReview} />
       ) : null}
+
+      {/* Under the written rule: the two are the owner's two ways of not being asked. */}
+      {profile.canManage ? <AllowancesCard agentId={agentId} /> : null}
 
       <MemoriesCard agentId={agentId} />
 
@@ -619,6 +623,14 @@ function SkillsCard({ agentId }: { agentId: string }) {
   });
   const settled = settledOf(reading);
   const mine = (settled?.data.skills ?? []).filter(isMine);
+  /*
+   * THE ONES IT CAME WITH, COUNTED. "아직 쓴 스킬이 없습니다" was all this card said on a Bot that
+   * carried three built-in skills (ux-review-0.5.4, item 18), which reads as a Bot with none. They
+   * are the deployment's to hand out, so they are counted rather than offered as switches.
+   */
+  const builtIn = (settled?.data.skills ?? []).filter(
+    (skill) => !isMine(skill) && skill.grantedTo.includes(agentId),
+  ).length;
   const toggle = (slug: string, held: boolean) => {
     setBusy(slug);
     setProblem(null);
@@ -666,6 +678,13 @@ function SkillsCard({ agentId }: { agentId: string }) {
           <p className="text-muted-foreground text-sm">
             {t("A Bot carrying one offers it in the composer as /name.")}
           </p>
+          {builtIn > 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t("It comes with {count} skills of its own.", {
+                count: builtIn,
+              })}
+            </p>
+          ) : null}
         </div>
       )}
       {settled?.state === "empty" ? (
@@ -801,10 +820,28 @@ function AutoReviewCard({
           )}
         </p>
       </div>
+      {/*
+       * EMPTY HAS TO LOOK EMPTY. The placeholder used to be one of the example sentences, in a
+       * near-white grey on the dark theme, so an owner who had written nothing read a saved rule —
+       * while the Bot was in fact asking about everything (ux-review-0.5.4 §1.8). What is in force
+       * is said in words above the box, and the placeholder is marked as an example and fainter.
+       */}
+      <p
+        className="text-sm"
+        data-testid="auto-review-state"
+        data-written={instruction.trim() ? "true" : "false"}
+      >
+        {instruction.trim()
+          ? t("Saved. The Bot goes ahead with what this says.")
+          : t("Nothing written yet, so the Bot asks about everything.")}
+      </p>
       <Textarea
         aria-labelledby={labelId}
+        className="placeholder:text-muted-foreground/60 placeholder:italic"
         onChange={(event) => setDraft(event.target.value)}
-        placeholder={t("Reading anything on our own site is fine.")}
+        placeholder={t("For example: {example}", {
+          example: t("Reading anything on our own site is fine."),
+        })}
         rows={3}
         value={draft}
       />

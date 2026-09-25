@@ -81,7 +81,7 @@ describe("a Bot's name in Korean", () => {
     const shown = await renderedInKorean();
 
     const titles = NAMES.map(
-      ([name, particle]) => `${name}${particle} 기다립니다`,
+      ([name, particle]) => `${name}${particle} 기다려요`,
     );
     // The notices arrive oldest first; which name comes first is not the point.
     expect([...shown.notices].sort()).toEqual([...titles].sort());

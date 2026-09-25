@@ -276,7 +276,7 @@ describe("the cards, as a Korean reader sees them", () => {
     expect(page).toHaveLength(1);
     const [card] = page;
     expect(card?.question).toContain(
-      "지메일의 ‘메일 보내기’ 도구를 쓰려 합니다.",
+      "지메일의 ‘메일 보내기’ 도구를 쓰려 해요.",
     );
     expect(card?.lines).toEqual([
       [
@@ -284,7 +284,7 @@ describe("the cards, as a Korean reader sees them", () => {
         `${Array.from({ length: 10 }, (_, at) => `guest${at}@shop.kr`).join(", ")} 외 2명`,
       ],
       ["제목", "9월 정산 안내"],
-      ["내용", "안녕하세요.\n9월 정산서를 보내 드립니다.… (이하 생략)"],
+      ["내용", "안녕하세요.\n9월 정산서를 보내 드려요.… (이하 생략)"],
     ]);
   }, 60_000);
 });

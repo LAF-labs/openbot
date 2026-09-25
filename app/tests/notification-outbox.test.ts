@@ -94,8 +94,8 @@ describe("which of the two interruptions a row is", () => {
   });
 
   test("the line under the title says what happened", () => {
-    expect(bodyFor("approval.requested", "‘출금 승인’을 누르려 합니다")).toBe(
-      "‘출금 승인’을 누르려 합니다",
+    expect(bodyFor("approval.requested", "‘출금 승인’을 누르려 해요")).toBe(
+      "‘출금 승인’을 누르려 해요",
     );
     // Every one of these goes through `t()`, so a Korean reader gets Korean — the server sends no
     // prose for a lock screen.
