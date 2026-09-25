@@ -14,6 +14,7 @@ import { TabError } from "./profiles";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
+import { thumbnailOf } from "./thumbnail";
 
 /**
  * The current page as text, without navigating anywhere.
@@ -113,14 +114,13 @@ async function pictureOfTab(target: Page): Promise<Buffer | undefined> {
  *
  * The panel's thumbnail asked for the full-viewport PNG every 2 s — 166–554 KB and 120–600 ms of the
  * computer's one core each, for a picture drawn a few hundred pixels wide (performance audit,
- * 2026-09-25). Chrome scales and encodes it itself (`clip.scale`), so nothing here decodes a pixel,
- * and it is taken the way the screen is painted rather than through the document (`pictureOf`), so a
- * page that is busy arriving does not hold it up.
+ * 2026-09-25). Chrome scales and encodes it itself, so nothing here decodes a pixel — as one frame of
+ * a screencast (`thumbnail.ts`), never a scaled screenshot, which left the tab emulating 480x300.
  */
-function thumbnailOptions(
+export function thumbnailOptions(
   url: URL,
   viewport: { width: number; height: number },
-): Record<string, unknown> | undefined {
+): { width: number; height: number; quality: number } | undefined {
   if (url.searchParams.get("format") !== "jpeg") return undefined;
   const asked = Number(url.searchParams.get("width"));
   const width = Number.isFinite(asked) && asked > 0 ? asked : viewport.width;
@@ -129,9 +129,9 @@ function thumbnailOptions(
     Math.min(90, Math.max(20, Number(url.searchParams.get("quality")) || 60)),
   );
   return {
-    format: "jpeg",
+    width: Math.round(viewport.width * scale),
+    height: Math.round(viewport.height * scale),
     quality,
-    clip: { x: 0, y: 0, ...viewport, scale },
   };
 }
 
@@ -141,7 +141,7 @@ export const screenshot: BotRoute = async ({ botId, url }, { profiles }) => {
     const size = target.viewportSize() ?? { width: 1280, height: 800 };
     const small = thumbnailOptions(url, size);
     const buffer = small
-      ? await pictureOf(target, PAINT_WAIT_MS, small)
+      ? await thumbnailOf(target, small, small.quality, PAINT_WAIT_MS)
       : await pictureOfTab(target);
     if (!buffer) return fact("laf:browser_failed");
     return json({
