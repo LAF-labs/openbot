@@ -814,7 +814,7 @@ export function mountCopilotRuntime(
 
   const runtime = new CopilotRuntime({
     runner: localRunner,
-    agents: agents as never,
+    agents,
   });
   return createCopilotHonoHandler({ runtime, basePath });
 }

@@ -74,7 +74,7 @@ export function PluginTools() {
 /** Convert vendor JSON Schema to SDK parameters; unreadable schemas fall back to catchall. */
 function parametersFor(inputSchema: Record<string, unknown>) {
   try {
-    const converted = z.fromJSONSchema(inputSchema as never);
+    const converted = z.fromJSONSchema(inputSchema);
     // Only object schemas describe tool arguments; other vendor schemas fall back to catchall.
     if (converted instanceof z.ZodObject) return converted;
   } catch {}

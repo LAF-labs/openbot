@@ -65,7 +65,7 @@ export async function signInWithProvider(
         additionalData: { provider },
       })
     : await authClient.signIn.social({
-        provider: provider as never,
+        provider,
         callbackURL,
         errorCallbackURL,
       });

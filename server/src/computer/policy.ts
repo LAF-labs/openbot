@@ -335,7 +335,7 @@ function matches(
     return (
       evaluate(
         expression,
-        context as unknown as Record<string, unknown>,
+        context as Record<string, unknown>,
         POLICY_FUNCTIONS as Record<string, CallableFunction>,
       ) === true
     );

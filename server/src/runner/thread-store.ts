@@ -359,7 +359,7 @@ export async function appendMessages(
       // rebuilt. The second one is an edit of the first, never a second row.
       const waiting = fresh.get(message.id);
       if (waiting) {
-        waiting.message = message as unknown as Record<string, unknown>;
+        waiting.message = message as Record<string, unknown>;
         continue;
       }
       const previous = stored.get(message.id);
@@ -368,7 +368,7 @@ export async function appendMessages(
         fresh.set(message.id, {
           threadId,
           seq: next,
-          message: message as unknown as Record<string, unknown>,
+          message: message as Record<string, unknown>,
           at,
           runId,
         });
@@ -377,7 +377,7 @@ export async function appendMessages(
       if (canonical(previous.message) === canonical(message)) continue;
       await transaction
         .update(lafThreadMessages)
-        .set({ message: message as unknown as Record<string, unknown> })
+        .set({ message: message as Record<string, unknown> })
         .where(
           and(
             eq(lafThreadMessages.threadId, threadId),
@@ -391,7 +391,7 @@ export async function appendMessages(
       for (const [id, row] of fresh) {
         stored.set(id, {
           seq: row.seq,
-          message: row.message as unknown as StoredMessage,
+          message: row.message as StoredMessage,
         });
       }
     }

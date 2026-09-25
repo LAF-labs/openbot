@@ -66,14 +66,10 @@ export function notificationFrame(
     ...(record.approvalId ? { approvalId: record.approvalId } : {}),
     ...(record.channelId ? { channelId: record.channelId } : {}),
     ...(record.subject
-      ? { subject: record.subject as unknown as Record<string, unknown> }
+      ? { subject: record.subject as Record<string, unknown> }
       : {}),
-    ...(record.run
-      ? { run: record.run as unknown as Record<string, unknown> }
-      : {}),
-    ...(record.pause
-      ? { pause: record.pause as unknown as Record<string, unknown> }
-      : {}),
+    ...(record.run ? { run: record.run as Record<string, unknown> } : {}),
+    ...(record.pause ? { pause: record.pause as Record<string, unknown> } : {}),
     at: record.createdAt,
   };
 }

@@ -342,7 +342,7 @@ function boundedFetch(
   // Bun's `typeof fetch` carries a `preconnect` member; the SDK only ever calls the function.
   return Object.assign(guarded, {
     preconnect: () => {},
-  }) as unknown as typeof fetch;
+  }) as typeof fetch;
 }
 
 type Connection = {

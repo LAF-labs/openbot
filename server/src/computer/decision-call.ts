@@ -32,7 +32,7 @@ import {
   APIConnectionError,
   APIError,
   APITimeoutError,
-  type Questions,
+  type EntryType,
   RateLimitError,
   TypeSafeClient,
 } from "@typesafe-ai/sdk";
@@ -225,12 +225,13 @@ export async function askDecision(
       retry: { maxRetries: 0 },
       timeout: ask.timeoutMs,
       logLevel: "off",
-      ...(call.fetch ? { fetch: call.fetch as never } : {}),
+      ...(call.fetch ? { fetch: call.fetch } : {}),
     });
     const result = (await client.systemOne({
       model: call.model,
-      state: ask.state as never,
-      questions: ask.questions as unknown as Questions,
+      // The SDK asks for JSON; `state` is an object this module's callers build from JSON.
+      state: ask.state as EntryType,
+      questions: ask.questions,
     })) as unknown as {
       model?: unknown;
       answers?: unknown;

@@ -97,7 +97,7 @@ export function watchSession(
   // Bun's `fetch` carries `preconnect`; the wrapper has to be the same shape to be assignable.
   scope.fetch = Object.assign(watching, {
     preconnect: original.preconnect,
-  }) as unknown as typeof fetch;
+  }) as typeof fetch;
   return () => {
     scope.fetch = original;
   };

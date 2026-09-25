@@ -128,8 +128,7 @@ const isProbe = (data: SocketData): data is ProbeData =>
   (data as ProbeData).screenProbe === true;
 
 // Hono owns the socket's data once it has upgraded it; this hands its own back to it.
-const asChannelSocket = (ws: { data: SocketData }) =>
-  ws as unknown as ChannelSocket;
+const asChannelSocket = (ws: { data: SocketData }) => ws as ChannelSocket;
 
 const toStreamUrl = (baseUrl: string, botId: string, token: string) =>
   // The Bot travels in the query, because a websocket upgrade carries no custom header for the

@@ -48,6 +48,7 @@ import {
 } from "./auto-review";
 import {
   askDecision,
+  type DecisionAnswer,
   type DecisionCall,
   type DecisionQuestion,
   noulOf,
@@ -118,16 +119,21 @@ export const JEV_REVIEW_QUESTIONS: Record<string, DecisionQuestion> = {
 
 /** The verdict from Jev's answers against a bar. Pure, so the calibration can be replayed. */
 export function jevVerdict(
-  answers: Record<string, unknown>,
+  answers: {
+    covers?: DecisionAnswer;
+    named?: DecisionAnswer;
+    // The calibration replay passes only the probabilities it recorded, not a whole choice answer.
+    kind?: DecisionAnswer | { probabilities?: Record<string, number> };
+  },
   bar: { covers: number; read: number },
   model: string,
 ): ReviewVerdict {
-  const covers = noulOf(answers.covers as never);
-  const named = noulOf(answers.named as never);
-  const kind = answers.kind as
-    | { choice?: string; probabilities?: Record<string, number> }
-    | undefined;
-  const read = kind?.probabilities?.read ?? 0;
+  const covers = noulOf(answers.covers);
+  const named = noulOf(answers.named);
+  const kind = answers.kind;
+  const read =
+    (kind && "probabilities" in kind ? kind.probabilities?.read : undefined) ??
+    0;
   const allowed =
     covers >= bar.covers && (read >= bar.read || named >= bar.covers);
   return {

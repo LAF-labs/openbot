@@ -19,7 +19,11 @@ import type {
   JevResponse,
   JevState,
 } from "../context/vendor/fast-jev-compaction/index";
-import { type DecisionCall, askDecision } from "./decision-call";
+import {
+  askDecision,
+  type DecisionCall,
+  type DecisionQuestion,
+} from "./decision-call";
 import { askModel, jsonFrom, type ModelCall } from "./model-call";
 
 /** Jev, through the SDK. */
@@ -32,11 +36,13 @@ export function jevAsker(
       const decided = await askDecision(call, {
         purpose: options.purpose ?? "compaction",
         state,
-        questions: questions as never,
+        // Narrower than the library's type, which also allows `score`: the compactor asks only
+        // `noul` (vendor `compact.ts`), and `readable` would refuse a score answer as unreadable.
+        questions: questions as Record<string, DecisionQuestion>,
         timeoutMs: options.timeoutMs,
       });
       if (!decided.ok) throw new Error(`jev: ${decided.because}`);
-      return { model: decided.model, answers: decided.answers as never };
+      return { model: decided.model, answers: decided.answers };
     },
   };
 }

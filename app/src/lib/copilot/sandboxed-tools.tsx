@@ -63,7 +63,7 @@ export function SandboxedTools() {
 /** Convert an author's JSON Schema to SDK parameters; unreadable schemas fall back to catchall. */
 function parametersFor(schema: Record<string, unknown>) {
   try {
-    const converted = z.fromJSONSchema(schema as never);
+    const converted = z.fromJSONSchema(schema);
     if (converted instanceof z.ZodObject) return converted;
   } catch {
     // Unreadable author schemas fall back to permissive arguments and server-side checks.

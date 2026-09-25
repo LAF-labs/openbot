@@ -291,7 +291,7 @@ function stoppedTurn(
     ) {
       for (const type of ["RUN_STARTED", "RUN_FINISHED"]) {
         subscriber?.onEvent?.({
-          event: { type, threadId, runId } as unknown as BaseEvent,
+          event: { type, threadId, runId } as BaseEvent,
         });
       }
       return { result: undefined, newMessages: [] };

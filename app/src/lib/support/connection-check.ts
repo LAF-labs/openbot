@@ -664,7 +664,7 @@ export function browserCheckIO(): CheckIO {
       // Same origin, so the scheme follows the page: wss when it came over https.
       const url = new URL(path, window.location.href);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-      return new WebSocket(url.toString()) as unknown as ProbeSocket;
+      return new WebSocket(url.toString()) as ProbeSocket;
     },
     elapsed: monotonic,
     wallClock: () => Date.now(),
