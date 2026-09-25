@@ -19,6 +19,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useStartChannel } from "@/lib/channels/start";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
+import { useActiveBot } from "@/lib/copilot/active-bot";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -92,6 +93,12 @@ function FirstConversation({ botId }: { botId: string }) {
   // Optimistic seed shown before the first channel record exists.
   const [sent, setSent] = useState<Message | null>(null);
   const skillCommands = useSkillCommands(botId);
+  /*
+   * Named while the person types, so this Bot's grants are fetched now and are in the cache when the
+   * conversation the first send opens asks for them: that conversation's first turn waits for them
+   * (`useToolsSettled`), and would otherwise wait the length of a fetch.
+   */
+  useActiveBot(botId);
 
   /*
    * WHAT THIS PERSON HAS CONNECTED, AND WHETHER THIS BOT HAS EVER BEEN SPOKEN TO, DECIDE THE CHIPS.

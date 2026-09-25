@@ -55,6 +55,7 @@ import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { holdChat } from "@/lib/copilot/held-chats";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
+import { useToolsSettled } from "@/lib/copilot/tools-settled";
 
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
@@ -64,6 +65,12 @@ import { refreshTodayUsage } from "@/lib/usage/today";
  * Backstop for the first message of a new channel; a stalled join must not lose the message.
  */
 const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
+
+/**
+ * Backstop for the Bot's grants: a turn waits for them so every turn offers the same tools
+ * (`useToolsSettled`), but a grant endpoint that never answers must not hold a message forever.
+ */
+const SEND_WITHOUT_GRANTS_AFTER_MS = 5000;
 
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
@@ -219,6 +226,23 @@ export function ChannelChat({
   useEffect(() => {
     if (isReady) openReadyGate.current();
   }, [isReady]);
+
+  /*
+   * Promise gate so no turn goes out before this Bot's tools are decided. Opened in an effect: the
+   * tool registrations it waits for are effects too, earlier in the tree, and run first.
+   */
+  const toolsSettled = useToolsSettled(runtimeAgentId);
+  const openToolsGate = useRef<() => void>(() => {});
+  const toolsGate = useRef<Promise<void> | null>(null);
+  if (toolsGate.current === null) {
+    toolsGate.current = new Promise<void>((resolve) => {
+      openToolsGate.current = resolve;
+    });
+  }
+  const toolsGatePromise = toolsGate.current;
+  useEffect(() => {
+    if (toolsSettled) openToolsGate.current();
+  }, [toolsSettled]);
 
   // Join the gateway socket, restore durable history, then release the first-message gate.
   useEffect(() => {
@@ -403,6 +427,12 @@ export function ChannelChat({
    */
   /** Wait briefly for the runtime agent instance; a stalled join must not lose the turn. */
   const untilReady = async () => {
+    await Promise.race([
+      toolsGatePromise,
+      new Promise((resolve) =>
+        setTimeout(resolve, SEND_WITHOUT_GRANTS_AFTER_MS),
+      ),
+    ]);
     if (isReadyRef.current) return;
     await Promise.race([
       readyGatePromise,

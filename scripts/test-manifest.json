@@ -172,6 +172,7 @@
   "app/tests/today-usage.test.ts",
   "app/tests/tool-line-shimmer.test.ts",
   "app/tests/tool-result-codes.test.ts",
+  "app/tests/tools-settled.test.tsx",
   "app/tests/transcript-anchors.test.tsx",
   "app/tests/transcript-messages.test.ts",
   "app/tests/trial-banner.test.ts",
