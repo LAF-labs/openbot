@@ -21,7 +21,7 @@ type Chunk = {
   };
 };
 
-/** A provider that streams a `send_message` call the way OpenAI-compatible endpoints do. */
+/** A provider that streams a `remember` call (a core tool, so it streams as it arrives) the way OpenAI-compatible endpoints do. */
 function fakeCompletion(chunks: Chunk[]) {
   return {
     async *[Symbol.asyncIterator]() {
@@ -43,7 +43,7 @@ const SPEECH: Chunk[] = [
       {
         delta: {
           tool_calls: [
-            { index: 0, id: "call_1", function: { name: "send_message" } },
+            { index: 0, id: "call_1", function: { name: "remember" } },
           ],
         },
       },
@@ -71,7 +71,7 @@ const SPEECH: Chunk[] = [
 ];
 
 const SEND_MESSAGE = {
-  name: "send_message",
+  name: "remember",
   description: "방에 말한다.",
   parameters: { type: "object", properties: { text: { type: "string" } } },
 };

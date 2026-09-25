@@ -33,6 +33,7 @@ import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
   callsOf,
+  clientMessagesOf,
   eventsOfSse,
   resultsOf,
   type StreamEvent,
@@ -243,27 +244,21 @@ async function runOnce(
     const answered = resultsOf(events);
     if (!calls.some((call) => !answered.has(call.id))) break;
 
-    // The run ended on tool calls — continue the client loop, the answered ones as answered and
-    // the rest with stub results, under the ids the wire gave them.
-    messages.push({
-      id: `a_${runId}`,
-      role: "assistant",
-      content: "",
-      toolCalls: calls.map((call) => ({
-        id: call.id,
-        type: "function",
-        function: { name: call.name, arguments: call.rawArguments },
-      })),
-    });
+    /*
+     * The run ended on tool calls — continue the client loop with what the client files: each
+     * round's message with its prose, its calls and the reasoning it carries, the answered calls'
+     * results as they came, and stub results for the rest under the ids the wire gave them. It used
+     * to fold every call of the run into one empty message, which was never the thread the product
+     * sends back — and has no place for a turn's reasoning (`agent-bot/src/reasoning.ts`).
+     */
+    messages.push(...clientMessagesOf(events));
     for (const call of calls) {
+      if (answered.has(call.id)) continue;
       messages.push({
         id: `t_${call.id}`,
         role: "tool",
         toolCallId: call.id,
-        content:
-          answered.get(call.id) ??
-          scenario.stub?.(call) ??
-          stubResult(call.name),
+        content: scenario.stub?.(call) ?? stubResult(call.name),
       });
     }
   }

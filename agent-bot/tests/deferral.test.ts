@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type OpenAI from "openai";
+import { searchResultText } from "../../shared/tools/bridge";
 import { answerBridgeCall } from "../src/deferral";
 
 /**
@@ -153,6 +154,33 @@ const SHEETS_APPEND = tool(
 const CORE = [NAVIGATE, HELP, REMEMBER];
 const CONNECTED = [GMAIL_SEND, GMAIL_SEARCH, SHEETS_APPEND];
 
+/**
+ * A lookup already in the thread, as the client files one: the `tool_search` call and its answer,
+ * written by the real `searchResultText` so the schema lines are the ones the loop reads.
+ */
+const lookedUp = (...names: string[]): unknown[] => [
+  {
+    id: "a_lookup",
+    role: "assistant",
+    toolCalls: [
+      {
+        id: "c_lookup",
+        type: "function",
+        function: {
+          name: "tool_search",
+          arguments: JSON.stringify({ query: `select:${names.join(",")}` }),
+        },
+      },
+    ],
+  },
+  {
+    id: "t_lookup",
+    role: "tool",
+    toolCallId: "c_lookup",
+    content: searchResultText(CONNECTED, `select:${names.join(",")}`),
+  },
+];
+
 const namesOf = (request: Request | undefined) =>
   (request?.tools ?? []).map((entry) => entry.function.name);
 
@@ -161,6 +189,7 @@ async function runFor(
   tools: unknown[],
   scripts: Chunk[][],
   forwardedProps: Record<string, unknown> = {},
+  history: unknown[] = [],
 ) {
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
@@ -175,6 +204,7 @@ async function runFor(
           role: "user",
           content: "kim@shop.kr에 정산서 보냈다고 메일 보내줘",
         },
+        ...history,
       ],
       tools,
       context: [],
@@ -417,6 +447,8 @@ describe("tool_call", () => {
           },
         ]),
       ],
+      {},
+      lookedUp("mcp__gmail__send_message"),
     );
 
     // A real call ends the run, as it always did: the surface executes it and starts the next one.
@@ -435,6 +467,79 @@ describe("tool_call", () => {
     expect(JSON.parse(String(fragment?.delta))).toEqual(args);
     // Nothing about the bridge itself is on the wire.
     expect(JSON.stringify(events)).not.toContain("tool_call");
+  });
+
+  /*
+   * MEASURED 2026-09-25 (MiMo-V2.6-Pro, the 알림톡 scenario): with only the name in the context
+   * layer, the model called the send without looking it up, guessed `templateCode` for `template`,
+   * and sent `variables` as a JSON string four times in six. Forwarded, that is a refusal from the
+   * server one run later; answered here, the schema is in front of the model in the same run.
+   */
+  test("a tool whose schema this conversation never saw is answered with it, not forwarded", async () => {
+    const { requests, events } = await runFor(
+      [...CORE, ...CONNECTED],
+      [
+        calls([
+          {
+            id: "c1",
+            name: "tool_call",
+            args: {
+              name: "mcp__gmail__send_message",
+              args: { recipient: "kim@shop.kr" },
+            },
+          },
+        ]),
+        calls([
+          {
+            id: "c2",
+            name: "tool_call",
+            args: {
+              name: "mcp__gmail__send_message",
+              args: { to: "kim@shop.kr", subject: "정산", body: "…" },
+            },
+          },
+        ]),
+      ],
+    );
+    expect(requests).toHaveLength(2);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(String(result?.content)).toContain(
+      '"name":"mcp__gmail__send_message"',
+    );
+    // The second request carries the schema, and the call made from it reaches the wire.
+    const starts = events
+      .filter((event) => event.type === "TOOL_CALL_START")
+      .map((event) => event.toolCallName);
+    expect(starts).toEqual(["tool_call", "mcp__gmail__send_message"]);
+  });
+
+  test("an object argument sent as a JSON string is unwrapped when the schema says object", async () => {
+    const values = ["2026-09-25", "김밥", 3];
+    const { events } = await runFor(
+      [...CORE, ...CONNECTED],
+      [
+        calls([
+          {
+            id: "c1",
+            name: "tool_call",
+            args: {
+              name: "mcp__google-sheets__append_sheet_row",
+              args: {
+                spreadsheetId: "s1",
+                values: JSON.stringify(values),
+              },
+            },
+          },
+        ]),
+      ],
+      {},
+      lookedUp("mcp__google-sheets__append_sheet_row"),
+    );
+    const fragment = events.find((event) => event.type === "TOOL_CALL_ARGS");
+    expect(JSON.parse(String(fragment?.delta))).toEqual({
+      spreadsheetId: "s1",
+      values,
+    });
   });
 
   test("a name nothing is connected under is answered, not forwarded", async () => {
@@ -464,10 +569,12 @@ describe("tool_call", () => {
   });
 
   test("a bare name resolves when it is unique and is refused when it is not", () => {
+    const described = new Set(CONNECTED.map((entry) => entry.name));
     const unique = answerBridgeCall(
       "tool_call",
       JSON.stringify({ name: "send_message", args: { to: "a@b.c" } }),
       CONNECTED,
+      described,
     );
     expect(unique).toEqual({
       kind: "forward",
@@ -483,6 +590,7 @@ describe("tool_call", () => {
       "tool_call",
       JSON.stringify({ name: "send_message", args: {} }),
       twice,
+      described,
     );
     expect(ambiguous.kind).toBe("answer");
   });
@@ -511,27 +619,46 @@ describe("tool_call", () => {
 });
 
 describe("what the bridge leaves alone", () => {
-  test("a connected service's tool called by its real name goes through as it came", async () => {
+  test("a connected service's tool called by its real name goes through once its schema was seen", async () => {
+    const args = { to: "kim@shop.kr", subject: "안녕", body: "…" };
     const { events } = await runFor(
+      [...CORE, ...CONNECTED],
+      [calls([{ id: "c1", name: "mcp__gmail__send_message", args }])],
+      {},
+      lookedUp("mcp__gmail__send_message"),
+    );
+    // Held until complete, like a `tool_call`, so it goes out whole.
+    expect(kinds(events)).toEqual([
+      "RUN_STARTED",
+      "TOOL_CALL_START",
+      "TOOL_CALL_ARGS",
+      "TOOL_CALL_END",
+      "RUN_FINISHED",
+    ]);
+    const fragment = events.find((event) => event.type === "TOOL_CALL_ARGS");
+    expect(JSON.parse(String(fragment?.delta))).toEqual(args);
+  });
+
+  test("called by its real name without the schema, it is answered with it — the same rule as tool_call", async () => {
+    const { requests, events } = await runFor(
       [...CORE, ...CONNECTED],
       [
         calls([
           {
             id: "c1",
             name: "mcp__gmail__send_message",
-            args: { to: "kim@shop.kr", subject: "안녕", body: "…" },
+            args: { recipientEmail: "kim@shop.kr" },
           },
         ]),
+        said("스키마대로 다시 부를게요."),
       ],
     );
-    expect(kinds(events)).toEqual([
-      "RUN_STARTED",
-      "TOOL_CALL_START",
-      "TOOL_CALL_ARGS",
-      "TOOL_CALL_ARGS",
-      "TOOL_CALL_END",
-      "RUN_FINISHED",
-    ]);
+    expect(requests).toHaveLength(2);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(String(result?.content)).toContain(
+      '"name":"mcp__gmail__send_message"',
+    );
+    expect(kinds(events)).not.toContain("RUN_ERROR");
   });
 
   test("a run that only ever looks is made to act after four rounds", async () => {

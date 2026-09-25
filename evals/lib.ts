@@ -17,7 +17,96 @@ export type StreamEvent = {
   message?: string;
   /** A TOOL_CALL_RESULT's text: the answer to a call the Bot service settled itself. */
   content?: string;
+  /** The assistant message a TOOL_CALL_START belongs to. */
+  parentMessageId?: string;
+  /** REASONING_ENCRYPTED_VALUE: what it attaches to, and the value. */
+  subtype?: string;
+  entityId?: string;
+  encryptedValue?: string;
 };
+
+/** A message as the client files it, in AG-UI's shape. */
+export type ClientMessage = {
+  id: string;
+  role: "assistant" | "tool";
+  content?: string;
+  toolCalls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+  toolCallId?: string;
+  encryptedValue?: string;
+};
+
+/**
+ * What the client files from one run, in the order it files it — `@ag-ui/client`'s own reducer
+ * (`defaultApplyEvents`, 0.0.57) cut down to the events this service sends: a call opens under its
+ * `parentMessageId`, prose under its `messageId`, a TOOL_CALL_RESULT becomes a tool message, and
+ * REASONING_ENCRYPTED_VALUE sets `encryptedValue` on the message it names. The harness's client loop
+ * sends this back, so the next run gets what the product's next run gets — the reasoning a
+ * tool-call turn carries included (`agent-bot/src/reasoning.ts`).
+ */
+export function clientMessagesOf(events: StreamEvent[]): ClientMessage[] {
+  const filed: ClientMessage[] = [];
+  const assistant = (id: string): ClientMessage => {
+    const found = filed.find(
+      (message) => message.id === id && message.role === "assistant",
+    );
+    if (found) return found;
+    const made: ClientMessage = { id, role: "assistant" };
+    filed.push(made);
+    return made;
+  };
+  const argsById = new Map<string, { function: { arguments: string } }>();
+  for (const event of events) {
+    if (event.type === "TEXT_MESSAGE_START" && event.messageId) {
+      assistant(event.messageId).content ??= "";
+    }
+    if (event.type === "TEXT_MESSAGE_CONTENT" && event.messageId) {
+      const message = assistant(event.messageId);
+      message.content = (message.content ?? "") + (event.delta ?? "");
+    }
+    if (
+      event.type === "TOOL_CALL_START" &&
+      event.toolCallId &&
+      event.parentMessageId
+    ) {
+      const call = {
+        id: event.toolCallId,
+        type: "function" as const,
+        function: { name: event.toolCallName ?? "", arguments: "" },
+      };
+      const message = assistant(event.parentMessageId);
+      message.toolCalls = [...(message.toolCalls ?? []), call];
+      argsById.set(event.toolCallId, call);
+    }
+    if (event.type === "TOOL_CALL_ARGS" && event.toolCallId) {
+      const call = argsById.get(event.toolCallId);
+      if (call) call.function.arguments += event.delta ?? "";
+    }
+    if (event.type === "TOOL_CALL_RESULT" && event.toolCallId) {
+      filed.push({
+        id: event.messageId ?? `tool_${event.toolCallId}`,
+        role: "tool",
+        toolCallId: event.toolCallId,
+        content: event.content ?? "",
+      });
+    }
+    if (
+      event.type === "REASONING_ENCRYPTED_VALUE" &&
+      event.subtype === "message" &&
+      event.entityId &&
+      event.encryptedValue
+    ) {
+      const message = filed.find(
+        (candidate) => candidate.id === event.entityId,
+      );
+      if (message) message.encryptedValue = event.encryptedValue;
+    }
+  }
+  return filed;
+}
 
 /** The `data:` lines of an SSE body, parsed. Comment lines (heartbeats) are dropped. */
 export function eventsOfSse(body: string): StreamEvent[] {
@@ -75,6 +164,17 @@ export function callsOf(events: StreamEvent[]): ObservedCall[] {
     }
     return { id, name: call.name, rawArguments: raw, arguments: parsed };
   });
+}
+
+/**
+ * The calls that reached the surface — every call the stream carried but the Bot service did not
+ * answer itself. A call answered in the run (a lookup, a guard's fact, a deferred tool sent back for
+ * its schema) never reaches a person or a server, so what a scenario about a send judges is the send
+ * the surface would have executed.
+ */
+export function forwardedCallsOf(events: StreamEvent[]): ObservedCall[] {
+  const answered = resultsOf(events);
+  return callsOf(events).filter((call) => !answered.has(call.id));
 }
 
 /**

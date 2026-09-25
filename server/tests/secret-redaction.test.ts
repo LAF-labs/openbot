@@ -99,6 +99,38 @@ describe("what a refused typing leaves in the conversation", () => {
     expect(stored.lafRedacted).toBe(true);
   });
 
+  test("takes the reasoning that led to the typing out with it, and it stays out", () => {
+    // What a MiMo tool-call turn carries (agent-bot/src/reasoning.ts): the thought behind the call.
+    const thought = JSON.stringify({
+      model: "xiaomi/mimo-v2.6-pro",
+      reasoning_details: [
+        { type: "reasoning.text", text: `I will type ${PASSWORD} into it.` },
+      ],
+    });
+    const [stored] = redactSecretTyping([
+      typing("t1", PASSWORD, { encryptedValue: thought }),
+      answer("t1", attendedRefusal),
+    ]);
+    expect(JSON.stringify(stored)).not.toContain(PASSWORD);
+    expect(stored).not.toHaveProperty("encryptedValue");
+
+    // The client's copy comes round with the thought still on it; the stored decision wins.
+    const [again] = redactSecretTyping(
+      [typing("t1", PASSWORD, { encryptedValue: thought })],
+      [stored as StoredMessage],
+    );
+    expect(JSON.stringify(again)).not.toContain(PASSWORD);
+  });
+
+  test("an ordinary typing keeps its reasoning", () => {
+    const thought = JSON.stringify({ model: "m", reasoning_details: [] });
+    const [stored] = redactSecretTyping([
+      typing("t1", "김기범", { encryptedValue: thought }),
+      answer("t1", typed),
+    ]);
+    expect(stored).toHaveProperty("encryptedValue", thought);
+  });
+
   test("takes it out when the unattended loop reports the same refusal", () => {
     const [stored] = redactSecretTyping([
       typing("t1", PASSWORD),

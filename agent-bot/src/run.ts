@@ -2,11 +2,15 @@ import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { answerNowText } from "../../shared/prompt/context.ko";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import { textOf } from "../../shared/message-content";
+import { describedToolNames } from "../../shared/tools/bridge";
 import { nowResultText } from "../../shared/tools/now";
 import {
   answerBridgeCall,
+  answerDeferredCall,
   exposeTools,
   isBridgeCall,
+  isDeferredCall,
   isServiceCall,
   MAX_BRIDGE_ROUNDS,
   toolDeferralOf,
@@ -25,6 +29,7 @@ import {
   TOOL_LOOP_LIMIT,
 } from "./guards";
 import { isRetryable, log, runErrorCodeOf, runFailureOf } from "./log";
+import { carriedReasoning } from "./reasoning";
 import {
   type CompletionProvider,
   liveProvider,
@@ -326,13 +331,19 @@ async function runRounds(context: RunContext): Promise<void> {
      * prefix up to where it stood.
      */
     const transcript = [...input.messages, ...inRun];
+    /** The tools behind the bridge whose schema a lookup has already put in this conversation. */
+    const described = describedToolNames(
+      transcript.flatMap((message) =>
+        message.role === "tool" ? [textOf(message.content)] : [],
+      ),
+    );
     const nudge = mustSpeak
       ? answerNowText("budget")
       : round >= MAX_BRIDGE_ROUNDS
         ? answerNowText("lookups")
         : null;
     const messages = [
-      ...toProviderMessages(transcript),
+      ...toProviderMessages(transcript, MODEL),
       ...(nudge ? [{ role: "user" as const, content: nudge }] : []),
     ];
     const tools = toProviderTools(exposed.provider);
@@ -367,9 +378,11 @@ async function runRounds(context: RunContext): Promise<void> {
             ? "bridge"
             : isServiceCall(name)
               ? "service"
-              : known.has(name)
-                ? null
-                : "unknown",
+              : isDeferredCall(name, exposed)
+                ? "deferred"
+                : known.has(name)
+                  ? null
+                  : "unknown",
       });
     /*
      * ONE RETRY, OURS AND SAID. A server error or a dropped connection before a byte arrived is sent
@@ -618,16 +631,36 @@ async function runRounds(context: RunContext): Promise<void> {
         continue;
       }
 
-      if (call.held === "bridge") {
+      if (call.held === "bridge" || call.held === "deferred") {
         /*
-         * A BRIDGE CALL, held back whole until now. `isBridgeCall` only said yes to a name a
-         * bridge was offered under, so the narrowing here is the same fact read twice.
+         * A BRIDGE CALL, or a tool behind the bridge called by its own name — held back whole
+         * until now. `isBridgeCall` only said yes to a name a bridge was offered under, so the
+         * narrowing here is the same fact read twice. Either way a deferred tool is forwarded only
+         * once this conversation has been shown its schema (`settleDeferredCall`).
          */
-        const bridged = answerBridgeCall(
-          call.name as Parameters<typeof answerBridgeCall>[0],
-          call.arguments,
-          exposed.deferred,
-        );
+        const bridged =
+          call.held === "bridge"
+            ? answerBridgeCall(
+                call.name as Parameters<typeof answerBridgeCall>[0],
+                call.arguments,
+                exposed.deferred,
+                described,
+              )
+            : answerDeferredCall(
+                call.name,
+                call.arguments,
+                exposed.deferred,
+                described,
+              );
+        if (bridged === null) {
+          // Arguments that are not an object, on a tool called by its own name: as any real call's.
+          recoveries += 1;
+          answer(call, "laf:tool_arguments_invalid", false);
+          if (recoveries > MAX_TOOL_RECOVERIES) {
+            endsOn = "laf:tool_arguments_invalid";
+          }
+          continue;
+        }
 
         if (bridged.kind === "forward") {
           // The real call is what the budget and the loop are about, whichever way it was asked.
@@ -728,6 +761,25 @@ async function runRounds(context: RunContext): Promise<void> {
     }
 
     /*
+     * THE REASONING BEHIND A TOOL CALL GOES WITH IT (`./reasoning`). Attached to this round's
+     * assistant message — which every call above opened with `parentMessageId` — so the client files
+     * it on that message and hands it back with the next run's input, and the next round of this run
+     * reads it off `inRun`. Only a round that called something: a text answer's thought is never
+     * asked for again.
+     */
+    const carried = [...toolCalls.values()].some((call) => call.name)
+      ? carriedReasoning(MODEL, turn.reasoning)
+      : null;
+    if (carried) {
+      emit({
+        type: "REASONING_ENCRYPTED_VALUE",
+        subtype: "message",
+        entityId: messageId,
+        encryptedValue: carried,
+      } as BaseEvent);
+    }
+
+    /*
      * THE ANSWER STOPPED MID-SENTENCE AND NOTHING SAID SO.
      *
      * `finish_reason: "length"` was never read, so a cut-off answer was delivered as a finished
@@ -792,6 +844,7 @@ async function runRounds(context: RunContext): Promise<void> {
       id: messageId,
       role: "assistant",
       ...(text ? { content: text } : {}),
+      ...(carried ? { encryptedValue: carried } : {}),
       toolCalls: answered.map((entry) => ({
         id: entry.id,
         type: "function" as const,

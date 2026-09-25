@@ -596,6 +596,97 @@ export function searchResultText(
   ].join("\n");
 }
 
+/**
+ * 이 대화에서 스키마가 이미 건네진 미뤄진 툴의 이름들 — `tool_search`의 답이 툴 결과로 남긴
+ * `schemaLine` 줄을 읽는다. 같은 파일이 그 줄을 쓰므로 모양을 아는 곳도 여기 하나다.
+ */
+export function describedToolNames(results: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (const text of results) {
+    for (const line of text.split("\n")) {
+      if (!line.startsWith('{"name":')) continue;
+      try {
+        const parsed = JSON.parse(line) as {
+          name?: unknown;
+          parameters?: unknown;
+        };
+        if (
+          typeof parsed.name === "string" &&
+          parsed.parameters !== undefined
+        ) {
+          names.add(parsed.name);
+        }
+      } catch {
+        // 스키마 줄이 아니다.
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * 스키마를 받지 않고 부른 미뤄진 툴의 답: 그 툴의 스키마 전부와, 그대로 다시 부르라는 말.
+ *
+ * 왜 전달하지 않는가(Claude Code를 따른다 — 미뤄 둔 툴은 ToolSearch로 스키마를 받기 전에는 부를
+ * 수 없고, 부르면 먼저 받으라는 오류가 온다). 맥락 층에는 이름만 있으니, 스키마 없이 부른 인자는
+ * 짐작이다. 실측(MiMo-V2.6-Pro, 2026-09-25): 알림톡을 `tool_search` 없이 이름으로 바로 불러
+ * `template` 대신 `templateCode`를 보냈고, `variables`는 여섯 번 중 네 번 JSON 문자열이었다. 그
+ * 호출은 표면에 가서 서버의 인자 검사에 걸리고(`laf:tool_arguments_invalid`), 한 번 더 도는 값을
+ * 치른다. 여기서 답하면 같은 실행 안에서 한 라운드로 끝나고, 사람 앞에는 아무것도 가지 않는다.
+ */
+export function undescribedToolText(
+  deferred: readonly WireTool[],
+  name: string,
+): string {
+  const tool = resolveDeferred(deferred, name);
+  if (!tool) return unknownToolText(deferred, name);
+  return [
+    `'${tool.name}'의 스키마를 이 대화에서 아직 받지 않아서 부르지 않았다. 인자 이름을 짐작하지 말고, 아래 스키마의 이름과 타입 그대로 다시 부른다.`,
+    schemaLine(tool),
+  ].join("\n");
+}
+
+/**
+ * 스키마가 객체나 배열이라고 한 최상위 인자가 JSON 문자열로 왔을 때, 그 문자열을 풀어 그 타입이
+ * 되면 푼 값으로 바꾼다. 풀리지 않거나 다른 타입이 되면 그대로 둔다 — 서버의 검사가 답한다.
+ *
+ * 왜: OpenAI 호환 모델이 중첩 객체를 한 번 더 문자열로 싸는 것은 흔한 실수이고(실측: MiMo가 알림톡
+ * `variables`를 `"{\"#{상호}\": …}"`로), 그 문자열이 뜻하는 값은 모호하지 않다. 스키마가 타입을
+ * 말하고 파싱이 그 타입을 돌려줄 때만 바꾸므로, 문자열이어야 하는 인자는 절대 건드리지 않는다.
+ */
+export function coerceStringifiedArguments(
+  parameters: unknown,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const properties =
+    parameters && typeof parameters === "object"
+      ? (parameters as { properties?: unknown }).properties
+      : undefined;
+  if (!properties || typeof properties !== "object") return args;
+  let changed = false;
+  const out: Record<string, unknown> = { ...args };
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value !== "string") continue;
+    const declared = (properties as Record<string, { type?: unknown }>)[key]
+      ?.type;
+    if (declared !== "object" && declared !== "array") continue;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      const isArray = Array.isArray(parsed);
+      const fits =
+        declared === "array"
+          ? isArray
+          : parsed !== null && typeof parsed === "object" && !isArray;
+      if (!fits) continue;
+      out[key] = parsed;
+      changed = true;
+    } catch {
+      // 풀리지 않는 문자열은 그대로 — 서버가 답한다.
+    }
+  }
+  return changed ? out : args;
+}
+
 function unknownToolText(deferred: readonly WireTool[], name: string): string {
   const near = searchTools(deferred, bareNameOf(name), 5);
   return [

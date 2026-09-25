@@ -267,9 +267,16 @@ export function redactSecretTyping(
     // already redacted is still a redacted message and a reader asking "was anything taken out of
     // this turn" should get the same answer either way.
     const marked = message.lafRedacted === true;
-    if (!changed && marked) return message;
+    /*
+     * THE REASONING GOES WITH THE VALUE. A tool-call turn carries the model's thought in
+     * `encryptedValue` (agent-bot/src/reasoning.ts), and the thought that led to typing a
+     * credential is the one place besides the argument that is likely to spell it out.
+     */
+    const reasoned = message.encryptedValue !== undefined;
+    if (!changed && marked && !reasoned) return message;
+    const { encryptedValue: _dropped, ...kept } = message;
     return {
-      ...message,
+      ...kept,
       toolCalls: rewritten as typeof message.toolCalls,
       lafRedacted: true,
     };

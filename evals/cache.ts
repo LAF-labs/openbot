@@ -95,6 +95,12 @@ const CHOSEN: readonly Arm[] = (process.env.EVAL_CACHE_ARMS ?? ARMS.join(","))
 const CASES = (process.env.EVAL_CACHE_CASES ?? "week,browsing")
   .split(",")
   .map((name) => name.trim());
+/**
+ * Whether the browsing task's history carries each tool call's reasoning, as production's does since
+ * 2026-09-25 (`agent-bot/src/reasoning.ts`). `EVAL_CACHE_REASONING=off` is the history before that,
+ * for measuring what carrying it costs.
+ */
+const CARRY_REASONING = process.env.EVAL_CACHE_REASONING !== "off";
 /** The share the browsing task must read from cache after its first request (harness phase 2). */
 const BROWSING_TARGET_SHARE = 0.9;
 /** A reasoning model can sit before its first token; the product's own stall guard allows this order of patience. */
@@ -243,6 +249,11 @@ type TurnMeasure = {
   provider: string | null;
   latencyMs: number;
   problem: string | null;
+  /**
+   * The reasoning the run attached to its tool-call turn (`agent-bot/src/reasoning.ts`), which the
+   * client files on that turn's message. Not in the report: it is the model's thought.
+   */
+  carried?: string | null;
 };
 
 type ArmMeasure = {
@@ -316,6 +327,9 @@ async function requestOnce(input: {
         : usage
           ? null
           : "no usage event",
+      carried:
+        events.find((event) => event.type === "REASONING_ENCRYPTED_VALUE")
+          ?.encryptedValue ?? null,
     };
   } catch (error) {
     return {
@@ -543,6 +557,13 @@ async function measureBrowsing(tools: WireTool[]): Promise<ArmMeasure> {
   ];
   const turns: TurnMeasure[] = [];
   const steps = browsingSteps();
+  /*
+   * The reasoning the last request's tool call carried, filed on the next scripted step as the
+   * client files it on the call it produced — so the history grows by what production's does. The
+   * script's call is not always the call the model made; the thought is the model's own either way,
+   * and what is measured is whether a thought in the history keeps the prefix whole.
+   */
+  let carried: string | null = null;
   for (let at = 0; at < steps.length; at += 1) {
     const step = steps[at];
     if (!step) break;
@@ -552,6 +573,7 @@ async function measureBrowsing(tools: WireTool[]): Promise<ArmMeasure> {
         id: `b_a${at}`,
         role: "assistant",
         content: "",
+        ...(carried && CARRY_REASONING ? { encryptedValue: carried } : {}),
         toolCalls: [
           {
             id: callId,
@@ -608,6 +630,7 @@ async function measureBrowsing(tools: WireTool[]): Promise<ArmMeasure> {
     });
     turns.push(measure);
     printTurn("browsing", measure);
+    carried = measure.carried ?? null;
     await spill.settled();
   }
   return { arm: "browsing", turns, ...laterOf(turns) };
@@ -762,6 +785,7 @@ const report = {
   turns: TURNS,
   gapMinutes: GAP_MINUTES,
   historyMessages: history.length,
+  browsingCarriesReasoning: CARRY_REASONING,
   tools: tools.length,
   arms,
 };

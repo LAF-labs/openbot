@@ -29,6 +29,7 @@ import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
 import {
   discipline,
+  forwardedCallsOf,
   hangulShare,
   type ObservedCall,
   saysNumber,
@@ -620,8 +621,15 @@ export const SCENARIOS: Scenario[] = [
       ...alimtalkTemplatesLookedUp(),
     ],
     tools: [...REALISTIC_TOOLSET],
+    /*
+     * THE SEND THE SURFACE WOULD EXECUTE, which is the first one that was not answered in the run.
+     * Since 2026-09-25 a send made without the schema is answered with it by the Bot service
+     * (`settleDeferredCall`) and never reaches a person — the harm this scenario was born from is
+     * two approvals spent, and a call nobody is asked about spends none. The first FORWARDED send is
+     * judged, as strictly as before.
+     */
     check: (turn) => {
-      const send = turn.calls.find(
+      const send = forwardedCallsOf(turn.events).find(
         (call) => call.name === "mcp__kakao-alimtalk__alimtalk_send",
       );
       const variables = (send?.arguments?.variables ?? {}) as Record<

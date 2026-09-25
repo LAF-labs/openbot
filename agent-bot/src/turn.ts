@@ -2,6 +2,7 @@ import type { BaseEvent } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { describeFailure } from "../../shared/failure-text";
 import type { CompletionProvider } from "./provider";
+import { mergeReasoningDetails, type ReasoningDetail } from "./reasoning";
 import type { ProviderEffort } from "./transcript";
 
 /**
@@ -30,9 +31,11 @@ export type ToolCallRecord = {
    * Why nothing of this call goes on the wire as it streams. `bridge`: its arguments name the
    * REAL tool, and that is only known once they are complete. `service`: a tool this service
    * answers itself (`now`), which no surface has a handler for. `unknown`: a name the run was never
-   * handed, which no surface can execute and which the loop answers itself.
+   * handed, which no surface can execute and which the loop answers itself. `deferred`: a tool
+   * behind the bridge called by its own name, whose arguments are settled like a `tool_call`'s once
+   * they are complete (`settleDeferredCall`).
    */
-  held: "bridge" | "service" | "unknown" | null;
+  held: "bridge" | "service" | "deferred" | "unknown" | null;
 };
 
 /**
@@ -64,6 +67,12 @@ export type Turn = {
   provider: string | null;
   /** Why the model stopped. `length` means the answer was cut off mid-sentence. */
   finishReason: string | null;
+  /**
+   * What the model thought before it answered, as OpenRouter's `reasoning_details` — merged the way
+   * OpenRouter's own SDK merges the stream (`./reasoning`). Kept only to be handed back with a turn
+   * that called a tool; empty where the endpoint sends none.
+   */
+  reasoning: ReasoningDetail[];
   /**
    * THE STREAM STOPPED BEFORE THE MODEL SAID IT WAS DONE, with something already on the wire.
    *
@@ -173,6 +182,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
   let usage: OpenAI.CompletionUsage | null = null;
   let answeredBy: string | null = null;
   let finishReason: string | null = null;
+  const reasoning: ReasoningDetail[] = [];
   /** Whether any prose or any tool-call fragment arrived. What separates a cut from an empty turn. */
   let delivered = false;
 
@@ -184,6 +194,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     usage,
     provider: answeredBy,
     finishReason,
+    reasoning,
     cut,
   });
 
@@ -236,6 +247,11 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
       if (reason) finishReason = reason;
       const delta = chunk.choices[0]?.delta;
       if (!delta) continue;
+      // Not a type the SDK knows: OpenRouter's extension of the delta, read where it is sent.
+      mergeReasoningDetails(
+        reasoning,
+        (delta as { reasoning_details?: unknown }).reasoning_details,
+      );
 
       if (delta.content) {
         delivered = true;

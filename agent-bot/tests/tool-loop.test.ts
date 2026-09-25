@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { ANSWER_NOW_KO } from "../../shared/prompt/context.ko";
+import { searchResultText } from "../../shared/tools/bridge";
 
 /**
  * A Bot that keeps calling tools and never answers, bounded far below the browser's hundred.
@@ -337,10 +338,35 @@ describe("the same call over and over", () => {
       name: "mcp__gmail__search_messages",
       args: { query: "정산" },
     };
+    // Looked up already: a deferred tool is forwarded only once its schema is in the thread.
+    const lookup = "select:mcp__gmail__search_messages";
+    const history = [
+      {
+        id: "a_lookup",
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "c_lookup",
+            type: "function",
+            function: {
+              name: "tool_search",
+              arguments: JSON.stringify({ query: lookup }),
+            },
+          },
+        ],
+      },
+      {
+        id: "t_lookup",
+        role: "tool",
+        toolCallId: "c_lookup",
+        content: searchResultText(tools, lookup),
+      },
+    ] as Message[];
     const { runs, events } = await driveLoop(
       (ordinal) =>
         ordinal < 3 ? calls(`c${ordinal}`, "tool_call", search) : said("없다."),
       tools,
+      { history },
     );
     // Forwarded twice under Gmail's own name; the third is answered under the bridge's.
     expect(runs).toBe(3);

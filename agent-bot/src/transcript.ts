@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { textOf } from "../../shared/message-content";
+import { reasoningDetailsOf } from "./reasoning";
 import type { ProviderSession } from "./turn";
 
 /**
@@ -33,7 +34,11 @@ export type TranscriptMessage = RunAgentInput["messages"][number];
  * bridge lookup answered here (`./deferral`) is appended after the conversation as it arrived,
  * and the next round converts the whole of it again.
  */
-export function toProviderMessages(transcript: readonly TranscriptMessage[]) {
+export function toProviderMessages(
+  transcript: readonly TranscriptMessage[],
+  /** The model this request goes to: reasoning is handed back only to the model that wrote it. */
+  model = "",
+) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
 
   for (const message of transcript) {
@@ -64,11 +69,21 @@ export function toProviderMessages(transcript: readonly TranscriptMessage[]) {
           arguments: readableArguments(call.function.arguments),
         },
       }));
+      /*
+       * A turn that called a tool goes back with the reasoning that led to it (`./reasoning`), in
+       * OpenRouter's documented field. Not a field of the OpenAI SDK's type, which serialises the
+       * body as given; an endpoint that does not know it is not sent one, because only a turn this
+       * service filed from an OpenRouter stream carries any.
+       */
+      const reasoning = toolCalls?.length
+        ? reasoningDetailsOf(message.encryptedValue, model)
+        : null;
       messages.push({
         role: "assistant",
         content: message.content ?? null,
         ...(toolCalls?.length ? { tool_calls: toolCalls } : {}),
-      });
+        ...(reasoning ? { reasoning_details: reasoning } : {}),
+      } as OpenAI.Chat.ChatCompletionAssistantMessageParam);
     }
   }
 

@@ -2,11 +2,13 @@ import type { RunAgentInput } from "@ag-ui/core";
 import {
   BRIDGE_TOOLS,
   type BridgeToolName,
+  coerceStringifiedArguments,
   isBridgeToolName,
   searchResultText,
   splitExposure,
   TOOL_CALL,
   TOOL_SEARCH,
+  undescribedToolText,
   unwrapToolCall,
   type WireTool,
 } from "../../shared/tools/bridge";
@@ -147,11 +149,61 @@ function parseArguments(raw: string): unknown {
   }
 }
 
+/**
+ * A deferred tool's real call, once its name is resolved: answered with its schema if this
+ * conversation has never been shown it (`undescribedToolText`), else forwarded with any top-level
+ * object or array that arrived as a JSON string unwrapped (`coerceStringifiedArguments`).
+ *
+ * ONE RULE FOR BOTH DOORS. A deferred tool is reached through `tool_call` or — because its name is
+ * in the context layer and a model may simply use it — by that name directly. Both are guesses
+ * without the schema, and both used to be forwarded.
+ */
+export function settleDeferredCall(
+  name: string,
+  args: Record<string, unknown>,
+  deferred: readonly WireTool[],
+  described: ReadonlySet<string>,
+): BridgeAnswer {
+  const tool = deferred.find((candidate) => candidate.name === name);
+  if (!tool || !described.has(tool.name)) {
+    return { kind: "answer", text: undescribedToolText(deferred, name) };
+  }
+  return {
+    kind: "forward",
+    name: tool.name,
+    args: coerceStringifiedArguments(tool.parameters, args),
+  };
+}
+
+/** Whether a name the model called is one of the tools behind the bridge, called directly. */
+export function isDeferredCall(name: string, exposed: ExposedTools): boolean {
+  return exposed.bridged && exposed.deferred.some((tool) => tool.name === name);
+}
+
+/** A deferred tool called by its own name: the same rule as `tool_call`. */
+export function answerDeferredCall(
+  name: string,
+  rawArguments: string,
+  deferred: readonly WireTool[],
+  described: ReadonlySet<string>,
+): BridgeAnswer | null {
+  const args = parseArguments(rawArguments);
+  // Not an object: the loop's own recovery answers it, the way it answers any real call's.
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  return settleDeferredCall(
+    name,
+    args as Record<string, unknown>,
+    deferred,
+    described,
+  );
+}
+
 /** What one bridge call becomes. */
 export function answerBridgeCall(
   name: BridgeToolName,
   rawArguments: string,
   deferred: readonly WireTool[],
+  described: ReadonlySet<string>,
 ): BridgeAnswer {
   const args = parseArguments(rawArguments);
   const field = (key: string): string => {
@@ -166,7 +218,7 @@ export function answerBridgeCall(
   if (name === TOOL_CALL) {
     const unwrapped = unwrapToolCall(deferred, args);
     return unwrapped.ok
-      ? { kind: "forward", name: unwrapped.name, args: unwrapped.args }
+      ? settleDeferredCall(unwrapped.name, unwrapped.args, deferred, described)
       : { kind: "answer", text: unwrapped.text };
   }
   return { kind: "answer", text: `${name satisfies never}` };

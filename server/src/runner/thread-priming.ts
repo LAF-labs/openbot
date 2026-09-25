@@ -14,7 +14,10 @@ import type { LafPostgresRunner } from "./laf-runner";
  * The runtime is mounted behind these by the caller (`.route("/", mountCopilotRuntime(…))`).
  */
 export function primeThreadRoutes(input: {
-  runner: Pick<LafPostgresRunner, "prime" | "primeThreadList">;
+  runner: Pick<
+    LafPostgresRunner,
+    "prime" | "primeThreadList" | "getThreadMessages"
+  >;
   /**
    * Who the priming is reading for, or a refusal.
    *
@@ -66,6 +69,57 @@ export function primeThreadRoutes(input: {
           404,
         );
       }
-      return next();
+      await next();
+      if (
+        context.req.method !== "GET" ||
+        !context.req.path.endsWith("/messages") ||
+        !context.res.ok
+      ) {
+        return;
+      }
+      const answered = (await context.res
+        .clone()
+        .json()
+        .catch(() => null)) as { messages?: unknown } | null;
+      if (!answered || !Array.isArray(answered.messages)) return;
+      const kept = withCarriedReasoning(
+        answered.messages,
+        input.runner.getThreadMessages(context.req.param("threadId")),
+      );
+      if (kept !== answered.messages) {
+        context.res = Response.json({ ...answered, messages: kept });
+      }
     });
+}
+
+/**
+ * The runtime's messages route, with each message's `encryptedValue` put back.
+ *
+ * The route rebuilds every message from a fixed list of keys (`handleGetThreadMessages` in
+ * `@copilotkit/runtime`), and AG-UI's `encryptedValue` is not on it. That field is where a MiMo
+ * tool-call turn carries the reasoning Xiaomi asks to be handed back in every later request
+ * (`agent-bot/src/reasoning.ts`), so a tab reloaded from this route sent the thread back without
+ * it: the store kept the poorer copy (`appendMessages` rewrites a message it holds with the one that
+ * arrives), and the prefix the provider had cached was no longer the prefix it was sent. Put back
+ * from the messages the route was answered from, by id; nothing else is touched.
+ *
+ * Returns `mapped` itself when no message carries one.
+ */
+export function withCarriedReasoning(
+  mapped: readonly unknown[],
+  source: readonly { id: string; encryptedValue?: unknown }[],
+): unknown[] {
+  const carried = new Map<string, string>();
+  for (const message of source) {
+    if (typeof message.encryptedValue === "string" && message.encryptedValue) {
+      carried.set(message.id, message.encryptedValue);
+    }
+  }
+  if (carried.size === 0) return mapped as unknown[];
+  return mapped.map((message) => {
+    if (!message || typeof message !== "object") return message;
+    const id = (message as { id?: unknown }).id;
+    const value = typeof id === "string" ? carried.get(id) : undefined;
+    return value ? { ...message, encryptedValue: value } : message;
+  });
 }

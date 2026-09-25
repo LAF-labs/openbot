@@ -18,6 +18,18 @@ const runner = {
     primed.push(`thread:${threadId}:${userId}`);
     return threadId === "thread-mine";
   },
+  getThreadMessages: (threadId: string) =>
+    threadId === "thread-mine"
+      ? ([
+          { id: "u1", role: "user", content: "재고" },
+          {
+            id: "a1",
+            role: "assistant",
+            encryptedValue: '{"model":"m","reasoning_details":[]}',
+            toolCalls: [],
+          },
+        ] as never)
+      : [],
 };
 
 /** The runtime, as far as these routes reach it: its own basePath, and a note that it was reached. */
@@ -31,6 +43,15 @@ const app = primeThreadRoutes({
   "/",
   new Hono()
     .basePath("/api/copilotkit")
+    .get("/threads/:threadId/messages", (context) =>
+      // The runtime's own shape: every message rebuilt from a list of keys, `encryptedValue` not one.
+      context.json({
+        messages: [
+          { id: "u1", role: "user", content: "재고" },
+          { id: "a1", role: "assistant", toolCalls: [] },
+        ],
+      }),
+    )
     .all("*", (context) => context.json({ reached: true })),
 );
 
@@ -84,6 +105,23 @@ describe("the runtime's thread routes", () => {
       });
     }
     expect(primed).toEqual([]);
+  });
+
+  test("a message's carried reasoning comes back on the messages route, which drops it", async () => {
+    const response = await ask("/api/copilotkit/threads/thread-mine/messages", {
+      actor: "owner",
+    });
+    expect(await response.json()).toEqual({
+      messages: [
+        { id: "u1", role: "user", content: "재고" },
+        {
+          id: "a1",
+          role: "assistant",
+          toolCalls: [],
+          encryptedValue: '{"model":"m","reasoning_details":[]}',
+        },
+      ],
+    });
   });
 
   test("only reading the list primes it", async () => {
