@@ -178,7 +178,19 @@ test("runs migrations after PostgreSQL becomes healthy", () => {
 
   expect(compose).toContain("migrate:");
   expect(compose).toContain("condition: service_healthy");
-  expect(compose).toContain('"drizzle-kit", "migrate"');
+  // drizzle-kit behind one read of its ledger (server/scripts/migrate.ts), which still hands every
+  // database that is behind, or cannot say, to `drizzle-kit migrate`.
+  expect(parsedCompose.services.migrate?.command).toEqual([
+    "bun",
+    "scripts/migrate.ts",
+  ]);
+  const script = readFileSync(
+    join(import.meta.dir, "..", "server", "scripts", "migrate.ts"),
+    "utf8",
+  );
+  expect(script).toContain(
+    '"drizzle-kit", "migrate", "--config=drizzle.config.ts"',
+  );
 });
 
 /**
@@ -229,7 +241,12 @@ const parsedCompose = parseYaml(
       command?: string[];
       shm_size?: string;
       logging?: { driver?: string; options?: Record<string, string> };
-      healthcheck?: { test?: string[] };
+      healthcheck?: {
+        test?: string[];
+        start_period?: string;
+        start_interval?: string;
+      };
+      environment?: Record<string, string>;
     }
   >;
 };
@@ -316,4 +333,53 @@ test("gives every healthcheck a way to go red", () => {
       `${name}: ${command}`,
     ).toBe(true);
   }
+});
+
+/**
+ * The four long-lived services are checked every second while they start.
+ *
+ * With only `interval: 10s`, Docker's first check ran ten seconds after the start. The server
+ * waited that long for agent-bot and agent-computer, and then ten more before it read as healthy
+ * itself. Measured 2026-09-26 on a 1-OCPU VM: 23.3 s from `up` to an answering server, against
+ * about 7 s with `start_interval: 1s`. The standing spare's claim, and every upgrade, pays that
+ * difference.
+ */
+test("checks the long-lived services every second while they start", () => {
+  for (const name of ["server", "web", "agent-bot", "agent-computer"]) {
+    const health = parsedCompose.services[name]?.healthcheck;
+    expect(health?.start_interval, name).toBe("1s");
+    expect(health?.start_period, name).toBe("60s");
+  }
+});
+
+/**
+ * What the server waits for, and nothing more.
+ *
+ * A standing spare's claim starts only the server and the front door (`up -d --no-deps`): the
+ * database, the migration, agent-bot and agent-computer are already done or running on the spare.
+ * `--no-deps` hides any dependency added here from that claim, so a new one must be a decision
+ * made with the claim in mind (laf-control core/operations.ts), not a line that slips in.
+ */
+test("the server depends on exactly the four services a spare has already started", () => {
+  expect(
+    Object.keys(
+      (parsedCompose.services.server?.depends_on ?? {}) as Record<
+        string,
+        unknown
+      >,
+    ).sort(),
+  ).toEqual(["agent-bot", "agent-computer", "migrate", "postgres"]);
+});
+
+/**
+ * The spare's lock reaches the front door, and is off unless something sets it.
+ *
+ * app/Caddyfile answers every path with 503 while LAF_FRONT_LOCKED is "1". Compose passes it with
+ * an empty default, so a deployment whose `.env` never names it serves as it always has
+ * (tests/caddyfile.test.ts adapts both states).
+ */
+test("hands the spare's lock to the front door, open by default", () => {
+  expect(parsedCompose.services.web?.environment?.LAF_FRONT_LOCKED).toBe(
+    "${LAF_FRONT_LOCKED:-}",
+  );
 });

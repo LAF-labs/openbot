@@ -317,6 +317,7 @@
   "server/tests/memory-secrets.test.ts",
   "server/tests/message-speakers.test.ts",
   "server/tests/message-stamps.test.ts",
+  "server/tests/migrate-skip.integration.test.ts",
   "server/tests/model-usage.test.ts",
   "server/tests/notification-doors.test.ts",
   "server/tests/notification-outbox.integration.test.ts",

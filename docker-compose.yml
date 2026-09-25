@@ -115,7 +115,11 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
-    command: ["bun", "x", "drizzle-kit", "migrate", "--config=drizzle.config.ts"]
+    # drizzle-kit's migrate, behind one read of its ledger: a database already at the newest
+    # migration exits at once instead of loading drizzle-kit to find nothing to do (1.1 s → 0.6 s
+    # measured on a 1-OCPU VM, paid by every `up`; server/scripts/migrate.ts). Anything else, a
+    # fresh database included, goes to `drizzle-kit migrate` exactly as before.
+    command: ["bun", "scripts/migrate.ts"]
     environment:
       DATABASE_URL: postgres://openbot:${POSTGRES_PASSWORD:-openbot}@postgres:5432/openbot
     logging: *logging
@@ -295,6 +299,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # Checked every second while it starts, and every ten once it is up (see HEALTH WHILE
+      # STARTING under agent-bot).
+      start_period: 60s
+      start_interval: 1s
     # The process that holds a conversation in memory while a Bot answers it, and the one that
     # grows with the trail. 1.5g is several times its idle; past it the kernel restarts this one
     # container and Postgres does not notice.
@@ -338,6 +346,10 @@ services:
       # The www name only ever redirects to the apex. The default is at this layer, not just in
       # the Caddyfile, so an empty value from a bare `.env` line cannot become an empty site block.
       PUBLIC_WWW_ORIGIN: ${PUBLIC_WWW_ORIGIN:-http://www.localhost}
+      # "1" on a standing spare, and only there: every path answers 503 and nothing is proxied until
+      # the claim writes the person's lines and removes this one (app/Caddyfile, THE LOCK). Unset and
+      # empty both mean open, so a deployment that never heard of it is unchanged.
+      LAF_FRONT_LOCKED: ${LAF_FRONT_LOCKED:-}
     volumes:
       # Certificates and the ACME account. Without this volume a restart re-requests the same
       # certificate, and five of those in a week is a Let's Encrypt rate limit measured in days.
@@ -366,6 +378,7 @@ services:
       # The API waits on migrations and on two other containers being healthy, so a cold boot spends
       # a while with nothing behind this door. Failures in here do not count against `retries`.
       start_period: 60s
+      start_interval: 1s
     # Caddy: a few tens of MB idle, TLS and compression on top. The smallest ceiling here, and the
     # one whose death matters most — which is why it is generous relative to what it uses.
     mem_limit: 256m
@@ -509,6 +522,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # HEALTH WHILE STARTING. The first check used to run a full `interval` after the start, so
+      # every `up` waited ten seconds for agent-bot and agent-computer before the server could start,
+      # and another ten before the server read as healthy. Measured 2026-09-26 on a 1-OCPU VM: 23.3 s
+      # from `up` to an answering server, against about 7 s with a check every second while the
+      # service is starting. `start_period` only bounds how long the fast checks run, and a failure
+      # inside it does not count against `retries`. Once the first check passes, the interval goes
+      # back to ten seconds. Needs Docker 25 or later (the VMs run 29.8).
+      start_period: 60s
+      start_interval: 1s
     # One turn in flight at a time per Bot, each carrying the conversation the API handed it.
     # Several times its idle.
     mem_limit: 512m

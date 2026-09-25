@@ -20,6 +20,33 @@
 {$PUBLIC_ORIGIN:http://localhost}, http://localhost:2021 {
 	encode zstd gzip
 
+	# THE LOCK. A standing spare (the fleet's machine waiting for its next person) runs this front
+	# door before anybody owns it, so the certificate is issued while nobody waits: 13.3 s measured,
+	# which became the whole critical path once the stack itself got fast. Until the claim removes
+	# LAF_FRONT_LOCKED from `.env`, every path on every address gets the same neutral 503 and nothing
+	# is proxied. A spare has no server, and the product shell must not answer on a name that
+	# certificate transparency has just published.
+	#
+	# This block must stay FIRST. Caddy sorts `handle` blocks that have a path matcher by path
+	# length, and leaves the others in the order they are written. So this block comes first only
+	# while it is written above the rest. `tests/caddyfile.test.ts` adapts the file and walks the
+	# routes Caddy actually produced. An unset or empty variable leaves the door open, and that is
+	# every deployment that is not a spare.
+	#
+	# One exception: the container asking itself for its healthcheck, from loopback, on the internal
+	# port, on /health only. The door is up and locked, and here that is what "healthy" means.
+	# Nothing outside the container reaches loopback.
+	@locked expression `"{$LAF_FRONT_LOCKED}" == "1"`
+	handle @locked {
+		@probe {
+			path /health
+			remote_ip 127.0.0.1/8 ::1
+			expression `{http.request.local.port} == 2021`
+		}
+		respond @probe `{"status":"locked"}` 200
+		respond "Not in service." 503
+	}
+
 	# Everything the API owns, including the live screen's WebSocket. `reverse_proxy` passes an
 	# upgrade through without being told to; the socket arrives here as an ordinary /api path
 	# because the app builds its URL from window.location rather than from a configured host.

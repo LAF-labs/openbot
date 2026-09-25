@@ -83,6 +83,7 @@ type Route = {
  */
 function adaptedAppSites(
   kind: "routes" | "errors" = "routes",
+  environment: Record<string, string> = {},
 ): Map<string, Route[]> {
   const run = Bun.spawnSync(
     [
@@ -90,6 +91,10 @@ function adaptedAppSites(
       "run",
       "--rm",
       "--interactive",
+      ...Object.entries(environment).flatMap(([name, value]) => [
+        "--env",
+        `${name}=${value}`,
+      ]),
       caddyImage as string,
       "caddy",
       "adapt",
@@ -181,6 +186,47 @@ test.skipIf(!dockerAvailable || !caddyImage)(
     }
   },
   // The first run on a fresh machine pulls the image.
+  120_000,
+);
+
+/*
+ * THE SPARE'S LOCK (app/Caddyfile). A standing spare runs this front door before anybody owns it,
+ * to have its certificate ready, and every path must then answer 503 with nothing proxied. The
+ * lock is a `handle` like the others, and Caddy sorts `handle` blocks that have a path matcher by
+ * the path's length. So the only proof that it comes FIRST is the order Caddy produces, read here
+ * for both states of the variable.
+ */
+test.skipIf(!dockerAvailable || !caddyImage)(
+  "puts the spare's lock ahead of every route, and it proxies nothing",
+  () => {
+    for (const [value, expression] of [
+      ["1", '"1" == "1"'],
+      ["", '"" == "1"'],
+    ] as const) {
+      const sites = adaptedAppSites("routes", { LAF_FRONT_LOCKED: value });
+      expect([...sites.keys()].sort()).toEqual(
+        [":80", `:${healthcheckPort}`].sort(),
+      );
+      for (const routes of sites.values()) {
+        const handles = routes.filter((route) => route.group);
+        const lock = handles[0] as Route;
+        expect(lock.match).toEqual([
+          { expression: { expr: expression, name: "locked" } } as never,
+        ]);
+        const answers = handlersOf(lock);
+        expect(answers.map((handler) => handler.handler)).toEqual([
+          "static_response",
+          "static_response",
+        ]);
+        expect(
+          answers.map((handler) => [handler.status_code, handler.body]),
+        ).toEqual([
+          [200, '{"status":"locked"}'],
+          [503, "Not in service."],
+        ]);
+      }
+    }
+  },
   120_000,
 );
 
@@ -460,4 +506,101 @@ test("sets HSTS, nosniff, no framing and a referrer policy on what it serves, an
   // Deliberately absent: the shell's unreachable page probes this origin with a no-cors fetch,
   // which Cross-Origin-Resource-Policy would turn into a permanent "server down".
   expect(headers).not.toContain("Cross-Origin-Resource-Policy");
+});
+
+/*
+ * AND THE LOCK, ASKED OF A RUNNING CADDY. Every path on both addresses is the same 503, even the
+ * ones the open door proxies. The one answer that differs is the container's own healthcheck
+ * (loopback, the internal port, /health), and it answers "locked" rather than asking a server the
+ * spare does not have.
+ */
+test.skipIf(!dockerAvailable || !caddyImage)(
+  "answers every path 503 while locked, and its own healthcheck 200",
+  async () => {
+    const started = Bun.spawnSync([
+      "docker",
+      "run",
+      "--detach",
+      "--rm",
+      "--network",
+      "none",
+      "--env",
+      `CADDYFILE=${caddyfile}`,
+      "--env",
+      "LAF_FRONT_LOCKED=1",
+      caddyImage as string,
+      "sh",
+      "-c",
+      'printf "%s" "$CADDYFILE" > /etc/caddy/Caddyfile && exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile',
+    ]);
+    const container = started.stdout.toString().trim();
+    expect(started.exitCode).toBe(0);
+
+    const ask = (port: string, path: string) => {
+      const run = Bun.spawnSync([
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        `(printf 'GET ${path} HTTP/1.0\\r\\nHost: localhost:${port}\\r\\n\\r\\n'; sleep 0.5) | nc localhost ${port}`,
+      ]);
+      const [head = "", body = ""] = run.stdout.toString().split("\r\n\r\n");
+      return { status: Number(head.split(" ")[1]), body };
+    };
+
+    try {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (!Number.isNaN(ask("80", "/").status)) break;
+        await Bun.sleep(100);
+      }
+      for (const port of ["80", `${healthcheckPort}`]) {
+        for (const path of [
+          "/",
+          "/api/capabilities",
+          "/api/health",
+          "/connected",
+          "/assets/index.js",
+          ...(port === "80" ? ["/health"] : []),
+        ]) {
+          expect({ port, path, ...ask(port, path) }).toEqual({
+            port,
+            path,
+            status: 503,
+            body: "Not in service.",
+          });
+        }
+      }
+      expect(ask(`${healthcheckPort}`, "/health")).toEqual({
+        status: 200,
+        body: '{"status":"locked"}',
+      });
+      // The compose healthcheck itself, verbatim.
+      const probe = Bun.spawnSync([
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        `wget -q -O /dev/null http://localhost:${healthcheckPort}/health`,
+      ]);
+      expect(probe.exitCode).toBe(0);
+    } finally {
+      Bun.spawnSync(["docker", "rm", "--force", container]);
+    }
+  },
+  120_000,
+);
+
+test("the lock is the first thing the site block does after compressing", () => {
+  const site = caddyfile.slice(
+    caddyfile.indexOf(
+      "{$PUBLIC_ORIGIN:http://localhost}, http://localhost:2021 {",
+    ),
+  );
+  const firstHandle = /\n\thandle ([^\n]*)\{/.exec(site)?.[1]?.trim();
+  expect(firstHandle).toBe("@locked");
+  expect(caddyfile).toContain(
+    '@locked expression `"{$LAF_FRONT_LOCKED}" == "1"`',
+  );
 });

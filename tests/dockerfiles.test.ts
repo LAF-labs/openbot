@@ -119,8 +119,16 @@ describe("the server image", () => {
     expect(manifest.dependencies["drizzle-kit"]).toBeDefined();
     expect(manifest.devDependencies?.["drizzle-kit"]).toBeUndefined();
 
+    // The compose file runs it through server/scripts/migrate.ts, which reads the ledger first and
+    // hands anything behind to drizzle-kit, so the image must carry that script too.
     const compose = read("docker-compose.yml");
-    expect(compose).toContain('"drizzle-kit", "migrate"');
+    expect(compose).toContain('command: ["bun", "scripts/migrate.ts"]');
+    expect(read("server/scripts/migrate.ts")).toContain(
+      '"drizzle-kit", "migrate", "--config=drizzle.config.ts"',
+    );
+    expect(read("server/Dockerfile")).toContain(
+      "COPY server/scripts/migrate.ts server/scripts/migrate.ts",
+    );
   });
 
   /**
@@ -146,7 +154,12 @@ describe("the server image", () => {
     expect(dockerfile).not.toMatch(/^COPY server server\b/m);
     // Instructions, not prose: the file is allowed to SAY what it leaves out.
     expect(dockerfile).not.toMatch(/^COPY .*server\/tests/m);
-    expect(dockerfile).not.toMatch(/^COPY .*server\/scripts/m);
+    // Of the scripts, only the `migrate` service's command, which runs from this image.
+    expect(
+      dockerfile
+        .split("\n")
+        .filter((line) => /^COPY .*server\/scripts/.test(line)),
+    ).toEqual(["COPY server/scripts/migrate.ts server/scripts/migrate.ts"]);
   });
 });
 

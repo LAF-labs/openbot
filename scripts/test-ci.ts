@@ -533,16 +533,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * four verdicts and a judge that cannot answer, the dream refusing what is not a habit and never
  * bringing back what the owner removed) and one to `app` (the receipt row in 오늘, 밤사이 only
  * before six). Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with the standing spare's locked front door: two to `server` (the migrate
+ * step's ledger read, pure and against a database of its own, applying once and skipping after)
+ * and six to `root` (the lock first in the routes Caddy produces, in both states; every path 503
+ * and the healthcheck 200 from a running Caddy; the lock first in the text; the fast health checks
+ * while starting; the server's dependencies pinned for `--no-deps`; the lock passed to the front
+ * door, open by default). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2759, roots: ["server"] },
+  { name: "server", floor: 2761, roots: ["server"] },
   { name: "app", floor: 1347, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
-  { name: "root", floor: 422, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 428, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

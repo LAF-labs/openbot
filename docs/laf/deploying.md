@@ -84,6 +84,47 @@ loopback address the Caddyfile keeps for that, so it is red when the API is
 absent or degraded (a 503 either way; the body says which). The front door is
 the one service whose death is the product's death, and it used to have nothing.
 
+Every long-lived service's healthcheck also runs **every second while the
+service starts** (`start_interval: 1s`, inside a `start_period` of 60 s), and
+every ten seconds once it has passed. With only `interval: 10s`, Docker's first
+check came ten seconds after the start: `up` waited that long for `agent-bot`
+and `agent-computer`, and ten more before the server read as healthy. Measured
+2026-09-26 on a 1-OCPU VM, that was 23.3 s from `up` to an answering server,
+against about 7 s with the fast checks. It needs Docker 25 or later.
+
+The `migrate` one-shot reads its ledger before it loads drizzle-kit
+(`server/scripts/migrate.ts`). When the newest migration in the journal is
+already recorded, it prints `migrations up to date (<tag>)` and exits 0.
+Anything else, including a fresh database, goes to `drizzle-kit migrate` as
+before. Measured 2026-09-26 on a 1-OCPU VM with the database up to date, the
+one-shot took 1.1 s with drizzle-kit and 0.6 s with the ledger read.
+
+### A standing spare: the locked front door
+
+The fleet keeps one prepared VM standing so a signup does not wait for a
+machine (laf-control README §3.15). Nobody owns it yet, so **the server never
+runs on it**: the rule that production refuses to start without exactly one
+sign-in address does not change. But everything that belongs to nobody does run:
+`postgres` (migrated), `agent-computer`, `agent-bot` when the VM holds its own
+capped model key, and **`web`, locked**.
+
+`LAF_FRONT_LOCKED=1` in `.env` puts the lock at the front of the site block
+(`app/Caddyfile`). Every path on every address answers `503 Not in service.`
+and nothing is proxied. The one exception is the container's own healthcheck:
+loopback, port 2021, `/health`, which answers `200 {"status":"locked"}`. Caddy
+still takes the certificate for the spare's name, which was the 13 s the
+claim used to wait for. The claim writes the person's lines, drops
+`LAF_FRONT_LOCKED` in the same atomic rewrite, and runs
+`docker compose up -d --no-deps server web agent-bot agent-computer`. Compose
+recreates `web` because its environment changed, and the certificate is already
+in `caddy-data`.
+
+The lock fails closed: only the claim's rewrite removes the line. An unset or
+empty `LAF_FRONT_LOCKED` means an open door, so every deployment that is not a
+spare behaves as it always has. The server's `depends_on` list is pinned by
+`tests/compose.test.ts`, because `--no-deps` would hide a new dependency from
+that claim.
+
 `POSTGRES_PASSWORD` comes from `.env` now, defaulting to `openbot` so that
 existing deployments are unchanged. It is worth setting on a new one — but only
 **before the first start**, because the password lives in the postgres volume

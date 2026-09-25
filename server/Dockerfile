@@ -62,12 +62,14 @@ COPY --from=install /app/server/node_modules server/node_modules
 COPY --from=install /app/server/dist server/dist
 
 # What the server reads at run time, and nothing beside it: the sources, the migration chain the
-# `migrate` service replays, the two configs bun and drizzle-kit read. Not `server/tests`, not
-# `server/scripts`.
+# `migrate` service replays, the two configs bun and drizzle-kit read. Not `server/tests`, and of
+# `server/scripts` only the one file the `migrate` service runs.
 COPY tsconfig.base.json ./
 COPY server/package.json server/tsconfig.json server/drizzle.config.ts server/
 COPY server/src server/src
 COPY server/drizzle server/drizzle
+# The `migrate` service's command (docker-compose.yml): drizzle-kit behind one read of its ledger.
+COPY server/scripts/migrate.ts server/scripts/migrate.ts
 # The prompt and the tool catalogue live beside the workspaces, not inside one; the app imports
 # them through the @shared alias and the server through a relative path, so both images need them.
 COPY shared shared
