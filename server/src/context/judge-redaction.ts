@@ -160,21 +160,24 @@ export function resultExcerpt(text: string, chars = 700): string {
   } catch {
     // Not JSON: the text itself.
   }
-  const half = Math.floor(chars / 2);
-  const head = `${title}${body}`.slice(0, half);
-  const rest = `${title}${body}`.slice(half);
+  /*
+   * THE SALIENT LINES FIRST, the head after. Measured (eval:compaction, 2026-09-25): with the head
+   * first, an order page's first 350 characters were delivery boilerplate and the refund reason sat
+   * at the end of the excerpt, and Jev kept the result at 0.50 — a coin toss at the threshold.
+   */
   const salient: string[] = [];
   let used = 0;
-  for (const line of rest.split("\n")) {
+  for (const line of body.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || !SALIENT.test(trimmed)) continue;
     const bounded = trimmed.slice(0, 160);
-    if (used + bounded.length > chars - half) break;
+    if (used + bounded.length > Math.floor(chars / 2)) break;
     salient.push(bounded);
     used += bounded.length + 1;
   }
-  const more = rest.length > 0 ? " …" : "";
-  return salient.length > 0
-    ? `${head}${more}\n${salient.join("\n")}`
-    : `${head}${more}`;
+  const lead = [title.trim(), ...salient].filter(Boolean).join("\n");
+  const room = Math.max(0, chars - lead.length);
+  const head = body.slice(0, room);
+  const more = body.length > room ? " …" : "";
+  return `${lead}\n---\n${head}${more}`;
 }

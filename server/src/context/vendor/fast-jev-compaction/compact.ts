@@ -55,6 +55,7 @@ export function resolveOptions(options: CompactOptions = {}): ResolvedCompactOpt
     ),
     // LAF local change: see `CompactOptions.describeResult`.
     ...(options.describeResult ? { describeResult: options.describeResult } : {}),
+    ...(options.stateContext ? { stateContext: options.stateContext } : {}),
   };
 }
 

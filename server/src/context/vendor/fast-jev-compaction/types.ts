@@ -114,6 +114,12 @@ export interface CompactOptions {
    * `ok, N chars (omitted)`. LAF passes a redacted excerpt, so a result is not judged blind.
    */
   describeResult?: (call: ToolCall) => string;
+  /**
+   * LAF local change: the state's `context` line. Default: upstream's, written for a coding
+   * assistant ("the assistant can always re-run a tool or re-read a file"). A shop page read last
+   * week cannot be re-read as it was, so LAF says what is lost when a result goes.
+   */
+  stateContext?: string;
 }
 
 export interface ResolvedCompactOptions {
@@ -125,6 +131,8 @@ export interface ResolvedCompactOptions {
   truncateHeadChars: number;
   /** LAF local change; see `CompactOptions.describeResult`. */
   describeResult?: (call: ToolCall) => string;
+  /** LAF local change; see `CompactOptions.stateContext`. */
+  stateContext?: string;
 }
 
 export interface CompactResult {

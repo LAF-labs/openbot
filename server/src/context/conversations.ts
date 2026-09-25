@@ -119,9 +119,10 @@ type Conversation = {
   /** A compaction is being decided. One at a time. */
   compacting: boolean;
   /**
-   * The prompt size the last compaction attempt was made at, if it found nothing new to drop. The
-   * next attempt waits until the prompt has grown by a quarter of the threshold past it — a history
-   * that is long in TEXT (which is never dropped) would otherwise ask the judge on every request.
+   * The prompt size the last compaction attempt was made at. The next attempt waits until the
+   * prompt has grown by a quarter of the threshold past it, whatever the last one decided — a
+   * history long in TEXT (which is never dropped) would otherwise ask the judge on every request,
+   * and one that found a little each time would break the cache each time (measured, 2026-09-25).
    */
   triedAtTokens: number | null;
   /** Usage rows recorded in this epoch. The first is the epoch's cold request. */
@@ -220,6 +221,13 @@ export type CompactionSetting = {
   thresholdTokens: number;
   compact: Compactor;
 };
+
+/**
+ * What a compaction must save to be taken: a floor in characters and a share of the conversation.
+ * Below either, the cache miss it causes costs more than the tokens it saves.
+ */
+const MIN_SAVED_CHARS = 4_000;
+const MIN_SAVED_SHARE = 0.1;
 
 /** A stored plan, read back: only the two actions there are. */
 function planOf(value: unknown): CompactionPlan {
@@ -397,21 +405,32 @@ export function createConversationStore(
         const fresh = Object.entries(plan).filter(
           ([id, action]) => conversation.compaction[id] !== action,
         );
+        const merged = mergePlans(conversation.compaction, plan);
+        const before = JSON.stringify(view).length;
+        const saved =
+          before - JSON.stringify(applyCompaction(raw, merged)).length;
+        /*
+         * WORTH A MISS, OR NOT TAKEN. Applying a plan breaks the prefix from the first message it
+         * touches, so a plan that saves a click's `{ok:true}` costs the whole conversation behind it
+         * for nothing. Measured on the real stack (2026-09-25): Jev dropping one small result per
+         * request re-billed the history each time.
+         */
+        const worth =
+          saved >= Math.max(MIN_SAVED_CHARS, before * MIN_SAVED_SHARE);
         // Counts and the rule that decided. Never a message, never a result.
         log.info("conversation_compacted", {
           bot: conversation.botId,
           arm,
           dropped: fresh.length,
+          savedChars: saved,
+          taken: fresh.length > 0 && worth,
           promptTokens,
           ms: Date.now() - started,
         });
-        if (fresh.length === 0) {
-          conversation.triedAtTokens = promptTokens;
-          return false;
-        }
-        conversation.compaction = mergePlans(conversation.compaction, plan);
+        conversation.triedAtTokens = promptTokens;
+        if (fresh.length === 0 || !worth) return false;
+        conversation.compaction = merged;
         conversation.pending = "compaction";
-        conversation.triedAtTokens = null;
         keep(conversation);
         return true;
       })

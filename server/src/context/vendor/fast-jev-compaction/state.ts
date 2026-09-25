@@ -203,12 +203,13 @@ export function fitState(
   calls: readonly ToolCall[],
   options: Pick<
     ResolvedCompactOptions,
-    'maxStateTokens' | 'preserveRecentMessages' | 'goal' | 'describeResult'
+    'maxStateTokens' | 'preserveRecentMessages' | 'goal' | 'describeResult' | 'stateContext'
   >,
 ): FittedState {
   const goal = options.goal || goalFromMessages(messages);
   const stateOf = (history: HistoryEntry[]): CompactionState => ({
-    context: STATE_CONTEXT,
+    // LAF local change: see `CompactOptions.stateContext`.
+    context: options.stateContext ?? STATE_CONTEXT,
     goal,
     history,
   });

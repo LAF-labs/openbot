@@ -90,7 +90,7 @@ function thread(): Msg[] {
     call("c1", "computer_navigate", {
       url: "https://shop.example.test/orders",
     }),
-    result("c1", page("orders", "주문 목록 1쪽 ".repeat(200))),
+    result("c1", page("orders", "주문 목록 1쪽 ".repeat(800))),
     call("c2", "computer_snapshot"),
     result(
       "c2",
@@ -443,5 +443,48 @@ describe("in the conversation store: at the threshold, once, and a new epoch", (
     store.recordUsage("t1", { promptTokens: 56_000 });
     await store.settled();
     expect(asked).toBe(2);
+  });
+
+  /*
+   * MEASURED ON THE REAL STACK (2026-09-25): Jev dropping one click's `{ok:true}` per request broke
+   * the prefix on each. A plan that saves too little to be worth a cache miss is not taken, and a
+   * taken one is not followed by another until the prompt has grown again.
+   */
+  test("a plan that saves too little to be worth a miss is not taken", async () => {
+    const store = createConversationStore({
+      compaction: {
+        thresholdTokens: 40_000,
+        compact: async () => ({
+          plan: { c3: "drop_call" },
+          arm: "decisions",
+        }),
+      },
+    });
+    prepare(store, thread());
+    store.recordUsage("t1", { promptTokens: 45_000 });
+    await store.settled();
+    const after = prepare(store, thread());
+    expect(after.epoch.fresh).toBe(false);
+    expect(after.messages.map((m) => m.id)).toContain("a_c3");
+  });
+
+  test("after a compaction is taken, the next waits for the prompt to grow", async () => {
+    let asked = 0;
+    const store = createConversationStore({
+      compaction: {
+        thresholdTokens: 40_000,
+        compact: async (messages) => {
+          asked += 1;
+          return { plan: latestSnapshotPlan(messages), arm: "latest-snapshot" };
+        },
+      },
+    });
+    prepare(store, thread());
+    store.recordUsage("t1", { promptTokens: 45_000 });
+    await store.settled();
+    prepare(store, thread());
+    store.recordUsage("t1", { promptTokens: 45_500 });
+    await store.settled();
+    expect(asked).toBe(1);
   });
 });
