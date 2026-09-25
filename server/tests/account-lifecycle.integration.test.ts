@@ -131,8 +131,26 @@ async function makePerson(label: string): Promise<Person> {
     .values({ userId: id, channelId, threadId });
   await appendMessages(database, threadId, [
     { id: `${id}-m1`, role: "user", content: `${label} asked something.` },
-    { id: `${id}-m2`, role: "assistant", content: "The Bot answered." },
+    {
+      id: `${id}-m2`,
+      role: "assistant",
+      content: "The Bot answered.",
+      // The model's reasoning, carried as AG-UI files it (agent-bot/src/reasoning.ts): cleartext.
+      encryptedValue: JSON.stringify([
+        { type: "reasoning.text", text: `${id} reasoning` },
+      ]),
+    },
   ]);
+  // The last picture of a browsing task, a column on that row (channels/frames.ts): cleartext too.
+  await database
+    .update(lafThreadMessages)
+    .set({ frame: `/9j/${id}frame` })
+    .where(
+      and(
+        eq(lafThreadMessages.threadId, threadId),
+        sql`${lafThreadMessages.message} ->> 'id' = ${`${id}-m2`}`,
+      ),
+    );
   // What they thought of that answer: theirs to take, and theirs to take away when they go.
   await database.insert(lafAnswerRatings).values({
     id: `${id}-rating`,
@@ -439,6 +457,15 @@ describe("deletion", () => {
       admission: admittedOnly(stayer),
     });
 
+    // Present before, so the absence asserted below is the deletion's doing.
+    const [seeded] = await database
+      .select({ frame: lafThreadMessages.frame })
+      .from(lafThreadMessages)
+      .where(
+        sql`${lafThreadMessages.frame} = ${`/9j/${leaver.id}frame`} and ${lafThreadMessages.message}::text like ${`%${leaver.id} reasoning%`}`,
+      );
+    expect(seeded?.frame).toBe(`/9j/${leaver.id}frame`);
+
     // The deployment's person removes the leftover (`POST /api/admin/users/:id/delete`).
     const result = await deletion.delete({
       userId: leaver.id,
@@ -512,6 +539,20 @@ describe("deletion", () => {
         .select()
         .from(lafThreadMessages)
         .where(eq(lafThreadMessages.threadId, leaver.threadId)),
+    );
+    /*
+     * The two things stored in cleartext on a message — a browsing task's last picture and the
+     * model's reasoning — go with it, looked for across the whole table rather than by thread, so a
+     * copy filed anywhere else would show here (security review 2026-09-25 F3).
+     */
+    await gone(
+      "frames and reasoning",
+      database
+        .select({ seq: lafThreadMessages.seq })
+        .from(lafThreadMessages)
+        .where(
+          sql`${lafThreadMessages.frame} = ${`/9j/${leaver.id}frame`} or ${lafThreadMessages.message}::text like ${`%${leaver.id} reasoning%`}`,
+        ),
     );
     await gone(
       "channels",
