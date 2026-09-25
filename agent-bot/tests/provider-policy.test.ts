@@ -153,8 +153,25 @@ describe("which endpoints may answer", () => {
     });
     // Another model — the one a deployment just swapped to — gets nothing it was not measured for.
     expect(providerRoutingOf(env, router, "xiaomi/mimo-v2.6-pro")).toBeNull();
-    // Nothing said, or said unreadably, nothing sent: the request it always was.
-    expect(providerRoutingOf({}, router, "z-ai/glm-5.3-flash")).toBeNull();
+    // Nothing said: the measured lines, because laf-control's env writer cannot carry JSON to a
+    // customer's VM. A model nobody measured still gets nothing.
+    expect(providerRoutingOf({}, router, "xiaomi/mimo-v2.6-pro")).toEqual({
+      order: ["xiaomi"],
+    });
+    expect(providerRoutingOf({}, router, "z-ai/glm-5.3-flash")).toEqual({
+      order: ["z-ai"],
+      ignore: ["wafer", "relace"],
+    });
+    expect(providerRoutingOf({}, router, "vendor/unmeasured")).toBeNull();
+    // Said as `{}`: the operator turned routing off, and nothing is sent.
+    expect(
+      providerRoutingOf(
+        { BOT_PROVIDER_POLICY: "{}" },
+        router,
+        "xiaomi/mimo-v2.6-pro",
+      ),
+    ).toBeNull();
+    // Said unreadably: nothing sent, never half-applied.
     expect(
       providerRoutingOf(
         { BOT_PROVIDER_POLICY: "{not json" },

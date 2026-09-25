@@ -106,6 +106,19 @@ export function createProvider(
  * configured for this model, so a deployment that says nothing sends exactly the request it always
  * sent. A policy that is not JSON is ignored and said so at boot (`./server`), never half-applied.
  */
+/**
+ * THE MEASURED LINES, used when `BOT_PROVIDER_POLICY` is unset. The fleet's VMs are written by
+ * laf-control, whose env writer takes plain values only — JSON cannot travel that way — so a policy
+ * that lived only in `.env` never reached a customer. These two are the measured ones
+ * (docs/laf/eval-pack.md): MiMo on Xiaomi read 99.8% of a week-long conversation from cache where
+ * DeepInfra read 79.9% with tails past 160 s; GLM on Z.AI, without Wafer's empty arguments and
+ * Relace's cold cache. Setting the variable replaces them entirely, `{}` included.
+ */
+export const MEASURED_PROVIDER_POLICY: Record<string, ProviderRouting> = {
+  "xiaomi/mimo-v2.6-pro": { order: ["xiaomi"] },
+  "z-ai/glm-5.3-flash": { order: ["z-ai"], ignore: ["wafer", "relace"] },
+};
+
 export type ProviderRouting = {
   order?: string[];
   ignore?: string[];
@@ -130,7 +143,8 @@ export function providerRoutingOf(
   }
   let policy: unknown;
   try {
-    policy = JSON.parse(env.BOT_PROVIDER_POLICY?.trim() || "{}");
+    const configured = env.BOT_PROVIDER_POLICY?.trim();
+    policy = configured ? JSON.parse(configured) : MEASURED_PROVIDER_POLICY;
   } catch {
     return null;
   }
