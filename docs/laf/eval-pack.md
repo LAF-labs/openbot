@@ -247,7 +247,7 @@ arm을 돌리지 못했다. 키가 있는 곳에서 `bun run eval:model`을 돌�
   `defer_loading`은 Responses API 전용이고 LangGraph bigtool은 요청마다 목록을 바꾼다 — 둘 다
   chat completions + GLM에 맞지 않아, Hermes 모양의 작은 다리를 유지했다.
 - **9행, 압축은 캐시 안전한 갈래다.** 요청의 프롬프트가 문턱(`COMPACTION_THRESHOLD_TOKENS`,
-  60,000)을 넘으면 그 뒤에서 한 번, 오래된 툴 결과 중 무엇을 더는 싣지 않을지 정해 대화와 함께
+  30,000 — 아래 "Compaction threshold")을 넘으면 그 뒤에서 한 번, 오래된 툴 결과 중 무엇을 더는 싣지 않을지 정해 대화와 함께
   저장하고(`laf_conversation_contexts.compaction`) 새 에포크를 연다. 남는 메시지는 바이트까지
   같고, 버린 호출은 결과와 함께 빠지고, 비운 결과는 고정된 한 줄이 된다. 한 번 정한 것은 다시
   계산하지 않는다. 캐시 한 번을 깰 만큼 줄이지 못하는 결정(4,000자 미만 또는 10% 미만)은 받지
@@ -272,7 +272,7 @@ arm을 돌리지 못했다. 키가 있는 곳에서 `bun run eval:model`을 돌�
 브라우징의 나머지 10%는 걸음마다 새로 붙는 페이지 자체다 — 어떤 하네스도 처음 보는 결과를
 캐시에서 읽지 못한다. 그래서 `prefixReuse`(앞 요청 전체 중 다시 읽힌 몫)를 같이 적는다.
 일주일 대화가 비싸진 것은 오래된 페이지를 더는 뒤늦게 자르지 않아서다(40.7K → 63.7K 토큰); 그
-압박은 문턱의 압축이 맡는다 — 이 대화는 60K 문턱을 넘으니 배포에서는 압축된다.
+압박은 문턱의 압축이 맡는다 — 이 대화는 30K 문턱을 넘으니 배포에서는 압축된다.
 
 `xiaomi/mimo-v2.6-pro`(다음 모델 후보, 라우팅 고정 없음, 공급자 Xiaomi): 일주일 대화 99.8%,
 요청당 $0.00053(첫 요청 $0.0261), 브라우징 89.7%(prefix reuse 99.6%), 요청당 $0.00126.
@@ -429,6 +429,47 @@ laf-control의 env push가 바꿀 이름은 셋이다: `BOT_MODEL=xiaomi/mimo-v2
 `BOT_MODEL_EFFORT=false`(비워 두어도 새 패키지 기본값이 false다 — 하지만 GLM 시절에 `true`를 적은 VM이
 있으면 그것이 이긴다), `BOT_PROVIDER_POLICY={"xiaomi/mimo-v2.6-pro":{"order":["xiaomi"]}}`.
 `REVIEW_MODEL`은 비워 둔다. `OPENAI_BASE_URL`·키는 그대로(OpenRouter).
+
+### Compaction threshold — 30K, from measured prices (2026-09-25)
+
+Re-measured with the week case of `bun run eval:cache` (epoch arm, 5 turns) at two history lengths,
+on both models. Cost per request as the provider billed it:
+
+| | prompt | miss (turn 1) | hit (turns 2+) |
+|---|---|---|---|
+| GLM-5.3-flash (routed: Together, Relace) | 63.7K | $0.00962 | $0.00202–0.00207 |
+| | 13.2K | $0.00094 | $0.00031–0.00035 |
+| MiMo-v2.6-pro (Xiaomi) | 59.8K | $0.02641 | $0.00036–0.00142 |
+| | 12.2K | $0.00543 | $0.00024–0.00032 |
+
+Per prompt token, from the difference between the two lengths: GLM $0.172/M on a miss and
+$0.0345/M on a hit (5×); MiMo $0.441/M and $0.0036/M list (122×). The head every request carries —
+system message and tools — is B ≈ 11.5K.
+
+A compaction at threshold T costs one miss on what is left and saves the dropped share on every
+later request, most of all on the random misses (12% of warm requests on Xiaomi, performance audit
+§6), each of which bills the whole history. With the history growing g ≈ 1.5K tokens a request (the
+audit's day: 30 chat turns and 40 browsing steps) and compaction taking s ≈ 0.8 of what is above the
+head (the compaction eval: 44.9K → 10.0K), the cost per request is
+
+    C(T) = g·Δc·(T / (s·(T − B)) − 1) + e·(T − s·(T − B)/2)
+
+where Δc is the miss premium per token and e = m·c_miss + (1 − m)·c_hit the expected price of a
+carried token at miss rate m. The first term is the forced misses spread over the requests between
+compactions; the second is the average prompt. The minimum is at
+
+    T* = B + √(g·Δc·B / (s·e·(1 − s/2)))
+
+| | m = 12% | m = 0 | 30K vs T* | 30K vs 60K |
+|---|---|---|---|---|
+| MiMo | T* ≈ 28K | T* ≈ 78K | +0.3% (m = 12%) | −26% per request (m = 12%) |
+| GLM | T* ≈ 21K | T* ≈ 23K | +5–10% | −35–38% |
+
+30K is the default (`DEFAULT_COMPACTION_THRESHOLD_TOKENS`). The one case that wants 60K or more is
+MiMo with no random misses at all, which is not what was measured; if the per-provider miss rate the
+usage rows now record (`cacheLow`) settles near zero on MiMo, this is the number to revisit. The
+"worth a miss" floor (4,000 characters and 10%) is unchanged: at 30K on MiMo with 12% misses, a 10%
+saving pays its miss back in ~70 requests, and the saving lasts for the rest of the conversation.
 
 ## 이 다음
 

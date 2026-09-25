@@ -1040,8 +1040,26 @@ const DEFAULT_STALL_TIMEOUT_MS = 60_000;
 /** The compaction arm a deployment runs when `COMPACTION` says nothing. See `harness`. */
 export const DEFAULT_COMPACTION = "decisions" as const;
 
-/** Prompt tokens at which a conversation is compacted when `COMPACTION_THRESHOLD_TOKENS` says nothing. */
-export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 60_000;
+/**
+ * Prompt tokens at which a conversation is compacted when `COMPACTION_THRESHOLD_TOKENS` says nothing.
+ *
+ * 30K, NOT 60K, SET FROM MEASURED PRICES (2026-09-25, `bun run eval:cache`, the week case at two
+ * history lengths). Per prompt token: GLM-5.3-flash as routed $0.172/M on a miss and $0.0345/M on a
+ * hit; MiMo-v2.6-pro $0.441/M and $0.0036/M. The fixed head every request carries (system + tools)
+ * measured B ≈ 11.5K. A compaction is paid for with one miss on what is left; it pays back on every
+ * later request, and most of all on the random misses (12% of warm requests on Xiaomi in the
+ * performance audit), each of which bills the whole history.
+ *
+ * With the history growing g ≈ 1.5K tokens a request (a day of the audit's usage model) and
+ * compaction taking s ≈ 0.8 of what is above the head, the cost per request is
+ * g·Δc·(T/(s(T−B)) − 1) + e·(T − s(T−B)/2), where Δc is the miss premium and e the expected price
+ * of a carried token. Its minimum, T* = B + √(g·Δc·B / (s·e·(1 − s/2))), falls at ~28K for MiMo and
+ * ~21–23K for GLM (12% misses or none), and 30K costs within 0.3% (MiMo) and 5–10% (GLM) of those:
+ * 26% less per request than 60K on MiMo, 35–38% less on GLM. The one case that wants 60K or more is MiMo with no
+ * random misses at all (T* ≈ 78K) — not what was measured. The arithmetic is in
+ * `docs/laf/eval-pack.md` (compaction threshold).
+ */
+export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 30_000;
 
 /**
  * The harness's switches, or a refusal to start. A value that is not one of the words is a typo,
