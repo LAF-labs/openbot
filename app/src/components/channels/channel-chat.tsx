@@ -82,6 +82,12 @@ import { refreshTodayUsage } from "@/lib/usage/today";
 const SEND_WITHOUT_JOIN_AFTER_MS = 1500;
 
 /**
+ * Backstop for the thread's history before any turn goes out (`deliver`): a turn sent without it
+ * reaches the server as a thread of one message.
+ */
+const SEND_WITHOUT_HISTORY_AFTER_MS = 15_000;
+
+/**
  * Backstop for the Bot's grants: a turn waits for them so every turn offers the same tools
  * (`useToolsSettled`), but a grant endpoint that never answers must not hold a message forever.
  */
@@ -474,6 +480,21 @@ export function ChannelChat({
   ) => {
     // Before adding the message, not after: a message added to a provisional agent is lost.
     await untilReady();
+    /*
+     * AND AFTER THE THREAD'S HISTORY, which the join restores (the effect that opens `joinGate`).
+     * MEASURED 2026-09-26: a message sent as soon as a conversation opened, on a server with no run
+     * of that thread in memory — every thread after a restart — and a history read that took 3 s,
+     * went out as a run of ONE message; the history was merged in behind it afterwards, so the next
+     * run sent the thread out of order. That breaks the provider's cached prefix and hands the Bot
+     * a conversation whose newest line comes first. The backstop is long because a history read is
+     * what it waits for, and short of forever because a join that never ends must not keep a turn.
+     */
+    await Promise.race([
+      joinGatePromise,
+      new Promise((resolve) =>
+        setTimeout(resolve, SEND_WITHOUT_HISTORY_AFTER_MS),
+      ),
+    ]);
 
     setRunError(null);
     setNoticeCode(null);

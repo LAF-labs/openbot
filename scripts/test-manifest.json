@@ -160,6 +160,7 @@
   "app/tests/screen-routes.test.ts",
   "app/tests/section-boundary.test.tsx",
   "app/tests/section-seams.test.tsx",
+  "app/tests/send-after-history.test.tsx",
   "app/tests/session-gate.test.tsx",
   "app/tests/settings-frame.test.tsx",
   "app/tests/settings-rows.test.tsx",
