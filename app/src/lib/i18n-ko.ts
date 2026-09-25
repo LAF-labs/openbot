@@ -165,7 +165,7 @@ export const ko: Record<string, string> = {
     "봇이 생각만 하고 아무 말도 하지 않았습니다. 다시 물어보세요.",
   "The Bot's computer could not be reached": "봇의 컴퓨터에 닿지 못함",
   "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.":
-    "봇의 모델이 요청을 받지 않았습니다. 계속 반복되면 배포 점검이 필요합니다.",
+    "봇의 모델이 요청을 받지 않았습니다. 계속 이러면 설정의 문의·의견으로 알려 주세요.",
   "The answer was cut off before it finished. Ask the Bot to carry on.":
     "답이 잘렸습니다. 이어서 말해 달라고 해 보세요.",
   "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.":
