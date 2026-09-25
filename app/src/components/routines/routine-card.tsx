@@ -1,5 +1,5 @@
 import { IconClock } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import {
@@ -8,6 +8,7 @@ import {
 } from "@/components/routines/edit-in-chat";
 import { savingFailure } from "@/components/routines/saving-failure";
 import { useRoutineSwitch } from "@/components/routines/use-routine-switch";
+import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
   chatCard,
@@ -15,11 +16,14 @@ import {
   chatCardPadding,
   chatCardTitle,
 } from "@/components/ui/card-surface";
+import { dayKeys } from "@/lib/agents/day";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   type Routine,
+  routineKeys,
   routineListQueryOptions,
+  routineRequest,
   scheduleLabel,
   whenLabel,
 } from "@/lib/routines/queries";
@@ -129,6 +133,24 @@ function FullCard({ routine }: { routine: Routine }) {
   const toggle = useRoutineSwitch(routine);
   const conversation = useConversationWith(routine.agentId);
   const next = useNextLine(routine);
+  const queryClient = useQueryClient();
+  /*
+   * 지금 한 번 해 보기, ON THE CARD IT WAS MADE WITH (ux-review-0.5.4, item 21). The owner had just
+   * said "매일 아침 7시 30분에…" and had no way to see what it would say short of waiting until
+   * seven-thirty or finding 지금 실행 on the Routines screen. The same door that button uses, so a
+   * run from here is recorded exactly as one from there, and its answer lands in this conversation.
+   */
+  const tryNow = useMutation({
+    mutationFn: async () =>
+      routineRequest(`/api/routines/${routine.id}/run`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: routineKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: routineKeys.runs(routine.id),
+      });
+      void queryClient.invalidateQueries({ queryKey: dayKeys.all });
+    },
+  });
 
   return (
     <section
@@ -179,7 +201,28 @@ function FullCard({ routine }: { routine: Routine }) {
             {t("Change it")}
           </Button>
         ) : null}
+        <Button
+          disabled={tryNow.isPending}
+          onClick={() => tryNow.mutate()}
+          size="sm"
+          variant="outline"
+        >
+          {t("Try it now")}
+        </Button>
       </div>
+      {/* Mounted with the card, so what it says is heard when it is said. */}
+      <LiveRegion as="p" className="ps-6 text-muted-foreground text-xs">
+        {tryNow.isPending
+          ? t("Running now…")
+          : tryNow.isSuccess
+            ? t("Started. The answer lands below.")
+            : null}
+      </LiveRegion>
+      {tryNow.isError ? (
+        <p className="ps-6 text-destructive text-xs" role="alert">
+          {savingFailure(tryNow.error)}
+        </p>
+      ) : null}
       {toggle.isError ? (
         <p className="ps-6 text-destructive text-xs" role="alert">
           {savingFailure(toggle.error)}

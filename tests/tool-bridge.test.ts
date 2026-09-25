@@ -171,6 +171,30 @@ describe("tool_search", () => {
   test("an empty query matches nothing", () => {
     expect(searchTools(CONNECTED, "   ")).toEqual([]);
   });
+
+  /*
+   * THE FIRST MESSAGE'S EXTRA ROUND (ux-review-0.5.4, item 9). With nothing connected, only the
+   * gallery's cards sit behind the bridge, and a miss that said "다른 말로 다시 찾아 본다" bought
+   * another full model round for the same empty answer. Measured: every conversation's first
+   * weather question began with `tool_search("날씨 확인")`, 4.8–8 s of "생각 중".
+   */
+  test("with nothing connected, a miss does not send the Bot searching again", () => {
+    const cards = [wire("showBarChart", "막대 그래프를 띄운다.")];
+    const text = searchResultText(cards, "날씨 확인");
+    expect(text).toContain("지금 연결된 서비스는 없다.");
+    expect(text).toContain("다시 찾지 않는다");
+    expect(text).not.toContain("다른 말로 다시 찾아");
+    // A connected service is still worth a second phrasing.
+    expect(searchResultText(CONNECTED, "비행기표 예약")).toContain(
+      "다른 말로 다시 찾아 본다",
+    );
+  });
+
+  test("the context layer says the names behind the bridge are all of them", () => {
+    expect(deferredToolsText(["showBarChart", "askChoice"])).toContain(
+      "아래가 전부다",
+    );
+  });
 });
 
 describe("what tool_search hands back", () => {

@@ -58,6 +58,7 @@ import { markdownPlugins } from "@/lib/markdown-plugins";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
+import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
@@ -70,6 +71,8 @@ import {
 } from "./chat-messages";
 import { LEADING_SKILL, type QueuedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
+import { type Source, sourcesByAnswer } from "./sources";
+import { SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -100,6 +103,11 @@ type ChatTranscriptProps = {
   queued?: readonly QueuedMessage[];
   /** Take one back before it runs. Without it a queued line is shown but cannot be undone. */
   onRemoveQueued?: (id: string) => void;
+  /**
+   * Stop the running turn so what is queued goes now. Absent while there is nothing Stop could
+   * abort, and a queued line then offers only to be taken back.
+   */
+  onStopForQueued?: (() => void) | undefined;
   /**
    * Why the last turn ended without an answer, if it did — as a CODE, not a sentence.
    *
@@ -187,14 +195,22 @@ function splitSkillChip(
  * work is a tool call or a model that has not spoken yet.
  */
 function Thinking() {
+  /*
+   * THE SECONDS, ONCE THERE ARE ANY WORTH COUNTING. A first message waited 25–27 s on the one word
+   * "생각 중" (ux-review-0.5.4, item 9), which is exactly how a Bot that failed silently looks. A
+   * number that moves says it is still going. Not before two seconds: most turns answer sooner, and
+   * a counter flashing "1초" on every reply is noise.
+   */
+  const seconds = useElapsedSeconds();
   return (
     /*
      * Not a live region itself: one mounted together with its words is not announced. The
      * transcript says "Thinking" in its own always-mounted status line, politely — this is progress,
-     * not something that interrupts what somebody is doing.
+     * not something that interrupts what somebody is doing. The seconds stay out of that line, so a
+     * screen reader is not read a number every second.
      */
     <p className="tool-line-running text-muted-foreground text-sm">
-      {t("Thinking")}
+      {seconds >= 2 ? t("Thinking · {seconds}s", { seconds }) : t("Thinking")}
     </p>
   );
 }
@@ -387,9 +403,15 @@ function Unsent({
 function Queued({
   text,
   onRemove,
+  onStopForThis,
 }: {
   text: string;
   onRemove?: (() => void) | undefined;
+  /**
+   * Stop the job in hand so this goes now. Stop is all it does: the queue drains on the turn
+   * settling however it settled (`composer/queue.ts`), so what is parked is what runs next.
+   */
+  onStopForThis?: (() => void) | undefined;
 }) {
   return (
     <MessageRow align="end">
@@ -405,7 +427,26 @@ function Queued({
            * `status` rather than `alert`, matching the thinking line: a person who has just chosen
            * to queue something is not being interrupted by the news that it is queued.
            */}
-          <span role="status">{t("Queued")}</span>
+          {/*
+           * NOT "대기 중". That word was also the idle pill's, so one screen said the Bot was
+           * waiting and that this message was waiting, two opposite facts (ux-review-0.5.4 §1.9).
+           * This says what will happen to it and when.
+           */}
+          <span role="status">{t("Sends when the current job is done")}</span>
+          {onStopForThis ? (
+            /*
+             * "아 그거 말고…" waited behind the wrong job until it finished being wrong. Grok's
+             * answer is to let the correction take over; this is that, as one press.
+             */
+            <button
+              aria-label={t("Stop the current job and send: {text}", { text })}
+              className={`ml-2 font-medium text-foreground underline underline-offset-2 ${focusRing}`}
+              onClick={onStopForThis}
+              type="button"
+            >
+              {t("Stop and send this")}
+            </button>
+          ) : null}
           {onRemove ? (
             <button
               /*
@@ -789,8 +830,11 @@ const TranscriptMessage = memo(function TranscriptMessage({
   partial = false,
   rateable = false,
   role,
+  sources,
   text,
 }: {
+  /** The pages this answer was read from, as JSON (`sources.ts`). Absent draws no row. */
+  sources?: string;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
@@ -884,6 +928,14 @@ const TranscriptMessage = memo(function TranscriptMessage({
             <p className="mt-1 text-muted-foreground text-xs">
               {t("Received up to here")}
             </p>
+          ) : null}
+          {/*
+           * Inside the answer's own wrapper, not after it: the reply actions are lifted out of flow
+           * to the wrapper's bottom edge, and a row drawn after the wrapper sat exactly under them —
+           * measured, 좋아요 took the click meant for 출처.
+           */}
+          {sources ? (
+            <SourcesRow sources={JSON.parse(sources) as Source[]} />
           ) : null}
           {/*
            * COPYING A REPLY WAS SELECT-AND-DRAG, OR NOTHING.
@@ -1109,6 +1161,7 @@ export function ChatTranscript({
   messages,
   readWindow,
   onRemoveQueued,
+  onStopForQueued,
   onRetry,
   queued = EMPTY_QUEUE,
   stoppedCode,
@@ -1201,6 +1254,8 @@ export function ChatTranscript({
     busy && lastItem?.kind === "text" && lastItem.role === "user";
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
   const settledBefore = unsettledFrom(items, busy);
+  /** The pages each answer was read from, by the answer's id (`sources.ts`). */
+  const sources = sourcesByAnswer(items);
   /** The task still being done, and the newest task — the one the live screen would show. */
   const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
   const newestTaskId =
@@ -1534,6 +1589,15 @@ export function ChatTranscript({
                       joinedNext={continues(items[index + 1], item.role)}
                       joinedPrev={continues(items[index - 1], item.role)}
                       role={item.role}
+                      /*
+                       * Where the answer came from, once the turn is over: an answer still being
+                       * written may yet read another page, and a list that grows under it is a
+                       * list nobody can trust. As a string so the memo still holds — a fresh
+                       * array every chunk would re-render the answer it hangs from every chunk.
+                       */
+                      {...(index < settledBefore && sources.has(item.id)
+                        ? { sources: JSON.stringify(sources.get(item.id)) }
+                        : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>
@@ -1611,6 +1675,7 @@ export function ChatTranscript({
                 onRemove={
                   onRemoveQueued ? () => onRemoveQueued(message.id) : undefined
                 }
+                onStopForThis={onStopForQueued}
                 text={message.text}
               />
             ))}

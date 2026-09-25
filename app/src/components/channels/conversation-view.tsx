@@ -44,7 +44,10 @@ export function ConversationView({
   emptyState,
   onSubmit,
   onStop,
+  placeholder,
 }: {
+  /** What the empty composer says; see `ComposerProps.placeholder`. */
+  placeholder?: string | undefined;
   /**
    * A slim line between the header and the transcript: what the Bot is doing in its browser right
    * now (`browsing-banner.tsx`). Above the scroller, so it stays put while the conversation scrolls.
@@ -280,6 +283,8 @@ export function ConversationView({
             onRemoveQueued={(id) => {
               apply({ id, type: "remove" });
             }}
+            // The same gate the composer's Stop is drawn from, for the same reason (below).
+            onStopForQueued={(stoppable ?? pending) ? onStop : undefined}
             queued={queued}
             {...(stoppedCode ? { stoppedCode } : {})}
             {...(noticeCode ? { noticeCode } : {})}
@@ -314,6 +319,7 @@ export function ConversationView({
           }
           onStop={onStop}
           onSubmit={(draft) => submit(draft, false)}
+          placeholder={placeholder}
           /*
            * `inFlight` rather than the `pending` this was given. A drained turn is started from the
            * effect above rather than from the composer, so the composer's own send tracking knows

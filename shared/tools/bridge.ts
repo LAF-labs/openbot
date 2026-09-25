@@ -183,8 +183,15 @@ export function deferredToolsText(names: readonly string[]): string {
     const family = familyOf(name);
     groups.set(family, [...(groups.get(family) ?? []), name]);
   }
+  /*
+   * "아래가 전부다"가 첫 메시지의 20초였다(0.5.4 리뷰 9번, 2026-09-25 측정). 목록에 날씨 도구가
+   * 없는데도 봇은 대화의 첫 질문마다 `tool_search("날씨 확인")`부터 했고, 그 한 라운드(4.8–8초,
+   * 사람에게는 "생각 중"만 보이는)가 지나서야 브라우저를 열었다. 다음 질문부터는 빗나간 검색이
+   * 대화에 남아 있어서 하지 않았다 — 첫 메시지만 느렸던 까닭이다. 목록이 전부라고 말해 주면 찾을
+   * 까닭이 없다.
+   */
   return [
-    `목록에 없는 도구도 쓸 수 있다. 아래는 이름뿐이니, 쓰기 전에 ${TOOL_SEARCH}로 스키마를 받고 ${TOOL_CALL}로 부른다:`,
+    `목록에 없는 도구도 쓸 수 있다. 아래는 이름뿐이니, 쓰기 전에 ${TOOL_SEARCH}로 스키마를 받고 ${TOOL_CALL}로 부른다. 다리 뒤에 있는 것은 아래가 전부다 — 여기 없는 일을 하려고 ${TOOL_SEARCH} 하지 말고, 가진 도구로 곧바로 한다:`,
     ...[...groups.entries()]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([family, members]) => `- ${family}: ${members.join(", ")}`),
@@ -587,12 +594,17 @@ export function searchResultText(
       ...found.map(schemaLine),
     ].join("\n");
   }
+  /*
+   * 다시 찾으라는 말은 연결된 서비스가 있을 때만 한다. 서비스가 없으면 다리 뒤에는 맥락에 이름이
+   * 다 적힌 화면 카드뿐이라, 다른 말로 찾아도 같은 빈손이고 한 라운드만 더 든다.
+   */
+  const services = familiesOf(deferred.map((tool) => tool.name)).length > 0;
   return [
     `'${query}'에 맞는 도구가 없다.`,
     deferredFamiliesLine(deferred.map((tool) => tool.name)),
-    deferred.length > 0
-      ? "다른 말로 다시 찾아 본다. 그래도 없으면 그 일은 지금 쓸 수 있는 도구로는 할 수 없다고 사람에게 말한다."
-      : "그 일은 지금 쓸 수 있는 도구로는 할 수 없다고 사람에게 말한다.",
+    services
+      ? "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다."
+      : "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
   ].join("\n");
 }
 

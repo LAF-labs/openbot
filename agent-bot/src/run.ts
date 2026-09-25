@@ -442,6 +442,32 @@ async function runRounds(context: RunContext): Promise<void> {
 
     const { messageId, text, textOpen, toolCalls, finishReason } = turn;
 
+    /*
+     * ONE LINE PER ROUND, COUNTS ONLY. `run_finished` said a first message took 27 s and nothing
+     * said whether that was one slow request, a model thinking before its first word, or several
+     * rounds of lookups the surface never draws (ux-review-0.5.4, item 9). The held kinds are the
+     * rounds a person sees as nothing but "생각 중".
+     */
+    const heldKinds: Record<string, number> = {};
+    for (const call of toolCalls.values()) {
+      const kind = call.held ?? "drawn";
+      heldKinds[kind] = (heldKinds[kind] ?? 0) + 1;
+    }
+    log.info("round_finished", {
+      bot: botId,
+      run: input.runId,
+      round,
+      firstChunkMs: turn.timing.firstChunkMs,
+      firstOutputMs: turn.timing.firstOutputMs,
+      calls: heldKinds,
+      chars: text.length,
+      reasoningTokens:
+        turn.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      promptTokens: turn.usage?.prompt_tokens ?? null,
+      cachedTokens: turn.usage?.prompt_tokens_details?.cached_tokens ?? null,
+      ms: Date.now() - context.startedAt,
+    });
+
     if (textOpen) {
       emit({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
     }

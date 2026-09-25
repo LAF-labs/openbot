@@ -79,6 +79,14 @@ export type Turn = {
    * Null for every stream that ended the way a stream ends. See `runTurn` for the rule.
    */
   cut: Cut | null;
+  /**
+   * Where the round's time went, in milliseconds from the request: the first chunk of any kind
+   * (reasoning included), and the first thing a person could see — prose or a tool call. Null
+   * where it never came. Measured because "생각 중" sat for 25 s on a first message and nothing
+   * could say whether the provider was slow to start, the model was thinking, or the run was
+   * several rounds long (ux-review-0.5.4, item 9).
+   */
+  timing: { firstChunkMs: number | null; firstOutputMs: number | null };
 };
 
 /** The request outlived its bound. Its own error, because a timeout is not a provider failure. */
@@ -165,6 +173,9 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
   expiry.unref?.();
 
   const messageId = round === 0 ? `msg_${runId}` : `msg_${runId}_${round}`;
+  const requestedAt = Date.now();
+  let firstChunkMs: number | null = null;
+  let firstOutputMs: number | null = null;
   let textOpen = false;
   let text = "";
   /*
@@ -196,6 +207,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     finishReason,
     reasoning,
     cut,
+    timing: { firstChunkMs, firstOutputMs },
   });
 
   try {
@@ -239,6 +251,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     );
 
     for await (const chunk of completion) {
+      firstChunkMs ??= Date.now() - requestedAt;
       // The usage chunk has no choices; read it before the delta guard skips it.
       if (chunk.usage) usage = chunk.usage;
       const named = (chunk as { provider?: unknown }).provider;
@@ -255,6 +268,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
 
       if (delta.content) {
         delivered = true;
+        firstOutputMs ??= Date.now() - requestedAt;
         if (!textOpen) {
           emit({
             type: "TEXT_MESSAGE_START",
@@ -273,6 +287,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
 
       for (const call of delta.tool_calls ?? []) {
         delivered = true;
+        firstOutputMs ??= Date.now() - requestedAt;
         const existing = toolCalls.get(call.index) ?? {
           id: null as string | null,
           name: null as string | null,
