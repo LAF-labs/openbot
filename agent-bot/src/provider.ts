@@ -91,14 +91,20 @@ export function createProvider(
  * session header keeps a conversation on one endpoint; this decides which endpoints are in the pool
  * at all, and which is tried first.
  *
- *   BOT_PROVIDER_ORDER   comma-separated slugs, tried in order (`z-ai`)
- *   BOT_PROVIDER_IGNORE  comma-separated slugs never used (`wafer,relace`)
- *   BOT_PROVIDER_FALLBACKS `off` to fail rather than leave the order; anything else leaves
- *                        OpenRouter's fallback on, because a Bot that answers from a cold cache is
- *                        better than a Bot that does not answer
+ * KEYED BY MODEL, IN CONFIGURATION. Which endpoints are good is a fact about one model's endpoints —
+ * Wafer and Relace are GLM's — so the policy names the model it is for, and a deployment that swaps
+ * `BOT_MODEL` sends no routing at all until somebody measures the new model's endpoints and writes
+ * its line. Nothing here names a provider.
+ *
+ *   BOT_PROVIDER_POLICY  JSON: { "<model>": { "order": [...], "ignore": [...], "allow_fallbacks": bool } }
+ *                        e.g. {"z-ai/glm-5.3-flash":{"order":["z-ai"],"ignore":["wafer","relace"]}}
+ *
+ * `allow_fallbacks` false fails rather than leave the order; left out, OpenRouter's fallback stays
+ * on, because a Bot that answers from a cold cache is better than a Bot that does not answer.
  *
  * Sent only to OpenRouter: an unknown body field is a 400 on OpenAI's own API. Null when nothing is
- * configured, so a deployment that says nothing sends exactly the request it always sent.
+ * configured for this model, so a deployment that says nothing sends exactly the request it always
+ * sent. A policy that is not JSON is ignored and said so at boot (`./server`), never half-applied.
  */
 export type ProviderRouting = {
   order?: string[];
@@ -106,29 +112,42 @@ export type ProviderRouting = {
   allow_fallbacks?: boolean;
 };
 
-const slugsOf = (value: string | undefined) =>
-  (value ?? "")
-    .split(",")
-    .map((slug) => slug.trim())
-    .filter(Boolean);
+const slugs = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value
+        .filter((slug): slug is string => typeof slug === "string")
+        .map((slug) => slug.trim())
+        .filter(Boolean)
+    : [];
 
 export function providerRoutingOf(
   env: Record<string, string | undefined>,
   baseUrl: string | undefined,
+  model: string,
 ): ProviderRouting | null {
   if (!baseUrl || !/(^|\.)openrouter\.ai$/.test(safeHost(baseUrl))) {
     return null;
   }
-  const order = slugsOf(env.BOT_PROVIDER_ORDER);
-  const ignore = slugsOf(env.BOT_PROVIDER_IGNORE);
-  const fallbacks = env.BOT_PROVIDER_FALLBACKS?.trim().toLowerCase();
-  if (order.length === 0 && ignore.length === 0 && fallbacks !== "off") {
+  let policy: unknown;
+  try {
+    policy = JSON.parse(env.BOT_PROVIDER_POLICY?.trim() || "{}");
+  } catch {
     return null;
   }
+  const entry =
+    policy && typeof policy === "object"
+      ? (policy as Record<string, unknown>)[model]
+      : undefined;
+  if (!entry || typeof entry !== "object") return null;
+  const fields = entry as Record<string, unknown>;
+  const order = slugs(fields.order);
+  const ignore = slugs(fields.ignore);
+  const fallbacks = fields.allow_fallbacks === false;
+  if (order.length === 0 && ignore.length === 0 && !fallbacks) return null;
   return {
     ...(order.length > 0 ? { order } : {}),
     ...(ignore.length > 0 ? { ignore } : {}),
-    ...(fallbacks === "off" ? { allow_fallbacks: false } : {}),
+    ...(fallbacks ? { allow_fallbacks: false } : {}),
   };
 }
 
@@ -140,7 +159,7 @@ function safeHost(url: string): string {
   }
 }
 
-export const PROVIDER_ROUTING = providerRoutingOf(process.env, BASE_URL);
+export const PROVIDER_ROUTING = providerRoutingOf(process.env, BASE_URL, MODEL);
 
 /**
  * THE CLIENT RETRIES NOTHING ON ITS OWN. The OpenAI SDK retries a 408, a 429, a 5xx and a dropped

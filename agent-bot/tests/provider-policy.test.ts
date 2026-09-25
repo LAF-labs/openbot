@@ -128,29 +128,44 @@ describe("which endpoints may answer", () => {
     expect(fake.requests[0]?.body).not.toHaveProperty("provider");
   });
 
-  test("read from the environment, and only for OpenRouter", async () => {
+  /*
+   * KEYED BY MODEL. Which endpoints are good is a fact about one model's endpoints, so a deployment
+   * that swaps its model sends no routing until the new model's line is written.
+   */
+  test("read from the environment, for this model only, and only for OpenRouter", async () => {
     const { providerRoutingOf } = await import("../src/provider");
     const router = "https://openrouter.ai/api/v1";
+    const env = {
+      BOT_PROVIDER_POLICY: JSON.stringify({
+        "z-ai/glm-5.3-flash": {
+          order: ["z-ai"],
+          ignore: ["wafer", " relace "],
+        },
+        "vendor/other": { allow_fallbacks: false },
+      }),
+    };
+    expect(providerRoutingOf(env, router, "z-ai/glm-5.3-flash")).toEqual({
+      order: ["z-ai"],
+      ignore: ["wafer", "relace"],
+    });
+    expect(providerRoutingOf(env, router, "vendor/other")).toEqual({
+      allow_fallbacks: false,
+    });
+    // Another model — the one a deployment just swapped to — gets nothing it was not measured for.
+    expect(providerRoutingOf(env, router, "xiaomi/mimo-v2.6-pro")).toBeNull();
+    // Nothing said, or said unreadably, nothing sent: the request it always was.
+    expect(providerRoutingOf({}, router, "z-ai/glm-5.3-flash")).toBeNull();
     expect(
       providerRoutingOf(
-        { BOT_PROVIDER_ORDER: "z-ai", BOT_PROVIDER_IGNORE: "wafer, relace" },
+        { BOT_PROVIDER_POLICY: "{not json" },
         router,
+        "z-ai/glm-5.3-flash",
       ),
-    ).toEqual({ order: ["z-ai"], ignore: ["wafer", "relace"] });
-    expect(
-      providerRoutingOf({ BOT_PROVIDER_FALLBACKS: "off" }, router),
-    ).toEqual({ allow_fallbacks: false });
-    // Nothing said, nothing sent: the request it always was.
-    expect(providerRoutingOf({}, router)).toBeNull();
+    ).toBeNull();
     // An unknown body field is a 400 on OpenAI's own API.
     expect(
-      providerRoutingOf(
-        { BOT_PROVIDER_ORDER: "z-ai" },
-        "https://api.openai.com/v1",
-      ),
+      providerRoutingOf(env, "https://api.openai.com/v1", "z-ai/glm-5.3-flash"),
     ).toBeNull();
-    expect(
-      providerRoutingOf({ BOT_PROVIDER_ORDER: "z-ai" }, undefined),
-    ).toBeNull();
+    expect(providerRoutingOf(env, undefined, "z-ai/glm-5.3-flash")).toBeNull();
   });
 });

@@ -2,7 +2,12 @@ import type { RunAgentInput } from "@ag-ui/core";
 import { serve } from "bun";
 import { buildOf, reportCrashes } from "../../shared/log";
 import { log } from "./log";
-import { BASE_URL, MODEL, REQUEST_TIMEOUT_MS } from "./provider";
+import {
+  BASE_URL,
+  MODEL,
+  PROVIDER_ROUTING,
+  REQUEST_TIMEOUT_MS,
+} from "./provider";
 import { runAgent } from "./run";
 
 /**
@@ -59,6 +64,8 @@ export function startServer(): void {
     baseUrl: BASE_URL ?? "https://api.openai.com/v1",
     port: server.port,
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
+    // Which endpoints may answer this model, or none: the policy is keyed by model (`./provider`).
+    providerRouting: PROVIDER_ROUTING ?? "none",
   });
 
   /*

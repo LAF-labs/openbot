@@ -476,10 +476,9 @@ services:
       # the server reads, and this Bot refuses to start rather than answering on a model nobody
       # chose. Set BOT_MODEL in .env; .env.example ships it set.
       BOT_MODEL: ${BOT_MODEL:-}
-      # Which OpenRouter endpoints may answer (agent-bot/src/provider.ts). Unset sends nothing.
-      BOT_PROVIDER_ORDER: ${BOT_PROVIDER_ORDER:-}
-      BOT_PROVIDER_IGNORE: ${BOT_PROVIDER_IGNORE:-}
-      BOT_PROVIDER_FALLBACKS: ${BOT_PROVIDER_FALLBACKS:-}
+      # Which OpenRouter endpoints may answer, keyed by model (agent-bot/src/provider.ts). Unset,
+      # or no line for BOT_MODEL, sends nothing.
+      BOT_PROVIDER_POLICY: ${BOT_PROVIDER_POLICY:-}
     logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4200/health'); process.exit(r.ok ? 0 : 1)\""]
