@@ -13,6 +13,7 @@ import { SKILL_TOOLS } from "../../../shared/tools/skills";
 import {
   type AuditStore,
   ONE_SHARED_COMPUTER,
+  auditRowLost,
   recordAuditEvent,
 } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
@@ -88,7 +89,7 @@ export function recordStartingArrangement(input: {
           ? "Set while running and kept. A restart returns to this."
           : "The deployment default. Anything an administrator sets from here is kept.",
     },
-  }).catch(() => undefined);
+  }).catch(auditRowLost("computer.policy_loaded"));
 
   /*
    * The sharing is a product decision (computer/assignment.ts), not an accident of configuration,
@@ -108,7 +109,7 @@ export function recordStartingArrangement(input: {
        */
       note: ONE_SHARED_COMPUTER,
     },
-  }).catch(() => undefined);
+  }).catch(auditRowLost("computer.isolation_loaded"));
 }
 
 /**

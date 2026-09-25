@@ -38,7 +38,7 @@
  * on. AG-UI permits RUN_ERROR at any point in a stream, including as the very first event, which is
  * what a Bot that never spoke produces.
  */
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import { log } from "../log";
 import { type StalledStream, TurnWatchdog } from "./turn-watchdog";
 
@@ -230,7 +230,7 @@ export function createStallGuard(options: StallGuardOptions): StallGuard {
           chunks: stalled.chunks,
           ...(turn ? { thread: turn.threadId, run: turn.runId } : {}),
         },
-      }).catch(() => undefined);
+      }).catch(auditRowLost("agent.stream_stalled"));
     }
   }
 

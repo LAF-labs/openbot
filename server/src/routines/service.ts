@@ -2,7 +2,7 @@ import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
 import { resolveTimeZone } from "../../../shared/prompt";
 import type { AgentActor } from "../agents/profile-types";
-import type { AuditStore } from "../audit";
+import { type AuditStore, auditRowLost } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
@@ -310,7 +310,7 @@ async function forgetNotepad(
           entries: cleared,
         },
       })
-      .catch(() => {});
+      .catch(auditRowLost("routine.notepad_cleared"));
   }
   return { cleared };
 }

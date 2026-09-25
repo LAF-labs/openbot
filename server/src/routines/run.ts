@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import type { AgentActor } from "../agents/profile-types";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import type { lafRoutines } from "../db/schema";
+import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import {
@@ -216,9 +217,10 @@ async function authorIsAdmitted(
         // Said when the answer was not a "no" but no answer at all.
         ...(admitted === null ? { unconfirmed: true } : {}),
       },
-    }).catch(() => {
+    }).catch(
       // Losing the row must not turn a skip into a run.
-    });
+      auditRowLost("routine.skipped_not_admitted"),
+    );
   }
   return false;
 }
@@ -325,7 +327,11 @@ async function openLedger(
       origin: "routine",
       label: row.name,
     })
-    .catch(() => null);
+    .catch((error) => {
+      // The run goes ahead without its row: the roster just cannot show it busy. Said, not dropped.
+      log.warn("routine_ledger_row_lost", { routine: row.id, reason: error });
+      return null;
+    });
 }
 
 /** The Bot, asked the routine's instruction as its author would see the roster. Never throws. */

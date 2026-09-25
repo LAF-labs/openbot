@@ -909,7 +909,13 @@ export function createApp(
           ? (approvalId) => {
               void notifications.outbox
                 .markSeenForApproval(approvalId)
-                .catch(() => undefined);
+                .catch((error) => {
+                  // The answer stands; only the row that says it was waiting stays unread.
+                  log.warn("notification_seen_unsaved", {
+                    approval: approvalId,
+                    reason: error,
+                  });
+                });
             }
           : undefined,
       ),

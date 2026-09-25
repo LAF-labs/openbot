@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
+import { log } from "./log";
 
 const sensitiveKeys = new Set([
   "access_token",
@@ -601,6 +602,20 @@ export function redactAuditPayload(value: unknown): unknown {
       isSensitiveKey(key) ? "[REDACTED]" : redactAuditPayload(nestedValue),
     ]),
   );
+}
+
+/**
+ * The catch for a trail row nobody waits on: `void recordAuditEvent(…).catch(auditRowLost(type))`.
+ *
+ * The action the row describes has already happened, so the row's failure must not become the
+ * action's — that part the old `.catch(() => undefined)` got right. What it got wrong is that the row
+ * then vanished without a line: a `model.usage` row lost is a month's cost undercounted, a
+ * `computer.isolation_loaded` row lost is a trail that no longer says the computer is shared, and
+ * nobody could tell either from a quiet log. The event type is the fact an operator greps for; the
+ * payload stays out, the same rule as every other line.
+ */
+export function auditRowLost(eventType: string): (error: unknown) => void {
+  return (error) => log.warn("audit_row_lost", { eventType, reason: error });
 }
 
 export async function recordAuditEvent(

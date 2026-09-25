@@ -100,6 +100,7 @@ export function createStopAll(options: {
         if (entry.agentId === null) return true;
         let verdict = verdicts.get(entry.agentId);
         if (!verdict) {
+          // A Bot whose ownership cannot be checked is not one this person may stop.
           verdict = mayDrive(entry.agentId).catch(() => false);
           verdicts.set(entry.agentId, verdict);
         }

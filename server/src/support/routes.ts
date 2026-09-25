@@ -33,7 +33,7 @@ import {
   type ConnectionCheckFacts,
   readConnectionCheck,
 } from "../../../shared/support/connection-check";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import type { HealthReport } from "../health";
 import { isCatalogueKey } from "../insights/catalogue-key";
@@ -254,7 +254,7 @@ export function createSupportRoutes(
         withDiagnostics: bundle !== null,
         told,
       },
-    }).catch(() => undefined);
+    }).catch(auditRowLost("support.feedback_sent"));
 
     return context.json(
       {

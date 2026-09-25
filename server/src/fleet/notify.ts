@@ -31,7 +31,7 @@
  */
 import { createHmac } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
 import { log } from "../log";
@@ -194,7 +194,9 @@ export function createFleetNotifier(
           attempts,
           remainingAccounts: notice.remainingAccounts,
         },
-      }).catch(() => undefined);
+      }).catch(
+        auditRowLost(delivered ? "fleet.notified" : "fleet.notify_failed"),
+      );
 
       if (!delivered) {
         log.error("fleet_notice_not_delivered", {

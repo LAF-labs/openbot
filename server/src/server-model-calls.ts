@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { type AuditStore, recordAuditEvent } from "./audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
 import {
   type AutoReviewer,
   createAutoReviewProbe,
@@ -69,7 +69,7 @@ export function createServerModelCalls(input: {
         eventType: "model.usage",
         targetType: "model",
         payload: { ...usage, source },
-      }).catch(() => undefined);
+      }).catch(auditRowLost("model.usage"));
     };
 
   /**
@@ -119,7 +119,7 @@ export function createServerModelCalls(input: {
             eventType: "model.usage",
             targetType: "model",
             payload: { ...usage, source: "decisions" },
-          }).catch(() => undefined),
+          }).catch(auditRowLost("model.usage")),
       }
     : null;
   const reviewModel: AutoReviewer = decisionCall

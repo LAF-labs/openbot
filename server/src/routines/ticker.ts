@@ -2,6 +2,7 @@ import { and, asc, eq, lte } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
+import { log } from "../log";
 import {
   CAUGHT_UP_AFTER_MS,
   catchUpGraceMs,
@@ -106,7 +107,9 @@ async function pass(options: RoutineTickerOptions): Promise<number> {
    */
   if (due.length > 0 && options.pauseUnread) {
     const botIds = [...new Set(due.map((row) => row.agentId))];
-    await options.pauseUnread(botIds, at).catch(() => undefined);
+    await options.pauseUnread(botIds, at).catch((error) => {
+      log.warn("routine_unread_sweep_failed", { bots: botIds, reason: error });
+    });
   }
 
   let ran = 0;

@@ -24,7 +24,7 @@ import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName } from "../../shared/tools/bridge";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
-import { type AuditStore, recordAuditEvent } from "./audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
 import type { ConversationStore } from "./context/conversations";
@@ -581,7 +581,7 @@ function remoteAgentWithPrompt(
               ...(cacheLow ? { cacheLow: true } : {}),
               source: "bot-turn",
             },
-          }).catch(() => undefined);
+          }).catch(auditRowLost("model.usage"));
         }
       },
     });

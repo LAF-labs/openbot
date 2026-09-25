@@ -141,7 +141,14 @@ export async function settleRun(
       reason: describeFailure(error),
     });
     if (run.ledgerRunId) {
-      await options.ledger?.finish(run.ledgerRunId, failure).catch(() => {});
+      const ledgerRunId = run.ledgerRunId;
+      await options.ledger?.finish(ledgerRunId, failure).catch((error) => {
+        // Then the roster shows the Bot busy until the boot sweep closes the row.
+        log.warn("routine_ledger_unclosed", {
+          run: ledgerRunId,
+          reason: error,
+        });
+      });
     }
     /*
      * The notepad rolled back with the rest: the cursor is where the last recorded run left it. So
