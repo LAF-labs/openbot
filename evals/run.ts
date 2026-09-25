@@ -167,6 +167,7 @@ async function runOnce(
       scenario.frozenAt,
       undefined,
       scenario.notebook,
+      scenario.summary,
     ),
     ...scenario.messages,
   ];

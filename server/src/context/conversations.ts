@@ -21,6 +21,11 @@
  *    request's prompt crosses the threshold, what the conversation no longer carries is decided
  *    once behind it (`./compaction`), stored with the conversation, applied to every request
  *    after, and the next run starts a new epoch.
+ *  - At the owner's local DAY BOUNDARY (`./day-close`): once the day has turned and nothing is
+ *    running or waiting on the owner, the days before are summarised behind the conversation, and
+ *    the owner's next message starts an epoch whose frozen layer carries today's date and that
+ *    summary, with the history cut after it. The client still sends the whole thread; the cut is
+ *    made here, and it goes with every later epoch until the next day's close replaces it.
  *  - A change during the epoch — a new local day, a place or zone, a rename, a memory written
  *    outside the Bot's own `remember` — is appended to the person's NEW message as `<알림>`, once,
  *    and stored with that message's id, so every later request carries the same bytes in the same

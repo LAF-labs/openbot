@@ -32,6 +32,9 @@
  *   EVAL_CACHE_PROVIDER=z-ai                 an OpenRouter provider slug; unset lets it route
  *   EVAL_CACHE_HISTORY_CHARS=39000           how long the week was
  *
+ *   EVAL_CACHE_CASES=days                    a week day by day, before and after the day epochs
+ *   EVAL_DAYS_ARMS=lifelong,daily EVAL_DAYS=7 (see ./cache-days.ts)
+ *
  * PASS: the epoch arm serves ≥ 95% of its prompt from cache on every turn after the first. A
  * measurement, not a gate — it calls a real model. Reports land in evals/reports/ (not committed).
  */
@@ -57,6 +60,12 @@ import { zonedParts, zoneLabel } from "../shared/prompt/zone";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { SELF_TOOLS } from "../shared/tools/self";
 import { SKILL_VIEW } from "../shared/tools/skills";
+import {
+  DAY_ARMS,
+  type DayArm,
+  type DayArmMeasure,
+  measureDays,
+} from "./cache-days";
 import { longPage } from "./fixtures";
 import { eventsOfSse } from "./lib";
 import {
@@ -731,6 +740,46 @@ async function measureArm(
 }
 
 const tools = await toolsOf();
+
+const dayArms: DayArmMeasure[] = [];
+if (CASES.includes("days")) {
+  const chosen = (process.env.EVAL_DAYS_ARMS ?? DAY_ARMS.join(","))
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name): name is DayArm =>
+      (DAY_ARMS as readonly string[]).includes(name),
+    );
+  console.log(
+    `\ndays · model ${MODEL} · provider ${PROVIDER ?? "routed"} · ${tools.length} tools · arms ${chosen.join(", ")}\n`,
+  );
+  for (const arm of chosen) {
+    dayArms.push(
+      await measureDays({
+        arm,
+        model: MODEL,
+        tools,
+        provider: PROVIDER,
+        key: process.env.OPENAI_API_KEY ?? "",
+        baseUrl: process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1",
+      }),
+    );
+  }
+  console.log("\ndays:");
+  for (const measured of dayArms) {
+    const pct = (value: number | null) =>
+      value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+    const firsts = measured.firstMessageLatencyMs
+      .slice(1)
+      .sort((a, b) => a - b);
+    console.log(
+      `  ${measured.arm.padEnd(8)} day-7 prompt ${measured.day7PromptMean ?? "—"}` +
+        `  cache ${pct(measured.cacheShare)} (warm ${pct(measured.warmCacheShare)})` +
+        `  $/day ${measured.costPerDay.map((cost) => cost.toFixed(4)).join(" ")}` +
+        `  first-of-day median ${firsts[Math.floor(firsts.length / 2)] ?? "—"}ms` +
+        `  needles supplier ${measured.needles.supplier ? "kept" : "LOST"} refund ${measured.needles.refund ? "kept" : "LOST"}`,
+    );
+  }
+}
 const history = weekOfHistory();
 console.log(
   `\ncache alignment · model ${MODEL} · provider ${PROVIDER ?? "routed"} · ${tools.length} tools` +
@@ -759,9 +808,16 @@ for (const measured of arms) {
   );
 }
 
+const daily = dayArms.find((measured) => measured.arm === "daily");
+const daysPass =
+  daily === undefined ||
+  (daily.needles.supplier &&
+    daily.needles.refund &&
+    daily.requests.every((request) => request.problem === null));
 const epoch = arms.find((measured) => measured.arm === "epoch");
 const browsing = arms.find((measured) => measured.arm === "browsing");
 const pass =
+  daysPass &&
   (epoch === undefined ||
     (epoch.laterShare !== null && epoch.laterShare >= TARGET_SHARE)) &&
   (browsing === undefined ||
@@ -788,6 +844,7 @@ const report = {
   browsingCarriesReasoning: CARRY_REASONING,
   tools: tools.length,
   arms,
+  days: dayArms,
 };
 mkdirSync(new URL("./reports/", import.meta.url), { recursive: true });
 const reportPath = new URL(

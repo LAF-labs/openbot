@@ -16,6 +16,7 @@ import {
   composePrompt,
   contextFactsFor,
   DEFAULT_TIME_ZONE,
+  earlierSummaryText,
   type PromptMode,
   type PromptPerson,
   type PromptSkill,
@@ -82,20 +83,29 @@ export function systemMessageFor(
   skills?: readonly PromptSkill[],
   /** 수첩 as the frozen layer drew it. Absent is the pack's two ordinary memories. */
   notebook?: EvalNotebook,
+  /**
+   * The summary a day's close left at the end of the frozen layer, as the conversation store
+   * appends it (`server/src/context/conversations.ts`). Absent is an epoch with no cut.
+   */
+  summary?: string,
 ) {
+  const composed = composePrompt({
+    mode,
+    now: frozenAt,
+    timeZone: EVAL_TIME_ZONE,
+    bot: EVAL_BOT,
+    standingRole: EVAL_STANDING_ROLE,
+    ...notebookInput(notebook),
+    ...(person ? { person } : {}),
+    ...(skills ? { skills } : {}),
+  });
+  const earlier = summary
+    ? earlierSummaryText(summary, factsFor(mode, person, frozenAt).day)
+    : "";
   return {
     id: "laf-prompt:eval_bot",
     role: "system" as const,
-    content: composePrompt({
-      mode,
-      now: frozenAt,
-      timeZone: EVAL_TIME_ZONE,
-      bot: EVAL_BOT,
-      standingRole: EVAL_STANDING_ROLE,
-      ...notebookInput(notebook),
-      ...(person ? { person } : {}),
-      ...(skills ? { skills } : {}),
-    }),
+    content: earlier ? `${composed}\n\n${earlier}` : composed,
   };
 }
 

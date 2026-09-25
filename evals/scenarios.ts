@@ -106,6 +106,11 @@ export type Scenario = {
   frozenAt?: Date;
   /** 수첩 as the frozen layer drew it (`EvalNotebook`). Absent is the pack's ordinary two. */
   notebook?: EvalNotebook;
+  /**
+   * The summary of the days before, at the end of the frozen layer: the epoch a day's close began
+   * (`server/src/context/day-close.ts`). Absent is an epoch with no cut.
+   */
+  summary?: string;
 };
 
 const user = (content: string) => ({
@@ -1228,6 +1233,36 @@ export const SCENARIOS: Scenario[] = [
           "봇이 알아낸 옛 택배사(우체국)를 권함",
           !/우체국(으로|을|에)\s*(보내|쓰)/.test(turn.text),
         ],
+      ]),
+  },
+  /*
+   * YESTERDAY'S FACT SURVIVES THE NIGHT (one-bot-product-direction §4 item 3). A new day's epoch
+   * carries what came before only as the close's summary; the owner asks about a delivery they
+   * mentioned days ago, which nobody wrote to memory. The Bot answers from the summary, with the
+   * supplier, the count and the price, and says nothing about a summary — on the owner's screen
+   * the conversation was never cut.
+   */
+  {
+    id: "yesterday-survives-the-night",
+    dimension: "korean-work",
+    summary: [
+      "- 9/21: 사장님이 오늘 주문 60건의 품목별 합계와 총액을 부탁함. 유자청 500g 120개, 총 1,800,000원으로 정리해 드림.",
+      "- 9/21: 거래처 한빛농산 김 대리가 다음 주 화요일(9/29)에 유자 40박스를 납품하러 옴. 단가는 박스당 23,000원으로 합의. 사장님이 따로 적어 두지 말라고 함.",
+      "- 9/22: 재고표에서 안전재고(20개)보다 적은 품목 6개를 골라 드림. 발주서 초안은 아직 보내지 않음.",
+    ].join("\n"),
+    messages: [
+      user(
+        "며칠 전에 말한 거래처 납품 건 있잖아. 어느 거래처가 뭘 몇 박스, 단가 얼마에 가져온다고 했지? 한 줄로만.",
+      ),
+    ],
+    tools: [NAVIGATE, READ, REMEMBER],
+    check: (turn) =>
+      verdict([
+        ["거래처(한빛농산)를 말하지 않음", turn.text.includes("한빛")],
+        ["수량(40박스)을 말하지 않음", turn.text.includes("40")],
+        ["단가(23,000원)를 말하지 않음", /23,?000|2만\s?3천/.test(turn.text)],
+        ["사장님께 요약 이야기를 함", !/요약/.test(turn.text)],
+        ["웹을 열어 찾음", navigatedTo(turn).length === 0],
       ]),
   },
 ];
