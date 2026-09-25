@@ -574,6 +574,73 @@ reuse 99.2–99.6%) — 생각을 싣지 않은 같은 하네스 89.7%(99.6%)와
   바꿀 때만 둘 다.
 - `REVIEW_MODEL` — 비운다. 무언가 적힌 VM이 있으면 지운다: 그것이 서버 모델을 덮는다.
 
+## Day epochs — a new epoch at the owner's day boundary (2026-09-26)
+
+Item 3 of `~/laf/docs/one-bot-product-direction.md`, and harness phase 2's row 9 reshaped (review R7). A Bot keeps
+one lifelong conversation on screen; the request behind it now carries about one day.
+
+- **The close, prepared at night** (`server/src/context/day-close.ts`). Once a minute (`boot/background.ts`) the
+  store looks for a kept conversation whose owner's local day has turned, that has made no request for two minutes,
+  and whose Bot has no run `running` or `waiting` in the ledger (package A's `waiting`: a step with its owner). It
+  reads the thread as stored (`lafAt` stamps), cuts before the first message stamped today — never between a call
+  and its result — and, when the span is worth it (≥ 8,000 characters), runs the existing compaction over it (Jev,
+  the server model behind it, the rule, redacted excerpts) and has the server model write the summary from a redacted
+  transcript, merged with the previous day's. Bounded at 3,000 characters by dropping its oldest lines.
+- **Taken by the owner's next message, never by a task's next step.** The epoch it starts (`day_boundary`) freezes
+  today's date and the summary (`earlierSummaryText`) into the system message, so no date reminder is needed in it.
+  The cut (`through`, `summary`, `day`) lives in `laf_conversation_contexts.epoch` (jsonb, no migration) and goes
+  with every later epoch until the next close. The client still sends the whole thread; the transcript is whole.
+- **Not ready by the first message** (a message at 00:01, a restart): the old epoch carries on with the date
+  reminder, the close is prepared behind that turn, and the next message takes it. The 30K threshold compaction
+  stays as the within-day net.
+- **Why the server model and not a cache-safe fork of the Bot's request.** A close made hours after the last turn
+  reads a cold cache either way; on MiMo a 60K miss is $0.026, and the close measured below costs $0.0002–0.0005.
+- `DAY_EPOCHS=off` switches it off. `LAF_CLOCK_OFFSET_MS` turns the day on a laptop; production refuses it.
+
+### `eval:cache` — the `days` case (MiMo-V2.6-Pro, Xiaomi pinned, two runs)
+
+`EVAL_CACHE_CASES=days`: seven simulated days on the production store, each four person turns and one browsing
+step (a ~4K-token page), every request real; the night modelled by a new nonce in the first tool each day, so every
+first message of a day is cold in both arms. `lifelong` is what shipped (one epoch, the date as a reminder, the 30K
+threshold compaction); `daily` adds the close the store's own tick makes at 03:00.
+
+| | lifelong | daily |
+|---|---|---|
+| Prompt tokens per request, day 7 (mean) | 28,419 / 28,422 | **9,727 / 9,870** (−65%) |
+| First message of a day, prompt (days 2–7) | 11.4K–30.0K, growing until the threshold compaction on day 5, then again | 6.4K–6.8K, flat |
+| Cache share, all requests (warm only) | 53.5% (65.9%) / 55.2% (67.9%) | 65.8% (76.0%) / 68.4% (79.1%) |
+| Dollars per day, days 2–7 (mean) | $0.0241 / $0.0242, day 7 $0.029 | **$0.0086 / $0.0087**, day 7 $0.007–0.009, closes included |
+| Seven days in all | $0.155 / $0.152 | $0.062 / $0.062 (six closes $0.0022) |
+| First message of a day, latency (median, days 2–7) | 10.2 s / 8.6 s | 11.1 s / 11.2 s |
+| The close (off the critical path) | — | 6/6 made each run, 10–41 s, $0.0002–0.0005 |
+
+The first run priced each run's first request only; the second prices every request of a run. The first message's
+latency did not improve measurably: MiMo's thinking (3–31 s across the arms) dominates at these sizes, and the
+point is that the first message waits on no compaction at all. The warm share stays under 80% in both arms because
+each day's page and each new turn are new tokens, not a broken prefix.
+
+**Needles** (day 1, asked on day 5): a supplier delivery the owner stated and asked the Bot not to write down
+(한빛농산, 유자 40박스, 박스당 23,000원), and a refund reason only an order page held (파손). Daily: 2/2 and 2/2.
+Lifelong: 1/2 and 0/2 — the threshold compaction dropped the page, and once MiMo read "따로 적어 두진 말고" in the
+raw history as "do not remember"; the summary had turned it into a plain fact.
+
+### Real stack
+
+Local server, agent-bot and computer on MiMo with a fresh database, the chat driven through the runtime endpoint the
+app uses. Four turns on day 1 (the last request 8,100 prompt tokens); the server restarted with the clock a day
+ahead; one tick later `day_closed` (10 messages, 9,273 characters, summary 547, arm `decisions`, 13.5 s). The first
+message of the new day sent the whole thread (11 messages) and the provider billed **2,705** prompt tokens, the usage
+row said `epochReason: day_boundary`, the stored epoch held the cut and `오늘은 2026-09-27`, no reminder was written,
+and the Bot answered the supplier question from the summary. The next message read 2,688 of 2,767 from cache. Only
+the night path was checked there: the thread store stamps with the wall clock, so the offset cannot put a message
+on "today".
+
+### `eval:model`
+
+28/28 on Xiaomi (one run each, deferral arm skipped), including the new `yesterday-survives-the-night`: a fact that
+lives only in a close's summary, answered with supplier, count and price and without the word 요약 — 3/3 more on
+its own. Prompt skeleton unchanged (`6b8591d5fe55ef3d`); the summary block appears only in an epoch with a cut.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
