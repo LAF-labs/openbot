@@ -77,6 +77,9 @@ const SEND_MESSAGE = {
 };
 
 async function eventsFor(chunks: Chunk[]): Promise<string[]> {
+  // The machine's .env names the deployment's model, and the effort words are per model: a
+  // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+  process.env.BOT_MODEL = "";
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
   const response = await runAgent(
@@ -158,6 +161,9 @@ describe("how hard to think", () => {
   async function requestFor(
     forwardedProps: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
+    // The machine's .env names the deployment's model, and the effort words are per model: a
+    // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+    process.env.BOT_MODEL = "";
     process.env.OPENAI_API_KEY ??= "test-key";
     const { runAgent } = await import("../src/index");
     let sent: Record<string, unknown> = {};
@@ -308,6 +314,9 @@ describe("a provider failure on a customer's screen", () => {
    * what leaves the building is only which of the three next steps applies.
    */
   async function runErrorFor(thrown: unknown): Promise<string> {
+    // The machine's .env names the deployment's model, and the effort words are per model: a
+    // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+    process.env.BOT_MODEL = "";
     process.env.OPENAI_API_KEY ??= "test-key";
     const { runAgent } = await import("../src/index");
     const response = await runAgent(

@@ -76,6 +76,9 @@ async function requestFor(
    * takes the whole suite down before a single test runs. The key is the string "test-key" and
    * nothing is ever sent anywhere: the fake provider below is the model.
    */
+  // The machine's .env names the deployment's model, and the effort words are per model: a
+  // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+  process.env.BOT_MODEL = "";
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../../agent-bot/src/index");
   let sent: ProviderRequest = {};
@@ -152,8 +155,20 @@ describe("what reaches the model", () => {
   });
 
   test("the effort, translated by the service that speaks that API", async () => {
-    // `thorough` on the wire between the two services; `high` on the wire to the provider.
-    expect((await requestFor(true)).reasoning_effort).toBe("high");
+    // `thorough` on the wire between the two services; the model's own word on the wire to the
+    // provider. Which word depends on the model agent-bot read at import — another file in this
+    // process may have imported it first with the machine's BOT_MODEL — so ask agent-bot's table
+    // rather than hard-coding one model's spelling.
+    const { MODEL } = await import("../../agent-bot/src/provider");
+    const { reasoningEffortOf } = await import(
+      "../../agent-bot/src/transcript"
+    );
+    const expected = reasoningEffortOf(
+      { forwardedProps: { effort: "thorough" } } as never,
+      MODEL,
+    );
+    expect(expected === "high" || expected === "max").toBe(true);
+    expect((await requestFor(true)).reasoning_effort).toBe(expected);
   });
 
   test("no effort at all where the deployment's model takes none", async () => {

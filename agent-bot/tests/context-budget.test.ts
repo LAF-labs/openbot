@@ -59,6 +59,9 @@ async function turnFor(
   /** The tools the run is handed. A call to a name not in here is answered, not forwarded. */
   tools: unknown[] = [],
 ) {
+  // The machine's .env names the deployment's model, and the effort words are per model: a
+  // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+  process.env.BOT_MODEL = "";
   process.env.OPENAI_API_KEY ??= "test-key";
   const { runAgent } = await import("../src/index");
   const requests: Array<{
@@ -349,6 +352,9 @@ describe("a request that never comes back", () => {
    * `laf:model_failed`: a timeout's next step is different from a refusal's.
    */
   test("ends the turn with its own code rather than holding it open", async () => {
+    // The machine's .env names the deployment's model, and the effort words are per model: a
+    // checkout with BOT_MODEL=glm-5.3 read `max` where CI read `high` (2026-09-25). Pin it.
+    process.env.BOT_MODEL = "";
     process.env.OPENAI_API_KEY ??= "test-key";
     const { runAgent } = await import("../src/index");
     const logged = spyOn(console, "error").mockImplementation(() => {});
