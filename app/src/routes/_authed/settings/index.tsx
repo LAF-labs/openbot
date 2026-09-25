@@ -214,7 +214,12 @@ function RouteComponent() {
           <Item size="sm">
             <ItemContent>
               <ItemTitle>{t("Language")}</ItemTitle>
-              <ItemDescription>
+              {/*
+               * Unclamped, here and in the rows below: at 375 px the select takes half the row and
+               * two lines ended on "바꾸면 화면을 다시…" — cutting off exactly the warning the
+               * sentence exists to give (measured 2026-09-25).
+               */}
+              <ItemDescription className="line-clamp-none">
                 {/* The reload is said out loud. It used to happen with no warning at all, which
                     from the other side of the screen is the app restarting itself. */}
                 {t(
@@ -253,7 +258,7 @@ function RouteComponent() {
           <Item size="sm">
             <ItemContent>
               <ItemTitle>{t("Appearance")}</ItemTitle>
-              <ItemDescription>
+              <ItemDescription className="line-clamp-none">
                 {t("How {product} looks. Following the system flips with it.", {
                   product: appConfig.brand.productName,
                 })}
