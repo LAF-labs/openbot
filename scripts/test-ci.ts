@@ -477,16 +477,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and placed) and thirteen to `server` (a question's step, its holder, a withdrawal, the routes
  * and the matrix for them, a run's `waiting` and how it really ended). Each floor rises by
  * exactly what was added.
+ * RAISED 2026-09-25 with 0.5.4 packages D and E: eight to `app` (an answer's pages from what the
+ * browser read, a failed read kept out, one page once per turn, the connections list in the shop's
+ * order and in the catalogue's without one, a queued correction's words and its Stop, and the idle
+ * pill no longer sharing them), five to `server` (the owner's standing permissions listed, said to be
+ * off, revoked as the boundary's revoke under who pressed it, another Bot's refused, a Bot not
+ * theirs not here) and two to `root` (a miss with nothing connected not sending the Bot searching
+ * again, the context layer saying its list is complete). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2663, roots: ["server"] },
-  { name: "app", floor: 1302, roots: ["app"] },
+  { name: "server", floor: 2668, roots: ["server"] },
+  { name: "app", floor: 1310, roots: ["app"] },
   { name: "agent-computer", floor: 287, roots: ["agent-computer"] },
-  { name: "root", floor: 415, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 417, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
