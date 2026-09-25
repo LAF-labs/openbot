@@ -428,14 +428,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * net to `root` (the loop's own retry and never a 429, routing keyed by model, the same tool list
  * whatever is connected, every result forwarded as it arrived — against the budget tests the cut
  * took with it). Each floor rises by exactly what was added.
+ * RAISED 2026-09-25 with 오늘, the Bot's day in the sidebar: sixteen to `server` (the person's day
+ * across midnight and a summer-time change, the chat label cut at forty code points without splitting
+ * an emoji, a browsing turn folded into one row, and against real tables: somebody else's run and
+ * another Bot's never, a silent routine silent with no message, the route's 404) and eight to `app`
+ * (each kind of row and its mark, where a press goes, six then the rest, the next two routines, an
+ * empty day and a new Bot's first things, the marks' Korean, the day's clock, the jump left for one
+ * conversation). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2598, roots: ["server"] },
-  { name: "app", floor: 1216, roots: ["app"] },
+  { name: "server", floor: 2614, roots: ["server"] },
+  { name: "app", floor: 1224, roots: ["app"] },
   { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
   { name: "root", floor: 397, roots: ["tests", "agent-bot"] },
 ] as const;

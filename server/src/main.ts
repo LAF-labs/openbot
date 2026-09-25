@@ -9,6 +9,7 @@ import {
   createBrowserWhereabouts,
   createWhereaboutsStore,
 } from "./account/whereabouts";
+import { createDayReader } from "./agents/day";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createAgentMemoryStore } from "./agents/memory-store";
 import { withPersonContext } from "./agents/person-context";
@@ -864,6 +865,12 @@ const app = createApp(
   shopStore,
   // The person's clock and place: `/api/me` carries them and three doors change them.
   whereaboutsStore,
+  // 오늘: the Bot's day, from the ledgers, in the person's own day.
+  createDayReader({
+    database,
+    zoneOf: async (userId) => (await whereaboutsStore.read(userId)).timeZone,
+    fallbackZone: config.botTimeZone,
+  }),
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

@@ -45,7 +45,7 @@ export type RunStart = {
   /** The conversation, when there is one. A routine has none. */
   threadId?: string | null;
   origin: RunOrigin;
-  /** What it is doing, in words a person wrote — a routine's name. */
+  /** What it is doing, in words a person wrote: a routine's name, or the start of a chat message. */
   label?: string | null;
   /** Machine-initiated runs carry one; a repeat with the same key must not run twice. */
   dedupeKey?: string | null;
@@ -77,6 +77,65 @@ export type RunOutcome = {
  * disagree with it either way.
  */
 export type LedgerExecutor = Pick<Database, "update">;
+
+/** How much of the person's message a chat run's label keeps: enough to recognise, not to reread. */
+export const CHAT_LABEL_LENGTH = 40;
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The first `limit` code points of some words, on one line, never cutting a character in half.
+ *
+ * Code points rather than UTF-16 units, because "40 characters" of Korean and of emoji must be the
+ * same forty; and whole graphemes, because a family emoji is several code points joined, and a cut
+ * through one leaves a stray person in the label. A grapheme that would cross the limit is left out
+ * whole. Empty words are no label at all.
+ */
+export function headOf(text: string, limit: number): string | null {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  let kept = "";
+  let count = 0;
+  for (const { segment } of graphemes.segment(flat)) {
+    const size = [...segment].length;
+    if (count + size > limit) break;
+    kept += segment;
+    count += size;
+  }
+  return kept.trimEnd() || null;
+}
+
+/**
+ * A chat run's label: the start of what the person said, when the person is what started it.
+ *
+ * The column always said "in the person's own words where there are any", and a chat run is the one
+ * run that has some; only routines ever wrote it. 오늘 (the Bot's day in the sidebar) reads it to
+ * name a turn. Only when the newest message IS the person's: a browser step coming back to the Bot is
+ * also a chat run, and its newest message is a tool's result — that run carries the turn on, and
+ * has no words of its own (`runner/laf-runner.ts`, `carriesAStepOn`).
+ *
+ * Written when the run opens, after nothing the model reads: the label is never read into a prompt.
+ */
+export function chatLabelOf(
+  messages: ReadonlyArray<{ role: string; content?: unknown }>,
+): string | null {
+  const last = messages.at(-1);
+  if (last?.role !== "user") return null;
+  const content = last.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((part) =>
+              part && typeof part === "object" && part.type === "text"
+                ? String(part.text ?? "")
+                : "",
+            )
+            .join(" ")
+        : "";
+  return headOf(text, CHAT_LABEL_LENGTH);
+}
 
 export type RunLedger = {
   begin(start: RunStart): Promise<string>;

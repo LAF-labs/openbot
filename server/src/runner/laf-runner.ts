@@ -40,7 +40,12 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import type { WorkInFlight } from "./in-flight";
-import { RUN_ORIGINS, type RunLedger, type RunOrigin } from "./run-ledger";
+import {
+  chatLabelOf,
+  RUN_ORIGINS,
+  type RunLedger,
+  type RunOrigin,
+} from "./run-ledger";
 import { redactSecretTyping } from "./secret-redaction";
 import {
   appendMessages,
@@ -746,6 +751,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         agentId,
         userId: owner,
         origin,
+        // What the person asked, for 오늘 to name the turn by. Null on a run a browser step started.
+        label: origin === "chat" ? chatLabelOf(messages) : null,
         dedupeKey,
       });
       await appendMessages(this.database, threadId, messages, { runId });
@@ -898,7 +905,12 @@ export async function reportInterruptedRuns(input: {
       ...(channelId ? { channelId } : {}),
       run: {
         origin,
-        ...(run.label ? { label: run.label } : {}),
+        /*
+         * A routine's name only. A chat run carries a label too since 오늘 (the start of what the
+         * person typed), and a notification's facts can leave for a partner channel or a webhook;
+         * the person's own sentence is not a fact about the run worth sending there.
+         */
+        ...(run.origin === "routine" && run.label ? { label: run.label } : {}),
         code: TURN_FAILURE_CODES.interrupted,
       },
     });

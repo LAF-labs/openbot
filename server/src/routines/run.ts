@@ -243,7 +243,7 @@ async function executeNow(
    * author never owned. It stops instead, in the one place a person reads a routine's history.
    */
   const author = row.createdById;
-  const ledgerRunId = await openLedger(options, row, author);
+  const ledgerRunId = await openLedger(options, row, author, runId);
   const attempt = await askTheBot(options, row, author, signal, scheduledFor);
 
   /*
@@ -304,6 +304,12 @@ async function openLedger(
   options: RoutineRunOptions,
   row: RoutineRow,
   author: string | null,
+  /**
+   * The receipt's id, which the ledger row takes as its own. The ledger names a routine only by its
+   * name, and 오늘 (the Bot's day) has to find the receipt that says whether the run was silent and
+   * which routine it was: one id for both halves of one run is that join, with no column added.
+   */
+  runId: string,
 ): Promise<string | null | undefined> {
   const conversation = author
     ? await soloChannelFor(options.database, author, row.agentId).catch(
@@ -312,6 +318,7 @@ async function openLedger(
     : null;
   return options.ledger
     ?.begin({
+      runId,
       agentId: row.agentId,
       userId: row.createdById,
       threadId: conversation?.threadId ?? null,

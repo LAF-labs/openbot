@@ -8,6 +8,7 @@ import {
   createWhereaboutsRoutes,
   type WhereaboutsStore,
 } from "./account/whereabouts";
+import { createDayRoutes, type DayReader } from "./agents/day";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -398,6 +399,13 @@ export function createApp(
    * them and none of their three doors is mounted.
    */
   whereabouts?: WhereaboutsStore,
+  /**
+   * 오늘: what a Bot did today, read from the ledgers (agents/day.ts). Last, like everything new.
+   *
+   * Absent leaves `GET /api/agents/:agentId/day` unmounted — a 404 the sidebar draws nothing for,
+   * rather than an empty day that reads as a Bot that did nothing.
+   */
+  readDay?: DayReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -937,6 +945,17 @@ export function createApp(
   }
 
   if (agentProfileStore) {
+    if (readDay) {
+      app.route(
+        "/api/agents",
+        createDayRoutes(
+          async (actor, agentId) =>
+            (await agentProfileStore.get(actor, agentId)) !== null,
+          requireUser,
+          readDay,
+        ),
+      );
+    }
     app.route(
       "/api/agents",
       createAgentRoutes(
