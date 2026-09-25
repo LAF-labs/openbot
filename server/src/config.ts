@@ -93,6 +93,8 @@ export const ENVIRONMENT = {
   BOT_MODEL: "operator",
   BOT_MODEL_EFFORT: "compose",
   REVIEW_MODEL: "compose",
+  SERVER_MODEL: "compose",
+  SERVER_MODEL_EFFORT: "compose",
   // The agent harness: the privacy switch for Jev, and compaction.
   JEV_ENABLED: "compose",
   COMPACTION: "compose",
@@ -142,6 +144,8 @@ export type VariableName = keyof typeof ENVIRONMENT;
 export const TENANT_PACKAGE_VARIABLES = [
   "BOT_MODEL",
   "BOT_MODEL_EFFORT",
+  "SERVER_MODEL",
+  "SERVER_MODEL_EFFORT",
   "REVIEW_MODEL",
 ] as const satisfies readonly VariableName[];
 
@@ -204,10 +208,13 @@ export type DeploymentConfig = {
   /**
    * The agent harness's two switches for phase 2 (`~/laf/docs/agent-harness-design.md` rows 8–9).
    *
-   * `jevEnabled` (`JEV_ENABLED`, OFF unless it says `on`): whether TypeSafe's Jev is asked anything —
-   * compaction's keep-or-drop, auto-review's triage. Jev is hosted in the US; off, the deployment's
-   * own model answers the same questions and nothing leaves for anyone new. What is sent when it is
-   * on is redacted (`context/judge-redaction.ts`) and only its having been consulted is logged.
+   * `jevEnabled` (`JEV_ENABLED`, ON unless it says `off`): whether TypeSafe's Jev is asked anything —
+   * compaction's keep-or-drop, auto-review's triage. Jev is hosted in the US; the owner authorised it
+   * for the fleet on 2026-09-25, on the measurements in docs/laf/eval-pack.md ("서버 쪽 호출": 0 false
+   * allows, p50 220 ms against the server model's 894 ms). Off, the server model answers the same
+   * questions and nothing leaves for anyone new. What is sent when it is on is redacted
+   * (`context/judge-redaction.ts`) and only its having been consulted is logged. Only an OpenRouter
+   * endpoint reaches it at all (`decisionBaseUrlOf`).
    *
    * `compaction` (`COMPACTION`): how a long conversation is compacted at `compactionThresholdTokens`
    * (`COMPACTION_THRESHOLD_TOKENS`) prompt tokens — `latest-snapshot`, `decisions`, or `off`. The
@@ -1068,7 +1075,7 @@ export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 30_000;
 function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
   const jev = optional(environment, "JEV_ENABLED")?.toLowerCase();
   if (jev !== undefined && jev !== "on" && jev !== "off") {
-    throw new Error("JEV_ENABLED must be on or off (unset is off)");
+    throw new Error("JEV_ENABLED must be on or off (unset is on)");
   }
   const mode = optional(environment, "COMPACTION") ?? DEFAULT_COMPACTION;
   if (mode !== "off" && mode !== "latest-snapshot" && mode !== "decisions") {
@@ -1084,7 +1091,7 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
     );
   }
   return {
-    jevEnabled: jev === "on",
+    jevEnabled: jev !== "off",
     compaction: mode,
     compactionThresholdTokens: threshold,
   };

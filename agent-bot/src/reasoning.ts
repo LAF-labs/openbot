@@ -10,6 +10,13 @@
  * passed-back block reaches the prompt (+8 tokens for an 8-token thought), and it is still rendered
  * after a later user message, so the prefix a provider cached stays the prefix it is sent.
  *
+ * WHAT IT CHANGES, BY PROVIDER (measured the same day, the real stack's request replayed). Xiaomi
+ * already restores the reasoning of a call it minted when the call comes back under that id —
+ * stripped and passed back read the same prompt tokens (897 / 897), and a renamed id read 888 / 897.
+ * DeepInfra, the fallback, does not (872 / 881). So on Xiaomi the rendered prompt, and its cache, are
+ * what they were; on DeepInfra this is the only way the reasoning arrives; and neither depends on how
+ * long Xiaomi keeps its own copy, which nothing documents.
+ *
  * HOW IT TRAVELS. This service holds nothing between runs, and a tool the surface executes ends the
  * run, so the reasoning rides the conversation: AG-UI's `REASONING_ENCRYPTED_VALUE` attaches it to
  * the assistant message as `encryptedValue`, the client keeps it there and sends it back with the

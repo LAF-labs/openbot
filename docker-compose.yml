@@ -198,13 +198,16 @@ services:
       # to the one default in the code or in the tenant package, so the default stays in one place
       # and this file only carries it across the container boundary.
       #
-      # REVIEW_MODEL is the one with teeth: it names the small, fast model that judges a Bot's
-      # "do not ask me about reading" instruction, and without it that judgement runs on the
-      # flagship model — ten to thirty seconds per yes/no, in front of somebody waiting.
+      # SERVER_MODEL is the small, fast model this server asks on its own account when Jev is off or
+      # cannot answer — the auto-review judge and compaction's stand-in (tenant model.yaml
+      # `server_model`, GLM-5.3-Flash unset); SERVER_MODEL_EFFORT says whether it takes an effort.
+      # REVIEW_MODEL overrides it for the judge alone.
+      SERVER_MODEL: ${SERVER_MODEL:-}
+      SERVER_MODEL_EFFORT: ${SERVER_MODEL_EFFORT:-}
       REVIEW_MODEL: ${REVIEW_MODEL:-}
       # The agent harness (docs/laf/eval-pack.md). JEV_ENABLED is the privacy switch for TypeSafe's
-      # Jev (US-hosted): off unless it says `on`. COMPACTION and its threshold decide how a long
-      # conversation stops carrying old tool results.
+      # Jev (US-hosted): on unless it says `off`, since 2026-09-25. COMPACTION and its threshold
+      # decide how a long conversation stops carrying old tool results.
       JEV_ENABLED: ${JEV_ENABLED:-}
       COMPACTION: ${COMPACTION:-}
       COMPACTION_THRESHOLD_TOKENS: ${COMPACTION_THRESHOLD_TOKENS:-}

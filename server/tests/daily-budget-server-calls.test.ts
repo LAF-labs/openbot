@@ -81,6 +81,8 @@ function calls(reached: boolean) {
       credentialSecretRef: "model:openai",
       defaultModel: "laf-1",
       supportsEffort: false,
+      serverModel: "laf-small",
+      serverModelSupportsEffort: true,
       reviewModel: "laf-small",
       decisionModel: "typesafe/jev-1.13-20260917",
     },

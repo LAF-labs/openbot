@@ -43,16 +43,22 @@ const app = primeThreadRoutes({
   "/",
   new Hono()
     .basePath("/api/copilotkit")
-    .get("/threads/:threadId/messages", (context) =>
-      // The runtime's own shape: every message rebuilt from a list of keys, `encryptedValue` not one.
-      context.json({
-        messages: [
-          { id: "u1", role: "user", content: "재고" },
-          { id: "a1", role: "assistant", toolCalls: [] },
-        ],
-      }),
-    )
-    .all("*", (context) => context.json({ reached: true })),
+    /*
+     * One wildcard, as the runtime routes (`fetch-router` reads the path itself). Behind it the
+     * outer middleware's `param("threadId")` no longer answers — measured on the real stack, where
+     * reading it after `next()` came back undefined and nothing was put back.
+     */
+    .all("*", (context) =>
+      context.req.path.endsWith("/messages")
+        ? // The runtime's own shape: every message rebuilt from a list of keys, not `encryptedValue`.
+          context.json({
+            messages: [
+              { id: "u1", role: "user", content: "재고" },
+              { id: "a1", role: "assistant", toolCalls: [] },
+            ],
+          })
+        : context.json({ reached: true }),
+    ),
 );
 
 const ask = (path: string, init: RequestInit & { actor?: string } = {}) =>

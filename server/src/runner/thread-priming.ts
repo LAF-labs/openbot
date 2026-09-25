@@ -59,10 +59,10 @@ export function primeThreadRoutes(input: {
        * VM since boot would be answered out of memory however carefully this middleware declined to
        * prime it. The request has to stop.
        */
-      const mine = await input.runner.prime(
-        context.req.param("threadId"),
-        actor.id,
-      );
+      // Read before `next()`: once the runtime's own routing has matched, `param` answers for its
+      // route rather than this one (measured: undefined, and the messages read came back empty).
+      const threadId = context.req.param("threadId");
+      const mine = await input.runner.prime(threadId, actor.id);
       if (!mine) {
         return context.json(
           { error: "laf:thread_not_found", code: "laf:thread_not_found" },
@@ -84,7 +84,7 @@ export function primeThreadRoutes(input: {
       if (!answered || !Array.isArray(answered.messages)) return;
       const kept = withCarriedReasoning(
         answered.messages,
-        input.runner.getThreadMessages(context.req.param("threadId")),
+        input.runner.getThreadMessages(threadId),
       );
       if (kept !== answered.messages) {
         context.res = Response.json({ ...answered, messages: kept });

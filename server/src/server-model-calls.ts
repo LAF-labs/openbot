@@ -90,9 +90,10 @@ export function createServerModelCalls(input: {
     baseUrl: endpoint.baseUrl,
     model: model.reviewModel,
     apiKey,
-    // The deployment's own assertion that its model reasons, which is what decides whether an effort
-    // is sent at all. See `model.yaml supports_effort`, and the note in auto-review.ts.
-    supportsEffort: model.supportsEffort,
+    // The server model's own assertion that it reasons, which is what decides whether an effort is
+    // sent at all — not the Bot's model's: a MiMo deployment judges on GLM, which takes `low`. See
+    // `model.yaml server_model_effort`, and the note in auto-review.ts.
+    supportsEffort: model.serverModelSupportsEffort,
   };
 
   const modelReviewer = createModelAutoReviewer({
@@ -132,15 +133,17 @@ export function createServerModelCalls(input: {
   /*
    * THE COMPACTOR (`context/compaction.ts`). `decisions` asks Jev when the switch is on and the
    * deployment's model in Jev's shape when it is off or Jev cannot answer; any failure of both
-   * falls back to the deterministic rule. The stand-in is the Bot's own model: a compaction runs
-   * behind the conversation, never in front of a waiting person, so a slow careful answer is fine.
+   * falls back to the deterministic rule. The stand-in is the server model, not the Bot's: it used
+   * to be the Bot's on the theory that a compaction runs behind the conversation and may be slow,
+   * and on MiMo-V2.6-Pro it outlived its bound 2 times in 3 and the rule lost the detail
+   * (docs/laf/eval-pack.md). A stand-in that times out is no stand-in.
    */
   const standIn = modelAsker(
     {
       baseUrl: endpoint.baseUrl,
-      model: model.defaultModel,
+      model: model.serverModel,
       apiKey,
-      supportsEffort: model.supportsEffort,
+      supportsEffort: model.serverModelSupportsEffort,
       onUsage: recordModelUsage("compaction"),
     },
     { timeoutMs: 90_000 },

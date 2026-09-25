@@ -156,8 +156,19 @@ async function ask(
 }
 
 const apiKey = async () => KEY;
+/**
+ * The stand-in is the server model, as production's is (`model.yaml server_model`): `SERVER_MODEL`,
+ * unset the package's default. It used to be `BOT_MODEL`, which on MiMo-V2.6-Pro outlived the bound
+ * 2 times in 3 (docs/laf/eval-pack.md).
+ */
+const STAND_IN_MODEL = process.env.SERVER_MODEL?.trim() || "z-ai/glm-5.3-flash";
 const standIn = modelAsker(
-  { baseUrl: BASE, model: MODEL, apiKey, supportsEffort: true },
+  {
+    baseUrl: BASE,
+    model: STAND_IN_MODEL,
+    apiKey,
+    supportsEffort: process.env.SERVER_MODEL_EFFORT !== "false",
+  },
   { timeoutMs: 120_000 },
 );
 const jev = jevAsker(
@@ -307,7 +318,7 @@ async function measure(arm: Arm, run: number): Promise<ArmResult> {
 }
 
 console.log(
-  `compaction · model ${MODEL} · provider ${PROVIDER ?? "routed"} · ${RUNS} runs · arms ${CHOSEN.join(", ")}`,
+  `compaction · model ${MODEL} · stand-in ${STAND_IN_MODEL} · provider ${PROVIDER ?? "routed"} · ${RUNS} runs · arms ${CHOSEN.join(", ")}`,
 );
 const results: ArmResult[] = [];
 for (let run = 1; run <= RUNS; run += 1) {
@@ -349,6 +360,7 @@ const report = {
   model: MODEL,
   provider: PROVIDER,
   jevModel: JEV_MODEL,
+  standInModel: STAND_IN_MODEL,
   runs: RUNS,
   results,
 };

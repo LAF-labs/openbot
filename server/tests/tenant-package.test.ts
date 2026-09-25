@@ -45,6 +45,8 @@ function loadedPackage(): LoadedTenantPackage {
       credentialSecretRef: "openai-key",
       defaultModel: "gpt-4.1",
       supportsEffort: true,
+      serverModel: "gpt-4.1",
+      serverModelSupportsEffort: true,
       reviewModel: "gpt-4.1",
       decisionModel: "typesafe/jev-1.13-20260917",
     },
@@ -132,6 +134,35 @@ describe("tenant YAML validation", () => {
       packageWithModel(`model: { ${base}, review_model: "" }`).model
         .reviewModel,
     ).toBe("gpt-4.1");
+  });
+
+  test("the server's own calls have their own model, which the review falls back to", () => {
+    const base =
+      "provider: openai, credential_secret_ref: openai-key, default_model: mimo, supports_effort: false";
+    const named = packageWithModel(
+      `model: { ${base}, server_model: glm-flash }`,
+    ).model;
+    // A named server model is its own model: it takes an effort unless the package says otherwise,
+    // whatever the Bot's model takes.
+    expect(named.serverModel).toBe("glm-flash");
+    expect(named.serverModelSupportsEffort).toBe(true);
+    expect(named.reviewModel).toBe("glm-flash");
+    expect(
+      packageWithModel(
+        `model: { ${base}, server_model: glm-flash, server_model_effort: "false" }`,
+      ).model.serverModelSupportsEffort,
+    ).toBe(false);
+    // An older package that names none runs its server calls on the Bot's model, as it always did.
+    const older = packageWithModel(`model: { ${base} }`).model;
+    expect(older.serverModel).toBe("mimo");
+    expect(older.serverModelSupportsEffort).toBe(false);
+    expect(older.reviewModel).toBe("mimo");
+    // REVIEW_MODEL still wins for the review.
+    expect(
+      packageWithModel(
+        `model: { ${base}, server_model: glm-flash, review_model: tiny-1 }`,
+      ).model.reviewModel,
+    ).toBe("tiny-1");
   });
 
   test("refuses an effort declaration that is neither", () => {

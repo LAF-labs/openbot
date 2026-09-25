@@ -25,6 +25,26 @@ describe("merging the client's history with the store", () => {
     ]);
   });
 
+  test("a live copy without the reasoning the store filed gets the store's", () => {
+    const thought = '{"model":"m","reasoning_details":[]}';
+    const stored = [
+      m("u1"),
+      { ...m("a1", "assistant"), encryptedValue: thought } as Message,
+    ];
+    const incoming = [m("u1"), m("a1", "assistant")];
+    const merged = mergeKeepingStoredOnly(stored, incoming);
+    expect(merged[1]).toHaveProperty("encryptedValue", thought);
+    // Where the live copy has its own, the live copy's stands.
+    const own = [
+      m("u1"),
+      { ...m("a1", "assistant"), encryptedValue: "live" } as Message,
+    ];
+    expect(mergeKeepingStoredOnly(stored, own)[1]).toHaveProperty(
+      "encryptedValue",
+      "live",
+    );
+  });
+
   test("the client's own order wins where both agree", () => {
     const stored = [m("u1"), m("a1", "assistant")];
     const incoming = [

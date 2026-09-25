@@ -94,6 +94,21 @@ export function mergeKeepingStoredOnly(
     const at = result.findIndex((candidate) => candidate.id === message.id);
     if (at !== -1) {
       insertAfter = at;
+      /*
+       * THE STORE'S REASONING, WHERE THE LIVE COPY HAS NONE. A tool-call turn's reasoning rides the
+       * message as `encryptedValue` (agent-bot/src/reasoning.ts), and the vendored runner's live copy
+       * was measured without it on the very turn the store filed it with — so the messages route
+       * answered a reloaded tab without it. Nothing else of the live copy is touched.
+       */
+      const live = result[at];
+      const kept = (message as { encryptedValue?: unknown }).encryptedValue;
+      if (
+        live &&
+        typeof kept === "string" &&
+        (live as { encryptedValue?: unknown }).encryptedValue === undefined
+      ) {
+        result[at] = { ...live, encryptedValue: kept } as Message;
+      }
       continue;
     }
     if (incomingIds.has(message.id)) continue;

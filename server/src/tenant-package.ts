@@ -101,7 +101,15 @@ export type TenantPackage = {
     defaultModel: string;
     /** Whether this model takes an effort setting. See `agent_effort` and `model.yaml`. */
     supportsEffort: boolean;
-    /** Which model judges an auto-review instruction. Falls back to `defaultModel`. */
+    /**
+     * The model this server asks on its own account when Jev is off or cannot answer: the
+     * auto-review judge and compaction's stand-in. Falls back to `defaultModel` in a package that
+     * names none. See `model.yaml server_model`.
+     */
+    serverModel: string;
+    /** Whether `serverModel` takes an effort setting — its own, not the Bot's model's. */
+    serverModelSupportsEffort: boolean;
+    /** Which model judges an auto-review instruction. Falls back to `serverModel`. */
     reviewModel: string;
     /**
      * The decisions model (Jev) asked when `JEV_ENABLED` is on — a DATED snapshot, because every
@@ -227,6 +235,20 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
   if (model.provider !== "openai") {
     throw new Error("model.provider must be openai");
   }
+  // Absent reads as yes: the product's own model has one, and a package that says nothing about
+  // effort is far more likely to be an older package than a deployment on a model without it.
+  const supportsEffort = asBoolean(
+    model.supports_effort,
+    true,
+    "model.supports_effort",
+  );
+  const namedServerModel =
+    typeof model.server_model === "string" && model.server_model.trim()
+      ? model.server_model.trim()
+      : null;
+  const serverModel =
+    namedServerModel ??
+    requiredString(model.default_model, "model.default_model");
 
   return {
     tenantId: requiredString(tenant.id, "tenant.id"),
@@ -241,19 +263,21 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
         "model.credential_secret_ref",
       ),
       defaultModel: requiredString(model.default_model, "model.default_model"),
-      // Absent reads as yes: the product's own model has one, and a package that says nothing about
-      // effort is far more likely to be an older package than a deployment on a model without it.
-      supportsEffort: asBoolean(
-        model.supports_effort,
-        true,
-        "model.supports_effort",
+      supportsEffort,
+      serverModel,
+      // A package that names no server model runs its server calls on the Bot's, and so says what
+      // the Bot's model takes.
+      serverModelSupportsEffort: asBoolean(
+        model.server_model_effort,
+        namedServerModel ? true : supportsEffort,
+        "model.server_model_effort",
       ),
       // Empty falls back rather than failing: `${REVIEW_MODEL:-}` with nothing set is the empty
-      // string, and a deployment that has not chosen one should run on the model it already has.
+      // string, and a deployment that has not chosen one judges on the server's model.
       reviewModel:
         typeof model.review_model === "string" && model.review_model.trim()
           ? model.review_model.trim()
-          : requiredString(model.default_model, "model.default_model"),
+          : serverModel,
       decisionModel:
         typeof model.decision_model === "string" && model.decision_model.trim()
           ? model.decision_model.trim()

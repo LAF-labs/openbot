@@ -782,11 +782,12 @@ describe("the variables that used to be read elsewhere", () => {
 
 describe("the agent harness's switches", () => {
   /*
-   * THE PRIVACY SWITCH IS OFF UNLESS IT SAYS `on`. Jev is hosted in the US; a deployment that says
-   * nothing must never send it anything, and a typo must not boot as whichever way a parser leaned.
+   * THE PRIVACY SWITCH IS ON UNLESS IT SAYS `off` — the owner's decision of 2026-09-25, on the
+   * measurements in docs/laf/eval-pack.md. A deployment that must keep everything off US hosting
+   * says `off`, and a typo must not boot as whichever way a parser leaned.
    */
-  test("Jev is off unless the deployment says on, and a typo refuses to start", () => {
-    expect(loadConfig(baseEnvironment).harness.jevEnabled).toBe(false);
+  test("Jev is on unless the deployment says off, and a typo refuses to start", () => {
+    expect(loadConfig(baseEnvironment).harness.jevEnabled).toBe(true);
     expect(
       loadConfig({ ...baseEnvironment, JEV_ENABLED: "off" }).harness.jevEnabled,
     ).toBe(false);

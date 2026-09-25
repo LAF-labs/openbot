@@ -31,15 +31,24 @@ model:
   # that lies, so it is not drawn, and MiMo thinks as it does by default — on. A deployment on a model
   # with levels of its own (GLM-5.3: low, high, max) sets BOT_MODEL_EFFORT=true.
   supports_effort: ${BOT_MODEL_EFFORT:-false}
-  # Which model judges a Bot's "do not ask me about" instruction. Defaults to the one above.
+  # The model this server asks on its own account when Jev is off or cannot answer: auto-review's
+  # judge and compaction's stand-in (server/src/server-model-calls.ts). Not the Bot's model, because
+  # neither job is the Bot's: a yes/no in front of a waiting Bot, and a keep-or-drop inside a 90 s
+  # bound. Measured 2026-09-25 (docs/laf/eval-pack.md, "서버 쪽 호출"): on MiMo-V2.6-Pro the judge
+  # took a median 5.3 s and the stand-in outlived its bound 2 times in 3; GLM-5.3-Flash at `low`
+  # answered both in about a second with no false allow.
+  server_model: ${SERVER_MODEL:-z-ai/glm-5.3-flash}
+  # Whether that model takes an effort. GLM-5.3-Flash does (low, high, max); the calls send `low`.
+  server_model_effort: ${SERVER_MODEL_EFFORT:-true}
+  # Which model judges a Bot's "do not ask me about" instruction. Defaults to the server model.
   #
   # ITS OWN, BECAUSE IT IS A DIFFERENT JOB. Deciding whether one action is read-only is a
   # classification, and asking a flagship reasoning model to do it costs both money and a Bot
   # standing still: measured against the model this deployment serves, a yes/no took between ten
   # and thirty seconds, which is longer than a person often takes to press the button itself.
   #
-  # Point it at something small and fast. Unset, it is the same model as everything else, which
-  # works and is slow.
+  # Unset, it is the server model above, which is small and fast; set, it overrides that for the
+  # review alone, and `server_model_effort` still says whether it is sent an effort.
   review_model: ${REVIEW_MODEL:-}
   # The decisions model — TypeSafe's Jev through OpenRouter, on the key above — asked only when
   # JEV_ENABLED=on: compaction's keep-or-drop and auto-review's triage (docs/laf/eval-pack.md).
