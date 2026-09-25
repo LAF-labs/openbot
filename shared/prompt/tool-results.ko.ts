@@ -728,6 +728,9 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "그 스킬은 다른 사람의 것이라 사장님이 고치거나 봇에 줄 수 없다. 다시 시도하지 말고 그대로 알려라.",
   "laf:skill_belongs_to_deployment":
     "그 스킬은 배포 전체용이라 관리자만 고치거나 지닐 봇을 정할 수 있다. 관리자에게 부탁해야 한다고 말해라.",
+  // 패키지가 싣고 온 스킬(`built-in-skill-sync.ts`). 고쳐도 다음 업데이트가 되돌리므로 고치지 못하게 막는다.
+  "laf:skill_built_in":
+    "그 스킬은 앱에 들어 있는 것이라 업데이트와 함께 바뀌고, 여기서 고치거나 지울 수 없다. 다시 시도하지 말고 그대로 알려라.",
   "laf:skill_unknown":
     "그런 이름의 스킬이 없다. 이름을 지어내지 말고, 어떤 스킬을 말하는지 사장님께 물어라.",
   "laf:bot_not_owned":

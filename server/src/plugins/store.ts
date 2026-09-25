@@ -678,6 +678,7 @@ export function createPluginStore(options: PluginStoreOptions) {
 
     listSkills: grants.listSkills,
     skillOwner: grants.skillOwner,
+    skillOrigin: grants.skillOrigin,
     agentOwner: grants.agentOwner,
     /** Whether this person may act through this Bot at all. See `skills-and-grants.ts`. */
     actorMayDriveBot: grants.actorMayDriveBot,

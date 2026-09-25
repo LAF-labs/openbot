@@ -2123,6 +2123,8 @@ export const ko: Record<string, string> = {
   "That skill was written for everyone here, so only an administrator can change it or choose its Bots.":
     "모두를 위해 만든 스킬이라 관리자만 고치거나 지닐 봇을 정할 수 있습니다.",
   "There is no skill by that name.": "그런 이름의 스킬이 없습니다.",
+  "This skill comes with the app and is updated with it, so it cannot be changed or deleted here.":
+    "앱에 들어 있는 스킬이라 업데이트와 함께 바뀌고, 여기서 고치거나 지울 수 없습니다.",
   "You can only put your own skills on Bots you own.":
     "내 스킬은 내가 만든 봇에만 줄 수 있습니다.",
   "Choose a server from the list first.": "먼저 목록에서 서버를 고르세요.",

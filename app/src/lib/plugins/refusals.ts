@@ -25,6 +25,9 @@ export const SKILL_REFUSALS: Record<string, string> = {
   "laf:skill_belongs_to_deployment":
     "That skill was written for everyone here, so only an administrator can change it or choose its Bots.",
   "laf:skill_unknown": "There is no skill by that name.",
+  // A skill the package ships (`built-in-skill-sync.ts`): the next upgrade would undo any edit.
+  "laf:skill_built_in":
+    "This skill comes with the app and is updated with it, so it cannot be changed or deleted here.",
   "laf:bot_not_owned": "You can only put your own skills on Bots you own.",
   // The client builds this request itself, so these two are a bug or a race, not a mistake to fix.
   "laf:grant_incomplete": "That change could not be read. Try again.",

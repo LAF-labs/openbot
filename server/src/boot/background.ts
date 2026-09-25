@@ -3,6 +3,7 @@ import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
+import type { BuiltInSkillsRuntime } from "../plugins/built-in-skill-sync";
 import type { PublicDataRuntime } from "../plugins/public-data-rest";
 import type { PluginStore } from "../plugins/store";
 import type { RoutineService } from "../routines/service";
@@ -36,6 +37,8 @@ export function startBackgroundWork(input: {
   /** Present only with a fleet webhook: on a laptop there is nothing to tell. */
   fleetOutbox: Pick<NotificationOutbox, "redeliver"> | undefined;
   publicData: Pick<PublicDataRuntime, "reconcile">;
+  /** The package's skills. Optional so a boot without a package, a test's, starts without them. */
+  builtInSkills?: Pick<BuiltInSkillsRuntime, "reconcile">;
   pluginStore: PluginStore;
 }): void {
   /*
@@ -88,4 +91,6 @@ export function startBackgroundWork(input: {
    * Never fatal: a store that could not be written leaves the tools missing, which the log says.
    */
   void input.publicData.reconcile(input.pluginStore, "deployment");
+  // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).
+  void input.builtInSkills?.reconcile(input.pluginStore, "deployment");
 }

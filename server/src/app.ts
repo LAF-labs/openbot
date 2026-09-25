@@ -85,6 +85,7 @@ import {
 } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
+import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
 import type { PublicDataRuntime } from "./plugins/public-data-rest";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import { connectableCatalogue } from "./plugins/shared-clients";
@@ -406,6 +407,11 @@ export function createApp(
    * rather than an empty day that reads as a Bot that did nothing.
    */
   readDay?: DayReader,
+  /**
+   * The package's skills (plugins/built-in-skill-sync.ts), handed to a Bot the moment it is made.
+   * Absent, a new Bot waits for nothing: it simply holds none.
+   */
+  builtInSkills?: BuiltInSkillsRuntime,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -999,6 +1005,9 @@ export function createApp(
                 ownerUserId,
                 "deployment",
               );
+              if (builtInSkills) {
+                await builtInSkills.offerTo(pluginStore, agentId, "deployment");
+              }
             }
           : undefined,
       ),

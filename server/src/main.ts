@@ -90,6 +90,7 @@ import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
 import { createPublicDataRuntime } from "./plugins/public-data-rest";
 import { lookupOver } from "./plugins/shared-clients";
+import { createBuiltInSkills } from "./plugins/built-in-skill-sync";
 import { allLiveBots } from "./plugins/skills-and-grants";
 import { createPluginStore } from "./plugins/store";
 import {
@@ -284,6 +285,14 @@ const partnerRuntime = createPartnerRuntime({
  */
 const publicDataRuntime = createPublicDataRuntime({
   keys: config.connectors.keys,
+  listBots: () => allLiveBots(database),
+});
+/**
+ * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
+ * Read from the same directory the package above was, so a deployment's skills are its package's.
+ */
+const builtInSkills = createBuiltInSkills({
+  packageDir: config.tenantPackageDirectory,
   listBots: () => allLiveBots(database),
 });
 sayConnectors({
@@ -871,6 +880,8 @@ const app = createApp(
     zoneOf: async (userId) => (await whereaboutsStore.read(userId)).timeZone,
     fallbackZone: config.botTimeZone,
   }),
+  // The package's skills, handed to a Bot the moment it is made (built-in-skill-sync.ts).
+  builtInSkills,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -935,5 +946,6 @@ startBackgroundWork({
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
   publicData: publicDataRuntime,
+  builtInSkills,
   pluginStore,
 });

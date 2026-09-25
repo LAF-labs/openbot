@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { SKILL_SLUG_PATTERN, skillSlugOf } from "../../../shared/tools/skills";
+import { BUILT_IN_ORIGIN } from "./built-in-skills";
 import type { AppVariables } from "../auth/guards";
 import {
   ADMIN_REQUIRED,
@@ -81,6 +82,8 @@ export const GRANT_INCOMPLETE = "laf:grant_incomplete";
 export const SKILL_NOT_YOURS = "laf:skill_not_yours";
 /** A skill an administrator wrote for the whole deployment. */
 export const SKILL_BELONGS_TO_DEPLOYMENT = "laf:skill_belongs_to_deployment";
+/** A skill the package ships, which only a new package changes. */
+export const SKILL_BUILT_IN = "laf:skill_built_in";
 /** A grant naming a skill nobody wrote. */
 export const SKILL_UNKNOWN = "laf:skill_unknown";
 /** Your skill, on a Bot you may drive and do not own — a shared one this deployment publishes. */
@@ -228,6 +231,10 @@ export function createPluginRoutes(
     context: { var: AppVariables },
     slug: string,
   ): Promise<string | null> {
+    // The package's, administrators included: the next boot would put the shipped text back
+    // (`built-in-skill-sync.ts`), so an edit here would be a save that does nothing.
+    if ((await store.skillOrigin(slug)) === BUILT_IN_ORIGIN)
+      return SKILL_BUILT_IN;
     const actor = skillActor(context);
     if (actor.isAdmin) return null;
     const owner = await store.skillOwner(slug);

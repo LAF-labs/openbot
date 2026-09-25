@@ -212,6 +212,16 @@ export function createSkillsAndGrants(context: PluginContext) {
       }));
     },
 
+    /** Where a skill came from (`yours`, `catalogue`, `built_in`), or `undefined` if there is no such skill. */
+    async skillOrigin(slug: string): Promise<string | undefined> {
+      const [row] = await database
+        .select({ origin: skills.origin })
+        .from(skills)
+        .where(eq(skills.slug, slug))
+        .limit(1);
+      return row?.origin;
+    },
+
     /** Whose a skill is, or `undefined` if there is no such skill. Null owner means the deployment's. */
     async skillOwner(slug: string): Promise<string | null | undefined> {
       const [row] = await database
