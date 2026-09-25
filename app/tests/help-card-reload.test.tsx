@@ -1,4 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   afterAll,
   afterEach,
@@ -7,6 +6,7 @@ import {
   expect,
   test,
 } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mount, unmountAll } from "./support/mount";
 
 /**
@@ -75,6 +75,15 @@ describe("whose request is open", () => {
         reason: REASON,
       }),
     ).toBe(false);
+    // Taken over and not yet handed back: still this card's, and the Bot still waits on it.
+    expect(
+      isOwnRequestOpen("help", REASON, {
+        ...open,
+        holder: "human",
+        requested: false,
+        reason: REASON,
+      }),
+    ).toBe(true);
     expect(
       isOwnRequestOpen("secret", "네이버 비밀번호", {
         ...open,

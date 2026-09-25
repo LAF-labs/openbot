@@ -278,8 +278,15 @@ export function HelpCard({
  * one the Bot wrote on it. The computer trims what it keeps (`agent-computer/src/control.ts`).
  *
  * Matched rather than assumed, so an old card left unfinished by a reload days ago does not grow
- * buttons for somebody else's request. A request the person has taken the wheel for is no longer
- * "requested"; the live view is where that one is handed back.
+ * buttons for somebody else's request.
+ *
+ * A request the person has taken the wheel for is no longer "requested", but it is still open: the
+ * Bot's call waits for the hand-back, and the computer keeps the reason while the person holds the
+ * wheel. MEASURED 2026-09-25 (0.5.4 final QA): the window that was driving went away without
+ * handing back, and after a reload the card had no buttons, the header said 쉬는 중, and the only
+ * way back was the screen icon nobody would think to press — the Bot waited behind it. So a card
+ * whose words the person is holding the wheel for keeps 직접 하기 (back into the screen), 다 했어요
+ * and 건너뛰기.
  */
 export function isOwnRequestOpen(
   kind: "help" | "secret",
@@ -289,7 +296,8 @@ export function isOwnRequestOpen(
   const asked = said?.trim();
   if (!control || !asked) return false;
   return kind === "help"
-    ? control.requested && control.reason === asked
+    ? (control.requested || control.holder === "human") &&
+        control.reason === asked
     : control.secretWanted === asked;
 }
 
