@@ -5,6 +5,7 @@
  * the facts on an approval card all read these, so a new acting route cannot arrive without an
  * intent, and a subject cannot say something about a page that the server did not resolve itself.
  */
+import { readableName } from "../../../../shared/element-label";
 import type { AskSubject } from "../approvals";
 import type { PolicyContext } from "../policy";
 import type { SnapshotElement } from "../schema";
@@ -138,8 +139,15 @@ export function askSubjectOf(input: {
     intent: input.intent ?? "act",
     ...(host ? { host } : {}),
     ...(path ? { path } : {}),
+    // Readable, for everybody who is shown the question: the card, the notice, the trail and the
+    // judge. The raw name stays what the policy matched and the fingerprint binds (`approvals.ts`).
     ...(input.element
-      ? { element: { role: input.element.role, name: input.element.name } }
+      ? {
+          element: {
+            role: input.element.role,
+            name: readableName(input.element.name),
+          },
+        }
       : {}),
     ...repeated,
     reason,

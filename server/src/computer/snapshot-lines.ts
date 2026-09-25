@@ -11,6 +11,7 @@
  * Both paths that hand a snapshot to a model come through here: the surface's `/snapshot` route and
  * the routine executor. Nothing about what the gateway decides changes.
  */
+import { readableName } from "../../../shared/element-label";
 import type { SnapshotElement, SnapshotResult } from "./schema";
 
 /**
@@ -20,7 +21,9 @@ import type { SnapshotElement, SnapshotResult } from "./schema";
 const NAME_CHARS = 60;
 
 export function elementLine(element: SnapshotElement): string {
-  const flat = element.name.replace(/\s+/g, " ").trim();
+  // Letter-spacing closed up and a name said twice said once (`shared/element-label.ts`): the
+  // model reads the words a person would, and "앱 다 운 로 드 앱 다 운 로 드" is neither.
+  const flat = readableName(element.name);
   const name =
     flat.length > NAME_CHARS ? `${flat.slice(0, NAME_CHARS - 1)}…` : flat;
   const parts = [element.ref, element.role];
