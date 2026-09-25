@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import { withApprovalNotifications } from "../src/notifications/notify";
 import { A_CLICK } from "./support/subjects";
@@ -52,8 +52,25 @@ describe("approval notifications", () => {
     expect(await registry.pending("bot-1")).toHaveLength(1);
   });
 
+  /*
+   * It asserted only that the question had an id, which a registry that dropped the question and a
+   * notifier that said nothing both still passed (measured 2026-09-25 by deleting the line). The
+   * name promises two things, so both are checked: the question is waiting, and a line was written.
+   */
   test("no webhook configured is a log line, not a crash", async () => {
-    const registry = withApprovalNotifications(createApprovalRegistry(), {});
-    expect((await ask(registry)).id).toBeTruthy();
+    const lines: string[] = [];
+    const info = spyOn(console, "info").mockImplementation((...args) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      const registry = withApprovalNotifications(createApprovalRegistry(), {});
+      const pending = await ask(registry);
+      expect(
+        (await registry.pending("bot-1")).map((entry) => entry.id),
+      ).toEqual([pending.id]);
+      expect(lines.some((line) => line.startsWith("[notify] "))).toBe(true);
+    } finally {
+      info.mockRestore();
+    }
   });
 });

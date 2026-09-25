@@ -74,7 +74,12 @@ describe("the transport registry", () => {
     // The union is closed, so this cannot fail at compile time — but an entry naming a transport
     // the registry forgot would fail at the first tool call, on somebody's screen.
     for (const entry of CATALOGUE) {
-      expect(transportFor(entry)).toBeDefined();
+      // The two functions every caller reaches for, not merely a value: a registry entry pointing at
+      // the wrong module is defined and still fails at the first call.
+      const transport = transportFor(entry);
+      expect(typeof transport?.listTools).toBe("function");
+      expect(typeof transport?.callTool).toBe("function");
+      expect(typeof transport?.listNeedsCredential).toBe("boolean");
     }
   });
 
