@@ -141,16 +141,32 @@ export type ProviderEffort = "low" | "medium" | "high" | "max";
  * model's middle, not its floor; `max` for `thorough` was accepted by the provider and measured
  * 25 of 27 at 18 s a scenario.
  *
+ * MIMO-V2.6 DEFINES NO EFFORT AT ALL — ONLY THINKING ON OR OFF. Xiaomi's docs give `thinking.type`
+ * `enabled` / `disabled` (on by default) and no level or budget; OpenRouter lists `reasoning` but
+ * neither `reasoning_effort` nor `supported_efforts`. Measured through OpenRouter (2026-09-25, both
+ * of its providers): `low`, `medium`, `high` and `max` thought the same length — 101–168 reasoning
+ * tokens on a receipt sum; 795–2,448 on a week of stock arithmetic, `low`, `high` and `max` in no
+ * order — and answered the same; `none` turned thinking off and got the receipt wrong 8 times in 8.
+ * There is no third request to make, and two of three words sending the same thing is a control
+ * that saves and does nothing (CLAUDE.md). So a MiMo deployment says `supports_effort: false` (model.yaml), the control
+ * is not drawn, and this line is the floor under that: a model with no words of its own is sent
+ * nothing, whatever arrives, and thinks as its provider defaults — on.
+ *
  * Matched on the name `BOT_MODEL` sends, because that is the only thing this service knows about
  * the model. Any other model keeps the OpenAI words, which every OpenAI reasoning model defines.
  */
 const MODEL_EFFORTS: ReadonlyArray<{
   model: RegExp;
-  words: Record<ProductEffort, ProviderEffort>;
+  /** Null: the model defines no effort, so none is ever sent. */
+  words: Record<ProductEffort, ProviderEffort> | null;
 }> = [
   {
     model: /(^|\/)glm-5\.3/i,
     words: { quick: "low", balanced: "high", thorough: "max" },
+  },
+  {
+    model: /(^|\/)mimo-v2\.6/i,
+    words: null,
   },
 ];
 
@@ -181,10 +197,9 @@ export function reasoningEffortOf(
   if (effort !== "quick" && effort !== "balanced" && effort !== "thorough") {
     return undefined;
   }
-  const words =
-    MODEL_EFFORTS.find((entry) => entry.model.test(model))?.words ??
-    OPENAI_EFFORTS;
-  return words[effort];
+  const entry = MODEL_EFFORTS.find((known) => known.model.test(model));
+  if (entry && entry.words === null) return undefined;
+  return (entry?.words ?? OPENAI_EFFORTS)[effort];
 }
 
 /**

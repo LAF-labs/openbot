@@ -9,7 +9,10 @@ model:
   # recorded in 4ef8c4c. Four defaults meant the value nobody set was different in each half of the
   # product, and no one of them was the truth. agent-bot and the eval now carry none and refuse to
   # run without BOT_MODEL; this is the fallback, and it is the model the eval certified.
-  default_model: ${BOT_MODEL:-z-ai/glm-5.3-flash}
+  #
+  # Xiaomi's MiMo-V2.6-Pro since 2026-09-25, the owner's decision, put through the same ritual
+  # (docs/laf/eval-pack.md, "MiMo-V2.6-Pro").
+  default_model: ${BOT_MODEL:-xiaomi/mimo-v2.6-pro}
   # Whether this deployment's model reasons, and therefore takes an effort setting.
   #
   # AN ASSERTION, NOT A DESCRIPTION. The model provider decides on its own whether to send an effort
@@ -21,7 +24,13 @@ model:
   # True also puts the system prompt in the developer role, which is what the provider does for every
   # model it recognises as reasoning. Set it false on a model that does not reason: nothing is sent,
   # and the control disappears from the Bot's profile rather than sitting there doing nothing.
-  supports_effort: ${BOT_MODEL_EFFORT:-true}
+  #
+  # FALSE BY DEFAULT SINCE THE DEFAULT IS MIMO, which reasons but defines no effort: thinking is on
+  # or off, and every effort word measured through OpenRouter thought the same length
+  # (agent-bot/src/transcript.ts `MODEL_EFFORTS`). Three settings that make one request are a control
+  # that lies, so it is not drawn, and MiMo thinks as it does by default — on. A deployment on a model
+  # with levels of its own (GLM-5.3: low, high, max) sets BOT_MODEL_EFFORT=true.
+  supports_effort: ${BOT_MODEL_EFFORT:-false}
   # Which model judges a Bot's "do not ask me about" instruction. Defaults to the one above.
   #
   # ITS OWN, BECAUSE IT IS A DIFFERENT JOB. Deciding whether one action is read-only is a

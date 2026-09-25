@@ -6,15 +6,25 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "@shared/prompt/tool-results.ko";
-import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
+import {
+  MANAGE_ROUTINE,
+  REMEMBER,
+  UPDATE_PROFILE,
+  UPDATE_PROFILE_WITHOUT_EFFORT,
+} from "@shared/tools/self";
 import { asStandardSchema } from "@shared/tools/standard-schema";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useRef } from "react";
 import { ToolLine } from "@/components/channels/tool-line";
 import { RoutineCard } from "@/components/routines/routine-card";
 import { type AgentEffort, effortLabel } from "@/lib/agents/effort-label";
 import { AGENT_REFUSALS } from "@/lib/agents/mutations";
 import { agentKeys } from "@/lib/agents/queries";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { routineKeys } from "@/lib/routines/queries";
 import { keepPlace } from "@/lib/whereabouts/queries";
@@ -414,14 +424,25 @@ export function SelfTools() {
       }
     };
 
+  /*
+   * No `effort` field where the deployment's model takes none — the same fact that keeps the effort
+   * card off the profile. Offered anyway, a Bot could tell its owner it now thinks more carefully
+   * when nothing it is sent has changed. Read the way the card reads it, so the two cannot disagree.
+   */
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const profileTool =
+    user && !user.deployment.effort
+      ? UPDATE_PROFILE_WITHOUT_EFFORT
+      : UPDATE_PROFILE;
+
   useFrontendTool({
-    name: UPDATE_PROFILE.name,
-    description: UPDATE_PROFILE.description,
+    name: profileTool.name,
+    description: profileTool.description,
     parameters: asStandardSchema<{
       name?: string;
       description?: string;
       effort?: AgentEffort;
-    }>(UPDATE_PROFILE.parameters),
+    }>(profileTool.parameters),
     handler: async (
       args: {
         name?: string;

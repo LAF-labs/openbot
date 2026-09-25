@@ -197,6 +197,30 @@ describe("tenant YAML validation", () => {
     expect(tenantPackage.model.provider).toBe("openai");
     expect(tenantPackage.model.defaultModel).not.toBe("");
   });
+
+  test("the package's default model and its effort default agree with agent-bot's table", async () => {
+    // A control drawn for a model that is sent no effort saves and does nothing (CLAUDE.md). The
+    // package decides whether it is drawn and agent-bot decides what is sent, so they are held
+    // together here: whatever the default model is, its default effort answers to its words.
+    const { model } = await loadTenantPackage(
+      new URL("../../tenant/laf", import.meta.url).pathname,
+      {},
+    );
+    const { reasoningEffortOf } = await import(
+      "../../agent-bot/src/transcript"
+    );
+    const words = ["quick", "balanced", "thorough"].map((effort) =>
+      reasoningEffortOf(
+        { forwardedProps: { effort } } as never,
+        model.defaultModel,
+      ),
+    );
+    if (!model.supportsEffort) {
+      expect(words).toEqual([undefined, undefined, undefined]);
+    } else {
+      expect(new Set(words).size).toBe(3);
+    }
+  });
 });
 
 /**

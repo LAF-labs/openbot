@@ -238,6 +238,17 @@ describe("effort, in the model's own words", () => {
     expect(new Set(words).size).toBe(3);
   });
 
+  test("MiMo-V2.6 defines no effort, so none is sent — not three words that think alike", async () => {
+    for (const model of ["xiaomi/mimo-v2.6-pro", "xiaomi/mimo-v2.6-flash"]) {
+      const words = await Promise.all(
+        ["quick", "balanced", "thorough"].map((effort) =>
+          effortFor(model, effort),
+        ),
+      );
+      expect(words).toEqual([undefined, undefined, undefined]);
+    }
+  });
+
   test("any other model keeps the OpenAI words, and silence stays silence", async () => {
     expect(await effortFor("gpt-5.5", "balanced")).toBe("medium");
     expect(await effortFor("gpt-5.5", "nonsense")).toBeUndefined();

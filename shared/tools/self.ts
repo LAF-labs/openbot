@@ -29,18 +29,23 @@ const object = (
   required: readonly string[] = [],
 ): JsonSchema => ({ type: "object", properties, required });
 
+const PROFILE_DUTY =
+  "'앞으로 X를 맡아줘', '이제부터 네가 X를 해' 처럼 너에게 맡겨진 일은 네 직무이므로, 기억할 것처럼 들려도 여기다. " +
+  "바뀌는 것만 보낸다. 이것은 너를 고치고 다른 누구도 고치지 않는다.";
+
+const PROFILE_FIELDS = {
+  name: { type: "string", description: "네 새 이름" },
+  description: {
+    type: "string",
+    description: "네가 무엇을 하는 봇인지 한두 문장. 상시 직무로 쓴다",
+  },
+};
+
 export const UPDATE_PROFILE: SelfTool = {
   name: "update_profile",
-  description:
-    "네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지, 얼마나 깊이 생각하는지. " +
-    "'앞으로 X를 맡아줘', '이제부터 네가 X를 해' 처럼 너에게 맡겨진 일은 네 직무이므로, 기억할 것처럼 들려도 여기다. " +
-    "바뀌는 것만 보낸다. 이것은 너를 고치고 다른 누구도 고치지 않는다.",
+  description: `네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지, 얼마나 깊이 생각하는지. ${PROFILE_DUTY}`,
   parameters: object({
-    name: { type: "string", description: "네 새 이름" },
-    description: {
-      type: "string",
-      description: "네가 무엇을 하는 봇인지 한두 문장. 상시 직무로 쓴다",
-    },
+    ...PROFILE_FIELDS,
     effort: {
       type: "string",
       enum: ["quick", "balanced", "thorough"],
@@ -159,6 +164,18 @@ export const REMEMBER: SelfTool = {
         "사장님이 가게(일하는 곳) 위치를 말했을 때만, 시·구까지(예: 서울 강남구). 번지·도로명은 빼고, 이것을 줄 때는 fact를 비운다",
     },
   }),
+};
+
+/*
+ * 배포의 모델이 노력 설정을 받지 않을 때(`deployment.effort` false — MiMo-V2.6은 생각을 켜고 끌
+ * 뿐이다)의 같은 툴. 화면이 노력 카드를 그리지 않는 곳에서 봇이 "꼼꼼하게로 바꿨어요"라고 말할 수
+ * 있으면, 저장만 하고 아무것도 하지 않는 설정이 대화 쪽에 남는다. 배포마다 고정이라 대화 중에
+ * 툴 목록이 바뀌지 않는다.
+ */
+export const UPDATE_PROFILE_WITHOUT_EFFORT: SelfTool = {
+  name: UPDATE_PROFILE.name,
+  description: `네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지. ${PROFILE_DUTY}`,
+  parameters: object(PROFILE_FIELDS),
 };
 
 export const SELF_TOOLS: readonly SelfTool[] = [

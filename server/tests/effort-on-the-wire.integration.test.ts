@@ -167,8 +167,14 @@ describe("what reaches the model", () => {
       { forwardedProps: { effort: "thorough" } } as never,
       MODEL,
     );
+    const sent = await requestFor(true);
+    if (expected === undefined) {
+      // A model that defines no effort of its own (MiMo-V2.6) is sent none, whatever was asked.
+      expect(sent).not.toHaveProperty("reasoning_effort");
+      return;
+    }
     expect(expected === "high" || expected === "max").toBe(true);
-    expect((await requestFor(true)).reasoning_effort).toBe(expected);
+    expect(sent.reasoning_effort).toBe(expected);
   });
 
   test("no effort at all where the deployment's model takes none", async () => {
