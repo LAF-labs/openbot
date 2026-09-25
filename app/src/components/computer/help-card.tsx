@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { pokeControl } from "./control-poll";
 import {
+  type ControlState,
   readControl,
   releaseControl,
   supplySecret,
@@ -58,8 +59,23 @@ export function HelpCard({
   status: "inProgress" | "executing" | "complete";
   result: string | undefined;
 }) {
-  const isWaiting = status === "executing";
-  const control = useControl(isWaiting ? botId : undefined, true);
+  /*
+   * WAITING IS WHAT THE COMPUTER SAYS, NOT ONLY WHAT THIS TAB IS RUNNING.
+   *
+   * After a reload the call that asked is no longer running here — the SDK draws it `inProgress`,
+   * with no result — while the computer still holds the request, and the header, which reads the
+   * computer, still said 도움 필요 over a card with no buttons (0.5.4 QA). So an unfinished card
+   * reads the computer too, and while its own request is open there it keeps its buttons: 다 했어요
+   * and 건너뛰기 close that request, and 직접 하기 still hands over the browser. Once the request
+   * is closed the card stops saying it needs anybody, and the header agrees.
+   */
+  const control = useControl(
+    status === "complete" ? undefined : botId,
+    status === "executing",
+  );
+  const isWaiting =
+    status === "executing" ||
+    (status === "inProgress" && isOwnRequestOpen(kind, said, control));
   const { isWide } = useScreenPanelViewport();
   const [isPressing, setIsPressing] = useState(false);
   /** Held only until it is sent. Never lifted into a URL, a log, or anything that outlives this form. */
@@ -126,16 +142,23 @@ export function HelpCard({
               : t("The Bot needs your help")}
           </span>
         </span>
-        <span
-          className={cn(
-            chatCardChip,
-            isWaiting
-              ? "bg-warning/12 text-warning"
-              : "bg-muted text-muted-foreground",
-          )}
-        >
-          {ending ? endingLabel(ending) : t("Needs you")}
-        </span>
+        {/*
+         * Nothing while it is neither waiting nor ended: a call still being written, or one a reload
+         * left unfinished whose request the computer no longer holds. 도움 필요 there was the card
+         * disagreeing with the header.
+         */}
+        {ending || isWaiting ? (
+          <span
+            className={cn(
+              chatCardChip,
+              isWaiting
+                ? "bg-warning/12 text-warning"
+                : "bg-muted text-muted-foreground",
+            )}
+          >
+            {ending ? endingLabel(ending) : t("Needs you")}
+          </span>
+        ) : null}
       </div>
 
       {said ? <p className="text-pretty ps-6">{said}</p> : null}
@@ -248,6 +271,26 @@ export function HelpCard({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Whether the computer still holds THIS card's request: the reason, or the secret's label, is the
+ * one the Bot wrote on it. The computer trims what it keeps (`agent-computer/src/control.ts`).
+ *
+ * Matched rather than assumed, so an old card left unfinished by a reload days ago does not grow
+ * buttons for somebody else's request. A request the person has taken the wheel for is no longer
+ * "requested"; the live view is where that one is handed back.
+ */
+export function isOwnRequestOpen(
+  kind: "help" | "secret",
+  said: string | undefined,
+  control: ControlState | null,
+): boolean {
+  const asked = said?.trim();
+  if (!control || !asked) return false;
+  return kind === "help"
+    ? control.requested && control.reason === asked
+    : control.secretWanted === asked;
 }
 
 type HelpEnding =
