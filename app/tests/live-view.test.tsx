@@ -1,4 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   afterAll,
   afterEach,
@@ -10,7 +9,8 @@ import {
 } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createElement } from "react";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { createElement, StrictMode } from "react";
 import { SCREEN_STALL_MS } from "../src/components/computer/live-screen";
 import { forgetScreenPanelViewport } from "../src/lib/computer/screen-panel";
 import { SCREEN_PROBLEM_SAID } from "../src/lib/computer/screen-problems";
@@ -161,7 +161,7 @@ afterEach(async () => {
   });
 });
 
-async function mountedView() {
+async function mountedView({ strict = false }: { strict?: boolean } = {}) {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { LiveView } = await import("../src/components/computer/live-view");
@@ -169,7 +169,8 @@ async function mountedView() {
   document.body.append(host);
   const root = createRoot(host);
   await act(async () => {
-    root.render(createElement(LiveView, { botId: "bot-1" }));
+    const view = createElement(LiveView, { botId: "bot-1" });
+    root.render(strict ? createElement(StrictMode, null, view) : view);
   });
   mounted.add(root);
   return {
@@ -318,6 +319,34 @@ describe("somebody driving on a wide window", () => {
     // Back in the pane, watching.
     expect(view.host.querySelector("canvas")).not.toBeNull();
     await view.unmount();
+  });
+
+  /*
+   * MEASURED 2026-09-25 (0.5.4 final QA, dev server): 직접 하기 on a help card took the wheel, the
+   * screen mounted already driven, React's development double-mount ran the unmount cleanup, and
+   * the wheel went back 67 ms after it was taken — the Bot carried on past a login nobody did.
+   */
+  test("a screen that only mounts again keeps the wheel; closing it hands the wheel back", async () => {
+    const { rememberControlState } = await import(
+      "../src/components/computer/take-the-wheel"
+    );
+    control = { ...control, holder: "human" };
+    // The card's take was answered before the screen mounted, as 직접 하기 on a help card does.
+    rememberControlState("bot-1", {
+      holder: "human",
+      since: "2026-09-24T00:00:00Z",
+      requested: false,
+    });
+    const view = await mountedView({ strict: true });
+    await view.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(presses).toEqual([]);
+    expect(view.sheet()).not.toBeNull();
+
+    await view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(presses).toEqual(["release"]);
   });
 
   test("does not offer to teach while the Bot is asking for help", async () => {

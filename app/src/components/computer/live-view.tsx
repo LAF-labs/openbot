@@ -13,7 +13,7 @@ import { SectionBoundary } from "@/components/layout/section-boundary";
 import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { markPageGone } from "@/lib/computer/browsing-now";
-import { readRecording, type Recording } from "@/lib/computer/demonstration";
+import { type Recording, readRecording } from "@/lib/computer/demonstration";
 import {
   type ScreenPanelSize,
   setScreenOpen,
@@ -45,6 +45,17 @@ export const PANEL_SIZES: readonly { size: ScreenPanelSize; label: string }[] =
     { size: "medium", label: "Medium" },
     { size: "large", label: "Large" },
   ];
+
+/**
+ * The hand-backs a closing view asked for, by Bot, held one task before they are sent.
+ *
+ * MEASURED 2026-09-25 (0.5.4 final QA, dev server): 직접 하기 on a help card took the wheel, the
+ * screen mounted already knowing it was driven, React's development double-mount ran the unmount
+ * cleanup, and the wheel was handed back 67 ms after it was taken — the Bot carried on past a login
+ * nobody had done. The same cleanup ran whenever the view only moved (a layout that remounts it).
+ * A view of the same Bot mounting in the same commit cancels the hand-back; a real close still sends it.
+ */
+const pendingReleases = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
  * THE BOT'S BROWSER, LIVE — OPENED BY A PERSON, AND GONE WHEN THERE IS NOTHING TO SHOW.
@@ -102,14 +113,24 @@ export function LiveView({ botId }: { botId: string }) {
   useLayoutEffect(() => {
     drivingRef.current = isDriving;
   });
-  useEffect(
-    () => () => {
-      if (drivingRef.current) {
-        void releaseControl(botId).then(() => pokeControl(botId));
-      }
-    },
-    [botId],
-  );
+  useEffect(() => {
+    // A view of this Bot mounting again in the same commit was only moving: it keeps the wheel.
+    const pending = pendingReleases.get(botId);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      pendingReleases.delete(botId);
+    }
+    return () => {
+      if (!drivingRef.current) return;
+      pendingReleases.set(
+        botId,
+        setTimeout(() => {
+          pendingReleases.delete(botId);
+          void releaseControl(botId).then(() => pokeControl(botId));
+        }, 0),
+      );
+    };
+  }, [botId]);
 
   const refreshRecording = useCallback(async () => {
     setRecording(await readRecording(botId));
