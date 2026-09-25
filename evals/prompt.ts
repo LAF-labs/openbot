@@ -18,6 +18,7 @@ import {
   DEFAULT_TIME_ZONE,
   type PromptMode,
   type PromptPerson,
+  type PromptSkill,
   promptSkeleton,
   reminderBlock,
   reminderLines,
@@ -77,6 +78,8 @@ export function systemMessageFor(
    * on the person's message — which is how production sends a long-lived conversation.
    */
   frozenAt: Date = EVAL_NOW,
+  /** The skills the Bot holds, listed the way the server lists them (`eval:browse` only). */
+  skills?: readonly PromptSkill[],
 ) {
   return {
     id: "laf-prompt:eval_bot",
@@ -89,6 +92,7 @@ export function systemMessageFor(
       standingRole: EVAL_STANDING_ROLE,
       memories: EVAL_MEMORIES,
       ...(person ? { person } : {}),
+      ...(skills ? { skills } : {}),
     }),
   };
 }
