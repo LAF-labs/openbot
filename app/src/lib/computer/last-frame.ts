@@ -23,9 +23,21 @@ import { readControl } from "@/components/computer/take-the-wheel";
 const FRAME_WIDTH = 400;
 const FRAME_QUALITY = 0.7;
 
-/** The result reaches the thread with the next run's input, a moment after the task ends. */
-const KEEP_ATTEMPTS = 5;
+/**
+ * The result reaches the thread with the next run's input: as a rule a moment after the task ends,
+ * so a picture that is early is offered again a few times. A step stopped while this window was
+ * making it has its result here and nowhere else until the person's next turn carries it on, so
+ * its picture is held here until then (`keepHeldFrames`).
+ */
+const EARLY_ATTEMPTS = 3;
 const KEEP_RETRY_MS = 1_500;
+
+/** Pictures taken and not kept yet, by call id: the server has the call and not its result. */
+const held = new Map<string, { channelId: string; jpeg: string }>();
+/** Calls whose picture is being offered now, so a turn starting meanwhile does not offer it twice. */
+const offering = new Set<string>();
+/** A tab left open all day holds a few; the oldest goes first. */
+const HELD_MAX = 16;
 
 export function frameAddress(channelId: string, toolCallId: string): string {
   return `/api/channels/${encodeURIComponent(channelId)}/frames/${encodeURIComponent(toolCallId)}`;
@@ -82,10 +94,18 @@ export async function keepLastFrame({
   channelId,
   botId,
   toolCallId,
+  isCutOff = false,
 }: {
   channelId: string;
   botId: string;
   toolCallId: string;
+  /**
+   * The turn ended right after this task — the person stopped it — so its last result may be in
+   * this window only, not even its call in the thread: a run stopped on the wire keeps its words
+   * and not the call it was making (measured). The picture is taken now and held, and offered once
+   * the conversation's next turn has carried that result to the server (`keepHeldFrames`).
+   */
+  isCutOff?: boolean;
 }): Promise<boolean> {
   const { state } = await readControl(botId).catch(() => ({ state: null }));
   if (state?.holder === "human" || state?.secretWanted) return false;
@@ -107,20 +127,74 @@ export async function keepLastFrame({
     shot.mime === "image/jpeg" ? shot.base64 : await shrink(shot.base64);
   if (!jpeg) return false;
 
-  for (let attempt = 0; attempt < KEEP_ATTEMPTS; attempt += 1) {
-    const put = await fetch(frameAddress(channelId, toolCallId), {
-      method: "PUT",
-      credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jpeg }),
-    }).catch(() => null);
-    if (put?.ok) {
+  if (isCutOff) {
+    hold(channelId, toolCallId, jpeg);
+    return false;
+  }
+  return offerFrame(channelId, toolCallId, jpeg);
+}
+
+/**
+ * Offer a taken picture to the server: kept (204), early (202 — the call is there and its result is
+ * not yet), or refused. Early is offered again a few times and then held for this conversation's
+ * next turn. Only a refusal is an error in the console, and it is never asked again.
+ *
+ * It used to be five PUTs a step apart, each a 404 in the console, after every Stop made while the
+ * step was in this window — whose result could not arrive before the next turn (0.5.4 final QA).
+ */
+export async function offerFrame(
+  channelId: string,
+  toolCallId: string,
+  jpeg: string,
+  retryMs = KEEP_RETRY_MS,
+): Promise<boolean> {
+  if (offering.has(toolCallId)) return false;
+  offering.add(toolCallId);
+  try {
+    for (let attempt = 0; attempt < EARLY_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryMs));
+      }
+      const put = await fetch(frameAddress(channelId, toolCallId), {
+        method: "PUT",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jpeg }),
+      }).catch(() => null);
+      if (put?.status === 202) {
+        hold(channelId, toolCallId, jpeg);
+        continue;
+      }
+      held.delete(toolCallId);
+      if (!put?.ok) return false;
       kept(toolCallId);
       return true;
     }
-    // Anything but "not there yet" will not change by asking again.
-    if (put && put.status !== 404) return false;
-    await new Promise((resolve) => setTimeout(resolve, KEEP_RETRY_MS));
+    return false;
+  } finally {
+    offering.delete(toolCallId);
   }
-  return false;
+}
+
+function hold(channelId: string, toolCallId: string, jpeg: string): void {
+  held.delete(toolCallId);
+  held.set(toolCallId, { channelId, jpeg });
+  const oldest = held.keys().next().value;
+  if (held.size > HELD_MAX && oldest !== undefined) held.delete(oldest);
+}
+
+/**
+ * A turn in this conversation ended, and the results this window had kept back went with its
+ * first run: the pictures held for them are offered again.
+ */
+export function keepHeldFrames(channelId: string): void {
+  for (const [toolCallId, entry] of held) {
+    if (entry.channelId !== channelId) continue;
+    void offerFrame(channelId, toolCallId, entry.jpeg);
+  }
+}
+
+/** Whether a picture is held for this call. For tests. */
+export function isFrameHeld(toolCallId: string): boolean {
+  return held.has(toolCallId);
 }

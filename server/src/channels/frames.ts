@@ -96,6 +96,29 @@ export function createFrameStore(database: Database) {
     },
 
     /**
+     * Whether the thread holds the Bot's call with this id — answered or not.
+     *
+     * What tells a picture that is early from one that is wrong. A step stopped while its window
+     * was making it has a result only in that window until the person's next turn carries it here
+     * (0.5.4 final QA: five 404s in the console after every such Stop, one per retry), and a call
+     * the thread does not hold at all never will.
+     */
+    async holdsCall(threadId: string, toolCallId: string): Promise<boolean> {
+      const [row] = await database
+        .select({ seq: lafThreadMessages.seq })
+        .from(lafThreadMessages)
+        .where(
+          and(
+            eq(lafThreadMessages.threadId, threadId),
+            sql`${lafThreadMessages.message} ->> 'role' = 'assistant'`,
+            sql`${lafThreadMessages.message} -> 'toolCalls' @> jsonb_build_array(jsonb_build_object('id', ${toolCallId}::text))`,
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
+    },
+
+    /**
      * Keep a picture on a result. False when the thread holds no such result — yet: the result
      * arrives with the next run's input, and the surface asks again a moment later.
      *

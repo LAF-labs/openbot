@@ -116,8 +116,10 @@ export function createTranscriptRoutes(
    * Keep that picture. The surface makes it (`app/src/lib/computer/last-frame.ts`); this checks it
    * is what the surface makes — a small JPEG — and puts it on the task's last result.
    *
-   * 404 while the result has not reached the thread yet: it arrives with the next run's input, and
-   * the surface asks again.
+   * 202 while the call is in the thread and its result is not yet: the result arrives with the
+   * next run's input — at once as a rule, and only with the person's next turn when the step was
+   * stopped while its window was making it — and the surface asks again then. 404 is for a call
+   * the thread does not hold, which asking again cannot change.
    */
   routes.put("/:channelId/frames/:toolCallId", requireUser, async (context) => {
     const body = (await context.req.json().catch(() => null)) as {
@@ -133,14 +135,17 @@ export function createTranscriptRoutes(
         context.req.param("channelId"),
       );
       if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
+      const toolCallId = context.req.param("toolCallId");
       const kept = store.keepFrame
-        ? await store.keepFrame(
-            channel.threadId,
-            context.req.param("toolCallId"),
-            jpeg,
-          )
+        ? await store.keepFrame(channel.threadId, toolCallId, jpeg)
         : false;
-      if (!kept) return context.json(refusal("laf:frame_not_found"), 404);
+      if (!kept) {
+        const early = store.holdsCall
+          ? await store.holdsCall(channel.threadId, toolCallId)
+          : false;
+        if (early) return context.json({ waiting: true }, 202);
+        return context.json(refusal("laf:frame_not_found"), 404);
+      }
       return context.body(null, 204);
     } catch (error) {
       return mapRefusal(context, error);

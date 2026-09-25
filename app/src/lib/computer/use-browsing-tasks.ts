@@ -7,14 +7,14 @@ import {
 } from "react";
 import {
   openBrowsingTask,
-  toVisibleChatItems,
   type TranscriptItem,
+  toVisibleChatItems,
   withBrowsingTasks,
 } from "@/components/channels/chat-messages";
-import { doingNow, pictureStepOf, sitesOf } from "@/lib/computer/browsing";
 import { questionOn, watchQuestions } from "@/lib/approvals";
+import { doingNow, pictureStepOf, sitesOf } from "@/lib/computer/browsing";
 import { publishOpenTask } from "@/lib/computer/browsing-now";
-import { keepLastFrame } from "@/lib/computer/last-frame";
+import { keepHeldFrames, keepLastFrame } from "@/lib/computer/last-frame";
 import { t } from "@/lib/i18n";
 
 /**
@@ -84,6 +84,17 @@ export function useBrowsingTasks({
   // Leaving the conversation leaves nothing claiming the browser is in use.
   useEffect(() => () => publishOpenTask(null), []);
 
+  /*
+   * A turn ending here carried the results this window kept back — a task the person stopped — so
+   * the pictures held for them can be kept now (`last-frame.ts`). Before the effect below, which is
+   * what holds this turn's own: this turn's picture waits for the next one.
+   */
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (!busy && wasBusy.current) keepHeldFrames(channelId);
+    wasBusy.current = busy;
+  }, [busy, channelId]);
+
   const watched = useRef<string | null>(null);
   useEffect(() => {
     const previous = watched.current;
@@ -94,7 +105,11 @@ export function useBrowsingTasks({
     );
     const toolCallId =
       ended?.kind === "browse" ? pictureStepOf(ended.steps) : null;
-    if (toolCallId) void keepLastFrame({ channelId, botId, toolCallId });
+    // Nothing after it: the turn was cut off in this task (`cutOffOf` in `chat-messages.ts`).
+    const isCutOff = itemsRef.current.at(-1)?.id === previous;
+    if (toolCallId) {
+      void keepLastFrame({ channelId, botId, toolCallId, isCutOff });
+    }
   }, [openId, channelId, botId]);
 
   return open;

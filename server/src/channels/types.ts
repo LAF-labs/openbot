@@ -89,4 +89,6 @@ export type ChannelStore = {
     toolCallId: string,
     frame: string,
   ) => Promise<boolean>;
+  /** Whether the thread holds the Bot's call with this id, answered or not. */
+  holdsCall?: (threadId: string, toolCallId: string) => Promise<boolean>;
 };

@@ -113,6 +113,7 @@
   "app/tests/i18n-coverage.test.ts",
   "app/tests/josa.test.ts",
   "app/tests/korean-render.test.ts",
+  "app/tests/last-frame-offer.test.ts",
   "app/tests/legal-pages.test.ts",
   "app/tests/live-region.test.tsx",
   "app/tests/live-screen.test.tsx",

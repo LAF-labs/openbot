@@ -51,10 +51,11 @@ function routes(overrides: Partial<ChannelStore> = {}) {
         .filter((key) => key.startsWith(`${threadId}/`))
         .map((key) => key.slice(threadId.length + 1)),
     keepFrame: async (threadId, toolCallId, frame) => {
-      if (toolCallId === "not-yet") return false;
+      if (toolCallId === "not-yet" || toolCallId === "never") return false;
       kept.set(`${threadId}/${toolCallId}`, frame);
       return true;
     },
+    holdsCall: async (_threadId, toolCallId) => toolCallId === "not-yet",
     ...overrides,
   };
   return { app: createChannelRoutes(store, requireUser), kept };
@@ -124,14 +125,29 @@ describe("keeping and reading it", () => {
     expect((await app.request("/theirs/frames/call-9")).status).toBe(404);
   });
 
-  test("a result not in the thread yet is a miss the surface can ask again about", async () => {
-    const { app } = routes();
+  /*
+   * EARLY IS NOT AN ERROR (0.5.4 final QA): a step stopped while its window was making it has its
+   * result only in that window until the next turn, and each 404 the surface retried on was a line
+   * in the console. A call the thread does not hold is still a miss.
+   */
+  test("a call whose result is not in the thread yet is early, and one it does not hold is a miss", async () => {
+    const { app, kept } = routes();
     const early = await app.request(
       "/mine/frames/not-yet",
       put({ jpeg: JPEG }),
     );
-    expect(early.status).toBe(404);
-    expect(await early.json()).toMatchObject({ code: "laf:frame_not_found" });
+    expect(early.status).toBe(202);
+    expect(await early.json()).toEqual({ waiting: true });
+    expect(kept.size).toBe(0);
+    const never = await app.request("/mine/frames/never", put({ jpeg: JPEG }));
+    expect(never.status).toBe(404);
+    expect(await never.json()).toMatchObject({ code: "laf:frame_not_found" });
+    // A store that cannot tell says a miss, as before.
+    const bare = routes({ holdsCall: undefined });
+    expect(
+      (await bare.app.request("/mine/frames/not-yet", put({ jpeg: JPEG })))
+        .status,
+    ).toBe(404);
   });
 
   test("a miss is not cached, so the picture shows once it is kept", async () => {

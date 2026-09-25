@@ -49,5 +49,6 @@ export function createChannelStore(
     frameFor: frames.frameFor,
     framedCalls: frames.framedCalls,
     keepFrame: frames.keepFrame,
+    holdsCall: frames.holdsCall,
   };
 }

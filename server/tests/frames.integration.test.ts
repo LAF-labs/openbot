@@ -98,6 +98,38 @@ describe("the last picture of a task", () => {
     expect(await frames.frameFor(other.threadId, callId)).toBeNull();
   });
 
+  /*
+   * A STEP STOPPED WHILE ITS WINDOW WAS MAKING IT: the call is in the thread, its result is only in
+   * that window until the next turn (0.5.4 final QA: five 404s in the console per Stop). The door
+   * tells that picture "early" from one for a call the thread does not hold.
+   */
+  test("knows a call the thread holds without its result from one it does not hold", async () => {
+    const threadId = `test-frames-${randomUUID()}`;
+    threads.push(threadId);
+    const callId = `call-${randomUUID()}`;
+    await appendMessages(database, threadId, [
+      {
+        id: `assistant-${randomUUID()}`,
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: callId,
+            type: "function",
+            function: { name: "computer_click", arguments: "{}" },
+          },
+        ],
+      } as unknown as StoredMessage,
+    ]);
+    const other = await threadWithACall();
+    expect(await frames.keepFrame(threadId, callId, JPEG)).toBe(false);
+    expect(await frames.holdsCall(threadId, callId)).toBe(true);
+    expect(await frames.holdsCall(threadId, "no-such-call")).toBe(false);
+    // The thread is part of the address here too.
+    expect(await frames.holdsCall(other.threadId, callId)).toBe(false);
+    expect(await frames.holdsCall(threadId, other.callId)).toBe(false);
+  });
+
   test("survives the row being written over by the next run's copy", async () => {
     const { threadId, callId, result } = await threadWithACall();
     await frames.keepFrame(threadId, callId, JPEG);
