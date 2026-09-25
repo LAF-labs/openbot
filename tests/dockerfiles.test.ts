@@ -123,6 +123,21 @@ describe("the server image", () => {
     expect(compose).toContain('"drizzle-kit", "migrate"');
   });
 
+  /**
+   * The server starts from one bundle, not from ~2,500 TS modules: the start is the `/health` 502
+   * window of every upgrade, and the bundle cut it from 27 s to 9 s on a loaded host (the comment
+   * above the build line has the measurement).
+   */
+  test("runs the bundle it builds, not the sources", () => {
+    expect(dockerfile).toContain(
+      "RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js",
+    );
+    expect(dockerfile).toContain(
+      "COPY --from=install /app/server/dist server/dist",
+    );
+    expect(dockerfile).toContain('CMD ["bun", "dist/index.js"]');
+  });
+
   test("copies the sources and the migrations, not the tests or the scripts", () => {
     expect(dockerfile).toContain("COPY server/src server/src");
     expect(dockerfile).toContain("COPY server/drizzle server/drizzle");

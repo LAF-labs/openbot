@@ -34,6 +34,21 @@ COPY agent-computer/package.json agent-computer/package.json
 COPY desktop/package.json desktop/package.json
 RUN bun install --frozen-lockfile --filter=server --production
 
+# THE SERVER RUNS AS ONE BUNDLE, BUILT HERE. From TS source it resolved and transpiled ~2,500 modules
+# on every start, and a start is exactly what the person waits through during an upgrade: the
+# `/health` 502 window. Measured 2026-09-25, both images alternating three rounds under the same
+# host load, `--cpus 1`: `docker start` to `/health` 200 went from 19.5 s to 4.0 s (median), and the
+# gap a compose-style replacement leaves (stop, remove, create, start) from 27.3 s to 9.3 s.
+# `--target=bun` keeps Bun's own APIs (`bun:sql`, `Bun.serve`) as they are; every other import is
+# inlined, so nothing at run time resolves a module path. The sources still cross to the image
+# below: `drizzle.config.ts`, which the `migrate` service runs from this image, names the schema
+# files.
+COPY tsconfig.base.json ./
+COPY server/tsconfig.json server/
+COPY server/src server/src
+COPY shared shared
+RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js
+
 # oven/bun:1.3.14 — the same digest as the install stage, so the two never run different runtimes.
 FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
 
@@ -44,6 +59,7 @@ WORKDIR /app
 # links, and `bun x drizzle-kit` reads the bin out of the workspace's own tree.
 COPY --from=install /app/node_modules node_modules
 COPY --from=install /app/server/node_modules server/node_modules
+COPY --from=install /app/server/dist server/dist
 
 # What the server reads at run time, and nothing beside it: the sources, the migration chain the
 # `migrate` service replays, the two configs bun and drizzle-kit read. Not `server/tests`, not
@@ -71,5 +87,6 @@ ENV GIT_SHA=${REVISION} \
 
 WORKDIR /app/server
 
-# The migration service overrides this with its own command; everything else wants the API.
-CMD ["bun", "src/index.ts"]
+# The migration service overrides this with its own command; everything else wants the API, as the
+# bundle built above.
+CMD ["bun", "dist/index.js"]
