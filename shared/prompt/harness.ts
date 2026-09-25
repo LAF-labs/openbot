@@ -20,6 +20,7 @@ import {
   deferredToolsText,
 } from "../tools/bridge";
 import { NOW_TOOL } from "../tools/now";
+import { settledAttachmentText } from "./attachments.ko";
 import {
   answerNowText,
   type ContextFacts,
@@ -77,6 +78,16 @@ export const HARNESS_VERSION = createHash("sha256")
       contextLayerText(FIXTURE),
       contextLayerText(FIXTURE, "메모장"),
       earlierSummaryText("- 9/24 택배 두 건을 보냈다.", FIXTURE.day),
+      settledAttachmentText({
+        id: "00000000-0000-4000-8000-000000000000",
+        filename: "영수증.jpg",
+        kind: "image",
+      }),
+      settledAttachmentText({
+        id: "00000000-0000-4000-8000-000000000000",
+        filename: "9월매출.xlsx",
+        kind: "sheet",
+      }),
       reminderBlock(reminderLines(FIXTURE, MOVED)),
       routineRunLine({
         startedAt: new Date("2026-09-24T22:30:05Z"),

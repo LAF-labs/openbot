@@ -155,12 +155,13 @@ export const lafConversationContexts = pgTable("laf_conversation_contexts", {
   lastUserMessageId: text("last_user_message_id"),
   /**
    * What compaction has decided this conversation no longer carries: tool-call id → `drop_call` or
-   * `drop_result` (`context/compaction.ts`). Applied to every request after it; only ever added to.
+   * `drop_result`, and `attachments:<message id>` → `settle_attachments` (`context/compaction.ts`).
+   * Applied to every request after it; only ever added to. A type only, so no migration.
    * Kept here because a decision a restart forgot would put the dropped results back — a history
    * rewritten under the cache, and the context the compaction relieved, back.
    */
   compaction: jsonb("compaction")
-    .$type<Record<string, "drop_call" | "drop_result">>()
+    .$type<Record<string, "drop_call" | "drop_result" | "settle_attachments">>()
     .notNull()
     .default(sql`'{}'::jsonb`),
   updatedAt: timestamp("updated_at", { withTimezone: true })

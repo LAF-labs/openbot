@@ -596,6 +596,12 @@ one lifelong conversation on screen; the request behind it now carries about one
 - **Why the server model and not a cache-safe fork of the Bot's request.** A close made hours after the last turn
   reads a cold cache either way; on MiMo a 60K miss is $0.026, and the close measured below costs $0.0002–0.0005.
 - `DAY_EPOCHS=off` switches it off. `LAF_CLOCK_OFFSET_MS` turns the day on a laptop; production refuses it.
+- **Attachments** (0.5.4 candidate 15): a photo or a file rides along in every later request, since the run's
+  fetch expands its reference each time. Before the cut the day's close takes it out with the rest (the summariser
+  is told only its name). Within a day, the threshold compaction settles every attachment whose question is behind
+  it — older than the newest six messages and than the current question — into a fixed note
+  (`settledAttachmentText`; a sheet or PDF points at its copy in `uploads/`), decided once and stored like the tool
+  decisions, so the kept history stays byte-identical within an epoch. Not measured on a model yet.
 
 ### `eval:cache` — the `days` case (MiMo-V2.6-Pro, Xiaomi pinned, two runs)
 

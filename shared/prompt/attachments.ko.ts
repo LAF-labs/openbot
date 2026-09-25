@@ -79,6 +79,27 @@ export const PDF_WITHOUT_TEXT =
 /** 빈 표. */
 export const SHEET_WITHOUT_ROWS = "(이 표에는 내용이 없다.)";
 
+/**
+ * 앞에서 이미 다룬 첨부 — 압축이 그 사진이나 파일 내용을 더는 싣지 않기로 한 뒤, 그 자리에 서는 글
+ * (`server/src/context/compaction.ts`).
+ *
+ * 사진 한 장은 그 뒤의 모든 요청에 다시 실린다. 그 사진을 두고 네가 한 답은 대화에 그대로 남으므로,
+ * 지난 질문의 사진은 이름과 이 한 줄이면 된다. 다시 봐야 할 때의 길을 같이 적는다: 표와 PDF는 전체가
+ * 네 컴퓨터 폴더의 uploads/에 있을 수 있고(이름에 파일 번호 앞 8자가 들어 있다), 사진은 사장님께 다시
+ * 붙여 달라고 하는 수밖에 없다. 같은 첨부는 언제나 같은 글이 되어야 한다 — 캐시된 역사를 매번 고쳐
+ * 쓰지 않게.
+ */
+export function settledAttachmentText(part: {
+  id: string;
+  filename: string;
+  kind: keyof typeof KIND_WORD | null;
+}): string {
+  const word = part.kind ? KIND_WORD[part.kind] : "파일";
+  return part.kind === "sheet" || part.kind === "pdf"
+    ? `[앞에서 읽은 첨부 ${word}: ${part.filename} — 내용은 더 싣지 않는다. 다시 봐야 하면 네 컴퓨터 폴더 uploads/에서 이름에 ${part.id.slice(0, 8)}가 든 파일을 computer_read_file로 읽고, 없으면 사장님께 다시 붙여 달라고 해라.]`
+    : `[앞에서 본 첨부 ${word}: ${part.filename} — 그림은 더 싣지 않는다. 무엇이었는지는 그때 네 답에 있다. 다시 봐야 하면 사장님께 다시 붙여 달라고 해라.]`;
+}
+
 /** 찾을 수 없는 첨부 — 지워졌거나, 다른 봇의 것이다. */
 export function missingAttachmentText(name: string): string {
   return `[첨부: ${name} — 지금은 이 파일을 열 수 없다. 사장님께 다시 붙여 달라고 해라.]`;

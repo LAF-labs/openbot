@@ -16,7 +16,9 @@
  *   The decision is never recomputed. A later compaction adds to it; nothing un-drops.
  *
  * Person and assistant TEXT is never dropped: Jev decides about tool calls only, and so does the
- * rule below. (A summary of old text — the design's third step — is not built; see the eval notes.)
+ * rule below. Old text leaves the request at the owner's day boundary instead, as a summary
+ * (`./day-close`). What a person message ATTACHED is the one exception: a photo or a file whose
+ * question is behind it becomes a fixed note (`attachmentPlan`), decided with the rest.
  *
  * THREE WAYS TO DECIDE, measured against each other by `bun run eval:compaction` (docs/laf/eval-pack.md):
  *
@@ -32,7 +34,12 @@
  */
 
 import type { AbstractAgent } from "@ag-ui/client";
+import {
+  attachmentKindOf,
+  isAttachmentPart,
+} from "../../../shared/attachments";
 import { jsonObjectOf } from "../../../shared/json-object";
+import { settledAttachmentText } from "../../../shared/prompt/attachments.ko";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { redactedInput, redactText, resultExcerpt } from "./judge-redaction";
 import {
@@ -46,10 +53,24 @@ import {
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
-export type CompactionAction = "drop_call" | "drop_result";
+export type CompactionAction =
+  | "drop_call"
+  | "drop_result"
+  /** A person message's attachments stand as a fixed note (keyed `attachments:<message id>`). */
+  | "settle_attachments";
 
 /** What one compaction decided, by tool-call id. Persisted; only ever added to. */
 export type CompactionPlan = Record<string, CompactionAction>;
+
+/** The plan's key for one person message's attachments. */
+export const attachmentsKey = (messageId: string) => `attachments:${messageId}`;
+
+/**
+ * What one settled attachment is counted as saving, for the "worth a miss" floor. The store sees
+ * only the reference; what the endpoint is sent in its place is the photo (a 2000px JPEG, about a
+ * thousand-odd tokens) or the file's text (up to 8,000 characters, `attachments/extract.ts`).
+ */
+export const SETTLED_ATTACHMENT_CHARS = 4_000;
 
 /** How compaction decides. `off` never compacts. */
 export type CompactionMode = "off" | "latest-snapshot" | "decisions";
@@ -103,6 +124,28 @@ export function applyCompaction(
   if (Object.keys(plan).length === 0) return [...messages];
   const out: AgentMessage[] = [];
   for (const message of messages) {
+    if (
+      message.role === "user" &&
+      plan[attachmentsKey(message.id)] === "settle_attachments" &&
+      Array.isArray(message.content)
+    ) {
+      out.push({
+        ...message,
+        content: (message.content as unknown[]).map((part) =>
+          isAttachmentPart(part)
+            ? {
+                type: "text",
+                text: settledAttachmentText({
+                  id: part.id,
+                  filename: part.filename,
+                  kind: attachmentKindOf(part.mimeType),
+                }),
+              }
+            : part,
+        ),
+      } as AgentMessage);
+      continue;
+    }
     if (message.role === "tool") {
       const id = (message as { toolCallId?: string }).toolCallId ?? "";
       const action = plan[id];
@@ -141,6 +184,49 @@ export function mergePlans(
     merged[id] = action;
   }
   return merged;
+}
+
+/**
+ * The attachments that have had their question: every person message that carries one, older than
+ * the newest {@link PRESERVE_RECENT_MESSAGES} messages AND older than the newest person message.
+ * A photo rides along in every later request (`shared/attachments.ts`); the Bot's answer about it
+ * stays in the history, so once its question is behind it the photo itself can go. Never the
+ * current question's: a receipt sent before twenty browsing steps is still what they are about.
+ * Deterministic, no model, and taken with whichever rule decides the rest.
+ */
+export function attachmentPlan(
+  messages: readonly AgentMessage[],
+  preserveRecent = PRESERVE_RECENT_MESSAGES,
+): CompactionPlan {
+  let newestUser = -1;
+  messages.forEach((message, at) => {
+    if (message.role === "user") newestUser = at;
+  });
+  const cutoff = Math.min(messages.length - preserveRecent, newestUser);
+  const plan: CompactionPlan = {};
+  messages.forEach((message, at) => {
+    if (at >= cutoff || message.role !== "user") return;
+    const content = (message as { content?: unknown }).content;
+    if (Array.isArray(content) && content.some(isAttachmentPart)) {
+      plan[attachmentsKey(message.id)] = "settle_attachments";
+    }
+  });
+  return plan;
+}
+
+/** How many attachments a plan settles in these messages, for the "worth a miss" floor. */
+export function settledAttachments(
+  messages: readonly AgentMessage[],
+  plan: CompactionPlan,
+): number {
+  let count = 0;
+  for (const message of messages) {
+    if (plan[attachmentsKey(message.id)] !== "settle_attachments") continue;
+    const content = (message as { content?: unknown }).content;
+    if (Array.isArray(content))
+      count += content.filter(isAttachmentPart).length;
+  }
+  return count;
 }
 
 /* ------------------------------------------------------------------------------------------ */

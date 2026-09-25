@@ -508,19 +508,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * owner's route and its refusals), three to `app` (no tool handler reaching `/notebook`, the Bot's
  * tool still on `/memories`, the shop lines' Korean) and two to `root` (the carry order, the
  * character bound). Each floor rises by exactly what was added.
- * RAISED 2026-09-26 with the day epochs: sixteen to `server` (where a day's close cuts and never
+ * RAISED 2026-09-26 with the day epochs: nineteen to `server` (where a day's close cuts and never
  * between a call and its result; what the summariser is shown, nothing typed; a summary over its
  * bound losing its oldest lines; the close prepared at night, taken only by a person's new message,
  * outliving a later epoch, waiting on a busy Bot and on a short day, failing without harm, running
  * the existing compaction first, and read back whole after a restart, in memory and in Postgres;
- * the two switches). The floor rises by exactly what was added.
+ * the two switches; an attachment whose question is behind it becoming a note, in the store at the
+ * threshold, and named in the summary). The floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2730, roots: ["server"] },
+  { name: "server", floor: 2733, roots: ["server"] },
   { name: "app", floor: 1334, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 422, roots: ["tests", "agent-bot"] },

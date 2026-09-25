@@ -27,6 +27,10 @@
  */
 
 import type { AbstractAgent } from "@ag-ui/client";
+import {
+  attachmentKindOf,
+  attachmentPartsOf,
+} from "../../../shared/attachments";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { dayLabel } from "../../../shared/prompt/zone";
 import { type Ask, askModel, type ModelCall } from "../computer/model-call";
@@ -138,6 +142,14 @@ export function closePoint(
   return last ? { through: last.id, span } : null;
 }
 
+/** What an attachment is called in the transcript. */
+const KIND_WORD = {
+  image: "사진",
+  sheet: "표",
+  pdf: "PDF",
+  file: "파일",
+} as const;
+
 /** How much of a call's arguments the transcript keeps: enough for a URL or a query. */
 const ARGUMENT_CHARS = 200;
 
@@ -165,7 +177,16 @@ export function transcriptOf(
     }
     const text = redactText(textOf(message.content)).trim();
     if (message.role === "user") {
-      if (text) lines.push(`사장님: ${text}`);
+      /*
+       * A photo or a file the owner handed over is named, never shown: the summariser learns that
+       * there was a receipt, and what it said is in the Bot's answer about it (`shared/attachments`).
+       */
+      const files = attachmentPartsOf(message.content).map(
+        (part) =>
+          `[첨부 ${KIND_WORD[attachmentKindOf(part.mimeType) ?? "file"]}: ${redactText(part.filename)}]`,
+      );
+      const said = [text, ...files].filter(Boolean).join(" ");
+      if (said) lines.push(`사장님: ${said}`);
       continue;
     }
     if (message.role === "assistant") {

@@ -251,6 +251,31 @@ describe("what the summariser is shown", () => {
     expect(transcript).toContain("=== 2026-09-25 (금) ===");
   });
 
+  test("a photo the owner handed over is named, never shown", () => {
+    const span: Thread = [
+      {
+        id: "u0",
+        role: "user",
+        content: [
+          { type: "text", text: "이 영수증 합계 봐줘" },
+          {
+            type: "binary",
+            mimeType: "image/jpeg",
+            id: "0f8e2d4c-1b2a-4c3d-8e9f-0a1b2c3d4e5f",
+            filename: "영수증.jpg",
+          },
+        ],
+        lafAt: at(0).toISOString(),
+      } as never,
+      answer("a0", "합계는 23,500원입니다.", at(0, 1)),
+    ];
+    const transcript = transcriptOf(span, ZONE);
+    expect(transcript).toContain(
+      "사장님: 이 영수증 합계 봐줘 [첨부 사진: 영수증.jpg]",
+    );
+    expect(transcript).not.toContain("0f8e2d4c");
+  });
+
   test("a summary over its bound gives up its oldest lines, never the newest day", () => {
     const old = Array.from(
       { length: 200 },

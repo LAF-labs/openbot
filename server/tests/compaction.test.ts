@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyCompaction,
+  attachmentPlan,
   createCompactor,
   DROPPED_RESULT_HEAD,
   decisionPlan,
   droppedResultText,
   latestSnapshotPlan,
   mergePlans,
+  settledAttachments,
 } from "../src/context/compaction";
 import { createConversationStore } from "../src/context/conversations";
 import type {
@@ -486,5 +488,101 @@ describe("in the conversation store: at the threshold, once, and a new epoch", (
     store.recordUsage("t1", { promptTokens: 45_500 });
     await store.settled();
     expect(asked).toBe(1);
+  });
+});
+
+/**
+ * A photo the owner hands over rides along in every later request (`shared/attachments.ts`): the
+ * transcript keeps a reference and the run's fetch expands it into the picture or the file's text.
+ * Once its question is behind it, the reference becomes a fixed note — the Bot's answer about it is
+ * still in the history — and never the current question's.
+ */
+describe("an attachment whose question is behind it", () => {
+  const photo = {
+    type: "binary",
+    mimeType: "image/jpeg",
+    id: "0f8e2d4c-1b2a-4c3d-8e9f-0a1b2c3d4e5f",
+    filename: "영수증.jpg",
+  };
+  const sheet = {
+    type: "binary",
+    mimeType: "text/csv",
+    id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    filename: "9월매출.csv",
+  };
+  const withFiles = (id: string, text: string, files: unknown[]): Msg => ({
+    id,
+    role: "user",
+    content: [{ type: "text", text }, ...files],
+  });
+  const conversation = (): Msg[] => [
+    withFiles("u1", "이 영수증 합계 봐줘", [photo]),
+    said("a1", "합계는 23,500원입니다."),
+    withFiles("u2", "이 매출표 정리해줘", [sheet]),
+    said("a2", "9월 매출은 4,210,000원입니다."),
+    user("u3", "고마워"),
+    said("a3", "네."),
+    user("u4", "다음은?"),
+    said("a4", "없습니다."),
+    withFiles("u5", "이것도 봐줘", [photo]),
+  ];
+
+  test("older than the newest messages and the current question, each becomes the same note", () => {
+    const messages = conversation();
+    const plan = attachmentPlan(messages as never, 4);
+    expect(Object.keys(plan).sort()).toEqual([
+      "attachments:u1",
+      "attachments:u2",
+    ]);
+    const applied = applyCompaction(messages as never, plan);
+    const first = JSON.stringify(applied.find((m) => m.id === "u1"));
+    expect(first).not.toContain('"binary"');
+    expect(first).toContain("이 영수증 합계 봐줘");
+    expect(first).toContain("앞에서 본 첨부 사진: 영수증.jpg");
+    const second = JSON.stringify(applied.find((m) => m.id === "u2"));
+    expect(second).toContain("uploads/");
+    expect(second).toContain("9a8b7c6d");
+    // The current question keeps its photo, and the rest are the very objects they were.
+    expect(applied.find((m) => m.id === "u5")).toBe(
+      messages.find((m) => m.id === "u5") as never,
+    );
+    expect(JSON.stringify(applyCompaction(messages as never, plan))).toBe(
+      JSON.stringify(applied),
+    );
+    expect(settledAttachments(messages as never, plan)).toBe(2);
+  });
+
+  test("the store settles them at the threshold, counting what a photo weighs on the wire", async () => {
+    const store = createConversationStore({
+      compaction: {
+        thresholdTokens: 30_000,
+        compact: async () => ({ plan: {}, arm: "decisions" }),
+      },
+    });
+    const now = new Date("2026-09-24T00:30:00Z");
+    const facts = contextFactsFor({
+      mode: "chat",
+      now,
+      bot: { id: "b", name: "미소" },
+    });
+    const run = () =>
+      store.prepare({
+        threadId: "t-files",
+        botId: "b",
+        mode: "chat",
+        messages: conversation() as never,
+        key: { harness: "h", model: "m", effort: "e", tools: "x" },
+        facts,
+        system: (told) => systemPromptText("chat", told.name),
+        now,
+      });
+    run();
+    store.recordUsage("t-files", { promptTokens: 31_000 });
+    await store.settled();
+    const after = run();
+    expect(after.epoch.reason).toBe("compaction");
+    const sent = JSON.stringify(after.messages);
+    expect(sent.match(/"binary"/g)).toHaveLength(1);
+    expect(sent).toContain("앞에서 본 첨부 사진");
   });
 });

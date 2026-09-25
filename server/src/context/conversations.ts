@@ -67,9 +67,13 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import {
   applyCompaction,
+  attachmentPlan,
+  attachmentsKey,
   type CompactionPlan,
   type Compactor,
   mergePlans,
+  SETTLED_ATTACHMENT_CHARS,
+  settledAttachments,
 } from "./compaction";
 import {
   afterCut,
@@ -309,7 +313,13 @@ function planOf(value: unknown): CompactionPlan {
   if (!value || typeof value !== "object") return {};
   const plan: CompactionPlan = {};
   for (const [id, action] of Object.entries(value as Record<string, unknown>)) {
-    if (action === "drop_call" || action === "drop_result") plan[id] = action;
+    if (
+      action === "drop_call" ||
+      action === "drop_result" ||
+      action === "settle_attachments"
+    ) {
+      plan[id] = action;
+    }
   }
   return plan;
 }
@@ -491,14 +501,25 @@ export function createConversationStore(
     const started = Date.now();
     const view = applyCompaction(raw, conversation.compaction);
     const work = compact(view)
-      .then(({ plan, arm }) => {
+      .then(({ plan: decided, arm }) => {
+        // Old attachments go with whichever rule decided the rest (`attachmentPlan`).
+        const plan = { ...decided, ...attachmentPlan(view) };
         const fresh = Object.entries(plan).filter(
           ([id, action]) => conversation.compaction[id] !== action,
         );
         const merged = mergePlans(conversation.compaction, plan);
         const before = JSON.stringify(view).length;
+        /*
+         * An attachment is a small reference here and a photo or a file's text on the wire, so what
+         * settling one saves is counted at its weight, not at the reference's length.
+         */
+        const settled =
+          settledAttachments(raw, merged) -
+          settledAttachments(raw, conversation.compaction);
         const saved =
-          before - JSON.stringify(applyCompaction(raw, merged)).length;
+          before -
+          JSON.stringify(applyCompaction(raw, merged)).length +
+          settled * SETTLED_ATTACHMENT_CHARS;
         /*
          * WORTH A MISS, OR NOT TAKEN. Applying a plan breaks the prefix from the first message it
          * touches, so a plan that saves a click's `{ok:true}` costs the whole conversation behind it
@@ -768,6 +789,7 @@ export function createConversationStore(
             const calls = new Set<string>();
             for (const message of input.messages) {
               if (!carried.has(message.id)) continue;
+              calls.add(attachmentsKey(message.id));
               const id = (message as { toolCallId?: string }).toolCallId;
               if (id) calls.add(id);
               for (const call of (
