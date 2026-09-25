@@ -37,6 +37,10 @@ const PERMANENT: Record<string, { reads: number; why: string }> = {
     reads: 1,
     why: "sets COPILOTKIT_TELEMETRY_DISABLED for the vendored runtime before it loads",
   },
+  "server/src/context/vendor/fast-jev-compaction/client.ts": {
+    reads: 1,
+    why: "upstream's JevClient defaults its key to TYPESAFE_API_KEY; vendored unchanged and never constructed here — compaction's transport is decision-askers.ts, keyed through config",
+  },
 };
 
 /**

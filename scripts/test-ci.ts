@@ -419,15 +419,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and dollars a question may take whatever the history weighs, the date and never the minute).
  * Each floor rises by exactly what was added.
  *
+ * RAISED 2026-09-25 with the agent harness, phase 2 (results final when produced, one tool list,
+ * compaction, Jev): fifty-three to `server` (upstream fast-jev-compaction's own twenty-three,
+ * compaction applied byte for byte, the newest snapshot per tab, the blind drop and the excerpt
+ * that fixes it, nothing typed in a judge's state, the threshold, the worth of a miss, Jev through
+ * the SDK with no retries and a log that says only that it was consulted, allow-or-ask with the
+ * calibrated bar, the privacy switch off unless `on`, a service connected as a reminder) and five
+ * net to `root` (the loop's own retry and never a 429, routing keyed by model, the same tool list
+ * whatever is connected, every result forwarded as it arrived — against the budget tests the cut
+ * took with it). Each floor rises by exactly what was added.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2545, roots: ["server"] },
+  { name: "server", floor: 2598, roots: ["server"] },
   { name: "app", floor: 1216, roots: ["app"] },
   { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
-  { name: "root", floor: 392, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 397, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
