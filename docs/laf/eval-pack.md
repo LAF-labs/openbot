@@ -440,7 +440,7 @@ on both models. Cost per request as the provider billed it:
 | GLM-5.3-flash (routed: Together, Relace) | 63.7K | $0.00962 | $0.00202–0.00207 |
 | | 13.2K | $0.00094 | $0.00031–0.00035 |
 | MiMo-v2.6-pro (Xiaomi) | 59.8K | $0.02641 | $0.00036–0.00142 |
-| | 12.2K | $0.00543 | $0.00024–0.00032 |
+| | 12.2K | $0.00543 | $0.00024–0.00037 |
 
 Per prompt token, from the difference between the two lengths: GLM $0.172/M on a miss and
 $0.0345/M on a hit (5×); MiMo $0.441/M and $0.0036/M list (122×). The head every request carries —
