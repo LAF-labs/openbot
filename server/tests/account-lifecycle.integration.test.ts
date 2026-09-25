@@ -23,6 +23,7 @@ import {
   computerStandingApprovals,
   credentials,
   lafAnswerRatings,
+  lafAttachments,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -162,6 +163,19 @@ async function makePerson(label: string): Promise<Person> {
     reason: "wrong-facts",
     note: `${label} thinks the total is off.`,
   });
+  // A receipt they handed the Bot: the photo's bytes in a row of its own (`attachments/`).
+  await database.insert(lafAttachments).values({
+    id: `${id}-receipt`,
+    userId: id,
+    channelId,
+    agentId: botId,
+    name: "영수증.jpg",
+    mimeType: "image/jpeg",
+    bytes: 4,
+    data: Buffer.from(`${label}`),
+    modelText: "[첨부 사진: 영수증.jpg · 4B]",
+    workspacePath: null,
+  });
   await database.insert(lafRoutines).values({
     id: routineId,
     agentId: botId,
@@ -282,11 +296,14 @@ const admittedOnly = (...people: Array<Pick<Person, "email">>) =>
  */
 function computerThatRecords() {
   const wiped: string[] = [];
+  /** Whose resets also asked for the Bot's folder to be emptied (attached files' copies). */
+  const emptied: string[] = [];
   const stopped: string[] = [];
   const client = {
     forBot: (id: string) => ({
-      resetComputer: async () => {
+      resetComputer: async (options: { emptyFolder?: boolean } = {}) => {
         wiped.push(id);
+        if (options.emptyFolder) emptied.push(id);
         return { reset: true, botId: id, scope: "deployment" as const };
       },
       stopComputer: async () => {
@@ -295,7 +312,7 @@ function computerThatRecords() {
       },
     }),
   };
-  return { client: client as never, wiped, stopped };
+  return { client: client as never, wiped, emptied, stopped };
 }
 
 /** An audit store that keeps what it was handed, for the rows written beside the transaction. */
@@ -374,6 +391,18 @@ describe("the export", () => {
       (document.conversations as Array<{ messages: unknown[] }>)[0]?.messages,
     ).toHaveLength(2);
     // How they rated the answers they got — their own ratings, reason and note included.
+    // The files they attached go as what they were, never as their bytes.
+    expect(document.attachments).toEqual([
+      expect.objectContaining({
+        id: `${leaver.id}-receipt`,
+        name: "영수증.jpg",
+        mimeType: "image/jpeg",
+        bytes: 4,
+      }),
+    ]);
+    expect(JSON.stringify(document.attachments)).not.toContain(
+      Buffer.from("leaver").toString("base64"),
+    );
     expect(document.answerRatings).toEqual([
       {
         id: `${leaver.id}-rating`,
@@ -501,6 +530,7 @@ describe("deletion", () => {
     expect(result.counts).toMatchObject({
       threadMessages: 2,
       answerRatings: 1,
+      attachments: 1,
       threads: 1,
       channelMemberships: 1,
       channels: 1,
@@ -557,6 +587,13 @@ describe("deletion", () => {
     await gone(
       "channels",
       database.select().from(channels).where(eq(channels.id, leaver.channelId)),
+    );
+    await gone(
+      "attachments",
+      database
+        .select({ id: lafAttachments.id })
+        .from(lafAttachments)
+        .where(eq(lafAttachments.userId, leaver.id)),
     );
     await gone(
       "answerRatings",
@@ -753,6 +790,8 @@ describe("deletion", () => {
 
     expect(result.deleted).toBe(true);
     expect(computer.wiped).toEqual([owner.botId]);
+    // And the folder with it: what their attached files became on the computer leaves with them.
+    expect(computer.emptied).toEqual([owner.botId]);
     expect(computer.stopped).toEqual([]);
     expect(result.computers).toEqual({
       reset: [owner.botId],

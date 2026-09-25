@@ -281,3 +281,21 @@ describe("escaping the workspace", () => {
     );
   });
 });
+
+describe("emptying the workspace when the account leaves", () => {
+  test("removes every file and folder, keeps the folder, and never follows a link out", async () => {
+    const ws = workspace();
+    await ws.write("uploads/2026-09-26-1a2b3c4d-영수증.csv", "합계,12000\n");
+    await ws.write(".results/call-1.txt", "a long result");
+    await ws.write("notes.md", "memo");
+    await symlink(outside, join(root, "escape"));
+
+    expect(await ws.clear()).toBe(4);
+
+    expect((await ws.list()).entries).toEqual([]);
+    // The link went; what it pointed at, outside the workspace, did not.
+    expect(await Bun.file(join(outside, "secret.txt")).text()).toBe(
+      "a private key",
+    );
+  });
+});

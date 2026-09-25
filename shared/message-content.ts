@@ -7,11 +7,11 @@
  * WRONG for the other: `String([{type:"text",…}])` is `"[object Object]"`. Nothing throws, nothing
  * logs, and the model is handed a sentence nobody wrote.
  *
- * This is the floor, not the feature. Nothing in this product produces array content yet, so an
- * image part is named rather than sent — sending one means a provider-shaped content array, and
- * that belongs in the change that lets somebody attach a picture in the first place, where it can
- * be tested against a real provider. Naming it keeps "what is this?" from arriving as an empty
- * question.
+ * This is the floor, not the feature. The feature is attachments (`shared/attachments.ts`, since
+ * 2026-09-26): the server turns each attached file into text and a photo into an image part before
+ * the endpoint sees it, and `agent-bot` hands a photo on in the provider's shape
+ * (`agent-bot/src/transcript.ts` `userContentOf`). Here a part that is not text is still NAMED,
+ * which keeps "what is this?" from arriving as an empty question wherever only words are wanted.
  *
  * In `shared/` because it is a reading of the AG-UI contract rather than one service's code. It had
  * a second reader until 2026-08 — an upstream LangGraph runtime, deleted with the rest of the

@@ -2608,4 +2608,29 @@ export const ko: Record<string, string> = {
     "기본 스킬 {count}개가 들어 있어요.",
   "{count} sources": "출처 {count}개",
   "Try it now": "지금 해 보기",
+  // attach
+  "Attach a file": "파일 붙이기",
+  "Attached files": "붙인 파일",
+  "Attaching…": "붙이는 중…",
+  "Remove {name}": "{name} 빼기",
+  "Open {name}": "{name} 크게 보기",
+  "Shrink {name}": "{name} 작게 보기",
+  "Save {name}": "{name} 내려받기",
+  "Up to {count} files can be attached at a time.":
+    "한 번에 {count}개까지 붙일 수 있어요.",
+  "This Bot's model cannot see photos. Attach an Excel, CSV or PDF file instead.":
+    "이 봇은 사진을 볼 수 없어요. 엑셀·CSV나 PDF 파일로 붙여 주세요.",
+  "Only photos, Excel or CSV files and PDFs can be attached.":
+    "사진, 엑셀·CSV, PDF만 붙일 수 있어요.",
+  "Only Excel or CSV files and PDFs can be attached.":
+    "엑셀·CSV와 PDF만 붙일 수 있어요.",
+  "This file is empty.": "빈 파일이에요.",
+  "This file is too large. Files up to 10 MB can be attached.":
+    "파일이 너무 커요. 10MB까지 붙일 수 있어요.",
+  "This file could not be recognised. Attach a photo, an Excel or CSV file, or a PDF.":
+    "어떤 파일인지 알아볼 수 없어요. 사진, 엑셀·CSV, PDF를 붙여 주세요.",
+  "This file could not be opened. It may be damaged or password-protected.":
+    "파일을 열 수 없어요. 손상됐거나 암호가 걸려 있을 수 있어요.",
+  "The file could not be attached. Please try again.":
+    "파일을 붙이지 못했어요. 다시 해 주세요.",
 };

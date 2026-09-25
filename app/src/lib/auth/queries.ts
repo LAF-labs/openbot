@@ -55,6 +55,13 @@ export type Deployment = {
   effort: boolean;
   autoReview: boolean;
   /**
+   * Whether the composer takes files at all, and whether photos are among them (the model sees).
+   * Absent reads as NO, unlike the two above: a server that says nothing about attachments is one
+   * from before them, and an attach button there would upload into a 404.
+   */
+  attachments?: boolean;
+  images?: boolean;
+  /**
    * A free trial, as the server described it — absent on every deployment that is not one, and then
    * no banner exists to draw. See `components/layout/trial-banner.tsx`.
    */
@@ -237,6 +244,8 @@ async function currentUser(): Promise<CurrentUserResult> {
     deployment: {
       effort: body.deployment?.effort !== false,
       autoReview: body.deployment?.autoReview !== false,
+      attachments: body.deployment?.attachments === true,
+      images: body.deployment?.images === true,
       ...(trial ? { trial } : {}),
     },
   };

@@ -34,9 +34,12 @@ describe("the base prompt", () => {
     expect(BASE_KO).toContain("'사람'이 바로 사장님이다");
   });
 
-  test("does not invite a file the product cannot take", () => {
-    expect(BASE_KO).toContain("파일을 올려 달라고 하거나");
-    expect(BASE_KO).toContain("붙여 넣거나 말로 알려");
+  test("says what the composer takes, and that the Bot may ask for it", () => {
+    // The rule that forbade asking is gone with the dead end it guarded (0.5.3 audit item 7).
+    expect(BASE_KO).not.toContain("파일을 올려 달라고 하거나");
+    expect(BASE_KO).toContain("사진(영수증·메뉴판 같은 것), 엑셀·CSV, PDF");
+    expect(BASE_KO).toContain("한 번에 5개, 파일 하나에 10MB까지");
+    expect(BASE_KO).toContain("파일을 붙여 달라고 하거나");
   });
 });
 

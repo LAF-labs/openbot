@@ -492,16 +492,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * question could give, none on a No; a window that went quiet not read as holding). The control
  * poll's tests moved to a hand-turned clock without changing their number. Measured at server
  * 2,757 / app 1,351 / agent-computer 300 / root 459. Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with attachments (0.5.4 candidate 15): twenty-six to `server` (what a file is
+ * by its bytes, the name it is kept under, a sheet and a PDF read for the model, the reference
+ * expanded on the fetch for one Bot only, a file unable to close its own fence, the two doors, and
+ * the service against the database),
+ * eight to `app` (the message a file rides in, files parked with a correction, the composer's
+ * refusals in Korean), one to `agent-computer` (the folder emptied when the account leaves) and
+ * three to `root` (a photo handed on as `image_url`, words alone sent as they always were).
+ * Measured at server 2,783 / app 1,359 / agent-computer 301 / root 462. Each floor rises by exactly
+ * what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2672, roots: ["server"] },
-  { name: "app", floor: 1323, roots: ["app"] },
-  { name: "agent-computer", floor: 287, roots: ["agent-computer"] },
-  { name: "root", floor: 417, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2698, roots: ["server"] },
+  { name: "app", floor: 1331, roots: ["app"] },
+  { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
+  { name: "root", floor: 420, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

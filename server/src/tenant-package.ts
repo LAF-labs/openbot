@@ -102,6 +102,12 @@ export type TenantPackage = {
     /** Whether this model takes an effort setting. See `agent_effort` and `model.yaml`. */
     supportsEffort: boolean;
     /**
+     * Whether this model sees pictures, so a photo the owner attaches can be handed to it. False
+     * refuses photos at the door and the composer does not offer them. See `model.yaml`. Absent
+     * reads as yes, like `supportsEffort`.
+     */
+    supportsImages?: boolean;
+    /**
      * The model this server asks on its own account when Jev is off or cannot answer: the
      * auto-review judge and compaction's stand-in. Falls back to `defaultModel` in a package that
      * names none. See `model.yaml server_model`.
@@ -264,6 +270,11 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
       ),
       defaultModel: requiredString(model.default_model, "model.default_model"),
       supportsEffort,
+      supportsImages: asBoolean(
+        model.supports_images,
+        true,
+        "model.supports_images",
+      ),
       serverModel,
       // A package that names no server model runs its server calls on the Bot's, and so says what
       // the Bot's model takes.

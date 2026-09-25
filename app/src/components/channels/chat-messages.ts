@@ -1,3 +1,4 @@
+import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import type { Message, ToolCall } from "@ag-ui/core";
 import {
   BROWSING_TOOLS,
@@ -17,6 +18,8 @@ export type VisibleChatItem =
       text: string;
       /** ISO-8601, when this message was first seen. Absent for anything said before stamping. */
       at?: string;
+      /** The files a person's message carried, drawn above their words (`@shared/attachments`). */
+      attachments?: AttachmentPart[];
     }
   | {
       kind: "tool";
@@ -239,14 +242,17 @@ export function toVisibleChatItems(
             .filter((part) => part.type === "text")
             .map((part) => part.text)
             .join("\n");
+    // A message of files alone is still something said: a receipt handed over without a word.
+    const attachments = attachmentPartsOf(message.content);
 
-    return text
+    return text || attachments.length > 0
       ? [
           {
             kind: "text",
             id: message.id,
             role: "user",
             text,
+            ...(attachments.length > 0 ? { attachments } : {}),
             ...(times[message.id] ? { at: times[message.id] } : {}),
           },
         ]

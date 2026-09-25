@@ -212,6 +212,8 @@ services:
       COMPACTION: ${COMPACTION:-}
       COMPACTION_THRESHOLD_TOKENS: ${COMPACTION_THRESHOLD_TOKENS:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
+      # Whether the model sees photos the owner attaches (tenant/laf/model.yaml `supports_images`).
+      BOT_MODEL_IMAGES: ${BOT_MODEL_IMAGES:-}
       COMPUTER_REPEAT_WINDOW_MS: ${COMPUTER_REPEAT_WINDOW_MS:-}
       AGENT_COMPUTER_POLICY: ${AGENT_COMPUTER_POLICY:-}
       # The zone the Bot is told the time in. Asia/Seoul unless a deployment says otherwise.

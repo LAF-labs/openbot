@@ -1,3 +1,4 @@
+import type { AttachmentPart } from "@shared/attachments";
 import {
   getChipsByTrigger,
   isSegmentsEmpty,
@@ -28,7 +29,10 @@ export type ComposerDraft = {
   text: string;
   /** Commands that survive into the sent message, in the order they were typed. */
   commandIds: string[];
+  /** Whether nothing is TYPED. A draft of files alone is not empty to send; see `attachments`. */
   isEmpty: boolean;
+  /** Files the server already kept, as the parts the message carries (`@shared/attachments`). */
+  attachments?: AttachmentPart[];
 };
 
 export function toDraft(segments: Segment[]): ComposerDraft {

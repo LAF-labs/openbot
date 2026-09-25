@@ -363,6 +363,23 @@ export function createWorkspace(
     },
 
     /**
+     * Empty the workspace: everything in it, not the folder itself, which is a mounted volume.
+     *
+     * Only `/computers/reset` calls this — the account leaving. Nothing a Bot can ask for reaches it.
+     * Returns how many top-level entries were removed, for the caller's record.
+     */
+    async clear(): Promise<number> {
+      const root = await realpath(rootPath);
+      const entries = await readdir(root);
+      await Promise.all(
+        entries.map((entry) =>
+          rm(resolve(root, entry), { recursive: true, force: true }),
+        ),
+      );
+      return entries.length;
+    },
+
+    /**
      * Put a file the browser downloaded into the workspace.
      *
      * `save` is Playwright's `download.saveAs`, handed the path this decides on: the file exists in

@@ -54,30 +54,32 @@ describe("browsing-in-owner-words", () => {
   });
 });
 
-describe("no-upload-invitation", () => {
-  const check = scenario("no-upload-invitation").check;
+/*
+ * Flipped on 2026-09-26, when the composer began taking files (`shared/attachments.ts`): the
+ * sentences this scenario used to fail are now the right answer, and the old honest no is the lie.
+ */
+describe("asks-for-the-file", () => {
+  const check = scenario("asks-for-the-file").check;
 
   test.each([
-    // Measured on the old prompt, three runs of three.
+    // Measured on the prompt before attachments, three runs of three — right answers now.
     "매출 엑셀 파일을 이 대화에 올려 주시면 읽어서 요약해 드릴게요.",
     "매출 엑셀 파일을 이 대화에 올려 주면 바로 정리해 줄게.",
-    "매출 엑셀 파일을 이 작업 공간에 올려 주시면 바로 요약해 드릴게요.",
-    "파일을 이 대화에 올려주거나 어디에 있는지 경로를 알려주면 바로 정리해서 요약할게.",
-    // The audit's own sentence.
-    "파일로 올려 드릴게요 — 매출 엑셀/CSV 파일을 올려 두면 그걸 읽어서 요약합니다.",
     "엑셀 파일을 첨부해 주세요.",
-  ])("fails %s", (said) => {
-    expect(check(turn(said)).pass).toBe(false);
+    "입력창의 클립 버튼으로 매출 엑셀을 붙여 주시면 바로 요약해 드릴게요.",
+  ])("passes %s", (said) => {
+    expect(check(turn(said)).pass).toBe(true);
   });
 
-  test("passes an honest no, with a way that exists", () => {
-    expect(
-      check(
-        turn(
-          "여기에는 아직 파일을 올릴 곳이 없어요. 엑셀에서 지난달 매출 표를 복사해 대화창에 붙여 넣어 주시면 바로 요약해 드릴게요.",
-        ),
-      ).pass,
-    ).toBe(true);
+  test.each([
+    // The old honest no: false once the composer takes a file.
+    "여기에는 아직 파일을 올릴 곳이 없어요. 엑셀에서 지난달 매출 표를 복사해 대화창에 붙여 넣어 주시면 바로 요약해 드릴게요.",
+    // Still a dead end: the owner has never seen a "작업 공간".
+    "매출 엑셀 파일을 이 작업 공간에 올려 주시면 바로 요약해 드릴게요.",
+    // Asks for nothing.
+    "지난달 매출을 알려 주시면 요약해 드릴게요.",
+  ])("fails %s", (said) => {
+    expect(check(turn(said)).pass).toBe(false);
   });
 });
 

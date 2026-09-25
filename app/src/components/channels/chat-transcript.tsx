@@ -1,3 +1,4 @@
+import type { AttachmentPart } from "@shared/attachments";
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import {
@@ -72,6 +73,7 @@ import {
 } from "./chat-messages";
 import { LEADING_SKILL, type QueuedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
+import { MessageAttachments } from "./message-attachments";
 import { type Source, sourcesByAnswer } from "./sources";
 import { SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -822,6 +824,7 @@ function Arriving({
  * It is also what keeps the entrance honest — no remount means no replay of the fade.
  */
 const TranscriptMessage = memo(function TranscriptMessage({
+  attachments,
   channelId,
   commandNames = "",
   delay,
@@ -834,6 +837,11 @@ const TranscriptMessage = memo(function TranscriptMessage({
   sources,
   text,
 }: {
+  /**
+   * The files a person's message carried, as JSON — a string for the same reason `sources` is one:
+   * the memo compares primitives. Absent draws nothing.
+   */
+  attachments?: string;
   /** The pages this answer was read from, as JSON (`sources.ts`). Absent draws no row. */
   sources?: string;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
@@ -865,6 +873,12 @@ const TranscriptMessage = memo(function TranscriptMessage({
     <MessageRow align={align}>
       <MessageContent>
         <Arriving delay={delay}>
+          {isUser && attachments ? (
+            <MessageAttachments
+              attachments={JSON.parse(attachments) as AttachmentPart[]}
+              channelId={channelId}
+            />
+          ) : null}
           {/* The chat measure: what a Bot says and what a person typed read at one size. */}
           {/*
            * BOTH SIDES GET A BUBBLE.
@@ -874,57 +888,60 @@ const TranscriptMessage = memo(function TranscriptMessage({
            * the Bot the grey bubble and the person the near-black one, and that symmetry is what
            * makes the transcript read as a conversation between two parties.
            */}
-          <Bubble
-            align={align}
-            className={partial ? "chat-prose opacity-60" : "chat-prose"}
-            joinedNext={joinedNext}
-            joinedPrev={joinedPrev}
-            variant={isUser ? "user" : "agent"}
-          >
-            <BubbleContent>
-              {isUser ? (
-                // A person's own message is shown exactly as they typed it. Rendering it as markdown
-                // would silently reformat what they said, and an asterisk in a sentence is not
-                // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
-                // the thing that was already a chip in the composer as a chip here too, so the
-                // transcript shows a skill was used rather than a slash that was typed.
-                <span className="whitespace-pre-wrap">
-                  {invoked ? (
-                    <>
-                      {/*
-                       * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
-                       * thing was invoked before it says which one. `inline-flex` with
-                       * `align-middle` rather than a block: this sits mid-sentence, and a badge that
-                       * breaks the line it is in reads as a separate message.
-                       */}
-                      <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
-                        <IconBox className="size-3 shrink-0" />/{invoked.chip}
-                      </span>
-                      {invoked.rest}
-                    </>
-                  ) : (
-                    text
-                  )}
-                </span>
-              ) : (
-                /*
-                 * A Bot's prose is markdown, and it arrives in pieces.
-                 *
-                 * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
-                 * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
-                 * plain markdown parser draws that as literal asterisks and backticks until the
-                 * closing token arrives, so the answer visibly rewrites itself as it lands. This
-                 * closes them for the duration.
-                 */
-                <Streamdown
-                  components={markdownComponents}
-                  plugins={markdownPlugins}
-                >
-                  {text}
-                </Streamdown>
-              )}
-            </BubbleContent>
-          </Bubble>
+          {/* Files handed over without a word are the whole message: no empty bubble under them. */}
+          {text ? (
+            <Bubble
+              align={align}
+              className={partial ? "chat-prose opacity-60" : "chat-prose"}
+              joinedNext={joinedNext}
+              joinedPrev={joinedPrev}
+              variant={isUser ? "user" : "agent"}
+            >
+              <BubbleContent>
+                {isUser ? (
+                  // A person's own message is shown exactly as they typed it. Rendering it as markdown
+                  // would silently reformat what they said, and an asterisk in a sentence is not
+                  // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
+                  // the thing that was already a chip in the composer as a chip here too, so the
+                  // transcript shows a skill was used rather than a slash that was typed.
+                  <span className="whitespace-pre-wrap">
+                    {invoked ? (
+                      <>
+                        {/*
+                         * The same icon the sidebar uses for Skills, so the badge says WHAT KIND of
+                         * thing was invoked before it says which one. `inline-flex` with
+                         * `align-middle` rather than a block: this sits mid-sentence, and a badge that
+                         * breaks the line it is in reads as a separate message.
+                         */}
+                        <span className="mr-1 inline-flex items-center gap-1 rounded bg-foreground/10 px-1.5 py-0.5 align-middle font-mono text-foreground/80 text-xs">
+                          <IconBox className="size-3 shrink-0" />/{invoked.chip}
+                        </span>
+                        {invoked.rest}
+                      </>
+                    ) : (
+                      text
+                    )}
+                  </span>
+                ) : (
+                  /*
+                   * A Bot's prose is markdown, and it arrives in pieces.
+                   *
+                   * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
+                   * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
+                   * plain markdown parser draws that as literal asterisks and backticks until the
+                   * closing token arrives, so the answer visibly rewrites itself as it lands. This
+                   * closes them for the duration.
+                   */
+                  <Streamdown
+                    components={markdownComponents}
+                    plugins={markdownPlugins}
+                  >
+                    {text}
+                  </Streamdown>
+                )}
+              </BubbleContent>
+            </Bubble>
+          ) : null}
           {partial ? (
             <p className="mt-1 text-muted-foreground text-xs">
               {t("Received up to here")}
@@ -1605,6 +1622,9 @@ export function ChatTranscript({
                       {...(index < settledBefore && sources.has(item.id)
                         ? { sources: JSON.stringify(sources.get(item.id)) }
                         : {})}
+                      {...(item.attachments
+                        ? { attachments: JSON.stringify(item.attachments) }
+                        : {})}
                       text={item.text}
                     />
                   </MessageScrollerItem>
@@ -1683,7 +1703,13 @@ export function ChatTranscript({
                   onRemoveQueued ? () => onRemoveQueued(message.id) : undefined
                 }
                 onStopForThis={onStopForQueued}
-                text={message.text}
+                // The files it will carry are named with it: a parked receipt is not an empty line.
+                text={[
+                  message.attachments?.map((file) => file.filename).join(", "),
+                  message.text,
+                ]
+                  .filter(Boolean)
+                  .join("\n")}
               />
             ))}
           </MessageScrollerContent>

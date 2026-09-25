@@ -9,7 +9,7 @@
 import { isBotId } from "./authorisation";
 import type { BotRoute, Computer } from "./computer";
 import { stopViewer } from "./live-screen";
-import { json } from "./respond";
+import { bodyOf, json } from "./respond";
 import { forgetSecretFields } from "./secret-fields";
 
 /**
@@ -85,9 +85,10 @@ export const stopComputer: BotRoute = async (
  * clicking "stop" must not be able to discard a login by mistyping a parameter.
  */
 export const resetComputer: BotRoute = async (
-  { botId, session },
-  { profiles, sessions },
+  { botId, request, session },
+  { profiles, sessions, workspace },
 ) => {
+  const body = await bodyOf<{ emptyFolder?: unknown }>(request);
   /*
    * THE BOT'S STATE IN THIS PROCESS GOES WITH THE PROFILE, AND BEFORE IT.
    *
@@ -107,5 +108,21 @@ export const resetComputer: BotRoute = async (
   // Always answers: a browser that will not close is killed (profiles.ts, closeAndWait), so a
   // reset cannot be the fourth thing queued behind a page that never loaded.
   await profiles.reset(botId);
-  return json({ reset: true, botId, scope: "deployment" });
+  /*
+   * AND THE BOT'S FOLDER, WHEN THE ACCOUNT IS LEAVING. The folder holds what the person's files
+   * became — a receipt's sheet as CSV, a menu's text — beside what the Bot downloaded and the long
+   * results it filed, and the next person to get this computer must not find them, any more than
+   * they may find the logins (`server/src/account/deletion.ts` asks for this).
+   *
+   * ONLY WHEN ASKED. The administrator's 초기화 reaches this route too, and its dialog promises a
+   * sign-out, not a deleted folder: emptying it there would be the control doing more than it says.
+   */
+  const emptied =
+    body?.emptyFolder === true ? await workspace.clear() : undefined;
+  return json({
+    reset: true,
+    botId,
+    scope: "deployment",
+    ...(emptied === undefined ? {} : { emptied }),
+  });
 };

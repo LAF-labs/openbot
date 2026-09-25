@@ -45,7 +45,10 @@ export function ConversationView({
   onSubmit,
   onStop,
   placeholder,
+  attach,
 }: {
+  /** Files as well as words; see `ComposerProps.attach`. Absent draws no paperclip. */
+  attach?: { channelId: string; images: boolean } | undefined;
   /** What the empty composer says; see `ComposerProps.placeholder`. */
   placeholder?: string | undefined;
   /**
@@ -318,6 +321,7 @@ export function ConversationView({
               : undefined
           }
           onStop={onStop}
+          attach={attach}
           onSubmit={(draft) => submit(draft, false)}
           placeholder={placeholder}
           /*

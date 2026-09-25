@@ -29,6 +29,8 @@ import {
   originRefusalBody,
 } from "./auth/origin";
 import type { SessionAdmission } from "./auth/session-revocation";
+import { createAttachmentRoutes } from "./attachments/routes";
+import type { AttachmentService } from "./attachments/service";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -413,6 +415,13 @@ export function createApp(
    * Absent, a new Bot waits for nothing: it simply holds none.
    */
   builtInSkills?: BuiltInSkillsRuntime,
+  /**
+   * Files the owner hands their Bot (attachments/). Last, like everything new here.
+   *
+   * Absent leaves both doors unmounted and `deployment.attachments` false, so the composer draws no
+   * attach button — a deployment that cannot keep a file must not offer to take one.
+   */
+  attachments?: AttachmentService,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -471,6 +480,9 @@ export function createApp(
   const capabilities = async () => ({
     effort: deploymentEffort !== false,
     autoReview: autoReviewCapable ? await autoReviewCapable() : true,
+    // Whether the composer offers to take a file at all, and whether a photo is among what it takes.
+    attachments: attachments !== undefined,
+    images: attachments?.imagesAccepted === true,
     /*
      * NO `seats` ANY MORE. It told the roster how many Bots fit so it could say "3/5"; since
      * 2026-09-24 a person has one Bot, the number is not a setting, and nothing on the surface
@@ -1049,6 +1061,13 @@ export function createApp(
         // Where the activity socket may be opened from. The same list every other check reads.
         config.trustedOrigins,
       ),
+    );
+  }
+
+  if (channelStore && attachments) {
+    app.route(
+      "/api/channels",
+      createAttachmentRoutes(attachments, channelStore, requireUser),
     );
   }
 

@@ -89,6 +89,7 @@ import {
   computerStandingApprovals,
   credentials,
   lafAnswerRatings,
+  lafAttachments,
   lafConversationContexts,
   lafRoutineRuns,
   lafRoutines,
@@ -286,7 +287,10 @@ export function createAccountDeletion(
       const [through] = botIds;
       if (computerClient && through && !keepProfile) {
         try {
-          await computerClient.forBot(through).resetComputer();
+          // The folder too: what their attached files became on the computer goes with them.
+          await computerClient
+            .forBot(through)
+            .resetComputer({ emptyFolder: true });
           reset.push(through);
         } catch {
           // Recorded, not thrown. A computer that is down must not leave the account half-deleted
@@ -387,6 +391,20 @@ export function createAccountDeletion(
             .delete(lafAnswerRatings)
             .where(eq(lafAnswerRatings.userId, userId))
             .returning({ id: lafAnswerRatings.id }),
+        );
+
+        /*
+         * The files they handed their Bots — receipts, sales sheets, menus (`attachments/`). Like
+         * the ratings, the cascade would take them at the end; taken here so the tally says how many.
+         * What the Bot could read of them was also filed on its computer as text, and that goes with
+         * the computer's reset above, which now empties the Bot's folder along with the profile.
+         */
+        record(
+          "attachments",
+          await transaction
+            .delete(lafAttachments)
+            .where(eq(lafAttachments.userId, userId))
+            .returning({ id: lafAttachments.id }),
         );
 
         const memberOf = await transaction

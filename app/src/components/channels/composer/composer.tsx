@@ -1,7 +1,17 @@
-import { IconArrowUp, IconPlayerStopFilled } from "@tabler/icons-react";
+import {
+  ATTACHMENT_PICKER_ACCEPT,
+  ATTACHMENTS_PER_MESSAGE,
+} from "@shared/attachments";
+import {
+  IconArrowUp,
+  IconPaperclip,
+  IconPlayerStopFilled,
+} from "@tabler/icons-react";
 import { PromptArea, type PromptAreaHandle } from "prompt-area";
 import type { Segment } from "prompt-area/helpers";
 import {
+  type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   useCallback,
   useContext,
@@ -11,10 +21,18 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  attachmentPartOf,
+  isImageFile,
+  refusalBeforeUpload,
+  uploadAttachment,
+  uploadRefusalText,
+} from "@/lib/attachments/upload";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
+import { AttachmentChips, type PendingAttachment } from "./attachment-chips";
 import {
   applyCommandChips,
   type CommandOption,
@@ -61,6 +79,13 @@ function createSources(initial: Sources) {
       current = next;
     },
   };
+}
+
+/** A photo's preview is this device's memory until it is let go. */
+function releasePreviews(released: readonly PendingAttachment[]) {
+  for (const attachment of released) {
+    if (attachment.preview) URL.revokeObjectURL(attachment.preview);
+  }
 }
 
 export type ComposerProps = {
@@ -117,6 +142,15 @@ export type ComposerProps = {
    * Defaults to `pending`, which is the right answer for a caller with no gap between the two.
    */
   stoppable?: boolean;
+  /**
+   * Take files as well as words: a picker, a drop and a paste, each file sent up the moment it is
+   * picked (`lib/attachments/upload.ts`) and carried by the message as a reference.
+   *
+   * Absent draws no paperclip. The conversation passes it only where there is a conversation to
+   * keep the file in and the deployment says it takes files (`deployment.attachments`); `images` is
+   * whether photos are among them, which is whether the model sees.
+   */
+  attach?: { channelId: string; images: boolean } | undefined;
 };
 
 export function Composer({
@@ -130,8 +164,16 @@ export function Composer({
   pending = false,
   stoppable,
   placeholder,
+  attach,
 }: ComposerProps) {
   const [value, setValue] = useState<Segment[]>([]);
+  const [attachments, setAttachments] = useState<readonly PendingAttachment[]>(
+    [],
+  );
+  /** Why the last file offered was not taken, in the owner's words. Cleared by the next offer. */
+  const [attachNotice, setAttachNotice] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitInFlight = useRef(false);
   const promptAreaRef = useRef<PromptAreaHandle>(null);
@@ -166,6 +208,125 @@ export function Composer({
     [sources],
   );
   const draft = useMemo(() => toDraft(value), [value]);
+  const isUploading = attachments.some(
+    (attachment) => attachment.status === "uploading",
+  );
+  /** Something to send: words, or files that have landed. */
+  const hasContent =
+    !draft.isEmpty || attachments.some((attachment) => attachment.part);
+
+  const handleRemoveAttachment = (localId: string) => {
+    const removed = attachments.filter((item) => item.localId === localId);
+    releasePreviews(removed);
+    setAttachments((current) =>
+      current.filter((item) => item.localId !== localId),
+    );
+  };
+
+  /**
+   * Every way a file arrives — the picker, a drop, a paste — comes here. Each is checked, drawn as a
+   * chip at once, and sent up on its own; a refusal is said in words under the box, and the files
+   * that were fine still go.
+   */
+  const handleFiles = (files: readonly File[]) => {
+    if (!attach || files.length === 0 || disabled) return;
+    const room = ATTACHMENTS_PER_MESSAGE - attachments.length;
+    let notice: string | null =
+      files.length > room
+        ? t("Up to {count} files can be attached at a time.", {
+            count: ATTACHMENTS_PER_MESSAGE,
+          })
+        : null;
+    for (const file of files.slice(0, Math.max(0, room))) {
+      const refused = refusalBeforeUpload(file, attach.images);
+      if (refused) {
+        notice = refused;
+        continue;
+      }
+      const localId = crypto.randomUUID();
+      const image = isImageFile(file);
+      const pending: PendingAttachment = {
+        localId,
+        name: file.name,
+        kind: image
+          ? "image"
+          : file.name.toLowerCase().endsWith(".pdf")
+            ? "pdf"
+            : "sheet",
+        bytes: file.size,
+        status: "uploading",
+        ...(image ? { preview: URL.createObjectURL(file) } : {}),
+      };
+      setAttachments((current) => [...current, pending]);
+      uploadAttachment(attach.channelId, file).then(
+        (received) => {
+          setAttachments((current) =>
+            current.map((item) =>
+              item.localId === localId
+                ? {
+                    ...item,
+                    name: received.name,
+                    kind: received.kind,
+                    bytes: received.bytes,
+                    status: "ready",
+                    part: attachmentPartOf(received),
+                  }
+                : item,
+            ),
+          );
+        },
+        (error: unknown) => {
+          releasePreviews([pending]);
+          setAttachments((current) =>
+            current.filter((item) => item.localId !== localId),
+          );
+          setAttachNotice(
+            uploadRefusalText((error as { code?: unknown } | null)?.code),
+          );
+        },
+      );
+    }
+    setAttachNotice(notice);
+  };
+
+  const handlePickFiles = () => {
+    fileInput.current?.click();
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLFormElement>) => {
+    if (!attach || !event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (event: DragEvent<HTMLFormElement>) => {
+    // Leaving for a child of the form is not leaving the form.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    setIsDragging(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    if (!attach || event.dataTransfer.files.length === 0) return;
+    event.preventDefault();
+    setIsDragging(false);
+    handleFiles([...event.dataTransfer.files]);
+  };
+
+  /**
+   * A pasted picture becomes an attachment. Only when the clipboard holds no TEXT: a range copied
+   * out of Excel carries its cells as text and a picture of them as well, and the person pasting it
+   * wants the numbers in the box, not a screenshot of them.
+   */
+  const handlePaste = (event: ClipboardEvent<HTMLFormElement>) => {
+    if (!attach) return;
+    const { files, types } = event.clipboardData;
+    if (files.length === 0 || types.includes("text/plain")) return;
+    event.preventDefault();
+    handleFiles([...files]);
+  };
 
   /*
    * WHAT COMES BACK OUT OF HERE IS WHAT WENT IN, UNLESS A `/` CHIP REALLY HAD TO BE REWRITTEN.
@@ -206,8 +367,16 @@ export function Composer({
    */
   const submitDraft = useCallback(
     async (segments: Segment[]) => {
-      const submitted = toDraft(segments);
-      if (submitted.isEmpty || disabled) {
+      const typed = toDraft(segments);
+      const sentAttachments = attachments;
+      const parts = sentAttachments.flatMap((attachment) =>
+        attachment.part ? [attachment.part] : [],
+      );
+      const submitted: ComposerDraft = parts.length
+        ? { ...typed, attachments: parts }
+        : typed;
+      // A file still going up holds the send: the message would leave without it.
+      if ((typed.isEmpty && parts.length === 0) || disabled || isUploading) {
         return;
       }
 
@@ -228,6 +397,8 @@ export function Composer({
           return;
         }
         setValue([]);
+        setAttachments([]);
+        releasePreviews(sentAttachments);
         onQueue(submitted);
         return;
       }
@@ -240,14 +411,17 @@ export function Composer({
       setIsSubmitting(true);
       // Clear optimistically; restore if the send fails before becoming a message.
       setValue([]);
+      setAttachments([]);
       // `try`…`catch`…`finally`, the `finally` through `ensure`: the React Compiler cannot compile
       // a `finally` in the component itself. The draft is put back first, then the flags come down.
       await ensure(
         async () => {
           try {
             await onSubmit(submitted);
+            releasePreviews(sentAttachments);
           } catch (error) {
             setValue(segments);
+            setAttachments(sentAttachments);
             throw error;
           }
         },
@@ -260,7 +434,7 @@ export function Composer({
         },
       );
     },
-    [disabled, isBusy, onQueue, onSubmit],
+    [attachments, disabled, isBusy, isUploading, onQueue, onSubmit],
   );
 
   /**
@@ -347,8 +521,9 @@ export function Composer({
    */
   const canQueue = Boolean(onQueue) && isBusy && !disabled;
   /** Something is typed, mid-turn, with a queue to put it in. */
-  const parking = canQueue && !draft.isEmpty;
-  const canSend = !disabled && !draft.isEmpty && (!isBusy || canQueue);
+  const parking = canQueue && hasContent;
+  const canSend =
+    !disabled && hasContent && !isUploading && (!isBusy || canQueue);
   /**
    * Stop is available only once there is a run for it to reach, and it gives way to Send the moment
    * there is something typed to park.
@@ -372,78 +547,138 @@ export function Composer({
 
   if (compact) {
     return (
-      <form
-        aria-busy={isBusy}
-        className={cn(
-          /*
-           * `py-3` IS LOAD-BEARING ONCE THE TEXT WRAPS. On one line `min-h-14` and `items-center`
-           * fake the vertical padding, so it read as correct for as long as nobody typed a
-           * paragraph. Past that the row grows to fit its content exactly and the glyphs sit
-           * against the border.
-           *
-           * It goes on the form rather than on the editor because the editor scrolls internally at
-           * COMPACT_MAX_HEIGHT_PX: padding inside that box would scroll away with the text, so the
-           * first visible line would still touch the top edge on a long message.
-           */
-          /*
-           * THE MEASURED COMPOSER: an elevated pill on a hairline, lifted by a shadow so faint it
-           * reads as a raised surface rather than as a card.
-           *
-           * A 3px focus ring used to bloom around it. Grok focuses by darkening the hairline to
-           * `border/focus` and nothing else — on a control that is already the brightest thing on
-           * the screen, a ring is noise, and it was the one place the app shouted.
-           *
-           * `pl-4` replaces the inset the removed `+` button used to provide.
-           */
-          "flex min-h-12 items-center gap-3 rounded-[24px] border-[0.5px] border-border bg-[var(--sand-fill-elevated)] py-2 pr-2 pl-4 shadow-[var(--sand-shadow-composer)] transition-colors focus-within:border-[var(--sand-border-focus)]",
-          className,
-        )}
-        onSubmit={handleFormSubmit}
-      >
-        {/*
-         * THE `+` IS GONE. It was permanently disabled and drawn at full strength
-         * (`disabled:opacity-100`), so it read as a working control that ignored every click, and it
-         * announced itself as "More message options unavailable" to anybody using a screen reader.
-         * A control that can never do anything is not a promise worth keeping on screen.
-         */}
-        <PromptArea
-          aria-label={t("Message")}
-          className="chat-prose min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none"
-          disabled={disabled}
-          maxHeight={COMPACT_MAX_HEIGHT_PX}
-          minHeight={COMPACT_MIN_HEIGHT_PX}
-          onChange={handleChange}
-          onSubmit={submitDraft}
-          placeholder={placeholder ?? t("Ask anything")}
-          ref={promptAreaRef}
-          triggers={triggers}
-          value={value}
-        />
-        {canStop ? (
-          <Button
-            aria-label={t("Stop the Bot")}
-            className="size-8 rounded-full p-0"
-            data-testid="composer-stop"
-            onClick={onStop}
-            size="icon"
-            title={t("Stop the Bot")}
-            type="button"
-          >
-            <IconPlayerStopFilled className="size-3" />
-          </Button>
-        ) : (
-          <Button
-            aria-label={sendLabel}
-            className="size-8 rounded-full p-0"
-            disabled={!canSend}
-            size="icon"
-            title={sendLabel}
-            type="submit"
-          >
-            <IconArrowUp className="size-3.5" />
-          </Button>
-        )}
-      </form>
+      <div className={cn("flex flex-col", className)}>
+        {attach ? (
+          <AttachmentChips
+            attachments={attachments}
+            onRemove={handleRemoveAttachment}
+          />
+        ) : null}
+        {attachNotice ? (
+          <p className="mb-2 text-destructive text-sm" role="alert">
+            {attachNotice}
+          </p>
+        ) : null}
+        <form
+          aria-busy={isBusy}
+          className={cn(
+            /*
+             * `py-3` IS LOAD-BEARING ONCE THE TEXT WRAPS. On one line `min-h-14` and `items-center`
+             * fake the vertical padding, so it read as correct for as long as nobody typed a
+             * paragraph. Past that the row grows to fit its content exactly and the glyphs sit
+             * against the border.
+             *
+             * It goes on the form rather than on the editor because the editor scrolls internally at
+             * COMPACT_MAX_HEIGHT_PX: padding inside that box would scroll away with the text, so the
+             * first visible line would still touch the top edge on a long message.
+             */
+            /*
+             * THE MEASURED COMPOSER: an elevated pill on a hairline, lifted by a shadow so faint it
+             * reads as a raised surface rather than as a card.
+             *
+             * A 3px focus ring used to bloom around it. Grok focuses by darkening the hairline to
+             * `border/focus` and nothing else — on a control that is already the brightest thing on
+             * the screen, a ring is noise, and it was the one place the app shouted.
+             *
+             * `pl-4` replaces the inset the removed `+` button used to provide.
+             */
+            "flex min-h-12 items-center gap-3 rounded-[24px] border-[0.5px] border-border bg-[var(--sand-fill-elevated)] py-2 pr-2 shadow-[var(--sand-shadow-composer)] transition-colors focus-within:border-[var(--sand-border-focus)]",
+            // The paperclip sits where the inset was.
+            attach ? "pl-1.5" : "pl-4",
+            isDragging && "border-ring border-dashed",
+          )}
+          data-testid="composer"
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onPaste={handlePaste}
+          onSubmit={handleFormSubmit}
+        >
+          {/*
+           * THE PAPERCLIP, drawn only where it works (`attach`). The `+` that stood here until 0.5.3
+           * was permanently disabled and read as a working control that ignored every click; this one
+           * exists only where a file has somewhere to go.
+           */}
+          {attach ? (
+            <>
+              <Button
+                aria-label={t("Attach a file")}
+                className="size-8 shrink-0 rounded-full p-0 text-muted-foreground hover:text-foreground"
+                data-testid="composer-attach"
+                disabled={disabled}
+                onClick={handlePickFiles}
+                size="icon"
+                title={t("Attach a file")}
+                type="button"
+                variant="ghost"
+              >
+                <IconPaperclip className="size-4" />
+              </Button>
+              <input
+                accept={
+                  attach.images
+                    ? ATTACHMENT_PICKER_ACCEPT
+                    : ".xlsx,.xls,.csv,.pdf"
+                }
+                className="hidden"
+                data-testid="composer-file-input"
+                multiple
+                onChange={(event) => {
+                  handleFiles([...(event.currentTarget.files ?? [])]);
+                  // The same file picked twice in a row is still a pick.
+                  event.currentTarget.value = "";
+                }}
+                ref={fileInput}
+                tabIndex={-1}
+                type="file"
+              />
+            </>
+          ) : null}
+          {/*
+           * THE `+` IS GONE. It was permanently disabled and drawn at full strength
+           * (`disabled:opacity-100`), so it read as a working control that ignored every click, and it
+           * announced itself as "More message options unavailable" to anybody using a screen reader.
+           * A control that can never do anything is not a promise worth keeping on screen.
+           */}
+          <PromptArea
+            aria-label={t("Message")}
+            className="chat-prose min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+            disabled={disabled}
+            maxHeight={COMPACT_MAX_HEIGHT_PX}
+            minHeight={COMPACT_MIN_HEIGHT_PX}
+            onChange={handleChange}
+            onSubmit={submitDraft}
+            placeholder={placeholder ?? t("Ask anything")}
+            ref={promptAreaRef}
+            triggers={triggers}
+            value={value}
+          />
+          {canStop ? (
+            <Button
+              aria-label={t("Stop the Bot")}
+              className="size-8 rounded-full p-0"
+              data-testid="composer-stop"
+              onClick={onStop}
+              size="icon"
+              title={t("Stop the Bot")}
+              type="button"
+            >
+              <IconPlayerStopFilled className="size-3" />
+            </Button>
+          ) : (
+            <Button
+              aria-label={sendLabel}
+              className="size-8 rounded-full p-0"
+              disabled={!canSend}
+              size="icon"
+              title={sendLabel}
+              type="submit"
+            >
+              <IconArrowUp className="size-3.5" />
+            </Button>
+          )}
+        </form>
+      </div>
     );
   }
 

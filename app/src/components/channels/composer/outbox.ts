@@ -1,3 +1,4 @@
+import type { AttachmentPart } from "@shared/attachments";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -31,6 +32,11 @@ export type UnsentMessage = {
   at: string;
   /** It has been sent once by itself already. The next try is the person's. */
   autoTried: boolean;
+  /**
+   * The files it carried, as references. The files themselves are already on the server — they were
+   * sent up when they were picked — so what is kept here is only what to send again.
+   */
+  attachments?: AttachmentPart[];
 };
 
 const KEY_PREFIX = "laf:unsent:";

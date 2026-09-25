@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import {
   UseAgentUpdate,
   useAgent,
@@ -30,6 +31,8 @@ import {
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
 import { turnPhaseOf, usePublishTurn } from "@/lib/agents/presence";
 import { agentQueryOptions } from "@/lib/agents/queries";
+import { contentOf } from "@/lib/attachments/message";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
   recordChannelActivityMutationOptions,
   setChannelReadMutationOptions,
@@ -137,6 +140,10 @@ export function ChannelChat({
   const storedFailures = useQuery(channelFailuresQueryOptions(channel.id));
   /** The Bot's name, for the composer to say who the words go to. Cached by the sidebar already. */
   const botName = useQuery(agentQueryOptions(runtimeAgentId)).data?.name;
+  /** Whether the composer takes files here, and photos among them (`deployment.attachments`). */
+  const signedIn = useQuery(currentUserQueryOptions()).data;
+  const deployment =
+    typeof signedIn === "object" && signedIn ? signedIn.deployment : undefined;
 
   /*
    * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED.
@@ -458,7 +465,11 @@ export function ChannelChat({
     ]);
   };
 
-  const deliver = async (trimmed: string, skillInstructions: string[]) => {
+  const deliver = async (
+    trimmed: string,
+    skillInstructions: string[],
+    attachments: AttachmentPart[],
+  ) => {
     // Before adding the message, not after: a message added to a provisional agent is lost.
     await untilReady();
 
@@ -495,7 +506,11 @@ export function ChannelChat({
           role: "system",
         });
       }
-      agent.addMessage({ content: message.text, id: message.id, role: "user" });
+      agent.addMessage({
+        content: contentOf(message.text, message.attachments ?? []),
+        id: message.id,
+        role: "user",
+      });
     }
 
     for (const instruction of skillInstructions) {
@@ -523,20 +538,24 @@ export function ChannelChat({
     const at = new Date().toISOString();
     setSentAt((held) => ({ ...held, [messageId]: at }));
     agent.addMessage({
-      content: trimmed,
+      content: contentOf(trimmed, attachments),
       id: messageId,
       role: "user",
     });
-    report(trimmed, null);
+    report(
+      trimmed || attachments.map((part) => part.filename).join(", "),
+      null,
+    );
     // What would be kept on this device if the server never gets it (`composer/outbox.ts`).
     sending.current = [
-      ...kept.map(({ id, text, instructions, at: keptAt }) => ({
-        id,
-        text,
-        instructions,
-        at: keptAt,
-      })),
-      { id: messageId, text: trimmed, instructions: skillInstructions, at },
+      ...kept.map(({ autoTried: _autoTried, ...message }) => message),
+      {
+        id: messageId,
+        text: trimmed,
+        instructions: skillInstructions,
+        at,
+        ...(attachments.length ? { attachments } : {}),
+      },
     ];
 
     await run();
@@ -630,7 +649,14 @@ export function ChannelChat({
       const prompt = skillCommands.find(
         (command) => command.name === skill,
       )?.prompt;
-      await say(text, prompt ? [prompt] : []);
+      // The files it was asked with go with it: a receipt's question without the receipt is a
+      // different question.
+      const asked = agent.messages.find((message) => message.id === id);
+      await say(
+        text,
+        prompt ? [prompt] : [],
+        attachmentPartsOf(asked?.content),
+      );
       return;
     }
     stopBeforeRun.current = false;
@@ -687,18 +713,15 @@ export function ChannelChat({
           });
         }
         agent.addMessage({
-          content: message.text,
+          content: contentOf(message.text, message.attachments ?? []),
           id: message.id,
           role: "user",
         });
         setSentAt((held) => ({ ...held, [message.id]: message.at }));
       }
-      sending.current = messages.map(({ id, text, instructions, at }) => ({
-        id,
-        text,
-        instructions,
-        at,
-      }));
+      sending.current = messages.map(
+        ({ autoTried: _autoTried, ...message }) => message,
+      );
       if (automatic) noteResent(messages.map((message) => message.id));
       await run();
     } finally {
@@ -715,15 +738,19 @@ export function ChannelChat({
    * keeping here rather than in the view: the view sees only the turns it started itself, and a
    * queue that drains on the wrong one of those posts a correction into the middle of an answer.
    */
-  const say = async (text: string, skillInstructions: string[] = []) => {
+  const say = async (
+    text: string,
+    skillInstructions: string[] = [],
+    attachments: AttachmentPart[] = [],
+  ) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
 
     stopBeforeRun.current = false;
     turnsNow.current += 1;
     setTurnsInFlight((count) => count + 1);
     try {
-      await deliver(trimmed, skillInstructions);
+      await deliver(trimmed, skillInstructions, attachments);
     } finally {
       turnsNow.current -= 1;
       setTurnsInFlight((count) => count - 1);
@@ -1250,6 +1277,11 @@ export function ChannelChat({
               </p>
             )
           }
+          attach={
+            deployment?.attachments && channel.active
+              ? { channelId: channel.id, images: deployment.images === true }
+              : undefined
+          }
           onSubmit={async (draft) => {
             /*
              * `commandIds` are the `/` chips that survived into the send, in the order they were
@@ -1266,7 +1298,7 @@ export function ChannelChat({
                 Boolean(instruction),
               );
 
-            await say(draft.text, skillInstructions);
+            await say(draft.text, skillInstructions, draft.attachments ?? []);
           }}
           onStop={handleStop}
           placeholder={botName ? t("Ask {name}", { name: botName }) : undefined}

@@ -19,8 +19,8 @@
  *
  * A fifth dimension, `owner-words`, came from the 0.5.3 UI/UX audit: a Bot can call every tool
  * right and still talk to a shop owner in its tools' words — refs, snapshots, milliseconds, "사람에게"
- * — offer a file upload the product has no place for, or give a reason for stopping that is not the
- * owner's own 거부. A candidate that does any of those fails here.
+ * — fail to ask for the file the composer can now take, or give a reason for stopping that is not
+ * the owner's own 거부. A candidate that does any of those fails here.
  */
 
 import type { PromptPerson } from "../shared/prompt/person.ko";
@@ -181,16 +181,19 @@ function alreadyBrowsed(
 }
 
 /**
- * An offer to take a file the product has no way to take.
+ * An offer to take a file, now that the product takes one.
  *
- * "파일로 올려 드릴게요 — 매출 엑셀/CSV 파일을 작업 공간에 올려 두면 그걸 읽어서 요약" was the
- * first choice a Bot offered when a routine was being made (audit item 7). The composer has no
- * attach button and no other screen takes a file, so the press is a dead end. Saying there is no
- * such place is honest and allowed: the pattern is the INVITATION — 올려 주시면, 첨부해 주세요,
- * 올려 두면.
+ * Audit item 7 (0.5.3): "매출 엑셀/CSV 파일을 작업 공간에 올려 두면" was offered when the composer had
+ * no attach button, and this pattern was the thing the eval refused. Since 2026-09-26 the composer
+ * takes photos, sheets and PDFs (`shared/attachments.ts`), so the same words are the right answer:
+ * the scenario now asks for them — and still refuses the old dead ends, "작업 공간" and "there is
+ * nowhere to put it".
  */
-const UPLOAD_INVITATION =
-  /(올려|올리|업로드|첨부|끌어다)[^.?!\n]{0,12}(주시|주세요|주면|주거나|주실|주셔|두시|두면|하시면|시면|드릴게요|드리면)/;
+const FILE_INVITATION =
+  /(올려|올리|업로드|첨부|붙여|붙이|끌어다)[^.?!\n]{0,12}(주시|주세요|주면|주거나|주실|주셔|두시|두면|하시면|시면|드릴게요|드리면)/;
+
+/** The old refusal, which is a lie once the composer takes files. */
+const NO_PLACE_FOR_FILES = /(올릴|첨부할|붙일|받을)\s?(곳|수)(이|가)?\s?없/;
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -746,7 +749,7 @@ export const SCENARIOS: Scenario[] = [
       ]),
   },
   {
-    id: "no-upload-invitation",
+    id: "asks-for-the-file",
     dimension: "owner-words",
     messages: [
       user("지난달 매출 정리해서 요약해 줘. 매출은 엑셀 파일로 갖고 있어."),
@@ -754,15 +757,12 @@ export const SCENARIOS: Scenario[] = [
     tools: [LIST_FILES, READ_FILE, NAVIGATE, REMEMBER, MANAGE_ROUTINE],
     check: (turn) =>
       verdict([
+        ["엑셀 파일을 붙여 달라고 하지 않음", FILE_INVITATION.test(turn.text)],
         [
-          `받을 곳이 없는 파일을 올려 달라고 함 — "${turn.text.match(UPLOAD_INVITATION)?.[0] ?? ""}"`,
-          !UPLOAD_INVITATION.test(turn.text),
+          `파일 받을 곳이 없다고 함 — "${turn.text.match(NO_PLACE_FOR_FILES)?.[0] ?? ""}"`,
+          !NO_PLACE_FOR_FILES.test(turn.text),
         ],
         ["'작업 공간'이라고 말함", !/작업\s?공간/.test(turn.text)],
-        [
-          "숫자를 받을 실제 길(붙여 넣기·말로 알려 주기)을 말하지 않음",
-          /(붙여|복사|적어|알려|말씀|입력)/.test(turn.text),
-        ],
       ]),
   },
   {

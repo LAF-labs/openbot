@@ -92,6 +92,7 @@ export const ENVIRONMENT = {
   OPENAI_BASE_URL: "compose",
   BOT_MODEL: "operator",
   BOT_MODEL_EFFORT: "compose",
+  BOT_MODEL_IMAGES: "compose",
   REVIEW_MODEL: "compose",
   SERVER_MODEL: "compose",
   SERVER_MODEL_EFFORT: "compose",
@@ -144,6 +145,7 @@ export type VariableName = keyof typeof ENVIRONMENT;
 export const TENANT_PACKAGE_VARIABLES = [
   "BOT_MODEL",
   "BOT_MODEL_EFFORT",
+  "BOT_MODEL_IMAGES",
   "SERVER_MODEL",
   "SERVER_MODEL_EFFORT",
   "REVIEW_MODEL",

@@ -330,6 +330,15 @@ describe.if(HAS_BROWSER)("resetting the computer", () => {
      * ASKED BY THE OTHER BOT, and it signs the first one out. That is the property the button's
      * words had to change for: the Bot on the header is who pressed it, not whose logins go.
      */
+    // A file the owner attached, as the server files it for the Bot to read.
+    const attached = join(
+      workspaceDir,
+      "uploads",
+      "2026-09-26-1a2b3c4d-매출.csv",
+    );
+    await mkdir(join(workspaceDir, "uploads"), { recursive: true });
+    await writeFile(attached, "메뉴,수량\n라떼,2\n", "utf8");
+
     const reset = await post(computer, "/computers/reset", {}, OFFICE_BOT);
     expect(reset.status).toBe(200);
     expect(reset.body).toMatchObject({
@@ -337,6 +346,21 @@ describe.if(HAS_BROWSER)("resetting the computer", () => {
       botId: OFFICE_BOT,
       scope: "deployment",
     });
+    // The administrator's reset promises a sign-out, and the folder is not part of that promise.
+    expect(existsSync(attached)).toBe(true);
+    expect(reset.body.emptied).toBeUndefined();
+
+    // An account leaving asks for the folder as well, and gets it.
+    const leaving = await post(
+      computer,
+      "/computers/reset",
+      { emptyFolder: true },
+      OFFICE_BOT,
+    );
+    expect(leaving.status).toBe(200);
+    expect(existsSync(attached)).toBe(false);
+    expect(leaving.body.emptied).toBeGreaterThanOrEqual(1);
+    expect(existsSync(workspaceDir)).toBe(true);
 
     const after = await post(
       computer,

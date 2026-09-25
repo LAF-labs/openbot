@@ -1,4 +1,5 @@
 [
+  "agent-bot/tests/attachments.test.ts",
   "agent-bot/tests/context-budget.test.ts",
   "agent-bot/tests/deferral.test.ts",
   "agent-bot/tests/harness.test.ts",
@@ -53,6 +54,7 @@
   "app/tests/approval-preview.test.ts",
   "app/tests/approval-subject.test.ts",
   "app/tests/approve-centring.test.tsx",
+  "app/tests/attachments.test.ts",
   "app/tests/audit-labels.test.ts",
   "app/tests/audit-paging.test.ts",
   "app/tests/audit-rows.test.ts",
@@ -212,6 +214,8 @@
   "server/tests/approval-metrics.test.ts",
   "server/tests/approval-notify.test.ts",
   "server/tests/approval-routes.test.ts",
+  "server/tests/attachments.integration.test.ts",
+  "server/tests/attachments.test.ts",
   "server/tests/audit-append-only.integration.test.ts",
   "server/tests/audit.test.ts",
   "server/tests/auth-allowlist.test.ts",

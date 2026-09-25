@@ -35,6 +35,7 @@ import {
   channelThreads,
   computerStandingApprovals,
   lafAnswerRatings,
+  lafAttachments,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -325,6 +326,31 @@ export function createAccountExport(database: Database): AccountExport {
         .from(lafAnswerRatings)
         .where(eq(lafAnswerRatings.userId, userId))
         .orderBy(asc(lafAnswerRatings.createdAt)),
+    )}`;
+
+    /*
+     * The files they handed their Bots: what each was, when, in which conversation, and what the
+     * Bot was given to read of it. NOT the bytes — this is one JSON file, and a month of receipt
+     * photos in base64 would make it one nobody can open. Each file is still in its conversation,
+     * where the message that carried it downloads it again (`attachments/routes.ts`); the message in
+     * `conversations` above names it by the same id.
+     */
+    yield `,\n"attachments":${JSON.stringify(
+      await database
+        .select({
+          id: lafAttachments.id,
+          channelId: lafAttachments.channelId,
+          agentId: lafAttachments.agentId,
+          name: lafAttachments.name,
+          mimeType: lafAttachments.mimeType,
+          bytes: lafAttachments.bytes,
+          modelText: lafAttachments.modelText,
+          workspacePath: lafAttachments.workspacePath,
+          createdAt: lafAttachments.createdAt,
+        })
+        .from(lafAttachments)
+        .where(eq(lafAttachments.userId, userId))
+        .orderBy(asc(lafAttachments.createdAt)),
     )}`;
 
     /*

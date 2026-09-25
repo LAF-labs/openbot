@@ -120,7 +120,14 @@ describe("server authorization", () => {
       // and each of these decides whether a control is drawn at all, so a wrong answer here is a
       // control that saves and reaches nothing.
       // No seat count: a person has one Bot since 2026-09-24, and nothing on the surface counts.
-      deployment: { effort: true, autoReview: true },
+      // Attachments are the exception to "true when nothing says otherwise": with no service to
+      // keep a file, the composer must not offer to take one.
+      deployment: {
+        effort: true,
+        autoReview: true,
+        attachments: false,
+        images: false,
+      },
     });
   });
 

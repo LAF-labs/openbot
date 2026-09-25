@@ -1,3 +1,4 @@
+import type { AttachmentPart } from "@shared/attachments";
 import type { ComposerDraft } from "./draft";
 
 /**
@@ -44,6 +45,8 @@ export type QueuedMessage = {
    * eventually runs rather than being silently dropped on the way through the queue.
    */
   commandIds: string[];
+  /** Files parked with the words, sent with them. */
+  attachments?: AttachmentPart[];
 };
 
 export type QueueAction =
@@ -97,25 +100,11 @@ export function reduceQueue(
         }
         return {
           queue: [],
-          run: joinQueued([
-            ...queue,
-            {
-              id: action.id,
-              text: action.draft.text,
-              commandIds: [...action.draft.commandIds],
-            },
-          ]),
+          run: joinQueued([...queue, queuedOf(action.id, action.draft)]),
         };
       }
       return {
-        queue: [
-          ...queue,
-          {
-            id: action.id,
-            text: action.draft.text,
-            commandIds: [...action.draft.commandIds],
-          },
-        ],
+        queue: [...queue, queuedOf(action.id, action.draft)],
         run: null,
       };
     }
@@ -147,9 +136,25 @@ export function reduceQueue(
  * Never empty. The composer refuses an empty draft before it reaches the queue, so a drained turn
  * always has something in it to send.
  */
-function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
+function queuedOf(id: string, draft: ComposerDraft): QueuedMessage {
   return {
-    text: queue.map((message) => message.text).join("\n"),
+    id,
+    text: draft.text,
+    commandIds: [...draft.commandIds],
+    ...(draft.attachments?.length
+      ? { attachments: [...draft.attachments] }
+      : {}),
+  };
+}
+
+function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
+  const attachments = queue.flatMap((message) => message.attachments ?? []);
+  return {
+    ...(attachments.length ? { attachments } : {}),
+    text: queue
+      .map((message) => message.text)
+      .filter((text) => text.length > 0)
+      .join("\n"),
     // The same skill queued twice is still one instruction. Sending it twice would put the same
     // paragraph in front of the Bot two times and say nothing new by doing it.
     commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],

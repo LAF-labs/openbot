@@ -25,6 +25,8 @@ import { isDeferredToolName } from "../../shared/tools/bridge";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
+import { withAttachments } from "./attachments/for-model";
+import type { AttachmentService } from "./attachments/service";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
 import type { ConversationStore } from "./context/conversations";
@@ -388,6 +390,13 @@ export type RunMeter = {
    * test that builds agents alone wants.
    */
   conversations?: ConversationStore;
+  /**
+   * The files people handed their Bot (`attachments/`), turned into what the model reads on the way
+   * out — on the fetch, beside the trial's day, for the same reason: finding one reads the database.
+   * Here rather than in its own parameter because this bag is what every run path is already handed.
+   * Absent, an attachment reaches the endpoint as the bare reference it is stored as.
+   */
+  attachments?: Pick<AttachmentService, "forModel">;
 };
 
 /**
@@ -505,12 +514,19 @@ function remoteAgentWithPrompt(
   const { timeZone, stallGuard, spill, meter } = options;
   const conversations = meter?.conversations;
   const watched = stallGuard?.watch({ id: agent.id, name: agent.name });
-  const reach: AgentFetch | undefined = meter?.dailyBudget
+  const budgeted: AgentFetch | undefined = meter?.dailyBudget
     ? withDailyBudget(
         meter.dailyBudget,
         watched ?? ((url, requestInit) => fetch(url, requestInit)),
       )
     : watched;
+  const reach: AgentFetch | undefined = meter?.attachments
+    ? withAttachments(
+        meter.attachments,
+        agent.id,
+        budgeted ?? ((url, requestInit) => fetch(url, requestInit)),
+      )
+    : budgeted;
   const remote = new HttpAgent({
     url: agent.endpoint,
     agentId: agent.id,

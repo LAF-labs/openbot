@@ -65,6 +65,7 @@ import {
   conversationPersistence,
   createConversationStore,
 } from "./context/conversations";
+import { createAttachmentService } from "./attachments/service";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
@@ -198,11 +199,6 @@ const conversations = createConversationStore({
       }),
 });
 const conversationsLoaded = await conversations.load();
-const runMeter = {
-  auditStore: bootAuditStore,
-  ...(dailyBudget ? { dailyBudget } : {}),
-  conversations,
-};
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -255,6 +251,21 @@ const tenantPackage = await loadTenantPackage(
   config.tenantPackageVariables,
 );
 const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
+/**
+ * Files the owner hands their Bot (attachments/): the bytes kept here, what the Bot can read of them
+ * filed on its computer, and photos refused where the model cannot see.
+ */
+const attachmentService = createAttachmentService({
+  database,
+  ...(computerClient ? { computer: computerClient } : {}),
+  imagesAccepted: tenantPackage.model.supportsImages !== false,
+});
+const runMeter = {
+  auditStore: bootAuditStore,
+  ...(dailyBudget ? { dailyBudget } : {}),
+  conversations,
+  attachments: attachmentService,
+};
 /**
  * Every socket open on this server, and the one thing that fans an event out to them.
  *
@@ -882,6 +893,8 @@ const app = createApp(
   }),
   // The package's skills, handed to a Bot the moment it is made (built-in-skill-sync.ts).
   builtInSkills,
+  // Files the owner hands their Bot: the composer's two doors, and whether photos are offered.
+  attachmentService,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

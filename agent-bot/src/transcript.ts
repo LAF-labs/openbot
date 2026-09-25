@@ -46,7 +46,7 @@ export function toProviderMessages(
     if (message.role === "user") {
       // Not `String(content)`: a user message's content can be an array of parts, and stringifying
       // one hands the model "[object Object]" with nothing anywhere saying so. See message-content.
-      messages.push({ role: "user", content: textOf(message.content) });
+      messages.push({ role: "user", content: userContentOf(message.content) });
       continue;
     }
     if (message.role === "system" || message.role === "developer") {
@@ -89,6 +89,45 @@ export function toProviderMessages(
   }
 
   return messages;
+}
+
+/**
+ * What a person's message says, in the provider's shape.
+ *
+ * A plain string, exactly as before, unless the message carries a PICTURE — the one part a string
+ * cannot hold. The server has already turned each attachment into its text and, for a photo, an
+ * AG-UI `image` part (`server/src/attachments/for-model.ts`); this hands the photo on as OpenAI's
+ * `image_url`, which OpenRouter forwards to a model that sees. Everything without a picture stays a
+ * string so that a conversation from before attachments is sent byte for byte as it always was —
+ * the provider's cache holds those bytes.
+ */
+export function userContentOf(
+  content: Extract<TranscriptMessage, { role: "user" }>["content"],
+): string | OpenAI.Chat.ChatCompletionContentPart[] {
+  if (!Array.isArray(content)) return textOf(content);
+  const hasImage = content.some(
+    (part) => part.type === "image" && imageUrlOf(part) !== null,
+  );
+  if (!hasImage) return textOf(content);
+  return content.map((part): OpenAI.Chat.ChatCompletionContentPart => {
+    if (part.type === "text") return { type: "text", text: part.text };
+    const url = part.type === "image" ? imageUrlOf(part) : null;
+    return url
+      ? { type: "image_url", image_url: { url } }
+      : { type: "text", text: textOf([part]) };
+  });
+}
+
+/** An image part's address: its bytes as a data URL, or the URL it names. Null when neither. */
+function imageUrlOf(part: unknown): string | null {
+  const source = (part as { source?: unknown }).source as
+    | { type?: unknown; value?: unknown; mimeType?: unknown }
+    | undefined;
+  if (!source || typeof source.value !== "string") return null;
+  if (source.type === "data" && typeof source.mimeType === "string") {
+    return `data:${source.mimeType};base64,${source.value}`;
+  }
+  return source.type === "url" ? source.value : null;
 }
 
 /**

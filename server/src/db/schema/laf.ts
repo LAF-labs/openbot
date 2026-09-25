@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  customType,
   index,
   integer,
   pgEnum,
@@ -764,4 +765,56 @@ export const lafAnswerRatings = pgTable(
     // The fleet's count, which is a range over when each rating was last said.
     index("laf_answer_ratings_updated_at_idx").on(table.updatedAt),
   ],
+);
+
+/** Postgres `bytea`, as a Buffer both ways. Drizzle has no built-in; this is its documented shape. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
+/**
+ * A file the owner handed their Bot with a message (`server/src/attachments/`).
+ *
+ * THE FILE ITSELF IS HERE, NOT IN A MESSAGE. The message holds a reference — an AG-UI `binary` part
+ * with this row's id — because every run hands the whole history back and every append reads the
+ * newest rows' `message`, so a photo inside one would ride along on every turn (the reason a
+ * browsing task's picture is its own column, `frame` above).
+ *
+ * `model_text` is what the model reads for the file, made ONCE when it arrives: the sheet as a table,
+ * the PDF's text, the name of a photo. Once, because the conversation replays it on every turn and
+ * the provider caches the bytes it saw — reading the file again later, with a newer extractor, would
+ * rewrite history the cache already holds.
+ *
+ * `workspace_path` is where the readable whole lives on the Bot's computer (a sheet as CSV, a PDF as
+ * text), for `computer_read_file`; null for a photo, and when the computer could not be reached.
+ *
+ * Goes with the person, the conversation or the Bot, whichever goes first; account deletion also
+ * deletes these explicitly so its trail can say how many (`account/deletion.ts`).
+ */
+export const lafAttachments = pgTable(
+  "laf_attachments",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => channels.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /** The name as stored: made safe, with the extension of what the bytes really are. */
+    name: text("name").notNull(),
+    /** The detected type, one of `ATTACHMENT_TYPES` (shared/attachments.ts). */
+    mimeType: text("mime_type").notNull(),
+    bytes: integer("bytes").notNull(),
+    data: bytea("data").notNull(),
+    modelText: text("model_text").notNull(),
+    workspacePath: text("workspace_path"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("laf_attachments_user_id_idx").on(table.userId)],
 );

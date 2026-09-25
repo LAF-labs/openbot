@@ -704,15 +704,28 @@ export function createComputerClient(options: ComputerClientOptions) {
        * the answer is who asked and `scope` says whose logins went. Optional on the type because an
        * older container does not send it, and an absent field must not be read as "just this Bot's".
        */
-      async resetComputer(): Promise<{
+      async resetComputer(
+        /**
+         * Empty the Bot's folder as well — what the person's attached files became, the downloads,
+         * the filed results. Only an account leaving asks (`account/deletion.ts`); the
+         * administrator's reset promises a sign-out and does exactly that.
+         */
+        options: { emptyFolder?: boolean } = {},
+      ): Promise<{
         reset: boolean;
         botId: string;
         scope?: "deployment";
+        /** How many entries the folder held, when it was emptied. */
+        emptied?: number;
       }> {
-        return (await post("/computers/reset", {})) as {
+        return (await post(
+          "/computers/reset",
+          options.emptyFolder ? { emptyFolder: true } : {},
+        )) as {
           reset: boolean;
           botId: string;
           scope?: "deployment";
+          emptied?: number;
         };
       },
 

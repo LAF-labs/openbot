@@ -22,8 +22,11 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "eventsource": "3.0.7",
+    "file-type": "^22.1.1",
     "hono": "^4.10.0",
     "postgres": "^3.4.9",
+    "unpdf": "^1.8.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
