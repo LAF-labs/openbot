@@ -515,14 +515,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the existing compaction first, and read back whole after a restart, in memory and in Postgres;
  * the two switches; an attachment whose question is behind it becoming a note, in the store at the
  * threshold, and named in the summary). The floor rises by exactly what was added.
+ * RAISED 2026-09-26 with the final QA's small issues: six to `server` (a joining window's replay
+ * with a stopped run's error settled, what the stopped run left open closed and no call answered,
+ * a live error left alone; a picture early for its result told from one for no call, in the route
+ * and against the database; a kept picture told to the person's windows) and twelve to `app` (a
+ * picture kept, early, held for the next turn, refused once, and a cut-off task's held; a kept
+ * picture making its conversation's list stale; a turn's last task reading the turn's failure;
+ * a step out elsewhere, said so, never for a person at the wheel, and 오늘 not saying 사장님 차례
+ * without a question; a turn sent before the history arrived). Each floor rises by exactly what
+ * was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2733, roots: ["server"] },
-  { name: "app", floor: 1334, roots: ["app"] },
+  { name: "server", floor: 2739, roots: ["server"] },
+  { name: "app", floor: 1346, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 422, roots: ["tests", "agent-bot"] },
 ] as const;
