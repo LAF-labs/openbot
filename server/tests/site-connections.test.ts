@@ -91,9 +91,13 @@ const BAEMIN_LOGIN_WALL = {
   truncated: false,
 };
 
+/** What each read asked for: the check must read the page whole, never the article's cut. */
+const readOptions: unknown[] = [];
+
 function routesReading(page: typeof BAEMIN_SIGNED_IN | Error, userId: string) {
   const gateway = {
-    read: async () => {
+    read: async (_botId: string, options?: unknown) => {
+      readOptions.push(options);
       if (page instanceof Error) throw page;
       return page;
     },
@@ -588,6 +592,22 @@ describe("the check route", () => {
     expect(everything).not.toContain("ceo.baemin.com/orders");
   });
 
+  test("reads the page whole, because the article's cut leaves the login words out", async () => {
+    /*
+     * MEASURED 2026-09-25: 배민 사장님's home page, signed out, read as Reader View's cut — forum
+     * posts, no 로그인 — and the card said 연결됨.
+     */
+    const userId = await createUser();
+    readOptions.length = 0;
+    const app = routesReading(BAEMIN_LOGIN_WALL, userId);
+    await app.request("/api/sites/baemin-ceo/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ botId: "bot-1" }),
+    });
+    expect(readOptions).toEqual([{ whole: true }]);
+  });
+
   test("a login wall answers signedIn: false and marks the row", async () => {
     const userId = await createUser();
     await store.record({
@@ -692,7 +712,7 @@ describe("the gateway reports where a navigation landed", () => {
   const PERMISSIVE: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
   const ACTOR = { id: "dev-local-user" };
 
-  function gatewayLandingOn(page: typeof BAEMIN_SIGNED_IN) {
+  function gatewayLandingOn(page: typeof BAEMIN_SIGNED_IN & { reader?: true }) {
     const seen: Array<{
       siteId: string;
       signedIn: boolean;
@@ -721,6 +741,7 @@ describe("the gateway reports where a navigation landed", () => {
         title: page.title,
         text: page.text,
         truncated: false,
+        ...(page.reader ? { reader: true } : {}),
         elapsedMs: 1,
       }),
     };
@@ -778,6 +799,23 @@ describe("the gateway reports where a navigation landed", () => {
 
     expect(seen.map((event) => event.signedIn)).toEqual([false]);
     expect(JSON.stringify(rows)).not.toContain(TYPED_SECRET);
+  });
+
+  test("an article's cut is not judged: the words that would say signed out were cut", async () => {
+    const { gateway, seen } = gatewayLandingOn({
+      url: "https://ceo.baemin.com/",
+      title: "배민외식업광장",
+      text: "Q. 4대보험을 가입안한 직원이 권고사직 후 퇴직금 요구",
+      truncated: false,
+      reader: true,
+    });
+    await gateway.navigate(
+      "default",
+      "bot-1",
+      ACTOR,
+      "https://ceo.baemin.com/",
+    );
+    expect(seen).toEqual([]);
   });
 
   test("a page outside the catalogue is nobody's business", async () => {

@@ -174,7 +174,14 @@ export function createNavigation(deps: {
          * the redirect is precisely the information worth having: `nid.naver.com` is not one of
          * 스마트스토어's hosts, so it reads as "not signed in" without any special case.
          */
-        noteSiteVisit(botId, actor, result.url, result.text);
+        /*
+         * Not from an article's cut (`result.reader`): Reader View drops the header the login words
+         * are in, so a signed-out page would read as signed in — the same mistake the check route
+         * made (`site-routes.ts`). A login wall is never an article, so nothing true is lost.
+         */
+        if (!result.reader) {
+          noteSiteVisit(botId, actor, result.url, result.text);
+        }
         return result;
       }
       asked.add(target);

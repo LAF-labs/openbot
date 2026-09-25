@@ -65,7 +65,13 @@ export function createSiteRoutes(
 
     let page: { url: string; text: string };
     try {
-      page = await gateway.read(botId);
+      /*
+       * WHOLE, NOT THE ARTICLE. Since `bd2ce0a9` a page that calls itself an article is read as
+       * Reader View's cut of it, and the cut leaves out the header where "로그인/회원가입" sits.
+       * MEASURED 2026-09-25: 배민 사장님's home page, signed out, read as 769 characters of forum
+       * posts with no 로그인 in them, and the card said "연결됨 · 복실이가 확인" for a login nobody made.
+       */
+      page = await gateway.read(botId, { whole: true });
     } catch (error) {
       // A browser that will not answer is not a failed login. The card must not start saying "log
       // in again" because the container was restarting. Answered with the computer's own fact —
