@@ -340,8 +340,7 @@ SDK의 조용한 재시도(429·5xx 두 번, 매번 새 라우팅)는 껐고, �
   `supported_efforts`는 없다(`reasoning.mandatory: false`).
 - **추론은 `reasoning_content`로**(Xiaomi), OpenRouter를 거치면 `reasoning`과 `reasoning_details`로
   온다. Xiaomi는 툴 호출이 있는 턴의 `reasoning_content`를 다음 요청에 돌려주라고 하고, 직접 API에서는
-  빼면 400이다. `agent-bot`은 돌려주지 않는다 — OpenRouter를 거친 이번 측정 수백 요청에서 400은
-  없었지만, Xiaomi는 빼면 성능이 떨어진다고 적는다. 열린 항목이다.
+  빼면 400이다. 같은 날 닫았다 — 아래 "MiMo 후속"의 추론 돌려주기.
 - **`temperature`·`top_p`는 고정**(1.0, 0.95)이다. `askModel`의 `temperature: 0`은 오류 없이 무시됐다.
 - **공급자는 둘**: Xiaomi(fp8, 출력 최대 131K, 하루 가동 99.75%, `tool_choice`는 auto·required만)와
   DeepInfra(fp8, 상태 저하 표시, 하루 가동 92.2%).
@@ -400,6 +399,8 @@ SDK의 조용한 재시도(429·5xx 두 번, 매번 새 라우팅)는 껐고, �
 
 ### 서버 쪽 호출
 
+같은 날 바뀌었다 — 아래 "MiMo 후속"의 서버 쪽 호출. 이 표는 바뀌기 전의 기록이다.
+
 | 호출 | 모델 | 근거 |
 |---|---|---|
 | 자동 검토(`REVIEW_MODEL`) | **MiMo-V2.6-Pro**(비워 둠 = `BOT_MODEL`) | `eval:auto-review` 36개: Pro 틀린 허용 0, 정직한 허용 6/6, p50 5.3초 · p95 19.1초. Flash 틀린 허용 0, 정직한 허용 **3/6**, p50 20.0초(시간 제한) — 더 싸도 더 느렸다. GLM은 p50 967ms였으니 사람 앞에서 1초가 5초가 된다. 빠른 길은 `JEV_ENABLED=on`(p50 235ms)이고, 그것은 데이터 거주 결정이다 |
@@ -428,7 +429,8 @@ SDK의 조용한 재시도(429·5xx 두 번, 매번 새 라우팅)는 껐고, �
 laf-control의 env push가 바꿀 이름은 셋이다: `BOT_MODEL=xiaomi/mimo-v2.6-pro`,
 `BOT_MODEL_EFFORT=false`(비워 두어도 새 패키지 기본값이 false다 — 하지만 GLM 시절에 `true`를 적은 VM이
 있으면 그것이 이긴다), `BOT_PROVIDER_POLICY={"xiaomi/mimo-v2.6-pro":{"order":["xiaomi"]}}`.
-`REVIEW_MODEL`은 비워 둔다. `OPENAI_BASE_URL`·키는 그대로(OpenRouter).
+`REVIEW_MODEL`은 비워 둔다. `OPENAI_BASE_URL`·키는 그대로(OpenRouter). 서버 쪽 호출의 이름은 아래
+"MiMo 후속"의 플릿에 더한다.
 
 ### Compaction threshold — 30K, from measured prices (2026-09-25)
 
@@ -470,6 +472,107 @@ MiMo with no random misses at all, which is not what was measured; if the per-pr
 usage rows now record (`cacheLow`) settles near zero on MiMo, this is the number to revisit. The
 "worth a miss" floor (4,000 characters and 10%) is unchanged: at 30K on MiMo with 12% misses, a 10%
 saving pays its miss back in ~70 requests, and the saving lasts for the rest of the conversation.
+
+## MiMo 후속 — 추론 돌려주기, 스키마 먼저, 서버 쪽 모델 (2026-09-25)
+
+### 추론 돌려주기
+
+Xiaomi(OpenAI 호환 API 문서, X 공지)는 생각 모드에서 툴을 부른 어시스턴트 메시지의 `reasoning_content`를
+그 뒤의 모든 요청에 남기라고 한다 — 사용자 턴이 바뀐 뒤에도. OpenRouter의 문서화된 길은 어시스턴트
+메시지의 `reasoning_details`를 **고치지 않고** 돌려주는 것이다("Preserving reasoning blocks"). 그대로 했다
+(`agent-bot/src/reasoning.ts`):
+
+- 스트림의 `delta.reasoning_details` 조각을 OpenRouter 자신의 SDK(`@openrouter/ai-sdk-provider` 3.1.0,
+  `doStream`)와 같은 규칙으로 합친다 — 이어지는 `reasoning.text`는 한 덩어리로. MiMo는 몇 낱말마다 조각
+  하나를 보낸다(`format: "unknown"`, `index: 0`).
+- **툴을 부른 턴만** 싣는다. 두 문서가 요구하는 것이 그것이고, 글로 한 답의 생각은 다시 읽히지 않는다.
+  쓴 모델에게만 돌려준다(값에 모델 이름이 있다).
+- 실행 사이에는 AG-UI의 `REASONING_ENCRYPTED_VALUE`(subtype `message`)로 그 턴의 메시지에 붙는다.
+  클라이언트(`@ag-ui/client` 0.0.57)가 `encryptedValue`로 적고 다음 실행의 입력으로 돌려준다. **DB에
+  남는다** — Xiaomi 문서가 턴을 넘겨 남기라고 하므로, 대화 저장소가 그 메시지와 같이 적는다. 런타임의
+  `/threads/:id/messages`는 키 목록으로 메시지를 다시 만들며 이 값을 버렸고(새로 고친 탭이 없는 채로
+  돌려보내 저장소도 가난한 사본으로 덮였다), 이제 되붙인다. 비밀로 거절된 타이핑의 턴은 값과 함께
+  생각도 지운다.
+
+공급자마다 무엇이 바뀌나(실스택 요청을 그대로 다시 보냄, 프롬프트 토큰 없이/있이):
+
+| | 받은 호출 id 그대로 | id를 바꾸면 |
+|---|---|---|
+| Xiaomi | 897 / 897 | 888 / 897 |
+| DeepInfra | 872 / 881 | 872 / 881 |
+
+**Xiaomi는 자기가 만든 호출 id로 돌아온 턴의 생각을 스스로 되살린다** — 그래서 Xiaomi에서는 그려지는
+프롬프트도, 캐시도 전과 같다. DeepInfra(대체 공급자)에서는 이것이 생각이 닿는 유일한 길이고, Xiaomi가 제
+사본을 얼마나 오래 두는지(문서에 없다)에 기대지 않게 된다. 사용자 턴이 바뀐 뒤에도 두 공급자 모두 그린다
+(+8, +8).
+
+`eval:cache`(Xiaomi 고정): 일주일 대화 **99.7%**(prefix reuse 99.8%), 브라우징 10걸음 **88.7–89.4%**(prefix
+reuse 99.2–99.6%) — 생각을 싣지 않은 같은 하네스 89.7%(99.6%)와 같다. 한 번은 9걸음째가 통째로
+미스(cached 0)여서 73.0%였다 — 앞머리까지 놓친 것이라 접두사가 깨진 것이 아니라 공급자 쪽 무작위 미스다.
+하네스의 브라우징 걸음은 대본의 호출 id라 Xiaomi가 되살리지 못하므로 생각이 실제로 더해진다: 10걸음째
+프롬프트 27.0–28.1K 대 26.1K(+3–8%), 캐시 읽기 값이라 $0.0036/M.
+
+### 알림톡 — 스키마 먼저
+
+추론 돌려주기만으로는 **2/6**이었다. MiMo는 `tool_search` 없이 맥락 층의 이름만 보고 알림톡을 **이름으로
+바로** 불렀고(`tool_call`도 아니었다 — 미뤄진 툴의 이름은 표면이 아는 이름이라 그대로 전달됐다),
+`template` 대신 `templateCode`, `variables`는 JSON 문자열이었다. Claude Code의 규칙을 따랐다: 미뤄 둔 툴은
+스키마를 받기 전에는 부를 수 없다. 이 대화에서 스키마를 받은 적 없는 미뤄진 툴의 호출은 — 이름으로든
+`tool_call`로든 — 전달하지 않고 **그 스키마로 답한다**(`settleDeferredCall`). 같은 실행 안의 한 라운드이고
+사람 앞에는 아무것도 가지 않는다. 스키마가 객체·배열이라 한 최상위 인자가 JSON 문자열로 오면 풀어서
+그 타입이 될 때만 바꾼다. 시나리오의 판정은 그대로 엄격하고, 이제 **표면에 간 첫 발송**을 본다
+(안에서 답한 호출은 아무도 승인하지 않는다).
+
+결과: 추적 3/3(세 번 중 두 번 첫 호출이 스키마로 돌려받고 두 번째에 맞게), 판정 고정 2/2 · 고정 없음 2/2.
+
+### 개발자 말
+
+프롬프트는 고치지 않았다. 이 변경 뒤 전용으로 잰 `browsing-in-owner-words`·`declined-says-declined`
+6회씩 **12/12**. 전체 판정에서는 고정 1/2(아래) — 여덟 번에 한 번 꼴의 미끄러짐이고, 규칙은 이미 그
+낱말을 이름으로 적고 있다.
+
+### 서버 쪽 호출 — `SERVER_MODEL`, Jev 켬
+
+| 호출 | 이제 | 잰 것 |
+|---|---|---|
+| 자동 검토 | **Jev**, 실패하면 `SERVER_MODEL` | `eval:auto-review` 36개 × 3: Jev 틀린 허용 **0**, 정직한 허용 18/18, **p50 220ms · p95 383ms**. GLM-5.3-Flash(`low`) 0 · 18/18, p50 894ms · p95 4.3초. MiMo-V2.6-Pro(앞의 측정) 0 · 6/6, p50 5.3초 · p95 19.1초 |
+| 압축 | **Jev**, 실패하면 `SERVER_MODEL`, 그다음 결정적 규칙 | `eval:compaction` Xiaomi 고정 3회: Jev 3/3 사유 보존, 0.29–0.30초. GLM-5.3-Flash 대역 3/3, 6.4–8.9초. MiMo 대역(앞의 측정) 1/3, 두 번 120초 넘김 |
+| 시연 정리 | MiMo-V2.6-Pro(그대로) | 사람이 기다리는 한 번 |
+
+`SERVER_MODEL`(비우면 `z-ai/glm-5.3-flash`)과 `SERVER_MODEL_EFFORT`(비우면 `true` — GLM에 `low`)가
+새 이름이다. `REVIEW_MODEL`은 판정만 덮는다. **`JEV_ENABLED`는 이제 `off`라고 적지 않으면 켜짐이다** —
+사장님이 OpenRouter 키로 Jev를 허락했다. 보내는 것은 이미 만든 가림(`context/judge-redaction.ts`)을 지난
+상태이고, OpenRouter 끝점에서만 닿는다. 로컬 실스택 부팅에서 Jev 탐침이 398ms에 답했다.
+
+### `eval:model` — 판정
+
+`prompt 6b8591d5fe55ef3d · catalogue bd7877572afae90b`(앞 판정과 같다), 2회씩, deferral 팔은 건너뜀.
+
+| | 결과 | 미끄러진 것 |
+|---|---|---|
+| Xiaomi 고정 | **51/54** | 브라우징 중 웹 주소 경로("/Product/") 1/2; 들은 위치 0/2 — 사이트가 짐작한 제주 |
+| 고정 없음(정책 없음) | **52/54** | 받을 곳 없는 파일에 붙여 넣기·말하기 길을 말하지 않음 1/2; 들은 위치 1/2 — 제주 |
+
+알림톡은 두 판정 모두 2/2다(툴 호출 14/14).
+
+**들은 위치의 "제주"는 답이 아니라 중간 말이다.** 추적: MiMo가 먼저 `weather.naver.com`을 열고, 스텁이
+짐작한 제주를 보여 주자 "제주 날씨가 떠 있어서 마포구로 다시 찾아볼게요"라고 한 문장 말한 뒤 마포구를
+다시 찾아 마포 날씨로 답했다. 판정은 "제주"가 글 어디에든 있으면 실패다 — 사장님께 제주 날씨를 사장님
+것처럼 말한 적은 없지만, 기준을 낮추지 않았다. 앞 카탈로그의 판정에서도 1/2였다.
+
+미끄러진 셋만 Xiaomi 고정으로 4회씩 다시: 개발자 말 **4/4**, 들은 위치 **3/4**(같은 중간 말), 받을 곳 없는
+파일 **3/4**("작업 공간"이라고 말함 — 앞의 1/2와 다른 조항). 셋 다 한 번씩, 매번 다른 조항에서
+미끄러진다: 모델의 흔들림이지 한 규칙이 닿지 않는 것이 아니다. **54/54는 아니다.** 프롬프트를 고쳐
+맞추지 않았다 — 고치면 새 판정이고, 한 번씩 나는 미끄러짐을 한 줄로 막는다는 근거가 없다.
+
+### 플릿 — env push가 적을 이름
+
+앞 절의 셋(`BOT_MODEL`, `BOT_MODEL_EFFORT=false`, `BOT_PROVIDER_POLICY`)에 더해:
+
+- `JEV_ENABLED=on` — 새 기본값이 켜짐이지만, 예전에 `off`를 적은 VM이 있으면 그것이 이긴다.
+- `SERVER_MODEL`, `SERVER_MODEL_EFFORT` — **적지 않는다**(패키지 기본값 GLM-5.3-Flash · `true`). 다른 모델로
+  바꿀 때만 둘 다.
+- `REVIEW_MODEL` — 비운다. 무언가 적힌 VM이 있으면 지운다: 그것이 서버 모델을 덮는다.
 
 ## 이 다음
 

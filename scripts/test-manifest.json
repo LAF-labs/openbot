@@ -3,6 +3,7 @@
   "agent-bot/tests/deferral.test.ts",
   "agent-bot/tests/harness.test.ts",
   "agent-bot/tests/provider-policy.test.ts",
+  "agent-bot/tests/reasoning.test.ts",
   "agent-bot/tests/stream-cut.test.ts",
   "agent-bot/tests/streaming.test.ts",
   "agent-bot/tests/tool-calls.test.ts",

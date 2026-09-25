@@ -445,16 +445,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * far back, redraws only the streaming message, and where the window starts), one to `server` (a turn over 500 messages reads a bounded
  * tail and rewrites nothing) and one to `root` (the server image runs its bundle). Each floor rises
  * by exactly what was added.
+ * RAISED 2026-09-25 with the MiMo follow-ups: thirteen to `root` (agent-bot: ten on a tool-call
+ * turn's reasoning going back with it, three on a deferred tool called before its schema was seen
+ * and an object argument sent as a string) and five to `server` (the messages route and the merge
+ * keeping that reasoning, a redacted typing losing it and an ordinary one keeping it, the server
+ * model). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2621, roots: ["server"] },
+  { name: "server", floor: 2626, roots: ["server"] },
   { name: "app", floor: 1256, roots: ["app"] },
   { name: "agent-computer", floor: 262, roots: ["agent-computer"] },
-  { name: "root", floor: 398, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 411, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
