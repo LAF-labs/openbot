@@ -17,8 +17,10 @@
  *    memories, skills index — into the system message, once. Every request in the epoch sends it
  *    byte for byte. A new epoch starts when the conversation starts, when the model, the effort,
  *    the harness (`HARNESS_VERSION`) or the tool list changes — each of which breaks the cache at
- *    the head of the prompt anyway, so re-freezing then costs nothing — and on compaction
- *    (`beginEpoch`, for phase 2).
+ *    the head of the prompt anyway, so re-freezing then costs nothing — and on compaction: when a
+ *    request's prompt crosses the threshold, what the conversation no longer carries is decided
+ *    once behind it (`./compaction`), stored with the conversation, applied to every request
+ *    after, and the next run starts a new epoch.
  *  - A change during the epoch — a new local day, a place or zone, a rename, a memory written
  *    outside the Bot's own `remember` — is appended to the person's NEW message as `<알림>`, once,
  *    and stored with that message's id, so every later request carries the same bytes in the same
@@ -56,6 +58,12 @@ import type { Database } from "../db/client";
 import { lafConversationContexts } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
+import {
+  applyCompaction,
+  type CompactionPlan,
+  type Compactor,
+  mergePlans,
+} from "./compaction";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -103,7 +111,19 @@ type Conversation = {
   lastUserMessageId: string | null;
   /** A new epoch asked for from outside — compaction. Taken by the next `prepare`. */
   pending: EpochReason | null;
+  /** What compaction has decided this conversation no longer carries (`./compaction`). */
+  compaction: CompactionPlan;
   // ------------------------------------------------------------------ memory only
+  /** The conversation as the last run carried it, before compaction: what the next one judges. */
+  raw: readonly AgentMessage[] | null;
+  /** A compaction is being decided. One at a time. */
+  compacting: boolean;
+  /**
+   * The prompt size the last compaction attempt was made at, if it found nothing new to drop. The
+   * next attempt waits until the prompt has grown by a quarter of the threshold past it — a history
+   * that is long in TEXT (which is never dropped) would otherwise ask the judge on every request.
+   */
+  triedAtTokens: number | null;
   /** Usage rows recorded in this epoch. The first is the epoch's cold request. */
   requests: number;
   /** When this conversation last made a model request, ms. */
@@ -153,11 +173,17 @@ export type ConversationStore = {
   /** A usage row of `threadId`'s run: its dollars go on the question, its time on the idle clock. */
   recordUsage(
     threadId: string,
-    usage: { costUsd?: number },
+    usage: { costUsd?: number; promptTokens?: number },
     at?: Date,
   ): UsageContext | null;
-  /** Start a new epoch on the conversation's next run. The compaction hook (phase 2). */
+  /** Start a new epoch on the conversation's next run. The compaction hook. */
   beginEpoch(threadId: string, reason: EpochReason): void;
+  /**
+   * Decide a compaction for the conversation now, whatever its size, and wait for it. What the
+   * threshold does on its own; exposed for the eval and the tests. Resolves to whether anything new
+   * was dropped (and so whether the next run starts a new epoch).
+   */
+  compactNow(threadId: string): Promise<boolean>;
   /** Read every kept conversation into memory. Called once, at boot, before any run. */
   load(): Promise<number>;
   /** Every write asked for so far, landed. For tests and for a clean shutdown. */
@@ -174,6 +200,7 @@ export type ConversationPersistence = {
       known: unknown;
       reminders: Record<string, string>;
       lastUserMessageId: string | null;
+      compaction?: Record<string, string>;
     }>
   >;
   save(conversation: {
@@ -183,8 +210,26 @@ export type ConversationPersistence = {
     known: ContextFacts;
     reminders: Record<string, string>;
     lastUserMessageId: string | null;
+    compaction: CompactionPlan;
   }): Promise<void>;
 };
+
+/** When and how a conversation is compacted. Absent: never. */
+export type CompactionSetting = {
+  /** Prompt tokens at which a compaction is decided. */
+  thresholdTokens: number;
+  compact: Compactor;
+};
+
+/** A stored plan, read back: only the two actions there are. */
+function planOf(value: unknown): CompactionPlan {
+  if (!value || typeof value !== "object") return {};
+  const plan: CompactionPlan = {};
+  for (const [id, action] of Object.entries(value as Record<string, unknown>)) {
+    if (action === "drop_call" || action === "drop_result") plan[id] = action;
+  }
+  return plan;
+}
 
 /** How long a routine run's conversation is held after it was last used. */
 const UNKEPT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -283,9 +328,14 @@ function carrying(message: AgentMessage, block: string): AgentMessage {
 }
 
 export function createConversationStore(
-  options: { persistence?: ConversationPersistence; now?: () => number } = {},
+  options: {
+    persistence?: ConversationPersistence;
+    now?: () => number;
+    compaction?: CompactionSetting;
+  } = {},
 ): ConversationStore {
   const { persistence } = options;
+  const setting = options.compaction;
   const clock = options.now ?? (() => Date.now());
   const conversations = new Map<string, Conversation>();
   let sweptAt = 0;
@@ -305,6 +355,7 @@ export function createConversationStore(
       known: conversation.known,
       reminders: { ...conversation.reminders },
       lastUserMessageId: conversation.lastUserMessageId,
+      compaction: { ...conversation.compaction },
     };
     const previous = writes.get(state.threadId) ?? Promise.resolve();
     const next = previous
@@ -319,6 +370,67 @@ export function createConversationStore(
         if (writes.get(state.threadId) === next) writes.delete(state.threadId);
       });
     writes.set(state.threadId, next);
+  };
+
+  /** Compactions being decided, by thread. For `settled` and `compactNow`. */
+  const compactions = new Map<string, Promise<boolean>>();
+
+  /**
+   * One compaction: judged on the conversation as the last run carried it, with what was already
+   * decided applied; added to the plan; and, when it dropped anything new, a new epoch on the next
+   * run. A compactor that throws decides nothing — the conversation goes on as it was.
+   */
+  const compactConversation = (
+    conversation: Conversation,
+    promptTokens: number | null,
+  ): Promise<boolean> => {
+    const compact = setting?.compact;
+    const raw = conversation.raw;
+    if (!compact || !raw || conversation.compacting) {
+      return Promise.resolve(false);
+    }
+    conversation.compacting = true;
+    const started = Date.now();
+    const view = applyCompaction(raw, conversation.compaction);
+    const work = compact(view)
+      .then(({ plan, arm }) => {
+        const fresh = Object.entries(plan).filter(
+          ([id, action]) => conversation.compaction[id] !== action,
+        );
+        // Counts and the rule that decided. Never a message, never a result.
+        log.info("conversation_compacted", {
+          bot: conversation.botId,
+          arm,
+          dropped: fresh.length,
+          promptTokens,
+          ms: Date.now() - started,
+        });
+        if (fresh.length === 0) {
+          conversation.triedAtTokens = promptTokens;
+          return false;
+        }
+        conversation.compaction = mergePlans(conversation.compaction, plan);
+        conversation.pending = "compaction";
+        conversation.triedAtTokens = null;
+        keep(conversation);
+        return true;
+      })
+      .catch((error: unknown) => {
+        conversation.triedAtTokens = promptTokens;
+        log.warn("conversation_compaction_failed", {
+          bot: conversation.botId,
+          reason: describeFailure(error),
+        });
+        return false;
+      })
+      .finally(() => {
+        conversation.compacting = false;
+        if (compactions.get(conversation.threadId) === work) {
+          compactions.delete(conversation.threadId);
+        }
+      });
+    compactions.set(conversation.threadId, work);
+    return work;
   };
 
   const sweep = (now: number) => {
@@ -369,6 +481,10 @@ export function createConversationStore(
           reminders: {},
           lastUserMessageId: null,
           pending: null,
+          compaction: {},
+          raw: null,
+          compacting: false,
+          triedAtTokens: null,
           requests: 0,
           lastRequestAt: null,
           question: { messageId: null, costUsd: 0 },
@@ -445,10 +561,17 @@ export function createConversationStore(
 
       if (changed) keep(conversation);
 
+      /*
+       * COMPACTED, BY WHAT WAS DECIDED — never by what is true now. The plan names tool calls; every
+       * message it does not name goes through as the very object the run carried, so the history
+       * behind the new epoch's head is the provider's cached prefix from the next request on.
+       */
+      conversation.raw = input.messages;
+      const carried = applyCompaction(input.messages, conversation.compaction);
       const reminders = conversation.reminders;
       return {
         system: conversation.epoch.system,
-        messages: input.messages.map((message) =>
+        messages: carried.map((message) =>
           message.role === "user" && reminders[message.id]
             ? carrying(message, reminders[message.id] ?? "")
             : message,
@@ -482,16 +605,39 @@ export function createConversationStore(
       if (typeof usage.costUsd === "number" && usage.costUsd > 0) {
         conversation.question.costUsd += usage.costUsd;
       }
+      /*
+       * AT THE THRESHOLD, AND ONLY THERE. The request that crossed it has already been answered; the
+       * decision is made behind it and lands on a later run as a new epoch — never per request, and
+       * never on the request that is waiting.
+       */
+      const prompt = usage.promptTokens ?? 0;
+      if (
+        setting &&
+        prompt >= setting.thresholdTokens &&
+        (conversation.triedAtTokens === null ||
+          prompt >= conversation.triedAtTokens + setting.thresholdTokens / 4) &&
+        !conversation.compacting
+      ) {
+        void compactConversation(conversation, prompt);
+      }
       return context;
     },
 
     async settled() {
-      await Promise.all([...writes.values()]);
+      await Promise.all([...writes.values(), ...compactions.values()]);
     },
 
     beginEpoch(threadId, reason) {
       const conversation = conversations.get(threadId);
       if (conversation) conversation.pending = reason;
+    },
+
+    async compactNow(threadId) {
+      const conversation = conversations.get(threadId);
+      if (!conversation) return false;
+      const running = compactions.get(threadId);
+      if (running) await running;
+      return compactConversation(conversation, null);
     },
 
     async load() {
@@ -509,6 +655,10 @@ export function createConversationStore(
           reminders: row.reminders ?? {},
           lastUserMessageId: row.lastUserMessageId,
           pending: null,
+          compaction: planOf(row.compaction),
+          raw: null,
+          compacting: false,
+          triedAtTokens: null,
           requests: 0,
           lastRequestAt: null,
           question: { messageId: row.lastUserMessageId, costUsd: 0 },
@@ -534,6 +684,7 @@ export function conversationPersistence(
           known: lafConversationContexts.known,
           reminders: lafConversationContexts.reminders,
           lastUserMessageId: lafConversationContexts.lastUserMessageId,
+          compaction: lafConversationContexts.compaction,
         })
         .from(lafConversationContexts);
     },
@@ -548,6 +699,7 @@ export function conversationPersistence(
             known: conversation.known,
             reminders: conversation.reminders,
             lastUserMessageId: conversation.lastUserMessageId,
+            compaction: conversation.compaction,
             updatedAt: sql`now()`,
           },
         });

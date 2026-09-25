@@ -1,0 +1,1 @@
+ALTER TABLE "laf_conversation_contexts" ADD COLUMN "compaction" jsonb DEFAULT '{}'::jsonb NOT NULL;

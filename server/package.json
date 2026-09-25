@@ -16,6 +16,7 @@
     "@better-auth/drizzle-adapter": "^1.6.27",
     "@copilotkit/runtime": "1.67.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@typesafe-ai/sdk": "0.6.0",
     "better-auth": "^1.6.27",
     "cel-js": "^0.8.2",
     "drizzle-kit": "^0.31.10",

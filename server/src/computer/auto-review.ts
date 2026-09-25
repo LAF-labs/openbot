@@ -288,10 +288,10 @@ export function createModelAutoReviewer(
  * that host, so "ask" here is a model that cannot do the job rather than a cautious one. The host is
  * `.invalid` (RFC 2606): nothing about the question is anybody's real site.
  */
-const PROBE_INSTRUCTION =
+export const PROBE_INSTRUCTION =
   "Reading pages on probe.invalid is fine without asking me.";
 
-const PROBE_SUBJECT: ReviewSubject = {
+export const PROBE_SUBJECT: ReviewSubject = {
   action: "computer_read",
   subject: {
     kind: "browser",
