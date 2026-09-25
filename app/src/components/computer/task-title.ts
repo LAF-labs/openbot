@@ -98,6 +98,11 @@ export function taskOf(
   let text = (asked.split("\n").find((line) => line.trim()) ?? "").trim();
   text = text.split(/(?<=[.?!])\s+/)[0] ?? text;
   text = text.replace(LEADING_SKILL, "");
+  /*
+   * An address the request starts with is the site half already, said the machine's way:
+   * "httpbin.org · https://httpbin.org/forms/post 열어서 이름 칸에 …" (measured 2026-09-25).
+   */
+  text = text.replace(LEADING_ADDRESS, "");
   if (site) {
     const at = ASKED_PLACE.exec(text);
     if (at && samePlace(site, at[1] ?? "")) text = text.slice(at[0].length);
@@ -106,6 +111,10 @@ export function taskOf(
   text = text.replace(REQUEST_ENDING, "").trim();
   return text || null;
 }
+
+/** A request that starts with the address it goes to, and the verb that opens it. */
+const LEADING_ADDRESS =
+  /^https?:\/\/\S+\s*(?:(?:을|를)\s*)?(?:(?:열어서|열고|열어|들어가서|접속해서)\s+)?/;
 
 /** "네이버 쇼핑에서 …": the place a request names, with its 홈페이지/사이트/앱 and 에서. */
 const ASKED_PLACE = /^(.{1,24}?)(?:\s*(?:홈페이지|사이트|앱))?에서\s+/;

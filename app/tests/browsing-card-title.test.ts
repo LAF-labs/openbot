@@ -75,6 +75,17 @@ describe("what was asked, as half a title", () => {
     expect(taskOf("쿠팡에서 원두 찾아줘", "네이버 쇼핑")).toBe("쿠팡에서 원두");
   });
 
+  test("without the address the request opened with", () => {
+    expect(
+      taskOf(
+        "https://httpbin.org/forms/post 열어서 이름 칸에 '복실빵집' 넣어줘",
+        "httpbin.org",
+      ),
+    ).toBe("이름 칸에 '복실빵집' 넣어");
+    // An address alone leaves the site half to say it.
+    expect(taskOf("https://httpbin.org/forms/post", "httpbin.org")).toBeNull();
+  });
+
   test("the first sentence says what the task is; the rest says how", () => {
     expect(
       taskOf(
