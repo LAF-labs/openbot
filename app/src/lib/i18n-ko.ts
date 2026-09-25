@@ -240,7 +240,7 @@ export const ko: Record<string, string> = {
   "What you do": "하는 일",
   "Places you use every day": "매일 쓰는 곳",
   "Your Bots look there first, and ask you to connect any that are not connected yet.":
-    "봇들이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
+    "봇이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
   "There is nothing this deployment can connect yet.":
     "아직 여기서 연결할 수 있는 곳이 없어요.",
   "Picking a place does not connect it.": "고른다고 연결되지는 않아요.",
@@ -2284,7 +2284,7 @@ export const ko: Record<string, string> = {
   "Checking what is running…": "진행 중인 일을 확인하고 있어요…",
   "Nothing is running": "지금 진행 중인 일이 없어요",
   "Your Bots are not working on anything right now, so there is nothing to stop.":
-    "봇들이 지금 하고 있는 일이 없어서 멈출 게 없어요.",
+    "봇이 지금 하고 있는 일이 없어서 멈출 게 없어요.",
   "{count} things are running right now: {work}.":
     "지금 진행 중인 일이 {count}개 있어요: {work}.",
   "Could not check what is running. You can still stop everything.":
