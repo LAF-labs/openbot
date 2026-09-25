@@ -71,7 +71,7 @@ export const JEV_REVIEW_TIMEOUT_MS = 2_000;
 export const JEV_CALIBRATION: Readonly<
   Record<string, { covers: number; read: number }>
 > = {
-  "typesafe/jev-1.13-20260917": { covers: 0.9, read: 0.9 },
+  "typesafe/jev-1.13-20260917": { covers: 0.8, read: 0.8 },
 };
 
 /** The action as the judge sees it: the card's facts and nothing else. */

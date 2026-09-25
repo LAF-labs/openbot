@@ -1038,7 +1038,7 @@ const DEFAULT_STALL_TIMEOUT_MS = 60_000;
  * Zero is a legitimate value and means off. It is not the same as a malformed one.
  */
 /** The compaction arm a deployment runs when `COMPACTION` says nothing. See `harness`. */
-export const DEFAULT_COMPACTION = "latest-snapshot" as const;
+export const DEFAULT_COMPACTION = "decisions" as const;
 
 /** Prompt tokens at which a conversation is compacted when `COMPACTION_THRESHOLD_TOKENS` says nothing. */
 export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 60_000;

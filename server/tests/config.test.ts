@@ -800,7 +800,7 @@ describe("the agent harness's switches", () => {
 
   test("compaction defaults to the measured arm, and its threshold to a floor", () => {
     const harness = loadConfig(baseEnvironment).harness;
-    expect(harness.compaction).toBe("latest-snapshot");
+    expect(harness.compaction).toBe("decisions");
     expect(harness.compactionThresholdTokens).toBe(60_000);
     expect(
       loadConfig({ ...baseEnvironment, COMPACTION: "off" }).harness.compaction,
