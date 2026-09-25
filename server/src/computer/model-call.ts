@@ -16,6 +16,7 @@
  * be read is nothing to show.
  */
 
+import { jsonObjectOf } from "../../../shared/json-object";
 import { providerStatusFact } from "../failure-text";
 import { log } from "../log";
 
@@ -190,12 +191,5 @@ export function jsonFrom(
 ): Record<string, unknown> | null {
   if (!content) return null;
   const fenced = content.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
-  try {
-    const parsed: unknown = JSON.parse(fenced);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  return jsonObjectOf(fenced);
 }

@@ -22,6 +22,7 @@
  * Pure on purpose: `appendMessages` is a transaction holding an advisory lock, and the rule that
  * decides whether a credential survives should be testable without a database.
  */
+import { jsonObjectOf } from "../../../shared/json-object";
 import { looksLikeASecret } from "../agents/memory-store";
 import type { StoredMessage } from "./thread-store";
 
@@ -69,14 +70,7 @@ type StoredToolCall = {
 
 /** A JSON object, or undefined for anything that is not one. */
 function asObject(text: string): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return jsonObjectOf(text) ?? undefined;
 }
 
 /** A nested `element.type`, wherever a refusal chose to hang its subject. */

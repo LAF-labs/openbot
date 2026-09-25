@@ -10,6 +10,7 @@
  *
  * Pure, so the grouping, the sites and the sentences are tested without a browser.
  */
+import { jsonObjectOf } from "@shared/json-object";
 import { siteNameOf } from "@/components/computer/task-title";
 import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
@@ -80,14 +81,7 @@ export function outcomeOf(result: string | undefined): ComputerOutcome {
 /** The arguments, parsed; empty for anything that is not an object, including a half-streamed one. */
 export function argsOf(args: string | undefined): Record<string, unknown> {
   if (!args) return {};
-  try {
-    const parsed = JSON.parse(args) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
+  return jsonObjectOf(args) ?? {};
 }
 
 /**

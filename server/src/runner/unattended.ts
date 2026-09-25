@@ -23,6 +23,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent, Message, Tool } from "@ag-ui/client";
+import { jsonObjectOf } from "../../../shared/json-object";
 import type { PromptMode, RoutineNote } from "../../../shared/prompt";
 import {
   noteTexts,
@@ -234,14 +235,7 @@ function unanswered(messages: Message[]) {
  * this is the same answer for anything that does not.
  */
 function parseArgs(raw: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(raw || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  return jsonObjectOf(raw || "{}");
 }
 
 /**

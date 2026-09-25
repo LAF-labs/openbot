@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
+import { jsonObjectOf } from "../../shared/json-object";
 import { textOf } from "../../shared/message-content";
 import { reasoningDetailsOf } from "./reasoning";
 import type { ProviderSession } from "./turn";
@@ -101,14 +102,7 @@ export function parseToolArguments(
 ): Record<string, unknown> | null {
   const text = raw.trim();
   if (text === "") return {};
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
+  return jsonObjectOf(text);
 }
 
 /**

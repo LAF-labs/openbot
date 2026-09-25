@@ -32,6 +32,7 @@
  */
 
 import type { AbstractAgent } from "@ag-ui/client";
+import { jsonObjectOf } from "../../../shared/json-object";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { redactedInput, redactText, resultExcerpt } from "./judge-redaction";
 import {
@@ -88,14 +89,7 @@ function callsOf(message: AgentMessage): Call[] {
 }
 
 function argumentsOf(call: Call): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(call.function.arguments || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
+  return jsonObjectOf(call.function.arguments || "{}") ?? {};
 }
 
 /**
