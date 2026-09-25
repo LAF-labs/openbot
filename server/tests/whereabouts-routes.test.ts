@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { NO_WHEREABOUTS, type Whereabouts } from "../../shared/whereabouts";
 import {
   createBrowserWhereabouts,
@@ -177,12 +177,35 @@ describe("PUT /api/me/place", () => {
 
   test("the log says that a place was set, never which", async () => {
     const { store } = whereaboutsStore();
-    await send(surface(store), "/api/me/place", "PUT", {
-      place: "부산 해운대구",
-      coordinates: { latitude: 35.163_2, longitude: 129.163_6 },
-    });
-    const written = recentLines.lines().join("\n");
+    // The buffer keeps its last 2,000 lines, so "after this one", not "after line n".
+    const before = recentLines.lines().at(-1);
+    /*
+     * What this request wrote, without each line's own clock. The whole buffer, stamps included, was
+     * read here, and a line stamped `…T04:12:35.164Z` contains "35.16": the test failed on the
+     * second hand, measured 2026-09-25. The clock is set to exactly that second, so it is known.
+     */
+    setSystemTime(new Date("2026-09-25T04:12:35.164Z"));
+    try {
+      await send(surface(store), "/api/me/place", "PUT", {
+        place: "부산 해운대구",
+        coordinates: { latitude: 35.163_2, longitude: 129.163_6 },
+      });
+    } finally {
+      setSystemTime();
+    }
+    const lines = recentLines.lines();
+    const written = lines
+      .slice(before === undefined ? 0 : lines.lastIndexOf(before) + 1)
+      .map((line) => {
+        const { at: _at, ...rest } = JSON.parse(line) as Record<
+          string,
+          unknown
+        >;
+        return JSON.stringify(rest);
+      })
+      .join("\n");
     expect(written).toContain("place_set");
+    expect(lines.join("\n")).toContain("35.164Z");
     expect(written).not.toContain("해운대");
     expect(written).not.toContain("35.16");
     expect(written).not.toContain("129.16");
