@@ -32,3 +32,10 @@ model:
   # Point it at something small and fast. Unset, it is the same model as everything else, which
   # works and is slow.
   review_model: ${REVIEW_MODEL:-}
+  # The decisions model — TypeSafe's Jev through OpenRouter, on the key above — asked only when
+  # JEV_ENABLED=on: compaction's keep-or-drop and auto-review's triage (docs/laf/eval-pack.md).
+  #
+  # A DATED SNAPSHOT, NOT `jev-latest`. Every threshold held against it is a measurement of this one
+  # (server/src/computer/jev-auto-review.ts `JEV_CALIBRATION`); an ID with no measured bar allows
+  # nothing. Changing this line is re-running `bun run eval:auto-review` and `eval:compaction`.
+  decision_model: typesafe/jev-1.13-20260917

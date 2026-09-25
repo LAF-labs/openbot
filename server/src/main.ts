@@ -59,6 +59,7 @@ import { createSiteConnectionStore } from "./computer/site-connections";
 import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { loadConfig } from "./config";
+import type { Compactor } from "./context/compaction";
 import {
   conversationPersistence,
   createConversationStore,
@@ -178,6 +179,21 @@ const dailyBudget = dailyBudgetFor(config.trial, database);
  */
 const conversations = createConversationStore({
   persistence: conversationPersistence(database),
+  /*
+   * Compaction at the threshold (`context/compaction.ts`). The compactor is built with the server's
+   * own model calls below — read when a conversation crosses the threshold, long after boot.
+   */
+  ...(config.harness.compaction === "off"
+    ? {}
+    : {
+        compaction: {
+          thresholdTokens: config.harness.compactionThresholdTokens,
+          compact: (messages: Parameters<Compactor>[0]) =>
+            modelCalls.compactor
+              ? modelCalls.compactor(messages)
+              : Promise.resolve({ plan: {}, arm: "latest-snapshot" as const }),
+        },
+      }),
 });
 const conversationsLoaded = await conversations.load();
 const runMeter = {
@@ -480,6 +496,7 @@ const modelCalls = createServerModelCalls({
   encryptionKey: config.keyEncryptionKey,
   endpoint: config.model,
   model: tenantPackage.model,
+  harness: config.harness,
   ...(dailyBudget ? { dailyBudget } : {}),
 });
 /*

@@ -82,6 +82,7 @@ function calls(reached: boolean) {
       defaultModel: "laf-1",
       supportsEffort: false,
       reviewModel: "laf-small",
+      decisionModel: "typesafe/jev-1.13-20260917",
     },
     dailyBudget: budget,
   });

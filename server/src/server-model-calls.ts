@@ -1,11 +1,20 @@
 import { eq } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "./audit";
 import {
+  type AutoReviewer,
   createAutoReviewProbe,
   createModelAutoReviewer,
   type ReviewSubject,
 } from "./computer/auto-review";
+import { jevAsker, modelAsker, withFallback } from "./computer/decision-askers";
+import { type DecisionCall, decisionBaseUrlOf } from "./computer/decision-call";
+import {
+  createJevAutoReviewer,
+  createJevAutoReviewProbe,
+} from "./computer/jev-auto-review";
 import type { ModelUsage } from "./computer/model-call";
+import { createCompactor } from "./context/compaction";
+import { log } from "./log";
 import { createWriteUp, type WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import {
@@ -42,6 +51,8 @@ export function createServerModelCalls(input: {
    * same sum. Absent — every deployment that is not a trial — nothing is judged.
    */
   dailyBudget?: DailyBudget;
+  /** The harness's switches: Jev, and how compaction decides. Absent: Jev off, compaction off. */
+  harness?: DeploymentConfig["harness"];
 }) {
   const { endpoint, model, dailyBudget } = input;
 
@@ -52,7 +63,8 @@ export function createServerModelCalls(input: {
    * tokens invisibly would undercount its own KPI. Counts only, never content.
    */
   const recordModelUsage =
-    (source: "auto-review" | "write-up") => (usage: ModelUsage) => {
+    (source: "auto-review" | "write-up" | "compaction") =>
+    (usage: ModelUsage) => {
       void recordAuditEvent(input.auditStore, {
         eventType: "model.usage",
         targetType: "model",
@@ -83,9 +95,64 @@ export function createServerModelCalls(input: {
     supportsEffort: model.supportsEffort,
   };
 
-  const reviewModel = createModelAutoReviewer({
+  const modelReviewer = createModelAutoReviewer({
     ...reviewCall,
     onUsage: recordModelUsage("auto-review"),
+  });
+
+  /*
+   * JEV, ONLY WITH THE SWITCH ON (`JEV_ENABLED`, off by default), and only where the deployment's
+   * endpoint is OpenRouter — the key it holds is an OpenRouter key. Off, or not OpenRouter, the
+   * deployment's own model answers every question it would have been asked, exactly as before.
+   */
+  const decisionBase = input.harness?.jevEnabled
+    ? decisionBaseUrlOf(endpoint.baseUrl)
+    : null;
+  const decisionCall: DecisionCall | null = decisionBase
+    ? {
+        baseUrl: decisionBase,
+        model: model.decisionModel,
+        apiKey,
+        onUsage: (usage) =>
+          void recordAuditEvent(input.auditStore, {
+            eventType: "model.usage",
+            targetType: "model",
+            payload: { ...usage, source: "decisions" },
+          }).catch(() => undefined),
+      }
+    : null;
+  const reviewModel: AutoReviewer = decisionCall
+    ? createJevAutoReviewer({ call: decisionCall, fallback: modelReviewer })
+    : modelReviewer;
+  const modelProbe = createAutoReviewProbe({
+    ...reviewCall,
+    onUsage: recordModelUsage("auto-review"),
+  });
+
+  /*
+   * THE COMPACTOR (`context/compaction.ts`). `decisions` asks Jev when the switch is on and the
+   * deployment's model in Jev's shape when it is off or Jev cannot answer; any failure of both
+   * falls back to the deterministic rule. The stand-in is the Bot's own model: a compaction runs
+   * behind the conversation, never in front of a waiting person, so a slow careful answer is fine.
+   */
+  const standIn = modelAsker(
+    {
+      baseUrl: endpoint.baseUrl,
+      model: model.defaultModel,
+      apiKey,
+      supportsEffort: model.supportsEffort,
+      onUsage: recordModelUsage("compaction"),
+    },
+    { timeoutMs: 90_000 },
+  );
+  const compactor = createCompactor({
+    mode: input.harness?.compaction ?? "off",
+    asker: decisionCall
+      ? withFallback(jevAsker(decisionCall, { timeoutMs: 15_000 }), standIn)
+      : standIn,
+    excerpts: true,
+    onFallback: (reason) =>
+      log.warn("compaction_fell_back", { reason: reason.split(":")[0] }),
   });
 
   const writeUp = createWriteUp({
@@ -125,10 +192,15 @@ export function createServerModelCalls(input: {
      * Whether this deployment can auto-review at all, measured rather than assumed. The caller starts
      * it at boot without awaiting it; see `createAutoReviewProbe`.
      */
-    autoReviewCapable: createAutoReviewProbe({
-      ...reviewCall,
-      onUsage: recordModelUsage("auto-review"),
-    }),
+    autoReviewCapable: decisionCall
+      ? createJevAutoReviewProbe({
+          call: decisionCall,
+          fallbackProbe: modelProbe,
+        })
+      : modelProbe,
+
+    /** How a long conversation is compacted, or null when it is not. See `context/compaction.ts`. */
+    compactor,
 
     /**
      * A finished recording, written up as a procedure.

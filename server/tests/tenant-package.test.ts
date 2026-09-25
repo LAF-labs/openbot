@@ -46,6 +46,7 @@ function loadedPackage(): LoadedTenantPackage {
       defaultModel: "gpt-4.1",
       supportsEffort: true,
       reviewModel: "gpt-4.1",
+      decisionModel: "typesafe/jev-1.13-20260917",
     },
     themeCss: "",
     sourcePath: `/test/${randomUUID()}`,

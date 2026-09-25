@@ -779,3 +779,37 @@ describe("the variables that used to be read elsewhere", () => {
     });
   });
 });
+
+describe("the agent harness's switches", () => {
+  /*
+   * THE PRIVACY SWITCH IS OFF UNLESS IT SAYS `on`. Jev is hosted in the US; a deployment that says
+   * nothing must never send it anything, and a typo must not boot as whichever way a parser leaned.
+   */
+  test("Jev is off unless the deployment says on, and a typo refuses to start", () => {
+    expect(loadConfig(baseEnvironment).harness.jevEnabled).toBe(false);
+    expect(
+      loadConfig({ ...baseEnvironment, JEV_ENABLED: "off" }).harness.jevEnabled,
+    ).toBe(false);
+    expect(
+      loadConfig({ ...baseEnvironment, JEV_ENABLED: "on" }).harness.jevEnabled,
+    ).toBe(true);
+    expect(() =>
+      loadConfig({ ...baseEnvironment, JEV_ENABLED: "yes" }),
+    ).toThrow("JEV_ENABLED");
+  });
+
+  test("compaction defaults to the measured arm, and its threshold to a floor", () => {
+    const harness = loadConfig(baseEnvironment).harness;
+    expect(harness.compaction).toBe("latest-snapshot");
+    expect(harness.compactionThresholdTokens).toBe(60_000);
+    expect(
+      loadConfig({ ...baseEnvironment, COMPACTION: "off" }).harness.compaction,
+    ).toBe("off");
+    expect(() =>
+      loadConfig({ ...baseEnvironment, COMPACTION: "summary" }),
+    ).toThrow("COMPACTION");
+    expect(() =>
+      loadConfig({ ...baseEnvironment, COMPACTION_THRESHOLD_TOKENS: "500" }),
+    ).toThrow("COMPACTION_THRESHOLD_TOKENS");
+  });
+});

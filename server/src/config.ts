@@ -93,6 +93,10 @@ export const ENVIRONMENT = {
   BOT_MODEL: "operator",
   BOT_MODEL_EFFORT: "compose",
   REVIEW_MODEL: "compose",
+  // The agent harness: the privacy switch for Jev, and compaction.
+  JEV_ENABLED: "compose",
+  COMPACTION: "compose",
+  COMPACTION_THRESHOLD_TOKENS: "compose",
   BOT_TIME_ZONE: "compose",
   AGENT_STALL_TIMEOUT_MS: "compose",
   // The Bot's computer and its boundary.
@@ -197,6 +201,23 @@ export type DeploymentConfig = {
    * switches the sweep off. See `account/retention.ts`.
    */
   auditRetentionDays: number;
+  /**
+   * The agent harness's two switches for phase 2 (`~/laf/docs/agent-harness-design.md` rows 8–9).
+   *
+   * `jevEnabled` (`JEV_ENABLED`, OFF unless it says `on`): whether TypeSafe's Jev is asked anything —
+   * compaction's keep-or-drop, auto-review's triage. Jev is hosted in the US; off, the deployment's
+   * own model answers the same questions and nothing leaves for anyone new. What is sent when it is
+   * on is redacted (`context/judge-redaction.ts`) and only its having been consulted is logged.
+   *
+   * `compaction` (`COMPACTION`): how a long conversation is compacted at `compactionThresholdTokens`
+   * (`COMPACTION_THRESHOLD_TOKENS`) prompt tokens — `latest-snapshot`, `decisions`, or `off`. The
+   * default is the arm `bun run eval:compaction` measured best (docs/laf/eval-pack.md).
+   */
+  harness: {
+    jevEnabled: boolean;
+    compaction: "off" | "latest-snapshot" | "decisions";
+    compactionThresholdTokens: number;
+  };
   /**
    * `PUBLIC_ORIGIN`: the deployed address, and what the fleet and the operator's alert channel
    * know this deployment by. Absent on a laptop.
@@ -1016,6 +1037,41 @@ const DEFAULT_STALL_TIMEOUT_MS = 60_000;
  *
  * Zero is a legitimate value and means off. It is not the same as a malformed one.
  */
+/** The compaction arm a deployment runs when `COMPACTION` says nothing. See `harness`. */
+export const DEFAULT_COMPACTION = "latest-snapshot" as const;
+
+/** Prompt tokens at which a conversation is compacted when `COMPACTION_THRESHOLD_TOKENS` says nothing. */
+export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 60_000;
+
+/**
+ * The harness's switches, or a refusal to start. A value that is not one of the words is a typo,
+ * and a typo in a privacy switch must not boot as whichever way the parser leaned.
+ */
+function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
+  const jev = optional(environment, "JEV_ENABLED")?.toLowerCase();
+  if (jev !== undefined && jev !== "on" && jev !== "off") {
+    throw new Error("JEV_ENABLED must be on or off (unset is off)");
+  }
+  const mode = optional(environment, "COMPACTION") ?? DEFAULT_COMPACTION;
+  if (mode !== "off" && mode !== "latest-snapshot" && mode !== "decisions") {
+    throw new Error(
+      "COMPACTION must be latest-snapshot, decisions or off (unset is the measured default)",
+    );
+  }
+  const raw = optional(environment, "COMPACTION_THRESHOLD_TOKENS");
+  const threshold = raw ? Number(raw) : DEFAULT_COMPACTION_THRESHOLD_TOKENS;
+  if (!Number.isInteger(threshold) || threshold < 4_000) {
+    throw new Error(
+      "COMPACTION_THRESHOLD_TOKENS must be a whole number of tokens, 4000 or more",
+    );
+  }
+  return {
+    jevEnabled: jev === "on",
+    compaction: mode,
+    compactionThresholdTokens: threshold,
+  };
+}
+
 function agentStallTimeoutMs(environment: Environment): number {
   const raw = optional(environment, "AGENT_STALL_TIMEOUT_MS");
   if (!raw) {
@@ -1254,6 +1310,7 @@ export function loadConfig(
     tenantPackageVariables: tenantPackageVariables(environment),
     botTimeZone: botTimeZone(environment),
     auditRetentionDays: retentionDays(environment),
+    harness: harnessConfig(environment),
     trial: trialConfig(environment),
   };
 }

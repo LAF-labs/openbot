@@ -202,6 +202,12 @@ services:
       # "do not ask me about reading" instruction, and without it that judgement runs on the
       # flagship model — ten to thirty seconds per yes/no, in front of somebody waiting.
       REVIEW_MODEL: ${REVIEW_MODEL:-}
+      # The agent harness (docs/laf/eval-pack.md). JEV_ENABLED is the privacy switch for TypeSafe's
+      # Jev (US-hosted): off unless it says `on`. COMPACTION and its threshold decide how a long
+      # conversation stops carrying old tool results.
+      JEV_ENABLED: ${JEV_ENABLED:-}
+      COMPACTION: ${COMPACTION:-}
+      COMPACTION_THRESHOLD_TOKENS: ${COMPACTION_THRESHOLD_TOKENS:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
       COMPUTER_REPEAT_WINDOW_MS: ${COMPUTER_REPEAT_WINDOW_MS:-}
       AGENT_COMPUTER_POLICY: ${AGENT_COMPUTER_POLICY:-}
@@ -470,6 +476,10 @@ services:
       # the server reads, and this Bot refuses to start rather than answering on a model nobody
       # chose. Set BOT_MODEL in .env; .env.example ships it set.
       BOT_MODEL: ${BOT_MODEL:-}
+      # Which OpenRouter endpoints may answer (agent-bot/src/provider.ts). Unset sends nothing.
+      BOT_PROVIDER_ORDER: ${BOT_PROVIDER_ORDER:-}
+      BOT_PROVIDER_IGNORE: ${BOT_PROVIDER_IGNORE:-}
+      BOT_PROVIDER_FALLBACKS: ${BOT_PROVIDER_FALLBACKS:-}
     logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4200/health'); process.exit(r.ok ? 0 : 1)\""]

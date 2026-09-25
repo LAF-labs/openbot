@@ -88,6 +88,9 @@ type PackageFiles = {
   themeCss: string;
 };
 
+/** Jev 1.13, the snapshot the thresholds were measured against (2026-09-25). */
+export const DEFAULT_DECISION_MODEL = "typesafe/jev-1.13-20260917";
+
 export type TenantPackage = {
   tenantId: string;
   productName: string;
@@ -100,6 +103,11 @@ export type TenantPackage = {
     supportsEffort: boolean;
     /** Which model judges an auto-review instruction. Falls back to `defaultModel`. */
     reviewModel: string;
+    /**
+     * The decisions model (Jev) asked when `JEV_ENABLED` is on — a DATED snapshot, because every
+     * threshold held against it was measured against that one (`computer/jev-auto-review.ts`).
+     */
+    decisionModel: string;
   };
   themeCss: string;
 };
@@ -246,6 +254,10 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
         typeof model.review_model === "string" && model.review_model.trim()
           ? model.review_model.trim()
           : requiredString(model.default_model, "model.default_model"),
+      decisionModel:
+        typeof model.decision_model === "string" && model.decision_model.trim()
+          ? model.decision_model.trim()
+          : DEFAULT_DECISION_MODEL,
     },
     themeCss: files.themeCss,
   };
