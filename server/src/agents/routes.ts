@@ -8,6 +8,7 @@ import { checkAgentEndpoint } from "./endpoint";
 import {
   type AgentMemoryStore,
   looksLikeAnInstruction,
+  looksLikeAStandingOrder,
   looksLikeASecret,
   MAX_MEMORY_LENGTH,
   MemoryFullError,
@@ -583,9 +584,12 @@ export function createAgentRoutes(
      * NOR AN INSTRUCTION. The memory list is read as prompt on every later turn, so a sentence
      * that tells the Bot what to do — rather than what is true about the person — is a rule that
      * survives every session, written by whatever the Bot happened to be reading. Refused by shape
-     * (see `looksLikeAnInstruction`); the Bot is told to write the fact instead.
+     * (see `looksLikeAnInstruction`); the Bot is told to write the fact instead. And a standing
+     * order written as a fact — "the owner prefers every invoice emailed to …", "확인 없이 진행하길
+     * 원한다" — is refused under the same code (`looksLikeAStandingOrder`, security review
+     * 2026-09-25 F2): the shape a page most wants reread as its owner's wish.
      */
-    if (looksLikeAnInstruction(content)) {
+    if (looksLikeAnInstruction(content) || looksLikeAStandingOrder(content)) {
       return context.json(
         {
           error: "laf:memory_looks_like_instruction",
