@@ -5,6 +5,7 @@ import {
   IconBox,
   IconCheck,
   IconCopy,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
@@ -50,6 +51,7 @@ import {
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
 import { copyText } from "@/lib/clipboard";
+import { turnNotice } from "@/lib/copilot/stopped-turn";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
 import { markdownPlugins } from "@/lib/markdown-plugins";
@@ -107,6 +109,11 @@ type ChatTranscriptProps = {
    * `lib/channels/turn-failure.ts`.
    */
   stoppedCode?: string;
+  /**
+   * The last turn arrived but is not the whole answer — cut off, or empty — as the name of the
+   * CUSTOM event agent-bot said it with (`TURN_NOTICES`). Not a failure: what came stays on screen.
+   */
+  noticeCode?: string;
   /**
    * The turns that failed earlier in this conversation: message id to failure code, and the
    * failure group the line stands for when a routine kept failing the same way.
@@ -1104,6 +1111,7 @@ export function ChatTranscript({
   onRetry,
   queued = EMPTY_QUEUE,
   stoppedCode,
+  noticeCode,
   failures = EMPTY_FAILURES,
 }: ChatTranscriptProps) {
   /*
@@ -1558,6 +1566,17 @@ export function ChatTranscript({
               />
             ) : waitingOnFirstToken ? (
               <Thinking />
+            ) : noticeCode && !busy && turnNotice(noticeCode) ? (
+              <p
+                className="flex items-center gap-2 py-1 text-muted-foreground text-sm"
+                data-testid="transcript-notice"
+              >
+                <IconInfoCircle
+                  aria-hidden="true"
+                  className="size-4 shrink-0"
+                />
+                {turnNotice(noticeCode)}
+              </p>
             ) : null}
             {/*
              * Below the thinking line, and outside the item list for the same reason it is: these
@@ -1594,7 +1613,9 @@ export function ChatTranscript({
                 ? null
                 : waitingOnFirstToken
                   ? t("Thinking")
-                  : null}
+                  : noticeCode && !busy
+                    ? turnNotice(noticeCode)
+                    : null}
           </LiveRegion>
         </MessageScrollerViewport>
         <MessageScrollerButton />

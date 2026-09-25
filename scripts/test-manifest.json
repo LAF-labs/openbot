@@ -180,6 +180,7 @@
   "app/tests/transcript-messages.test.ts",
   "app/tests/trial-banner.test.ts",
   "app/tests/turn-failure.test.ts",
+  "app/tests/turn-notice.test.tsx",
   "app/tests/turn-retry.test.tsx",
   "app/tests/unsent-messages.test.tsx",
   "app/tests/use-now.test.tsx",

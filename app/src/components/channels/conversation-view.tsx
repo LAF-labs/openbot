@@ -36,6 +36,7 @@ export function ConversationView({
   disabled = false,
   pending = false,
   stoppedCode,
+  noticeCode,
   failures,
   onRetry,
   stoppable,
@@ -81,6 +82,11 @@ export function ConversationView({
    * See `lib/channels/turn-failure.ts`.
    */
   stoppedCode?: string;
+  /**
+   * The last turn arrived but is not the whole answer (`TURN_NOTICES`), as the CUSTOM event's name.
+   * Drawn quietly under the answer it is about, not in red: nothing failed, and what came is kept.
+   */
+  noticeCode?: string;
   /** Turns that failed earlier and are still on the server's record: message id to failure. */
   failures?: Readonly<Record<string, StandingFailure>>;
   /** Ask one of them again. The transcript hands back the message that got no answer. */
@@ -276,6 +282,7 @@ export function ConversationView({
             }}
             queued={queued}
             {...(stoppedCode ? { stoppedCode } : {})}
+            {...(noticeCode ? { noticeCode } : {})}
             {...(failures ? { failures } : {})}
             {...(onRetry ? { onRetry } : {})}
           />

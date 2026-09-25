@@ -43,6 +43,7 @@ import {
   mergeStoredHistory,
 } from "@/lib/channels/thread-history";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
+import { turnNotice } from "@/lib/copilot/stopped-turn";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -356,6 +357,14 @@ export function ChannelChat({
    * screen. `liveTurnFailureCode` reduces it to a fact and the transcript owns the sentence.
    */
   const [runError, setRunError] = useState<string | null>(null);
+  /*
+   * A turn that ARRIVED and is still not the whole answer: cut off at the model's length limit, or
+   * empty twice (`TURN_NOTICES` in `lib/copilot/stopped-turn.ts`). agent-bot says these as CUSTOM
+   * events, not errors, so the run subscriber below has to listen for them by name. It did not from
+   * 2026-09-02 (`4e68b040`) until 0.5.4: the hook that listened lived on a route that was deleted,
+   * and a half answer read as a finished one.
+   */
+  const [noticeCode, setNoticeCode] = useState<string | null>(null);
   /** Message id to the moment this tab sent it, for separators the server has not stamped yet. */
   const [sentAt, setSentAt] = useState<Record<string, string>>({});
   const awaitingReply = useRef(false);
@@ -446,6 +455,7 @@ export function ChannelChat({
     await untilReady();
 
     setRunError(null);
+    setNoticeCode(null);
     awaitingReply.current = true;
 
     /*
@@ -592,6 +602,7 @@ export function ChannelChat({
     try {
       await untilReady();
       setRunError(null);
+      setNoticeCode(null);
       awaitingReply.current = true;
       // The server stored this question when its first run began; there is nothing to keep.
       sending.current = [];
@@ -626,6 +637,7 @@ export function ChannelChat({
     try {
       await untilReady();
       setRunError(null);
+      setNoticeCode(null);
       awaitingReply.current = true;
       const present = new Set(agent.messages.map((message) => message.id));
       for (const message of messages) {
@@ -765,6 +777,11 @@ export function ChannelChat({
        */
       onRunStartedEvent: () => {
         if (awaitingReply.current) heard();
+      },
+      onCustomEvent: ({ event }) => {
+        const name = (event as { name?: unknown }).name;
+        // The same stream carries `laf.model.usage`, which is nothing to a person.
+        if (typeof name === "string" && turnNotice(name)) setNoticeCode(name);
       },
       onRunFinishedEvent: () => {
         const wasOurs = awaitingReply.current;
@@ -1125,10 +1142,12 @@ export function ChannelChat({
            * run before closing it; see server/src/channels/stall-guard.ts.
            */
           stoppedCode={runError ?? undefined}
+          noticeCode={noticeCode ?? undefined}
           failures={failuresById}
           onRetry={(message) => {
             // The failure line is this tab's; clear it so the retry is not drawn as still failed.
             setRunError(null);
+            setNoticeCode(null);
             void retryRef.current(message);
           }}
         />

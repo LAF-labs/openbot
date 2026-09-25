@@ -1,5 +1,3 @@
-import { useAgent } from "@copilotkit/react-core/v2";
-import { useEffect, useState } from "react";
 import { t } from "@/lib/i18n";
 
 /**
@@ -100,51 +98,14 @@ export function stoppedReason(reported: unknown): string {
   return said.trim() || t("The Bot stopped without saying why.");
 }
 
-/** The sentence for a CUSTOM event the Bot's own stream carries, or null for one this ignores. */
+/**
+ * The sentence for a CUSTOM event the Bot's own stream carries, or null for one this ignores.
+ *
+ * `ChannelChat`'s run subscriber is what listens. The hook that used to (`useStoppedTurn`) was
+ * mounted only by the `/bot` route, and when `4e68b040` deleted that route the two notices reached
+ * no screen for three weeks — a half answer read as a whole one (`turn-notice.test.tsx`).
+ */
 export function turnNotice(name: unknown): string | null {
   const known = typeof name === "string" ? TURN_NOTICES[name] : undefined;
   return known ? t(known) : null;
-}
-
-/**
- * Watch one Bot's runs and hold on to the reason the last one ended, if it ended badly.
- *
- * Bound by agent id rather than handed an agent, so a caller that only renders the packaged chat
- * does not have to reach for one: `useAgent` returns the same shared instance the chat itself binds
- * to, so this watches exactly the runs that chat starts.
- *
- * Cleared when the next run begins rather than on a timer. A sentence about a turn that is over
- * should stay until there is something newer to look at, and the person deciding when that is is the
- * one who sends the next message.
- *
- * NOTHING MOUNTS THIS since `4e68b040` (2026-09-02) deleted the `/bot` route that did, so the two
- * `TURN_NOTICES` agent-bot sends reach no screen. Kept for whoever wires it into the chat rather than
- * deleted with the evidence; knip is told so with the tag below.
- *
- * @public
- */
-export function useStoppedTurn(agentId: string): string | null {
-  const { agent } = useAgent({ agentId });
-  const [stopped, setStopped] = useState<string | null>(null);
-
-  useEffect(() => {
-    const subscription = agent.subscribe?.({
-      onRunInitialized: () => setStopped(null),
-      onRunErrorEvent: ({ event }) => setStopped(stoppedReason(event?.message)),
-      onRunFailed: ({ error }) => setStopped(stoppedReason(error)),
-      /*
-       * A truncated or empty answer arrives here, not as an error.
-       *
-       * The same stream carries `laf.model.usage`, which is nothing to a person, so anything this
-       * does not have words for is left alone rather than shown as a name.
-       */
-      onCustomEvent: ({ event }) => {
-        const notice = turnNotice((event as { name?: unknown })?.name);
-        if (notice) setStopped(notice);
-      },
-    });
-    return () => subscription?.unsubscribe();
-  }, [agent]);
-
-  return stopped;
 }
