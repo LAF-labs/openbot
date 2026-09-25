@@ -18,9 +18,18 @@ import { mount, unmountAll } from "./support/mount";
  * column beside the conversation and none of this applies.
  */
 
-beforeAll(() => {
+beforeAll(async () => {
   // Narrower than `lg` (64rem), the width the sheet is drawn at.
   GlobalRegistrator.register({ url: "http://localhost:3110/", width: 375 });
+  /*
+   * The width is read once per process and kept (`screen-panel.ts`), so a file drawn at PC width
+   * before this one left the sheet reading as a column: measured 2026-09-25, any file mounting the
+   * route tree sorted ahead of this one failed it under `test:ci`.
+   */
+  const { forgetScreenPanelViewport } = await import(
+    "../src/lib/computer/screen-panel"
+  );
+  forgetScreenPanelViewport();
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
