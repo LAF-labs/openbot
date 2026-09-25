@@ -80,6 +80,8 @@ export function systemMessageFor(
   frozenAt: Date = EVAL_NOW,
   /** The skills the Bot holds, listed the way the server lists them (`eval:browse` only). */
   skills?: readonly PromptSkill[],
+  /** 수첩 as the frozen layer drew it. Absent is the pack's two ordinary memories. */
+  notebook?: EvalNotebook,
 ) {
   return {
     id: "laf-prompt:eval_bot",
@@ -90,11 +92,48 @@ export function systemMessageFor(
       timeZone: EVAL_TIME_ZONE,
       bot: EVAL_BOT,
       standingRole: EVAL_STANDING_ROLE,
-      memories: EVAL_MEMORIES,
+      ...notebookInput(notebook),
       ...(person ? { person } : {}),
       ...(skills ? { skills } : {}),
     }),
   };
+}
+
+/** 수첩's lines as the server hands them to the composer (`agents/memory-store.ts`). */
+export type EvalNotebook = {
+  memories: readonly string[];
+  confirmed?: readonly string[];
+  superseded?: Readonly<Record<string, string>>;
+};
+
+function notebookInput(notebook: EvalNotebook | undefined) {
+  return {
+    memories: notebook?.memories ?? EVAL_MEMORIES,
+    ...(notebook?.confirmed ? { confirmedMemories: notebook.confirmed } : {}),
+    ...(notebook?.superseded
+      ? { supersededMemories: notebook.superseded }
+      : {}),
+  };
+}
+
+/**
+ * A person's message carrying what changed on 수첩 since the frozen layer, built by the same
+ * `reminderLines` the conversation store uses — the words a Bot is actually shown.
+ */
+export function withNotebookReminder(
+  content: string,
+  from: EvalNotebook,
+  to: EvalNotebook,
+): string {
+  return withReminder(
+    content,
+    reminderBlock(
+      reminderLines(
+        factsFor("chat", undefined, EVAL_NOW, from),
+        factsFor("chat", undefined, EVAL_NOW, to),
+      ),
+    ),
+  );
 }
 
 /** What the context layer says, for a person at a moment — what a reminder compares. */
@@ -102,6 +141,7 @@ export function factsFor(
   mode: PromptMode,
   person: PromptPerson | undefined,
   at: Date,
+  notebook?: EvalNotebook,
 ) {
   return contextFactsFor({
     mode,
@@ -109,7 +149,7 @@ export function factsFor(
     timeZone: EVAL_TIME_ZONE,
     bot: EVAL_BOT,
     standingRole: EVAL_STANDING_ROLE,
-    memories: EVAL_MEMORIES,
+    ...notebookInput(notebook),
     ...(person ? { person } : {}),
   });
 }

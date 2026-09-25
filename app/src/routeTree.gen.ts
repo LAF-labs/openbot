@@ -24,6 +24,7 @@ import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
+import { Route as AuthedAppNotebookRouteImport } from './routes/_authed/_app/notebook'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -115,6 +116,11 @@ const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
 const AuthedAppHelpRoute = AuthedAppHelpRouteImport.update({
   id: '/help',
   path: '/help',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppNotebookRoute = AuthedAppNotebookRouteImport.update({
+  id: '/notebook',
+  path: '/notebook',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -230,6 +236,7 @@ export interface FileRoutesByFullPath {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/help': typeof AuthedAppHelpRoute
+  '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -262,6 +269,7 @@ export interface FileRoutesByTo {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/help': typeof AuthedAppHelpRoute
+  '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -298,6 +306,7 @@ export interface FileRoutesById {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/_authed/_app/help': typeof AuthedAppHelpRoute
+  '/_authed/_app/notebook': typeof AuthedAppNotebookRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -335,6 +344,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/terms'
     | '/help'
+    | '/notebook'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/terms'
     | '/help'
+    | '/notebook'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/terms'
     | '/_authed/_app/help'
+    | '/_authed/_app/notebook'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -540,6 +552,13 @@ declare module '@tanstack/react-router' {
       path: '/help'
       fullPath: '/help'
       preLoaderRoute: typeof AuthedAppHelpRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/notebook': {
+      id: '/_authed/_app/notebook'
+      path: '/notebook'
+      fullPath: '/notebook'
+      preLoaderRoute: typeof AuthedAppNotebookRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -724,6 +743,7 @@ const AuthedSettingsRouteRouteWithChildren =
 
 interface AuthedAppRouteChildren {
   AuthedAppHelpRoute: typeof AuthedAppHelpRoute
+  AuthedAppNotebookRoute: typeof AuthedAppNotebookRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -735,6 +755,7 @@ interface AuthedAppRouteChildren {
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppHelpRoute: AuthedAppHelpRoute,
+  AuthedAppNotebookRoute: AuthedAppNotebookRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,

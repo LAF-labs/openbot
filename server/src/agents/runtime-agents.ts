@@ -1,16 +1,20 @@
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
 import type { Database } from "../db/client";
 import {
-  agentMemories,
   agentProfiles,
   agents,
   channelAgents,
   channelMemberships,
 } from "../db/schema";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
-import { MAX_MEMORIES_CARRIED } from "./memory-store";
+import {
+  type CarriedMemories,
+  carriedMemoriesOf,
+  type MemoryRow,
+  selectNotebookRows,
+} from "./memory-store";
 import { visibleToActor } from "./profile-policy";
 import type { AgentActor } from "./profile-types";
 
@@ -44,9 +48,17 @@ export function createRuntimeAgentLoader(
     // agent. Tombstones are appended after, and never overwrite a live agent of the same id.
     const registered = new Map<string, RegisteredAgent>();
     for (const row of active) {
+      const carried = remembered.get(row.id);
       const agent = registeredAgentFromRow({
         ...row,
-        memories: remembered.get(row.id) ?? [],
+        memories: carried?.memories ?? [],
+        // Only for a Bot holding lines: one that holds none carries nothing to tell apart.
+        ...(carried
+          ? {
+              confirmedMemories: carried.confirmed,
+              supersededMemories: carried.superseded,
+            }
+          : {}),
       });
       if (!agent) continue;
       // The key is resolved per load, rather than being cached on the row: revoking a
@@ -86,34 +98,20 @@ async function selectMemories(
   database: Database,
   actor: AgentActor,
   agentIds: string[],
-): Promise<Map<string, string[]>> {
-  const byAgent = new Map<string, string[]>();
-  if (agentIds.length === 0) return byAgent;
-
-  const rows = await database
-    .select({
-      agentId: agentMemories.agentId,
-      content: agentMemories.content,
-    })
-    .from(agentMemories)
-    .where(
-      and(
-        inArray(agentMemories.agentId, agentIds),
-        eq(agentMemories.ownerUserId, actor.id),
-        isNull(agentMemories.forgottenAt),
-      ),
-    )
-    .orderBy(asc(agentMemories.createdAt));
-
+): Promise<Map<string, CarriedMemories>> {
+  const rows = await selectNotebookRows(database, agentIds, actor.id);
+  const byAgent = new Map<string, MemoryRow[]>();
   for (const row of rows) {
-    const carried = byAgent.get(row.agentId) ?? [];
-    // Bounded per Bot, not across the account: one talkative coworker must not spend another's
-    // budget. Oldest kept, because the cap drops what is least likely to still be true.
-    if (carried.length >= MAX_MEMORIES_CARRIED) continue;
-    carried.push(row.content);
-    byAgent.set(row.agentId, carried);
+    byAgent.set(row.agentId, [...(byAgent.get(row.agentId) ?? []), row]);
   }
-  return byAgent;
+  /*
+   * Bounded per Bot, not across the account, and by characters rather than by a count: the count
+   * of forty kept the oldest rows and dropped the newest, so a Bot with forty-one short lines saved
+   * the last one and never read it (`shared/notebook.ts`, `carriedLines`).
+   */
+  return new Map(
+    [...byAgent].map(([agentId, held]) => [agentId, carriedMemoriesOf(held)]),
+  );
 }
 
 function selectActiveAgents(database: Database, actor: AgentActor) {

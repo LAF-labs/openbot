@@ -191,6 +191,34 @@ export const agentMemories = pgTable(
      * gone forever, and so the audit trail keeps the shape of what the Bot once believed.
      */
     forgottenAt: timestamp("forgotten_at", { withTimezone: true }),
+    /**
+     * Who wrote the words: `bot` through `remember` in a conversation, `owner` on 수첩.
+     *
+     * Decided by the route, never by the body: the Bot's tool posts to `/memories` and 수첩 to
+     * `/notebook`, and no tool handler reaches the second (`app/tests/notebook-boundary.test.ts`).
+     * Every row older than the column was the Bot's, which is what the default says.
+     */
+    source: text("source").notNull().default("bot"),
+    /**
+     * When the person said a Bot's memory is right. An owner's own line is confirmed by being
+     * theirs and leaves this null. Confirmed lines are drawn under their own heading in the
+     * prompt and are carried first when the memory is over its cap (`shared/notebook.ts`).
+     */
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    /**
+     * The line that replaced this one, when it was edited on 수첩 rather than forgotten.
+     *
+     * An edit is soft — this row is forgotten and a new one written — so the audit keeps what the
+     * Bot once believed. The link is what tells the harness it was a correction and not a
+     * forgetting: a correction reaches a conversation as a reminder, where a forgetting has to
+     * redraw the frozen layer (`server/src/context/conversations.ts`).
+     */
+    replacedBy: text("replaced_by"),
+    /**
+     * One of the shop's named lines on 수첩 — `shop_name`, `hours`, `offer` — or null for an
+     * ordinary memory. At most one live row per slot (the store replaces, never appends).
+     */
+    slot: text("slot"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

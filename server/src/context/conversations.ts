@@ -289,10 +289,23 @@ function ownMemories(messages: readonly AgentMessage[]): Set<string> {
 
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 
-/** The memories the conversation was told of that are no longer there. */
+/**
+ * The memories the conversation was told of that are no longer there.
+ *
+ * One corrected on 수첩 is not among them: its replacement is carried now, and the correction
+ * reaches the Bot as a reminder (`reminderLines`) with the frozen layer left as it is until the
+ * next epoch. Only a line nothing replaced has to stop reaching the model at once.
+ */
 function forgottenMemories(known: ContextFacts, now: ContextFacts): string[] {
   const kept = new Set(now.memories.map(flat));
-  return known.memories.filter((memory) => !kept.has(flat(memory)));
+  const corrected = new Set(
+    Object.entries(now.superseded)
+      .filter(([, replacement]) => kept.has(flat(replacement)))
+      .map(([old]) => flat(old)),
+  );
+  return known.memories.filter(
+    (memory) => !kept.has(flat(memory)) && !corrected.has(flat(memory)),
+  );
 }
 
 /**

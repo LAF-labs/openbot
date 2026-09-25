@@ -44,7 +44,14 @@ import {
 } from "../shared/prompt/context.ko";
 import type { PromptMode } from "../shared/prompt/index";
 import { zonedParts } from "../shared/prompt/zone";
-import { EVAL_NOW, EVAL_TIME_ZONE, withReminderFor } from "./prompt";
+import {
+  EVAL_MEMORIES,
+  EVAL_NOW,
+  EVAL_TIME_ZONE,
+  type EvalNotebook,
+  withNotebookReminder,
+  withReminderFor,
+} from "./prompt";
 import {
   CLICK,
   LIST_FILES,
@@ -76,7 +83,8 @@ export type Scenario = {
     | "korean-work"
     | "laf-watch"
     | "owner-words"
-    | "whereabouts";
+    | "whereabouts"
+    | "notebook";
   /** The conversation handed to the Bot, AG-UI message shapes. */
   messages: unknown[];
   tools: unknown[];
@@ -96,6 +104,8 @@ export type Scenario = {
    * message as a reminder (`withReminderFor`).
    */
   frozenAt?: Date;
+  /** 수첩 as the frozen layer drew it (`EvalNotebook`). Absent is the pack's ordinary two. */
+  notebook?: EvalNotebook;
 };
 
 const user = (content: string) => ({
@@ -194,6 +204,17 @@ const FILE_INVITATION =
 
 /** The old refusal, which is a lie once the composer takes files. */
 const NO_PLACE_FOR_FILES = /(올릴|첨부할|붙일|받을)\s?(곳|수)(이|가)?\s?없/;
+
+/** The frozen layer's 수첩 before the owner corrected the hours, and after. */
+const NOTEBOOK_BEFORE: EvalNotebook = {
+  memories: ["영업시간: 평일 10시~21시", ...EVAL_MEMORIES],
+  confirmed: ["영업시간: 평일 10시~21시"],
+};
+const NOTEBOOK_AFTER: EvalNotebook = {
+  memories: ["영업시간: 평일 9시~20시", ...EVAL_MEMORIES],
+  confirmed: ["영업시간: 평일 9시~20시"],
+  superseded: { "영업시간: 평일 10시~21시": "영업시간: 평일 9시~20시" },
+};
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -1144,6 +1165,70 @@ export const SCENARIOS: Scenario[] = [
         ],
       ]);
     },
+  },
+  /*
+   * 수첩: A LINE CORRECTED MID-EPOCH. The frozen layer still says the old hours under the owner's
+   * heading; the reminder on the message says which line is wrong and which is right. The answer
+   * must use the new hours, not mention the reminder, and not `remember` what 수첩 already holds —
+   * measured on the real stack (2026-09-26), MiMo re-remembered the corrected line until the
+   * reminder said not to.
+   */
+  {
+    id: "notebook-correction-by-reminder",
+    dimension: "notebook",
+    notebook: NOTEBOOK_BEFORE,
+    messages: [
+      user(
+        withNotebookReminder(
+          "우리 가게 평일에 몇 시에 열고 몇 시에 닫아? 한 줄로.",
+          NOTEBOOK_BEFORE,
+          NOTEBOOK_AFTER,
+        ),
+      ),
+    ],
+    tools: [REMEMBER, UPDATE_PROFILE, NAVIGATE],
+    check: (turn) =>
+      verdict([
+        [
+          "고친 여는 시각(9시)을 말하지 않음",
+          /(^|[^0-9])9\s*시/.test(turn.text),
+        ],
+        [
+          "고친 닫는 시각(20시·오후 8시)을 말하지 않음",
+          /20\s*시|8\s*시/.test(turn.text),
+        ],
+        [
+          "옛 시각(10시·21시·오후 9시)으로 답함",
+          !/10\s*시|21\s*시|오후\s*9\s*시/.test(turn.text),
+        ],
+        ["알림을 받았다고 떠벌림", !/알림/.test(turn.text)],
+        ["수첩에 이미 있는 줄을 다시 remember함", !called(turn, "remember")],
+      ]),
+  },
+  /*
+   * 수첩: THE OWNER'S LINE OVER THE BOT'S. The owner confirmed one courier on 수첩; an older line the
+   * Bot learned names another. The owner's heading is drawn first and says it is the owner's.
+   */
+  {
+    id: "owner-line-over-learned",
+    dimension: "notebook",
+    notebook: {
+      memories: ["택배는 CJ대한통운으로 보낸다.", ...EVAL_MEMORIES],
+      confirmed: ["택배는 CJ대한통운으로 보낸다."],
+    },
+    messages: [user("내일 택배 보낼 건데 어느 택배사로 보내면 돼? 한 줄로.")],
+    tools: [REMEMBER, UPDATE_PROFILE, NAVIGATE],
+    check: (turn) =>
+      verdict([
+        [
+          "사장님이 적은 택배사(CJ대한통운)를 말하지 않음",
+          /CJ|대한통운/.test(turn.text),
+        ],
+        [
+          "봇이 알아낸 옛 택배사(우체국)를 권함",
+          !/우체국(으로|을|에)\s*(보내|쓰)/.test(turn.text),
+        ],
+      ]),
   },
 ];
 

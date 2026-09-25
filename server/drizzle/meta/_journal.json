@@ -379,6 +379,13 @@
       "when": 1790355337340,
       "tag": "0053_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790360972690,
+      "tag": "0054_notebook",
+      "breakpoints": true
     }
   ]
 }

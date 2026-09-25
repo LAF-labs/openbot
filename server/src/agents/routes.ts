@@ -5,12 +5,15 @@ import { describeFailure, NOT_FOUND } from "../failure-text";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { checkAgentEndpoint } from "./endpoint";
+import { isNotebookSlot } from "../../../shared/notebook";
 import {
   type AgentMemoryStore,
   looksLikeAnInstruction,
   looksLikeAStandingOrder,
   looksLikeASecret,
+  looksLikePromptStructure,
   MAX_MEMORY_LENGTH,
+  MEMORY_CHARACTER_CAP,
   MemoryFullError,
 } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
@@ -541,7 +544,12 @@ export function createAgentRoutes(
         context.req.param("agentId"),
         context.var.actor.id,
       );
-      return context.json({ memories });
+      // The numbers 수첩's gauge draws. Counted on the words the person sees.
+      const used = memories.reduce(
+        (total, memory) => total + memory.content.length,
+        0,
+      );
+      return context.json({ memories, used, cap: MEMORY_CHARACTER_CAP });
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -659,6 +667,141 @@ export function createAgentRoutes(
               { error: "laf:memory_not_found", code: "laf:memory_not_found" },
               404,
             );
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    },
+  );
+
+  /*
+   * 수첩 — THE OWNER'S PEN. Three routes the Bot's tools never reach (`app/tests/notebook-boundary
+   * .test.ts` walks the tool handlers to say so), which is what lets a line written here be called
+   * the owner's: provenance is the route, never a field in the body a tool could fill.
+   *
+   * The owner is the principal, so a line here is not held to the Bot's full instruction filter —
+   * "파는 것: 아메리카노, 콜라" ends the way an order ends, and a person writing down what their shop
+   * sells is not a page steering the Bot's pen. Three things are still refused, for the owner as for
+   * the Bot: a secret (reread every turn), a prompt's own structure (role markers, tool syntax), and
+   * a standing order — a destination to send things to, or leave to act without asking, which is
+   * the one switch's to decide (`settleWithoutAsking`) and never a sentence's.
+   */
+  const notebookRefusal = (content: string) =>
+    looksLikeASecret(content)
+      ? "laf:memory_looks_like_a_secret"
+      : looksLikePromptStructure(content) || looksLikeAStandingOrder(content)
+        ? "laf:notebook_not_a_fact"
+        : !content.trim()
+          ? "laf:memory_empty"
+          : content.trim().length > MAX_MEMORY_LENGTH
+            ? "laf:memory_too_long"
+            : null;
+
+  const refused = (
+    context: Context<{ Variables: AppVariables }>,
+    code: string,
+  ) => context.json({ error: code, code }, 400);
+
+  const memoryFull = (
+    context: Context<{ Variables: AppVariables }>,
+    error: MemoryFullError,
+  ) =>
+    context.json(
+      {
+        error: "laf:memory_full",
+        code: "laf:memory_full",
+        used: error.used,
+        cap: error.cap,
+      },
+      409,
+    );
+
+  const memoryNotFound = (context: Context<{ Variables: AppVariables }>) =>
+    context.json(
+      { error: "laf:memory_not_found", code: "laf:memory_not_found" },
+      404,
+    );
+
+  /** The owner adds a line — to a shop slot (replacing what stands there) or to the list. */
+  routes.post("/:agentId/notebook", requireUser, async (context) => {
+    if (!memoryStore) return noMemoryStore(context);
+    const body = (await context.req.json().catch(() => null)) as {
+      content?: unknown;
+      slot?: unknown;
+    } | null;
+    const content = typeof body?.content === "string" ? body.content : "";
+    const slot = body?.slot ?? null;
+    if (slot !== null && !isNotebookSlot(slot)) {
+      return refused(context, "laf:notebook_slot_unknown");
+    }
+    const refusal = notebookRefusal(content);
+    if (refusal) return refused(context, refusal);
+    try {
+      const hidden = await visibleOr404(context);
+      if (hidden) return hidden;
+      const agentId = context.req.param("agentId");
+      const actorId = context.var.actor.id;
+      const standing = slot
+        ? await memoryStore.slotLine(agentId, actorId, slot)
+        : null;
+      const memory = standing
+        ? await memoryStore.revise(agentId, standing, actorId, content)
+        : await memoryStore.remember(agentId, actorId, content, {
+            source: "owner",
+            slot,
+          });
+      return memory
+        ? context.json({ memory }, 201)
+        : refused(context, "laf:memory_empty");
+    } catch (error) {
+      if (error instanceof MemoryFullError) return memoryFull(context, error);
+      return mapStoreError(context, error);
+    }
+  });
+
+  /**
+   * The owner rewrites a line. Soft, like forgetting: the old row is kept, forgotten, and points at
+   * the new one — which is what lets a conversation hear it as a correction on the next message
+   * instead of redrawing its frozen layer (`server/src/context/conversations.ts`).
+   */
+  routes.put("/:agentId/notebook/:memoryId", requireUser, async (context) => {
+    if (!memoryStore) return noMemoryStore(context);
+    const body = (await context.req.json().catch(() => null)) as {
+      content?: unknown;
+    } | null;
+    const content = typeof body?.content === "string" ? body.content : "";
+    const refusal = notebookRefusal(content);
+    if (refusal) return refused(context, refusal);
+    try {
+      const hidden = await visibleOr404(context);
+      if (hidden) return hidden;
+      const memory = await memoryStore.revise(
+        context.req.param("agentId"),
+        context.req.param("memoryId"),
+        context.var.actor.id,
+        content,
+      );
+      return memory ? context.json({ memory }) : memoryNotFound(context);
+    } catch (error) {
+      if (error instanceof MemoryFullError) return memoryFull(context, error);
+      return mapStoreError(context, error);
+    }
+  });
+
+  /** The owner says a line the Bot wrote is right. */
+  routes.post(
+    "/:agentId/notebook/:memoryId/confirm",
+    requireUser,
+    async (context) => {
+      if (!memoryStore) return noMemoryStore(context);
+      try {
+        const hidden = await visibleOr404(context);
+        if (hidden) return hidden;
+        const confirmed = await memoryStore.confirm(
+          context.req.param("agentId"),
+          context.req.param("memoryId"),
+          context.var.actor.id,
+        );
+        return confirmed ? context.body(null, 204) : memoryNotFound(context);
       } catch (error) {
         return mapStoreError(context, error);
       }

@@ -474,6 +474,7 @@ describe("the roster speaks the app's language", () => {
     const labels = view.footerLinks().map((link) => link.textContent);
     expect(labels).toEqual([
       "Bot profile",
+      "Notebook",
       "Routines",
       "Skills",
       "Connections",
@@ -483,7 +484,7 @@ describe("the roster speaks the app's language", () => {
       expect(ko[label as string]).toBeTruthy();
     }
     await view.unmount();
-    // In the rail the same five words move into the labels.
+    // In the rail the same six words move into the labels.
     const rail = await roster({ wide: false });
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),
@@ -522,6 +523,7 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
   test("the nav has no second way to the profile, and is pinned below the part that scrolls", async () => {
     const view = await roster({ bots: one() });
     expect(view.footerLinks().map((link) => link.textContent)).toEqual([
+      "Notebook",
       "Routines",
       "Skills",
       "Connections",

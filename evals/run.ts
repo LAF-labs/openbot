@@ -165,6 +165,8 @@ async function runOnce(
       scenario.mode ?? "chat",
       scenario.person,
       scenario.frozenAt,
+      undefined,
+      scenario.notebook,
     ),
     ...scenario.messages,
   ];

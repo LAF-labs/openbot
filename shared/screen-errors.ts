@@ -88,6 +88,7 @@ export const SCREEN_ROUTES = [
   "/legal/privacy",
   "/legal/terms",
   "/no-access",
+  "/notebook",
   "/privacy",
   "/routines",
   "/settings",

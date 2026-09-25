@@ -1,3 +1,4 @@
+import type { NotebookSlot } from "@shared/notebook";
 import { queryOptions } from "@tanstack/react-query";
 import type { AskSubject } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
@@ -107,11 +108,26 @@ export function agentAllowancesQueryOptions(agentId: string) {
   });
 }
 
-/** One thing a Bot has learned about the person reading the list. */
+/** One line of 수첩: something the Bot knows about the shop or the person reading it. */
 export type AgentMemory = {
   id: string;
   content: string;
   createdAt: string;
+  /** `bot`: written by the Bot in a conversation. `owner`: written or corrected on 수첩. */
+  source: "bot" | "owner";
+  /** The owner's own line, or a Bot's line the owner said is right. */
+  confirmed: boolean;
+  /** One of the shop's named lines (`shared/notebook.ts`), or null. */
+  slot: NotebookSlot | null;
+  /** Whether the line reaches the Bot. False only past the character cap. */
+  carried: boolean;
+};
+
+/** Every line, and how full the memory is, in characters. */
+export type Notebook = {
+  memories: AgentMemory[];
+  used: number;
+  cap: number;
 };
 
 /**
@@ -125,7 +141,7 @@ export type AgentMemory = {
 export function agentMemoriesQueryOptions(agentId: string) {
   return queryOptions({
     queryKey: agentKeys.memories(agentId),
-    queryFn: async (): Promise<AgentMemory[]> => {
+    queryFn: async (): Promise<Notebook> => {
       const response = await fetch(
         `/api/agents/${encodeURIComponent(agentId)}/memories`,
         { credentials: "include" },
@@ -142,7 +158,7 @@ export function agentMemoriesQueryOptions(agentId: string) {
           response,
           t("Could not load what this Bot knows. Refresh to try again."),
         );
-      return ((await response.json()) as { memories: AgentMemory[] }).memories;
+      return (await response.json()) as Notebook;
     },
   });
 }

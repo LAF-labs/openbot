@@ -314,6 +314,8 @@ export function createDayReader(options: {
             eq(agentMemories.agentId, agentId),
             eq(agentMemories.ownerUserId, userId),
             isNull(agentMemories.forgottenAt),
+            // What the Bot learned; a line the owner wrote on 수첩 is not the Bot's day.
+            eq(agentMemories.source, "bot"),
             gte(agentMemories.createdAt, start),
             lt(agentMemories.createdAt, end),
           ),

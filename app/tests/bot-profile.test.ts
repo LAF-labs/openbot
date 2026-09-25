@@ -110,7 +110,8 @@ describe("what it remembers", () => {
   test("an empty list is drawn, not withheld", () => {
     /*
      * It used to `return null` on an empty list, so the one question the card answers — what does
-     * this Bot know about me — had no answer at all until it had a worrying one.
+     * this Bot know about me — had no answer at all until it had a worrying one. The list itself is
+     * on 수첩 now; the card still says "nothing yet" rather than a count of none, and leads there.
      */
     const source = readFileSync(PROFILE, "utf8");
     const card = source.slice(
@@ -131,5 +132,6 @@ describe("what it remembers", () => {
     expect(card).toContain("<Skeleton");
     expect(card).not.toContain("return null;");
     expect(card).not.toContain("memories.length === 0) return null");
+    expect(card).toContain('to="/notebook"');
   });
 });

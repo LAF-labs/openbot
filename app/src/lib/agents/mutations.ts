@@ -35,7 +35,11 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:memory_looks_like_instruction":
     "That reads like an instruction rather than a fact, so it was not saved.",
   "laf:memory_full":
-    "This Bot's memory is full. Forget something on its screen to make room.",
+    "This Bot's memory is full. Forget or shorten something in the Notebook to make room.",
+  // 수첩's own two (`/notebook`): the owner's pen refuses less than the Bot's, and says so here.
+  "laf:notebook_not_a_fact":
+    "That reads like an order to the Bot. Write what is true here, and ask the Bot for things in a conversation.",
+  "laf:notebook_slot_unknown": "That could not be saved. Try again.",
   /*
    * What the Bot form itself can be refused for, one code per field.
    *

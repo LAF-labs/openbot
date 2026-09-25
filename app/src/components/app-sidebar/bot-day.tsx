@@ -118,13 +118,13 @@ export function BotDay({
 
   /** A routine's card, or what the Bot remembers: another screen, and the element on it. */
   const handleShowOnPage = async (
-    to: "/routines" | "/agents",
+    to: "/routines" | "/notebook",
     hash: string | undefined,
   ) => {
     onLeave?.();
     await navigate({
       ...(hash ? { hash } : {}),
-      ...(to === "/agents" ? { search: { agent: botId } } : {}),
+      ...(to === "/notebook" ? { search: { agent: botId } } : {}),
       to,
     });
     if (hash) revealWhenDrawn(hash);
@@ -132,8 +132,7 @@ export function BotDay({
 
   const handlePress = (item: BotDayItem) => {
     if (item.kind === "learned") {
-      // The profile's memory section until 수첩 has a page of its own.
-      void handleShowOnPage("/agents", "memories");
+      void handleShowOnPage("/notebook", undefined);
       return;
     }
     if (item.kind === "routine" && (item.silent || !item.messageId)) {

@@ -40,7 +40,9 @@ const FIXTURE: ContextFacts = {
   zoneIsPerson: true,
   locale: "ko-KR",
   day: "2026-09-25 (금)",
-  memories: ["택배는 우체국을 쓴다."],
+  memories: ["영업시간: 평일 10시~21시", "택배는 우체국을 쓴다."],
+  confirmed: ["영업시간: 평일 10시~21시"],
+  superseded: {},
   skills: "- /재고정리 — 재고를 정리한다",
   tools: deferredToolsText(["mcp__gmail__send_message", "showBarChart"]),
 };
@@ -51,7 +53,18 @@ const MOVED: ContextFacts = {
   place: "사장님 가게 위치: 망원동.",
   timeZone: "Asia/Dubai",
   day: "2026-09-26 (토)",
-  memories: ["주말에는 쉰다."],
+  memories: [
+    "영업시간: 평일 9시~20시",
+    "택배는 우체국을 쓴다.",
+    "사장님은 존댓말을 쓴다.",
+    "주말에는 쉰다.",
+  ],
+  confirmed: [
+    "영업시간: 평일 9시~20시",
+    "택배는 우체국을 쓴다.",
+    "사장님은 존댓말을 쓴다.",
+  ],
+  superseded: { "영업시간: 평일 10시~21시": "영업시간: 평일 9시~20시" },
   tools: deferredToolsText(["mcp__cafe24__list_orders"]),
 };
 

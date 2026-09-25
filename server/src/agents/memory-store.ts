@@ -1,38 +1,145 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  carriedLines,
+  drawnLine,
+  isNotebookSlot,
+  MAX_MEMORY_LENGTH,
+  MEMORY_CHARACTER_CAP,
+  type MemorySource,
+  type NotebookLine,
+  type NotebookSlot,
+} from "../../../shared/notebook";
 import type { Database } from "../db/client";
 import { agentMemories } from "../db/schema";
 
-/** One thing a Bot learned, as the person reading the list sees it. */
+export { MAX_MEMORY_LENGTH, MEMORY_CHARACTER_CAP };
+
+/** One line of 수첩, as the person reading the list sees it. */
 export type AgentMemory = {
   id: string;
   content: string;
   createdAt: Date;
+  /** Who wrote the words. */
+  source: MemorySource;
+  /** The owner's own line, or a Bot's line the owner said is right. */
+  confirmed: boolean;
+  /** One of the shop's named lines, or null. */
+  slot: NotebookSlot | null;
+  /** Whether the line reaches the prompt (`carriedLines`). */
+  carried: boolean;
 };
 
 /**
- * The most a Bot may carry into a conversation.
- *
- * A cap rather than everything, because this text is prepended to every single turn: unbounded, a
- * Bot that has worked with somebody for a year spends its whole context remembering and has none
- * left to answer with. Oldest fall out first — what somebody told it last week is more likely to
- * still be true than what it inferred in its first hour.
+ * What one Bot carries into a conversation about one person, drawn: the lines in carry order, the
+ * ones the owner wrote or confirmed, and the corrections made on 수첩 (old line → the line now).
  */
-export const MAX_MEMORIES_CARRIED = 40;
+export type CarriedMemories = {
+  memories: string[];
+  confirmed: string[];
+  superseded: Record<string, string>;
+};
 
-/** How long one remembered fact may be. Long enough for a sentence, short enough to read in a list. */
-export const MAX_MEMORY_LENGTH = 400;
+/** A row as the notebook reads it. `forgottenAt` and `replacedBy` only matter for corrections. */
+export type MemoryRow = {
+  id: string;
+  agentId: string;
+  content: string;
+  createdAt: Date;
+  source: string;
+  confirmedAt: Date | null;
+  slot: string | null;
+  forgottenAt: Date | null;
+  replacedBy: string | null;
+};
+
+const lineOf = (row: MemoryRow): NotebookLine & { createdAt: Date } => ({
+  id: row.id,
+  content: row.content,
+  createdAt: row.createdAt,
+  slot: isNotebookSlot(row.slot) ? row.slot : null,
+  source: row.source === "owner" ? "owner" : "bot",
+  confirmed: row.source === "owner" || row.confirmedAt !== null,
+});
+
+/** The live lines with whether each is carried: the carried ones in carry order, then the rest. */
+function notebookOf(rows: readonly MemoryRow[]): AgentMemory[] {
+  const live = rows.filter((row) => row.forgottenAt === null).map(lineOf);
+  const { carried } = carriedLines(live);
+  const reaching = new Set(carried.map((line) => line.id));
+  const rest = live.filter((line) => !reaching.has(line.id));
+  return [...carried, ...rest].map((line) => ({
+    ...line,
+    carried: reaching.has(line.id),
+  }));
+}
 
 /**
- * The most a Bot may remember about one person, in characters, across every fact it still carries.
+ * What the prompt carries, drawn, from one Bot's rows for one person — live and corrected.
  *
- * A second bound beside the count, because forty facts of four hundred characters is sixteen
- * thousand characters standing in front of every turn — the count alone never said how much
- * prompt the memory was allowed to be. 2,200 is Hermes Agent's figure for the same list, and it is
- * five or six full sentences: what one person's shop actually takes to describe. The Bot cannot
- * make room on its own (forgetting is the person's, on the Bot's screen), so a full memory is told
- * to the Bot as a fact and it asks.
+ * A correction is followed to the line that stands now, so two edits before the next message read
+ * as one: "10시" → "9시" → "8시" tells a conversation that last heard "10시" that it is "8시".
+ * A chain that ends in a forgotten line is a forgetting, and says nothing here.
  */
-export const MEMORY_CHARACTER_CAP = 2_200;
+export function carriedMemoriesOf(rows: readonly MemoryRow[]): CarriedMemories {
+  const lines = notebookOf(rows).filter((line) => line.carried);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const superseded: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.forgottenAt === null || !row.replacedBy) continue;
+    let next = byId.get(row.replacedBy);
+    const seen = new Set([row.id]);
+    while (next && next.forgottenAt !== null && next.replacedBy) {
+      if (seen.has(next.id)) break;
+      seen.add(next.id);
+      next = byId.get(next.replacedBy);
+    }
+    if (next && next.forgottenAt === null) {
+      superseded[drawnLine(lineOf(row))] = drawnLine(lineOf(next));
+    }
+  }
+  return {
+    memories: lines.map(drawnLine),
+    confirmed: lines.filter((line) => line.confirmed).map(drawnLine),
+    superseded,
+  };
+}
+
+const ROW_COLUMNS = {
+  id: agentMemories.id,
+  agentId: agentMemories.agentId,
+  content: agentMemories.content,
+  createdAt: agentMemories.createdAt,
+  source: agentMemories.source,
+  confirmedAt: agentMemories.confirmedAt,
+  slot: agentMemories.slot,
+  forgottenAt: agentMemories.forgottenAt,
+  replacedBy: agentMemories.replacedBy,
+};
+
+/**
+ * Every row the notebook reads for these Bots and this person: the live ones, and the ones an
+ * edit replaced. One query for every Bot, because this runs on every turn.
+ */
+export async function selectNotebookRows(
+  database: Database,
+  agentIds: readonly string[],
+  ownerUserId: string,
+): Promise<MemoryRow[]> {
+  if (agentIds.length === 0) return [];
+  return database
+    .select(ROW_COLUMNS)
+    .from(agentMemories)
+    .where(
+      and(
+        inArray(agentMemories.agentId, [...agentIds]),
+        eq(agentMemories.ownerUserId, ownerUserId),
+        or(
+          isNull(agentMemories.forgottenAt),
+          isNotNull(agentMemories.replacedBy),
+        ),
+      ),
+    );
+}
 
 /** The memory is at its cap and one more fact would not fit. Carries the numbers, not a sentence. */
 export class MemoryFullError extends Error {
@@ -296,20 +403,43 @@ export function looksLikeAStandingOrder(text: string): boolean {
 }
 
 export type AgentMemoryStore = {
-  /** What this Bot still knows about this person, oldest first. */
+  /** Every line this Bot still holds about this person, in carry order, with what is carried. */
   list(agentId: string, ownerUserId: string): Promise<AgentMemory[]>;
   /**
-   * Append one fact. Returns null when the text is empty or too long to be one.
+   * Append one line. Returns null when the text is empty or too long to be one.
    *
-   * Throws {@link MemoryFullError} when the fact would take the memory past
+   * Throws {@link MemoryFullError} when the line would take the memory past
    * {@link MEMORY_CHARACTER_CAP}: unlike an empty or an overlong fact, a full memory is not a
    * property of the text, and the caller has to say something different about it.
+   *
+   * `source` is the route's to decide: `/memories` is the Bot's tool, `/notebook` is the owner.
    */
   remember(
     agentId: string,
     ownerUserId: string,
     content: string,
+    options?: { source?: MemorySource; slot?: NotebookSlot | null },
   ): Promise<AgentMemory | null>;
+  /**
+   * Replace one line with new words — soft, like forgetting: the old row is forgotten and points
+   * at the new one, which is the owner's. Null when there is no such live line or the words are
+   * empty or too long. Throws {@link MemoryFullError} when the new words would not fit where the
+   * old ones stood.
+   */
+  revise(
+    agentId: string,
+    id: string,
+    ownerUserId: string,
+    content: string,
+  ): Promise<AgentMemory | null>;
+  /** Say a Bot's line is right. Whether a live line was found. */
+  confirm(agentId: string, id: string, ownerUserId: string): Promise<boolean>;
+  /** The id of the live line in a shop slot, if there is one. */
+  slotLine(
+    agentId: string,
+    ownerUserId: string,
+    slot: NotebookSlot,
+  ): Promise<string | null>;
   /**
    * Stop carrying one fact.
    *
@@ -320,32 +450,76 @@ export type AgentMemoryStore = {
   forget(id: string, ownerUserId: string): Promise<boolean>;
 };
 
+/** The characters one Bot's live lines take for one person. */
+async function usedCharacters(
+  database: Database,
+  agentId: string,
+  ownerUserId: string,
+): Promise<number> {
+  const [usage] = await database
+    .select({
+      used: sql<number>`coalesce(sum(length(${agentMemories.content})), 0)`,
+    })
+    .from(agentMemories)
+    .where(
+      and(
+        eq(agentMemories.agentId, agentId),
+        eq(agentMemories.ownerUserId, ownerUserId),
+        isNull(agentMemories.forgottenAt),
+      ),
+    );
+  return Number(usage?.used ?? 0);
+}
+
+const asMemory = (row: MemoryRow): AgentMemory => ({
+  ...lineOf(row),
+  carried: true,
+});
+
 export function createAgentMemoryStore(database: Database): AgentMemoryStore {
+  const liveRow = async (agentId: string, id: string, ownerUserId: string) => {
+    const [row] = await database
+      .select(ROW_COLUMNS)
+      .from(agentMemories)
+      .where(
+        and(
+          eq(agentMemories.id, id),
+          eq(agentMemories.agentId, agentId),
+          eq(agentMemories.ownerUserId, ownerUserId),
+          isNull(agentMemories.forgottenAt),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  };
+
   return {
     async list(agentId, ownerUserId) {
-      const rows = await database
-        .select({
-          id: agentMemories.id,
-          content: agentMemories.content,
-          createdAt: agentMemories.createdAt,
-        })
-        .from(agentMemories)
-        .where(
-          and(
-            eq(agentMemories.agentId, agentId),
-            eq(agentMemories.ownerUserId, ownerUserId),
-            isNull(agentMemories.forgottenAt),
-          ),
-        )
-        // Oldest first: the prompt reads as a history, and the cap drops the far end.
-        .orderBy(asc(agentMemories.createdAt))
-        .limit(MAX_MEMORIES_CARRIED);
-      return rows;
+      return notebookOf(
+        await selectNotebookRows(database, [agentId], ownerUserId),
+      );
     },
 
-    async remember(agentId, ownerUserId, content) {
+    async remember(agentId, ownerUserId, content, options = {}) {
       const text = content.trim();
       if (!text || text.length > MAX_MEMORY_LENGTH) return null;
+
+      /*
+       * A LINE ALREADY THERE IS NOT WRITTEN TWICE. Measured on MiMo (2026-09-26): told by a reminder
+       * that the owner had corrected the hours on 수첩, the Bot `remember`ed the same sentence again,
+       * and the list held it twice — twice the characters against the cap, and a second copy the
+       * owner would have to find and forget when the hours change next. Compared as the Bot reads
+       * it, so "영업시간: …" matches the shop's hours line.
+       */
+      const flat = (value: string) => value.replace(/\s+/g, " ").trim();
+      const standing = (
+        await selectNotebookRows(database, [agentId], ownerUserId)
+      ).find(
+        (row) =>
+          row.forgottenAt === null &&
+          flat(drawnLine(lineOf(row))) === flat(text),
+      );
+      if (standing) return asMemory(standing);
 
       /*
        * Counted on the way in rather than trimmed on the way out, so the Bot learns the memory is
@@ -353,19 +527,7 @@ export function createAgentMemoryStore(database: Database): AgentMemoryStore {
        * oldest line. Read-then-insert without a lock: one server process per VM, and a Bot writes
        * one fact per tool call, so two writes for one person do not race here.
        */
-      const [usage] = await database
-        .select({
-          used: sql<number>`coalesce(sum(length(${agentMemories.content})), 0)`,
-        })
-        .from(agentMemories)
-        .where(
-          and(
-            eq(agentMemories.agentId, agentId),
-            eq(agentMemories.ownerUserId, ownerUserId),
-            isNull(agentMemories.forgottenAt),
-          ),
-        );
-      const used = Number(usage?.used ?? 0);
+      const used = await usedCharacters(database, agentId, ownerUserId);
       if (used + text.length > MEMORY_CHARACTER_CAP) {
         throw new MemoryFullError(used, MEMORY_CHARACTER_CAP);
       }
@@ -377,13 +539,79 @@ export function createAgentMemoryStore(database: Database): AgentMemoryStore {
           agentId,
           ownerUserId,
           content: text,
+          source: options.source ?? "bot",
+          slot: options.slot ?? null,
         })
-        .returning({
-          id: agentMemories.id,
-          content: agentMemories.content,
-          createdAt: agentMemories.createdAt,
-        });
-      return row ?? null;
+        .returning(ROW_COLUMNS);
+      return row ? asMemory(row) : null;
+    },
+
+    async revise(agentId, id, ownerUserId, content) {
+      const text = content.trim();
+      if (!text || text.length > MAX_MEMORY_LENGTH) return null;
+      const old = await liveRow(agentId, id, ownerUserId);
+      if (!old) return null;
+      const used = await usedCharacters(database, old.agentId, ownerUserId);
+      if (used - old.content.length + text.length > MEMORY_CHARACTER_CAP) {
+        throw new MemoryFullError(used, MEMORY_CHARACTER_CAP);
+      }
+      const newId = `memory_${crypto.randomUUID()}`;
+      const row = await database.transaction(async (tx) => {
+        const [written] = await tx
+          .insert(agentMemories)
+          .values({
+            id: newId,
+            agentId: old.agentId,
+            ownerUserId,
+            content: text,
+            // The words are the owner's now, whoever wrote the line they replace.
+            source: "owner",
+            slot: old.slot,
+          })
+          .returning(ROW_COLUMNS);
+        await tx
+          .update(agentMemories)
+          .set({
+            forgottenAt: new Date(),
+            replacedBy: newId,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentMemories.id, old.id));
+        return written;
+      });
+      return row ? asMemory(row) : null;
+    },
+
+    async confirm(agentId, id, ownerUserId) {
+      const confirmed = await database
+        .update(agentMemories)
+        .set({ confirmedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(agentMemories.id, id),
+            eq(agentMemories.agentId, agentId),
+            eq(agentMemories.ownerUserId, ownerUserId),
+            isNull(agentMemories.forgottenAt),
+          ),
+        )
+        .returning({ id: agentMemories.id });
+      return confirmed.length > 0;
+    },
+
+    async slotLine(agentId, ownerUserId, slot) {
+      const [row] = await database
+        .select({ id: agentMemories.id })
+        .from(agentMemories)
+        .where(
+          and(
+            eq(agentMemories.agentId, agentId),
+            eq(agentMemories.ownerUserId, ownerUserId),
+            eq(agentMemories.slot, slot),
+            isNull(agentMemories.forgottenAt),
+          ),
+        )
+        .limit(1);
+      return row?.id ?? null;
     },
 
     async forget(id, ownerUserId) {

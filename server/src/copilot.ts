@@ -124,6 +124,10 @@ export type AgentStandingProfile = {
    * only thing all of them already understand.
    */
   memories?: readonly string[];
+  /** Of those, the ones the owner wrote on 수첩 or said are right. */
+  confirmedMemories?: readonly string[];
+  /** Lines corrected on 수첩: old → the line now. Not drawn; the reminder and the epoch read it. */
+  supersededMemories?: Readonly<Record<string, string>>;
   /**
    * The skills this Bot holds, by name and one line, so the prompt can list them.
    *
@@ -225,6 +229,12 @@ function composeInputOf(
     standingRole: profile.roleDescription,
     ...(profile.shop ? { shop: profile.shop } : {}),
     ...(profile.memories ? { memories: profile.memories } : {}),
+    ...(profile.confirmedMemories
+      ? { confirmedMemories: profile.confirmedMemories }
+      : {}),
+    ...(profile.supersededMemories
+      ? { supersededMemories: profile.supersededMemories }
+      : {}),
     ...(profile.skills ? { skills: profile.skills } : {}),
     ...(options.notepad?.length ? { notepad: options.notepad } : {}),
     ...((options.person ?? profile.person)
@@ -311,6 +321,8 @@ type RuntimeAgentRow = {
    * scope memories to, and a Bot carrying somebody else's is the one failure this must not have.
    */
   memories?: readonly string[];
+  confirmedMemories?: readonly string[];
+  supersededMemories?: Readonly<Record<string, string>>;
 };
 
 export function registeredAgentFromRow(
@@ -342,6 +354,12 @@ export function registeredAgentFromRow(
           name: row.name,
           roleDescription: row.roleDescription,
           ...(row.memories ? { memories: row.memories } : {}),
+          ...(row.confirmedMemories
+            ? { confirmedMemories: row.confirmedMemories }
+            : {}),
+          ...(row.supersededMemories
+            ? { supersededMemories: row.supersededMemories }
+            : {}),
         },
         effort: row.effort ?? "balanced",
       }

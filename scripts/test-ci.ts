@@ -501,16 +501,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * three to `root` (a photo handed on as `image_url`, words alone sent as they always were).
  * Measured at server 2,783 / app 1,359 / agent-computer 301 / root 462. Each floor rises by exactly
  * what was added.
+ * RAISED 2026-09-26 with 수첩: sixteen to `server` (a correction on 수첩 reaching a conversation as
+ * a reminder in the same epoch, a line the Bot wrote corrected before the next message, a confirm,
+ * a cleared line still a new epoch; the forty-first line carried, owner and shop lines drawn first,
+ * a soft edit and its chain, an edit that would not fit, a confirm, a line not written twice; the
+ * owner's route and its refusals), three to `app` (no tool handler reaching `/notebook`, the Bot's
+ * tool still on `/memories`, the shop lines' Korean) and two to `root` (the carry order, the
+ * character bound). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2698, roots: ["server"] },
-  { name: "app", floor: 1331, roots: ["app"] },
+  { name: "server", floor: 2714, roots: ["server"] },
+  { name: "app", floor: 1334, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
-  { name: "root", floor: 420, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 422, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

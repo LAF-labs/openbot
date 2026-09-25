@@ -107,8 +107,12 @@ export type ComposePromptInput = {
    * 줄을 읽는다. 비어 있거나 없으면 아무 줄도 없다.
    */
   shop?: ShopProfile;
-  /** 이 봇이 이 사람에 대해 알아낸 것, 오래된 것부터. */
+  /** 이 봇이 읽는 기억, 싣는 순서대로(`shared/notebook.ts`). */
   memories?: readonly string[];
+  /** 그중 사장님이 수첩에 적었거나 맞다고 확인한 것. */
+  confirmedMemories?: readonly string[];
+  /** 수첩에서 고쳐진 기억, 옛 글 → 지금의 글. 그려지지 않고 알림과 에포크만 읽는다. */
+  supersededMemories?: Readonly<Record<string, string>>;
   /** 이 봇에게 허용된 스킬. 이름과 한 줄만 — 본문은 skill_view가 읽는다. */
   skills?: readonly PromptSkill[];
   /** 루틴의 메모장. 루틴 모드에서만 실린다 — 다른 자리에서 온 것은 그리지 않는다. */
@@ -189,6 +193,12 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
     shop: shopText(input.shop),
     place: placeText(input.person, input.mode),
     ...(input.memories ? { memories: input.memories } : {}),
+    ...(input.confirmedMemories
+      ? { confirmedMemories: input.confirmedMemories }
+      : {}),
+    ...(input.supersededMemories
+      ? { supersededMemories: input.supersededMemories }
+      : {}),
     skills: skillIndexText(input.skills ?? []),
     tools: deferredToolsText(input.toolNames ?? []),
     ...(input.person ? { person: input.person } : {}),

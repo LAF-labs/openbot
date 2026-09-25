@@ -7,6 +7,7 @@ import {
   IconLogout,
   IconMailOpened,
   IconMessageCircle,
+  IconNotebook,
   IconPencil,
   IconPlayerStop,
   IconPlugConnected,
@@ -120,6 +121,12 @@ import { cn } from "@/lib/utils";
  */
 const FOOTER_LINKS = [
   { to: "/agents", icon: IconUserCircle, label: "Bot profile" },
+  /*
+   * 수첩 (one-bot direction #2): what the Bot knows about the shop and the person, where a wrong
+   * line is fixed. Near the top because it is the one place a person checks the Bot believes the
+   * right things — the profile no longer lists them.
+   */
+  { to: "/notebook", icon: IconNotebook, label: "Notebook" },
   { to: "/routines", icon: IconClock, label: "Routines" },
   { to: "/skills", icon: IconBox, label: "Skills" },
   {

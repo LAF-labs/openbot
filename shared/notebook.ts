@@ -1,0 +1,107 @@
+/**
+ * 수첩 — what a Bot knows about the shop and its owner, as one list the owner can read and fix.
+ *
+ * Shared because three places must agree on it: the server decides which lines reach the prompt,
+ * the surface shows which ones do, and the prompt draws them. A line the screen says is carried
+ * and the prompt leaves out is a control that saves and does nothing.
+ */
+
+/**
+ * The most a Bot may remember about one person, in characters, across every line it carries.
+ *
+ * Counted on the words the person sees, not on the drawn line: the gauge on 수첩 is this number.
+ * 2,200 is Hermes Agent's figure for the same list. Measured on MiMo-V2.6-Pro (2026-09-26), prompt
+ * tokens over a Bot with none: 63 ordinary sentences filling the cap (2,192 characters) cost
+ * 1,769; the worst shape, 220 lines of ten characters (1,980), cost 2,230 — each line's "- " and
+ * newline are the difference. Bounded either way, and frozen per epoch, so no count is needed.
+ */
+export const MEMORY_CHARACTER_CAP = 2_200;
+
+/** How long one line may be. Long enough for a sentence, short enough to read in a list. */
+export const MAX_MEMORY_LENGTH = 400;
+
+/**
+ * The shop's named lines on 수첩. The rest of what the shop is — the kind, the places, the
+ * location — is 내 가게's, and 수첩 reads it from there rather than keeping a second copy.
+ */
+export const NOTEBOOK_SLOTS = ["shop_name", "hours", "offer"] as const;
+export type NotebookSlot = (typeof NOTEBOOK_SLOTS)[number];
+
+export const isNotebookSlot = (value: unknown): value is NotebookSlot =>
+  typeof value === "string" &&
+  (NOTEBOOK_SLOTS as readonly string[]).includes(value);
+
+/** The label a slot's line is drawn with in the prompt. The surface has its own words. */
+export const SLOT_LABEL_KO: Readonly<Record<NotebookSlot, string>> = {
+  shop_name: "가게 이름",
+  hours: "영업시간",
+  offer: "파는 것",
+};
+
+/** Who wrote a line. Decided by the route it came through, never by the body. */
+export type MemorySource = "bot" | "owner";
+
+/** One line as the carry rule needs it. */
+export type NotebookLine = {
+  id: string;
+  content: string;
+  slot: NotebookSlot | null;
+  source: MemorySource;
+  /** The owner's own line, or a Bot's line the owner said is right. */
+  confirmed: boolean;
+  createdAt: Date | string;
+};
+
+/** A line as the Bot reads it: a slot's line carries its label. */
+export function drawnLine(
+  line: Pick<NotebookLine, "content" | "slot">,
+): string {
+  const text = line.content.trim();
+  return line.slot ? `${SLOT_LABEL_KO[line.slot]}: ${text}` : text;
+}
+
+const time = (value: Date | string) => new Date(value).getTime();
+
+/**
+ * The lines in the order the prompt carries them: the shop's named lines, then the rest the owner
+ * wrote or confirmed, then what the Bot learned on its own — each oldest first.
+ */
+export function carryOrder<T extends NotebookLine>(lines: readonly T[]): T[] {
+  const rank = (line: T) => (line.slot ? 0 : line.confirmed ? 1 : 2);
+  return [...lines].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      time(a.createdAt) - time(b.createdAt) ||
+      a.id.localeCompare(b.id),
+  );
+}
+
+/**
+ * Which lines reach the prompt, in carry order, and how many characters the whole list holds.
+ *
+ * REPLACES A COUNT OF FORTY. Reads used to keep the oldest forty rows while writes were bounded
+ * by characters, so a Bot holding forty-one short lines saved the forty-first and never read it
+ * (harness review 2026-09, item 10). The character cap is what bounds the prompt, so it is the
+ * one bound: a line is carried while the list so far fits under it. Writes refuse past the cap,
+ * so on a list written through the store every line is carried; the rule still says what happens
+ * if one is not, and 수첩 draws that line as not reaching the Bot.
+ */
+export function carriedLines<T extends NotebookLine>(
+  lines: readonly T[],
+): { carried: T[]; used: number; cap: number } {
+  const carried: T[] = [];
+  let used = 0;
+  let room = MEMORY_CHARACTER_CAP;
+  for (const line of carryOrder(lines)) {
+    const length = line.content.trim().length;
+    used += length;
+    if (length <= room) {
+      carried.push(line);
+      room -= length;
+    } else {
+      // Nothing after a line that did not fit is carried either: the order is the priority.
+      room = -1;
+    }
+  }
+  return { carried, used, cap: MEMORY_CHARACTER_CAP };
+}

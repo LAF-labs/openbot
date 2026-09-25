@@ -12,7 +12,7 @@ import {
   NotificationPermission,
   noticeWindowNote,
 } from "@/components/notifications/notification-permission";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,7 +37,7 @@ import {
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { ensure } from "@/lib/ensure";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { josa } from "@/lib/josa";
 import { pluginKeys, pluginsPageQueryOptions } from "@/lib/plugins/queries";
@@ -46,6 +46,7 @@ import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { botDeleteRecheck } from "@/lib/rechecks";
 import { useSavedFlash } from "@/lib/saved-flash";
+import { cn } from "@/lib/utils";
 
 /**
  * What a change on this page that did not save says.
@@ -463,62 +464,22 @@ function EffortCard({
 }
 
 /**
- * WHAT THIS BOT HAS LEARNED, AND THE BUTTON THAT UNDOES IT.
+ * WHAT THIS BOT HAS LEARNED — NOW ON 수첩, AND THIS CARD IS THE WAY THERE.
  *
- * The competing product keeps the same thing and its own documentation says you cannot inspect,
- * correct, export, or delete individual memories. This card is the whole disagreement: a Bot that
- * quietly learned something wrong about somebody's business is the ordinary case, not the edge one,
- * and it has to be fixable in the time it takes to read the sentence.
+ * The card used to be the list itself, with 잊기 beside each line and nothing else: a wrong line
+ * could be forgotten and told again, never corrected. 수첩 (`/notebook`) shows, writes, corrects
+ * and confirms, beside the shop's own lines, so the profile says how much it holds and goes there.
  *
- * Shown to everybody who can see the Bot rather than only to whoever manages it, because these are
- * the reader's own — a shared coworker keeps what it learned from each person separately, and
- * nobody else's is on this list.
- *
- * DRAWN EMPTY, TOO. It used to return null with nothing learned yet, so the one question this card
- * answers — what does it know about me — had no answer at all until it had a worrying one. An empty
- * list is the reassuring case and it should be readable.
+ * Nothing is claimed before the answer arrives, and a failed read or a deployment with no memory
+ * store says so rather than "nothing yet" — both were measured saying 아직 없습니다 (2026-09-18).
  */
 function MemoriesCard({ agentId }: { agentId: string }) {
-  const queryClient = useQueryClient();
-  const memories = useQuery(agentMemoriesQueryOptions(agentId));
-  const [forgetting, setForgetting] = useState<string | null>(null);
-  /*
-   * "IT REMEMBERS NOTHING" IS A CLAIM, and until 2026-09-18 two things that are not nothing made it:
-   * a read that failed, and a deployment with no memory store at all (`laf:not_found` — which the
-   * server sends precisely so a screen will not say "nothing yet" for a Bot that cannot learn).
-   * Both measured saying 아직 없습니다 on this card.
-   */
-  const reading = useReading(memories, {
+  const notebook = useQuery(agentMemoriesQueryOptions(agentId));
+  const reading = useReading(notebook, {
+    isEmpty: (data) => data.memories.length === 0,
     unavailable: { "laf:agent_not_found": "not_allowed" },
   });
   const settled = settledOf(reading);
-
-  const forget = (memoryId: string) => {
-    setForgetting(memoryId);
-    // `try`…`finally`, through `ensure`: the React Compiler cannot compile the statement itself.
-    return ensure(
-      async () => {
-        await fetch(
-          `/api/agents/${encodeURIComponent(agentId)}/memories/${encodeURIComponent(memoryId)}`,
-          { credentials: "include", method: "DELETE" },
-        );
-        await queryClient.invalidateQueries({
-          queryKey: agentKeys.memories(agentId),
-        });
-      },
-      () => setForgetting(null),
-    );
-  };
-
-  /*
-   * Nothing is claimed before the answer arrives: "it remembers nothing" is as much a claim as a
-   * list, and it was being made while the request was still in flight.
-   *
-   * BUT NOT `null`. Returning nothing left a card-shaped hole that filled in a moment later and
-   * pushed the two cards below it down the pane — measured on a cold load, everything under
-   * 기억하는 내용 jumped once the memories landed, and again when the skills did. The placeholder is
-   * the same height as the card it becomes.
-   */
   const line = readLineOf(reading, {
     failed: t("What it remembers could not be loaded."),
     notHere: t(
@@ -526,66 +487,55 @@ function MemoriesCard({ agentId }: { agentId: string }) {
     ),
   });
 
-  // One section in every state, the notice last in it: mounted before it speaks.
   return (
     <section
-      className="flex scroll-mt-4 flex-col gap-2 rounded-xl bg-muted p-3 transition-shadow duration-700 data-[jumped=true]:ring-2 data-[jumped=true]:ring-primary/40"
-      // 오늘 links a learned fact here until 수첩 has its own page (`app-sidebar/bot-day.tsx`).
+      className="flex scroll-mt-4 flex-col gap-2 rounded-xl bg-muted p-3"
       id="memories"
     >
       {reading.state === "loading" ? (
         <>
           <Skeleton className="h-5 w-32" />
           <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-9 w-full rounded-lg" />
         </>
       ) : (
         <div className="flex flex-col gap-0.5">
           <h2 className="font-medium text-base">{t("What it remembers")}</h2>
           <p className="text-muted-foreground text-sm">
-            {/*
-             * "당신에 대해 … 내 것은 나만 봅니다" was written for several people sharing a Bot. There is
-             * one account and one Bot now, and "당신" is not how this product speaks to anybody
-             * (0.5.3 audit, item 9).
-             */}
-            {t("What this Bot has learned, kept between conversations.")}
+            {settled?.state === "ready"
+              ? t(
+                  "{count} lines in the Notebook · {used} of {cap} characters",
+                  {
+                    count: settled.data.memories.length,
+                    used: settled.data.used.toLocaleString(activeLocale),
+                    cap: settled.data.cap.toLocaleString(activeLocale),
+                  },
+                )
+              : settled?.state === "empty"
+                ? t("Nothing yet. What it learns about you appears here.")
+                : t("What this Bot has learned, kept between conversations.")}
           </p>
         </div>
       )}
-      {settled?.state === "ready" ? (
-        <ul className="flex flex-col gap-1">
-          {settled.data.map((memory) => (
-            <li
-              className="flex items-start gap-2 rounded-lg bg-background px-3 py-2"
-              key={memory.id}
-            >
-              <p className="flex-1 text-pretty text-sm">{memory.content}</p>
-              <Button
-                disabled={forgetting === memory.id}
-                onClick={() => void forget(memory.id)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("Forget")}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {settled?.state === "empty" ? (
-        <p className="rounded-lg bg-background px-3 py-2 text-muted-foreground text-sm">
-          {t("Nothing yet. What it learns about you appears here.")}
-        </p>
-      ) : null}
+      {reading.state === "loading" || line?.kind === "unavailable" ? null : (
+        <Link
+          className={cn(
+            buttonVariants({ size: "sm", variant: "outline" }),
+            "self-start",
+          )}
+          search={{ agent: agentId }}
+          to="/notebook"
+        >
+          {t("Open the Notebook")}
+        </Link>
+      )}
       <ReadNotice
-        // "Not here" in the empty line's own box, so it and "nothing yet" read as siblings.
         className={
           line?.kind === "unavailable"
             ? "rounded-lg bg-background px-3 py-2"
             : "py-0"
         }
         line={line}
-        onRetry={() => void memories.refetch()}
+        onRetry={() => void notebook.refetch()}
       />
     </section>
   );

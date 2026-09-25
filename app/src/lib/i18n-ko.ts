@@ -1813,8 +1813,8 @@ export const ko: Record<string, string> = {
   // 기억 쓰기의 거절 둘. 지시문은 프롬프트가 되므로 받지 않고, 가득 찬 기억은 사람이 비운다.
   "That reads like an instruction rather than a fact, so it was not saved.":
     "사실이 아니라 지시문처럼 읽혀서 저장하지 않았어요.",
-  "This Bot's memory is full. Forget something on its screen to make room.":
-    "이 봇의 기억이 가득 찼어요. 봇 화면에서 오래된 기억을 잊게 하면 자리가 나요.",
+  "This Bot's memory is full. Forget or shorten something in the Notebook to make room.":
+    "이 봇의 기억이 가득 찼어요. 수첩에서 오래된 기억을 잊거나 줄이면 자리가 나요.",
 
   /*
    * 승인 카드의 세 번째 답 — “이 대화 동안”. “이번만”과 “항상” 사이의 무게 차이가 하루짜리
@@ -2633,4 +2633,57 @@ export const ko: Record<string, string> = {
     "파일을 열 수 없어요. 손상됐거나 암호가 걸려 있을 수 있어요.",
   "The file could not be attached. Please try again.":
     "파일을 붙이지 못했어요. 다시 해 주세요.",
+  // notebook
+  Notebook: "수첩",
+  "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.":
+    "봇이 가게와 사장님에 대해 아는 것이에요. 틀린 게 있으면 여기서 고치세요. 다음 메시지부터 봇이 알아요.",
+  "The Notebook could not be loaded.": "수첩을 불러오지 못했어요.",
+  "Room in the Notebook": "수첩에 남은 자리",
+  "{used} of {cap} characters": "{cap}자 중 {used}자",
+  "The shop": "가게",
+  "What your Bot reads about the shop before every conversation.":
+    "봇이 대화를 시작할 때마다 읽는 가게 정보예요.",
+  "Shop name": "가게 이름",
+  "e.g. Miso Café": "예: 미소카페",
+  "Write the shop name": "가게 이름 적기",
+  "Opening hours": "영업시간",
+  "e.g. Weekdays 10:00–21:00, closed Sundays":
+    "예: 평일 10시~21시, 일요일 휴무",
+  "Write the opening hours": "영업시간 적기",
+  "What you sell": "파는 것",
+  "e.g. Americano, latte, bakery": "예: 아메리카노, 라떼, 베이커리",
+  "Write what you sell": "파는 것 적기",
+  "Clear it": "지우기",
+  "Not set": "아직 없음",
+  "Change these on My shop": "내 가게에서 바꾸기",
+  "What your Bot has learned in conversations, and what you wrote down. Edit anything that is wrong.":
+    "봇이 대화에서 알게 된 것과 사장님이 적은 것이에요. 틀린 건 바로 고치세요.",
+  "Write something down for your Bot": "봇에게 알려 줄 것 적기",
+  "e.g. Parcels go by the post office. Regulars get a free drink.":
+    "예: 택배는 우체국으로 보내요. 단골손님께는 음료 한 잔을 서비스해요.",
+  "Write it down": "적기",
+  "Nothing yet. What your Bot learns in conversations appears here.":
+    "아직 없어요. 봇이 대화에서 알게 된 것이 여기에 쌓여요.",
+  "You wrote this · {date}": "사장님이 적음 · {date}",
+  "Your Bot wrote this in a conversation · {date}":
+    "봇이 대화에서 적음 · {date}",
+  "You said it is right": "맞다고 확인함",
+  "Over the limit, so your Bot does not read it":
+    "자리가 넘쳐서 봇이 읽지 못해요",
+  "That's right": "맞아요",
+  "Edit what your Bot remembers": "봇의 기억 고치기",
+  "Saved. Your Bot knows from your next message.":
+    "저장했어요. 다음 메시지부터 봇이 알아요.",
+  "Written down. Your Bot knows from your next message.":
+    "적었어요. 다음 메시지부터 봇이 알아요.",
+  "Corrected. Your Bot knows from your next message.":
+    "고쳤어요. 다음 메시지부터 봇이 알아요.",
+  "Marked as right.": "맞다고 표시했어요.",
+  "Forgotten. Your Bot no longer reads it.": "잊었어요. 이제 봇이 읽지 않아요.",
+  "Cleared. Your Bot no longer reads it.": "지웠어요. 이제 봇이 읽지 않아요.",
+  "{count} lines in the Notebook · {used} of {cap} characters":
+    "수첩에 {count}줄 · {cap}자 중 {used}자",
+  "Open the Notebook": "수첩 열기",
+  "That reads like an order to the Bot. Write what is true here, and ask the Bot for things in a conversation.":
+    "봇에게 시키는 말처럼 읽혀요. 여기에는 사실을 적고, 부탁은 대화로 해 주세요.",
 };
