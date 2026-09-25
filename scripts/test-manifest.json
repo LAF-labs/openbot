@@ -311,6 +311,8 @@
   "server/tests/live-screen.test.ts",
   "server/tests/log-hygiene.integration.test.ts",
   "server/tests/mcp-check-mirror.test.ts",
+  "server/tests/memory-evidence.integration.test.ts",
+  "server/tests/memory-forgetting.test.ts",
   "server/tests/memory-instructions.test.ts",
   "server/tests/memory-secrets.test.ts",
   "server/tests/message-speakers.test.ts",

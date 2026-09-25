@@ -1,4 +1,5 @@
 import { createRetentionJob } from "../account/retention";
+import type { MemoryCurator } from "../agents/memory-curation";
 import type { ConversationStore } from "../context/conversations";
 import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
@@ -26,6 +27,10 @@ const FLEET_REDELIVERY_MS = 5 * 60_000;
 /** How often conversations are looked at for a day's close. */
 const DAY_CLOSE_TICK_MS = 60_000;
 
+/** The memory's curation: hourly, and once a minute after boot so a restart does not skip an hour. */
+const CURATION_TICK_MS = 60 * 60_000;
+const CURATION_FIRST_MS = 60_000;
+
 /**
  * What this process does on its own once the port is open: on a clock, and once at boot.
  *
@@ -46,6 +51,8 @@ export function startBackgroundWork(input: {
   pluginStore: PluginStore;
   /** The conversation store, whose day closes are looked for on a clock. */
   conversations?: Pick<ConversationStore, "tick">;
+  /** The hourly check of a Bot's new memories against the owner's words (`agents/memory-curation.ts`). */
+  memoryCurator?: MemoryCurator;
 }): void {
   /*
    * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
@@ -113,5 +120,31 @@ export function startBackgroundWork(input: {
         log.warn("day_close_tick_failed", { reason: describeFailure(error) });
       });
     }, DAY_CLOSE_TICK_MS).unref();
+  }
+
+  /*
+   * THE MEMORY'S CURATION, off the critical path: once an hour, each line a Bot wrote since the last
+   * run is checked against the owner's own words. A run that finds nothing new asks nothing; one
+   * already going is not started twice.
+   */
+  const curator = input.memoryCurator;
+  if (curator) {
+    let curating = false;
+    const curate = () => {
+      if (curating) return;
+      curating = true;
+      void curator
+        .runOnce()
+        .catch((error) => {
+          log.warn("memory_curation_failed", {
+            reason: describeFailure(error),
+          });
+        })
+        .finally(() => {
+          curating = false;
+        });
+    };
+    setTimeout(curate, CURATION_FIRST_MS).unref();
+    setInterval(curate, CURATION_TICK_MS).unref();
   }
 }

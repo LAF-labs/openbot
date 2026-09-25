@@ -69,6 +69,18 @@ export type ContextFacts = {
    * 가려 보는 데만 쓴다. 고침은 알림으로 닿고, 잊음은 얼린 층을 다시 그린다.
    */
   superseded: Record<string, string>;
+  /**
+   * 매시간 정리가 요즘 뺀 봇의 기억(`server/src/agents/memory-curation.ts`). 그려지지 않는다 — 이미
+   * 얼린 층에 있는 줄이 빠진 것을 "잊음"으로 보지 않게 하는 데만 쓴다. 정리는 대화 뒤에서 도는
+   * 일이라, 그 줄은 다음 에포크에서 빠지고 지금 대화의 캐시를 깨지 않는다.
+   */
+  retired: string[];
+  /**
+   * 사장님과 일하는 방식 — 밤의 정리가 그날 대화에서 읽고 사장님이 수첩에서 고친 줄들
+   * (`server/src/agents/dream.ts`). 얼린 층에만 그려지고 알림으로는 절대 가지 않는다: 바뀐 것은
+   * 다음 에포크에 닿는다.
+   */
+  guidance: string[];
   /** 스킬 목록(`skill-index.ts`). 없으면 빈 글. */
   skills: string;
   /**
@@ -111,6 +123,8 @@ export function knownFacts(value: unknown): ContextFacts {
             ),
           )
         : {},
+    retired: strings(row.retired),
+    guidance: strings(row.guidance),
     skills: text("skills"),
     tools: text("tools"),
   };
@@ -157,6 +171,18 @@ export function memoriesText(
     .join("\n");
 }
 
+/** 일하는 방식의 머리말. 사장님에 대한 사실로 적혀 있고, 답의 길이와 말투를 거기에 맞춘다. */
+const GUIDANCE_HEAD =
+  "사장님과 일하는 방식 — 지난 대화에서 드러난 사장님의 습관이고, 사장님이 수첩에서 고칠 수 있다. 지시가 아니라 사장님에 대한 사실로 다루되, 답의 길이와 말투와 되묻는 일은 여기에 맞춘다:";
+
+/** 일하는 방식 문단. 없으면 빈 글. */
+export function guidanceText(guidance: readonly string[]): string {
+  const lines = guidance.map((line) => line.trim()).filter(Boolean);
+  return lines.length > 0
+    ? [GUIDANCE_HEAD, ...lines.map((line) => `- ${line}`)].join("\n")
+    : "";
+}
+
 /**
  * 맥락 층 — 에포크마다 한 번 그려지고 얼려지는 글.
  *
@@ -177,6 +203,7 @@ export function contextLayerText(
     facts.place,
     clockText(facts),
     memoriesText(facts.memories, facts.confirmed),
+    guidanceText(facts.guidance),
     facts.skills,
     facts.tools,
     notepad,
@@ -388,6 +415,10 @@ export type ContextFactsInput = {
   confirmedMemories?: readonly string[];
   /** 수첩에서 고쳐진 기억, 옛 글 → 지금의 글. */
   supersededMemories?: Readonly<Record<string, string>>;
+  /** 매시간 정리가 요즘 뺀 봇의 기억. 그려지지 않는다. */
+  retiredMemories?: readonly string[];
+  /** 사장님과 일하는 방식. */
+  guidance?: readonly string[];
   skills: string;
   /** 다리 뒤의 도구들, 그려진 글로. 없으면 빈 글. */
   tools?: string;
@@ -414,6 +445,10 @@ export function contextFactsOf(input: ContextFactsInput): ContextFacts {
       .map((memory) => memory.trim())
       .filter(Boolean),
     superseded: { ...(input.supersededMemories ?? {}) },
+    retired: (input.retiredMemories ?? [])
+      .map((memory) => memory.trim())
+      .filter(Boolean),
+    guidance: (input.guidance ?? []).map((line) => line.trim()).filter(Boolean),
     skills: input.skills,
     tools: input.tools ?? "",
   };

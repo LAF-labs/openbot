@@ -114,6 +114,10 @@ export type ComposePromptInput = {
   confirmedMemories?: readonly string[];
   /** 수첩에서 고쳐진 기억, 옛 글 → 지금의 글. 그려지지 않고 알림과 에포크만 읽는다. */
   supersededMemories?: Readonly<Record<string, string>>;
+  /** 매시간 정리가 요즘 뺀 봇의 기억. 그려지지 않고 에포크만 읽는다. */
+  retiredMemories?: readonly string[];
+  /** 사장님과 일하는 방식 — 밤의 정리가 쓰고 사장님이 수첩에서 고친다. 얼린 층에만 그려진다. */
+  guidance?: readonly string[];
   /** 이 봇에게 허용된 스킬. 이름과 한 줄만 — 본문은 skill_view가 읽는다. */
   skills?: readonly PromptSkill[];
   /** 루틴의 메모장. 루틴 모드에서만 실린다 — 다른 자리에서 온 것은 그리지 않는다. */
@@ -200,6 +204,10 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
     ...(input.supersededMemories
       ? { supersededMemories: input.supersededMemories }
       : {}),
+    ...(input.retiredMemories
+      ? { retiredMemories: input.retiredMemories }
+      : {}),
+    ...(input.guidance ? { guidance: input.guidance } : {}),
     skills: skillIndexText(input.skills ?? []),
     tools: deferredToolsText(input.toolNames ?? []),
     ...(input.person ? { person: input.person } : {}),

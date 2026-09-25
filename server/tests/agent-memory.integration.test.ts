@@ -164,10 +164,13 @@ describe("what a Bot remembers", () => {
     expect(second).not.toBeNull();
 
     // Somebody else's id is not a key to this row, even though they can see the Bot.
-    expect(await memoryStore.forget(second?.id ?? "", other.id)).toBe(false);
-    expect(await memoryStore.forget(second?.id ?? "", owner.id)).toBe(true);
+    expect(await memoryStore.forget(second?.id ?? "", other.id)).toBeNull();
+    expect(await memoryStore.forget(second?.id ?? "", owner.id)).toEqual({
+      agentId: bot.id,
+      line: "Forget this.",
+    });
     // Forgetting twice is not a second forgetting.
-    expect(await memoryStore.forget(second?.id ?? "", owner.id)).toBe(false);
+    expect(await memoryStore.forget(second?.id ?? "", owner.id)).toBeNull();
 
     const left = await memoryStore.list(bot.id, owner.id);
     expect(left.map((memory) => memory.id)).toEqual([first?.id ?? ""]);
@@ -235,7 +238,7 @@ describe("what a Bot remembers", () => {
     ).rejects.toBeInstanceOf(MemoryFullError);
 
     // Forgetting is how room is made. A forgotten row no longer counts.
-    expect(await memoryStore.forget(kept[0] ?? "", owner.id)).toBe(true);
+    expect(await memoryStore.forget(kept[0] ?? "", owner.id)).not.toBeNull();
     expect(
       await memoryStore.remember(bot.id, owner.id, "y".repeat(300)),
     ).not.toBeNull();

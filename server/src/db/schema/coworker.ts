@@ -7,9 +7,11 @@
 import {
   boolean,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
@@ -219,6 +221,38 @@ export const agentMemories = pgTable(
      * ordinary memory. At most one live row per slot (the store replaces, never appends).
      */
     slot: text("slot"),
+    /**
+     * WHERE THE BOT LEARNED IT: the conversation, the owner's message it was answering, and a short
+     * redacted excerpt of the owner's words there (`agents/memory-evidence.ts`). Taken by the server
+     * from the conversation store when `remember` lands, never from the tool's arguments — a Bot
+     * that could name its own evidence could cite anything. Null for an owner's line (the owner is
+     * the source), for a line from before the columns, and when no message could be found. The
+     * hourly curation may move it to the owner message that actually says the fact.
+     */
+    evidenceThreadId: text("evidence_thread_id"),
+    evidenceMessageId: text("evidence_message_id"),
+    evidenceExcerpt: text("evidence_excerpt"),
+    /**
+     * When the hourly curation checked a Bot's line against the owner's words, and how strongly
+     * they support it (0–1, the judge's probability). A line checked and supported is "confirmed by
+     * evidence", which is not the owner saying it is right (`confirmedAt`). Null: not checked yet,
+     * or nothing to check it against.
+     */
+    curatedAt: timestamp("curated_at", { withTimezone: true }),
+    confidence: real("confidence"),
+    /**
+     * The older line this one replaced — the inverse of `replacedBy`, written on the new row so a
+     * line can say what it supersedes without a search. Set by an owner's edit on 수첩 and by the
+     * curation when a newer line of the Bot's updates an older one.
+     */
+    supersedes: text("supersedes"),
+    /**
+     * WHO FORGOT IT, AND WHY — the deletion on record. `owner` (잊기), `revision` (an edit on 수첩
+     * replaced it), `curation` (the hourly check). The reason is the curation's: `unsupported`,
+     * `superseded`, `restated_forgotten`. Null on a live line and on one forgotten before the column.
+     */
+    forgottenBy: text("forgotten_by"),
+    forgetReason: text("forget_reason"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -228,6 +262,87 @@ export const agentMemories = pgTable(
       table.agentId,
       table.ownerUserId,
       table.forgottenAt,
+    ),
+  ],
+);
+
+/**
+ * STANDING GUIDANCE — how the owner likes to work, as the nightly dream reads it off the day's
+ * conversation ("사장님은 짧은 답을 좋아한다"), and as the owner fixes it on 수첩.
+ *
+ * Its own table rather than a kind of memory: a memory is a fact the owner or the Bot wrote, counted
+ * against the 2,200-character cap and carried the moment it is written; a guidance line is the
+ * Bot's reading of the owner's habits, rewritten each night and bounded on its own
+ * (`shared/notebook.ts`, `MAX_GUIDANCE_LINES`), and it reaches the Bot only through the next epoch's
+ * frozen layer — never as a reminder, never mid-epoch (`server/src/context/conversations.ts`).
+ */
+export const agentGuidance = pgTable(
+  "agent_guidance",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    /** `dream` (the nightly reading) or `owner` (written over on 수첩, which the dream never touches). */
+    source: text("source").notNull().default("dream"),
+    /** The owner's local day the dream was made for, "2026-09-26". Null on an owner's line. */
+    day: text("day"),
+    forgottenAt: timestamp("forgotten_at", { withTimezone: true }),
+    /** `owner` (removed on 수첩 — the dream is told never to bring it back), `dream`, `revision`. */
+    forgottenBy: text("forgotten_by"),
+    replacedBy: text("replaced_by"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("agent_guidance_agent_owner_idx").on(
+      table.agentId,
+      table.ownerUserId,
+      table.forgottenAt,
+    ),
+  ],
+);
+
+/**
+ * RECEIPTS FOR THE MEMORY'S BACKGROUND WORK — one row per run of the hourly curation, the nightly
+ * dream and an owner's forgetting, with counts and never content. 오늘 shows the ones that changed
+ * something ("밤사이 기억 3개 정리함", `agents/day.ts`); the rest are the record that the work ran.
+ */
+export const agentMemoryReceipts = pgTable(
+  "agent_memory_receipts",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** `curation`, `dream` or `forget`. */
+    job: text("job").notNull(),
+    /** Lines looked at. */
+    checked: integer("checked").notNull().default(0),
+    /** Lines the owner's words supported (curation), or guidance lines written (dream). */
+    confirmed: integer("confirmed").notNull().default(0),
+    /** Lines dropped: unsupported or restating a forgotten fact (curation), guidance retired (dream). */
+    dropped: integer("dropped").notNull().default(0),
+    /** Older lines a newer one replaced. */
+    superseded: integer("superseded").notNull().default(0),
+    /** Summary lines taken out so a forgotten fact is not carried (forget). */
+    scrubbed: integer("scrubbed").notNull().default(0),
+    /** Who decided: `jev`, `model`, `rule`. */
+    arm: text("arm"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("agent_memory_receipts_agent_owner_idx").on(
+      table.agentId,
+      table.ownerUserId,
+      table.createdAt,
     ),
   ],
 );

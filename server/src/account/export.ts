@@ -24,6 +24,7 @@
 import { and, asc, desc, eq, gt, inArray, or, type SQL } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
+  agentGuidance,
   agentMemories,
   agentPreferences,
   agentProfiles,
@@ -208,6 +209,15 @@ export function createAccountExport(database: Database): AccountExport {
         .from(agentMemories)
         .where(eq(agentMemories.ownerUserId, userId))
         .orderBy(asc(agentMemories.createdAt)),
+    )}`;
+
+    // How the owner likes to work, as the nightly dream read it — removed lines included, for the same reason.
+    yield `,\n"guidance":${JSON.stringify(
+      await database
+        .select()
+        .from(agentGuidance)
+        .where(eq(agentGuidance.ownerUserId, userId))
+        .orderBy(asc(agentGuidance.createdAt)),
     )}`;
 
     /*

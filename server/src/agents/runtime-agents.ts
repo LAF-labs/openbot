@@ -9,6 +9,7 @@ import {
   channelMemberships,
 } from "../db/schema";
 import { agentAuthHeaders, authFromConfiguration } from "./auth-header";
+import { selectGuidance } from "./guidance-store";
 import {
   type CarriedMemories,
   carriedMemoriesOf,
@@ -38,11 +39,19 @@ export function createRuntimeAgentLoader(
 
     // One query for every Bot rather than one per Bot: this runs on every single turn, and a
     // round trip per coworker is a cost the person pays as latency before anything is answered.
-    const remembered = await selectMemories(
-      database,
-      actor,
-      active.map((row) => row.id),
-    );
+    const [remembered, guidance] = await Promise.all([
+      selectMemories(
+        database,
+        actor,
+        active.map((row) => row.id),
+      ),
+      // How the owner likes to work: drawn in the frozen layer only (`agents/dream.ts`).
+      selectGuidance(
+        database,
+        active.map((row) => row.id),
+        actor.id,
+      ),
+    ]);
 
     // A row whose configuration cannot be understood is skipped rather than mounted as a broken
     // agent. Tombstones are appended after, and never overwrite a live agent of the same id.
@@ -57,7 +66,12 @@ export function createRuntimeAgentLoader(
           ? {
               confirmedMemories: carried.confirmed,
               supersededMemories: carried.superseded,
+              retiredMemories: carried.retired,
             }
+          : {}),
+        // Only for a Bot the dream or the owner gave lines: none draws nothing, as before.
+        ...(guidance.get(row.id)?.length
+          ? { guidance: guidance.get(row.id) }
           : {}),
       });
       if (!agent) continue;

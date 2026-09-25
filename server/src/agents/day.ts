@@ -47,6 +47,7 @@ import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
   agentMemories,
+  agentMemoryReceipts,
   channelThreads,
   lafRoutineRuns,
   lafRoutines,
@@ -103,7 +104,20 @@ export type BotDayItem =
       /** Facts the Bot remembered during this run. */
       learned: number;
     }
-  | { kind: "learned"; memoryId: string; at: string; head: string };
+  | { kind: "learned"; memoryId: string; at: string; head: string }
+  /**
+   * A receipt of the memory's background work (`agent_memory_receipts`): the hourly curation's lines
+   * checked and settled, or the nightly dream's standing guidance written. Only one that changed
+   * something stands here ("밤사이 기억 3개 정리함"); the rest are the record that the work ran.
+   */
+  | {
+      kind: "tidied";
+      receiptId: string;
+      at: string;
+      job: "curation" | "dream";
+      /** Lines it settled: confirmed, dropped or superseded; for the dream, written or retired. */
+      count: number;
+    };
 
 export type BotDay = {
   /** `YYYY-MM-DD` in `zone`. */
@@ -261,7 +275,7 @@ export function createDayReader(options: {
     ];
     const runIds = runs.map((run) => run.runId);
 
-    const [messages, channels, receipts, memories] = await Promise.all([
+    const [messages, channels, receipts, memories, tidied] = await Promise.all([
       threadIds.length > 0 && runIds.length > 0
         ? readMessages(database, threadIds, runIds)
         : Promise.resolve([] as MessageRow[]),
@@ -318,6 +332,25 @@ export function createDayReader(options: {
             eq(agentMemories.source, "bot"),
             gte(agentMemories.createdAt, start),
             lt(agentMemories.createdAt, end),
+          ),
+        ),
+      database
+        .select({
+          id: agentMemoryReceipts.id,
+          job: agentMemoryReceipts.job,
+          confirmed: agentMemoryReceipts.confirmed,
+          dropped: agentMemoryReceipts.dropped,
+          superseded: agentMemoryReceipts.superseded,
+          createdAt: agentMemoryReceipts.createdAt,
+        })
+        .from(agentMemoryReceipts)
+        .where(
+          and(
+            eq(agentMemoryReceipts.agentId, agentId),
+            eq(agentMemoryReceipts.ownerUserId, userId),
+            inArray(agentMemoryReceipts.job, ["curation", "dream"]),
+            gte(agentMemoryReceipts.createdAt, start),
+            lt(agentMemoryReceipts.createdAt, end),
           ),
         ),
     ]);
@@ -464,6 +497,18 @@ export function createDayReader(options: {
         head: headOf(memory.content, LEARNED_HEAD_LENGTH) ?? "",
       });
     });
+
+    for (const receipt of tidied) {
+      const count = receipt.confirmed + receipt.dropped + receipt.superseded;
+      if (count === 0) continue;
+      items.push({
+        kind: "tidied",
+        receiptId: receipt.id,
+        at: receipt.createdAt.toISOString(),
+        job: receipt.job === "dream" ? "dream" : "curation",
+        count,
+      });
+    }
 
     items.sort((a, b) => b.at.localeCompare(a.at));
     return {

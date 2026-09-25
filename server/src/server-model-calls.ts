@@ -64,7 +64,15 @@ export function createServerModelCalls(input: {
    * tokens invisibly would undercount its own KPI. Counts only, never content.
    */
   const recordModelUsage =
-    (source: "auto-review" | "write-up" | "compaction" | "day-summary") =>
+    (
+      source:
+        | "auto-review"
+        | "write-up"
+        | "compaction"
+        | "day-summary"
+        | "memory"
+        | "dream",
+    ) =>
     (usage: ModelUsage) => {
       void recordAuditEvent(input.auditStore, {
         eventType: "model.usage",
@@ -176,6 +184,38 @@ export function createServerModelCalls(input: {
     { timeoutMs: 120_000 },
   );
 
+  /*
+   * THE MEMORY'S JUDGE — the hourly curation's keep-or-drop (`agents/memory-curation.ts`) and the
+   * scrub that takes a forgotten fact out of the day summaries (`context/forget-scrub.ts`). The
+   * compactor's arrangement: Jev when the switch is on, the server model in Jev's shape behind it or
+   * alone. Shorter bounds than the compactor's, because an owner's 잊기 waits on the scrub.
+   */
+  const memoryStandIn = modelAsker(
+    {
+      baseUrl: endpoint.baseUrl,
+      model: model.serverModel,
+      apiKey,
+      supportsEffort: model.serverModelSupportsEffort,
+      onUsage: recordModelUsage("memory"),
+    },
+    { timeoutMs: 30_000 },
+  );
+  const memoryAsker = decisionCall
+    ? withFallback(
+        jevAsker(decisionCall, { timeoutMs: 10_000, purpose: "memory" }),
+        memoryStandIn,
+      )
+    : memoryStandIn;
+
+  /** The nightly dream's writer (`agents/dream.ts`): the server model, like the day's summary. */
+  const dreamCall = {
+    baseUrl: endpoint.baseUrl,
+    model: model.serverModel,
+    apiKey,
+    supportsEffort: model.serverModelSupportsEffort,
+    onUsage: recordModelUsage("dream"),
+  };
+
   const writeUp = createWriteUp({
     baseUrl: endpoint.baseUrl,
     model: model.defaultModel,
@@ -225,6 +265,12 @@ export function createServerModelCalls(input: {
 
     /** The summary a day's close stands on. See `context/day-close.ts`. */
     summarizeDay,
+
+    /** The memory's keep-or-drop judge: curation and the forgetting's scrub. */
+    memoryAsker,
+
+    /** The nightly dream's writer. See `agents/dream.ts`. */
+    dreamCall,
 
     /**
      * A finished recording, written up as a procedure.

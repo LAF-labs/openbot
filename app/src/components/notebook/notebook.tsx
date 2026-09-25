@@ -1,10 +1,11 @@
 import {
+  MAX_GUIDANCE_LENGTH as GUIDANCE_LENGTH,
   MAX_MEMORY_LENGTH,
   NOTEBOOK_SLOTS,
   type NotebookSlot,
 } from "@shared/notebook";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection } from "@/components/layout/page-shell";
@@ -15,15 +16,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   confirmLine,
+  forgetGuidance,
   forgetLine,
+  reviseGuidance,
   reviseLine,
   writeLine,
 } from "@/lib/agents/notebook";
 import {
   type AgentMemory,
   agentMemoriesQueryOptions,
+  type GuidanceLine,
 } from "@/lib/agents/queries";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { requestJump } from "@/lib/channels/jump";
 import { ensure } from "@/lib/ensure";
 import { activeLocale, t } from "@/lib/i18n";
 import { readLineOf } from "@/lib/read-line";
@@ -106,6 +111,8 @@ export function Notebook({ agentId }: { agentId: string }) {
   };
 
   const lines = settled?.state === "ready" ? settled.data.memories : [];
+  const guidance =
+    settled?.state === "ready" ? (settled.data.guidance ?? []) : [];
   const slotLines = new Map(
     lines.flatMap((line) => (line.slot ? [[line.slot, line] as const] : [])),
   );
@@ -231,7 +238,117 @@ export function Notebook({ agentId }: { agentId: string }) {
           </ul>
         ) : null}
       </PageSection>
+
+      {/*
+       * HOW YOU LIKE TO WORK — the nightly dream's reading of the day's conversation, one line each
+       * (`server/src/agents/dream.ts`). It reaches the Bot the next day, never mid-conversation, and
+       * the page says so: a change here that seemed to do nothing until tomorrow would read as broken.
+       */}
+      <PageSection
+        description={t(
+          "Each night your Bot notes how you like to work from the day's conversations. Changes here reach it from the next day.",
+        )}
+        title={t("How you like to work")}
+      >
+        {settled?.state === "ready" && guidance.length === 0 ? (
+          <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-sm">
+            {t(
+              "Nothing yet. After a day of conversations, your Bot notes here how you like to work.",
+            )}
+          </p>
+        ) : null}
+        {guidance.length > 0 ? (
+          <ul className="mt-4 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+            {guidance.map((line) => (
+              <GuidanceRow
+                busy={busy}
+                key={line.id}
+                line={line}
+                onForget={() =>
+                  handleWrite(
+                    line.id,
+                    () => forgetGuidance(queryClient, agentId, line.id),
+                    t("Removed. Your Bot stops reading it from the next day."),
+                  )
+                }
+                onRevise={(content) =>
+                  handleWrite(
+                    line.id,
+                    () =>
+                      reviseGuidance(queryClient, agentId, line.id, content),
+                    t("Saved. Your Bot reads it from the next day."),
+                  )
+                }
+              />
+            ))}
+          </ul>
+        ) : null}
+      </PageSection>
     </>
+  );
+}
+
+/** One line of how the owner likes to work: the words, who wrote them, edit and remove. */
+function GuidanceRow({
+  busy,
+  line,
+  onForget,
+  onRevise,
+}: {
+  busy: Busy;
+  line: GuidanceLine;
+  onForget: () => Promise<boolean>;
+  onRevise: (content: string) => Promise<boolean>;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  return (
+    <li className="flex flex-col gap-2 px-3 py-3">
+      {isEditing ? (
+        <LineEditor
+          initial={line.content}
+          isBusy={busy === line.id}
+          label={t("Edit how you like to work")}
+          maxLength={GUIDANCE_LENGTH}
+          onCancel={() => setIsEditing(false)}
+          onSave={async (content) => {
+            const saved = await onRevise(content);
+            if (saved) setIsEditing(false);
+            return saved;
+          }}
+          placeholder={line.content}
+          saveLabel={t("Save")}
+        />
+      ) : (
+        <p className="text-pretty text-sm">{line.content}</p>
+      )}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-muted-foreground text-xs">
+          {line.source === "owner"
+            ? t("You wrote this")
+            : t("Your Bot noticed this in your conversations")}
+        </span>
+        {isEditing ? null : (
+          <div className="ml-auto flex gap-1">
+            <Button
+              disabled={Boolean(busy)}
+              onClick={() => setIsEditing(true)}
+              size="sm"
+              variant="ghost"
+            >
+              {t("Edit")}
+            </Button>
+            <Button
+              disabled={Boolean(busy)}
+              onClick={() => void onForget()}
+              size="sm"
+              variant="ghost"
+            >
+              {t("Clear it")}
+            </Button>
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 
@@ -271,6 +388,7 @@ function LineEditor({
   initial,
   isBusy,
   label,
+  maxLength = MAX_MEMORY_LENGTH,
   onCancel,
   onSave,
   placeholder,
@@ -279,6 +397,7 @@ function LineEditor({
   initial: string;
   isBusy: boolean;
   label: string;
+  maxLength?: number;
   onCancel?: () => void;
   onSave: (content: string) => Promise<boolean>;
   placeholder: string;
@@ -287,7 +406,7 @@ function LineEditor({
   const [draft, setDraft] = useState(initial);
   const trimmed = draft.trim();
   const isChanged = trimmed !== initial.trim();
-  const isTooLong = trimmed.length > MAX_MEMORY_LENGTH;
+  const isTooLong = trimmed.length > maxLength;
 
   const handleSave = async () => {
     if (!trimmed || !isChanged || isTooLong || isBusy) return;
@@ -329,7 +448,7 @@ function LineEditor({
         <span
           className={`ml-auto text-xs ${isTooLong ? "text-destructive" : "text-muted-foreground"}`}
         >
-          {`${trimmed.length}/${MAX_MEMORY_LENGTH}`}
+          {`${trimmed.length}/${maxLength}`}
         </span>
       </div>
     </div>
@@ -487,6 +606,51 @@ function ShopProfileRows() {
   );
 }
 
+/**
+ * 어디서 알게 됐나 — the owner's own words the Bot learned a line from, and a way back to them in the
+ * conversation. The words are the server's redacted excerpt of the owner's message; the jump is the
+ * one 오늘 uses (`lib/channels/jump.ts`), so the transcript shows that message once it is drawn.
+ */
+function LearnedFrom({
+  channelId,
+  excerpt,
+  messageId,
+}: {
+  channelId: string | null;
+  excerpt: string;
+  messageId: string | null;
+}) {
+  const navigate = useNavigate();
+  /*
+   * THE JUMP IS LEFT AFTER THE CONVERSATION IS ON SCREEN, not before. Left first — the way 오늘 does
+   * it from beside the conversation — it was dropped on the way: measured in Chromium from 수첩, the
+   * transcript mounted, unmounted and mounted again as the route settled, and the unmount drops a
+   * jump named for it (`dropJump`), so the row was never marked.
+   */
+  const handleShow = async () => {
+    if (!channelId || !messageId) return;
+    await navigate({ params: { channelId }, to: "/channel/$channelId" });
+    requestJump({ channelId, messageId });
+  };
+  return (
+    <div className="flex flex-col gap-1 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs">
+      <span className="text-muted-foreground">
+        {t("Where it learned this")}
+      </span>
+      <q className="text-pretty text-foreground">{excerpt}</q>
+      {channelId && messageId ? (
+        <button
+          className={`self-start rounded-sm text-link underline-offset-4 hover:underline ${focusRing}`}
+          onClick={() => void handleShow()}
+          type="button"
+        >
+          {t("Show it in the conversation")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 /** One thing the Bot remembers: the words, who wrote them, and what can be done about them. */
 function MemoryRow({
   busy,
@@ -511,6 +675,7 @@ function MemoryRow({
     line.source === "owner"
       ? t("You wrote this · {date}", { date: when })
       : t("Your Bot wrote this in a conversation · {date}", { date: when });
+  const evidence = line.evidence;
 
   return (
     <li className="flex flex-col gap-2 px-3 py-3">
@@ -531,11 +696,22 @@ function MemoryRow({
       ) : (
         <p className="text-pretty text-sm">{line.content}</p>
       )}
+      {line.source === "bot" && evidence?.excerpt && !isEditing ? (
+        <LearnedFrom
+          channelId={evidence.channelId}
+          excerpt={evidence.excerpt}
+          messageId={evidence.messageId}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-muted-foreground text-xs">{origin}</span>
         {line.source === "bot" && line.confirmed ? (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
             {t("You said it is right")}
+          </span>
+        ) : evidence?.trust === "evidence" ? (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+            {t("Matches what you said")}
           </span>
         ) : null}
         {line.carried ? null : (

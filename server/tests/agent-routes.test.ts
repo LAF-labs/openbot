@@ -821,6 +821,14 @@ describe("what a Bot writes into its own profile", () => {
  * the store ever sees it. Both refusals are codes the surface and the model each have words for,
  * and neither echoes the sentence that was refused — see the secret case for why.
  */
+const NO_EVIDENCE = {
+  trust: "inferred",
+  confidence: null,
+  channelId: null,
+  messageId: null,
+  excerpt: null,
+} as const;
+
 function fakeMemoryStore(
   overrides: Partial<AgentMemoryStore> = {},
 ): AgentMemoryStore & { remembered: string[] } {
@@ -839,6 +847,7 @@ function fakeMemoryStore(
         confirmed: false,
         slot: null,
         carried: true,
+        evidence: NO_EVIDENCE,
       };
     },
     async revise() {
@@ -851,7 +860,7 @@ function fakeMemoryStore(
       return null;
     },
     async forget() {
-      return true;
+      return { agentId: "agent-1", line: "forgotten" };
     },
   };
   return Object.assign(base, overrides, { remembered });
@@ -958,6 +967,7 @@ describe("what the owner may write on 수첩", () => {
           confirmed: true,
           slot: options?.slot ?? null,
           carried: true,
+          evidence: NO_EVIDENCE,
         };
       },
     });
@@ -1031,6 +1041,7 @@ describe("what the owner may write on 수첩", () => {
           confirmed: true,
           slot: "hours",
           carried: true,
+          evidence: NO_EVIDENCE,
         };
       },
     });

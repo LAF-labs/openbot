@@ -55,7 +55,15 @@ export type BotDayItem =
       messageId: string | null;
       learned?: number;
     }
-  | { kind: "learned"; memoryId: string; at: string; head: string };
+  | { kind: "learned"; memoryId: string; at: string; head: string }
+  /** The memory's background work that changed something (`server/src/agents/day.ts`). */
+  | {
+      kind: "tidied";
+      receiptId: string;
+      at: string;
+      job: "curation" | "dream";
+      count: number;
+    };
 
 export type BotDay = {
   day: string;
@@ -150,6 +158,24 @@ export function dayClock(iso: string, zone: string): string {
   const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
   const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
   return clockLabel(`${hour}:${minute}`);
+}
+
+/** Before six in the morning on the owner's clock: work done while they slept ("밤사이"). */
+export function isOvernight(iso: string, zone: string): boolean {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return false;
+  try {
+    const hour = new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(when)
+      .find((part) => part.type === "hour")?.value;
+    return Number(hour) < 6;
+  } catch {
+    return when.getHours() < 6;
+  }
 }
 
 export type DayMark = { text: string; tone: "active" | "failed" | "quiet" };

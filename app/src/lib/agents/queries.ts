@@ -1,4 +1,4 @@
-import type { NotebookSlot } from "@shared/notebook";
+import type { MemoryEvidence, NotebookSlot } from "@shared/notebook";
 import { queryOptions } from "@tanstack/react-query";
 import type { AskSubject } from "@/lib/approvals";
 import { t } from "@/lib/i18n";
@@ -121,6 +121,20 @@ export type AgentMemory = {
   slot: NotebookSlot | null;
   /** Whether the line reaches the Bot. False only past the character cap. */
   carried: boolean;
+  /**
+   * Who stands behind it and where it was learned: 수첩's "어디서 알게 됐나". Absent from a server
+   * before 2026-09-26.
+   */
+  evidence?: MemoryEvidence;
+};
+
+/** One line of how the owner likes to work, as the nightly dream read it or the owner wrote it. */
+export type GuidanceLine = {
+  id: string;
+  content: string;
+  source: "dream" | "owner";
+  day: string | null;
+  createdAt: string;
 };
 
 /** Every line, and how full the memory is, in characters. */
@@ -128,6 +142,8 @@ export type Notebook = {
   memories: AgentMemory[];
   used: number;
   cap: number;
+  /** Absent from a server before 2026-09-26. */
+  guidance?: GuidanceLine[];
 };
 
 /**

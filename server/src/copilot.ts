@@ -128,6 +128,13 @@ export type AgentStandingProfile = {
   confirmedMemories?: readonly string[];
   /** Lines corrected on 수첩: old → the line now. Not drawn; the reminder and the epoch read it. */
   supersededMemories?: Readonly<Record<string, string>>;
+  /** Lines the hourly curation retired lately. Not drawn; the epoch reads them as gone quietly. */
+  retiredMemories?: readonly string[];
+  /**
+   * How the owner likes to work, as the nightly dream read it and the owner fixed it on 수첩
+   * (`agents/dream.ts`). Drawn in the frozen layer only — a change reaches the next epoch.
+   */
+  guidance?: readonly string[];
   /**
    * The skills this Bot holds, by name and one line, so the prompt can list them.
    *
@@ -235,6 +242,10 @@ function composeInputOf(
     ...(profile.supersededMemories
       ? { supersededMemories: profile.supersededMemories }
       : {}),
+    ...(profile.retiredMemories
+      ? { retiredMemories: profile.retiredMemories }
+      : {}),
+    ...(profile.guidance ? { guidance: profile.guidance } : {}),
     ...(profile.skills ? { skills: profile.skills } : {}),
     ...(options.notepad?.length ? { notepad: options.notepad } : {}),
     ...((options.person ?? profile.person)
@@ -323,6 +334,8 @@ type RuntimeAgentRow = {
   memories?: readonly string[];
   confirmedMemories?: readonly string[];
   supersededMemories?: Readonly<Record<string, string>>;
+  retiredMemories?: readonly string[];
+  guidance?: readonly string[];
 };
 
 export function registeredAgentFromRow(
@@ -360,6 +373,10 @@ export function registeredAgentFromRow(
           ...(row.supersededMemories
             ? { supersededMemories: row.supersededMemories }
             : {}),
+          ...(row.retiredMemories
+            ? { retiredMemories: row.retiredMemories }
+            : {}),
+          ...(row.guidance ? { guidance: row.guidance } : {}),
         },
         effort: row.effort ?? "balanced",
       }

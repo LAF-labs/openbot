@@ -2688,4 +2688,26 @@ export const ko: Record<string, string> = {
     "봇에게 시키는 말처럼 읽혀요. 여기에는 사실을 적고, 부탁은 대화로 해 주세요.",
   // small
   "This task was going on in another window.": "다른 창에서 진행 중이었어요.",
+  // memory
+  "Where it learned this": "어디서 알게 됐나",
+  "Show it in the conversation": "대화에서 보기",
+  "Matches what you said": "사장님 말과 맞음",
+  "How you like to work": "일하는 방식",
+  "Each night your Bot notes how you like to work from the day's conversations. Changes here reach it from the next day.":
+    "봇이 밤마다 그날 대화를 보고 사장님이 일하는 방식을 적어 둬요. 여기서 고친 것은 다음 날부터 봇이 알아요.",
+  "Nothing yet. After a day of conversations, your Bot notes here how you like to work.":
+    "아직 없어요. 하루 대화가 쌓이면 봇이 여기에 사장님이 일하는 방식을 적어 둬요.",
+  "Edit how you like to work": "일하는 방식 고치기",
+  "You wrote this": "사장님이 적음",
+  "Your Bot noticed this in your conversations": "봇이 대화에서 알아챔",
+  "Removed. Your Bot stops reading it from the next day.":
+    "지웠어요. 다음 날부터 봇이 읽지 않아요.",
+  "Saved. Your Bot reads it from the next day.":
+    "저장했어요. 다음 날부터 봇이 읽어요.",
+  "You had this forgotten, so it was not written down again.":
+    "사장님이 잊게 한 내용이라 다시 적지 않았어요.",
+  "Overnight: noted how you like to work": "밤사이 일하는 방식 정리함",
+  "Noted how you like to work": "일하는 방식 정리함",
+  "Overnight: tidied {count} memories": "밤사이 기억 {count}개 정리함",
+  "Tidied {count} memories": "기억 {count}개 정리함",
 };

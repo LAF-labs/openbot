@@ -524,14 +524,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a step out elsewhere, said so, never for a person at the wheel, and 오늘 not saying 사장님 차례
  * without a question; a turn sent before the history arrived). Each floor rises by exactly what
  * was added.
+ * RAISED 2026-09-26 with the memory package: twenty to `server` (the scrub's rule and its judge,
+ * a forgotten memory leaving the next epoch's frozen layer and the summary line that said it, a
+ * waiting close losing it, a later close told it and scrubbed anyway, the summariser told the rule
+ * only when something is forgotten, a curation's drop and the
+ * dream's guidance never breaking an epoch, where a line was learned and the jump to it, the
+ * deletion on record, no Bot writing a forgotten line back, a revision's supersedes, the curation's
+ * four verdicts and a judge that cannot answer, the dream refusing what is not a habit and never
+ * bringing back what the owner removed) and one to `app` (the receipt row in 오늘, 밤사이 only
+ * before six). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2739, roots: ["server"] },
-  { name: "app", floor: 1346, roots: ["app"] },
+  { name: "server", floor: 2759, roots: ["server"] },
+  { name: "app", floor: 1347, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 422, roots: ["tests", "agent-bot"] },
 ] as const;

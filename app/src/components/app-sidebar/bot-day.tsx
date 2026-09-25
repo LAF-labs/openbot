@@ -3,6 +3,7 @@ import {
   IconBulb,
   IconClock,
   IconMessageCircle,
+  IconSparkles,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -14,6 +15,7 @@ import {
   type DayMark,
   dayClock,
   dayMark,
+  isOvernight,
   useBotDay,
 } from "@/lib/agents/day";
 import {
@@ -131,7 +133,7 @@ export function BotDay({
   };
 
   const handlePress = (item: BotDayItem) => {
-    if (item.kind === "learned") {
+    if (item.kind === "learned" || item.kind === "tidied") {
       void handleShowOnPage("/notebook", undefined);
       return;
     }
@@ -211,7 +213,13 @@ export function BotDay({
             <DayItemRow
               isAsking={waiting.length > 0}
               item={item}
-              key={item.kind === "learned" ? item.memoryId : item.runId}
+              key={
+                item.kind === "learned"
+                  ? item.memoryId
+                  : item.kind === "tidied"
+                    ? item.receiptId
+                    : item.runId
+              }
               onPress={() => handlePress(item)}
               zone={day.data?.zone ?? ""}
             />
@@ -309,6 +317,30 @@ function DayItemRow({
   zone: string;
 }) {
   const time = dayClock(item.at, zone);
+  /*
+   * THE MEMORY'S BACKGROUND WORK, as a receipt: what the hourly curation settled, what the nightly
+   * dream noted about how the owner likes to work. Before six in the morning it is "밤사이", which is
+   * when the dream runs and when the owner was not looking.
+   */
+  if (item.kind === "tidied") {
+    const overnight = isOvernight(item.at, zone);
+    const text =
+      item.job === "dream"
+        ? overnight
+          ? t("Overnight: noted how you like to work")
+          : t("Noted how you like to work")
+        : overnight
+          ? t("Overnight: tidied {count} memories", { count: item.count })
+          : t("Tidied {count} memories", { count: item.count });
+    return (
+      <DayRow
+        detail={time}
+        icon={<IconSparkles aria-hidden="true" className="size-3.5 shrink-0" />}
+        onPress={onPress}
+        text={text}
+      />
+    );
+  }
   if (item.kind === "learned") {
     return (
       <DayRow

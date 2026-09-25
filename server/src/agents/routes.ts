@@ -5,7 +5,7 @@ import { describeFailure, NOT_FOUND } from "../failure-text";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { checkAgentEndpoint } from "./endpoint";
-import { isNotebookSlot } from "../../../shared/notebook";
+import { isNotebookSlot, MAX_GUIDANCE_LENGTH } from "../../../shared/notebook";
 import {
   type AgentMemoryStore,
   looksLikeAnInstruction,
@@ -14,6 +14,7 @@ import {
   looksLikePromptStructure,
   MAX_MEMORY_LENGTH,
   MEMORY_CHARACTER_CAP,
+  MemoryForgottenError,
   MemoryFullError,
 } from "./memory-store";
 import { canManageAgent } from "./profile-policy";
@@ -549,7 +550,18 @@ export function createAgentRoutes(
         (total, memory) => total + memory.content.length,
         0,
       );
-      return context.json({ memories, used, cap: MEMORY_CHARACTER_CAP });
+      // How the owner likes to work: the dream's lines and the owner's, on the same page.
+      const guidance =
+        (await memoryStore.guidance?.list(
+          context.req.param("agentId"),
+          context.var.actor.id,
+        )) ?? [];
+      return context.json({
+        memories,
+        used,
+        cap: MEMORY_CHARACTER_CAP,
+        guidance,
+      });
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -630,6 +642,17 @@ export function createAgentRoutes(
             400,
           );
     } catch (error) {
+      /*
+       * The owner forgot this very line on 수첩. Their message saying it may still be in today's
+       * history, and a Bot that reads it would write it straight back; it is told the owner's
+       * answer instead of being told nothing.
+       */
+      if (error instanceof MemoryForgottenError) {
+        return context.json(
+          { error: "laf:memory_forgotten", code: "laf:memory_forgotten" },
+          409,
+        );
+      }
       if (error instanceof MemoryFullError) {
         // 409 like a full roster: the request was well-formed, the memory is simply full. The
         // numbers travel so the surface can say how full; the sentence is the surface's.
@@ -786,6 +809,69 @@ export function createAgentRoutes(
       return mapStoreError(context, error);
     }
   });
+
+  /*
+   * HOW THE OWNER LIKES TO WORK — the nightly dream's lines, fixed on 수첩 (`./dream.ts`). The owner
+   * edits a line (theirs from then on, never touched by the dream) or removes it (on record, never
+   * written again). Held to the owner's pen, like a 수첩 line. Neither reaches a running
+   * conversation: the next epoch's frozen layer draws what stands then.
+   */
+  routes.put(
+    "/:agentId/notebook/guidance/:guidanceId",
+    requireUser,
+    async (context) => {
+      if (!memoryStore?.guidance) return noMemoryStore(context);
+      const body = (await context.req.json().catch(() => null)) as {
+        content?: unknown;
+      } | null;
+      const content = typeof body?.content === "string" ? body.content : "";
+      /*
+       * The owner may write it as they would say it — "짧게 답해 줘" is how the owner likes to work,
+       * in the owner's words — so an order's ending is not refused here as it is for the dream's.
+       */
+      const refusal =
+        notebookRefusal(content) ??
+        (content.trim().length > MAX_GUIDANCE_LENGTH
+          ? "laf:memory_too_long"
+          : null);
+      if (refusal) return refused(context, refusal);
+      try {
+        const hidden = await visibleOr404(context);
+        if (hidden) return hidden;
+        const line = await memoryStore.guidance.revise(
+          context.req.param("agentId"),
+          context.req.param("guidanceId"),
+          context.var.actor.id,
+          content,
+        );
+        return line
+          ? context.json({ guidance: line })
+          : memoryNotFound(context);
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    },
+  );
+
+  routes.delete(
+    "/:agentId/notebook/guidance/:guidanceId",
+    requireUser,
+    async (context) => {
+      if (!memoryStore?.guidance) return noMemoryStore(context);
+      try {
+        const hidden = await visibleOr404(context);
+        if (hidden) return hidden;
+        const removed = await memoryStore.guidance.forget(
+          context.req.param("agentId"),
+          context.req.param("guidanceId"),
+          context.var.actor.id,
+        );
+        return removed ? context.body(null, 204) : memoryNotFound(context);
+      } catch (error) {
+        return mapStoreError(context, error);
+      }
+    },
+  );
 
   /** The owner says a line the Bot wrote is right. */
   routes.post(

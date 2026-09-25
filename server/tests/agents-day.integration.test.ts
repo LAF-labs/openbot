@@ -418,7 +418,9 @@ describe("the Bot's day", () => {
           ? `learned:${item.head}`
           : item.kind === "chat"
             ? `chat:${item.label}`
-            : `routine:${item.name}:${item.silent ? "silent" : "said"}`,
+            : item.kind === "routine"
+              ? `routine:${item.name}:${item.silent ? "silent" : "said"}`
+              : `tidied:${item.job}:${item.count}`,
       ),
     ).toEqual([
       "routine:아침 주문 확인:silent",

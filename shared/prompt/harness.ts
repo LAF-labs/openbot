@@ -45,6 +45,8 @@ const FIXTURE: ContextFacts = {
   memories: ["영업시간: 평일 10시~21시", "택배는 우체국을 쓴다."],
   confirmed: ["영업시간: 평일 10시~21시"],
   superseded: {},
+  retired: [],
+  guidance: ["사장님은 짧은 답을 좋아한다."],
   skills: "- /재고정리 — 재고를 정리한다",
   tools: deferredToolsText(["mcp__gmail__send_message", "showBarChart"]),
 };

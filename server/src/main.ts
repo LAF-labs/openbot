@@ -11,7 +11,14 @@ import {
 } from "./account/whereabouts";
 import { createDayReader } from "./agents/day";
 import { withGrantedSkills } from "./agents/granted-skills";
-import { createAgentMemoryStore } from "./agents/memory-store";
+import { createDream } from "./agents/dream";
+import { createGuidanceStore } from "./agents/guidance-store";
+import {
+  createMemoryCurator,
+  evidenceFromConversations,
+} from "./agents/memory-curation";
+import { recordMemoryReceipt } from "./agents/memory-receipts";
+import { createAgentMemoryStore, forgottenForBot } from "./agents/memory-store";
 import { withPersonContext } from "./agents/person-context";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
@@ -61,6 +68,7 @@ import { createResultSpill } from "./computer/spillover";
 import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
 import { loadConfig } from "./config";
 import type { Compactor } from "./context/compaction";
+import { createSummaryScrubber } from "./context/forget-scrub";
 import {
   botBusyReader,
   conversationPersistence,
@@ -212,9 +220,15 @@ const conversations = createConversationStore({
           history: (threadId: string) => messagesFor(database, threadId),
           busy: botBusyReader(database),
           fallbackTimeZone: config.botTimeZone,
+          // What the owner forgot is never summarised again (`context/forget-scrub.ts`).
+          forgotten: forgottenForBot(database),
+          // The nightly dream, read late like the summariser (`agents/dream.ts`).
+          dream: (input: Parameters<typeof dream>[0]) => dream(input),
         },
       }
     : {}),
+  // A forgotten fact out of the day summaries: the memory's judge with the rule under it.
+  scrub: (input) => createSummaryScrubber(modelCalls.memoryAsker)(input),
   ...(config.harness.clockOffsetMs
     ? { now: () => Date.now() + config.harness.clockOffsetMs }
     : {}),
@@ -228,8 +242,25 @@ const agentVault = {
   reader: credentialStore,
   encryptionKey: config.keyEncryptionKey,
 };
-/** What each Bot has learned about each person, and the rows that let them undo it. */
-const agentMemoryStore = createAgentMemoryStore(database);
+/**
+ * What each Bot has learned about each person, and the rows that let them undo it. A Bot's line
+ * carries where it was learned (the owner message its conversation is answering); a line the owner
+ * forgets is taken out of the day summaries before 잊기 answers, and the forgetting is on record.
+ */
+const agentMemoryStore = createAgentMemoryStore(database, {
+  evidenceFor: evidenceFromConversations(conversations),
+  afterForget: async ({ agentId, ownerUserId, line }) => {
+    const { scrubbed, arm } = await conversations.forget(agentId, [line]);
+    await recordMemoryReceipt(database, {
+      agentId,
+      ownerUserId,
+      job: "forget",
+      checked: 1,
+      scrubbed,
+      arm,
+    });
+  },
+});
 
 // Every Bot on the deployment shares the one computer at `baseUrl` and its one browser profile, by
 // decision (docs/laf/deployment-model.md). Built before the Bot store, which hands a deleted Bot's
@@ -548,6 +579,15 @@ const modelCalls = createServerModelCalls({
  * completion per process.
  */
 void modelCalls.autoReviewCapable().catch(() => false);
+/**
+ * The nightly dream at the day's close: how the owner likes to work, as standing guidance. Built
+ * here, after the server's model calls; the conversation store above reads it only at a close.
+ */
+const dream = createDream({
+  database,
+  guidance: agentMemoryStore.guidance ?? createGuidanceStore(database),
+  call: modelCalls.dreamCall,
+});
 
 /**
  * The OAuth applications LAF registered once for the whole fleet, as one lookup.
@@ -983,4 +1023,11 @@ startBackgroundWork({
   builtInSkills,
   pluginStore,
   conversations,
+  // The hourly curation: each new line of a Bot's checked against the owner's own words.
+  memoryCurator: createMemoryCurator({
+    database,
+    asker: modelCalls.memoryAsker,
+    history: (threadId) => messagesFor(database, threadId),
+    now: () => conversations.now(),
+  }),
 });

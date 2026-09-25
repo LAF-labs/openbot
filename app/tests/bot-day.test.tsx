@@ -281,6 +281,42 @@ describe("오늘", () => {
     expect(rows[0]).toContain("Remembered 3");
   });
 
+  test("the memory's background work is a receipt row, overnight only before six", async () => {
+    const view = await day({
+      items: [
+        // 12:10 in Seoul: the hourly curation, during the day.
+        {
+          kind: "tidied",
+          receiptId: "rc-2",
+          at: at(3, 10),
+          job: "curation",
+          count: 2,
+        },
+        // 03:00 in Seoul: the nightly dream, and a curation beside it.
+        {
+          kind: "tidied",
+          receiptId: "rc-1",
+          at: at(18, 0).replace("2026-09-25", "2026-09-24"),
+          job: "dream",
+          count: 3,
+        },
+        {
+          kind: "tidied",
+          receiptId: "rc-0",
+          at: at(17, 50).replace("2026-09-25", "2026-09-24"),
+          job: "curation",
+          count: 3,
+        },
+      ],
+    });
+    const rows = view.rows();
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toContain("Tidied 2 memories");
+    expect(rows[0]).not.toContain("Overnight");
+    expect(rows[1]).toContain("Overnight: noted how you like to work");
+    expect(rows[2]).toContain("Overnight: tidied 3 memories");
+  });
+
   test("the drawer beside the full sidebar shows only what waits on the owner", async () => {
     const view = await day(
       {

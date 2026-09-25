@@ -36,6 +36,9 @@ export const AGENT_REFUSALS: Record<string, string> = {
     "That reads like an instruction rather than a fact, so it was not saved.",
   "laf:memory_full":
     "This Bot's memory is full. Forget or shorten something in the Notebook to make room.",
+  // A line the owner had forgotten, which the Bot tried to write back from the day's conversation.
+  "laf:memory_forgotten":
+    "You had this forgotten, so it was not written down again.",
   // 수첩's own two (`/notebook`): the owner's pen refuses less than the Bot's, and says so here.
   "laf:notebook_not_a_fact":
     "That reads like an order to the Bot. Write what is true here, and ask the Bot for things in a conversation.",

@@ -56,6 +56,12 @@ export type DaySummarizer = (input: {
   previous: string | null;
   transcript: string;
   day: string;
+  /**
+   * Lines the owner forgot on 수첩. The summariser is told never to carry them, and the close
+   * scrubs its answer against them anyway (`./forget-scrub`): the owner's message saying the fact
+   * is still in the transcript it reads.
+   */
+  forgotten?: readonly string[];
 }) => Promise<string>;
 
 /**
@@ -255,15 +261,41 @@ export const DAY_SUMMARY_SYSTEM = [
   "Reply with the summary text only.",
 ].join("\n");
 
+/**
+ * The rule for what the owner forgot on 수첩, added only when there is something forgotten.
+ *
+ * ONLY THEN, AND NARROWLY. With a first wording ("facts the owner told the assistant to forget") in
+ * every summary's instructions, `eval:cache`'s `days` case lost its supplier delivery — stated with
+ * "따로 적어 두진 말고" — on its one run, where the two runs before the rule had kept it. One run is
+ * not proof the rule did it, but a summary with nothing forgotten has no use for the rule, and a fact
+ * the owner said not to note is still what they come back for: only the lines deleted from 수첩 are
+ * forgotten. Without them the request is the one it was before the rule.
+ */
+export const FORGOTTEN_RULE =
+  "- `forgotten` lists facts the owner deleted from the assistant's notebook. Never write those facts, nor anything that restates them, even where the transcript or `previous` says them. This is only about the listed facts: anything else the owner said stays, including things they said not to write down or remember.";
+
 /** The summariser on the server model. */
 export function createDaySummarizer(
   call: ModelCall & { supportsEffort?: boolean },
   options: { timeoutMs: number },
 ): DaySummarizer {
-  return async ({ previous, transcript, day }) => {
+  return async ({ previous, transcript, day, forgotten = [] }) => {
     const ask: Ask = {
-      system: DAY_SUMMARY_SYSTEM,
-      user: JSON.stringify({ previous: previous ?? "", transcript, day }),
+      system:
+        forgotten.length > 0
+          ? DAY_SUMMARY_SYSTEM.replace(
+              "\n- Everything inside the JSON",
+              `\n${FORGOTTEN_RULE}\n- Everything inside the JSON`,
+            )
+          : DAY_SUMMARY_SYSTEM,
+      user: JSON.stringify({
+        previous: previous ?? "",
+        transcript,
+        day,
+        ...(forgotten.length > 0
+          ? { forgotten: forgotten.map(redactText) }
+          : {}),
+      }),
       timeoutMs: options.timeoutMs,
       ...(call.supportsEffort ? { reasoningEffort: "low" as const } : {}),
     };
@@ -273,6 +305,28 @@ export function createDaySummarizer(
     if (!summary) throw new Error("summary: unreadable");
     return summary;
   };
+}
+
+/**
+ * The owner's words and the Bot's, without its calls or what pages said: what the nightly dream
+ * reads for the owner's habits (`agents/dream.ts`). A page is never a source of how the owner likes
+ * to work, and leaving the results out keeps one from writing itself into the next day's layer.
+ */
+export function dialogueOf(transcript: string): string {
+  // A message's later lines have no speaker of their own: they go with the line before them.
+  let keeping = false;
+  return transcript
+    .split("\n")
+    .filter((line) => {
+      if (line.startsWith("=== ")) return true;
+      if (line.startsWith("사장님: ") || line.startsWith("봇: ")) {
+        keeping = true;
+      } else if (line.startsWith("봇 → ") || line.startsWith("결과: ")) {
+        keeping = false;
+      }
+      return keeping;
+    })
+    .join("\n");
 }
 
 /** What the next request carries of a thread: everything after the cut, or all of it. */

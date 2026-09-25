@@ -81,10 +81,12 @@ import {
   type DayCut,
   type DaySummarizer,
   dayKey,
+  dialogueOf,
   MIN_DAY_CLOSE_CHARS,
   type StampedMessage,
   transcriptOf,
 } from "./day-close";
+import { type SummaryScrubber, scrubByRule } from "./forget-scrub";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -236,6 +238,25 @@ export type ConversationStore = {
   closeNow(threadId: string): Promise<boolean>;
   /** The store's clock: what the middleware dates a run by. Injected in tests and the eval. */
   now(): Date;
+  /**
+   * The owner message a Bot is answering now, in its kept conversation: where a `remember` it makes
+   * was learned (`agents/memory-evidence.ts`). Null when the Bot has no conversation this process
+   * has seen a person message in. The text is the message's own words, unredacted — the caller
+   * redacts what it keeps.
+   */
+  questionOf(
+    botId: string,
+  ): { threadId: string; messageId: string; text: string } | null;
+  /**
+   * The owner forgot these lines on 수첩: take them out of every day summary this Bot's
+   * conversations carry or are about to carry, and start a new epoch on each one whose summary
+   * changed. Resolves once the model's scrub has landed, or the rule's when the model cannot
+   * answer; how many summary lines went, and who decided.
+   */
+  forget(
+    botId: string,
+    lines: readonly string[],
+  ): Promise<{ scrubbed: number; arm: string }>;
   /** Read every kept conversation into memory. Called once, at boot, before any run. */
   load(): Promise<number>;
   /** Every write asked for so far, landed. For tests and for a clean shutdown. */
@@ -283,6 +304,21 @@ export type DayEpochSetting = {
    * never prepared then: the task's messages would be cut out from under it.
    */
   busy?: (botId: string) => Promise<boolean>;
+  /**
+   * The lines the owner forgot on 수첩 (`ownerForgottenLines`): told to the summariser and scrubbed
+   * out of what it writes, so a forgotten fact the owner once said is never summarised again.
+   */
+  forgotten?: (botId: string) => Promise<readonly string[]>;
+  /**
+   * The nightly dream (`agents/dream.ts`), run after the close's summary and before the close can be
+   * taken, so what it writes is in the frozen layer of the epoch the close begins. Reads the day's
+   * dialogue only. Its failure never fails the close.
+   */
+  dream?: (input: {
+    botId: string;
+    dialogue: string;
+    day: string;
+  }) => Promise<void>;
   /** The zone a conversation that never said its own is dated in. */
   fallbackTimeZone?: string;
   /** How long since the conversation's last request before a close may be prepared. */
@@ -388,8 +424,18 @@ function forgottenMemories(known: ContextFacts, now: ContextFacts): string[] {
       .filter(([, replacement]) => kept.has(flat(replacement)))
       .map(([old]) => flat(old)),
   );
+  /*
+   * NOR ONE THE HOURLY CURATION RETIRED (`agents/memory-curation.ts`). That is the Bot's own
+   * unsupported line leaving on the Bot's schedule, not the owner saying "잊어": it stops being drawn
+   * at the next epoch, and breaking this conversation's cache for it now would make a background job
+   * cost the owner a re-read of the whole day, every hour it found something.
+   */
+  const retired = new Set(now.retired.map(flat));
   return known.memories.filter(
-    (memory) => !kept.has(flat(memory)) && !corrected.has(flat(memory)),
+    (memory) =>
+      !kept.has(flat(memory)) &&
+      !corrected.has(flat(memory)) &&
+      !retired.has(flat(memory)),
   );
 }
 
@@ -417,6 +463,23 @@ function scrubbed(
   return out;
 }
 
+/** A message's words, whatever shape its content has. */
+function textOfContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) =>
+        part &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "text"
+          ? String((part as { text?: unknown }).text ?? "")
+          : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
 /** A person message with its reminder appended — to the text, or as one more text part. */
 function carrying(message: AgentMessage, block: string): AgentMessage {
   if (message.role !== "user" || !block) return message;
@@ -439,9 +502,17 @@ export function createConversationStore(
     now?: () => number;
     compaction?: CompactionSetting;
     days?: DayEpochSetting;
+    /** Takes what the owner forgot out of a day summary (`./forget-scrub`). Absent: the rule alone. */
+    scrub?: SummaryScrubber;
   } = {},
 ): ConversationStore {
   const { persistence } = options;
+  const scrub: SummaryScrubber =
+    options.scrub ??
+    (async ({ summary, forgotten }) => ({
+      ...scrubByRule(summary, forgotten),
+      arm: "rule",
+    }));
   const setting = options.compaction;
   const days = options.days;
   const clock = options.now ?? (() => Date.now());
@@ -661,11 +732,42 @@ export function createConversationStore(
         }
       }
       const transcript = transcriptOf(span, zone);
-      const summary = await days.summarize({
+      const forgotten = days.forgotten
+        ? await days.forgotten(conversation.botId)
+        : [];
+      const written = await days.summarize({
         previous: conversation.epoch.cut?.summary ?? null,
         transcript,
         day: today,
+        forgotten,
       });
+      /*
+       * TOLD, AND CHECKED. The owner's message saying a fact they later forgot is in the transcript
+       * the summariser read, and a model told not to write something sometimes writes it anyway.
+       */
+      const summary =
+        forgotten.length > 0
+          ? (await scrub({ summary: written, forgotten })).summary
+          : written;
+      /*
+       * THE DREAM, BEFORE THE CLOSE CAN BE TAKEN, so the standing guidance it writes is in the frozen
+       * layer of the epoch this close begins — never a change in the middle of one. The dialogue
+       * only: a page's words are no source of how the owner likes to work.
+       */
+      if (days.dream) {
+        try {
+          await days.dream({
+            botId: conversation.botId,
+            dialogue: dialogueOf(transcriptOf(point.span, zone)),
+            day: today,
+          });
+        } catch (error) {
+          log.warn("dream_failed", {
+            bot: conversation.botId,
+            reason: describeFailure(error),
+          });
+        }
+      }
       conversation.close = { through: point.through, summary, day: today };
       conversation.closeFailedAt = null;
       // Counts only. Never a message, never the summary.
@@ -988,6 +1090,115 @@ export function createConversationStore(
 
     now() {
       return new Date(clock());
+    },
+
+    questionOf(botId) {
+      let found: Conversation | null = null;
+      for (const conversation of conversations.values()) {
+        if (!conversation.kept || conversation.botId !== botId) continue;
+        if (!conversation.lastUserMessageId) continue;
+        if (!found || conversation.touchedAt > found.touchedAt) {
+          found = conversation;
+        }
+      }
+      if (!found?.lastUserMessageId) return null;
+      const message = (found.raw ?? []).find(
+        (one) => one.id === found?.lastUserMessageId,
+      );
+      return {
+        threadId: found.threadId,
+        messageId: found.lastUserMessageId,
+        text: message ? textOfContent(message.content) : "",
+      };
+    },
+
+    async forget(botId, lines) {
+      const facts = lines.map((line) => line.trim()).filter(Boolean);
+      let scrubbed = 0;
+      let arm = "rule";
+      if (facts.length === 0) return { scrubbed, arm };
+      for (const conversation of conversations.values()) {
+        if (conversation.botId !== botId) continue;
+        // A close being prepared read the old summary; scrub what it wrote, not what it read.
+        const running = closes.get(conversation.threadId);
+        if (running) await running;
+        /*
+         * The cut the conversation carries, with a new summary: a new epoch, and the frozen text
+         * rewritten too — `pending` lives in memory, and a restart before the next message must not
+         * bring back a layer that still says it.
+         */
+        const replaceCut = (summary: string) => {
+          const cut = conversation.epoch.cut;
+          if (!cut) return;
+          const before = withSummary("", cut).trim();
+          const clean = { ...cut, summary };
+          conversation.epoch = {
+            ...conversation.epoch,
+            cut: clean,
+            system: before
+              ? conversation.epoch.system.replace(
+                  before,
+                  withSummary("", clean).trim(),
+                )
+              : conversation.epoch.system,
+          };
+          conversation.pending = "memory_forgotten";
+          keep(conversation);
+        };
+        /*
+         * THE RULE FIRST, AT ONCE: `prepare` answers synchronously and may run before the model's
+         * scrub lands, and a message sent then must already be without the fact's own words. Then
+         * the model's, over what the rule left, for what the rule cannot see.
+         */
+        const cut = conversation.epoch.cut;
+        if (cut) {
+          const ruled = scrubByRule(cut.summary, facts);
+          if (ruled.removed > 0) {
+            scrubbed += ruled.removed;
+            replaceCut(ruled.summary);
+          }
+        }
+        const close = conversation.close;
+        if (close) {
+          const ruled = scrubByRule(close.summary, facts);
+          if (ruled.removed > 0) {
+            scrubbed += ruled.removed;
+            conversation.close = { ...close, summary: ruled.summary };
+          }
+        }
+        const carried = conversation.epoch.cut;
+        if (carried) {
+          const judged = await scrub({
+            summary: carried.summary,
+            forgotten: facts,
+          });
+          arm = judged.arm;
+          if (judged.removed > 0 && conversation.epoch.cut === carried) {
+            scrubbed += judged.removed;
+            replaceCut(judged.summary);
+          }
+        }
+        const waiting = conversation.close;
+        if (waiting) {
+          const judged = await scrub({
+            summary: waiting.summary,
+            forgotten: facts,
+          });
+          arm = judged.arm;
+          if (judged.removed > 0 && conversation.close === waiting) {
+            scrubbed += judged.removed;
+            conversation.close = { ...waiting, summary: judged.summary };
+          }
+        }
+      }
+      // Counts only. Never the lines, never the summary.
+      log.info("memory_forgotten_scrubbed", {
+        bot: botId,
+        lines: facts.length,
+        scrubbed,
+        arm,
+      });
+      return { scrubbed, arm };
     },
 
     async compactNow(threadId) {

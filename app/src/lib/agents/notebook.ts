@@ -95,3 +95,32 @@ export function forgetLine(
     { method: "DELETE" },
   );
 }
+
+/** New words for a line of how the owner likes to work. The owner's from then on. */
+export function reviseGuidance(
+  queryClient: QueryClient,
+  agentId: string,
+  guidanceId: string,
+  content: string,
+) {
+  return send(
+    queryClient,
+    agentId,
+    `/notebook/guidance/${encodeURIComponent(guidanceId)}`,
+    { method: "PUT", body: JSON.stringify({ content }) },
+  );
+}
+
+/** Remove a line of how the owner likes to work. On record: the nightly dream does not write it again. */
+export function forgetGuidance(
+  queryClient: QueryClient,
+  agentId: string,
+  guidanceId: string,
+) {
+  return send(
+    queryClient,
+    agentId,
+    `/notebook/guidance/${encodeURIComponent(guidanceId)}`,
+    { method: "DELETE" },
+  );
+}

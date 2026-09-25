@@ -14,6 +14,15 @@
  * tokens over a Bot with none: 63 ordinary sentences filling the cap (2,192 characters) cost
  * 1,769; the worst shape, 220 lines of ten characters (1,980), cost 2,230 — each line's "- " and
  * newline are the difference. Bounded either way, and frozen per epoch, so no count is needed.
+ *
+ * WHY THERE IS NO `memory_search` (the memory package, 2026-09-26). Muse keeps a curated sheet in the
+ * prompt and searches the rest; a search tool earns its place only when memories exceed what the
+ * frozen layer carries. Here they cannot: `remember` refuses a line past this cap
+ * (`MemoryFullError`), so every line written through the store fits and `carriedLines` carries all
+ * of them — `carried: false` is reachable only by a row written around the store. A search would find
+ * nothing the prompt does not already hold, and as a core tool it would ride in front of every turn
+ * (CLAUDE.md, the footprint ladder); offered only when the cap is reached, it would change the tool
+ * list mid-conversation. Revisit when the cap is raised past what one epoch should carry.
  */
 export const MEMORY_CHARACTER_CAP = 2_200;
 
@@ -105,3 +114,57 @@ export function carriedLines<T extends NotebookLine>(
   }
   return { carried, used, cap: MEMORY_CHARACTER_CAP };
 }
+
+/**
+ * How sure the Bot can be of a line, from who stands behind it — drawn on 수첩 beside the line.
+ *
+ * `owner`: the owner wrote it. `owner_confirmed`: the Bot wrote it and the owner said it is right.
+ * `evidence`: the Bot wrote it and the hourly curation found the owner's own words saying it
+ * (`server/src/agents/memory-curation.ts`) — confirmed by evidence, which is not the owner's word.
+ * `inferred`: the Bot wrote it and nothing has checked it yet, or there was nothing to check against.
+ */
+export type MemoryTrust = "owner" | "owner_confirmed" | "evidence" | "inferred";
+
+/** The support a curated line needs to be confirmed by evidence, and below which it is dropped. */
+export const EVIDENCE_KEEP = 0.5;
+
+/** How much of the owner's words a line keeps as its evidence. Enough to recognise the moment. */
+export const EVIDENCE_EXCERPT_LENGTH = 120;
+
+/** Where a line came from, as 수첩 draws "어디서 알게 됐나". */
+export type MemoryEvidence = {
+  trust: MemoryTrust;
+  /** The curation's probability that the owner's words say it, when it was checked. */
+  confidence: number | null;
+  /** The conversation on screen and the owner's message in it, to jump to. */
+  channelId: string | null;
+  messageId: string | null;
+  /** The owner's words there, redacted and short. */
+  excerpt: string | null;
+};
+
+export function trustOf(line: {
+  source: string;
+  confirmedAt: Date | string | null;
+  curatedAt: Date | string | null;
+  confidence: number | null;
+}): MemoryTrust {
+  if (line.source === "owner") return "owner";
+  if (line.confirmedAt) return "owner_confirmed";
+  if (
+    line.curatedAt &&
+    line.confidence !== null &&
+    line.confidence >= EVIDENCE_KEEP
+  ) {
+    return "evidence";
+  }
+  return "inferred";
+}
+
+/**
+ * STANDING GUIDANCE'S BOUNDS: a few short lines about how the owner likes to work. Small enough
+ * that the frozen layer's cost is a rounding error beside the memories (5 × 100 characters), and
+ * few enough that the owner reads every one on 수첩.
+ */
+export const MAX_GUIDANCE_LINES = 5;
+export const MAX_GUIDANCE_LENGTH = 100;
