@@ -62,6 +62,7 @@ import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
   openBrowsingTask,
+  failurePlaces,
   type TranscriptItem,
   toVisibleChatItems,
   unsettledFrom,
@@ -1204,6 +1205,57 @@ export function ChatTranscript({
   const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
   const newestTaskId =
     items.findLast((item) => item.kind === "browse")?.id ?? null;
+  /** Each stored failure, drawn after the last row its turn drew (`failurePlaces`). */
+  const failuresAfter = failurePlaces(messages, items, Object.keys(failures));
+
+  /**
+   * The failure lines drawn after one row.
+   *
+   * OUTSIDE ANY SCROLLER ITEM, like the separators: a failure is not a message, must not be measured
+   * or anchored as one, and must never join the history that goes back to the model.
+   */
+  const failuresDrawnAfter = (rowId: string) =>
+    (failuresAfter.get(rowId) ?? []).map((key) => {
+      const failure = failures[key];
+      if (
+        !failure ||
+        failure.askedAgain ||
+        /*
+         * Suppressed while the live line is up, so a turn that has just failed does not say so
+         * twice — the server's record and this tab's own view of the same failure.
+         */
+        (stoppedCode && rowId === lastItem?.id) ||
+        /*
+         * And not while the question it is under is being asked again. The failure stays on the
+         * server's record until an answer lands after it (`standingFailures`), and "no answer came
+         * back" above a turn that is running says the retry already failed.
+         */
+        (busy && key === lastAsked?.id)
+      ) {
+        return null;
+      }
+      const isUnderQuestion = items.some(
+        (item) =>
+          item.id === key && item.kind === "text" && item.role === "user",
+      );
+      return (
+        <TurnFailed
+          code={failure.code}
+          group={failure.group}
+          key={`failed-${key}`}
+          onRetry={retryFor(
+            /*
+             * The person's own words: the question itself, or the one the server says this half
+             * answer was answering. Never a routine's heading: the server names no question for a
+             * run nobody asked, and "try again" there would send that heading back as if the
+             * person had typed it. The routine runs again at its next slot; nothing here can hurry
+             * it.
+             */
+            isUnderQuestion ? key : failure.askedId,
+          )}
+        />
+      );
+    });
 
   /*
    * A REPLY THAT ARRIVED WAS NEVER ANNOUNCED.
@@ -1407,36 +1459,40 @@ export function ChatTranscript({
             {items.slice(start).map((item, offset) => {
               const index = start + offset;
               return item.kind === "browse" ? (
-                <MessageScrollerItem
-                  className="py-0.5 pt-3"
-                  key={item.id}
-                  messageId={item.id}
-                >
-                  <Arriving
-                    delay={delays.delayFor(item.id, index, items.length)}
+                <Fragment key={item.id}>
+                  <MessageScrollerItem
+                    className="py-0.5 pt-3"
+                    messageId={item.id}
                   >
-                    <BrowsingCard
-                      channelId={channelId}
-                      isNewest={item.id === newestTaskId}
-                      isOpen={item.id === openTaskId}
-                      item={item}
-                    />
-                  </Arriving>
-                </MessageScrollerItem>
+                    <Arriving
+                      delay={delays.delayFor(item.id, index, items.length)}
+                    >
+                      <BrowsingCard
+                        channelId={channelId}
+                        isNewest={item.id === newestTaskId}
+                        isOpen={item.id === openTaskId}
+                        item={item}
+                      />
+                    </Arriving>
+                  </MessageScrollerItem>
+                  {failuresDrawnAfter(item.id)}
+                </Fragment>
               ) : item.kind === "tool" ? (
-                <MessageScrollerItem
-                  className="py-0.5 pt-3"
-                  key={item.id}
-                  messageId={item.id}
-                >
-                  <TranscriptToolCall
-                    args={item.toolCall.function.arguments}
-                    delay={delays.delayFor(item.id, index, items.length)}
-                    name={item.toolCall.function.name}
-                    result={item.result}
-                    toolCallId={item.toolCall.id}
-                  />
-                </MessageScrollerItem>
+                <Fragment key={item.id}>
+                  <MessageScrollerItem
+                    className="py-0.5 pt-3"
+                    messageId={item.id}
+                  >
+                    <TranscriptToolCall
+                      args={item.toolCall.function.arguments}
+                      delay={delays.delayFor(item.id, index, items.length)}
+                      name={item.toolCall.function.name}
+                      result={item.result}
+                      toolCallId={item.toolCall.id}
+                    />
+                  </MessageScrollerItem>
+                  {failuresDrawnAfter(item.id)}
+                </Fragment>
               ) : (
                 <Fragment key={item.id}>
                   {firstUnreadId === item.id ? <UnreadLine /> : null}
@@ -1501,43 +1557,7 @@ export function ChatTranscript({
                       {t("Sent when the connection came back.")}
                     </p>
                   ) : null}
-                  {
-                    /*
-                     * OUTSIDE THE SCROLLER ITEM, like the separators above it: a failure is not a
-                     * message, must not be measured or anchored as one, and must never join the
-                     * history that goes back to the model.
-                     *
-                     * Suppressed while the live line is up, so a turn that has just failed does not
-                     * say so twice — the server's record and this tab's own view of the same failure.
-                     */
-                    failures[item.id] &&
-                    !failures[item.id].askedAgain &&
-                    !(stoppedCode && item.id === lastItem?.id) &&
-                    /*
-                     * And not while the question it is under is being asked again. The failure
-                     * stays on the server's record until an answer lands after it
-                     * (`standingFailures`), and "no answer came back" above a turn that is running
-                     * says the retry already failed.
-                     */
-                    !(busy && item.id === lastAsked?.id) ? (
-                      <TurnFailed
-                        code={failures[item.id].code}
-                        group={failures[item.id].group}
-                        onRetry={retryFor(
-                          /*
-                           * The person's own words: the question itself, or the one the server
-                           * says this half answer was answering. Never a routine's heading: the
-                           * server names no question for a run nobody asked, and "try again"
-                           * there would send that heading back as if the person had typed it.
-                           * The routine runs again at its next slot; nothing here can hurry it.
-                           */
-                          item.role === "user"
-                            ? item.id
-                            : failures[item.id].askedId,
-                        )}
-                      />
-                    ) : null
-                  }
+                  {failuresDrawnAfter(item.id)}
                 </Fragment>
               );
             })}

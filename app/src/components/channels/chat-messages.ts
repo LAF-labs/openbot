@@ -249,3 +249,56 @@ export function unsettledFrom(
   }
   return 0;
 }
+
+/**
+ * WHERE A STORED FAILURE IS DRAWN: AFTER THE LAST THING ITS TURN DREW. Item id to the failure keys
+ * drawn after it.
+ *
+ * The server keys a failure to a message (`turn-failures.ts`) — the question, or the last message
+ * its run wrote — and the transcript drew the line right under that message's own row. But one
+ * message draws several rows: the Bot's "찾아볼게요" and the browsing card its tool calls became
+ * are one assistant message, so after a reload the red line sat between the sentence and the card it
+ * was about (0.5.4 QA), while the live line — drawn at the end — sat under the card. So the line goes
+ * where the live one did: after the last row drawn from that message or anything after it, up to
+ * the person's next message. A key no row can be found for stays where it was, under its own row.
+ */
+export function failurePlaces(
+  messages: ReadonlyArray<Readonly<Message>>,
+  items: readonly TranscriptItem[],
+  failureIds: Iterable<string>,
+): Map<string, string[]> {
+  /** Every id a row stands for — a message, a call, a result, a note inside a card — to its row. */
+  const rowOf = new Map<string, number>();
+  items.forEach((item, index) => {
+    rowOf.set(item.id, index);
+    if (item.kind === "browse") {
+      for (const step of item.steps) rowOf.set(step.id, index);
+      for (const note of item.notes) rowOf.set(note.id, index);
+    }
+  });
+  const positionOf = new Map(
+    messages.map((message, index) => [message.id, index]),
+  );
+  const places = new Map<string, string[]>();
+  for (const key of failureIds) {
+    let last = rowOf.get(key) ?? -1;
+    const at = positionOf.get(key);
+    if (at !== undefined) {
+      for (let index = at; index < messages.length; index += 1) {
+        const message = messages[index];
+        if (!message) break;
+        if (index > at && message.role === "user") break;
+        const ids: string[] = [message.id];
+        if (message.role === "assistant") {
+          for (const call of message.toolCalls ?? []) ids.push(call.id);
+        }
+        if (isToolResult(message)) ids.push(message.toolCallId);
+        for (const id of ids) last = Math.max(last, rowOf.get(id) ?? -1);
+      }
+    }
+    const row = items[last];
+    if (!row) continue;
+    places.set(row.id, [...(places.get(row.id) ?? []), key]);
+  }
+  return places;
+}
