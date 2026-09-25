@@ -125,8 +125,11 @@ describe("the tenant package", () => {
   test("names only the variables config.ts hands it", () => {
     const directory = join(root, "tenant/laf");
     const referenced = new Set<string>();
-    for (const file of readdirSync(directory)) {
-      const text = readFileSync(join(directory, file), "utf8");
+    // The files the loader interpolates. `skills/` is text the Bot reads, never interpolated
+    // (`plugins/built-in-skills.ts`), and a directory besides.
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const text = readFileSync(join(directory, entry.name), "utf8");
       for (const [, name] of text.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g)) {
         if (name) referenced.add(name);
       }

@@ -328,6 +328,10 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     const clicked = await post("/click", {
       ref: refFor(shot.elements, "주문 상세 보기"),
       snapshotId: shot.snapshotId,
+      // What the gateway sends with every click (`acts.ts`), and what tells the computer a link that
+      // has not gone anywhere yet may still open its tab: on a loaded machine it takes longer than the
+      // 150 ms any click waits (measured in the gate, 2026-09-25).
+      element: { role: "link", name: "주문 상세 보기" },
     });
     expect(clicked.status).toBe(200);
     // The tab it opened, read in the same answer — no `/read` round trip for the Bot (actions.ts).

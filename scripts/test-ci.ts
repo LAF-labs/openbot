@@ -450,16 +450,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and an object argument sent as a string) and five to `server` (the messages route and the merge
  * keeping that reasoning, a redacted typing losing it and an ordinary one keeping it, the server
  * model). Each floor rises by exactly what was added.
+ * RAISED 2026-09-25 with browsing: fifteen to `server` (the snapshot as lines, the package's skills
+ * parsed and kept small, and against real tables: written as the package's, a grant taken off
+ * staying off, a changed body, a name somebody holds, a Bot made later, a skill no longer shipped,
+ * the routes refusing an edit), eleven to `agent-computer` (short lines folded, an article read as
+ * its story and whole when asked, a page that is not one read whole, a thumbnail as a small JPEG),
+ * four to `root` (a screen frame in bytes) and one to `app` (the live screen taking bytes). Each
+ * floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2626, roots: ["server"] },
-  { name: "app", floor: 1256, roots: ["app"] },
-  { name: "agent-computer", floor: 262, roots: ["agent-computer"] },
-  { name: "root", floor: 411, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2641, roots: ["server"] },
+  { name: "app", floor: 1257, roots: ["app"] },
+  { name: "agent-computer", floor: 273, roots: ["agent-computer"] },
+  { name: "root", floor: 415, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
