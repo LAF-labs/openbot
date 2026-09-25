@@ -777,6 +777,8 @@ export const ko: Record<string, string> = {
     "무엇을 입력했든 대상이 같으면 같은 호출로 셉니다. 한 검색창에서 열 번 검색하거나 한 파일을 열 번 읽으면 열 번째에서 거부됩니다. 반대로 놓치는 것도 있습니다 — 몇 분보다 느리게 흩어 시도하면 걸리지 않고, 인자를 하나씩 바꾸면 열 번 다 다른 호출이며, 다른 서버의 도구 호출은 아예 세지 않습니다. 이 규칙은 거부합니다. 기본 경계는 다섯 번째에서 묻기부터 시작합니다.",
   "Unpublished, so no Bot may use it": "게시 취소됨 — 어느 봇도 쓸 수 없음",
   Unread: "읽지 않음",
+  // 긴 대화는 최근 부분만 그리고, 위로 올리면 이전 대화를 이어 붙인다.
+  "Show earlier messages": "이전 대화 보기",
   "Waiting for your answer": "답변을 기다리는 중",
   "Waiting for your answer: {question}": "답변을 기다리는 중: {question}",
   "Watch this Bot's screen": "이 봇의 화면 보기",

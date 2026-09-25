@@ -12,6 +12,7 @@ import {
   Fragment,
   memo,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -539,6 +540,61 @@ const FIRST_PAINT_STAGGER_COUNT = 12;
 const FIRST_PAINT_STAGGER_SECONDS = 0.04;
 
 /**
+ * How many of the newest rows a transcript draws when it opens, and how many more each scroll back
+ * to the top adds.
+ *
+ * MEASURED 2026-09-25 (`~/laf/docs/performance-audit-2026-09.md` §1, fix 1): a 500-message
+ * conversation at 4× CPU on a Mac shared with other work (load average ~20). Every row ever said
+ * used to be drawn — 6–42 s to show the newest message, single tasks of 2.7–11 s, ~9,000 DOM nodes,
+ * and up to 2.3 s frozen at a time under the first reply. Sixty rows took it to 4.4–4.9 s against
+ * 3.4–4.0 s for a two-message conversation on the same machine, the rest being one task that lays
+ * the rows out. Forty, measured alternating with the old build: 2.3–5.2 s against 6.0–10.9 s,
+ * longest task 0.5–0.8 s against 2.7–5.3 s, 1,250 nodes. Forty rows is still screens of
+ * conversation above the newest message — more than anybody reads on opening — and the rest
+ * arrives as they scroll up to it.
+ *
+ * Windowing rather than virtualising, on purpose: the scroller (`@shadcn/react/message-scroller`)
+ * places its anchor and its spacer from the real layout of every row it holds and restores the
+ * reading position itself when rows are prepended above the first one (`preserveScrollOnPrepend`).
+ * A virtualiser would take rows out of the middle of that layout and out from under its anchor.
+ */
+export const TRANSCRIPT_WINDOW_ROWS = 40;
+
+/**
+ * An unread line further back than this is not pulled into the first window: two hundred rows is
+ * already most of what windowing saves, and somebody who missed that much starts from the newest.
+ */
+const UNREAD_REACH_ROWS = 200;
+
+/**
+ * Where the drawn window starts: the row it was pinned to, or the newest `TRANSCRIPT_WINDOW_ROWS`,
+ * reaching back to the unread line when that is near enough.
+ *
+ * PINNED BY ID, NOT BY COUNT. A window of "the last forty" would drop its top row whenever a new one
+ * arrived at the bottom — the reader's page moving under them mid-sentence, and a child out while a
+ * child comes in, which is the exact change the scroller reads as a swap to scroll to (see
+ * `createAnchorDecider`). So the first drawn row is remembered, and the window only ever grows.
+ */
+export function windowStart(
+  ids: readonly string[],
+  pinnedId: string | null,
+  unreadId: string | null,
+): number {
+  const pinned = pinnedId === null ? -1 : ids.indexOf(pinnedId);
+  const start =
+    pinned >= 0 ? pinned : Math.max(0, ids.length - TRANSCRIPT_WINDOW_ROWS);
+  /*
+   * Applied to a pinned window too: where the reading stopped arrives from its own request, and it
+   * can land after the conversation has been drawn and pinned. The rows it adds go above, which the
+   * scroller keeps the reader's place across.
+   */
+  const unread = unreadId === null ? -1 : ids.indexOf(unreadId);
+  return unread >= 0 && ids.length - unread <= UNREAD_REACH_ROWS
+    ? Math.min(start, unread)
+    : start;
+}
+
+/**
  * Decide, once per message, whether it waits its turn.
  *
  * FROZEN PER ID ON PURPOSE. `delay` is a prop on a memoised component, so a value that changed
@@ -1005,15 +1061,16 @@ function UnreadLine() {
  * padding, 12/16 at the secondary colour. One line per sitting, not a clock on every bubble — a
  * timestamp beside every sentence is what makes a transcript read as a log instead of a chat.
  */
-function TimeSeparator({ at }: { at: Date }) {
+function TimeSeparator({ at }: { at: string }) {
   // 오늘 becomes 어제 at midnight because the time is an input, not a read; see `useNow`.
   const now = useNow();
+  const when = new Date(at);
   return (
     <time
       className="mt-3.5 mb-2 flex h-7 w-auto items-center justify-center self-center whitespace-nowrap py-1.5 text-muted-foreground text-xs"
-      dateTime={at.toISOString()}
+      dateTime={when.toISOString()}
     >
-      {sittingLabel(at, now)}
+      {sittingLabel(when, now)}
     </time>
   );
 }
@@ -1194,7 +1251,13 @@ export function ChatTranscript({
    * A conversation whose history predates stamping has no times at all and simply gets no
    * separators, which is the honest outcome: the app does not know when those were said.
    */
-  const separators = new Map<string, Date>();
+  /*
+   * Id to the ISO string, NOT a Date: this map is rebuilt on every render, and a Date built here
+   * is a new object each time, so every separator's props changed with every chunk of a streamed
+   * reply and each one formatted its label again through `Intl` — 150 ms of a turn at 4× CPU,
+   * measured 2026-09-25. A string is equal to itself, and the compiled separator is skipped.
+   */
+  const separators = new Map<string, string>();
   let previousAt: Date | null = null;
   /*
    * WHERE THE READING STOPPED — the first message a Bot said after this person last looked.
@@ -1215,7 +1278,7 @@ export function ChatTranscript({
     if (item.kind !== "text" || !item.at) continue;
     const at = new Date(item.at);
     if (Number.isNaN(at.getTime())) continue;
-    if (startsNewSitting(at, previousAt)) separators.set(item.id, at);
+    if (startsNewSitting(at, previousAt)) separators.set(item.id, item.at);
     previousAt = at;
     if (
       firstUnreadId === null &&
@@ -1228,10 +1291,84 @@ export function ChatTranscript({
     }
   }
 
+  /*
+   * THE DRAWN WINDOW. See `TRANSCRIPT_WINDOW_ROWS` and `windowStart`. Everything above — the
+   * separators, the unread line, the retry and rating decisions — is still worked out over the whole
+   * conversation, because those are walks over plain objects; what cost was drawing every row.
+   */
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const start = windowStart(
+    items.map((item) => item.id),
+    pinnedId,
+    firstUnreadId,
+  );
+  const firstShownId = items[start]?.id ?? null;
+  const hasEarlier = start > 0;
+  /*
+   * Pinned once the conversation has arrived, to the row the window opened on. Before this runs
+   * the window is computed from the newest row, and it computes the same row, so the pin changes
+   * nothing that is drawn.
+   */
+  const isPinned =
+    pinnedId !== null && items.some((item) => item.id === pinnedId);
+  useEffect(() => {
+    // And pinned again should the row it named ever leave the conversation.
+    if (!isPinned && firstShownId !== null) setPinnedId(firstShownId);
+  }, [isPinned, firstShownId]);
+  const earlierId =
+    items[Math.max(0, start - TRANSCRIPT_WINDOW_ROWS)]?.id ?? null;
+  const handleShowEarlier = () => {
+    if (earlierId !== null) setPinnedId(earlierId);
+  };
+  /*
+   * Scrolled near the top, the next page is drawn above. The scroller keeps what was on screen where
+   * it was (`preserveScrollOnPrepend`, which is why nothing but rows may be the first child of its
+   * content — see the live regions below the list). An effect event, so a streaming reply
+   * re-rendering this on every chunk does not re-arm the observer with each one.
+   */
+  const earlierRef = useRef<HTMLDivElement>(null);
+  const onEarlierInView = useEffectEvent(() => handleShowEarlier());
+  useEffect(() => {
+    const sentinel = earlierRef.current;
+    if (!hasEarlier || !sentinel || typeof IntersectionObserver === "undefined")
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onEarlierInView();
+      },
+      {
+        root: sentinel.closest('[data-slot="message-scroller-viewport"]'),
+        // A screen early, so scrolling up rarely has to stop and wait at the top.
+        rootMargin: "600px 0px 0px 0px",
+      },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasEarlier, firstShownId]);
+
   const view = (
     <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
       <MessageScroller>
         <MessageScrollerViewport>
+          {hasEarlier ? (
+            /*
+             * OUTSIDE THE CONTENT, and it has to be. The scroller restores the reading position when
+             * its content's FIRST CHILD moves down — rows prepended above it. Anything else sitting
+             * first would never move, and every page drawn above would throw the reader up by its
+             * height. The live regions left the content for the same reason.
+             */
+            <div className="flex justify-center pt-3" ref={earlierRef}>
+              <Button
+                className="h-7 px-3 text-xs"
+                onClick={handleShowEarlier}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {t("Show earlier messages")}
+              </Button>
+            </div>
+          ) : null}
           <MessageScrollerContent
             aria-busy={busy}
             /*
@@ -1245,34 +1382,15 @@ export function ChatTranscript({
              */
             className="mx-auto w-full max-w-none gap-0 px-4 py-4"
           >
-            {/* The finished reply, once, for a reader who cannot see it arrive. */}
-            <div aria-atomic="true" aria-live="polite" className="sr-only">
-              {announcement}
-            </div>
-            {/*
-             * WHAT THE TURN IS DOING, SAID. "생각하는 중" and "답을 기다리는 중" are drawn in the slot under
-             * the last message and come and go with the turn, and a status line mounted together with
-             * its words is not announced: somebody listening pressed send and heard nothing until the
-             * reply. The words are said here as well, in a region that is always mounted. The drawn
-             * lines are no longer live themselves, so nothing is said twice.
-             */}
-            <LiveRegion className="sr-only">
-              {awaitingAnswer
-                ? t("Waiting for your answer")
-                : stoppedCode
-                  ? null
-                  : waitingOnFirstToken
-                    ? t("Thinking")
-                    : null}
-            </LiveRegion>
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
              * reads the scroller's context, so it re-renders whenever the scroll state moves and
              * memoising it would achieve nothing. Its child is what costs — markdown parsing and
              * chart SVGs — and that is what is skipped.
              */}
-            {items.map((item, index) =>
-              item.kind === "browse" ? (
+            {items.slice(start).map((item, offset) => {
+              const index = start + offset;
+              return item.kind === "browse" ? (
                 <MessageScrollerItem
                   className="py-0.5 pt-3"
                   key={item.id}
@@ -1309,7 +1427,7 @@ export function ChatTranscript({
                   {separators.has(item.id) ? (
                     // Outside the scroller item on purpose: it is not a message, so it must not be
                     // measured, anchored or scrolled to as one.
-                    <TimeSeparator at={separators.get(item.id) as Date} />
+                    <TimeSeparator at={separators.get(item.id) as string} />
                   ) : null}
                   <MessageScrollerItem
                     className={
@@ -1405,8 +1523,8 @@ export function ChatTranscript({
                     ) : null
                   }
                 </Fragment>
-              ),
-            )}
+              );
+            })}
             {/*
              * Outside the item list, so neither of these is a message. Each has no id, is never
              * anchored, and is gone by the next turn — giving one a `MessageScrollerItem` would ask
@@ -1450,6 +1568,26 @@ export function ChatTranscript({
               />
             ))}
           </MessageScrollerContent>
+          {/* The finished reply, once, for a reader who cannot see it arrive. */}
+          <div aria-atomic="true" aria-live="polite" className="sr-only">
+            {announcement}
+          </div>
+          {/*
+           * WHAT THE TURN IS DOING, SAID. "생각하는 중" and "답을 기다리는 중" are drawn in the slot under
+           * the last message and come and go with the turn, and a status line mounted together with
+           * its words is not announced: somebody listening pressed send and heard nothing until the
+           * reply. The words are said here as well, in a region that is always mounted. The drawn
+           * lines are no longer live themselves, so nothing is said twice.
+           */}
+          <LiveRegion className="sr-only">
+            {awaitingAnswer
+              ? t("Waiting for your answer")
+              : stoppedCode
+                ? null
+                : waitingOnFirstToken
+                  ? t("Thinking")
+                  : null}
+          </LiveRegion>
         </MessageScrollerViewport>
         <MessageScrollerButton />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
