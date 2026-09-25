@@ -43,15 +43,10 @@ import type { ActionPolicy, PolicyContext } from "./policy";
 export {
   hostPattern,
   isSimpleTerm,
-  MONEY_HOST_RULE,
   MONEY_HOSTS,
-  MONEY_WORD_RULE,
   MONEY_WORDS,
-  REPEAT_ASK_AT,
-  REPEAT_RULE,
   SECRET_FIELD_RULE,
   SECRET_FIELD_WORDS,
-  UPLOAD_RULE,
   wordPattern,
 } from "../../../shared/policy-rules";
 

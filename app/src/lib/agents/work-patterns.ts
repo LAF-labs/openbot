@@ -68,11 +68,6 @@ export const WORK_PATTERNS: readonly WorkPattern[] = [
   },
 ] as const;
 
-/** A pattern by its id. Every id in the type is in `WORK_PATTERNS`, so this is total. */
-export function workPattern(id: WorkPatternId): WorkPattern {
-  return WORK_PATTERNS.find((pattern) => pattern.id === id) as WorkPattern;
-}
-
 /**
  * Which kinds of work each trade leads with, likeliest first (`shared/shop/catalogue.ts`).
  *

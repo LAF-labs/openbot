@@ -43,10 +43,7 @@ import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO } from "./base.ko";
 export {
-  CONTEXT_RULES_KO,
   type ContextFacts,
-  clockText,
-  contextFactsOf,
   contextLayerText,
   knownFacts,
   REMINDER_CLOSE,
@@ -55,8 +52,6 @@ export {
   reminderLines,
   routineRunLine,
   withReminder,
-  ANSWER_NOW_KO,
-  answerNowText,
 } from "./context.ko";
 export {
   NOTEPAD_MAX_BYTES,
@@ -66,18 +61,10 @@ export {
   notepadText,
   type RoutineNote,
 } from "./notepad.ko";
-export { copula } from "./particles";
 export { type PromptPerson, placeText } from "./person.ko";
-export { shopText } from "./shop.ko";
-export { type PromptSkill, skillIndexText } from "./skill-index";
+export type { PromptSkill } from "./skill-index";
 export { TOOL_RESULT_KO } from "./tool-results.ko";
-export {
-  DEFAULT_TIME_ZONE,
-  dayLabel,
-  isKnownTimeZone,
-  resolveTimeZone,
-  zoneLabel,
-} from "./zone";
+export { DEFAULT_TIME_ZONE, resolveTimeZone } from "./zone";
 
 /**
  * 실행이 벌어지는 자리. `forwardedProps.mode`로 오고, 아무 말이 없으면 대화다.
@@ -176,7 +163,7 @@ export function promptSkeleton(mode: PromptMode): string {
  * 소개부터 한다. 그래서 이 문단은 사실을 말한다: 정해진 직무는 없고, 이 사람이 대화로 맡기는 일이
  * 네 일이다. 앞으로 계속 맡길 일을 들으면 적어 두는 길(`update_profile`)은 그대로 남는다.
  */
-export function unassignedRoleText(mode: PromptMode): string {
+function unassignedRoleText(mode: PromptMode): string {
   return [
     "정해 둔 직무는 없다 — 이 사람이 대화로 맡기는 일이 곧 네 일이다.",
     mode === "chat"

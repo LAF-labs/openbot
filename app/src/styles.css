@@ -97,7 +97,6 @@ html {
   --sand-bg-elevated: #ffffff;
   --sand-text-primary: #17191c;
   --sand-text-secondary: #17191ca3;
-  --sand-text-tertiary: #17191c6b;
   --sand-text-on-primary: #fcfcfc;
   /*
    * WHITE IN BOTH THEMES, and that is not an oversight.
@@ -109,14 +108,12 @@ html {
    * dark mode.
    */
   --sand-text-on-color: #fcfcfc;
-  --sand-border-subtle: #17191c0d;
   --sand-border-weak: #17191c1a;
   --sand-border-default: #17191c26;
   --sand-border-focus: #17191c66;
   --sand-fill-primary: #17191c;
   --sand-fill-primary-hover: #33363b;
   --sand-fill-secondary: #71788217;
-  --sand-fill-secondary-hover: #7178822b;
   --sand-fill-ghost-hover: #71788214;
   --sand-fill-ghost-selected: #71788226;
   --sand-fill-elevated: #ffffff;
@@ -141,10 +138,8 @@ html {
   --sand-chat-min-width: 424px;
   --sand-titlebar-block: 44px;
   --sand-row-height: 54px;
-  --sand-avatar-size: 36px;
   --sand-bubble-radius: 18px;
   --sand-bubble-radius-joined: 6px;
-  --sand-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
   /*
    * ---- the Bot's colour, as the app's accent ----
@@ -225,16 +220,13 @@ html {
   --sand-bg-elevated: #1b1c20;
   --sand-text-primary: #f2f3f5;
   --sand-text-secondary: #f2f3f5a3;
-  --sand-text-tertiary: #f2f3f56b;
   --sand-text-on-primary: #17191c;
-  --sand-border-subtle: #f2f3f50f;
   --sand-border-weak: #f2f3f51a;
   --sand-border-default: #f2f3f526;
   --sand-border-focus: #f2f3f566;
   --sand-fill-primary: #f2f3f5;
   --sand-fill-primary-hover: #d4d6da;
   --sand-fill-secondary: #8a90992e;
-  --sand-fill-secondary-hover: #8a909952;
   --sand-fill-ghost-hover: #8a909926;
   --sand-fill-ghost-selected: #8a909942;
   --sand-fill-elevated: #2a2c31;
@@ -698,17 +690,6 @@ body {
   .animate-pulse {
     animation: none;
     opacity: 0.65;
-  }
-
-  /*
-   * A face that neither blinks nor bobs is still a face, and blocked still carries its raised brows
-   * and its mark — those are drawn by the component and never by an animation, so the one state
-   * that has something urgent to say still says it here.
-   */
-  .bot-avatar-body,
-  .bot-avatar-eyes,
-  .bot-avatar-mark {
-    animation: none;
   }
 }
 

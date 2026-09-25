@@ -139,6 +139,10 @@ const TOOLS: readonly McpTool[] = Object.freeze([
  * own settings page and connected a personal Google account, whose token was then handed to
  * {@link listTools} — which ignores it — and thrown away. The gate was real and the work behind it
  * was not.
+ *
+ * Read through this module's namespace in `transport.ts`'s `TRANSPORTS` map, which knip cannot follow.
+ *
+ * @public
  */
 export const listNeedsCredential = false;
 

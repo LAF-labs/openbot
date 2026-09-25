@@ -90,6 +90,30 @@ describe("the Korean dictionary", () => {
     }
     expect(keys.size).toBeGreaterThan(400);
   });
+
+  /*
+   * THE OTHER DIRECTION. The test above cannot see an entry nothing asks for any more, and by
+   * 2026-09-25 there were thirty-six: the skill editor's help, the old take-control strip, the
+   * room-era approval sentences — each translated, reviewed and shipped to every browser, and read by
+   * nobody. A dead entry is also how a revived English sentence comes back wearing last year's Korean.
+   *
+   * Looser than the forward check on purpose: the key only has to appear, as written, somewhere in
+   * `src` or `shared`, because tables read through `t(variable)` hold their English as plain values
+   * and `shared/` holds some of those tables. That still catches an entry whose sentence is gone.
+   */
+  test("has no entry that nothing in the app asks for", () => {
+    const corpus = [
+      ...sourceFiles(SOURCE),
+      ...sourceFiles(join(import.meta.dir, "../../shared")),
+    ]
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
+    const unread = Object.keys(ko).filter((key) => {
+      const escaped = JSON.stringify(key).slice(1, -1);
+      return !corpus.includes(key) && !corpus.includes(escaped);
+    });
+    expect({ unread }).toEqual({ unread: [] });
+  });
 });
 
 /**

@@ -38,8 +38,6 @@ export const ko: Record<string, string> = {
   "A rule that asks a person first, written in CEL":
     "먼저 사람에게 묻는 규칙 — CEL로 작성",
   "A rule, written in CEL": "규칙 — CEL로 작성",
-  "A skill is a named instruction you invoke with / and a Bot follows. Yours are yours alone, and go on the Bots you own.":
-    "스킬은 /로 불러내면 봇이 그대로 따르는, 이름 붙은 지시입니다. 내가 만든 스킬은 나만의 것이고, 내가 소유한 봇에 붙습니다.",
   "Access token for this server": "이 서버의 액세스 토큰",
   "Access token for {name}": "{name} 액세스 토큰",
   "Access token, if it needs one": "액세스 토큰 (필요한 경우)",
@@ -53,8 +51,6 @@ export const ko: Record<string, string> = {
   "Added to file": "파일에 추가함",
   "Add rule": "규칙 추가",
   "Add server": "서버 추가",
-  "Added to the run when the command is used. Write it as instructions to the Bot, not as a description of them.":
-    "명령을 쓰면 실행에 더해집니다. 봇에게 내리는 지시문으로 쓰세요 — 지시문에 대한 설명이 아니라.",
   Admin: "관리",
   "Agent endpoint (optional)": "봇을 실행할 서버 주소 (선택)",
   Bots: "봇",
@@ -64,8 +60,6 @@ export const ko: Record<string, string> = {
   "Answers are coming faster than the model can take right now. Give it a moment and ask again.":
     "지금은 답변 요청이 몰려 모델이 잠시 벅찹니다. 조금 기다렸다가 다시 물어봐 주세요.",
   "Approved as it now is": "지금 상태 그대로 승인됨",
-  "Asked because of this rule. Allowing once covers this action; the other covers every one like it until somebody takes it back.":
-    "이 규칙 때문에 물었습니다. 한 번 허용은 이 행동에만, 다른 하나는 누군가 취소할 때까지 같은 행동 전부에 적용됩니다.",
   Blocked: "차단됨",
   "Bot endpoints": "봇 주소",
   "Could not be replaced": "교체하지 못함",
@@ -249,8 +243,6 @@ export const ko: Record<string, string> = {
     "봇들이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
   "There is nothing this deployment can connect yet.":
     "아직 여기서 연결할 수 있는 곳이 없어요.",
-  "The places could not be loaded. Refresh to try again.":
-    "고를 곳을 불러오지 못했어요. 새로고침해서 다시 시도해 주세요.",
   "Picking a place does not connect it.": "고른다고 연결되지는 않아요.",
   "Connect it on Connections": "연결 화면에서 연결하기",
   "That answer could not be recorded. Try again.":
@@ -274,8 +266,6 @@ export const ko: Record<string, string> = {
   "Ask me first": "먼저 묻기",
   "Asked a person": "사람에게 물음",
   "Attached file": "파일 첨부",
-  "Asked because of this rule. Allowing covers this one action.":
-    "이 규칙 때문에 묻습니다. 허용은 이 행동 한 번에만 적용됩니다.",
   "Asks about every Enter the Bot presses, because a form submits from Enter in any of its fields. Expect to be asked while it is filling one in, not only at the end.":
     "봇이 누르는 모든 Enter마다 묻습니다. 폼은 어느 칸에서든 Enter로 제출되기 때문입니다. 마지막에만이 아니라 작성 중에도 물어올 수 있습니다.",
   Audit: "감사 기록",
@@ -289,7 +279,6 @@ export const ko: Record<string, string> = {
   "Capabilities and interface pieces available across Bots.":
     "모든 봇이 쓸 수 있는 기능과 인터페이스 조각.",
   Catalogue: "카탈로그",
-  "Bot in this conversation": "이 대화의 봇",
   "Finish in the browser that just opened, then come back.":
     "방금 열린 브라우저에서 동의를 마친 뒤 돌아와 주세요.",
   "Check again": "다시 확인",
@@ -431,8 +420,6 @@ export const ko: Record<string, string> = {
   Messages: "메시지",
   "Never submit a form": "폼은 절대 제출하지 않기",
   "Never type into a password field": "비밀번호 칸에는 절대 입력하지 않기",
-  "No skills yet. Write one and any Bot you own can run it.":
-    "아직 스킬이 없습니다. 하나 써두면 내가 소유한 어느 봇이든 실행할 수 있습니다.",
   "Nothing was lost. Trying again is usually enough.":
     "잃어버린 것은 없습니다. 대개 다시 시도하면 됩니다.",
   Notifications: "알림",
@@ -443,8 +430,6 @@ export const ko: Record<string, string> = {
   "Opening Kakao…": "카카오 여는 중…",
   "Opening Naver…": "네이버 여는 중…",
   Paused: "일시정지",
-  "Press Escape to hand back and close":
-    "Esc를 누르면 제어를 돌려주고 닫습니다",
   "Published, so every Bot may use it": "게시됨 — 모든 봇이 쓸 수 있음",
   "Publishing makes it available to every Bot. Switch it off for a particular Bot on the Components page, the same as for a component this build ships.":
     "게시하면 모든 봇이 쓸 수 있습니다. 특정 봇에게만 끄려면 컴포넌트 페이지에서 조정하세요 — 기본 제공 컴포넌트와 같습니다.",
@@ -621,8 +606,6 @@ export const ko: Record<string, string> = {
   "Sending…": "보내는 중…",
   "A command cannot be changed. To rename a skill, write a new one and delete this.":
     "명령은 바꿀 수 없습니다. 이름을 바꾸려면 새로 하나 만들고 이것을 지우세요.",
-  "What you type after a slash, like /standup.":
-    "빗금 뒤에 입력하는 말입니다. 예: /standup",
   "Shown beside the command in this list and in the / menu. Optional.":
     "이 목록과 / 메뉴에서 명령 옆에 표시됩니다. 선택 사항입니다.",
   "The skill could not be saved.": "스킬을 저장하지 못했습니다.",
@@ -644,8 +627,6 @@ export const ko: Record<string, string> = {
   "There was nothing to remember.": "기억할 내용이 없습니다.",
   "That rule is already in this list.": "이미 이 목록에 있는 규칙입니다.",
   "The assistant's screen, live": "봇의 화면 — 실시간",
-  "The assistant's screen. You have control: click and type here. Tab leaves, Escape hands back.":
-    "봇의 화면입니다. 제어 중이니 여기서 클릭하고 입력하세요. Tab으로 빠져나가고, Esc로 제어를 돌려줍니다.",
   "The Bot asked for a secret": "봇이 비밀값을 요청함",
   "The Bot asked for help": "봇이 도움을 요청함",
   "The Bot called the same tool again": "봇이 같은 도구를 다시 호출함",
@@ -719,8 +700,6 @@ export const ko: Record<string, string> = {
     "봇의 컴퓨터에서 문제가 생겼습니다.",
   "The live picture could not be started.":
     "실시간 화면을 시작하지 못했습니다.",
-  "Take control before clicking or typing on the page.":
-    "페이지를 클릭하거나 입력하려면 먼저 제어를 가져오세요.",
   "That click or keystroke did not reach the page.":
     "방금 누른 클릭이나 키가 페이지에 전달되지 않았습니다.",
   "The server did not answer": "서버가 응답하지 않음",
@@ -765,7 +744,6 @@ export const ko: Record<string, string> = {
   // 대화상자의 버튼이 일하는 동안 하는 말.
   "Adding…": "추가하는 중…",
   "Installing…": "설치하는 중…",
-  "Taking control…": "제어를 가져오는 중…",
   "Handing back…": "돌려주는 중…",
   "The browser could not be handed back to the Bot. Try again.":
     "봇에게 브라우저를 돌려주지 못했습니다. 다시 시도하세요.",
@@ -820,10 +798,7 @@ export const ko: Record<string, string> = {
   "Some routines were paused — their results went unread for a while.":
     "결과를 한동안 보지 않으셔서 루틴을 멈췄어요.",
   "Create routine": "루틴 만들기",
-  "An instruction a Bot runs on a clock — a morning digest, a daily check, a weekly summary.":
-    "봇이 시계에 맞춰 실행하는 지시 — 아침 다이제스트, 매일 점검, 주간 요약.",
   "Which Bot": "어느 봇이",
-  "Name, e.g. Morning review digest": "이름 (예: 아침 리뷰 다이제스트)",
   "What should it do? e.g. Check the store reviews and summarize the new ones.":
     "무엇을 할까요? 예: 스토어 리뷰를 확인하고 새 리뷰만 요약해줘.",
   "Every N minutes": "N분마다",
@@ -870,7 +845,6 @@ export const ko: Record<string, string> = {
   "Filled in": "입력함",
   General: "일반",
   "Hand back": "제어 반환",
-  "Hand back to the Bot": "봇에게 제어 돌려주기",
   "Held for this deployment and never shown again once saved.":
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않습니다.",
   "How {product} looks and behaves on this device.":
@@ -891,7 +865,6 @@ export const ko: Record<string, string> = {
   "May read": "읽기 허용",
   Message: "메시지",
   Model: "모델",
-  "My standup skill": "나의 스탠드업 스킬",
   Name: "이름",
   "New skill": "새 스킬",
   "No auth providers are configured.": "설정된 로그인 제공자가 없습니다.",
@@ -958,8 +931,6 @@ export const ko: Record<string, string> = {
   Slug: "슬러그",
   "Stop the Bot": "봇 정지",
   "Switched tab": "탭 이동",
-  "Summarise what I did yesterday from the channel, then list what is left.":
-    "대화에서 어제 한 일을 요약하고, 남은 일을 목록으로.",
   Summary: "요약",
   "The Bot's screen": "봇의 화면",
   "The audit trail could not be loaded.": "감사 기록을 불러오지 못했습니다.",
@@ -974,8 +945,6 @@ export const ko: Record<string, string> = {
   "This deployment ships no components.": "이 배포에는 컴포넌트가 없습니다.",
   Title: "제목",
   "To:": "받는 봇:",
-  "Turns yesterday's work into a standup update":
-    "어제 한 일을 스탠드업 업데이트로 바꿉니다",
   Type: "유형",
   "Vendor documentation": "공급자 문서",
   "Waiting on you": "답을 기다려요",
@@ -1002,7 +971,6 @@ export const ko: Record<string, string> = {
     "이미 /{slug} 스킬이 있습니다. 저장하면 덮어씁니다 — 목록에서 열어 수정하세요.",
   "You do not own a Bot to put this on yet.":
     "이것을 붙일 내 봇이 아직 없습니다.",
-  "You have control.": "제어 중입니다.",
   "Your routines could not be loaded.": "루틴을 불러오지 못했습니다.",
   "Your skills": "내 스킬",
   Yours: "추가한 서버",
@@ -1079,8 +1047,6 @@ export const ko: Record<string, string> = {
   Sheets: "시트",
   "Connected apps": "연결된 앱",
   "Allow once": "이번만 허용",
-  "Asked because of this rule. Allowing once covers this action; the other covers every one like it until you take it back in Boundaries.":
-    "이 규칙 때문에 묻습니다. 이번만 허용은 이 행동 하나에만 적용되고, 다른 하나는 경계 설정에서 취소할 때까지 같은 종류를 모두 허용합니다.",
   "Always allow {site}": "{site} 항상 허용",
   "Always allow this file": "이 파일 항상 허용",
   "Always allow this tool": "이 도구 항상 허용",
@@ -1112,8 +1078,6 @@ export const ko: Record<string, string> = {
     "이 설정을 바꾸려면 이유를 적어야 하고, 그 이유는 감사 기록에 남습니다.",
   "Your Bot cannot read this at the moment, so what is written here is not being applied and you are being asked about everything. It is kept, and starts working again by itself.":
     "지금은 봇이 이 문장을 읽지 못해서, 여기 적은 내용이 적용되지 않고 모든 행동을 물어봅니다. 내용은 그대로 보관되며, 다시 읽을 수 있게 되면 저절로 다시 동작합니다.",
-  "Saying no stops it being asked again for a while.":
-    "거절하면 같은 행동은 한동안 다시 묻지 않고 거절됩니다.",
   "Saying no is remembered: the same action is refused for the next half hour instead of being asked about again.":
     "거절은 기억됩니다. 같은 행동은 이후 30분 동안 다시 묻지 않고 거절됩니다.",
   "Two things can settle a question without anybody seeing the action: “always” on a card, and a Bot's own “do not ask me about” instruction. Both are recorded, and every allowance is listed below and can be taken back.":
@@ -1126,8 +1090,6 @@ export const ko: Record<string, string> = {
     "한 번만 직접 해 보이면, 다음부터는 이 봇이 합니다.",
   "Teach a task": "이 작업 가르치기",
   Recording: "기록 중",
-  "{count} steps so far. Hand back when you are done.":
-    "지금까지 {count}단계. 끝나면 제어를 돌려주세요.",
   "Discard recording": "기록 버리기",
   "Saved. Type /{slug} to ask for it.":
     "저장했습니다. /{slug} 를 입력하면 불러옵니다.",
@@ -1206,8 +1168,6 @@ export const ko: Record<string, string> = {
   "The fleet could not be told": "함대에 전달하지 못함",
 
   // 사이트 연결 — 화면의 말.
-  "Make a Bot first — a site is connected on the browser they share.":
-    "먼저 봇을 만들어 주세요. 사이트 연결은 봇들이 함께 쓰는 브라우저에 로그인하는 일입니다.",
   // 로그인은 계정의 것이다. 고르는 것은 "누가 여느냐"이지 "어디에 로그인되느냐"가 아니다.
   "Which Bot should open it?": "어느 봇이 열까요?",
   "Needs signing in again": "다시 로그인 필요",
@@ -1217,7 +1177,6 @@ export const ko: Record<string, string> = {
   "The Bot's browser could not be reached.": "봇의 브라우저에 닿지 못했습니다.",
   "That page still looks like a login screen, so nothing was recorded. Try again when you are through.":
     "아직 로그인 화면으로 보여서 아무것도 기록하지 않았습니다. 로그인을 마친 뒤 다시 해 주세요.",
-  "Log in on {name}, then hand it back.": "{name}에 로그인한 뒤 돌려주세요.",
   "Checking the page…": "화면을 확인하는 중…",
 
   // 사이트 연결 — 사이트 이름. shared/sites/catalogue.ts의 표를 그대로 따른다.
@@ -1396,12 +1355,8 @@ export const ko: Record<string, string> = {
     "브라우저 상태를 읽지 못했습니다 — 다시 확인해 주세요.",
   "That could not be turned off. Please try again.":
     "끄지 못했습니다. 다시 시도해 주세요.",
-  "Connected · every Bot shares it · {name} last looked {date}":
-    "연결됨 · 모든 봇이 함께 씀 · {name}이(가) {date}에 확인",
   "You authenticate each time — the Bot cannot keep this one.":
     "인증은 매번 직접 하셔야 합니다 — 봇이 대신 보관할 수 없습니다.",
-  "Turn this site off? Your Bots will stop using it. The browser they share stays signed in until you log out on the site itself.":
-    "이 사이트를 끌까요? 봇들은 더 이상 쓰지 않습니다. 사이트에서 직접 로그아웃하기 전까지 봇들이 함께 쓰는 브라우저에는 로그인이 남아 있습니다.",
   "Connected · {name} · KakaoTalk is still reviewing the messages":
     "연결됨 · {name} · 카카오가 메시지 서식을 심사 중입니다",
   "Connected · {name} · connected on {date}": "연결됨 · {name} · {date}에 연결",
@@ -1560,14 +1515,12 @@ export const ko: Record<string, string> = {
   "Working in the browser": "브라우저에서 일하는 중",
   "View the Bot's screen": "봇의 화면 보기",
   "The Bot's browser": "봇의 브라우저",
-  "1 step": "1단계",
   "{count} steps": "{count}단계",
   "View screen": "화면 보기",
   "No page is open now. The picture is the last one.":
     "지금 열린 페이지가 없어요. 그림이 마지막 화면이에요.",
   "What it did": "한 일",
   "Working on it": "하는 중",
-  "Got stuck": "막힘",
   "What the Bot's browser showed last": "봇의 브라우저에 마지막으로 보인 화면",
   "Hide this for this task": "이번 작업에서는 숨기기",
   "The Bot is using its browser. View its screen":
@@ -1577,8 +1530,6 @@ export const ko: Record<string, string> = {
   "Connecting to the screen…": "화면에 연결하는 중…",
   "Live · {site}": "실시간 · {site}",
   Live: "실시간",
-  "You are using the browser. The Bot waits until you hand it back.":
-    "지금 직접 조작하고 있어요. 돌려줄 때까지 봇은 기다려요.",
   "You can click and type on this page yourself.":
     "이 페이지를 직접 누르고 입력할 수 있어요.",
   "Take over": "직접 하기",
@@ -1603,8 +1554,6 @@ export const ko: Record<string, string> = {
 
   // 입력칸 옆에 그대로 붙는 문장. zod가 던지고 `field.tsx`가 그린다.
   "A command is required.": "명령을 입력해 주세요.",
-  "Lower-case letters, numbers and hyphens, 2 to 40 characters.":
-    "소문자, 숫자, 하이픈으로 2~40자.",
   "A title is required.": "제목을 입력해 주세요.",
   "The one-liner must be 200 characters or fewer.":
     "한 줄 소개는 200자 이하여야 합니다.",
@@ -1688,8 +1637,6 @@ export const ko: Record<string, string> = {
   "Pick at least one day.": "요일을 하나 이상 골라 주세요.",
   "Five minutes is the shortest gap.": "5분보다 짧게는 안 됩니다.",
   Weekdays: "평일",
-  "An instruction, a Bot, and a clock. You can change all of it later.":
-    "무엇을, 어느 봇이, 언제. 나중에 다 바꿀 수 있습니다.",
 
   /** The failed read on Skills, which used to say 아직 스킬이 없습니다 instead. */
   "Your skills could not be loaded.":
@@ -1884,8 +1831,6 @@ export const ko: Record<string, string> = {
   "Allow {site} for this conversation": "이 대화 동안 {site} 허용",
   "Allow this file for this conversation": "이 대화 동안 이 파일 허용",
   "Allow this tool for this conversation": "이 대화 동안 이 도구 허용",
-  "For this conversation means here only, and for a day at most.":
-    "‘이 대화 동안’은 이 대화에서만, 길어야 하루입니다.",
   "For one conversation only, until {when}": "한 대화에서만 · {when}까지",
   "For one conversation only": "한 대화에서만",
   "Each of these was a question somebody answered with “always” or “for this conversation”. Until it is taken back or runs out, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
@@ -2173,8 +2118,6 @@ export const ko: Record<string, string> = {
   "Only an administrator can do that.": "관리자만 할 수 있는 일입니다.",
   "A skill needs a command, a title and instructions.":
     "스킬에는 명령, 제목, 지시문이 모두 있어야 합니다.",
-  "A command is 2 to 40 lower-case letters, numbers and hyphens.":
-    "명령은 영어 소문자·숫자·하이픈(-)으로 2~40자여야 합니다.",
   "That skill is somebody else's, so only they can change it or put it on a Bot.":
     "다른 사람의 스킬이라 그 사람만 고치거나 봇에 줄 수 있습니다.",
   "That skill was written for everyone here, so only an administrator can change it or choose its Bots.":
@@ -2600,10 +2543,7 @@ export const ko: Record<string, string> = {
   "{status}. See what the Bot is doing": "{status}. 봇이 하는 일 보기",
   Now: "지금",
   "Nothing going on right now.": "지금 하는 일은 없어요.",
-  "Nothing is waiting for you.": "기다리는 일이 없어요.",
   "Show me": "보기",
-  "Next routines": "다음 루틴",
-  "No routines coming up.": "예정된 루틴이 없어요.",
   "See all routines": "루틴 모두 보기",
   Conversation: "대화",
   "Open the menu": "메뉴 열기",

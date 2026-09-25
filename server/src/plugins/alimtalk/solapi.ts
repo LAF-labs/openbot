@@ -29,6 +29,8 @@ export const SOLAPI_DEFAULT_BASE_URL = "https://api.solapi.com";
  * Exported as data rather than left in prose, because a comment is not a checklist and this is one.
  * `docs/laf/connections.md` points here, and deleting an entry is a deliberate act by somebody who
  * has actually run the call. Nothing in the product reads it: it is the operator's list.
+ *
+ * @public
  */
 export const SOLAPI_UNVERIFIED: readonly {
   call: string;

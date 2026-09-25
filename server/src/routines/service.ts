@@ -63,7 +63,6 @@ import { pauseUnreadRoutines } from "./unread";
  */
 
 export { RoutineError } from "./errors";
-export { ROUTINE_RUN_TIMEOUT_MS } from "./run";
 export {
   CATCH_UP_GRACE_MAX_MS,
   CATCH_UP_GRACE_MIN_MS,

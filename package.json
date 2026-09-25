@@ -22,6 +22,7 @@
     "format": "bunx biome format --write .",
     "format:check": "bunx biome format .",
     "lint": "bunx biome lint .",
+    "knip": "knip",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit -p tsconfig.json && bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
@@ -37,6 +38,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
     "@types/bun": "^1.4.0",
+    "knip": "6.38.0",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"

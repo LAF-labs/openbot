@@ -103,12 +103,6 @@ export function useLiveFrame(
   );
 }
 
-/** Test seam: back to a tab that has watched nothing. */
-export function forgetLiveFrames(): void {
-  for (const poll of polls.values()) clearTimeout(poll.timer);
-  polls.clear();
-}
-
 /**
  * A frame, painted on a canvas that fills the box it is put in. Transparent until the first
  * picture arrives, so the mark underneath shows through.

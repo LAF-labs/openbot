@@ -27,9 +27,7 @@ import type { ConnectionsOverview } from "@/lib/connections/queries";
 
 export {
   BUSINESS_KINDS,
-  type BusinessKind,
   type BusinessKindId,
-  DAILY_PLACES,
   type DailyPlace,
   dailyPlaceById,
   EMPTY_SHOP,

@@ -408,6 +408,7 @@
   "tests/eval-deferral.test.ts",
   "tests/eval-lib.test.ts",
   "tests/eval-owner-words.test.ts",
+  "tests/knip.test.ts",
   "tests/laf-package.test.ts",
   "tests/legal-bundle.test.ts",
   "tests/log-discipline.test.ts",

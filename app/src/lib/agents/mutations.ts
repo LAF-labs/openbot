@@ -187,18 +187,6 @@ export function setAgentEffortMutationOptions(queryClient: QueryClient) {
   });
 }
 
-export function setAgentHiddenMutationOptions(queryClient: QueryClient) {
-  return mutationOptions({
-    mutationFn: async (variables: { agentId: string; hidden: boolean }) => {
-      await agentRequest(
-        `/api/agents/${variables.agentId}/${variables.hidden ? "hide" : "unhide"}`,
-        { method: "POST" },
-      );
-    },
-    onSuccess: () => invalidateAgents(queryClient),
-  });
-}
-
 /**
  * Pin, mute, hide — one call, and it is NOT gated on being able to manage the Bot.
  *

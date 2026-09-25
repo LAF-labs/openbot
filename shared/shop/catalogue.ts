@@ -334,11 +334,6 @@ export const DAILY_PLACES: readonly DailyPlace[] = [
   },
 ];
 
-/** One kind by id, or null for an id that is not in the table. */
-export function businessKindById(id: string): BusinessKind | null {
-  return BUSINESS_KINDS.find((kind) => kind.id === id) ?? null;
-}
-
 /** One place by id, or null for an id that is not in the table. */
 export function dailyPlaceById(id: string): DailyPlace | null {
   return DAILY_PLACES.find((place) => place.id === id) ?? null;

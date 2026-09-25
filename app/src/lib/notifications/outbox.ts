@@ -19,18 +19,6 @@
  * tightened the include.
  */
 
-/** The outbox kinds, in the server's spelling. Anything else is a build talking to a newer server. */
-export const NOTIFICATION_EVENTS = [
-  "approval.requested",
-  "approval.expired",
-  "run.needs_you",
-  "run.finished",
-  "run.failed",
-  "routine.paused",
-] as const;
-
-export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
-
 export type NotificationFrame = {
   kind: "notification";
   /** The outbox row's id. What `markNotificationSeen` sends back. */

@@ -73,14 +73,3 @@ export function nextBotName(
     if (!used.has(candidate)) return candidate;
   }
 }
-
-/**
- * A face, chosen for somebody who has not been asked which one they want.
- *
- * A random SEED rather than a random tile id: `botAvatarParams` maps anything to a drawn character, so
- * this stays true whatever the art set is on the day, and a seed that names no tile cannot name the
- * wrong one after the set changes.
- */
-export function randomFaceSeed(random: () => number = Math.random): string {
-  return `seed-${Math.floor(random() * 0xffffff).toString(36)}${Math.floor(random() * 0xffffff).toString(36)}`;
-}

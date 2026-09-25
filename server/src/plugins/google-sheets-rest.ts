@@ -138,7 +138,13 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   },
 ]);
 
-/** The list is this file, so nobody's credential is needed to know what this connector can do. */
+/**
+ * The list is this file, so nobody's credential is needed to know what this connector can do.
+ *
+ * Read through this module's namespace in `transport.ts`'s `TRANSPORTS` map, which knip cannot follow.
+ *
+ * @public
+ */
 export const listNeedsCredential = false;
 
 export async function listTools(

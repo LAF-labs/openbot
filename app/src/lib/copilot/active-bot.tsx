@@ -135,9 +135,15 @@ export function useActiveConversation(threadId: string | undefined): void {
   }, [threadId]);
 }
 
+/**
+ * The header the server reads the current conversation from, so an answer can be "for this
+ * conversation". Sent on every acting call the surface makes while a channel is open; absent, the
+ * question is asked in the standing terms alone. Mirrors `THREAD_HEADER` in
+ * `server/src/computer/gateway/caller.ts`.
+ */
+const THREAD_HEADER = "x-openbot-thread-id";
+
 /** The header naming the conversation, or nothing when no surface has declared one. */
 export function activeConversationHeaders(): Record<string, string> {
-  return conversation.current
-    ? { "x-openbot-thread-id": conversation.current }
-    : {};
+  return conversation.current ? { [THREAD_HEADER]: conversation.current } : {};
 }

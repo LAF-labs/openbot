@@ -1,0 +1,79 @@
+/*
+ * What nothing reaches: files, exports, dependencies. Run by `tests/knip.test.ts`, so by the gate.
+ *
+ * WHY A TOOL AND NOT A GREP. On 2026-09-24 rooms and multi-Bot went, and the harness replaced the
+ * trimming, effort and budget code. What they left behind — a room's avatar component, a hide
+ * mutation, a face-seed helper, re-exports nobody imported — typechecked and passed tests, because
+ * nothing that is never called can fail. knip (ISC, webpro-nl/knip) follows the import graph from
+ * the entries below and names what the graph never reaches.
+ *
+ * Every entry is somewhere a process starts. A file only a subprocess runs is an entry too, or it
+ * reads as dead: the `*-render.tsx` helpers and the `*-child.ts` routine processes are spawned by
+ * `bun <path>` from a test, not imported.
+ */
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // An export its own file uses is a local that happens to be exported; not dead.
+  "ignoreExportsUsedInFile": true,
+  // Vendored source, kept as upstream wrote it so the next sync is a diff (see its README).
+  "ignore": ["server/src/context/vendor/**"],
+  "ignoreIssues": {
+    // shadcn's generated primitives export every part; the app takes the parts it needs.
+    "app/src/components/ui/**": ["exports", "types"],
+    /*
+     * The wire contract with agent-computer, where a browsing branch is merging (2026-09-25).
+     * `NavigateInput` is unread today; it goes with that branch rather than across it.
+     */
+    "server/src/computer/schema.ts": ["types"]
+  },
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.ts", "evals/*.ts", "tests/**/*.test.ts"],
+      "project": [
+        "scripts/**/*.ts",
+        "evals/**/*.ts",
+        "tests/**/*.ts",
+        "shared/**/*.ts"
+      ]
+    },
+    "app": {
+      "entry": [
+        "src/main.tsx",
+        "src/routes/**/*.tsx",
+        "scripts/*.ts",
+        "tests/**/*.test.{ts,tsx}",
+        "tests/support/*-render.tsx"
+      ],
+      // The stylesheet is in the project so its `@import`s count as uses of tailwindcss and friends.
+      "project": [
+        "src/**/*.{ts,tsx,css}",
+        "scripts/**/*.ts",
+        "tests/**/*.{ts,tsx}"
+      ]
+    },
+    "server": {
+      "entry": [
+        "src/index.ts",
+        "scripts/*.ts",
+        "drizzle.config.ts",
+        "tests/**/*.test.ts",
+        "tests/support/*-child.ts"
+      ],
+      // Its plugin loads the config, which refuses to load without DATABASE_URL.
+      "drizzle": false,
+      "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
+    },
+    "agent-bot": {
+      "entry": ["src/index.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "agent-computer": {
+      "entry": ["src/index.ts", "tests/**/*.test.ts"],
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
+    },
+    "desktop": {
+      "entry": ["typecheck.ts", "scripts/*.ts"],
+      "project": ["*.ts", "scripts/**/*.ts"]
+    }
+  }
+}

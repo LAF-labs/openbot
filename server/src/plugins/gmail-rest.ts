@@ -129,6 +129,12 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   },
 ]);
 
+/**
+ * Read as `transport.listNeedsCredential` through this module's namespace in `transport.ts`'s
+ * `TRANSPORTS` map, which knip cannot follow.
+ *
+ * @public
+ */
 export const listNeedsCredential = false;
 
 export async function listTools(

@@ -57,14 +57,6 @@ export type AllowanceScope = {
 export type ApprovalTier = "once" | "thread" | "always";
 
 /**
- * The header the server reads the current conversation from, so an answer can be "for this
- * conversation". Sent on every acting call the surface makes while a channel is open; absent, the
- * question is asked in the standing terms alone. Mirrors `THREAD_HEADER` in
- * `server/src/computer/gateway.ts`.
- */
-export const THREAD_HEADER = "x-openbot-thread-id";
-
-/**
  * The scope out of a pause reply, or undefined if it was not one.
  *
  * One parser for both callers — the computer's tools and the plugin call — because a scope that

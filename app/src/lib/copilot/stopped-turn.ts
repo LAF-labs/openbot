@@ -116,6 +116,12 @@ export function turnNotice(name: unknown): string | null {
  * Cleared when the next run begins rather than on a timer. A sentence about a turn that is over
  * should stay until there is something newer to look at, and the person deciding when that is is the
  * one who sends the next message.
+ *
+ * NOTHING MOUNTS THIS since `4e68b040` (2026-09-02) deleted the `/bot` route that did, so the two
+ * `TURN_NOTICES` agent-bot sends reach no screen. Kept for whoever wires it into the chat rather than
+ * deleted with the evidence; knip is told so with the tag below.
+ *
+ * @public
  */
 export function useStoppedTurn(agentId: string): string | null {
   const { agent } = useAgent({ agentId });

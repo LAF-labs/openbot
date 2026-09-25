@@ -15,8 +15,6 @@
  * skin clamp in the engine keeps the eyes on the body whatever the shape.
  */
 
-import { CENTRE } from "./grok-shapes";
-
 export type Eye = {
   cx: number;
   cy: number;
@@ -292,5 +290,3 @@ export function widenTo(pair: Expression, minHalfW = 0): Expression {
     };
   }) as unknown as Expression;
 }
-
-export { CENTRE };
