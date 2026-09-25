@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createWorkspace,
+  RANGE_CHARS,
   WorkspaceFileError,
   WorkspacePathError,
 } from "../src/workspace";
@@ -81,6 +82,53 @@ describe("reading and writing inside the workspace", () => {
     // The true size is reported even though the contents were cut, so the Bot can say so rather
     // than believing it has the whole file.
     expect(read.bytes).toBe(16);
+  });
+
+  /*
+   * PAST THE CUT. A result over 20,000 characters is shown cut and filed whole in `.results/`, and a
+   * plain read of that file is cut at the same place again: until 2026-09-25 nothing past the first
+   * 20,000 characters of a filed result could be read at all. A range reads on from where it stopped.
+   */
+  test("a range reads on past the cut, in characters, and says whether more follows", async () => {
+    const ws = workspace();
+    // Korean is three bytes a character: a byte offset would land mid-letter.
+    const filed = `${"가".repeat(20_000)}${"나".repeat(20_000)}끝`;
+    await ws.write(".results/call_1.txt", filed);
+
+    const head = await ws.read(".results/call_1.txt");
+    expect(head.text.length).toBeLessThan(filed.length);
+    expect(head.truncated).toBe(true);
+
+    const next = await ws.read(".results/call_1.txt", { offset: 20_000 });
+    expect(next.offset).toBe(20_000);
+    expect(next.text).toBe("나".repeat(RANGE_CHARS));
+    expect(next.truncated).toBe(true);
+
+    const last = await ws.read(".results/call_1.txt", {
+      offset: 40_000,
+      limit: 5,
+    });
+    expect(last.text).toBe("끝");
+    expect(last.truncated).toBe(false);
+
+    const some = await ws.read(".results/call_1.txt", {
+      offset: 19_998,
+      limit: 4,
+    });
+    expect(some.text).toBe("가가나나");
+    expect(some.truncated).toBe(true);
+    expect(some.bytes).toBe(Buffer.byteLength(filed));
+  });
+
+  test("a range never hands back more than one step's worth", async () => {
+    const ws = workspace();
+    await ws.write("big.txt", "a".repeat(RANGE_CHARS * 3));
+    const read = await ws.read("big.txt", {
+      offset: 0,
+      limit: RANGE_CHARS * 3,
+    });
+    expect(read.text.length).toBe(RANGE_CHARS);
+    expect(read.truncated).toBe(true);
   });
 
   test("a write that exceeds the limit is refused before it touches the disk", async () => {

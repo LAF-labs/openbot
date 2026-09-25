@@ -435,15 +435,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (each kind of row and its mark, where a press goes, six then the rest, the next two routines, an
  * empty day and a new Bot's first things, the marks' Korean, the day's clock, the jump left for one
  * conversation). Each floor rises by exactly what was added.
+ * RAISED 2026-09-25 with five small fixes: twenty-six to `app` (Korean emphasis drawn in both
+ * modes and every renderer taking the plugins, a turn held until the Bot's tools are decided, a
+ * 오늘 chip sent on the conversation already on screen), six to `server` (a read's range, reading on
+ * not counted as repetition, the schema and its size) and two to `agent-computer` (a range past the
+ * cut, in characters, and its bound). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2614, roots: ["server"] },
+  { name: "server", floor: 2620, roots: ["server"] },
   { name: "app", floor: 1250, roots: ["app"] },
-  { name: "agent-computer", floor: 260, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 262, roots: ["agent-computer"] },
   { name: "root", floor: 397, roots: ["tests", "agent-bot"] },
 ] as const;
 

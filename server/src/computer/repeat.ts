@@ -104,6 +104,12 @@ export type RepeatedCall = {
   key?: string | undefined;
   filePath?: string | undefined;
   targetUrl?: string | undefined;
+  /**
+   * Which part of the file a read asked for (`computer_read_file`'s `offset`/`limit`). Kept apart in
+   * the count like a page's query: reading a long file on, fifteen thousand characters at a time,
+   * is not asking for the same thing again.
+   */
+  part?: string | undefined;
 };
 
 export type RepeatObservation = {
@@ -314,7 +320,7 @@ export function fingerprintOf(call: RepeatedCall): string | null {
  * window and never leaves this process, and it still does not have to hold a one-time code to count.
  */
 function countingKeyOf(call: RepeatedCall, fingerprint: string): string {
-  const rest = addressRestOf(call.targetUrl);
+  const rest = `${addressRestOf(call.targetUrl)}${call.part ?? ""}`;
   if (!rest) return fingerprint;
   const digest = createHash("sha256").update(rest).digest("base64url");
   return `${fingerprint} #${digest.slice(0, 22)}`;

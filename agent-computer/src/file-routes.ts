@@ -9,10 +9,31 @@ import type { BotRoute } from "./computer";
 import { fileFailure } from "./failures";
 import { bodyOf, invalid, json } from "./respond";
 
+/** A whole number at or above zero, `undefined` when not given, `false` when unusable. */
+function countOf(value: unknown): number | undefined | false {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : false;
+}
+
 export const readFile: BotRoute = async ({ request }, { workspace }) => {
-  const body = await bodyOf<{ path?: unknown }>(request);
+  const body = await bodyOf<{
+    path?: unknown;
+    offset?: unknown;
+    limit?: unknown;
+  }>(request);
+  const offset = countOf(body?.offset);
+  const limit = countOf(body?.limit);
+  if (offset === false) return invalid("offset");
+  if (limit === false || limit === 0) return invalid("limit");
   try {
-    return json(await workspace.read(String(body?.path ?? "")));
+    return json(
+      await workspace.read(String(body?.path ?? ""), {
+        ...(offset === undefined ? {} : { offset }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
   } catch (error) {
     return fileFailure(error);
   }

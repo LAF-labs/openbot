@@ -569,8 +569,13 @@ export function ComputerTools() {
   });
 
   useFrontendTool({
-    ...fromCatalogue<{ path: string }>("computer_read_file"),
-    handler: async (input: { path: string }, call: ToolCallContext = {}) =>
+    ...fromCatalogue<{ path: string; offset?: number; limit?: number }>(
+      "computer_read_file",
+    ),
+    handler: async (
+      input: { path: string; offset?: number; limit?: number },
+      call: ToolCallContext = {},
+    ) =>
       callComputer(
         bot.current,
         "/files/read",

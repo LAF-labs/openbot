@@ -96,6 +96,23 @@ export type WorkspaceEntry = {
   bytes?: number;
 };
 
+/**
+ * Most characters one ranged read hands back (`offset`/`limit`).
+ *
+ * A result over 20,000 characters is cut where the server first sees it, and the whole is filed in
+ * `.results/` (`shared/spillover.ts`). Reading that file back was cut at the same place, every time:
+ * there was no way past the first 20,000 characters (harness phase 2, 2026-09-25). A range continues
+ * from where the cut stopped, and it stays under the cut once the result wrapping it — JSON, whose
+ * escapes lengthen what is quoted — is counted, so reading on does not spill a second file.
+ *
+ * CHARACTERS, NOT LINES as Claude Code's Read counts them, because the cut and the line that names
+ * the file (`[앞 20,000자만 보인다 …]`) count characters, and a spilled result is one JSON line.
+ */
+export const RANGE_CHARS = 15_000;
+
+/** A part of a file, in characters: where to start and how many. Either may be left out. */
+export type ReadRange = { offset?: number; limit?: number };
+
 export const DEFAULT_WORKSPACE_LIMITS: WorkspaceLimits = {
   readBytes: 64_000,
   writeBytes: 1_000_000,
@@ -256,12 +273,21 @@ export function createWorkspace(
       return { path: requested, entries, truncated };
     },
 
-    /** Read a text file. Bounded, and it says when it gave you less than the whole thing. */
-    async read(requested: string): Promise<{
+    /**
+     * Read a text file. Bounded, and it says when it gave you less than the whole thing.
+     *
+     * With a range, the characters from `offset`, at most `limit` and never more than `RANGE_CHARS`;
+     * `truncated` then says whether anything follows them.
+     */
+    async read(
+      requested: string,
+      range: ReadRange = {},
+    ): Promise<{
       path: string;
       text: string;
       truncated: boolean;
       bytes: number;
+      offset?: number;
     }> {
       const full = await resolvePath(requested, false);
       const info = await stat(full).catch(() => null);
@@ -276,6 +302,23 @@ export function createWorkspace(
       }
 
       const buffer = await readFile(full);
+      if (range.offset !== undefined || range.limit !== undefined) {
+        const offset = range.offset ?? 0;
+        const end =
+          offset +
+          Math.min(range.limit ?? RANGE_CHARS, RANGE_CHARS, limits.readBytes);
+        // A UTF-16 unit is at most three bytes of UTF-8, so this prefix holds every unit up to `end`.
+        const prefix = buffer.subarray(0, end * 3);
+        const decoded = prefix.toString("utf8");
+        return {
+          path: requested,
+          text: decoded.slice(offset, end),
+          truncated:
+            decoded.length > end || prefix.byteLength < buffer.byteLength,
+          bytes: buffer.byteLength,
+          offset,
+        };
+      }
       const slice = buffer.subarray(0, limits.readBytes);
       return {
         path: requested,

@@ -32,7 +32,6 @@ import {
   WorkspaceRequestError,
 } from "./client";
 import type { DemonstrationRecorder } from "./demonstration";
-import type { ScreenViewAudit } from "./screen-view";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -41,6 +40,8 @@ import {
   THREAD_HEADER,
 } from "./gateway";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
+import { readFileInputOf } from "./schema";
+import type { ScreenViewAudit } from "./screen-view";
 import type { WriteUp } from "./write-up";
 
 /**
@@ -737,16 +738,9 @@ export function createComputerRoutes(
     requireBotAccess(),
     (context) =>
       act(context, (botId, actor, body) => {
-        if (typeof body?.path !== "string" || !body.path.trim()) {
-          return ARGUMENTS_INVALID_BODY;
-        }
-        return gateway.readFile(
-          botId,
-          botId,
-          actor,
-          { path: body.path.trim() },
-          asApprovalId(body),
-        );
+        const input = readFileInputOf(body);
+        if (!input) return ARGUMENTS_INVALID_BODY;
+        return gateway.readFile(botId, botId, actor, input, asApprovalId(body));
       }),
   );
 

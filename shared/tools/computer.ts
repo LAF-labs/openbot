@@ -206,6 +206,15 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
           type: "string",
           description: "작업 공간 기준 경로. 예: notes.md",
         },
+        offset: {
+          type: "number",
+          description:
+            "이 글자부터 읽는다 (선택, 0부터). 잘린 결과는 보인 글자 수부터 이어 읽는다.",
+        },
+        limit: {
+          type: "number",
+          description: "읽을 글자 수 (선택, 한 번에 최대 15,000)",
+        },
       },
       ["path"],
     ),

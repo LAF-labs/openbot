@@ -366,7 +366,7 @@ export const TOOL_RESULT_KO: Record<string, string> = {
    * 서버가 채운다(`shared/spillover.ts`). 전문은 봇의 작업 공간에 파일로 남는다.
    */
   "laf:tool_result_spilled":
-    "[너무 길어 앞 {chars}자만 보인다. 전체 {total}자는 작업 공간의 {path}에 있다.]",
+    "[너무 길어 앞 {chars}자만 보인다. 전체 {total}자는 작업 공간의 {path}에 있다. 이어 읽으려면 computer_read_file에 offset {offset}을 준다.]",
 
   // 자기 자신을 고치는 툴들이 되돌려받는 것. 핸들러 안의 영어 문장을 대신한다.
   "laf:profile_updated":

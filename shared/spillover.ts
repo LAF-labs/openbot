@@ -41,10 +41,14 @@ export function spillPath(toolCallId: string): string {
 
 /** The line that closes a cut result and names the file. The model reads it, so its words are the table's. */
 export function spillLine(path: string, total: number): string {
-  return toolResultText("laf:tool_result_spilled")
-    .replace("{chars}", TOOL_RESULT_CUT.toLocaleString("en-US"))
-    .replace("{total}", total.toLocaleString("en-US"))
-    .replace("{path}", path);
+  return (
+    toolResultText("laf:tool_result_spilled")
+      .replace("{chars}", TOOL_RESULT_CUT.toLocaleString("en-US"))
+      .replace("{total}", total.toLocaleString("en-US"))
+      .replace("{path}", path)
+      // Bare digits: this one is copied into a number argument, and "20,000" is not one.
+      .replace("{offset}", String(TOOL_RESULT_CUT))
+  );
 }
 
 /** A cut result as the model sees it — on every request, from the first: the head, and where the whole is. */

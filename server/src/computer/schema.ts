@@ -254,7 +254,11 @@ export type ListFilesResult = {
   truncated: boolean;
 };
 
-export type ReadFileInput = { path: string };
+/**
+ * A path, and optionally a part of the file in characters (`offset` from 0, `limit` of them) — the
+ * only way past a result cut at 20,000 characters and filed whole (`shared/spillover.ts`).
+ */
+export type ReadFileInput = { path: string; offset?: number; limit?: number };
 export type ReadFileResult = {
   path: string;
   text: string;
@@ -262,7 +266,32 @@ export type ReadFileResult = {
   truncated: boolean;
   /** The file's real size, even when the text was cut. */
   bytes: number;
+  /** Where `text` starts, in characters, when a part was asked for. */
+  offset?: number;
 };
+
+/**
+ * A read's arguments as a model or a surface sent them, or null when they are not a read.
+ *
+ * `offset` and `limit` pass only as whole numbers (a `limit` of at least one); anything else is the
+ * same refusal a missing path is, rather than a read of some other part than the one asked for.
+ */
+export function readFileInputOf(
+  args: Record<string, unknown> | null | undefined,
+): ReadFileInput | null {
+  const path = typeof args?.path === "string" ? args.path.trim() : "";
+  if (!path) return null;
+  const whole = (value: unknown, least: number) =>
+    typeof value === "number" && Number.isInteger(value) && value >= least;
+  const { offset, limit } = args ?? {};
+  if (offset !== undefined && offset !== null && !whole(offset, 0)) return null;
+  if (limit !== undefined && limit !== null && !whole(limit, 1)) return null;
+  return {
+    path,
+    ...(typeof offset === "number" ? { offset } : {}),
+    ...(typeof limit === "number" ? { limit } : {}),
+  };
+}
 
 export type WriteFileInput = {
   path: string;

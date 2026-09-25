@@ -220,7 +220,13 @@ export function createActs(deps: {
         "computer_read_file",
         botId,
         actor,
-        { filePath: input.path, ...(approvalId ? { approvalId } : {}) },
+        {
+          filePath: input.path,
+          ...(input.offset !== undefined || input.limit !== undefined
+            ? { part: `${input.offset ?? 0}+${input.limit ?? ""}` }
+            : {}),
+          ...(approvalId ? { approvalId } : {}),
+        },
         () => as(botId).readFile(input),
       );
     },

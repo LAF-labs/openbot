@@ -323,6 +323,7 @@
   "server/tests/policy-durability.integration.test.ts",
   "server/tests/profile-text.test.ts",
   "server/tests/public-data-rest.test.ts",
+  "server/tests/read-file-range.test.ts",
   "server/tests/request-actor.test.ts",
   "server/tests/restart-recovery.integration.test.ts",
   "server/tests/result-spillover.test.ts",

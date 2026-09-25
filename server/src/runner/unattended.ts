@@ -36,6 +36,7 @@ import {
   ActionRefusedError,
   type ComputerGateway,
 } from "../computer/gateway";
+import { readFileInputOf } from "../computer/schema";
 import {
   PluginNeedsApprovalError,
   PluginRefusedError,
@@ -953,20 +954,14 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                 approvalId,
               )),
             };
-          case "computer_read_file":
-            if (typeof args.path !== "string") {
-              return invalidArguments();
-            }
+          case "computer_read_file": {
+            const input = readFileInputOf(args);
+            if (!input) return invalidArguments();
             return {
               ok: true,
-              ...(await gateway.readFile(
-                c,
-                botId,
-                actor,
-                { path: args.path },
-                approvalId,
-              )),
+              ...(await gateway.readFile(c, botId, actor, input, approvalId)),
             };
+          }
           case "computer_write_file":
             if (
               typeof args.path !== "string" ||

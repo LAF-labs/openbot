@@ -70,6 +70,8 @@ export function createGovern(options: {
     subject: {
       ref?: string;
       filePath?: string;
+      /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
+      part?: string;
       targetUrl?: string;
       key?: string;
       /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
@@ -127,6 +129,7 @@ export function createGovern(options: {
       key: subject.key,
       filePath,
       targetUrl: subject.targetUrl,
+      part: subject.part,
     });
 
     /*
