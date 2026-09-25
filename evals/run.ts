@@ -154,21 +154,37 @@ async function runOnce(
   attempt: number,
   arm?: Arm,
 ) {
+  /*
+   * Server-side work first, for the scenarios that need it (`evals/memory.ts`): its system message
+   * is what the real store froze, and its notes go in the report. Not counted in the latency.
+   */
+  const prepared = scenario.prepare ? await scenario.prepare() : {};
+  for (const note of prepared.notes ?? []) console.log(`    · ${note}`);
   const started = performance.now();
+  /*
+   * `EVAL_GUIDANCE=off` is the control arm of the standing-guidance scenario: the same question,
+   * with the dream's lines taken out of the frozen layer.
+   */
+  const notebook =
+    process.env.EVAL_GUIDANCE === "off" && scenario.notebook
+      ? { ...scenario.notebook, guidance: [] }
+      : scenario.notebook;
   /*
    * The composed prompt first, exactly where the server's middleware puts it. Rebuilt per attempt
    * from one fixed clock (`EVAL_NOW`), so a run that straddles midnight does not judge one date
    * against a prompt carrying another.
    */
   const messages: unknown[] = [
-    systemMessageFor(
-      scenario.mode ?? "chat",
-      scenario.person,
-      scenario.frozenAt,
-      undefined,
-      scenario.notebook,
-      scenario.summary,
-    ),
+    prepared.system
+      ? { id: "laf-prompt:eval_bot", role: "system", content: prepared.system }
+      : systemMessageFor(
+          scenario.mode ?? "chat",
+          scenario.person,
+          scenario.frozenAt,
+          undefined,
+          notebook,
+          scenario.summary,
+        ),
     ...scenario.messages,
   ];
   const allEvents: StreamEvent[] = [];

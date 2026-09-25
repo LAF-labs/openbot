@@ -114,6 +114,8 @@ export type EvalNotebook = {
   memories: readonly string[];
   confirmed?: readonly string[];
   superseded?: Readonly<Record<string, string>>;
+  /** How the owner likes to work, as the nightly dream wrote it (`server/src/agents/dream.ts`). */
+  guidance?: readonly string[];
 };
 
 function notebookInput(notebook: EvalNotebook | undefined) {
@@ -123,6 +125,7 @@ function notebookInput(notebook: EvalNotebook | undefined) {
     ...(notebook?.superseded
       ? { supersededMemories: notebook.superseded }
       : {}),
+    ...(notebook?.guidance ? { guidance: notebook.guidance } : {}),
   };
 }
 

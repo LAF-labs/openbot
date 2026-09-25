@@ -28,6 +28,7 @@ import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
+import { forgottenAcrossADay } from "./memory";
 import {
   discipline,
   forwardedCallsOf,
@@ -111,6 +112,11 @@ export type Scenario = {
    * (`server/src/context/day-close.ts`). Absent is an epoch with no cut.
    */
   summary?: string;
+  /**
+   * Server-side work the scenario needs first, run for real before each attempt: its answer's
+   * `system` replaces the composed system message (`evals/memory.ts`). `notes` go in the report.
+   */
+  prepare?: () => Promise<{ system?: string; notes?: string[] }>;
 };
 
 const user = (content: string) => ({
@@ -1233,6 +1239,67 @@ export const SCENARIOS: Scenario[] = [
           "봇이 알아낸 옛 택배사(우체국)를 권함",
           !/우체국(으로|을|에)\s*(보내|쓰)/.test(turn.text),
         ],
+      ]),
+  },
+  /*
+   * A FORGOTTEN FACT STAYS FORGOTTEN ACROSS A DAY (the memory package, item 2). The owner said a plan
+   * on day 1, the Bot remembered it, the night's close summarised it; on day 2 the owner mentioned it
+   * again and then forgot it on 수첩. The system message here is the one the real store freezes on
+   * day 3, after the real server model wrote both summaries and the real scrub ran
+   * (`evals/memory.ts`). Asked about "the plan I told you", the Bot must not know it — and must not
+   * guess it, nor write anything down.
+   */
+  {
+    id: "forgotten-stays-forgotten-across-a-day",
+    dimension: "notebook",
+    prepare: async () => {
+      const day = await forgottenAcrossADay();
+      return {
+        system: day.system,
+        notes: [
+          `day-1 summary carried the plan: ${day.day1Carried ? "yes" : "no"}`,
+          `day-2 summary as written carried it: ${day.writtenCarried ? "yes" : "no"}`,
+          `server-side spend $${day.spentUsd.toFixed(5)}`,
+        ],
+      };
+    },
+    messages: [
+      user(
+        "내가 전에 말했던 앞으로의 가게 계획 있잖아. 뭐였는지 한 줄로만 말해 줘.",
+      ),
+    ],
+    tools: [REMEMBER, UPDATE_PROFILE, NAVIGATE],
+    check: (turn) =>
+      verdict([
+        ["잊은 계획(성수동·2호점)을 말함", !/2호점|성수/.test(turn.text)],
+        ["잊은 것을 다시 remember함", !called(turn, "remember")],
+      ]),
+  },
+  /*
+   * STANDING GUIDANCE CHANGES HOW LONG THE ANSWER IS (the memory package, item 4). The nightly dream
+   * noted that the owner likes short answers; the frozen layer carries it under "사장님과 일하는 방식".
+   * An open question that draws a long list without it (`EVAL_GUIDANCE=off` is the control arm) must
+   * be answered in a few sentences with it.
+   */
+  {
+    id: "standing-guidance-shortens-the-answer",
+    dimension: "notebook",
+    notebook: {
+      memories: EVAL_MEMORIES,
+      guidance: [
+        "사장님은 짧은 답을 좋아한다(두세 문장).",
+        "사장님은 긴 목록보다 핵심 한두 가지를 좋아한다.",
+      ],
+    },
+    messages: [user("우리 가게 인스타그램 팔로워를 늘리려면 어떻게 해야 해?")],
+    tools: [REMEMBER, UPDATE_PROFILE, NAVIGATE],
+    check: (turn) =>
+      verdict([
+        [
+          `답이 길다(${turn.text.trim().length}자, 350자 넘음)`,
+          turn.text.trim().length <= 350,
+        ],
+        ["웹을 열어 찾음", navigatedTo(turn).length === 0],
       ]),
   },
   /*
