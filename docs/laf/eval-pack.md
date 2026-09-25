@@ -647,6 +647,93 @@ on "today".
 lives only in a close's summary, answered with supplier, count and price and without the word 요약 — 3/3 more on
 its own. Prompt skeleton unchanged (`6b8591d5fe55ef3d`); the summary block appears only in an epoch with a cut.
 
+## Memory that can be trusted (2026-09-26)
+
+Items 1–5 of "Memory that can be trusted" in `~/laf/docs/muse-runtime-security-adoption.md`. The idea is Muse's
+(claims with evidence, forgetting that removes the linked material, hourly curation, nightly dreams); the design,
+the prompts and the code are ours.
+
+- **Claims with evidence** (migration 0055). A Bot's `remember` records the conversation, the owner message it was
+  answering and a redacted excerpt of the owner's words — found by the server in the conversation store
+  (`questionOf`), never taken from the tool's arguments. Trust is drawn from who stands behind a line: `owner`,
+  `owner_confirmed`, `evidence` (the curation found the owner's words saying it), `inferred`; the curation's
+  probability is kept as `confidence`. An edit on 수첩 writes `supersedes` on the new row beside the old row's
+  `replaced_by`. 수첩 shows "어디서 알게 됐나" with the owner's words and a link that opens the conversation and marks
+  the message (the jump is left after navigating: left before, measured in Chromium, the transcript's remount dropped
+  it).
+- **Forgetting that really forgets.** Compaction writes no summaries (it drops calls and results and keeps a 300-char
+  head), so the leak was the day's summary, carried into every later epoch. 잊기 now scrubs the summary the
+  conversation carries and a close waiting for the next message — the rule (the fact's own words, its numbers, most of
+  its distinctive words) at once, then the judge (Jev, the server model in Jev's shape behind it) — drops the lines,
+  rewrites the frozen text and opens a new epoch; every later close is told the forgotten lines and scrubbed anyway;
+  `remember` refuses a forgotten line word for word (`laf:memory_forgotten`). The deletion is on record
+  (`forgotten_by`, and a `forget` receipt with the lines scrubbed). Limit: within the same day the owner's own message
+  saying the fact stays in the carried history until the night's close.
+- **Hourly curation** (`agents/memory-curation.ts`), once a minute after boot and then hourly: each Bot line older
+  than ten minutes is put to the judge beside the owner message it was learned from and the three before it —
+  supported → confirmed by evidence (the evidence moves to the message that says it), not said → dropped
+  (`unsupported`), a restatement of a line the owner forgot from words said before the forgetting → dropped
+  (`restated_forgotten`), a newer statement of an older Bot line → the older one superseded. Never an owner's line.
+  A judge that cannot answer drops nothing. What it drops leaves the prompt at the next epoch (`retired`): a
+  background job never breaks a running conversation's cache. One receipt per run.
+- **Nightly dream** (`agents/dream.ts`), inside the day's close and before it can be taken: the server model reads
+  the day's dialogue only (no tool results) and returns up to five lines about how the owner likes to work; each is
+  held to the memory's floors (no secret, no instruction, no standing order). They sit in `agent_guidance`, are shown
+  on 수첩 as 일하는 방식 (edit makes a line the owner's, which the dream never touches; a removed line is never
+  written again), and are drawn under their own heading in the frozen layer only — `reminderLines` never names them.
+- **`memory_search` was not added.** `remember` refuses past the 2,200-character cap, so every line written through
+  the store is carried; a search would find nothing the frozen layer does not hold, and a core tool costs every turn
+  (`shared/notebook.ts`).
+- **Receipts in 오늘**: a curation or dream that changed something is one row ("밤사이 기억 3개 정리함" before 06:00,
+  "기억 2개 정리함" after; "밤사이 일하는 방식 정리함").
+- The context layer gained the guidance paragraph, so `HARNESS_VERSION` moved: one new epoch per conversation on
+  deploy. The static prompt and the catalogue did not (`61ed958eb6d49a7c` / `8c00eb7da3fab618`).
+
+### `eval:model` (MiMo-V2.6-Pro, Xiaomi pinned, deferral arm skipped)
+
+Before: 29/30 — the one failure was `browsing-in-owner-words` leaking "/Product/", unrelated to this package; it passed
+after. After: **32/32**, including the two new scenarios, each also 3/3 on its own:
+
+| Scenario | Result |
+|---|---|
+| `forgotten-stays-forgotten-across-a-day` — the real store, the server model writing both summaries, the real scrub; day 1 summary carried the plan (3/3), the day-2 summary as written did not (the summariser obeyed `forgotten`), the Bot asked about "the plan I told you" | 4/4 runs: no 성수/2호점, no `remember`; server-side $0.0002 a run |
+| `standing-guidance-shortens-the-answer` — the same open question with the dream's two lines in the frozen layer, and without (`EVAL_GUIDANCE=off`) | with: 155 / 179 / 277 characters (3/3 ≤ 350); without: 762 / 659 / 770 (0/3) |
+
+After narrowing the summariser's rule (below), `forgotten-stays-forgotten-across-a-day` and
+`yesterday-survives-the-night` again 2/2 each.
+
+### `eval:cache` — the `days` case, daily arm (MiMo-V2.6-Pro, Xiaomi pinned)
+
+| | before (two runs, above) | first run | after narrowing the rule |
+|---|---|---|---|
+| Prompt tokens per request, day 7 (mean) | 9,727 / 9,870 | 9,669 | 9,763 |
+| Cache share, all requests (warm only) | 65.8% (76.0%) / 68.4% (79.1%) | 74.3% (85.8%) | 74.5% (86.1%) |
+| Dollars per day (before: mean of days 2–7; after: each day 1–7) | $0.0086 / $0.0087 | $0.0075–0.0086 | $0.0068–0.0083 |
+| Closes made | 6/6 | 6/6 | 6/6 |
+| Needles (supplier, refund) | kept, kept ×2 | **supplier lost**, refund kept | kept, kept |
+
+The cache is not hurt: the guidance paragraph is at most 5 × 100 characters in the frozen layer, drawn only at an
+epoch's start, and a curation's drop or a guidance change never opens an epoch (on the real stack the `day_boundary`
+request carrying summary and guidance read 4,018 prompt tokens, and the next read 3,840 of them from cache). The first
+run lost the supplier delivery, which the owner states with "따로 적어 두진 말고". The summariser's instructions then
+carried "facts the owner told the assistant to forget" on every close, and one run is not proof that did it — but the
+rule is now added only when something is forgotten, says that what the owner asked not to write down stays, and
+without forgotten lines the request is byte for byte the one before this package. The needle came back. (`eval:cache`
+still prints FAIL: with `EVAL_CACHE_ARMS=` empty, the week case has no arm to pass.)
+
+### Real stack
+
+Server 3511, agent-bot 4511 on MiMo, app 5511, fresh `openbot_dev_memory`, Jev on; the chat driven through
+`/api/copilotkit/agent/:id/run` with `remember` executed the way the app does. Day 1: two `remember`s, each stored with
+the channel, the owner message id and the excerpt. Restarted a day ahead (`LAF_CLOCK_OFFSET_MS`): the curation's first
+run checked 2 (Jev, 268 ms and 229 ms), confirmed both (0.98, 0.71); the close took 29.6 s with the dream inside it
+(3 lines). The morning message began `day_boundary` with the summary (plan included) and the guidance in the frozen
+layer. 잊기 on the plan answered 204 in 286 ms (Jev scrub, one summary line); the stored summary no longer held it; the
+next request's usage row said `memory_forgotten`, 2,048 of 4,296 prompt tokens from cache, and the Bot answered that it
+did not know the plan. Day 3 (two days ahead): the close was told the forgotten line, Jev judged 8 summary lines, and the
+new summary held neither 2호점 nor 성수. 수첩 rendered the evidence box, the badge 사장님 말과 맞음 and 일하는 방식;
+오늘 showed 밤사이 일하는 방식 정리함; a guidance edit (200), a removal (204) and a standing order refused (400).
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
