@@ -68,6 +68,7 @@ import {
   openBrowsingTask,
   type TranscriptItem,
   toVisibleChatItems,
+  turnFailedAfter,
   unsettledFrom,
   withBrowsingTasks,
 } from "./chat-messages";
@@ -1280,6 +1281,16 @@ export function ChatTranscript({
     items.findLast((item) => item.kind === "browse")?.id ?? null;
   /** Each stored failure, drawn after the last row its turn drew (`failurePlaces`). */
   const failuresAfter = failurePlaces(messages, items, Object.keys(failures));
+  /**
+   * The rows a failure line is drawn under: a stored one not since asked again, or this tab's own
+   * under the last row. What a turn's last task reads its ending from (`turnFailedAfter`).
+   */
+  const failedRows = new Set<string>(
+    [...failuresAfter]
+      .filter(([, keys]) => keys.some((key) => !failures[key]?.askedAgain))
+      .map(([rowId]) => rowId),
+  );
+  if (stoppedCode && lastItem) failedRows.add(lastItem.id);
 
   /**
    * The failure lines drawn after one row.
@@ -1542,12 +1553,17 @@ export function ChatTranscript({
                     >
                       <BrowsingCard
                         channelId={channelId}
-                        cutOff={cutOffOf(items, index, {
-                          busy,
-                          failed:
-                            failuresAfter.has(item.id) ||
-                            (Boolean(stoppedCode) && item.id === lastItem?.id),
-                        })}
+                        cutOff={
+                          turnFailedAfter(items, index, failedRows)
+                            ? "failed"
+                            : cutOffOf(items, index, {
+                                busy,
+                                failed:
+                                  failuresAfter.has(item.id) ||
+                                  (Boolean(stoppedCode) &&
+                                    item.id === lastItem?.id),
+                              })
+                        }
                         isNewest={item.id === newestTaskId}
                         isOpen={item.id === openTaskId}
                         item={item}

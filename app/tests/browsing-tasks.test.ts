@@ -7,6 +7,7 @@ import {
   cutOffOf,
   openBrowsingTask,
   toVisibleChatItems,
+  turnFailedAfter,
   withBrowsingTasks,
 } from "../src/components/channels/chat-messages";
 import {
@@ -315,6 +316,54 @@ describe("a task its turn was cut off in", () => {
       kind: "failed",
       code: null,
     });
+  });
+
+  /*
+   * MEASURED 2026-09-26: the turn died while the Bot was answering after a finished task (agent-bot
+   * cut mid-answer; the server restarting does the same). The card read 끝남 from its steps under a
+   * half answer and a failure line, while 오늘 read the turn and said 못 끝냄.
+   */
+  test("its turn's last task reads the turn's failure, and an earlier task keeps its own", () => {
+    const items = itemsOf([
+      said("user", "뉴스"),
+      ...navigated(),
+      said("assistant", "맨 위 뉴스는"),
+    ]);
+    const card = items.findIndex((item) => item.kind === "browse");
+    const halfAnswer = items.at(-1)?.id ?? "";
+    expect(turnFailedAfter(items, card, new Set([halfAnswer]))).toBe(true);
+    expect(turnFailedAfter(items, card, new Set())).toBe(false);
+
+    const twoTasks = itemsOf([
+      said("user", "뉴스"),
+      ...navigated(),
+      // Something that is not browsing, drawn between: two tasks, not one (`withBrowsingTasks`).
+      ...calls({ name: "manage_routine", args: {}, result: { ok: true } }),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://weather.naver.com" },
+        result: { ok: true },
+      }),
+      said("assistant", "오늘은"),
+    ]);
+    const first = twoTasks.findIndex((item) => item.kind === "browse");
+    const last = twoTasks.findLastIndex((item) => item.kind === "browse");
+    const failedUnder = new Set([twoTasks.at(-1)?.id ?? ""]);
+    expect(turnFailedAfter(twoTasks, first, failedUnder)).toBe(false);
+    expect(turnFailedAfter(twoTasks, last, failedUnder)).toBe(true);
+
+    // A failure of a later turn is that turn's.
+    const nextTurn = itemsOf([
+      said("user", "뉴스"),
+      ...navigated(),
+      said("assistant", "맨 위 뉴스는 이것"),
+      said("user", "고마워"),
+      said("assistant", "천만"),
+    ]);
+    const cardOf = nextTurn.findIndex((item) => item.kind === "browse");
+    expect(
+      turnFailedAfter(nextTurn, cardOf, new Set([nextTurn.at(-1)?.id ?? ""])),
+    ).toBe(false);
   });
 
   test("is cut off when the person's next message came straight after it", () => {

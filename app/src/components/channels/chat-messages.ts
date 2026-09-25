@@ -177,6 +177,32 @@ export function cutOffOf(
   return failed ? "failed" : "stopped";
 }
 
+/**
+ * Whether the card at `index` is its turn's last task and the turn ended in a failure line drawn
+ * after it — `failedRows` holds the rows a failure is drawn under, stored or this tab's own.
+ *
+ * MEASURED 2026-09-26 (0.5.4 final QA, "끝남 on the card, 못 끝냄 in 오늘"): the Bot finished a
+ * Naver task and began its answer, and the turn died there — agent-bot cut, or the server
+ * restarting. The half answer after the card made it not cut off, so the card read 끝남 from its
+ * steps, while 오늘 read the turn's ledger and said 못 끝냄. The turn is one thing that did not
+ * finish, and its last task says so with it; an earlier task in the same turn keeps its own ending.
+ */
+export function turnFailedAfter(
+  items: readonly TranscriptItem[],
+  index: number,
+  failedRows: ReadonlySet<string>,
+): boolean {
+  if (items[index]?.kind !== "browse") return false;
+  for (let at = index + 1; at < items.length; at += 1) {
+    const item = items[at];
+    if (!item) break;
+    if (item.kind === "browse") return false;
+    if (item.kind === "text" && item.role === "user") return false;
+    if (failedRows.has(item.id)) return true;
+  }
+  return false;
+}
+
 /** A tool result, as it arrives, its own message, pointing back at the call it answers. */
 type ToolResultMessage = { role: "tool"; toolCallId: string; content?: string };
 
