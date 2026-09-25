@@ -377,6 +377,15 @@ export const navigate: BotRoute = async (
             truncated: extract.truncated,
             ...(extract.reader ? { reader: true } : {}),
             ...(extract.frames ? { frames: extract.frames } : {}),
+            /*
+             * THE SITE REFUSED, SAID AS A FACT. A 403 "Access Denied" is a page like any other to
+             * the browser, so it arrived as a navigation that worked, and the task card said 끝남
+             * over a site that had turned the Bot away (UX review 0.5.4, item 2). Only on a refusal:
+             * a result that worked carries nothing new.
+             */
+            ...((response?.status() ?? 0) >= 400
+              ? { httpStatus: response?.status() }
+              : {}),
             elapsedMs: Date.now() - startedAt,
           }),
         );

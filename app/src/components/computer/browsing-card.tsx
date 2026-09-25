@@ -30,12 +30,17 @@ import {
   pictureStepOf,
   sitesOf,
   stepLine,
-  type TaskEnding,
 } from "@/lib/computer/browsing";
 import { framedCallsQueryOptions } from "@/lib/channels/queries";
 import { useBrowsingNow } from "@/lib/computer/browsing-now";
 import { frameAddress, useFrameVersion } from "@/lib/computer/last-frame";
 import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
+import {
+  canRetry,
+  type TaskState,
+  taskStateLine,
+} from "@/lib/computer/task-state";
+import { useConversation } from "@/lib/copilot/conversation";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -95,7 +100,7 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   const stepsId = useId();
   const botId = useDeclaredBotId();
   const now = useBrowsingNow();
-  const ending = endingOf(item.steps, isOpen);
+  const conversation = useConversation();
   /*
    * A step of this task is waiting on the person — an approval above the card. Subscribed, so the
    * card says so the moment it is asked and stops the moment it is answered.
@@ -103,9 +108,40 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
   const isAsking = useSyncExternalStore(watchQuestions, () =>
     item.steps.some((step) => questionOn(step.id) !== undefined),
   );
+  /*
+   * ONE STATE, FROM FACTS (`task-state.ts`): the words the banner, 오늘 and the drawer use too. A
+   * question open on a step is the owner's turn, whatever the steps say.
+   */
+  const state: TaskState = isAsking
+    ? { kind: "yourTurn" }
+    : endingOf(item.steps, isOpen);
   const pictureStep = isOpen ? null : pictureStepOf(item.steps);
+  const version = useFrameVersion(pictureStep);
+  const framed = useQuery({
+    ...framedCallsQueryOptions(channelId ?? ""),
+    enabled: channelId !== undefined && !isOpen,
+  });
+  /*
+   * Asked for only where there is one: kept by this tab, or listed by the server. Every ended card
+   * used to ask, and a task with no picture was a 404 in the console each time (0.5.4 QA).
+   */
+  const hasFrame =
+    pictureStep !== null &&
+    (version > 0 || framed.data?.has(pictureStep) === true);
   const isPageGone = botId !== undefined && now.pageGoneFor === botId;
-  const canView = isNewest && botId !== undefined && !isPageGone;
+  /*
+   * NOT ON A FAILED TASK WITH NO PICTURE. Measured (UX review 0.5.4, item 3): a task that failed
+   * because the browser was down offered 화면 보기, which opened on nothing and then said the picture
+   * beside it was the last screen, beside an empty placeholder. There is nothing to show there.
+   */
+  const canView =
+    isNewest &&
+    botId !== undefined &&
+    !isPageGone &&
+    !(state.kind === "failed" && !hasFrame);
+  const asked = item.asked;
+  const canAskAgain =
+    canRetry(state) && asked !== undefined && conversation !== null;
   const title = taskTitle(sitesOf(item.steps), item.asked);
   const latest = item.notes.at(-1);
 
@@ -113,8 +149,10 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
     <TaskPicture
       botId={botId}
       channelId={channelId}
+      hasFrame={hasFrame}
       isOpen={isOpen}
       toolCallId={pictureStep}
+      version={version}
     />
   );
 
@@ -154,16 +192,30 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
           <p
             className={cn(
               "text-xs",
-              isAsking
+              state.kind === "yourTurn"
                 ? "font-medium text-warning"
-                : ending === "blocked"
+                : state.kind === "failed"
                   ? "text-warning"
                   : "text-muted-foreground",
             )}
           >
-            {isAsking ? t("Your turn") : endingText(ending)}
+            {taskStateLine(state)}
           </p>
           <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
+            {/*
+             * 다시 해 보기: the owner's own words again, as if typed. Measured (UX review 0.5.4,
+             * item 3): after a failed task the Bot said "다시 시도해 달라고 해 주시면", and the owner
+             * had to type the whole request out a second time.
+             */}
+            {canAskAgain ? (
+              <Button
+                onClick={() => conversation.ask(asked)}
+                size="xs"
+                variant="secondary"
+              >
+                {t("Try it again")}
+              </Button>
+            ) : null}
             {canView ? (
               <Button
                 onClick={() => setScreenOpen(true)}
@@ -176,7 +228,9 @@ function TaskCard({ item, channelId, isOpen, isNewest }: BrowsingCardProps) {
             {/* Mounted with the card, so the page going away is heard when it is said. */}
             <LiveRegion as="span" className="text-muted-foreground text-xs">
               {!canView && isNewest && isPageGone && !isOpen
-                ? t("No page is open now. The picture is the last one.")
+                ? hasFrame
+                  ? t("No page is open now. The picture is the last one.")
+                  : t("No page is open now.")
                 : null}
             </LiveRegion>
             <Button
@@ -266,22 +320,6 @@ function StepDecision({ toolCallId }: { toolCallId: string }) {
 }
 
 /**
- * How the task stands, in three words a person uses — 끝남, 멈춤 — plus 하는 중 while it runs.
- * 사장님 차례 is decided above, from a question on one of its steps.
- */
-function endingText(ending: TaskEnding): string {
-  switch (ending) {
-    case "running":
-      return t("Working on it");
-    case "done":
-      return t("Finished");
-    case "stopped":
-    case "blocked":
-      return t("Halted");
-  }
-}
-
-/**
  * The task's picture: the page as it is now while the task runs, its last picture once it ended, or
  * a quiet browser mark where there is none.
  *
@@ -292,26 +330,18 @@ function endingText(ending: TaskEnding): string {
 function TaskPicture({
   botId,
   channelId,
+  hasFrame,
   toolCallId,
   isOpen,
+  version,
 }: {
   botId: string | undefined;
   channelId: string | undefined;
+  hasFrame: boolean;
   toolCallId: string | null;
   isOpen: boolean;
+  version: number;
 }) {
-  const version = useFrameVersion(toolCallId);
-  const framed = useQuery({
-    ...framedCallsQueryOptions(channelId ?? ""),
-    enabled: channelId !== undefined && !isOpen,
-  });
-  /*
-   * Asked for only where there is one: kept by this tab, or listed by the server. Every ended card
-   * used to ask, and a task with no picture was a 404 in the console each time (0.5.4 QA).
-   */
-  const hasFrame =
-    toolCallId !== null &&
-    (version > 0 || framed.data?.has(toolCallId) === true);
   return (
     <span className="relative flex aspect-[16/10] w-28 items-center justify-center overflow-hidden rounded-lg bg-muted sm:w-36">
       <IconBrowser

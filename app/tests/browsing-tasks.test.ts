@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
+import { SITE_REFUSED, UNANSWERED_RESULT } from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
+import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import {
   openBrowsingTask,
   toVisibleChatItems,
@@ -345,22 +347,102 @@ describe("what the card and the banner say", () => {
 
   test("how a task ended is read from its last step", () => {
     const done = [step("computer_navigate", {}, { ok: true })];
-    expect(endingOf(done, true)).toBe("running");
-    expect(endingOf(done, false)).toBe("done");
+    expect(endingOf(done, true)).toEqual({ kind: "running" });
+    expect(endingOf(done, false)).toEqual({ kind: "done" });
     expect(
       endingOf(
         [step("computer_click", {}, { ok: false, stopped: true })],
         false,
       ),
-    ).toBe("stopped");
+    ).toEqual({ kind: "stopped" });
+    // A refusal, and the browser being down, are 못 끝냄 with why — never the owner's 멈춤.
     expect(
       endingOf(
-        [step("computer_click", {}, { ok: false, refused: true })],
+        [
+          step(
+            "computer_click",
+            {},
+            { ok: false, refused: true, code: "laf:person_declined" },
+          ),
+        ],
         false,
       ),
-    ).toBe("blocked");
+    ).toEqual({ kind: "failed", code: "laf:person_declined" });
+    expect(
+      endingOf(
+        [
+          step(
+            "computer_navigate",
+            {},
+            { ok: false, code: "laf:computer_unreachable" },
+          ),
+        ],
+        false,
+      ),
+    ).toEqual({ kind: "failed", code: "laf:computer_unreachable" });
     // A call the run never answered: the person stopped it mid-action.
-    expect(endingOf([step("computer_click")], false)).toBe("stopped");
+    expect(endingOf([step("computer_click")], false)).toEqual({
+      kind: "stopped",
+    });
+  });
+
+  test("a reload cannot turn 멈춤 into 끝남: the placeholder answer is the same stop", () => {
+    // UX review 0.5.4, item 2: 멈춤 in one load and 끝남 in the next, for a task that never got its
+    // answer. Before the next turn the app answers the call with a placeholder; it is still a stop.
+    const unanswered = step("computer_click");
+    const repaired: BrowsingStep = {
+      ...unanswered,
+      result: UNANSWERED_RESULT,
+    };
+    expect(endingOf([unanswered], false)).toEqual({ kind: "stopped" });
+    expect(endingOf([repaired], false)).toEqual({ kind: "stopped" });
+    const [placeholder] = repairUnansweredToolCalls([
+      {
+        id: "a",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: unanswered.id,
+            type: "function",
+            function: { name: "computer_click", arguments: "{}" },
+          },
+        ],
+      },
+    ] as Message[]).slice(1);
+    expect(
+      endingOf(
+        [
+          {
+            ...unanswered,
+            result: (placeholder as { content: string }).content,
+          },
+        ],
+        false,
+      ),
+    ).toEqual({ kind: "stopped" });
+  });
+
+  test("a site that answered with a refusal page is 못 끝냄, until the Bot lands somewhere else", () => {
+    // Coupang's "Access Denied" was a navigation that worked, and the card said 끝남.
+    const refused = step(
+      "computer_navigate",
+      { url: "https://www.coupang.com" },
+      { ok: true, url: "https://www.coupang.com", httpStatus: 403 },
+    );
+    const readIt = step("computer_snapshot", {}, { ok: true, count: 0 });
+    expect(endingOf([refused, readIt], false)).toEqual({
+      kind: "failed",
+      code: SITE_REFUSED,
+    });
+    const elsewhere = step(
+      "computer_navigate",
+      { url: "https://www.naver.com" },
+      { ok: true, url: "https://www.naver.com" },
+    );
+    expect(endingOf([refused, readIt, elsewhere], false)).toEqual({
+      kind: "done",
+    });
   });
 
   test("the picture goes on the last call that has a result", () => {

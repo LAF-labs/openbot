@@ -2570,5 +2570,14 @@ export const ko: Record<string, string> = {
     "아직 오늘 한 일이 없어요. 이런 걸 맡겨 보세요.",
   "Approval needed · {subject}": "승인 필요 · {subject}",
   "Help needed · {reason}": "도움 필요 · {reason}",
-  "Didn't finish": "끝내지 못함",
+  // 0.5.4 BC
+  "Couldn't finish": "못 끝냄",
+  "The site turned the Bot away": "사이트가 봇을 막았어요",
+  "You said no": "사장님이 거절함",
+  "Try it again": "다시 해 보기",
+  "No page is open now.": "지금 열린 페이지가 없어요.",
+  "Waiting for your OK": "사장님 확인 기다리는 중",
+  "Go to the question": "확인할 곳으로 가기",
+  "Remembered {count}": "기억함 {count}",
+  Stop: "멈추기",
 };

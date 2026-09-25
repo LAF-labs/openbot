@@ -22,6 +22,14 @@ export type OpenTask = {
   sites: readonly string[];
   /** What it is doing right now, already in the person's words (`doingNow`). */
   doing: string;
+  /**
+   * The step a question is open on, while the Bot waits for the owner's answer. The banner said
+   * "누르는 중" through the whole wait (UX review 0.5.4, item 13): the click was the last call, and
+   * it had not happened — it was waiting on a person.
+   */
+  askingOn?: string;
+  /** The conversation the task is in, so the banner can take the owner to the question's card. */
+  channelId?: string;
 };
 
 export type BrowsingNow = {
@@ -69,6 +77,8 @@ function sameTask(left: OpenTask | null, right: OpenTask | null): boolean {
     left.botId === right.botId &&
     left.taskId === right.taskId &&
     left.doing === right.doing &&
+    left.askingOn === right.askingOn &&
+    left.channelId === right.channelId &&
     left.sites.join("\n") === right.sites.join("\n")
   );
 }

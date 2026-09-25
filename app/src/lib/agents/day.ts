@@ -1,6 +1,6 @@
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { t } from "@/lib/i18n";
+import { taskStateLine, taskStateWord } from "@/lib/computer/task-state";
 import { clockLabel } from "@/lib/routines/queries";
 import { useNow } from "@/lib/use-now";
 import { workingQueryOptions } from "./working";
@@ -27,6 +27,10 @@ export type BotDayItem =
       runId: string;
       at: string;
       status: DayRunStatus;
+      /** Why it did not finish, as a code, when its browsing says (`server/src/agents/day.ts`). */
+      reason?: string | null;
+      /** Facts remembered during the turn. Absent from a server before 2026-09-25. */
+      learned?: number;
       label: string | null;
       channelId: string | null;
       messageId: string | null;
@@ -42,6 +46,7 @@ export type BotDayItem =
       silent: boolean;
       channelId: string | null;
       messageId: string | null;
+      learned?: number;
     }
   | { kind: "learned"; memoryId: string; at: string; head: string };
 
@@ -140,14 +145,30 @@ export function dayClock(iso: string, zone: string): string {
   return clockLabel(`${hour}:${minute}`);
 }
 
-export type DayMark = { text: string; tone: "active" | "failed" };
+export type DayMark = { text: string; tone: "active" | "failed" | "quiet" };
 
-/** What a row is marked with, when it is anything but finished well. */
-export function dayMark(status: DayRunStatus): DayMark | null {
+/**
+ * What a row is marked with, when it is anything but finished well — in the card's own words
+ * (`lib/computer/task-state.ts`), so a task that is 못 끝냄 on its card is 못 끝냄 here too. It was
+ * 끝내지 못함 here, 멈춤 on the card and 중단됨 on a step's line for the one stop.
+ *
+ * 멈춤 is quiet, not red: it is the owner's own Stop, not something that went wrong.
+ */
+export function dayMark(
+  status: DayRunStatus,
+  reason?: string | null,
+): DayMark | null {
   if (status === "error" || status === "unknown") {
-    return { text: t("Didn't finish"), tone: "failed" };
+    return {
+      text: taskStateLine({ kind: "failed", code: reason ?? null }),
+      tone: "failed",
+    };
   }
-  if (status === "stopped") return { text: t("Stopped"), tone: "failed" };
-  if (status === "running") return { text: t("Working…"), tone: "active" };
+  if (status === "stopped") {
+    return { text: taskStateWord({ kind: "stopped" }), tone: "quiet" };
+  }
+  if (status === "running") {
+    return { text: taskStateWord({ kind: "running" }), tone: "active" };
+  }
   return null;
 }

@@ -2,9 +2,11 @@ import { IconBrowser, IconPlayerStopFilled, IconX } from "@tabler/icons-react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
+import { requestJump } from "@/lib/channels/jump";
 import { dismissTask, useBrowsingNow } from "@/lib/computer/browsing-now";
 import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
 import { taskTitle } from "./task-title";
 
@@ -74,6 +76,21 @@ function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
    * it carries, so the line and the card read as one task.
    */
   const title = taskTitle(where ? [where] : [], asked);
+  /*
+   * WHILE THE BOT WAITS FOR THE OWNER, THE LINE SAYS SO AND THE PRESS GOES TO THE QUESTION. The live
+   * screen shows the page the click is on, not the buttons that answer it; the card with 허용 is
+   * where the owner has to be, and the jump puts the keyboard on its first button (`jump.ts`).
+   */
+  const askingOn = task.askingOn;
+  const channelId = task.channelId;
+  const isAsking = askingOn !== undefined && channelId !== undefined;
+  const handlePress = () => {
+    if (isAsking) {
+      requestJump({ channelId, waitingCard: askingOn });
+      return;
+    }
+    setScreenOpen(true);
+  };
 
   return (
     <>
@@ -81,9 +98,11 @@ function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
       <div className="shrink-0 px-4 pt-1 pb-2">
         <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-card">
           <button
-            aria-label={t("View the Bot's screen")}
+            aria-label={
+              isAsking ? t("Go to the question") : t("View the Bot's screen")
+            }
             className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg text-left"
-            onClick={() => setScreenOpen(true)}
+            onClick={handlePress}
             type="button"
           >
             <span className="relative flex aspect-[16/10] w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
@@ -97,7 +116,14 @@ function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
               <span className="truncate font-medium text-sm">
                 {title ?? t("The Bot's browser")}
               </span>
-              <span className="truncate text-muted-foreground text-xs">
+              <span
+                className={cn(
+                  "truncate text-xs",
+                  isAsking
+                    ? "font-medium text-warning"
+                    : "text-muted-foreground",
+                )}
+              >
                 {task.doing}
               </span>
             </span>

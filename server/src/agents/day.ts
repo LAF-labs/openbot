@@ -20,8 +20,27 @@
  * next run with the result (`runner/laf-runner.ts`, `handedToBrowser`), so one "예스24에서 찾아 줘" is
  * a dozen ledger rows. Only the first carries the person's words (`chatLabelOf`); the rest fold into
  * it here, so a person sees one row for one thing they asked.
+ *
+ * HOW IT ENDED IS THE CARD'S DECISION, NOT THE LEDGER'S ALONE (2026-09-25, UX review 0.5.4 item 2).
+ * The ledger says `done` for a run that ended on a site's "Access Denied", or on a click that was
+ * still waiting for the owner when the window went: the run finished, the task did not. So the turn's
+ * browsing steps are read too — which calls it made and what each answered — and ended by the same
+ * function the card uses (`shared/task-ending.ts`). The one `status` a row carries is then the same
+ * word the card says. Only the facts cross: a code, never the page.
+ *
+ * WHAT IT LEARNED FOLDS INTO THE TURN THAT LEARNED IT. One message that taught the Bot three things was
+ * four rows (UX review 0.5.4, item 12); a memory written while a turn was running is counted on that
+ * turn's row, and only one learned outside any turn stands on its own.
  */
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import {
+  BROWSING_TOOL_NAMES,
+  type EndingStep,
+  endingOfSteps,
+  factsOfObject,
+  type ResultFacts,
+  UNANSWERED_RESULT,
+} from "../../../shared/task-ending";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
@@ -47,6 +66,13 @@ export type BotDayItem =
       runId: string;
       at: string;
       status: DayRunStatus;
+      /**
+       * Why it did not finish, as a code (`laf:page_timeout`, `laf:site_refused`), when the turn's
+       * last browsing step says. Null otherwise: the surface says the word without a reason.
+       */
+      reason: string | null;
+      /** Facts the Bot remembered during this turn, counted here instead of a row each. */
+      learned: number;
       /** The start of what the person asked. Null for a turn that began before labels existed. */
       label: string | null;
       channelId: string | null;
@@ -67,6 +93,8 @@ export type BotDayItem =
       channelId: string | null;
       /** The delivered answer. Null when silent, failed, or not delivered yet. */
       messageId: string | null;
+      /** Facts the Bot remembered during this run. */
+      learned: number;
     }
   | { kind: "learned"; memoryId: string; at: string; head: string };
 
@@ -148,6 +176,7 @@ type RunRow = {
   label: string | null;
   status: DayRunStatus;
   startedAt: Date;
+  finishedAt?: Date | null;
 };
 
 type MessageRow = {
@@ -159,6 +188,11 @@ type MessageRow = {
   firstCallId: string | null;
   toolCallId: string | null;
   hasFrame: boolean;
+  /** An assistant row's calls, in order: ids and tool names, never the arguments. */
+  callIds: string[];
+  callNames: string[];
+  /** A tool row's result, reduced to facts in the database. */
+  facts: ResultFacts | null;
 };
 
 /** One thing the person asked, and the runs a browser carried it through. */
@@ -197,6 +231,7 @@ export function createDayReader(options: {
         label: lafThreadRuns.label,
         status: lafThreadRuns.status,
         startedAt: lafThreadRuns.startedAt,
+        finishedAt: lafThreadRuns.finishedAt,
       })
       .from(lafThreadRuns)
       .where(
@@ -309,27 +344,81 @@ export function createDayReader(options: {
       messagesOf.set(message.runId, list);
     }
 
+    /*
+     * A call's answer, wherever it was written. A browser carries a step's result into the NEXT run,
+     * and a step that never got one is answered with a placeholder at the start of the person's next
+     * turn — so a turn's own runs do not hold all of its answers.
+     */
+    const answerOf = new Map<string, MessageRow>();
+    for (const message of messages) {
+      if (message.toolCallId) answerOf.set(message.toolCallId, message);
+    }
+    const learnedAt = memories.map((memory) => memory.createdAt.getTime());
+    const counted = new Set<number>();
+    const learnedDuring = (runsOf: readonly RunRow[]): number => {
+      const from = runsOf[0]?.startedAt.getTime() ?? 0;
+      const last = runsOf.at(-1);
+      const to = runsOf.some((one) => one.status === "running")
+        ? Number.POSITIVE_INFINITY
+        : (last?.finishedAt ?? last?.startedAt ?? new Date(0)).getTime() +
+          LEARNED_SLACK_MS;
+      let count = 0;
+      learnedAt.forEach((when, index) => {
+        if (counted.has(index) || when < from || when > to) return;
+        counted.add(index);
+        count += 1;
+      });
+      return count;
+    };
+
     const items: BotDayItem[] = [];
     for (const turn of turns) {
       const written = turn.runs
         .flatMap((run) => messagesOf.get(run.runId) ?? [])
         .sort((a, b) => a.seq - b.seq);
       const last = turn.runs.at(-1) ?? turn.head;
+      const calls = written.flatMap((row) =>
+        row.role === "assistant"
+          ? row.callIds.map((id, index) => ({
+              id,
+              name: row.callNames[index] ?? "",
+            }))
+          : [],
+      );
+      const ended = endedAs(
+        turn.runs.some((run) => run.status === "running")
+          ? "running"
+          : last.status,
+        calls
+          .filter((call) => BROWSING_TOOL_NAMES.has(call.name))
+          .map(
+            (call): EndingStep => ({
+              name: call.name,
+              facts: answerOf.get(call.id)?.facts ?? null,
+            }),
+          ),
+      );
+      /*
+       * The picture of a call THIS turn made. Any framed row among the turn's runs used to do, and a
+       * turn that never browsed showed the last turn's toss.im screen (UX review 0.5.4, item 4): the
+       * earlier task's last answer had arrived with this turn's first run.
+       */
+      const framed = calls
+        .filter((call) => answerOf.get(call.id)?.hasFrame === true)
+        .at(-1);
       items.push({
         kind: "chat",
         runId: turn.head.runId,
         at: turn.head.startedAt.toISOString(),
-        status: turn.runs.some((run) => run.status === "running")
-          ? "running"
-          : last.status,
+        status: ended.status,
+        reason: ended.reason,
+        learned: learnedDuring(turn.runs),
         label: turn.head.label,
         channelId: turn.head.threadId
           ? (channelOf.get(turn.head.threadId) ?? null)
           : null,
         messageId: firstSaid(written),
-        frameToolCallId:
-          written.filter((row) => row.hasFrame && row.toolCallId).at(-1)
-            ?.toolCallId ?? null,
+        frameToolCallId: framed?.id ?? null,
       });
     }
     for (const run of routineRuns) {
@@ -354,16 +443,18 @@ export function createDayReader(options: {
         silent,
         channelId: run.threadId ? (channelOf.get(run.threadId) ?? null) : null,
         messageId: delivered,
+        learned: learnedDuring([run]),
       });
     }
-    for (const memory of memories) {
+    memories.forEach((memory, index) => {
+      if (counted.has(index)) return;
       items.push({
         kind: "learned",
         memoryId: memory.id,
         at: memory.createdAt.toISOString(),
         head: headOf(memory.content, LEARNED_HEAD_LENGTH) ?? "",
       });
-    }
+    });
 
     items.sort((a, b) => b.at.localeCompare(a.at));
     return {
@@ -373,6 +464,33 @@ export function createDayReader(options: {
       more: items.length > DAY_ITEM_LIMIT,
     };
   };
+}
+
+/**
+ * A memory is written by a tool inside a run, so it lands before the run's end; the slack is for a
+ * ledger row whose end was stamped a moment before the write committed.
+ */
+const LEARNED_SLACK_MS = 2_000;
+
+/**
+ * The status a turn's row says, and why: the ledger's, unless the turn's browsing says otherwise.
+ *
+ * The ledger's word wins where it is already not `done` — stopped, failed, unknown or still running
+ * say more than any step can. Where it says `done`, the last browsing task's ending decides: a step
+ * that never got its answer is `stopped`, one that failed or a site that refused is `error`, with the
+ * code for why.
+ */
+export function endedAs(
+  ledger: DayRunStatus,
+  steps: readonly EndingStep[],
+): { status: DayRunStatus; reason: string | null } {
+  if (ledger !== "done" || steps.length === 0) {
+    return { status: ledger, reason: null };
+  }
+  const ending = endingOfSteps(steps);
+  if (ending.kind === "stopped") return { status: "stopped", reason: null };
+  if (ending.kind === "failed") return { status: "error", reason: ending.code };
+  return { status: "done", reason: null };
 }
 
 /**
@@ -438,6 +556,23 @@ async function readMessages(
         string | null
       >`${lafThreadMessages.message} ->> 'toolCallId'`,
       hasFrame: sql<boolean>`${lafThreadMessages.frame} is not null`,
+      callIds: sql<
+        unknown[] | null
+      >`jsonb_path_query_array(${lafThreadMessages.message} -> 'toolCalls', '$[*].id')`,
+      callNames: sql<
+        unknown[] | null
+      >`jsonb_path_query_array(${lafThreadMessages.message} -> 'toolCalls', '$[*].function.name')`,
+      /*
+       * A tool row's facts, read in the database so a page's text never leaves it. A result that is
+       * not JSON — the placeholder for a call that got no answer, a thrown handler's "Error: …" — is
+       * told apart by the placeholder's exact words and by its first characters.
+       */
+      unanswered: sql<boolean>`${lafThreadMessages.message} ->> 'content' = ${UNANSWERED_RESULT}`,
+      thrown: sql<boolean>`left(${lafThreadMessages.message} ->> 'content', 6) = 'Error:'`,
+      result: sql<Record<
+        string,
+        unknown
+      > | null>`case when ${lafThreadMessages.message} ->> 'role' = 'tool' and pg_input_is_valid(${lafThreadMessages.message} ->> 'content', 'jsonb') and jsonb_typeof((${lafThreadMessages.message} ->> 'content')::jsonb) = 'object' then jsonb_build_object('ok', ((${lafThreadMessages.message} ->> 'content')::jsonb) -> 'ok', 'stopped', ((${lafThreadMessages.message} ->> 'content')::jsonb) -> 'stopped', 'refused', ((${lafThreadMessages.message} ->> 'content')::jsonb) -> 'refused', 'code', ((${lafThreadMessages.message} ->> 'content')::jsonb) -> 'code', 'httpStatus', ((${lafThreadMessages.message} ->> 'content')::jsonb) -> 'httpStatus') end`,
     })
     .from(lafThreadMessages)
     .where(
@@ -446,11 +581,27 @@ async function readMessages(
         inArray(lafThreadMessages.runId, runIds),
       ),
     );
-  return rows.map((row) => ({
+  return rows.map(({ unanswered, thrown, result, ...row }) => ({
     ...row,
     seq: Number(row.seq),
     hasText: row.hasText === true,
     hasFrame: row.hasFrame === true,
+    callIds: (row.callIds ?? []).filter(
+      (id): id is string => typeof id === "string",
+    ),
+    callNames: (row.callNames ?? []).map((name) =>
+      typeof name === "string" ? name : "",
+    ),
+    facts:
+      row.role !== "tool"
+        ? null
+        : unanswered === true
+          ? { unanswered: true }
+          : result
+            ? factsOfObject(result)
+            : thrown === true
+              ? { ok: false }
+              : {},
   }));
 }
 

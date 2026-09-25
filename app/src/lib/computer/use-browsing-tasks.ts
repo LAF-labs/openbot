@@ -1,5 +1,10 @@
 import type { Message } from "@ag-ui/core";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   openBrowsingTask,
   toVisibleChatItems,
@@ -7,8 +12,10 @@ import {
   withBrowsingTasks,
 } from "@/components/channels/chat-messages";
 import { doingNow, pictureStepOf, sitesOf } from "@/lib/computer/browsing";
+import { questionOn, watchQuestions } from "@/lib/approvals";
 import { publishOpenTask } from "@/lib/computer/browsing-now";
 import { keepLastFrame } from "@/lib/computer/last-frame";
+import { t } from "@/lib/i18n";
 
 /**
  * The conversation's browsing, told to the rest of the screen — and each task's last picture, kept.
@@ -35,7 +42,20 @@ export function useBrowsingTasks({
   const items = withBrowsingTasks(toVisibleChatItems(messages));
   const open = openBrowsingTask(items, busy);
   const openId = open?.id ?? null;
-  const doing = open ? doingNow(open.steps) : "";
+  /*
+   * A question open on one of the task's steps: the Bot is not clicking, it is waiting for the owner.
+   * Subscribed, so the line changes the moment it is asked and the moment it is answered. Said here,
+   * once, because the banner and the header's drawer both read `doing`.
+   */
+  const askingOn = useSyncExternalStore(
+    watchQuestions,
+    () => open?.steps.find((step) => questionOn(step.id) !== undefined)?.id,
+  );
+  const doing = open
+    ? askingOn
+      ? t("Waiting for your OK")
+      : doingNow(open.steps)
+    : "";
   const sites = open ? sitesOf(open.steps) : [];
   const sitesKey = sites.join("\n");
 
@@ -47,8 +67,19 @@ export function useBrowsingTasks({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `sitesKey` stands for `sites`, which is a new array every render.
   useEffect(() => {
-    publishOpenTask(openId ? { botId, taskId: openId, sites, doing } : null);
-  }, [openId, doing, sitesKey, botId]);
+    publishOpenTask(
+      openId
+        ? {
+            botId,
+            taskId: openId,
+            sites,
+            doing,
+            channelId,
+            ...(askingOn ? { askingOn } : {}),
+          }
+        : null,
+    );
+  }, [openId, doing, sitesKey, botId, askingOn, channelId]);
 
   // Leaving the conversation leaves nothing claiming the browser is in use.
   useEffect(() => () => publishOpenTask(null), []);

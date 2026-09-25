@@ -1,11 +1,16 @@
 import type { Message } from "@ag-ui/core";
+import { UNANSWERED_RESULT } from "@shared/task-ending";
 
 /**
  * Insert explanatory tool results for unanswered tool calls before sending history to providers.
  */
 
-const UNANSWERED =
-  "This call produced no result: the surface was interrupted before it could answer. Do not assume it succeeded.";
+/*
+ * In `shared/task-ending.ts` since 2026-09-25, because a task card and 오늘 read it back: a step
+ * answered with this is a step that stopped, and read as plain text it made a stopped task "끝남"
+ * after the next turn.
+ */
+const UNANSWERED = UNANSWERED_RESULT;
 
 /** A tool result message, which AG-UI models as its own role. */
 type ToolResult = { role: "tool"; toolCallId: string };

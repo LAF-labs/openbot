@@ -48,6 +48,12 @@ export type NavigateResult = {
    * which is a different fact from there being nothing in it.
    */
   frames?: { url: string; chars: number; code?: string }[];
+  /**
+   * The document answered 400 or worse: the site served a refusal ("Access Denied"), not the page.
+   * Absent on every navigation the site served. The task card and 오늘 end the task on it
+   * (`shared/task-ending.ts`).
+   */
+  httpStatus?: number;
   /** Wall-clock ms the navigation took, for the progress line in the transcript. */
   elapsedMs: number;
   notes?: ComputerNote[];

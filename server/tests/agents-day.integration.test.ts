@@ -28,6 +28,7 @@ import {
   lafThreadRuns,
   users,
 } from "../src/db/schema";
+import { UNANSWERED_RESULT } from "../../shared/task-ending";
 import { TEST_POOL } from "./support/database";
 
 const database = createDatabase(
@@ -67,6 +68,11 @@ const runIds = [
   "silent",
   "b",
   "a2",
+  "site",
+  "site2",
+  "toss",
+  "toss2",
+  "next",
 ].map(run);
 
 beforeAll(async () => {
@@ -162,6 +168,32 @@ beforeAll(async () => {
       label: "다른 봇",
       startedAt: at("2026-09-25T01:40:00Z"),
     }),
+    // A site that answered the Bot with a refusal page; the ledger says done.
+    ledger("site", {
+      label: "쿠팡에서 가격 봐 줘",
+      startedAt: at("2026-09-25T01:10:00Z"),
+      finishedAt: at("2026-09-25T01:10:05Z"),
+    }),
+    ledger("site2", {
+      startedAt: at("2026-09-25T01:10:10Z"),
+      finishedAt: at("2026-09-25T01:10:30Z"),
+    }),
+    // A click that never got its answer, then the person's next turn, which carried that answer
+    // (the app's placeholder) and the task's last picture with it.
+    ledger("toss", {
+      label: "토스에서 앱 다운로드 눌러 봐",
+      startedAt: at("2026-09-25T01:20:00Z"),
+      finishedAt: at("2026-09-25T01:20:05Z"),
+    }),
+    ledger("toss2", {
+      startedAt: at("2026-09-25T01:20:10Z"),
+      finishedAt: at("2026-09-25T01:20:20Z"),
+    }),
+    ledger("next", {
+      label: "오늘 날씨 알려 줘",
+      startedAt: at("2026-09-25T01:25:00Z"),
+      finishedAt: at("2026-09-25T01:25:10Z"),
+    }),
   ]);
   await database.insert(lafRoutineRuns).values([
     {
@@ -221,6 +253,98 @@ beforeAll(async () => {
       role: "assistant",
       content: "찾았어요",
     }),
+    message(6, run("site"), {
+      id: "m-site-call",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-site",
+          type: "function",
+          function: { name: "computer_navigate", arguments: "{}" },
+        },
+      ],
+    }),
+    message(7, run("site2"), {
+      id: "m-site-result",
+      role: "tool",
+      toolCallId: "call-site",
+      content: JSON.stringify({
+        url: "https://www.coupang.com/",
+        title: "Access Denied",
+        text: "You don't have permission to access this server.",
+        httpStatus: 403,
+      }),
+    }),
+    message(8, run("site2"), {
+      id: "m-site-snap",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-site-snap",
+          type: "function",
+          function: { name: "computer_snapshot", arguments: "{}" },
+        },
+      ],
+    }),
+    message(9, run("site2"), {
+      id: "m-site-snap-result",
+      role: "tool",
+      toolCallId: "call-site-snap",
+      content: JSON.stringify({ count: 0, elements: "" }),
+    }),
+    message(10, run("toss"), {
+      id: "m-toss-call",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-toss-open",
+          type: "function",
+          function: { name: "computer_navigate", arguments: "{}" },
+        },
+      ],
+    }),
+    message(11, run("toss2"), {
+      id: "m-toss-click",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-toss-click",
+          type: "function",
+          function: { name: "computer_click", arguments: "{}" },
+        },
+      ],
+    }),
+    message(
+      12,
+      run("next"),
+      {
+        id: "m-toss-open-result",
+        role: "tool",
+        toolCallId: "call-toss-open",
+        content: JSON.stringify({ url: "https://toss.im/", title: "토스" }),
+      },
+      "aGVsbG8=",
+    ),
+    message(13, run("next"), {
+      id: "m-toss-click-result",
+      role: "tool",
+      toolCallId: "call-toss-click",
+      content: UNANSWERED_RESULT,
+    }),
+    message(14, run("next"), {
+      id: "m-next-user",
+      role: "user",
+      content: "오늘 날씨 알려 줘",
+    }),
+    message(15, run("next"), {
+      id: "m-next-answer",
+      role: "assistant",
+      content: "맑아요",
+    }),
   ]);
   await database.insert(agentMemories).values([
     {
@@ -230,6 +354,14 @@ beforeAll(async () => {
       content:
         "사장님 가게는 매주 월요일에 쉰다. 배달은 오후 네 시까지만 받는다.",
       createdAt: at("2026-09-25T02:00:00Z"),
+    },
+    // Learned while the Coupang turn ran: counted on its row, not a row of its own.
+    {
+      id: `day-mem-during-${tag}`,
+      agentId: A.bot,
+      ownerUserId: A.user,
+      content: "쿠팡은 봇을 막는다",
+      createdAt: at("2026-09-25T01:10:20Z"),
     },
     {
       id: `day-mem-yesterday-${tag}`,
@@ -291,6 +423,9 @@ describe("the Bot's day", () => {
     ).toEqual([
       "routine:아침 주문 확인:silent",
       "learned:사장님 가게는 매주 월요일에 쉰다. 배달은 오후 네 시",
+      "chat:오늘 날씨 알려 줘",
+      "chat:토스에서 앱 다운로드 눌러 봐",
+      "chat:쿠팡에서 가격 봐 줘",
       "chat:예스24에서 책 찾아 줘",
       "routine:아침 주문 확인:said",
       "chat:오늘 새벽",
@@ -321,6 +456,8 @@ describe("the Bot's day", () => {
       runId: run("chat"),
       at: "2026-09-25T01:00:00.000Z",
       status: "stopped",
+      reason: null,
+      learned: 0,
       label: "예스24에서 책 찾아 줘",
       channelId: A.channel,
       messageId: "call-1",
@@ -331,6 +468,38 @@ describe("the Bot's day", () => {
         .filter((item) => item.kind === "chat")
         .map((item) => item.runId),
     ).not.toContain(run("step1"));
+  });
+
+  test("a site that refused the Bot is not 끝남, though the ledger says done; what it learned is on its row", async () => {
+    const day = await read({ userId: A.user, agentId: A.bot });
+    const site = day.items.find(
+      (item) => item.kind === "chat" && item.runId === run("site"),
+    );
+    expect(site).toMatchObject({
+      status: "error",
+      reason: "laf:site_refused",
+      learned: 1,
+    });
+    expect(JSON.stringify(day)).not.toContain("쿠팡은 봇을 막는다");
+    // Only the facts cross: never the page it was refused with.
+    expect(JSON.stringify(day)).not.toContain("permission");
+  });
+
+  test("a step that never got its answer is 멈춤, and its picture stays on its own turn", async () => {
+    const day = await read({ userId: A.user, agentId: A.bot });
+    const toss = day.items.find(
+      (item) => item.kind === "chat" && item.runId === run("toss"),
+    );
+    expect(toss).toMatchObject({
+      status: "stopped",
+      reason: null,
+      frameToolCallId: "call-toss-open",
+    });
+    // The next turn carried that answer and picture in, and never browsed: no picture, done.
+    const next = day.items.find(
+      (item) => item.kind === "chat" && item.runId === run("next"),
+    );
+    expect(next).toMatchObject({ status: "done", frameToolCallId: null });
   });
 
   test("a silent routine is silent, has no message, and still names its routine", async () => {
@@ -347,6 +516,7 @@ describe("the Bot's day", () => {
         silent: true,
         channelId: A.channel,
         messageId: null,
+        learned: 0,
       },
       {
         kind: "routine",
@@ -358,6 +528,7 @@ describe("the Bot's day", () => {
         silent: false,
         channelId: A.channel,
         messageId: "m-said",
+        learned: 0,
       },
     ]);
   });
@@ -409,7 +580,7 @@ describe("GET /api/agents/:agentId/day", () => {
     const response = await surface(A.user).request(`/api/agents/${A.bot}/day`);
     expect(response.status).toBe(200);
     const day = (await response.json()) as BotDay;
-    expect(day.items.length).toBe(5);
+    expect(day.items.length).toBe(8);
   });
 
   test("a Bot the person cannot see is not found, the same as the profile says", async () => {

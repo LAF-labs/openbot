@@ -347,6 +347,10 @@ export function ComputerTools() {
             url: result.url,
             text: result.text,
             truncated: result.truncated,
+            // The site refused ("Access Denied"): the card ends the task on it (`task-ending.ts`).
+            ...(typeof result.httpStatus === "number"
+              ? { httpStatus: result.httpStatus }
+              : {}),
           }
         : result;
     },

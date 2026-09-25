@@ -11,6 +11,12 @@
  * Pure, so the grouping, the sites and the sentences are tested without a browser.
  */
 import { jsonObjectOf } from "@shared/json-object";
+import {
+  BROWSING_TOOL_NAMES,
+  endingOfSteps,
+  resultFactsOf,
+  type TaskEnding as SharedEnding,
+} from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
 import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
@@ -23,18 +29,10 @@ import { t } from "@/lib/i18n";
  * two requests for a person either — each of those is a card of its own (`help-card.tsx`), and it ends
  * the task in front of it, because what the Bot did after somebody helped it is a new stretch of
  * work with its own last picture.
+ *
+ * In `shared/task-ending.ts`, because 오늘 on the server folds the same calls into the same ending.
  */
-export const BROWSING_TOOLS: ReadonlySet<string> = new Set([
-  "computer_navigate",
-  "computer_read",
-  "computer_snapshot",
-  "computer_click",
-  "computer_type",
-  "computer_key",
-  "computer_scroll",
-  "computer_switch_tab",
-  "computer_upload_file",
-]);
+export const BROWSING_TOOLS: ReadonlySet<string> = BROWSING_TOOL_NAMES;
 
 /** One call in a task, as the transcript holds it. */
 export type BrowsingStep = {
@@ -273,20 +271,24 @@ export function doingNow(steps: readonly BrowsingStep[]): string {
   }
 }
 
-/** How a finished task ended, from its steps. */
-export type TaskEnding = "running" | "done" | "stopped" | "blocked";
+/**
+ * How a task stands: running, or how it ended (`shared/task-ending.ts`, the one decision the card,
+ * 오늘 and the drawer all read). 사장님 차례 is not here: it is a question open on a step, which the
+ * card subscribes to (`task-state.ts`).
+ */
+export type TaskEnding = { kind: "running" } | SharedEnding;
 
 export function endingOf(
   steps: readonly BrowsingStep[],
   isOpen: boolean,
 ): TaskEnding {
-  if (isOpen) return "running";
-  const last = steps.at(-1);
-  if (!last || last.result === undefined) return "stopped";
-  const outcome = outcomeOf(last.result);
-  if (outcome.stopped === true) return "stopped";
-  if (outcome.refused === true || didNotWork(outcome)) return "blocked";
-  return "done";
+  if (isOpen) return { kind: "running" };
+  return endingOfSteps(
+    steps.map((step) => ({
+      name: step.name,
+      facts: resultFactsOf(step.result),
+    })),
+  );
 }
 
 /**
