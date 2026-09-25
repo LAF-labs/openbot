@@ -579,6 +579,8 @@ export function windowStart(
   ids: readonly string[],
   pinnedId: string | null,
   unreadId: string | null,
+  /** A row 오늘 asked to be shown (`lib/channels/jump.ts`): drawn however far back it is. */
+  jumpId: string | null = null,
 ): number {
   const pinned = pinnedId === null ? -1 : ids.indexOf(pinnedId);
   const start =
@@ -589,9 +591,12 @@ export function windowStart(
    * scroller keeps the reader's place across.
    */
   const unread = unreadId === null ? -1 : ids.indexOf(unreadId);
-  return unread >= 0 && ids.length - unread <= UNREAD_REACH_ROWS
-    ? Math.min(start, unread)
-    : start;
+  const reached =
+    unread >= 0 && ids.length - unread <= UNREAD_REACH_ROWS
+      ? Math.min(start, unread)
+      : start;
+  const jump = jumpId === null ? -1 : ids.indexOf(jumpId);
+  return jump >= 0 ? Math.min(reached, jump) : reached;
 }
 
 /**
@@ -1297,24 +1302,26 @@ export function ChatTranscript({
    * conversation, because those are walks over plain objects; what cost was drawing every row.
    */
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const jumpId = usePendingJump(channelId)?.messageId ?? null;
   const start = windowStart(
     items.map((item) => item.id),
     pinnedId,
     firstUnreadId,
+    jumpId,
   );
   const firstShownId = items[start]?.id ?? null;
   const hasEarlier = start > 0;
   /*
-   * Pinned once the conversation has arrived, to the row the window opened on. Before this runs
-   * the window is computed from the newest row, and it computes the same row, so the pin changes
-   * nothing that is drawn.
+   * Pinned to the row the window starts at: once the conversation has arrived, and again whenever
+   * the unread line or a jump reached further back — so the window only ever grows, and a jump that
+   * has been taken does not take the rows it drew away from under the reader. Before this runs the
+   * window is computed to start at that same row, so the pin changes nothing that is drawn.
    */
-  const isPinned =
-    pinnedId !== null && items.some((item) => item.id === pinnedId);
   useEffect(() => {
-    // And pinned again should the row it named ever leave the conversation.
-    if (!isPinned && firstShownId !== null) setPinnedId(firstShownId);
-  }, [isPinned, firstShownId]);
+    if (firstShownId !== null && firstShownId !== pinnedId) {
+      setPinnedId(firstShownId);
+    }
+  }, [firstShownId, pinnedId]);
   const earlierId =
     items[Math.max(0, start - TRANSCRIPT_WINDOW_ROWS)]?.id ?? null;
   const handleShowEarlier = () => {
@@ -1328,6 +1335,7 @@ export function ChatTranscript({
    */
   const earlierRef = useRef<HTMLDivElement>(null);
   const onEarlierInView = useEffectEvent(() => handleShowEarlier());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-armed per page, so a sentinel still in view after one is drawn asks for the next.
   useEffect(() => {
     const sentinel = earlierRef.current;
     if (!hasEarlier || !sentinel || typeof IntersectionObserver === "undefined")

@@ -75,7 +75,7 @@ function conversation(): Message[] {
   );
 }
 
-function transcript() {
+function transcript(channelId?: string) {
   const { ChatTranscript, TRANSCRIPT_WINDOW_ROWS } = modules.transcript;
   const { query } = modules;
   const client = new query.QueryClient();
@@ -83,7 +83,11 @@ function transcript() {
     createElement(
       query.QueryClientProvider,
       { client },
-      createElement(ChatTranscript, { busy, messages }),
+      createElement(ChatTranscript, {
+        busy,
+        messages,
+        ...(channelId ? { channelId } : {}),
+      }),
     );
   return { draw, windowRows: TRANSCRIPT_WINDOW_ROWS };
 }
@@ -112,6 +116,8 @@ describe("where the drawn window starts", () => {
     expect(windowStart([...ids, "m-new"], "m-440", null)).toBe(440);
     // Where the reading stopped can arrive after the pin, and still reaches back.
     expect(windowStart(ids, "m-440", "m-420")).toBe(420);
+    // A row 오늘 asked to be shown is drawn however far back it is.
+    expect(windowStart(ids, "m-440", null, "m-12")).toBe(12);
     // A pin that no longer names a row (another conversation's) falls back to the newest.
     expect(windowStart(ids, "gone", null)).toBe(
       LENGTH - modules.transcript.TRANSCRIPT_WINDOW_ROWS,
@@ -133,6 +139,24 @@ describe("a 500-message conversation", () => {
     expect(windowRows).toBeLessThanOrEqual(80);
     expect(rows.at(-1)).toBe(`a-${LENGTH - 1}`);
     expect(rows[0]).toBe(history[LENGTH - windowRows]?.id);
+  }, 30_000);
+
+  test("draws a row 오늘 asked for however far back it is, and keeps it drawn", async () => {
+    const { requestJump } = await import("../src/lib/channels/jump");
+    const { draw } = transcript("channel-jump");
+    const view = await mount(draw([]));
+    const { act } = await import("react");
+    await act(async () => {
+      requestJump({ channelId: "channel-jump", messageId: "u-10" });
+    });
+    await view.render(draw(conversation()));
+    await view.settle();
+    expect(rowsIn(view.host)).toContain("u-10");
+
+    // Taken, and the rows it drew stay: the window only grows.
+    await view.render(draw(conversation()));
+    await view.settle();
+    expect(rowsIn(view.host)[0]).toBe("u-10");
   }, 30_000);
 
   test("draws the next page above when asked for it, and keeps the newest", async () => {
