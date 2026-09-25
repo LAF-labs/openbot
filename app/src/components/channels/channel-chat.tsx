@@ -428,8 +428,6 @@ export function ChannelChat({
       text: trimmed,
     });
   };
-  const reportRef = useRef(report);
-  reportRef.current = report;
 
   /**
    * Everything `say` does once it has something worth sending, split out so the counter it is
@@ -559,6 +557,35 @@ export function ChannelChat({
     } finally {
       setRunsInFlight((count) => count - 1);
     }
+    // Still awaited: nothing failed it and nobody stopped it, so every run of it has come back.
+    if (!awaitingReply.current) return;
+    awaitingReply.current = false;
+    finishTurn();
+  };
+
+  /** The turn this tab started came back whole: say so to the roster, the stamps and the read mark. */
+  const finishTurn = () => {
+    const reply = [...agent.messages]
+      .reverse()
+      .find((message) => message.role === "assistant");
+    const content = typeof reply?.content === "string" ? reply.content : "";
+    if (content) report(content, runtimeAgentId);
+    // The turn's messages have stamps now; this is the only thing that asks for them.
+    void refreshTimesRef.current();
+    // And anything that landed while the Bot had the turn, which was parked rather than shown.
+    if (missedWhileBusy.current) {
+      missedWhileBusy.current = false;
+      void catchUpRef.current();
+    }
+    /*
+     * And the room is read again. The mark was set when the room opened; a reply that landed
+     * while the person sat watching it is newer than that mark, so on leaving, the roster
+     * flagged as unread the one reply they had just read. The previous mark is deliberately
+     * not captured here — the line stays where the person's reading actually started.
+     */
+    void markRead
+      .current({ channelId: channel.id, read: true })
+      .catch(() => {});
   };
 
   /**
@@ -783,37 +810,20 @@ export function ChannelChat({
         // The same stream carries `laf.model.usage`, which is nothing to a person.
         if (typeof name === "string" && turnNotice(name)) setNoticeCode(name);
       },
+      /*
+       * ONE RUN ENDED, WHICH IS NOT THE TURN ENDING. A turn that used the browser is several runs
+       * inside one `runAgent` — the Bot asks for a click, the run ends so this tab can make it, and
+       * the next run carries the result — so the turn's own ending is in `run`, where that call
+       * returns. This used to be it, and cleared `awaitingReply` on the first run of a browsing turn:
+       * a failure in any later run was dropped without a line (MEASURED 2026-09-25, agent-bot killed
+       * after a Naver search), and the answer itself was never reported or marked read.
+       */
       onRunFinishedEvent: () => {
-        const wasOurs = awaitingReply.current;
-        awaitingReply.current = false;
-        if (!wasOurs) return;
-        heard();
-
-        const reply = [...agent.messages]
-          .reverse()
-          .find((message) => message.role === "assistant");
-        const content = typeof reply?.content === "string" ? reply.content : "";
-        if (content) reportRef.current(content, runtimeAgentId);
-        // The turn's messages have stamps now; this is the only thing that asks for them.
-        void refreshTimesRef.current();
-        // And anything that landed while the Bot had the turn, which was parked rather than shown.
-        if (missedWhileBusy.current) {
-          missedWhileBusy.current = false;
-          void catchUpRef.current();
-        }
-        /*
-         * And the room is read again. The mark was set when the room opened; a reply that landed
-         * while the person sat watching it is newer than that mark, so on leaving, the roster
-         * flagged as unread the one reply they had just read. The previous mark is deliberately
-         * not captured here — the line stays where the person's reading actually started.
-         */
-        void markRead
-          .current({ channelId: channel.id, read: true })
-          .catch(() => {});
+        if (awaitingReply.current) heard();
       },
     });
     return () => subscription?.unsubscribe();
-  }, [agent, runtimeAgentId, channel.id]);
+  }, [agent, channel.id]);
 
   /*
    * A TURN THAT ENDED MOVES TODAY'S METER — on a free trial, once per turn, and not per run: a turn

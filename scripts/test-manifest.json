@@ -64,6 +64,7 @@
   "app/tests/browsing-card-decisions.test.tsx",
   "app/tests/browsing-card-title.test.ts",
   "app/tests/browsing-tasks.test.ts",
+  "app/tests/browsing-turn-end.test.tsx",
   "app/tests/bundle-graph.test.ts",
   "app/tests/card-seams.test.tsx",
   "app/tests/channel-events-socket.test.tsx",
