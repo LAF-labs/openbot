@@ -140,7 +140,16 @@ export function createApprovalRoutes(
   routes.get("/:botId", requireUser, requireBotAccess(), async (context) => {
     const botId = context.req.param("botId") ?? "";
     return context.json({
-      approvals: (await approvals.pending(botId)).map(presentable),
+      /*
+       * A lambda, never `.map(presentable)`: `map` hands the index as the second argument, which is
+       * `presentable`'s clock, so every question read as held at time zero. MEASURED 2026-09-25
+       * (0.5.4 final QA): a window closed without its `pagehide` (a crash, a killed process) left
+       * its holder behind, the list said `held: true` for the question's whole ten minutes, no other
+       * window took the step on, and an answer given on the phone went nowhere.
+       */
+      approvals: (await approvals.pending(botId)).map((approval) =>
+        presentable(approval),
+      ),
     });
   });
 

@@ -8,6 +8,7 @@ import {
   type ApprovalRegistry,
   createApprovalRegistry,
   fingerprintOf,
+  HOLD_LAPSE_MS,
 } from "../src/computer/approvals";
 import type { ComputerClient } from "../src/computer/client";
 import {
@@ -91,12 +92,14 @@ function fakeClient() {
  * people, and the only thing joining the two rows is the approval id. A test that gave each half its
  * own store could not see whether they agree.
  */
-async function surface() {
+async function surface(now?: () => number) {
   const rows: AuditEventInput[] = [];
   const auditStore: AuditStore = {
     insert: async (event) => void rows.push(event),
   };
-  const approvals: ApprovalRegistry = createApprovalRegistry();
+  const approvals: ApprovalRegistry = createApprovalRegistry(
+    now ? { now } : {},
+  );
   // One store behind the gateway and the routes, which is the arrangement being tested: the button
   // is pressed on one and the next action is decided on the other.
   const standing = createStandingApprovalStore();
@@ -489,9 +492,39 @@ describe("the step a question holds open", () => {
       400,
     );
 
+    const listed = (await (await app.request("/bot-1")).json()) as {
+      approvals: { held?: boolean }[];
+    };
+    expect(listed.approvals[0]?.held).toBe(true);
+
     await post(app, `${path}/release`, { holder: "window-aaaa" });
     const taken = await post(app, `${path}/hold`, { holder: "window-bbbb" });
     expect(await taken.json()).toMatchObject({ holding: true });
+  });
+
+  /*
+   * MEASURED 2026-09-25 (0.5.4 final QA): the list was `.map(presentable)`, which handed the index
+   * to `presentable` as its clock, so a window that died without letting go read as holding the
+   * step for the question's whole life — nobody took it on, and an answer went nowhere.
+   */
+  test("a window that went quiet without letting go is not read as holding, on the list", async () => {
+    // The hold is stamped by a registry clock one lapse and more behind the reader's.
+    const { app, gateway } = await surface(
+      () => Date.now() - HOLD_LAPSE_MS - 1_000,
+    );
+    const asked = (await gateway
+      .click("bot-1", "bot-1", STEP_DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await post(app, `/bot-1/${asked.approvalId}/hold`, {
+      holder: "window-gone",
+    });
+    const list = (await (await app.request("/bot-1")).json()) as {
+      approvals: { id: string; held?: boolean }[];
+    };
+    expect(list.approvals.map((approval) => approval.id)).toEqual([
+      asked.approvalId,
+    ]);
+    expect(list.approvals[0]?.held).toBeUndefined();
   });
 
   test("a stopped turn withdraws its question, on the record and not as a No", async () => {
