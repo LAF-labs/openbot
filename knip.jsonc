@@ -7,16 +7,15 @@
  * nothing that is never called can fail. knip (ISC, webpro-nl/knip) follows the import graph from
  * the entries below and names what the graph never reaches.
  *
- * Every entry is somewhere a process starts. A file only a subprocess runs is an entry too, or it
- * reads as dead: the `*-render.tsx` helpers and the `*-child.ts` routine processes are spawned by
- * `bun <path>` from a test, not imported.
+ * Every entry is somewhere a process starts; the ones a `package.json` script already names
+ * (`src/index.ts`, `src/main.tsx` through Vite, `typecheck.ts`) knip reads from there. A file only a
+ * subprocess runs is an entry too, or it reads as dead: the `*-render.tsx` helpers and the
+ * `*-child.ts` routine processes are spawned by `bun <path>` from a test, not imported.
  */
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // An export its own file uses is a local that happens to be exported; not dead.
   "ignoreExportsUsedInFile": true,
-  // Vendored source, kept as upstream wrote it so the next sync is a diff (see its README).
-  "ignore": ["server/src/context/vendor/**"],
   "ignoreIssues": {
     // shadcn's generated primitives export every part; the app takes the parts it needs.
     "app/src/components/ui/**": ["exports", "types"],
@@ -38,7 +37,6 @@
     },
     "app": {
       "entry": [
-        "src/main.tsx",
         "src/routes/**/*.tsx",
         "scripts/*.ts",
         "tests/**/*.test.{ts,tsx}",
@@ -64,15 +62,15 @@
       "project": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
     },
     "agent-bot": {
-      "entry": ["src/index.ts", "tests/**/*.test.ts"],
+      "entry": ["tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "agent-computer": {
-      "entry": ["src/index.ts", "tests/**/*.test.ts"],
+      "entry": ["tests/**/*.test.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     },
     "desktop": {
-      "entry": ["typecheck.ts", "scripts/*.ts"],
+      "entry": ["scripts/*.ts"],
       "project": ["*.ts", "scripts/**/*.ts"]
     }
   }
