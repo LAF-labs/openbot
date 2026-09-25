@@ -99,15 +99,30 @@ export function taskOf(
   text = text.split(/(?<=[.?!])\s+/)[0] ?? text;
   text = text.replace(LEADING_SKILL, "");
   if (site) {
-    const at = /^(.{1,24}?)(?:\s*(?:홈페이지|사이트|앱))?에서\s+/.exec(text);
-    const squash = (value: string) => value.replace(/\s+/g, "").toLowerCase();
-    if (at && squash(site).includes(squash(at[1] ?? ""))) {
-      text = text.slice(at[0].length);
-    }
+    const at = ASKED_PLACE.exec(text);
+    if (at && samePlace(site, at[1] ?? "")) text = text.slice(at[0].length);
   }
   text = text.replace(/[\s.!?~。…]+$/u, "");
   text = text.replace(REQUEST_ENDING, "").trim();
   return text || null;
+}
+
+/** "네이버 쇼핑에서 …": the place a request names, with its 홈페이지/사이트/앱 and 에서. */
+const ASKED_PLACE = /^(.{1,24}?)(?:\s*(?:홈페이지|사이트|앱))?에서\s+/;
+
+const squash = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+
+/**
+ * Whether the place a person named is the site the Bot went to: the same name, or a part of it the
+ * person named more exactly. MEASURED 2026-09-25 on MiMo: "네이버 쇼핑에서 크라프트 봉투 …" went to
+ * `search.naver.com`'s price comparison, and the card read "네이버 · 네이버 쇼핑에서 …".
+ */
+function samePlace(site: string, place: string): boolean {
+  const named = squash(place);
+  return (
+    named.length > 0 &&
+    (squash(site).includes(named) || named.startsWith(squash(site)))
+  );
 }
 
 /**
@@ -118,7 +133,16 @@ export function taskTitle(
   hosts: readonly string[],
   asked: string | undefined,
 ): string | null {
-  const site = siteNamesOf(hosts).at(-1) ?? null;
+  const visited = siteNamesOf(hosts).at(-1) ?? null;
+  /*
+   * The person's own name for the place when it is the same site, named more exactly: they said
+   * 네이버 쇼핑, and 네이버 is where its price comparison lives.
+   */
+  const place = ASKED_PLACE.exec(asked?.trim() ?? "")?.[1]?.trim();
+  const site =
+    visited && place && squash(place).startsWith(squash(visited))
+      ? place
+      : visited;
   const task = taskOf(asked, site);
   const title = [site, task].filter(Boolean).join(" · ");
   return title || null;

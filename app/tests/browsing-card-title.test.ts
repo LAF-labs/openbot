@@ -67,6 +67,10 @@ describe("what was asked, as half a title", () => {
     expect(taskOf("예스24 홈페이지에서 소년이 온다 찾아줘", "예스24")).toBe(
       "소년이 온다",
     );
+    // A part of the site named more exactly is still the site the other half names.
+    expect(
+      taskOf("네이버 쇼핑에서 크라프트 봉투 찾아서 알려줘", "네이버"),
+    ).toBe("크라프트 봉투 찾아서");
     // A different place is part of the request and stays.
     expect(taskOf("쿠팡에서 원두 찾아줘", "네이버 쇼핑")).toBe("쿠팡에서 원두");
   });
@@ -101,6 +105,24 @@ describe("the whole title", () => {
         "원두 1kg 가격 비교해 줘",
       ),
     ).toBe("Naver Shopping · 원두 1kg 가격 비교");
+  });
+
+  test("the person's own, more exact name for the site, said once", () => {
+    /*
+     * Measured on MiMo: the price comparison lives on search.naver.com, and the card read
+     * "네이버 · 네이버 쇼핑에서 빵 포장용 크라프트 봉투 …". Tests read the English keys, so the person
+     * says the English name here; on a Korean screen both halves are Korean and match the same way.
+     */
+    expect(
+      taskTitle(
+        ["search.naver.com"],
+        "Naver Shopping에서 크라프트 봉투 가격 비교해 줘",
+      ),
+    ).toBe("Naver Shopping · 크라프트 봉투 가격 비교");
+    // A different place is not the site named more exactly.
+    expect(taskTitle(["search.naver.com"], "쿠팡에서 원두 찾아줘")).toBe(
+      "Naver · 쿠팡에서 원두",
+    );
   });
 
   test("either half alone, and nothing for neither", () => {
