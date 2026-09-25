@@ -143,6 +143,11 @@ export function useActiveConversation(threadId: string | undefined): void {
  */
 const THREAD_HEADER = "x-openbot-thread-id";
 
+/** The conversation the surface in front of you is in, or undefined outside one. */
+export function activeConversationId(): string | undefined {
+  return conversation.current;
+}
+
 /** The header naming the conversation, or nothing when no surface has declared one. */
 export function activeConversationHeaders(): Record<string, string> {
   return conversation.current ? { [THREAD_HEADER]: conversation.current } : {};

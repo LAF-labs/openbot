@@ -447,6 +447,92 @@ describe("answering a question", () => {
 });
 
 /**
+ * A QUESTION OUTLIVES ITS WINDOW (UX review 0.5.4, candidate 1): raised from a conversation's step,
+ * it names that step for every window; one window holds it; a stopped turn withdraws it.
+ */
+describe("the step a question holds open", () => {
+  const STEP_DRIVER = { ...DRIVER, threadId: "thread-9", toolCallId: "call-3" };
+  const post = (
+    app: Hono<{ Variables: AppVariables }>,
+    path: string,
+    body?: Record<string, unknown>,
+  ) =>
+    app.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+  test("every window reads the step, one holds it, and letting go hands it on", async () => {
+    const { app, gateway } = await surface();
+    const asked = (await gateway
+      .click("bot-1", "bot-1", STEP_DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    const list = (await (await app.request("/bot-1")).json()) as {
+      approvals: { id: string; step?: unknown; held?: boolean }[];
+    };
+    expect(list.approvals[0]?.step).toEqual({
+      threadId: "thread-9",
+      toolCallId: "call-3",
+    });
+    expect(list.approvals[0]?.held).toBeUndefined();
+
+    const path = `/bot-1/${asked.approvalId}`;
+    const first = await post(app, `${path}/hold`, { holder: "window-aaaa" });
+    expect(await first.json()).toMatchObject({
+      holding: true,
+      approval: { held: true },
+    });
+    const second = await post(app, `${path}/hold`, { holder: "window-bbbb" });
+    expect(await second.json()).toMatchObject({ holding: false });
+    expect((await post(app, `${path}/hold`, { holder: "no" })).status).toBe(
+      400,
+    );
+
+    await post(app, `${path}/release`, { holder: "window-aaaa" });
+    const taken = await post(app, `${path}/hold`, { holder: "window-bbbb" });
+    expect(await taken.json()).toMatchObject({ holding: true });
+  });
+
+  test("a stopped turn withdraws its question, on the record and not as a No", async () => {
+    const { app, gateway, rows, approvals } = await surface();
+    const asked = (await gateway
+      .click("bot-1", "bot-1", STEP_DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    const withdrawn = await post(app, `/bot-1/${asked.approvalId}/withdraw`);
+    expect(withdrawn.status).toBe(200);
+    expect(rows.at(-1)?.eventType).toBe("approval.withdrawn");
+    expect(rows.at(-1)?.payload.approval).toBe(asked.approvalId);
+    expect(await approvals.pending("bot-1")).toEqual([]);
+    expect(
+      (await post(app, `/bot-1/${asked.approvalId}/withdraw`)).status,
+    ).toBe(409);
+    // Nothing stands against the action: the next attempt asks, it is not refused.
+    const again = await gateway
+      .click("bot-1", "bot-1", STEP_DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught);
+    expect(again).toBeInstanceOf(ActionNeedsApprovalError);
+  });
+
+  test("another person's Bot's question cannot be held or withdrawn", async () => {
+    const { app, gateway } = await surface();
+    const asked = (await gateway
+      .click("bot-1", "bot-1", STEP_DRIVER, { ref: "e9", snapshotId: 7 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(
+      (
+        await post(app, `/bot-3/${asked.approvalId}/hold`, {
+          holder: "window-aaaa",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await post(app, `/bot-3/${asked.approvalId}/withdraw`)).status,
+    ).toBe(404);
+  });
+});
+
+/**
  * "And stop asking me about this."
  *
  * The interesting failures here are all about the gap between what a person was shown and what the

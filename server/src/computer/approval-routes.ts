@@ -310,7 +310,118 @@ export function createApprovalRoutes(
     },
   );
 
+  /*
+   * WHICH WINDOW CARRIES A STEP ON (UX review 0.5.4, candidate 1).
+   *
+   * A question used to live only as long as the window whose tool call raised it: close or reload
+   * that window and the card was gone, and nothing could carry the Bot's step on once somebody
+   * answered. The question now names its step (`ApprovalStep`), every window of the conversation
+   * draws it, and exactly one of them holds it — the one that will send the action once it is
+   * allowed and hand the result back to the Bot. These three are how a window says so. All three
+   * are the Bot's owner's, like answering; none of them answers anything.
+   */
+
+  /** "I am still waiting on this, and I will carry it on." Polled by the holding window. */
+  routes.post(
+    "/:botId/:approvalId/hold",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const holder = holderOf(await context.req.json().catch(() => null));
+      if (!holder) {
+        return context.json(
+          { error: "laf:holder_missing", code: "laf:holder_missing" },
+          400,
+        );
+      }
+      const held = await approvals.hold(
+        context.req.param("approvalId") ?? "",
+        context.req.param("botId") ?? "",
+        holder,
+      );
+      if (!held.ok) {
+        return context.json(
+          {
+            error: "laf:approval_not_waiting",
+            code: "laf:approval_not_waiting",
+          },
+          409,
+        );
+      }
+      return context.json({
+        approval: presentable(held.approval),
+        holding: held.holding,
+      });
+    },
+  );
+
+  /**
+   * "This window is going away": sent as the page is hidden for good, so the next window to open
+   * the conversation takes the step at once instead of waiting out the quiet. Always 200 — there is
+   * nothing for a page that is closing to do with a refusal.
+   */
+  routes.post(
+    "/:botId/:approvalId/release",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const holder = holderOf(await context.req.json().catch(() => null));
+      const released = holder
+        ? await approvals.release(
+            context.req.param("approvalId") ?? "",
+            context.req.param("botId") ?? "",
+            holder,
+          )
+        : false;
+      return context.json({ released });
+    },
+  );
+
+  /** The turn that raised it was stopped: nobody is waiting for this answer any more. */
+  routes.post(
+    "/:botId/:approvalId/withdraw",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const record = context.var.actor;
+      const withdrawn = await approvals.withdraw(
+        context.req.param("approvalId") ?? "",
+        context.req.param("botId") ?? "",
+      );
+      if (!withdrawn) {
+        return context.json(
+          {
+            error: "laf:approval_not_waiting",
+            code: "laf:approval_not_waiting",
+          },
+          409,
+        );
+      }
+      // The notice about it is stale in the same way an answered one's is.
+      onAnswered?.(withdrawn.id);
+      await recordAuditEvent(auditStore, {
+        eventType: "approval.withdrawn",
+        targetType: withdrawn.target.type,
+        targetId: withdrawn.target.id,
+        ...(record.email === DEV_ACTOR.email ? {} : { actorUserId: record.id }),
+        payload: payloadFor(withdrawn, record.id),
+      });
+      return context.json({ withdrawn: true });
+    },
+  );
+
   return routes;
+}
+
+/**
+ * The window's own name for itself, off a body. A made-up id, checked for shape only: it
+ * authorises nothing, it only tells one window from another.
+ */
+function holderOf(body: unknown): string | undefined {
+  const holder = (body as { holder?: unknown } | null)?.holder;
+  return typeof holder === "string" && /^[A-Za-z0-9-]{8,64}$/.test(holder)
+    ? holder
+    : undefined;
 }
 
 /**

@@ -97,6 +97,12 @@ export const runOrigin = pgEnum("laf_run_origin", ["chat", "routine", "wake"]);
  * `unknown` is boot's verdict on a run whose process died mid-turn; `stopped` is a person pressing
  * Stop, which is not an error. Both existed as free text before this enum and both are written by
  * `runner/laf-runner.ts`; nothing writes any other value.
+ *
+ * `waiting` is a run that ended by handing a step to a window — a click to make, a question for the
+ * owner to answer — and whose step has not come back yet. It becomes `done` when the step's result
+ * carries the turn on, and `stopped` when it never does. Until 0.5.4 such a run was written `done`
+ * the moment it handed the step over, so a task that died with its window read as finished
+ * (UX review 0.5.4, finding 1).
  */
 export const runStatus = pgEnum("laf_run_status", [
   "running",
@@ -104,6 +110,7 @@ export const runStatus = pgEnum("laf_run_status", [
   "error",
   "stopped",
   "unknown",
+  "waiting",
 ]);
 
 /** `interval` runs every N minutes; `daily` runs once a day at `dailyLocal` in `dailyTimeZone`. */

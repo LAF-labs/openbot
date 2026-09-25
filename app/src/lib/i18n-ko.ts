@@ -2570,6 +2570,7 @@ export const ko: Record<string, string> = {
     "아직 오늘 한 일이 없어요. 이런 걸 맡겨 보세요.",
   "Approval needed · {subject}": "승인 필요 · {subject}",
   "Help needed · {reason}": "도움 필요 · {reason}",
+
   // 0.5.4 BC
   "Couldn't finish": "못 끝냄",
   "The site turned the Bot away": "사이트가 봇을 막았어요",
@@ -2580,4 +2581,11 @@ export const ko: Record<string, string> = {
   "Go to the question": "확인할 곳으로 가기",
   "Remembered {count}": "기억함 {count}",
   Stop: "멈추기",
+  // 0.5.4 A
+  "Carry on": "이어서 하기",
+  "You stopped this task partway.": "사장님이 중간에 멈춘 일이에요.",
+  "This task stopped before its last step finished.":
+    "마지막 단계를 마치기 전에 일이 멈췄어요.",
+  "Please carry on with the task you were doing.": "하던 일 이어서 해 주세요.",
+  "The turn stopped before anybody answered": "답하기 전에 일이 멈춤",
 };

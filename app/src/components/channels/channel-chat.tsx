@@ -6,6 +6,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CarryOnNotice } from "@/components/channels/carry-on-notice";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import { LEADING_SKILL } from "@/components/channels/composer/draft";
 import {
@@ -43,7 +44,6 @@ import {
   mergeStoredHistory,
 } from "@/lib/channels/thread-history";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
-import { turnNotice } from "@/lib/copilot/stopped-turn";
 import {
   CHANNEL_ACTIVITY,
   type ChannelActivity,
@@ -57,6 +57,13 @@ import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { holdChat } from "@/lib/copilot/held-chats";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
+import { watchStrandedSteps } from "@/lib/copilot/step-watcher";
+import { turnNotice } from "@/lib/copilot/stopped-turn";
+import {
+  taskStopOf,
+  type UnansweredCall,
+  withStepResult,
+} from "@/lib/copilot/stranded-steps";
 import { useToolsSettled } from "@/lib/copilot/tools-settled";
 
 import { t } from "@/lib/i18n";
@@ -857,11 +864,121 @@ export function ChannelChat({
         stop: () => {
           stopBeforeRun.current = true;
           awaitingReply.current = false;
+          stepWatcher.current?.stop();
           copilotkit.stopAgent({ agent });
         },
       }),
     [agent, copilotkit, channel.threadId],
   );
+
+  /*
+   * A STEP THAT OUTLIVED ITS WINDOW (UX review 0.5.4, candidate 1; audit item 16 from 0.5.3).
+   *
+   * The questions this conversation's steps are waiting on, drawn here whichever window raised
+   * them, folded when another window's person answers — and carried on from here when the window
+   * that raised one has gone: closed, or this very window before a reload. See
+   * `lib/copilot/step-watcher.ts`. Started once the history is in, so the calls it looks for are.
+   */
+  const [stepsChecked, setStepsChecked] = useState(false);
+  /** The server says the turn is going on somewhere — maybe in another window. See the watcher. */
+  const [turnGoingOn, setTurnGoingOn] = useState(false);
+  const stepWatcher = useRef<{ stop: () => void } | null>(null);
+  /**
+   * A step carried on from here: its result into the thread under the call, then the Bot's turn,
+   * exactly as the core would have run it for the window that asked. Stopped, the result goes in
+   * and nothing runs.
+   */
+  const carryOn = async (
+    step: UnansweredCall,
+    content: string,
+    stopped: boolean,
+  ) => {
+    agent.setMessages(
+      withStepResult(agent.messages, {
+        messageId: step.messageId,
+        toolCallId: step.call.id,
+        content,
+        id: crypto.randomUUID(),
+      }) as typeof agent.messages,
+    );
+    if (stopped) return;
+    stopBeforeRun.current = false;
+    setRunError(null);
+    setNoticeCode(null);
+    awaitingReply.current = true;
+    // The step's own result; nothing the person typed is riding on this run.
+    sending.current = [];
+    await run();
+  };
+  const carryOnRef = useRef(carryOn);
+  carryOnRef.current = carryOn;
+  useEffect(() => {
+    if (!isReady) return;
+    let current = true;
+    let watcher: ReturnType<typeof watchStrandedSteps> | undefined;
+    void joinGatePromise.then(() => {
+      if (!current) return;
+      watcher = watchStrandedSteps({
+        botId: runtimeAgentId,
+        threadId: channel.threadId,
+        messages: () => agent.messages,
+        busy: () => agent.isRunning || turnsNow.current > 0,
+        catchUp: () => catchUpRef.current(),
+        resync: async () => {
+          const stored = await loadThreadHistory(
+            channel.threadId,
+            runtimeAgentId,
+          );
+          if (stored && !agent.isRunning) {
+            agent.setMessages(stored as typeof agent.messages);
+          }
+        },
+        execute: async (step, question, signal) => {
+          const tool = copilotkit.getTool({
+            toolName: step.call.function.name,
+            agentId: agent.agentId,
+          });
+          if (!tool?.handler) throw new Error("laf:tool_unknown");
+          const args = JSON.parse(step.call.function.arguments || "{}");
+          // The call's own handler, told which question it is already waiting on (`resume`), so it
+          // waits and acts rather than asking the computer a second time.
+          const context = {
+            toolCall: { ...step.call, type: "function" as const },
+            agent,
+            signal,
+            resume: question,
+          };
+          return tool.handler(args, context);
+        },
+        carryOn: (step, content, stopped) =>
+          carryOnRef.current(step, content, stopped),
+        onChecked: (goingOn) => {
+          setStepsChecked(true);
+          setTurnGoingOn(goingOn);
+        },
+        onCarrying: (carrying) => {
+          const by = carrying ? 1 : -1;
+          turnsNow.current += by;
+          setTurnsInFlight((count) => count + by);
+          // Stop reaches it from here as it would the run: the button is drawn off this count.
+          setRunsInFlight((count) => count + by);
+        },
+      });
+      stepWatcher.current = watcher;
+    });
+    return () => {
+      current = false;
+      watcher?.dispose();
+      stepWatcher.current = null;
+    };
+  }, [
+    agent,
+    copilotkit,
+    isReady,
+    joinGatePromise,
+    channel.threadId,
+    runtimeAgentId,
+  ]);
 
   /*
    * Held in a ref because the run subscriber is wired once per agent, not per render — capturing
@@ -1060,8 +1177,15 @@ export function ChannelChat({
    */
   const handleStop = useCallback(() => {
     awaitingReply.current = false;
+    // A step this window carried on from another is not the core's run; it is stopped here.
+    stepWatcher.current?.stop();
     copilotkit.stopAgent({ agent });
   }, [agent, copilotkit]);
+  /*
+   * The last task ended in the middle of the Bot's work: a step that never came back, or one the
+   * person stopped. Read from the agent's own thread — the copy drawn above drops tool results.
+   */
+  const taskStop = taskStopOf(agent.messages);
 
   return (
     <ConversationProvider ask={askFromComponent}>
@@ -1094,7 +1218,18 @@ export function ChannelChat({
           {...(readWindow ? { readWindow } : {})}
           messages={thread}
           notice={
-            channel.active ? null : (
+            channel.active ? (
+              <CarryOnNotice
+                busy={agent.isRunning || turnsInFlight > 0 || turnGoingOn}
+                checked={stepsChecked}
+                onCarryOn={() => {
+                  void sayRef.current(
+                    t("Please carry on with the task you were doing."),
+                  );
+                }}
+                stop={taskStop}
+              />
+            ) : (
               <p className="pb-2 text-sm text-muted-foreground" role="status">
                 {t(
                   "This Bot has been deleted. The conversation stays readable, but it can no longer reply.",

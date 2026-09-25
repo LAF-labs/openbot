@@ -19,7 +19,14 @@ import { workingQueryOptions } from "./working";
  * day changed (`useDayFollowsWork`). And the window coming forward refetches, as every query does.
  */
 
-export type DayRunStatus = "done" | "error" | "stopped" | "unknown" | "running";
+/** `waiting`: the turn's step is with a window — the owner's answer, most often. */
+export type DayRunStatus =
+  | "done"
+  | "error"
+  | "stopped"
+  | "unknown"
+  | "running"
+  | "waiting";
 
 export type BotDayItem =
   | {
@@ -169,6 +176,11 @@ export function dayMark(
   }
   if (status === "running") {
     return { text: taskStateWord({ kind: "running" }), tone: "active" };
+  }
+  // Its step is waiting on a window: the owner's answer, or a window that has not come back yet.
+  // Not finished, which is what it read as when the ledger wrote it `done` (UX review 0.5.4, #1).
+  if (status === "waiting") {
+    return { text: taskStateWord({ kind: "yourTurn" }), tone: "active" };
   }
   return null;
 }

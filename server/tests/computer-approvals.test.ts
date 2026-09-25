@@ -3,6 +3,8 @@ import {
   type ApprovalSubject,
   createApprovalRegistry,
   fingerprintOf,
+  HOLD_LAPSE_MS,
+  presentable,
 } from "../src/computer/approvals";
 import { A_CLICK } from "./support/subjects";
 
@@ -390,5 +392,104 @@ describe("the fingerprint", () => {
     expect(fingerprintOf({ botId: "b", toolName: "t", ref: "ab" })).not.toBe(
       fingerprintOf({ botId: "b", toolName: "t", ref: "a", key: "b" }),
     );
+  });
+});
+
+/**
+ * A QUESTION OUTLIVES THE WINDOW THAT RAISED IT (UX review 0.5.4, candidate 1). It names its step,
+ * every window of the conversation can see it, and exactly one window holds it — the one that will
+ * carry the step on once it is answered.
+ */
+describe("which window carries a question's step on", () => {
+  const STEP = { threadId: "thread-1", toolCallId: "call-7" };
+
+  async function askFromStep(
+    approvals: ReturnType<typeof registry>,
+  ): Promise<string> {
+    const approval = await approvals.request({
+      botId: CLICK.botId,
+      actor: "owner",
+      rule: "r",
+      subject: A_CLICK,
+      fingerprint: fingerprintOf(CLICK),
+      step: STEP,
+      target: { type: "computer", id: CLICK.botId },
+    });
+    return approval.id;
+  }
+
+  test("the step travels with the question to every window", async () => {
+    const approvals = registry();
+    await askFromStep(approvals);
+    const [open] = await approvals.pending(CLICK.botId);
+    expect(presentable(open as never).step).toEqual(STEP);
+  });
+
+  test("one holder at a time, kept by whoever keeps asking", async () => {
+    const clock = { at: 1_000_000 };
+    const approvals = registry(clock);
+    const id = await askFromStep(approvals);
+
+    const first = await approvals.hold(id, CLICK.botId, "window-a");
+    expect(first).toMatchObject({ ok: true, holding: true });
+    const second = await approvals.hold(id, CLICK.botId, "window-b");
+    expect(second).toMatchObject({ ok: true, holding: false });
+    const [held] = await approvals.pending(CLICK.botId);
+    expect(presentable(held as never, clock.at).held).toBe(true);
+
+    clock.at += HOLD_LAPSE_MS - 1;
+    expect(await approvals.hold(id, CLICK.botId, "window-a")).toMatchObject({
+      holding: true,
+    });
+  });
+
+  test("a window that let go, or went quiet, is taken over", async () => {
+    const clock = { at: 1_000_000 };
+    const approvals = registry(clock);
+    const id = await askFromStep(approvals);
+    await approvals.hold(id, CLICK.botId, "window-a");
+
+    // Said so on its way out: the next window takes the step at once.
+    expect(await approvals.release(id, CLICK.botId, "window-b")).toBe(false);
+    expect(await approvals.release(id, CLICK.botId, "window-a")).toBe(true);
+    expect(await approvals.hold(id, CLICK.botId, "window-b")).toMatchObject({
+      holding: true,
+    });
+
+    // Went quiet without saying so: taken once the quiet outlasts a throttled background tab.
+    clock.at += HOLD_LAPSE_MS;
+    expect(await approvals.hold(id, CLICK.botId, "window-c")).toMatchObject({
+      holding: true,
+    });
+    expect(await approvals.hold(id, CLICK.botId, "window-b")).toMatchObject({
+      holding: false,
+    });
+  });
+
+  test("holding answers nothing, and an answer is still bound to its action", async () => {
+    const approvals = registry();
+    const id = await askFromStep(approvals);
+    const held = await approvals.hold(id, CLICK.botId, "window-a");
+    expect(held.ok && held.approval.granted).toBeUndefined();
+    expect(await approvals.consume(id, fingerprintOf(CLICK))).toEqual({
+      ok: false,
+      reason: "unanswered",
+    });
+  });
+
+  test("a withdrawn question is gone without a No standing against the action", async () => {
+    const approvals = registry();
+    const id = await askFromStep(approvals);
+    expect((await approvals.withdraw(id, "another-bot")) === undefined).toBe(
+      true,
+    );
+    expect((await approvals.withdraw(id, CLICK.botId))?.id).toBe(id);
+    expect(await approvals.pending(CLICK.botId)).toEqual([]);
+    expect(await approvals.hold(id, CLICK.botId, "window-a")).toEqual({
+      ok: false,
+    });
+    expect(
+      await approvals.recentlyDeclined(CLICK.botId, fingerprintOf(CLICK)),
+    ).toBe(false);
   });
 });

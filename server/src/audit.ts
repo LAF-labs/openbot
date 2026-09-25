@@ -180,6 +180,13 @@ export const auditEventTypes = [
    * does next, and "why was the Bot asked again after being told no" needs a row to find.
    */
   "approval.decline_lifted",
+  /**
+   * A question nobody will spend any more, closed because the turn that raised it was stopped
+   * (`approval-routes.ts`, withdraw). Not an answer and not a No: without it the trail showed a
+   * question asked and never answered, which is the shape of a Bot left waiting on nobody — the
+   * opposite of what happened.
+   */
+  "approval.withdrawn",
   // The computer itself being stopped or wiped. `reset` destroys every login on the one browser this
   // account's Bots share, which is both the recovery path and the most consequential button on the
   // admin page, so who pressed it and when is exactly the sort of thing an investigator needs and

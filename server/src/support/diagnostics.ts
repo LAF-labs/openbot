@@ -281,7 +281,7 @@ function screenEventFrom(
 export type LedgerRun = {
   runId: string;
   agentId: string | null;
-  status: "running" | "done" | "error" | "stopped" | "unknown";
+  status: "running" | "done" | "error" | "stopped" | "unknown" | "waiting";
   origin: string;
   error: string | null;
   startedAt: Date;
@@ -301,6 +301,9 @@ function runEventName(status: LedgerRun["status"]): string {
       return "run_stopped";
     case "unknown":
       return "run_interrupted";
+    // Its step is with a window: a click to make, or a question the owner has not answered yet.
+    case "waiting":
+      return "run_waiting";
   }
 }
 

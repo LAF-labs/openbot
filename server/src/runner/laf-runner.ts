@@ -32,7 +32,7 @@ import {
   InMemoryAgentRunner,
   type InMemoryThread,
 } from "@copilotkit/runtime/v2";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { TURN_FAILURE_CODES } from "../channels/turn-failures";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadRuns } from "../db/schema";
@@ -269,6 +269,26 @@ function carriesAStepOn(messages: readonly Message[]): boolean {
 }
 
 /**
+ * Why a run that handed a step to a window was recorded `stopped` without anybody pressing Stop:
+ * the step never came back — its window closed, or the person said something new instead.
+ */
+export const STEP_NOT_RETURNED = "laf:step_not_returned";
+
+/**
+ * A run that handed its step to a window and has not heard back, as the ledger has to finish it.
+ *
+ * `written` settles once the run's own `waiting` row is written, so the ending that follows cannot
+ * land first and be overwritten by it: the window answers a click in milliseconds, and the two
+ * writes race.
+ */
+type StepWait = {
+  runId: string;
+  eventCount: number;
+  written: Promise<void>;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+/**
  * The Bot's stand-in for the one run a stop refuses: it starts, it finishes, it asks nothing.
  *
  * Handed to the vendored runner in the Bot's place so everything downstream — the stream the browser
@@ -334,6 +354,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   private readonly inBrowser = new Map<string, () => void>();
   /** Threads a person stopped while a step was with a browser, and when. See `run`. */
   private readonly halted = new Map<string, number>();
+  /** Runs whose ledger row says `waiting`, by thread, until their step comes back or never does. */
+  private readonly stepWaits = new Map<string, StepWait>();
 
   private constructor(
     private readonly database: Database,
@@ -367,11 +389,14 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      * because the process that ran it is the one that just died. Marked
      * `unknown` rather than `error` — nothing is known about how it ended,
      * and the digest names these as what they are: crash suspects.
+     *
+     * And a run still `waiting`: its step's question and its window's hold were in the memory of
+     * the process that died, so nothing can carry it on now.
      */
     const reconciled = await database
       .update(lafThreadRuns)
       .set({ status: "unknown", finishedAt: new Date() })
-      .where(eq(lafThreadRuns.status, "running"))
+      .where(inArray(lafThreadRuns.status, ["running", "waiting"]))
       .returning({
         runId: lafThreadRuns.runId,
         threadId: lafThreadRuns.threadId,
@@ -524,13 +549,25 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
      * lets `모두 멈추기` stop a conversation open in another window as well as its own. A person's
      * own new message is never refused: its last message is theirs, not a step's result.
      */
-    this.inBrowser.get(request.threadId)?.();
     const haltedAt = this.halted.get(request.threadId);
-    this.halted.delete(request.threadId);
     const refused =
       haltedAt !== undefined &&
       Date.now() - haltedAt < BROWSER_STEP_MS &&
       carriesAStepOn(inputMessages);
+    /*
+     * And the run that handed it over is written with how its step ended: carried on is `done`; a
+     * stop, or a person saying something new while the step never came back, is `stopped`.
+     */
+    this.endStepWait(
+      request.threadId,
+      refused
+        ? { status: "stopped", error: null }
+        : carriesAStepOn(inputMessages)
+          ? { status: "done", error: null }
+          : { status: "stopped", error: STEP_NOT_RETURNED },
+    );
+    this.inBrowser.get(request.threadId)?.();
+    this.halted.delete(request.threadId);
     const live: LiveRun = { stopped: refused, over: false };
     this.latest.set(request.threadId, live);
     const opened = this.beginRun(
@@ -612,9 +649,97 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     const live = this.latest.get(request.threadId);
     const marked = live !== undefined && !live.over && !live.stopped;
     if (live && marked) live.stopped = true;
+    /*
+     * A Stop pressed while a window had the step: nothing is on the wire to abort, and the run that
+     * handed the step over is what the person stopped. Without this it read `waiting` for ten
+     * minutes after they had stopped it.
+     */
+    this.endStepWait(request.threadId, { status: "stopped", error: null });
     const stopped = (await super.stop(request)) === true;
     if (live && marked && !stopped) live.stopped = false;
     return stopped;
+  }
+
+  /**
+   * Whether this thread's turn is still going on somewhere: a run on the wire, or a step handed to
+   * a window that has not come back yet. What a second window asks before saying a task stopped —
+   * from where it stands, a step another window is making looks exactly like one that died.
+   */
+  stepState(threadId: string): { running: boolean; waiting: boolean } {
+    const live = this.latest.get(threadId);
+    return {
+      running: live !== undefined && !live.over,
+      waiting: this.stepWaits.has(threadId),
+    };
+  }
+
+  /**
+   * The window that held this thread's step is going away without it — closed or reloaded mid-step
+   * with no question open to outlive it. The run that handed the step over stopped, and says so now
+   * rather than ten minutes from now. False when no step was out.
+   */
+  abandonStep(threadId: string): boolean {
+    if (!this.stepWaits.has(threadId)) return false;
+    this.endStepWait(threadId, { status: "stopped", error: STEP_NOT_RETURNED });
+    this.inBrowser.get(threadId)?.();
+    return true;
+  }
+
+  /**
+   * A run handed its step to a window: its row says `waiting` until the step comes back, and
+   * `stopped` if it has not in the time the longest step may take.
+   */
+  private beginStepWait(
+    threadId: string,
+    runId: string,
+    eventCount: number,
+  ): () => void {
+    // Every run ends the thread's wait as it starts, so there is none here; a stray timer is cleared.
+    const previous = this.stepWaits.get(threadId);
+    if (previous) clearTimeout(previous.timer);
+    let written: () => void = () => {};
+    const entry: StepWait = {
+      runId,
+      eventCount,
+      written: new Promise<void>((resolve) => {
+        written = resolve;
+      }),
+      timer: setTimeout(() => {
+        if (this.stepWaits.get(threadId) === entry) {
+          this.endStepWait(threadId, {
+            status: "stopped",
+            error: STEP_NOT_RETURNED,
+          });
+        }
+      }, BROWSER_STEP_MS),
+    };
+    entry.timer.unref?.();
+    this.stepWaits.set(threadId, entry);
+    return written;
+  }
+
+  /** The step came back, or never will: the run that handed it over gets its real ending. */
+  private endStepWait(
+    threadId: string,
+    outcome: { status: "done" | "stopped"; error: string | null },
+  ): void {
+    const entry = this.stepWaits.get(threadId);
+    if (!entry) return;
+    this.stepWaits.delete(threadId);
+    clearTimeout(entry.timer);
+    void entry.written
+      .then(() =>
+        this.ledger.settle(entry.runId, {
+          ...outcome,
+          eventCount: entry.eventCount,
+        }),
+      )
+      .catch((error: unknown) => {
+        log.error("run_end_not_persisted", {
+          thread: threadId,
+          reason: describeFailure(error),
+        });
+      });
   }
 
   /** A run's stream has ended: it is no longer going on, whatever is still being written about it. */
@@ -668,6 +793,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       threadId,
       stop: async () => {
         this.halted.set(threadId, Date.now());
+        this.endStepWait(threadId, { status: "stopped", error: null });
         return true;
       },
     });
@@ -791,6 +917,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     errorMessage: string | null,
     live: LiveRun,
   ): Promise<void> {
+    /** Says this run's `waiting` row is written, where it has one. Called on every way out. */
+    let waited: (() => void) | undefined;
     try {
       const { runId, owner } = await opened;
       /*
@@ -798,15 +926,23 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
        * the browser starts the step's run a round trip after this one ended, and a listing made
        * after that run began would claim a step that is already over.
        */
-      if (
-        owner &&
+      const handed =
         !live.stopped &&
         errorMessage === null &&
         this.latest.get(threadId) === live &&
-        handedToBrowser(events)
-      ) {
+        handedToBrowser(events);
+      if (owner && handed) {
         this.listInBrowser(threadId, owner, agentId);
       }
+      /*
+       * Decided here, with nothing awaited between the check above and the entry below: a step's
+       * result can come back before this run's rows are written, and the run that carries it on
+       * finds the entry and ends it — after the `waiting` row, never before (`StepWait.written`).
+       */
+      waited =
+        runId && handed
+          ? this.beginStepWait(threadId, runId, events.length)
+          : undefined;
       const messages = [
         ...inputMessages,
         ...assistantMessagesFrom(events, startedAt, agentId),
@@ -815,11 +951,14 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
       if (runId) {
         const outcome = live.stopped
           ? { status: "stopped" as const, error: null }
-          : runOutcome(events, errorMessage);
+          : waited
+            ? { status: "waiting" as const, error: null }
+            : runOutcome(events, errorMessage);
         await this.ledger.settle(runId, {
           ...outcome,
           eventCount: events.length,
         });
+        waited?.();
         /*
          * NOT THE TURN'S TOKEN COUNTS, which were written here until 2026-09-15 on the claim that
          * this tee was the one place every run's events pass through — chat, rooms and routines
@@ -830,6 +969,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
          */
       }
     } catch (error) {
+      waited?.();
       log.error("run_end_not_persisted", {
         thread: threadId,
         reason: describeFailure(error),

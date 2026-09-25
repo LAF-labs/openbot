@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
 import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { silenceOf } from "@/lib/audit/silence";
+import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { siteById } from "@/lib/sites/catalogue";
@@ -612,6 +612,8 @@ export const DECISIONS: Record<string, string> = {
   "approval.standing_revoked": "A person asked to be asked again",
   // Not "allowed it": the No is taken back and the next attempt is asked about again.
   "approval.decline_lifted": "A person took back their no",
+  // Not a No: the turn that asked was stopped, so nobody was waiting for the answer any more.
+  "approval.withdrawn": "The turn stopped before anybody answered",
 
   "component.granted": "Granted to this Bot",
   "component.revoked": "Taken away from this Bot",
@@ -952,6 +954,7 @@ export const EVENTS: Record<string, string> = {
   "approval.standing_granted": "A standing allowance",
   "approval.standing_revoked": "A standing allowance",
   "approval.decline_lifted": "A question",
+  "approval.withdrawn": "A question",
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
   "computer.released": "The computer",

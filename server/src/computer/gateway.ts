@@ -67,6 +67,7 @@ export {
   ActionNeedsApprovalError,
   ActionRefusedError,
   THREAD_HEADER,
+  TOOL_CALL_HEADER,
 } from "./gateway/caller";
 export { isTextKey } from "./gateway/intent";
 

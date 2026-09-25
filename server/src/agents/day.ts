@@ -58,7 +58,14 @@ import { log } from "../log";
 import { isSilentAnswer } from "../routines/deliver";
 import { headOf } from "../runner/run-ledger";
 
-export type DayRunStatus = "done" | "error" | "stopped" | "unknown" | "running";
+/** `waiting`: the turn's step is with a window — the owner's answer, most often (run-ledger). */
+export type DayRunStatus =
+  | "done"
+  | "error"
+  | "stopped"
+  | "unknown"
+  | "running"
+  | "waiting";
 
 export type BotDayItem =
   | {

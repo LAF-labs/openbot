@@ -58,6 +58,32 @@ export const APPROVAL_TTL_MS = 10 * 60_000;
 export const DECLINE_STICKS_MS = 30 * 60_000;
 
 /**
+ * How long a window may go quiet before the step it was holding counts as let go.
+ *
+ * The window whose tool call raised a question holds it open by asking after it every second
+ * (`hold`), and says so when it goes away (`release`, sent as the page is hidden for good). The
+ * quiet is for the window that could not say so: a crash, a laptop lid, a phone that killed the tab.
+ * Ninety seconds, because a hidden Chrome tab is throttled to one timer a minute after five minutes
+ * (measured 2026-08-24): a window that is merely behind others must not have its step taken from it.
+ */
+export const HOLD_LAPSE_MS = 90_000;
+
+/**
+ * The step of a conversation a question holds open: which thread, and which of the Bot's tool calls.
+ *
+ * What lets a question outlive the window it was raised in (UX review 0.5.4, candidate 1). The
+ * window that raised it used to be the only thing that knew which tool call it was about, so
+ * closing or reloading it took the card away, and a second window showed the task stopped with no
+ * card at all. With the step on the question, any window that opens the conversation can draw the
+ * card on its line and, when nobody else is holding the step, carry it on once it is answered.
+ *
+ * Separate from `threadId`, which is present only when "for this conversation" is on offer and is
+ * off with every other allowance when a deployment turns them off; where a question was raised is a
+ * fact either way.
+ */
+export type ApprovalStep = { threadId: string; toolCallId: string };
+
+/**
  * The action an approval is about, in the fields a fingerprint is taken over.
  *
  * Everything here is known to the caller before it acts and is derived from the request it is
@@ -280,6 +306,13 @@ export type PendingApproval = {
    * request, for the reason `scope` is.
    */
   threadId?: string;
+  /** The conversation step this question holds open. See {@link ApprovalStep}. */
+  step?: ApprovalStep;
+  /**
+   * The window holding the step while it waits, and when it last said so. Absent once let go.
+   * An id the window made up for itself; nothing is authorised by it, it only says who carries on.
+   */
+  holder?: { id: string; seenAt: number };
   requestedAt: string;
   expiresAt: string;
   /** Undefined until somebody answers. False is an answer, and a final one. */
@@ -311,13 +344,27 @@ export type PresentedApproval = {
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer, so the card knows to draw that button. */
   threadId?: string;
+  /** Which conversation and which tool call, so every window of it can draw the card. */
+  step?: ApprovalStep;
+  /** Some window is holding the step and will carry it on; nobody else should. */
+  held?: true;
   requestedAt: string;
   expiresAt: string;
   granted?: boolean;
   answeredBy?: string;
 };
 
-export function presentable(approval: PendingApproval): PresentedApproval {
+/** Whether a window is holding this question's step right now. */
+export function isHeld(approval: PendingApproval, at: number): boolean {
+  return (
+    approval.holder !== undefined && at - approval.holder.seenAt < HOLD_LAPSE_MS
+  );
+}
+
+export function presentable(
+  approval: PendingApproval,
+  at: number = Date.now(),
+): PresentedApproval {
   return {
     id: approval.id,
     botId: approval.botId,
@@ -326,6 +373,8 @@ export function presentable(approval: PendingApproval): PresentedApproval {
     ...(approval.preview ? { preview: approval.preview } : {}),
     ...(approval.scope ? { scope: approval.scope } : {}),
     ...(approval.threadId ? { threadId: approval.threadId } : {}),
+    ...(approval.step ? { step: approval.step } : {}),
+    ...(isHeld(approval, at) ? { held: true as const } : {}),
     requestedAt: approval.requestedAt,
     expiresAt: approval.expiresAt,
     ...(approval.granted === undefined ? {} : { granted: approval.granted }),
@@ -337,6 +386,17 @@ export type ApprovalAnswer =
   | { ok: true; approval: PendingApproval }
   /** One reason, because a person acts on all three identically: that question is no longer open. */
   | { ok: false; reason: "no longer open" };
+
+/**
+ * What a window learned by holding a question's step.
+ *
+ * `holding` false means another window has it and is alive: this one draws the card and leaves the
+ * carrying on to that one. `ok: false` means the question is not open here any more — answered and
+ * spent, withdrawn, expired, or asked about another Bot.
+ */
+export type ApprovalHold =
+  | { ok: true; approval: PendingApproval; holding: boolean }
+  | { ok: false };
 
 export type ApprovalConsumption =
   | { ok: true; approval: PendingApproval }
@@ -416,6 +476,8 @@ export type ApprovalRegistry = {
     scope?: AllowanceScope;
     /** The conversation it came from, where it came from one. See PendingApproval.threadId. */
     threadId?: string;
+    /** The conversation step it holds open, where the surface named one. See {@link ApprovalStep}. */
+    step?: ApprovalStep;
     target: { type: string; id: string };
   }) => Promise<PendingApproval>;
   /**
@@ -469,6 +531,24 @@ export type ApprovalRegistry = {
     id: string,
     botId: string,
   ) => Promise<{ ok: true; approval: PendingApproval } | { ok: false }>;
+  /**
+   * A window saying it is still waiting on this question, and will carry its step on.
+   *
+   * Taken when nobody holds it, when the holder let it go, or when the holder has been quiet for
+   * {@link HOLD_LAPSE_MS}; kept by whoever holds it for as long as it keeps asking. One holder at a
+   * time is what stops two windows carrying the same step on twice.
+   */
+  hold: (id: string, botId: string, holderId: string) => Promise<ApprovalHold>;
+  /** The holding window is going away. The question stays open for another window to take. */
+  release: (id: string, botId: string, holderId: string) => Promise<boolean>;
+  /**
+   * The turn that raised this question was stopped, so nobody is waiting for its answer.
+   *
+   * Not a No: nothing is recorded against the action and the next attempt asks as usual. Without
+   * it a stopped turn's question stayed answerable for the rest of its ten minutes, and now that
+   * every window of a conversation draws what is open, it would have been drawn in all of them.
+   */
+  withdraw: (id: string, botId: string) => Promise<PendingApproval | undefined>;
 };
 
 /**
@@ -589,6 +669,7 @@ export function createApprovalRegistry(
         fingerprint: input.fingerprint,
         ...(input.scope ? { scope: input.scope } : {}),
         ...(input.threadId ? { threadId: input.threadId } : {}),
+        ...(input.step ? { step: input.step } : {}),
         target: input.target,
         requestedAt: new Date(at).toISOString(),
         expiresAt: new Date(at + ttlMs).toISOString(),
@@ -656,6 +737,47 @@ export function createApprovalRegistry(
     liftDecline: async (id, botId) => {
       const approval = declines.lift(id, botId);
       return approval ? { ok: true, approval } : { ok: false };
+    },
+
+    hold: async (id, botId, holderId) => {
+      sweep();
+      const approval = open.get(id);
+      if (!approval || approval.botId !== botId || !holderId) {
+        return { ok: false };
+      }
+      const at = now();
+      const takenElsewhere =
+        isHeld(approval, at) && approval.holder?.id !== holderId;
+      if (takenElsewhere) return { ok: true, approval, holding: false };
+      const held: PendingApproval = {
+        ...approval,
+        holder: { id: holderId, seenAt: at },
+      };
+      open.set(id, held);
+      return { ok: true, approval: held, holding: true };
+    },
+
+    release: async (id, botId, holderId) => {
+      sweep();
+      const approval = open.get(id);
+      if (
+        !approval ||
+        approval.botId !== botId ||
+        approval.holder?.id !== holderId
+      ) {
+        return false;
+      }
+      const { holder: _released, ...rest } = approval;
+      open.set(id, rest);
+      return true;
+    },
+
+    withdraw: async (id, botId) => {
+      sweep();
+      const approval = open.get(id);
+      if (!approval || approval.botId !== botId) return undefined;
+      open.delete(id);
+      return approval;
     },
   };
 }

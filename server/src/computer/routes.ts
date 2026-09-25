@@ -38,6 +38,7 @@ import {
   ActionRefusedError,
   type ComputerGateway,
   THREAD_HEADER,
+  TOOL_CALL_HEADER,
 } from "./gateway";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
 import { readFileInputOf } from "./schema";
@@ -959,6 +960,9 @@ async function act(
         // Which conversation this is happening in, so an answer can be "for this conversation".
         // Absent is fine: the question is then asked in the standing terms alone.
         ...(threadOf(context) ? { threadId: threadOf(context) } : {}),
+        // And which of the Bot's calls, so a question it raises can be drawn and carried on from
+        // any window of the conversation (`ApprovalStep`).
+        ...(toolCallOf(context) ? { toolCallId: toolCallOf(context) } : {}),
       },
       body,
       context.req.raw.signal,
@@ -1071,6 +1075,12 @@ function awaitingApproval(
 /** The conversation the surface says it is in, off the request. Undefined when it said nothing. */
 function threadOf(context: ComputerContext): string | undefined {
   const named = context.req.header(THREAD_HEADER)?.trim();
+  return named ? named : undefined;
+}
+
+/** The Bot's tool call the surface says this request carries out. Undefined when it said nothing. */
+function toolCallOf(context: ComputerContext): string | undefined {
+  const named = context.req.header(TOOL_CALL_HEADER)?.trim();
   return named ? named : undefined;
 }
 

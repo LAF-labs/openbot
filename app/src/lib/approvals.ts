@@ -18,6 +18,7 @@
  * IT IS ALSO WHERE THE QUESTION BECOMES A SENTENCE. The server sends what the action is; the words
  * are chosen here, once, for every card that asks. See `describeSubject`.
  */
+import { readableLabel, readableName } from "@shared/element-label";
 import { moneyWordIn, shippedAskRuleOf } from "@shared/policy-rules";
 import { type CallPreview, callPreviewOf } from "@/lib/call-preview";
 import { t } from "@/lib/i18n";
@@ -127,6 +128,14 @@ export type PendingApproval = {
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer. See `OpenQuestion.threadId`. */
   threadId?: string;
+  /**
+   * The conversation step the question holds open: which thread, which of the Bot's tool calls.
+   * What lets every window of that conversation draw the card, and carry the step on once it is
+   * answered if the window that raised it has gone (`lib/copilot/stranded-steps.ts`).
+   */
+  step?: { threadId: string; toolCallId: string };
+  /** Some window is holding the step and will carry it on. */
+  held?: true;
   requestedAt: string;
   expiresAt: string;
   /** Absent while nobody has answered. False is an answer. */
@@ -217,7 +226,9 @@ export function subjectPhrases(subject: AskSubject): {
 
 function actionPhrase(subject: AskSubject): Phrase {
   const host = subject.host ?? "";
-  const name = subject.element?.name ?? "";
+  // As a person reads it, and short enough to quote (`shared/element-label.ts`): the money card
+  // once asked about "‘앱 다 운 로 드 앱 다 운 로 드’".
+  const name = readableLabel(subject.element?.name ?? "");
   const named = { name, host, particle: objectParticle(name) };
   switch (subject.intent) {
     case "activate":
@@ -432,7 +443,10 @@ export function whyAskedPhrase(
  * explaining a match it did not see.
  */
 function moneyWordPhrase(label: string | undefined): Phrase {
-  const found = moneyWordIn(label);
+  // Found in the readable name: a letter-spaced "결 제 하 기" holds no "결제" to find.
+  const found = moneyWordIn(
+    label === undefined ? undefined : readableName(label),
+  );
   const params = { word: found?.word ?? "" };
   switch (found?.kind) {
     case "money":
@@ -476,7 +490,7 @@ export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
     return { key: "something this screen cannot name", params: {} };
   }
   const host = subject.host ?? "";
-  const name = subject.element?.name ?? "";
+  const name = readableLabel(subject.element?.name ?? "");
   switch (subject.intent) {
     case "activate":
       if (name && host) {
@@ -1011,29 +1025,170 @@ export async function waitForApproval(
   botId: string,
   approvalId: string,
   signal: AbortSignal | undefined,
-): Promise<"granted" | "declined" | "gave up" | "cancelled"> {
+): Promise<"granted" | "declined" | "gave up" | "cancelled" | "handed over"> {
   const deadline = Date.now() + WAIT_FOR_ANSWER_MS;
-  while (Date.now() < deadline) {
-    // Stop must work out of this wait as well, or pressing it leaves a Bot parked on a question
-    // nobody is going to answer.
-    if (signal?.aborted) return "cancelled";
-    const approvals = await readApprovals(botId);
-    if (approvals) {
-      const mine = approvals.find((one) => one.id === approvalId);
-      // Gone from a list we did read means it expired and was swept, which is the same outcome as
-      // running out of patience here. A list we could NOT read says nothing, so it is not read as an
-      // answer.
-      if (!mine) return settled(approvalId, "unanswered", "gave up");
-      if (mine.granted === true) {
+  heldHere.set(approvalId, botId);
+  listenForLeaving();
+  try {
+    while (Date.now() < deadline) {
+      // Stop must work out of this wait as well, or pressing it leaves a Bot parked on a question
+      // nobody is going to answer.
+      if (signal?.aborted) return "cancelled";
+      /*
+       * HELD, NOT MERELY READ. Asking after the question by holding it is what tells every other
+       * window of this conversation that this one is alive and will carry the step on, so none of
+       * them does it a second time (`server/src/computer/approvals.ts`, `hold`).
+       */
+      const held = await holdApproval(botId, approvalId);
+      // Gone from a server we did reach means it expired and was swept, which is the same outcome
+      // as running out of patience here. A server we could NOT reach says nothing, so it is not read
+      // as an answer.
+      if (held.state === "gone") {
+        return settled(approvalId, "unanswered", "gave up");
+      }
+      // Another window took the step while this one was asleep — a hidden tab is throttled to a
+      // timer a minute, and one frozen for longer counts as gone. That window carries it on now.
+      if (held.state === "elsewhere") return "handed over";
+      const mine = held.state === "holding" ? held.approval : undefined;
+      if (mine?.granted === true) {
         return settled(approvalId, "allowed", "granted");
       }
-      if (mine.granted === false) {
+      if (mine?.granted === false) {
         return settled(approvalId, "declined", "declined");
       }
+      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
     }
-    await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+    return settled(approvalId, "unanswered", "gave up");
+  } finally {
+    heldHere.delete(approvalId);
   }
-  return settled(approvalId, "unanswered", "gave up");
+}
+
+/**
+ * The questions this window is holding the step of, by approval, with their Bot: what it lets go
+ * of when the page goes away, and what tells this window's own conversation that a question on
+ * its screen is already being waited on here.
+ */
+const heldHere = new Map<string, string>();
+
+/** Whether this window is the one waiting on this question and will carry its step on. */
+export function isHeldHere(approvalId: string): boolean {
+  return heldHere.has(approvalId);
+}
+
+/**
+ * This window's name for itself, as the server tells holders apart. Made up per page load: a
+ * reloaded window is a new window, and it is the reload that let the old one go.
+ */
+let windowId: string | undefined;
+function thisWindow(): string {
+  windowId ??= crypto.randomUUID();
+  return windowId;
+}
+
+/** What holding a question's step came to. */
+export type HoldResult =
+  | { state: "holding"; approval: PendingApproval }
+  /** Another window holds it and is alive; this one draws the card and leaves the rest to that. */
+  | { state: "elsewhere"; approval: PendingApproval }
+  /** Not open any more: answered and spent, withdrawn, or run out. */
+  | { state: "gone" }
+  /** The server could not be asked. Says nothing about the question. */
+  | { state: "unknown" };
+
+export async function holdApproval(
+  botId: string,
+  approvalId: string,
+): Promise<HoldResult> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/hold`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ holder: thisWindow() }),
+      },
+    );
+  } catch {
+    return { state: "unknown" };
+  }
+  if (response.status === 409) return { state: "gone" };
+  if (!response.ok) return { state: "unknown" };
+  const body = (await response.json().catch(() => null)) as {
+    approval?: PendingApproval;
+    holding?: boolean;
+  } | null;
+  if (!body?.approval) return { state: "unknown" };
+  return body.holding === true
+    ? { state: "holding", approval: body.approval }
+    : { state: "elsewhere", approval: body.approval };
+}
+
+/**
+ * THE PAGE IS GOING AWAY: let go of every step it holds, so the next window to open the
+ * conversation carries them on at once rather than after the quiet the server allows a window that
+ * could not say so. `pagehide` rather than `beforeunload`, which a phone does not fire when the tab
+ * is swiped away; `keepalive` so the request outlives the page that sent it.
+ */
+let listening = false;
+function listenForLeaving(): void {
+  if (listening || typeof window === "undefined") return;
+  listening = true;
+  window.addEventListener("pagehide", (event) => {
+    // Kept in the back/forward cache, the page is not gone: it comes back holding what it held.
+    if (event.persisted) return;
+    for (const [approvalId, botId] of heldHere) {
+      void fetch(
+        `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/release`,
+        {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ holder: thisWindow() }),
+        },
+      ).catch(() => {});
+    }
+  });
+}
+
+/**
+ * The turn that raised this question was stopped: close it, so no window goes on offering buttons
+ * for an answer nobody is waiting for. Not a No — nothing is refused and the next attempt asks.
+ */
+export async function withdrawApproval(
+  botId: string,
+  approvalId: string,
+): Promise<void> {
+  try {
+    await fetch(
+      `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/withdraw`,
+      { method: "POST", credentials: "include" },
+    );
+  } catch {
+    // Unreachable: it runs out on its own in ten minutes, as every question did before this.
+  }
+}
+
+/**
+ * The card for a question this window learned about from the server rather than from its own tool
+ * call — raised in another window, or by this conversation before a reload. The same fields the
+ * pause reply carries, off the server's record.
+ */
+export function questionFromRecord(approval: PendingApproval): OpenQuestion {
+  const preview = callPreviewOf(approval.preview);
+  return {
+    approvalId: approval.id,
+    botId: approval.botId,
+    subject: askSubjectOf(approval.subject),
+    ...(preview ? { preview } : {}),
+    rule: approval.rule || null,
+    scope: allowanceScopeOf(approval.scope),
+    ...(approval.threadId ? { threadId: approval.threadId } : {}),
+    expiresAt: approval.expiresAt,
+  };
 }
 
 /**

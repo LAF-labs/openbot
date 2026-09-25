@@ -16,7 +16,11 @@ import type { LafPostgresRunner } from "./laf-runner";
 export function primeThreadRoutes(input: {
   runner: Pick<
     LafPostgresRunner,
-    "prime" | "primeThreadList" | "getThreadMessages"
+    | "prime"
+    | "primeThreadList"
+    | "getThreadMessages"
+    | "stepState"
+    | "abandonStep"
   >;
   /**
    * Who the priming is reading for, or a refusal.
@@ -29,9 +33,22 @@ export function primeThreadRoutes(input: {
    */
   actorOf: (request: Request) => Promise<{ id: string } | null>;
 }): Hono {
-  return new Hono()
-    .use("/api/copilotkit/threads", async (context, next) => {
-      if (context.req.method === "GET") {
+  return (
+    new Hono()
+      .use("/api/copilotkit/threads", async (context, next) => {
+        if (context.req.method === "GET") {
+          const actor = await input.actorOf(context.req.raw);
+          if (!actor) {
+            return context.json(
+              { error: "laf:unauthenticated", code: "laf:unauthenticated" },
+              401,
+            );
+          }
+          await input.runner.primeThreadList(actor.id);
+        }
+        return next();
+      })
+      .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
         const actor = await input.actorOf(context.req.raw);
         if (!actor) {
           return context.json(
@@ -39,57 +56,59 @@ export function primeThreadRoutes(input: {
             401,
           );
         }
-        await input.runner.primeThreadList(actor.id);
-      }
-      return next();
-    })
-    .use("/api/copilotkit/threads/:threadId/*", async (context, next) => {
-      const actor = await input.actorOf(context.req.raw);
-      if (!actor) {
-        return context.json(
-          { error: "laf:unauthenticated", code: "laf:unauthenticated" },
-          401,
+        /*
+         * REFUSED HERE, not merely left unprimed.
+         *
+         * `getThreadMessages` reads the vendored runner's live copy as well as the primed one, and that
+         * copy is a process-wide singleton — so a thread of somebody else's that has been run on this
+         * VM since boot would be answered out of memory however carefully this middleware declined to
+         * prime it. The request has to stop.
+         */
+        // Read before `next()`: once the runtime's own routing has matched, `param` answers for its
+        // route rather than this one (measured: undefined, and the messages read came back empty).
+        const threadId = context.req.param("threadId");
+        const mine = await input.runner.prime(threadId, actor.id);
+        if (!mine) {
+          return context.json(
+            { error: "laf:thread_not_found", code: "laf:thread_not_found" },
+            404,
+          );
+        }
+        await next();
+        if (
+          context.req.method !== "GET" ||
+          !context.req.path.endsWith("/messages") ||
+          !context.res.ok
+        ) {
+          return;
+        }
+        const answered = (await context.res
+          .clone()
+          .json()
+          .catch(() => null)) as { messages?: unknown } | null;
+        if (!answered || !Array.isArray(answered.messages)) return;
+        const kept = withCarriedReasoning(
+          answered.messages,
+          input.runner.getThreadMessages(threadId),
         );
-      }
+        if (kept !== answered.messages) {
+          context.res = Response.json({ ...answered, messages: kept });
+        }
+      })
       /*
-       * REFUSED HERE, not merely left unprimed.
-       *
-       * `getThreadMessages` reads the vendored runner's live copy as well as the primed one, and that
-       * copy is a process-wide singleton — so a thread of somebody else's that has been run on this
-       * VM since boot would be answered out of memory however carefully this middleware declined to
-       * prime it. The request has to stop.
+       * WHETHER THE TURN IS STILL GOING ON SOMEWHERE, AND A WINDOW LETTING GO OF ITS STEP (UX review
+       * 0.5.4, candidate 1). Behind the middleware above, so only the thread's own person reaches
+       * either. Answered here rather than by the runtime, which has no notion of a step with a window.
        */
-      // Read before `next()`: once the runtime's own routing has matched, `param` answers for its
-      // route rather than this one (measured: undefined, and the messages read came back empty).
-      const threadId = context.req.param("threadId");
-      const mine = await input.runner.prime(threadId, actor.id);
-      if (!mine) {
-        return context.json(
-          { error: "laf:thread_not_found", code: "laf:thread_not_found" },
-          404,
-        );
-      }
-      await next();
-      if (
-        context.req.method !== "GET" ||
-        !context.req.path.endsWith("/messages") ||
-        !context.res.ok
-      ) {
-        return;
-      }
-      const answered = (await context.res
-        .clone()
-        .json()
-        .catch(() => null)) as { messages?: unknown } | null;
-      if (!answered || !Array.isArray(answered.messages)) return;
-      const kept = withCarriedReasoning(
-        answered.messages,
-        input.runner.getThreadMessages(threadId),
-      );
-      if (kept !== answered.messages) {
-        context.res = Response.json({ ...answered, messages: kept });
-      }
-    });
+      .get("/api/copilotkit/threads/:threadId/step", (context) =>
+        context.json(input.runner.stepState(context.req.param("threadId"))),
+      )
+      .post("/api/copilotkit/threads/:threadId/step-abandoned", (context) =>
+        context.json({
+          abandoned: input.runner.abandonStep(context.req.param("threadId")),
+        }),
+      )
+  );
 }
 
 /**

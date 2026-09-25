@@ -13,14 +13,21 @@ import {
   allowanceScopeOf,
   askSubjectOf,
   closeQuestion,
+  type OpenQuestion,
   openQuestion,
   pauseFrom,
   waitForApproval,
+  withdrawApproval,
 } from "@/lib/approvals";
 import { didNotWork, labelForCode, outcomeOf } from "@/lib/computer/browsing";
 import { takeSkip } from "@/lib/computer/help-skips";
 import { t } from "@/lib/i18n";
-import { activeConversationHeaders, useActiveBotHolder } from "./active-bot";
+import {
+  activeConversationHeaders,
+  activeConversationId,
+  useActiveBotHolder,
+} from "./active-bot";
+import { STEP_HANDED_OVER, STEP_HANDED_OVER_EVENT } from "./stranded-steps";
 
 /**
  * Frontend registrations for computer tools, including inline rendering and policy-refusal display.
@@ -70,7 +77,24 @@ function refusal(code: string, extra: Record<string, unknown> = {}) {
  * nowhere else. Optional throughout, because the SDK's context argument is optional and a handler
  * that destructures it unconditionally throws on any call that omits it.
  */
-type ToolCallContext = { signal?: AbortSignal; toolCall?: { id?: string } };
+type ToolCallContext = {
+  signal?: AbortSignal;
+  toolCall?: { id?: string };
+  /**
+   * The question this call is already waiting on, when a window is carrying on a step another
+   * window raised it for (`lib/copilot/stranded-steps.ts`). The call then does not ask the computer
+   * again — that would open a second question — but waits on this one and sends the action once
+   * it is allowed, exactly as the window that raised it would have.
+   */
+  resume?: OpenQuestion;
+};
+
+/**
+ * The header naming the Bot's tool call a request carries out, beside the conversation's. Mirrors
+ * `TOOL_CALL_HEADER` in `server/src/computer/gateway/caller.ts`: with it a question the call raises
+ * names its step, and every window of the conversation can draw it and carry it on.
+ */
+const TOOL_CALL_HEADER = "x-openbot-tool-call-id";
 
 /**
  * Human-assistance wait window. Long enough for a user to return, finite so the run can unblock.
@@ -137,24 +161,82 @@ async function callComputer(
   init?: RequestInit,
   call: ToolCallContext = {},
 ): Promise<ToolOutcome> {
-  const signal = call.signal;
-  const outcome = await sendToComputer(botId, path, init, signal);
-  if (outcome.awaitingApproval !== true) return outcome;
+  const threadId = activeConversationId();
+  const step: StepHere = { threadId: threadId ?? "", asking: false };
+  if (threadId) {
+    stepsHere.add(step);
+    listenForLeavingSteps();
+  }
+  try {
+    return await takeStep(botId, path, init, call, step);
+  } finally {
+    stepsHere.delete(step);
+  }
+}
 
-  const approvalId = String(outcome.approvalId ?? "");
+/** A step this window is making for a conversation, and whether it is waiting on a question. */
+type StepHere = { threadId: string; asking: boolean };
+const stepsHere = new Set<StepHere>();
+
+/**
+ * THE WINDOW IS GOING AWAY MID-STEP. A step waiting on a question outlives it — the question is
+ * held on the server and the next window carries it on (`lib/approvals.ts` lets go of it). Any
+ * other step dies with the window, and the server is told so on the way out: otherwise the run
+ * that handed it over read `waiting` for ten minutes, and every other window was told the task was
+ * still going on (`server/src/runner/laf-runner.ts`, `abandonStep`).
+ */
+let leavingSteps = false;
+function listenForLeavingSteps(): void {
+  if (leavingSteps || typeof window === "undefined") return;
+  leavingSteps = true;
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) return;
+    const told = new Set<string>();
+    for (const step of stepsHere) {
+      if (step.asking || told.has(step.threadId)) continue;
+      told.add(step.threadId);
+      void fetch(
+        `/api/copilotkit/threads/${encodeURIComponent(step.threadId)}/step-abandoned`,
+        { method: "POST", credentials: "include", keepalive: true },
+      ).catch(() => {});
+    }
+  });
+}
+
+async function takeStep(
+  botId: string,
+  path: string,
+  init: RequestInit | undefined,
+  call: ToolCallContext,
+  step: StepHere,
+): Promise<ToolOutcome> {
+  const signal = call.signal;
+  const toolCallId = call.toolCall?.id ?? "";
+  const outcome = call.resume
+    ? undefined
+    : await sendToComputer(botId, path, init, signal, toolCallId);
+  if (outcome && outcome.awaitingApproval !== true) return outcome;
+
+  const question: OpenQuestion = call.resume ?? {
+    approvalId: String(outcome?.approvalId ?? ""),
+    botId,
+    // The facts, not a sentence: the card writes the Korean. See lib/approvals.ts.
+    subject: askSubjectOf(outcome?.subject),
+    rule: typeof outcome?.rule === "string" ? outcome.rule : null,
+    scope: allowanceScopeOf(outcome?.scope),
+    // The conversation, where "for this conversation" is on offer: the same card every other window
+    // draws off the server's record (`questionFromRecord`), third button included.
+    ...(typeof outcome?.threadId === "string" && outcome.threadId
+      ? { threadId: outcome.threadId }
+      : {}),
+    expiresAt: typeof outcome?.expiresAt === "string" ? outcome.expiresAt : "",
+  };
+  const approvalId = question.approvalId;
   // Put in front of the person on this call's own line rather than left to be found. The id is what
   // ties the card to the action it is about; see lib/approvals.ts for why anything looser gets it
   // wrong.
-  const toolCallId = call.toolCall?.id ?? "";
-  openQuestion(toolCallId, {
-    approvalId,
-    botId,
-    // The facts, not a sentence: the card writes the Korean. See lib/approvals.ts.
-    subject: askSubjectOf(outcome.subject),
-    rule: typeof outcome.rule === "string" ? outcome.rule : null,
-    scope: allowanceScopeOf(outcome.scope),
-    expiresAt: typeof outcome.expiresAt === "string" ? outcome.expiresAt : "",
-  });
+  openQuestion(toolCallId, question);
+  step.asking = true;
   try {
     const answer = await waitForApproval(botId, approvalId, signal);
     if (answer === "granted") {
@@ -166,9 +248,17 @@ async function callComputer(
         path,
         withApproval(init, approvalId),
         signal,
+        toolCallId,
       );
     }
+    if (answer === "handed over") {
+      // This window's copy of the thread is behind the one that took the step; it fetches it.
+      window.dispatchEvent(new Event(STEP_HANDED_OVER_EVENT));
+      throw new Error(STEP_HANDED_OVER);
+    }
     if (answer === "cancelled") {
+      // Nobody is waiting for this answer any more; no window should go on offering buttons for it.
+      void withdrawApproval(botId, approvalId);
       return refusal("laf:stopped", { stopped: true });
     }
     return answer === "declined"
@@ -187,6 +277,7 @@ async function sendToComputer(
   path: string,
   init?: RequestInit,
   signal?: AbortSignal,
+  toolCallId?: string,
 ): Promise<ToolOutcome> {
   let response: Response;
   try {
@@ -197,7 +288,12 @@ async function sendToComputer(
       ...init,
       // Which conversation this action belongs to, so a question it raises can be answered "for
       // this conversation". Merged under the caller's own headers, never over them.
-      headers: { ...activeConversationHeaders(), ...(init?.headers ?? {}) },
+      headers: {
+        ...activeConversationHeaders(),
+        // Which of the Bot's calls, so a question it raises names its step (see TOOL_CALL_HEADER).
+        ...(toolCallId ? { [TOOL_CALL_HEADER]: toolCallId } : {}),
+        ...(init?.headers ?? {}),
+      },
     });
   } catch (error) {
     // An abort is a stopped run, not a computer failure.

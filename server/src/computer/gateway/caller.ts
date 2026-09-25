@@ -90,6 +90,16 @@ export class ActionNeedsApprovalError extends Error {
  */
 export const THREAD_HEADER = "x-openbot-thread-id";
 
+/**
+ * The header naming the Bot's tool call an acting request carries out, beside the conversation.
+ *
+ * With the thread it says which step of which conversation a question holds open, so the question
+ * can be drawn in every window of that conversation and carried on from any of them
+ * (`ApprovalStep`). Nothing is authorised by it: a window naming the wrong call puts a card on the
+ * wrong line of its own person's conversation, and the answer is still bound to the action.
+ */
+export const TOOL_CALL_HEADER = "x-openbot-tool-call-id";
+
 /** Who is asking. The gateway records this; it does not decide it. */
 export type ActionActor = {
   /** The signed-in person, or the local actor when authentication is not configured. */
@@ -98,4 +108,6 @@ export type ActionActor = {
   userId?: string;
   /** The conversation the action was raised from, when it was raised from one. See THREAD_HEADER. */
   threadId?: string;
+  /** The Bot's tool call the action carries out, when the surface named it. See TOOL_CALL_HEADER. */
+  toolCallId?: string;
 };

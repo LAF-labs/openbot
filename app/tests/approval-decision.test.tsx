@@ -444,28 +444,31 @@ describe("an answer given somewhere else", () => {
       rule: MONEY_HOST_RULE,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     });
-    globalThis.fetch = stubFetch(async () =>
-      json({
-        approvals: [
-          {
-            id: "approval-elsewhere",
-            botId: BOT,
-            rule: MONEY_HOST_RULE,
-            subject: PRESSING_ON_TOSS,
-            requestedAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 600_000).toISOString(),
-            granted: true,
-            answeredBy: "owner-1",
-          },
-        ],
-      }),
-    );
+    // The waiting window holds the question (0.5.4 A): what it learns comes back on the hold.
+    const held: string[] = [];
+    globalThis.fetch = stubFetch(async (input) => {
+      held.push(String(input));
+      return json({
+        holding: true,
+        approval: {
+          id: "approval-elsewhere",
+          botId: BOT,
+          rule: MONEY_HOST_RULE,
+          subject: PRESSING_ON_TOSS,
+          requestedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          granted: true,
+          answeredBy: "owner-1",
+        },
+      });
+    });
     const answer = await approvals.waitForApproval(
       BOT,
       "approval-elsewhere",
       undefined,
     );
     expect(answer).toBe("granted");
+    expect(held).toEqual([`/api/approvals/${BOT}/approval-elsewhere/hold`]);
     expect(approvals.questionOn("call-elsewhere")).toBeUndefined();
     expect(approvals.decisionOn("call-elsewhere")).toEqual({
       outcome: "allowed",
@@ -481,8 +484,13 @@ describe("an answer given somewhere else", () => {
       rule: MONEY_HOST_RULE,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     });
-    // Swept from the server's list: it expired.
-    globalThis.fetch = stubFetch(async () => json({ approvals: [] }));
+    // Swept on the server: it expired, and holding it answers that nothing is open.
+    globalThis.fetch = stubFetch(async () =>
+      json(
+        { error: "laf:approval_not_waiting", code: "laf:approval_not_waiting" },
+        409,
+      ),
+    );
     expect(
       await approvals.waitForApproval(BOT, "approval-nobody", undefined),
     ).toBe("gave up");

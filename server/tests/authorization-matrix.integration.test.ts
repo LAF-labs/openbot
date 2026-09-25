@@ -487,6 +487,10 @@ function bodyFor(method: string, template: string): unknown {
       // A real answer, and a No: it gets as far as the registry for whoever the guard lets through,
       // and it widens nothing on the way.
       return { granted: false };
+    case "POST /api/approvals/:botId/:approvalId/hold":
+    case "POST /api/approvals/:botId/:approvalId/release":
+      // A window's made-up name for itself, so the press reaches the registry (0.5.4 A).
+      return { holder: `matrix-window-${run}` };
     case "POST /api/me/first-task":
       // A chip pressed on A's Bot: the owner's press is a row, the colleague's is a Bot not there.
       return {
@@ -839,6 +843,10 @@ const A_ALLOWED = [
   "POST /api/approvals/:botId/:approvalId",
   // Taking their own No back (다시 물어보기): the same person as answering.
   "POST /api/approvals/:botId/:approvalId/reconsider",
+  // Which of their windows carries the step on, and a stopped turn closing its question (0.5.4 A).
+  "POST /api/approvals/:botId/:approvalId/hold",
+  "POST /api/approvals/:botId/:approvalId/release",
+  "POST /api/approvals/:botId/:approvalId/withdraw",
   "POST /api/channels",
   "POST /api/components/:name/call",
   "POST /api/components/:name/decision",
@@ -919,6 +927,9 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "GET /api/approvals/:botId",
   "POST /api/approvals/:botId/:approvalId",
   "POST /api/approvals/:botId/:approvalId/reconsider",
+  "POST /api/approvals/:botId/:approvalId/hold",
+  "POST /api/approvals/:botId/:approvalId/release",
+  "POST /api/approvals/:botId/:approvalId/withdraw",
   "DELETE /api/plugins/grants",
   "POST /api/plugins/grants",
   "GET /api/plugins/for/:agentId",

@@ -372,3 +372,79 @@ describe("a one-to-one conversation stopped from anywhere", () => {
     expect(work.of(OWNER)).toEqual([]);
   }, 20_000);
 });
+
+/**
+ * THE LEDGER SAYS HOW A HANDED-OVER STEP REALLY ENDED (UX review 0.5.4, finding 1). A run that ends
+ * by handing a step to a window used to be written `done` at once, so a task that died with its
+ * window — its approval card with it — read as finished everywhere.
+ */
+describe("a run whose step is with a window", () => {
+  async function handedOver() {
+    const runner = await LafPostgresRunner.create(
+      database,
+      createRunLedger(database),
+      createWorkInFlight(),
+    );
+    const threadId = await aThread();
+    const first = start(runner, threadId, clickingBot().agent, [asked]);
+    await first.ended;
+    await until(
+      async () => (await statusOf(first.runId)) === "waiting",
+      "the ledger to say waiting",
+    );
+    expect(runner.stepState(threadId)).toEqual({
+      running: false,
+      waiting: true,
+    });
+    return { runner, threadId, first };
+  }
+
+  test("is waiting, and done once its result carries the turn on", async () => {
+    const { runner, threadId, first } = await handedOver();
+    await start(runner, threadId, answeringBot().agent, [
+      asked,
+      { id: "t1", role: "tool", toolCallId: "call-1", content: "{}" },
+    ]).ended;
+    await until(
+      async () => (await statusOf(first.runId)) === "done",
+      "the step's run to say done",
+    );
+    expect(runner.stepState(threadId).waiting).toBe(false);
+  }, 20_000);
+
+  test("is stopped when the person presses Stop while the window has the step", async () => {
+    const { runner, threadId, first } = await handedOver();
+    await runner.stop({ threadId } as never);
+    await until(
+      async () => (await statusOf(first.runId)) === "stopped",
+      "the step's run to say stopped",
+    );
+  }, 20_000);
+
+  test("is stopped, with why, when its window goes away without it", async () => {
+    const { runner, threadId, first } = await handedOver();
+    expect(runner.abandonStep(threadId)).toBe(true);
+    await until(
+      async () => (await statusOf(first.runId)) === "stopped",
+      "the step's run to say stopped",
+    );
+    const [row] = await database
+      .select({ error: lafThreadRuns.error })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, first.runId));
+    expect(row?.error).toBe("laf:step_not_returned");
+    expect(runner.abandonStep(threadId)).toBe(false);
+  }, 20_000);
+
+  test("is stopped when the person says something new instead of the step coming back", async () => {
+    const { runner, threadId, first } = await handedOver();
+    await start(runner, threadId, answeringBot().agent, [
+      asked,
+      { id: "u2", role: "user", content: "그거 말고 다른 거" },
+    ]).ended;
+    await until(
+      async () => (await statusOf(first.runId)) === "stopped",
+      "the step's run to say stopped",
+    );
+  }, 20_000);
+});

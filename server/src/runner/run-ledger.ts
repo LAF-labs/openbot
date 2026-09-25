@@ -60,7 +60,8 @@ export type RunStart = {
 
 /** How a run ended, as the events reported it. See `runOutcome` in `laf-runner.ts`. */
 export type RunOutcome = {
-  status: "done" | "error" | "stopped";
+  /** `waiting`: its step is with a window. See `runStatus` in `db/schema/laf.ts`. */
+  status: "done" | "error" | "stopped" | "waiting";
   error?: string | null;
   /** How big the turn was. Zero for a run whose path does not stream events. */
   eventCount?: number;

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."laf_run_status" ADD VALUE 'waiting';

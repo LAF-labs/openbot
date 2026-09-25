@@ -23,6 +23,7 @@
  */
 import type {
   ApprovalRegistry,
+  ApprovalStep,
   AskSubject,
   CallPreview,
   PendingApproval,
@@ -72,6 +73,13 @@ export type SettleInput = {
    * work outside any — a routine — where neither applies.
    */
   threadId?: string | undefined;
+  /**
+   * The conversation step the action came from — thread and tool call — where the surface named
+   * one. Goes on a question whatever `settleWithoutAsking` says, unlike `threadId` above: it is where
+   * the question was raised, which every window of that conversation needs to draw it, not an
+   * allowance anybody could be granted.
+   */
+  step?: ApprovalStep | undefined;
   /** The caller's own policy verdict, evaluated against the caller's own context. */
   policyVerdict: PolicyDecision;
   /**
@@ -265,6 +273,7 @@ export async function settle(
     // goes with the scope: "for this conversation" is a kind of allowance and off with the rest.
     ...(mayStand ? { scope: input.allowance } : {}),
     ...(mayStand && input.threadId ? { threadId: input.threadId } : {}),
+    ...(input.step ? { step: input.step } : {}),
     target: input.target,
   });
   return {
