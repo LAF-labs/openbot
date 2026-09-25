@@ -467,6 +467,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` (a help card left by a reload, a No taken back, where a stored failure is drawn, a picture
  * asked for only where one was kept) and five to `server` (the No taken back through the registry
  * and the route, the kept pictures listed). Each floor rises by exactly what was added.
+ * RAISED 2026-09-25 with 0.5.4 packages B and C: nine to `app` (a reload that cannot turn 멈춤
+ * into 끝남, a site's refusal page, the five words and their reasons, 다시 해 보기 never for a No, 오늘
+ * in the card's words, what a turn remembered on its row, the drawer beside the full sidebar) and two
+ * to `server` (a refused site and a stopped step read from the real tables). Each floor rises by
+ * exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -474,7 +479,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 2650, roots: ["server"] },
-  { name: "app", floor: 1275, roots: ["app"] },
+  { name: "app", floor: 1284, roots: ["app"] },
   { name: "agent-computer", floor: 287, roots: ["agent-computer"] },
   { name: "root", floor: 415, roots: ["tests", "agent-bot"] },
 ] as const;

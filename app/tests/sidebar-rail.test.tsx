@@ -519,7 +519,7 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(rows[0]?.querySelector(".sr-only")?.textContent).toBe("Unread");
   });
 
-  test("the nav has no second way to the profile, and sits right under the conversation", async () => {
+  test("the nav has no second way to the profile, and is pinned below the part that scrolls", async () => {
     const view = await roster({ bots: one() });
     expect(view.footerLinks().map((link) => link.textContent)).toEqual([
       "Routines",
@@ -527,11 +527,16 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
       "Connections",
       "Help",
     ]);
-    // In the scrolling part with the Bot, not pushed to the bottom beside the account.
-    expect(
-      view.column().querySelector("[data-sidebar-nav]")?.parentElement
-        ?.className,
-    ).toContain("overflow-y-auto");
+    /*
+     * OUT OF THE SCROLLING PART, PINNED ABOVE THE ACCOUNT. At the PC app's smallest window (1024×640)
+     * 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold when they scrolled with it (UX review 0.5.4,
+     * item 4). The Bot, its conversation and 오늘 scroll; the links do not.
+     */
+    const nav = view.column().querySelector("[data-sidebar-nav]");
+    expect(nav?.className).toContain("shrink-0");
+    expect(nav?.closest(".overflow-y-auto")).toBeNull();
+    const scroller = view.column().querySelector(".overflow-y-auto");
+    expect(scroller?.textContent).toContain("Conversation");
   });
 
   test("the rail keeps a name on the face and on the conversation", async () => {

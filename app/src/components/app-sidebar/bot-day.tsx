@@ -5,7 +5,7 @@ import {
   IconMessageCircle,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { useControl } from "@/components/computer/use-control";
 import { focusRing } from "@/components/ui/focus";
@@ -57,16 +57,24 @@ import { cn } from "@/lib/utils";
  * offers the first things to hand it instead.
  *
  * NOTHING POLLS HERE either: see `lib/agents/day.ts` for what refreshes it.
+ *
+ * WHAT THE DRAWER SHOWS DEPENDS ON WHETHER THE SIDEBAR IS THERE (2026-09-25, UX review 0.5.4 item
+ * 12). On the PC app the full column always is, and the pill's drawer repeated it word for word; there
+ * the drawer asks for `waiting` only — what needs the owner now, beside 지금. Below `lg` the column is a
+ * rail or a sheet that is away, and the drawer is the one place 한 일 and 다음 are, so it shows all.
  */
 export function BotDay({
   botId,
   onLeave,
   placement,
+  waitingOnly = false,
 }: {
   botId: string;
   /** Called before a press leaves for somewhere else: the drawer closes, the phone's sheet goes. */
   onLeave?: () => void;
   placement: "sidebar" | "drawer";
+  /** Only what is waiting on the owner: the drawer, beside a sidebar that shows the rest. */
+  waitingOnly?: boolean;
 }) {
   const now = useNow();
   const navigate = useNavigate();
@@ -80,9 +88,13 @@ export function BotDay({
     .slice(0, 2);
   const waiting = useWaiting(botId);
   const [isExpanded, setIsExpanded] = useState(false);
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
 
-  const items = day.data?.items ?? [];
-  const shown = isExpanded ? items : items.slice(0, VISIBLE_ROWS);
+  const items = waitingOnly ? [] : (day.data?.items ?? []);
+  const visible = placement === "sidebar" ? SIDEBAR_ROWS : VISIBLE_ROWS;
+  const shown = isExpanded ? items : items.slice(0, visible);
   const hidden = items.length - shown.length;
   const isNewBot =
     channels.data !== undefined && isFirstConversation(channels.data, botId);
@@ -135,13 +147,24 @@ export function BotDay({
   };
 
   const isSidebar = placement === "sidebar";
-  const isFirstThings = items.length === 0 && day.isSuccess && isNewBot;
+  /*
+   * NOT BESIDE THE EMPTY CONVERSATION, WHICH OFFERS THE SAME SENTENCES. The first screen showed the
+   * same chips twice, in the sidebar and under the face (UX review 0.5.4, item 12). The conversation's
+   * are the ones to press: they are where the answer will appear.
+   */
+  const isFirstThings =
+    items.length === 0 &&
+    day.isSuccess &&
+    isNewBot &&
+    !waitingOnly &&
+    pathname !== "/channel/new";
+  const next = waitingOnly ? [] : upcoming;
   // Nothing in any group: no heading over nothing, which would read as a list that failed to load.
   if (
     waiting.length === 0 &&
     items.length === 0 &&
     !isFirstThings &&
-    upcoming.length === 0
+    next.length === 0
   ) {
     return null;
   }
@@ -212,9 +235,9 @@ export function BotDay({
         </DayGroup>
       ) : null}
 
-      {upcoming.length > 0 ? (
+      {next.length > 0 ? (
         <DayGroup placement={placement} title={t("Up next")}>
-          {upcoming.map((routine) => (
+          {next.map((routine) => (
             <DayRow
               icon={
                 <IconClock aria-hidden="true" className="size-3.5 shrink-0" />
@@ -243,8 +266,13 @@ export function BotDay({
   );
 }
 
-/** Six, then "n개 더 보기": the column is a glance, and the conversation holds the rest. */
+/** Six, then "n개 더 보기": the drawer is a glance, and the conversation holds the rest. */
 const VISIBLE_ROWS = 6;
+/**
+ * Four in the sidebar: at the PC app's smallest window (1024×640) the column under the Bot and its
+ * conversation has room for 기다리는 일, four of 한 일 and 다음 before it has to scroll.
+ */
+const SIDEBAR_ROWS = 4;
 
 function DayGroup({
   children,
@@ -288,11 +316,24 @@ function DayItemRow({
       />
     );
   }
-  const mark = dayMark(item.status);
+  const mark = dayMark(
+    item.status,
+    item.kind === "chat" ? (item.reason ?? null) : null,
+  );
+  /*
+   * What it remembered while doing this, on this row: one message that taught the Bot three things
+   * was four rows before (UX review 0.5.4, item 12). The facts themselves are on its profile. Beside
+   * the time rather than after the words, which a long request cuts off at 375px.
+   */
+  const learned = item.learned ?? 0;
+  const detail =
+    learned > 0
+      ? `${time} · ${t("Remembered {count}", { count: learned })}`
+      : time;
   if (item.kind === "routine") {
     return (
       <DayRow
-        detail={time}
+        detail={detail}
         icon={<IconClock aria-hidden="true" className="size-3.5 shrink-0" />}
         mark={mark}
         note={item.silent ? t("Nothing new") : undefined}
@@ -303,7 +344,7 @@ function DayItemRow({
   }
   return (
     <DayRow
-      detail={time}
+      detail={detail}
       icon={
         <IconMessageCircle aria-hidden="true" className="size-3.5 shrink-0" />
       }
@@ -367,13 +408,21 @@ function DayRow({
           ) : null}
         </span>
         {detail || mark ? (
-          <span className="flex items-center gap-1.5 text-muted-foreground text-xs tabular-nums">
-            {detail ? <span>{detail}</span> : null}
+          <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs tabular-nums">
+            {/* The time never wraps: a reason beside it is cut first ("못 끝냄 · 봇의 컴퓨터에…"). */}
+            {detail ? (
+              <span className="shrink-0 whitespace-nowrap">{detail}</span>
+            ) : null}
             {mark ? (
               <span
-                className={
-                  mark.tone === "active" ? "text-link" : "text-destructive"
-                }
+                className={cn(
+                  "min-w-0 truncate",
+                  mark.tone === "active"
+                    ? "text-link"
+                    : mark.tone === "failed"
+                      ? "text-warning"
+                      : "text-muted-foreground",
+                )}
               >
                 {mark.text}
               </span>

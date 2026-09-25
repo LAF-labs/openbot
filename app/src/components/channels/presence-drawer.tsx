@@ -1,5 +1,5 @@
-import { IconChevronDown } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { IconChevronDown, IconPlayerStopFilled } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,20 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useMyBots } from "@/lib/agents/my-bots";
 import type { Presence } from "@/lib/agents/presence";
-import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
+import {
+  workingKeys,
+  workingLabel,
+  workingQueryOptions,
+} from "@/lib/agents/working";
 import { useBrowsingNow } from "@/lib/computer/browsing-now";
 import { setScreenOpen } from "@/lib/computer/screen-panel";
+import { stopHeldChats } from "@/lib/copilot/held-chats";
 import { t } from "@/lib/i18n";
+import { useIsWideViewport } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
+import { pressStopAll, stopEverything } from "@/lib/work/stop-all";
 import { PILL_CLASS, PILL_TONES, PresencePillBody } from "./bot-header";
 
 /**
@@ -33,6 +41,17 @@ import { PILL_CLASS, PILL_TONES, PresencePillBody } from "./bot-header";
  * under it is 오늘, the sidebar's own component (`app-sidebar/bot-day.tsx`), since 2026-09-25: the
  * pill and the sidebar showed the same waiting and the same next routines from two copies of the
  * same code, and one copy is how they stay the same.
+ *
+ * ON THE PC APP, ONLY WHAT THE SIDEBAR DOES NOT SAY (2026-09-25, UX review 0.5.4 item 12): 지금, with
+ * a Stop beside it, and 기다리는 일. The full column beside it already shows 한 일 and 다음, and the
+ * drawer repeated them word for word. Below `lg` the column is a rail or a sheet that is away, and the
+ * drawer shows the whole day.
+ *
+ * STOP IS HERE, BESIDE WHAT IS BEING DONE (item 17). It lived only in the account menu, as 모두 멈추기,
+ * and 지금 said what the Bot was doing with no way to make it stop. It is the same stop — this window's
+ * conversation first, then the server's runs, routines included (`pressStopAll`) — because a person
+ * has one Bot and "stop what it is doing" is all of it. An account from before the cap, with several
+ * Bots, does not get it here: the one button would stop the others too, and 모두 멈추기 says so.
  */
 export function PresenceDrawer({
   botId,
@@ -107,6 +126,18 @@ function DrawerBody({
       : presence.tone === "active"
         ? t(presence.label)
         : null;
+  const isWide = useIsWideViewport();
+  const mine = useMyBots();
+  const isOnlyBot = (mine.bots?.length ?? 0) <= 1;
+  const queryClient = useQueryClient();
+  const stop = useMutation({
+    mutationFn: () =>
+      pressStopAll({ stopHere: stopHeldChats, stopServer: stopEverything }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+    },
+  });
+  const canStop = doing !== null && isOnlyBot;
 
   return (
     <div className="flex flex-col divide-y divide-border">
@@ -121,6 +152,19 @@ function DrawerBody({
               className="mt-1.75 size-1.5 shrink-0 rounded-full bg-primary"
             />
             <p className="wrap-break-word min-w-0 flex-1 text-sm">{doing}</p>
+            {canStop ? (
+              <Button
+                aria-label={t("Stop the Bot")}
+                className="shrink-0"
+                disabled={stop.isPending}
+                onClick={() => stop.mutate()}
+                size="xs"
+                variant="destructive"
+              >
+                <IconPlayerStopFilled />
+                {t("Stop")}
+              </Button>
+            ) : null}
             {task ? (
               <Button
                 className="shrink-0"
@@ -139,7 +183,12 @@ function DrawerBody({
           <DrawerEmpty>{t("Nothing going on right now.")}</DrawerEmpty>
         )}
       </section>
-      <BotDay botId={botId} onLeave={onClose} placement="drawer" />
+      <BotDay
+        botId={botId}
+        onLeave={onClose}
+        placement="drawer"
+        waitingOnly={isWide}
+      />
     </div>
   );
 }

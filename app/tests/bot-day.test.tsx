@@ -127,7 +127,14 @@ function server(options: {
 
 const PATHS = ["/channel/$channelId", "/channel/new", "/routines", "/agents"];
 
-async function day(options: Parameters<typeof server>[0]) {
+async function day(
+  options: Parameters<typeof server>[0],
+  where: {
+    path?: string;
+    placement?: "sidebar" | "drawer";
+    waitingOnly?: boolean;
+  } = {},
+) {
   const asked = server(options);
   const { QueryClient, QueryClientProvider } = await import(
     "@tanstack/react-query"
@@ -137,9 +144,13 @@ async function day(options: Parameters<typeof server>[0]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const router = await routerAt("/channel/ch-1", PATHS, () => (
+  const router = await routerAt(where.path ?? "/channel/ch-1", PATHS, () => (
     <QueryClientProvider client={client}>
-      <BotDay botId="bot-1" placement="sidebar" />
+      <BotDay
+        botId="bot-1"
+        placement={where.placement ?? "sidebar"}
+        waitingOnly={where.waitingOnly ?? false}
+      />
     </QueryClientProvider>
   ));
   const view = await mount(<RouterProvider router={router} />);
@@ -188,8 +199,8 @@ describe("오늘", () => {
     expect(rows[1]).toContain("Remembered · 월요일은 쉰다");
     expect(rows[2]).toContain("예스24에서 책 찾아 줘");
     expect(rows[3]).toContain("주문서 만들어 줘");
-    expect(rows[3]).toContain("Didn't finish");
-    expect(rows[2]).not.toContain("Didn't finish");
+    expect(rows[3]).toContain("Couldn't finish");
+    expect(rows[2]).not.toContain("Couldn't finish");
     // The time is on the person's day's clock: 02:30 UTC is 11:30 in Seoul.
     expect(rows[0]).toContain("11:30");
 
@@ -227,14 +238,60 @@ describe("오늘", () => {
     expect(view.router.state.location.pathname).toBe("/channel/ch-1");
   });
 
-  test("six rows, then the rest behind one press", async () => {
+  test("four rows in the sidebar, six in the drawer, then the rest behind one press", async () => {
+    // At the PC app's smallest window the sidebar has room for four (UX review 0.5.4, item 4).
     const items = Array.from({ length: 8 }, (_, index) =>
       chat(`c-${index}`, { label: `일 ${index}` }),
     );
     const view = await day({ items });
-    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(6);
-    await view.press(view.button("Show 2 more"));
+    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(4);
+    await view.press(view.button("Show 4 more"));
     expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(8);
+    await unmountAll();
+
+    const drawer = await day({ items }, { placement: "drawer" });
+    expect(drawer.rows().filter((row) => row.startsWith("일"))).toHaveLength(6);
+  });
+
+  test("the card's words: 못 끝냄 with why, 멈춤 for a stop, 하는 중", async () => {
+    const view = await day({
+      items: [
+        chat("c-1", {
+          status: "error",
+          reason: "laf:site_refused",
+          label: "쿠팡 가격",
+        }),
+        chat("c-2", { status: "stopped", label: "토스 앱 다운로드" }),
+        chat("c-3", { status: "running", label: "날씨" }),
+      ],
+    });
+    const rows = view.rows();
+    expect(rows[0]).toContain("Couldn't finish · The site turned the Bot away");
+    expect(rows[1]).toContain("Halted");
+    expect(rows[2]).toContain("Working on it");
+  });
+
+  test("what a turn remembered is on its row, not three more rows", async () => {
+    const view = await day({
+      items: [chat("c-1", { learned: 3, label: "우리 가게 소개" })],
+    });
+    const rows = view.rows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain("우리 가게 소개");
+    expect(rows[0]).toContain("Remembered 3");
+  });
+
+  test("the drawer beside the full sidebar shows only what waits on the owner", async () => {
+    const view = await day(
+      {
+        items: [chat("c-1")],
+        routines: [routine("rt-1", "리뷰 확인", later(1))],
+      },
+      { placement: "drawer", waitingOnly: true },
+    );
+    expect(view.groups()).toEqual([]);
+    expect(view.host.textContent).not.toContain("예스24에서 책 찾아 줘");
+    expect(view.host.textContent).not.toContain("리뷰 확인");
   });
 
   test("the next two of this Bot's routines that are on, soonest first", async () => {
@@ -271,6 +328,18 @@ describe("오늘", () => {
     const chips = [...fresh.host.querySelectorAll("section div button")];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.length).toBeLessThanOrEqual(3);
+    await unmountAll();
+
+    // Not beside the empty conversation, which offers the same chips under the face.
+    const beside = await day(
+      { items: [], channels: [] },
+      { path: "/channel/new" },
+    );
+    await beside.settle(60);
+    expect(beside.groups()).toEqual([]);
+    expect(beside.host.textContent).not.toContain(
+      "Nothing done yet today. Try handing over one of these.",
+    );
   });
 });
 

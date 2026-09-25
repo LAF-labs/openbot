@@ -18,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
 import {
   BotRow,
@@ -72,6 +72,7 @@ import {
 } from "@/lib/mobile-nav";
 import { settledOf, useReading } from "@/lib/reading";
 import { useNow } from "@/lib/use-now";
+import { useIsWideViewport } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
 
 /**
@@ -88,8 +89,11 @@ import { cn } from "@/lib/utils";
  *  2. THE CONVERSATION. One row: the last thing said, when, and whether it is unread — and under
  *     it 오늘, what the Bot did today, what is waiting on the person and what is next
  *     (`bot-day.tsx`), in the height that used to be empty.
- *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, right under it rather than pushed to the
- *     bottom, and the account below them all.
+ *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, pinned to the bottom above the account.
+ *     They sat right under 오늘 in the one scrolling column until 2026-09-25, and at the PC app's
+ *     smallest window (1024×640) 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review
+ *     0.5.4, item 4). Now the Bot, its conversation and 오늘 scroll in their own region, and the
+ *     links never move.
  *
  * AN ACCOUNT FROM BEFORE THE CAP CAME DOWN keeps every Bot it had, and reaches them the old way: with
  * more than one, the list under "내 봇" is back, a row per Bot, each its own conversation, and 봇
@@ -105,51 +109,6 @@ import { cn } from "@/lib/utils";
  * narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so the sheet is the phone's and the
  * browser's, never the PC app's.
  */
-
-/**
- * WIDE ENOUGH FOR THE FULL COLUMN — Tailwind's `lg`, read in JavaScript rather than in CSS.
- *
- * A media query in the class list can hide the words but it cannot take them out of the document,
- * and a 64px rail whose names are still in the accessibility tree, still being measured, still being
- * truncated, is a rail only to the eye. `rem` inside a media query is the INITIAL root font size and
- * not this app's 14px root, so 64rem here is the same 1024px `lg:` compiles to.
- *
- * The phone's sheet needs no second query: it is `max-md:` classes, and whether it is out is a
- * press, not a width.
- */
-const WIDE_QUERY = "(min-width: 64rem)";
-
-const isWideViewport = () =>
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia(WIDE_QUERY).matches;
-
-const subscribeToViewport = (onChange: () => void) => {
-  if (
-    typeof window === "undefined" ||
-    typeof window.matchMedia !== "function"
-  ) {
-    return () => {};
-  }
-  const query = window.matchMedia(WIDE_QUERY);
-  query.addEventListener("change", onChange);
-  /*
-   * AND `resize`, because the media query's own event is not always delivered. Measured: with the
-   * window emulated from 800 to 1280 while the tab was backgrounded, `matchMedia(…).matches` read
-   * true and the column stayed a rail until the next reload — the `change` never arrived. Dragging
-   * a window edge is how this switch is normally reached in the installed app, and a roster that
-   * only notices on reload is a roster that noticed nothing. `resize` fires often and costs nothing
-   * here: the snapshot is a boolean, so React re-renders only when it actually flips.
-   */
-  window.addEventListener("resize", onChange);
-  return () => {
-    query.removeEventListener("change", onChange);
-    window.removeEventListener("resize", onChange);
-  };
-};
-
-const useIsWideViewport = () =>
-  useSyncExternalStore(subscribeToViewport, isWideViewport, () => true);
 
 /**
  * The nav that is not the Bot. Every one of these is somewhere a person goes to change how it works.
@@ -768,15 +727,15 @@ export function BotSidebar() {
               </Tooltip>
             </div>
           ) : null}
+        </div>
 
-          <div
-            className="mt-2 flex flex-col gap-0.5 border-border border-t pt-2"
-            data-sidebar-nav
-          >
-            {links.map((link) => (
-              <FooterLink {...link} isCompact={isRail} key={link.to} />
-            ))}
-          </div>
+        <div
+          className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
+          data-sidebar-nav
+        >
+          {links.map((link) => (
+            <FooterLink {...link} isCompact={isRail} key={link.to} />
+          ))}
         </div>
 
         <div className="shrink-0 border-border border-t px-2 py-2">
