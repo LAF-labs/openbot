@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   activeControlPolls,
+  type ControlTimers,
+  MAX_FAILURE_INTERVAL_MS,
   pokeControl,
   SETTLED_READS,
   watchControl,
@@ -18,9 +20,73 @@ import { stubFetch } from "./support/fetch";
  * here, because neither is visible from the component: that the cards share one loop, and that it
  * stops once the answer stops changing.
  *
- * Counted rather than timed. The loop's interval is set to zero and the assertions wait for it to
- * go quiet, so nothing here turns on how fast the machine running it happens to be.
+ * Counted on a clock this file turns by hand. It used to be the wall clock with the interval set to
+ * zero, and "keeps asking while live" and the backoff test failed three times in one day's full
+ * `test:ci` under load — never alone — because both counted reads between two real instants. Now
+ * every wait the loop asks for is queued here, a read happens only when the test fires it, and each
+ * read is awaited to its end before the next, so nothing turns on how fast the machine is.
  */
+
+type Pending = { at: number; tick: () => Promise<void>; id: number };
+
+/** A clock nothing moves but the test. */
+function handClock() {
+  let now = 0;
+  let nextId = 0;
+  let queue: Pending[] = [];
+  let inFlight: Promise<void>[] = [];
+  const timers: ControlTimers = {
+    run: (tick) => {
+      inFlight.push(tick());
+    },
+    later: (ms, tick) => {
+      nextId += 1;
+      queue.push({ at: now + ms, tick, id: nextId });
+      return nextId;
+    },
+    cancel: (handle) => {
+      queue = queue.filter((pending) => pending.id !== handle);
+    },
+  };
+  /** Let every read already started finish, including the wait it asks for at its end. */
+  async function settle(): Promise<void> {
+    while (inFlight.length > 0) {
+      const running = inFlight;
+      inFlight = [];
+      await Promise.all(running);
+    }
+  }
+  function earliest(): Pending | undefined {
+    queue.sort((a, b) => a.at - b.at || a.id - b.id);
+    return queue[0];
+  }
+  /** Fire the earliest wait, moving the clock to it. False when nothing is waiting. */
+  async function step(): Promise<boolean> {
+    await settle();
+    const next = earliest();
+    if (!next) return false;
+    queue.shift();
+    now = next.at;
+    inFlight.push(next.tick());
+    await settle();
+    return true;
+  }
+  return {
+    timers,
+    now: () => now,
+    pending: () => queue.length,
+    step,
+    /** Fire every wait due within `ms` from now, then stand the clock there. */
+    async advance(ms: number): Promise<void> {
+      const until = now + ms;
+      await settle();
+      for (let next = earliest(); next && next.at <= until; next = earliest()) {
+        await step();
+      }
+      now = until;
+    },
+  };
+}
 
 const BOT: ControlState = {
   holder: "bot",
@@ -31,26 +97,29 @@ const BOT: ControlState = {
 /** One read to learn the state, then the run of identical ones that settles it. */
 const READS_TO_SETTLE = SETTLED_READS + 1;
 
+/** Far more reads than any settling loop makes: a loop still asking after this never settles. */
+const RUNAWAY = 200;
+
 let requests = 0;
 let answer: () => Response;
 let originalFetch: typeof fetch;
+let clock: ReturnType<typeof handClock>;
 
 /** A distinct computer per test, so no test can inherit another's loop. */
 let counter = 0;
 const nextComputer = () => `computer-${++counter}`;
 
-/** Wait until the loop has stopped asking, and answer with how many times it asked. */
+/** Run the loop until it stops asking, and answer with how many times it has asked. */
 async function quiet(): Promise<number> {
-  let previous = -1;
-  while (previous !== requests) {
-    previous = requests;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+  for (let steps = 0; steps < RUNAWAY; steps += 1) {
+    if (!(await clock.step())) return requests;
   }
-  return requests;
+  throw new Error(`the loop was still asking after ${RUNAWAY} reads`);
 }
 
 beforeEach(() => {
   requests = 0;
+  clock = handClock();
   answer = () => new Response(JSON.stringify(BOT), { status: 200 });
   originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetch(async () => {
@@ -63,6 +132,21 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+/** Watch on the hand clock. */
+function watch(
+  computerId: string,
+  isLive: () => boolean,
+  onState: (state: ControlState) => void = () => {},
+  intervalMs = 0,
+): () => void {
+  return watchControl(
+    computerId,
+    { isLive, onState },
+    intervalMs,
+    clock.timers,
+  );
+}
+
 /** Watch, run the body, and always let go — a leaked loop would poison the next test. */
 async function watching(
   computerId: string,
@@ -70,11 +154,7 @@ async function watching(
   body: () => Promise<void>,
   intervalMs = 0,
 ): Promise<void> {
-  const stop = watchControl(
-    computerId,
-    { isLive, onState: () => {} },
-    intervalMs,
-  );
+  const stop = watch(computerId, isLive, () => {}, intervalMs);
   try {
     await body();
   } finally {
@@ -84,12 +164,11 @@ async function watching(
 
 describe("the shared control poll", () => {
   test("stops asking once the answer has come back the same enough times", async () => {
-    const computerId = nextComputer();
     const seen: ControlState[] = [];
-    const stop = watchControl(
-      computerId,
-      { isLive: () => false, onState: (state) => seen.push(state) },
-      0,
+    const stop = watch(
+      nextComputer(),
+      () => false,
+      (state) => seen.push(state),
     );
     try {
       expect(await quiet()).toBe(READS_TO_SETTLE);
@@ -105,8 +184,12 @@ describe("the shared control poll", () => {
       nextComputer(),
       () => true,
       async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        expect(requests).toBeGreaterThan(READS_TO_SETTLE);
+        // Many times the reads that would settle it, and every one of them asked for another.
+        for (let read = 0; read < READS_TO_SETTLE * 5; read += 1) {
+          expect(await clock.step()).toBe(true);
+        }
+        expect(requests).toBe(READS_TO_SETTLE * 5 + 1);
+        expect(clock.pending()).toBe(1);
       },
     );
   });
@@ -146,7 +229,7 @@ describe("the shared control poll", () => {
   test("nine cards on one computer are one loop, not nine", async () => {
     const computerId = nextComputer();
     const stops = Array.from({ length: 9 }, () =>
-      watchControl(computerId, { isLive: () => false, onState: () => {} }, 0),
+      watch(computerId, () => false),
     );
     try {
       expect(activeControlPolls()).toBe(1);
@@ -181,30 +264,28 @@ describe("the shared control poll", () => {
     answer = () => new Response("{}", { status: 500 });
     const stamps: number[] = [];
     globalThis.fetch = stubFetch(async () => {
-      stamps.push(Date.now());
+      stamps.push(clock.now());
       requests += 1;
       return answer();
     });
-    const computerId = nextComputer();
+    const gaps = () =>
+      stamps.slice(1).map((at, index) => at - (stamps[index] as number));
     // Live throughout, so nothing but the backoff decides the rhythm.
     await watching(
-      computerId,
+      nextComputer(),
       () => true,
       async () => {
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        await clock.advance(300);
+        // A healthy loop at a 10ms base makes thirty reads in 300ms; a doubling one makes five,
+        // and the first failure already waits twice the base.
+        expect(stamps).toEqual([0, 20, 60, 140, 300]);
+        expect(gaps()).toEqual([20, 40, 80, 160]);
+        // And it doubles up to the outage cap, not past it.
+        for (let read = 0; read < 30; read += 1) await clock.step();
+        expect(gaps().at(-1)).toBe(MAX_FAILURE_INTERVAL_MS);
+        expect(Math.max(...gaps())).toBe(MAX_FAILURE_INTERVAL_MS);
       },
       10,
-    );
-    // At a 10ms base a healthy loop makes ~30 reads in 300ms; 10, 20, 40, 80, 160 makes five.
-    expect(stamps.length).toBeLessThanOrEqual(7);
-    expect(stamps.length).toBeGreaterThanOrEqual(3);
-    // The last wait is several times the first. Not every step is compared with its neighbour:
-    // timer jitter at these sizes is a few milliseconds, which is a whole first step.
-    const gaps = stamps
-      .slice(1)
-      .map((at, index) => at - (stamps[index] as number));
-    expect(gaps.at(-1) as number).toBeGreaterThanOrEqual(
-      (gaps[0] as number) * 3,
     );
   });
 
@@ -245,18 +326,16 @@ describe("the shared control poll", () => {
   });
 
   test("the last card leaving takes the loop with it", async () => {
-    const computerId = nextComputer();
-    const stop = watchControl(
-      computerId,
-      { isLive: () => true, onState: () => {} },
-      0,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const stop = watch(nextComputer(), () => true);
+    for (let read = 0; read < READS_TO_SETTLE * 2; read += 1) {
+      expect(await clock.step()).toBe(true);
+    }
+    const atStop = requests;
     stop();
 
     expect(activeControlPolls()).toBe(0);
-    const afterStop = await quiet();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(requests).toBe(afterStop);
+    // The wait it had asked for is gone with it, so nothing is left to fire.
+    expect(clock.pending()).toBe(0);
+    expect(await quiet()).toBe(atStop);
   });
 });

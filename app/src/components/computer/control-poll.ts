@@ -36,6 +36,27 @@ const DEFAULT_INTERVAL_MS = 1000;
  */
 export const MAX_FAILURE_INTERVAL_MS = OUTAGE_CAP_MS;
 
+/**
+ * Where the loop's reads and waits come from. The real clock in the app; a clock a test turns by
+ * hand in `control-poll.test.ts`, because a loop whose every assertion is about how many reads fit
+ * between two instants cannot be checked against the wall clock on a machine under load — the
+ * backoff test failed three times in one day's full run and never alone.
+ */
+export type ControlTimers = {
+  /** Make a read now. */
+  run: (tick: () => Promise<void>) => void;
+  /** Make a read after `ms`. */
+  later: (ms: number, tick: () => Promise<void>) => unknown;
+  cancel: (handle: unknown) => void;
+};
+
+const REAL_TIMERS: ControlTimers = {
+  run: (tick) => void tick(),
+  later: (ms, tick) => setTimeout(tick, ms),
+  cancel: (handle) =>
+    clearTimeout(handle as ReturnType<typeof setTimeout> | undefined),
+};
+
 type Watcher = {
   onState: (state: ControlState) => void;
   /** True while this view has its own reason to keep the loop awake, whatever the state says. */
@@ -44,7 +65,8 @@ type Watcher = {
 
 type Loop = {
   watchers: Set<Watcher>;
-  timer: ReturnType<typeof setTimeout> | undefined;
+  timer: unknown;
+  timers: ControlTimers;
   polling: boolean;
   /** Consecutive identical reads. Reset by a change and by every poke. */
   unchanged: number;
@@ -58,12 +80,17 @@ type Loop = {
 
 const loops = new Map<string, Loop>();
 
-function loopFor(computerId: string, intervalMs: number): Loop {
+function loopFor(
+  computerId: string,
+  intervalMs: number,
+  timers: ControlTimers,
+): Loop {
   const existing = loops.get(computerId);
   if (existing) return existing;
   const created: Loop = {
     watchers: new Set(),
     timer: undefined,
+    timers,
     polling: false,
     unchanged: 0,
     last: "",
@@ -112,14 +139,14 @@ function start(computerId: string, loop: Loop): void {
       );
     }
     if (shouldContinue(loop)) {
-      loop.timer = setTimeout(tick, loop.waitMs);
+      loop.timer = loop.timers.later(loop.waitMs, tick);
       return;
     }
     loop.polling = false;
     loop.timer = undefined;
   };
 
-  void tick();
+  loop.timers.run(tick);
 }
 
 /**
@@ -132,8 +159,9 @@ export function watchControl(
   computerId: string,
   watcher: Watcher,
   intervalMs = DEFAULT_INTERVAL_MS,
+  timers: ControlTimers = REAL_TIMERS,
 ): () => void {
-  const loop = loopFor(computerId, intervalMs);
+  const loop = loopFor(computerId, intervalMs, timers);
   loop.watchers.add(watcher);
   loop.unchanged = 0;
   start(computerId, loop);
@@ -141,7 +169,7 @@ export function watchControl(
   return () => {
     loop.watchers.delete(watcher);
     if (loop.watchers.size > 0) return;
-    clearTimeout(loop.timer);
+    loop.timers.cancel(loop.timer);
     loop.timer = undefined;
     loop.polling = false;
     loops.delete(computerId);
