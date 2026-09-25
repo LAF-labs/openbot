@@ -272,6 +272,7 @@
   "server/tests/daily-budget-server-calls.test.ts",
   "server/tests/daily-budget.integration.test.ts",
   "server/tests/database.test.ts",
+  "server/tests/day-epochs.test.ts",
   "server/tests/demonstration.test.ts",
   "server/tests/deployment-admission.integration.test.ts",
   "server/tests/dev-actor.integration.test.ts",

@@ -100,6 +100,9 @@ export const ENVIRONMENT = {
   JEV_ENABLED: "compose",
   COMPACTION: "compose",
   COMPACTION_THRESHOLD_TOKENS: "compose",
+  DAY_EPOCHS: "compose",
+  // A laptop's way to turn the owner's day without waiting for midnight; refused in production.
+  LAF_CLOCK_OFFSET_MS: "development",
   BOT_TIME_ZONE: "compose",
   AGENT_STALL_TIMEOUT_MS: "compose",
   // The Bot's computer and its boundary.
@@ -226,6 +229,17 @@ export type DeploymentConfig = {
     jevEnabled: boolean;
     compaction: "off" | "latest-snapshot" | "decisions";
     compactionThresholdTokens: number;
+    /**
+     * `DAY_EPOCHS` (on unless it says `off`): at the owner's local day boundary the next person
+     * message starts a new epoch on a summary of the days before (`context/day-close.ts`).
+     */
+    dayEpochs: boolean;
+    /**
+     * `LAF_CLOCK_OFFSET_MS`: moves the clock the conversation store dates runs by, so a day can be
+     * turned on a laptop without waiting for midnight. Refused in production; zero everywhere else
+     * unless it is set.
+     */
+    clockOffsetMs: number;
   };
   /**
    * `PUBLIC_ORIGIN`: the deployed address, and what the fleet and the operator's alert channel
@@ -1092,10 +1106,29 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
       "COMPACTION_THRESHOLD_TOKENS must be a whole number of tokens, 4000 or more",
     );
   }
+  const days = optional(environment, "DAY_EPOCHS")?.toLowerCase();
+  if (days !== undefined && days !== "on" && days !== "off") {
+    throw new Error("DAY_EPOCHS must be on or off (unset is on)");
+  }
+  const offsetRaw = optional(environment, "LAF_CLOCK_OFFSET_MS");
+  const clockOffsetMs = offsetRaw ? Number(offsetRaw) : 0;
+  if (!Number.isInteger(clockOffsetMs)) {
+    throw new Error(
+      "LAF_CLOCK_OFFSET_MS must be a whole number of milliseconds",
+    );
+  }
+  // A moved clock is a laptop's way to turn the day; on a deployment it would date an owner's day wrong.
+  if (clockOffsetMs !== 0 && environment.NODE_ENV === "production") {
+    throw new Error(
+      "LAF_CLOCK_OFFSET_MS is for development and is refused in production",
+    );
+  }
   return {
     jevEnabled: jev !== "off",
     compaction: mode,
     compactionThresholdTokens: threshold,
+    dayEpochs: days !== "off",
+    clockOffsetMs,
   };
 }
 

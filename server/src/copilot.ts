@@ -627,7 +627,8 @@ function remoteAgentWithPrompt(
         : {};
     // What the run says it is. Chat says nothing, and silence is a chat.
     const mode = promptModeOf(forwarded);
-    const now = new Date();
+    // The store's clock, so the day a run is dated by is the day its close was made for.
+    const now = conversations?.now() ?? new Date();
     const composing = composeInputOf(agent.profile, {
       mode,
       now,

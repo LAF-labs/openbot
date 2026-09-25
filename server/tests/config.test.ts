@@ -813,4 +813,35 @@ describe("the agent harness's switches", () => {
       loadConfig({ ...baseEnvironment, COMPACTION_THRESHOLD_TOKENS: "500" }),
     ).toThrow("COMPACTION_THRESHOLD_TOKENS");
   });
+
+  test("day epochs are on unless they say off, and a moved clock is a laptop's alone", () => {
+    const harness = loadConfig(baseEnvironment).harness;
+    expect(harness.dayEpochs).toBe(true);
+    expect(harness.clockOffsetMs).toBe(0);
+    expect(
+      loadConfig({ ...baseEnvironment, DAY_EPOCHS: "off" }).harness.dayEpochs,
+    ).toBe(false);
+    expect(() =>
+      loadConfig({ ...baseEnvironment, DAY_EPOCHS: "daily" }),
+    ).toThrow("DAY_EPOCHS");
+    expect(
+      loadConfig({ ...baseEnvironment, LAF_CLOCK_OFFSET_MS: "86400000" })
+        .harness.clockOffsetMs,
+    ).toBe(86_400_000);
+    expect(() =>
+      loadConfig({ ...baseEnvironment, LAF_CLOCK_OFFSET_MS: "tomorrow" }),
+    ).toThrow("LAF_CLOCK_OFFSET_MS");
+    // A production environment that otherwise boots, as the token-key test above builds one.
+    const production = {
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: `B${"A".repeat(42)}=`,
+      MANAGED_AGENT_AG_UI_URL: baseEnvironment.MANAGED_AGENT_AG_UI_URL,
+      NODE_ENV: "production",
+      LAF_TOKEN_ENCRYPTION_KEY: "9f2c4a7e1b3d5c8a".repeat(4),
+    };
+    expect(loadConfig(production).harness.clockOffsetMs).toBe(0);
+    expect(() =>
+      loadConfig({ ...production, LAF_CLOCK_OFFSET_MS: "86400000" }),
+    ).toThrow("LAF_CLOCK_OFFSET_MS");
+  });
 });

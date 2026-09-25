@@ -45,6 +45,7 @@ export { BASE_KO } from "./base.ko";
 export {
   type ContextFacts,
   contextLayerText,
+  earlierSummaryText,
   knownFacts,
   REMINDER_CLOSE,
   REMINDER_OPEN,

@@ -14,6 +14,7 @@ import {
 } from "./computer/jev-auto-review";
 import type { ModelUsage } from "./computer/model-call";
 import { createCompactor } from "./context/compaction";
+import { createDaySummarizer } from "./context/day-close";
 import { log } from "./log";
 import { createWriteUp, type WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
@@ -63,7 +64,7 @@ export function createServerModelCalls(input: {
    * tokens invisibly would undercount its own KPI. Counts only, never content.
    */
   const recordModelUsage =
-    (source: "auto-review" | "write-up" | "compaction") =>
+    (source: "auto-review" | "write-up" | "compaction" | "day-summary") =>
     (usage: ModelUsage) => {
       void recordAuditEvent(input.auditStore, {
         eventType: "model.usage",
@@ -158,6 +159,23 @@ export function createServerModelCalls(input: {
       log.warn("compaction_fell_back", { reason: reason.split(":")[0] }),
   });
 
+  /*
+   * THE DAY'S SUMMARY (`context/day-close.ts`), on the server model like the compactor's stand-in.
+   * Jev answers yes/no questions and cannot write one; the Bot's own model could, as a cache-safe
+   * fork, but a close made hours after the last turn reads a cold cache either way, and the server
+   * model is the one measured to answer inside its bound.
+   */
+  const summarizeDay = createDaySummarizer(
+    {
+      baseUrl: endpoint.baseUrl,
+      model: model.serverModel,
+      apiKey,
+      supportsEffort: model.serverModelSupportsEffort,
+      onUsage: recordModelUsage("day-summary"),
+    },
+    { timeoutMs: 120_000 },
+  );
+
   const writeUp = createWriteUp({
     baseUrl: endpoint.baseUrl,
     model: model.defaultModel,
@@ -204,6 +222,9 @@ export function createServerModelCalls(input: {
 
     /** How a long conversation is compacted, or null when it is not. See `context/compaction.ts`. */
     compactor,
+
+    /** The summary a day's close stands on. See `context/day-close.ts`. */
+    summarizeDay,
 
     /**
      * A finished recording, written up as a procedure.

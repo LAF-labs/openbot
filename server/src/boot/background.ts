@@ -1,4 +1,5 @@
 import { createRetentionJob } from "../account/retention";
+import type { ConversationStore } from "../context/conversations";
 import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
@@ -22,6 +23,9 @@ const RETENTION_SWEEP_MS = 6 * 60 * 60_000;
 /** How often withdrawals the fleet has not taken yet are offered again. */
 const FLEET_REDELIVERY_MS = 5 * 60_000;
 
+/** How often conversations are looked at for a day's close. */
+const DAY_CLOSE_TICK_MS = 60_000;
+
 /**
  * What this process does on its own once the port is open: on a clock, and once at boot.
  *
@@ -40,6 +44,8 @@ export function startBackgroundWork(input: {
   /** The package's skills. Optional so a boot without a package, a test's, starts without them. */
   builtInSkills?: Pick<BuiltInSkillsRuntime, "reconcile">;
   pluginStore: PluginStore;
+  /** The conversation store, whose day closes are looked for on a clock. */
+  conversations?: Pick<ConversationStore, "tick">;
 }): void {
   /*
    * The routine clock. A minute is the finest grain a routine is ever due at — schedules are
@@ -93,4 +99,19 @@ export function startBackgroundWork(input: {
   void input.publicData.reconcile(input.pluginStore, "deployment");
   // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).
   void input.builtInSkills?.reconcile(input.pluginStore, "deployment");
+
+  /*
+   * The day's close (`context/day-close.ts`), looked for once a minute: a conversation whose owner's
+   * day has turned, idle and with nothing waiting on its owner, gets its summary prepared now, so
+   * the owner's first message of the day waits on nothing. Most ticks find nothing to do and read
+   * nothing.
+   */
+  const conversations = input.conversations;
+  if (conversations) {
+    setInterval(() => {
+      void conversations.tick().catch((error) => {
+        log.warn("day_close_tick_failed", { reason: describeFailure(error) });
+      });
+    }, DAY_CLOSE_TICK_MS).unref();
+  }
 }

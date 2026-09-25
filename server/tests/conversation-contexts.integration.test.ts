@@ -125,6 +125,64 @@ describe("a conversation's epoch and reminders outlive the process", () => {
     expect(again.epoch.fresh).toBe(false);
   });
 
+  test("a day's cut and its summary are written with the epoch and read back whole", async () => {
+    const botId = await aBot();
+    const threadId = `${suite}-thread-${randomUUID().slice(0, 8)}`;
+    const thursday = new Date("2026-09-24T01:00:00Z");
+    const friday = new Date("2026-09-25T01:00:00Z");
+    const stamped = (
+      id: string,
+      role: "user" | "assistant",
+      content: string,
+      at: Date,
+    ) => ({ id, role, content, lafAt: at.toISOString() }) as never;
+    const thread = [
+      stamped("u1", "user", "한빛농산 유자 40박스 온대", thursday),
+      stamped("a1", "assistant", "알겠습니다. ".repeat(2_000), thursday),
+    ];
+    let clock = thursday.getTime();
+    const before = createConversationStore({
+      persistence: conversationPersistence(database),
+      now: () => clock,
+      days: {
+        summarize: async () => "- 9/24: 한빛농산 유자 40박스",
+        history: async () => thread,
+      },
+    });
+    const bare = (message: Record<string, unknown>) => {
+      const { lafAt: _stamp, ...rest } = message;
+      return rest as never;
+    };
+    before.prepare(input(botId, threadId, thread.map(bare), thursday));
+    clock = friday.getTime() - 3 * 60 * 60_000;
+    expect(await before.tick()).toBe(1);
+    const morningThread = [...thread.map(bare), user("u2", "좋은 아침")];
+    clock = friday.getTime();
+    const morning = before.prepare(
+      input(botId, threadId, morningThread, friday),
+    );
+    await before.settled();
+    expect(morning.epoch.reason).toBe("day_boundary");
+    expect(morning.messages.map((message) => message.id)).toEqual(["u2"]);
+
+    const [row] = await database
+      .select({ epoch: lafConversationContexts.epoch })
+      .from(lafConversationContexts)
+      .where(eq(lafConversationContexts.threadId, threadId));
+    const stored = row?.epoch as { cut?: { through?: string } } | undefined;
+    expect(stored?.cut?.through).toBe("a1");
+
+    // The process restarts.
+    const after = createConversationStore({
+      persistence: conversationPersistence(database),
+    });
+    await after.load();
+    const again = after.prepare(input(botId, threadId, morningThread, friday));
+    expect(again.system).toBe(morning.system);
+    expect(again.system).toContain("한빛농산 유자 40박스");
+    expect(again.messages).toEqual(morning.messages);
+  });
+
   test("one row per conversation, and it goes with its Bot", async () => {
     const botId = await aBot();
     const threadId = `${suite}-thread-${randomUUID().slice(0, 8)}`;

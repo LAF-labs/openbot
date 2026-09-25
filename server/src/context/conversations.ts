@@ -42,10 +42,11 @@
  */
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
-import { sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { PromptMode } from "../../../shared/prompt";
 import {
   type ContextFacts,
+  earlierSummaryText,
   knownFacts,
   REMINDER_CLOSE,
   REMINDER_OPEN,
@@ -54,8 +55,9 @@ import {
   routineRunLine,
   withReminder,
 } from "../../../shared/prompt";
+import { dayLabel } from "../../../shared/prompt/zone";
 import type { Database } from "../db/client";
-import { lafConversationContexts } from "../db/schema";
+import { lafConversationContexts, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import {
@@ -64,6 +66,16 @@ import {
   type Compactor,
   mergePlans,
 } from "./compaction";
+import {
+  afterCut,
+  closePoint,
+  type DayCut,
+  type DaySummarizer,
+  dayKey,
+  MIN_DAY_CLOSE_CHARS,
+  type StampedMessage,
+  transcriptOf,
+} from "./day-close";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -79,7 +91,9 @@ export type EpochReason =
   | "mode_changed"
   /** The person had a memory forgotten: its words must stop reaching the model. */
   | "memory_forgotten"
-  | "compaction";
+  | "compaction"
+  /** The owner's local day turned: the history before it became a summary (`./day-close`). */
+  | "day_boundary";
 
 /** What an epoch is frozen against. Any of them changing starts a new one. */
 export type EpochKey = {
@@ -96,6 +110,12 @@ type Epoch = EpochKey & {
   startedAt: string;
   /** The whole system message, frozen. */
   system: string;
+  /**
+   * Where the history the next request carries begins, and the summary standing for what came
+   * before it. Carried from epoch to epoch until the next day's close replaces it; stored with the
+   * epoch (`laf_conversation_contexts.epoch`, jsonb), so no migration and a restart keeps the cut.
+   */
+  cut?: DayCut;
 };
 
 type Conversation = {
@@ -125,6 +145,16 @@ type Conversation = {
    * and one that found a little each time would break the cache each time (measured, 2026-09-25).
    */
   triedAtTokens: number | null;
+  /** A day's close, prepared behind the conversation and waiting for the owner's next message. */
+  close: DayCut | null;
+  /** A close is being prepared. One at a time. */
+  closing: boolean;
+  /** When the last close failed, ms: the next attempt waits `CLOSE_RETRY_MS`. */
+  closeFailedAt: number | null;
+  /** What the last look for a close was made against; nothing changed, nothing to look at again. */
+  closeCheckedKey: string | null;
+  /** Said once per cut: the thread the run carried did not hold the message the cut is after. */
+  cutMissingLogged: boolean;
   /** Usage rows recorded in this epoch. The first is the epoch's cold request. */
   requests: number;
   /** When this conversation last made a model request, ms. */
@@ -185,6 +215,18 @@ export type ConversationStore = {
    * was dropped (and so whether the next run starts a new epoch).
    */
   compactNow(threadId: string): Promise<boolean>;
+  /**
+   * Look for conversations whose day has turned and prepare their close, behind them. Called on a
+   * minute's clock (`boot/background.ts`); resolves to how many closes it made.
+   */
+  tick(): Promise<number>;
+  /**
+   * Prepare the conversation's day close now, whatever the idle clock says, and wait for it. For
+   * the eval and the tests. Resolves to whether a close is ready for the next person message.
+   */
+  closeNow(threadId: string): Promise<boolean>;
+  /** The store's clock: what the middleware dates a run by. Injected in tests and the eval. */
+  now(): Date;
   /** Read every kept conversation into memory. Called once, at boot, before any run. */
   load(): Promise<number>;
   /** Every write asked for so far, landed. For tests and for a clean shutdown. */
@@ -221,6 +263,34 @@ export type CompactionSetting = {
   thresholdTokens: number;
   compact: Compactor;
 };
+
+/** The day's close (`./day-close`). Absent: a conversation's history is never cut by day. */
+export type DayEpochSetting = {
+  summarize: DaySummarizer;
+  /** The thread as the store holds it, stamped (`runner/thread-store.ts messagesFor`). */
+  history: (threadId: string) => Promise<readonly StampedMessage[]>;
+  /**
+   * Whether the Bot has anything running or waiting on its owner (package A's `waiting`). A close is
+   * never prepared then: the task's messages would be cut out from under it.
+   */
+  busy?: (botId: string) => Promise<boolean>;
+  /** The zone a conversation that never said its own is dated in. */
+  fallbackTimeZone?: string;
+  /** How long since the conversation's last request before a close may be prepared. */
+  idleMs?: number;
+  minChars?: number;
+};
+
+/** A close is not prepared within two minutes of a request: the turn may still be going. */
+const DEFAULT_CLOSE_IDLE_MS = 2 * 60_000;
+/** After a failed close (the summariser down), the next attempt waits this long. */
+const CLOSE_RETRY_MS = 30 * 60_000;
+
+/** The frozen system message, with the summary of what the cut replaced at its end. */
+function withSummary(system: string, cut: DayCut | undefined): string {
+  const summary = cut ? earlierSummaryText(cut.summary, cut.day) : "";
+  return summary ? `${system}\n\n${summary}` : system;
+}
 
 /**
  * What a compaction must save to be taken: a floor in characters and a share of the conversation.
@@ -353,10 +423,12 @@ export function createConversationStore(
     persistence?: ConversationPersistence;
     now?: () => number;
     compaction?: CompactionSetting;
+    days?: DayEpochSetting;
   } = {},
 ): ConversationStore {
   const { persistence } = options;
   const setting = options.compaction;
+  const days = options.days;
   const clock = options.now ?? (() => Date.now());
   const conversations = new Map<string, Conversation>();
   let sweptAt = 0;
@@ -475,9 +547,14 @@ export function createConversationStore(
     }
   };
 
+  /**
+   * A new epoch's frozen layer. The cut goes with it — the one it replaces, or the day's close it
+   * takes — so no epoch ever carries again what a close already summarised.
+   */
   const freeze = (
     input: PrepareInput,
     reason: EpochReason,
+    cut?: DayCut,
   ): Pick<Conversation, "epoch" | "known"> => ({
     epoch: {
       ...input.key,
@@ -485,10 +562,122 @@ export function createConversationStore(
       id: randomUUID(),
       reason,
       startedAt: input.now.toISOString(),
-      system: input.system(input.facts),
+      system: withSummary(input.system(input.facts), cut),
+      ...(cut ? { cut } : {}),
     },
     known: input.facts,
   });
+
+  /** The per-conversation state that lives in memory only, fresh. */
+  const unkept = () => ({
+    pending: null,
+    raw: null,
+    compacting: false,
+    triedAtTokens: null,
+    close: null,
+    closing: false,
+    closeFailedAt: null,
+    closeCheckedKey: null,
+    cutMissingLogged: false,
+    requests: 0,
+    lastRequestAt: null,
+  });
+
+  /**
+   * One day's close: the span from the current cut to the last message before today, through the
+   * existing compaction, then summarised with what the last close said. Stored in memory for the
+   * owner's next message to take; a failure leaves the conversation exactly as it was.
+   */
+  const closeConversation = async (
+    conversation: Conversation,
+    options: { force: boolean },
+  ): Promise<boolean> => {
+    if (!days || conversation.closing) return false;
+    const now = clock();
+    const zone =
+      conversation.known.timeZone || days.fallbackTimeZone || "Asia/Seoul";
+    const today = dayLabel(new Date(now), zone);
+    const key = `${dayKey(today)}|${conversation.lastUserMessageId}|${conversation.epoch.cut?.through ?? ""}`;
+    if (!options.force && conversation.closeCheckedKey === key) return false;
+    conversation.closing = true;
+    const started = Date.now();
+    try {
+      /*
+       * NEVER MID-TASK. A run going on, or a step waiting on the owner's answer, would have its own
+       * messages cut out from under it by the time it carries on. Asked again on the next tick.
+       */
+      if (days.busy && (await days.busy(conversation.botId))) return false;
+      const stored = await days.history(conversation.threadId);
+      conversation.closeCheckedKey = key;
+      const point = closePoint(stored, {
+        today,
+        timeZone: zone,
+        after: conversation.epoch.cut?.through ?? null,
+      });
+      if (!point) return conversation.close !== null;
+      if (conversation.close?.through === point.through) return true;
+      const chars = JSON.stringify(point.span).length;
+      if (chars < (days.minChars ?? MIN_DAY_CLOSE_CHARS)) return false;
+      /*
+       * THE EXISTING COMPACTION FIRST (`./compaction`: Jev, the server model behind it, the rule
+       * below both), so what the summariser reads has lost the page reads nobody needs and kept the
+       * ones Jev judged still matter — with the same redacted excerpts.
+       */
+      let span: readonly StampedMessage[] = point.span;
+      let arm = "none";
+      if (setting?.compact) {
+        try {
+          const decided = await setting.compact(span);
+          span = applyCompaction(span, decided.plan) as StampedMessage[];
+          arm = decided.arm;
+        } catch {
+          arm = "failed";
+        }
+      }
+      const transcript = transcriptOf(span, zone);
+      const summary = await days.summarize({
+        previous: conversation.epoch.cut?.summary ?? null,
+        transcript,
+        day: today,
+      });
+      conversation.close = { through: point.through, summary, day: today };
+      conversation.closeFailedAt = null;
+      // Counts only. Never a message, never the summary.
+      log.info("day_closed", {
+        bot: conversation.botId,
+        messages: point.span.length,
+        spanChars: chars,
+        transcriptChars: transcript.length,
+        summaryChars: summary.length,
+        arm,
+        ms: Date.now() - started,
+      });
+      return true;
+    } catch (error) {
+      conversation.closeFailedAt = now;
+      log.warn("day_close_failed", {
+        bot: conversation.botId,
+        reason: describeFailure(error),
+      });
+      return false;
+    } finally {
+      conversation.closing = false;
+    }
+  };
+
+  /** Closes being prepared, by thread. For `settled`. */
+  const closes = new Map<string, Promise<boolean>>();
+  const startClose = (conversation: Conversation, force: boolean) => {
+    const running = closes.get(conversation.threadId);
+    if (running) return running;
+    const work = closeConversation(conversation, { force }).finally(() => {
+      if (closes.get(conversation.threadId) === work) {
+        closes.delete(conversation.threadId);
+      }
+    });
+    closes.set(conversation.threadId, work);
+    return work;
+  };
 
   return {
     prepare(input) {
@@ -512,13 +701,8 @@ export function createConversationStore(
           ...freeze(input, reason),
           reminders: {},
           lastUserMessageId: null,
-          pending: null,
           compaction: {},
-          raw: null,
-          compacting: false,
-          triedAtTokens: null,
-          requests: 0,
-          lastRequestAt: null,
+          ...unkept(),
           question: { messageId: null, costUsd: 0 },
           touchedAt: now,
         };
@@ -536,17 +720,66 @@ export function createConversationStore(
          * that is rare and that the person asked for.
          */
         const forgotten = forgottenMemories(conversation.known, input.facts);
+        /*
+         * THE DAY'S CLOSE IS TAKEN BY A PERSON'S NEW MESSAGE, and only by one: never by the next
+         * step of a task, which is still working on the history the close would cut. And only on
+         * the day it was made for or later, and only when the thread still holds where it cuts.
+         */
+        const close = conversation.close;
+        const takeClose =
+          close !== null &&
+          newest !== null &&
+          newest.message.id !== conversation.lastUserMessageId &&
+          dayKey(input.facts.day) >= dayKey(close.day) &&
+          input.messages.some((message) => message.id === close.through);
         const moved =
           conversation.pending ??
           KEY_REASONS.find(
             ([field]) => conversation?.epoch[field] !== key[field],
           )?.[1] ??
-          (forgotten.length > 0 ? "memory_forgotten" : null);
+          (forgotten.length > 0 ? "memory_forgotten" : null) ??
+          (takeClose ? "day_boundary" : null);
         if (moved) {
-          Object.assign(conversation, freeze(input, moved), {
+          const cut = takeClose && close ? close : conversation.epoch.cut;
+          Object.assign(conversation, freeze(input, moved, cut), {
             pending: null,
             requests: 0,
           });
+          if (takeClose) {
+            /*
+             * What the cut took is no longer sent, so nothing about it is kept: the reminders its
+             * person messages carried and the compaction decisions about its calls.
+             */
+            const carried = new Set(
+              afterCut(input.messages, cut).carried.map(
+                (message) => message.id,
+              ),
+            );
+            conversation.reminders = Object.fromEntries(
+              Object.entries(conversation.reminders).filter(([id]) =>
+                carried.has(id),
+              ),
+            );
+            const calls = new Set<string>();
+            for (const message of input.messages) {
+              if (!carried.has(message.id)) continue;
+              const id = (message as { toolCallId?: string }).toolCallId;
+              if (id) calls.add(id);
+              for (const call of (
+                message as { toolCalls?: Array<{ id: string }> }
+              ).toolCalls ?? []) {
+                calls.add(call.id);
+              }
+            }
+            conversation.compaction = Object.fromEntries(
+              Object.entries(conversation.compaction).filter(([id]) =>
+                calls.has(id),
+              ),
+            );
+            conversation.close = null;
+            conversation.cutMissingLogged = false;
+            conversation.triedAtTokens = null;
+          }
           if (forgotten.length > 0) {
             conversation.reminders = scrubbed(
               conversation.reminders,
@@ -598,8 +831,22 @@ export function createConversationStore(
        * message it does not name goes through as the very object the run carried, so the history
        * behind the new epoch's head is the provider's cached prefix from the next request on.
        */
-      conversation.raw = input.messages;
-      const carried = applyCompaction(input.messages, conversation.compaction);
+      /*
+       * CUT AT THE DAY'S CLOSE, then compacted. Everything before the cut is in the frozen layer's
+       * summary; the client still sends the whole thread and the transcript stays whole — the cut
+       * is made here, at the seam. A thread that no longer holds the message the cut is after (an
+       * edited or restored conversation) is carried whole: longer, never missing anything.
+       */
+      const { carried: current, found } = afterCut(
+        input.messages,
+        conversation.epoch.cut,
+      );
+      if (!found && !conversation.cutMissingLogged) {
+        conversation.cutMissingLogged = true;
+        log.warn("day_cut_not_found", { bot: conversation.botId });
+      }
+      conversation.raw = current;
+      const carried = applyCompaction(current, conversation.compaction);
       const reminders = conversation.reminders;
       return {
         system: conversation.epoch.system,
@@ -656,12 +903,64 @@ export function createConversationStore(
     },
 
     async settled() {
-      await Promise.all([...writes.values(), ...compactions.values()]);
+      await Promise.all([
+        ...writes.values(),
+        ...compactions.values(),
+        ...closes.values(),
+      ]);
     },
 
     beginEpoch(threadId, reason) {
       const conversation = conversations.get(threadId);
       if (conversation) conversation.pending = reason;
+    },
+
+    async tick() {
+      if (!days) return 0;
+      const now = clock();
+      const idle = days.idleMs ?? DEFAULT_CLOSE_IDLE_MS;
+      const work: Array<Promise<boolean>> = [];
+      for (const conversation of conversations.values()) {
+        if (!conversation.kept || conversation.closing) continue;
+        if (conversation.compacting) continue;
+        if (
+          conversation.lastRequestAt !== null &&
+          now - conversation.lastRequestAt < idle
+        ) {
+          continue;
+        }
+        if (
+          conversation.closeFailedAt !== null &&
+          now - conversation.closeFailedAt < CLOSE_RETRY_MS
+        ) {
+          continue;
+        }
+        const zone =
+          conversation.known.timeZone || days.fallbackTimeZone || "Asia/Seoul";
+        const today = dayKey(dayLabel(new Date(now), zone));
+        // Closed today already: the rest of the day is today's, and waits for tomorrow.
+        if (
+          conversation.epoch.cut &&
+          dayKey(conversation.epoch.cut.day) >= today
+        ) {
+          continue;
+        }
+        work.push(startClose(conversation, false));
+      }
+      const made = await Promise.all(work);
+      return made.filter(Boolean).length;
+    },
+
+    async closeNow(threadId) {
+      const conversation = conversations.get(threadId);
+      if (!conversation) return false;
+      const running = closes.get(threadId);
+      if (running) await running;
+      return startClose(conversation, true);
+    },
+
+    now() {
+      return new Date(clock());
     },
 
     async compactNow(threadId) {
@@ -686,13 +985,8 @@ export function createConversationStore(
           known: knownFacts(row.known),
           reminders: row.reminders ?? {},
           lastUserMessageId: row.lastUserMessageId,
-          pending: null,
           compaction: planOf(row.compaction),
-          raw: null,
-          compacting: false,
-          triedAtTokens: null,
-          requests: 0,
-          lastRequestAt: null,
+          ...unkept(),
           question: { messageId: row.lastUserMessageId, costUsd: 0 },
           touchedAt: clock(),
         });
@@ -736,5 +1030,30 @@ export function conversationPersistence(
           },
         });
     },
+  };
+}
+
+/**
+ * How long a `running` or `waiting` run is believed. A step can wait on its owner's answer for a
+ * long time (package A: work survives the window), but a row a crash left behind is reconciled only
+ * at the next boot, and a day's close must not wait on it forever.
+ */
+const BUSY_STALE_MS = 12 * 60 * 60_000;
+
+/** Whether a Bot has a run going on or a step waiting on its owner, from the run ledger. */
+export function botBusyReader(database: Database) {
+  return async (botId: string): Promise<boolean> => {
+    const rows = await database
+      .select({ runId: lafThreadRuns.runId })
+      .from(lafThreadRuns)
+      .where(
+        and(
+          eq(lafThreadRuns.agentId, botId),
+          inArray(lafThreadRuns.status, ["running", "waiting"]),
+          gt(lafThreadRuns.startedAt, new Date(Date.now() - BUSY_STALE_MS)),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   };
 }

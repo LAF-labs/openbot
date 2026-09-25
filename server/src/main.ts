@@ -62,10 +62,12 @@ import { createDatabaseStandingApprovalStore } from "./computer/standing-approva
 import { loadConfig } from "./config";
 import type { Compactor } from "./context/compaction";
 import {
+  botBusyReader,
   conversationPersistence,
   createConversationStore,
 } from "./context/conversations";
 import { createAttachmentService } from "./attachments/service";
+import { messagesFor } from "./runner/thread-store";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
@@ -197,6 +199,25 @@ const conversations = createConversationStore({
               : Promise.resolve({ plan: {}, arm: "latest-snapshot" as const }),
         },
       }),
+  /*
+   * The day's close (`context/day-close.ts`): prepared on the background clock once the owner's day
+   * has turned and nothing of theirs is running or waiting, read from the thread as it is stored,
+   * and summarised by the server model — read late, like the compactor, long after boot.
+   */
+  ...(config.harness.dayEpochs
+    ? {
+        days: {
+          summarize: (input: Parameters<typeof modelCalls.summarizeDay>[0]) =>
+            modelCalls.summarizeDay(input),
+          history: (threadId: string) => messagesFor(database, threadId),
+          busy: botBusyReader(database),
+          fallbackTimeZone: config.botTimeZone,
+        },
+      }
+    : {}),
+  ...(config.harness.clockOffsetMs
+    ? { now: () => Date.now() + config.harness.clockOffsetMs }
+    : {}),
 });
 const conversationsLoaded = await conversations.load();
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
@@ -961,4 +982,5 @@ startBackgroundWork({
   publicData: publicDataRuntime,
   builtInSkills,
   pluginStore,
+  conversations,
 });

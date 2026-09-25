@@ -24,6 +24,7 @@ import {
   answerNowText,
   type ContextFacts,
   contextLayerText,
+  earlierSummaryText,
   reminderBlock,
   reminderLines,
   routineRunLine,
@@ -75,6 +76,7 @@ export const HARNESS_VERSION = createHash("sha256")
       staticPrompt("routine"),
       contextLayerText(FIXTURE),
       contextLayerText(FIXTURE, "메모장"),
+      earlierSummaryText("- 9/24 택배 두 건을 보냈다.", FIXTURE.day),
       reminderBlock(reminderLines(FIXTURE, MOVED)),
       routineRunLine({
         startedAt: new Date("2026-09-24T22:30:05Z"),
