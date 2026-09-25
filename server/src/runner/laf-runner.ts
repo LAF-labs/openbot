@@ -288,6 +288,8 @@ type StepWait = {
   eventCount: number;
   written: Promise<void>;
   timer: ReturnType<typeof setTimeout>;
+  /** When the step went to its window. See `stepState`. */
+  since: number;
 };
 
 /**
@@ -667,11 +669,25 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
    * a window that has not come back yet. What a second window asks before saying a task stopped —
    * from where it stands, a step another window is making looks exactly like one that died.
    */
-  stepState(threadId: string): { running: boolean; waiting: boolean } {
+  stepState(threadId: string): {
+    running: boolean;
+    waiting: boolean;
+    waitingMs: number;
+  } {
     const live = this.latest.get(threadId);
+    const wait = this.stepWaits.get(threadId);
     return {
       running: live !== undefined && !live.over,
-      waiting: this.stepWaits.has(threadId),
+      waiting: wait !== undefined,
+      /*
+       * How long the step has been out. A window that crashed says nothing, so its step is listed
+       * for the whole ten minutes (`BROWSER_STEP_MS`) — which stays, because a step legitimately
+       * waits that long on a person's 허용, and nothing here can tell a window that is thinking
+       * from one that is gone. What the second window does with the number is say so honestly:
+       * a step out far longer than one takes, with no question on it, is "다른 창에서 진행
+       * 중이었어요 · 이어서 하기" (`step-watcher.ts`), not a turn going on here.
+       */
+      waitingMs: wait ? Date.now() - wait.since : 0,
     };
   }
 
@@ -701,6 +717,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     if (previous) clearTimeout(previous.timer);
     let written: () => void = () => {};
     const entry: StepWait = {
+      since: Date.now(),
       runId,
       eventCount,
       written: new Promise<void>((resolve) => {

@@ -1,10 +1,10 @@
 import type { Message } from "@ag-ui/core";
-import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import {
   UseAgentUpdate,
   useAgent,
   useCopilotKit,
 } from "@copilotkit/react-core/v2";
+import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CarryOnNotice } from "@/components/channels/carry-on-notice";
@@ -29,6 +29,7 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
+import { useControl } from "@/components/computer/use-control";
 import { turnPhaseOf, usePublishTurn } from "@/lib/agents/presence";
 import { agentQueryOptions } from "@/lib/agents/queries";
 import { contentOf } from "@/lib/attachments/message";
@@ -64,6 +65,7 @@ import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import { watchStrandedSteps } from "@/lib/copilot/step-watcher";
 import { turnNotice } from "@/lib/copilot/stopped-turn";
 import {
+  asksForPerson,
   taskStopOf,
   type UnansweredCall,
   withStepResult,
@@ -912,6 +914,8 @@ export function ChannelChat({
   const [stepsChecked, setStepsChecked] = useState(false);
   /** The server says the turn is going on somewhere — maybe in another window. See the watcher. */
   const [turnGoingOn, setTurnGoingOn] = useState(false);
+  /** The turn is going on only as a step another window took long ago (`step-watcher.ts`). */
+  const [stepElsewhere, setStepElsewhere] = useState(false);
   const stepWatcher = useRef<{ stop: () => void } | null>(null);
   /**
    * A step carried on from here: its result into the thread under the call, then the Bot's turn,
@@ -982,9 +986,10 @@ export function ChannelChat({
         },
         carryOn: (step, content, stopped) =>
           carryOnRef.current(step, content, stopped),
-        onChecked: (goingOn) => {
+        onChecked: (goingOn, elsewhere) => {
           setStepsChecked(true);
           setTurnGoingOn(goingOn);
+          setStepElsewhere(elsewhere);
         },
         onCarrying: (carrying) => {
           const by = carrying ? 1 : -1;
@@ -1226,6 +1231,17 @@ export function ChannelChat({
         return at >= 0 && at >= lastAskedAt;
       }),
   });
+  /*
+   * A step out with another window long past a step's length is that window's gone quiet — unless
+   * it is waiting on a person: a request for help, or somebody at the wheel. Then it is the person's
+   * time it is taking, and 이어서 하기 here would start a second run under them.
+   */
+  const control = useControl(runtimeAgentId, false);
+  const isStepElsewhere =
+    stepElsewhere &&
+    control?.holder !== "human" &&
+    control?.requested !== true &&
+    !(taskStop && asksForPerson(agent.messages, taskStop.unanswered));
 
   return (
     <ConversationProvider ask={askFromComponent}>
@@ -1260,8 +1276,13 @@ export function ChannelChat({
           notice={
             channel.active ? (
               <CarryOnNotice
-                busy={agent.isRunning || turnsInFlight > 0 || turnGoingOn}
+                busy={
+                  agent.isRunning ||
+                  turnsInFlight > 0 ||
+                  (turnGoingOn && !isStepElsewhere)
+                }
                 checked={stepsChecked}
+                elsewhere={isStepElsewhere}
                 onCarryOn={() => {
                   void sayRef.current(
                     t("Please carry on with the task you were doing."),

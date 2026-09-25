@@ -2686,4 +2686,6 @@ export const ko: Record<string, string> = {
   "Open the Notebook": "수첩 열기",
   "That reads like an order to the Bot. Write what is true here, and ask the Bot for things in a conversation.":
     "봇에게 시키는 말처럼 읽혀요. 여기에는 사실을 적고, 부탁은 대화로 해 주세요.",
+  // small
+  "This task was going on in another window.": "다른 창에서 진행 중이었어요.",
 };

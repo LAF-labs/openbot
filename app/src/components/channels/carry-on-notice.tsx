@@ -22,11 +22,18 @@ export function CarryOnNotice({
   stop,
   checked,
   busy,
+  elsewhere = false,
   onCarryOn,
 }: {
   stop: TaskStop | null;
   checked: boolean;
   busy: boolean;
+  /**
+   * The step is still listed as out with another window, far longer than a step takes, and no
+   * question is open on it — most likely a window that crashed, which the server keeps listing for
+   * ten minutes. Said as that, with the same press, rather than drawn as a turn going on here.
+   */
+  elsewhere?: boolean;
   onCarryOn: () => void;
 }) {
   const unanswered = stop?.unanswered.join(",") ?? "";
@@ -43,9 +50,11 @@ export function CarryOnNotice({
       role="status"
     >
       <span className="min-w-0 flex-1">
-        {stop.reason === "stopped"
-          ? t("You stopped this task partway.")
-          : t("This task stopped before its last step finished.")}
+        {elsewhere && stop.reason === "window_closed"
+          ? t("This task was going on in another window.")
+          : stop.reason === "stopped"
+            ? t("You stopped this task partway.")
+            : t("This task stopped before its last step finished.")}
       </span>
       <Button
         className="shrink-0"

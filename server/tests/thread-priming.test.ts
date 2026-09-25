@@ -33,6 +33,7 @@ const runner = {
   stepState: (threadId: string) => ({
     running: false,
     waiting: threadId === "thread-mine",
+    waitingMs: threadId === "thread-mine" ? 1_000 : 0,
   }),
   abandonStep: (threadId: string) => {
     primed.push(`abandon:${threadId}`);
@@ -143,7 +144,11 @@ describe("the runtime's thread routes", () => {
       actor: "owner",
     });
     expect(step.status).toBe(200);
-    expect(await step.json()).toEqual({ running: false, waiting: true });
+    expect(await step.json()).toEqual({
+      running: false,
+      waiting: true,
+      waitingMs: 1_000,
+    });
 
     primed.length = 0;
     const theirs = await ask(

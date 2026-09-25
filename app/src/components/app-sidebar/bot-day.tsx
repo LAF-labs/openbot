@@ -209,6 +209,7 @@ export function BotDay({
         <DayGroup placement={placement} title={t("What it did")}>
           {shown.map((item) => (
             <DayItemRow
+              isAsking={waiting.length > 0}
               item={item}
               key={item.kind === "learned" ? item.memoryId : item.runId}
               onPress={() => handlePress(item)}
@@ -296,10 +297,13 @@ function DayGroup({
 }
 
 function DayItemRow({
+  isAsking,
   item,
   onPress,
   zone,
 }: {
+  /** A question is open for the owner: what a `waiting` row is waiting on. */
+  isAsking: boolean;
   item: BotDayItem;
   onPress: () => void;
   zone: string;
@@ -318,6 +322,7 @@ function DayItemRow({
   const mark = dayMark(
     item.status,
     item.kind === "chat" ? (item.reason ?? null) : null,
+    isAsking,
   );
   /*
    * What it remembered while doing this, on this row: one message that taught the Bot three things

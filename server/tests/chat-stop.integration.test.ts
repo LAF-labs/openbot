@@ -392,10 +392,11 @@ describe("a run whose step is with a window", () => {
       async () => (await statusOf(first.runId)) === "waiting",
       "the ledger to say waiting",
     );
-    expect(runner.stepState(threadId)).toEqual({
-      running: false,
-      waiting: true,
-    });
+    const state = runner.stepState(threadId);
+    expect(state).toMatchObject({ running: false, waiting: true });
+    // How long it has been out, for a second window to judge whether it is still being made.
+    expect(state.waitingMs).toBeGreaterThanOrEqual(0);
+    expect(state.waitingMs).toBeLessThan(20_000);
     return { runner, threadId, first };
   }
 

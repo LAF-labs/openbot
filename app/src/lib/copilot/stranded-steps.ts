@@ -94,6 +94,26 @@ export type TaskStop = {
   unanswered: string[];
 };
 
+/**
+ * Whether any of these calls is the Bot asking for a person at its computer (`computer_request_help`):
+ * a step out with a window for as long as the person takes — a login, a verification code — which
+ * another window must not read as one that went quiet.
+ */
+export function asksForPerson(
+  messages: readonly Message[],
+  toolCallIds: readonly string[],
+): boolean {
+  const ids = new Set(toolCallIds);
+  return messages.some(
+    (message) =>
+      hasCalls(message) &&
+      message.toolCalls.some(
+        (call) =>
+          ids.has(call.id) && call.function.name === "computer_request_help",
+      ),
+  );
+}
+
 export function taskStopOf(
   messages: readonly Message[],
   /**

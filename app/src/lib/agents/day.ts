@@ -164,6 +164,8 @@ export type DayMark = { text: string; tone: "active" | "failed" | "quiet" };
 export function dayMark(
   status: DayRunStatus,
   reason?: string | null,
+  /** A question is open for the owner — an approval or a request for help at the computer. */
+  isAsking = true,
 ): DayMark | null {
   if (status === "error" || status === "unknown") {
     return {
@@ -179,8 +181,17 @@ export function dayMark(
   }
   // Its step is waiting on a window: the owner's answer, or a window that has not come back yet.
   // Not finished, which is what it read as when the ledger wrote it `done` (UX review 0.5.4, #1).
+  /*
+   * Only while a question is open, though. With none, the step is a window's to make — or a
+   * window's that crashed, which the server lists for ten minutes — and 사장님 차례 told the owner
+   * to look for a question that was not there (0.5.4 final QA). It is still going on, as far as
+   * anything here can know; the conversation says the rest ("다른 창에서 진행 중이었어요").
+   */
   if (status === "waiting") {
-    return { text: taskStateWord({ kind: "yourTurn" }), tone: "active" };
+    return {
+      text: taskStateWord({ kind: isAsking ? "yourTurn" : "running" }),
+      tone: "active",
+    };
   }
   return null;
 }

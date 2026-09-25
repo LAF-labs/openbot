@@ -64,23 +64,60 @@ const LOOK_WHILE_SHOWING_MS = 2_000;
 const LOOK_OTHERWISE_MS = 15_000;
 
 /**
+ * How long a step may be out with another window before this one stops calling it a turn going on.
+ * A step takes a second or three, and the longest the computer lets one take is its navigation
+ * timeout, 30 s; one waiting on the owner — a 허용, or a person at the wheel for a login — is not
+ * this window's to call quiet at all (`CarryOnNotice`, `asksForPerson`). Past this, with neither,
+ * it is a window that went quiet: most likely one that crashed, which says nothing, so the server
+ * lists its step for ten minutes.
+ */
+export const ELSEWHERE_AFTER_MS = 60_000;
+
+/** How the server says this thread's turn stands. */
+export type TurnState = {
+  /** A run on the wire, or a step out with a window: a task here is not stopped yet. */
+  goingOn: boolean;
+  /**
+   * Going on only as a step another window took and has not brought back for far longer than a
+   * step takes: "다른 창에서 진행 중이었어요 · 이어서 하기", not a turn this window must wait on.
+   */
+  elsewhere: boolean;
+};
+
+/**
  * Whether the server says this thread's turn is going on: a run on the wire or a step out with a
  * window. Unreachable counts as going on — saying a task stopped is the claim that needs the proof.
  */
-async function turnGoingOn(threadId: string): Promise<boolean> {
+export function turnStateOf(body: {
+  running?: unknown;
+  waiting?: unknown;
+  waitingMs?: unknown;
+}): TurnState {
+  const running = body.running === true;
+  const waiting = body.waiting === true;
+  return {
+    goingOn: running || waiting,
+    elsewhere:
+      !running &&
+      waiting &&
+      typeof body.waitingMs === "number" &&
+      body.waitingMs >= ELSEWHERE_AFTER_MS,
+  };
+}
+
+async function turnState(threadId: string): Promise<TurnState> {
+  const unknown = { goingOn: true, elsewhere: false };
   try {
     const response = await fetch(
       `/api/copilotkit/threads/${encodeURIComponent(threadId)}/step`,
       { credentials: "include" },
     );
-    if (!response.ok) return true;
-    const body = (await response.json()) as {
-      running?: unknown;
-      waiting?: unknown;
-    };
-    return body.running === true || body.waiting === true;
+    if (!response.ok) return unknown;
+    return turnStateOf(
+      (await response.json()) as Parameters<typeof turnStateOf>[0],
+    );
   } catch {
-    return true;
+    return unknown;
   }
 }
 
@@ -118,7 +155,7 @@ export type StepWatcherDeps = {
    * wire, or a step another window is making. Until then, and while it is, a call with no result in
    * this window's copy is not a stopped task: it may be one another window is in the middle of.
    */
-  onChecked: (goingOn: boolean) => void;
+  onChecked: (goingOn: boolean, elsewhere: boolean) => void;
   /** This window is carrying a step on: the turn is in flight here, for Stop and the composer. */
   onCarrying: (carrying: boolean) => void;
 };
@@ -234,10 +271,11 @@ export function watchStrandedSteps(deps: StepWatcherDeps): {
         }
       }
       const wasGoingOn = goingOn;
-      goingOn = await turnGoingOn(deps.threadId);
+      const state = await turnState(deps.threadId);
+      goingOn = state.goingOn;
       // It just ended somewhere else: what it said is fetched before anything here reads the thread.
       if (wasGoingOn && !goingOn) await deps.catchUp();
-      if (!disposed) deps.onChecked(goingOn);
+      if (!disposed) deps.onChecked(goingOn, state.elsewhere);
     } finally {
       looking = false;
       schedule();
