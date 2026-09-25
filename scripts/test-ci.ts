@@ -457,14 +457,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * its story and whole when asked, a page that is not one read whole, a thumbnail as a small JPEG),
  * four to `root` (a screen frame in bytes) and one to `app` (the live screen taking bytes). Each
  * floor rises by exactly what was added.
+ * RAISED 2026-09-25 with the 0.5.4 product QA: nine to `app` (a cut-off and an empty answer
+ * drawn under what arrived, a browsing turn's failure and answer after its step, the package's
+ * skills listed as built in, a held wheel told apart from a question, and two card titles) and two
+ * to `server` (the login check reading the page whole, a reader cut never judged). Each floor rises
+ * by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2641, roots: ["server"] },
-  { name: "app", floor: 1257, roots: ["app"] },
+  { name: "server", floor: 2643, roots: ["server"] },
+  { name: "app", floor: 1266, roots: ["app"] },
   { name: "agent-computer", floor: 273, roots: ["agent-computer"] },
   { name: "root", floor: 415, roots: ["tests", "agent-bot"] },
 ] as const;
