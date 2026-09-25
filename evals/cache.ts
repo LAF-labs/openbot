@@ -10,8 +10,9 @@
  * epoch, changes as reminders on the person's message, the minute behind a `now` tool — and this
  * says, in the provider's own numbers, whether that holds.
  *
- * THE CASE: a week-old conversation. A synthetic week of chat and browsing (~39K tokens; the page
- * results past the newest four are cut by agent-bot exactly as in production), then
+ * THE CASE: a week-old conversation. A synthetic week of chat and browsing (~39K characters of chat
+ * and six pages; ~64K tokens now that no result is cut after the fact — compaction, not measured
+ * here, is what relieves that at the server's threshold), then
  * `EVAL_CACHE_TURNS` new person turns `EVAL_CACHE_GAP_MINUTES` apart on a simulated clock, one of
  * them the first message of a new day. Scripted, so both arms send the same conversation and
  * differ only in the harness:
@@ -251,6 +252,12 @@ type ArmMeasure = {
   laterShare: number | null;
   laterCostPerRequest: number | null;
   laterMedianLatencyMs: number | null;
+  /**
+   * Cached tokens over the PREVIOUS request's whole prompt, turns 2+: how much of what the provider
+   * already had was read back. The share above also counts each step's new tool result as a miss,
+   * which no harness can cache; this is the harness's own number (≈100% when nothing is rewritten).
+   */
+  prefixReuse: number | null;
   /** Every request of the arm, the cold first one included. */
   totalCostUsd: number;
 };
@@ -334,6 +341,20 @@ function printTurn(label: string, measure: TurnMeasure) {
   );
 }
 
+/** See `ArmMeasure.prefixReuse`. */
+function prefixReuseOf(turns: readonly TurnMeasure[]): number | null {
+  let cached = 0;
+  let before = 0;
+  for (let at = 1; at < turns.length; at += 1) {
+    const previous = turns[at - 1]?.promptTokens;
+    const read = turns[at]?.cachedPromptTokens;
+    if (typeof previous !== "number" || typeof read !== "number") continue;
+    cached += read;
+    before += previous;
+  }
+  return before > 0 ? Math.min(1, cached / before) : null;
+}
+
 /** Turns 2+ summed: the share read from cache, the dollars per request, the median latency. */
 function laterOf(turns: readonly TurnMeasure[]) {
   const later = turns.filter(
@@ -361,6 +382,7 @@ function laterOf(turns: readonly TurnMeasure[]) {
       ? (latencies[Math.floor(latencies.length / 2)] ?? null)
       : null,
     totalCostUsd: turns.reduce((sum, turn) => sum + (turn.costUsd ?? 0), 0),
+    prefixReuse: prefixReuseOf(turns),
   };
 }
 
@@ -709,6 +731,7 @@ for (const measured of arms) {
     `  ${measured.arm.padEnd(8)} ${measured.laterShare === null ? "cache not reported" : `${(measured.laterShare * 100).toFixed(1)}% from cache`}` +
       `  $${measured.laterCostPerRequest?.toFixed(5) ?? "—"}/request` +
       `  $${measured.totalCostUsd.toFixed(5)} in all` +
+      `  prefix reuse ${measured.prefixReuse === null ? "—" : `${(measured.prefixReuse * 100).toFixed(1)}%`}` +
       `  median ${measured.laterMedianLatencyMs ?? "—"}ms`,
   );
 }

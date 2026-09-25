@@ -278,7 +278,13 @@ console.log(
     `\nprompt ${PROMPT_HASH} · catalogue ${CATALOGUE_HASH}\n`,
 );
 
+/** `EVAL_ONLY=a,b` runs those scenarios alone — for re-measuring one, never for a verdict. */
+const ONLY = (process.env.EVAL_ONLY ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
 for (const scenario of SCENARIOS) {
+  if (ONLY.length > 0 && !ONLY.includes(scenario.id)) continue;
   let passes = 0;
   const notes = new Set<string>();
   const latencies: number[] = [];

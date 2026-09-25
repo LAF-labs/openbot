@@ -15,7 +15,7 @@
  * which is where the date, the standing role and the memories come from. Three of
  * them exist only because that prompt does: today's date with no date in the
  * question, an English question that must still be answered in Korean, and a
- * twelve-step transcript that must stay inside the context budget.
+ * twelve-step transcript whose newest page must be read right among eleven older ones.
  *
  * A fifth dimension, `owner-words`, came from the 0.5.3 UI/UX audit: a Bot can call every tool
  * right and still talk to a shop owner in its tools' words — refs, snapshots, milliseconds, "사람에게"
@@ -34,7 +34,6 @@ import {
   saysNumber,
   type StreamEvent,
   textOf,
-  usageOf,
 } from "./lib";
 import {
   reminderBlock,
@@ -519,7 +518,15 @@ export const SCENARIOS: Scenario[] = [
       ]),
   },
   {
-    id: "twelve-steps-stay-in-budget",
+    /*
+     * TWELVE WHOLE PAGES, AND THE LAST ONE READ RIGHT. This was "twelve-steps-stay-in-budget", and
+     * it held agent-bot's cut of older results to a 25,000-token ceiling. The cut is gone
+     * (agent-harness-design row 8: it rewrote the history under the provider's cache on every
+     * step, 54% cached while browsing); context pressure is compaction's now, decided once at the
+     * server's threshold and measured by `bun run eval:compaction`. What stays for the model to
+     * get right is the answer from the newest page among twelve long ones.
+     */
+    id: "twelve-steps-answer-from-the-last",
     dimension: "tool-calls",
     messages: [
       user(
@@ -529,21 +536,10 @@ export const SCENARIOS: Scenario[] = [
     ],
     tools: [NAVIGATE, READ, LIST_FILES],
     check: (turn) => {
-      const usage = usageOf(turn.events);
       return verdict([
         [
           "마지막 페이지의 발주번호(BAL-12-9931)를 답하지 못함 — 최근 결과는 온전해야 한다",
           turn.text.includes("BAL-12-9931"),
-        ],
-        /*
-         * The budget, measured rather than asserted about the code. Twelve untrimmed pages is
-         * forty to sixty thousand tokens of Korean page text (§3.2); the trim keeps the last four
-         * whole and cuts the rest to 500 characters, which lands an order of magnitude under. A
-         * ceiling rather than an exact number, because a provider's tokeniser is not ours.
-         */
-        [
-          `프롬프트 토큰이 예산을 넘음 (${usage?.promptTokens ?? "?"})`,
-          usage !== null && usage.promptTokens < 25_000,
         ],
         [
           "답이 length로 잘림 — 예산 정리가 듣지 않았다",
