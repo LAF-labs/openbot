@@ -23,7 +23,7 @@ COPY --from=oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab7
 # asks fontconfig when a Korean page's own font is not here (measured: NanumGothic after, WenQuanYi
 # before; Latin text keeps its own face).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends fonts-nanum=20200506-1 \
+  && apt-get install -y --no-install-recommends fonts-nanum=20200506-1 iptables=1.8.10-3ubuntu2 \
   && rm -rf /var/lib/apt/lists/* \
   && printf '%s\n' \
     '<?xml version="1.0"?>' \
@@ -53,6 +53,7 @@ RUN bun install --frozen-lockfile --filter=agent-computer
 # the layout is preserved so the import resolves the same in the image and locally.
 COPY shared ./shared
 COPY agent-computer/src ./agent-computer/src
+COPY --chmod=755 agent-computer/egress-firewall.sh /usr/local/bin/egress-firewall
 
 # Durable working directory. Bot-produced files that must survive replacement live here.
 #
@@ -77,6 +78,11 @@ HEALTHCHECK --interval=2s --timeout=3s --start-period=2s --retries=30 \
 # default seccomp profile refuses, so docker-compose.yml hands the container Playwright's profile.
 # Without it the browser does not start at all ("No usable sandbox!"), which is the honest failure:
 # a deployment that loses the profile finds out on its first page, not after a renderer is owned.
-USER pwuser
-
+#
+# STILL NOT ROOT, BUT ROOT FIRST, FOR ONE SCRIPT. The egress firewall (security review 2026-09-25 F1)
+# is written in this container's network namespace, which takes root and NET_ADMIN; the script then
+# becomes `pwuser` with an empty capability bounding set and no_new_privs before `bun` starts, so the
+# computer and every Chromium process under it run exactly as they did, minus the ability to undo the
+# rules. `agent-computer/tests/sandbox.test.ts` holds both halves.
+ENTRYPOINT ["/usr/local/bin/egress-firewall"]
 CMD ["bun", "agent-computer/src/index.ts"]

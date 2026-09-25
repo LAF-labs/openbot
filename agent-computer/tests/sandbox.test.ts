@@ -21,6 +21,7 @@ type ComputerService = {
   init?: boolean;
   pids_limit?: number;
   security_opt?: string[];
+  cap_add?: string[];
   user?: string;
   post_start?: { command?: string[]; user?: string }[];
 };
@@ -56,12 +57,45 @@ describe("the browser's sandbox", () => {
 
   test("the image runs as pwuser, and owns both volume roots by it", () => {
     const dockerfile = read("agent-computer/Dockerfile");
-    const users = [...dockerfile.matchAll(/^USER\s+(\S+)/gm)].map(
-      (match) => match[1],
+    /*
+     * Root only for the entrypoint, which writes the egress firewall and then becomes pwuser for
+     * good (security review 2026-09-25 F1). No USER line may come back as root after it either.
+     */
+    expect(dockerfile).toContain(
+      'ENTRYPOINT ["/usr/local/bin/egress-firewall"]',
     );
-    // The last USER is the one the process runs as.
-    expect(users.at(-1)).toBe("pwuser");
+    expect(dockerfile).not.toMatch(/^USER\s+root/m);
     expect(dockerfile).toContain("chown pwuser:pwuser /workspace /profiles");
+    const script = read("agent-computer/egress-firewall.sh");
+    const drop = script.slice(script.indexOf("drop_to_pwuser() {"));
+    expect(drop).toMatch(
+      /exec setpriv --reuid=pwuser --regid=pwuser --init-groups\s*\\\s*--inh-caps=-all --bounding-set=-all --no-new-privs/,
+    );
+    // Every way out of the script runs the computer through that drop, never as root.
+    expect(script.trimEnd().endsWith('drop_to_pwuser "$@"')).toBe(true);
+  });
+
+  test("the firewall refuses the metadata endpoint, the private ranges and the host", () => {
+    const script = read("agent-computer/egress-firewall.sh");
+    expect(script).toContain('ALWAYS4="169.254.0.0/16"');
+    for (const range of [
+      "10.0.0.0/8",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "127.0.0.0/8",
+      "100.64.0.0/10",
+      "0.0.0.0/8",
+      "fc00::/7",
+      "::ffff:0:0/96",
+    ]) {
+      expect([range, script.includes(range)]).toEqual([range, true]);
+    }
+    // Replies to the server's own calls, and this container's loopback, stay open.
+    expect(script).toContain("--ctstate ESTABLISHED,RELATED -j RETURN");
+    expect(script).toContain("-o lo -j RETURN");
+    // Fails closed.
+    expect(script).toContain("egress_firewall_failed");
+    expect(computer?.cap_add).toEqual(["NET_ADMIN"]);
   });
 
   test("compose does not put the process back on root", () => {

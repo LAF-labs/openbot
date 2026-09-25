@@ -174,6 +174,26 @@ The symptom of getting this wrong is not an error. Caddy retries an ACME
 challenge that cannot complete, so the container comes up and the site never
 answers, which looks like a server that is still starting.
 
+**The other direction is not the host's job, and is in the image.** What the
+Bot's browser may reach *outward* is decided inside the `agent-computer`
+container (`agent-computer/egress-firewall.sh`, security review 2026-09-25 F1):
+its entrypoint writes iptables rules into the container's own network namespace
+that REJECT 169.254.0.0/16 (the metadata endpoint on OCI, AWS and GCP alike),
+RFC 1918, CGNAT, loopback-to-host and the reserved ranges, keeps the replies to
+the server's own calls and the container's resolver open, and then runs the
+computer as `pwuser` with no capabilities left. That is why compose gives the
+service `cap_add: [NET_ADMIN]`; without it the container refuses to start
+(`egress_firewall_failed`). The navigation guard resolves every name before a
+page is opened, but Chromium resolves it again to send the request, and an image
+or a `fetch()` is never paused at all — the firewall is what holds for those.
+Measured on the rebuilt image: from inside, the host's Postgres port and
+169.254.169.254 answer `ECONNREFUSED` in under 5 ms, www.naver.com connects.
+`AGENT_COMPUTER_EGRESS_FIREWALL=off` exists for a runtime that cannot grant the
+capability and is logged at every start; a proxy in `EGRESS_PROXY_DEFAULT` is
+let through by address and port. The VM's metadata service should also refuse
+tokenless requests (IMDSv2 on AWS, legacy endpoints off on OCI) — that is set at
+launch by the fleet tool, not here.
+
 ## Images: CI bakes, deployments pull
 
 Five images are published to GHCR by `.github/workflows/images.yml` — the
@@ -953,6 +973,18 @@ page cannot read it and stays on the ordinary card. The script is named by
 hash in `tauri.conf.json`'s policy (`tests/desktop-shell.test.ts` recomputes
 it), so an edit to the page and its hash land together, and the sentence ships
 with the next desktop release.
+
+### Advisories cleared 2026-09-25, and the one left open
+
+`rustls` 0.23.43 → 0.23.45 (`cargo update -p rustls`, RUSTSEC-2026-0285);
+`cargo audit` then reports no vulnerabilities, only the unmaintained-crate
+warnings of Tauri's own tree and the glib entry below. `uuid` is overridden to
+^11.1.1 in the root `package.json` (GHSA-w5hq-g745-h8pq): `@copilotkit/runtime`
+declares ^10 but its bundle never imports the package. `esbuild` ≤0.24.2
+(GHSA-67mh-4wv8-2f99) stays: it is `drizzle-kit`'s `@esbuild-kit` loader pinned
+at ~0.18, a nested range a root override cannot reach without replacing the
+loader, and the advisory is about esbuild's development server, which nothing
+here runs.
 
 ### An advisory the shell's lockfile carries, and Tauri's pin holds
 

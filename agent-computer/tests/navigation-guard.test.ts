@@ -1,6 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
+import type { BrowserContext } from "playwright";
+import { forgetResolvedHosts } from "../../shared/net/host-verdict";
 import { judgedLabelOf, nameToMatch } from "../src/label-hold";
-import { hopVerdict, hostnameOf } from "../src/navigation-guard";
+import {
+  guardNavigations,
+  hopVerdict,
+  hostnameOf,
+  privateServerAddressOf,
+  resolvedHopVerdict,
+} from "../src/navigation-guard";
 
 /**
  * The decisions under the two browser boundaries, without a browser.
@@ -84,5 +92,183 @@ describe("the name a control is held to", () => {
       role: "button",
       name: "",
     });
+  });
+});
+
+/**
+ * Where a name POINTS, not how it is spelled (security review 2026-09-25 F1).
+ *
+ * `http://127.0.0.1.nip.io/` passed every hop: nip.io is a public name whose A record is the IP in
+ * it. The resolver is injected — these never touch somebody else's DNS — and the cache is cleared
+ * between cases, since it is keyed by name alone.
+ */
+describe("the floor, resolved", () => {
+  const answers =
+    (table: Record<string, string[]>) =>
+    async (host: string): Promise<string[]> => {
+      const found = table[host];
+      if (!found) throw new Error(`ENOTFOUND ${host}`);
+      return found;
+    };
+  const resolve = answers({
+    "127.0.0.1.nip.io": ["127.0.0.1"],
+    "metadata.evil.example": ["169.254.169.254"],
+    "mapped.evil.example": ["::ffff:127.0.0.1"],
+    "mapped-hex.evil.example": ["::ffff:a9fe:a9fe"],
+    "split.evil.example": ["93.184.216.34", "10.0.0.5"],
+    "www.naver.com": ["223.130.200.104", "223.130.192.248"],
+    "shop.example": ["93.184.216.34"],
+  });
+
+  beforeEach(() => forgetResolvedHosts());
+
+  test("a public name whose record says 127.0.0.1 is refused", async () => {
+    const verdict = await resolvedHopVerdict(
+      "http://127.0.0.1.nip.io/",
+      false,
+      resolve,
+    );
+    expect(verdict.allowed).toBe(false);
+  });
+
+  test("so is one pointing at the metadata endpoint", async () => {
+    const verdict = await resolvedHopVerdict(
+      "http://metadata.evil.example/latest/meta-data/",
+      false,
+      resolve,
+    );
+    expect(verdict.allowed).toBe(false);
+  });
+
+  test("an IPv4-mapped IPv6 answer is asked the IPv4 question", async () => {
+    for (const url of [
+      "http://mapped.evil.example/",
+      "http://mapped-hex.evil.example/",
+      "http://[::ffff:127.0.0.1]/",
+      "http://[::ffff:169.254.169.254]/",
+    ]) {
+      const verdict = await resolvedHopVerdict(url, false, resolve);
+      expect([url, verdict.allowed]).toEqual([url, false]);
+    }
+  });
+
+  test("every answer counts, not the first one", async () => {
+    const verdict = await resolvedHopVerdict(
+      "https://split.evil.example/",
+      false,
+      resolve,
+    );
+    expect(verdict.allowed).toBe(false);
+  });
+
+  test("an ordinary site still opens, and a name that resolves nowhere does not", async () => {
+    const naver = await resolvedHopVerdict(
+      "https://www.naver.com/",
+      false,
+      resolve,
+    );
+    expect(naver.allowed).toBe(true);
+    const nowhere = await resolvedHopVerdict(
+      "https://nowhere.example/",
+      false,
+      resolve,
+    );
+    expect(nowhere.allowed).toBe(false);
+  });
+
+  test("the opt-in and documents made inside the browser are not resolved at all", async () => {
+    const refuse = async (): Promise<string[]> => {
+      throw new Error("asked");
+    };
+    const optedIn = await resolvedHopVerdict(
+      "http://127.0.0.1.nip.io/",
+      true,
+      refuse,
+    );
+    expect(optedIn.allowed).toBe(true);
+    const inside = await resolvedHopVerdict(
+      "data:text/html,<p>x</p>",
+      false,
+      refuse,
+    );
+    expect(inside.allowed).toBe(true);
+    // Refused by the string before any resolver is asked.
+    const literal = await resolvedHopVerdict(
+      "http://169.254.169.254/",
+      false,
+      refuse,
+    );
+    expect(literal.allowed).toBe(false);
+  });
+
+  test("the address a document was actually fetched from is judged too (rebinding)", async () => {
+    const from = (ipAddress: string | null) => ({
+      serverAddr: async () => (ipAddress ? { ipAddress, port: 80 } : null),
+    });
+    expect(await privateServerAddressOf(from("169.254.169.254"))).toBe(
+      "169.254.169.254",
+    );
+    expect(await privateServerAddressOf(from("::ffff:10.0.0.5"))).toBe(
+      "::ffff:10.0.0.5",
+    );
+    expect(await privateServerAddressOf(from("223.130.200.104"))).toBeNull();
+    expect(await privateServerAddressOf(from(null))).toBeNull();
+  });
+
+  /**
+   * The guard itself, on a stand-in for Chromium's browser session: a public hop continues, and each
+   * redirect it answers with — paused again as a request of its own — is judged alone, so the hop
+   * whose name resolves inside is failed before it is sent, two redirects deep.
+   */
+  test("a redirect to a name resolving privately is failed at that hop", async () => {
+    type Paused = {
+      requestId: string;
+      request: {
+        url: string;
+        method: string;
+        headers: Record<string, string>;
+      };
+      frameId: string;
+      redirectedRequestId?: string;
+    };
+    let paused: ((event: Paused) => Promise<void>) | undefined;
+    const sent: [string, string][] = [];
+    const session = {
+      on: (_event: string, handler: (event: Paused) => Promise<void>) => {
+        paused = handler;
+      },
+      send: async (method: string, params?: { requestId?: string }) => {
+        sent.push([method, params?.requestId ?? ""]);
+        return {};
+      },
+    };
+    const context = {
+      browser: () => ({ newBrowserCDPSession: async () => session }),
+      on: () => undefined,
+    };
+    const refused: [string, string | null][] = [];
+    await guardNavigations(context as unknown as BrowserContext, {
+      allowPrivateHosts: false,
+      resolve,
+      onRefused: (hop) => refused.push([hop.url, hop.redirectedFrom]),
+    });
+    const hop = (requestId: string, url: string, from?: string): Paused => ({
+      requestId,
+      request: { url, method: "GET", headers: {} },
+      frameId: "tab",
+      ...(from ? { redirectedRequestId: from } : {}),
+    });
+    await paused?.(hop("1", "https://shop.example/go"));
+    await paused?.(hop("2", "https://www.naver.com/next", "1"));
+    await paused?.(hop("3", "http://127.0.0.1.nip.io:5432/", "2"));
+    expect(sent).toEqual([
+      ["Fetch.enable", ""],
+      ["Fetch.continueRequest", "1"],
+      ["Fetch.continueRequest", "2"],
+      ["Fetch.failRequest", "3"],
+    ]);
+    expect(refused).toEqual([
+      ["http://127.0.0.1.nip.io:5432/", "https://www.naver.com/next"],
+    ]);
   });
 });

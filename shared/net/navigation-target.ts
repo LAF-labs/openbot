@@ -1,10 +1,12 @@
 import {
+  type HostResolver,
   isAddressLiteral,
   isCloudMetadataHostname,
   isLoopbackHostname,
   isNotPubliclyRoutableName,
   isPrivateAddress,
   normalizeHostname,
+  resolvedHostVerdict,
 } from "./host-verdict";
 
 /**
@@ -17,8 +19,9 @@ import {
  * otherwise do exactly that and screenshot the result back into the transcript.
  *
  * This is an allow-list of schemes plus a deny-list of destinations, applied before the request is
- * made rather than after. It is deliberately dumb: no DNS resolution, no redirect following, no
- * cleverness that could disagree with what the browser eventually does. The gateway sits in front
+ * made rather than after. {@link checkNavigationTarget} reads the string only; the browser's own
+ * guard asks {@link resolvedNavigationTarget}, which also resolves the name, because a string is
+ * not an address (security review 2026-09-25 F1: `127.0.0.1.nip.io` passed). The gateway sits in front
  * of every action, which is where policy per Bot belongs; this is the floor that holds even without it.
  *
  * The ranges and the names come from {@link ../net/host-verdict}, which is also what "add an MCP
@@ -113,4 +116,45 @@ export function checkNavigationTarget(
   }
 
   return { allowed: true, url: url.toString() };
+}
+
+/**
+ * The floor, plus where the name actually points. What the browser's guard asks of every hop.
+ *
+ * WHY THE STRING WAS NOT ENOUGH HERE EITHER. Measured 2026-09-25 (security review F1):
+ * `http://127.0.0.1.nip.io/` passed {@link checkNavigationTarget}, because nip.io is an ordinary
+ * public name whose A record says 127.0.0.1, and Chromium then resolved it and opened this
+ * deployment's own loopback. "Add an MCP server" had resolved names since the two lists were merged;
+ * the browser, which a page drives hop by hop, never had. So the same {@link resolvedHostVerdict}
+ * now answers for both, every answer checked, an unresolvable name refused.
+ *
+ * NOT A DEFENCE AGAINST REBINDING, and not the last line. Chromium resolves the name again itself,
+ * a moment later, and a zone answering 1.2.3.4 to this lookup and 169.254.169.254 to that one
+ * defeats any check made here. That half is answered twice more: the guard checks the address the
+ * browser actually connected to on every document response (`navigation-guard.ts`), and the
+ * container's own firewall refuses private and metadata destinations to every request, subresources
+ * included (`agent-computer/egress-firewall.sh`).
+ *
+ * A literal address is not resolved — {@link checkNavigationTarget} already judged it — and nor is
+ * anything under the private-host opt-in, which exists for a laptop browsing its own services.
+ */
+export async function resolvedNavigationTarget(
+  raw: string,
+  options: { allowPrivateHosts?: boolean; resolve?: HostResolver } = {},
+): Promise<TargetVerdict> {
+  const verdict = checkNavigationTarget(raw, options);
+  if (!verdict.allowed || options.allowPrivateHosts) return verdict;
+  const hostname = normalizeHostname(new URL(verdict.url).hostname);
+  if (isAddressLiteral(hostname)) return verdict;
+  const resolved = await resolvedHostVerdict(hostname, {
+    resolve: options.resolve,
+  });
+  if (resolved.allowed) return verdict;
+  return {
+    allowed: false,
+    reason:
+      resolved.fact === "laf:host_resolves_privately"
+        ? "That name points inside this deployment's own network, so the assistant is not allowed to open it."
+        : "Nothing could be found at that address, so the assistant did not open it.",
+  };
 }

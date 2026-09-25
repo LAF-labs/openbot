@@ -390,6 +390,17 @@ services:
       # API server applies to the address a Bot asks for. Empty is off, which is what a hosted
       # deployment wants; a laptop that sets it for the server sets it here with the same word.
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: ${AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS:-}
+      # The container's own egress firewall (agent-computer/egress-firewall.sh). Empty is on; `off`
+      # is for a runtime that cannot grant NET_ADMIN, and is logged at every start.
+      AGENT_COMPUTER_EGRESS_FIREWALL: ${AGENT_COMPUTER_EGRESS_FIREWALL:-}
+    # THE ONE CAPABILITY ADDED, AND ONLY FOR THE FIRST SECOND. The entrypoint writes the egress
+    # firewall into this container's network namespace — nothing the browser requests may reach
+    # 169.254.169.254, RFC 1918, CGNAT or the host, whatever a name resolved to (security review
+    # 2026-09-25 F1: DNS rebinding and subresources walk past the navigation guard) — and then runs
+    # the computer as `pwuser` with an empty bounding set and no_new_privs, so no process under it
+    # holds NET_ADMIN or can get it back. Without the capability the container refuses to start.
+    cap_add:
+      - NET_ADMIN
     volumes:
       - agent-workspace:/workspace
       # Chromium's user-data directory is volume-backed so logins survive container restarts.

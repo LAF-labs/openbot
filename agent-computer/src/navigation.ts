@@ -7,16 +7,22 @@
  * which hop is held for the gateway to judge, and how the tab is left afterwards.
  */
 import type { Frame, Page } from "playwright";
-import { checkNavigationTarget } from "../../shared/net/navigation-target";
+import {
+  checkNavigationTarget,
+  resolvedNavigationTarget,
+} from "../../shared/net/navigation-target";
 import type { BotRoute } from "./computer";
 import { ControlError, HUMAN_HAS_CONTROL } from "./control";
+import { deploymentEgress } from "./egress";
 import { log } from "./log";
 import {
+  CONNECTED_PRIVATELY,
   hopVerdict,
   hostnameOf,
   mainFrameIdOf,
   type NavigationHop,
   originOf,
+  privateServerAddressOf,
 } from "./navigation-guard";
 import { arrivalNote } from "./page-arrival";
 import { readSettledPageText, titleOf } from "./page-text";
@@ -255,9 +261,10 @@ export const navigate: BotRoute = async (
   /*
    * The address itself, before the browser is asked. The guard would refuse it a moment later
    * anyway, but a `javascript:` URL never becomes a request the guard sees — and the server's own
-   * check is one process away, on a caller this container cannot assume was the server.
+   * check is one process away, on a caller this container cannot assume was the server. Resolved,
+   * because a public name can point at 127.0.0.1 (security review 2026-09-25 F1).
    */
-  const asked = checkNavigationTarget(body.url, {
+  const asked = await resolvedNavigationTarget(body.url, {
     allowPrivateHosts: config.allowPrivateHosts,
   });
   if (!asked.allowed) {
@@ -333,6 +340,23 @@ export const navigate: BotRoute = async (
         url: landed.address,
         redirectedFrom: asked.url,
         reason: landed.verdict.reason,
+      };
+    }
+    /*
+     * And the address the document was actually fetched from, which no string check can see: a name
+     * the guard resolved publicly can be resolved privately by Chromium a moment later (DNS
+     * rebinding). Not asked behind a proxy, whose own address is all this would read.
+     */
+    if (
+      response &&
+      !config.allowPrivateHosts &&
+      deploymentEgress(process.env) === null &&
+      (await privateServerAddressOf(response))
+    ) {
+      navigating.refused ??= {
+        url: response.url(),
+        redirectedFrom: asked.url,
+        reason: CONNECTED_PRIVATELY,
       };
     }
     if (!navigating.refused && !navigating.held) {

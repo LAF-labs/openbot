@@ -22,10 +22,15 @@
  * nothing. Documents only: a subresource's body never reaches the model, and pausing every image
  * for a verdict is a cost paid on every page.
  */
-import type { BrowserContext, CDPSession, Page } from "playwright";
-import { normalizeHostname } from "../../shared/net/host-verdict";
+import type { BrowserContext, CDPSession, Page, Response } from "playwright";
+import {
+  type HostResolver,
+  isPrivateAddress,
+  normalizeHostname,
+} from "../../shared/net/host-verdict";
 import {
   checkNavigationTarget,
+  resolvedNavigationTarget,
   type TargetVerdict,
 } from "../../shared/net/navigation-target";
 import { log } from "./log";
@@ -58,6 +63,10 @@ export type NavigationGuardOptions = {
    * where it was going. What differs from a refusal is only who decides next.
    */
   holds?: (hop: NavigationHop) => boolean;
+  /** A proxy carries every request, so the address Chromium connected to is the proxy's. */
+  behindProxy?: boolean;
+  /** How names are resolved. Injected by tests, which never depend on somebody else's DNS. */
+  resolve?: HostResolver;
 };
 
 /**
@@ -73,6 +82,10 @@ const HOST_SCHEMES = new Set([
   "ftp:",
   "file:",
 ]);
+
+/** Why a document that arrived from inside this deployment's network after all was not read. */
+export const CONNECTED_PRIVATELY =
+  "That page came from inside this deployment's own network, so the assistant is not allowed to read it.";
 
 /** How many paused requests are remembered, so a redirect hop can name the request it came from. */
 const REMEMBERED_REQUESTS = 256;
@@ -96,6 +109,43 @@ export function hopVerdict(
   }
   if (!HOST_SCHEMES.has(scheme)) return { allowed: true, url };
   return checkNavigationTarget(url, { allowPrivateHosts });
+}
+
+/**
+ * {@link hopVerdict}, plus where the name resolves (`resolvedNavigationTarget`). What the guard asks.
+ *
+ * Only for schemes that name a host: a `data:` document has nothing to resolve. Security review
+ * 2026-09-25 F1 — `http://127.0.0.1.nip.io/` passed the string-only floor at every hop.
+ */
+export async function resolvedHopVerdict(
+  url: string,
+  allowPrivateHosts: boolean,
+  resolve?: HostResolver,
+): Promise<TargetVerdict> {
+  const verdict = hopVerdict(url, allowPrivateHosts);
+  if (!verdict.allowed || !HOST_SCHEMES.has(new URL(url).protocol)) {
+    return verdict;
+  }
+  return resolvedNavigationTarget(url, { allowPrivateHosts, resolve });
+}
+
+/**
+ * The address a document was actually fetched from, when it is inside this deployment's network.
+ *
+ * THE REBINDING HALF. The guard resolves a name before the request, and Chromium resolves it again
+ * to send it; a zone that answers publicly to the first and privately to the second walks past the
+ * first. `serverAddr()` is the address Chromium connected to, so this is the one check made at
+ * connect time rather than before it. The request has been sent by then — the container's firewall
+ * is what stops that (`agent-computer/egress-firewall.sh`) — but the answer is not handed on.
+ *
+ * Null when there is nothing to judge: a cached response carries no address.
+ */
+export async function privateServerAddressOf(
+  response: Pick<Response, "serverAddr">,
+): Promise<string | null> {
+  const server = await response.serverAddr().catch(() => null);
+  if (!server?.ipAddress) return null;
+  return isPrivateAddress(server.ipAddress) ? server.ipAddress : null;
 }
 
 /** The host a URL names, normalised as every comparison in `host-verdict` expects. Empty if none. */
@@ -162,7 +212,7 @@ export async function guardNavigations(
       // Gone already: the tab closed or another navigation replaced this one. Nothing to stop.
       .catch(() => undefined);
 
-  session.on("Fetch.requestPaused", (event) => {
+  session.on("Fetch.requestPaused", async (event) => {
     const hop: NavigationHop = {
       url: event.request.url,
       redirectedFrom: event.redirectedRequestId
@@ -175,7 +225,11 @@ export async function guardNavigations(
     remember(event.requestId, hop.url);
     let stop: boolean;
     try {
-      const verdict = hopVerdict(hop.url, options.allowPrivateHosts);
+      const verdict = await resolvedHopVerdict(
+        hop.url,
+        options.allowPrivateHosts,
+        options.resolve,
+      );
       if (!verdict.allowed) {
         options.onRefused?.(hop, verdict.reason);
         stop = true;
@@ -193,6 +247,35 @@ export async function guardNavigations(
           .send("Fetch.continueRequest", { requestId: event.requestId })
           .catch(() => undefined));
   });
+
+  /*
+   * Where every document actually came from, judged when it arrives (`privateServerAddressOf`).
+   * Skipped under the private-host opt-in, and behind a proxy, where the address is the proxy's.
+   * A document that came from inside is replaced with a blank page before anybody reads it.
+   */
+  if (!options.allowPrivateHosts && !options.behindProxy) {
+    context.on("response", (response) => {
+      if (!response.request().isNavigationRequest()) return;
+      void privateServerAddressOf(response).then(async (address) => {
+        if (!address) return;
+        const page = response.frame().page();
+        options.onRefused?.(
+          {
+            url: response.url(),
+            redirectedFrom: null,
+            frameId: (await mainFrameIdOf(page)) ?? "",
+            method: response.request().method(),
+            referer: null,
+          },
+          CONNECTED_PRIVATELY,
+        );
+        log.warn("navigation_connected_privately", {
+          origin: originOf(response.url()),
+        });
+        void page.goto("about:blank").catch(() => undefined);
+      });
+    });
+  }
 
   await session.send("Fetch.enable", {
     patterns: [

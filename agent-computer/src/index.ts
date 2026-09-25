@@ -3,7 +3,7 @@ import type { Page } from "playwright";
 import { buildOf } from "../../shared/log";
 import type { Computer } from "./computer";
 import { readConfig } from "./config";
-import { ignoredEgressVariables } from "./egress";
+import { deploymentEgress, ignoredEgressVariables } from "./egress";
 import { liveScreen, type StreamData } from "./live-screen";
 import { log } from "./log";
 import { heldForJudgement, navigationRefused } from "./navigation";
@@ -130,6 +130,7 @@ const profiles = createProfiles(config.profilesDir, {
   onContext: async (context) => {
     await guardNavigations(context, {
       allowPrivateHosts: config.allowPrivateHosts,
+      behindProxy: deploymentEgress(process.env) !== null,
       onRefused: (hop, reason) => {
         const botId = botForHop(hop);
         if (!botId) {
