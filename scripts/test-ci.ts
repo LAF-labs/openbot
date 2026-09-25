@@ -484,14 +484,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * off, revoked as the boundary's revoke under who pressed it, another Bot's refused, a Bot not
  * theirs not here) and two to `root` (a miss with nothing connected not sending the Bot searching
  * again, the context layer saying its list is complete). Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with the 0.5.4 final QA: thirteen to `app` (a yes the approval wait wrote first
+ * completed by the press that knew its width, and the width read off the server's record; a
+ * reloaded remember line saying what it kept; a card cut off between steps reading 멈춤 or 못 끝냄
+ * and offering 이어서 하기; a screen that only remounts keeping the wheel; the chosen state held
+ * under dark mode) and four to `server` (a yes's width on the approval record, only what the
+ * question could give, none on a No; a window that went quiet not read as holding). The control
+ * poll's tests moved to a hand-turned clock without changing their number. Measured at server
+ * 2,757 / app 1,351 / agent-computer 300 / root 459. Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2668, roots: ["server"] },
-  { name: "app", floor: 1310, roots: ["app"] },
+  { name: "server", floor: 2672, roots: ["server"] },
+  { name: "app", floor: 1323, roots: ["app"] },
   { name: "agent-computer", floor: 287, roots: ["agent-computer"] },
   { name: "root", floor: 417, roots: ["tests", "agent-bot"] },
 ] as const;
