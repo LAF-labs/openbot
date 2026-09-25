@@ -603,13 +603,19 @@ export const SCENARIOS: Scenario[] = [
    * 인원. The model sent 예약일·예약시간·요청사항 instead, was refused, sent `{}` next, and the
    * person had approved the send twice for nothing by then. The schema now names the blanks per
    * template; this is the check that a candidate reads them.
+   *
+   * "내일" IS TOMORROW BY THE PROMPT'S OWN CLOCK. The sentence said "내일 9월 7일" — true on the day
+   * it was written, and false every day since, because `EVAL_NOW` is the real clock. GLM sent it
+   * anyway; MiMo-V2.6-Pro stopped and asked which date was meant, 4 times in 4 (2026-09-25), which
+   * is what a Bot about to message a customer should do with a contradiction. The scenario measures
+   * the blanks, not whether the Bot notices a stale date, so the date is now true.
    */
   {
     id: "send-alimtalk-with-the-blanks-named",
     dimension: "tool-calls",
     messages: [
       user(
-        "박*민 손님(010-2222-3333)께 내일 9월 7일 12:00 4명 단체석 예약 확정 알림톡 보내줘. 상호는 미소분식이야.",
+        `박*민 손님(010-2222-3333)께 내일 ${tomorrowInKorean()} 12:00 4명 단체석 예약 확정 알림톡 보내줘. 상호는 미소분식이야.`,
       ),
       ...alimtalkTemplatesLookedUp(),
     ],
@@ -1251,6 +1257,16 @@ function scheduledAt(at: Date, hhmm: string, zone: string): Date {
   const signed =
     offsetMinutes > 12 * 60 ? offsetMinutes - 24 * 60 : offsetMinutes;
   return new Date(new Date(`${date}T${hhmm}:00Z`).getTime() - signed * 60_000);
+}
+
+/** Tomorrow by `EVAL_NOW` in the eval's zone, as a person says it: "9월 26일". */
+function tomorrowInKorean(): string {
+  const { date } = zonedParts(
+    new Date(EVAL_NOW.getTime() + 86_400_000),
+    EVAL_TIME_ZONE,
+  );
+  const [, month, day] = date.split("-").map(Number);
+  return `${month}월 ${day}일`;
 }
 
 /**
