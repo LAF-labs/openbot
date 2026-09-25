@@ -125,7 +125,7 @@ describe("LAF Agent workspace", () => {
   });
 
   /**
-   * Two advisories the lockfile could not close on its own, closed by overriding UPWARD.
+   * Advisories the lockfile could not close on its own, closed by overriding UPWARD.
    *
    * `bun audit` on 2026-09-10: 27 findings, nine high. Updating the packages this repository
    * names (`hono`, `fast-uri`, `js-yaml`) took it to four high, all in packages nobody here
@@ -135,7 +135,7 @@ describe("LAF Agent workspace", () => {
    * So both are overridden to the fixed line, and the floor is written down here: an override
    * moved BELOW the fix, or dropped, would reopen an advisory without `bun audit` being run.
    */
-  test("overrides the two transitive advisories to their fixed versions, and no lower", () => {
+  test("overrides the transitive advisories to their fixed versions, and no lower", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { overrides?: Record<string, string> };
@@ -159,10 +159,18 @@ describe("LAF Agent workspace", () => {
     atLeast("lodash-es", [4, 17, 23]);
     // The WebSocket and header advisories: fixed across 6.23 / 7.x; 7 is what its importers want.
     atLeast("undici", [7, 29, 0]);
+    /*
+     * GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g (2026-09-25): `qs` 6.14.2–6.15.3, under
+     * CopilotKit's runtime and the MCP SDK through Express, whose own `~6.15.1` would never reach
+     * 6.16.0. Neither Express is served here (Hono is), but a parser nobody calls today is still one
+     * import away from a request.
+     */
+    atLeast("qs", [6, 16, 0]);
 
     // And the lockfile agrees: the vulnerable lines are gone from what would be installed.
     const lock = readFileSync(join(repositoryRoot, "bun.lock"), "utf8");
     expect(lock).not.toMatch(/"undici@5\./);
     expect(lock).not.toMatch(/"lodash-es@4\.17\.2[012]"/);
+    expect(lock).not.toMatch(/"qs@6\.1[45]\./);
   });
 });
