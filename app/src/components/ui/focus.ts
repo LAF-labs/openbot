@@ -98,6 +98,11 @@ export const focusRingNested =
  *
  * Written out rather than composed for the same reason as `focusRingNested`: Tailwind emits a
  * utility only for a class name it can SEE.
+ *
+ * AND ONCE MORE UNDER `dark:`. The outline variant's own `dark:border-input dark:bg-input/30` is
+ * sorted after a single `aria-pressed:` and won: MEASURED 2026-09-25 (0.5.4 final QA), in dark mode
+ * a chosen 음식점·카페 and an unchosen 온라인 판매 on 내 가게 had the same border and the same fill,
+ * computed, and so did every outline picker in the app. A class with both variants sorts after both.
  */
 export const selectedWhenPressed =
-  "aria-pressed:border-foreground aria-pressed:bg-accent aria-pressed:text-foreground";
+  "aria-pressed:border-foreground aria-pressed:bg-accent aria-pressed:text-foreground dark:aria-pressed:border-foreground dark:aria-pressed:bg-accent";
