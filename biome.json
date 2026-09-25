@@ -10,7 +10,9 @@
       "!app/src/lib/generated/application-config.ts",
       "!app/src/routeTree.gen.ts",
       "!desktop/src-tauri/target",
-      "!desktop/src-tauri/gen"
+      "!desktop/src-tauri/gen",
+      "!server/src/context/vendor",
+      "!server/tests/vendor"
     ]
   },
   "formatter": {
