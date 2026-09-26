@@ -47,7 +47,10 @@ COPY tsconfig.base.json ./
 COPY server/tsconfig.json server/
 COPY server/src server/src
 COPY shared shared
-RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js
+# The PDF worker is a second entry, flattened beside the bundle: a worker is loaded from a file at run
+# time, `bun build` does not follow `new Worker(...)`, and `extract.ts` looks for `./pdf-worker.js`
+# next to the file it was bundled into.
+RUN bun build server/src/index.ts server/src/attachments/pdf-worker.ts --target=bun --outdir server/dist --entry-naming "[name].[ext]"
 
 # oven/bun:1.3.14 — the same digest as the install stage, so the two never run different runtimes.
 FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4

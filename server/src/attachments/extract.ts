@@ -67,7 +67,8 @@ const WHOLE_BYTES = 900_000;
  * Not bounded by this, measured: pdf.js inflates a page's content stream whole before it reads it
  * (300 MB of text in a 2.3 MB file still costs 1.9 s and 690 MB with this bound), and a page of
  * drawing with no text is then walked in microtasks that no timer here can interrupt (400 MB of
- * paths: 8 s with the event loop held, 1.3 GB). Those need the reading in a worker that can be killed.
+ * paths: 8 s with the event loop held, 1.3 GB). That is why a PDF is read in a worker, ended at
+ * `PDF_DEADLINE_MS`.
  */
 const PDF_CHARS = WHOLE_BYTES;
 
@@ -410,7 +411,76 @@ async function pageText(
   }
 }
 
-export async function readPdf(bytes: Uint8Array): Promise<Extracted> {
+/**
+ * How long a PDF is given, on its own thread, before that thread is ended.
+ *
+ * Bounding what is read (the pages, the characters) did not bound what pdf.js does to read it: it
+ * inflates a page's whole content stream first, and a page of nothing but drawing is then worked
+ * through in one piece that no timer on this thread can interrupt — 400 MB of paths held the server
+ * 8 s at 1.3 GB (measured 2026-09-26), and the server is the one process a deployment has. A
+ * worker's thread can be ended mid-page. Five seconds is several times what the sixty pages a
+ * person's PDF is read to take here (0.26 s for 5,000 pages, 0.9 s for one page of 100 MB of text),
+ * and short enough that what a pathological page can allocate before it is ended stays well under
+ * the VM's memory.
+ */
+const PDF_DEADLINE_MS = 5_000;
+
+/** A PDF whose reading was ended at the deadline. Only the name reaches the log. */
+class PdfTooSlow extends Error {
+  override name = "PdfTooSlow";
+}
+
+/** Why the worker could not read it: the error it named, carried back by name only. */
+class PdfUnreadable extends Error {}
+
+/*
+ * `.ts` beside this file when it runs from source (tests, `bun --watch`); `.js` beside the bundle in
+ * the image, where this module is inlined into `dist/index.js` and the worker is built to
+ * `dist/pdf-worker.js` (server/Dockerfile, `--entry-naming [name].[ext]`).
+ */
+const PDF_WORKER = new URL(
+  import.meta.url.endsWith(".ts") ? "./pdf-worker.ts" : "./pdf-worker.js",
+  import.meta.url,
+);
+
+export function readPdf(
+  bytes: Uint8Array,
+  options: { deadlineMs?: number } = {},
+): Promise<Extracted> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(PDF_WORKER.href);
+    const end = () => {
+      clearTimeout(timer);
+      worker.terminate();
+    };
+    const timer = setTimeout(() => {
+      end();
+      reject(new PdfTooSlow());
+    }, options.deadlineMs ?? PDF_DEADLINE_MS);
+    worker.onmessage = (
+      event: MessageEvent<
+        { ok: true; extracted: Extracted } | { ok: false; name: string }
+      >,
+    ) => {
+      end();
+      if (event.data.ok) resolve(event.data.extracted);
+      else {
+        const failure = new PdfUnreadable();
+        failure.name = event.data.name;
+        reject(failure);
+      }
+    };
+    worker.onerror = (event) => {
+      event.preventDefault();
+      end();
+      reject(new PdfUnreadable());
+    };
+    worker.postMessage(bytes);
+  });
+}
+
+/** Read on the thread that calls it: the worker's, in the server (`pdf-worker.ts`). */
+export async function readPdfHere(bytes: Uint8Array): Promise<Extracted> {
   // A copy: pdf.js takes ownership of the buffer it is given and detaches it.
   const document = await getDocumentProxy(new Uint8Array(bytes));
   try {

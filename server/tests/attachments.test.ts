@@ -4,16 +4,16 @@ import type { MiddlewareHandler } from "hono";
 import * as XLSX from "xlsx";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import { documentAttachmentText } from "../../shared/prompt/attachments.ko";
-import {
-  expandAttachments,
-  withAttachments,
-} from "../src/attachments/for-model";
 import { readPdf, readSheets, SUMMARY_CHARS } from "../src/attachments/extract";
 import {
   detectAttachmentType,
   safeAttachmentName,
   workspacePathFor,
 } from "../src/attachments/files";
+import {
+  expandAttachments,
+  withAttachments,
+} from "../src/attachments/for-model";
 import { createAttachmentRoutes } from "../src/attachments/routes";
 import {
   type AttachmentForModel,
@@ -559,6 +559,47 @@ describe("what the model reads of a sheet or a PDF", () => {
     expect(read.body.length).toBeLessThanOrEqual(SUMMARY_CHARS);
     expect(read.shown).toBe("1쪽 중 앞부분");
     expect(Buffer.byteLength(read.whole ?? "")).toBeLessThanOrEqual(1_000_000);
+  });
+
+  test("a page of nothing but drawing is ended at its deadline, off the server's thread", async () => {
+    // Paths, not text: pdf.js works through the whole inflated stream in one piece no timer on its
+    // own thread can interrupt (400 MB held the server 8 s at 1.3 GB on 2026-09-26). On a worker's
+    // thread it is ended, and this thread goes on ticking the whole time.
+    // 160 MB of paths in a 0.9 MB file: about 4 s read on this thread (80 MB measured 2.1 s with the
+    // loop held, 400 MB 12.6 s and 1.4 GB). The deadline sits above what starting a worker costs, so
+    // what ends it is the page and not a slow start.
+    const drawing = pdfOfOneHugePage(160, "0 0 m 300 144 l S\n");
+    const [plain] = await timed(() =>
+      readPdf(pdfWith("warm"), { deadlineMs: 5_000 }),
+    );
+    expect(plain.body).toContain("warm");
+    let ticks = 0;
+    const ticking = setInterval(() => {
+      ticks += 1;
+    }, 10);
+    const [outcome, ms] = await timed(() =>
+      readPdf(drawing, { deadlineMs: 1_000 }).then(
+        () => "read",
+        (error: Error) => error.name,
+      ),
+    );
+    clearInterval(ticking);
+    expect(outcome).toBe("PdfTooSlow");
+    expect(ms).toBeGreaterThanOrEqual(950);
+    expect(ms).toBeLessThan(2_500);
+    // A held thread ticks a handful of times; a free one about every 10 ms.
+    expect(ticks).toBeGreaterThan(50);
+  });
+
+  test("a PDF the worker cannot read is refused by the name of what failed", async () => {
+    const outcome = await readPdf(
+      new TextEncoder().encode("%PDF-1.4\nnot a pdf"),
+    ).then(
+      () => "read",
+      (error: Error) => error.name,
+    );
+    expect(outcome).not.toBe("read");
+    expect(outcome).not.toBe("PdfTooSlow");
   });
 
   test("a file cannot close its own fence and speak as the owner", () => {

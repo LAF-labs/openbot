@@ -138,7 +138,7 @@ describe("the server image", () => {
    */
   test("runs the bundle it builds, not the sources", () => {
     expect(dockerfile).toContain(
-      "RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js",
+      'RUN bun build server/src/index.ts server/src/attachments/pdf-worker.ts --target=bun --outdir server/dist --entry-naming "[name].[ext]"',
     );
     expect(dockerfile).toContain(
       "COPY --from=install /app/server/dist server/dist",
