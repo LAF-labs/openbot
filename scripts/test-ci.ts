@@ -576,14 +576,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (a retry said on the wire, twice, in agent-bot; eval:from-failures rebuilding a saved answer
  * field by field, its week's numbers, its skeletons, and a file that is not an answer). Each floor
  * rises by exactly what was added.
+ * RAISED 2026-09-27 with the server owning the turn: twenty-five to `server` (a chat turn's tools
+ * carried out on the server and answered as the window answered them, a question held and waited on
+ * there, a help request and its skip, a decision card answered from any window, manage_routine's
+ * refusals; the live cursor, its snapshot and its log per turn; a turn run through the real thread
+ * store and ledger with nobody watching, framed as one run, joined halfway, stopped from anywhere
+ * and queued behind a routine with its record already open) and nine to `app` (what a window makes
+ * of the frames: deltas, a join halfway, the server's own copies, replays, a failure, notices).
+ * Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2980, roots: ["server"] },
-  { name: "app", floor: 1416, roots: ["app"] },
+  { name: "server", floor: 3005, roots: ["server"] },
+  { name: "app", floor: 1425, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 480, roots: ["tests", "agent-bot"] },
 ] as const;
