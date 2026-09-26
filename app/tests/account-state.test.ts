@@ -101,6 +101,18 @@ const DEVICE_SCOPED = [
    * it the moment it does. Wrong, it is one frame of the previous colour. Nothing a Bot does reads it.
    */
   "lib/avatar/accent.ts",
+  /*
+   * A page from before a deploy, reloading into the new build (`lib/build-reload.ts`, P1, G6): the
+   * mark that this tab already reloaded for a build, and what was typed and not sent, carried over
+   * the one reload.
+   *
+   * A DECISION, and the argument is that both are about this tab and nothing else. The mark is
+   * what stops a broken build reloading one window forever, and it must not stop another window's
+   * one reload — so it is `sessionStorage`, which is the tab's and dies with it. The typed words
+   * exist nowhere but this page: the server never had them, and they are handed back to the box
+   * they came from once and removed. Nothing a Bot does reads either.
+   */
+  "lib/build-reload.ts",
 ];
 
 /**

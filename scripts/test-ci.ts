@@ -548,14 +548,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * shape, and absent in a tab or an older shell) and three to `root` (the shell's commands handled,
  * declared and granted as one list; no capability granting a plugin that acts on the machine; the
  * window not suspended when put away). Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with connection resilience (P1): six to `server` (a page's ping answered; a
+ * page that answers still counted past the listening window; a silent page no longer counted while
+ * its socket is open, then closed; the finished-run notice written when the only socket is silent;
+ * a page from before the heartbeat held as before; the hub counting only what is listening) and
+ * twenty-four to `app` (the page's heartbeat: the feed opened with it, pings kept and a silent
+ * socket given up, the server's ping answered, a probe when looked at, an open that never comes,
+ * the backoff reset only after a minute; the notice's grace and its thirty-second sentence; a chunk
+ * in each engine's words, the reload once per build with what was typed, again for a new build,
+ * never into an unreachable server or without storage, Vite's event taken at once; failures by
+ * class — a dropped connection, a stale page, reported only when the reload was spent, the three
+ * new facts in their shapes; the calm part that comes back with the socket, the loading one, the
+ * one that offers the reload; the typed text back in its box on the next page). Each floor rises
+ * by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2761, roots: ["server"] },
-  { name: "app", floor: 1357, roots: ["app"] },
+  { name: "server", floor: 2767, roots: ["server"] },
+  { name: "app", floor: 1381, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 431, roots: ["tests", "agent-bot"] },
 ] as const;
