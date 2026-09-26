@@ -539,6 +539,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and the healthcheck 200 from a running Caddy; the lock first in the text; the fast health checks
  * while starting; the server's dependencies pinned for `--no-deps`; the lock passed to the front
  * door, open by default). Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with the 0.5.5 final QA's fixes: two to `app` (a retry in place retiring the
+ * failure a task that died between two steps left; a failed turn marking the room read as it
+ * ends). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -546,7 +549,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 2761, roots: ["server"] },
-  { name: "app", floor: 1347, roots: ["app"] },
+  { name: "app", floor: 1349, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 428, roots: ["tests", "agent-bot"] },
 ] as const;
