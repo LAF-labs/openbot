@@ -94,6 +94,22 @@ describe("what a demonstration keeps", () => {
     expect(written).not.toContain("482913");
   });
 
+  test("nor a character that is more than one UTF-16 unit", () => {
+    const recorder = recorderWith(null);
+    recorder.start("bot-1", "boss");
+    // A mathematical digit, a ligature key on Arabic keyboards, and an emoji: each is one key and
+    // more than one code unit, and each used to be kept whole as if it were a key's name.
+    for (const key of ["𝟗", "لا", "😀", "Enter"]) {
+      recorder.observe("bot-1", { type: "key", event: "down", key });
+    }
+    const record = recorder.read("bot-1", "boss");
+    const written = JSON.stringify(record);
+    for (const typed of ["𝟗", "لا", "😀"]) {
+      expect(written).not.toContain(typed);
+    }
+    expect(record?.steps.map((step) => step.kind)).toEqual(["typed", "key"]);
+  });
+
   test("that typing happened, and where, once per run", () => {
     const recorder = recorderWith(null);
     recorder.start("bot-1", "boss");

@@ -47,6 +47,13 @@
  * model to leave out "the pages they opened and immediately left" as though it would see any. A
  * recording that cannot see navigation should say so rather than keep a field for it.
  */
+
+/**
+ * KeyboardEvent's named keys are ASCII words that begin upper-case — Enter, ArrowLeft, F5, Dead,
+ * Unidentified. Everything else a key can carry is a character somebody typed.
+ */
+const NAMED_KEY = /^[A-Z][A-Za-z0-9]+$/;
+
 export type DemonstrationStep =
   /** Something was pressed. Named where the page had a name for it. */
   | {
@@ -209,10 +216,11 @@ export function createDemonstrationRecorder(
         if (!key) return;
         /*
          * A printable character is a character of whatever somebody is typing, and this module does
-         * not record that. One-character keys are exactly the printable ones — the surface sends
-         * `text` for those and only those — so the length test is the same line the surface draws.
+         * not record that. The test is "not a named key", never "one UTF-16 unit": `key.length === 1`
+         * let "𝟗", "😀" and the Arabic keyboard's "لا" through as named keys, whole, into the record
+         * that goes to the write-up model (red-team run, 2026-09-26). A password can hold any of them.
          */
-        if (key.length === 1) {
+        if (!NAMED_KEY.test(key)) {
           const last = session.steps.at(-1);
           // One "typed" step per run of typing, rather than one per keystroke: a person filling in
           // a form produces forty keystrokes and one fact.
