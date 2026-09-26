@@ -614,6 +614,20 @@ function createDeclineMemory(now: () => number, stickyMs: number) {
   };
 }
 
+/**
+ * How long after a question's expiry its alarm goes off. A timer is never early by the clock it was
+ * set on, but `expiresAt` is written to the millisecond from `now()`, and a sweep that ran a hair
+ * before it would find nothing and never run again for that question.
+ */
+const EXPIRY_ALARM_SLACK_MS = 250;
+
+/** A `setTimeout` that holds no process open. See the `timer` option. */
+function unrefTimer(fire: () => void, ms: number): () => void {
+  const handle = setTimeout(fire, ms);
+  handle.unref?.();
+  return () => clearTimeout(handle);
+}
+
 export function createApprovalRegistry(
   options: {
     /** Injectable so expiry can be tested without a test that sleeps for ten minutes. */
@@ -634,6 +648,12 @@ export function createApprovalRegistry(
      * take a caller's read down with it.
      */
     onExpire?: (approval: PendingApproval) => void;
+    /**
+     * Schedules `fire` after `ms` and hands back what cancels it. Injected by a test that drives the
+     * clock; production gets an unref'd `setTimeout`, which keeps no process — and no test run —
+     * alive for a question nobody is going to answer.
+     */
+    timer?: (fire: () => void, ms: number) => () => void;
   } = {},
 ): ApprovalRegistry {
   const now = options.now ?? (() => Date.now());
@@ -643,19 +663,30 @@ export function createApprovalRegistry(
     options.declineStickyMs ?? DECLINE_STICKS_MS,
   );
   const open = new Map<string, PendingApproval>();
+  const timer = options.timer ?? unrefTimer;
+  /** Each open question's own alarm, by id: cancelled whenever the question goes another way. */
+  const alarms = new Map<string, () => void>();
+  const forget = (id: string) => {
+    open.delete(id);
+    alarms.get(id)?.();
+    alarms.delete(id);
+  };
 
   /**
-   * Drop what has run out, on every read.
+   * Drop what has run out: on every read, and when a question's own alarm goes off.
    *
-   * On read rather than on a timer, because a timer keeps a process alive and adds a thing that can
-   * be forgotten in a test; nothing here matters until somebody looks, and everything that looks
-   * sweeps first.
+   * It was on read only — "nothing here matters until somebody looks" — which stopped being true
+   * the day `onExpire` arrived, because what it announces is precisely that nobody looked. A
+   * question a 03:00 routine raised expired unseen and its `approval.expired` notice waited for the
+   * next read of this registry: the morning's first page load, or never (review 2026-09-26). Each
+   * question now carries an unref'd alarm for its own expiry, which keeps no process alive and is
+   * cancelled the moment the question is spent, withdrawn or swept.
    */
   const sweep = () => {
     const at = now();
     for (const [id, approval] of open) {
       if (Date.parse(approval.expiresAt) <= at) {
-        open.delete(id);
+        forget(id);
         // Only the ones nobody answered. An answered question that was never spent expires too, and
         // announcing that as "nobody was reached" would be false about the one case where somebody
         // definitely was.
@@ -690,6 +721,13 @@ export function createApprovalRegistry(
         expiresAt: new Date(at + ttlMs).toISOString(),
       };
       open.set(approval.id, approval);
+      alarms.set(
+        approval.id,
+        timer(() => {
+          alarms.delete(approval.id);
+          sweep();
+        }, ttlMs + EXPIRY_ALARM_SLACK_MS),
+      );
       return approval;
     },
 
@@ -744,7 +782,7 @@ export function createApprovalRegistry(
       // Single use. A grant is permission for one thing to happen once; leaving it spendable would
       // make "yes" mean "yes, as often as you like", which is not what anybody pressing Allow on one
       // button thinks they are agreeing to.
-      open.delete(id);
+      forget(id);
       return { ok: true, approval };
     },
 
@@ -793,7 +831,7 @@ export function createApprovalRegistry(
       sweep();
       const approval = open.get(id);
       if (!approval || approval.botId !== botId) return undefined;
-      open.delete(id);
+      forget(id);
       return approval;
     },
   };

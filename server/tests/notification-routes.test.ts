@@ -253,6 +253,75 @@ describe("a question nobody answered", () => {
     expect(expired).toEqual([ignored.id]);
   });
 
+  test("the notice goes out at the expiry, with nobody reading the registry", async () => {
+    let clock = 1_000_000;
+    const expired: string[] = [];
+    const alarms: Array<{ fire: () => void; ms: number; cancelled: boolean }> =
+      [];
+    const registry = createApprovalRegistry({
+      now: () => clock,
+      ttlMs: 60_000,
+      onExpire: (approval) => expired.push(approval.id),
+      timer: (fire, ms) => {
+        const alarm = { fire, ms, cancelled: false };
+        alarms.push(alarm);
+        return () => {
+          alarm.cancelled = true;
+        };
+      },
+    });
+    const asked = {
+      botId: "bot-1",
+      actor: "person-1",
+      rule: "r",
+      subject: A_CLICK,
+      target: { type: "computer", id: "c" },
+    };
+    const ignored = await registry.request({ ...asked, fingerprint: "f1" });
+    const spent = await registry.request({ ...asked, fingerprint: "f2" });
+    await registry.answer(spent.id, "bot-1", "person-1", true);
+    expect((await registry.consume(spent.id, "f2")).ok).toBe(true);
+
+    // One alarm per question, just after its own expiry — and the spent one's is taken back.
+    expect(alarms.map((alarm) => alarm.ms >= 60_000)).toEqual([true, true]);
+    expect(alarms.map((alarm) => alarm.cancelled)).toEqual([false, true]);
+
+    // A 03:00 question, and no page open to read anything: the alarm is the only thing that runs.
+    clock += 61_000;
+    alarms[0]?.fire();
+    expect(expired).toEqual([ignored.id]);
+    // And a later read does not announce it twice.
+    expect(await registry.pending("bot-1")).toEqual([]);
+    expect(expired).toEqual([ignored.id]);
+  });
+
+  test("a question's alarm holds no process open", async () => {
+    // The default alarm is a real ten-minute timer; a process that only asked a question must still
+    // be free to exit at once, or every test run and every restart would wait on it.
+    const child = Bun.spawn(
+      [
+        "bun",
+        "-e",
+        [
+          'import { createApprovalRegistry } from "./src/computer/approvals";',
+          "const registry = createApprovalRegistry();",
+          'await registry.request({ botId: "b", actor: "p", rule: "r", subject: { kind: "click" }, fingerprint: "f", target: { type: "computer", id: "c" } });',
+          'console.log("asked");',
+        ].join(" "),
+      ],
+      { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" },
+    );
+    const started = Date.now();
+    const exited = await Promise.race([
+      child.exited,
+      Bun.sleep(15_000).then(() => "still running" as const),
+    ]);
+    if (exited === "still running") child.kill();
+    expect(await new Response(child.stdout).text()).toContain("asked");
+    expect(exited).toBe(0);
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 20_000);
+
   test("a hook that throws cannot take a read of the registry down with it", async () => {
     let clock = 1_000_000;
     const registry = createApprovalRegistry({
