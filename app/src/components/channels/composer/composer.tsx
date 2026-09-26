@@ -13,6 +13,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type FormEvent,
+  type KeyboardEvent,
   useCallback,
   useContext,
   useEffect,
@@ -31,6 +32,7 @@ import {
 import { holdDraft, takeKeptDraft } from "@/lib/build-reload";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
+import { isImeKey } from "@/lib/ime";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
 import { AttachmentChips, type PendingAttachment } from "./attachment-chips";
@@ -534,6 +536,23 @@ export function Composer({
     if (kept !== null) offerDraft(draftKey, kept);
   }, [draftKey]);
 
+  /**
+   * THE KEYS A KOREAN SYLLABLE BORROWS NEVER REACH THE EDITOR'S MENU.
+   *
+   * With the `/` menu open, the editor takes Enter and Tab as "pick the highlighted command" and
+   * does not ask whether an input method is still assembling a syllable (prompt-area 0.6.3). Measured
+   * 2026-09-26 by driving the built composer: `/리뷰답` with 답 still being composed, and the Enter
+   * that accepts it picked 리뷰답장 and rebuilt the box underneath the syllable — `[리뷰답장] 답`, the
+   * caret's node gone, and the next Enter sent "/리뷰답장 답" to the Bot. The editor skips any key
+   * whose default has been prevented, so this answers first; the Enter that follows the syllable is
+   * the person's own and does what it always did (`lib/ime.ts`).
+   */
+  const handleEditorKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.key === "Enter" || event.key === "Tab") && isImeKey(event)) {
+      event.preventDefault();
+    }
+  };
+
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     void submitDraft(value);
@@ -673,6 +692,7 @@ export function Composer({
             maxHeight={COMPACT_MAX_HEIGHT_PX}
             minHeight={COMPACT_MIN_HEIGHT_PX}
             onChange={handleChange}
+            onKeyDown={handleEditorKeyDown}
             onSubmit={submitDraft}
             placeholder={placeholder ?? t("Ask anything")}
             ref={promptAreaRef}
@@ -729,6 +749,7 @@ export function Composer({
             disabled={disabled}
             maxHeight={MAX_HEIGHT_PX}
             onChange={handleChange}
+            onKeyDown={handleEditorKeyDown}
             onSubmit={submitDraft}
             placeholder={placeholder ?? t("Ask anything")}
             ref={promptAreaRef}

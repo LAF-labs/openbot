@@ -1,5 +1,5 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { createElement } from "react";
 import type {
   CommandOption,
@@ -217,6 +217,136 @@ describe("a Korean syllable being assembled in the composer", () => {
     expect(editorOf(host)).toBe(editor);
     expect(editor.contains(node)).toBe(true);
     expect(editor.textContent).toBe("오");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+});
+
+/** The text at the end of the box, with the caret after it, as a person's typing leaves it. */
+function typed(editor: HTMLElement, text: string): Text {
+  const node = caretNode(editor);
+  node.textContent = text;
+  const range = document.createRange();
+  range.setStart(node, text.length);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  return node;
+}
+
+/**
+ * The `/` menu takes Enter and Tab as "pick this command" and never asked whether a syllable was
+ * still being assembled. MEASURED 2026-09-26: `/리뷰답` with 답 in composition, and the Enter that
+ * accepts it picked 리뷰답장 and rebuilt the box under the syllable — `[리뷰답장] 답`, the caret's
+ * node gone — and the next Enter sent "/리뷰답장 답" to the Bot.
+ */
+describe("the / menu while a Korean syllable is being assembled", () => {
+  const KOREAN_SKILL: Sources = {
+    commands: [{ id: "리뷰답장", name: "리뷰답장", kind: "chip" }],
+  };
+
+  async function menuOpenOnReview() {
+    const screen = await mounted();
+    const { act } = await import("react");
+    await screen.show(KOREAN_SKILL);
+    const editor = editorOf(screen.host);
+    await act(async () => {
+      typed(editor, "/리뷰");
+      editor.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "뷰",
+          inputType: "insertText",
+        }),
+      );
+    });
+    let node: Text | null = null;
+    await act(async () => {
+      editor.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true, data: "" }),
+      );
+      node = typed(editor, "/리뷰답");
+      editor.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "답",
+          inputType: "insertCompositionText",
+        }),
+      );
+    });
+    return { ...screen, act, editor, node: node as unknown as Text };
+  }
+
+  for (const key of ["Enter", "Tab"]) {
+    test(`the ${key} that accepts the syllable picks nothing and rebuilds nothing`, async () => {
+      const { act, editor, node, root, sent } = await menuOpenOnReview();
+
+      await act(async () => {
+        editor.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            key,
+            isComposing: true,
+          }),
+        );
+      });
+
+      expect(editor.querySelector("[data-chip-trigger]")).toBeNull();
+      expect(editor.contains(node)).toBe(true);
+      expect(editor.textContent).toBe("/리뷰답");
+      expect(sent).toEqual([]);
+
+      await act(async () => {
+        root.unmount();
+      });
+    });
+  }
+
+  test("the Enter after it is the person's own, and picks the command whole", async () => {
+    const { act, editor, root, sent } = await menuOpenOnReview();
+
+    await act(async () => {
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+          isComposing: true,
+        }),
+      );
+      editor.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: "답" }),
+      );
+      editor.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "답",
+          inputType: "insertText",
+        }),
+      );
+    });
+    await act(async () => {
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: "Enter",
+        }),
+      );
+    });
+
+    expect(
+      editor
+        .querySelector("[data-chip-trigger]")
+        ?.getAttribute("data-chip-value"),
+    ).toBe("리뷰답장");
+    // No stray half of the name beside the chip, and nothing sent yet.
+    expect(editor.textContent?.replace("/리뷰답장", "").trim()).toBe("");
+    expect(sent).toEqual([]);
 
     await act(async () => {
       root.unmount();
