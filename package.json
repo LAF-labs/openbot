@@ -36,7 +36,8 @@
     "eval:deferral": "bun --env-file=.env evals/deferral.ts",
     "eval:compaction": "bun --env-file=.env evals/compaction.ts",
     "eval:auto-review": "bun --env-file=.env evals/auto-review.ts",
-    "eval:browse": "bun --env-file=.env evals/browse.ts"
+    "eval:browse": "bun --env-file=.env evals/browse.ts",
+    "eval:from-failures": "bun --env-file=.env scripts/eval-from-failures.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.11",
