@@ -74,8 +74,11 @@ export type NavigateResult = {
 };
 
 export type ScreenshotResult = {
-  /** The picture, base64. The transcript renders it; nothing else interprets it. */
-  base64: string;
+  /**
+   * The picture, base64. The transcript renders it; nothing else interprets it. Absent when the Bot
+   * has no tab open: a picture is never a reason to open one (`agent-computer`'s page-routes).
+   */
+  base64?: string;
   /** `image/jpeg` for a thumbnail asked for as one; a PNG otherwise, and from an older computer. */
   mime?: string;
   width: number;

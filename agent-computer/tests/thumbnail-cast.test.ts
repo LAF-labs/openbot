@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { type Browser, chromium, type Page } from "playwright";
-import { thumbnailOptions } from "../src/page-routes";
+import type { Computer } from "../src/computer";
+import { screenshot, thumbnailOptions } from "../src/page-routes";
 import { startScreencast } from "../src/screencast";
 import { thumbnailOf } from "../src/thumbnail";
 
@@ -36,6 +37,44 @@ describe("what a thumbnail is asked for", () => {
     expect(
       thumbnailOptions(new URL("http://computer/screenshot"), VIEWPORT),
     ).toBeUndefined();
+  });
+});
+
+describe("a picture asked for with no tab open", () => {
+  /*
+   * The panel's thumbnail and a card's last frame ask on a timer. `profiles.page` opened a tab for
+   * them — starting the browser, marking the Bot busy — so an open panel undid a Stop within a poll.
+   */
+  test("opens nothing, and says there is nothing to picture", async () => {
+    let opened = 0;
+    const computer = {
+      profiles: {
+        activePage: () => undefined,
+        page: async () => {
+          opened += 1;
+          throw new Error("a picture must not open a tab");
+        },
+      },
+    } as unknown as Computer;
+    for (const asked of [
+      "http://computer/screenshot?format=jpeg&width=480&quality=60",
+      "http://computer/screenshot",
+    ]) {
+      const response = await screenshot(
+        {
+          request: new Request(asked),
+          url: new URL(asked),
+          botId: "bot-1",
+          session: {} as never,
+        },
+        computer,
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body.url).toBe("about:blank");
+      expect(body.base64).toBeUndefined();
+    }
+    expect(opened).toBe(0);
   });
 });
 

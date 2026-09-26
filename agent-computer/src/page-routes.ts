@@ -137,9 +137,26 @@ export function thumbnailOptions(
   };
 }
 
+/*
+ * A PICTURE IS NEVER A REASON TO OPEN THE BROWSER. Only a person asks for one — the panel's
+ * thumbnail, and the last frame a card keeps — and both ask on a timer while they are on screen.
+ * `profiles.page` opened a tab when there was none, started the browser for it and marked the Bot
+ * busy, so with the panel open a Stop was undone within a poll and the idle sweep never came
+ * (review, 2026-09-26; the live screen had the same loop and was fixed the same way). With no tab
+ * there is nothing to picture, said the way a browser that has been sent nowhere is: `about:blank`,
+ * no bytes. Both callers already draw nothing for that.
+ */
 export const screenshot: BotRoute = async ({ botId, url }, { profiles }) => {
   try {
-    const target = await profiles.page(botId);
+    const target = profiles.activePage(botId);
+    if (!target) {
+      return json({
+        url: "about:blank",
+        width: 0,
+        height: 0,
+        capturedAt: new Date().toISOString(),
+      });
+    }
     const size = target.viewportSize() ?? { width: 1280, height: 800 };
     const small = thumbnailOptions(url, size);
     const buffer = small
