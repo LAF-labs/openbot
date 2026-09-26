@@ -602,16 +602,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * offered only where the Bot holds the grant, its place in the row, its press reported, the day card
  * drawing it) and thirteen to `root` (the eval judge reading only what 기업마당 returned, and the
  * runner's awaited stubs, skills and round limit). Each floor rises by exactly what was added.
+ * RAISED 2026-09-27 with the first session's polish: five to `server` (a call cut partway through
+ * its arguments filed as the cut and the retry answering; five different reads not asked about and
+ * five identical ones asked; a write still counted by its tool; a read's arguments keeping two
+ * reads apart outside the fingerprint, and the tool alone without them), five to `app` (the step
+ * labels' Korean, every core tool named, every catalogue tool never shown by its name, the walk's
+ * two lines, the fallbacks) and three to `root` (a retry after a cut leaving the half call out and
+ * routed afresh, only the cut calls left out, a turn of nothing but cut calls gone). Each floor
+ * rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3028, roots: ["server"] },
-  { name: "app", floor: 1433, roots: ["app"] },
+  { name: "server", floor: 3033, roots: ["server"] },
+  { name: "app", floor: 1438, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 499, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 502, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
