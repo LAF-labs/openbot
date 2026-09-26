@@ -110,6 +110,13 @@ export type RepeatedCall = {
    * is not asking for the same thing again.
    */
   part?: string | undefined;
+  /**
+   * What a connected service's READ asked for: its arguments, as {@link readArgumentsKey} writes
+   * them. Kept apart in the count the same way, and held only as a digest in the counting key —
+   * never in the fingerprint, which goes onto the audit row. See `plugins/call.ts` for which calls
+   * carry it; a call that changes anything never does.
+   */
+  asked?: string | undefined;
 };
 
 export type RepeatObservation = {
@@ -320,10 +327,34 @@ export function fingerprintOf(call: RepeatedCall): string | null {
  * window and never leaves this process, and it still does not have to hold a one-time code to count.
  */
 function countingKeyOf(call: RepeatedCall, fingerprint: string): string {
-  const rest = `${addressRestOf(call.targetUrl)}${call.part ?? ""}`;
+  const rest = `${addressRestOf(call.targetUrl)}${call.part ?? ""}${
+    call.asked === undefined ? "" : `\u0000${call.asked}`
+  }`;
   if (!rest) return fingerprint;
   const digest = createHash("sha256").update(rest).digest("base64url");
   return `${fingerprint} #${digest.slice(0, 22)}`;
+}
+
+/**
+ * A read's arguments as one string, so that the same question asked twice is one key however the
+ * model wrote it: keys in order at every depth, every string's whitespace collapsed and trimmed
+ * (see {@link normalize}), and an absent value the same as one left out.
+ */
+export function readArgumentsKey(args: unknown): string {
+  if (Array.isArray(args)) {
+    return `[${args.map(readArgumentsKey).join(",")}]`;
+  }
+  if (args !== null && typeof args === "object") {
+    const entries = Object.entries(args as Record<string, unknown>)
+      .filter(([, value]) => value !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(
+        ([key, value]) => `${JSON.stringify(key)}:${readArgumentsKey(value)}`,
+      );
+    return `{${entries.join(",")}}`;
+  }
+  if (typeof args === "string") return JSON.stringify(normalize(args));
+  return JSON.stringify(args) ?? "null";
 }
 
 /** An address's query and fragment, as written — the part `pageForTrail` drops. */

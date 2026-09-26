@@ -102,14 +102,16 @@ export type PolicyContext = {
    * ways: the window is time-based, so a Bot slow enough to spread its attempts wider than the window
    * never trips this, and one that varies a single argument each time round is thirty calls; the
    * detector holds a bounded number of calls per Bot and Bots at once (`repeat.ts`), so a Bot whose
-   * loop opens after sixty-four distinct calls is uncounted until one of them ages out; and a call to
-   * another server's tools over MCP is not counted at all, because only the computer gateway counts.
+   * loop opens after sixty-four distinct calls is uncounted until one of them ages out; and a
+   * connected service's read is counted under what it asked (`plugins/call.ts`), so a Bot asking one
+   * service a different question each time round is a first attempt every time.
    *
    * Over, once, and that one costs somebody their Bot rather than their evidence. Two calls are the
    * same call when the thing acted on is the same, whatever was typed into it, so ten searches typed
    * into one box and one file read ten times while a Bot works through it are both ten repeats, and
-   * `repeat.count >= 10` refuses the tenth. It is a backstop against the loop that actually happens,
-   * rather than a guarantee.
+   * `repeat.count >= 10` refuses the tenth. The same holds for a connected service's tool that
+   * changes something: ten different messages sent are ten sends. It is a backstop against the loop
+   * that actually happens, rather than a guarantee.
    */
   repeat: { count: number };
   /**

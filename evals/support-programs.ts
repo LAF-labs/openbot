@@ -111,12 +111,15 @@ export function liveSupportSearch(
 /* ── The judge ──────────────────────────────────────────────────────────────────────────────── */
 
 /**
- * The most searches one job may make before the boundary asks the owner.
+ * The most searches one job may make.
  *
- * The deployment ships `repeat.count >= 5` (`server/src/main.ts`), and a plugin call's repeat key is
- * the tool alone, arguments left out (`plugins/call.ts`). Measured on the walk (2026-09-27): six
- * searches — four fields one at a time, the 시군구 and the 업종 — put "같은 행동을 5번째 반복하는
- * 중이에요" with seven buttons in front of a shop owner on their first task, twice.
+ * It was the boundary's number. The deployment ships `repeat.count >= 5` (`server/src/main.ts`), and
+ * a plugin call's repeat key was the tool alone. Measured on the walk (2026-09-27): six searches —
+ * four fields one at a time, the 시군구 and the 업종 — put "같은 행동을 5번째 반복하는 중이에요"
+ * with seven buttons in front of a shop owner on their first task, twice. A read is now counted under
+ * what it asked (`plugins/call.ts`), so only the same search five times asks. The bound stays: the
+ * portal takes several fields in one call, four searches cover a job, and each one more is the owner
+ * waiting.
  */
 export const MAX_SEARCHES = 4;
 
@@ -330,7 +333,7 @@ export function judgeSupportAnswer(input: {
       searches > 0,
     ],
     [
-      `기업마당을 ${searches}번 부름 — 다섯 번째부터 사장님께 반복 허락을 묻는다`,
+      `기업마당을 ${searches}번 부름 — 분야는 한 번에 여럿 넣을 수 있고, 네 번이면 한 일에 충분하다`,
       searches <= MAX_SEARCHES,
     ],
     [

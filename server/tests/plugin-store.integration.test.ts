@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { REPEAT_RULE } from "../../shared/policy-rules";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ReviewSubject, ReviewVerdict } from "../src/computer/auto-review";
@@ -625,10 +626,9 @@ describe("a tool call goes through the same settle step as a click", () => {
      * The shipped boundary's own rule, which was unreachable from this path: every tool call
      * reported itself as a first attempt.
      *
-     * A counter of its own, because the detector keys on the tool rather than on the arguments (the
-     * same reason typed text is not in the browser's key, `computer/repeat.ts`) — so the calls the
-     * tests above made on this ref are in the count, and a test that has to be run in a particular
-     * order is a test that fails for a reason nobody can see.
+     * A counter of its own, because a shared one holds whatever the tests above asked this ref —
+     * the same question twice anywhere in the file is a repeat here — and a test that has to be run
+     * in a particular order is a test that fails for a reason nobody can see.
      */
     settling = { deny: [], ask: ["repeat.count >= 3"], allow: ["true"] };
     judged = [];
@@ -666,6 +666,119 @@ describe("a tool call goes through the same settle step as a click", () => {
     const asked = third as PluginNeedsApprovalError;
     expect(asked.subject.reason).toBe("repeat");
     expect(asked.subject.repeatCount).toBe(3);
+  });
+
+  /*
+   * THE 지원사업 WALK (2026-09-27): four different 기업마당 searches and a fifth, keyed on the tool
+   * alone, asked a shop owner "같은 행동을 5번째 반복하는 중이에요" on their first task. A read is
+   * counted by what it asked as well; the rule is the one the deployment ships.
+   */
+  test("five different reads are five questions; the same read five times still asks", async () => {
+    settling = { deny: [], ask: [REPEAT_RULE], allow: ["true"] };
+    const reading = createPluginStore({
+      database,
+      auditStore: createAuditStore(database),
+      credentials: credentialVaultStub({ readSecret: async () => null }),
+      encryptionKey: "x".repeat(44),
+      policy: () => settling,
+      approvals,
+      repeat: createRepeatDetector({ windowMs: 60_000 }),
+      callVendor: async () => {
+        throw new Error("the test vendor is unreachable");
+      },
+    });
+    const read = (args: Record<string, unknown>) =>
+      reading
+        .callTool({
+          ref,
+          args,
+          botId: holderId,
+          actorId: "someone@laf.local",
+        })
+        .catch((error: unknown) => error);
+
+    const different = [
+      await read({ query: "춘천" }),
+      await read({ query: "강원", field: "01" }),
+      await read({ query: "강원", field: "05" }),
+      await read({ query: "강원", field: "06,07" }),
+      await read({ query: "한식" }),
+      await read({ query: "강원", field: "09" }),
+    ];
+    expect(
+      different.map((outcome) => outcome instanceof PluginNeedsApprovalError),
+    ).toEqual([false, false, false, false, false, false]);
+
+    // The same question, however the model spaced it or ordered its keys, is one call.
+    const same = [
+      await read({ query: "again", page: 1 }),
+      await read({ page: 1, query: "again" }),
+      await read({ query: " again ", page: 1 }),
+      await read({ query: "again", page: 1 }),
+    ];
+    expect(
+      same.map((outcome) => outcome instanceof PluginNeedsApprovalError),
+    ).toEqual([false, false, false, false]);
+    const fifth = await read({ query: "again", page: 1 });
+    expect(fifth).toBeInstanceOf(PluginNeedsApprovalError);
+    expect((fifth as PluginNeedsApprovalError).subject).toMatchObject({
+      reason: "repeat",
+      repeatCount: 5,
+    });
+  });
+
+  test("a call that changes something is still counted by the tool, whatever it was sent", async () => {
+    const writeTool = "update_things";
+    const writeRef = `${serverId}/${writeTool}`;
+    await database
+      .insert(mcpTools)
+      .values({
+        serverId,
+        name: writeTool,
+        description: "Update things.",
+        // Declared, not read-only, no effect class: a write the written policy decides, no floor.
+        annotations: { readOnlyHint: false },
+      })
+      .onConflictDoNothing();
+    settling = { deny: [], ask: ["repeat.count >= 3"], allow: ["true"] };
+    const writing = createPluginStore({
+      database,
+      auditStore: createAuditStore(database),
+      credentials: credentialVaultStub({ readSecret: async () => null }),
+      encryptionKey: "x".repeat(44),
+      policy: () => settling,
+      approvals,
+      repeat: createRepeatDetector({ windowMs: 60_000 }),
+      callVendor: async () => {
+        throw new Error("the test vendor is unreachable");
+      },
+    });
+    await writing.grant("mcp", writeRef, holderId, "admin@laf.local");
+    try {
+      const write = (args: Record<string, unknown>) =>
+        writing
+          .callTool({
+            ref: writeRef,
+            args,
+            botId: holderId,
+            actorId: "someone@laf.local",
+          })
+          .catch((error: unknown) => error);
+
+      const outcomes = [
+        await write({ id: "1", status: "배송중" }),
+        await write({ id: "2", status: "배송중" }),
+        await write({ id: "3", status: "배송완료" }),
+      ];
+      expect(
+        outcomes.map((outcome) => outcome instanceof PluginNeedsApprovalError),
+      ).toEqual([false, false, true]);
+      expect(
+        (outcomes[2] as PluginNeedsApprovalError).subject.repeatCount,
+      ).toBe(3);
+    } finally {
+      await database.delete(pluginGrants).where(eq(pluginGrants.ref, writeRef));
+    }
   });
 
   /**

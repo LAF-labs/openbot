@@ -7,6 +7,7 @@ import {
   type PolicyContext,
   type PolicyDecision,
 } from "../computer/policy";
+import { readArgumentsKey } from "../computer/repeat";
 import { type SettleResult, settle } from "../computer/settle";
 import { allowanceFor } from "../computer/standing-approvals";
 import { mcpTools } from "../db/schema";
@@ -617,16 +618,37 @@ export function createCallPath(
        * calling the same tool on somebody else's server over and over, so `repeat.count >= 5` — a
        * rule this deployment ships by default — was false here on every call, however many times a
        * stuck model made it. The detector keys on the tool plus the thing it acted on
-       * (`computer/repeat.ts`), and for a tool call the thing acted on is the tool itself: the
-       * arguments are deliberately not in the key there, for the same reason typed text is not.
+       * (`computer/repeat.ts`), and for a tool call that changes something the thing acted on is
+       * the tool itself: its arguments are not in the key, for the same reason typed text is not.
        *
        * Absent leaves a count of one, which is what a rule about repetition reads as a first
        * attempt — a number nobody can substantiate must never be the reason a Bot is refused.
+       *
+       * A READ IS COUNTED BY WHAT IT ASKED, TOO. Keyed on the tool alone, four different 기업마당
+       * searches and a fifth were "the same action for the fifth time", and the shipped
+       * `repeat.count >= 5` put that question, with seven buttons, in front of a shop owner on their
+       * first task (the 지원사업 walk, 2026-09-27). A loop is the same call again; five different
+       * questions to a service that only answers are five questions. So a call this deployment
+       * trusts to change nothing — a curated tool off the entry's write list, or a custom one
+       * declaring `readOnlyHint` and no other effect — is counted under its arguments as well, the
+       * way a page is counted under its query: five identical searches still reach the rule, five
+       * different ones do not. The arguments stay out of the fingerprint and the audit row, exactly
+       * as typed text does; the key holds them as a digest, in memory, for one window.
+       *
+       * EVERYTHING ELSE KEEPS ITS KEY. A write, and any call with a guard floor, is still counted by
+       * the tool alone — thirty different messages sent is still thirty sends — because there the
+       * count is the only thing between a model and somebody's customers. Nothing here decides
+       * anything: the count is what the policy is told (`computer/settle.ts`), a `deny` is read the
+       * same way against it, and no call gets past a person that a rule would have stopped for the
+       * same call repeated. What a Bot running up varied reads costs is bounded where cost is, per
+       * question (`agent-bot/src/guards.ts`, `MAX_QUESTION_STEPS` and `MAX_QUESTION_COST_USD`).
        */
+      const readOnly = effect === "read" && guard === null;
       const repetition = options.repeat
         ? await options.repeat.observe(input.botId, {
             tool: toolNameFor(input.ref),
             ref: input.ref,
+            ...(readOnly ? { asked: readArgumentsKey(args) } : {}),
           })
         : { count: 1, fingerprint: null, threshold: null };
 

@@ -3,6 +3,7 @@ import {
   createRepeatDetector,
   DEFAULT_REPEAT_WINDOW_MS,
   fingerprintOf,
+  readArgumentsKey,
 } from "../src/computer/repeat";
 
 /**
@@ -458,5 +459,40 @@ describe("an address, counted", () => {
         targetUrl: "https://shop.example/app#/reviews",
       }),
     ).toMatchObject({ count: 1 });
+  });
+});
+
+describe("a read of a connected service, counted", () => {
+  const search = "mcp__public-data__search_support_programs";
+  const ref = "public-data/search_support_programs";
+
+  test("what it asked keeps two reads apart, and never reaches the fingerprint", async () => {
+    const detector = createRepeatDetector({ now: clock().now });
+    const asked = (args: Record<string, unknown>) =>
+      detector.observe("sales-bot", {
+        tool: search,
+        ref,
+        asked: readArgumentsKey(args),
+      });
+
+    const first = await asked({ hashtags: "춘천", max: 10 });
+    expect(first).toMatchObject({ count: 1 });
+    // The fingerprint goes onto the audit row as it stands: the tool and the service, nothing asked.
+    expect(first.fingerprint).toBe(`${search} ref=${ref}`);
+    expect(await asked({ hashtags: "강원", max: 10 })).toMatchObject({
+      count: 1,
+    });
+    // The same question, keys in another order and spaced differently, is the same call.
+    expect(await asked({ max: 10, hashtags: " 춘천 " })).toMatchObject({
+      count: 2,
+    });
+  });
+
+  test("with nothing asked, the tool alone is the key, as for a write", async () => {
+    const detector = createRepeatDetector({ now: clock().now });
+    await detector.observe("sales-bot", { tool: search, ref });
+    expect(
+      await detector.observe("sales-bot", { tool: search, ref }),
+    ).toMatchObject({ count: 2 });
   });
 });

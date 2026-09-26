@@ -166,12 +166,14 @@ const PROGRAM_FIELDS = new Set([
 /**
  * The field filter as the portal takes it: known codes, comma-joined, or nothing.
  *
- * SEVERAL AT ONCE, BECAUSE THE BOUNDARY COUNTS CALLS. The portal reads "01,07" as either (measured
- * 2026-09-27: 강원 with 01 was 54, with 07 146, with "01,07" 200), and a Bot covering 금융·내수·창업·
- * 경영 one call each, plus its own 시군구, made the fifth call of one tool inside three minutes —
- * which the deployment's `repeat.count >= 5` rule turns into a question to the owner on their first
- * task. A code the portal does not know is dropped rather than sent: a typo would otherwise come
- * back as "nothing matched".
+ * SEVERAL AT ONCE, BECAUSE ONE CALL IS CHEAPER THAN FOUR. The portal reads "01,07" as either
+ * (measured 2026-09-27: 강원 with 01 was 54, with 07 146, with "01,07" 200), and a Bot covering
+ * 금융·내수·창업·경영 one call each, plus its own 시군구, made the fifth call of one tool inside three
+ * minutes — which the deployment's `repeat.count >= 5` rule, then keyed on the tool alone, turned
+ * into a question to the owner on their first task. A read is now counted under what it asked
+ * (`plugins/call.ts`), so different searches no longer ask; one call for four fields is still one
+ * round trip instead of four. A code the portal does not know is dropped rather than sent: a typo
+ * would otherwise come back as "nothing matched".
  */
 function fieldsOf(raw: string | null): string | null {
   const codes = (raw ?? "")
