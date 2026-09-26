@@ -533,6 +533,14 @@ export type ProfileOptions = {
    */
   onContext?: (context: BrowserContext) => Promise<void> | void;
   /**
+   * Asked before the browser is handed to anybody, running or not, and throws to refuse it.
+   *
+   * On the way to an existing browser as well as a new one, because what it guards — the host's
+   * egress firewall (egress-guard.ts) — can go away under a browser that is already open, and a tab
+   * handed out on it would be the page this whole arrangement exists to stop.
+   */
+  beforeBrowser?: () => Promise<void>;
+  /**
    * Told once, when an existing per-Bot profile was taken over as the deployment's.
    *
    * Given the Bot whose call caused the first launch, because that is who is owed the explanation:
@@ -706,6 +714,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    * container restarts. This turns that into one slow request instead of an outage.
    */
   const browserFor = async (botId: string): Promise<BrowserContext> => {
+    await options.beforeBrowser?.();
     const running = starting;
     if (running) return running;
     if (shared?.context.browser()?.isConnected()) return shared.context;

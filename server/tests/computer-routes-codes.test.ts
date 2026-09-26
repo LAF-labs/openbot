@@ -246,6 +246,8 @@ describe("every answer the container can send", () => {
     // The browser, the disk or the guard failed: the computer's, and an operator's, problem.
     "laf:browser_failed": 503,
     "laf:navigation_guard_unavailable": 503,
+    // The machine not holding the browser's egress rules: an operator's problem, not the caller's.
+    "laf:egress_unguarded": 503,
     "laf:file_failed": 503,
     // The caller left; the container's 499 is a convention a person's browser never sees.
     "laf:stopped": 503,

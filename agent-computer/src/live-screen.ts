@@ -14,6 +14,7 @@ import type { Page } from "playwright";
 import type { ScreenCode } from "./codes";
 import type { Computer } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
+import { EGRESS_UNGUARDED, EgressUnguardedError } from "./egress-guard";
 import { log } from "./log";
 import { followTyping, inTurn, settleTyping } from "./person-typing";
 import { encodeScreenFrame } from "../../shared/screen-frame";
@@ -264,6 +265,12 @@ export function liveScreen({
         await attach();
         follow();
       } catch (error) {
+        // The one refusal the person watching can be told the reason for, rather than "not started".
+        if (error instanceof EgressUnguardedError) {
+          ws.send(screenError(EGRESS_UNGUARDED));
+          ws.close();
+          return;
+        }
         log.error("screen_not_started", { bot: ws.data.botId, reason: error });
         ws.send(screenError("laf:screen_not_started"));
         ws.close();

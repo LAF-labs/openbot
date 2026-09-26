@@ -68,6 +68,10 @@ export const COMPUTER_CODES = {
   "laf:browser_failed": { status: 502, caller: "any" },
   // The address check could not be put on a browser, so the browser was not opened at all.
   "laf:navigation_guard_unavailable": { status: 502, caller: "any" },
+  // The machine is not holding the browser's egress firewall — the host rules that keep a page off
+  // the metadata endpoint, the private ranges and the host itself — so no browser was opened, and
+  // one already open was closed (egress-guard.ts). Nothing the caller sends will change it.
+  "laf:egress_unguarded": { status: 502, caller: "any", screen: true },
 
   /* ── Opening a page ───────────────────────────────────────────────────────────────────── */
 

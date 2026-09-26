@@ -615,10 +615,8 @@
       "names": ["chroot"],
       "action": "SCMP_ACT_ALLOW",
       "args": [],
-      "comment": "",
-      "includes": {
-        "caps": ["CAP_SYS_CHROOT"]
-      },
+      "comment": "Chromium's zygote chroots inside its own user namespace; the container holds no CAP_SYS_CHROOT to gate this on (cap_drop: ALL), and outside a namespace the kernel still refuses it",
+      "includes": {},
       "excludes": {}
     },
     {

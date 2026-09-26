@@ -304,6 +304,8 @@ beforeAll(async () => {
       PROFILES_DIR: profilesDir,
       WORKSPACE_DIR: workspaceDir,
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
+      // A laptop has no host to hold the browser's egress rules (egress-guard.ts).
+      AGENT_COMPUTER_EGRESS_FIREWALL: "off",
     },
     stdout: "pipe",
     stderr: "pipe",

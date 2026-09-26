@@ -100,7 +100,7 @@ reason.
 
 ```bash
 docker compose up -d postgres
-COMPUTER_TOKEN=laf-local-dev docker compose up -d agent-computer
+COMPUTER_TOKEN=laf-local-dev AGENT_COMPUTER_EGRESS_FIREWALL=off docker compose up -d agent-computer
 (cd agent-bot && PORT=4200 bun --env-file=../.env src/index.ts)
 (cd server && AGENT_COMPUTER_URL=http://localhost:4100 COMPUTER_TOKEN=laf-local-dev bun --env-file=../.env src/index.ts)
 (cd app && bun run dev)
@@ -109,7 +109,10 @@ COMPUTER_TOKEN=laf-local-dev docker compose up -d agent-computer
 `agent-computer` runs from an **image**, not from source: editing it and
 restarting the container changes nothing. `docker compose build agent-computer`
 first. And it refuses to start without `COMPUTER_TOKEN`, which compose does not
-supply on its own.
+supply on its own. Its egress firewall is the VM host's (laf-control installs it
+on the `laf-browser` bridge), and it refuses to browse (`laf:egress_unguarded`)
+where the host is not refusing the metadata endpoint — which on a laptop it never
+is, hence `AGENT_COMPUTER_EGRESS_FIREWALL=off` above.
 
 Deployments never build: CI publishes the four runtime images (server, web,
 agent-bot, agent-computer) and the `openbot-deploy` bundle to GHCR

@@ -4,6 +4,7 @@ import { buildOf } from "../../shared/log";
 import type { Computer } from "./computer";
 import { readConfig } from "./config";
 import { deploymentEgress, ignoredEgressVariables } from "./egress";
+import { createEgressGuard, verdictOf } from "./egress-guard";
 import { liveScreen, type StreamData } from "./live-screen";
 import { log } from "./log";
 import { heldForJudgement, navigationRefused } from "./navigation";
@@ -114,6 +115,19 @@ const rememberFrame = (botId: string, page: Page): void => {
 };
 
 /**
+ * Whether the host is holding the browser's egress firewall. See egress-guard.ts.
+ *
+ * Asked before any browser is handed out, and every minute besides; a machine that stops holding it
+ * has its open browser closed under it, so the refusal is not only for the next launch.
+ */
+const egress = createEgressGuard({
+  enforce: config.egressFirewall,
+  allowPrivateHosts: config.allowPrivateHosts,
+  log,
+  onUnguarded: () => profiles.closeAll(),
+});
+
+/**
  * The deployment's browser and the profile that outlives it. See profiles.ts.
  *
  * `chromium.launch()` gives a fresh anonymous profile every time. The persistent profile lives on a
@@ -121,6 +135,7 @@ const rememberFrame = (botId: string, page: Page): void => {
  * Bot signed into is signed in for the others, which is the promise the onboarding screen makes.
  */
 const profiles = createProfiles(config.profilesDir, {
+  beforeBrowser: () => egress.ensureGuarded(),
   onPage: (botId, page) => {
     rememberFrame(botId, page);
     watchPage(sessions.sessionFor(botId), botId, page, workspace);
@@ -165,7 +180,7 @@ const profiles = createProfiles(config.profilesDir, {
     }),
 });
 
-const computer: Computer = { config, profiles, workspace, sessions };
+const computer: Computer = { config, profiles, workspace, sessions, egress };
 
 const listener = serve<StreamData>({
   port: config.port,
@@ -186,6 +201,23 @@ log.info("boot", {
   // Which user the browser runs as. `0` here is the finding this image was rebuilt to close.
   uid: typeof process.getuid === "function" ? process.getuid() : null,
 });
+
+/*
+ * The host's egress firewall, asked of the network now and every minute after. The first answer is
+ * the line an operator reads (`egress_guarded`, or `egress_unguarded` with each target's result).
+ *
+ * `off` is the laptop's way past it and is said at every start, with what the network looked like
+ * anyway — a VM that has it set is browsing without the firewall, and that should be findable.
+ */
+egress.start();
+if (!config.egressFirewall) {
+  void egress.check().then(() =>
+    log.warn("egress_firewall_off", {
+      observed: verdictOf(egress.results()),
+      note: "AGENT_COMPUTER_EGRESS_FIREWALL=off: the browser opens whether or not the host holds its egress rules",
+    }),
+  );
+}
 
 /*
  * A deployment that still names a per-Bot proxy is told, once, at boot.

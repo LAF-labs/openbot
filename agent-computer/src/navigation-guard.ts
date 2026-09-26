@@ -136,7 +136,7 @@ export async function resolvedHopVerdict(
  * to send it; a zone that answers publicly to the first and privately to the second walks past the
  * first. `serverAddr()` is the address Chromium connected to, so this is the one check made at
  * connect time rather than before it. The request has been sent by then — the container's firewall
- * is what stops that (`agent-computer/egress-firewall.sh`) — but the answer is not handed on.
+ * is what stops that (the host's rules on the `laf-browser` bridge, checked by `agent-computer/src/egress-guard.ts`) — but the answer is not handed on.
  *
  * Null when there is nothing to judge: a cached response carries no address.
  */

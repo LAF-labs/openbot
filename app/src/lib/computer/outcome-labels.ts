@@ -61,6 +61,7 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:computer_route_unknown": "The Bot's computer is a different version",
   "laf:browser_failed": "The Bot's browser did not manage it",
   "laf:navigation_guard_unavailable": "The Bot's browser did not start",
+  "laf:egress_unguarded": "The Bot's browser was kept closed for safety",
   "laf:request_invalid": "The computer could not use the request",
   // Opening a page.
   "laf:page_timeout": "The page did not open in time",

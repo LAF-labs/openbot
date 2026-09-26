@@ -285,6 +285,19 @@ services:
       LAF_TRIAL_HOLD_DAYS: ${LAF_TRIAL_HOLD_DAYS:-}
       LAF_DAILY_TOKEN_BUDGET: ${LAF_DAILY_TOKEN_BUDGET:-}
     logging: *logging
+    # ON BOTH NETWORKS, BECAUSE IT IS THE ONE THING THAT CALLS THE COMPUTER. `agent-computer` lives
+    # alone on `browser` (see `networks:` at the end), so this is the only service that can reach
+    # `agent-computer:4100`. The host's rules let exactly that through the bridge and refuse the
+    # computer anything back that it did not answer — it cannot open this service's port in return.
+    #
+    # The default route stays on `default`: gw_priority decides it (Docker 28+, the VMs run 29.8),
+    # where before it was whichever network's name sorted first, and `browser` sorts before
+    # `default`. The server's own calls out — the model, the broker, a vendor's API — are not the
+    # browser's and should not leave through the browser's bridge.
+    networks:
+      default:
+        gw_priority: 1
+      browser: {}
     depends_on:
       postgres:
         condition: service_healthy
@@ -407,17 +420,23 @@ services:
       # API server applies to the address a Bot asks for. Empty is off, which is what a hosted
       # deployment wants; a laptop that sets it for the server sets it here with the same word.
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: ${AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS:-}
-      # The container's own egress firewall (agent-computer/egress-firewall.sh). Empty is on; `off`
-      # is for a runtime that cannot grant NET_ADMIN, and is logged at every start.
+      # Whether a browser waits for the host's egress firewall (agent-computer/src/egress-guard.ts).
+      # Empty is on: before any browser opens, the computer asks the network whether the host is
+      # refusing 169.254.169.254, the private ranges and itself, and refuses to browse
+      # (`laf:egress_unguarded`) until it is. `off` is the laptop's way past it — Docker Desktop has
+      # no host to put the rules on — and is logged at every start.
       AGENT_COMPUTER_EGRESS_FIREWALL: ${AGENT_COMPUTER_EGRESS_FIREWALL:-}
-    # THE ONE CAPABILITY ADDED, AND ONLY FOR THE FIRST SECOND. The entrypoint writes the egress
-    # firewall into this container's network namespace — nothing the browser requests may reach
-    # 169.254.169.254, RFC 1918, CGNAT or the host, whatever a name resolved to (security review
-    # 2026-09-25 F1: DNS rebinding and subresources walk past the navigation guard) — and then runs
-    # the computer as `pwuser` with an empty bounding set and no_new_privs, so no process under it
-    # holds NET_ADMIN or can get it back. Without the capability the container refuses to start.
-    cap_add:
-      - NET_ADMIN
+    # ALONE ON ITS OWN NETWORK, AND THE FIREWALL IS THE HOST'S. Nothing the browser requests may
+    # reach 169.254.169.254, RFC 1918, CGNAT or the host, whatever a name resolved to (security
+    # review 2026-09-25 F1: DNS rebinding and subresources walk past the navigation guard). Until
+    # 2026-09-26 this container wrote those rules itself, as root with NET_ADMIN; now the host does,
+    # on the `browser` network's bridge, which only this service's traffic crosses — the fleet tool
+    # installs them at provision and upgrade (docs/laf/deploying.md, the host firewall). So the
+    # container holds no capability at all: not NET_ADMIN, and not the defaults either.
+    networks:
+      - browser
+    cap_drop:
+      - ALL
     volumes:
       - agent-workspace:/workspace
       # Chromium's user-data directory is volume-backed so logins survive container restarts.
@@ -447,8 +466,13 @@ services:
     # and Docker 29.8, as `pwuser`: without it Chromium exits with "No usable sandbox!"; with it every
     # renderer runs in a user, PID and network namespace of its own. No AppArmor change is needed.
     # The path is read on the host, so the file rides in the deploy bundle beside this one.
+    #
+    # no_new_privs, with `cap_drop: [ALL]` above, is what the entrypoint's `setpriv` did from
+    # 2026-09-25: the computer runs as `pwuser` (the image's USER) with an empty bounding set, and
+    # nothing it executes — a setuid binary included — can gain a capability back.
     security_opt:
       - seccomp=./agent-computer/seccomp_profile.json
+      - no-new-privileges:true
     # THE VOLUMES, HANDED TO THE USER THE COMPUTER NOW RUNS AS. Every deployment that ran the image
     # before 2026-09-13 has `agent-profiles` and `agent-workspace` owned by root, and a computer that
     # starts as `pwuser` cannot open a root-owned profile — every Bot's logins would be unreadable
@@ -456,10 +480,17 @@ services:
     # container starts and before anything asks for a browser (the server waits for the healthcheck,
     # and nothing here touches either volume at boot). `--from=root` makes it a no-op on a volume that
     # is already right: a fresh one takes the image's ownership, and every later file is pwuser's.
+    #
+    # `privileged` because the container itself holds no capability (`cap_drop` above), and root
+    # without CAP_CHOWN changes nothing — nor, without CAP_DAC_READ_SEARCH, walks into pwuser's 0700
+    # profile directories to find a root-owned file left inside. The privilege is this exec's, for
+    # this one command; the computer's process is untouched by it (measured 2026-09-26, compose
+    # 5.1.1: the hook ran with every capability, the service's own process with CapBnd 0).
     post_start:
       - command:
           ["chown", "-R", "--from=root", "pwuser:pwuser", "/profiles", "/workspace"]
         user: root
+        privileged: true
     # Docker's default /dev/shm is 64MB, which Chromium exhausts on ordinary pages. The launch args
     # pass --disable-dev-shm-usage so it writes to /tmp instead and survives; this makes the shared
     # memory real, so it does not have to.
@@ -543,3 +574,24 @@ volumes:
   postgres-data:
   agent-workspace:
   agent-profiles:
+
+networks:
+  # Every service but the computer, as it always was.
+  default: {}
+  # THE BROWSER'S OWN NETWORK, SO THE HOST CAN FIREWALL IT BY NAME. The bridge is named rather than
+  # `br-<id>` so the host's rules — installed by the fleet tool before this file first comes up
+  # (laf-control core/host-firewall.ts; docs/laf/deploying.md, the host firewall) — can match it
+  # across a `down`, a recreate and a reboot: they refuse every NEW connection coming in from it to
+  # 169.254.0.0/16, the private and reserved ranges and the host itself (INPUT, which a rule in
+  # DOCKER-USER never sees — the host's Postgres port, its gateway address), let the server through
+  # to :4100, and nothing else across the bridge. The replies to the server's calls are not NEW and
+  # pass. No fixed subnet: the rules key on the interface, and a fixed range is one more thing two
+  # stacks on one machine would fight over.
+  #
+  # COMPUTER_BRIDGE is for a machine running two stacks — two worktrees on one laptop — where the
+  # second `up` would otherwise find the name taken. Fifteen characters at most (Linux's limit on an
+  # interface name). A VM runs one stack and never sets it: the host's rules name `laf-browser`.
+  browser:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ${COMPUTER_BRIDGE:-laf-browser}

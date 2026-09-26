@@ -250,6 +250,8 @@ beforeAll(async () => {
       // The fixture is served on 127.0.0.1 and localhost, which the navigation guard refuses without
       // this — the same opt-in a laptop deployment sets to browse its own services.
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
+      // A laptop has no host to hold the browser's egress rules (egress-guard.ts).
+      AGENT_COMPUTER_EGRESS_FIREWALL: "off",
     },
     stdout: "pipe",
     stderr: "pipe",

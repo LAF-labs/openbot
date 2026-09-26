@@ -90,6 +90,9 @@ jobs:
             echo "MANAGED_AGENT_AG_UI_URL=http://localhost:$BOT_PORT/ag-ui"
             echo "KEY_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)"
             echo "COMPUTER_TOKEN=$COMPUTER_TOKEN"
+            # A runner has no fleet to lay the browser's egress rules on its host (docs/laf/deploying.md,
+            # the host firewall), so the computer's check for them is off here, as on a laptop.
+            echo "AGENT_COMPUTER_EGRESS_FIREWALL=off"
             echo "OPENAI_API_KEY=$OPENAI_API_KEY"
             [ -n "$OPENAI_BASE_URL" ] && echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"
             [ -n "$BOT_MODEL" ] && echo "BOT_MODEL=$BOT_MODEL"

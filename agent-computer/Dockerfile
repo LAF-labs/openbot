@@ -59,7 +59,7 @@ RUN bun install --frozen-lockfile --filter=agent-computer
 # before; Latin text keeps its own face).
 RUN apt-get update \
   && cd agent-computer && bun node_modules/playwright/cli.js install-deps chromium && cd .. \
-  && apt-get install -y --no-install-recommends ca-certificates fonts-nanum=20200506-1 iptables=1.8.10-3ubuntu2 \
+  && apt-get install -y --no-install-recommends ca-certificates fonts-nanum=20200506-1 \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 1001 pwuser \
   && useradd --uid 1001 --gid 1001 --groups users --create-home --shell /bin/bash pwuser \
@@ -79,7 +79,6 @@ COPY --from=browsers /ms-playwright/chromium_headless_shell-1234 /ms-playwright/
 # the layout is preserved so the import resolves the same in the image and locally.
 COPY shared ./shared
 COPY agent-computer/src ./agent-computer/src
-COPY --chmod=755 agent-computer/egress-firewall.sh /usr/local/bin/egress-firewall
 
 # Durable working directory. Bot-produced files that must survive replacement live here.
 #
@@ -111,10 +110,14 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=1s -
 # Without it the browser does not start at all ("No usable sandbox!"), which is the honest failure:
 # a deployment that loses the profile finds out on its first page, not after a renderer is owned.
 #
-# STILL NOT ROOT, BUT ROOT FIRST, FOR ONE SCRIPT. The egress firewall (security review 2026-09-25 F1)
-# is written in this container's network namespace, which takes root and NET_ADMIN; the script then
-# becomes `pwuser` with an empty capability bounding set and no_new_privs before `bun` starts, so the
-# computer and every Chromium process under it run exactly as they did, minus the ability to undo the
-# rules. `agent-computer/tests/sandbox.test.ts` holds both halves.
-ENTRYPOINT ["/usr/local/bin/egress-firewall"]
+# NOT ROOT FROM THE FIRST INSTRUCTION, EITHER. From 2026-09-25 to 2026-09-26 the entrypoint started as
+# root with NET_ADMIN to write the egress firewall (security review 2026-09-25 F1) into this
+# container's network namespace, then dropped to `pwuser`. The firewall is the host's now — rules on
+# the `laf-browser` bridge the fleet tool installs, which nothing in here can reach — so nothing here
+# needs root at all: the process starts as `pwuser`, and docker-compose.yml takes every capability
+# away (`cap_drop: [ALL]`) and sets no_new_privs, which is what the old `setpriv` line did. The one
+# thing that still runs as root is compose's `post_start` hand-over of the volumes, in an exec of its
+# own. `src/egress-guard.ts` asks the network whether the host rules are there before any browser
+# opens. `agent-computer/tests/sandbox.test.ts` holds all of it.
+USER pwuser
 CMD ["bun", "agent-computer/src/index.ts"]

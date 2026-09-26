@@ -22,15 +22,20 @@ type ComputerService = {
   pids_limit?: number;
   security_opt?: string[];
   cap_add?: string[];
+  cap_drop?: string[];
   user?: string;
-  post_start?: { command?: string[]; user?: string }[];
+  networks?: string[] | Record<string, unknown>;
+  post_start?: { command?: string[]; user?: string; privileged?: boolean }[];
 };
 
-const computer = (
-  parseYaml(read("docker-compose.yml")) as {
-    services: Record<string, ComputerService>;
-  }
-).services["agent-computer"];
+const compose = parseYaml(read("docker-compose.yml")) as {
+  services: Record<string, ComputerService>;
+  networks?: Record<
+    string,
+    { driver?: string; driver_opts?: Record<string, string> } | null
+  >;
+};
+const computer = compose.services["agent-computer"];
 
 describe("the browser's sandbox", () => {
   test("no launch arg turns the sandbox off", () => {
@@ -55,47 +60,47 @@ describe("the browser's sandbox", () => {
     expect(profiles).not.toContain("chromiumSandbox: false");
   });
 
-  test("the image runs as pwuser, and owns both volume roots by it", () => {
+  test("the image runs as pwuser from its first instruction, and owns both volume roots by it", () => {
     const dockerfile = read("agent-computer/Dockerfile");
     /*
-     * Root only for the entrypoint, which writes the egress firewall and then becomes pwuser for
-     * good (security review 2026-09-25 F1). No USER line may come back as root after it either.
+     * No root entrypoint any more: the egress firewall that needed one is the host's since
+     * 2026-09-26 (egress-guard.ts). The image's last USER is pwuser, and nothing installs iptables.
      */
-    expect(dockerfile).toContain(
-      'ENTRYPOINT ["/usr/local/bin/egress-firewall"]',
-    );
+    expect(dockerfile).toMatch(/^USER pwuser$/m);
     expect(dockerfile).not.toMatch(/^USER\s+root/m);
+    expect(dockerfile).not.toContain("ENTRYPOINT");
+    expect(dockerfile).not.toMatch(/iptables=/);
     expect(dockerfile).toContain("chown pwuser:pwuser /workspace /profiles");
-    const script = read("agent-computer/egress-firewall.sh");
-    const drop = script.slice(script.indexOf("drop_to_pwuser() {"));
-    expect(drop).toMatch(
-      /exec setpriv --reuid=pwuser --regid=pwuser --init-groups\s*\\\s*--inh-caps=-all --bounding-set=-all --no-new-privs/,
-    );
-    // Every way out of the script runs the computer through that drop, never as root.
-    expect(script.trimEnd().endsWith('drop_to_pwuser "$@"')).toBe(true);
+    expect(() => read("agent-computer/egress-firewall.sh")).toThrow();
   });
 
-  test("the firewall refuses the metadata endpoint, the private ranges and the host", () => {
-    const script = read("agent-computer/egress-firewall.sh");
-    expect(script).toContain('ALWAYS4="169.254.0.0/16"');
-    for (const range of [
-      "10.0.0.0/8",
-      "172.16.0.0/12",
-      "192.168.0.0/16",
-      "127.0.0.0/8",
-      "100.64.0.0/10",
-      "0.0.0.0/8",
-      "fc00::/7",
-      "::ffff:0:0/96",
-    ]) {
-      expect([range, script.includes(range)]).toEqual([range, true]);
-    }
-    // Replies to the server's own calls, and this container's loopback, stay open.
-    expect(script).toContain("--ctstate ESTABLISHED,RELATED -j RETURN");
-    expect(script).toContain("-o lo -j RETURN");
-    // Fails closed.
-    expect(script).toContain("egress_firewall_failed");
-    expect(computer?.cap_add).toEqual(["NET_ADMIN"]);
+  test("the container holds no capability, and sits alone on the bridge the host firewalls", () => {
+    /*
+     * Security package item 6 (2026-09-26): no NET_ADMIN — the rules are the host's, keyed on the
+     * `laf-browser` bridge (laf-control core/host-firewall.ts) — and no default capability either.
+     */
+    expect(computer?.cap_add).toBeUndefined();
+    expect(computer?.cap_drop).toEqual(["ALL"]);
+    expect(computer?.networks).toEqual(["browser"]);
+    expect(compose.networks?.browser?.driver_opts).toEqual({
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: compose's own interpolation, read as written.
+      "com.docker.network.bridge.name": "${COMPUTER_BRIDGE:-laf-browser}",
+    });
+    // The server is the one other thing on that bridge, because it is the one thing that calls :4100.
+    const server = compose.services.server as ComputerService;
+    expect(Object.keys((server.networks ?? {}) as object).sort()).toEqual([
+      "browser",
+      "default",
+    ]);
+  });
+
+  test("before a browser opens, the computer asks the network whether the host is refusing", () => {
+    const guard = read("agent-computer/src/egress-guard.ts");
+    expect(guard).toContain('host: "169.254.169.254"');
+    expect(guard).toContain('EGRESS_UNGUARDED = "laf:egress_unguarded"');
+    expect(read("agent-computer/src/index.ts")).toContain(
+      "beforeBrowser: () => egress.ensureGuarded()",
+    );
   });
 
   test("compose does not put the process back on root", () => {
@@ -103,9 +108,10 @@ describe("the browser's sandbox", () => {
     expect(computer?.user).toBeUndefined();
   });
 
-  test("compose hands the container Playwright's seccomp profile and a pid ceiling", () => {
+  test("compose hands the container Playwright's seccomp profile, no new privileges and a pid ceiling", () => {
     expect(computer?.security_opt).toEqual([
       "seccomp=./agent-computer/seccomp_profile.json",
+      "no-new-privileges:true",
     ]);
     expect(computer?.pids_limit).toBe(1024);
   });
@@ -128,6 +134,8 @@ describe("the browser's sandbox", () => {
           "/workspace",
         ],
         user: "root",
+        // The container holds no capability, so root in this one exec needs it given back.
+        privileged: true,
       },
     ]);
   });
@@ -147,6 +155,29 @@ describe("the browser's sandbox", () => {
     for (const syscall of ["clone", "unshare", "setns"]) {
       expect([syscall, allowed.has(syscall)]).toEqual([syscall, true]);
     }
+  });
+
+  test("chroot is allowed without a capability to gate it on, because the container holds none", () => {
+    /*
+     * Chromium's zygote chroots into /proc/self/fdinfo inside the user namespace it just made. A rule
+     * gated on CAP_SYS_CHROOT is compiled in only when the CONTAINER holds that capability, and with
+     * `cap_drop: [ALL]` it holds none — measured on the lima drill (2026-09-26, Docker 29.8.1): the
+     * sandbox died with `Check failed: sys_chroot("/proc/self/fdinfo/") == 0` and every browser
+     * failed to start, while the same image with Docker's default capabilities read naver.com. The
+     * entrypoint this replaced dropped them inside the process, after the filter was built.
+     */
+    const profile = JSON.parse(read("agent-computer/seccomp_profile.json")) as {
+      syscalls: {
+        names: string[];
+        action: string;
+        includes?: { caps?: string[] };
+      }[];
+    };
+    const chroot = profile.syscalls.filter(
+      (rule) =>
+        rule.names.includes("chroot") && rule.action === "SCMP_ACT_ALLOW",
+    );
+    expect(chroot.some((rule) => !rule.includes?.caps?.length)).toBe(true);
   });
 
   test("the deploy bundle carries the profile at the path compose names", () => {

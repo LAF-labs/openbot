@@ -32,6 +32,8 @@ export const SCREEN_PROBLEM_SAID: Record<string, string> = {
    */
   "laf:navigation_guard_unavailable":
     "The Bot's browser did not start, because its address check could not be set up.",
+  "laf:egress_unguarded":
+    "The Bot's browser did not start, because this machine's security rules for it are not in place.",
   "laf:browser_failed": "The Bot's browser did not respond.",
   "laf:computer_token_refused":
     "The Bot's computer did not accept this server's connection.",

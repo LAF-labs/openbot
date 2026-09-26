@@ -300,6 +300,8 @@ export const COMPUTER_ANSWERS = {
   // The computer could not: its browser, its disk, a caller that left, its door refusing this server.
   "laf:browser_failed": ComputerUnavailableError,
   "laf:navigation_guard_unavailable": ComputerUnavailableError,
+  // The machine is not holding the browser's egress firewall, so no browser was opened (item 6).
+  "laf:egress_unguarded": ComputerUnavailableError,
   "laf:file_failed": ComputerUnavailableError,
   "laf:stopped": ComputerUnavailableError,
   "laf:computer_token_refused": ComputerUnavailableError,

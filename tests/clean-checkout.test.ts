@@ -94,7 +94,11 @@ describe("a clone that has only run bun install", () => {
       .filter((line) => line && !line.startsWith("#"));
 
     expect(active.length).toBeGreaterThan(0);
-    for (const name of ["AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS"]) {
+    for (const name of [
+      "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS",
+      // Off, the browser runs on a VM whose host rules never arrived (egress-guard.ts).
+      "AGENT_COMPUTER_EGRESS_FIREWALL",
+    ]) {
       expect(active.some((line) => line.startsWith(`${name}=`))).toBe(false);
       // And still documented, so commenting it out did not delete the knob.
       expect(example).toContain(name);

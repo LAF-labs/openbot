@@ -2738,4 +2738,9 @@ export const ko: Record<string, string> = {
     "지금 서버에 닿지 않아요. 연결이 돌아오면 이 부분도 돌아와요.",
   // notebook forget
   "Press again to forget": "한 번 더 누르면 잊어요",
+  // sec3
+  "The Bot's browser did not start, because this machine's security rules for it are not in place.":
+    "이 기계에 봇 브라우저를 지키는 보안 규칙이 걸려 있지 않아서 브라우저를 열지 않았어요.",
+  "The Bot's browser was kept closed for safety":
+    "안전을 위해 브라우저를 열지 않음",
 };

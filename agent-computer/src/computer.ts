@@ -5,6 +5,7 @@
  * browser or a directory it was not given.
  */
 import type { ComputerConfig } from "./config";
+import type { EgressGuard } from "./egress-guard";
 import type { Profiles } from "./profiles";
 import type { BotSession, Sessions } from "./sessions";
 import type { Workspace } from "./workspace";
@@ -16,6 +17,8 @@ export type Computer = {
   /** The Bot's durable files. See workspace.ts. */
   workspace: Workspace;
   sessions: Sessions;
+  /** Whether the host is holding the browser's egress firewall. See egress-guard.ts. */
+  egress: EgressGuard;
 };
 
 /** A request that has passed the token and named a Bot this process will treat as a name. */

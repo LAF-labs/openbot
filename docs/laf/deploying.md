@@ -215,25 +215,38 @@ The symptom of getting this wrong is not an error. Caddy retries an ACME
 challenge that cannot complete, so the container comes up and the site never
 answers, which looks like a server that is still starting.
 
-**The other direction is not the host's job, and is in the image.** What the
-Bot's browser may reach *outward* is decided inside the `agent-computer`
-container (`agent-computer/egress-firewall.sh`, security review 2026-09-25 F1):
-its entrypoint writes iptables rules into the container's own network namespace
-that REJECT 169.254.0.0/16 (the metadata endpoint on OCI, AWS and GCP alike),
-RFC 1918, CGNAT, loopback-to-host and the reserved ranges, keeps the replies to
-the server's own calls and the container's resolver open, and then runs the
-computer as `pwuser` with no capabilities left. That is why compose gives the
-service `cap_add: [NET_ADMIN]`; without it the container refuses to start
-(`egress_firewall_failed`). The navigation guard resolves every name before a
-page is opened, but Chromium resolves it again to send the request, and an image
-or a `fetch()` is never paused at all — the firewall is what holds for those.
-Measured on the rebuilt image: from inside, the host's Postgres port and
-169.254.169.254 answer `ECONNREFUSED` in under 5 ms, www.naver.com connects.
-`AGENT_COMPUTER_EGRESS_FIREWALL=off` exists for a runtime that cannot grant the
-capability and is logged at every start; a proxy in `EGRESS_PROXY_DEFAULT` is
-let through by address and port. The VM's metadata service should also refuse
-tokenless requests (IMDSv2 on AWS, legacy endpoints off on OCI) — that is set at
-launch by the fleet tool, not here.
+**The other direction is the host's job too, since 2026-09-26.** What the Bot's
+browser may reach *outward* is decided on the host, not in the container
+(security review 2026-09-25 F1; security package item 6). `agent-computer` sits
+alone on the compose network `browser`, whose bridge is named `laf-browser`, and
+holds no capability at all (`cap_drop: [ALL]`, no new privileges). The fleet
+tool installs `/usr/local/sbin/laf-browser-firewall` and a systemd unit ordered
+after, and part of, `docker.service` (laf-control `core/host-firewall.ts`) at
+provision, spare prepare, claim and every upgrade — before compose comes up.
+It rejects, with ICMP "administratively prohibited", every NEW connection coming
+in from that bridge to 169.254.0.0/16 (the metadata endpoint on OCI, AWS and GCP
+alike), RFC 1918, CGNAT, loopback and the reserved ranges (in `DOCKER-USER`), to
+the host itself (in `INPUT`, which `DOCKER-USER` never sees — the host's Postgres
+port, its gateway address), and across the bridge to anything but the
+computer's :4100. DNS to the VM's resolvers on port 53 and the deployment's
+`EGRESS_PROXY_DEFAULT` stay open. It loads `br_netfilter`, because Docker 29 no
+longer does and bridge-local traffic otherwise never meets iptables.
+
+The computer does not take the rules on trust. Before it opens a browser, and
+every minute, it connects to 169.254.169.254:80, an unused RFC 1918 address and
+its own gateway, and counts itself guarded only when every one answers with the
+rule's signature: refused within a second, with an ICMP destination-unreachable
+arriving for it (`agent-computer/src/egress-guard.ts`). The count is the
+kernel's, in the container's own `/proc/net/snmp`, because Bun reports the
+rule's refusal as `ECONNREFUSED`, the same as a closed port. A connection, a
+timeout or a closed port's refusal is not a firewall. Unguarded, it still
+answers `/health` (`egress: "unguarded"`) and every call, and refuses to browse
+with `laf:egress_unguarded`, closing a browser already open. So an old VM whose
+host rules never arrived fails closed instead of quietly reaching the metadata
+endpoint. `AGENT_COMPUTER_EGRESS_FIREWALL=off` is a laptop's way past it (Docker
+Desktop has no host to hold the rules) and is logged at every start. The VM's
+metadata service should also refuse tokenless requests (IMDSv2 on AWS, legacy
+endpoints off on OCI) — that is set at launch by the fleet tool, not here.
 
 ## Images: CI bakes, deployments pull
 

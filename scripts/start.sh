@@ -33,6 +33,9 @@ BOT_PORT="$(setting BOT_PORT 4200)"
 export APP_PORT SERVER_PORT
 # The computer refuses to start without a token, and compose does not supply one on its own.
 COMPUTER_TOKEN="$(setting COMPUTER_TOKEN laf-dev-computer-token)"
+# And it refuses to browse where the host is not holding its egress rules, which a laptop never is
+# (docs/laf/deploying.md, the host firewall). `on` here is for a Linux box that has them.
+AGENT_COMPUTER_EGRESS_FIREWALL="$(setting AGENT_COMPUTER_EGRESS_FIREWALL off)"
 
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
 red()   { printf '\033[31m%s\033[0m\n' "$1"; }
@@ -83,7 +86,7 @@ for svc_port in "agent-computer:$COMPUTER_PORT" "agent-bot:$BOT_PORT" ; do
   fi
 done
 
-export COMPUTER_TOKEN COMPUTER_PORT BOT_PORT
+export COMPUTER_TOKEN COMPUTER_PORT BOT_PORT AGENT_COMPUTER_EGRESS_FIREWALL
 docker compose up -d --build "${SERVICES[@]}" >/dev/null
 if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."

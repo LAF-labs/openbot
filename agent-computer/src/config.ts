@@ -13,6 +13,8 @@ export type ComputerConfig = {
   navigationTimeoutMs: number;
   actionTimeoutMs: number;
   allowPrivateHosts: boolean;
+  /** See {@link readConfig}: false only where the deployment said `off`. */
+  egressFirewall: boolean;
   profilesDir: string;
   workspaceDir: string;
 };
@@ -63,6 +65,16 @@ export function readConfig(
      */
     allowPrivateHosts:
       environment.AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS?.trim() === "true",
+    /**
+     * Whether a browser waits for the host's egress rules (egress-guard.ts).
+     *
+     * On unless it says `off`, which is the laptop's way past it: Docker Desktop has no host to put
+     * the rules on. The variable kept its name from when it switched the container's own firewall,
+     * so a laptop's `.env` means the same thing it always did.
+     */
+    egressFirewall:
+      environment.AGENT_COMPUTER_EGRESS_FIREWALL?.trim().toLowerCase() !==
+      "off",
     profilesDir: environment.PROFILES_DIR ?? "/profiles",
     workspaceDir: environment.WORKSPACE_DIR ?? "/workspace",
   };

@@ -132,8 +132,8 @@ export function checkNavigationTarget(
  * a moment later, and a zone answering 1.2.3.4 to this lookup and 169.254.169.254 to that one
  * defeats any check made here. That half is answered twice more: the guard checks the address the
  * browser actually connected to on every document response (`navigation-guard.ts`), and the
- * container's own firewall refuses private and metadata destinations to every request, subresources
- * included (`agent-computer/egress-firewall.sh`).
+ * host's firewall refuses private and metadata destinations to every request, subresources
+ * included (the host's rules on the `laf-browser` bridge, checked by `agent-computer/src/egress-guard.ts`).
  *
  * A literal address is not resolved — {@link checkNavigationTarget} already judged it — and nor is
  * anything under the private-host opt-in, which exists for a laptop browsing its own services.

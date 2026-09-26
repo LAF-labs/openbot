@@ -20,13 +20,22 @@ import { forgetSecretFields } from "./secret-fields";
  * Named, and a name — a health check is not a way to ask about `../..` either, and an unnameable
  * Bot is simply not reported on rather than refused.
  */
-export function health(asked: string | null, { profiles }: Computer): Response {
+export function health(
+  asked: string | null,
+  { profiles, egress }: Computer,
+): Response {
   const [profile] = isBotId(asked) ? profiles.summary([asked]) : [];
   return json({
     status: "ok",
     // `browser` kept as it was: it is in the published contract and start.sh reads it.
     browser: profile?.running ?? false,
     ...(profile ? { profile } : {}),
+    /*
+     * Whether the host is holding the browser's egress firewall (egress-guard.ts). Said here and
+     * still 200: an unguarded computer is up, answers every call and refuses only to browse, and
+     * the server can only say why if it can still reach the process that knows.
+     */
+    egress: egress.state(),
     /*
      * NO `identity` FIELD. It reported what the local SPIRE agent said this computer was, and
      * SPIRE went with the per-Bot container plane in 2026-08. Nothing has set
