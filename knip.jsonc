@@ -52,6 +52,9 @@
     "server": {
       "entry": [
         "src/index.ts",
+        // A worker is loaded from a file at run time, not imported; built as the bundle's second
+        // entry (server/Dockerfile).
+        "src/attachments/pdf-worker.ts",
         "scripts/*.ts",
         "drizzle.config.ts",
         "tests/**/*.test.ts",
