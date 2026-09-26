@@ -357,7 +357,11 @@ describe("a routine taken back while its run is out", () => {
 
     expect(bot.asked()).toBe(1);
     const [receipt] = await service.runs(PERSON, second.id);
-    expect(receipt).toMatchObject({ ok: false, error: "laf:run_stopped" });
+    // Its own fact: nobody pressed 모두 멈추기, and the Routines page must not say they did.
+    expect(receipt).toMatchObject({
+      ok: false,
+      error: "laf:run_switched_off",
+    });
     const ran = rows.find(
       (row) => row.eventType === "routine.ran" && row.targetId === second.id,
     );
@@ -382,10 +386,18 @@ describe("a routine taken back while its run is out", () => {
 
     expect(bot.aborted()).toBe(1);
     const [receipt] = await service.runs(PERSON, routine.id);
-    expect(receipt).toMatchObject({ ok: false, error: "laf:run_stopped" });
-    expect(
-      rows.find((row) => row.eventType === "routine.ran")?.payload,
-    ).toMatchObject({ ok: false, stopped: true });
+    expect(receipt).toMatchObject({
+      ok: false,
+      error: "laf:run_switched_off",
+    });
+    const ran = rows.find((row) => row.eventType === "routine.ran");
+    expect(ran?.payload).toMatchObject({
+      ok: false,
+      stopped: true,
+      withdrawn: "off",
+    });
+    expect(ran?.payload).not.toHaveProperty("failure");
+    expect(await notificationsFrom(rows)).toEqual([]);
   });
 
   test("Run now on a routine that is switched off still runs it: a person pressed the button", async () => {
@@ -402,4 +414,3 @@ describe("a routine taken back while its run is out", () => {
     expect(delivered).toEqual(["공급처에 발주 넣었어요."]);
   });
 });
-

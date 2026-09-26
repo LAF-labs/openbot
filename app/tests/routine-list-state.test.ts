@@ -3,6 +3,7 @@ import { ko } from "../src/lib/i18n-ko";
 import type { Reading } from "../src/lib/reading";
 import {
   AWAITING_APPROVAL,
+  RUN_SWITCHED_OFF,
   routineListView,
   runOutcome,
 } from "../src/lib/routines/list-state";
@@ -159,6 +160,16 @@ describe("a run's row", () => {
       tone: "stopped",
       text: "It was stopped with Stop everything.",
     });
+  });
+
+  test("a run whose routine was switched off says so, not that somebody pressed Stop everything", () => {
+    const off = runOutcome(run({ error: RUN_SWITCHED_OFF }));
+    expect(off).toEqual({
+      label: "Stopped",
+      tone: "stopped",
+      text: "The routine was switched off before this run finished.",
+    });
+    expect(ko[off.text]).toBeTruthy();
   });
 
   test("a failed run says what the failure means, never what the runner wrote", () => {

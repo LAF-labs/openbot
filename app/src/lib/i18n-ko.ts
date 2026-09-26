@@ -2303,6 +2303,9 @@ export const ko: Record<string, string> = {
   "Could not stop: {work}. Try again in a moment.":
     "멈추지 못한 일: {work}. 잠시 뒤에 다시 눌러 주세요.",
   "It was stopped with Stop everything.": "모두 멈추기로 멈췄어요.",
+  // 실행이 끝나기 전에(또는 차례를 기다리는 동안) 루틴을 끈 경우. `lib/routines/list-state.ts`.
+  "The routine was switched off before this run finished.":
+    "이 실행이 끝나기 전에 루틴이 꺼졌어요.",
   // 일의 종류별 한 줄. `lib/work/stop-all.ts`의 WORK_LINES를 `t(변수)`로 읽는다.
   "Conversations: {count}": "대화 {count}개",
   "Routines: {count}": "루틴 {count}개",

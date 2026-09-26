@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
+import { eq } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { ActionActor } from "../computer/gateway";
-import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
 import { log } from "../log";
@@ -154,8 +154,9 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
         agentId: row.agentId,
         // So deleting or switching the routine off reaches this run too (`service.ts`).
         routineId: row.id,
-        stop: async () => {
-          stopping.abort();
+        // The reason rides the abort, so the record can say who stopped it (`askTheBot`).
+        stop: async (withdrawn) => {
+          stopping.abort(withdrawn);
           return true;
         },
       });
@@ -399,16 +400,22 @@ async function askTheBot(
    * threw on its way out. The loop throws its own `RunStopped`, the toolless path its own, and a stop that landed mid-write could surface as anything; the signal is the one
    * witness that a person asked for it.
    */
-  const stopped = (steps: Attempt["steps"]): Attempt => ({
-    ok: false,
-    answer: "",
-    failure: RUN_STOPPED,
-    steps,
-    awaiting: null,
-    // Kept so the trail can say its writes were discarded, exactly as a failed run's are.
-    notepad,
-    stopped: true,
-  });
+  const stopped = (steps: Attempt["steps"]): Attempt => {
+    // Its routine taken back — deleted or switched off — rather than a person's stop, when the
+    // abort says so (`service.ts` passes the reason; `모두 멈추기` passes none).
+    const reason: unknown = signal.reason;
+    return {
+      ok: false,
+      answer: "",
+      failure: RUN_STOPPED,
+      steps,
+      awaiting: null,
+      // Kept so the trail can say its writes were discarded, exactly as a failed run's are.
+      notepad,
+      stopped: true,
+      ...(reason === "gone" || reason === "off" ? { withdrawn: reason } : {}),
+    };
+  };
   if (signal.aborted) return stopped(null);
   try {
     // Deleted or switched off while it waited its turn: stopped, and the Bot is asked nothing.

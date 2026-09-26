@@ -10,7 +10,7 @@ import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
 import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
-import type { WorkInFlight } from "../runner/in-flight";
+import type { Withdrawn, WorkInFlight } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
 import type { UnattendedToolkit } from "../runner/unattended";
 import type { DeliverRoutineAnswer, DeliverRoutineFailure } from "./deliver";
@@ -187,9 +187,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
    * the way `모두 멈추기` stops it, so a routine somebody deleted mid-run does not go on clicking for
    * the rest of its ten minutes. Its record says `stopped`, with why (`settlement.ts`).
    */
-  const takeBack = async (routineId: string) => {
+  const takeBack = async (routineId: string, withdrawn: Withdrawn) => {
     for (const entry of options.work?.ofRoutine(routineId) ?? []) {
-      await entry.stop().catch(() => false);
+      await entry.stop(withdrawn).catch(() => false);
     }
   };
   const ticker = createRoutineTicker({
@@ -222,7 +222,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
     async setEnabled(actor: AgentActor, id: string, enabled: boolean) {
       const routine = await setRoutineEnabled(store, actor, id, enabled);
-      if (!enabled) await takeBack(id);
+      if (!enabled) await takeBack(id, "off");
       return routine;
     },
 
@@ -247,7 +247,7 @@ export function createRoutineService(options: RoutineServiceOptions) {
 
     async remove(actor: AgentActor, id: string) {
       await removeRoutine(store, actor, id);
-      await takeBack(id);
+      await takeBack(id, "gone");
     },
 
     /** What the routine noted for its next run. Scoped like its runs: a note is the routine's work. */

@@ -12,6 +12,7 @@ import {
   routineFailureSignature,
   routineScope,
 } from "../notifications/failure-groups";
+import type { Withdrawn } from "../runner/in-flight";
 import type { RunLedger } from "../runner/run-ledger";
 import type { Executor } from "../runner/thread-store";
 import {
@@ -93,23 +94,33 @@ export type RunToSettle = {
    */
   stopped?: boolean;
   /**
-   * The routine was taken back before the Bot was asked: deleted (`gone`) or switched off (`off`)
-   * while the run waited its turn (`run.ts`). A stop, with the reason the trail keeps.
+   * The routine was taken back under the run: deleted (`gone`) or switched off (`off`) while the run
+   * waited its turn or while its Bot was working (`run.ts`, `service.ts`). A stop, with the reason
+   * the trail keeps.
    */
   withdrawn?: Withdrawn;
   /** The run stopped for a question only a person can answer. A fact beside the answer. */
   awaiting?: AwaitingCode | null;
 };
 
-/** Why a run stopped without a person pressing stop: its routine went, or was switched off. */
-export type Withdrawn = "gone" | "off";
+/**
+ * What the receipt of a run whose routine was switched off under it says where a failure's reason
+ * would be. Its own fact, beside `laf:run_stopped`: the Routines page said "모두 멈추기로 멈췄어요"
+ * about every stop, and nobody pressed that. (A routine that is gone has no receipt to say it on.)
+ * `laf:run_…`, like the stop, and not `laf:routine_…`: that prefix is the routes' refusals, which the
+ * surface keeps a refusal sentence for (`app/tests/routines-copy.test.ts`).
+ */
+export const RUN_SWITCHED_OFF = "laf:run_switched_off";
 
 /** What the record came to, and the announcements it earned — to be made by the caller. */
 export type Settlement = {
   /** Whether the run is reported as having succeeded; false too when its record rolled back. */
   ok: boolean;
   failure: string;
-  /** A person stopped the run, and its record says so. False when the record rolled back. */
+  /**
+   * The run was stopped — by a person, or by its routine being taken back (`withdrawn`) — and its
+   * record says so. False when the record rolled back.
+   */
   stopped: boolean;
   /** Its routine was deleted or switched off under it. Null for every other run. */
   withdrawn: Withdrawn | null;
@@ -280,7 +291,11 @@ async function writeRecord(
     finishedAt: options.now(),
     ok: run.ok,
     answer: run.ok ? run.answer : null,
-    error: run.ok ? null : run.failure,
+    error: run.ok
+      ? null
+      : run.withdrawn === "off"
+        ? RUN_SWITCHED_OFF
+        : run.failure,
     awaiting: run.ok ? (run.awaiting ?? null) : null,
     steps: run.steps,
   });

@@ -58,6 +58,13 @@ export function routineListView(
  */
 export const AWAITING_APPROVAL = "laf:awaiting_approval";
 
+/**
+ * A run whose routine was switched off under it — waiting its turn, or already going — as its receipt
+ * records it (`server/src/routines/settlement.ts`, `RUN_SWITCHED_OFF`). A stop, and not one
+ * anybody made with 모두 멈추기.
+ */
+export const RUN_SWITCHED_OFF = "laf:run_switched_off";
+
 /** How one run ended, as its row in the history says it. */
 export type RunOutcome = {
   label: string;
@@ -94,6 +101,13 @@ export function runOutcome(run: RoutineRun): RunOutcome {
   }
   if (run.ok) {
     return { label: t("Ran"), tone: "done", text: run.answer ?? "" };
+  }
+  if (run.error === RUN_SWITCHED_OFF) {
+    return {
+      label: t("Stopped"),
+      tone: "stopped",
+      text: t("The routine was switched off before this run finished."),
+    };
   }
   if (run.error === RUN_STOPPED) {
     return {

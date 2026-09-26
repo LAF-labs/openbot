@@ -23,6 +23,12 @@ export const WORK_KINDS = ["chat", "routine"] as const;
 
 export type WorkKind = (typeof WORK_KINDS)[number];
 
+/**
+ * Why a routine's run is stopped when no person pressed stop: its routine was deleted (`gone`) or
+ * switched off (`off`) under it (`routines/service.ts`). Its record says which, not "모두 멈추기".
+ */
+export type Withdrawn = "gone" | "off";
+
 export type Work = {
   kind: WorkKind;
   /** The person it is being done for: whose conversation or routine it is. */
@@ -35,9 +41,10 @@ export type Work = {
   routineId?: string;
   /**
    * Stop it. Resolves whether it was stopped. Never expected to throw — a stop that cannot reach
-   * what it stops says false — but the reader catches anyway.
+   * what it stops says false — but the reader catches anyway. `withdrawn` says the stop is its
+   * routine being taken back rather than a person's; only a routine's run reads it.
    */
-  stop: () => Promise<boolean>;
+  stop: (withdrawn?: Withdrawn) => Promise<boolean>;
 };
 
 export type WorkInFlight = {
