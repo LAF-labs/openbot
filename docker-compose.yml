@@ -217,6 +217,8 @@ services:
       COMPACTION_THRESHOLD_TOKENS: ${COMPACTION_THRESHOLD_TOKENS:-}
       # A new epoch on a summary at the owner's local day boundary; on unless it says `off`.
       DAY_EPOCHS: ${DAY_EPOCHS:-}
+      # A chat turn runs on the server and windows only watch; on unless it says `off`.
+      SERVER_TURNS: ${SERVER_TURNS:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
       # Whether the model sees photos the owner attaches (tenant/laf/model.yaml `supports_images`).
       BOT_MODEL_IMAGES: ${BOT_MODEL_IMAGES:-}

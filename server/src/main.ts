@@ -84,6 +84,7 @@ import {
 } from "./attachments/converter-client";
 import { createAttachmentService } from "./attachments/service";
 import { messagesFor } from "./runner/thread-store";
+import { recordActivity } from "./channels/activity";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
@@ -126,6 +127,11 @@ import { createRunLedger } from "./runner/run-ledger";
 import { createStopAll } from "./runner/stop-all";
 import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
+import { createChatTools } from "./turns/chat-tools";
+import { createTurnEngine } from "./turns/engine";
+import { createTurnHub } from "./turns/hub";
+import { createPersonAnswers } from "./turns/people";
+import { createTurnRoutes } from "./turns/routes";
 import { createWorkingReader } from "./runner/working";
 import { createServerModelCalls } from "./server-model-calls";
 import { createAnswerRatingStore } from "./support/answer-ratings";
@@ -806,6 +812,52 @@ void reportInterruptedRuns({
   markRoutine: markRoutineFailure,
 });
 
+/*
+ * THE SERVER OWNS THE TURN (`turns/engine.ts`). A chat turn runs here, on the loop and the Bot lane
+ * a routine runs on, with the Bot's tools carried out here; a window hands over what the person
+ * said and then only watches. `SERVER_TURNS=off` leaves all of it unbuilt and the doors unmounted,
+ * and the app drives turns from the window as it did before (`deployment.serverTurns`).
+ */
+const turnHub = createTurnHub();
+const personAnswers = createPersonAnswers();
+const chatTools = createChatTools({
+  ...(computerGateway ? { gateway: computerGateway } : {}),
+  pluginStore,
+  approvals,
+  people: personAnswers,
+  agents: agentProfileStore,
+  memories: agentMemoryStore,
+  allowPrivateHosts: config.computer?.allowPrivateHosts ?? false,
+  routines: routineService,
+  whereabouts: whereaboutsStore,
+  components: componentStore,
+  auditStore: bootAuditStore,
+});
+const turnEngine = config.harness.serverTurns
+  ? createTurnEngine({
+      database,
+      ledger: runLedger,
+      hub: turnHub,
+      lane: botLane,
+      work: workInFlight,
+      resolveAgents: resolveAgentsFor,
+      tools: (context, declared) =>
+        chatTools(context, declared, {
+          effort: tenantPackage.model.supportsEffort,
+        }),
+      // An account the list no longer admits acts on nothing, a turn nobody watches included.
+      admits: (userId) => admission.admitsPerson(userId),
+      // The Bot's answer on the roster, every open tab, and a notice for a person with no tab.
+      announce: ({ owner, channelId, agentId, text }) =>
+        recordActivity(database, announceFinished, owner, channelId, {
+          agentId,
+          text,
+          at: new Date(),
+        }),
+      awaiting: (threadId) => personAnswers.awaiting(threadId),
+    })
+  : undefined;
+
 /** The runtime's thread routes, each reading the thread it answers for first. See thread-priming.ts. */
 const copilotEndpoint = primeThreadRoutes({
   runner: lafRunner,
@@ -985,6 +1037,17 @@ const app = createApp(
   builtInSkills,
   // Files the owner hands their Bot: the composer's two doors, and whether photos are offered.
   attachmentService,
+  // A turn the server owns: its doors, and `deployment.serverTurns` for the app to choose by.
+  turnEngine
+    ? (requireUser) =>
+        createTurnRoutes({
+          database,
+          engine: turnEngine,
+          hub: turnHub,
+          people: personAnswers,
+          requireUser,
+        })
+    : undefined,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

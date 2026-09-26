@@ -101,6 +101,8 @@ export const ENVIRONMENT = {
   COMPACTION: "compose",
   COMPACTION_THRESHOLD_TOKENS: "compose",
   DAY_EPOCHS: "compose",
+  // Whether a chat turn runs on the server, with windows only watching (`turns/engine.ts`).
+  SERVER_TURNS: "compose",
   // A laptop's way to turn the owner's day without waiting for midnight; refused in production.
   LAF_CLOCK_OFFSET_MS: "development",
   BOT_TIME_ZONE: "compose",
@@ -242,6 +244,13 @@ export type DeploymentConfig = {
      * message starts a new epoch on a summary of the days before (`context/day-close.ts`).
      */
     dayEpochs: boolean;
+    /**
+     * `SERVER_TURNS` (on unless it says `off`): a chat turn runs on the server and every window of
+     * the conversation only watches it (`turns/engine.ts`), so a task goes on with the laptop shut.
+     * `off` is the path before it — the window drives the turn through CopilotKit — kept until the
+     * new one has been proven on real deployments.
+     */
+    serverTurns: boolean;
     /**
      * `LAF_CLOCK_OFFSET_MS`: moves the clock the conversation store dates runs by, so a day can be
      * turned on a laptop without waiting for midnight. Refused in production; zero everywhere else
@@ -1118,6 +1127,10 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
   if (days !== undefined && days !== "on" && days !== "off") {
     throw new Error("DAY_EPOCHS must be on or off (unset is on)");
   }
+  const turns = optional(environment, "SERVER_TURNS")?.toLowerCase();
+  if (turns !== undefined && turns !== "on" && turns !== "off") {
+    throw new Error("SERVER_TURNS must be on or off (unset is on)");
+  }
   const offsetRaw = optional(environment, "LAF_CLOCK_OFFSET_MS");
   const clockOffsetMs = offsetRaw ? Number(offsetRaw) : 0;
   if (!Number.isInteger(clockOffsetMs)) {
@@ -1136,6 +1149,7 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
     compaction: mode,
     compactionThresholdTokens: threshold,
     dayEpochs: days !== "off",
+    serverTurns: turns !== "off",
     clockOffsetMs,
   };
 }

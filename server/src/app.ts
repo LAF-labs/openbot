@@ -422,6 +422,15 @@ export function createApp(
    * attach button — a deployment that cannot keep a file must not offer to take one.
    */
   attachments?: AttachmentService,
+  /**
+   * The doors of a turn the server owns (`turns/routes.ts`). Last, like everything new here.
+   *
+   * Absent — `SERVER_TURNS=off` — leaves them unmounted and `deployment.serverTurns` false, and the
+   * app drives each turn from the window the way it did before.
+   */
+  turnRoutes?: (
+    requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  ) => Hono<{ Variables: AppVariables }>,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -483,6 +492,8 @@ export function createApp(
     // Whether the composer offers to take a file at all, and whether a photo is among what it takes.
     attachments: attachments !== undefined,
     images: attachments?.imagesAccepted === true,
+    // Whether a chat turn runs on the server and the window only watches it (`turns/engine.ts`).
+    serverTurns: turnRoutes !== undefined,
     /*
      * NO `seats` ANY MORE. It told the roster how many Bots fit so it could say "3/5"; since
      * 2026-09-24 a person has one Bot, the number is not a setting, and nothing on the surface
@@ -1170,6 +1181,9 @@ export function createApp(
 
   // `모두 멈추기`, under `/api/me` because it is about the person asking and nobody else.
   if (stopAll) app.route("/api", createStopAllRoutes(stopAll, requireUser));
+
+  // A turn the server owns: hand it over, watch it, stop it, page its history (`turns/routes.ts`).
+  if (turnRoutes) app.route("/api/turns", turnRoutes(requireUser));
 
   // The shop answers' one door, for the first run and Settings alike. See account/shop.ts.
   if (shop) app.route("/api", createShopRoutes(shop, requireUser));
