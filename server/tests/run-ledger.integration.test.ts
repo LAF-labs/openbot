@@ -69,6 +69,7 @@ describeDb("run ledger", () => {
     if (seeded.length > 0) {
       await database.delete(agents).where(inArray(agents.id, seeded));
     }
+    await database.$client.close();
   });
 
   test("a routine with no conversation still opens a run", async () => {

@@ -121,6 +121,7 @@ describeDb("plugin definition consent", () => {
     await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
     await database.delete(agents).where(eq(agents.id, botId));
     await database.delete(users).where(eq(users.id, actorId));
+    await database.$client.close();
   });
 
   test("registration is the consent: the first sync lands approved", async () => {

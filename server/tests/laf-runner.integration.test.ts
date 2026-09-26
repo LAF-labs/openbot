@@ -21,6 +21,7 @@ describeDb("laf runner boot reconciliation", () => {
 
   afterAll(async () => {
     await database.delete(lafThreadRuns).where(eq(lafThreadRuns.runId, runId));
+    await database.$client.close();
   });
 
   test("a run with no ending is adjudicated to unknown at boot", async () => {
