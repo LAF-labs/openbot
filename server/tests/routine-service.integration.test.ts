@@ -753,6 +753,54 @@ describe("a routine on the clock", () => {
     expect(theirs.id).toBeString();
   });
 
+  test("thirty creates at once, one short of the cap, leave exactly the cap", async () => {
+    /*
+     * A pool of its own, wide enough for the creates to be in flight together: the suite's two
+     * connections serialise them into a queue that almost never races. Closed below.
+     */
+    const wide = createDatabase(
+      process.env.DATABASE_URL ??
+        "postgres://openbot:openbot@localhost:5432/openbot",
+      { max: 12 },
+    );
+    try {
+      const service = createRoutineService({
+        database: wide,
+        resolveAgents: async () => ({}),
+        now: () => new Date(),
+      });
+      const make = (name: string) =>
+        service.create(ACTOR, {
+          agentId: BOT_ID,
+          name,
+          instruction: "x",
+          schedule: { kind: "interval", minutes: 10 },
+        });
+      for (let held = 0; held < MAX_ROUTINES - 1; held += 1) {
+        await make(`held ${held}`);
+      }
+      // The count and the insert used to commit apart: every create that counted nineteen before
+      // any of the others committed took the last place.
+      const attempts = await Promise.allSettled(
+        Array.from({ length: 30 }, (_, index) => make(`at once ${index}`)),
+      );
+      const refused = attempts.flatMap((attempt) =>
+        attempt.status === "rejected" ? [attempt.reason] : [],
+      );
+      expect(attempts.length - refused.length).toBe(1);
+      for (const reason of refused) {
+        expect(reason).toMatchObject({ code: "laf:routine_cap_reached" });
+      }
+      const held = await database
+        .select({ id: lafRoutines.id })
+        .from(lafRoutines)
+        .where(eq(lafRoutines.createdById, ACTOR.id));
+      expect(held).toHaveLength(MAX_ROUTINES);
+    } finally {
+      await wide.$client.close();
+    }
+  });
+
   test("run-now fires ahead of the clock and pushes the next firing out", async () => {
     let clock = new Date("2026-08-20T07:00:00Z");
     const { agents } = fakeAgents("early");

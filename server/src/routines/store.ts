@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import {
   actorMayDriveBot,
@@ -278,11 +278,29 @@ async function refuseSomebodyElsesBot(
   }
 }
 
-/** This person's routines, not the deployment's. See MAX_ROUTINES. */
+/**
+ * The advisory-lock class the cap is counted under: two keys, so it can never be the one-key lock
+ * `profile-store.ts` takes on the same person for their one Bot. Beside `thread-store.ts`'s 0x1af7
+ * and `failure-groups.ts`'s 0x1af8.
+ */
+const ROUTINE_CAP_LOCK = 0x1af9;
+
+/**
+ * This person's routines, not the deployment's. See MAX_ROUTINES.
+ *
+ * COUNTED UNDER A LOCK ON THE PERSON. A count and then an insert, each committed on its own, let
+ * every create that counted before any of the others committed see room: thirty creates at once
+ * left twenty-one routines (review 2026-09-26). The lock is the transaction's, released at its
+ * commit, so the next create counts what this one wrote — read-committed takes a fresh snapshot
+ * per statement, and the count is the statement after the lock.
+ */
 async function refuseAtCap(
-  transaction: Pick<Database, "select">,
+  transaction: Pick<Database, "select" | "execute">,
   actor: AgentActor,
 ): Promise<void> {
+  await transaction.execute(
+    sql`select pg_advisory_xact_lock(${ROUTINE_CAP_LOCK}, hashtext(${actor.id}))`,
+  );
   const [held] = await transaction
     .select({ count: count() })
     .from(lafRoutines)
