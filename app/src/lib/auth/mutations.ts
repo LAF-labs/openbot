@@ -1,4 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { forgetAllUnsent } from "@/components/channels/composer/outbox";
+import { forgetKeptDrafts } from "@/lib/build-reload";
 import { authKeys } from "./queries";
 
 async function signOut() {
@@ -14,6 +16,10 @@ async function signOut() {
 export function signOutMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: signOut,
-    onSuccess: () => queryClient.removeQueries({ queryKey: authKeys.all }),
+    onSuccess: () => {
+      forgetAllUnsent();
+      forgetKeptDrafts();
+      queryClient.removeQueries({ queryKey: authKeys.all });
+    },
   });
 }

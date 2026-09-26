@@ -205,6 +205,27 @@ export function useResent(): ReadonlySet<string> {
   );
 }
 
+/**
+ * Signing out forgets every conversation's unsent messages. They would otherwise wait in this
+ * browser past the session and send themselves at the next connection, whoever sits down next.
+ */
+export function forgetAllUnsent(): void {
+  try {
+    const storage = globalThis.localStorage;
+    if (storage) {
+      const mine: string[] = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(KEY_PREFIX)) mine.push(key);
+      }
+      for (const key of mine) storage.removeItem(key);
+    }
+  } catch {
+    // Storage refused: nothing was kept in it.
+  }
+  forgetUnsentCache();
+}
+
 /** Test seam: back to a tab that has kept nothing. Storage is the test's to clear. */
 export function forgetUnsentCache(): void {
   cache.clear();

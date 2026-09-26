@@ -309,3 +309,48 @@ describe("the kept list itself", () => {
     }
   });
 });
+
+describe("signing out", () => {
+  test("forgets every unsent message and every draft kept for a reload, and nothing else", async () => {
+    const outbox = await import("../src/components/channels/composer/outbox");
+    const reloader = await import("../src/lib/build-reload");
+    const { signOutMutationOptions } = await import(
+      "../src/lib/auth/mutations"
+    );
+    const { QueryClient } = await import("@tanstack/react-query");
+    for (const channel of ["channel_a", "channel_b"]) {
+      outbox.keepUnsent(channel, {
+        id: `${channel}-m1`,
+        text: TYPED,
+        instructions: [],
+        at: "2026-09-26T10:00:00.000Z",
+      });
+    }
+    localStorage.setItem("theme", "dark");
+    const tab = new Map<string, string>([
+      ["laf:drafts-kept-through-reload", JSON.stringify({ channel_a: TYPED })],
+    ]);
+    reloader.configureBuildReload({
+      storage: () =>
+        ({
+          getItem: (key: string) => tab.get(key) ?? null,
+          setItem: (key: string, value: string) => tab.set(key, value),
+          removeItem: (key: string) => tab.delete(key),
+        }) as unknown as Storage,
+    });
+
+    const options = signOutMutationOptions(new QueryClient());
+    await options.onSuccess?.(undefined, undefined, undefined, {} as never);
+
+    expect(outbox.readUnsent("channel_a")).toEqual([]);
+    expect(outbox.readUnsent("channel_b")).toEqual([]);
+    expect(
+      Object.keys(localStorage).filter((key) => key.startsWith("laf:unsent:")),
+    ).toEqual([]);
+    expect(tab.has("laf:drafts-kept-through-reload")).toBe(false);
+    expect(reloader.takeKeptDraft("channel_a")).toBeNull();
+    // Not a wipe of the browser: the person's own settings stay.
+    expect(localStorage.getItem("theme")).toBe("dark");
+    reloader.configureBuildReload(null);
+  });
+});
