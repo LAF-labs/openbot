@@ -934,7 +934,8 @@ const app = createApp(
   // When each message was first seen. Read from the snapshot column directly — see message-times.
   createMessageTimeReader(database),
   // What is running for a person right now, from the same ledger chat and routines both write.
-  createWorkingReader(database),
+  // With the turns this process is running, which the ledger's ten minutes cannot see past.
+  createWorkingReader(database, (userId) => turnEngine?.working(userId) ?? []),
   standingApprovals,
   tenantPackage.model.supportsEffort,
   demonstrations,
@@ -979,6 +980,16 @@ const app = createApp(
       // trail its released Bots are written to.
       admission,
       auditStore: bootAuditStore,
+      // A turn or a routine still running for them is stopped, and the turns waited out, first.
+      stopWorkFor: async (userId) => {
+        const routines = workInFlight
+          .of(userId)
+          .filter((work) => work.kind === "routine");
+        await Promise.all([
+          turnEngine?.stopFor(userId),
+          ...routines.map((work) => work.stop().catch(() => false)),
+        ]);
+      },
     }),
     auditStore: bootAuditStore,
   },

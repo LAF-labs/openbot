@@ -26,7 +26,15 @@ export type WorkingRun = {
   startedAt: string;
 };
 
-export function createWorkingReader(database: Database) {
+export function createWorkingReader(
+  database: Database,
+  /**
+   * What this process knows to be running right now: a chat turn the server owns, which is running
+   * however long ago it started. A turn that worked for more than ten minutes read as idle on the
+   * roster while it went on (review M5); the ledger row alone cannot tell a long turn from a dead one.
+   */
+  live?: (userId: string) => WorkingRun[],
+) {
   return async (userId: string): Promise<WorkingRun[]> => {
     const since = new Date(Date.now() - STALE_AFTER_MS);
     const rows = await database
@@ -63,6 +71,12 @@ export function createWorkingReader(database: Database) {
       const seen = byAgent.get(row.agentId);
       if (!seen || entry.startedAt < seen.startedAt) {
         byAgent.set(row.agentId, entry);
+      }
+    }
+    for (const entry of live?.(userId) ?? []) {
+      const seen = byAgent.get(entry.agentId);
+      if (!seen || entry.startedAt < seen.startedAt) {
+        byAgent.set(entry.agentId, entry);
       }
     }
     return [...byAgent.values()];

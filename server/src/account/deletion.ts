@@ -72,6 +72,8 @@ import type {
 import type { ComputerClient } from "../computer/client";
 import { releaseComputerFor } from "../computer/release";
 import type { Database } from "../db/client";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import {
   accounts,
   actionPolicy,
@@ -193,6 +195,13 @@ export type AccountDeletionDependencies = {
    * keeps the profile. Absent in the suites that only count rows; `main.ts` passes the boot store.
    */
   auditStore?: AuditStore;
+  /**
+   * Stop what is running for the person, and wait for it to have stopped, before anything of theirs
+   * is deleted: a chat turn the server owns goes on writing its steps into the conversation for as
+   * long as it runs, and a conversation being deleted must not be written to (review M2). Absent in
+   * the suites that only count rows; `main.ts` passes the turn engine's and the routines'.
+   */
+  stopWorkFor?: (userId: string) => Promise<void>;
 };
 
 /** Nothing to write to: the suites that pass no audit store read the result instead. */
@@ -217,6 +226,7 @@ export function createAccountDeletion(
     fleetNotices,
     sessions: sessionEnds,
     admission,
+    stopWorkFor,
   } = dependencies;
   const releaseBot = releaseComputerFor(
     computerClient,
@@ -245,6 +255,14 @@ export function createAccountDeletion(
           },
         };
       }
+
+      // Nothing of theirs may still be running while it is deleted. A stop that fails is logged
+      // and the deletion goes on: a person's right to leave does not wait on a stuck turn.
+      await stopWorkFor?.(userId).catch((error: unknown) => {
+        log.warn("deletion_work_not_stopped", {
+          reason: describeFailure(error),
+        });
+      });
 
       const ownedBots = await database
         .select({ agentId: agentProfiles.agentId })

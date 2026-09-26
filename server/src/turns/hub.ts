@@ -76,14 +76,22 @@ export function createTurnHub(options: { keepEndedMs?: number } = {}) {
   const epoch = randomUUID();
   const conversations = new Map<string, Conversation>();
   const keepEndedMs = options.keepEndedMs ?? KEEP_ENDED_MS;
+  /*
+   * ONE COUNTER FOR THE PROCESS, NOT ONE PER CONVERSATION. A conversation's log is let go of once
+   * its turn has ended and nobody watches; numbered from zero again when it came back, a phone
+   * returning with `epoch:57` was replayed frames 58 onward of a different turn as though they
+   * followed what it held (review M3). Numbers never run backwards in one process, so a cursor
+   * from before the let-go is always older than what is held, and gets a snapshot.
+   */
+  let counter = 0;
 
   const conversation = (threadId: string): Conversation => {
     let found = conversations.get(threadId);
     if (!found) {
       found = {
-        seq: 0,
+        seq: counter,
         frames: [],
-        floor: 1,
+        floor: counter + 1,
         turn: null,
         live: null,
         waiting: [],
@@ -101,7 +109,8 @@ export function createTurnHub(options: { keepEndedMs?: number } = {}) {
     frame: DistributiveOmit<TurnFrame, "seq">,
   ): void => {
     const at = conversation(threadId);
-    at.seq += 1;
+    counter += 1;
+    at.seq = counter;
     const numbered = { ...frame, seq: at.seq } as TurnFrame;
     at.frames.push(numbered);
     if (at.frames.length > MAX_FRAMES) {

@@ -284,6 +284,18 @@ upstream(CopilotKit) 커밋 06a1a84(#21)는 승인 대기표(#15)와 반복
 gateway 스냅샷 캐시)는 미봉책이 아니라 **이 결정에 의해 옳다.** 코드 리뷰에서
 "멀티 프로세스에서 깨진다"는 지적이 나오면 답은 이 문서다.
 
+**The turns the server owns (2026-09-27) are in-process by the same decision.**
+`server/src/turns/`: the turn hub (the numbered frames every window watches, with the process's
+epoch in every cursor), the live turns and their per-Bot lane holds (`runner/bot-lane.ts`, shared
+with routines), and the waits on a person (the approval hold, decision cards, help skips) all live
+in the one API process. What is durable is written as it happens: the person's message and the
+turn's ledger row at send, each step's messages as the step ends. A restart therefore ends a turn
+honestly and never resumes it: boot reconciles the open ledger row to `unknown` and sends
+`run.failed` (`laf:turn_interrupted`); the conversation keeps every step written so far; a window
+reconnecting with a cursor from the dead process gets a snapshot and re-reads the newest page; a
+call left unanswered is answered `UNANSWERED_RESULT` when the next turn starts; and the questions
+the dead process was waiting on go with it, since the approval registry is in memory too.
+
 같은 이유로 upstream 동기화는 **merge가 아니라 선별 cherry-pick**으로 한다.
 #21을 머지하면 boundaries의 토대가 삭제된다. 주기적으로 upstream 로그를 훑고
 보안·프로토콜 수정만 가져온다.

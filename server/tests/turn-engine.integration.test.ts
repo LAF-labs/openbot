@@ -18,7 +18,7 @@ import { createWorkInFlight } from "../src/runner/in-flight";
 import { createRunLedger } from "../src/runner/run-ledger";
 import { messagesFor } from "../src/runner/thread-store";
 import type { LoopAgent } from "../src/runner/turn-loop";
-import type { ChatToolkit } from "../src/turns/chat-tools";
+import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
 import { createTurnEngine } from "../src/turns/engine";
 import { historyPage } from "../src/turns/history";
 import {
@@ -119,14 +119,19 @@ function scriptedBot(answer = "다 됐어요.") {
     messages: [] as Message[],
     runs: 0,
     inputs: [] as Message[][],
+    runIds: [] as Array<string | undefined>,
     setMessages(messages: Message[]) {
       agent.messages = [...messages];
     },
     addMessage(message: Message) {
       agent.messages.push(message);
     },
-    async runAgent(_input: unknown, subscriber?: Subscriber) {
+    async runAgent(
+      input: { runId?: string } | undefined,
+      subscriber?: Subscriber,
+    ) {
       agent.inputs.push([...agent.messages]);
+      agent.runIds.push(input?.runId);
       agent.runs += 1;
       const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
       emit(event("RUN_STARTED"));
@@ -188,8 +193,14 @@ function scriptedBot(answer = "다 됐어요.") {
 
 function engineWith(
   bot: ReturnType<typeof scriptedBot>,
-  execute: ChatToolkit["execute"],
-  options: { lane?: ReturnType<typeof createBotLane> } = {},
+  execute:
+    | ChatToolkit["execute"]
+    | ((context: ChatTurnContext) => ChatToolkit["execute"]),
+  options: {
+    lane?: ReturnType<typeof createBotLane>;
+    resolveAgents?: () => Promise<Record<string, LoopAgent | undefined>>;
+    timeoutMs?: number;
+  } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
   const announced: string[] = [];
@@ -199,11 +210,19 @@ function engineWith(
     hub,
     ...(options.lane ? { lane: options.lane } : {}),
     work: createWorkInFlight(),
-    resolveAgents: async () => ({ [BOT]: bot as unknown as LoopAgent }),
-    tools: async () => ({
+    resolveAgents:
+      options.resolveAgents ??
+      (async () => ({ [BOT]: bot as unknown as LoopAgent })),
+    tools: async (context) => ({
       tools: [{ name: "computer_navigate", description: "go", parameters: {} }],
-      execute,
+      execute:
+        execute.length === 1
+          ? (execute as (context: ChatTurnContext) => ChatToolkit["execute"])(
+              context,
+            )
+          : (execute as ChatToolkit["execute"]),
     }),
+    ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     announce: async ({ text }) => {
       announced.push(text);
     },
@@ -430,5 +449,249 @@ describe("a turn the server owns", () => {
     expect(bot.runs).toBe(0);
     free();
     await until(async () => (await statusOf(sent.turnId)) === "done");
+  });
+});
+
+describe("a turn and the Bot's lane", () => {
+  test("a turn waiting on a person lets a routine have the Bot, and takes it back before it acts", async () => {
+    /*
+     * Review H1: a turn held the lane through every wait on a person — up to ten minutes a
+     * question — and the 07:30 briefing queued behind it ran at nine. The lane is let go of for the
+     * wait, and whoever reads the wait's outcome is told a routine drove the Bot meanwhile.
+     */
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const bot = scriptedBot();
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const order: string[] = [];
+    const seen: { moved: boolean | null } = { moved: null };
+    const { engine } = engineWith(
+      bot,
+      (context: ChatTurnContext) => async () => {
+        order.push("turn: asked the person");
+        const waited = await context.awaitPerson?.(() => answered);
+        seen.moved = waited?.moved ?? null;
+        order.push("turn: acts again");
+        return { ok: true };
+      },
+      { lane },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("결제 전에 물어봐줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => order.length === 1);
+    // The routine due now runs now, not when the person gets round to answering.
+    await lane.run(BOT, async () => {
+      order.push("routine ran");
+    });
+    expect(order).toEqual(["turn: asked the person", "routine ran"]);
+    answer();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(order).toEqual([
+      "turn: asked the person",
+      "routine ran",
+      "turn: acts again",
+    ]);
+    expect(seen.moved).toBe(true);
+  });
+
+  test("a stop while the turn waits for the Bot does not wait for the Bot", async () => {
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const busy = await lane.acquire(BOT);
+    const bot = scriptedBot();
+    const { engine } = engineWith(bot, async () => ({ ok: true }), { lane });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("루틴 끝나면 해줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    expect(engine.stop(threadId)).toBe(true);
+    await until(async () => (await statusOf(sent.turnId)) === "stopped");
+    expect(bot.runs).toBe(0);
+    // And the lane it never got is not kept from whoever comes next.
+    busy.release();
+    expect(await lane.run(BOT, async () => "next")).toBe("next");
+  });
+});
+
+describe("how a turn ends", () => {
+  test("a correction sent the moment the end is heard is taken, not refused as in progress", async () => {
+    // Review L1: the end frame went out before the conversation was freed.
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const { engine, hub } = engineWith(bot, async () => ({ ok: true }));
+    const next: Array<Promise<{ ok: boolean }>> = [];
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (
+        frame.kind === "turn" &&
+        frame.turn.status === "done" &&
+        next.length === 0
+      ) {
+        next.push(
+          engine.send({
+            threadId,
+            channelId,
+            owner: { id: OWNER, role: "user" },
+            botId: BOT,
+            messages: [asked("아 그리고 하나 더")],
+            tools: null,
+          }),
+        );
+      }
+    });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("첫 번째")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => next.length === 1);
+    const second = await next[0];
+    expect(second?.ok).toBe(true);
+    if (second && "turnId" in second) {
+      await until(
+        async () => (await statusOf(String(second.turnId))) !== "running",
+      );
+    }
+  });
+
+  test("what broke is logged and the window and the ledger are handed a fact, never its words", async () => {
+    // Review M4: a Drizzle failure's message is its statement and its parameters.
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const { engine, hub } = engineWith(bot, async () => ({ ok: true }), {
+      resolveAgents: async () => {
+        throw new Error(
+          'Failed query: select * from "agents" where "id" = $1 params: 사장님 비밀',
+        );
+      },
+    });
+    const errors: string[] = [];
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (frame.kind === "event" && frame.event.type === "RUN_ERROR") {
+        errors.push(String((frame.event as { message?: string }).message));
+      }
+    });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("안녕")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "error");
+    const [row] = await database
+      .select({ error: lafThreadRuns.error })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, sent.turnId));
+    expect(row?.error).toBe("laf:turn_failed");
+    expect(errors).toEqual(["laf:turn_failed"]);
+  });
+
+  test("a turn out of its whole time ends on the deadline's fact", async () => {
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const { engine } = engineWith(
+      bot,
+      () =>
+        new Promise<{ ok: boolean }>((resolve) =>
+          setTimeout(() => resolve({ ok: true }), 400),
+        ),
+      { timeoutMs: 100 },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("오래 걸리는 일")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "error");
+    const [row] = await database
+      .select({ error: lafThreadRuns.error })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, sent.turnId));
+    expect(row?.error).toBe("laf:run_timed_out");
+  });
+
+  test("each request of a turn is filed under the turn, and the roster sees it however long it runs", async () => {
+    // Review M6 and M5.
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { engine } = engineWith(bot, async () => {
+      await held;
+      return { ok: true };
+    });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("길게 해줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => bot.runs === 1);
+    expect(engine.working(OWNER)).toEqual([
+      expect.objectContaining({ agentId: BOT, origin: "chat" }),
+    ]);
+    release();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(bot.runIds).toEqual([sent.turnId, `${sent.turnId}.1`]);
+    expect(engine.working(OWNER)).toEqual([]);
+  });
+
+  test("an account's deletion stops its turns and waits for them to end", async () => {
+    // Review M2: a turn went on writing into a conversation being deleted.
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const { engine } = engineWith(
+      bot,
+      (_name, _args, call) =>
+        new Promise((resolve) => {
+          call.signal.addEventListener("abort", () =>
+            resolve({ ok: false, code: "laf:stopped", stopped: true }),
+          );
+        }),
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("끝없는 일")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => bot.runs === 1);
+    await engine.stopFor(OWNER);
+    // Written its end before `stopFor` came back: nothing of it runs after the deletion starts.
+    expect(await statusOf(sent.turnId)).toBe("stopped");
+    expect(engine.busy(threadId)).toBe(false);
   });
 });

@@ -125,6 +125,11 @@ export type TurnFailure = {
 export function classifyTurnFailure(error: string | null): TurnFailureCode {
   const said = (error ?? "").toLowerCase();
   if (!said.trim()) return TURN_FAILURE_CODES.unknown;
+  // Already one of these: a turn the server owns writes the fact itself (`turns/engine.ts`).
+  const named = Object.values(TURN_FAILURE_CODES).find((code) => code === said);
+  if (named) return named;
+  // A turn or a routine that ran out of its whole time, by its fact rather than its sentence.
+  if (said.includes("laf:run_timed_out")) return TURN_FAILURE_CODES.timedOut;
 
   // The deployment's own codes first: agent-bot already names these, and a name beats a guess.
   if (said.includes("laf:model_rate_limited")) {

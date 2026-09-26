@@ -155,6 +155,19 @@ async function recordTurn(
 }
 
 describe("classifyTurnFailure", () => {
+  test("reads a fact a turn the server owns wrote as itself, and its deadline as time", () => {
+    // Review M4: the engine stores the fact, never the prose of whatever threw.
+    expect(classifyTurnFailure("laf:turn_unreachable")).toBe(
+      TURN_FAILURE_CODES.unreachable,
+    );
+    expect(classifyTurnFailure("laf:turn_failed")).toBe(
+      TURN_FAILURE_CODES.unknown,
+    );
+    expect(classifyTurnFailure("laf:run_timed_out")).toBe(
+      TURN_FAILURE_CODES.timedOut,
+    );
+  });
+
   test("places the sentence a dead endpoint actually threw", () => {
     // Measured verbatim, 2026-09-06. This exact string was rendered in red on a Korean screen.
     expect(

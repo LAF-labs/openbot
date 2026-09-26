@@ -216,6 +216,13 @@ export type TurnLoopOptions = {
   /** What rides on every run of the model: the prompt middleware reads the mode and the rest here. */
   forwardedProps: Record<string, unknown>;
   /**
+   * The id each run of the model is made under, by its place in the loop — so what a run cost is
+   * filed under something the ledger knows (`model.usage` rows carry it). Absent, AG-UI mints a
+   * random one per run. Must differ per run: the Bot service names the messages a run writes after
+   * its id (`agent-bot/src/turn.ts`), and two runs under one id would write over each other.
+   */
+  runIdFor?: (run: number) => string;
+  /**
    * A person's stop. It cuts exactly where the deadline cuts, because it is the same cut on a
    * person's word instead of a clock's: the model's stream is aborted, the call in flight is
    * abandoned down to the socket, and nothing further is started. What already happened stays
@@ -260,6 +267,8 @@ export async function runTurnLoop(
   let settledAhead = 0;
   /** Where this loop's own messages begin. See the function's comment. */
   const from = target.messages.length;
+  /** How many times the model has been asked in this loop. See `runIdFor`. */
+  let runs = 0;
 
   /*
    * The deadline ABORTS, not just rejects. Racing a timer against the run and walking away left
@@ -333,10 +342,16 @@ export async function runTurnLoop(
     let failure: string | null = null;
     let finished = false;
     const before = target.messages.length;
+    const runId = options.runIdFor?.(runs);
+    runs += 1;
     try {
       await withDeadline(
         target.runAgent(
-          { tools, forwardedProps: options.forwardedProps },
+          {
+            tools,
+            forwardedProps: options.forwardedProps,
+            ...(runId ? { runId } : {}),
+          },
           {
             onEvent: ({ event }) => {
               options.observe?.(event);

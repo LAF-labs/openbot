@@ -119,6 +119,13 @@ export function doorFor(method: string, pathname: string): Door | undefined {
     }
     return undefined;
   }
+  /*
+   * The same message, through the door a turn the server owns is handed over by
+   * (`turns/routes.ts`, `POST /api/turns/:threadId`). It was outside every limit (review M1): a
+   * script could start turns as fast as it could post. Its neighbours — stop, a card's answer, a
+   * skip — are not messages.
+   */
+  if (/^\/api\/turns\/(?!skips\/?$)[^/]+\/?$/.test(path)) return "message";
   if (/^\/api\/routines\/[^/]+\/trigger\/?$/.test(path)) return "trigger";
   return undefined;
 }

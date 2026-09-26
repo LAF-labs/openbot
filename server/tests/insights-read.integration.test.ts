@@ -578,9 +578,10 @@ async function seed() {
     { runId: RUN("run-u1-chat"), totalTokens: 1200 },
     at(10),
   );
+  // The same turn's second request, as a turn the server owns names it: `<turn>.<n>` (review M6).
   await audit(
     "model.usage",
-    { runId: RUN("run-u1-chat"), totalTokens: 800 },
+    { runId: `${RUN("run-u1-chat")}.1`, totalTokens: 800 },
     at(10),
   );
   await audit(

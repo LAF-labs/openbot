@@ -283,6 +283,207 @@ describe("a computer call, answered as the window answered it", () => {
   });
 });
 
+describe("a wait on a person while the Bot is let go of", () => {
+  const moved = {
+    ...context,
+    awaitPerson: async <T>(wait: () => Promise<T>) => ({
+      value: await wait(),
+      moved: true,
+    }),
+  };
+
+  test("a yes given while a routine drove the Bot is not spent on a page that moved", async () => {
+    // Review H1: the lane is let go of for the wait, and the page under the ref may be another.
+    const approvals = createApprovalRegistry();
+    const question = await approvals.request({
+      botId: "bot-1",
+      actor: owner.id,
+      rule: "ask",
+      subject: A_CLICK,
+      fingerprint: "f-moved",
+      target: { type: "computer", id: "bot-1" },
+    });
+    let clicks = 0;
+    const gateway = {
+      click: async () => {
+        clicks += 1;
+        throw new ActionNeedsApprovalError(question);
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+    })(moved, [tool("computer_click")]);
+    const pending = toolkit.execute(
+      "computer_click",
+      { ref: "e1", snapshotId: 1 },
+      call(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await approvals.answer(question.id, "bot-1", owner.id, true);
+    expect(await pending).toEqual({
+      ok: false,
+      code: "laf:stale_refs",
+      reason: toolResultText("laf:stale_refs"),
+      staleRefs: true,
+    });
+    expect(clicks).toBe(1);
+  });
+
+  test("an address is not the page: a navigation the person allowed still goes", async () => {
+    const approvals = createApprovalRegistry();
+    const question = await approvals.request({
+      botId: "bot-1",
+      actor: owner.id,
+      rule: "ask",
+      subject: A_CLICK,
+      fingerprint: "f-nav",
+      target: { type: "computer", id: "bot-1" },
+    });
+    const gateway = {
+      navigate: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        _url: string,
+        approvalId?: string,
+      ) => {
+        if (!approvalId) throw new ActionNeedsApprovalError(question);
+        return {
+          title: "토스",
+          url: "https://toss.im/",
+          text: "",
+          truncated: false,
+        };
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+    })(moved, [tool("computer_navigate")]);
+    const pending = toolkit.execute(
+      "computer_navigate",
+      { url: "https://toss.im" },
+      call(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await approvals.answer(question.id, "bot-1", owner.id, true);
+    expect(await pending).toMatchObject({ ok: true, url: "https://toss.im/" });
+  });
+
+  test("the wheel back after somebody else drove the Bot says to look again", async () => {
+    const gateway = {
+      requestHelp: async () => ({ holder: "bot", requested: true }),
+      control: async () => ({ holder: "bot", requested: false }),
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      controlPollMs: 10,
+    })(moved, [tool("computer_request_help")]);
+    expect(
+      await toolkit.execute(
+        "computer_request_help",
+        { reason: "로그인" },
+        call(),
+      ),
+    ).toEqual({
+      ok: true,
+      code: "laf:control_returned",
+      result: toolResultText("laf:control_returned"),
+      notes: toolResultText("laf:stale_refs"),
+    });
+  });
+});
+
+describe("the arguments a route would refuse, refused here too", () => {
+  test("a tab by a number that is not whole, and a file with no name", async () => {
+    // Review L5: the routes check these (`computer/routes.ts`); the turn's door did not.
+    const gateway = {} as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+    })(context, [tool("computer_switch_tab"), tool("computer_write_file")]);
+    const invalid = {
+      ok: false,
+      code: "laf:tool_arguments_invalid",
+      reason: toolResultText("laf:tool_arguments_invalid"),
+    };
+    expect(
+      await toolkit.execute("computer_switch_tab", { index: 1.5 }, call()),
+    ).toEqual(invalid);
+    expect(
+      await toolkit.execute(
+        "computer_write_file",
+        { path: "   ", contents: "x" },
+        call(),
+      ),
+    ).toEqual(invalid);
+  });
+
+  test("a path is trimmed as the route trims it", async () => {
+    const paths: unknown[] = [];
+    const gateway = {
+      listFiles: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        input: unknown,
+      ) => {
+        paths.push(input);
+        return { entries: [] };
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+    })(context, [tool("computer_list_files")]);
+    await toolkit.execute("computer_list_files", { path: " 영수증 " }, call());
+    await toolkit.execute("computer_list_files", { path: "  " }, call());
+    expect(paths).toEqual([{ path: "영수증" }, {}]);
+  });
+});
+
+describe("a Bot's grants that could not be read", () => {
+  test("keep the tools the last turn had, so the list does not drop and come back", async () => {
+    // Review L3: a failed listing dropped the plugin tools for a turn and changed the epoch twice.
+    let fail = false;
+    const pluginStore = {
+      listForAgent: async () => {
+        if (fail) throw new Error("the database blinked");
+        return {
+          tools: [
+            {
+              ref: "mail/send",
+              toolName: "mail_send",
+              description: "send",
+              inputSchema: {},
+            },
+          ],
+          skills: [],
+        };
+      },
+      callTool: async () => ({ text: "sent", isError: false }),
+      viewSkill: async () => ({
+        allowed: false,
+        reason: "laf:skill_not_granted",
+      }),
+    } as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+    const tools = createChatTools({
+      pluginStore,
+      people: createPersonAnswers(),
+    });
+    const first = await tools(context, [tool("mail_send")]);
+    fail = true;
+    const second = await tools(context, [tool("mail_send")]);
+    expect(first.tools.map((offered) => offered.name)).toEqual(["mail_send"]);
+    expect(second.tools.map((offered) => offered.name)).toEqual(["mail_send"]);
+    expect(await second.execute("mail_send", {}, call())).toBe("sent");
+  });
+});
+
 describe("a card the Bot asks the person with", () => {
   test("its answer is the call's result, from whichever window pressed it", async () => {
     // Every window is told when a card starts waiting and when it stops (`waiting` frames).

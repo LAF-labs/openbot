@@ -101,6 +101,23 @@ describe("a window watching from a cursor", () => {
     expect(hub.state("thread-1")).toEqual({ turn: null, seq: 0 });
   });
 
+  test("a cursor from before the let-go is never replayed another turn's frames", async () => {
+    // Review M3: numbered from zero again after the let-go, a phone coming back with `epoch:2` was
+    // handed frames 3 onward of a turn it had never seen, as though they followed what it held.
+    const hub = createTurnHub({ keepEndedMs: 20 });
+    hub.turn("thread-1", running);
+    hub.event("thread-1", "t1", delta("옛날"));
+    hub.turn("thread-1", { ...running, status: "done" });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    hub.turn("thread-1", { id: "t2", status: "running", asked: ["u2"] });
+    hub.event("thread-1", "t2", delta("새로"));
+    hub.event("thread-1", "t2", delta("더"));
+    const { seen } = watch(hub, { epoch: hub.epoch, after: 2 });
+    expect(seen.map((frame) => frame.kind)).toEqual(["snapshot"]);
+    // And the numbers went on from where they were, not from zero.
+    expect(hub.state("thread-1").seq).toBe(6);
+  });
+
   test("one window that throws does not stop the others", () => {
     const hub = createTurnHub();
     hub.subscribe("thread-1", { epoch: null, after: null }, (frame) => {

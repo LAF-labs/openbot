@@ -65,6 +65,7 @@ import {
   ActionRefusedError,
   type ComputerGateway,
 } from "../computer/gateway";
+import { STALE_REFS } from "../computer/client";
 import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
@@ -115,6 +116,14 @@ export type ChatTurnContext = {
   threadId: string;
   /** The turn's run: who holds a question it raises. */
   runId: string;
+  /**
+   * Wait for a person without holding the Bot (`engine.ts`): the Bot's lane is let go of for the
+   * wait and taken back before the call goes on, and `moved` says whether anything else drove the
+   * Bot in between — a routine may have moved the shared browser. Absent, the wait simply runs.
+   */
+  awaitPerson?: <T>(
+    wait: () => Promise<T>,
+  ) => Promise<{ value: T; moved: boolean }>;
 };
 
 export type ChatToolkit = { tools: Tool[]; execute: LoopExecutor };
@@ -192,10 +201,21 @@ function computerReply(result: unknown): ComputerOutcome {
   );
 }
 
+/**
+ * The grants a Bot's last turn read, by Bot. A listing that fails reuses them rather than dropping
+ * the Bot's plugin and card tools for one turn: the tool list is the head of the prompt, and a list
+ * that loses tools and gets them back re-bills the conversation twice (review L3).
+ */
+type Listing = {
+  plugins: Awaited<ReturnType<PluginStore["listForAgent"]>>["tools"];
+  components: string[];
+};
+
 /** The names of every tool this file can carry out for one Bot, right now. */
 async function executableNames(
   deps: ChatToolsDeps,
   botId: string,
+  lastListed: Map<string, Listing>,
 ): Promise<{
   names: Set<string>;
   pluginRefs: Map<string, string>;
@@ -212,12 +232,16 @@ async function executableNames(
   }
   const pluginRefs = new Map<string, string>();
   const pluginTools: Tool[] = [];
+  const last = lastListed.get(botId);
+  const listing: Listing = { plugins: [], components: [] };
   if (deps.pluginStore) {
     names.add(SKILL_VIEW.name);
-    const granted = await deps.pluginStore
-      .listForAgent(botId)
-      .catch(() => ({ tools: [], skills: [] }));
-    for (const tool of granted.tools) {
+    const granted = await deps.pluginStore.listForAgent(botId).catch(() => {
+      log.warn("chat_tools_listing_failed", { bot: botId, of: "plugins" });
+      return null;
+    });
+    listing.plugins = granted?.tools ?? last?.plugins ?? [];
+    for (const tool of listing.plugins) {
       names.add(tool.toolName);
       pluginRefs.set(tool.toolName, tool.ref);
       pluginTools.push({
@@ -228,9 +252,16 @@ async function executableNames(
     }
   }
   if (deps.components) {
-    const held = await deps.components.listForAgent(botId).catch(() => []);
-    for (const component of held) names.add(component.name);
+    const held = await deps.components.listForAgent(botId).catch(() => {
+      log.warn("chat_tools_listing_failed", { bot: botId, of: "components" });
+      return null;
+    });
+    listing.components = held
+      ? held.map((component) => component.name)
+      : (last?.components ?? []);
+    for (const name of listing.components) names.add(name);
   }
+  lastListed.set(botId, listing);
   return { names, pluginRefs, pluginTools };
 }
 
@@ -293,6 +324,7 @@ function serverTools(
 }
 
 export function createChatTools(deps: ChatToolsDeps) {
+  const lastListed = new Map<string, Listing>();
   return async (
     context: ChatTurnContext,
     declared: readonly Tool[] | null,
@@ -302,6 +334,7 @@ export function createChatTools(deps: ChatToolsDeps) {
     const { names, pluginRefs, pluginTools } = await executableNames(
       deps,
       botId,
+      lastListed,
     );
     const tools = declared
       ? declared.filter((tool) => names.has(tool.name))
@@ -317,6 +350,12 @@ export function createChatTools(deps: ChatToolsDeps) {
     }
     const holder = `turn:${runId}`;
     const personWaitMs = deps.personWaitMs ?? WAIT_FOR_PERSON_MS;
+    const awaitPerson =
+      context.awaitPerson ??
+      (async <T>(wait: () => Promise<T>) => ({
+        value: await wait(),
+        moved: false,
+      }));
 
     /** The actor a call is carried out as, naming its conversation and its step. */
     const actorFor = (toolCallId: string): ActionActor => ({
@@ -337,6 +376,8 @@ export function createChatTools(deps: ChatToolsDeps) {
       attempt: (approvalId: string | undefined) => Promise<unknown>,
       shape: (outcome: ComputerOutcome) => ComputerOutcome = (outcome) =>
         outcome,
+      /** The call acts on the page in front of the Bot, not on its files or on an address. */
+      onThePage = true,
     ): Promise<ComputerOutcome> => {
       let pause: ActionNeedsApprovalError;
       try {
@@ -348,13 +389,27 @@ export function createChatTools(deps: ChatToolsDeps) {
         }
         pause = error;
       }
-      const waited = await awaitApproval(deps.approvals ?? noRegistry, {
-        botId,
-        approvalId: pause.approvalId,
-        holder,
-        signal,
-      });
+      const { value: waited, moved } = await awaitPerson(() =>
+        awaitApproval(deps.approvals ?? noRegistry, {
+          botId,
+          approvalId: pause.approvalId,
+          holder,
+          signal,
+        }),
+      );
       if (waited.answer === "granted") {
+        /*
+         * SOMEBODY ELSE DROVE THE BOT WHILE THE PERSON DECIDED. The lane was let go of for the wait
+         * (`engine.ts`), and a routine may have moved the shared browser: the element the person
+         * said yes to may not be the one under that ref any more. Not sent — the Bot is told to look
+         * again, and asks again if it still means to.
+         */
+        if (moved && onThePage) {
+          return computerReplyOutcome(409, {
+            error: STALE_REFS,
+            code: STALE_REFS,
+          });
+        }
         try {
           return shape(computerReply(await attempt(pause.approvalId)));
         } catch (error) {
@@ -432,6 +487,7 @@ export function createChatTools(deps: ChatToolsDeps) {
                 signal,
               ),
             navigationOutcome,
+            false,
           );
         case "computer_read":
           try {
@@ -513,7 +569,9 @@ export function createChatTools(deps: ChatToolsDeps) {
             ),
           );
         case "computer_switch_tab": {
-          if (typeof args.index !== "number") return invalidArguments();
+          if (typeof args.index !== "number" || !Number.isInteger(args.index)) {
+            return invalidArguments();
+          }
           const index = args.index;
           return governed(signal, (approvalId) =>
             gateway.switchTab(c, botId, actor, { index }, approvalId),
@@ -536,37 +594,49 @@ export function createChatTools(deps: ChatToolsDeps) {
             ),
           );
         }
-        case "computer_list_files":
-          return governed(signal, (approvalId) =>
-            gateway.listFiles(
-              c,
-              botId,
-              actor,
-              typeof args.path === "string" ? { path: args.path } : {},
-              approvalId,
-            ),
+        case "computer_list_files": {
+          const listed =
+            typeof args.path === "string" && args.path.trim()
+              ? { path: args.path.trim() }
+              : {};
+          return governed(
+            signal,
+            (approvalId) =>
+              gateway.listFiles(c, botId, actor, listed, approvalId),
+            undefined,
+            false,
           );
+        }
         case "computer_read_file": {
           const input = readFileInputOf(args);
           if (!input) return invalidArguments();
-          return governed(signal, (approvalId) =>
-            gateway.readFile(c, botId, actor, input, approvalId),
+          return governed(
+            signal,
+            (approvalId) =>
+              gateway.readFile(c, botId, actor, input, approvalId),
+            undefined,
+            false,
           );
         }
         case "computer_write_file": {
           if (
             typeof args.path !== "string" ||
+            !args.path.trim() ||
             typeof args.contents !== "string"
           ) {
             return invalidArguments();
           }
           const file = {
-            path: args.path,
+            path: args.path.trim(),
             contents: args.contents,
             append: args.append === true,
           };
-          return governed(signal, (approvalId) =>
-            gateway.writeFile(c, botId, actor, file, approvalId),
+          return governed(
+            signal,
+            (approvalId) =>
+              gateway.writeFile(c, botId, actor, file, approvalId),
+            undefined,
+            false,
           );
         }
         case "computer_request_help": {
@@ -582,10 +652,12 @@ export function createChatTools(deps: ChatToolsDeps) {
           );
           if (!asked.ok) return asked;
           // Resolved when the wheel is back with the Bot and no help request remains outstanding.
-          const outcome = await waitForPerson(
-            call.id,
-            signal,
-            (state) => state.holder === "bot" && !state.requested,
+          const { value: outcome, moved } = await awaitPerson(() =>
+            waitForPerson(
+              call.id,
+              signal,
+              (state) => state.holder === "bot" && !state.requested,
+            ),
           );
           const code =
             outcome === "answered"
@@ -595,7 +667,12 @@ export function createChatTools(deps: ChatToolsDeps) {
                 : outcome === "cancelled"
                   ? "laf:request_cancelled"
                   : "laf:nobody_took_control";
-          return { ok: true, code, result: toolResultText(code) };
+          return {
+            ok: true,
+            code,
+            result: toolResultText(code),
+            ...(moved ? { notes: toolResultText(STALE_REFS) } : {}),
+          };
         }
         case "computer_request_secret": {
           const target = asRef(args);
@@ -611,10 +688,12 @@ export function createChatTools(deps: ChatToolsDeps) {
           );
           if (!asked.ok) return asked;
           // Completion is `secretWanted` clearing; the value never returns to the model.
-          const outcome = await waitForPerson(
-            call.id,
-            signal,
-            (state) => state.secretWanted === undefined,
+          const { value: outcome, moved } = await awaitPerson(() =>
+            waitForPerson(
+              call.id,
+              signal,
+              (state) => state.secretWanted === undefined,
+            ),
           );
           const code =
             outcome === "answered"
@@ -624,7 +703,12 @@ export function createChatTools(deps: ChatToolsDeps) {
                 : outcome === "cancelled"
                   ? "laf:request_cancelled"
                   : "laf:secret_not_entered";
-          return { ok: true, code, result: toolResultText(code) };
+          return {
+            ok: true,
+            code,
+            result: toolResultText(code),
+            ...(moved ? { notes: toolResultText(STALE_REFS) } : {}),
+          };
         }
         default:
           return refusal("laf:tool_unknown");
@@ -664,12 +748,15 @@ export function createChatTools(deps: ChatToolsDeps) {
         if (!(error instanceof PluginNeedsApprovalError)) {
           return pluginFailure(error, ref);
         }
-        const waited = await awaitApproval(deps.approvals ?? noRegistry, {
-          botId,
-          approvalId: error.approvalId,
-          holder,
-          signal: call.signal,
-        });
+        // Somebody else's server, not the page: nothing a routine did meanwhile changes the call.
+        const { value: waited } = await awaitPerson(() =>
+          awaitApproval(deps.approvals ?? noRegistry, {
+            botId,
+            approvalId: error.approvalId,
+            holder,
+            signal: call.signal,
+          }),
+        );
         if (waited.answer === "granted") {
           try {
             return said(await send(error.approvalId));
@@ -814,12 +901,14 @@ export function createChatTools(deps: ChatToolsDeps) {
        * The window's card answered its own run through CopilotKit; the server waits for the same
        * answer from whichever window the person presses it in (`routes.ts`, answers).
        */
-      const answered = await deps.people.wait({
-        threadId,
-        toolCallId: call.id,
-        signal: call.signal,
-        timeoutMs: personWaitMs,
-      });
+      const { value: answered } = await awaitPerson(() =>
+        deps.people.wait({
+          threadId,
+          toolCallId: call.id,
+          signal: call.signal,
+          timeoutMs: personWaitMs,
+        }),
+      );
       if (!answered.answered) {
         return call.signal.aborted
           ? toolResultText("laf:stopped")

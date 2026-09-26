@@ -42,6 +42,33 @@ describe("one thing at a time, per Bot", () => {
     expect(await lane.run("risk", async () => "ran anyway")).toBe("ran anyway");
   });
 
+  test("a holder can let go while it waits on somebody, and learns who ran meanwhile", async () => {
+    // A chat turn waiting on a person's answer lets a routine have the Bot, and takes it back after.
+    const lane = createBotLane();
+    const order: string[] = [];
+    const turn = await lane.acquire("risk");
+    const before = lane.grants("risk");
+    const routine = lane.run("risk", async () => {
+      order.push("routine");
+    });
+    await tick(10);
+    expect(order).toEqual([]);
+    turn.release();
+    await routine;
+    const back = await lane.acquire("risk");
+    // Its own grant back is one; the routine was the other.
+    expect(lane.grants("risk") - before).toBe(2);
+    const after = lane.run("risk", async () => {
+      order.push("after");
+    });
+    await tick(10);
+    expect(order).toEqual(["routine"]);
+    back.release();
+    back.release();
+    await after;
+    expect(order).toEqual(["routine", "after"]);
+  });
+
   test("the lane is released once a Bot is idle, so a long-lived process does not grow", async () => {
     const lane = createBotLane();
     await lane.run("risk", async () => undefined);

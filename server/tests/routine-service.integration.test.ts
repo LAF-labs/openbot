@@ -25,6 +25,7 @@ import {
   users,
 } from "../src/db/schema";
 import { createRoutineRoutes } from "../src/routines/routes";
+import { createBotLane } from "../src/runner/bot-lane";
 import {
   createRoutineService,
   MAX_ROUTINES,
@@ -140,7 +141,7 @@ function fakeAgents(reply: string, delayMs = 0) {
 function serviceWith(
   agents: Record<string, AbstractAgent>,
   clock: () => Date,
-  deployment: Pick<RoutineServiceOptions, "timeZone"> = {},
+  deployment: Pick<RoutineServiceOptions, "timeZone" | "lane"> = {},
 ) {
   const rows: AuditEventInput[] = [];
   /** What reached the person's conversation. A test that expects silence reads this. */
@@ -907,6 +908,56 @@ describe("two ticks over one service", () => {
     // The pass that was already going still does all of its own work, sequentially.
     expect(await running).toBe(2);
     expect(asked).toEqual(["run first", "run second"]);
+  });
+
+  test("a routine queued behind a busy Bot does not hold the clock for the next one", async () => {
+    /*
+     * Review H1 (2026-09-27): a pass awaited each run before it claimed the next, so a run queued
+     * behind a Bot held busy — by a chat turn the server owns waiting on a person, say — held every
+     * later pass too. A routine falling due meanwhile was claimed only once the queue moved, found
+     * past its grace, and written `routine.skipped_missed`. Now it is claimed on time and waits its
+     * turn on the lane.
+     */
+    let clock = new Date("2026-08-20T07:00:00Z");
+    const { agents, asked } = fakeAgents("done");
+    const lane = createBotLane();
+    const { service, rows } = serviceWith(agents, () => clock, { lane });
+    for (const [name, minutes] of [
+      ["every ten", 10],
+      ["every twenty", 20],
+    ] as const) {
+      await service.create(ACTOR, {
+        agentId: BOT_ID,
+        name,
+        instruction: `run ${name}`,
+        schedule: { kind: "interval", minutes },
+      });
+    }
+    // The Bot is busy: a turn holds its lane for as long as the test says.
+    const busy = await lane.acquire(BOT_ID);
+
+    clock = new Date("2026-08-20T07:11:00Z");
+    const first = service.tick();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    clock = new Date("2026-08-20T07:20:30Z");
+    const second = service.tick();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Claimed at 07:20:30, on time, while the first run still waits behind the busy Bot.
+    const [twenty] = await database
+      .select({ nextRunAt: lafRoutines.nextRunAt })
+      .from(lafRoutines)
+      .where(eq(lafRoutines.name, "every twenty"));
+    expect(twenty?.nextRunAt?.toISOString()).toBe("2026-08-20T07:40:30.000Z");
+    expect(asked).toEqual([]);
+
+    busy.release();
+    expect(await first).toBe(1);
+    expect(await second).toBe(1);
+    expect(asked).toEqual(["run every ten", "run every twenty"]);
+    expect(rows.map((row) => row.eventType)).not.toContain(
+      "routine.skipped_missed",
+    );
   });
 });
 

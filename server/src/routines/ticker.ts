@@ -2,6 +2,7 @@ import { and, asc, eq, lte } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import {
   CAUGHT_UP_AFTER_MS,
@@ -42,7 +43,7 @@ export type RoutineTickerOptions = {
 
 export function createRoutineTicker(options: RoutineTickerOptions) {
   let timer: ReturnType<typeof setInterval> | undefined;
-  let ticking = false;
+  let claiming = false;
 
   /**
    * One pass: claim everything due, run what was claimed and is not stale.
@@ -51,21 +52,37 @@ export function createRoutineTicker(options: RoutineTickerOptions) {
    * the same table finds nothing due — the rule the pull request template asks about, answered the
    * way it suggests: a conditional update, not a check-then-write.
    *
-   * A pass never overlaps a pass. `start` fires this on an interval while one run may take up to
-   * ROUTINE_RUN_TIMEOUT_MS, so on a ten-minute run the ticker used to enter this function nine more
-   * times underneath itself; each of those re-read the table, and a routine coming due meanwhile was
-   * started by whichever pass reached it first while the others queued behind the Bot's lane. The
-   * second pass is skipped, not queued: whatever it would have found is still due at the next tick,
-   * and a queue of passes is how one slow morning turns into a burst at lunchtime.
+   * CLAIMS NEVER OVERLAP; RUNS DO NOT HOLD THE CLOCK. `start` fires this on an interval while a run
+   * may take up to ROUTINE_RUN_TIMEOUT_MS, and the pass used to await each run before claiming the
+   * next — so one run queued behind a busy Bot (a chat turn the server owns, say) held every later
+   * pass: a routine coming due meanwhile was claimed only once the queue moved, found late past its
+   * grace, and written `routine.skipped_missed` (review H1, 2026-09-27). Now a pass claims everything
+   * due on time and hands each run to the Bot's lane, which is what keeps one browser driven by one
+   * thing at a time; the next tick claims whatever falls due next, whether or not those runs are
+   * still waiting their turn. Only the claiming is guarded against itself, so nothing is claimed
+   * twice by two passes reading the table at once.
+   *
+   * A pass's own runs still go one after the other, in the order they were claimed — oldest due
+   * first — and the pass resolves once they have, so a caller that awaits a tick sees them done.
    */
   async function tick(): Promise<number> {
-    if (ticking) return 0;
-    ticking = true;
+    if (claiming) return 0;
+    claiming = true;
+    let starts: Array<() => Promise<boolean>>;
     try {
-      return await pass(options);
+      starts = await claimDue(options);
     } finally {
-      ticking = false;
+      claiming = false;
     }
+    let ran = 0;
+    for (const start of starts) {
+      const did = await start().catch((error: unknown) => {
+        log.warn("routine_run_crashed", { reason: describeFailure(error) });
+        return false;
+      });
+      if (did) ran += 1;
+    }
+    return ran;
   }
 
   return {
@@ -83,8 +100,14 @@ export function createRoutineTicker(options: RoutineTickerOptions) {
   };
 }
 
-/** Everything due at this instant, attended to in order. How many of them ran. */
-async function pass(options: RoutineTickerOptions): Promise<number> {
+/**
+ * Everything due at this instant, claimed in order. What starts each claimed run, not yet started:
+ * the claiming is the part a pass guards, and the runs wait their turn on the Bot's lane without
+ * holding the clock.
+ */
+async function claimDue(
+  options: RoutineTickerOptions,
+): Promise<Array<() => Promise<boolean>>> {
   const at = options.now();
   const due = await options.database
     .select()
@@ -112,19 +135,23 @@ async function pass(options: RoutineTickerOptions): Promise<number> {
     });
   }
 
-  let ran = 0;
+  const starts: Array<() => Promise<boolean>> = [];
   for (const row of due) {
-    if (await attend(options, row, at)) ran += 1;
+    const start = await attend(options, row, at);
+    if (start) starts.push(start);
   }
-  return ran;
+  return starts;
 }
 
-/** One due routine: claimed for this pass, then run, caught up or let go. Whether it ran. */
+/**
+ * One due routine: claimed for this pass, then caught up or let go. What starts its run, or null
+ * when there is nothing to run.
+ */
 async function attend(
   options: RoutineTickerOptions,
   row: RoutineRow,
   at: Date,
-): Promise<boolean> {
+): Promise<(() => Promise<boolean>) | null> {
   const schedule = scheduleOf(row);
   const next = nextRunAt(schedule, at);
   const [claimed] = await options.database
@@ -140,11 +167,11 @@ async function attend(
     .returning();
   // Somebody else already took this window: an overlapping tick, or a `runNow` that arrived
   // over HTTP while this pass was walking the list. One process, but not one caller.
-  if (!claimed) return false;
+  if (!claimed) return null;
 
-  if (!(await withinGrace(options, row, schedule, at, next))) return false;
+  if (!(await withinGrace(options, row, schedule, at, next))) return null;
 
-  return options.execute(claimed, row.nextRunAt);
+  return () => options.execute(claimed, row.nextRunAt);
 }
 
 /**

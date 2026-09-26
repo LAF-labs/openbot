@@ -320,6 +320,15 @@ describe("three doors have a rate", () => {
       "message",
     );
     expect(doorFor("POST", "/api/routines/r1/trigger")).toBe("trigger");
+    // The door a turn the server owns is handed over by is the same message door.
+    expect(doorFor("POST", "/api/turns/thread-1")).toBe("message");
+    expect(doorFor("POST", "/api/turns//thread-1/")).toBe("message");
+    expect(doorFor("POST", "/api/turns/thread-1/stop")).toBeUndefined();
+    expect(
+      doorFor("POST", "/api/turns/thread-1/answers/call-1"),
+    ).toBeUndefined();
+    expect(doorFor("POST", "/api/turns/skips")).toBeUndefined();
+    expect(doorFor("GET", "/api/turns/thread-1")).toBeUndefined();
     // Not doors: a read, a stop, a connect, and the routes beside them.
     expect(doorFor("GET", "/api/copilotkit/agent/bot-1/run")).toBeUndefined();
     expect(
@@ -381,6 +390,34 @@ describe("three doors have a rate", () => {
     expect((await send("better-auth.session_token=B.sig")).status).not.toBe(
       429,
     );
+  });
+
+  test("a turn the server owns is counted as the message it is, on the same count", async () => {
+    // Review M1: `POST /api/turns/:threadId` starts a turn exactly as a CopilotKit run did, and was
+    // outside every limit. One session's messages through either door share one count.
+    const application = app();
+    const cookie = "better-auth.session_token=T.sig";
+    const send = (path: string) =>
+      application.request(`${ORIGIN}${path}`, {
+        method: "POST",
+        headers: from("203.0.113.30", { cookie }),
+      });
+    for (
+      let attempt = 0;
+      attempt < RATE_LIMITS.message.perSession;
+      attempt += 1
+    ) {
+      const path =
+        attempt % 2 === 0
+          ? "/api/turns/thread-1"
+          : "/api/copilotkit/agent/bot-1/run";
+      expect((await send(path)).status).not.toBe(429);
+    }
+    const refused = await send("/api/turns/thread-1");
+    expect(refused.status).toBe(429);
+    await expect(refused.json()).resolves.toEqual(RATE_LIMITED);
+    // Stopping is never counted: a person past the limit can still stop what is running.
+    expect((await send("/api/turns/thread-1/stop")).status).not.toBe(429);
   });
 
   test("the anonymous trigger: per token, and per address", async () => {

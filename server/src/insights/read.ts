@@ -380,7 +380,8 @@ export function insightStatements(options: {
    */
   const people = sql`
     WITH usage AS (
-      SELECT payload->>'runId' AS run_id,
+      -- A turn the server owns asks the model under "<turn>.<n>" (turns/engine.ts); the ledger row is "<turn>".
+      SELECT split_part(payload->>'runId', '.', 1) AS run_id,
              sum(CASE WHEN payload->>'totalTokens' ~ '^[0-9]{1,15}$' THEN (payload->>'totalTokens')::bigint ELSE 0 END) AS tokens
         FROM audit_events
        WHERE event_type = 'model.usage' AND created_at >= ${since} AND created_at < ${to}

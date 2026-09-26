@@ -20,9 +20,13 @@ import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import type { AgentActor } from "../agents/profile-types";
+import {
+  classifyTurnFailure,
+  TURN_FAILURE_CODES,
+} from "../channels/turn-failures";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import type { BotLane } from "../runner/bot-lane";
+import type { BotLane, LaneHold } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import { chatLabelOf, type RunLedger } from "../runner/run-ledger";
 import {
@@ -34,10 +38,12 @@ import {
 import {
   type LoopAgent,
   outcomeContent,
+  RunDeadline,
   RunFailed,
   RunStopped,
   runTurnLoop,
 } from "../runner/turn-loop";
+import type { WorkingRun } from "../runner/working";
 import { createRunMeter } from "../telemetry/run-meter";
 import type { ChatToolkit, ChatTurnContext } from "./chat-tools";
 import type { TurnHub, TurnState, TurnStatus } from "./hub";
@@ -53,6 +59,12 @@ export const CHAT_TURN_TIMEOUT_MS = 90 * 60_000;
 
 /** The result a call gets when the person stopped the turn while it was out: `laf:stopped`. */
 const STOPPED_RESULT = { ok: false, code: "laf:stopped", stopped: true };
+
+/** A turn that ran out of its whole time: the same fact a routine's deadline is. */
+export const RUN_TIMED_OUT = "laf:run_timed_out";
+
+/** A fact, whole: what the ledger's `error` column and the window's failure line may carry. */
+const WHOLE_FACT = /^laf:[a-z0-9_]{1,60}$/;
 
 /** Why a send was not taken. */
 export type SendRefusal =
@@ -108,9 +120,18 @@ type TurnAgent = LoopAgent & { threadId?: string };
 type LiveTurn = {
   id: string;
   threadId: string;
+  ownerId: string;
+  botId: string;
+  /** What the person asked, as 오늘 names the turn. */
+  label: string | null;
+  startedAt: Date;
   status: TurnStatus;
   asked: string[];
   stop: AbortController;
+  /** Free the conversation for its next turn and take the turn off the stoppable list. Twice is harmless. */
+  free: () => void;
+  /** Settles once the turn has written its end. */
+  ended: Promise<void>;
 };
 
 /** A message as the Bot is handed it: AG-UI's fields, none of the store's own. */
@@ -184,10 +205,38 @@ function lastSaid(messages: readonly Message[]): string {
   return "";
 }
 
+/**
+ * What ended a turn, as a fact the surface has words for — never the words of whatever threw.
+ *
+ * A Drizzle failure's message is its statement and its bound parameters (`failure-text.ts`), and the
+ * window and the ledger's `error` column were both being handed it. The Bot service's own facts
+ * (`laf:model_rate_limited`, the stall guard's `laf:agent_stalled`) pass as they are; its transport's
+ * prose ("Unable to connect…") is reduced to the turn-failure fact both classifiers read
+ * (`channels/turn-failures.ts`, `app/src/lib/channels/turn-failure.ts`); the turn's own deadline is
+ * `laf:run_timed_out`, as a routine's is; anything else is logged here and reaches nobody but the
+ * operator.
+ */
+export function turnFailureOf(error: unknown, threadId: string): string {
+  if (error instanceof RunDeadline) return RUN_TIMED_OUT;
+  if (error instanceof RunFailed) {
+    return WHOLE_FACT.test(error.reason)
+      ? error.reason
+      : classifyTurnFailure(error.reason);
+  }
+  const said = error instanceof Error ? error.message : "";
+  if (WHOLE_FACT.test(said)) return said;
+  log.error("turn_failed", {
+    thread: threadId,
+    reason: describeFailure(error),
+  });
+  return TURN_FAILURE_CODES.unknown;
+}
+
 export function createTurnEngine(options: TurnEngineOptions) {
   const live = new Map<string, LiveTurn>();
   const maxSteps = options.maxSteps ?? CHAT_MAX_STEPS;
   const timeoutMs = options.timeoutMs ?? CHAT_TURN_TIMEOUT_MS;
+  const lane = options.lane;
 
   const announceTurn = (turn: LiveTurn, status: TurnStatus, code?: string) => {
     turn.status = status;
@@ -231,6 +280,62 @@ export function createTurnEngine(options: TurnEngineOptions) {
     let failure: string | null = null;
     let stopped = false;
 
+    /*
+     * THE BOT'S LANE: HELD WHILE THE TURN DRIVES THE BOT, LET GO OF WHILE IT WAITS ON A PERSON.
+     *
+     * A turn used to hold the lane from its first step to its last, and a turn waiting on a
+     * question holds it for up to ten minutes a question: the 07:30 briefing, queued behind it, ran
+     * at nine (review H1, 2026-09-27). The lane is released for every wait on a person and taken
+     * back before the turn touches the Bot again, and whoever reads a wait's outcome is told whether
+     * anybody else drove the Bot meanwhile — a routine may have moved the shared browser.
+     *
+     * A stop never waits for the lane: taking it back races the stop, and a hold granted after the
+     * turn is over is handed straight back, so nothing abandoned mid-wait can keep the Bot forever.
+     */
+    let hold: LaneHold | null = null;
+    let over = false;
+    const stoppedNow = new Promise<null>((resolve) => {
+      if (signal.aborted) resolve(null);
+      else
+        signal.addEventListener("abort", () => resolve(null), { once: true });
+    });
+    const take = async (): Promise<void> => {
+      if (!lane) return;
+      const granted = lane.acquire(botId);
+      const won = await Promise.race([
+        granted.then((held) => ({ held })),
+        stoppedNow,
+      ]);
+      if (!won) {
+        void granted.then((held) => held.release());
+        return;
+      }
+      if (over) {
+        won.held.release();
+        return;
+      }
+      hold = won.held;
+    };
+    const letGo = () => {
+      hold?.release();
+      hold = null;
+    };
+    const awaitPerson = async <T>(
+      wait: () => Promise<T>,
+    ): Promise<{ value: T; moved: boolean }> => {
+      if (!lane) return { value: await wait(), moved: false };
+      const before = lane.grants(botId);
+      letGo();
+      let value: T;
+      try {
+        value = await wait();
+      } finally {
+        await take();
+      }
+      // Our own grant back is one; anything more is somebody else who held the Bot meanwhile.
+      return { value, moved: lane.grants(botId) - before > 1 };
+    };
+
     /** The turn's messages with the store's own fields, as the thread keeps them. */
     const turnMessages = (): Message[] =>
       (target?.messages.slice(from) ?? []).map((message) => {
@@ -244,6 +349,8 @@ export function createTurnEngine(options: TurnEngineOptions) {
       });
 
     try {
+      // Queued until the Bot is free: a routine it is running finishes first.
+      await take();
       if (signal.aborted) throw new RunStopped([]);
       if (options.admits && !(await options.admits(owner.id))) {
         throw new Error("laf:not_admitted");
@@ -285,7 +392,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
       } as BaseEvent);
 
       const toolkit = await options.tools(
-        { botId, owner, threadId, runId: turn.id },
+        { botId, owner, threadId, runId: turn.id, awaitPerson },
         input.tools,
       );
       let persisting: Promise<void> = Promise.resolve();
@@ -303,6 +410,12 @@ export function createTurnEngine(options: TurnEngineOptions) {
         // What the window's CopilotKit properties carried: the device's clock and language.
         forwardedProps:
           input.device === undefined ? {} : { device: input.device },
+        /*
+         * Each run of the model under the turn's own id, so the `model.usage` rows it writes are
+         * the ledger's turn's (`insights/read.ts` joins on the part before the dot). The first run
+         * is the turn's id itself; the rest are numbered after it.
+         */
+        runIdFor: (n) => (n === 0 ? turn.id : `${turn.id}.${n}`),
         signal,
         observe: (event) => {
           events += 1;
@@ -354,16 +467,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
     } catch (error) {
       if (error instanceof RunStopped || signal.aborted) {
         stopped = true;
-      } else if (error instanceof RunFailed) {
-        failure = error.reason;
       } else {
-        failure = error instanceof Error ? error.message : String(error);
-        if (!failure.startsWith("laf:") && !(error instanceof Error)) {
-          log.error("turn_failed", { reason: describeFailure(error) });
-        }
+        failure = turnFailureOf(error, threadId);
       }
     }
     meter.end();
+    // Nothing of this turn drives the Bot any more: whoever is next may have it.
+    over = true;
+    letGo();
 
     /*
      * A STOP LEAVES NO CALL UNANSWERED. The one in flight when the person pressed it — a click, a
@@ -412,16 +523,24 @@ export function createTurnEngine(options: TurnEngineOptions) {
       : failure !== null
         ? "error"
         : "done";
+    /*
+     * FREE, THEN SAY SO — IN ONE STEP. A window that hears the turn is over may send the person's
+     * next message that instant, and was answered 409 `laf:turn_in_progress` while this function
+     * was still writing the ledger (review L1). And nothing may be awaited between the two, or a new
+     * turn's frames could be published before this one's end and be reset by it.
+     */
+    turn.free();
     options.hub.event(
       threadId,
       turn.id,
       (status === "error"
-        ? {
-            type: "RUN_ERROR",
-            message: failure ?? "",
-            ...(failure?.startsWith("laf:") ? { code: failure } : {}),
-          }
+        ? { type: "RUN_ERROR", message: failure ?? "", code: failure ?? "" }
         : { type: "RUN_FINISHED", threadId, runId: turn.id }) as BaseEvent,
+    );
+    announceTurn(
+      turn,
+      status,
+      status === "error" ? (failure ?? undefined) : undefined,
     );
     try {
       await options.ledger.settle(turn.id, {
@@ -436,11 +555,6 @@ export function createTurnEngine(options: TurnEngineOptions) {
         reason: describeFailure(error),
       });
     }
-    announceTurn(
-      turn,
-      status,
-      status === "error" && failure?.startsWith("laf:") ? failure : undefined,
-    );
 
     // The roster row and every open tab; a notice for a person with no tab at all.
     const said = target ? lastSaid(target.messages.slice(from)) : "";
@@ -484,13 +598,24 @@ export function createTurnEngine(options: TurnEngineOptions) {
       }
 
       const turnId = randomUUID();
+      let free: () => void = () => {};
       const turn: LiveTurn = {
         id: turnId,
         threadId: input.threadId,
+        ownerId: input.owner.id,
+        botId: input.botId,
+        label: chatLabelOf(input.messages),
+        startedAt: new Date(),
         status: "queued",
         asked: input.messages.map((message) => message.id),
         stop: new AbortController(),
+        free: () => free(),
+        ended: Promise.resolve(),
       };
+      // Re-checked after every await below: a second send can arrive while this one is writing.
+      if (live.has(input.threadId)) {
+        return { ok: false, code: "laf:turn_in_progress" };
+      }
       live.set(input.threadId, turn);
       try {
         await options.ledger.begin({
@@ -500,7 +625,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
           userId: input.owner.id,
           origin: "chat",
           // What the person asked, for 오늘 to name the turn by.
-          label: chatLabelOf(input.messages),
+          label: turn.label,
           continues: false,
         });
         // The person's side is safe from here, whatever happens to the turn.
@@ -533,15 +658,15 @@ export function createTurnEngine(options: TurnEngineOptions) {
           return true;
         },
       });
-      const task = () => run(turn, input);
-      void (options.lane ? options.lane.run(input.botId, task) : task())
+      free = () => {
+        done?.();
+        if (live.get(input.threadId) === turn) live.delete(input.threadId);
+      };
+      turn.ended = run(turn, input)
         .catch((error: unknown) => {
           log.error("turn_crashed", { reason: describeFailure(error) });
         })
-        .finally(() => {
-          done?.();
-          if (live.get(input.threadId) === turn) live.delete(input.threadId);
-        });
+        .finally(() => turn.free());
       return { ok: true, turnId };
     },
 
@@ -553,9 +678,36 @@ export function createTurnEngine(options: TurnEngineOptions) {
       return true;
     },
 
+    /**
+     * Stop every turn this person has going, and wait until each has written its end. What an
+     * account's deletion does first, so no turn goes on writing into a conversation being deleted.
+     */
+    async stopFor(userId: string): Promise<void> {
+      const theirs = [...live.values()].filter(
+        (turn) => turn.ownerId === userId,
+      );
+      for (const turn of theirs) turn.stop.abort();
+      await Promise.all(theirs.map((turn) => turn.ended));
+    },
+
     /** Whether the conversation has a turn queued or running. */
     busy(threadId: string): boolean {
       return live.has(threadId);
+    },
+
+    /**
+     * The turns going on for one person, as the roster reads work: a turn this process is running
+     * is running however long ago it started, which the ledger's ten-minute presumption cannot say.
+     */
+    working(userId: string): WorkingRun[] {
+      return [...live.values()]
+        .filter((turn) => turn.ownerId === userId)
+        .map((turn) => ({
+          agentId: turn.botId,
+          origin: "chat",
+          label: turn.label,
+          startedAt: turn.startedAt.toISOString(),
+        }));
     },
   };
 }
