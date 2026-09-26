@@ -430,6 +430,7 @@
   "server/tests/thread-store.integration.test.ts",
   "server/tests/token-encryption.test.ts",
   "server/tests/tool-exposure.test.ts",
+  "server/tests/transaction-pool.integration.test.ts",
   "server/tests/trial-config.test.ts",
   "server/tests/trial-env-contract.test.ts",
   "server/tests/trial-me.test.ts",
