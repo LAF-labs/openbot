@@ -146,14 +146,31 @@ export type NoticeRequest = {
   notify: boolean | undefined;
   /** A Bot hidden from the roster is one somebody has already put away. */
   hidden: boolean | undefined;
-  /** `document.visibilityState === "visible"`. */
-  visible: boolean;
+  /** Somebody is looking at this window: `isLookedAt()`. */
+  lookedAt: boolean;
   /** The room on screen, and the room this is about. Only `finished` has a room. */
   openChannelId?: string | null;
   channelId?: string;
   /** Milliseconds, for the throttle. */
   now: number;
 };
+
+/**
+ * Whether somebody is looking at this window: its page is showing AND the window has the focus.
+ *
+ * VISIBLE WAS NOT ENOUGH, AND IN THE INSTALLED APP IT WAS NEARLY ALWAYS TRUE. A window left open
+ * behind the spreadsheet a shop owner is actually working in stays "visible" — WebView2 tracks no
+ * occlusion at all, and WKWebView only calls a window hidden once it is covered completely — so a
+ * Bot that stopped to ask was answered "they are looking at it" and raised no notice, at exactly
+ * the moment the shell exists for: somebody working in another app. Focus is what a person looking
+ * at the window gives it; a tab in the foreground of an unfocused browser gets the notice too,
+ * which is the same person in the same other app.
+ */
+export function isLookedAt(
+  page: Pick<Document, "visibilityState" | "hasFocus"> = document,
+): boolean {
+  return page.visibilityState === "visible" && page.hasFocus();
+}
 
 /**
  * One decider, both kinds, in this order: put away, muted, looking at it, too soon.
@@ -163,9 +180,9 @@ export type NoticeRequest = {
  * otherwise interrupt somebody who had put it away.
  *
  * "Looking at it" differs by kind, and that asymmetry is the point. A question is raised by a tool
- * call in the tab the person is driving, so a visible tab already draws the card on that call's own
- * line and a visible tab is enough to stay quiet. A message can arrive in any room, so it takes a
- * visible tab AND that room being the one on screen.
+ * call in the tab the person is driving, so a window they are looking at already draws the card on
+ * that call's own line and is enough to stay quiet. A message can arrive in any room, so it takes a
+ * window they are looking at AND that room being the one on screen.
  */
 export function decideNotice(
   request: NoticeRequest,
@@ -173,7 +190,7 @@ export function decideNotice(
 ): NoticeDecision {
   if (request.hidden) return "hidden";
   if (request.notify === false) return "muted";
-  if (request.visible) {
+  if (request.lookedAt) {
     if (request.kind === "needs-you") return "focused";
     if (request.openChannelId === request.channelId) return "focused";
   }

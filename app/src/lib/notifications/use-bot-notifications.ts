@@ -16,6 +16,21 @@ import {
   SOCKET_RECONNECTED,
   socketState,
 } from "@/lib/channels/use-channel-events";
+import { appConfig } from "@/lib/generated/application-config";
+import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
+import {
+  canRaiseNotice,
+  decideNotice,
+  isLookedAt,
+  type NoticeDestination,
+  type NoticeKind,
+  type NoticeRequest,
+  notificationSupport,
+  setUnreadBadge,
+  showNotice,
+  throttleKey,
+} from "@/lib/notifications/bot-notifications";
 import {
   destinationOf,
   markNotificationSeen,
@@ -25,23 +40,9 @@ import {
   readNotifications,
   routinesChangedBy,
 } from "@/lib/notifications/outbox";
-import { appConfig } from "@/lib/generated/application-config";
-import { t } from "@/lib/i18n";
-import { josa } from "@/lib/josa";
+import { inShell } from "@/lib/notifications/shell";
 import { routineKeys } from "@/lib/routines/queries";
 import { pausedCountOf, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
-import {
-  canRaiseNotice,
-  decideNotice,
-  type NoticeDestination,
-  type NoticeKind,
-  type NoticeRequest,
-  notificationSupport,
-  setUnreadBadge,
-  showNotice,
-  throttleKey,
-} from "@/lib/notifications/bot-notifications";
-import { inShell } from "@/lib/notifications/shell";
 
 /**
  * The title of the notice that a Bot is stopped and waiting, with the particle that fits its name.
@@ -239,7 +240,7 @@ export function useBotNotifications(): void {
           agentId,
           notify: bot?.notify,
           hidden: bot?.hidden,
-          visible: document.visibilityState === "visible",
+          lookedAt: isLookedAt(),
           openChannelId: openChannelFrom(pathRef.current),
           channelId: activity.channelId,
           now: Date.now(),
@@ -291,7 +292,7 @@ export function useBotNotifications(): void {
             agentId: question.botId,
             notify: bot?.notify,
             hidden: bot?.hidden,
-            visible: document.visibilityState === "visible",
+            lookedAt: isLookedAt(),
             now: Date.now(),
           },
           {
@@ -386,7 +387,7 @@ export function useBotNotifications(): void {
           agentId: frame.botId,
           notify: bot?.notify,
           hidden: bot?.hidden,
-          visible: document.visibilityState === "visible",
+          lookedAt: isLookedAt(),
           openChannelId: openChannelFrom(pathRef.current),
           ...(frame.channelId ? { channelId: frame.channelId } : {}),
           now: Date.now(),

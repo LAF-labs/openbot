@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   canRaiseNotice,
   decideNotice,
-  noticeBody,
+  isLookedAt,
   type NoticeRequest,
+  noticeBody,
   readNotificationSupport,
   THROTTLE_MS,
   throttleKey,
@@ -15,7 +18,7 @@ const finished: NoticeRequest = {
   agentId: "risk-analyst",
   notify: true,
   hidden: false,
-  visible: true,
+  lookedAt: true,
   openChannelId: null,
   channelId: "channel_a",
   now: 1_000_000,
@@ -25,7 +28,7 @@ const needsYou: NoticeRequest = {
   agentId: "risk-analyst",
   notify: true,
   hidden: false,
-  visible: false,
+  lookedAt: false,
   now: 1_000_000,
 };
 
@@ -46,7 +49,7 @@ describe("whether a Bot finishing is worth interrupting for", () => {
   test("that room in a hidden tab is, because nobody is reading it", () => {
     expect(
       decideNotice(
-        { ...finished, openChannelId: "channel_a", visible: false },
+        { ...finished, openChannelId: "channel_a", lookedAt: false },
         undefined,
       ),
     ).toBe("deliver");
@@ -59,9 +62,55 @@ describe("whether a Bot asking is worth interrupting for", () => {
   });
 
   test("a visible tab is not, whatever room is open — the card is right there", () => {
-    expect(decideNotice({ ...needsYou, visible: true }, undefined)).toBe(
+    expect(decideNotice({ ...needsYou, lookedAt: true }, undefined)).toBe(
       "focused",
     );
+  });
+});
+
+/**
+ * The installed app's window, open behind the spreadsheet somebody is working in, stays "visible":
+ * WebView2 tracks no occlusion, and WKWebView calls a window hidden only once it is fully covered.
+ * Read by visibility alone, a Bot that stopped to ask raised no notice then — the moment the shell
+ * exists for.
+ */
+describe("whether somebody is looking at the window", () => {
+  const page = (
+    visibilityState: DocumentVisibilityState,
+    focused: boolean,
+  ) => ({
+    visibilityState,
+    hasFocus: () => focused,
+  });
+
+  test("a showing, focused window is being looked at", () => {
+    expect(isLookedAt(page("visible", true))).toBe(true);
+  });
+
+  test("a window left open behind another app is not, though it is still visible", () => {
+    expect(isLookedAt(page("visible", false))).toBe(false);
+    expect(
+      decideNotice(
+        { ...needsYou, lookedAt: isLookedAt(page("visible", false)) },
+        undefined,
+      ),
+    ).toBe("deliver");
+  });
+
+  test("a hidden page is not, whatever holds the focus", () => {
+    expect(isLookedAt(page("hidden", true))).toBe(false);
+  });
+
+  test("every notice the app raises asks the same question", () => {
+    const hook = readFileSync(
+      join(
+        import.meta.dir,
+        "../src/lib/notifications/use-bot-notifications.ts",
+      ),
+      "utf8",
+    );
+    expect(hook).not.toContain("visibilityState");
+    expect(hook.match(/lookedAt: isLookedAt\(\)/g)?.length).toBe(3);
   });
 });
 
