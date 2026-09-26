@@ -103,6 +103,43 @@ export const COMPUTER_FIRST_TASK: Sentence = {
 };
 
 /**
+ * The grant that makes the support-programme chip answerable: 기업마당, on the fleet's key.
+ *
+ * `server/src/plugins/public-data-rest.ts` grants it to every Bot on a VM that holds
+ * `DATA_GO_KR_SERVICE_KEY`, at boot and the moment a Bot is made, and takes it back when the key is
+ * gone. So the Bot's own grants are the one fact that answers "can this be asked here" — the
+ * catalogue says what the deployment could offer; the grant says what this Bot will actually call.
+ */
+export const SUPPORT_PROGRAMS_TOOL = "public-data/search_support_programs";
+
+/**
+ * 지원사업 — the first task that needs nothing from the person and still comes back with something
+ * nobody could have written from their own head (`~/laf/docs/korean-smb-needs-2026-09.md` §7.2).
+ *
+ * Not in `NO_CONNECTION_TASKS`: that table is one sentence per kind of work, all answerable on
+ * every deployment, and the server reads `pattern` + `via` as naming a sentence exactly. This one is
+ * answerable only where the fleet's key is, so it travels as what it is — a sentence the public-data
+ * entry made answerable, named by that entry's catalogue key, which the press route already accepts.
+ * The package's 지원사업 skill (`tenant/laf/skills/support-programs.md`) is how the Bot does it.
+ */
+export const SUPPORT_PROGRAMS_FIRST_TASK: Sentence & {
+  via: { kind: "account"; id: "public-data" };
+} = {
+  pattern: "paperwork",
+  sentence: "Find the government support programmes our shop could apply for.",
+  via: { kind: "account", id: "public-data" },
+};
+
+/** Whether this Bot holds the 기업마당 tool — the only condition the support chip is drawn on. */
+export function holdsSupportPrograms(
+  granted: { tools: readonly { ref: string }[] } | undefined,
+): boolean {
+  return (
+    granted?.tools.some((tool) => tool.ref === SUPPORT_PROGRAMS_TOOL) ?? false
+  );
+}
+
+/**
  * One sentence per pattern that a Bot can answer with nothing connected at all.
  *
  * In the order they are offered when nothing narrows it: the first four are what somebody with
@@ -296,6 +333,11 @@ export function pickFirstTasks(
     count?: number;
     /** What the person answered about the business. Absent or empty changes nothing. */
     shop?: ShopProfile;
+    /**
+     * Whether this Bot holds the 기업마당 tool (`holdsSupportPrograms`). Absent is no: a chip for a
+     * tool the Bot does not have is a first task that fails.
+     */
+    supportPrograms?: boolean;
   } = {},
 ): FirstTask[] {
   const count = options.count ?? FIRST_TASK_COUNT;
@@ -357,6 +399,34 @@ export function pickFirstTasks(
   );
   if (!onTheComputer && lastPadding >= 0) {
     picked[lastPadding] = { kind: "ask", ...COMPUTER_FIRST_TASK, via: null };
+  }
+
+  /*
+   * 지원사업, SECOND AMONG THE SENTENCES THAT NEED NOTHING, where the Bot holds the tool. It takes
+   * the place of the last padding chip that is not the lookup — the row stays four, and the Bot's
+   * computer stays on it. Second rather than first because the 7:30 chip repeats the first sentence
+   * that asks something, and a search for support programmes every morning answers the same list
+   * six days running; the skill offers a Monday routine of its own instead. Never a `candidate`:
+   * the general connect chip is for somebody with nothing connected, and this connects nothing.
+   */
+  if (options.supportPrograms) {
+    const padding = picked.flatMap((task, index) =>
+      task.kind === "ask" && task.via === null ? [index] : [],
+    );
+    const drop = padding.findLast(
+      (index) =>
+        (picked[index] as FirstTaskAsk).sentence !==
+        COMPUTER_FIRST_TASK.sentence,
+    );
+    const start = padding[0];
+    if (drop !== undefined && start !== undefined) {
+      picked.splice(drop, 1);
+      const stillPadded = padding.length > 1;
+      picked.splice(stillPadded ? start + 1 : start, 0, {
+        kind: "ask",
+        ...SUPPORT_PROGRAMS_FIRST_TASK,
+      });
+    }
   }
 
   /*

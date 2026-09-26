@@ -19,6 +19,7 @@ import {
   useBotDay,
 } from "@/lib/agents/day";
 import {
+  holdsSupportPrograms,
   isFirstConversation,
   pickFirstTasks,
   reportFirstTaskPressed,
@@ -36,6 +37,7 @@ import { useStartChannel } from "@/lib/channels/start";
 import { frameAddress } from "@/lib/computer/last-frame";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { t } from "@/lib/i18n";
+import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import { routineListQueryOptions, whenLabel } from "@/lib/routines/queries";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -495,12 +497,16 @@ function FirstThings({
 }) {
   const overview = useQuery(connectionsOverviewQueryOptions());
   const user = useQuery(currentUserQueryOptions());
+  // What this Bot holds decides the 지원사업 chip; drawn once it has answered, never swapped in later.
+  const granted = useQuery(agentPluginsQueryOptions(botId));
   const { start, pending } = useStartChannel();
-  const tasks = overview.data
-    ? pickFirstTasks(overview.data, { shop: user.data?.shop }).flatMap(
-        (task) => (task.kind === "ask" ? [task] : []),
-      )
-    : [];
+  const tasks =
+    overview.data && !granted.isPending
+      ? pickFirstTasks(overview.data, {
+          shop: user.data?.shop,
+          supportPrograms: holdsSupportPrograms(granted.data),
+        }).flatMap((task) => (task.kind === "ask" ? [task] : []))
+      : [];
 
   return (
     <div className="flex flex-col gap-2 px-1">

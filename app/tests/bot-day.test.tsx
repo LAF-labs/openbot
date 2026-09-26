@@ -88,6 +88,8 @@ function server(options: {
   items: Item[];
   channels?: ReturnType<typeof conversation>[];
   routines?: ReturnType<typeof routine>[];
+  /** The tool refs the Bot holds (`GET /api/plugins/for/:id`). */
+  granted?: string[];
 }) {
   const asked: string[] = [];
   globalThis.fetch = stubFetch(async (input, init) => {
@@ -114,6 +116,17 @@ function server(options: {
     }
     if (url === "/api/connections/overview") {
       return json({ sites: [], accounts: [] });
+    }
+    if (url === "/api/plugins/for/bot-1") {
+      return json({
+        tools: (options.granted ?? []).map((ref) => ({
+          ref,
+          toolName: ref,
+          description: "",
+          inputSchema: {},
+        })),
+        skills: [],
+      });
     }
     if (url === "/api/me") {
       return json({
@@ -364,6 +377,22 @@ describe("오늘", () => {
     const chips = [...fresh.host.querySelectorAll("section div button")];
     expect(chips.length).toBeGreaterThan(0);
     expect(chips.length).toBeLessThanOrEqual(3);
+    await unmountAll();
+
+    // A Bot holding the 기업마당 tool is offered the support programmes among the three.
+    const funded = await day({
+      items: [],
+      channels: [],
+      granted: ["public-data/search_support_programs"],
+    });
+    await funded.settle(60);
+    const offered = [...funded.host.querySelectorAll("section div button")].map(
+      (chip) => chip.textContent,
+    );
+    expect(offered).toHaveLength(3);
+    expect(offered).toContain(
+      "Find the government support programmes our shop could apply for.",
+    );
     await unmountAll();
 
     // Not beside the empty conversation, which offers the same chips under the face.

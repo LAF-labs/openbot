@@ -8,6 +8,7 @@ import {
   type FirstTask,
   type FirstTaskPressed,
   firstTaskPressBody,
+  holdsSupportPrograms,
   isFirstConversation,
   MORNING_REPORT_TIME,
   makeMorningReport,
@@ -16,6 +17,8 @@ import {
   pickFirstTasks,
   reportFirstTaskPressed,
   routineSentence,
+  SUPPORT_PROGRAMS_FIRST_TASK,
+  SUPPORT_PROGRAMS_TOOL,
 } from "../src/lib/agents/first-tasks";
 import {
   WORK_PATTERNS,
@@ -407,7 +410,11 @@ describe("what a press reports", () => {
     const agentId = "agent_1f2e3d4c-aaaa-4bbb-8ccc-123456789abc";
     let checked = 0;
     for (const connected of [overview(), everything]) {
-      const tasks = pickFirstTasks(connected, { count: 64 });
+      // With the 지원사업 chip on the row: its `via` names the public-data entry, and must count.
+      const tasks = pickFirstTasks(connected, {
+        count: 64,
+        supportPrograms: true,
+      });
       const leading = tasks.find((task) => task.kind === "ask");
       const presses: FirstTaskPressed[] = tasks.map((task) =>
         task.kind === "connect"
@@ -526,6 +533,7 @@ describe("the words", () => {
   const sentences = [
     ...NO_CONNECTION_TASKS.map((task) => task.sentence),
     ...Object.values(ACCOUNT_FIRST_TASKS).map((task) => task.sentence),
+    SUPPORT_PROGRAMS_FIRST_TASK.sentence,
     ...BUSINESS_SITES.map((entry) => entry.prompts[0] ?? ""),
   ];
 
@@ -558,6 +566,7 @@ describe("the words", () => {
     for (const task of [
       ...NO_CONNECTION_TASKS,
       ...Object.values(ACCOUNT_FIRST_TASKS),
+      SUPPORT_PROGRAMS_FIRST_TASK,
     ]) {
       expect(known.has(task.pattern)).toBe(true);
     }
@@ -608,6 +617,7 @@ describe("the words", () => {
     for (const sentence of [
       ...NO_CONNECTION_TASKS,
       ...Object.values(ACCOUNT_FIRST_TASKS),
+      SUPPORT_PROGRAMS_FIRST_TASK,
     ].map((task) => task.sentence)) {
       expect(ko[sentence]).toMatch(/줘$/);
     }
@@ -655,5 +665,103 @@ describe("the Bot's computer is on the row", () => {
         id: "naver-smartplace",
       }),
     );
+  });
+});
+
+/*
+ * 지원사업 — the one first task that needs nothing from the person and still returns something no
+ * model could write from its own head. Offered only where the Bot holds the 기업마당 tool, second
+ * among the sentences that need nothing, and never at the cost of the Bot's computer.
+ */
+describe("the support-programme chip", () => {
+  const support = ask(SUPPORT_PROGRAMS_FIRST_TASK.sentence, {
+    kind: "account",
+    id: "public-data",
+  });
+  const hasSupport = (tasks: readonly FirstTask[]) =>
+    tasks.some(
+      (task) =>
+        task.kind === "ask" &&
+        task.sentence === SUPPORT_PROGRAMS_FIRST_TASK.sentence,
+    );
+
+  test("is not drawn for a Bot that does not hold the tool", () => {
+    expect(hasSupport(pickFirstTasks(overview()))).toBe(false);
+    expect(
+      hasSupport(pickFirstTasks(overview(), { supportPrograms: false })),
+    ).toBe(false);
+  });
+
+  test("the grant decides, by the tool's own ref", () => {
+    expect(holdsSupportPrograms(undefined)).toBe(false);
+    expect(holdsSupportPrograms({ tools: [] })).toBe(false);
+    expect(
+      holdsSupportPrograms({ tools: [{ ref: "public-data/search_bids" }] }),
+    ).toBe(false);
+    expect(
+      holdsSupportPrograms({ tools: [{ ref: SUPPORT_PROGRAMS_TOOL }] }),
+    ).toBe(true);
+  });
+
+  test("with nothing connected: second, after the lookup, and the row is still four and a link", () => {
+    const tasks = pickFirstTasks(overview(), { supportPrograms: true });
+    expect(sentencesOf(tasks)).toEqual([
+      weather,
+      SUPPORT_PROGRAMS_FIRST_TASK.sentence,
+      introductions,
+      opening,
+      "connect",
+    ]);
+    expect(tasks[1]).toEqual(support);
+    // The 7:30 chip repeats the lookup, not a search that answers the same list every morning.
+    expect(routineSentence(tasks)).toBe(weather);
+  });
+
+  test("whatever the shop's order, it is second among what needs nothing, and the lookup stays", () => {
+    for (const kind of BUSINESS_KINDS) {
+      const tasks = pickFirstTasks(overview(), {
+        shop: { kind: kind.id, places: [] },
+        supportPrograms: true,
+      });
+      const asks = tasks.filter((task) => task.kind === "ask");
+      expect(asks).toHaveLength(FIRST_TASK_COUNT);
+      expect(asks[1]).toEqual(support);
+      expect(
+        asks.some((task) => task.sentence === COMPUTER_FIRST_TASK.sentence),
+      ).toBe(true);
+    }
+  });
+
+  test("a connected sentence still comes first, and nothing connected is displaced", () => {
+    const tasks = pickFirstTasks(overview([site("naver-smartplace")]), {
+      supportPrograms: true,
+    });
+    const asks = tasks.filter((task) => task.kind === "ask");
+    expect(asks).toHaveLength(FIRST_TASK_COUNT);
+    expect(asks[0]).toEqual(
+      ask(firstPrompt("naver-smartplace"), {
+        kind: "site",
+        id: "naver-smartplace",
+      }),
+    );
+    // Second among the padding: the connected sentence, the first padding chip, then this.
+    expect(asks[2]).toEqual(support);
+    // It connects nothing, so a person with a site connected is not sent to 연결 because of it.
+    expect(tasks.some((task) => task.kind === "connect")).toBe(false);
+  });
+
+  test("with no room beside the lookup, the lookup keeps its place", () => {
+    const accounts = ["gmail", "google-calendar", "google-sheets"].map((id) =>
+      account(id),
+    );
+    const tasks = pickFirstTasks(overview([], accounts), {
+      supportPrograms: true,
+    });
+    const asks = tasks.filter((task) => task.kind === "ask");
+    expect(asks).toHaveLength(FIRST_TASK_COUNT);
+    expect(asks.map((task) => task.sentence)).toContain(
+      COMPUTER_FIRST_TASK.sentence,
+    );
+    expect(hasSupport(tasks)).toBe(false);
   });
 });

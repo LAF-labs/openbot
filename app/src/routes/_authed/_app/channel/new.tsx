@@ -12,7 +12,11 @@ import { seedMessage } from "@/components/channels/transcript-messages";
 import { MobileNavButton } from "@/components/layout/mobile-nav-button";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isFirstConversation, pickFirstTasks } from "@/lib/agents/first-tasks";
+import {
+  holdsSupportPrograms,
+  isFirstConversation,
+  pickFirstTasks,
+} from "@/lib/agents/first-tasks";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { usePublishTurn } from "@/lib/agents/presence";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
@@ -22,6 +26,7 @@ import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
+import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
 /**
@@ -109,9 +114,18 @@ function FirstConversation({ botId }: { botId: string }) {
   const { data: overview } = useQuery(connectionsOverviewQueryOptions());
   const { data: channels } = useQuery(channelListQueryOptions());
   const { data: user } = useQuery(currentUserQueryOptions());
+  // Already fetched for the first turn (`useActiveBot` above); the 지원사업 chip waits on it too.
+  const granted = useQuery(agentPluginsQueryOptions(botId));
   const firstTasks =
-    bot && overview && channels && isFirstConversation(channels, bot.id)
-      ? pickFirstTasks(overview, { shop: user?.shop })
+    bot &&
+    overview &&
+    channels &&
+    !granted.isPending &&
+    isFirstConversation(channels, bot.id)
+      ? pickFirstTasks(overview, {
+          shop: user?.shop,
+          supportPrograms: holdsSupportPrograms(granted.data),
+        })
       : null;
 
   // The first message is on its way: the header says the Bot is thinking before the channel exists.

@@ -1848,6 +1848,9 @@ export const ko: Record<string, string> = {
   "Try one of these first": "이런 일부터 시켜 보세요",
   "Look up today's weather on Naver and tell me.":
     "네이버에서 오늘 날씨 찾아서 알려줘",
+  // 공공데이터 키가 있는 배포에서, 봇이 기업마당 툴을 받았을 때만 뜬다.
+  "Find the government support programmes our shop could apply for.":
+    "우리 가게가 받을 수 있는 지원사업 찾아줘",
   "Write three short introductions for our shop.":
     "우리 가게 소개 문구 세 가지 써줘",
   "Make a checklist for opening up tomorrow morning.":
