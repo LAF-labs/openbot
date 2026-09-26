@@ -819,7 +819,18 @@ void reportInterruptedRuns({
  * and the app drives turns from the window as it did before (`deployment.serverTurns`).
  */
 const turnHub = createTurnHub();
-const personAnswers = createPersonAnswers();
+/*
+ * The cards a turn waits on a person's choice for, told to every window of the conversation as they
+ * start and stop waiting, so the one the person presses in can answer.
+ */
+const personAnswers = createPersonAnswers({
+  onChange: (threadId) => {
+    const turn = turnHub.state(threadId).turn;
+    if (turn) {
+      turnHub.waiting(threadId, turn.id, personAnswers.awaiting(threadId));
+    }
+  },
+});
 const chatTools = createChatTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
@@ -854,7 +865,6 @@ const turnEngine = config.harness.serverTurns
           text,
           at: new Date(),
         }),
-      awaiting: (threadId) => personAnswers.awaiting(threadId),
     })
   : undefined;
 

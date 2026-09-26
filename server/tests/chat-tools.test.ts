@@ -285,7 +285,11 @@ describe("a computer call, answered as the window answered it", () => {
 
 describe("a card the Bot asks the person with", () => {
   test("its answer is the call's result, from whichever window pressed it", async () => {
-    const people = createPersonAnswers();
+    // Every window is told when a card starts waiting and when it stops (`waiting` frames).
+    const told: string[] = [];
+    const people = createPersonAnswers({
+      onChange: (threadId) => told.push(threadId),
+    });
     const components = {
       listForAgent: async () => [
         {
@@ -295,7 +299,7 @@ describe("a card the Bot asks the person with", () => {
           description: "d",
         },
       ],
-      decide: async () => ({ allowed: true }),
+      decide: async () => ({ allowed: true as const, description: "d" }),
       mayCall: async () => true,
     };
     const toolkit = await createChatTools({ people, components })(context, [
@@ -312,6 +316,8 @@ describe("a card the Bot asks the person with", () => {
     expect(people.answer("thread-2", "choice-1", { choice: "b" })).toBe(false);
     expect(people.answer("thread-1", "choice-1", { choice: "a" })).toBe(true);
     expect(await pending).toBe('{"choice":"a"}');
+    expect(told).toEqual(["thread-1", "thread-1"]);
+    expect(people.awaiting("thread-1")).toEqual([]);
   });
 
   test("a card on screen answers with its own sentence", async () => {
@@ -319,7 +325,7 @@ describe("a card the Bot asks the person with", () => {
       listForAgent: async () => [
         { name: "showBarChart", title: "Bar", kind: "chart", description: "d" },
       ],
-      decide: async () => ({ allowed: true }),
+      decide: async () => ({ allowed: true as const, description: "d" }),
       mayCall: async () => true,
     };
     const toolkit = await createChatTools({
@@ -382,7 +388,11 @@ describe("manage_routine, as the window's handler answered it", () => {
     expect(
       await routineAction(
         service({
-          setEnabled: async (_actor: unknown, _id: string, enabled: boolean) => {
+          setEnabled: async (
+            _actor: unknown,
+            _id: string,
+            enabled: boolean,
+          ) => {
             toggled.push(enabled);
             return routine;
           },

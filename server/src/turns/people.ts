@@ -95,7 +95,15 @@ type Waiting = {
  *
  * Keyed by the tool call's id, which the model's provider mints per call: two calls never share one.
  */
-export function createPersonAnswers() {
+export function createPersonAnswers(
+  options: {
+    /**
+     * The cards a conversation is waiting on changed: one started waiting, or stopped. What tells
+     * every window which card to hand a `respond` (`hub.ts`, `waiting` frames).
+     */
+    onChange?: (threadId: string) => void;
+  } = {},
+) {
   const waiting = new Map<string, Waiting>();
   const skipped = new Map<string, number>();
   /** A skip nobody read is forgotten after the longest a help request may wait. */
@@ -123,6 +131,7 @@ export function createPersonAnswers() {
           input.signal.removeEventListener("abort", onStop);
           if (waiting.get(input.toolCallId)?.resolve === settle) {
             waiting.delete(input.toolCallId);
+            options.onChange?.(input.threadId);
           }
           resolve(value);
         }
@@ -133,6 +142,7 @@ export function createPersonAnswers() {
           threadId: input.threadId,
           resolve: settle,
         });
+        options.onChange?.(input.threadId);
       });
     },
     /** A window answered. False when nothing in that conversation is waiting on that call. */

@@ -83,7 +83,7 @@ export type TurnEngineOptions = {
   /** The same agents every run path resolves, as the conversation's owner. */
   resolveAgents: (
     actor: AgentActor,
-  ) => Promise<Record<string, LoopAgent | undefined>>;
+  ) => Promise<Record<string, TurnAgent | undefined>>;
   /** The turn's tools, carried out here (`chat-tools.ts`). */
   tools: (
     context: ChatTurnContext,
@@ -98,11 +98,12 @@ export type TurnEngineOptions = {
     agentId: string | null;
     text: string;
   }) => Promise<void>;
-  /** The cards a turn is waiting on a person to answer, for a window that opens mid-wait. */
-  awaiting?: (threadId: string) => string[];
   maxSteps?: number;
   timeoutMs?: number;
 };
+
+/** The Bot as a turn drives it: the loop's slice, and the conversation it answers in. */
+type TurnAgent = LoopAgent & { threadId?: string };
 
 type LiveTurn = {
   id: string;
@@ -224,7 +225,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
     const startedAt = new Map<string, string>();
     /** When each result was filed. */
     const filedAt = new Map<string, string>();
-    let target: LoopAgent | undefined;
+    let target: TurnAgent | undefined;
     let from = 0;
     let events = 0;
     let failure: string | null = null;
@@ -250,6 +251,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
       const agents = await options.resolveAgents(owner);
       target = agents[botId];
       if (!target) throw new Error("laf:bot_not_found");
+      /*
+       * THE CONVERSATION'S OWN ID ON EVERY RUN. An agent resolved here is a fresh one, and AG-UI
+       * mints it a random thread id: every run of the turn then looked like a conversation nobody
+       * had seen, so each turn began a new epoch ("resumed") and was billed its whole history
+       * again, and its usage rows named a thread that does not exist. Measured on the usage rows:
+       * every server-owned turn started an epoch, where the window's turns went on in one.
+       */
+      target.threadId = threadId;
       const stored = repairUnanswered(
         (await messagesFor(options.database, threadId)).map(forTheBot),
       );
@@ -318,10 +327,6 @@ export function createTurnEngine(options: TurnEngineOptions) {
           }
           options.hub.event(threadId, turn.id, event);
         },
-        onToolStart: () => {
-          const waiting = options.awaiting?.(threadId);
-          if (waiting) options.hub.waiting(threadId, turn.id, waiting);
-        },
         onToolResult: (message) => {
           filedAt.set(message.id, new Date().toISOString());
           options.hub.event(threadId, turn.id, {
@@ -331,8 +336,6 @@ export function createTurnEngine(options: TurnEngineOptions) {
             content: message.content,
             role: "tool",
           } as BaseEvent);
-          const waiting = options.awaiting?.(threadId);
-          if (waiting) options.hub.waiting(threadId, turn.id, waiting);
           void persistNow();
         },
         onStep: async () => {

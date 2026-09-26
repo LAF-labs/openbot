@@ -269,6 +269,8 @@ describe("a turn the server owns", () => {
     expect(stored.at(-1)?.lafAgentId).toBe(BOT);
     // The second run was handed the result the server filed, as the window's second run was.
     expect(bot.inputs[1]?.at(-1)?.role).toBe("tool");
+    // And every run answered in the conversation's own thread, which its epoch is kept under.
+    expect((bot as { threadId?: string }).threadId).toBe(threadId);
     await until(async () => announced.length > 0);
     expect(announced).toEqual(["다 됐어요."]);
     // And it reads back a page at a time, newest last, each with its durable cursor.

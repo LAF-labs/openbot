@@ -8,7 +8,11 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { BaseEvent, Message } from "@ag-ui/client";
-import { createTurnHub, type TurnFrame, type TurnSnapshot } from "../src/turns/hub";
+import {
+  createTurnHub,
+  type TurnFrame,
+  type TurnSnapshot,
+} from "../src/turns/hub";
 
 const running = { id: "t1", status: "running" as const, asked: ["u1"] };
 const delta = (text: string) =>
