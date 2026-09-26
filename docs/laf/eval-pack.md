@@ -762,6 +762,101 @@ high (`supports_effort: true`; quick → low, balanced → high, thorough → ma
 Fleet: `LAF_FLEET_BOT_MODEL=deepseek/deepseek-v4.1-flash` (VM `BOT_MODEL`), and `BOT_MODEL_EFFORT`
 true or unset — a VM that still says `false` from the MiMo days keeps the effort control hidden.
 
+**The pack with 지원사업 비서 (2026-09-27, commit `149d121f`).** 33 scenarios once, unpinned:
+**30/33** — `watch-signals-triaged` 0/3 as above, `declined-says-declined` 2/3 on rerun,
+`send-alimtalk-with-the-blanks-named` 6/8 with the public-data tools in the toolset (3/3 without).
+`support-programs-only-from-the-portal` 3/3 at `EVAL_RUNS=3`, ~53 s and ~45K tokens a run.
+
+## Answer latency — the endpoint, not the prompt or the effort (2026-09-27)
+
+The 지원사업 walk: 75 s from 시작하기 to a five-item list, and the last round — the answer after
+four portal searches — sat 28 s on 생각 중 before its first word. `round_finished` and the usage
+row said why, once read together:
+
+| walk | endpoint | prompt / cached | first chunk | reasoning | first word | done |
+|---|---|---|---|---|---|---|
+| first walk (03:39 KST) | Relace | 19,850 / 0 | 0.8 s | 1,583 tok (58 tok/s) | 28.2 s | 38.7 s |
+| second walk (04:44 KST) | Relace | 19,829 / 8,192 | 0.7 s | 602 tok (160 tok/s) | 4.4 s | 9.6 s |
+
+**How it was measured.** The polish walk's thread and frozen system message, replayed through
+`agent-bot`'s own `runAgent` against OpenRouter with the realistic toolset — 19,829 prompt tokens,
+the walk's own count to the token. Every request cold (a nonce at the head of the system message),
+because the walk's round read nothing from cache. Each answer judged by the pack's own
+`judgeSupportAnswer` against the rows the portal returned in that thread. Effort `balanced` (=
+`high`) unless named. Medians; the first word's range in brackets.
+
+| arm | n | endpoint | first chunk | first word | done | reasoning | tok/s | $ / round | judge |
+|---|---|---|---|---|---|---|---|---|---|
+| **deployment policy (ignore-only)** | 6 | Relace ×6 | 1.4 s | **32.8 s** (17.0–75.6) | 54.2 s | 1,079 | 42 | 0.0018 | 6/6 |
+| Parasail | 3 | pinned | 0.9 s | 4.9 s (4.0–6.8) | 6.5 s | 1,182 | 379 | 0.0084 | 3/3 |
+| Venice | 3 | pinned | 1.5 s | 6.2 s (5.7–15.3) | 8.4 s | 1,352 | 292 | 0.0105 | 3/3 |
+| Together | 3 | pinned | 0.7 s | 6.4 s (5.6–7.7) | 9.9 s | 1,365 | 218 | 0.0086 | 3/3 |
+| Novita | 3 | pinned | 1.2 s | 7.2 s (5.6–8.4) | 10.4 s | 1,433 | 243 | 0.0083 | 3/3 |
+| Makora | 3 | pinned | 1.2 s | 7.6 s (6.4–8.3) | 10.2 s | 1,709 | 259 | 0.0091 | 3/3 |
+| Alibaba | 3 | pinned | 1.5 s | 9.2 s (6.3–11.8) | 11.8 s | 1,638 | 236 | 0.0045 | 3/3 |
+| Fireworks | 3 | pinned | 1.7 s | 14.1 s (13.2–15.0) | 21.1 s | 1,101 | 82 | 0.0056 | 2/3 (one 5xx) |
+| DeepInfra | 3 | pinned | 1.4 s | 23.5 s (16.4–33.1) | 34.9 s | 1,548 | 66 | 0.0038 | 3/3 |
+| InferenceNet | 3 | pinned | 3.5 s | 78.6 s (72.6–81.8) | cut at 120 s | — | ~14 | — | 0/3 finished |
+| **new policy** | 5 | Alibaba ×5 | 1.3 s | **6.7 s** (4.7–7.1) | 9.6 s | 1,336 | 249 | 0.0043 | 5/5 |
+
+- **Not the prompt.** The first chunk came in a median 0.7–1.7 s on every endpoint that could answer, cold,
+  on 19.8K tokens. The first turn is 6,381 tokens: 46 the owner's words, 1,947 the system message,
+  4,388 the 21 tools the model is shown (largest `manage_routine` 590, `remember` 330 — both used on
+  this very task; measured by removing each from a request pinned to DeepInfra). Nothing large rides
+  in front of a first turn unused, and a trim would start a new epoch in every conversation.
+- **Not the effort, much.** Same round, pinned, n=3 each:
+
+  | endpoint | effort | reasoning | first word | done | judge |
+  |---|---|---|---|---|---|
+  | Relace | `quick` (low) | 921 (784–1,262) | 35.8 s | 49.5 s | 3/3 |
+  | Relace | `balanced` (high) | 1,147 (963–1,205) | 27.9 s | 43.9 s | 3/3 |
+  | Relace | `thorough` (max) | 2,897 (the one that finished) | 82.5 s, 111.1 s, none | 108 s once | 1/3 finished — two cut at 120 s |
+  | Alibaba | `quick` (low) | 1,141 (947–1,372) | 5.6 s | 8.1 s | 3/3 |
+  | Alibaba | `balanced` (high) | 1,678 (1,223–1,925) | 7.8 s | 10.7 s | 3/3 |
+  | Alibaba | `thorough` (max) | 3,838 (2,972–5,473) | 16.0 s | 18.8 s | 2/3 (one read a page instead) |
+
+  `low` thinks about a third less than `high` here and `max` twice as much. Quality at `low` held on
+  seven scenarios × 3 pinned to Alibaba (memory pair, receipt and date arithmetic, alimtalk blanks,
+  declined, twelve steps, this week's Friday): 20/21 at `quick` and 20/21 at `balanced`, the same
+  `declined-says-declined` 2/3 in both. Two seconds on the slowest round of a first session is not
+  worth reversing the 09-25 decision that the default Bot takes the model's middle, so the default
+  stays `balanced` and the control is unchanged: its three words still send three different requests.
+- **The endpoint.** With nothing ordered, OpenRouter weighs endpoints by the inverse square of their
+  price, and the cheapest that answers is Relace — seven rounds in seven, thinking at 26–51 tokens a
+  second on the day. OpenRouter's own 30-minute figures agree (Relace p50 50–58 tok/s, InferenceNet
+  14–15, Together 188–218). `sort: "latency"` is the wrong knob: OpenRouter's latency is time to the
+  first chunk, which was never the problem.
+
+**What an endpoint must also do to be ordered** — the four bridged searches of the same thread
+(`ARM_UPTO=9`, cold) and a warm repeat of that request:
+
+| endpoint | four `tool_call`s whole | reads its cache on a repeat | $ cold / warm (8.4K) |
+|---|---|---|---|
+| Alibaba | 6/6 | yes (8,320 of 8,437) | 0.0015 / 0.00034 |
+| Parasail | 6/6 | yes (8,320) | 0.0030 / 0.00052 |
+| Together | 6/6 | yes (8,320) | 0.0030 / 0.00054 |
+| Makora | 6/6 | yes (8,320) | 0.0030 / 0.00052 |
+| Novita | 6/6 | **no** (0, three times) | 0.0028 / 0.0028 |
+| Venice | 6/6 | **no** (0, three times) | 0.0037 / 0.0037 |
+| Relace | 3/3 | yes (8,192) | 0.0006 / 0.00020 |
+
+So `MEASURED_PROVIDER_POLICY` (`agent-bot/src/provider.ts`) orders DeepSeek `alibaba, parasail,
+together, makora` — fast, whole, caching; Alibaba first at half the others' price on what is new in
+a round — and adds `inference-net` to the ignored (the cheapest endpoint, so where a price-weighted
+fallback lands, and it cannot finish this round inside `REQUEST_TIMEOUT_MS`). Fallbacks stay on.
+The cost: a cold final round $0.0043 against Relace's $0.0018; on a long conversation that reads
+from cache, Alibaba's reads are $0.015/M against Relace's $0.005/M. `round_finished` now carries
+`provider` and `completionTokens`, so the next wait like this is one log line.
+
+On the real stack (a fresh account, the weather chip, 춘천): three rounds, all Alibaba, first
+output 2.6 s, 1.6 s and 1.9 s.
+
+**The pack on the new routing** (32 scenarios once, unpinned; `support-programs-only-from-the-portal`
+not run — this worktree had no `DATA_GO_KR_SERVICE_KEY`; its final round is the 5/5 above): **30/32**.
+`watch-signals-triaged` 0/1 (as in every DeepSeek record); `routine-at-seven-thirty-on-the-owners-clock`
+0/1, then 3/3 alone. `declined-says-declined` and `send-alimtalk-with-the-blanks-named` passed.
+Prompt `61ed958eb6d49a7c` · catalogue `8c00eb7da3fab618` — the record's, since routing moves neither.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

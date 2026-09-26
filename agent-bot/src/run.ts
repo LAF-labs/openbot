@@ -460,6 +460,11 @@ async function runRounds(context: RunContext): Promise<void> {
      * said whether that was one slow request, a model thinking before its first word, or several
      * rounds of lookups the surface never draws (ux-review-0.5.4, item 9). The held kinds are the
      * rounds a person sees as nothing but "생각 중".
+     *
+     * `provider` and `completionTokens` because the next 28 s wait turned out to be neither of the
+     * first two: 1,583 reasoning tokens at Relace's 58 a second (2026-09-27, `./provider`). Which
+     * endpoint answered was only in the server's usage row, and the speed it thought at is
+     * reasoning tokens over `firstOutputMs − firstChunkMs`, which this line can now say by itself.
      */
     const heldKinds: Record<string, number> = {};
     for (const call of toolCalls.values()) {
@@ -470,12 +475,14 @@ async function runRounds(context: RunContext): Promise<void> {
       bot: botId,
       run: input.runId,
       round,
+      provider: turn.provider,
       firstChunkMs: turn.timing.firstChunkMs,
       firstOutputMs: turn.timing.firstOutputMs,
       calls: heldKinds,
       chars: text.length,
       reasoningTokens:
         turn.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+      completionTokens: turn.usage?.completion_tokens ?? null,
       promptTokens: turn.usage?.prompt_tokens ?? null,
       cachedTokens: turn.usage?.prompt_tokens_details?.cached_tokens ?? null,
       ms: Date.now() - context.startedAt,

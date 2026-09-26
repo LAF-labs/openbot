@@ -613,6 +613,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-09-27: one to `server` (a plain write beside a rolled-back transaction survives it —
  * the two-pool guard against Bun's pre-1.4 pool, `db/client.ts`) and one to `app` (a failed remember
  * line names what was tried).
+ * RAISED 2026-09-27 with the answer's latency: two to `root` (no measured line orders what it
+ * ignores, DeepSeek asks the fast endpoints first; each round's log line names the endpoint and its
+ * output tokens). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -622,7 +625,7 @@ const GROUPS = [
   { name: "server", floor: 3034, roots: ["server"] },
   { name: "app", floor: 1439, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 502, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 504, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

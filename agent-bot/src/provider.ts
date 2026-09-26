@@ -122,10 +122,39 @@ export function createProvider(
  * in three on DeepInfra and on Novita. In the product the cut is "모델과의 연결이 끊겼어요" on a
  * shop owner's first task, and the conversation it leaves behind keeps failing on 다시 시도.
  * Setting the variable replaces them entirely, `{}` included.
+ *
+ * DEEPSEEK GOES TO THE FAST ENDPOINTS THAT KEEP A CACHE, CHEAPEST FIRST (2026-09-27). The 지원사업
+ * walk's last round — 19.8K prompt tokens, four portal answers to screen — sat 28 s on "생각 중"
+ * before its first word. Replayed through this service against OpenRouter (docs/laf/eval-pack.md,
+ * "Answer latency"), it was neither the prompt nor the effort: the first chunk came in a median
+ * 0.7–1.7 s cold on every endpoint, and `low` thought 921–1,141 tokens where `high` thought
+ * 1,078–1,678. It was the endpoint. With nothing ordered OpenRouter weighs endpoints by the inverse
+ * square of their price,
+ * and sent that round to Relace seven times in seven, which thinks at 26–51 tokens a second: first
+ * word 32.8 s median, done 54 s. Pinned, cold, three each: Alibaba 236–267 tokens a second, first word
+ * 7.8–9.2 s; Parasail 379, 4.9 s; Together 218, 6.4 s; Makora 259, 7.6 s — and each of the four read
+ * a repeated request from its cache and sent the four bridged searches whole, three times in three.
+ * Novita (243) and Venice (292) are as fast but read nothing back on a repeat, and a Bot's one long
+ * conversation lives on its cache; DeepInfra thought at 66 (23.5 s), Fireworks at 82 (14.1 s, and a
+ * 5xx in three). Alibaba first because it is half the others' price on what is new in a round
+ * ($0.15/M against $0.30/M, $0.60/M out against $1.20/M): $0.0045 for that cold round, where Relace
+ * was $0.0018 and Together $0.0086. The rest stay in the pool behind the order, fallbacks on — a slow
+ * answer is still better than none — except InferenceNet, which thought at ~14 tokens a second and
+ * ran into `REQUEST_TIMEOUT_MS` three times in three, the answer cut at 120 s; as the cheapest
+ * endpoint it is exactly where a fallback weighted by price would land. `sort: "latency"` was not
+ * the knob: OpenRouter's latency is the first chunk, which was already under two seconds on every
+ * endpoint that could answer; the wait was the speed of the thinking.
  */
 export const MEASURED_PROVIDER_POLICY: Record<string, ProviderRouting> = {
   "deepseek/deepseek-v4.1-flash": {
-    ignore: ["coreweave", "wafer", "open-inference", "sail-research"],
+    order: ["alibaba", "parasail", "together", "makora"],
+    ignore: [
+      "coreweave",
+      "wafer",
+      "open-inference",
+      "sail-research",
+      "inference-net",
+    ],
   },
   "xiaomi/mimo-v2.6-pro": { order: ["xiaomi"] },
   "z-ai/glm-5.3-flash": { order: ["z-ai"], ignore: ["wafer", "relace"] },

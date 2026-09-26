@@ -201,4 +201,64 @@ describe("which endpoints may answer", () => {
     ).toBeNull();
     expect(providerRoutingOf(env, undefined, "z-ai/glm-5.3-flash")).toBeNull();
   });
+
+  /*
+   * 2026-09-27: with nothing ordered, OpenRouter's price weighting sent the 지원사업 answer to Relace
+   * seven times in seven, which thought at 26–51 tokens a second — 32.8 s to the first word. The
+   * order is the endpoints measured fast that also read their cache; Relace stays reachable only
+   * behind them, as a fallback, and InferenceNet — 14 tokens a second — not at all.
+   */
+  test("a measured line never orders what it ignores, and DeepSeek asks the fast endpoints first", async () => {
+    const { MEASURED_PROVIDER_POLICY, providerRoutingOf } = await import(
+      "../src/provider"
+    );
+    for (const line of Object.values(MEASURED_PROVIDER_POLICY)) {
+      const ignored = new Set(line.ignore ?? []);
+      expect((line.order ?? []).filter((slug) => ignored.has(slug))).toEqual(
+        [],
+      );
+    }
+    const deepseek = providerRoutingOf(
+      {},
+      "https://openrouter.ai/api/v1",
+      "deepseek/deepseek-v4.1-flash",
+    );
+    expect(deepseek?.order?.[0]).toBe("alibaba");
+    expect(deepseek?.order).not.toContain("relace");
+    // The cheapest endpoint, where a price-weighted fallback lands, and it ran out the 120 s bound.
+    expect(deepseek?.ignore).toContain("inference-net");
+    // Fallbacks stay on: a slow answer from the rest of the pool beats no answer.
+    expect(deepseek).not.toHaveProperty("allow_fallbacks");
+  });
+
+  test("each round's log line says which endpoint answered and what it wrote", async () => {
+    const { logged } = await overTheWire([
+      {
+        ...answered,
+        provider: "Alibaba",
+        usage: {
+          prompt_tokens: 19_834,
+          completion_tokens: 2_308,
+          total_tokens: 22_142,
+          completion_tokens_details: { reasoning_tokens: 1_415 },
+        },
+      },
+    ]);
+    const round = logged
+      .map((line) => {
+        try {
+          return JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.event === "round_finished");
+    expect(round).toMatchObject({
+      provider: "Alibaba",
+      reasoningTokens: 1_415,
+      completionTokens: 2_308,
+      promptTokens: 19_834,
+    });
+    expect(typeof round?.firstChunkMs).toBe("number");
+  });
 });
