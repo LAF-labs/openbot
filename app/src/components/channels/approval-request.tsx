@@ -10,6 +10,8 @@ import { useCallback, useId, useState, useSyncExternalStore } from "react";
 import {
   alwaysLabel,
   duringLabel,
+  taskLabel,
+  todayLabel,
 } from "@/components/channels/allowance-label";
 import { CallPreviewList } from "@/components/channels/call-preview";
 import { Button } from "@/components/ui/button";
@@ -215,11 +217,23 @@ export function ApprovalRequest({
           {t("Allow once")}
         </Button>
         {/*
-         * THE MIDDLE BUTTON: the same width, for this conversation and for a day, whichever ends
-         * first. Drawn only when the server said which conversation the question came from — a
-         * question raised from nowhere has nothing for it to bind to, and the answering route would
-         * silently give the once. Between "once" and "always" because that is where it sits.
+         * THE WIDTHS, NARROWEST FIRST: this task, this conversation, today, always. Each is drawn
+         * only when the question can give it — a task and a conversation only when the server said
+         * which, a scope for all of them — because a button the answering route would quietly turn
+         * into "once" is a button that lies. A high-risk submission has no scope at all, so it
+         * offers "once" and "deny" and nothing else.
          */}
+        {asking.scope && asking.threadId && asking.taskId ? (
+          <Button
+            aria-describedby={questionId}
+            disabled={answering}
+            onClick={() => void answer(true, "task")}
+            size="sm"
+            variant="outline"
+          >
+            {taskLabel(asking.scope)}
+          </Button>
+        ) : null}
         {asking.scope && asking.threadId ? (
           <Button
             aria-describedby={questionId}
@@ -229,6 +243,17 @@ export function ApprovalRequest({
             variant="outline"
           >
             {duringLabel(asking.scope)}
+          </Button>
+        ) : null}
+        {asking.scope ? (
+          <Button
+            aria-describedby={questionId}
+            disabled={answering}
+            onClick={() => void answer(true, "day")}
+            size="sm"
+            variant="outline"
+          >
+            {todayLabel(asking.scope)}
           </Button>
         ) : null}
         {/*
@@ -260,6 +285,7 @@ export function ApprovalRequest({
         </Button>
       </div>
       <ButtonsExplained
+        hasTask={Boolean(asking.threadId && asking.taskId)}
         hasThread={Boolean(asking.threadId)}
         scope={asking.scope}
       />
@@ -310,16 +336,32 @@ export function ApprovalRequest({
  */
 function ButtonsExplained({
   scope,
+  hasTask,
   hasThread,
 }: {
   scope: AllowanceScope | undefined;
+  hasTask: boolean;
   hasThread: boolean;
 }) {
   const parts = [t("Allow once: just this.")];
+  if (scope && hasTask) {
+    parts.push(
+      t("{button}: until you ask for something else, six hours at most.", {
+        button: taskLabel(scope),
+      }),
+    );
+  }
   if (scope && hasThread) {
     parts.push(
       t("{button}: here only, and for a day at most.", {
         button: duringLabel(scope),
+      }),
+    );
+  }
+  if (scope) {
+    parts.push(
+      t("{button}: everywhere, until midnight.", {
+        button: todayLabel(scope),
       }),
     );
   }
@@ -406,7 +448,8 @@ function DecidedLine({
         <span className="min-w-0 wrap-break-word">
           {t(said.key, said.params)}
         </span>
-        {decision.outcome === "allowed" && decision.tier === "always" ? (
+        {decision.outcome === "allowed" &&
+        (decision.tier === "always" || decision.tier === "day") ? (
           /*
            * Where this "always" is taken back, from the line that records it. It used to be the
            * administrator's rules page, named and never linked (ux-review-0.5.4 §1.7).

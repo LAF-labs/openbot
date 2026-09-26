@@ -29,6 +29,7 @@ import type {
   PendingApproval,
 } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
+import type { HighRiskVerdict } from "./high-risk";
 import type { ActionPolicy, FactCode, PolicyDecision } from "./policy";
 import {
   type AllowanceScope,
@@ -92,6 +93,18 @@ export type SettleInput = {
    * rather than as a second sequence beside this one, which is what it was.
    */
   forcedAsk?: boolean;
+  /**
+   * Whether this is a high-risk submission (`high-risk.ts`), asked only when the answer could
+   * matter and at most once.
+   *
+   * A yes turns whatever would have let the action past without a person — the policy's own
+   * `allow`, a standing allowance, the owner's instruction — into a question, and the question
+   * offers no wider answer: an allowance granted from it would be one this check walks past every
+   * time, a button that saves and does nothing. It never allows anything, it is never asked about a
+   * `deny`, and a presented approval that matches is not second-guessed — the person saw this very
+   * action and said yes.
+   */
+  highRisk?: (() => Promise<HighRiskVerdict>) | undefined;
 };
 
 export type SettleDeps = {
@@ -119,6 +132,8 @@ export type SettleResult =
       allowance?: StandingApproval;
       /** Set when the yes came from the owner's instruction and no person saw the action at all. */
       autoReviewed?: ReviewVerdict;
+      /** What the high-risk check made of it, where it consulted anything. */
+      highRisk?: HighRiskVerdict;
     }
   | {
       outcome: "refused";
@@ -138,6 +153,8 @@ export type SettleResult =
        * instruction, or the judge could not be reached. Both mean a person is asked.
        */
       autoReview: ReviewVerdict | null;
+      /** The high-risk check's verdict, where it was asked. An escalation is why this was asked. */
+      highRisk?: HighRiskVerdict;
     };
 
 /**
@@ -159,9 +176,11 @@ export async function settle(
   const floorAsks = input.forcedAsk === true && verdict.forward;
 
   if (!policyAsks && !floorAsks) {
-    return verdict.forward
-      ? { outcome: "allowed" }
-      : { outcome: "refused", code: verdict.code ?? "laf:policy_denied" };
+    if (!verdict.forward) {
+      return { outcome: "refused", code: verdict.code ?? "laf:policy_denied" };
+    }
+    if (!input.highRisk) return { outcome: "allowed" };
+    return settleAllowed(input, deps, input.highRisk);
   }
 
   const presented = input.presentedApprovalId
@@ -202,14 +221,34 @@ export async function settle(
   const mayStand =
     (deps.policy()?.settleWithoutAsking ?? "allowed") === "allowed";
 
+  /*
+   * THE TASK THE CONVERSATION IS ON NOW, read here rather than taken from anybody: it is what a
+   * "이 일 동안" allowance answers for, and what one granted from this question would bind to.
+   */
+  const taskId =
+    mayStand && input.threadId && !presented?.ok
+      ? await deps.standing
+          ?.currentTask?.(input.threadId)
+          .catch(() => undefined)
+      : undefined;
+
+  /*
+   * THE HIGH-RISK CHECK, BEFORE ANYTHING THAT COULD PASS THIS WITHOUT A PERSON. Asked even where a
+   * person will be asked anyway, so that the card is honest: a high-risk submission is offered this
+   * once and nothing wider.
+   */
+  const risk =
+    presented?.ok || !input.highRisk ? undefined : await input.highRisk();
+  const escalated = risk?.escalate === true;
+
   const already =
-    presented?.ok || !mayStand
+    presented?.ok || !mayStand || escalated
       ? null
       : ((await deps.standing?.find(
           input.botId,
           input.rule,
           scopeKeyOf(input.allowance),
-          { threadId: input.threadId },
+          { threadId: input.threadId, taskId },
         )) ?? null);
 
   /*
@@ -228,7 +267,12 @@ export async function settle(
    * where an instruction planted in a mail or a web page would be written.
    */
   const reviewed =
-    presented?.ok || already || !mayStand || floorAsks || !deps.autoReview
+    presented?.ok ||
+    already ||
+    !mayStand ||
+    floorAsks ||
+    escalated ||
+    !deps.autoReview
       ? null
       : await deps.autoReview(input.botId, {
           action: input.action,
@@ -238,17 +282,19 @@ export async function settle(
   if (presented?.ok && presented.approval.answeredBy) {
     return { outcome: "allowed", approvedBy: presented.approval.answeredBy };
   }
+  const checked = risk && risk.signals.length > 0 ? { highRisk: risk } : {};
   if (already) {
     return {
       outcome: "allowed",
       approvedBy: already.grantedBy,
       allowance: already,
+      ...checked,
     };
   }
   if (reviewed?.allowed) {
     // Nobody's name goes on this. `approvedBy` stays absent, so the caller's row cannot read as a
     // person having stood behind it — the one thing this record must never claim.
-    return { outcome: "allowed", autoReviewed: reviewed };
+    return { outcome: "allowed", autoReviewed: reviewed, ...checked };
   }
 
   /*
@@ -261,18 +307,22 @@ export async function settle(
    * driving the Bot: crediting consent to the actor is the one attribution this record must never
    * make.
    */
+  // Absent where the deployment has turned allowances off: the card then offers two buttons and
+  // the answering route has nothing to grant, without either of them knowing why. The thread and
+  // the task go with the scope: "for this conversation" and "for this task" are kinds of
+  // allowance and off with the rest — and off for a high-risk submission, which no allowance passes.
+  const wider = mayStand && !escalated;
   const approval = await deps.approvals.request({
     botId: input.botId,
     actor: input.actorId,
     rule: input.rule,
-    subject: input.subject,
+    subject:
+      escalated && risk ? highRiskSubject(input.subject, risk) : input.subject,
     ...(input.preview ? { preview: input.preview } : {}),
     fingerprint: input.fingerprint,
-    // Absent where the deployment has turned allowances off: the card then offers two buttons and
-    // the answering route has nothing to grant, without either of them knowing why. The thread
-    // goes with the scope: "for this conversation" is a kind of allowance and off with the rest.
-    ...(mayStand ? { scope: input.allowance } : {}),
-    ...(mayStand && input.threadId ? { threadId: input.threadId } : {}),
+    ...(wider ? { scope: input.allowance } : {}),
+    ...(wider && input.threadId ? { threadId: input.threadId } : {}),
+    ...(wider && input.threadId && taskId ? { taskId } : {}),
     ...(input.step ? { step: input.step } : {}),
     target: input.target,
   });
@@ -281,5 +331,66 @@ export async function settle(
     approvalId: approval.id,
     approval,
     autoReview: reviewed,
+    ...(risk ? { highRisk: risk } : {}),
+  };
+}
+
+/** The subject a person is shown for a high-risk submission: the same action, and why. */
+function highRiskSubject(
+  subject: AskSubject,
+  risk: HighRiskVerdict,
+): AskSubject {
+  const { repeatCount: _repeat, ...rest } = subject;
+  return { ...rest, reason: "high_risk", risk: risk.kinds };
+}
+
+/**
+ * An action the policy itself allowed, with a high-risk check to consult.
+ *
+ * The check is the only thing here that can stop it, and only by asking. A presented approval that
+ * matches is spent first — the person already saw this action on a card this check raised — and a
+ * No still standing refuses, exactly as for any other question.
+ */
+async function settleAllowed(
+  input: SettleInput,
+  deps: SettleDeps,
+  highRisk: () => Promise<HighRiskVerdict>,
+): Promise<SettleResult> {
+  const presented = input.presentedApprovalId
+    ? await deps.approvals.consume(input.presentedApprovalId, input.fingerprint)
+    : undefined;
+  if (presented?.ok && presented.approval.answeredBy) {
+    return { outcome: "allowed", approvedBy: presented.approval.answeredBy };
+  }
+  const risk = await highRisk();
+  if (!risk.escalate) {
+    return {
+      outcome: "allowed",
+      ...(risk.signals.length > 0 ? { highRisk: risk } : {}),
+    };
+  }
+  if (await deps.approvals.recentlyDeclined(input.botId, input.fingerprint)) {
+    return {
+      outcome: "refused",
+      code: "laf:declined_recently",
+      declinedRecently: true,
+    };
+  }
+  const approval = await deps.approvals.request({
+    botId: input.botId,
+    actor: input.actorId,
+    rule: input.rule,
+    subject: highRiskSubject(input.subject, risk),
+    ...(input.preview ? { preview: input.preview } : {}),
+    fingerprint: input.fingerprint,
+    ...(input.step ? { step: input.step } : {}),
+    target: input.target,
+  });
+  return {
+    outcome: "asked",
+    approvalId: approval.id,
+    approval,
+    autoReview: null,
+    highRisk: risk,
   };
 }

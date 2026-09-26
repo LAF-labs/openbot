@@ -30,6 +30,7 @@
  * the surface a person answers on decides which half of a Bot's work they can see.
  */
 import { createHash, randomUUID } from "node:crypto";
+import type { HighRiskKind } from "./high-risk";
 import type { AllowanceScope, AllowanceTier } from "./standing-approvals";
 
 /**
@@ -170,7 +171,17 @@ export type AskIntent =
  * floors, which ask whatever the policy said. `repeat` is the same action over and over — the one
  * case where the sentence is about the count rather than about the thing being acted on.
  */
-export type AskReason = "policy_ask" | "guard_floor" | "repeat" | "unannotated";
+export type AskReason =
+  | "policy_ask"
+  | "guard_floor"
+  | "repeat"
+  | "unannotated"
+  /**
+   * A submission the high-risk check put in front of a person whatever an allowance or the owner's
+   * instruction would have said: it pays, changes how an account is secured, or hands somebody's
+   * details to a site (`high-risk.ts`). `risk` says which.
+   */
+  | "high_risk";
 
 /**
  * WHAT IS ABOUT TO HAPPEN, AS FACTS, FOR A SURFACE TO SAY IN ITS OWN LANGUAGE.
@@ -201,6 +212,8 @@ export type AskSubject = {
   tool?: { server: string; name: string; guard?: AskGuard };
   /** How many times this exact call has just been made, when that is why it stopped. */
   repeatCount?: number;
+  /** What made it high-risk, when that is why it stopped. See `high-risk.ts`. */
+  risk?: HighRiskKind[];
   reason: AskReason;
 };
 
@@ -306,6 +319,12 @@ export type PendingApproval = {
    * request, for the reason `scope` is.
    */
   threadId?: string;
+  /**
+   * The task in that conversation the action was raised under — the person's newest message there,
+   * read by the server when the question was asked — so "for this task" has something to bind to.
+   * Present only with `threadId`, and only where the server could read one.
+   */
+  taskId?: string;
   /** The conversation step this question holds open. See {@link ApprovalStep}. */
   step?: ApprovalStep;
   /**
@@ -355,6 +374,8 @@ export type PresentedApproval = {
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer, so the card knows to draw that button. */
   threadId?: string;
+  /** Present when "for this task" is on offer, so the card knows to draw that button. */
+  taskId?: string;
   /** Which conversation and which tool call, so every window of it can draw the card. */
   step?: ApprovalStep;
   /** Some window is holding the step and will carry it on; nobody else should. */
@@ -385,6 +406,7 @@ export function presentable(
     ...(approval.preview ? { preview: approval.preview } : {}),
     ...(approval.scope ? { scope: approval.scope } : {}),
     ...(approval.threadId ? { threadId: approval.threadId } : {}),
+    ...(approval.taskId ? { taskId: approval.taskId } : {}),
     ...(approval.step ? { step: approval.step } : {}),
     ...(isHeld(approval, at) ? { held: true as const } : {}),
     requestedAt: approval.requestedAt,
@@ -489,6 +511,8 @@ export type ApprovalRegistry = {
     scope?: AllowanceScope;
     /** The conversation it came from, where it came from one. See PendingApproval.threadId. */
     threadId?: string;
+    /** The task in that conversation, where the server could read one. See PendingApproval.taskId. */
+    taskId?: string;
     /** The conversation step it holds open, where the surface named one. See {@link ApprovalStep}. */
     step?: ApprovalStep;
     target: { type: string; id: string };
@@ -684,6 +708,7 @@ export function createApprovalRegistry(
         fingerprint: input.fingerprint,
         ...(input.scope ? { scope: input.scope } : {}),
         ...(input.threadId ? { threadId: input.threadId } : {}),
+        ...(input.threadId && input.taskId ? { taskId: input.taskId } : {}),
         ...(input.step ? { step: input.step } : {}),
         target: input.target,
         requestedAt: new Date(at).toISOString(),
@@ -800,16 +825,19 @@ export function createApprovalRegistry(
 }
 
 /**
- * The wider answer a question can actually give: "always" where a scope was derived, "for this
- * conversation" where it was also raised from one. Anything else is this once — the card did not
- * offer it, and a request that asks anyway gets the once it did give rather than a standing
- * allowance nobody was shown.
+ * The wider answer a question can actually give: "always" and "today" where a scope was derived,
+ * "for this conversation" where it was also raised from one, and "for this task" where the server
+ * also knew which task. Anything else is this once — the card did not offer it, and a request that
+ * asks anyway gets the once it did give rather than an allowance nobody was shown.
  */
 export function tierGiven(
-  approval: Pick<PendingApproval, "scope" | "threadId">,
+  approval: Pick<PendingApproval, "scope" | "threadId" | "taskId">,
   tier: AllowanceTier | undefined,
 ): AllowanceTier | undefined {
   if (!tier || !approval.scope) return undefined;
   if (tier === "thread" && !approval.threadId) return undefined;
+  if (tier === "task" && !(approval.threadId && approval.taskId)) {
+    return undefined;
+  }
   return tier;
 }

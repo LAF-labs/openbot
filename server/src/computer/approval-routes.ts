@@ -249,7 +249,15 @@ export function createApprovalRoutes(
       if (body.granted && tier && standing) {
         const scope = answered.approval.scope;
         const threadId = answered.approval.threadId;
-        if (scope && (tier === "always" || threadId)) {
+        const taskId = answered.approval.taskId;
+        // `tierGiven` already refused a width this question could not give; this is the same test,
+        // so a grant can never be recorded without the binding its width needs.
+        const bindable =
+          tier === "always" ||
+          tier === "day" ||
+          (tier === "thread" && threadId) ||
+          (tier === "task" && threadId && taskId);
+        if (scope && bindable) {
           const granted = await standing.grant({
             botId: answered.approval.botId,
             rule: answered.approval.rule,
@@ -257,7 +265,8 @@ export function createApprovalRoutes(
             subject: answered.approval.subject,
             grantedBy: record.id,
             tier,
-            ...(tier === "thread" ? { threadId } : {}),
+            ...(tier === "thread" || tier === "task" ? { threadId } : {}),
+            ...(tier === "task" ? { taskId } : {}),
           });
           await recordAuditEvent(auditStore, {
             eventType: "approval.standing_granted",
@@ -461,6 +470,7 @@ function standingPayload(standing: StandingApproval, actor: string) {
     // counting what has been stood down for good must be able to leave the afternoon's out.
     tier: standing.tier,
     ...(standing.threadId ? { thread: standing.threadId } : {}),
+    ...(standing.taskId ? { task: standing.taskId } : {}),
     ...(standing.expiresAt ? { expiresAt: standing.expiresAt } : {}),
     ...(standing.subject ? { subject: standing.subject } : {}),
     grantedBy: standing.grantedBy,
@@ -475,7 +485,14 @@ function standingPayload(standing: StandingApproval, actor: string) {
  * once", because a widening nobody can name is not one anybody consented to.
  */
 function tierOf(body: Record<string, unknown>): AllowanceTier | undefined {
-  if (body.tier === "always" || body.tier === "thread") return body.tier;
+  if (
+    body.tier === "always" ||
+    body.tier === "thread" ||
+    body.tier === "task" ||
+    body.tier === "day"
+  ) {
+    return body.tier;
+  }
   if (body.always === true) return "always";
   return undefined;
 }

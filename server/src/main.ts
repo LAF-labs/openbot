@@ -65,7 +65,11 @@ import { createRepeatDetector } from "./computer/repeat";
 import { botOwnerLookup, createScreenViewAudit } from "./computer/screen-view";
 import { createSiteConnectionStore } from "./computer/site-connections";
 import { createResultSpill } from "./computer/spillover";
-import { createDatabaseStandingApprovalStore } from "./computer/standing-approvals";
+import {
+  createDatabaseStandingApprovalStore,
+  ownerTaskTextIn,
+} from "./computer/standing-approvals";
+import { createHighRiskCheck } from "./computer/high-risk";
 import { loadConfig } from "./config";
 import type { Compactor } from "./context/compaction";
 import { createSummaryScrubber } from "./context/forget-scrub";
@@ -532,7 +536,10 @@ const approvals = withApprovalNotifications(
  * The allowances, in the database, because an allowance whose whole point is to outlive the turn
  * must outlive the process too. See `standing-approvals.ts`.
  */
-const standingApprovals = createDatabaseStandingApprovalStore(database);
+const standingApprovals = createDatabaseStandingApprovalStore(database, {
+  // "오늘 하루" ends at midnight where the person is, which is the Bot's clock.
+  timeZone: config.botTimeZone,
+});
 
 /**
  * ONE COUNT OF A BOT GOING ROUND IN CIRCLES, not one per subsystem.
@@ -696,6 +703,20 @@ const computerGateway = computerClient
        */
       siteSeen: (seen) => {
         void siteConnections.record(seen).catch(() => undefined);
+      },
+      /*
+       * A submission that pays, changes how an account is secured or hands somebody's details to a
+       * site is put in front of the person whatever was allowed before (`computer/high-risk.ts`).
+       * The judge is Jev with the server model behind it; the task it weighs against is the
+       * person's newest message in the conversation.
+       */
+      highRisk: {
+        check: createHighRiskCheck({
+          asker: modelCalls.highRiskAsker,
+          model: modelCalls.highRiskModel,
+        }),
+        taskText: (threadId) =>
+          ownerTaskTextIn(database, threadId).catch(() => ""),
       },
     })
   : undefined;

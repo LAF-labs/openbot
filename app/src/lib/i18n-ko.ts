@@ -2576,8 +2576,6 @@ export const ko: Record<string, string> = {
   // 0.5.4 DE
   "What you have allowed": "허락해 둔 것",
   "What you allowed could not be loaded.": "허락해 둔 것을 불러오지 못했어요.",
-  "When you pressed “Always allow”, the Bot stopped asking about these. Take one back and it asks again.":
-    "‘항상 허용’을 눌러서 봇이 묻지 않고 하는 일이에요. 되돌리면 다시 물어봐요.",
   "Paused for now: the Bot asks about all of these again. They are kept for when that changes.":
     "지금은 멈춰 있어서 봇이 이것들도 다시 물어봐요. 다시 켜지면 그대로 돌아와요.",
   "When you allowed it: {what}": "허락할 때: {what}",
@@ -2739,6 +2737,34 @@ export const ko: Record<string, string> = {
   // notebook forget
   "Press again to forget": "한 번 더 누르면 잊어요",
   // sec3
+  "Allow {site} for this task": "이 일 동안 {site} 허용",
+  "Allow this file for this task": "이 일 동안 이 파일 허용",
+  "Allow this tool for this task": "이 일 동안 이 도구 허용",
+  "Allow {site} for today": "오늘 하루 {site} 허용",
+  "Allow this file for today": "오늘 하루 이 파일 허용",
+  "Allow this tool for today": "오늘 하루 이 도구 허용",
+  "{button}: until you ask for something else, six hours at most.":
+    "{button}: 다른 일을 시키실 때까지, 길어야 6시간이에요.",
+  "{button}: everywhere, until midnight.":
+    "{button}: 어느 대화에서든 오늘 자정까지예요.",
+  "Allowed for this task · {action}": "이 일 동안 허용함 · {action}",
+  "Allowed for today · {action}": "오늘 하루 허용함 · {action}",
+  "Only for the task you had asked for, until {when} at the latest":
+    "시키신 그 일 동안만, 늦어도 {when}까지",
+  "Today only, until {when}": "오늘 하루만, {when}까지",
+  "For one task only, until {when} at the latest":
+    "한 가지 일 동안만, 늦어도 {when}까지",
+  "For today only, until {when}": "오늘 하루만, {when}까지",
+  "When you allowed something for a task, a conversation, today or always, the Bot stopped asking about it for that long. Take one back and it asks again.":
+    "‘이 일 동안’, ‘이 대화 동안’, ‘오늘 하루’, ‘항상’으로 허락하신 것들이에요. 그동안 봇이 묻지 않아요. 되돌리면 다시 물어봐요.",
+  "It looks like a payment, so you are asked every time, whatever you allowed before.":
+    "결제로 보여서, 전에 허락하신 것과 상관없이 매번 여쭤봐요.",
+  "It looks like a change to how an account is secured, so you are asked every time.":
+    "계정 보안을 바꾸는 일로 보여서 매번 여쭤봐요.",
+  "It would send personal details your request did not call for, so you are asked first.":
+    "시키신 일과 상관없는 개인정보가 나가게 돼서 먼저 여쭤봐요.",
+  "It would send someone's personal details to the site, so you are asked every time.":
+    "개인정보를 사이트로 보내게 돼서 매번 여쭤봐요.",
   "The Bot's browser did not start, because this machine's security rules for it are not in place.":
     "이 기계에 봇 브라우저를 지키는 보안 규칙이 걸려 있지 않아서 브라우저를 열지 않았어요.",
   "The Bot's browser was kept closed for safety":

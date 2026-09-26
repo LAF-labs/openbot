@@ -81,7 +81,7 @@ export function AllowancesCard({ agentId }: { agentId: string }) {
           <p className="text-muted-foreground text-sm">
             {inForce
               ? t(
-                  "When you pressed “Always allow”, the Bot stopped asking about these. Take one back and it asks again.",
+                  "When you allowed something for a task, a conversation, today or always, the Bot stopped asking about it for that long. Take one back and it asks again.",
                 )
               : // Said in the card's own sentence, not a footnote: a list under "it no longer asks"
                 // that is in fact being asked about is the lie this card exists to stop telling.
@@ -158,19 +158,34 @@ function scopeText(allowance: AgentAllowance): string {
   return t("The tool {tool}", { tool: allowance.scopeValue });
 }
 
-/** For good, or for one conversation until it runs out. */
+/**
+ * For good, or until when — every width but "always" has an end the server enforces, and the list
+ * says it, so a person reading it can tell today's yes from the one given for good.
+ */
 function tierText(allowance: AgentAllowance): string {
   const granted = new Date(allowance.grantedAt).toLocaleDateString(
     activeLocale,
     { dateStyle: "medium" },
   );
-  if (allowance.tier === "thread" && allowance.expiresAt) {
-    return t("Only in one conversation, until {when}", {
-      when: new Date(allowance.expiresAt).toLocaleString(activeLocale, {
+  const when = allowance.expiresAt
+    ? new Date(allowance.expiresAt).toLocaleString(activeLocale, {
         dateStyle: "short",
         timeStyle: "short",
-      }),
-    });
+      })
+    : null;
+  if (allowance.tier === "thread" && when) {
+    return t("Only in one conversation, until {when}", { when });
+  }
+  if (allowance.tier === "task" && when) {
+    return t(
+      "Only for the task you had asked for, until {when} at the latest",
+      {
+        when,
+      },
+    );
+  }
+  if (allowance.tier === "day" && when) {
+    return t("Today only, until {when}", { when });
   }
   return t("Allowed on {date}, until you take it back", { date: granted });
 }

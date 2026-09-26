@@ -30,10 +30,18 @@
  * the question came from — the thread — and to a clock, a day. It is the same row with two more
  * columns, listed and withdrawn in the same place, recorded under the same event, and it answers
  * for nothing outside its thread: a Bot doing the same thing in a room or on a schedule is asked.
+ *
+ * TWO MORE WIDTHS (2026-09-26, the Muse security package): "이 일 동안" and "오늘 하루". The first is
+ * narrower than the conversation — the task the person set, which ends at their next message — and
+ * the second is a clock with no conversation at all, running out at midnight where the person is.
+ * Four answers between "this once" and "for good", each one a sentence a person can check against
+ * the list afterwards, and each one's end enforced here rather than by the card that offered it.
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { type MessageContent, textOf } from "../../../shared/message-content";
 import type { Database } from "../db/client";
+import { lafThreadMessages } from "../db/schema";
 import { computerStandingApprovals } from "../db/schema/computer";
 import type { AskSubject } from "./approvals";
 
@@ -92,8 +100,81 @@ export function scopeKeyOf(scope: AllowanceScope): string {
  * middle answer, bound to the conversation the question was raised in and to a clock. It exists
  * because the two answers a card used to offer were a day apart in weight — "this once" and "for
  * good" — and a person clearing an obstacle for one afternoon had nothing honest to press.
+ *
+ * `task` is narrower than `thread`: the job the person set with their newest message in that
+ * conversation, ending when they write the next one (and after {@link TASK_ALLOWANCE_TTL_MS} at the
+ * latest). `day` is wider than `thread` and bound to nothing but the clock: every conversation and
+ * every routine, until midnight in the Bot's time zone.
  */
-export type AllowanceTier = "always" | "thread";
+export type AllowanceTier = "always" | "thread" | "task" | "day";
+
+/** Every tier, widest first — the order `find` prefers them in. */
+export const ALLOWANCE_TIERS: readonly AllowanceTier[] = [
+  "always",
+  "day",
+  "thread",
+  "task",
+];
+
+/**
+ * How long a task-bound allowance stands at most, when the person never writes again.
+ *
+ * Six hours: longer than any job a person watches a Bot do, short enough that a conversation
+ * somebody walked away from at lunch does not carry "이 일 동안" into the evening. The person's next
+ * message ends it sooner, which is the usual end.
+ */
+export const TASK_ALLOWANCE_TTL_MS = 6 * 60 * 60_000;
+
+/**
+ * The next midnight in `timeZone` after `at`, as an instant.
+ *
+ * "오늘 하루" is the person's day, not twenty-four hours: an answer given at 23:50 in Seoul lasts ten
+ * minutes, and the list says so. Computed from the zone's own offset at that midnight, twice, so a
+ * zone whose offset changes that night still lands on its own 00:00.
+ */
+export function endOfDayIn(timeZone: string, at: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date(at));
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value ?? "0");
+  const midnightAsUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day") + 1,
+  );
+  let guess = midnightAsUtc - offsetIn(timeZone, midnightAsUtc);
+  guess = midnightAsUtc - offsetIn(timeZone, guess);
+  return guess;
+}
+
+/** How far ahead of UTC `timeZone` is at `at`, in milliseconds. */
+function offsetIn(timeZone: string, at: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(new Date(at));
+  const part = (type: string) =>
+    Number(parts.find((entry) => entry.type === type)?.value ?? "0");
+  const wall = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour"),
+    part("minute"),
+    part("second"),
+  );
+  return wall - Math.floor(at / 1000) * 1000;
+}
 
 /**
  * How long a conversation-bound allowance stands on its own.
@@ -114,9 +195,11 @@ export type StandingApproval = {
   scopeKind: AllowanceScope["kind"];
   scopeValue: string;
   tier: AllowanceTier;
-  /** The conversation it answers for. Present exactly when the tier is `thread`. */
+  /** The conversation it answers for. Present exactly when the tier is `thread` or `task`. */
   threadId?: string;
-  /** When it stops standing on its own. Present exactly when the tier is `thread`. */
+  /** The person's message whose task it answers for. Present exactly when the tier is `task`. */
+  taskId?: string;
+  /** When it stops standing on its own. Present for every tier but `always`. */
   expiresAt?: string;
   /**
    * What the Bot was about to do when they granted it, in facts.
@@ -141,18 +224,26 @@ export type StandingGrant = {
   /** Absent is `always`, which is what every grant was before the middle answer existed. */
   tier?: AllowanceTier;
   /**
-   * The conversation a `thread` grant is bound to. Required for that tier and ignored otherwise.
+   * The conversation a `thread` or `task` grant is bound to. Required for those tiers and ignored
+   * otherwise.
    *
    * Read off the approval's own record by the answering route, never off the request: a body that
    * could name a thread could bind an allowance to a conversation the person was not looking at.
    */
   threadId?: string;
+  /** The task a `task` grant is bound to, off the approval's record like the thread. */
+  taskId?: string;
 };
 
 /** Where an action is happening, for the store to decide which allowances answer for it. */
 export type AllowanceLookup = {
   /** The conversation the action was raised from. Absent for work outside any — a routine. */
   threadId?: string | undefined;
+  /**
+   * The task that conversation is on now: the person's newest message in it. Read by the server
+   * ({@link StandingApprovalStore.currentTask}), never taken from the request.
+   */
+  taskId?: string | undefined;
 };
 
 export type StandingApprovalStore = {
@@ -198,31 +289,95 @@ export type StandingApprovalStore = {
    * somebody changed their mind about it.
    */
   endThread: (threadId: string, actor: string) => Promise<StandingApproval[]>;
+  /**
+   * Which task a conversation is on now — the id of the person's newest message in it — or
+   * undefined when it has none this store can see.
+   *
+   * What makes "이 일 동안" end: the task a question was raised under is read here when it is
+   * asked, and an allowance for it answers only while this still returns the same id. Absent on a
+   * store that cannot know, which then simply never offers the answer.
+   */
+  currentTask?: (threadId: string) => Promise<string | undefined>;
+};
+
+type Bound = {
+  tier: AllowanceTier;
+  threadId: string | undefined;
+  taskId: string | undefined;
+  expiresAt: number | undefined;
 };
 
 /**
- * The tier and the thread a grant is asking for, checked against each other.
+ * The tier, the thread and the task a grant is asking for, checked against each other, and when
+ * it runs out.
  *
  * A `thread` grant with no thread would be a row that no lookup can ever match — an allowance that
- * exists, is listed, and answers for nothing — so it is refused here rather than recorded. The
- * answering route reads the thread off the approval, which is absent when the question was raised
- * from outside any conversation; the card does not offer the button then, and this is the check
- * behind the card.
+ * exists, is listed, and answers for nothing — so it is refused here rather than recorded, and a
+ * `task` grant with no task the same. The answering route reads both off the approval, which lacks
+ * them when the question was raised from outside any conversation; the card does not offer the
+ * buttons then, and this is the check behind the card.
  */
-function boundTo(input: StandingGrant): {
-  tier: AllowanceTier;
-  threadId: string | undefined;
-} {
+function boundTo(input: StandingGrant, at: number, timeZone: string): Bound {
   const tier = input.tier ?? "always";
-  if (tier === "always") return { tier, threadId: undefined };
+  if (tier === "always") {
+    return {
+      tier,
+      threadId: undefined,
+      taskId: undefined,
+      expiresAt: undefined,
+    };
+  }
+  if (tier === "day") {
+    return {
+      tier,
+      threadId: undefined,
+      taskId: undefined,
+      expiresAt: endOfDayIn(timeZone, at),
+    };
+  }
   const threadId = input.threadId?.trim();
   if (!threadId) {
     throw new Error(
       "an allowance for this conversation needs to know which conversation",
     );
   }
-  return { tier, threadId };
+  if (tier === "thread") {
+    return {
+      tier,
+      threadId,
+      taskId: undefined,
+      expiresAt: at + THREAD_ALLOWANCE_TTL_MS,
+    };
+  }
+  const taskId = input.taskId?.trim();
+  if (!taskId) {
+    throw new Error("an allowance for this task needs to know which task");
+  }
+  return { tier, threadId, taskId, expiresAt: at + TASK_ALLOWANCE_TTL_MS };
 }
+
+/** Where an allowance's own binding says it answers: the lookup must name the same conversation and task. */
+function answersWhere(
+  row: Pick<StandingApproval, "tier" | "threadId" | "taskId">,
+  where: AllowanceLookup,
+): boolean {
+  if (row.tier === "always" || row.tier === "day") return true;
+  if (!where.threadId || row.threadId !== where.threadId) return false;
+  if (row.tier === "thread") return true;
+  return where.taskId !== undefined && row.taskId === where.taskId;
+}
+
+/** The widest of several live allowances, which is the one a reader expects on the rows it covers. */
+function widest<T extends { tier: AllowanceTier }>(rows: T[]): T | undefined {
+  for (const tier of ALLOWANCE_TIERS) {
+    const row = rows.find((entry) => entry.tier === tier);
+    if (row) return row;
+  }
+  return undefined;
+}
+
+/** The zone a day-long answer ends in when the caller does not say: the product's own default. */
+const FALLBACK_TIME_ZONE = "Asia/Seoul";
 
 /**
  * The store, in memory. FOR TESTS ONLY — nothing wires this.
@@ -238,9 +393,16 @@ function boundTo(input: StandingGrant): {
  * outlive the turn must outlive the process too.
  */
 export function createStandingApprovalStore(
-  options: { now?: () => number } = {},
+  options: {
+    now?: () => number;
+    /** Where "오늘 하루" ends. Absent: Seoul, the product's default. */
+    timeZone?: string;
+    /** The task a conversation is on now. Absent: no task is ever known, so none is offered. */
+    currentTask?: (threadId: string) => Promise<string | undefined>;
+  } = {},
 ): StandingApprovalStore {
   const now = options.now ?? (() => Date.now());
+  const timeZone = options.timeZone ?? FALLBACK_TIME_ZONE;
   const rows = new Map<string, StandingApproval>();
 
   /** Still standing: not withdrawn, and not past its own clock where it has one. */
@@ -248,18 +410,19 @@ export function createStandingApprovalStore(
     row.revokedAt === undefined &&
     (row.expiresAt === undefined || Date.parse(row.expiresAt) > now());
 
-  const live = (
-    botId: string,
-    rule: string,
-    scope: string,
-    threadId: string | undefined,
+  /** The live row under exactly this binding. */
+  const holding = (
+    input: { botId: string; rule: string; scope: string },
+    bound: Pick<Bound, "tier" | "threadId" | "taskId">,
   ) =>
     [...rows.values()].find(
       (row) =>
-        row.botId === botId &&
-        row.rule === rule &&
-        row.scope === scope &&
-        row.threadId === threadId &&
+        row.botId === input.botId &&
+        row.rule === input.rule &&
+        row.scope === input.scope &&
+        row.tier === bound.tier &&
+        row.threadId === bound.threadId &&
+        row.taskId === bound.taskId &&
         standing(row),
     );
 
@@ -273,18 +436,24 @@ export function createStandingApprovalStore(
     return revoked;
   };
 
-  return {
-    // The standing kind first: it is the wider decision, and the one whose id a reader expects to
-    // see on every row it covers rather than on all but the ones a conversation happened to cover.
+  const store: StandingApprovalStore = {
     find: async (botId, rule, scope, where = {}) =>
-      live(botId, rule, scope, undefined) ??
-      (where.threadId ? live(botId, rule, scope, where.threadId) : undefined) ??
-      null,
+      widest(
+        [...rows.values()].filter(
+          (row) =>
+            row.botId === botId &&
+            row.rule === rule &&
+            row.scope === scope &&
+            standing(row) &&
+            answersWhere(row, where),
+        ),
+      ) ?? null,
 
     grant: async (input) => {
       const scope = scopeKeyOf(input.scope);
-      const bound = boundTo(input);
-      const already = live(input.botId, input.rule, scope, bound.threadId);
+      const at = now();
+      const bound = boundTo(input, at, timeZone);
+      const already = holding({ ...input, scope }, bound);
       if (already) return already;
       const granted: StandingApproval = {
         id: randomUUID(),
@@ -294,29 +463,29 @@ export function createStandingApprovalStore(
         scopeKind: input.scope.kind,
         scopeValue: input.scope.value,
         tier: bound.tier,
-        ...(bound.threadId
-          ? {
-              threadId: bound.threadId,
-              expiresAt: new Date(
-                now() + THREAD_ALLOWANCE_TTL_MS,
-              ).toISOString(),
-            }
-          : {}),
+        ...(bound.threadId ? { threadId: bound.threadId } : {}),
+        ...(bound.taskId ? { taskId: bound.taskId } : {}),
+        ...(bound.expiresAt === undefined
+          ? {}
+          : { expiresAt: new Date(bound.expiresAt).toISOString() }),
         subject: input.subject,
         grantedBy: input.grantedBy,
-        grantedAt: new Date(now()).toISOString(),
+        grantedAt: new Date(at).toISOString(),
       };
       rows.set(granted.id, granted);
       return granted;
     },
 
     list: async (botId) =>
-      [...rows.values()]
-        .filter(
-          (row) =>
-            standing(row) && (botId === undefined || row.botId === botId),
-        )
-        .sort((left, right) => right.grantedAt.localeCompare(left.grantedAt)),
+      withCurrentTasks(
+        [...rows.values()]
+          .filter(
+            (row) =>
+              standing(row) && (botId === undefined || row.botId === botId),
+          )
+          .sort((left, right) => right.grantedAt.localeCompare(left.grantedAt)),
+        options.currentTask,
+      ),
 
     revoke: async (id, actor) => {
       const row = rows.get(id);
@@ -330,7 +499,95 @@ export function createStandingApprovalStore(
           (row) => row.threadId === threadId && row.revokedAt === undefined,
         )
         .map((row) => withdraw(row, actor)),
+
+    ...(options.currentTask ? { currentTask: options.currentTask } : {}),
   };
+  return store;
+}
+
+/**
+ * The live rows, less the task-bound ones whose task is over.
+ *
+ * A task allowance's clock is its outer bound; what usually ends it is the person writing again,
+ * which no clock can see. `find` never matches one of those — it is handed the current task — so the
+ * list must not show one as standing either: a list that says "이 일 동안" about a job that finished
+ * an hour ago is a boundary describing itself wrongly. One read per conversation, not per row.
+ */
+async function withCurrentTasks(
+  rows: StandingApproval[],
+  currentTask: ((threadId: string) => Promise<string | undefined>) | undefined,
+): Promise<StandingApproval[]> {
+  const threads = new Set(
+    rows
+      .filter((row) => row.tier === "task" && row.threadId)
+      .map((row) => row.threadId as string),
+  );
+  if (threads.size === 0) return rows;
+  const current = new Map<string, string | undefined>();
+  for (const threadId of threads) {
+    current.set(threadId, await currentTask?.(threadId));
+  }
+  return rows.filter(
+    (row) =>
+      row.tier !== "task" ||
+      (row.threadId !== undefined &&
+        row.taskId !== undefined &&
+        current.get(row.threadId) === row.taskId),
+  );
+}
+
+/**
+ * The person's newest message in a conversation, by its id: the task that conversation is on.
+ *
+ * Every run hands the whole history back and `appendMessages` writes each message once, at the
+ * start of the run whose input first carries it — so the person's message is in the table before
+ * the Bot does anything about it, and a browser step carried on by a fresh run (`waiting`, then the
+ * next run) adds no person's message and leaves the task where it was. Measured shape, not assumed:
+ * `runner/laf-runner.ts` appends in `startRun` and again in `finishRun`, both idempotent by id.
+ */
+export async function currentTaskIn(
+  database: Database,
+  threadId: string,
+): Promise<string | undefined> {
+  const [row] = await database
+    .select({ id: sql<string | null>`${lafThreadMessages.message} ->> 'id'` })
+    .from(lafThreadMessages)
+    .where(
+      and(
+        eq(lafThreadMessages.threadId, threadId),
+        sql`${lafThreadMessages.message} ->> 'role' = 'user'`,
+      ),
+    )
+    .orderBy(desc(lafThreadMessages.seq))
+    .limit(1);
+  return row?.id ?? undefined;
+}
+
+/**
+ * What the person asked for in their newest message in a conversation, as text: the task the
+ * high-risk check weighs a submission against ("is this data leaving for a reason the task gives?").
+ * Empty when there is no conversation — a routine — or nothing the store can read.
+ */
+export async function ownerTaskTextIn(
+  database: Database,
+  threadId: string | undefined,
+): Promise<string> {
+  if (!threadId) return "";
+  const [row] = await database
+    .select({ message: lafThreadMessages.message })
+    .from(lafThreadMessages)
+    .where(
+      and(
+        eq(lafThreadMessages.threadId, threadId),
+        sql`${lafThreadMessages.message} ->> 'role' = 'user'`,
+      ),
+    )
+    .orderBy(desc(lafThreadMessages.seq))
+    .limit(1);
+  const content = (row?.message as { content?: unknown } | undefined)?.content;
+  return typeof content === "string" || Array.isArray(content)
+    ? textOf(content as MessageContent)
+    : "";
 }
 
 /**
@@ -348,9 +605,15 @@ export function createStandingApprovalStore(
  */
 export function createDatabaseStandingApprovalStore(
   database: Database,
-  options: { now?: () => number } = {},
+  options: {
+    now?: () => number;
+    /** Where "오늘 하루" ends: the Bot's time zone (`BOT_TIME_ZONE`). Absent: Seoul. */
+    timeZone?: string;
+  } = {},
 ): StandingApprovalStore {
   const now = options.now ?? (() => Date.now());
+  const timeZone = options.timeZone ?? FALLBACK_TIME_ZONE;
+  const currentTask = (threadId: string) => currentTaskIn(database, threadId);
 
   const asStanding = (
     row: typeof computerStandingApprovals.$inferSelect,
@@ -362,8 +625,10 @@ export function createDatabaseStandingApprovalStore(
     // Written by `grant` from an `AllowanceScope`, so the column only ever holds one of the three.
     scopeKind: row.scopeKind as AllowanceScope["kind"],
     scopeValue: row.scopeValue,
-    tier: row.threadId === null ? "always" : "thread",
+    // Written by `grant` from an `AllowanceTier`; 0056 backfilled the rows from before it.
+    tier: row.tier as AllowanceTier,
     ...(row.threadId === null ? {} : { threadId: row.threadId }),
+    ...(row.taskId === null ? {} : { taskId: row.taskId }),
     ...(row.expiresAt === null
       ? {}
       : { expiresAt: row.expiresAt.toISOString() }),
@@ -408,25 +673,27 @@ export function createDatabaseStandingApprovalStore(
             : isNull(computerStandingApprovals.threadId),
           standing(),
         ),
-      )
-      .limit(2);
-    // The standing kind first, for the reason the Map gives.
-    const row = rows.find((entry) => entry.threadId === null) ?? rows[0];
-    return row ? asStanding(row) : null;
+      );
+    // The binding checked in code as well as in SQL, by the same function the Map uses, so the two
+    // stores cannot disagree about which task a row answers for.
+    const row = widest(
+      rows.map(asStanding).filter((entry) => answersWhere(entry, where)),
+    );
+    return row ?? null;
   };
 
   /**
    * The live row under this exact binding, expired or not.
    *
-   * `find` will not return an expired row and the unique index does not read `expires_at`, so a
-   * conversation-bound allowance whose day has run out still holds its slot until somebody
-   * withdraws it. `grant` needs to see that row to retire it.
+   * `find` will not return an expired row and the unique index does not read `expires_at`, so an
+   * allowance whose clock has run out still holds its slot until somebody withdraws it. `grant`
+   * needs to see that row to retire it.
    */
   const holding = async (
     botId: string,
     rule: string,
     scope: string,
-    threadId: string | undefined,
+    bound: Pick<Bound, "tier" | "threadId" | "taskId">,
   ) => {
     const [row] = await database
       .select()
@@ -436,9 +703,13 @@ export function createDatabaseStandingApprovalStore(
           eq(computerStandingApprovals.botId, botId),
           eq(computerStandingApprovals.rule, rule),
           eq(computerStandingApprovals.scope, scope),
-          threadId
-            ? eq(computerStandingApprovals.threadId, threadId)
+          eq(computerStandingApprovals.tier, bound.tier),
+          bound.threadId
+            ? eq(computerStandingApprovals.threadId, bound.threadId)
             : isNull(computerStandingApprovals.threadId),
+          bound.taskId
+            ? eq(computerStandingApprovals.taskId, bound.taskId)
+            : isNull(computerStandingApprovals.taskId),
           isNull(computerStandingApprovals.revokedAt),
         ),
       )
@@ -448,7 +719,8 @@ export function createDatabaseStandingApprovalStore(
 
   const grant: StandingApprovalStore["grant"] = async (input) => {
     const scope = scopeKeyOf(input.scope);
-    const bound = boundTo(input);
+    const at = now();
+    const bound = boundTo(input, at, timeZone);
     const [inserted] = await database
       .insert(computerStandingApprovals)
       .values({
@@ -458,13 +730,14 @@ export function createDatabaseStandingApprovalStore(
         scope,
         scopeKind: input.scope.kind,
         scopeValue: input.scope.value,
+        tier: bound.tier,
         threadId: bound.threadId ?? null,
-        expiresAt: bound.threadId
-          ? new Date(now() + THREAD_ALLOWANCE_TTL_MS)
-          : null,
+        taskId: bound.taskId ?? null,
+        expiresAt:
+          bound.expiresAt === undefined ? null : new Date(bound.expiresAt),
         subject: input.subject,
         grantedBy: input.grantedBy,
-        grantedAt: new Date(now()),
+        grantedAt: new Date(at),
       })
       .onConflictDoNothing()
       .returning();
@@ -472,11 +745,11 @@ export function createDatabaseStandingApprovalStore(
     /*
      * Lost the race, or it already stood: either way the answer is the row that is standing now.
      *
-     * Looked up under the same binding that was inserted, and the standing kind is NOT accepted as
-     * the answer to a conversation-bound grant: the person pressed the narrower button, and handing
-     * back the wider row would report that they had pressed the other one.
+     * Looked up under the same binding that was inserted, and a wider row is NOT accepted as the
+     * answer to a narrower grant: the person pressed the narrower button, and handing back the wider
+     * row would report that they had pressed another one.
      */
-    const row = await holding(input.botId, input.rule, scope, bound.threadId);
+    const row = await holding(input.botId, input.rule, scope, bound);
     if (!row) throw new Error("the allowance could not be recorded");
     if (row.expiresAt !== null && row.expiresAt <= new Date(now())) {
       // Run out but still holding the slot. Retired under the person granting anew, once, and the
@@ -504,7 +777,7 @@ export function createDatabaseStandingApprovalStore(
         .from(computerStandingApprovals)
         .where(where)
         .orderBy(desc(computerStandingApprovals.grantedAt));
-      return rows.map(asStanding);
+      return withCurrentTasks(rows.map(asStanding), currentTask);
     },
 
     revoke: async (id, actor) => {
@@ -534,5 +807,7 @@ export function createDatabaseStandingApprovalStore(
         .returning();
       return rows.map(asStanding);
     },
+
+    currentTask,
   };
 }

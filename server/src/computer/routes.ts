@@ -1064,6 +1064,8 @@ function awaitingApproval(
       // Present when "for this conversation" is on offer. The card draws its third button off this
       // and nothing else, so a question raised from outside a conversation offers two.
       threadId: error.threadId,
+      // And "for this task", where the server knew which task the conversation is on.
+      taskId: error.taskId,
       // So the card can show how long is left. Without it the question simply disappeared after ten
       // minutes with nothing having said it would.
       expiresAt: error.expiresAt,

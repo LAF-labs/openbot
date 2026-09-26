@@ -601,6 +601,8 @@ export function outcomeOfError(error: unknown): ToolOutcome {
       scope: error.scope,
       // And the middle one: "for this conversation", where the question came from one.
       threadId: error.threadId,
+      // And "for this task", where the server knew which task the conversation is on.
+      taskId: error.taskId,
       expiresAt: error.expiresAt,
       code: "laf:nobody_answered",
       reason: toolResultText("laf:nobody_answered"),

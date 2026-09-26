@@ -137,6 +137,22 @@ export const computerStandingApprovals = pgTable(
      * alive for as long as the tab is open.
      */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /**
+     * How wide the answer was: `always`, `thread` (이 대화 동안), `task` (이 일 동안) or `day`
+     * (오늘 하루).
+     *
+     * A column since migration 0056. It was read off `thread_id` being null or not, which held for
+     * two tiers and cannot hold for four: a day-long answer is as unbound to a conversation as the
+     * standing kind, and a task-long one is bound to the same thread as the conversation kind.
+     * Backfilled from `thread_id` for every row granted before.
+     */
+    tier: text("tier").notNull().default("always"),
+    /**
+     * The task a `task` answer covers: the person's message the question was raised under, in
+     * `thread_id`. It answers only while that message is still the newest the person has written in
+     * the thread — their next message is the next task. Null for every other tier.
+     */
+    taskId: text("task_id"),
     grantedBy: text("granted_by").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .notNull()
@@ -159,13 +175,19 @@ export const computerStandingApprovals = pgTable(
      *
      * Partial, so revoked rows accumulate freely: the same allowance can be granted, withdrawn and
      * granted again, and every one of those decisions stays on the record.
+     *
+     * The tier and the task are in the key since 0056: a standing answer and a day-long one are both
+     * unbound to a thread, and a conversation-long answer and a task-long one share their thread, so
+     * without them the second press of a different width would find the first one's slot taken.
      */
     uniqueIndex("computer_standing_approvals_live_idx")
       .on(
         table.botId,
         table.rule,
         table.scope,
+        table.tier,
         sql`coalesce(${table.threadId}, '')`,
+        sql`coalesce(${table.taskId}, '')`,
       )
       .where(sql`${table.revokedAt} is null`),
   ],

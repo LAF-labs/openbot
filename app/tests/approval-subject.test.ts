@@ -40,7 +40,18 @@ const REASONS = Object.keys({
   guard_floor: true,
   repeat: true,
   unannotated: true,
+  high_risk: true,
 } satisfies Record<AskSubject["reason"], true>) as AskSubject["reason"][];
+
+/** Each kind a high-risk question can name, and none: every one must be said in Korean. */
+const RISKS = [
+  ["payment"],
+  ["account"],
+  ["personal_data"],
+  ["unrelated_personal_data"],
+  ["personal_data", "unrelated_personal_data"],
+  [],
+] as const;
 
 const GUARDS = ["money", "external", "destructive", "unannotated"] as const;
 
@@ -62,6 +73,15 @@ function shapesOf(
     reason,
     ...(reason === "repeat" ? { repeatCount: 5 } : {}),
   } as const;
+  if (reason === "high_risk") {
+    return RISKS.map((risk) => ({
+      kind: "browser",
+      ...base,
+      host: "shop.example.com",
+      element: { role: "button", name: "결제하기" },
+      risk: [...risk],
+    }));
+  }
   if (intent === "call_tool") {
     return [
       {

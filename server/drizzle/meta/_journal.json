@@ -400,6 +400,13 @@
       "when": 1790396654248,
       "tag": "0056_run_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1790428613007,
+      "tag": "0057_scoped_allowances",
+      "breakpoints": true
     }
   ]
 }

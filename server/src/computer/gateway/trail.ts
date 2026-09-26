@@ -14,6 +14,7 @@ import {
 import type { PendingApproval } from "../approvals";
 import type { PolicyDecision } from "../policy";
 import type { SnapshotElement } from "../schema";
+import type { HighRiskVerdict } from "../high-risk";
 import type { AllowanceTier } from "../standing-approvals";
 import { originOf, pageForTrail } from "./addresses";
 import type { ActionActor } from "./caller";
@@ -69,6 +70,8 @@ export async function write(
      * sentence rather than a flag.
      */
     autoReviewed?: string;
+    /** The high-risk check's reading, where it consulted anything. Kinds and signals, never values. */
+    highRisk?: HighRiskVerdict;
     /** Set only when a permitted action was attempted and did not succeed. */
     failure?: string;
   },
@@ -144,6 +147,9 @@ export async function write(
             }
           : {}),
         ...(entry.autoReviewed ? { autoReviewed: entry.autoReviewed } : {}),
+        ...(entry.highRisk
+          ? { highRisk: highRiskForTrail(entry.highRisk) }
+          : {}),
         /**
          * Whether the action actually went on to run.
          *
@@ -312,6 +318,8 @@ export async function writeApprovalEvent(
      * could not be reached — and the difference is the whole of whether the feature is working.
      */
     autoReview?: { allowed: boolean; reason: string } | null;
+    /** Why a high-risk check asked, or what it read where it was consulted. */
+    highRisk?: HighRiskVerdict | undefined;
   },
 ) {
   await recordAuditEvent(auditStore, {
@@ -348,6 +356,23 @@ export async function writeApprovalEvent(
               : "could not be reached",
           }
         : {}),
+      // Who decided this needed eyes and on what: the rules or a named judge, and the signals it saw.
+      ...(entry.highRisk ? { highRisk: highRiskForTrail(entry.highRisk) } : {}),
     },
   });
+}
+
+/**
+ * The high-risk reading as the trail keeps it: whether it asked, why, and who decided — the signal
+ * names and the judge's probabilities. Nothing typed is in it, by construction: the verdict never
+ * held a value.
+ */
+export function highRiskForTrail(verdict: HighRiskVerdict) {
+  return {
+    escalated: verdict.escalate,
+    kinds: verdict.kinds,
+    signals: verdict.signals,
+    ...(verdict.judge ? { judge: verdict.judge } : {}),
+    ...(verdict.failed ? { failed: verdict.failed } : {}),
+  };
 }

@@ -121,6 +121,18 @@ export function createSecrets(deps: {
   }
 
   /**
+   * Whether a person put a secret into a field on this page's site. The high-risk check reads it:
+   * a password entered and then a press is a sign-in or a change of the password, and only the
+   * second is something a standing allowance should not carry.
+   */
+  function suppliedOn(computerId: string, pageUrl: string): boolean {
+    const origin = originOf(pageUrl);
+    return (typedInto.get(computerId) ?? []).some(
+      (field) => field.origin === origin,
+    );
+  }
+
+  /**
    * Asking for a secret, and supplying one.
    *
    * Both are audited, and neither records the value. The row says a secret was asked for, what it
@@ -222,6 +234,7 @@ export function createSecrets(deps: {
     forgetTypedInto,
     withoutSecrets,
     targetOf,
+    suppliedOn,
     requestSecret,
     supplySecret,
   };

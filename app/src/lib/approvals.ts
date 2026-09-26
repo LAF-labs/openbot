@@ -48,14 +48,22 @@ export type AllowanceScope = {
 };
 
 /**
- * How long a yes is meant to last, as the three buttons on a card say it.
+ * How long a yes is meant to last, as the buttons on a card say it.
  *
- * `once` is this action. `thread` is this conversation — bound to the thread the question came
- * from, and to a day. `always` is until somebody takes it back. The middle one exists because the
- * other two are a day apart in weight, and somebody clearing an obstacle for one afternoon had
- * nothing honest to press.
+ * `once` is this action. `task` is the job the person set with their newest message — it ends when
+ * they write again. `thread` is this conversation — bound to the thread the question came from, and
+ * to a day. `day` is today, everywhere, until midnight. `always` is until somebody takes it back.
+ * The middle ones exist because the ends are a lifetime apart in weight, and somebody clearing an
+ * obstacle for one job or one afternoon had nothing honest to press.
  */
-export type ApprovalTier = "once" | "thread" | "always";
+export type ApprovalTier = "once" | "task" | "thread" | "day" | "always";
+
+/** The kinds of high-risk submission the server names, for the card to say why. */
+export type HighRiskKind =
+  | "payment"
+  | "account"
+  | "personal_data"
+  | "unrelated_personal_data";
 
 /**
  * The scope out of a pause reply, or undefined if it was not one.
@@ -109,7 +117,9 @@ export type AskSubject = {
     guard?: "money" | "external" | "destructive" | "unannotated";
   };
   repeatCount?: number;
-  reason: "policy_ask" | "guard_floor" | "repeat" | "unannotated";
+  /** What made it high-risk, when that is why it stopped. */
+  risk?: HighRiskKind[];
+  reason: "policy_ask" | "guard_floor" | "repeat" | "unannotated" | "high_risk";
 };
 
 export type PendingApproval = {
@@ -128,6 +138,8 @@ export type PendingApproval = {
   scope?: AllowanceScope;
   /** Present when "for this conversation" is on offer. See `OpenQuestion.threadId`. */
   threadId?: string;
+  /** Present when "for this task" is on offer. */
+  taskId?: string;
   /**
    * The conversation step the question holds open: which thread, which of the Bot's tool calls.
    * What lets every window of that conversation draw the card, and carry the step on once it is
@@ -184,6 +196,7 @@ const REASONS = new Set<AskSubject["reason"]>([
   "guard_floor",
   "repeat",
   "unannotated",
+  "high_risk",
 ]);
 
 /**
@@ -331,6 +344,7 @@ function reasonPhrase(subject: AskSubject): Phrase | undefined {
       params: { count: subject.repeatCount ?? 0 },
     };
   }
+  if (subject.reason === "high_risk") return highRiskPhrase(subject.risk);
   if (subject.reason === "unannotated") {
     return {
       key: "The tool declared no risk at all, so it is treated as the most dangerous thing it could be.",
@@ -357,6 +371,37 @@ function reasonPhrase(subject: AskSubject): Phrase | undefined {
     default:
       return undefined;
   }
+}
+
+/**
+ * Why a submission is being put in front of a person whatever was allowed before: the one thing
+ * about it that the check saw. Money first, then the account, then whose details — the order a
+ * person would want to be told in.
+ */
+function highRiskPhrase(risk: HighRiskKind[] | undefined): Phrase {
+  const kinds = new Set(risk ?? []);
+  if (kinds.has("payment")) {
+    return {
+      key: "It looks like a payment, so you are asked every time, whatever you allowed before.",
+      params: {},
+    };
+  }
+  if (kinds.has("account")) {
+    return {
+      key: "It looks like a change to how an account is secured, so you are asked every time.",
+      params: {},
+    };
+  }
+  if (kinds.has("unrelated_personal_data")) {
+    return {
+      key: "It would send personal details your request did not call for, so you are asked first.",
+      params: {},
+    };
+  }
+  return {
+    key: "It would send someone's personal details to the site, so you are asked every time.",
+    params: {},
+  };
 }
 
 /**
@@ -616,6 +661,12 @@ export function decisionPhrase(decision: ApprovalDecision): Phrase {
       params: { action },
     };
   }
+  if (decision.tier === "task") {
+    return { key: "Allowed for this task · {action}", params: { action } };
+  }
+  if (decision.tier === "day") {
+    return { key: "Allowed for today · {action}", params: { action } };
+  }
   return { key: "Allowed · {action}", params: { action } };
 }
 
@@ -669,7 +720,11 @@ function decisionOf(value: unknown): ApprovalDecision | undefined {
   const checked = askSubjectOf(subject);
   return {
     outcome,
-    ...(tier === "once" || tier === "thread" || tier === "always"
+    ...(tier === "once" ||
+    tier === "task" ||
+    tier === "thread" ||
+    tier === "day" ||
+    tier === "always"
       ? { tier }
       : {}),
     ...(checked ? { subject: checked } : {}),
@@ -805,6 +860,9 @@ export function pauseFrom(
     ...(typeof body.threadId === "string" && body.threadId
       ? { threadId: body.threadId }
       : {}),
+    ...(typeof body.taskId === "string" && body.taskId
+      ? { taskId: body.taskId }
+      : {}),
     expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : "",
   };
 }
@@ -828,6 +886,11 @@ export type OpenQuestion = {
    * pressed, for the same reason the scope is not.
    */
   threadId?: string | undefined;
+  /**
+   * Present when "for this task" is on offer: the server knew which task the conversation is on.
+   * Like the thread, never sent back — the server binds the answer to its own record.
+   */
+  taskId?: string | undefined;
   /** When the question stops being answerable, so the card can count down. Empty when unknown. */
   expiresAt: string;
 };
@@ -1200,6 +1263,7 @@ export function questionFromRecord(approval: PendingApproval): OpenQuestion {
     rule: approval.rule || null,
     scope: allowanceScopeOf(approval.scope),
     ...(approval.threadId ? { threadId: approval.threadId } : {}),
+    ...(approval.taskId ? { taskId: approval.taskId } : {}),
     expiresAt: approval.expiresAt,
   };
 }

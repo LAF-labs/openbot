@@ -12,7 +12,15 @@ import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
 import { type ApprovalRegistry, fingerprintOf } from "../approvals";
 import type { ReviewSubject, ReviewVerdict } from "../auto-review";
+import { readableName } from "../../../../shared/element-label";
 import { ComputerUnavailableError, STOPPED } from "../client";
+import {
+  type HighRiskCheck,
+  type HighRiskFacts,
+  type TypedEntry,
+  type TypedLedger,
+  typedEntryOf,
+} from "../high-risk";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
@@ -26,7 +34,7 @@ import {
   allowanceFor,
   type StandingApprovalStore,
 } from "../standing-approvals";
-import { describeFile, hostOf } from "./addresses";
+import { describeFile, hostOf, pathOf } from "./addresses";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -51,6 +59,18 @@ export function createGovern(options: {
     subject: ReviewSubject,
   ) => Promise<ReviewVerdict | null>;
   snapshots: SnapshotCache;
+  /**
+   * The high-risk check and what it reads beside the call: what was typed on the site so far, by
+   * kind, and whether a person entered a secret there. Absent, no submission is ever escalated —
+   * which is how a test about something else keeps its old shape.
+   */
+  highRisk?: {
+    check: HighRiskCheck;
+    typed: TypedLedger;
+    secretHere: (computerId: string, pageUrl: string) => boolean;
+    /** The owner's words about the task at hand, for the judge: the conversation's newest message. */
+    taskText: (threadId: string | undefined) => Promise<string>;
+  };
 }) {
   const { auditStore, approvals, repeat, standing, snapshots } = options;
   const { pageMoved, resolve } = snapshots;
@@ -76,6 +96,11 @@ export function createGovern(options: {
       key?: string;
       /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
       submit?: boolean;
+      /**
+       * What a type call is about to put in the field — read here for its SHAPE only (a card number,
+       * a phone number), by the high-risk check, and never stored, logged, hashed or passed on.
+       */
+      typed?: string;
       /** The person's Stop, on its way to the browser. See the acting methods in `acts.ts`. */
       signal?: AbortSignal;
       /**
@@ -288,6 +313,46 @@ export function createGovern(options: {
       host: hostOf(pageUrl),
       filePath,
     });
+
+    /*
+     * WHAT THE HIGH-RISK CHECK WOULD SEE, for the calls that can send something to a site: a press,
+     * Enter, or typing. The field being typed into is read off this server's snapshot like every
+     * other fact here; the text is read for its shape and dropped with this frame.
+     */
+    const gate = options.highRisk;
+    const host = hostOf(pageUrl);
+    const typedNow: TypedEntry | undefined =
+      gate && toolName === "computer_type" && subject.typed !== undefined
+        ? typedEntryOf({
+            host,
+            label: element ? readableName(element.name) : "",
+            role: element?.role ?? "",
+            text: subject.typed,
+            at: Date.now(),
+          })
+        : undefined;
+    const riskFacts: HighRiskFacts | undefined =
+      gate && aboutThePage && (intent === "activate" || intent === "type")
+        ? {
+            tool: toolName,
+            intent: intent ?? "act",
+            submit: subject.submit === true,
+            key: subject.key,
+            host,
+            path: pathOf(pageUrl),
+            ...(element
+              ? {
+                  element: {
+                    role: element.role,
+                    name: readableName(element.name),
+                  },
+                }
+              : {}),
+            typedNow,
+            typed: gate.typed.on(computerId, host),
+            secretHere: gate.secretHere(computerId, pageUrl),
+          }
+        : undefined;
     const settled = await settle(
       {
         botId,
@@ -313,6 +378,12 @@ export function createGovern(options: {
           ? { step: { threadId: actor.threadId, toolCallId: actor.toolCallId } }
           : {}),
         policyVerdict: decision,
+        ...(gate && riskFacts
+          ? {
+              highRisk: () =>
+                gate.check(riskFacts, () => gate.taskText(actor.threadId)),
+            }
+          : {}),
       },
       {
         policy: options.policy,
@@ -334,6 +405,7 @@ export function createGovern(options: {
         pageUrl,
         filePath,
         ...(settled.autoReview ? { autoReview: settled.autoReview } : {}),
+        ...(settled.highRisk ? { highRisk: settled.highRisk } : {}),
       });
       throw new ActionNeedsApprovalError(settled.approval);
     }
@@ -380,6 +452,7 @@ export function createGovern(options: {
     const approvedBy = settled.approvedBy;
     const allowedByStanding = settled.allowance;
     const allowedByReview = settled.autoReviewed;
+    const checkedRisk = settled.highRisk;
     const carried: PolicyDecision = decision.forward
       ? decision
       : { ...decision, allowed: true, forward: true };
@@ -406,6 +479,7 @@ export function createGovern(options: {
           }
         : {}),
       ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
+      ...(checkedRisk ? { highRisk: checkedRisk } : {}),
     });
 
     let result: T;
@@ -453,6 +527,7 @@ export function createGovern(options: {
             }
           : {}),
         ...(allowedByReview ? { autoReviewed: allowedByReview.reason } : {}),
+        ...(checkedRisk ? { highRisk: checkedRisk } : {}),
         /*
          * Never `error.message`: a failed audit insert would put its SQL, parameters included, into
          * the trail it failed to write to (failure-text.ts). An exception from somebody else's
@@ -470,6 +545,26 @@ export function createGovern(options: {
         ? (result as { url?: unknown }).url
         : undefined;
     if (typeof movedTo === "string" && movedTo) pageMoved(computerId, movedTo);
+    /*
+     * What the Bot has typed on this site, by kind, for the next submission's check. A field of no
+     * particular kind is not worth remembering. Only a press that MOVED the page counts as the form
+     * having gone: a click that opened a dropdown on the same page leaves every field where it was,
+     * and forgetting them there would let the real submit past unexamined. A page on another site
+     * has none of this site's fields on it.
+     */
+    if (gate) {
+      if (typedNow && typedNow.kinds.length > 0) {
+        gate.typed.note(computerId, typedNow);
+      }
+      const moved =
+        typeof movedTo === "string" && movedTo !== "" && movedTo !== pageUrl;
+      if (moved) {
+        if (riskFacts && (subject.submit || intent === "activate")) {
+          gate.typed.sent(computerId, host);
+        }
+        gate.typed.movedTo(computerId, hostOf(movedTo));
+      }
+    }
     // The element's label, attached on the way out, so the transcript can say what was acted on
     // instead of quoting a ref. The computer cannot supply this: it knows the ref, and the resolved
     // snapshot lives here. File calls carry their own path already, so there is nothing to add.

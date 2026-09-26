@@ -55,6 +55,7 @@ import { createHandovers } from "./gateway/handovers";
 import { createNavigation, type SiteSeen } from "./gateway/navigation";
 import { createSecrets } from "./gateway/secrets";
 import { createPageReads, createSnapshotCache } from "./gateway/snapshots";
+import { createTypedLedger, type HighRiskCheck } from "./high-risk";
 import type { ActionPolicy } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
 import {
@@ -131,6 +132,14 @@ export type ComputerGatewayOptions = {
    * deployment without a database — changes nothing else about a navigation.
    */
   siteSeen?: SiteSeen;
+  /**
+   * The high-risk check (`high-risk.ts`) and where it reads the owner's task from. Absent, nothing
+   * is escalated — the gateway behaves as it did before the check existed.
+   */
+  highRisk?: {
+    check: HighRiskCheck;
+    taskText: (threadId: string | undefined) => Promise<string>;
+  };
 };
 
 export function createComputerGateway(options: ComputerGatewayOptions) {
@@ -155,6 +164,16 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     standing: options.standing ?? createStandingApprovalStore(),
     ...(options.autoReview ? { autoReview: options.autoReview } : {}),
     snapshots,
+    ...(options.highRisk
+      ? {
+          highRisk: {
+            check: options.highRisk.check,
+            taskText: options.highRisk.taskText,
+            typed: createTypedLedger(),
+            secretHere: secrets.suppliedOn,
+          },
+        }
+      : {}),
   });
 
   return {

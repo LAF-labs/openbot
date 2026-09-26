@@ -34,6 +34,32 @@ export function alwaysLabel(scope: AllowanceScope): string {
  * it. The day it also runs out after is said in the note under the buttons, not here: a button
  * that tried to say everything would say nothing legibly.
  */
+export function taskLabel(scope: AllowanceScope): string {
+  if (scope.kind === "host") {
+    return t("Allow {site} for this task", { site: scope.value });
+  }
+  if (scope.kind === "file") {
+    return t("Allow this file for this task");
+  }
+  return t("Allow this tool for this task");
+}
+
+/** The same thing, everywhere, until midnight where the person is. */
+export function todayLabel(scope: AllowanceScope): string {
+  if (scope.kind === "host") {
+    return t("Allow {site} for today", { site: scope.value });
+  }
+  if (scope.kind === "file") {
+    return t("Allow this file for today");
+  }
+  return t("Allow this tool for today");
+}
+
+/**
+ * The same thing, for this conversation. Beside it: `taskLabel`, the narrowest wider answer — the
+ * job the person set with their last message, ending when they write again — and `todayLabel`,
+ * everywhere until midnight.
+ */
 export function duringLabel(scope: AllowanceScope): string {
   if (scope.kind === "host") {
     return t("Allow {site} for this conversation", { site: scope.value });

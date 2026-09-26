@@ -206,7 +206,9 @@ describe("what became of an answer", () => {
 });
 
 /** The line-level card, on its own, for a question its tool call is waiting on. */
-async function lineCard() {
+async function lineCard(
+  extra: Partial<Parameters<typeof approvals.openQuestion>[1]> = {},
+) {
   const { createElement } = await import("react");
   const { QueryClient, QueryClientProvider } = await import(
     "@tanstack/react-query"
@@ -220,6 +222,7 @@ async function lineCard() {
     subject: OPENING_A_PAGE,
     rule: "browser.host == 'smartstore.naver.com'",
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    ...extra,
   });
   const view = await mount(
     createElement(
@@ -296,5 +299,72 @@ describe("the card on a conversation's line", () => {
     expect(card.alert()).toBe("That answer could not be recorded. Try again.");
     // Nothing was recorded, so the question is still there to answer.
     expect(card.button("Allow once")).toBeDefined();
+  });
+});
+
+describe("the widths a card offers", () => {
+  const SCOPE = { kind: "host", value: "smartstore.naver.com" } as const;
+  const names = (host: HTMLElement) =>
+    [...host.querySelectorAll("button")].map((button) =>
+      button.textContent?.trim(),
+    );
+
+  test("a question from a conversation on a known task offers all four, narrowest first", async () => {
+    const posts = answering("user", () =>
+      json({ id: APPROVAL, botId: BOT, granted: true, tier: "task" }),
+    );
+    const card = await lineCard({
+      scope: SCOPE,
+      threadId: "thread-1",
+      taskId: "message-1",
+    });
+    expect(names(card.host)).toEqual([
+      "Allow once",
+      "Allow smartstore.naver.com for this task",
+      "Allow smartstore.naver.com for this conversation",
+      "Allow smartstore.naver.com for today",
+      "Always allow smartstore.naver.com",
+      "Deny",
+    ]);
+    const forTask = card.button("Allow smartstore.naver.com for this task");
+    if (!forTask) throw new Error("the card drew no task button");
+    await card.press(forTask);
+    await card.settle(50);
+    // The width only: which task it binds to is read off the server's own record.
+    expect(posts).toEqual([
+      {
+        path: `/api/approvals/${BOT}/${APPROVAL}`,
+        body: { granted: true, tier: "task" },
+      },
+    ]);
+  });
+
+  test("a routine's question offers today and always, and no conversation or task", async () => {
+    answering("user", () => json({ id: APPROVAL, botId: BOT, granted: true }));
+    const card = await lineCard({ scope: SCOPE });
+    expect(names(card.host)).toEqual([
+      "Allow once",
+      "Allow smartstore.naver.com for today",
+      "Always allow smartstore.naver.com",
+      "Deny",
+    ]);
+  });
+
+  test("a high-risk submission offers once and deny, and says why", async () => {
+    answering("user", () => json({ id: APPROVAL, botId: BOT, granted: true }));
+    const card = await lineCard({
+      subject: {
+        kind: "browser",
+        intent: "activate",
+        host: "shop.example.com",
+        element: { role: "button", name: "결제하기" },
+        reason: "high_risk",
+        risk: ["payment"],
+      },
+    });
+    expect(names(card.host)).toEqual(["Allow once", "Deny"]);
+    expect(card.host.textContent).toContain(
+      "It looks like a payment, so you are asked every time, whatever you allowed before.",
+    );
   });
 });

@@ -71,7 +71,8 @@ export function createServerModelCalls(input: {
         | "compaction"
         | "day-summary"
         | "memory"
-        | "dream",
+        | "dream"
+        | "high-risk",
     ) =>
     (usage: ModelUsage) => {
       void recordAuditEvent(input.auditStore, {
@@ -269,8 +270,26 @@ export function createServerModelCalls(input: {
     /** The memory's keep-or-drop judge: curation and the forgetting's scrub. */
     memoryAsker,
 
+    /**
+     * The high-risk check's judge, and the snapshot it answers as first (for its bar). A spent free
+     * trial day is not judged — which here means the check falls back to its rules and asks where
+     * anything personal was typed, the direction it may always give way in.
+     */
+    highRiskAsker: {
+      ask: async (state, questions) => {
+        if (await dailyBudget?.reachedToday()) {
+          throw new Error("budget: the day's budget is spent");
+        }
+        return highRiskAsker.ask(state, questions);
+      },
+    } satisfies JevAsker,
+    highRiskModel: decisionCall ? model.decisionModel : model.serverModel,
+
     /** The nightly dream's writer. See `agents/dream.ts`. */
     dreamCall,
+
+    /** The mail's second look at what its rules could not settle. See `plugins/mail-secrets.ts`. */
+    mailSecretJudge,
 
     /**
      * A finished recording, written up as a procedure.

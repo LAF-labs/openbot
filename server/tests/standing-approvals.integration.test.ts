@@ -6,17 +6,24 @@ import {
   expect,
   test,
 } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
   allowanceFor,
   createDatabaseStandingApprovalStore,
   createStandingApprovalStore,
+  currentTaskIn,
   type StandingApprovalStore,
   scopeKeyOf,
+  TASK_ALLOWANCE_TTL_MS,
   THREAD_ALLOWANCE_TTL_MS,
 } from "../src/computer/standing-approvals";
 import { createDatabase } from "../src/db/client";
-import { agents, computerStandingApprovals } from "../src/db/schema";
+import {
+  agents,
+  computerStandingApprovals,
+  lafThreadMessages,
+} from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
 import { A_CLICK } from "./support/subjects";
 
@@ -313,6 +320,127 @@ for (const [name, build] of CLOCKED) {
       await expect(store().grant({ ...GRANT, tier: "thread" })).rejects.toThrow(
         /which conversation/,
       );
+    });
+  });
+}
+
+/*
+ * "이 일 동안" and "오늘 하루", held to one contract across the two stores.
+ *
+ * The task a conversation is on is the person's newest message in it. The database store reads that
+ * off `laf_thread_messages` itself — which is what this runs against a real table for — and the Map
+ * is handed the same answer, so both are asked the same question about the same conversation.
+ */
+const TASK_THREADS: string[] = [];
+let seq = 0;
+
+async function personSays(TASK_THREAD: string, id: string) {
+  seq += 1;
+  await database.insert(lafThreadMessages).values({
+    threadId: TASK_THREAD,
+    seq,
+    message: { id, role: "user", content: "영수증 정리해 줘" },
+  });
+  // A Bot's reply after it, which must not move the task.
+  seq += 1;
+  await database.insert(lafThreadMessages).values({
+    threadId: TASK_THREAD,
+    seq,
+    message: { id: `${id}-reply`, role: "assistant", content: "네" },
+  });
+}
+
+afterAll(async () => {
+  for (const threadId of TASK_THREADS) {
+    await database
+      .delete(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, threadId));
+  }
+});
+
+const TASKED: [string, (now: () => number) => StandingApprovalStore][] = [
+  [
+    "in memory",
+    (now) =>
+      createStandingApprovalStore({
+        now,
+        currentTask: (threadId) => currentTaskIn(database, threadId),
+      }),
+  ],
+  [
+    "in the database",
+    (now) =>
+      createDatabaseStandingApprovalStore(database, {
+        now,
+        timeZone: "Asia/Seoul",
+      }),
+  ],
+];
+
+for (const [name, build] of TASKED) {
+  describe(`the narrower and the clocked widths ${name}`, () => {
+    let at = Date.parse("2026-09-26T05:00:00.000Z");
+    const store = () => build(() => at);
+    const TASK_THREAD = `standing-test-task-${randomUUID()}`;
+    TASK_THREADS.push(TASK_THREAD);
+
+    test("the task is the person's newest message, and a reply does not move it", async () => {
+      await personSays(TASK_THREAD, "task-a");
+      expect(await store().currentTask?.(TASK_THREAD)).toBe("task-a");
+    });
+
+    test("for this task: answers while it is current, gone from the list once it is not", async () => {
+      await personSays(TASK_THREAD, "task-b");
+      const it = store();
+      const granted = await it.grant({
+        ...GRANT,
+        tier: "task",
+        threadId: TASK_THREAD,
+        taskId: "task-b",
+      });
+      expect(granted).toMatchObject({ tier: "task", taskId: "task-b" });
+      expect(Date.parse(granted.expiresAt ?? "")).toBe(
+        at + TASK_ALLOWANCE_TTL_MS,
+      );
+      expect(
+        (
+          await it.find(BOT, RULE, "host=wttr.in", {
+            threadId: TASK_THREAD,
+            taskId: "task-b",
+          })
+        )?.id,
+      ).toBe(granted.id);
+      expect((await it.list(BOT)).map((row) => row.id)).toEqual([granted.id]);
+
+      await personSays(TASK_THREAD, "task-c");
+      expect(
+        await it.find(BOT, RULE, "host=wttr.in", {
+          threadId: TASK_THREAD,
+          taskId: "task-c",
+        }),
+      ).toBeNull();
+      expect(await it.list(BOT)).toEqual([]);
+    });
+
+    test("for today: stands until midnight in Seoul, everywhere, then not", async () => {
+      const it = store();
+      const granted = await it.grant({ ...GRANT, tier: "day" });
+      expect(granted.expiresAt).toBe("2026-09-26T15:00:00.000Z");
+      expect((await it.find(BOT, RULE, "host=wttr.in"))?.tier).toBe("day");
+      expect(
+        (await it.find(BOT, RULE, "host=wttr.in", { threadId: THREAD }))?.tier,
+      ).toBe("day");
+      at = Date.parse("2026-09-26T15:00:01.000Z");
+      expect(await it.find(BOT, RULE, "host=wttr.in")).toBeNull();
+      at = Date.parse("2026-09-26T05:00:00.000Z");
+    });
+
+    test("a day's grant beside the standing one is its own row", async () => {
+      const it = store();
+      const forGood = await it.grant(GRANT);
+      const forToday = await it.grant({ ...GRANT, tier: "day" });
+      expect(forToday.id).not.toBe(forGood.id);
+      expect((await it.grant({ ...GRANT, tier: "day" })).id).toBe(forToday.id);
     });
   });
 }

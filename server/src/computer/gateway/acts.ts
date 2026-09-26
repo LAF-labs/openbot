@@ -93,6 +93,9 @@ export function createActs(deps: {
           // a rule about clicking and a rule about `key` both miss. The computer presses it itself,
           // so it never arrives here as an action of its own to be judged.
           submit: input.submit === true,
+          // For its shape only: the high-risk check asks whether it is a card or ID number, and
+          // nothing keeps it (see `govern`'s subject).
+          typed: input.text,
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },

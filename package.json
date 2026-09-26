@@ -36,6 +36,7 @@
     "eval:deferral": "bun --env-file=.env evals/deferral.ts",
     "eval:compaction": "bun --env-file=.env evals/compaction.ts",
     "eval:auto-review": "bun --env-file=.env evals/auto-review.ts",
+    "eval:high-risk": "bun --env-file=.env evals/high-risk.ts",
     "eval:browse": "bun --env-file=.env evals/browse.ts",
     "eval:from-failures": "bun --env-file=.env scripts/eval-from-failures.ts"
   },

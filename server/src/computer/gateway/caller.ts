@@ -59,6 +59,8 @@ export class ActionNeedsApprovalError extends Error {
   readonly scope: AllowanceScope | undefined;
   /** Present when "for this conversation" is on offer: the card draws that button off it. */
   readonly threadId: string | undefined;
+  /** Present when "for this task" is on offer: the card draws that button off it. */
+  readonly taskId: string | undefined;
   /**
    * When the question stops being answerable.
    *
@@ -76,6 +78,7 @@ export class ActionNeedsApprovalError extends Error {
     this.rule = approval.rule;
     this.scope = approval.scope;
     this.threadId = approval.threadId;
+    this.taskId = approval.taskId;
     this.expiresAt = approval.expiresAt;
   }
 }
