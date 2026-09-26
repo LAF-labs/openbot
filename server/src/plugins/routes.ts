@@ -56,6 +56,7 @@ import {
   type PluginStore,
   TOOL_UNKNOWN,
 } from "./store";
+import { WITHHELD_GONE } from "./withheld-secrets";
 
 /*
  * WHAT THESE ROUTES REFUSE WITH, BEYOND WHAT THE STORE ALREADY NAMES.
@@ -1168,6 +1169,33 @@ export function createPluginRoutes(
   );
 
   /**
+   * A one-time code or account link withheld from a mail this Bot read, shown to the person the
+   * call was made for — the control on that call's line asks here when they press 보기.
+   *
+   * The Bot is the path's, checked like every other door that names one, and the store checks it
+   * again together with the person: the id is in the conversation, and a colleague who can read
+   * the conversation is not who the code was for. Expired, never kept and not yours are one 404
+   * with one code, so the answer does not tell anybody which ids exist. Never cached, and never
+   * logged: this is the one response in the product whose body is somebody's key.
+   */
+  routes.get(
+    "/for/:agentId/withheld/:id",
+    requireUser,
+    requireBotAccess("agentId"),
+    (context) => {
+      context.header("cache-control", "no-store");
+      const shown = store.revealWithheld(context.req.param("id"), {
+        botId: context.req.param("agentId"),
+        actorId: context.var.actor.id,
+      });
+      if (!shown) {
+        return context.json({ error: WITHHELD_GONE, code: WITHHELD_GONE }, 404);
+      }
+      return context.json(shown);
+    },
+  );
+
+  /**
    * Call a tool, as a Bot.
    *
    * The grant, the policy and the audit row all happen inside the store, so this endpoint cannot
@@ -1214,6 +1242,9 @@ export function createPluginRoutes(
         ...(typeof body.approvalId === "string" && body.approvalId
           ? { approvalId: body.approvalId }
           : {}),
+        // The person is in front of this call, so a code withheld from a mail is kept for them to
+        // be shown on its line (`mail-secrets.ts`). A routine reaches the store without this.
+        watched: true,
       });
       return context.json(result);
     } catch (error) {
@@ -1243,6 +1274,7 @@ export function createPluginRoutes(
             rule: error.rule,
             scope: error.scope,
             threadId: error.threadId,
+            taskId: error.taskId,
             expiresAt: error.expiresAt,
           },
           409,

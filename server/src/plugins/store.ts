@@ -13,6 +13,7 @@ import type {
   AllowanceScope,
   StandingApprovalStore,
 } from "../computer/standing-approvals";
+import type { JevAsker } from "../context/vendor/fast-jev-compaction/index";
 import type { CredentialSecretReader, CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
 import { createCallPath } from "./call";
@@ -33,6 +34,10 @@ import { createServers, unlistedAdvertisedTools } from "./servers";
 import { NO_SHARED_CLIENTS, type SharedClientLookup } from "./shared-clients";
 import { createSkillsAndGrants } from "./skills-and-grants";
 import { transportFor, type VendorTransport } from "./transport";
+import {
+  createWithheldSecrets,
+  type WithheldSecrets,
+} from "./withheld-secrets";
 
 /**
  * Plugins: what this deployment has added, which Bots may use it, and the one path a call takes.
@@ -223,6 +228,8 @@ export class PluginNeedsApprovalError extends Error {
   readonly scope: AllowanceScope | undefined;
   /** Present when "for this conversation" is on offer: the card draws that button off it. */
   readonly threadId: string | undefined;
+  /** Present when "for this task" is on offer: the card draws that button off it. */
+  readonly taskId: string | undefined;
   /** When it stops being answerable, so the card can show how long is left. */
   readonly expiresAt: string;
 
@@ -235,6 +242,7 @@ export class PluginNeedsApprovalError extends Error {
     this.rule = approval.rule;
     this.scope = approval.scope;
     this.threadId = approval.threadId;
+    this.taskId = approval.taskId;
     this.expiresAt = approval.expiresAt;
   }
 }
@@ -543,6 +551,17 @@ export type PluginStoreOptions = {
    * so the shipped `repeat.count >= 5` rule was false here however many times a stuck model called.
    */
   repeat?: RepeatDetector;
+  /**
+   * Who looks at the numbers and links in a mail the rules could not settle (`mail-secrets.ts`):
+   * Jev when the switch is on, the deployment's server model behind it or alone
+   * (`server-model-calls.ts`). Absent, the deterministic rules alone decide what is withheld.
+   */
+  mailSecretJudge?: JevAsker;
+  /**
+   * Where a withheld code or link waits for the owner to press 보기. Defaults to one made here, which
+   * is what a deployment runs: the store that withholds is the store the reveal route asks.
+   */
+  withheld?: WithheldSecrets;
 };
 
 /**
@@ -586,6 +605,8 @@ export type PluginContext = {
    * vendor. `transport.ts`'s registry is still the answer for everything else, unchanged.
    */
   readonly transportFor: (entry: CatalogueEntry | null) => VendorTransport;
+  /** Where a withheld code or link waits for its owner. See {@link PluginStoreOptions.withheld}. */
+  readonly withheld: WithheldSecrets;
 };
 
 /**
@@ -646,6 +667,7 @@ export function createPluginStore(options: PluginStoreOptions) {
           ? (options.deploymentKeyTransports?.[entry.auth.key] ??
             KEY_UNAVAILABLE)
           : transportFor(entry),
+    withheld: options.withheld ?? createWithheldSecrets(),
   };
 
   const grants = createSkillsAndGrants(context);
@@ -709,6 +731,13 @@ export function createPluginStore(options: PluginStoreOptions) {
     retireConnectionsFor: connections.retireConnectionsFor,
 
     callTool: call.callTool,
+
+    /**
+     * A code or link withheld from a mail this Bot read for this person, or null — for anybody
+     * else, for another of their Bots, and once it has expired alike. See `withheld-secrets.ts`.
+     */
+    revealWithheld: (id: string, who: { botId: string; actorId: string }) =>
+      context.withheld.reveal(id, who),
   };
 }
 

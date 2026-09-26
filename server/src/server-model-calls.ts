@@ -14,6 +14,7 @@ import {
 } from "./computer/jev-auto-review";
 import type { ModelUsage } from "./computer/model-call";
 import { createCompactor } from "./context/compaction";
+import type { JevAsker } from "./context/vendor/fast-jev-compaction/index";
 import { createDaySummarizer } from "./context/day-close";
 import { log } from "./log";
 import { createWriteUp, type WriteUp } from "./computer/write-up";
@@ -72,7 +73,8 @@ export function createServerModelCalls(input: {
         | "day-summary"
         | "memory"
         | "dream"
-        | "high-risk",
+        | "high-risk"
+        | "mail-secrets",
     ) =>
     (usage: ModelUsage) => {
       void recordAuditEvent(input.auditStore, {
@@ -207,6 +209,64 @@ export function createServerModelCalls(input: {
         memoryStandIn,
       )
     : memoryStandIn;
+
+  /*
+   * THE MAIL'S SECOND LOOK (`plugins/mail-secrets.ts`): whether a number or a link the rules could
+   * not settle is a one-time code or an account key. The memory's arrangement — Jev when the switch
+   * is on, the server model in Jev's shape behind it or alone — with short bounds, because a person
+   * is waiting on the mail it is reading. It only ever sees the words around the value, redacted,
+   * with the value itself replaced by its shape; and it can only ever add to what is withheld.
+   *
+   * A trial's spent day is not judged, like the auto-review: the rules' answer stands alone, which
+   * withholds everything they are sure of and nothing more.
+   */
+  const mailStandIn = modelAsker(
+    {
+      baseUrl: endpoint.baseUrl,
+      model: model.serverModel,
+      apiKey,
+      supportsEffort: model.serverModelSupportsEffort,
+      onUsage: recordModelUsage("mail-secrets"),
+    },
+    { timeoutMs: 10_000 },
+  );
+  const mailAsker = decisionCall
+    ? withFallback(
+        jevAsker(decisionCall, { timeoutMs: 3_000, purpose: "mail-secrets" }),
+        mailStandIn,
+      )
+    : mailStandIn;
+  const mailSecretJudge: JevAsker = {
+    async ask(state, questions) {
+      if (await dailyBudget?.reachedToday()) {
+        throw new DailyBudgetReachedError();
+      }
+      return mailAsker.ask(state, questions);
+    },
+  };
+
+  /*
+   * THE HIGH-RISK CHECK'S JUDGE (`computer/high-risk.ts`): Jev when the switch is on, with a bound a
+   * person waiting on a press can stand — two seconds, the auto-review's — and the server model
+   * (GLM on this deployment) in Jev's shape behind it or alone. It is asked only about a submission
+   * the deterministic signals could not settle, and only ever to ask a person more, never less.
+   */
+  const highRiskStandIn = modelAsker(
+    {
+      baseUrl: endpoint.baseUrl,
+      model: model.serverModel,
+      apiKey,
+      supportsEffort: model.serverModelSupportsEffort,
+      onUsage: recordModelUsage("high-risk"),
+    },
+    { timeoutMs: 10_000 },
+  );
+  const highRiskAsker = decisionCall
+    ? withFallback(
+        jevAsker(decisionCall, { timeoutMs: 2_000, purpose: "high-risk" }),
+        highRiskStandIn,
+      )
+    : highRiskStandIn;
 
   /** The nightly dream's writer (`agents/dream.ts`): the server model, like the day's summary. */
   const dreamCall = {

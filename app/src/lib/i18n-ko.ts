@@ -2765,6 +2765,22 @@ export const ko: Record<string, string> = {
     "시키신 일과 상관없는 개인정보가 나가게 돼서 먼저 여쭤봐요.",
   "It would send someone's personal details to the site, so you are asked every time.":
     "개인정보를 사이트로 보내게 돼서 매번 여쭤봐요.",
+  "This mail had a one-time code. Only you can see it.":
+    "메일에 인증번호가 있었어요. 사장님만 볼 수 있어요.",
+  "This mail had a password reset link. Only you can see it.":
+    "메일에 비밀번호 재설정 링크가 있었어요. 사장님만 볼 수 있어요.",
+  "This mail had a sign-in link. Only you can see it.":
+    "메일에 로그인 링크가 있었어요. 사장님만 볼 수 있어요.",
+  "Not kept: it was read while nobody was watching.":
+    "아무도 보고 있지 않을 때 읽은 메일이라 남겨 두지 않았어요.",
+  "It is no longer kept. Ask the site to send a new one.":
+    "시간이 지나 사라졌어요. 사이트에서 새로 받아 주세요.",
+  "It could not be shown. Try again.":
+    "보여 드리지 못했어요. 다시 눌러 주세요.",
+  "[one-time code, hidden from the Bot]": "[인증번호 — 봇에게는 가림]",
+  "[password reset link, hidden from the Bot]":
+    "[비밀번호 재설정 링크 — 봇에게는 가림]",
+  "[sign-in link, hidden from the Bot]": "[로그인 링크 — 봇에게는 가림]",
   "The Bot's browser did not start, because this machine's security rules for it are not in place.":
     "이 기계에 봇 브라우저를 지키는 보안 규칙이 걸려 있지 않아서 브라우저를 열지 않았어요.",
   "The Bot's browser was kept closed for safety":

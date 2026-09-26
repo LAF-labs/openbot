@@ -4,6 +4,10 @@ import { useRef, useState } from "react";
 import * as z from "zod";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
+import {
+  WithheldSecrets,
+  withheldForDisplay,
+} from "@/components/channels/withheld-secrets";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { LazyMarkdown } from "@/lib/markdown";
 import {
@@ -236,9 +240,14 @@ function PluginTool({
             {result ? (
               /* The server's own words, drawn the way a Bot's prose is drawn — behind the lazy
                  boundary, because this renderer is registered on every signed-in screen. */
-              <LazyMarkdown>{forDisplay(result.text)}</LazyMarkdown>
+              <LazyMarkdown>
+                {withheldForDisplay(forDisplay(result.text))}
+              </LazyMarkdown>
             ) : null}
           </ToolLine>
+          {/* What a mail held that the Bot was not given — outside the folded detail, because the
+              owner who asked for a code is waiting on it, not on the mail around it. */}
+          {result ? <WithheldSecrets botId={botId} text={result.text} /> : null}
         </>
       );
     },

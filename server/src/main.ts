@@ -618,6 +618,8 @@ const pluginStore = createPluginStore({
   // held for a click and not for a call to somebody else's server was one boundary written twice.
   autoReview: modelCalls.autoReviewFor,
   repeat: repeatDetector,
+  // The second look at a number or link in a mail the rules could not settle. See mail-secrets.ts.
+  mailSecretJudge: modelCalls.mailSecretJudge,
   /*
    * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
    * public URL, and self-registration then simply does not happen — registering a redirect URI

@@ -244,6 +244,15 @@ export type CatalogueEntry = {
    */
   guardedTools?: Readonly<Record<string, LafGuard>>;
   /**
+   * The tools whose result is somebody's mail, and so may carry a one-time code, a password-reset
+   * link or a magic sign-in link.
+   *
+   * Their results have those taken out before the model reads them (`mail-secrets.ts`), the owner
+   * being shown them on the call's line instead. Named here, like the write list, because it is this
+   * repository's word about a vendor's tool; a server added by URL is judged by its own words.
+   */
+  mailReadingTools?: readonly string[];
+  /**
    * Whether this vendor answers to the fleet's relay instead of to this deployment's own callback.
    *
    * Google and Cafe24 both check `redirect_uri` for exact equality against what the OAuth
@@ -437,6 +446,8 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     writeTools: Object.freeze(["create_draft", "send_message"]),
     // A draft stays in the person's own mailbox; a send leaves and cannot be recalled.
     guardedTools: Object.freeze({ send_message: "external" as const }),
+    // A search returns subject lines, and "482913 is your verification code" is a subject line.
+    mailReadingTools: Object.freeze(["search_messages", "read_message"]),
     relay: true,
     docsUrl: "https://developers.google.com/gmail/api/reference/rest",
   },

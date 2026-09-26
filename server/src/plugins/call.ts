@@ -18,6 +18,7 @@ import {
   type ToolAnnotations,
 } from "./laf-contract";
 import { log } from "../log";
+import { readsMail, withholdMailSecrets } from "./mail-secrets";
 import { McpRefusedError, McpServerError, trimDetail } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
 import type { SkillsAndGrants } from "./skills-and-grants";
@@ -364,6 +365,14 @@ export function createCallPath(
        * made that means anything.
        */
       approvalId?: string | undefined;
+      /**
+       * Whether a person is watching this call happen — the app's own call, never a routine's.
+       *
+       * It decides one thing: whether a code or link withheld from a mail (`mail-secrets.ts`) is kept
+       * a while for that person to be shown on the call's line. Nobody watches a routine, so its
+       * values are kept nowhere and the result says only that one was there.
+       */
+      watched?: boolean | undefined;
     }): Promise<{ text: string; isError: boolean }> {
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
@@ -417,6 +426,7 @@ export function createCallPath(
       const advertised = await database
         .select({
           name: mcpTools.name,
+          description: mcpTools.description,
           inputSchema: mcpTools.inputSchema,
           annotations: mcpTools.annotations,
           needsReview: mcpTools.needsReview,
@@ -809,7 +819,7 @@ export function createCallPath(
         );
         const vendor =
           context.injectedVendor ?? context.transportFor(entry).callTool;
-        const result = await vendor(
+        const answered = await vendor(
           {
             url: effectiveUrl(row, entry),
             token,
@@ -819,6 +829,46 @@ export function createCallPath(
           toolName,
           args,
         );
+        /*
+         * A MAILBOX'S KEYS NEVER REACH THE MODEL. One-time codes, password-reset links and magic
+         * sign-in links come out of a mail tool's result here, before the trail and before the
+         * answer — the one place both the app's calls and a routine's pass through
+         * (`mail-secrets.ts`). Whatever this call returns is resent to the model on every later
+         * turn, so this is the last point at which leaving a key out costs nothing.
+         */
+        const withheld = readsMail({
+          entry,
+          toolName,
+          description: advertised[0]?.description,
+          serverTitle: row.title,
+          serverVendor: row.vendor,
+        })
+          ? await withholdMailSecrets(answered.text, {
+              judge: options.mailSecretJudge ?? null,
+              keep: input.watched
+                ? (kind, value) =>
+                    context.withheld.keep({
+                      botId: input.botId,
+                      actorId: input.actorId,
+                      kind,
+                      value,
+                    })
+                : null,
+            })
+          : null;
+        const withheldKinds = withheld?.withheld ?? [];
+        if (withheldKinds.length > 0) {
+          // How many and of what kind — never a value, never the mail.
+          log.info("mail_secrets_withheld", {
+            tool: input.ref,
+            count: withheldKinds.length,
+            kinds: [...new Set(withheldKinds)],
+            kept: input.watched === true,
+          });
+        }
+        const result = withheld
+          ? { ...answered, text: withheld.text }
+          : answered;
         /*
          * What the vendor's API answered, judged for the connection — the half the exchange above
          * cannot see. A 401 here is a grant that no longer works however alive its refresh token
@@ -844,14 +894,18 @@ export function createCallPath(
            * message written for whoever operates this deployment, and it is the most useful
            * sentence available. Capped, because the failure branch is not a promise about length.
            */
-          payload: result.isError
-            ? {
-                ...decided,
-                // The vendor's own sentence where it wrote one; ours is a code, because a vendor
-                // that says "this failed" and nothing else leaves this side speaking for it.
-                failure: trimDetail(result.text) || TOOL_REPORTED_ERROR,
-              }
-            : decided,
+          payload: {
+            ...(result.isError
+              ? {
+                  ...decided,
+                  // The vendor's own sentence where it wrote one; ours is a code, because a vendor
+                  // that says "this failed" and nothing else leaves this side speaking for it.
+                  failure: trimDetail(result.text) || TOOL_REPORTED_ERROR,
+                }
+              : decided),
+            // That something was withheld and what kind. The value went nowhere near the trail.
+            ...(withheldKinds.length > 0 ? { withheld: withheldKinds } : {}),
+          },
         });
         return { text: result.text, isError: result.isError };
       } catch (error) {
