@@ -561,6 +561,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * new facts in their shapes; the calm part that comes back with the socket, the loading one, the
  * one that offers the reload; the typed text back in its box on the next page). Each floor rises
  * by exactly what was added.
+ * RAISED 2026-09-26 with the security package (sec3): ten new files — the host firewall's probe in
+ * `agent-computer`; the task and today widths, the high-risk check through the gateway and on its
+ * own, the withheld mail secrets (unit and plugin path), the vendor's echoed credential and the
+ * converter's fresh child in `server`; the owner's view of a withheld code in `app` — and the
+ * changed files around them. Each floor is set to the count this branch ran (server 2980, app
+ * 1416, agent-computer 313, root 480): main's own counts already stood above its floors, so these
+ * rise by more than the package added, and no further than what runs.
  * RAISED 2026-09-26 with turn measurement (P3): twenty-seven to `server` (the run meter's times,
  * steps, requests, retries, money, the person's tools and numbers-only output; every ending against
  * its facts and every code the one shape, a code taken out of a sentence; nine turns through the
@@ -575,10 +582,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2794, roots: ["server"] },
-  { name: "app", floor: 1381, roots: ["app"] },
-  { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
-  { name: "root", floor: 437, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2980, roots: ["server"] },
+  { name: "app", floor: 1416, roots: ["app"] },
+  { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
+  { name: "root", floor: 480, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
