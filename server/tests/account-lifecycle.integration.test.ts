@@ -848,6 +848,42 @@ describe("deletion", () => {
     });
   });
 
+  test("stops the person's live work before their rows go, and leaves anyway when it cannot", async () => {
+    // Review M2: a turn went on writing into a conversation that was being deleted under it.
+    const busy = await makePerson("busy");
+    const stuck = await makePerson("stuck");
+    alsoMade.push(busy, stuck);
+    const stoppedWhileThere: Array<{ userId: string; rows: number }> = [];
+    const stopping = createAccountDeletion({
+      database,
+      stopWorkFor: async (userId) => {
+        const rows = await database
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.id, userId));
+        stoppedWhileThere.push({ userId, rows: rows.length });
+      },
+    });
+    expect(
+      (await stopping.delete({ userId: busy.id, by: busy.id })).deleted,
+    ).toBe(true);
+    expect(stoppedWhileThere).toEqual([{ userId: busy.id, rows: 1 }]);
+
+    // A stuck turn does not keep a person in a deployment they asked to leave.
+    const failing = createAccountDeletion({
+      database,
+      stopWorkFor: async () => {
+        throw new Error("the turn would not end");
+      },
+    });
+    expect(
+      (await failing.delete({ userId: stuck.id, by: stuck.id })).deleted,
+    ).toBe(true);
+    expect(
+      await database.select().from(users).where(eq(users.id, stuck.id)),
+    ).toHaveLength(0);
+  });
+
   test("the trail keeps what happened under a pseudonym, and names nobody", async () => {
     const pseudonym = pseudonymFor(leaver.id);
 

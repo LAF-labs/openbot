@@ -584,14 +584,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and queued behind a routine with its record already open) and nine to `app` (what a window makes
  * of the frames: deltas, a join halfway, the server's own copies, replays, a failure, notices).
  * Each floor rises by exactly what was added.
+ * RAISED 2026-09-27 with the review of the server-owned turn: nineteen to `server` (the lane let go
+ * of while a turn waits on a person and taken back before it acts, a yes not spent on a page a
+ * routine moved, a navigation still allowed, the wheel back told to look again; a stop while queued;
+ * a routine behind a busy Bot not holding the clock; the turn door counted as a message; the hub's
+ * numbers going on after a sweep; a correction taken the moment the end is heard; what broke logged
+ * and handed on as a fact, the deadline's own fact; each request filed under its turn and the roster
+ * seeing it; an account's deletion stopping its turns, and leaving anyway when it cannot; a tab by a
+ * fraction and a file with no name refused, a path trimmed, a failed listing keeping the last tools;
+ * the server's classifier reading the new facts) and one to `app` (its classifier reading them too).
+ * Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3005, roots: ["server"] },
-  { name: "app", floor: 1425, roots: ["app"] },
+  { name: "server", floor: 3024, roots: ["server"] },
+  { name: "app", floor: 1426, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 480, roots: ["tests", "agent-bot"] },
 ] as const;
