@@ -174,6 +174,10 @@ describe("which endpoints may answer", () => {
       order: ["z-ai"],
       ignore: ["wafer", "relace"],
     });
+    // DeepSeek without the endpoint that cut parallel bridged calls three times in three.
+    expect(
+      providerRoutingOf({}, router, "deepseek/deepseek-v4.1-flash")?.ignore,
+    ).toContain("sail-research");
     expect(providerRoutingOf({}, router, "vendor/unmeasured")).toBeNull();
     // Said as `{}`: the operator turned routing off, and nothing is sent.
     expect(

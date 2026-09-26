@@ -115,11 +115,17 @@ export function createProvider(
  * Relace's cold cache. DeepSeek V4.1 Flash (2026-09-26, one quick check, three turns 20 s apart on a
  * 15K prompt): ten endpoints read the second turn from cache; CoreWeave read nothing, Wafer's reads
  * cost ~7x the others' ($0.00093 against $0.00005–0.00023), and OpenInference (fp4) took 10–14 s.
+ * Sail Research breaks bridged calls (2026-09-27): the round where a Bot sends several `tool_call`s
+ * at once — the 지원사업 skill's searches — replayed three times each came back as a 502 mid-stream
+ * three times in three there ("invalid or incomplete DSML tool-call block", "invalid arguments for
+ * tool_call": DeepSeek's native call markup leaking into the nested `args`), and whole three times
+ * in three on DeepInfra and on Novita. In the product the cut is "모델과의 연결이 끊겼어요" on a
+ * shop owner's first task, and the conversation it leaves behind keeps failing on 다시 시도.
  * Setting the variable replaces them entirely, `{}` included.
  */
 export const MEASURED_PROVIDER_POLICY: Record<string, ProviderRouting> = {
   "deepseek/deepseek-v4.1-flash": {
-    ignore: ["coreweave", "wafer", "open-inference"],
+    ignore: ["coreweave", "wafer", "open-inference", "sail-research"],
   },
   "xiaomi/mimo-v2.6-pro": { order: ["xiaomi"] },
   "z-ai/glm-5.3-flash": { order: ["z-ai"], ignore: ["wafer", "relace"] },
