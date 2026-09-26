@@ -136,6 +136,15 @@ export type StandingFailure = {
  * superseded it. One under the half answer a turn left stands until the person asks again after it
  * (`askedAgain`), which is how 다시 시도 retries it (`retryWay`).
  *
+ * ONE UNDER A TASK'S OWN TRAFFIC IS A QUESTION'S. A turn that dies mid-task — agent-bot gone
+ * between two browser steps — leaves its last row a tool result, not words, so the server keys the
+ * failure there and names the question beside it. 다시 시도 then runs the thread again in place
+ * (`retriesInPlace`), exactly as under the question, and the answer lands under the same rows.
+ * MEASURED 2026-09-26 (0.5.5 QA, agent-bot killed after a Naver search): read as a half answer, the
+ * line waited for a question that a retry in place never asks, so "봇이 답하지 않았어요" sat under
+ * the answer that had just arrived, and the task's card read 못 끝냄 beside it, until the person
+ * asked something else. So it is superseded the way a question's is.
+ *
  * Nothing is reported until `times` has been read: without the stamps a superseded line cannot be
  * told from a standing one, and a red line that appears and then vanishes is worse than one that
  * arrives a moment late.
@@ -155,9 +164,21 @@ export function standingFailures(
     ...(failure.group ? { group: failure.group } : {}),
     ...(failure.askedId ? { askedId: failure.askedId } : {}),
   });
+  /** A reply the server stamped after the failure, before the person's next words. */
+  const answeredAfter = (at: number, failure: StoredFailure) => {
+    const failedAt = Date.parse(failure.at);
+    for (const later of messages.slice(at + 1)) {
+      if (later.role === "user") return false;
+      if (later.role === "system") continue;
+      const stamped = times[later.id];
+      if (stamped === undefined || Date.parse(stamped) > failedAt) return true;
+    }
+    return false;
+  };
   for (const failure of failures) {
     const at = position.get(failure.messageId);
-    if (at === undefined || messages[at]?.role !== "user") {
+    const keyed = at === undefined ? undefined : messages[at];
+    if (at === undefined || keyed?.role !== "user") {
       /*
        * Under the Bot's half answer: superseded by the person asking again after it — which is
        * what 다시 시도 there does — and never by anything else, since nothing else answers it.
@@ -166,23 +187,25 @@ export function standingFailures(
         failure.askedId !== undefined &&
         at !== undefined &&
         messages.slice(at + 1).some((later) => later.role === "user");
-      standing[failure.messageId] = askedAgain
-        ? { ...drawn(failure), askedAgain: true }
-        : drawn(failure);
+      if (askedAgain) {
+        standing[failure.messageId] = { ...drawn(failure), askedAgain: true };
+        continue;
+      }
+      const botSpoke = keyed?.role === "assistant" && hasWords(keyed.content);
+      if (
+        at !== undefined &&
+        failure.askedId !== undefined &&
+        !botSpoke &&
+        answeredAfter(at, failure)
+      ) {
+        continue;
+      }
+      standing[failure.messageId] = drawn(failure);
       continue;
     }
-    const failedAt = Date.parse(failure.at);
-    let superseded = false;
-    for (const later of messages.slice(at + 1)) {
-      if (later.role === "user") break;
-      if (later.role === "system") continue;
-      const stamped = times[later.id];
-      if (stamped === undefined || Date.parse(stamped) > failedAt) {
-        superseded = true;
-        break;
-      }
+    if (!answeredAfter(at, failure)) {
+      standing[failure.messageId] = drawn(failure);
     }
-    if (!superseded) standing[failure.messageId] = drawn(failure);
   }
   return standing;
 }

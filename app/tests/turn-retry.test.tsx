@@ -259,6 +259,76 @@ describe("다시 시도 under a failure the server recorded", () => {
     expect(view.buttonNamed("Try again")).toBeUndefined();
     await view.unmount();
   });
+
+  test("under a task that died between two steps, is retired by the answer the retry brings", async () => {
+    /*
+     * MEASURED 2026-09-26 (0.5.5 QA): agent-bot killed after the Bot's search, before its next
+     * step. The run's last row was the tool result, so the server keyed the failure there with the
+     * question beside it; 다시 시도 ran the thread again in place and the answer came — and
+     * "봇이 답하지 않았어요" stayed under it, read as a half answer waiting to be asked again.
+     */
+    const channelId = "channel_retry-mid-task";
+    const called = {
+      id: "a-called",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-now",
+          type: "function",
+          function: { name: "now", arguments: "{}" },
+        },
+      ],
+    };
+    const result = {
+      id: "t-now",
+      role: "tool",
+      toolCallId: "call-now",
+      content: '{"ok":true}',
+    };
+    const server = channelServer({
+      channelId,
+      history: [question, called, result],
+      failures: [
+        {
+          messageId: result.id,
+          code: "laf:turn_unreachable",
+          askedId: question.id,
+          at: "2026-09-26T00:35:37.619Z",
+        },
+      ],
+      runs: [answering(ANSWER)],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => view.buttonNamed("Try again") !== undefined,
+      "the stored failure under the task and its button",
+      8000,
+    );
+    // Nothing of an answer had arrived, so nothing is marked as only part of one.
+    expect(view.host.textContent).not.toContain("Received up to here");
+
+    await view.click(view.buttonNamed("Try again") as Element);
+    await view.waitFor(
+      () => bubblesSaying(view.host, ANSWER) === 1,
+      "the answer",
+      8000,
+    );
+    // Run again in place: the question once, under the id the store holds.
+    expect(
+      userMessages(server.runs[0]?.messages).map((message) => message.id),
+    ).toEqual([question.id]);
+    expect(bubblesSaying(view.host, QUESTION)).toBe(1);
+    await view.waitFor(
+      () => view.host.querySelector(failed) === null,
+      "the failure line retired by the answer",
+      8000,
+    );
+    await view.unmount();
+  });
 });
 
 /** A run that gets part of an answer out and then loses the Bot, as agent-bot dying mid-reply does. */
