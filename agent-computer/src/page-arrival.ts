@@ -20,6 +20,7 @@
  */
 import type { CDPSession, Page } from "playwright";
 import type { NoteCode } from "./codes";
+import type { DownloadProgress } from "./download-limit";
 import { originOf } from "./navigation-guard";
 import type { ComputerNote } from "./sessions";
 import { within } from "./within";
@@ -66,10 +67,16 @@ const SAME_DOCUMENT = new Set(["sameDocument", "historySameDocument"]);
  * `onDocument` is told each time the tab's main frame commits a NEW document — the same event that
  * moves `documentOf`, and never a `pushState`, which Playwright's own `framenavigated` does report
  * (measured 2026-09-26: a page's `history.pushState` fired it). See `watchPage` for who listens.
+ *
+ * `onDownload` is told what the tab says about each download it starts, from any of its frames: the
+ * address and name when it begins, the bytes as they arrive. See `download-limit.ts`.
  */
 export function followArrivals(
   page: Page,
-  hooks: { onDocument?: () => void } = {},
+  hooks: {
+    onDocument?: () => void;
+    onDownload?: (progress: DownloadProgress) => void;
+  } = {},
 ): void {
   void (async () => {
     let session: CDPSession | undefined;
@@ -99,6 +106,19 @@ export function followArrivals(
       });
       session.on("Page.downloadWillBegin", (event) => {
         if (event.frameId === main) ended();
+        hooks.onDownload?.({
+          guid: event.guid,
+          url: event.url,
+          suggestedFilename: event.suggestedFilename,
+        });
+      });
+      session.on("Page.downloadProgress", (event) => {
+        hooks.onDownload?.({
+          guid: event.guid,
+          totalBytes: event.totalBytes,
+          receivedBytes: event.receivedBytes,
+          state: event.state,
+        });
       });
       followed.set(page, tab);
       /*

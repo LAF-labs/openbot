@@ -211,6 +211,9 @@ export function createWorkspace(
   return {
     resolvePath,
 
+    /** What one write, and so one download, may put here (`download-limit.ts` holds a download to it). */
+    limits,
+
     /**
      * What is in the workspace.
      *

@@ -6,6 +6,7 @@
  * download starts and finishes while the Bot is still waiting for a click to return.
  */
 import type { Page } from "playwright";
+import { createDownloadLimit, type DownloadVerdict } from "./download-limit";
 import { log } from "./log";
 import { followArrivals } from "./page-arrival";
 import { type BotSession, note } from "./sessions";
@@ -39,8 +40,13 @@ export function watchPage(
     if (isActive()) session.snapshotId += 1;
   };
 
+  // Each download this tab starts, held to what the workspace takes while it arrives (download-limit.ts).
+  const downloads = createDownloadLimit({
+    limitBytes: workspace.limits.writeBytes,
+  });
+
   // Whether its next document is on its way, which is the one thing a look at it cannot ask it.
-  followArrivals(page, { onDocument });
+  followArrivals(page, { onDocument, onDownload: downloads.progress });
 
   page.on("dialog", (dialog) => {
     const kind = dialog.type();
@@ -69,6 +75,17 @@ export function watchPage(
 
   page.on("download", (download) => {
     void (async () => {
+      /*
+       * Stopped while it arrives, not measured once it has: `saveAs` waits for the whole file, and
+       * the whole file was on the disk before the limit below it was ever asked. Cancelling makes
+       * `saveAs` fail, and `stoppedFor` says why before it does.
+       */
+      const held = downloads.watch(download);
+      let stoppedFor: DownloadVerdict | undefined;
+      void held.verdict.then((verdict) => {
+        stoppedFor = verdict;
+        void download.cancel().catch(() => undefined);
+      });
       try {
         const saved = await workspace.saveDownload(
           download.suggestedFilename(),
@@ -84,12 +101,19 @@ export function watchPage(
         note(session, {
           // By the workspace's own code: a download that never arrived is not one that was too big.
           code:
-            error instanceof WorkspaceFileError &&
-            error.code === "laf:file_too_large"
+            stoppedFor === "too_large" ||
+            (error instanceof WorkspaceFileError &&
+              error.code === "laf:file_too_large")
               ? "laf:download_too_large"
               : "laf:download_failed",
         });
-        log.error("download_not_saved", { bot: botId, reason: error });
+        log.error("download_not_saved", {
+          bot: botId,
+          ...(stoppedFor ? { stoppedFor } : {}),
+          reason: error,
+        });
+      } finally {
+        held.done();
       }
     })();
   });

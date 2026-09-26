@@ -20,6 +20,8 @@
   "agent-computer/tests/closed-browser-pipes.test.ts",
   "agent-computer/tests/code-list.test.ts",
   "agent-computer/tests/control.test.ts",
+  "agent-computer/tests/download-bound.test.ts",
+  "agent-computer/tests/download-limit.test.ts",
   "agent-computer/tests/egress.test.ts",
   "agent-computer/tests/fact-codes.test.ts",
   "agent-computer/tests/fixture-site.test.ts",
