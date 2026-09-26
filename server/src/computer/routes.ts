@@ -884,7 +884,7 @@ export function createComputerRoutes(
 type ComputerContext = Context<{ Variables: AppVariables }>;
 
 /** A request that was rejected before any decision was needed, because it was not a valid action. */
-type BadRequest = { error: `laf:${string}`; code: `laf:${string}` };
+export type BadRequest = { error: `laf:${string}`; code: `laf:${string}` };
 
 /**
  * An acting request missing what its tool requires: a ref and its snapshotId, the text, the key.
@@ -1021,7 +1021,7 @@ function failed(context: ComputerContext, error: unknown) {
   return context.json({ error: code, code }, status);
 }
 
-function isBadRequest(value: unknown): value is BadRequest {
+export function isBadRequest(value: unknown): value is BadRequest {
   return (
     !!value &&
     typeof value === "object" &&
@@ -1126,7 +1126,9 @@ function asRef(
  * of these through one table (`COMPUTER_ANSWERS` in client.ts). Nothing here reads a message — a
  * person at the wheel used to be found by matching `control` in one.
  */
-function statusFor(error: unknown): 400 | 403 | 409 | 500 | 502 | 503 | 504 {
+export function statusFor(
+  error: unknown,
+): 400 | 403 | 409 | 500 | 502 | 503 | 504 {
   // A caller that named something no filesystem should be asked about. The request is wrong, so it
   // is a 400 — never a 500, which would send an operator looking at a container that is behaving.
   if (error instanceof BotIdRefusedError) return 400;
@@ -1170,7 +1172,7 @@ function statusFor(error: unknown): 400 | 403 | 409 | 500 | 502 | 503 | 504 {
  * The pane shows the words for the code (`app/src/lib/computer/screen-problems.ts`), the model its
  * own (`shared/prompt/tool-results.ko.ts`).
  */
-function codeFor(error: unknown): string {
+export function codeFor(error: unknown): string {
   if (error instanceof BotIdRefusedError) return BOT_ID_INVALID;
   if (
     error instanceof StaleSnapshotError ||

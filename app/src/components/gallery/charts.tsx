@@ -3,6 +3,7 @@ import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
+import { GALLERY_CONFIRMATIONS } from "@shared/tools/gallery";
 
 const point = z.object({
   label: z
@@ -411,7 +412,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show values as a bar chart. Use when comparing a handful of named things, teams, months, categories. Not for a trend over time, which is showLineChart.",
     parameters: BarChartProps,
     Component: BarChartCard as GalleryComponent["Component"],
-    confirmation: "The bar chart is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showBarChart,
   },
   {
     name: "showPieChart",
@@ -421,7 +422,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show how a whole is divided, as a donut with a legend. Use only when the parts sum to something meaningful, and prefer a bar chart above about six slices.",
     parameters: PieChartProps,
     Component: PieChartCard as GalleryComponent["Component"],
-    confirmation: "The donut chart is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showPieChart,
   },
   {
     name: "showLineChart",
@@ -431,7 +432,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show one or more series over an ordered axis, usually time. Every series must have one value per label.",
     parameters: LineChartProps,
     Component: LineChartCard as GalleryComponent["Component"],
-    confirmation: "The line chart is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showLineChart,
   },
   {
     name: "showAreaChart",
@@ -441,7 +442,7 @@ export const GALLERY: GalleryComponent[] = [
       "The same as showLineChart with the area under each line filled. Use for volume or accumulation rather than for a rate.",
     parameters: AreaChartProps,
     Component: AreaChartCard as GalleryComponent["Component"],
-    confirmation: "The area chart is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showAreaChart,
   },
   {
     name: "showProgress",
@@ -451,6 +452,6 @@ export const GALLERY: GalleryComponent[] = [
       "Show values against their targets as progress bars. Use for 'are we there yet' questions, budget spent against budget, done against planned.",
     parameters: ProgressChartProps,
     Component: ProgressChartCard as GalleryComponent["Component"],
-    confirmation: "The progress chart is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showProgress,
   },
 ];

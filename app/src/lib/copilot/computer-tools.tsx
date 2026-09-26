@@ -1,6 +1,10 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { noteTexts, toolResultText } from "@shared/prompt/tool-results.ko";
+import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { computerTool } from "@shared/tools/computer";
+import {
+  computerReplyOutcome,
+  navigationOutcome,
+} from "@shared/tools/computer-reply";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
@@ -327,46 +331,12 @@ async function sendToComputer(
         reason: toolResultText("laf:awaiting_approval"),
       };
     }
-    /*
-     * The computer answers with a fact code where it has one — `laf:human_has_control` is the
-     * whole of the sentence the container used to ship — so the words the model reads are chosen
-     * here, in Korean, rather than by a service that has never heard of a locale. Anything that is
-     * not a code is passed through: an English sentence from somewhere upstream reaching the
-     * person is a regression, and it is visible rather than swallowed.
-     */
-    const said = typeof body?.error === "string" ? body.error : "";
-    const code = said.startsWith("laf:") ? said : undefined;
-    return {
-      ok: false,
-      ...(code ? { code } : {}),
-      reason: code ? toolResultText(code) : said || "That did not work.",
-      // Preserve refusal/stale-ref/control distinctions for the model's next step.
-      ...(response.status === 403
-        ? { refused: true, rule: body?.rule ?? null }
-        : {}),
-      /*
-       * By the code: the server answers a failure as its code and nothing beside it, so the
-       * container's `humanHasControl: true` never reached this line, and a person at the wheel was
-       * handed to the model as `staleRefs: true` beside a sentence telling it to wait.
-       */
-      ...(response.status === 409
-        ? code === "laf:human_has_control" || body?.humanHasControl === true
-          ? { humanHasControl: true }
-          : { staleRefs: true }
-        : {}),
-    };
+    // The rest of the mapping is shared with the turns the server owns (`computer-reply.ts`).
+    return computerReplyOutcome(response.status, body);
   }
 
-  /*
-   * The facts the browser noticed, put into the words the model reads.
-   *
-   * The computer ships `{code: "laf:dialog", message}` and knows no locale, the same way it ships
-   * `laf:human_has_control`. Translated here, on the one path every successful computer call comes
-   * back through, so an alert the page raised reads as a sentence rather than as a symbol the model
-   * has never seen. The person's own words for the same fact are `t()`'s job, on the line below.
-   */
-  const said = body ? noteTexts(body.notes) : undefined;
-  return { ok: true, ...(body ?? {}), ...(said ? { notes: said } : {}) };
+  // The facts the browser noticed, put into the words the model reads (`computer-reply.ts`).
+  return computerReplyOutcome(response.status, body);
 }
 
 /**
@@ -436,19 +406,7 @@ export function ComputerTools() {
         },
         call,
       );
-      return result.ok
-        ? {
-            ok: true,
-            title: result.title,
-            url: result.url,
-            text: result.text,
-            truncated: result.truncated,
-            // The site refused ("Access Denied"): the card ends the task on it (`task-ending.ts`).
-            ...(typeof result.httpStatus === "number"
-              ? { httpStatus: result.httpStatus }
-              : {}),
-          }
-        : result;
+      return navigationOutcome(result);
     },
   });
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
 import { Badge, GalleryFrame, type Tone } from "./frame";
+import { GALLERY_CONFIRMATIONS } from "@shared/tools/gallery";
 
 const tone = z
   .enum(["neutral", "positive", "caution", "negative"])
@@ -244,7 +245,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show one thing and its fields, an order, a person, a ticket. Use instead of describing a record in prose.",
     parameters: RecordCardProps,
     Component: RecordCard as GalleryComponent["Component"],
-    confirmation: "The record is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showRecord,
   },
   {
     name: "showMetrics",
@@ -254,7 +255,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show up to six headline figures, each with an optional movement. Use for a summary somebody reads at a glance.",
     parameters: MetricsCardProps,
     Component: MetricsCard as GalleryComponent["Component"],
-    confirmation: "The figures are now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showMetrics,
   },
   {
     name: "showChecklist",
@@ -264,7 +265,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show a list of things and which are done. Reporting only, the person cannot tick these, so do not use it to ask for anything.",
     parameters: ChecklistCardProps,
     Component: ChecklistCard as GalleryComponent["Component"],
-    confirmation: "The checklist is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showChecklist,
   },
   {
     name: "showNotice",
@@ -274,6 +275,6 @@ export const GALLERY: GalleryComponent[] = [
       "Show a headline, a short explanation and optional supporting points. Use instead of writing several paragraphs of prose.",
     parameters: NoticeCardProps,
     Component: NoticeCard as GalleryComponent["Component"],
-    confirmation: "The notice is now on screen for the person.",
+    confirmation: GALLERY_CONFIRMATIONS.showNotice,
   },
 ];

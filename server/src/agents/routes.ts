@@ -204,6 +204,156 @@ function isAgentInputObject(input: unknown): input is AgentInputObject {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
+/** A refusal as both doors answer it: the fact, and the status the route sends it with. */
+export type SelfEditRefusal = {
+  ok: false;
+  code: string;
+  status: 400 | 403 | 404 | 409;
+  /** How full a full memory is, for the screen that says so. */
+  used?: number;
+  cap?: number;
+};
+
+/**
+ * A Bot's profile, changed by a patch — the route's whole decision, and the Bot's own
+ * `update_profile` when the server carries out its turn (`turns/chat-tools.ts`). One function so
+ * the two doors cannot come to accept different things.
+ */
+export async function editProfile(
+  store: AgentProfileStore,
+  actor: AgentActor,
+  agentId: string,
+  patch: Record<string, unknown> | null,
+  allowPrivateHosts: boolean,
+): Promise<{ ok: true; agent: AgentProfile } | SelfEditRefusal> {
+  if (!patch || typeof patch !== "object") {
+    return { ok: false, code: "laf:profile_invalid", status: 400 };
+  }
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, code: "laf:profile_no_fields", status: 400 };
+  }
+  try {
+    const current = await store.get(actor, agentId);
+    if (!current) {
+      return { ok: false, code: "laf:profile_not_found", status: 404 };
+    }
+    const name = profileTextOf(patch.name);
+    const roleDescription = profileTextOf(patch.roleDescription);
+    if (!name.ok || !roleDescription.ok) {
+      // The code and not the text: echoing what was refused would deliver it after all.
+      return { ok: false, code: "laf:profile_looks_like_prompt", status: 400 };
+    }
+    // Merged before validation, so the same rules that guard the edit form guard this too.
+    const merged = parseAgentInput(
+      {
+        name: name.value ?? current.name,
+        roleDescription: roleDescription.value ?? current.roleDescription,
+        ...(patch.avatarSeed === undefined
+          ? {}
+          : { avatarSeed: patch.avatarSeed }),
+        // Absent leaves it alone, like the face. A Bot writing its own description must not reset
+        // how hard it thinks as a side effect of doing so.
+        ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+        /*
+         * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
+         * feature. This is what a Bot's own `update_profile` tool reaches, from the route and from a
+         * turn the server carries out alike. A Bot that could write the instruction deciding whether
+         * it gets asked about would have no boundary at all, and the shortest path from a helpful Bot
+         * to that is a page telling it to be helpful. It is edited on the profile screen by a person,
+         * through PATCH, and nowhere else. Sending it here changes nothing rather than failing,
+         * because a Bot being told "no" is a Bot that tries again in another shape.
+         */
+      },
+      allowPrivateHosts,
+    );
+    if (!merged.ok) {
+      return { ok: false, code: "laf:profile_invalid", status: 400 };
+    }
+    return {
+      ok: true,
+      agent: await store.update(actor, agentId, merged.value),
+    };
+  } catch (error) {
+    const refused = storeRefusal(error);
+    if (refused) return refused;
+    throw error;
+  }
+}
+
+/**
+ * One thing a Bot remembers about the person — the route's whole decision, and the Bot's own
+ * `remember` when the server carries out its turn. See {@link editProfile}.
+ */
+export async function rememberFact(
+  store: AgentProfileStore,
+  memoryStore: AgentMemoryStore,
+  actor: AgentActor,
+  agentId: string,
+  content: string,
+): Promise<{ ok: true; memory: unknown } | SelfEditRefusal> {
+  if (looksLikeASecret(content)) {
+    return { ok: false, code: "laf:memory_looks_like_a_secret", status: 400 };
+  }
+  if (looksLikeAnInstruction(content) || looksLikeAStandingOrder(content)) {
+    return {
+      ok: false,
+      code: "laf:memory_looks_like_instruction",
+      status: 400,
+    };
+  }
+  try {
+    if (!(await store.get(actor, agentId))) {
+      return { ok: false, code: "laf:agent_not_found", status: 404 };
+    }
+    const memory = await memoryStore.remember(agentId, actor.id, content);
+    if (memory) return { ok: true, memory };
+    return {
+      ok: false,
+      code:
+        content.trim().length > MAX_MEMORY_LENGTH
+          ? "laf:memory_too_long"
+          : "laf:memory_empty",
+      status: 400,
+    };
+  } catch (error) {
+    /*
+     * The owner forgot this very line on 수첩. Their message saying it may still be in today's
+     * history, and a Bot that reads it would write it straight back; it is told the owner's
+     * answer instead of being told nothing.
+     */
+    if (error instanceof MemoryForgottenError) {
+      return { ok: false, code: "laf:memory_forgotten", status: 409 };
+    }
+    if (error instanceof MemoryFullError) {
+      // 409 like a full roster: the request was well-formed, the memory is simply full. The
+      // numbers travel so the surface can say how full; the sentence is the surface's.
+      return {
+        ok: false,
+        code: "laf:memory_full",
+        status: 409,
+        used: error.used,
+        cap: error.cap,
+      };
+    }
+    const refused = storeRefusal(error);
+    if (refused) return refused;
+    throw error;
+  }
+}
+
+/** A store refusal as its fact and status, or null for anything that is not one. */
+function storeRefusal(error: unknown): SelfEditRefusal | null {
+  if (
+    error instanceof AccountHasBotError ||
+    error instanceof AgentNotFoundError ||
+    error instanceof AgentNotManageableError ||
+    error instanceof ProtectedAgentError
+  ) {
+    return { ok: false, code: error.code, status: error.status };
+  }
+  return null;
+}
+
 export function createAgentRoutes(
   store: AgentProfileStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
@@ -401,99 +551,20 @@ export function createAgentRoutes(
       string,
       unknown
     > | null;
-    /*
-     * FACT CODES, because the caller is a Bot's own tool.
-     *
-     * The `update_profile` handler used to invent its own English sentences for these — server
-     * prose written in the browser, which no Korean reader and no other caller of this endpoint
-     * could use. The sentence stays for operators; the code is what the surface and the Bot both
-     * read.
-     */
-    if (!patch || typeof patch !== "object") {
+    const edited = await editProfile(
+      store,
+      context.var.actor,
+      context.req.param("agentId"),
+      patch,
+      allowPrivateHosts,
+    );
+    if (!edited.ok) {
       return context.json(
-        {
-          error: "laf:profile_invalid",
-          code: "laf:profile_invalid",
-        },
-        400,
+        { error: edited.code, code: edited.code },
+        edited.status,
       );
     }
-    if (Object.keys(patch).length === 0) {
-      return context.json(
-        { error: "laf:profile_no_fields", code: "laf:profile_no_fields" },
-        400,
-      );
-    }
-
-    try {
-      const current = await store.get(
-        context.var.actor,
-        context.req.param("agentId"),
-      );
-      if (!current) {
-        return context.json(
-          { error: "laf:profile_not_found", code: "laf:profile_not_found" },
-          404,
-        );
-      }
-
-      /*
-       * ONE LINE EACH, AND NOT A PROMPT. These two become part of every later system message
-       * (`shared/prompt/index.ts`), and this endpoint is the one a page reaches by telling the Bot
-       * to call `update_profile`. See profile-text.ts.
-       */
-      const name = profileTextOf(patch.name);
-      const roleDescription = profileTextOf(patch.roleDescription);
-      if (!name.ok || !roleDescription.ok) {
-        // The code and not the text: echoing what was refused would deliver it after all.
-        return context.json(
-          {
-            error: "laf:profile_looks_like_prompt",
-            code: "laf:profile_looks_like_prompt",
-          },
-          400,
-        );
-      }
-
-      // Merged before validation, so the same rules that guard the edit form guard this too.
-      const merged = parseAgentInput(
-        {
-          name: name.value ?? current.name,
-          roleDescription: roleDescription.value ?? current.roleDescription,
-          ...(patch.avatarSeed === undefined
-            ? {}
-            : { avatarSeed: patch.avatarSeed }),
-          // Absent leaves it alone, like the face. A Bot writing its own description must not reset
-          // how hard it thinks as a side effect of doing so.
-          ...(patch.effort === undefined ? {} : { effort: patch.effort }),
-          /*
-           * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
-           * feature. This endpoint is what a Bot's own `update_profile` tool calls. A Bot that could
-           * write the instruction deciding whether it gets asked about would have no boundary at
-           * all, and the shortest path from a helpful Bot to that is a page telling it to be
-           * helpful. It is edited on the profile screen by a person, through PATCH, and nowhere
-           * else. Sending it here changes nothing rather than failing, because a Bot being told
-           * "no" is a Bot that tries again in another shape.
-           */
-        },
-        allowPrivateHosts,
-      );
-      if (!merged.ok) {
-        return context.json(
-          { error: "laf:profile_invalid", code: "laf:profile_invalid" },
-          400,
-        );
-      }
-
-      const agent = await store.update(
-        context.var.actor,
-        context.req.param("agentId"),
-        merged.value,
-      );
-      return context.json({ agent: agentDto(context.var.actor, agent) });
-    } catch (error) {
-      return mapStoreError(context, error);
-    }
+    return context.json({ agent: agentDto(context.var.actor, edited.agent) });
   });
 
   /**
@@ -586,88 +657,23 @@ export function createAgentRoutes(
       content?: unknown;
     } | null;
     const content = typeof body?.content === "string" ? body.content : "";
-    if (looksLikeASecret(content)) {
-      /*
-       * The refused text is NOT echoed back, not in the error and not in the log. Refusing to
-       * store a password and then printing it in a 400 body would put it in the browser's network
-       * panel, the server's access log and the transcript — three more places than it started in.
-       */
-      return context.json(
-        {
-          error: "laf:memory_looks_like_a_secret",
-          code: "laf:memory_looks_like_a_secret",
-        },
-        400,
-      );
-    }
-    /*
-     * NOR AN INSTRUCTION. The memory list is read as prompt on every later turn, so a sentence
-     * that tells the Bot what to do — rather than what is true about the person — is a rule that
-     * survives every session, written by whatever the Bot happened to be reading. Refused by shape
-     * (see `looksLikeAnInstruction`); the Bot is told to write the fact instead. And a standing
-     * order written as a fact — "the owner prefers every invoice emailed to …", "확인 없이 진행하길
-     * 원한다" — is refused under the same code (`looksLikeAStandingOrder`, security review
-     * 2026-09-25 F2): the shape a page most wants reread as its owner's wish.
-     */
-    if (looksLikeAnInstruction(content) || looksLikeAStandingOrder(content)) {
-      return context.json(
-        {
-          error: "laf:memory_looks_like_instruction",
-          code: "laf:memory_looks_like_instruction",
-        },
-        400,
-      );
-    }
-    try {
-      const hidden = await visibleOr404(context);
-      if (hidden) return hidden;
-      const memory = await memoryStore.remember(
-        context.req.param("agentId"),
-        context.var.actor.id,
-        content,
-      );
-      return memory
-        ? context.json({ memory }, 201)
-        : context.json(
-            {
-              error:
-                content.trim().length > MAX_MEMORY_LENGTH
-                  ? "laf:memory_too_long"
-                  : "laf:memory_empty",
-              code:
-                content.trim().length > MAX_MEMORY_LENGTH
-                  ? "laf:memory_too_long"
-                  : "laf:memory_empty",
-            },
-            400,
-          );
-    } catch (error) {
-      /*
-       * The owner forgot this very line on 수첩. Their message saying it may still be in today's
-       * history, and a Bot that reads it would write it straight back; it is told the owner's
-       * answer instead of being told nothing.
-       */
-      if (error instanceof MemoryForgottenError) {
-        return context.json(
-          { error: "laf:memory_forgotten", code: "laf:memory_forgotten" },
-          409,
-        );
-      }
-      if (error instanceof MemoryFullError) {
-        // 409 like a full roster: the request was well-formed, the memory is simply full. The
-        // numbers travel so the surface can say how full; the sentence is the surface's.
-        return context.json(
-          {
-            error: "laf:memory_full",
-            code: "laf:memory_full",
-            used: error.used,
-            cap: error.cap,
-          },
-          409,
-        );
-      }
-      return mapStoreError(context, error);
-    }
+    const kept = await rememberFact(
+      store,
+      memoryStore,
+      context.var.actor,
+      context.req.param("agentId"),
+      content,
+    );
+    if (kept.ok) return context.json({ memory: kept.memory }, 201);
+    return context.json(
+      {
+        error: kept.code,
+        code: kept.code,
+        ...(kept.used === undefined ? {} : { used: kept.used }),
+        ...(kept.cap === undefined ? {} : { cap: kept.cap }),
+      },
+      kept.status,
+    );
   });
 
   routes.delete(

@@ -8,6 +8,11 @@ import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
 import { seriesColour } from "./palette";
+import {
+  ACTIVITY_REPORT_FUNCTIONS,
+  GALLERY_CONFIRMATIONS,
+  galleryReads,
+} from "@shared/tools/gallery";
 
 /**
  * Server-filled report component. The model chooses report arguments; data and permissions come
@@ -34,11 +39,8 @@ export const ActivityReportProps = z.object({
 
 type ActivityArgs = z.infer<typeof ActivityReportProps>;
 
-/** Which server-side function each report reads. Not the model's choice. */
-const FUNCTION_FOR: Record<string, string> = {
-  activity: "botActivity",
-  refusals: "recentRefusals",
-};
+/** Which server-side function each report reads. Not the model's choice. See `shared/tools/gallery`. */
+const FUNCTION_FOR = ACTIVITY_REPORT_FUNCTIONS;
 
 type ActivityRow = { bot: string; actions: number };
 type RefusalRow = {
@@ -288,12 +290,7 @@ export const GALLERY: GalleryComponent[] = [
       "Show what this deployment has actually been doing, read from its own records rather than from anything you know. Use for 'what have the Bots been up to' and 'what has been refused'. You choose the report and the period; the figures are read for you and you will not see them.",
     parameters: ActivityReportProps,
     Component: ActivityReportCard as GalleryComponent["Component"],
-    confirmation:
-      "The report is on screen for the person, filled with figures read from this deployment. You were not given the figures.",
-    reads: (args) => {
-      const report = typeof args.report === "string" ? args.report : undefined;
-      const functionName = report ? FUNCTION_FOR[report] : undefined;
-      return functionName ? [functionName] : [];
-    },
+    confirmation: GALLERY_CONFIRMATIONS.showActivityReport,
+    reads: (args) => galleryReads("showActivityReport", args),
   },
 ];

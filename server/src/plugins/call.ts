@@ -199,6 +199,8 @@ export function createCallPath(
     botId: string;
     actorId: string;
     threadId: string | undefined;
+    /** The Bot's call this is, so every window of the conversation can draw its question. */
+    toolCallId: string | undefined;
     ref: string;
     serverId: string;
     toolName: string;
@@ -238,6 +240,15 @@ export function createCallPath(
           ? { presentedApprovalId: question.approvalId }
           : {}),
         ...(question.threadId ? { threadId: question.threadId } : {}),
+        // The step it holds open, as a computer call's question names its own (`gateway/govern.ts`).
+        ...(question.threadId && question.toolCallId
+          ? {
+              step: {
+                threadId: question.threadId,
+                toolCallId: question.toolCallId,
+              },
+            }
+          : {}),
         policyVerdict: question.verdict,
         forcedAsk: question.forcedAsk,
       },
@@ -350,6 +361,8 @@ export function createCallPath(
       actorId: string;
       /** The conversation the call was raised from, so an answer can be for it. See gateway.ts. */
       threadId?: string | undefined;
+      /** The Bot's tool call this carries out, where a turn the server owns named it. */
+      toolCallId?: string | undefined;
       /**
        * Whether this person governs the whole deployment.
        *
@@ -704,6 +717,7 @@ export function createCallPath(
               botId: input.botId,
               actorId: input.actorId,
               threadId: input.threadId,
+              toolCallId: input.toolCallId,
               ref: input.ref,
               serverId,
               toolName,
