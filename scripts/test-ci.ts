@@ -865,9 +865,11 @@ for (const group of GROUPS) {
     },
   );
 
-  // Bun writes its summary to stderr, so it is captured and echoed rather than inherited.
+  // Bun writes its summary to stderr, so it is captured and echoed rather than inherited. Awaited:
+  // process.exit does not wait for a write to a pipe, and laf-control's copy of this gate cut every
+  // failing CI run's report off mid-line, before the failures, for eleven days (2026-09-15..26).
   const stderr = await new Response(proc.stderr).text();
-  process.stderr.write(stderr);
+  await Bun.write(Bun.stderr, stderr);
 
   const status = await proc.exited;
   const ran = stderr.match(/Ran (\d+) tests? across/);
@@ -941,13 +943,14 @@ const table = outcomes
   .join("\n");
 
 if (problems.length > 0) {
-  console.error(
+  await Bun.write(
+    Bun.stderr,
     `\n${problems.map((problem) => `- ${problem}`).join("\n")}\n\n${table}\n\n` +
       "A group under its floor with every test passing is not a failing test, it is a suite that got\n" +
       "smaller. The usual cause is a file that threw while being imported, which takes its tests with\n" +
       "it and reports nothing. Run `bun test` over that workspace and look for an unhandled error\n" +
       "between the file groups.\n\n" +
-      "If tests were deliberately removed, lower that group's floor in scripts/test-ci.ts and say why.",
+      "If tests were deliberately removed, lower that group's floor in scripts/test-ci.ts and say why.\n",
   );
   process.exit(1);
 }
