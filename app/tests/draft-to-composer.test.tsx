@@ -126,3 +126,68 @@ describe("a sentence handed to the conversation", () => {
     expect(takeOfferedDraft("channel_mine")).toBeNull();
   });
 });
+
+describe("what is in the box when the page reloads for a new build (P1, G6)", () => {
+  test("is back in its own conversation's box on the page that loads next, and nothing was sent", async () => {
+    const reloader = await import("../src/lib/build-reload");
+    const items = new Map<string, string>();
+    // The tab's `sessionStorage`: the one thing that outlives the reload.
+    const storage = {
+      getItem: (key: string) => items.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        items.set(key, value);
+      },
+      removeItem: (key: string) => {
+        items.delete(key);
+      },
+    } as unknown as Storage;
+    let reloads = 0;
+    const thisTab = () =>
+      reloader.configureBuildReload({
+        readBuild: async () => ({ version: "v0.5.6", revision: "abc1234" }),
+        reload: () => {
+          reloads += 1;
+        },
+        storage: () => storage,
+      });
+    thisTab();
+    try {
+      const channelId = "channel_draft-reload";
+      const server = channelServer({ channelId, history: [] });
+      const { editDraft, editInChatHref } = await import(
+        "../src/components/routines/edit-in-chat"
+      );
+      const view = await mountApp({
+        path: editInChatHref(channelId, "주간 매출 요약"),
+        api: server.api,
+      });
+      const sentence = editDraft("주간 매출 요약").trim();
+      await view.waitFor(
+        () => composerText(view.host).trim() === sentence,
+        "the sentence in the composer",
+        8000,
+      );
+
+      // A chunk of the new build is missing: the page reloads, with the box as it is.
+      expect(await reloader.recoverFromStaleBuild()).toBe("reloading");
+      expect(reloads).toBe(1);
+      await view.unmount();
+
+      // The page that loads next, in the same tab.
+      thisTab();
+      const next = await mountApp({
+        path: `/channel/${channelId}`,
+        api: server.api,
+      });
+      await next.waitFor(
+        () => composerText(next.host).trim() === sentence,
+        "what was typed, back in its box",
+        8000,
+      );
+      expect(server.runs).toHaveLength(0);
+      await next.unmount();
+    } finally {
+      reloader.configureBuildReload(null);
+    }
+  });
+});

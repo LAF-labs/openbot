@@ -28,6 +28,7 @@ import {
   uploadAttachment,
   uploadRefusalText,
 } from "@/lib/attachments/upload";
+import { holdDraft, takeKeptDraft } from "@/lib/build-reload";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,12 @@ import {
   type ComposerDraft,
   toDraft,
 } from "./draft";
-import { DraftScope, takeOfferedDraft, useOfferedDraft } from "./prefill";
+import {
+  DraftScope,
+  offerDraft,
+  takeOfferedDraft,
+  useOfferedDraft,
+} from "./prefill";
 import { PLACEHOLDER_COMMANDS } from "./sources";
 import { buildTriggers } from "./triggers";
 
@@ -507,6 +513,21 @@ export function Composer({
     promptAreaRef.current?.setText(text);
     promptAreaRef.current?.focus();
   }, [offered, scope, disabled, draft.isEmpty]);
+
+  /*
+   * WHAT IS TYPED SURVIVES A RELOAD FOR A NEW BUILD (`lib/build-reload.ts`). Held while it is here,
+   * written down in the moment before the page goes, and offered back to this conversation's box —
+   * through the offer above, so it lands the way a routine's 고치기 does and never over new typing.
+   */
+  useEffect(
+    () => (scope === undefined ? undefined : holdDraft(scope, draft.text)),
+    [scope, draft.text],
+  );
+  useEffect(() => {
+    if (scope === undefined) return;
+    const kept = takeKeptDraft(scope);
+    if (kept !== null) offerDraft(scope, kept);
+  }, [scope]);
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

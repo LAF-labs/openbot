@@ -6,6 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { authKeys } from "./lib/auth/queries";
 import { watchSession } from "./lib/auth/session-watch";
+import { listenForStaleChunks } from "./lib/build-reload";
 import { inShell } from "./lib/notifications/shell";
 import {
   configureScreenErrorReports,
@@ -40,6 +41,12 @@ configureScreenErrorReports({
   },
 });
 listenForScreenErrors();
+/*
+ * A PAGE FROM BEFORE A DEPLOY, asking for a chunk the new build does not have, reloads into the new
+ * build once, keeping what was typed (`lib/build-reload.ts`). Listened for before anything renders:
+ * the first route's own chunk can be the one that fails.
+ */
+listenForStaleChunks();
 
 const rootElement = document.getElementById("root");
 
