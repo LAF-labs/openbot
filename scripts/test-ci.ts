@@ -567,10 +567,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2801, roots: ["server"] },
-  { name: "app", floor: 1383, roots: ["app"] },
-  { name: "agent-computer", floor: 292, roots: ["agent-computer"] },
-  { name: "root", floor: 431, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 2824, roots: ["server"] },
+  { name: "app", floor: 1401, roots: ["app"] },
+  { name: "agent-computer", floor: 311, roots: ["agent-computer"] },
+  { name: "root", floor: 444, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
