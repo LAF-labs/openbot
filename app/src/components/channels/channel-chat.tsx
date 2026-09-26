@@ -615,7 +615,7 @@ export function ChannelChat({
     finishTurn();
   };
 
-  /** The turn this tab started came back whole: say so to the roster, the stamps and the read mark. */
+  /** The turn this tab started came back whole: say so to the roster and the stamps. */
   const finishTurn = () => {
     const reply = [...agent.messages]
       .reverse()
@@ -629,15 +629,6 @@ export function ChannelChat({
       missedWhileBusy.current = false;
       void catchUpRef.current();
     }
-    /*
-     * And the room is read again. The mark was set when the room opened; a reply that landed
-     * while the person sat watching it is newer than that mark, so on leaving, the roster
-     * flagged as unread the one reply they had just read. The previous mark is deliberately
-     * not captured here — the line stays where the person's reading actually started.
-     */
-    void markRead
-      .current({ channelId: channel.id, read: true })
-      .catch(() => {});
   };
 
   /**
@@ -899,7 +890,21 @@ export function ChannelChat({
     if (!hadTurn.current) return;
     hadTurn.current = false;
     refreshTodayUsage(queryClient);
-  }, [turnsInFlight, queryClient]);
+    /*
+     * And the room is read again. The mark was set when the room opened; a reply that landed
+     * while the person sat watching it is newer than that mark, so on leaving, the roster
+     * flagged as unread the one reply they had just read. The previous mark is deliberately
+     * not captured here — the line stays where the person's reading actually started.
+     *
+     * HOWEVER THE TURN ENDED. This lived in the path of a turn that came back whole, so a turn the
+     * person stopped, or one that failed, left the mark where the room had opened. MEASURED
+     * 2026-09-26 (0.5.5 QA): Stop partway through a search, then a reload, drew 읽지 않음 above the
+     * words the person had just watched arrive and had stopped themselves.
+     */
+    void markRead
+      .current({ channelId: channel.id, read: true })
+      .catch(() => {});
+  }, [turnsInFlight, queryClient, channel.id]);
 
   /*
    * THIS CONVERSATION'S STOP, HANDED TO `모두 멈추기` for as long as it is on screen.

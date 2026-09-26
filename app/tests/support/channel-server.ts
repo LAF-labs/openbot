@@ -87,6 +87,8 @@ export function channelServer(options: {
   replay?: { runId: string; asked: WireMessage[]; answer: string };
 }) {
   const runs: RunInput[] = [];
+  /** Every time the page marked the room read, in order: on opening, and when a turn ends. */
+  const reads: string[] = [];
   const channel = {
     id: options.channelId,
     name: "닻",
@@ -108,6 +110,7 @@ export function channelServer(options: {
       return json({ failures: options.failures ?? [] });
     }
     if (pathname === `${base}/read`) {
+      reads.push(new Date().toISOString());
       return json({ previousReadAt: null, readAt: new Date().toISOString() });
     }
     if (pathname === `${base}/activity`) {
@@ -179,5 +182,5 @@ export function channelServer(options: {
     }
     return undefined;
   };
-  return { api, runs };
+  return { api, runs, reads };
 }

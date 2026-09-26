@@ -407,6 +407,39 @@ describe("다시 시도 under the half of an answer", () => {
     await view.unmount();
   });
 
+  test("leaves the room read, as a turn that came back whole does", async () => {
+    /*
+     * MEASURED 2026-09-26 (0.5.5 QA): the read mark moved only for a turn that came back whole, so
+     * a turn that failed or was stopped left it where the room had opened, and the next open drew
+     * 읽지 않음 above the words the person had watched arrive.
+     */
+    const { stashFirstMessage } = await import(
+      "../src/components/channels/transcript-messages"
+    );
+    const channelId = "channel_retry-half-read";
+    stashFirstMessage(channelId, QUESTION);
+    const server = channelServer({
+      channelId,
+      runs: [halfThenGone(HALF)],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => view.host.querySelector(failed) !== null,
+      "the failure line under the half answer",
+      8000,
+    );
+    // Once as the room opened, and once more as the turn ended.
+    await view.waitFor(
+      () => server.reads.length >= 2,
+      "the room marked read again when the turn ended",
+      8000,
+    );
+    await view.unmount();
+  });
+
   test("is there after a reload, from what the server recorded", async () => {
     const channelId = "channel_retry-half-stored";
     const question = { id: "q-half", role: "user", content: QUESTION };
