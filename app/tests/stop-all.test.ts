@@ -188,9 +188,10 @@ describe("the words", () => {
 describe("the fact a stopped routine is recorded under", () => {
   test("is the one the server writes", async () => {
     // Read off the server's source: importing the loop would pull in the
-    // computer gateway and everything under it for one string.
+    // computer gateway and everything under it for one string. The loop that
+    // routines and chat share keeps it (`turn-loop.ts`).
     const loop = await Bun.file(
-      new URL("../../server/src/runner/unattended.ts", import.meta.url),
+      new URL("../../server/src/runner/turn-loop.ts", import.meta.url),
     ).text();
     expect(loop).toContain(`export const RUN_STOPPED = "${RUN_STOPPED}";`);
     expect(ko["It was stopped with Stop everything."]).toBeString();
