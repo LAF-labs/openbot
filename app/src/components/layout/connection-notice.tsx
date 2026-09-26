@@ -2,19 +2,16 @@ import { useSyncExternalStore } from "react";
 import { openConnectionCheck } from "@/components/help/connection-check-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
 import {
-  isSocketLost,
-  SOCKET_LOST,
-  SOCKET_RECONNECTED,
+  SOCKET_TROUBLE,
   socketState,
+  socketTrouble,
 } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
 
 function subscribe(onChange: () => void): () => void {
-  socketState.addEventListener(SOCKET_LOST, onChange);
-  socketState.addEventListener(SOCKET_RECONNECTED, onChange);
+  socketState.addEventListener(SOCKET_TROUBLE, onChange);
   return () => {
-    socketState.removeEventListener(SOCKET_LOST, onChange);
-    socketState.removeEventListener(SOCKET_RECONNECTED, onChange);
+    socketState.removeEventListener(SOCKET_TROUBLE, onChange);
   };
 }
 
@@ -65,15 +62,26 @@ export function useIsOnline(): boolean {
  *
  * `w-max`, because a box placed at `left: 50%` is laid out in the half of the window to the right of
  * that line: measured at 390px, the pill was 195px wide and broke onto two lines with room to spare.
+ *
+ * ONLY WHEN IT IS REALLY A PROBLEM (P1, 2026-09-26). The socket now finds a dead connection itself —
+ * after a sleep, a Wi-Fi change — and replaces it within a second; a pill for that second would be
+ * the app reporting a problem it had already solved. So it appears after two seconds of loss, and
+ * after thirty says that it has been a while (`SocketTrouble` in `use-channel-events.ts`).
  */
 export const ConnectionNotice = () => {
-  const lost = useSyncExternalStore(subscribe, isSocketLost, () => false);
+  const trouble = useSyncExternalStore(
+    subscribe,
+    socketTrouble,
+    () => "none" as const,
+  );
   const isOnline = useIsOnline();
   const sentence = !isOnline
     ? t("The internet connection is down. Check your connection.")
-    : lost
-      ? t("The connection to the server was lost. Reconnecting…")
-      : null;
+    : trouble === "slow"
+      ? t("The server has not answered for a while. Still reconnecting…")
+      : trouble === "lost"
+        ? t("The connection to the server was lost. Reconnecting…")
+        : null;
   return (
     <>
       {/*

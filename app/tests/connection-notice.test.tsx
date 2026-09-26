@@ -1,13 +1,14 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   afterAll,
   afterEach,
   beforeAll,
   describe,
   expect,
+  jest,
   test,
 } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { ko } from "../src/lib/i18n-ko";
 
@@ -55,6 +56,7 @@ afterAll(async () => {
 
 afterEach(() => {
   sockets = [];
+  jest.useRealTimers();
 });
 
 async function mountedShell() {
@@ -93,7 +95,14 @@ async function mountedShell() {
         root.unmount();
       });
       host.remove();
+      // Past the release, which is deferred by a turn, on whichever clock the test is on.
       await act(async () => {
+        try {
+          jest.advanceTimersByTime(10);
+        } catch {
+          // The real clock: the wait below is the one that passes it.
+        }
+        jest.useRealTimers();
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
     },
@@ -101,9 +110,15 @@ async function mountedShell() {
 }
 
 const SAID = "The connection to the server was lost. Reconnecting…";
+const SLOW = "The server has not answered for a while. Still reconnecting…";
 
 describe("the connection notice", () => {
-  test("appears when a socket that was up goes down, and leaves when it is back", async () => {
+  /*
+   * Fake timers from here: the notice waits out two seconds of loss before it says anything, and a
+   * test on the real clock would wait them too.
+   */
+  test("appears once a socket that was up has stayed down a moment, and leaves when it is back", async () => {
+    jest.useFakeTimers();
     const shell = await mountedShell();
     expect(shell.host.textContent).toBe("");
 
@@ -117,7 +132,16 @@ describe("the connection notice", () => {
     expect(region?.textContent).toBe("");
 
     await shell.act(() => sockets[0]?.close());
+    // The fact at once — a turn failing now blames the connection — and the pill not yet.
     expect(shell.events.isSocketLost()).toBe(true);
+    expect(shell.host.textContent).toBe("");
+
+    // The reconnect is the socket's own backoff: half a second, then the next socket, which the
+    // server does not answer.
+    await shell.act(() => {
+      jest.advanceTimersByTime(2_000);
+    });
+    expect(sockets.length).toBe(2);
     const notice = shell.host.querySelector('[role="status"]');
     expect(notice).toBe(region);
     expect(notice?.textContent).toBe(SAID);
@@ -125,16 +149,49 @@ describe("the connection notice", () => {
     expect(shell.host.textContent).toContain("Connection check");
     expect(ko[SAID]).toBe("서버와 연결이 끊겼어요 — 다시 잇는 중");
 
-    // The reconnect is the socket's own backoff: half a second, then the next socket.
-    await shell.act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-    });
-    expect(sockets.length).toBe(2);
     await shell.act(() => sockets[1]?.onopen?.());
     expect(shell.events.isSocketLost()).toBe(false);
     // The pill is gone and the region is quiet again, still there for the next drop.
     expect(shell.host.textContent).toBe("");
     expect(shell.host.querySelector('[role="status"]')).toBe(region);
+    await shell.unmount();
+  });
+
+  test("says nothing for a socket that is back before the moment is up", async () => {
+    // The heartbeat replaces a socket a sleep killed within a second; that is not news.
+    jest.useFakeTimers();
+    const shell = await mountedShell();
+    await shell.act(() => sockets[0]?.onopen?.());
+    await shell.act(() => sockets[0]?.close());
+    await shell.act(() => {
+      jest.advanceTimersByTime(600);
+    });
+    expect(sockets.length).toBe(2);
+    await shell.act(() => sockets[1]?.onopen?.());
+    await shell.act(() => {
+      jest.advanceTimersByTime(5_000);
+    });
+    expect(shell.host.textContent).toBe("");
+    await shell.unmount();
+  });
+
+  test("says that it has been a while after thirty seconds of trying", async () => {
+    jest.useFakeTimers();
+    const shell = await mountedShell();
+    await shell.act(() => sockets[0]?.onopen?.());
+    await shell.act(() => sockets[0]?.close());
+    await shell.act(() => {
+      jest.advanceTimersByTime(29_000);
+    });
+    expect(shell.host.textContent).toContain(SAID);
+
+    await shell.act(() => {
+      jest.advanceTimersByTime(1_500);
+    });
+    expect(shell.host.textContent).toContain(SLOW);
+    expect(shell.host.textContent).not.toContain(SAID);
+    expect(shell.host.textContent).toContain("Connection check");
+    expect(ko[SLOW]).toBe("서버가 한동안 답이 없어요 — 계속 다시 잇는 중");
     await shell.unmount();
   });
 

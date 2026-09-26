@@ -3,11 +3,24 @@
  */
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import {
+  HEARTBEAT_CLOSE_CODE,
+  HEARTBEAT_CLOSE_REASON,
+  HEARTBEAT_PARAM,
+  heartbeatFrameKind,
+  PING_FRAME,
+  PONG_FRAME,
+} from "../../../shared/channel-socket";
 import { CONNECTION_PROBE_PARAM } from "../../../shared/support/connection-check";
 import type { AppVariables } from "../auth/guards";
 import { originRefusalBody, upgradeOriginAllowed } from "../auth/origin";
 import type { ChannelEventHub } from "./events";
-import { upgradeWebSocket } from "./socket";
+import {
+  type Heartbeat,
+  type HeartbeatTiming,
+  startHeartbeat,
+  upgradeWebSocket,
+} from "./socket";
 
 /**
  * What a probe is answered with: the one frame this socket ever sends first.
@@ -21,6 +34,8 @@ export function createEventRoutes(
   events: ChannelEventHub,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   trustedOrigins: readonly string[],
+  /** The heartbeat's clock, shortened by a test; production takes the default. */
+  heartbeatTiming?: HeartbeatTiming,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -63,18 +78,46 @@ export function createEventRoutes(
       // Resolved at upgrade, not per message: the connection belongs to whoever authenticated it,
       // and nothing it later sends can change that.
       const { id: userId } = context.var.actor;
+      // Asked for by the page (`shared/channel-socket.ts`); a page from before it is held as before.
+      const isHeartbeat = context.req.query(HEARTBEAT_PARAM) !== undefined;
+      let heartbeat: Heartbeat | undefined;
       let detach = () => {};
+      const release = () => {
+        heartbeat?.stop();
+        detach();
+      };
       return {
         onOpen: (_event, ws) => {
+          if (isHeartbeat) {
+            heartbeat = startHeartbeat({
+              ping: () => ws.send(PING_FRAME),
+              /*
+               * OUT OF THE HUB FIRST, THEN CLOSED. A close on a connection whose other end is gone
+               * waits on a handshake nobody will finish, and `onClose` with it; a notice in that
+               * wait must already find nobody here.
+               */
+              onSilent: () => {
+                detach();
+                ws.close(HEARTBEAT_CLOSE_CODE, HEARTBEAT_CLOSE_REASON);
+              },
+              timing: heartbeatTiming,
+            });
+          }
           detach = events.register(
             userId,
             (payload) => ws.send(payload),
             // Their sessions were ended: 4401, the application's own code for the 401 every door answers.
             () => ws.close(4401, "laf:session_revoked"),
+            heartbeat?.isLive,
           );
         },
-        onClose: () => detach(),
-        onError: () => detach(),
+        onMessage: (event, ws) => {
+          // Anything the page says is the page being there; a ping is also owed its answer.
+          heartbeat?.heard();
+          if (heartbeatFrameKind(event.data) === "ping") ws.send(PONG_FRAME);
+        },
+        onClose: release,
+        onError: release,
       };
     }),
   );

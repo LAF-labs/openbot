@@ -1,3 +1,10 @@
+import {
+  HEARTBEAT_MS,
+  HEARTBEAT_PARAM,
+  heartbeatFrameKind,
+  PING_FRAME,
+  PONG_FRAME,
+} from "@shared/channel-socket";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { dayKeys } from "@/lib/agents/day";
@@ -68,6 +75,32 @@ export function isSocketLost(): boolean {
 }
 
 /**
+ * WHETHER THE LOSS IS WORTH A PERSON'S ATTENTION YET — A DIFFERENT QUESTION FROM WHETHER IT HAPPENED.
+ *
+ * `isSocketLost()` turns true the instant the socket drops, because a turn that fails in that
+ * instant must blame the connection and not the model (`channel-chat.tsx`, audit A4). The notice is
+ * a different reader. Since the heartbeat, a socket found dead after a sleep is replaced within a
+ * second, and a pill that flashed for that second would be the app announcing a problem it had
+ * already solved. So the notice waits out `NOTICE_GRACE_MS` of continuous loss (`"lost"`), and
+ * past `SLOW_RECONNECT_MS` says that it has been a while (`"slow"`). Changes fire `SOCKET_TROUBLE`.
+ */
+export type SocketTrouble = "none" | "lost" | "slow";
+
+export const SOCKET_TROUBLE = "socket-trouble";
+
+let trouble: SocketTrouble = "none";
+
+export function socketTrouble(): SocketTrouble {
+  return trouble;
+}
+
+function setTrouble(next: SocketTrouble) {
+  if (trouble === next) return;
+  trouble = next;
+  socketState.dispatchEvent(new Event(SOCKET_TROUBLE));
+}
+
+/**
  * The conversation a task's picture was just kept in, from the server's `frame_kept` frame
  * (`server/src/channels/transcript-routes.ts`), or null for any other frame.
  *
@@ -85,14 +118,50 @@ export function frameKeptIn(value: unknown): string | null {
 const FIRST_RETRY_MS = 500;
 /**
  * The longest wait between attempts: the minute every poll in the app backs off to during an outage
- * (`OUTAGE_CAP_MS`). A person coming back to the window does not wait it out — see `tryNow`.
+ * (`OUTAGE_CAP_MS`). A person coming back to the window does not wait it out — see `lookedAt`.
  */
 const MAX_RETRY_MS = OUTAGE_CAP_MS;
+
+/*
+ * THE HEARTBEAT (`shared/channel-socket.ts`). A socket that a sleep, a Wi-Fi change or a suspended
+ * window left half-open fires no `close` — it sits "connected" and hears nothing, for as long as the
+ * operating system cares to keep it, and the app looks fine and is deaf. So the page pings every
+ * `HEARTBEAT_MS` and gives the socket up when nothing at all comes back within `ANSWER_WAIT_MS`; a
+ * socket silently cut is noticed within fifteen seconds. When the window is looked at again it asks
+ * at once and waits only `PROBE_WAIT_MS`: after a sleep, that is the moment the answer matters.
+ */
+export const ANSWER_WAIT_MS = 5_000;
+export const PROBE_WAIT_MS = 3_000;
+/**
+ * How long a new socket may take to open. A network that swallows packets leaves one connecting for
+ * as long as TCP keeps trying — over a minute — with nothing to say it will not.
+ */
+export const OPEN_WAIT_MS = 15_000;
+/**
+ * How long a socket must stay up before the backoff starts again from half a second. Reset on open,
+ * a server that accepts and at once drops every socket would be asked twice a second forever.
+ */
+export const STABLE_MS = 60_000;
+/** Continuous loss before the notice appears. See `SocketTrouble`. */
+export const NOTICE_GRACE_MS = 2_000;
+/** Continuous loss before the notice says it has been a while. */
+export const SLOW_RECONNECT_MS = 30_000;
 
 function socketUrl() {
   const url = new URL("/api/channels/events", window.location.href);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  // This page pings and answers pings, and is to be judged by them (`shared/channel-socket.ts`).
+  url.searchParams.set(HEARTBEAT_PARAM, "1");
   return url.toString();
+}
+
+/** A frame down a socket that may be closing — where `send` throws, and the heartbeat will judge. */
+function trySend(socket: WebSocket, frame: string) {
+  try {
+    socket.send(frame);
+  } catch {
+    // Still connecting, or already closing: neither is this frame's to report.
+  }
 }
 
 type Connection = {
@@ -120,20 +189,116 @@ let connection: Connection | undefined;
 let holders = 0;
 let releaseTimer: ReturnType<typeof setTimeout> | undefined;
 
+type Timer = ReturnType<typeof setTimeout>;
+
 function openConnection(queryClient: QueryClient): Connection {
   let socket: WebSocket | undefined;
-  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether `socket` has opened. Kept here rather than read off `readyState`, which fakes lack. */
+  let isOpen = false;
+  let retryTimer: Timer | undefined;
   let retryDelay = FIRST_RETRY_MS;
   let stopped = false;
   let opened = false;
+  let openTimer: Timer | undefined;
+  let stableTimer: Timer | undefined;
+  let beatTimer: ReturnType<typeof setInterval> | undefined;
+  /** Set while a ping is out; cleared by anything at all coming back. */
+  let answerTimer: Timer | undefined;
+  let graceTimer: Timer | undefined;
+  let slowTimer: Timer | undefined;
+
+  const clear = (timer: Timer | undefined) => {
+    if (timer !== undefined) clearTimeout(timer);
+  };
+
+  const stopHeartbeat = () => {
+    if (beatTimer !== undefined) clearInterval(beatTimer);
+    beatTimer = undefined;
+    clear(answerTimer);
+    answerTimer = undefined;
+  };
+
+  const settleTrouble = () => {
+    clear(graceTimer);
+    clear(slowTimer);
+    graceTimer = undefined;
+    slowTimer = undefined;
+    setTrouble("none");
+  };
+
+  /**
+   * The socket is gone — closed by the other end, or given up on here. Everything that was timing
+   * it stops, the loss is said once, and the next attempt waits its turn.
+   */
+  const closed = () => {
+    stopHeartbeat();
+    clear(openTimer);
+    clear(stableTimer);
+    openTimer = undefined;
+    stableTimer = undefined;
+    socket = undefined;
+    isOpen = false;
+    if (stopped) return;
+    // Only a socket that had been up: a first connection failing is the /unreachable screen's.
+    if (opened && !lost) {
+      lost = true;
+      socketState.dispatchEvent(new Event(SOCKET_LOST));
+      graceTimer = setTimeout(() => setTrouble("lost"), NOTICE_GRACE_MS);
+      slowTimer = setTimeout(() => setTrouble("slow"), SLOW_RECONNECT_MS);
+    }
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      connect();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
+  };
+
+  /*
+   * GIVEN UP ON HERE, NOT WAITED FOR. `close()` on a socket whose other end has gone starts a
+   * handshake nobody will answer, and its `close` event can take as long as the connection took to
+   * die. So its handlers are taken off first, and it is treated as closed now.
+   */
+  const giveUp = (which: WebSocket) => {
+    if (socket !== which) return;
+    which.onopen = null;
+    which.onmessage = null;
+    which.onclose = null;
+    try {
+      which.close();
+    } catch {
+      // Already closing.
+    }
+    closed();
+  };
+
+  /** Ping, unless one is already out; give the socket up if nothing comes back within `wait`. */
+  const ping = (wait: number) => {
+    const current = socket;
+    if (!current || !isOpen || answerTimer !== undefined) return;
+    trySend(current, PING_FRAME);
+    answerTimer = setTimeout(() => {
+      answerTimer = undefined;
+      giveUp(current);
+    }, wait);
+  };
 
   const connect = () => {
     if (stopped) return;
-    socket = new WebSocket(socketUrl());
+    const next = new WebSocket(socketUrl());
+    socket = next;
+    isOpen = false;
+    openTimer = setTimeout(() => giveUp(next), OPEN_WAIT_MS);
 
-    socket.onopen = () => {
-      retryDelay = FIRST_RETRY_MS;
+    next.onopen = () => {
+      clear(openTimer);
+      openTimer = undefined;
+      isOpen = true;
+      beatTimer = setInterval(() => ping(ANSWER_WAIT_MS), HEARTBEAT_MS);
+      stableTimer = setTimeout(() => {
+        retryDelay = FIRST_RETRY_MS;
+      }, STABLE_MS);
       lost = false;
+      settleTrouble();
       // Recover events missed while the socket was disconnected.
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
       if (opened) {
@@ -145,7 +310,13 @@ function openConnection(queryClient: QueryClient): Connection {
       opened = true;
     };
 
-    socket.onmessage = (message) => {
+    next.onmessage = (message) => {
+      // Anything at all from the server is the server being there.
+      clear(answerTimer);
+      answerTimer = undefined;
+      const beat = heartbeatFrameKind(message.data);
+      if (beat === "ping") trySend(next, PONG_FRAME);
+      if (beat !== null) return;
       let parsed: unknown;
       try {
         parsed = JSON.parse(message.data as string);
@@ -256,36 +427,33 @@ function openConnection(queryClient: QueryClient): Connection {
     };
 
     // WebSocket needs explicit reconnect handling.
-    socket.onclose = () => {
-      if (stopped) return;
-      // Only a socket that had been up: a first connection failing is the /unreachable screen's.
-      if (opened && !lost) {
-        lost = true;
-        socketState.dispatchEvent(new Event(SOCKET_LOST));
-      }
-      retryTimer = setTimeout(() => {
-        retryTimer = undefined;
-        connect();
-      }, retryDelay);
-      retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
+    next.onclose = () => {
+      if (socket !== next) return;
+      closed();
     };
   };
 
   /*
    * A PERSON LOOKING AT THE WINDOW AGAIN IS WORTH AN ATTEMPT NOW. The wait between attempts grows to a
    * minute over a long outage, which is right for a window nobody is watching and wrong for the one
-   * somebody has just brought forward to see whether it works yet. Only while an attempt is waiting:
-   * a socket that is open, or already connecting, is left alone.
+   * somebody has just brought forward to see whether it works yet. And an open socket is asked
+   * whether it still reaches anything: coming back from a sleep is exactly when one does not, and
+   * nothing else would find out for another ten seconds. A socket still connecting is left alone.
    */
-  const tryNow = () => {
-    if (stopped || retryTimer === undefined) return;
-    if (document.visibilityState === "hidden") return;
-    clearTimeout(retryTimer);
-    retryTimer = undefined;
-    connect();
+  const lookedAt = () => {
+    if (stopped || document.visibilityState === "hidden") return;
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      connect();
+      return;
+    }
+    ping(PROBE_WAIT_MS);
   };
-  document.addEventListener("visibilitychange", tryNow);
-  window.addEventListener("focus", tryNow);
+  document.addEventListener("visibilitychange", lookedAt);
+  window.addEventListener("focus", lookedAt);
+  // The device's network came back: the same question, for the same reason.
+  window.addEventListener("online", lookedAt);
 
   connect();
 
@@ -293,12 +461,18 @@ function openConnection(queryClient: QueryClient): Connection {
     client: queryClient,
     close: () => {
       stopped = true;
-      document.removeEventListener("visibilitychange", tryNow);
-      window.removeEventListener("focus", tryNow);
-      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", lookedAt);
+      window.removeEventListener("focus", lookedAt);
+      window.removeEventListener("online", lookedAt);
+      clear(retryTimer);
+      // A screen that is gone has no connection to have lost; the next one starts from nothing.
+      lost = false;
+      settleTrouble();
+      const current = socket;
       // Cleared first: the close below must not schedule a reconnect for a screen that is gone.
-      if (socket) socket.onclose = null;
-      socket?.close();
+      if (current) current.onclose = null;
+      closed();
+      current?.close();
     },
   };
 }

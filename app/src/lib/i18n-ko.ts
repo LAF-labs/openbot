@@ -2727,4 +2727,7 @@ export const ko: Record<string, string> = {
   "This shortcut could not be turned on. Another app may be using it — choose another.":
     "이 단축키를 켜지 못했어요. 다른 앱이 쓰고 있을 수 있으니 다른 것을 골라 주세요.",
   Off: "끄기",
+  // connection resilience (P1): the socket's heartbeat, a page from before a deploy, a part that failed
+  "The server has not answered for a while. Still reconnecting…":
+    "서버가 한동안 답이 없어요 — 계속 다시 잇는 중",
 };

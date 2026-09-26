@@ -37,9 +37,23 @@ export type ChannelActivityEvent = {
 
 type Send = (payload: string) => void;
 
+/** Whether the page behind a connection is still there. See `channels/socket.ts`, `startHeartbeat`. */
+type IsLive = () => boolean;
+
+const ALWAYS = () => true;
+
 export type ChannelEventHub = {
-  /** Attach a connection for a person, and how to close it. Returns the detach. */
-  register(userId: string, send: Send, close?: () => void): () => void;
+  /**
+   * Attach a connection for a person, how to close it, and how to tell whether its page is still
+   * there. Returns the detach. A connection with no `isLive` counts for as long as it is attached:
+   * a page from before the heartbeat, which cannot be judged by one.
+   */
+  register(
+    userId: string,
+    send: Send,
+    close?: () => void,
+    isLive?: IsLive,
+  ): () => void;
   /**
    * Close every connection a person holds, because their sessions were ended — struck off the
    * sign-in list, or removed by an administrator (`auth/session-revocation.ts`).
@@ -54,17 +68,28 @@ export type ChannelEventHub = {
   deliver(event: ChannelActivityEvent): void;
   /** Fan one frame that is not a roster patch out — a notification, addressed on the frame. */
   deliverFrame(frame: { memberIds: string[] } & Record<string, unknown>): void;
+  /**
+   * How many of a person's connections have a page LISTENING behind them — not how many are open.
+   *
+   * The notification doors decide by this (`notifications/in-app.ts`): above zero, a frame goes
+   * down the socket and the row is stamped delivered; at zero, the row waits for the next door and
+   * a finished run writes a notice. A socket whose page went silent — a laptop asleep, a window
+   * the system suspended — used to count here for as long as the operating system kept it open,
+   * and every notice in that time was delivered to nobody (P2 measurement, 2026-09-26).
+   */
   connectionCount(userId: string): number;
 };
 
+type Held = { close: () => void; isLive: IsLive };
+
 export function createChannelEventHub(): ChannelEventHub {
-  /** Each person's connections: how to write to one, and how to close it. */
-  const connections = new Map<string, Map<Send, () => void>>();
+  /** Each person's connections: how to write to one, how to close it, whether it is listening. */
+  const connections = new Map<string, Map<Send, Held>>();
 
   return {
-    register(userId, send, close = () => {}) {
-      const existing = connections.get(userId) ?? new Map<Send, () => void>();
-      existing.set(send, close);
+    register(userId, send, close = () => {}, isLive = ALWAYS) {
+      const existing = connections.get(userId) ?? new Map<Send, Held>();
+      existing.set(send, { close, isLive });
       connections.set(userId, existing);
 
       return () => {
@@ -82,7 +107,7 @@ export function createChannelEventHub(): ChannelEventHub {
       if (!held) return 0;
       // Out of the map first: a frame delivered while these close must already find nobody here.
       connections.delete(userId);
-      for (const close of held.values()) {
+      for (const { close } of held.values()) {
         try {
           close();
         } catch {
@@ -124,7 +149,11 @@ export function createChannelEventHub(): ChannelEventHub {
     },
 
     connectionCount(userId) {
-      return connections.get(userId)?.size ?? 0;
+      let listening = 0;
+      for (const { isLive } of connections.get(userId)?.values() ?? []) {
+        if (isLive()) listening += 1;
+      }
+      return listening;
     },
   };
 }
