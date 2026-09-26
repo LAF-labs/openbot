@@ -18,6 +18,7 @@ export const INSIGHT_SECTIONS = [
   "failures",
   "support",
   "people",
+  "turns",
 ] as const;
 export type InsightSection = (typeof INSIGHT_SECTIONS)[number];
 
@@ -134,6 +135,70 @@ export type CacheInsight = {
   byProvider: Record<string, [number, number, number]>;
 };
 
+/** How many unfinished turns one VM lists for eval stubs; the rest stay counted in `endings`. */
+export const MAX_UNFINISHED_TURNS = 50;
+
+/**
+ * `(local day, origin, code, model requests, tool calls, approvals asked, retries, seconds)` — one
+ * turn that ended 못 끝냄, as the skeleton of an eval scenario (`scripts/eval-from-failures.ts`).
+ * No id and no word: the day is the deployment's clock's, the code a `laf:` code or `laf:uncoded`.
+ */
+export type UnfinishedTurnCell = [
+  string,
+  string,
+  string,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/**
+ * Whether the Bot got the owner's errands done, a turn at a time (P3, 2026-09-26).
+ *
+ * A TURN is what the owner asked for once, however many runs a browser split it into
+ * (`laf_thread_runs.turn_id`); a routine's run and a wake are a turn each. Only turns opened since
+ * this was measured are here — older rows have no turn and no ending, and counting them by
+ * `status` would call every step a window ran a task of its own.
+ *
+ * Counts and cells, like the rest of the report: the rate and the percentiles are the reader's to
+ * compute, across VMs, from cells that add (`insights/turns.ts` `summariseTurns` does it for one).
+ */
+export type TurnsInsight = {
+  /** Turns that have ended, by how: 끝남, 못 끝냄, 멈춤, 사장님 차례. */
+  endings: {
+    finished: number;
+    unfinished: number;
+    stopped: number;
+    owner: number;
+  };
+  /** Turns whose step was still with a window when read. In no ending, and in no rate. */
+  inFlight: number;
+  /** `origin → (ended turns, finished)`. */
+  byOrigin: Record<string, [number, number]>;
+  /**
+   * `(tenths of a second, how many)`: a conversation turn's accepted → the model's first text or
+   * tool call, on the run that opened it. Conversation only; nobody waits on a routine's first word.
+   */
+  firstAnswer: Array<[number, number]>;
+  /** `(asked, granted)` over the ended turns. */
+  approvals: [number, number];
+  /** Requests the model answered, tool calls it made, and requests the Bot's service sent again. */
+  work: { modelRequests: number; toolCalls: number; retries: number };
+  /** `(ending, code, origin, how many)` for turns that ended 못 끝냄 or 사장님 차례, most first. */
+  reasons: Array<[string, string, string, number]>;
+  /**
+   * What the ended turns cost as the provider billed them, how many people ran them, and on how
+   * many (person, local day) pairs. The Bot's own requests only: the server's calls are no turn's.
+   */
+  cost: { usd: number; owners: number; ownerDays: number };
+  /** `(prompt tokens, of them read from the cache)` over the ended turns. */
+  cache: [number, number];
+  /** The window's 못 끝냄 turns, newest first, at most {@link MAX_UNFINISHED_TURNS}. */
+  unfinished: UnfinishedTurnCell[];
+};
+
 /** Each section, or null where its statement could not answer. Null is not zero. */
 export type InsightsReport = {
   window: { days: number; from: string; to: string; nightTimeZone: string };
@@ -146,4 +211,5 @@ export type InsightsReport = {
   failures: FailuresInsight | null;
   support: SupportInsight | null;
   people: PeopleInsight | null;
+  turns: TurnsInsight | null;
 };

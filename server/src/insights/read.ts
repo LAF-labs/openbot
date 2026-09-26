@@ -7,7 +7,7 @@
  * lasts, where Bots get stuck, whether the caps are right, what a person costs, whether anybody
  * reads the help. laf-control reads those out of every VM (`core/insights-sql.ts`) over SSH and
  * psql, which works and needs a key to a shell on every customer's machine to do it. This is the
- * same nine sections over HTTPS, behind a read token (`routes.ts`), so the fleet can stop holding a
+ * same sections over HTTPS, behind a read token (`routes.ts`), so the fleet can stop holding a
  * shell to count something.
  *
  * THE SAME JSON, FIELD FOR FIELD. Each section is the value laf-control's statement for it prints —
@@ -58,6 +58,7 @@ import {
   MAX_FAILURE_SIGNATURES,
   MAX_PEOPLE_ROWS,
 } from "./report";
+import { turnsStatement } from "./turns";
 
 /**
  * A run that met the step budget records `DEFAULT_MAX_STEPS + 1` model turns (steps 0…12) and then
@@ -107,7 +108,7 @@ function hostsValues(): SQL {
  * ONE DIFFERENCE, AND IT IS THE WINDOW'S OTHER END. Those statements count from `now() - N days`
  * with nothing above; these count `from ≤ t < to`, the two instants the answer echoes. Read at the
  * time of the request that is the same set of rows to the millisecond, and it is what makes the
- * echoed window true rather than approximately true — a row written while the nine statements run
+ * echoed window true rather than approximately true — a row written while the statements run
  * one after another is in all of them or none. (Current state — live Bots, connections, per-person
  * caps — has no window and is read as it stands, as it is there.)
  */
@@ -461,6 +462,8 @@ export function insightStatements(options: {
     failures,
     support,
     people,
+    // Its own module: the section is new, and laf-control has not copied it yet (`turns.ts`).
+    turns: turnsStatement({ since, to, timeZone }),
   };
 }
 
@@ -498,7 +501,7 @@ async function readSection(
 /**
  * Each section through its own statement, null where one could not answer.
  *
- * One after another rather than at once: nine concurrent statements would take nine of the pool's
+ * One after another rather than at once: ten concurrent statements would take ten of the pool's
  * connections from the person using the VM for the length of a fleet read nobody is waiting on.
  * Exported so a test can hand it a statement that fails and see the other eight still answer.
  */
@@ -513,7 +516,7 @@ export async function readInsightSections(
   return read as Omit<InsightsReport, "window">;
 }
 
-/** The nine sections over the `days` days that end now, and the window they were read over. */
+/** The sections over the `days` days that end now, and the window they were read over. */
 export async function readInsights(
   database: Database,
   options: { days: number; timeZone: string; now?: () => Date },

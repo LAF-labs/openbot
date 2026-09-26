@@ -55,6 +55,7 @@ const REPORT: InsightsReport = {
     downReasons: { "too-slow": 1 },
   },
   people: null,
+  turns: null,
 };
 
 function door() {
