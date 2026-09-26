@@ -14,6 +14,7 @@ import {
 import { CONNECTION_PROBE_PARAM } from "../../../shared/support/connection-check";
 import type { AppVariables } from "../auth/guards";
 import { originRefusalBody, upgradeOriginAllowed } from "../auth/origin";
+import { log } from "../log";
 import type { ChannelEventHub } from "./events";
 import {
   type Heartbeat,
@@ -99,6 +100,8 @@ export function createEventRoutes(
               onSilent: () => {
                 detach();
                 ws.close(HEARTBEAT_CLOSE_CODE, HEARTBEAT_CLOSE_REASON);
+                // A fact for the operator: a page went quiet — asleep, suspended — and was let go.
+                log.info("activity_socket_silent", { user: userId });
               },
               timing: heartbeatTiming,
             });

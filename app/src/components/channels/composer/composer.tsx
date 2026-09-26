@@ -49,6 +49,12 @@ import {
 import { PLACEHOLDER_COMMANDS } from "./sources";
 import { buildTriggers } from "./triggers";
 
+/**
+ * The compose screen's own key for its text kept through a reload. Parenthesised, so it can never
+ * be a conversation's id, and no conversation's offer can reach the compose screen through it.
+ */
+const COMPOSE_SCREEN_KEY = "(compose)";
+
 const MAX_HEIGHT_PX = 220;
 /**
  * Tracks the compact line box so PromptArea stays vertically centered in one row.
@@ -498,36 +504,35 @@ export function Composer({
    *
    * Not into a box that already holds something: what the person was typing is theirs, and the
    * offer waits rather than writing over it. And only an offer for the conversation this composer
-   * sits in (`DraftScope`); the compose screen sits in none and takes nothing.
+   * sits in (`DraftScope`); the compose screen sits in none and takes no conversation's offer — only
+   * its own text back after a reload, under a key no conversation can have (below).
    */
   const scope = useContext(DraftScope);
-  const offered = useOfferedDraft(scope);
+  const draftKey = scope ?? COMPOSE_SCREEN_KEY;
+  const offered = useOfferedDraft(draftKey);
   useEffect(() => {
     if (offered === null || disabled || !draft.isEmpty) {
       return;
     }
-    const text = takeOfferedDraft(scope);
+    const text = takeOfferedDraft(draftKey);
     if (text === null) {
       return;
     }
     promptAreaRef.current?.setText(text);
     promptAreaRef.current?.focus();
-  }, [offered, scope, disabled, draft.isEmpty]);
+  }, [offered, draftKey, disabled, draft.isEmpty]);
 
   /*
    * WHAT IS TYPED SURVIVES A RELOAD FOR A NEW BUILD (`lib/build-reload.ts`). Held while it is here,
-   * written down in the moment before the page goes, and offered back to this conversation's box —
-   * through the offer above, so it lands the way a routine's 고치기 does and never over new typing.
+   * written down in the moment before the page goes, and offered back to this box when it is drawn
+   * again — through the offer above, so it lands the way a routine's 고치기 does and never over new
+   * typing. The compose screen too: before the first message there is no conversation to key it by.
    */
-  useEffect(
-    () => (scope === undefined ? undefined : holdDraft(scope, draft.text)),
-    [scope, draft.text],
-  );
+  useEffect(() => holdDraft(draftKey, draft.text), [draftKey, draft.text]);
   useEffect(() => {
-    if (scope === undefined) return;
-    const kept = takeKeptDraft(scope);
-    if (kept !== null) offerDraft(scope, kept);
-  }, [scope]);
+    const kept = takeKeptDraft(draftKey);
+    if (kept !== null) offerDraft(draftKey, kept);
+  }, [draftKey]);
 
   const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
