@@ -416,3 +416,59 @@ describeDb("a turn on the ledger, and the section that reads it", () => {
     }
   });
 });
+
+/*
+ * A routine writes its ending inside the transaction that delivers its answer. The turn's facts
+ * were first read on the pool from there — a second connection from inside a transaction, which
+ * on a pool of one never comes. Pinned to one, so that shape hangs here instead of in production.
+ */
+describeDb("a routine's ending, written inside its own transaction", () => {
+  const database = createDatabase(databaseUrl ?? "", { max: 1 });
+  const ledger = createRunLedger(database);
+  const botId = `agent_turns_${randomUUID().slice(0, 8)}_one`;
+  let runId = "";
+
+  afterAll(async () => {
+    if (runId) {
+      await database
+        .delete(lafThreadRuns)
+        .where(eq(lafThreadRuns.runId, runId));
+    }
+    await database.delete(agents).where(eq(agents.id, botId));
+    await database.$client.close();
+  });
+
+  test("is written on a pool of one, with the turn's facts read beside it", async () => {
+    await database
+      .insert(agents)
+      .values({
+        id: botId,
+        name: botId,
+        type: "remote_ag_ui",
+        configuration: {},
+      });
+    runId = await ledger.begin({
+      agentId: botId,
+      userId: "turns-one",
+      origin: "routine",
+    });
+    await database.transaction((transaction) =>
+      ledger.settle(
+        runId,
+        { status: "done", awaiting: true, measure: measure() },
+        transaction,
+      ),
+    );
+    const [found] = await database
+      .select()
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, runId));
+    expect(found).toMatchObject({
+      status: "done",
+      ending: "owner",
+      endingCode: ENDING_CODES.approvalUnanswered,
+      approvalsAsked: 0,
+      modelRequests: 1,
+    });
+  }, 5_000);
+});

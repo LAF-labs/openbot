@@ -561,20 +561,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * new facts in their shapes; the calm part that comes back with the socket, the loading one, the
  * one that offers the reload; the typed text back in its box on the next page). Each floor rises
  * by exactly what was added.
- * RAISED 2026-09-26 with turn measurement (P3): twenty-six to `server` (the run meter's times,
+ * RAISED 2026-09-26 with turn measurement (P3): twenty-seven to `server` (the run meter's times,
  * steps, requests, retries, money, the person's tools and numbers-only output; every ending against
  * its facts and every code the one shape, a code taken out of a sentence; nine turns through the
  * real ledger into the turns section, with the owner's words planted beside them and found in
- * neither) and six to `root` (a retry said on the wire, twice, in agent-bot; eval:from-failures
- * rebuilding a saved answer field by field, its week's numbers, its skeletons, and a file that is
- * not an answer). Each floor rises by exactly what was added.
+ * neither; a routine's ending written inside its transaction on a pool of one) and six to `root`
+ * (a retry said on the wire, twice, in agent-bot; eval:from-failures rebuilding a saved answer
+ * field by field, its week's numbers, its skeletons, and a file that is not an answer). Each floor
+ * rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 2793, roots: ["server"] },
+  { name: "server", floor: 2794, roots: ["server"] },
   { name: "app", floor: 1381, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
   { name: "root", floor: 437, roots: ["tests", "agent-bot"] },

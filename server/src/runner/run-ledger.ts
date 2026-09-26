@@ -97,8 +97,13 @@ export type RunOutcome = {
  * already landed was what a restart then reported as interrupted — measured on 2026-09-10. An
  * ending written on the pool would commit on its own, before or after that transaction, and could
  * disagree with it either way.
+ *
+ * `execute` and `transaction` too, for the turn's facts an ending is read with (`settle`).
  */
-export type LedgerExecutor = Pick<Database, "update">;
+export type LedgerExecutor = Pick<
+  Database,
+  "update" | "execute" | "transaction"
+>;
 
 /** How much of the person's message a chat run's label keeps: enough to recognise, not to reread. */
 export const CHAT_LABEL_LENGTH = 40;
@@ -211,8 +216,11 @@ type TurnSoFar = {
   turnStartedAt: Date | null;
 };
 
+/** Where the turn's facts are read: a transaction, or a savepoint inside the caller's. */
+type Reader = Pick<Database, "execute">;
+
 async function turnSoFar(
-  database: Database,
+  database: Reader,
   runId: string,
 ): Promise<TurnSoFar | null> {
   const rows = await database.execute<{
@@ -246,7 +254,7 @@ async function turnSoFar(
  * approval's id, as `notifications/approval-metrics.ts` and the fleet's `approvals` pair them.
  */
 async function approvalsSince(
-  database: Database,
+  database: Reader,
   agentId: string,
   since: Date,
 ): Promise<{ asked: number; granted: number; open: number }> {
@@ -283,30 +291,36 @@ export function createRunLedger(database: Database): RunLedger {
     executor = database,
   ) => {
     /*
-     * THE TURN'S FACTS ARE READ ON THE POOL, and never allowed to cost the ending. A routine settles
-     * inside its own transaction (`routines/settlement.ts`), and what these read — the run's own
-     * row, opened on the pool at `begin`, and the trail — is committed already. A read that fails
-     * leaves the ending written without them: a lost measurement is a gap in a report, and a lost
-     * ending is a Bot the roster calls busy.
+     * THE TURN'S FACTS ARE READ ON THE CALLER'S EXECUTOR, IN A SAVEPOINT, and never allowed to cost
+     * the ending.
+     *
+     * Not on the pool: a routine settles inside its own transaction (`routines/settlement.ts`), and
+     * a read on a second connection from inside one is the deadlock `db/client.ts` warns of — every
+     * pooled connection in such a transaction, each waiting for another. In a savepoint, a read that
+     * fails is rolled back alone and the caller's transaction stays usable, so the ending is written
+     * without these facts: a lost measurement is a gap in a report, a lost ending is a Bot the
+     * roster calls busy. On the pool it is a transaction of two reads.
      */
-    let turn: TurnSoFar | null = null;
-    let approvals: { asked: number; granted: number; open: number } | null =
-      null;
+    let facts: {
+      turn: TurnSoFar | null;
+      approvals: { asked: number; granted: number; open: number } | null;
+    } = { turn: null, approvals: null };
     try {
-      turn = await turnSoFar(database, runId);
-      if (outcome.status !== "waiting" && turn?.agentId && turn.turnStartedAt) {
-        approvals = await approvalsSince(
-          database,
-          turn.agentId,
-          turn.turnStartedAt,
-        );
-      }
+      facts = await executor.transaction(async (reader) => {
+        const turn = await turnSoFar(reader, runId);
+        const approvals =
+          outcome.status !== "waiting" && turn?.agentId && turn.turnStartedAt
+            ? await approvalsSince(reader, turn.agentId, turn.turnStartedAt)
+            : null;
+        return { turn, approvals };
+      });
     } catch (error) {
       log.warn("run_measure_unread", {
         run: runId,
         reason: describeFailure(error),
       });
     }
+    const { turn, approvals } = facts;
     const { ending, code } = endingOf({
       status: outcome.status,
       error: outcome.error ?? null,
