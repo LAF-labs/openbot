@@ -9,13 +9,13 @@ import {
   withheldForDisplay,
 } from "@/components/channels/withheld-secrets";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
+import { stepLineOf } from "@/lib/copilot/step-labels";
 import { LazyMarkdown } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
   callPluginTool,
   type GrantedPlugins,
 } from "@/lib/plugins/queries";
-import { toolLabel } from "@/lib/plugins/tool-labels";
 
 type GrantedTool = GrantedPlugins["tools"][number];
 
@@ -163,8 +163,12 @@ function PluginTool({
 
   const [serverId, ...rest] = toolRef.split("/");
   const bareName = rest.join("/");
-  // The line under the approval card names the tool the way the card does, where it has a name.
-  const lineLabel = toolLabel(toolRef) ?? bareName;
+  /*
+   * The line names the tool in the owner's words, and the service by its title. It used to be the
+   * tool's own name and the service's id — "search_support_programs · public-data", measured on a
+   * shop owner's first task (2026-09-27). See `step-labels.ts`.
+   */
+  const line = stepLineOf(name);
 
   useFrontendTool({
     name,
@@ -218,7 +222,7 @@ function PluginTool({
           <ToolLine
             detail={outcome.reason}
             failed={!outcome.refused}
-            label={lineLabel}
+            label={line.label}
             refused={outcome.refused}
           />
         );
@@ -232,9 +236,9 @@ function PluginTool({
            */}
           <ApprovalRequest toolCallId={toolCallId} />
           <ToolLine
-            detail={serverId}
+            detail={line.detail}
             failed={result?.isError}
-            label={lineLabel}
+            label={line.label}
             running={status !== "complete"}
           >
             {result ? (

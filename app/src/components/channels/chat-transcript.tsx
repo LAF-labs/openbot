@@ -52,6 +52,7 @@ import {
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
 import { copyText } from "@/lib/clipboard";
+import { stepLineOf } from "@/lib/copilot/step-labels";
 import { turnNotice } from "@/lib/copilot/stopped-turn";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
@@ -1112,14 +1113,15 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
          * something the app does not know about looking like a Bot that did nothing — the same
          * failure `ToolRenderBoundary` exists to prevent, arriving by a different route.
          *
-         * The fallback is a plain tool line: what was called, shimmering until its result lands. It
+         * The fallback is a plain tool line: what was done, shimmering until its result lands. It
          * is the same line the computer and MCP tools draw, so an unrecognised call reads as an
-         * ordinary event rather than as damage.
+         * ordinary event rather than as damage. In the owner's words, never the tool's name: this
+         * line read "tool_search" to a shop owner on their first task (`step-labels.ts`).
          */}
         {drawn ?? (
           <ToolLine
+            {...stepLineOf(name)}
             kind={toolKindOf(name)}
-            label={name}
             running={result === undefined}
           />
         )}

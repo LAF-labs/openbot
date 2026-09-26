@@ -52,6 +52,9 @@ export function serviceLabel(server: string): string | undefined {
       return t("Notion");
     case "kakao-alimtalk":
       return t("KakaoTalk notifications");
+    // No row on the 연결 screen — nothing to connect — but a step line names it all the same.
+    case "public-data":
+      return t("Public tenders and support programmes");
     default:
       return undefined;
   }
