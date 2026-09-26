@@ -144,10 +144,15 @@ describe("the reload into a new build", () => {
     const { reloader, state, storage } = await page();
     const release = reloader.holdDraft("channel-1", "내일 매출 정리해 줘");
 
-    expect(await reloader.recoverFromStaleBuild()).toBe("reloading");
+    const decided = reloader.recoverFromStaleBuild();
+    /*
+     * The order measured in a real deploy: the route that failed is committed while the server is
+     * asked for its build, and the conversation's composer unmounts and lets go of its text.
+     */
+    release();
+    expect(await decided).toBe("reloading");
     expect(state.reloads).toBe(1);
     expect(reloader.staleBuildState()).toBe("reloading");
-    release();
 
     // The page that loads next: same tab, same storage, nothing else.
     reloader.configureBuildReload({

@@ -207,10 +207,10 @@ export function takeKeptDraft(channelId: string): string | null {
   }
 }
 
-function keepDrafts(storage: Storage) {
-  if (held.size === 0) return;
+function keepDrafts(storage: Storage, drafts: ReadonlyMap<string, string>) {
+  if (drafts.size === 0) return;
   try {
-    storage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(held)));
+    storage.setItem(DRAFTS_KEY, JSON.stringify(Object.fromEntries(drafts)));
   } catch {
     // Storage full or refused: the reload still goes; what was typed is the one thing lost.
   }
@@ -219,12 +219,20 @@ function keepDrafts(storage: Storage) {
 /** The page reloads because the person asked it to — no guard, and what is typed is kept. */
 export function reloadPage(): void {
   const storage = deps.storage();
-  if (storage) keepDrafts(storage);
+  if (storage) keepDrafts(storage, held);
   setState("reloading");
   deps.reload();
 }
 
-async function recover(): Promise<StaleBuildOutcome> {
+/*
+ * WHAT IS TYPED IS TAKEN WHEN THE FAILURE IS SEEN, NOT WHEN THE RELOAD GOES. Measured 2026-09-26 in
+ * a real deploy under an open tab: the route that failed was committed while the server was still
+ * being asked for its build, the conversation's composer unmounted and let go of its text, and the
+ * page reloaded with nothing kept. The copy below is made before anything is awaited.
+ */
+async function recover(
+  drafts: ReadonlyMap<string, string>,
+): Promise<StaleBuildOutcome> {
   const build = await deps.readBuild().catch(() => null);
   if (!build) {
     setState("unreachable");
@@ -246,7 +254,7 @@ async function recover(): Promise<StaleBuildOutcome> {
     setState("stale");
     return "stale";
   }
-  keepDrafts(storage);
+  keepDrafts(storage, drafts);
   setState("reloading");
   deps.reload();
   return "reloading";
@@ -261,7 +269,7 @@ export function recoverFromStaleBuild(): Promise<StaleBuildOutcome> {
   if (state === "stale") return Promise.resolve("stale");
   if (pending) return pending;
   setState("checking");
-  pending = recover().then((outcome) => {
+  pending = recover(new Map(held)).then((outcome) => {
     pending = null;
     return outcome;
   });
