@@ -572,6 +572,107 @@ describe("how a turn ends", () => {
     }
   });
 
+  /*
+   * THE BOT'S STREAM STOPPED IN THE MIDDLE OF A CALL (2026-09-27). Nobody answered the call, and
+   * filed as merely unanswered it went back to the model on every later request as `remember({})`
+   * — its arguments were half an object. It is the cut, so the Bot service leaves it out of every
+   * request after (`shared/stream-cut.ts`); the retry in place then runs as any turn does.
+   */
+  test("a call cut partway through its arguments is filed as the cut, and the retry answers", async () => {
+    const { threadId, channelId } = await aConversation();
+    const answer = "가게 정보를 적어 뒀어요.";
+    const bot = scriptedBot(answer);
+    const scripted = bot.runAgent;
+    bot.runAgent = async (input, subscriber) => {
+      if (bot.runs > 0) return scripted(input, subscriber);
+      bot.runs += 1;
+      bot.inputs.push([...bot.messages]);
+      const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
+      const id = `a-${randomUUID()}`;
+      emit(event("RUN_STARTED"));
+      emit(
+        event("TOOL_CALL_START", {
+          toolCallId: "half-1",
+          toolCallName: "remember",
+          parentMessageId: id,
+        }),
+      );
+      emit(
+        event("TOOL_CALL_ARGS", {
+          toolCallId: "half-1",
+          delta: '{"fact": "가게는',
+        }),
+      );
+      bot.messages.push({
+        id,
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "half-1",
+            type: "function",
+            function: { name: "remember", arguments: '{"fact": "가게는' },
+          },
+        ],
+      } as Message);
+      // And then nothing: no result, no RUN_ERROR, no RUN_FINISHED — the connection went.
+      return { result: undefined, newMessages: [] };
+    };
+    const executed: string[] = [];
+    const { engine } = engineWith(bot, async (name, _args) => {
+      executed.push(name);
+      return { ok: true };
+    });
+    const question = asked("춘천에서 한식당 해요. 기억해 둬.");
+    const first = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [question],
+      tools: null,
+    });
+    if (!first.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(first.turnId)) === "error");
+
+    const filed = await messagesFor(database, threadId);
+    const result = filed.find(
+      (message) =>
+        message.role === "tool" &&
+        (message as { toolCallId?: string }).toolCallId === "half-1",
+    );
+    expect(JSON.parse(String(result?.content))).toMatchObject({
+      ok: false,
+      code: "laf:provider_stream_cut",
+    });
+    // Half an argument list was never carried out.
+    expect(executed).toEqual([]);
+
+    // 다시 시도, in place: the question again under the id the store already holds.
+    const retry = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [question],
+      tools: null,
+    });
+    if (!retry.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(retry.turnId)) === "done");
+    const after = await messagesFor(database, threadId);
+    expect(after.filter((message) => message.id === question.id)).toHaveLength(
+      1,
+    );
+    expect(after.at(-1)).toMatchObject({ role: "assistant", content: answer });
+    // Only the cut's answer is filed for the half call; nothing marks it merely unanswered.
+    expect(
+      after.filter(
+        (message) =>
+          message.role === "tool" &&
+          (message as { toolCallId?: string }).toolCallId === "half-1",
+      ),
+    ).toHaveLength(1);
+  });
+
   test("what broke is logged and the window and the ledger are handed a fact, never its words", async () => {
     // Review M4: a Drizzle failure's message is its statement and its parameters.
     const { threadId, channelId } = await aConversation();

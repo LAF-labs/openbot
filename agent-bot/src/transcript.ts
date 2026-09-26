@@ -3,6 +3,7 @@ import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { jsonObjectOf } from "../../shared/json-object";
 import { textOf } from "../../shared/message-content";
+import { isStreamCutResult } from "../../shared/stream-cut";
 import { reasoningDetailsOf } from "./reasoning";
 import type { ProviderSession } from "./turn";
 
@@ -34,6 +35,13 @@ export type TranscriptMessage = RunAgentInput["messages"][number];
  * Takes the transcript rather than the run, because a run's transcript grows inside the run: a
  * bridge lookup answered here (`./deferral`) is appended after the conversation as it arrived,
  * and the next round converts the whole of it again.
+ *
+ * THE ONE THING LEFT OUT is a call the stream was cut in the middle of, and its answer
+ * (`shared/stream-cut.ts`). Its arguments never finished arriving, so it went back as a call with
+ * none — `remember({})`, on every request after the cut, in a conversation that then failed the
+ * same way on every 다시 시도 (2026-09-27). Left out, the next request reads as though the cut round
+ * had not begun, which is the truth about it: nothing it asked for was carried out. The thread
+ * keeps the call for the person.
  */
 export function toProviderMessages(
   transcript: readonly TranscriptMessage[],
@@ -41,6 +49,7 @@ export function toProviderMessages(
   model = "",
 ) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+  const cut = cutCallIds(transcript);
 
   for (const message of transcript) {
     if (message.role === "user") {
@@ -54,6 +63,7 @@ export function toProviderMessages(
       continue;
     }
     if (message.role === "tool") {
+      if (cut.has(message.toolCallId)) continue;
       messages.push({
         role: "tool",
         tool_call_id: message.toolCallId,
@@ -62,14 +72,19 @@ export function toProviderMessages(
       continue;
     }
     if (message.role === "assistant") {
-      const toolCalls = message.toolCalls?.map((call) => ({
-        id: call.id,
-        type: "function" as const,
-        function: {
-          name: call.function.name,
-          arguments: readableArguments(call.function.arguments),
-        },
-      }));
+      const toolCalls = message.toolCalls
+        ?.filter((call) => !cut.has(call.id))
+        .map((call) => ({
+          id: call.id,
+          type: "function" as const,
+          function: {
+            name: call.function.name,
+            arguments: readableArguments(call.function.arguments),
+          },
+        }));
+      // A turn that was nothing but calls the cut took is nothing, to the model.
+      const allCut = !!message.toolCalls?.length && !toolCalls?.length;
+      if (allCut && !textOf(message.content).trim()) continue;
       /*
        * A turn that called a tool goes back with the reasoning that led to it (`./reasoning`), in
        * OpenRouter's documented field. Not a field of the OpenAI SDK's type, which serialises the
@@ -89,6 +104,17 @@ export function toProviderMessages(
   }
 
   return messages;
+}
+
+/** The calls answered with the cut's fact: left out of every request, with their answers. */
+function cutCallIds(transcript: readonly TranscriptMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of transcript) {
+    if (message.role === "tool" && isStreamCutResult(message.content)) {
+      ids.add(message.toolCallId);
+    }
+  }
+  return ids;
 }
 
 /**
@@ -308,19 +334,56 @@ const hashed = (text: string) =>
   createHash("sha256").update(text, "utf8").digest("hex").slice(0, 32);
 
 /**
+ * How many times each conversation's stream has been cut, for the session it is routed under.
+ *
+ * STICKY ROUTING KEPT A CUT CONVERSATION ON THE ENDPOINT THAT CUT IT. The session below pins a
+ * conversation to one endpoint for its cache, and a retry after a cut is — once the cut calls are
+ * left out (`toProviderMessages`) — the very request that was cut, sent to the very endpoint that
+ * cut it. Measured 2026-09-27 (commit 7d87baf4): Sail Research cut one such request 3 times in 3,
+ * and the conversation failed the same way on every 다시 시도. Ignoring Sail fixed one endpoint;
+ * this fixes the class: a cut starts the conversation on a new session, so the provider chooses
+ * its endpoint afresh, and a second cut chooses again. One cache miss per cut is the price.
+ *
+ * IN MEMORY, by the deployment's decision (docs/laf/deployment-model.md): one agent-bot per VM. A
+ * restart forgets the count and puts the conversation back on its first session, which may be the
+ * endpoint that cut it — the state before this existed, and never worse. Bounded, because a
+ * process that lives for months sees many conversations; the oldest is forgotten first.
+ */
+const cutsByConversation = new Map<string, number>();
+const CUT_CONVERSATIONS_KEPT = 512;
+
+/** The conversation's stream was just cut: its next request is routed under a new session. */
+export function noteCut(threadId: string | undefined): void {
+  if (!threadId) return;
+  const cuts = (cutsByConversation.get(threadId) ?? 0) + 1;
+  cutsByConversation.delete(threadId);
+  cutsByConversation.set(threadId, cuts);
+  if (cutsByConversation.size > CUT_CONVERSATIONS_KEPT) {
+    const oldest = cutsByConversation.keys().next().value;
+    if (oldest !== undefined) cutsByConversation.delete(oldest);
+  }
+}
+
+/**
  * Who this conversation is, to the provider: the thread and the Bot, hashed.
  *
  * One session per Bot conversation, not per epoch: the tools and the static prompt at the head of
  * every request are the same across epochs, and a new epoch on the same provider still reads them
  * from its cache. Hashed although a thread id is an id this deployment mints and carries nothing
- * personal — what leaves for a third party is what could never be read back into anything.
+ * personal — what leaves for a third party is what could never be read back into anything. A new
+ * one after each cut: see {@link noteCut}.
  */
 export function providerSessionOf(
   input: RunAgentInput,
 ): ProviderSession | undefined {
   if (typeof input.threadId !== "string" || !input.threadId) return undefined;
+  const cuts = cutsByConversation.get(input.threadId) ?? 0;
   return {
-    id: hashed(`laf-conversation:${input.threadId}`),
+    id: hashed(
+      cuts === 0
+        ? `laf-conversation:${input.threadId}`
+        : `laf-conversation:${input.threadId}:cut-${cuts}`,
+    ),
     user: hashed(`laf-bot:${botIdOf(input)}`),
   };
 }

@@ -18,6 +18,8 @@
  */
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
+import { jsonObjectOf } from "../../../shared/json-object";
+import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import type { AgentActor } from "../agents/profile-types";
 import {
@@ -167,12 +169,24 @@ export function repairUnanswered(messages: readonly Message[]): Message[] {
         id: randomUUID(),
         role: "tool",
         toolCallId: call.id,
-        content: UNANSWERED_RESULT,
+        // Half a call — a process that died while it streamed — is the cut, as at a turn's end.
+        content: arrivedWhole(call.function.arguments)
+          ? UNANSWERED_RESULT
+          : streamCutResult(),
       } as Message);
       answered.add(call.id);
     }
   }
   return repaired;
+}
+
+/**
+ * Whether a call's arguments arrived whole: an object, or nothing at all — which is what a provider
+ * sends for a call that takes none, and so cannot be told from a cut right after the name.
+ */
+function arrivedWhole(raw: string | undefined): boolean {
+  const text = (raw ?? "").trim();
+  return text === "" || jsonObjectOf(text) !== null;
 }
 
 /** A message the window may hand over: the person's words, or a skill's instruction before them. */
@@ -480,6 +494,13 @@ export function createTurnEngine(options: TurnEngineOptions) {
      * A STOP LEAVES NO CALL UNANSWERED. The one in flight when the person pressed it — a click, a
      * wait for an answer — gets the stopped result the window's handler would have filed, so the
      * thread reads as a task the person stopped (이어서 하기) and not as one a closed window lost.
+     *
+     * A FAILURE LEAVES NO HALF A CALL. When the Bot's own stream stops mid-call — the service died,
+     * a proxy closed it — nobody answered the call, and its arguments are whatever had arrived:
+     * `{"fact": "가게는`. Filed as merely unanswered, every later request handed it back to the model
+     * as `remember({})` (`shared/stream-cut.ts`). Arguments that are not a whole object never
+     * finished arriving, so the call gets the cut's answer, which keeps it out of every later
+     * request. A call whose arguments did arrive is only unanswered, and says so.
      */
     if (target && (stopped || failure !== null)) {
       const answered = new Set(
@@ -498,7 +519,9 @@ export function createTurnEngine(options: TurnEngineOptions) {
             toolCallId: call.id,
             content: stopped
               ? outcomeContent(STOPPED_RESULT)
-              : UNANSWERED_RESULT,
+              : arrivedWhole(call.function.arguments)
+                ? UNANSWERED_RESULT
+                : streamCutResult(),
           };
           target.addMessage(result);
           filedAt.set(result.id, new Date().toISOString());

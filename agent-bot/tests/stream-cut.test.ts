@@ -377,3 +377,237 @@ describe("the same cut, through the real SDK", () => {
     ]);
   });
 });
+
+/*
+ * THE CONVERSATION AFTER A CUT MID-CALL.
+ *
+ * Measured 2026-09-27 on the 지원사업 walk: a provider cut the stream in the middle of a round of
+ * `remember` calls, and from then on every 다시 시도 failed the same way. Two things kept it broken,
+ * and each is modelled here: the half-written calls went back to the model on every later request
+ * (as `remember({})`, which it copied), and the retry went to the same endpoint under the same
+ * session — the request byte for byte, to the endpoint that had just cut it.
+ */
+describe("a conversation cut mid-call, asked again", () => {
+  const fakes: FakeProvider[] = [];
+  afterAll(() => {
+    for (const fake of fakes) fake.stop();
+  });
+
+  const REMEMBER_TOOL = {
+    name: "remember",
+    description: "사실 하나를 적어 둔다",
+    parameters: {
+      type: "object",
+      properties: { fact: { type: "string" } },
+    },
+  };
+
+  const cutAnswer = JSON.stringify({
+    ok: false,
+    code: "laf:provider_stream_cut",
+    reason: toolResultText("laf:provider_stream_cut"),
+  });
+
+  /** One run through the real SDK, against the fake. */
+  async function run(
+    fake: FakeProvider,
+    threadId: string,
+    runId: string,
+    messages: unknown[],
+  ) {
+    process.env.OPENAI_API_KEY ??= "test-key";
+    const { runAgent } = await import("../src/index");
+    const { createProvider } = await import("../src/provider");
+    const provider = createProvider(
+      new OpenAI({ apiKey: "test-key", baseURL: fake.url, maxRetries: 0 }),
+    );
+    const log = captureLog();
+    try {
+      const response = await runAgent(
+        {
+          ...INPUT,
+          threadId,
+          runId,
+          messages,
+          tools: [REMEMBER_TOOL],
+        } as never,
+        provider,
+      );
+      return eventsOf(await response.text());
+    } finally {
+      log.restore();
+    }
+  }
+
+  test("the retry leaves the half call out, goes to another endpoint, and answers", async () => {
+    const threadId = `cut-${crypto.randomUUID()}`;
+    /*
+     * An endpoint that cuts this conversation every time, as Sail Research did (3 of 3): whatever
+     * is routed under the session the first request came with is cut mid-arguments. Any other
+     * session reaches an endpoint that answers whole.
+     */
+    let cutter: string | undefined;
+    const fake = startFakeProvider((ordinal, request) => {
+      if (ordinal === 0) cutter = request.headers["x-session-id"];
+      if (request.headers["x-session-id"] === cutter) {
+        return {
+          kind: "stream",
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, id: "c1", function: { name: "remember" } },
+                ],
+              },
+            },
+            {
+              delta: {
+                tool_calls: [
+                  { index: 0, function: { arguments: '{"fact": "가게는' } },
+                ],
+              },
+            },
+          ],
+          end: "eof",
+        };
+      }
+      return {
+        kind: "stream",
+        choices: calls(
+          "c2",
+          "remember",
+          '{"fact": "가게는 춘천의 한식당이다."}',
+        ),
+      };
+    });
+    fakes.push(fake);
+
+    const asked = {
+      id: "u1",
+      role: "user",
+      content: "춘천에서 한식당 해요. 기억해 둬.",
+    };
+    const first = await run(fake, threadId, "r1", [asked]);
+    expect(first.at(-1)?.message).toBe("laf:provider_stream_cut");
+    const answered = first.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(answered?.content).toBe(cutAnswer);
+
+    // The thread as the server files it: the question, the half call, and the cut's answer.
+    const stored = [
+      asked,
+      {
+        id: "a1",
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "remember", arguments: '{"fact": "가게는' },
+          },
+        ],
+      },
+      { id: "tool_c1", role: "tool", toolCallId: "c1", content: cutAnswer },
+    ];
+    const retry = await run(fake, threadId, "r2", stored);
+
+    // The model is not shown the half call, under any id or in any shape.
+    const sent = fake.requests[1]?.body.messages as Array<
+      Record<string, unknown>
+    >;
+    expect(JSON.stringify(sent)).not.toContain('"c1"');
+    expect(sent.at(-1)).toMatchObject({ role: "user" });
+    // Routed afresh: the session it was cut under is not the one it is retried under.
+    expect(fake.requests[1]?.headers["x-session-id"]).toBeString();
+    expect(fake.requests[1]?.headers["x-session-id"]).not.toBe(cutter);
+    // And it answers: the call arrives whole, for the surface to carry out.
+    expect(kinds(retry).at(-1)).toBe("RUN_FINISHED");
+    const args = retry
+      .filter((event) => event.type === "TOOL_CALL_ARGS")
+      .map((event) => event.delta)
+      .join("");
+    expect(JSON.parse(args)).toEqual({ fact: "가게는 춘천의 한식당이다." });
+  });
+
+  test("only the cut calls are left out: the words, the other calls and a guard's answer stay", async () => {
+    const { toProviderMessages } = await import("../src/transcript");
+    const sent = toProviderMessages([
+      { id: "u1", role: "user", content: "기억해 둬" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "적어 둘게요.",
+        toolCalls: [
+          {
+            id: "whole",
+            type: "function",
+            function: { name: "remember", arguments: '{"fact": "하나"}' },
+          },
+          {
+            id: "half",
+            type: "function",
+            function: { name: "remember", arguments: '{"fact": "둘' },
+          },
+          {
+            id: "broken",
+            type: "function",
+            function: { name: "remember", arguments: '{"fact": ' },
+          },
+        ],
+      },
+      { id: "t1", role: "tool", toolCallId: "whole", content: "기억했다." },
+      { id: "t2", role: "tool", toolCallId: "half", content: cutAnswer },
+      {
+        id: "t3",
+        role: "tool",
+        toolCallId: "broken",
+        content: JSON.stringify({
+          ok: false,
+          code: "laf:tool_arguments_invalid",
+          reason: toolResultText("laf:tool_arguments_invalid"),
+        }),
+      },
+    ] as never);
+
+    expect(sent).toHaveLength(4);
+    expect(sent[1]).toMatchObject({
+      role: "assistant",
+      content: "적어 둘게요.",
+      tool_calls: [
+        { id: "whole", function: { arguments: '{"fact": "하나"}' } },
+        // A guard's answer is how the model learns what to fix, so its call stays — as `{}`.
+        { id: "broken", function: { arguments: "{}" } },
+      ],
+    });
+    expect(
+      sent.flatMap((message) =>
+        message.role === "tool" ? [message.tool_call_id] : [],
+      ),
+    ).toEqual(["whole", "broken"]);
+  });
+
+  test("a turn that was only cut calls is gone; an empty answer that never called stays", async () => {
+    const { toProviderMessages } = await import("../src/transcript");
+    const sent = toProviderMessages([
+      { id: "u1", role: "user", content: "기억해 둬" },
+      {
+        id: "a1",
+        role: "assistant",
+        toolCalls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "remember", arguments: "" },
+          },
+        ],
+      },
+      { id: "t1", role: "tool", toolCallId: "c1", content: cutAnswer },
+      { id: "u2", role: "user", content: "다시" },
+      { id: "a2", role: "assistant", content: "" },
+    ] as never);
+    expect(sent.map((message) => message.role)).toEqual([
+      "user",
+      "user",
+      "assistant",
+    ]);
+  });
+});

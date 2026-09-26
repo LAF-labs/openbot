@@ -3,6 +3,7 @@ import { EventEncoder } from "@ag-ui/encoder";
 import { answerNowText } from "../../shared/prompt/context.ko";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { textOf } from "../../shared/message-content";
+import { STREAM_CUT, streamCutResult } from "../../shared/stream-cut";
 import { describedToolNames } from "../../shared/tools/bridge";
 import { nowResultText } from "../../shared/tools/now";
 import {
@@ -38,6 +39,7 @@ import {
 } from "./provider";
 import {
   botIdOf,
+  noteCut,
   parseToolArguments,
   providerSessionOf,
   questionCostOf,
@@ -491,7 +493,8 @@ async function runRounds(context: RunContext): Promise<void> {
      * `error`, what `/failures` lists and what puts the sentence under the half on the person's
      * screen, where RUN_FINISHED would have delivered it as the whole. A call caught partway
      * through its arguments is closed and answered with the same fact, so the thread holds no
-     * open call and no surface executes half an argument list.
+     * open call and no surface executes half an argument list — and no later request hands it back
+     * to the model (`toProviderMessages`, `shared/stream-cut.ts`).
      */
     if (turn.cut) {
       for (const call of toolCalls.values()) {
@@ -501,7 +504,7 @@ async function runRounds(context: RunContext): Promise<void> {
           type: "TOOL_CALL_RESULT",
           messageId: `tool_${call.id}`,
           toolCallId: call.id,
-          content: factResult("laf:provider_stream_cut"),
+          content: streamCutResult(),
           role: "tool",
         } as BaseEvent);
       }
@@ -513,9 +516,11 @@ async function runRounds(context: RunContext): Promise<void> {
         chars: text.length,
         ms: Date.now() - context.startedAt,
       });
+      // The next request of this conversation goes to an endpoint chosen afresh. See `noteCut`.
+      noteCut(input.threadId);
       emit({
         type: "RUN_ERROR",
-        message: "laf:provider_stream_cut",
+        message: STREAM_CUT,
       } as BaseEvent);
       return;
     }

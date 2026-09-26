@@ -77,17 +77,20 @@ const sleep = (ms: number) =>
 
 /**
  * Start one. `script` is either a list, one behaviour per request in order (the last one repeats),
- * or a function of the request's ordinal.
+ * or a function of the request's ordinal — and of the request itself, for an endpoint whose answer
+ * depends on what it was sent: the session a conversation is routed under, say.
  */
 export function startFakeProvider(
-  script: Behaviour[] | ((ordinal: number) => Behaviour),
+  script:
+    | Behaviour[]
+    | ((ordinal: number, request: RecordedRequest) => Behaviour),
 ): FakeProvider {
   const startedAt = Date.now();
   const now = () => Date.now() - startedAt;
   const requests: RecordedRequest[] = [];
-  const behaviourOf = (ordinal: number): Behaviour =>
+  const behaviourOf = (ordinal: number, request: RecordedRequest): Behaviour =>
     typeof script === "function"
-      ? script(ordinal)
+      ? script(ordinal, request)
       : (script[Math.min(ordinal, script.length - 1)] ?? {
           kind: "status",
           status: 500,
@@ -153,7 +156,7 @@ export function startFakeProvider(
           },
         );
       };
-      return respond(behaviourOf(requests.length - 1));
+      return respond(behaviourOf(requests.length - 1, record));
     },
   });
 
