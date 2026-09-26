@@ -90,6 +90,27 @@ describe("the webhook door", () => {
     }
   });
 
+  test("a webhook that answers with an error did not take the notification", async () => {
+    let hits = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => {
+        hits += 1;
+        return new Response("down", { status: 500 });
+      },
+    });
+    try {
+      const adapter = createWebhookAdapter(
+        `http://127.0.0.1:${server.port}/hook`,
+      );
+      // Reached, and refused: the row must not say `deliveredVia: ["webhook"]` about it.
+      expect(await adapter.deliver(RECORD)).toBe(false);
+      expect(hits).toBe(1);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("a dead webhook reports that it did not deliver, and does not throw", async () => {
     const adapter = createWebhookAdapter("http://127.0.0.1:1/hook");
     expect(await adapter.deliver(RECORD)).toBe(false);

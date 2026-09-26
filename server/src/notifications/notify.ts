@@ -19,6 +19,7 @@
  */
 import type { ApprovalRegistry, AskSubject } from "../computer/approvals";
 import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import type {
   NotificationAdapter,
   NotificationKind,
@@ -149,10 +150,12 @@ export function withApprovalNotifications(
  * say which row it was reacting to — the one thing a receiver could not do before, because there
  * was no row.
  *
- * It reports success on any answer at all, including a 500. What this door can honestly claim is
- * that the frame left this process and something took it; whether the thing on the other end did
- * anything useful with it is not knowable from here, and a door that guessed would be recording a
- * guess in a column people will read as fact.
+ * It reports success on a 2xx and on nothing else. It used to report success on any answer at all,
+ * a 500 included, on the argument that the frame had left this process — but a 500 is not silence
+ * about what the receiver did, it is the receiver saying it did not take it, and the row then said
+ * `deliveredVia: ["webhook"]` about a buzz nobody got (review 2026-09-26). What happened AFTER a 2xx
+ * is still not knowable from here and is not claimed; the fleet and 알림톡 doors already read the
+ * answer the same way.
  */
 export function createWebhookAdapter(webhookUrl: string): NotificationAdapter {
   return {
@@ -179,13 +182,17 @@ async function postWebhook(
   body: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    await fetch(webhookUrl, {
+    const response = await fetch(webhookUrl, {
       method: "POST",
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    return true;
+    if (!response.ok) {
+      // The status, never the body: a receiver's error page is somebody else's words.
+      log.warn("webhook_refused", { status: response.status });
+    }
+    return response.ok;
   } catch (error) {
     console.error("[notify] approval buzz failed:", describeFailure(error));
     return false;
