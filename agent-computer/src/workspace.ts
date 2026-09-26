@@ -20,16 +20,17 @@
  * A factory taking its root as an argument rather than reading the environment, so the confinement
  * can be tested against a temporary directory instead of being taken on trust.
  */
+import { constants } from "node:fs";
 import {
   lstat,
   mkdir,
+  open,
   readdir,
   readFile,
   realpath,
   rm,
   stat,
   unlink,
-  writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -360,10 +361,35 @@ export function createWorkspace(
 
       const full = await resolvePath(requested, true);
       await mkdir(dirname(full), { recursive: true });
-      await writeFile(full, contents, {
-        encoding: "utf8",
-        flag: options.append ? "a" : "w",
+      /*
+       * NOT THROUGH A LINK AT THE NAME ITSELF. `resolvePath` proves the folder a write lands in is
+       * inside the workspace, and hands back the name as text — and `writeFile` follows a link at
+       * that name wherever it points. Measured 2026-09-26: `innocent.txt` linked to a file outside,
+       * a write to it overwrote the file outside, while a read of the same link was refused. Nothing
+       * puts a link here today; the third layer at the top of this file says a link is not a way out,
+       * and this is where that was not true. `O_NOFOLLOW` asks the kernel, at the moment of opening,
+       * rather than a look beforehand that a link could be put in front of.
+       */
+      const handle = await open(
+        full,
+        constants.O_WRONLY |
+          constants.O_CREAT |
+          constants.O_NOFOLLOW |
+          (options.append ? constants.O_APPEND : constants.O_TRUNC),
+        0o666,
+      ).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ELOOP") {
+          throw new WorkspacePathError(
+            `${requested} is a link, and a write does not follow one.`,
+          );
+        }
+        throw error;
       });
+      try {
+        await handle.writeFile(contents, "utf8");
+      } finally {
+        await handle.close();
+      }
       return { path: requested, bytes, appended: options.append === true };
     },
 
@@ -449,7 +475,8 @@ export function createWorkspace(
       const extension = dot > 0 ? name.slice(dot) : "";
       let chosen = name;
       for (let attempt = 2; attempt < 100; attempt += 1) {
-        const taken = await stat(resolve(directory, chosen)).catch(() => null);
+        // `lstat`: a link is a name that is taken, wherever it points — or whether it points at all.
+        const taken = await lstat(resolve(directory, chosen)).catch(() => null);
         if (!taken) break;
         chosen = `${stem} (${attempt})${extension}`;
       }
@@ -458,6 +485,16 @@ export function createWorkspace(
       // that stays true if it ever is not.
       const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
       const full = await resolvePath(relativePath, true);
+      /*
+       * And the name must still be no link when Playwright writes it, which it does with a copy of
+       * its own that follows one (see `write`). A name the loop above found free and a link since is
+       * not a thing anything here does; refused rather than trusted.
+       */
+      if ((await lstat(full).catch(() => null))?.isSymbolicLink()) {
+        throw new WorkspacePathError(
+          `${relativePath} is a link, and a download does not follow one.`,
+        );
+      }
       await save(full);
 
       const written = await stat(full).catch(() => null);

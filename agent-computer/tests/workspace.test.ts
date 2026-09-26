@@ -254,6 +254,58 @@ describe("escaping the workspace", () => {
     );
   });
 
+  test("refuses to write THROUGH a symlinked FILE that points outside, appending or not", async () => {
+    // The name itself is the link: its folder is the workspace, so the folder check passes, and
+    // `writeFile` followed the link out. Measured 2026-09-26: the file outside was overwritten.
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    const ws = workspace();
+    await expect(ws.write("innocent.txt", "owned")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    await expect(
+      ws.write("innocent.txt", "owned", { append: true }),
+    ).rejects.toThrow(WorkspacePathError);
+    expect(await Bun.file(join(outside, "secret.txt")).text()).toBe(
+      "a private key",
+    );
+  });
+
+  test("refuses a write through a link that points nowhere yet, which would create the file outside", async () => {
+    await symlink(join(outside, "planted.txt"), join(root, "later.txt"));
+    await expect(workspace().write("later.txt", "owned")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    expect(await Bun.file(join(outside, "planted.txt")).exists()).toBe(false);
+  });
+
+  test("a download is never saved through a link at the name it would take", async () => {
+    // A dangling link where the download's name would go read as a free name (`stat` follows it), and
+    // `saveAs` would have written through it to wherever it pointed.
+    await mkdir(join(root, "downloads"), { recursive: true });
+    await symlink(
+      join(outside, "download-landed.pdf"),
+      join(root, "downloads", "invoice.pdf"),
+    );
+    const saved = await workspace().saveDownload("invoice.pdf", async (to) => {
+      await writeFile(to, "%PDF", "utf8");
+    });
+    expect(saved.path).toBe("downloads/invoice (2).pdf");
+    expect(await Bun.file(join(outside, "download-landed.pdf")).exists()).toBe(
+      false,
+    );
+  });
+
+  test("a planted link is still removed as a link, never reaching what it points at", async () => {
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    expect(await workspace().remove("innocent.txt")).toEqual({
+      path: "innocent.txt",
+      removed: true,
+    });
+    expect(await Bun.file(join(outside, "secret.txt")).text()).toBe(
+      "a private key",
+    );
+  });
+
   test("a symlink pointing back INSIDE the workspace still works", async () => {
     // The guard must confine, not merely forbid symlinks: refusing every link would be easier and
     // would break legitimate use.
