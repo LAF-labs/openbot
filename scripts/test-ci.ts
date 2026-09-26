@@ -623,6 +623,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sentence, which it no longer does) and fourteen to `root` (the briefing eval's judge failing a
  * padded, a repeated, another region's, an invented and a cursorless Monday, a Tuesday that says
  * 지원사업 or heads an empty inbox, and the scenarios sending the chip's own instruction).
+ * RAISED 2026-09-27 with the first-hour walk: five to `app` (a routine run's answer drawn as prose
+ * and a failed run's sentence left as it is; the Notebook's meter counting what is written; a
+ * briefing made without a place still saying the weather needs one; 지금 실행 in words on its
+ * button). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -630,7 +634,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3034, roots: ["server"] },
-  { name: "app", floor: 1449, roots: ["app"] },
+  { name: "app", floor: 1454, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 518, roots: ["tests", "agent-bot"] },
 ] as const;
