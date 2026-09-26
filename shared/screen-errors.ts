@@ -14,7 +14,11 @@
  * query. What kind of error, as the name of its constructor. A fingerprint: a digest of where it was
  * thrown, so two reports of one failure can be told from two failures. The components it was
  * drawn inside, by name, innermost first — which a fingerprint cannot say. The build the page knows
- * it is running, and whether it is running in the desktop app or a browser.
+ * it is running, and whether it is running in the desktop app or a browser. And since P1
+ * (2026-09-26) three facts ABOUT the error rather than from it: its class — an ordinary failure, or
+ * code a page from before a deploy could not load — its `name` when that has a constructor's shape,
+ * and the length of its message, a number. A dropped connection is not reported at all: the
+ * connection notice already says it, and it is not the screen's failure.
  *
  * NEVER THE MESSAGE. An error's message is written by whatever threw, and it quotes what it was
  * handed: a URL that would not parse is quoted whole, query and all; JSON that would not parse is
@@ -155,10 +159,31 @@ export const BUILD_REVISION = /^[0-9a-f]{7,40}$/;
 /** The largest body a report can honestly be, with room to spare. The server refuses anything past it. */
 export const SCREEN_ERROR_MAX_BYTES = 2_048;
 
+/**
+ * What sort of failure a report is about, as the page classified it before sending.
+ *
+ * `failure` is code that threw. `chunk` is code the page could not load — a page from before a
+ * deploy that reloaded once for the new build and still could not (`app/src/lib/build-reload.ts`),
+ * which is a broken build and worth knowing about. A dropped connection is the third class the page
+ * knows, and it is never sent, so it is not on this list.
+ */
+export const SCREEN_ERROR_CLASSES = ["failure", "chunk"] as const;
+
+export type ScreenErrorClass = (typeof SCREEN_ERROR_CLASSES)[number];
+
+/** The longest message length a report states; past it, it says this. A number, never the text. */
+export const SCREEN_ERROR_MAX_LENGTH = 65_535;
+
 export type ScreenErrorReport = {
   section: ScreenSection;
   route?: ScreenRoute;
   kind: string;
+  /** Absent from a report of a client from before P1. */
+  class?: ScreenErrorClass;
+  /** The error's own `name`, when it has a constructor's shape (`ERROR_KIND`). */
+  name?: string;
+  /** How many characters its message had. Never the message. */
+  length?: number;
   fingerprint: string;
   /** Innermost first. Absent where React had no component stack: outside drawing, or none fitted. */
   components?: string[];
@@ -170,6 +195,7 @@ export type ScreenErrorReport = {
 const sections: ReadonlySet<string> = new Set(SCREEN_SECTIONS);
 const routes: ReadonlySet<string> = new Set(SCREEN_ROUTES);
 const surfaces: ReadonlySet<string> = new Set(SCREEN_SURFACES);
+const classes: ReadonlySet<string> = new Set(SCREEN_ERROR_CLASSES);
 
 export const isScreenSection = (value: unknown): value is ScreenSection =>
   typeof value === "string" && sections.has(value);
@@ -188,6 +214,18 @@ const FACTS: Record<
   section: { required: true, fits: isScreenSection },
   route: { required: false, fits: isScreenRoute },
   kind: { required: true, fits: (value) => fits(ERROR_KIND, value) },
+  class: {
+    required: false,
+    fits: (value) => typeof value === "string" && classes.has(value),
+  },
+  name: { required: false, fits: (value) => fits(ERROR_KIND, value) },
+  length: {
+    required: false,
+    fits: (value) =>
+      Number.isInteger(value) &&
+      (value as number) >= 0 &&
+      (value as number) <= SCREEN_ERROR_MAX_LENGTH,
+  },
   fingerprint: { required: true, fits: (value) => fits(FINGERPRINT, value) },
   components: {
     required: false,

@@ -19,12 +19,22 @@ import {
   createRef,
   type ErrorInfo,
   type ReactNode,
+  type Ref,
   useContext,
   useSyncExternalStore,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { reloadPage, useStaleBuildState } from "@/lib/build-reload";
+import {
+  SOCKET_RECONNECTED,
+  socketState,
+} from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
-import { reportScreenError } from "@/lib/support/screen-errors";
+import {
+  classifyError,
+  type ErrorClass,
+  handleScreenError,
+} from "@/lib/support/screen-errors";
 import { cn } from "@/lib/utils";
 
 /**
@@ -185,20 +195,119 @@ type BoundaryProps = {
   queryClient: QueryClient | undefined;
 };
 
-type BoundaryState = { hasFailed: boolean; isRetrying: boolean };
+const LAYOUTS = {
+  line: "flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2",
+  block: "flex flex-col items-center justify-center gap-3 p-6 text-center",
+} as const;
+
+/**
+ * A FAILURE THAT IS NOT THE SCREEN'S, SAID CALMLY (P1, G7).
+ *
+ * `classifyError` (`lib/support/screen-errors.ts`) sorts what was caught. A dropped connection and a
+ * page from before a deploy are not a part of the screen breaking, and an error card that said so
+ * was the app blaming itself for a server that was upgrading. So each gets a quiet sentence in a
+ * status line, not an alert:
+ *
+ * - code being fetched for a new build: 새 버전을 불러오는 중, and nothing to press — the page is
+ *   about to reload itself (`lib/build-reload.ts`);
+ * - a new build that still could not be loaded after its one reload: a button that reloads the page,
+ *   which the person may press as often as they like;
+ * - a server that cannot be reached: 다시 시도, which is also pressed for them the moment the account's
+ *   socket comes back.
+ *
+ * Also the router's own error screen, drawn full-screen (`router.tsx`).
+ */
+export function CalmFailure({
+  errorClass,
+  isRetrying,
+  onRetry,
+  retryRef,
+  className,
+  section,
+}: {
+  errorClass: Exclude<ErrorClass, "failure">;
+  isRetrying: boolean;
+  onRetry: () => void;
+  retryRef?: Ref<HTMLButtonElement>;
+  className: string;
+  section?: ScreenSection;
+}) {
+  const build = useStaleBuildState();
+  const isUpdating =
+    errorClass === "chunk" && build !== "stale" && build !== "unreachable";
+  const isStale = errorClass === "chunk" && build === "stale";
+  const sentence = isUpdating
+    ? t("Loading the new version…")
+    : isStale
+      ? t("This part could not be loaded. Reloading the page usually fixes it.")
+      : t(
+          "The server cannot be reached right now. This part comes back once the connection does.",
+        );
+  return (
+    <div
+      className={className}
+      data-failed-section={section}
+      data-failure-class={errorClass}
+    >
+      <p className="text-pretty text-muted-foreground text-sm" role="status">
+        {sentence}
+      </p>
+      {isUpdating ? null : (
+        <Button
+          disabled={isRetrying}
+          onClick={isStale ? reloadPage : onRetry}
+          ref={retryRef}
+          size="sm"
+          variant="outline"
+        >
+          {isStale
+            ? t("Reload page")
+            : isRetrying
+              ? t("Reloading…")
+              : t("Try again")}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+type BoundaryState = {
+  hasFailed: boolean;
+  isRetrying: boolean;
+  errorClass: ErrorClass;
+};
 
 class Boundary extends Component<BoundaryProps, BoundaryState> {
-  state: BoundaryState = { hasFailed: false, isRetrying: false };
+  state: BoundaryState = {
+    hasFailed: false,
+    isRetrying: false,
+    errorClass: "failure",
+  };
 
   private readonly retryButton = createRef<HTMLButtonElement>();
 
-  static getDerivedStateFromError(): Partial<BoundaryState> {
-    return { hasFailed: true };
+  static getDerivedStateFromError(error: unknown): Partial<BoundaryState> {
+    return { hasFailed: true, errorClass: classifyError(error) };
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
-    void reportScreenError(this.props.section, error, info.componentStack);
+    void handleScreenError(this.props.section, error, info.componentStack);
   }
+
+  componentDidMount() {
+    socketState.addEventListener(SOCKET_RECONNECTED, this.handleReconnected);
+  }
+
+  componentWillUnmount() {
+    socketState.removeEventListener(SOCKET_RECONNECTED, this.handleReconnected);
+  }
+
+  /** The connection is back: a part that was waiting on it tries again without being asked to. */
+  handleReconnected = () => {
+    if (this.state.hasFailed && this.state.errorClass !== "failure") {
+      void this.handleRetry();
+    }
+  };
 
   componentDidUpdate(previous: BoundaryProps, previousState: BoundaryState) {
     /*
@@ -242,6 +351,7 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
 
   render() {
     const { children, className, layout, section } = this.props;
+    const { errorClass } = this.state;
     if (!this.state.hasFailed) {
       return (
         <InsideSection.Provider value={true}>
@@ -250,15 +360,23 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
         </InsideSection.Provider>
       );
     }
+    if (errorClass !== "failure") {
+      return (
+        <CalmFailure
+          className={cn(LAYOUTS[layout], className)}
+          errorClass={errorClass}
+          isRetrying={this.state.isRetrying}
+          onRetry={this.handleRetry}
+          retryRef={this.retryButton}
+          section={section}
+        />
+      );
+    }
     return (
       <div
-        className={cn(
-          layout === "line"
-            ? "flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2"
-            : "flex flex-col items-center justify-center gap-3 p-6 text-center",
-          className,
-        )}
+        className={cn(LAYOUTS[layout], className)}
         data-failed-section={section}
+        data-failure-class={errorClass}
       >
         <p className="text-pretty text-muted-foreground text-sm" role="alert">
           {t("This part of the screen ran into an unexpected problem.")}

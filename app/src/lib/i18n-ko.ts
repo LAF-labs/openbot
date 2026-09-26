@@ -2730,4 +2730,10 @@ export const ko: Record<string, string> = {
   // connection resilience (P1): the socket's heartbeat, a page from before a deploy, a part that failed
   "The server has not answered for a while. Still reconnecting…":
     "서버가 한동안 답이 없어요 — 계속 다시 잇는 중",
+  "Loading the new version…": "새 버전을 불러오는 중…",
+  "This part could not be loaded. Reloading the page usually fixes it.":
+    "이 부분을 불러오지 못했어요. 페이지를 다시 불러오면 대개 해결돼요.",
+  "Reload page": "페이지 다시 불러오기",
+  "The server cannot be reached right now. This part comes back once the connection does.":
+    "지금 서버에 닿지 않아요. 연결이 돌아오면 이 부분도 돌아와요.",
 };

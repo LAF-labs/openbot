@@ -30,10 +30,17 @@ import {
   ERROR_KIND,
   isScreenRoute,
   SCREEN_ERROR_MAX_COMPONENTS,
+  SCREEN_ERROR_MAX_LENGTH,
+  type ScreenErrorClass,
   type ScreenErrorReport,
   type ScreenSection,
   type ScreenSurface,
 } from "@shared/screen-errors";
+import {
+  isChunkLoadError,
+  recoverFromStaleBuild,
+  staleBuildState,
+} from "@/lib/build-reload";
 
 /** The frames that decide where an error came from. Past these it is the framework calling itself. */
 const FRAMES = 5;
@@ -72,6 +79,92 @@ export function errorKind(error: unknown): string {
     // A proxy that throws on being looked at is still a thrown object.
   }
   return typeof error === "function" ? "function" : "Object";
+}
+
+/**
+ * WHAT SORT OF FAILURE THIS IS, DECIDED ON THE PAGE AND NEVER BY SENDING WHAT IT SAID (P1, G7).
+ *
+ * Every failure used to be drawn and reported alike: a server that went away for an upgrade drew
+ * "this part ran into an unexpected problem" and filed a report, as a bug would. Three sorts now:
+ *
+ * - `disconnect`: a request that never reached the server, or that its front door answered for it
+ *   (`laf:api_unreachable`, a 502–504). Said calmly, retried when the socket comes back, and never
+ *   reported — the connection notice already says it, and it is not the screen's failure.
+ * - `chunk`: code the page could not load, which after a deploy is the page being out of date
+ *   (`lib/build-reload.ts`). While a reload for it is being decided or is under way, WHATEVER was
+ *   caught is this — Vite's failure was stopped at the door, and what reaches a boundary is the code
+ *   that expected the module failing without it. Reported only when the reload was already spent.
+ * - `failure`: everything else, as before.
+ *
+ * The message is READ here, to recognise the browsers' own sentences for a failed fetch and a failed
+ * import; it goes nowhere. What a report carries is the class, the name and the message's length.
+ */
+export type ErrorClass = ScreenErrorClass | "disconnect";
+
+/** A fetch that never reached anybody, in Chromium's, WebKit's and Gecko's words. */
+const NETWORK_FAILURES = [
+  "Failed to fetch",
+  "Load failed",
+  "NetworkError when attempting to fetch resource",
+  "Network request failed",
+];
+
+/** The statuses a front door answers with when the server behind it is gone. */
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+function isNetworkFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { name, message, code, status } = error as {
+    name?: unknown;
+    message?: unknown;
+    code?: unknown;
+    status?: unknown;
+  };
+  if (name === "NetworkError") return true;
+  // A refused request read into facts (`lib/refusals.ts`): its front door spoke for a missing server.
+  if (code === "laf:api_unreachable") return true;
+  if (
+    name === "RequestRefusedError" &&
+    typeof status === "number" &&
+    GATEWAY_STATUSES.has(status)
+  ) {
+    return true;
+  }
+  return (
+    name === "TypeError" &&
+    typeof message === "string" &&
+    NETWORK_FAILURES.some((failure) => message.startsWith(failure))
+  );
+}
+
+export function classifyError(error: unknown): ErrorClass {
+  if (staleBuildState() !== "idle" || isChunkLoadError(error)) return "chunk";
+  if (isNetworkFailure(error)) return "disconnect";
+  return "failure";
+}
+
+/** The error's own `name`, when it is shaped like a constructor's; left out otherwise. */
+function nameOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  try {
+    const { name } = error as { name?: unknown };
+    return typeof name === "string" && ERROR_KIND.test(name) ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How long the error's message is. The number only: the text never leaves this function. */
+function messageLengthOf(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  try {
+    const { message } = error as { message?: unknown };
+    return typeof message === "string"
+      ? Math.min(message.length, SCREEN_ERROR_MAX_LENGTH)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** `stack` without the header V8 puts above the frames, which is the name and the message. */
@@ -199,8 +292,11 @@ export function screenErrorReport(
   facts: ScreenFacts,
   /** React's `componentStack`, where the failure was caught while drawing. */
   componentStack?: string | null,
+  errorClass: ScreenErrorClass = "failure",
 ): ScreenErrorReport {
   const kind = errorKind(error);
+  const name = nameOf(error);
+  const length = messageLengthOf(error);
   const version = facts.build?.version;
   const revision = facts.build?.revision;
   const hasBuild = typeof version === "string" && BUILD_VERSION.test(version);
@@ -209,6 +305,9 @@ export function screenErrorReport(
     section,
     ...(isScreenRoute(facts.route) ? { route: facts.route } : {}),
     kind,
+    class: errorClass,
+    ...(name === undefined ? {} : { name }),
+    ...(length === undefined ? {} : { length }),
     fingerprint: fingerprintOf(kind, stackLocations(error)),
     ...(components.length > 0 ? { components } : {}),
     ...(hasBuild ? { build: version } : {}),
@@ -275,6 +374,7 @@ export async function reportScreenError(
   section: ScreenSection,
   error: unknown,
   componentStack?: string | null,
+  errorClass: ScreenErrorClass = "failure",
 ): Promise<ScreenErrorReport | null> {
   const current = reporting;
   if (!current) return null;
@@ -293,12 +393,32 @@ export async function reportScreenError(
       error,
       { route, build, surface },
       componentStack,
+      errorClass,
     );
     await (current.send ?? sendScreenErrorReport)(report);
     return report;
   } catch {
     return null;
   }
+}
+
+/**
+ * A caught failure, handled by its class (`classifyError`): a dropped connection is not reported,
+ * code that could not be loaded is reloaded for and reported only when that was already tried, and
+ * everything else is reported as it always was. The one entry point for every place that catches.
+ */
+export async function handleScreenError(
+  section: ScreenSection,
+  error: unknown,
+  componentStack?: string | null,
+): Promise<ScreenErrorReport | null> {
+  const errorClass = classifyError(error);
+  if (errorClass === "disconnect") return null;
+  if (errorClass === "chunk") {
+    const outcome = await recoverFromStaleBuild();
+    if (outcome !== "stale") return null;
+  }
+  return reportScreenError(section, error, componentStack, errorClass);
 }
 
 /** A deliberate cancel — the person pressed stop, a screen was left — is not a failure. */
@@ -317,11 +437,11 @@ const isAbort = (reason: unknown): boolean =>
 export function listenForScreenErrors(target: Window = window): () => void {
   const handleError = (event: ErrorEvent) => {
     if (event.error === null || event.error === undefined) return;
-    void reportScreenError("window_error", event.error);
+    void handleScreenError("window_error", event.error);
   };
   const handleRejection = (event: PromiseRejectionEvent) => {
     if (isAbort(event.reason)) return;
-    void reportScreenError("unhandled_rejection", event.reason);
+    void handleScreenError("unhandled_rejection", event.reason);
   };
   target.addEventListener("error", handleError);
   target.addEventListener("unhandledrejection", handleRejection);

@@ -135,9 +135,12 @@ describe("the body the app would post", () => {
     expect(Object.keys(parsed).sort()).toEqual(
       [
         "build",
+        "class",
         "components",
         "fingerprint",
         "kind",
+        "length",
+        "name",
         "revision",
         "route",
         "section",
@@ -148,6 +151,10 @@ describe("the body the app would post", () => {
       section: "transcript",
       route: "/channel/$channelId",
       kind: "TypeError",
+      // What it is, its own name and how long its message was — the length, and never the text.
+      class: "failure",
+      name: "TypeError",
+      length: error.message.length,
       build: "v0.5.1",
       revision: "eeea9853c2d1",
       surface: "shell",

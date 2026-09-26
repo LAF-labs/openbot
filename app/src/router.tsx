@@ -1,10 +1,13 @@
 import { createRouter, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { useIsInsideSection } from "./components/layout/section-boundary";
+import {
+  CalmFailure,
+  useIsInsideSection,
+} from "./components/layout/section-boundary";
 import { Button } from "./components/ui/button";
 import { PageSkeleton } from "./components/ui/skeleton";
 import { t } from "./lib/i18n";
-import { reportScreenError } from "./lib/support/screen-errors";
+import { classifyError, handleScreenError } from "./lib/support/screen-errors";
 import type { RouterContext } from "./router-context";
 import { routeTree } from "./routeTree.gen";
 
@@ -31,8 +34,25 @@ function AppErrorScreen({
    * of its own — and it replaced a whole route, so it is reported like any section that failed.
    */
   useEffect(() => {
-    void reportScreenError("route_screen", error, componentStack);
+    void handleScreenError("route_screen", error, componentStack);
   }, [error, componentStack]);
+
+  /*
+   * A DROPPED CONNECTION OR A PAGE FROM BEFORE A DEPLOY IS NOT "SOMETHING WENT WRONG" (P1, G7): the
+   * calm line a section would draw, across the whole screen. Only classified while drawing; the
+   * reload, and any report, are the effect's above.
+   */
+  const errorClass = classifyError(error);
+  if (errorClass !== "failure") {
+    return (
+      <CalmFailure
+        className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-8 text-center"
+        errorClass={errorClass}
+        isRetrying={false}
+        onRetry={reset}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background p-8 text-center">
