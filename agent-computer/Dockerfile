@@ -10,9 +10,9 @@
 # Measured 2026-09-26 on arm64: 4.08 GB on disk (1.02 GB pulled), 1.2 GB of it browsers that never
 # started. The final stage is plain Ubuntu of the same release the Playwright image is built on,
 # given the headless shell and the libraries Playwright's own `install-deps` names for Chromium.
-FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS browsers
+FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27 AS browsers
 
-FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+FROM ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ARG DEBIAN_FRONTEND=noninteractive
