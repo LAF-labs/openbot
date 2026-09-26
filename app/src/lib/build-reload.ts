@@ -266,7 +266,12 @@ async function recover(
  */
 export function recoverFromStaleBuild(): Promise<StaleBuildOutcome> {
   if (state === "reloading") return Promise.resolve("reloading");
-  if (state === "stale") return Promise.resolve("stale");
+  /*
+   * A page already `stale` asks again rather than answering from memory: the guard is per build, so
+   * the same build stays stale without a second reload, and a LATER deploy is a new build the page
+   * reloads into. Answering "stale" here left such a page waiting for the person to press reload
+   * after every upgrade that followed a broken one (P1's follow-up, 2026-09-26).
+   */
   if (pending) return pending;
   setState("checking");
   pending = recover(new Map(held)).then((outcome) => {

@@ -173,6 +173,27 @@ describe("the reload into a new build", () => {
     expect(reloader.staleBuildState()).toBe("stale");
   });
 
+  test("a page left stale by a broken build still reloads into the next deploy", async () => {
+    const { reloader, state, storage } = await page();
+    expect(await reloader.recoverFromStaleBuild()).toBe("reloading");
+    // The page after the reload: fresh module state, the same tab's storage.
+    reloader.configureBuildReload({
+      readBuild: async () => state.build,
+      reload: () => {
+        state.reloads += 1;
+      },
+      storage: () => storage,
+    });
+    // It is the same build, and its own chunk fails: it stops, and says so.
+    expect(await reloader.recoverFromStaleBuild()).toBe("stale");
+    expect(await reloader.recoverFromStaleBuild()).toBe("stale");
+    expect(state.reloads).toBe(1);
+    // A fix is deployed. The next failed chunk asks again, and this build is reloaded for.
+    state.build = { version: "v0.5.7", revision: "fix0001" };
+    expect(await reloader.recoverFromStaleBuild()).toBe("reloading");
+    expect(state.reloads).toBe(2);
+  });
+
   test("a later deploy is a new build, and is reloaded for again", async () => {
     const { reloader, state, storage } = await page();
     expect(await reloader.recoverFromStaleBuild()).toBe("reloading");
