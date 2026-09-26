@@ -605,6 +605,9 @@ export const ko: Record<string, string> = {
   "This device's clock is {gap} behind the server's, so routine times and countdowns will look wrong; turn on setting the time automatically in the device's settings.":
     "이 기기의 시계가 서버보다 {gap} 느려요 — 루틴 시각과 남은 시간이 어긋나 보이니 기기 설정에서 시간 자동 설정을 켜 주세요.",
   "Remembered something": "기억해 두었어요",
+  // A failed line's action: "기억하기 — 실패", never "기억해 두었어요 — 실패".
+  "Remember something": "기억하기",
+  "Save the shop's location": "가게 위치 저장",
   Remembering: "기억하는 중",
   "Something went wrong.": "문제가 생겼어요.",
   "Stay off social media": "소셜미디어 접근 안 하기",

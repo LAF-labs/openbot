@@ -56,4 +56,16 @@ describe("rememberLineFor — a reloaded remember line says what was kept", () =
     expect(line.failed).toBe(true);
     expect(JSON.stringify(line)).not.toContain("hunter2");
   });
+
+  test("a failed line names what was tried, not what was done", () => {
+    expect(
+      rememberLineFor({ fact: "" }, toolResultText("laf:memory_empty")),
+    ).toEqual({ done: t("Remember something"), failed: true });
+    expect(
+      rememberLineFor(
+        { place: "서울 마포구" },
+        toolResultText("laf:place_refused"),
+      ),
+    ).toEqual({ done: t("Save the shop's location"), failed: true });
+  });
 });

@@ -615,7 +615,8 @@ export function SelfTools() {
       const note = (text: string, failed?: boolean) =>
         noteFor(call)(
           {
-            done: t("Remembered something"),
+            // A failed line is "{action} — 실패", so its action cannot be the finished "기억해 두었어요".
+            done: failed ? t("Remember something") : t("Remembered something"),
             doing: t("Remembering"),
             note: text,
           },
@@ -758,14 +759,20 @@ export function rememberLineFor(
   result: string | undefined,
 ): { done: string; note?: string; failed?: boolean } {
   const said = answerText(result);
+  /*
+   * A failed line reads "{action} — 실패", so its action is the thing tried, not the thing done:
+   * "기억해 두었어요 — 실패" said both at once (walked 2026-09-27, a refused remember after a cut).
+   */
+  const failed = (action: string) =>
+    said ? { done: action, failed: true } : { done: t("Remembered something") };
   if (args?.place?.trim()) {
     return said === toolResultText("laf:place_saved")
       ? { done: t("Saved the shop's location"), note: args.place.trim() }
-      : { done: t("Remembered something"), failed: Boolean(said) };
+      : failed(t("Save the shop's location"));
   }
   return said === toolResultText("laf:remembered") && args?.fact
     ? { done: t("Remembered something"), note: args.fact }
-    : { done: t("Remembered something"), failed: Boolean(said) };
+    : failed(t("Remember something"));
 }
 
 /** A tool result as the transcript keeps it: the handler's string, sometimes JSON-quoted once. */
