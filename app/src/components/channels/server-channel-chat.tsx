@@ -49,6 +49,9 @@ import {
 import { retryWay, standingFailures } from "@/lib/channels/retry";
 import { liveTurnFailureCode } from "@/lib/channels/turn-failure";
 import {
+  CHANNEL_ACTIVITY,
+  type ChannelActivity,
+  channelActivity,
   isSocketLost,
   SOCKET_RECONNECTED,
   socketState,
@@ -193,12 +196,17 @@ export function ServerChannelChat({
     });
   };
 
+  /** Whether the grants are in, readable from a send that started before they were. */
+  const settled = useRef(toolsSettled);
+  useEffect(() => {
+    settled.current = toolsSettled;
+  }, [toolsSettled]);
+
   /** The tools this window would have offered the Bot, for the turn to offer the same. */
   const declaredTools = async (): Promise<Tool[] | null> => {
-    if (!toolsSettled) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, SEND_WITHOUT_GRANTS_AFTER_MS),
-      );
+    const deadline = Date.now() + SEND_WITHOUT_GRANTS_AFTER_MS;
+    while (!settled.current && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const core = copilotkit as unknown as {
       buildFrontendTools?: (agentId?: string) => Tool[];
@@ -375,11 +383,32 @@ export function ServerChannelChat({
     }
     if (!wasGoing) return;
     setWasGoing(false);
+    // Anything that arrived beside the turn — a routine's delivery — is read in with it.
+    void store.refresh();
     void storedTimes.refetch();
     void storedFailures.refetch();
     refreshTodayUsage(queryClient);
     void markRead();
-  }, [going, wasGoing, storedTimes, storedFailures, queryClient]);
+  }, [going, wasGoing, store, storedTimes, storedFailures, queryClient]);
+
+  /*
+   * SOMETHING ELSE WROTE TO THE CONVERSATION — a routine delivering its answer while the
+   * conversation sits open — and the roster's news of it is the only news. Read in now, or at the
+   * end of the turn in flight (above), and read, because it is on the screen in front of them.
+   */
+  useEffect(() => {
+    const onActivity = (event: Event) => {
+      const activity = (event as CustomEvent<ChannelActivity>).detail;
+      if (activity.channelId !== channel.id || !activity.lastMessageAgentId) {
+        return;
+      }
+      if (isTurnGoing(store.snapshot().turn)) return;
+      void store.refresh().then(() => markRead());
+    };
+    channelActivity.addEventListener(CHANNEL_ACTIVITY, onActivity);
+    return () =>
+      channelActivity.removeEventListener(CHANNEL_ACTIVITY, onActivity);
+  }, [store, channel.id]);
 
   /*
    * WHAT A TOOL CHANGED ELSEWHERE ON SCREEN. The window's handlers used to refresh these as they

@@ -176,6 +176,25 @@ export function createThreadStore(
       });
     },
 
+    /**
+     * The newest page read again and whatever it holds that this window does not, added: something
+     * other than a turn wrote to the conversation — a routine delivering its answer at seven in the
+     * morning while the conversation sits open on a desk.
+     */
+    async refresh(): Promise<void> {
+      const page = await deps.readHistory(threadId, null);
+      if (!page) return;
+      remember(page);
+      const held = new Set(state.messages.map((message) => message.id));
+      const missing = page.messages.filter((message) => !held.has(message.id));
+      if (missing.length === 0) return;
+      set({
+        ...state,
+        messages: [...state.messages, ...missing],
+        times: { ...page.times, ...state.times },
+      });
+    },
+
     /** The page above what is held, for a person scrolling up. */
     async loadOlder(): Promise<void> {
       if (!state.hasOlder || state.loadingOlder || oldestSeq === null) return;
@@ -254,5 +273,3 @@ export function createThreadStore(
     },
   };
 }
-
-export type ThreadStore = ReturnType<typeof createThreadStore>;
