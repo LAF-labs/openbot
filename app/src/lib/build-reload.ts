@@ -75,6 +75,8 @@ export type BuildReloadDeps = {
   readBuild: () => Promise<{ version: string; revision?: string } | null>;
   reload: () => void;
   storage: () => Storage | null;
+  /** Run `work` after `ms`; answers the way to cancel it. */
+  later: (work: () => void, ms: number) => () => void;
 };
 
 /** How long the server is given to say which build it runs, before this is a dropped connection. */
@@ -122,17 +124,36 @@ const DEFAULT_DEPS: BuildReloadDeps = {
   readBuild: readServerBuild,
   reload: () => window.location.reload(),
   storage: sessionStore,
+  later: (work, ms) => {
+    const timer = setTimeout(work, ms);
+    return () => clearTimeout(timer);
+  },
 };
+
+/*
+ * UNREACHABLE IS ASKED AGAIN UNTIL IT IS NOT. While the state is anything but `idle`, every error a
+ * boundary catches is taken for the stale page and neither shown nor reported. `unreachable` used to
+ * wait for somebody to ask again, and the only asker was the next error — so after one chunk failed
+ * offline, the next real crash was hidden, reloaded the page, and was never reported (red-team run,
+ * 2026-09-26). The server is now asked again on its own, sooner at first, until it answers.
+ */
+const RETRY_FIRST_MS = 5_000;
+const RETRY_MOST_MS = 60_000;
 
 let deps: BuildReloadDeps = DEFAULT_DEPS;
 let state: StaleBuildState = "idle";
 let pending: Promise<StaleBuildOutcome> | null = null;
+let retryIn = RETRY_FIRST_MS;
+let cancelRetry: (() => void) | null = null;
 const watchers = new Set<() => void>();
 /** The composers' unsent text, by conversation, while they are on screen. */
 const held = new Map<string, string>();
 
 /** Replace what the module asks of the page; `null` puts the real page back. For tests. */
 export function configureBuildReload(next: Partial<BuildReloadDeps> | null) {
+  cancelRetry?.();
+  cancelRetry = null;
+  retryIn = RETRY_FIRST_MS;
   deps = next ? { ...DEFAULT_DEPS, ...next } : DEFAULT_DEPS;
   state = "idle";
   pending = null;
@@ -216,6 +237,19 @@ function keepDrafts(storage: Storage, drafts: ReadonlyMap<string, string>) {
   }
 }
 
+/**
+ * Signing out lets go of what was kept for the reload. The tab outlives the session, and what was
+ * typed into it is the person's, not the next one's at this computer.
+ */
+export function forgetKeptDrafts(): void {
+  held.clear();
+  try {
+    deps.storage()?.removeItem(DRAFTS_KEY);
+  } catch {
+    // Storage refused: there was nothing it could have kept either.
+  }
+}
+
 /** The page reloads because the person asked it to — no guard, and what is typed is kept. */
 export function reloadPage(): void {
   const storage = deps.storage();
@@ -236,8 +270,12 @@ async function recover(
   const build = await deps.readBuild().catch(() => null);
   if (!build) {
     setState("unreachable");
+    askAgainLater();
     return "unreachable";
   }
+  cancelRetry?.();
+  cancelRetry = null;
+  retryIn = RETRY_FIRST_MS;
   const storage = deps.storage();
   const key = `${RELOADED_PREFIX}${build.version}@${build.revision ?? ""}`;
   /*
@@ -258,6 +296,16 @@ async function recover(
   setState("reloading");
   deps.reload();
   return "reloading";
+}
+
+function askAgainLater() {
+  cancelRetry?.();
+  const wait = retryIn;
+  retryIn = Math.min(retryIn * 2, RETRY_MOST_MS);
+  cancelRetry = deps.later(() => {
+    cancelRetry = null;
+    if (state === "unreachable") void recoverFromStaleBuild();
+  }, wait);
 }
 
 /**

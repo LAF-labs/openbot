@@ -199,6 +199,38 @@ describe("the reload into a new build", () => {
     expect(state.reloads).toBe(1);
   });
 
+  test("asks again by itself while the server cannot answer, so one dropped moment does not hide every later crash", async () => {
+    const { reloader, state } = await page(null);
+    const asked: { work: () => void; ms: number }[] = [];
+    reloader.configureBuildReload({
+      readBuild: async () => state.build,
+      reload: () => {
+        state.reloads += 1;
+      },
+      storage: tabStorage,
+      later: (work, ms) => {
+        asked.push({ work, ms });
+        return () => {};
+      },
+    });
+    expect(await reloader.recoverFromStaleBuild()).toBe("unreachable");
+    expect(asked.map((one) => one.ms)).toEqual([5_000]);
+
+    // Still down: asked again, later each time.
+    asked[0]?.work();
+    await settle();
+    expect(reloader.staleBuildState()).toBe("unreachable");
+    expect(asked.map((one) => one.ms)).toEqual([5_000, 10_000]);
+
+    // Back: nobody had to fail again for the page to come back.
+    state.build = { version: "v0.5.6" };
+    asked[1]?.work();
+    await settle();
+    expect(state.reloads).toBe(1);
+    expect(reloader.staleBuildState()).toBe("reloading");
+    expect(asked).toHaveLength(2);
+  });
+
   test("never happens by itself where the tab cannot remember it did", async () => {
     // Without the guard, a broken build would reload forever.
     const { reloader, state } = await page(undefined, null);
