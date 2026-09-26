@@ -11,6 +11,7 @@
       "!app/src/routeTree.gen.ts",
       "!desktop/src-tauri/target",
       "!desktop/src-tauri/gen",
+      "!evals/reports",
       "!server/src/context/vendor",
       "!server/tests/vendor"
     ]
