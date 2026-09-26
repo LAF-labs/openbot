@@ -85,6 +85,18 @@ describe("retries are the loop's, once, and said", () => {
     );
   });
 
+  test("the retry is said on the wire too, as a fact the server's run meter counts", async () => {
+    const { events } = await overTheWire([
+      { kind: "status", status: 502 },
+      answered,
+    ]);
+    const retries = events.filter(
+      (event) => event.type === "CUSTOM" && event.name === "laf.retry",
+    );
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ value: { kind: "provider" } });
+  });
+
   test("a 429 is never retried: a refusal wants waiting, and the run says it was refused", async () => {
     const { fake, events } = await overTheWire([
       { kind: "status", status: 429, retryAfter: "1" },

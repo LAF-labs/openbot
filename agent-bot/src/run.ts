@@ -401,6 +401,12 @@ async function runRounds(context: RunContext): Promise<void> {
           run: input.runId,
           reason: runFailureOf(error),
         });
+        // Said on the wire too, as a fact the server's run meter counts (`telemetry/run-meter.ts`).
+        emit({
+          type: "CUSTOM",
+          name: "laf.retry",
+          value: { kind: "provider" },
+        } as BaseEvent);
         return send();
       }
     };
@@ -429,6 +435,11 @@ async function runRounds(context: RunContext): Promise<void> {
       // The first attempt was paid for too. Overwriting it here is how the monthly cost KPI
       // missed exactly the days a reasoning model spent its budget on nothing (audit A2, S3-5).
       costInRun += emitUsage(context, turn);
+      emit({
+        type: "CUSTOM",
+        name: "laf.retry",
+        value: { kind: "empty" },
+      } as BaseEvent);
       turn = await request();
       if (isEmptyTurn(turn)) {
         log.warn("reply_empty", { bot: botId, run: input.runId });

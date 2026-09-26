@@ -176,6 +176,16 @@ describe("a turn that did not come back whole", () => {
    * it — the same answer `model-call.ts` records for `askModel`. Once only: a model that comes back
    * empty twice is not going to come back full on the third.
    */
+  test("the empty answer's retry is said on the wire, for the server's run meter", async () => {
+    const { events } = await turnFor(
+      [{ id: "u1", role: "user", content: "안녕" }],
+      [[], said("안녕하세요.")],
+    );
+    const retries = events.filter((event) => event.name === "laf.retry");
+    expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ value: { kind: "empty" } });
+  });
+
   test("asks again once, AT THE SAME EFFORT, when nothing came back", async () => {
     const { requests, events } = await turnFor(
       [{ id: "u1", role: "user", content: "안녕" }],
