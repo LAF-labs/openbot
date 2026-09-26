@@ -17,6 +17,7 @@ import {
   isFirstConversation,
   pickFirstTasks,
 } from "@/lib/agents/first-tasks";
+import { briefingSections } from "@/lib/agents/morning-briefing";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { usePublishTurn } from "@/lib/agents/presence";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
@@ -27,6 +28,7 @@ import { useActiveBot } from "@/lib/copilot/active-bot";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
+import { routineListQueryOptions } from "@/lib/routines/queries";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 
 /**
@@ -75,9 +77,14 @@ function RouteComponent() {
    * A Bot that already has its conversation opens on it. The server would answer a send from here
    * with that same channel anyway, but the screen in between would have shown an empty transcript
    * for a conversation with history — which reads as the history being gone.
+   *
+   * ONLY ONE WITH SOMETHING SAID IN IT. The briefing chip opens the conversation before anything is
+   * said, because a routine delivers only into one that exists (`routines/deliver.ts`); sending the
+   * person from here into that empty transcript would take the chips and the "made" line away the
+   * moment they pressed. The same rule `isFirstConversation` draws the chips by.
    */
   const existing = conversationOf(bot.id, channels);
-  if (existing) {
+  if (existing && existing.lastMessageAt !== null) {
     return (
       <Navigate
         params={{ channelId: existing.id }}
@@ -116,17 +123,34 @@ function FirstConversation({ botId }: { botId: string }) {
   const { data: user } = useQuery(currentUserQueryOptions());
   // Already fetched for the first turn (`useActiveBot` above); the 지원사업 chip waits on it too.
   const granted = useQuery(agentPluginsQueryOptions(botId));
+  /*
+   * And the routines, so a briefing made from here and the screen reloaded shows as made rather than
+   * offering a second one. A list that failed to load offers the chip: the server would still make
+   * the routine, and a second 아침 브리핑 is a thing the Routines page shows and can delete.
+   */
+  const routines = useQuery(routineListQueryOptions());
+  const supportPrograms = holdsSupportPrograms(granted.data);
   const firstTasks =
     bot &&
     overview &&
     channels &&
     !granted.isPending &&
+    !routines.isPending &&
     isFirstConversation(channels, bot.id)
-      ? pickFirstTasks(overview, {
-          shop: user?.shop,
-          supportPrograms: holdsSupportPrograms(granted.data),
-        })
+      ? pickFirstTasks(overview, { shop: user?.shop, supportPrograms })
       : null;
+  const briefingMade = (routines.data ?? []).some(
+    (routine) =>
+      routine.agentId === botId && routine.name === t("Morning briefing"),
+  );
+  // The 7:30 chip's briefing, from the same two answers the chips waited for.
+  const briefing = overview
+    ? briefingSections(overview, { supportPrograms })
+    : [];
+  const whereabouts = user?.whereabouts;
+  const placeKnown = Boolean(
+    whereabouts?.place?.trim() || whereabouts?.coordinates,
+  );
 
   // The first message is on its way: the header says the Bot is thinking before the channel exists.
   usePublishTurn(botId, pending || sent !== null ? "thinking" : "idle");
@@ -213,12 +237,15 @@ function FirstConversation({ botId }: { botId: string }) {
               {firstTasks ? (
                 <FirstTaskChips
                   agent={bot}
+                  briefing={briefing}
+                  briefingMade={briefingMade}
                   disabled={pending || sent !== null}
                   key={`first-tasks:${bot.id}`}
                   onAsk={(sentence) => {
                     // The failure is already on screen as the notice; nothing else to do with it.
                     void send(sentence).catch(() => undefined);
                   }}
+                  placeKnown={placeKnown}
                   tasks={firstTasks}
                 />
               ) : null}

@@ -12,6 +12,11 @@ import type {
   FirstTask,
   FirstTaskPressed,
 } from "../src/lib/agents/first-tasks";
+import {
+  type BriefingSection,
+  briefingContents,
+  briefingInstruction,
+} from "../src/lib/agents/morning-briefing";
 import type { AgentProfile } from "../src/lib/agents/queries";
 import { stubFetch } from "./support/fetch";
 
@@ -20,7 +25,8 @@ import { stubFetch } from "./support/fetch";
  *
  * `first-tasks.test.ts` proves which sentences are chosen; this proves that pressing one does what a
  * typed message does and nothing else: the sentence reaches `onAsk` in the person's language, one
- * browser event says so, and the routine chip goes to `POST /api/routines` with the same sentence.
+ * browser event says so, and the routine chip goes to `POST /api/routines` with the briefing it said
+ * it would make.
  * A chip that renders and does nothing when pressed is the failure this stands against — this app
  * has had it (`BotIntroCard` under a `pointer-events-none` overlay), and a green selection test
  * cannot see it.
@@ -74,15 +80,19 @@ const tasks: FirstTask[] = [
   { kind: "connect" },
 ];
 
-/** The routine chip names the sentence it repeats: the first ask in the row. */
+/** A Bot holding 기업마당 with nothing connected: the weather, and 지원사업 on Mondays. */
+const briefing: BriefingSection[] = [{ kind: "weather" }, { kind: "support" }];
+
 const routineLabel = (t: typeof import("../src/lib/i18n").t) =>
-  t("Get “{task}” every morning at 7:30", {
-    task: t("Look up today's weather on Naver and tell me."),
-  });
+  t("Get a briefing every morning at 7:30");
 
 async function mounted(props: {
+  /** Whether this Bot already has its briefing. Not unless a test says so. */
+  briefingMade?: boolean;
   disabled?: boolean;
   onAsk: (sentence: string) => void;
+  /** Whether the person's place is known. Known unless a test says otherwise. */
+  placeKnown?: boolean;
   /** The row to draw; the four sentences and the general connect chip unless a test says otherwise. */
   tasks?: FirstTask[];
 }) {
@@ -101,8 +111,11 @@ async function mounted(props: {
     component: () =>
       createElement(FirstTaskChips, {
         agent,
+        briefing,
+        briefingMade: props.briefingMade ?? false,
         disabled: props.disabled ?? false,
         onAsk: props.onAsk,
+        placeKnown: props.placeKnown ?? true,
         tasks: props.tasks ?? tasks,
       }),
   });
@@ -190,16 +203,43 @@ describe("the first-task chips", () => {
     expect(connect?.className).not.toContain("rounded-full");
   });
 
-  test("the routine chip says which sentence arrives at 7:30, and it is the first one", async () => {
+  test("the routine chip says what the briefing will have before anything is made", async () => {
     const { t } = await import("../src/lib/i18n");
     const view = await mounted({ onAsk: () => {} });
-    const routine = view
-      .buttons()
-      .find((button) => button.textContent?.includes("7:30"));
-    expect(routine?.textContent).toContain(
-      t("Look up today's weather on Naver and tell me."),
+    const text = view.host.textContent ?? "";
+    expect(text).toContain(briefingContents(briefing, t));
+    expect(text).toContain(t("the weather"));
+    expect(text).toContain(t("new support programmes on Mondays"));
+    expect(text).not.toContain("위의 첫 문장");
+  });
+
+  test("without a place it says the weather needs one, and where to give it", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const unknown = await mounted({ onAsk: () => {}, placeKnown: false });
+    expect(unknown.host.textContent).toContain(
+      t("Weather needs your shop's location."),
     );
-    expect(view.host.textContent).not.toContain("위의 첫 문장");
+    const shop = unknown
+      .links()
+      .find((link) => link.getAttribute("href") === "/settings/shop");
+    expect(shop?.textContent).toBe(t("Add it on My shop"));
+
+    const known = await mounted({ onAsk: () => {} });
+    expect(known.host.textContent).not.toContain(
+      t("Weather needs your shop's location."),
+    );
+  });
+
+  test("a Bot that already has its briefing is told so, and offered no second one", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const view = await mounted({ briefingMade: true, onAsk: () => {} });
+    expect(
+      view.buttons().some((button) => button.textContent === routineLabel(t)),
+    ).toBe(false);
+    expect(view.host.textContent).toContain(t("The routine is made."));
+    expect(
+      view.links().some((link) => link.getAttribute("href") === "/routines"),
+    ).toBe(true);
   });
 
   test("a picked place that is not connected is named on its own chip, first, and goes to 연결", async () => {
@@ -310,7 +350,7 @@ describe("the first-task chips", () => {
     expect(asked).toEqual([]);
   });
 
-  test("the routine chip makes the first sentence a 7:30 routine and says where it went", async () => {
+  test("the routine chip makes the briefing a 7:30 routine and says where it went", async () => {
     const { t } = await import("../src/lib/i18n");
     const { FIRST_TASK_PRESSED } = await import(
       "../src/lib/agents/first-tasks"
@@ -341,7 +381,11 @@ describe("the first-task chips", () => {
       await view.settle(50);
 
       // The press is reported first, as the keys of the chip; then the routine is made.
-      expect(requests).toHaveLength(2);
+      /*
+       * The press is reported first, as the keys of the chip; then the conversation is opened, so
+       * the briefing has somewhere to arrive; then the routine is made.
+       */
+      expect(requests).toHaveLength(3);
       expect(requests[0]).toEqual({
         url: "/api/me/first-task",
         body: {
@@ -352,11 +396,15 @@ describe("the first-task chips", () => {
           hint: null,
         },
       });
-      expect(requests[1]?.url).toBe("/api/routines");
-      expect(requests[1]?.body).toEqual({
+      expect(requests[1]).toEqual({
+        url: "/api/channels",
+        body: { agentIds: ["bot-1"] },
+      });
+      expect(requests[2]?.url).toBe("/api/routines");
+      expect(requests[2]?.body).toEqual({
         agentId: "bot-1",
-        name: t("Morning report"),
-        instruction: t("Look up today's weather on Naver and tell me."),
+        name: t("Morning briefing"),
+        instruction: briefingInstruction(briefing, t),
         schedule: {
           kind: "daily",
           time: "07:30",

@@ -25,6 +25,7 @@ import {
   reminderLines,
   withReminder,
 } from "../shared/prompt";
+import type { RoutineNote } from "../shared/prompt/notepad.ko";
 import { BRIDGE_TOOLS } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { NOW_TOOL } from "../shared/tools/now";
@@ -88,6 +89,8 @@ export function systemMessageFor(
    * appends it (`server/src/context/conversations.ts`). Absent is an epoch with no cut.
    */
   summary?: string,
+  /** A routine's notepad, as its run reads it (`forwardedProps.notepad`). Drawn in routine mode. */
+  notepad?: readonly RoutineNote[],
 ) {
   const composed = composePrompt({
     mode,
@@ -98,6 +101,7 @@ export function systemMessageFor(
     ...notebookInput(notebook),
     ...(person ? { person } : {}),
     ...(skills ? { skills } : {}),
+    ...(notepad ? { notepad } : {}),
   });
   const earlier = summary
     ? earlierSummaryText(summary, factsFor(mode, person, frozenAt).day)

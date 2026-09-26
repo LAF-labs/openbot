@@ -76,8 +76,14 @@ const CARRIED_ANSWER_MAX_CHARS = 1_500;
  * The instruction stays the person's. This is appended after it, as context and not as an order,
  * because a standing instruction that quietly grew a paragraph nobody wrote is a routine that no
  * longer does what its author can see it doing.
+ *
+ * Exported for the model eval's briefing scenarios (`evals/scenarios.ts`), which hand a Bot the
+ * morning before's briefing the way this does.
  */
-const carriedInstruction = (instruction: string, previous: string): string =>
+export const carriedInstruction = (
+  instruction: string,
+  previous: string,
+): string =>
   `${instruction}\n\nWhat you reported the last time this routine ran, so you can say what has changed and not repeat it:\n\n${previous}`;
 
 export type RoutineRunOptions = SettlementOptions & {

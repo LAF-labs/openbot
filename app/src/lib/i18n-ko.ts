@@ -1921,11 +1921,29 @@ export const ko: Record<string, string> = {
     "이번 주 노션에서 바뀐 것을 정리해줘",
   "Connect a site": "사이트 연결하기",
   "Connect {place}": "{place} 연결하기",
-  // 네 번째 칩. 첫 문장을 그대로 매일 아침 루틴으로 건다 — 같은 대화에 답이 온다.
-  "Get “{task}” every morning at 7:30": "‘{task}’ 매일 아침 7:30에 받기",
-  "Your Bot is asked this every morning at 7:30 and answers in this conversation.":
-    "매일 아침 7:30에 봇에게 이 부탁을 하고, 답은 이 대화로 와요.",
-  "Morning report": "아침 보고",
+  /*
+   * 아침 브리핑 칩 (`lib/agents/morning-briefing.ts`). 연결된 것으로 지시문을 짜서 매일 아침 7:30
+   * 루틴을 건다 — 답은 같은 대화로 온다. 지시문 줄은 봇이 받는 말이자 사장님이 루틴 화면에서 다시
+   * 읽고 고치는 말이다.
+   */
+  "Get a briefing every morning at 7:30": "매일 아침 7:30에 브리핑 받기",
+  "What it will have: {contents}. It comes to this conversation, and you can change it on Routines.":
+    "넣을 것: {contents}. 이 대화로 알려 드리고, 루틴 화면에서 언제든 바꿀 수 있어요.",
+  "Weather needs your shop's location.":
+    "날씨는 가게 위치를 알아야 볼 수 있어요.",
+  "Add it on My shop": "내 가게에서 위치 적기",
+  "Morning briefing": "아침 브리핑",
+  "Send this morning's briefing in one message, the way /{skill} says:":
+    "/{skill} 스킬대로 오늘 아침 브리핑을 한 메시지로 보내 줘:",
+  "Today's weather": "오늘 날씨",
+  "Today's schedule on Google Calendar": "오늘 일정 (구글 캘린더)",
+  "Mail nobody has answered, in Gmail": "답 안 한 메일 (Gmail)",
+  "If today is Monday: new support programmes on Bizinfo":
+    "오늘이 월요일이면: 새 지원사업 (기업마당)",
+  "the weather": "날씨",
+  "today's schedule": "오늘 일정",
+  "unanswered mail": "답 안 한 메일",
+  "new support programmes on Mondays": "월요일마다 새 지원사업",
   "Making the routine…": "루틴 만드는 중…",
   "The routine is made.": "루틴을 만들었어요",
   "See it on Routines": "루틴 화면에서 보기",

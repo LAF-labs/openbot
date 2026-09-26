@@ -430,6 +430,33 @@ API under `/api/routines/suggestions`: `GET /`, `POST /:key/accept`
 sentence — why it is worth having — is the app's (`lib/routines/suggestions.ts`);
 the name and the instruction are the catalogue's, stored verbatim.
 
+## The 7:30 chip — 아침 브리핑
+
+A new Bot's empty conversation offers one more routine beside its first-task
+chips: 매일 아침 7:30에 브리핑 받기. Its instruction is composed from what the
+Bot can reach when it is pressed (`app/src/lib/agents/morning-briefing.ts`):
+the weather always; today's calendar and the unanswered mail where Google
+Calendar and Gmail are connected; up to three connected sites and order or
+review accounts, each with its first task; and 지원사업 where the Bot holds the
+기업마당 tool. The line under the chip says what it will have before anything
+is made, and that the weather needs the shop's place when none is known. The
+instruction is a short list naming the package's `아침브리핑` skill
+(`tenant/laf/skills/morning-briefing.md`), which holds the procedure: only what
+the instruction lists, one message of about ten lines, "특이사항 없음" rather
+than a heading over nothing, 지원사업 on Mondays only (the weekday from the
+prompt's date line), and only notices posted after the notepad's
+`support_programs` watermark, which the run moves with `routine_note`.
+
+**The chip opens the conversation first.** A routine delivers only into a
+conversation that exists (`appendToSoloConversation` makes none), and before
+anything is said there is none: pressed on a fresh account, the chip made a
+briefing that arrived nowhere. So the press sends the same idempotent
+`POST /api/channels` a first message does, then makes the routine; the empty
+compose screen and `/` keep treating a conversation nothing was said in as
+the first one, so the chips stay. It is named 아침 브리핑, which hides the
+Routines page's own 아침 브리핑 card, and a Bot that has one is shown "made"
+rather than offered a second.
+
 ## Triggers
 
 Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the

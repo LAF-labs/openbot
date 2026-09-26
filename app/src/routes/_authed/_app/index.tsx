@@ -54,8 +54,9 @@ function RouteComponent() {
   const bot = primaryBot(mine.bots, channels.data);
   if (!bot) return <Navigate replace to="/welcome" />;
 
+  // One nothing has been said in yet — opened by the briefing chip — is still the first screen's.
   const conversation = conversationOf(bot.id, channels.data);
-  return conversation ? (
+  return conversation && conversation.lastMessageAt !== null ? (
     <Navigate
       params={{ channelId: conversation.id }}
       replace

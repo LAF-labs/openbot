@@ -16,7 +16,6 @@ import {
   NO_CONNECTION_TASKS,
   pickFirstTasks,
   reportFirstTaskPressed,
-  routineSentence,
   SUPPORT_PROGRAMS_FIRST_TASK,
   SUPPORT_PROGRAMS_TOOL,
 } from "../src/lib/agents/first-tasks";
@@ -415,7 +414,6 @@ describe("what a press reports", () => {
         count: 64,
         supportPrograms: true,
       });
-      const leading = tasks.find((task) => task.kind === "ask");
       const presses: FirstTaskPressed[] = tasks.map((task) =>
         task.kind === "connect"
           ? {
@@ -435,16 +433,15 @@ describe("what a press reports", () => {
               hint: null,
             },
       );
-      if (leading?.kind === "ask") {
-        presses.push({
-          agentId,
-          kind: "routine",
-          pattern: leading.pattern,
-          sentence: leading.sentence,
-          via: leading.via,
-          hint: null,
-        });
-      }
+      // The briefing chip's press, exactly as `first-task-chips.tsx` sends it.
+      presses.push({
+        agentId,
+        kind: "routine",
+        pattern: "schedule",
+        sentence: null,
+        via: null,
+        hint: null,
+      });
       for (const press of presses) {
         const parsed = parseFirstTaskPress(firstTaskPressBody(press));
         expect([press.kind, press.pattern, press.via, parsed.ok]).toEqual([
@@ -463,14 +460,6 @@ describe("what a press reports", () => {
 });
 
 describe("the routine chip", () => {
-  test("repeats the first sentence that asks something", () => {
-    expect(routineSentence(pickFirstTasks(overview()))).toBe(weather);
-    expect(
-      routineSentence(pickFirstTasks(overview([site("baemin-ceo")]))),
-    ).toBe(firstPrompt("baemin-ceo"));
-    expect(routineSentence([{ kind: "connect" }])).toBeNull();
-  });
-
   test("builds the body the Routines page would: daily at 07:30 in the person's zone, nothing else", () => {
     const payload = morningReportPayload({
       agentId: "bot-1",
@@ -594,9 +583,11 @@ describe("the words", () => {
     const screen = [
       "Try one of these first",
       "Connect a site",
-      "Get “{task}” every morning at 7:30",
-      "Your Bot is asked this every morning at 7:30 and answers in this conversation.",
-      "Morning report",
+      "Get a briefing every morning at 7:30",
+      "What it will have: {contents}. It comes to this conversation, and you can change it on Routines.",
+      "Weather needs your shop's location.",
+      "Add it on My shop",
+      "Morning briefing",
       "Making the routine…",
       "The routine is made.",
       "See it on Routines",
@@ -631,14 +622,13 @@ describe("the words", () => {
 describe("the Bot's computer is on the row", () => {
   const nothing = overview();
 
-  test("with nothing connected, the lookup leads — and it is the one the 7:30 chip repeats", () => {
+  test("with nothing connected, the lookup leads", () => {
     const tasks = pickFirstTasks(nothing);
     expect(tasks[0]).toEqual({
       kind: "ask",
       ...COMPUTER_FIRST_TASK,
       via: null,
     });
-    expect(routineSentence(tasks)).toBe(COMPUTER_FIRST_TASK.sentence);
     expect(ko[COMPUTER_FIRST_TASK.sentence]).toContain("네이버");
   });
 
@@ -713,8 +703,6 @@ describe("the support-programme chip", () => {
       "connect",
     ]);
     expect(tasks[1]).toEqual(support);
-    // The 7:30 chip repeats the lookup, not a search that answers the same list every morning.
-    expect(routineSentence(tasks)).toBe(weather);
   });
 
   test("whatever the shop's order, it is second among what needs nothing, and the lookup stays", () => {

@@ -857,6 +857,45 @@ not run — this worktree had no `DATA_GO_KR_SERVICE_KEY`; its final round is th
 0/1, then 3/3 alone. `declined-says-declined` and `send-alimtalk-with-the-blanks-named` passed.
 Prompt `61ed958eb6d49a7c` · catalogue `8c00eb7da3fab618` — the record's, since routing moves neither.
 
+## 아침 브리핑 — a Monday and a Tuesday (2026-09-27)
+
+Two scenarios, `morning-briefing-monday` and `morning-briefing-tuesday` (`evals/morning-briefing.ts`),
+run the 7:30 chip's routine as a routine runs: routine mode, the unattended toolkit plus `skill_view`
+and `routine_note`, the notepad in the prompt, the chip's own instruction (built by the app's
+`briefingInstruction` over its Korean dictionary) with the morning before's briefing carried under it,
+and a prompt dated the Monday or the Tuesday after today. 기업마당 is a fixture here, on purpose: the
+judge is about the briefing — last week's notice not repeated, another region's left out, the cursor
+moved, nothing about 지원사업 on a Tuesday, an empty inbox without a heading, about ten lines — and
+each of those needs a notice planted against the Monday. `routine_note` is answered by the server's
+own draft (`routines/notepad.ts`). The judge is pure and judged in `tests/eval-morning-briefing.test.ts`.
+
+**DeepSeek V4.1 Flash, once each: 2/2** (Monday 14.1 s, 40.9K tokens; Tuesday 7.8 s, 28.5K), run
+with `EVAL_ONLY=… EVAL_DEFERRAL=0`. The n = 3 run was refused by the session's permission check and
+not retried; the first run was against the instruction's first wording ("월요일에만: …"), before the
+real stack showed why it had to change (below).
+
+**On the real stack** (a fresh account, nothing connected, 기업마당 on the fleet's key; Sunday on the
+real clock, Monday with `LAF_CLOCK_OFFSET_MS=86400000`):
+
+| run | day | place | took | turns | tokens | $ | answer |
+|---|---|---|---|---|---|---|---|
+| 지금 실행 | Sun | none | 10.7 s | 4 | 26.9K | 0.0022 | 위치를 몰라 날씨 못 봄 + "지원사업은 월요일에만…" |
+| the clock, 07:30 | Sun | none | 7.4 s | 2 | — | — | 위치를 몰라 날씨 못 봄 |
+| 지금 실행 | Sun | 서울 마포구 | 13.1 s | 3 | 23.6K | 0.0022 | 날씨 + "지원사업은 월요일인 다음 실행 때…" |
+| 지금 실행, reworded | Sun | 서울 마포구 | 12.1 s | 3 | 24.5K | 0.0026 | 날씨만 |
+| 지금 실행 | Mon | 서울 마포구 | 83.0 s | 6 | 99.8K | 0.0129 | 날씨 + 새 지원사업 3 + cursor written |
+| 지금 실행 (made by the chip) | Sun | 서울 마포구 | 8.8 s | 3 | 23.0K | 0.0021 | 날씨 + "특이사항 없음: 날씨 외 확인 항목 없음", in the conversation |
+| 지금 실행 | Mon | 서울 마포구 | 71.4 s | 5 | 82.3K | 0.0108 | 날씨 + 새 지원사업 2 + cursor written |
+| 지금 실행 again | Mon | 서울 마포구 | 53.5 s | 5 | 78.8K | 0.0082 | 날씨 + "특이사항 없음: 지원사업", cursor unmoved |
+
+A non-Monday run said why it had not looked ("월요일에만 보는데 오늘이 일요일이라…") twice in three
+with the instruction line "월요일에만: 새 지원사업"; the line became "오늘이 월요일이면: 새 지원사업"
+and the skill says the item is simply absent, after which the next Sunday runs said nothing of it.
+A "특이사항 없음" line with nothing checked behind it ("날씨 외 확인 항목 없음") is why the skill now
+says the line is there only when a checked item was empty; the last two Monday runs ran on that text.
+The Tuesday scenario's judge fails exactly that line; the scenario did not catch it because its
+Tuesday has an inbox to report, and the real runs that said it had nothing else to say.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

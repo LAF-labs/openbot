@@ -23,12 +23,28 @@
  * the owner's own 거부. A candidate that does any of those fails here.
  */
 
+import type { RoutineNote } from "../shared/prompt/notepad.ko";
 import type { PromptPerson } from "../shared/prompt/person.ko";
 import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
+import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
+import { toolNameFor } from "../server/src/plugins/store";
+import { carriedInstruction } from "../server/src/routines/run";
+import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
+import { ROUTINE_NOTE } from "../shared/tools/routine-note";
 import { SKILL_VIEW } from "../shared/tools/skills";
 import { REALISTIC_TOOLSET } from "./deferral";
+import {
+  briefingBackend,
+  dayAfter,
+  GMAIL_INSTRUCTION,
+  judgeMondayBriefing,
+  judgeTuesdayBriefing,
+  lastAnswerOf,
+  NOTHING_CONNECTED_INSTRUCTION,
+  previousBriefing,
+} from "./morning-briefing";
 import { longPage } from "./fixtures";
 import { forgottenAcrossADay } from "./memory";
 import {
@@ -138,6 +154,8 @@ export type Scenario = {
    * `system` replaces the composed system message (`evals/memory.ts`). `notes` go in the report.
    */
   prepare?: () => Promise<{ system?: string; notes?: string[] }>;
+  /** A routine's notepad as its run reads it. Drawn only in routine mode, as production draws it. */
+  notepad?: readonly RoutineNote[];
 };
 
 const user = (content: string) => ({
@@ -721,6 +739,8 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   supportProgramsFromThePortal(),
+  morningBriefing("monday"),
+  morningBriefing("tuesday"),
   /*
    * THE THREE THE 0.5.3 AUDIT READ OFF A SHOP OWNER'S SCREEN.
    *
@@ -1416,6 +1436,95 @@ function supportProgramsFromThePortal(): Scenario {
           today,
         }),
       ]),
+  };
+}
+
+/**
+ * 아침 브리핑 — THE 7:30 CHIP'S ROUTINE, ON A MONDAY AND ON A TUESDAY (`./morning-briefing.ts`).
+ *
+ * Run as a routine is run: routine mode, the unattended toolkit (no hand-over tools, the granted
+ * plugins, `skill_view` and `routine_note`), the notepad in the prompt, the instruction the chip
+ * composes with the morning before's briefing carried under it and the run's reminder after, and a
+ * prompt dated the day the run pretends to be. Monday is a Bot with nothing connected but 기업마당;
+ * Tuesday has Gmail too, with nothing unread, so an empty section has somewhere to be padded.
+ *
+ * The weekday comes from the prompt, not the `now` tool — which reads the real clock and would say
+ * whatever today is. The skill says so, and a run that calls `now` anyway is judged on what it wrote.
+ */
+function morningBriefing(day: "monday" | "tuesday"): Scenario {
+  const zone = "Asia/Seoul";
+  const today = zonedParts(EVAL_NOW, zone).date;
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  // The next Monday after today on the Seoul clock, never today: one to seven days on.
+  const monday = dayAfter(today, (8 - weekday) % 7 || 7);
+  const date = day === "monday" ? monday : dayAfter(monday, 1);
+  const scheduledFor = scheduledAt(
+    new Date(`${date}T03:00:00Z`),
+    "07:30",
+    zone,
+  );
+  const startedAt = new Date(scheduledFor.getTime() + 40_000);
+  const backend = briefingBackend(monday, () => startedAt);
+  const weather = weatherSite();
+  const plugins = REALISTIC_TOOLSET.filter(
+    (tool) =>
+      tool.name.startsWith(toolNameFor(`${PUBLIC_DATA_KEY}/`)) ||
+      (day === "tuesday" && tool.name.startsWith(toolNameFor("gmail/"))),
+  );
+  const instruction =
+    day === "monday" ? NOTHING_CONNECTED_INSTRUCTION : GMAIL_INSTRUCTION;
+  return {
+    id: `morning-briefing-${day}`,
+    dimension: "korean-work",
+    mode: "routine",
+    person: { timeZone: zone, locale: "ko-KR", place: "서울 마포구" },
+    frozenAt: startedAt,
+    skills: PACKAGE_SKILLS,
+    notepad: backend.seeded,
+    messages: [
+      user(
+        withReminder(
+          carriedInstruction(instruction, previousBriefing(monday, day)),
+          reminderBlock([
+            routineRunLine({ startedAt, scheduledFor, timeZone: zone }),
+          ]),
+        ),
+      ),
+    ],
+    tools: [...UNATTENDED_COMPUTER_TOOLS, ...plugins, SKILL_VIEW, ROUTINE_NOTE],
+    // The skill, the weather, two searches and the note, each possibly its own round.
+    maxTurns: 10,
+    prepare: async () => {
+      backend.reset();
+      return {};
+    },
+    stub: (call) => {
+      if (call.name === SKILL_VIEW.name) return skillViewAnswer(call);
+      return backend.answer(call) ?? weather(call);
+    },
+    check: (turn) => {
+      const text = lastAnswerOf(turn.events);
+      // The briefing itself goes in the log: the verdict is about it, and so is anybody reading one.
+      console.log(`    · ${day}: ${text.replace(/\n/g, "\n      ")}`);
+      return verdict(
+        day === "monday"
+          ? judgeMondayBriefing({
+              text,
+              calls: turn.calls,
+              returned: backend.returned,
+              notepad: backend.notepad(),
+              week: backend.week,
+              weather: "20.8",
+              place: "마포",
+            })
+          : judgeTuesdayBriefing({
+              text,
+              calls: turn.calls,
+              weather: "20.8",
+              place: "마포",
+            }),
+      );
+    },
   };
 }
 

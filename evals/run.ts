@@ -184,6 +184,7 @@ async function runOnce(
           scenario.skills,
           notebook,
           scenario.summary,
+          scenario.notepad,
         ),
     ...scenario.messages,
   ];

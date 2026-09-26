@@ -23,7 +23,7 @@ import { BUSINESS_SITES } from "@/lib/sites/catalogue";
  * answer inside ten minutes of signing up, and the ten minutes are mostly spent on that blank.
  * So the empty conversation offers four sentences to press, chosen from the eight work patterns
  * by what this person has actually connected and by what the Bot has been told it is for — and a
- * fifth that turns the first of them into a morning routine.
+ * fifth that makes a morning briefing of what the Bot can reach (`morning-briefing.ts`).
  *
  * THE CONNECTION STATE DECIDES, NOT THE CATALOGUE. A chip for 스마트플레이스 in front of somebody
  * who has never signed the Bot's browser into it sends the Bot to a login wall it cannot get past,
@@ -94,8 +94,9 @@ export const FIRST_TASK_COUNT = 4;
  * in three seconds with its card. So the schedule sentence is that lookup, and `pickFirstTasks`
  * keeps it in the row whenever nothing else there would open the Bot's computer.
  *
- * Weather and not holidays, too: this is also the sentence the 7:30 chip repeats every morning, and
- * a public-holiday list asked daily answers the same thing seven days running.
+ * Weather and not holidays, too: this was the sentence the 7:30 chip repeated every morning until
+ * the chip became a briefing (`morning-briefing.ts`), whose one section that is always there is
+ * still this lookup — and a public-holiday list asked daily answers the same thing seven days running.
  */
 export const COMPUTER_FIRST_TASK: Sentence = {
   pattern: "schedule",
@@ -318,8 +319,7 @@ function connectedCandidates(
  * The chips for this Bot, in the order they are drawn.
  *
  * DETERMINISTIC ON PURPOSE: the same person opening the same screen twice should see the same
- * four, and the routine chip repeats the first one — a sentence that moved between reloads would
- * make "the same sentence, every morning" a lie.
+ * four. A row that reshuffled between reloads reads as the screen changing its mind.
  *
  * One pattern at a time: the eight patterns are walked in the shop's order, and the first connected
  * sentence under each is taken, then a second round for whatever is left. Four chips that are all
@@ -404,10 +404,11 @@ export function pickFirstTasks(
   /*
    * 지원사업, SECOND AMONG THE SENTENCES THAT NEED NOTHING, where the Bot holds the tool. It takes
    * the place of the last padding chip that is not the lookup — the row stays four, and the Bot's
-   * computer stays on it. Second rather than first because the 7:30 chip repeats the first sentence
-   * that asks something, and a search for support programmes every morning answers the same list
-   * six days running; the skill offers a Monday routine of its own instead. Never a `candidate`:
-   * the general connect chip is for somebody with nothing connected, and this connects nothing.
+   * computer stays on it. Second rather than first was decided while the 7:30 chip repeated the
+   * first sentence, so that it would not search the same list every morning; the chip is a briefing
+   * now, which asks 지원사업 on Mondays only (`morning-briefing.ts`), and the row was left as people
+   * had already been shown it. Never a `candidate`: the general connect chip is for somebody with
+   * nothing connected, and this connects nothing.
    */
   if (options.supportPrograms) {
     const padding = picked.flatMap((task, index) =>
@@ -438,14 +439,6 @@ export function pickFirstTasks(
   if (unconnected) return [{ kind: "connect", place: unconnected }, ...picked];
   if (candidates.length === 0) picked.push({ kind: "connect" });
   return picked;
-}
-
-/** The sentence the routine chip repeats: the first chip that asks something. */
-export function routineSentence(tasks: readonly FirstTask[]): string | null {
-  for (const task of tasks) {
-    if (task.kind === "ask") return task.sentence;
-  }
-  return null;
 }
 
 /**
@@ -485,7 +478,7 @@ export type FirstTaskPressed = {
   agentId: string;
   kind: "ask" | "routine" | "connect";
   pattern: WorkPatternId | null;
-  /** The English key of the sentence, or null for the connect chip. */
+  /** The English key of the sentence; null for the connect chip and the briefing, which say none. */
   sentence: string | null;
   via: FirstTaskAsk["via"];
   /**
