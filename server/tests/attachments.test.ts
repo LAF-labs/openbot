@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { deflateRawSync, constants as zlib } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
 import * as XLSX from "xlsx";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
@@ -26,30 +27,114 @@ import type { AgentChannel } from "../src/channels/types";
  * them, and the two doors they pass through. The database half is `attachments.integration.test.ts`.
  */
 
+/** A PDF of these objects, numbered from 1, with the cross-reference table written for them. */
+function pdfOf(objects: Array<string | Uint8Array>): Uint8Array {
+  const encoder = new TextEncoder();
+  const parts: Uint8Array[] = [encoder.encode("%PDF-1.4\n")];
+  let length = parts[0]?.length ?? 0;
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(length);
+    for (const part of [
+      encoder.encode(`${index + 1} 0 obj\n`),
+      typeof object === "string" ? encoder.encode(object) : object,
+      encoder.encode("\nendobj\n"),
+    ]) {
+      parts.push(part);
+      length += part.length;
+    }
+  });
+  let tail = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    tail += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  tail += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`;
+  parts.push(encoder.encode(tail));
+  return Buffer.concat(parts);
+}
+
+const HELVETICA = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
 /** A real one-page PDF with a text layer, small enough to write by hand. */
 function pdfWith(text: string): Uint8Array {
   const stream = `BT /F1 12 Tf 20 100 Td (${text}) Tj ET`;
-  const objects = [
+  return pdfOf([
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
     `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  ];
-  let body = "%PDF-1.4\n";
-  const offsets: number[] = [];
-  objects.forEach((object, index) => {
-    offsets.push(body.length);
-    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xref = body.length;
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    body += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  }
-  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return new TextEncoder().encode(body);
+    HELVETICA,
+  ]);
 }
+
+/** The red team's PDF: thousands of pages, every one pointing at the same small content stream. */
+function pdfOfPages(count: number): Uint8Array {
+  const stream = "BT /F1 12 Tf 20 100 Td (Same page) Tj ET";
+  const kids = Array.from({ length: count }, (_, i) => `${i + 5} 0 R`);
+  return pdfOf([
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${count} /MediaBox [0 0 300 144] /Resources << /Font << /F1 4 0 R >> >> >>`,
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    HELVETICA,
+    ...kids.map(() => "<< /Type /Page /Parent 2 0 R /Contents 3 0 R >>"),
+  ]);
+}
+
+/**
+ * A raw deflate stream that inflates to `copies` × `chunk` while staying small: the chunk deflated
+ * once with a full flush — so no back-reference crosses it and it can be repeated as is — then an
+ * empty final block.
+ */
+function deflateBomb(chunk: Uint8Array, copies: number): Uint8Array {
+  const block = deflateRawSync(chunk, { finishFlush: zlib.Z_FULL_FLUSH });
+  const out = new Uint8Array(block.length * copies + 2);
+  for (let i = 0; i < copies; i += 1) out.set(block, i * block.length);
+  out.set([0x03, 0x00], block.length * copies);
+  return out;
+}
+
+/** One page whose content stream, a few hundred KB on disk, inflates to `megabytes` of `operator`. */
+function pdfOfOneHugePage(megabytes: number, operator: string): Uint8Array {
+  const chunk = new TextEncoder().encode(
+    operator.repeat(Math.ceil(65_536 / operator.length)),
+  );
+  const raw = deflateBomb(
+    chunk,
+    Math.ceil((megabytes * 1024 * 1024) / chunk.length),
+  );
+  // FlateDecode is zlib: a two-byte header, the deflate stream, an Adler-32 pdf.js does not check.
+  const stream = new Uint8Array(raw.length + 6);
+  stream.set([0x78, 0x9c]);
+  stream.set(raw, 2);
+  const encoder = new TextEncoder();
+  return pdfOf([
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    Buffer.concat([
+      encoder.encode(
+        `<< /Length ${stream.length} /Filter /FlateDecode >>\nstream\n`,
+      ),
+      stream,
+      encoder.encode("\nendstream"),
+    ]),
+    HELVETICA,
+  ]);
+}
+
+/** Wall-clock milliseconds a piece of work took, with what it returned. */
+async function timed<T>(work: () => T | Promise<T>): Promise<[T, number]> {
+  const start = performance.now();
+  const result = await work();
+  return [result, performance.now() - start];
+}
+
+/**
+ * The ceiling every hostile file must finish under. The fixes bring each to a few hundred
+ * milliseconds; before them the same files took from 8 seconds to several minutes, so this is
+ * generous enough for a slow CI machine and still nowhere near the failure.
+ */
+const HOSTILE_MS = 2_000;
 
 function workbook(rows: (string | number)[][], name = "매출"): Uint8Array {
   const book = XLSX.utils.book_new();
@@ -205,6 +290,31 @@ describe("what the model reads of a sheet or a PDF", () => {
 
     const blank = await readPdf(pdfWith(""));
     expect(blank).toEqual({ body: "", whole: null });
+  });
+
+  test("a PDF of thousands of pages opens only the ones it reads, and says how many there were", async () => {
+    // 0.47 MB. Before the pages were bounded ahead of the work: 11 s and 830 MB, every page parsed.
+    const [read, ms] = await timed(() => readPdf(pdfOfPages(5_000)));
+    expect(ms).toBeLessThan(HOSTILE_MS);
+    expect(read.shown).toBe("5000쪽 중 앞부분");
+    expect(read.whole).toContain("--- 60쪽 ---\nSame page");
+    expect(read.whole).not.toContain("--- 61쪽 ---");
+  });
+
+  test("one page of endless text stops at the character bound", async () => {
+    // 0.23 MB inflating to 30 MB of `Tj`. Before the bound: every character collected first.
+    const [read, ms] = await timed(() =>
+      readPdf(
+        pdfOfOneHugePage(
+          30,
+          "BT /F1 12 Tf (AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) Tj ET\n",
+        ),
+      ),
+    );
+    expect(ms).toBeLessThan(HOSTILE_MS);
+    expect(read.body.length).toBeLessThanOrEqual(SUMMARY_CHARS);
+    expect(read.shown).toBe("1쪽 중 앞부분");
+    expect(Buffer.byteLength(read.whole ?? "")).toBeLessThanOrEqual(1_000_000);
   });
 
   test("a file cannot close its own fence and speak as the owner", () => {

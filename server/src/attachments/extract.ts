@@ -9,7 +9,7 @@
  * PDF text. Both parse untrusted input, so both are asked for text only — no formulas evaluated, no
  * HTML, no scripts — and bounded in rows and pages.
  */
-import { extractText, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
 
 /** The most characters of a file that ride in the conversation. The whole is on the computer. */
@@ -29,6 +29,18 @@ const PDF_PAGES = 60;
  * `agent-computer/src/workspace.ts`), with room for the line that says it was cut.
  */
 const WHOLE_BYTES = 900_000;
+
+/**
+ * Characters of a PDF's text read, all pages together. The whole is cut at `WHOLE_BYTES` and a
+ * character is at least a byte, so nothing past this survives — and one page can hold any amount:
+ * a 0.76 MB file whose page inflated to 100 MB of text took 20 s and 1.5 GB to read in full.
+ *
+ * Not bounded by this, measured: pdf.js inflates a page's content stream whole before it reads it
+ * (300 MB of text in a 2.3 MB file still costs 1.9 s and 690 MB with this bound), and a page of
+ * drawing with no text is then walked in microtasks that no timer here can interrupt (400 MB of
+ * paths: 8 s with the event loop held, 1.3 GB). Those need the reading in a worker that can be killed.
+ */
+const PDF_CHARS = WHOLE_BYTES;
 
 export type Extracted = {
   /** What the model reads, already bounded. */
@@ -119,23 +131,77 @@ export function readSheets(bytes: Uint8Array, mimeType: string): Extracted {
   };
 }
 
+type PdfPage = Awaited<
+  ReturnType<Awaited<ReturnType<typeof getDocumentProxy>>["getPage"]>
+>;
+
+/**
+ * One page's text, as unpdf's `extractText` joins it, read as a stream so that it can stop at
+ * `budget` characters instead of collecting everything the page holds first.
+ */
+async function pageText(
+  page: PdfPage,
+  budget: number,
+): Promise<{ text: string; full: boolean }> {
+  const reader = page.streamTextContent().getReader();
+  let text = "";
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) return { text, full: false };
+      const chunk = next.value as {
+        items: Array<{ str?: string; hasEOL?: boolean }>;
+      };
+      for (const item of chunk.items) {
+        if (item.str != null) text += item.str + (item.hasEOL ? "\n" : "");
+      }
+      if (text.length >= budget)
+        return { text: text.slice(0, budget), full: true };
+    }
+  } finally {
+    // With a reason, and an Error: pdf.js asserts one, and without it the cancel never marks the
+    // stream closed — every chunk still arriving then throws "Controller is already closed".
+    reader.cancel(new Error("read enough")).catch(() => {});
+  }
+}
+
 export async function readPdf(bytes: Uint8Array): Promise<Extracted> {
   // A copy: pdf.js takes ownership of the buffer it is given and detaches it.
   const document = await getDocumentProxy(new Uint8Array(bytes));
-  const { totalPages, text } = await extractText(document, {
-    mergePages: false,
-  });
-  const pages = text.slice(0, PDF_PAGES).map((page) => page.trim());
-  const withText = pages.filter((page) => page.length > 0);
-  if (withText.length === 0) return { body: "", whole: null };
+  try {
+    const totalPages = document.numPages;
+    // Only the pages that are read are opened. unpdf's `extractText` read every page and the slice
+    // came after: 5,000 pages sharing one content stream, 0.47 MB, took 11 s and 830 MB here.
+    const pages: string[] = [];
+    let budget = PDF_CHARS;
+    let full = false;
+    for (
+      let number = 1;
+      number <= Math.min(totalPages, PDF_PAGES) && !full;
+      number += 1
+    ) {
+      const page = await pageText(await document.getPage(number), budget);
+      pages.push(page.text.trim());
+      budget -= page.text.length;
+      full = page.full;
+    }
+    const withText = pages.filter((page) => page.length > 0);
+    if (withText.length === 0) return { body: "", whole: null };
 
-  const whole = pages
-    .map((page, index) => `--- ${index + 1}쪽 ---\n${page}`)
-    .join("\n\n");
-  const cut = whole.length > SUMMARY_CHARS || totalPages > PDF_PAGES;
-  return {
-    body: whole.length > SUMMARY_CHARS ? whole.slice(0, SUMMARY_CHARS) : whole,
-    ...(cut ? { shown: `${totalPages}쪽 중 앞부분` } : {}),
-    whole: cutToBytes(whole, WHOLE_BYTES),
-  };
+    const whole = pages
+      .map((page, index) => `--- ${index + 1}쪽 ---\n${page}`)
+      .join("\n\n");
+    const cut =
+      whole.length > SUMMARY_CHARS || totalPages > pages.length || full;
+    return {
+      body:
+        whole.length > SUMMARY_CHARS ? whole.slice(0, SUMMARY_CHARS) : whole,
+      ...(cut ? { shown: `${totalPages}쪽 중 앞부분` } : {}),
+      whole: cutToBytes(whole, WHOLE_BYTES),
+    };
+  } finally {
+    // Also what stops a page still being read: destroying the document terminates its worker task.
+    // `extractText` never destroys a document it is handed, so each one used to stay in memory.
+    await document.loadingTask.destroy();
+  }
 }
