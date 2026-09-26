@@ -196,6 +196,19 @@ describe("the row", () => {
     expect(page).toContain('t("Running now…")');
     expect(page).toContain('t("Started. The answer lands below.")');
   });
+
+  /*
+   * The first-hour walk, 2026-09-27: the button was a clock glyph named only by a tooltip, which a
+   * phone never shows. Its words are on the button itself, beside the glyph.
+   */
+  test("지금 실행 says so on the button, not only in a tooltip", () => {
+    const glyph = page.indexOf("<IconClockPlay");
+    const words = page.indexOf('{t("Run now")}', glyph);
+    expect(glyph).toBeGreaterThan(0);
+    expect(words).toBeGreaterThan(glyph);
+    expect(page.indexOf("</Button>", glyph)).toBeGreaterThan(words);
+    expect(page).not.toContain('<TooltipContent>{t("Run now")}');
+  });
 });
 
 /**

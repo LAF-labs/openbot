@@ -20,6 +20,7 @@ import {
 } from "@/components/routines/edit-in-chat";
 import { RoutineNotepad } from "@/components/routines/notepad";
 import { RoutineForm } from "@/components/routines/routine-form";
+import { RunAnswer } from "@/components/routines/run-answer";
 import { savingFailure } from "@/components/routines/saving-failure";
 import { RoutineSuggestions } from "@/components/routines/suggestions";
 import { UnreadPauseBanners } from "@/components/routines/unread-pause-banner";
@@ -136,9 +137,7 @@ function RunHistory({ routineId }: { routineId: string }) {
                     {shape ? ` · ${shape}` : ""}
                   </span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
-                  {outcome.text}
-                </p>
+                <RunAnswer outcome={outcome} />
               </li>
             );
           })}
@@ -303,33 +302,33 @@ function RoutineRow({
            * was the easier of the two to hit by accident. 삭제 moves into the ⋯ menu — the same
            * place a Bot's does — and the two that are left say what they are, in a tooltip for the
            * mouse and in `aria-label` for everybody else.
+           *
+           * AND THEN 지금 실행 SAYS IT IN WORDS. A clock with a triangle in it, named only by a
+           * tooltip, is a name nobody on a phone ever sees — there is no hover — and on the PC the
+           * first-hour walk (2026-09-27) found it only through the accessibility tree. It is the one
+           * press that shows somebody what their routine will do, so it carries its own label; the
+           * row's name wraps to a second line before it is cut, so the words cost no fact at 375.
            */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  aria-label={
-                    runNow.isPending
-                      ? t("Running {name}…", { name: routine.name })
-                      : t("Run {name} now", { name: routine.name })
-                  }
-                  disabled={runNow.isPending}
-                  // Opened here rather than in onSuccess: the panel the answer lands in should
-                  // already be open while the Bot is working, or the click looks like it did
-                  // nothing for a minute.
-                  onClick={() => {
-                    setShowRuns(true);
-                    runNow.mutate();
-                  }}
-                  size="icon-sm"
-                  variant="ghost"
-                >
-                  <IconClockPlay />
-                </Button>
-              }
-            />
-            <TooltipContent>{t("Run now")}</TooltipContent>
-          </Tooltip>
+          <Button
+            aria-label={
+              runNow.isPending
+                ? t("Running {name}…", { name: routine.name })
+                : t("Run {name} now", { name: routine.name })
+            }
+            disabled={runNow.isPending}
+            // Opened here rather than in onSuccess: the panel the answer lands in should
+            // already be open while the Bot is working, or the click looks like it did
+            // nothing for a minute.
+            onClick={() => {
+              setShowRuns(true);
+              runNow.mutate();
+            }}
+            size="sm"
+            variant="outline"
+          >
+            <IconClockPlay data-icon="inline-start" />
+            {t("Run now")}
+          </Button>
           <Tooltip>
             <TooltipTrigger
               render={
