@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import { ATTACHMENT_MAX_BYTES, type AttachmentPart } from "@shared/attachments";
 import { toVisibleChatItems } from "@/components/channels/chat-messages";
@@ -6,7 +6,9 @@ import type { ComposerDraft } from "@/components/channels/composer/draft";
 import { reduceQueue } from "@/components/channels/composer/queue";
 import { contentOf } from "@/lib/attachments/message";
 import {
+  AttachmentUploadError,
   refusalBeforeUpload,
+  uploadAttachment,
   uploadRefusalText,
 } from "@/lib/attachments/upload";
 import { ko } from "@/lib/i18n-ko";
@@ -139,5 +141,61 @@ describe("what the composer says before anything is sent", () => {
       expect(said).not.toContain("laf:");
       expect(isTranslated(said)).toBe(true);
     }
+  });
+});
+
+/**
+ * An iPhone photo on a surface that cannot decode it. The picker offers .heic because the surface
+ * converts it to a JPEG; Chromium — the Windows app's WebView2 — cannot, and the raw HEIC used to be
+ * uploaded and refused by the server as "어떤 파일인지 알아볼 수 없어요. 사진…을 붙여 주세요", to
+ * somebody who had attached a photo. This runtime, like Chromium, decodes no HEIC.
+ */
+describe("a HEIC photo this surface cannot convert", () => {
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    asked.length = 0;
+  });
+  const recordFetch = () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      return Response.json({
+        attachment: {
+          id: "33333333-3333-4333-8333-333333333333",
+          name: "영수증.jpg",
+          mimeType: "image/jpeg",
+          kind: "image",
+          bytes: 3,
+        },
+      });
+    }) as typeof fetch;
+  };
+
+  test("is refused before anything is uploaded, in words that say what to do", async () => {
+    recordFetch();
+    const photo = new File([new Uint8Array([0, 0, 0, 24])], "IMG_0001.HEIC", {
+      type: "image/heic",
+    });
+    const refused = await uploadAttachment("channel_a", photo).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(AttachmentUploadError);
+    const code = (refused as AttachmentUploadError).code;
+    expect(code).toBe("laf:attachment_heic_unconverted");
+    expect(asked).toEqual([]);
+    const said = uploadRefusalText(code);
+    expect(said).not.toBe(uploadRefusalText("laf:attachment_type_unsupported"));
+    expect(said).not.toBe(uploadRefusalText("laf:unknown"));
+    expect(isTranslated(said)).toBe(true);
+  });
+
+  test("another photo this surface cannot decode still goes up, and the server decides", async () => {
+    recordFetch();
+    const photo = new File([new Uint8Array([255, 216, 255])], "영수증.jpg", {
+      type: "image/jpeg",
+    });
+    await uploadAttachment("channel_a", photo);
+    expect(asked).toHaveLength(1);
   });
 });

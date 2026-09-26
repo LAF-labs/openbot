@@ -99,14 +99,29 @@ export function uploadRefusalText(code: unknown): string {
       return t(
         "This file could not be opened. It may be damaged or password-protected.",
       );
+    case "laf:attachment_heic_unconverted":
+      return t(
+        "This photo is in HEIC format, which cannot be opened here. Save it as a JPG and attach it again.",
+      );
     default:
       return t("The file could not be attached. Please try again.");
   }
 }
 
+/** An iPhone's own photo format, which only a WebKit surface can decode. */
+function isHeicFile(file: File): boolean {
+  const extension = extensionOf(file.name);
+  return (
+    extension === "heic" ||
+    extension === "heif" ||
+    file.type === "image/heic" ||
+    file.type === "image/heif"
+  );
+}
+
 /**
  * A photo as a JPEG no larger than `IMAGE_LONG_EDGE` on its long edge. The original when the browser
- * cannot decode it (HEIC in Chrome), and the server then says whether it can take it.
+ * cannot decode it, and the server then says whether it can take it — except a HEIC (below).
  */
 async function shrunk(file: File): Promise<File> {
   let bitmap: ImageBitmap;
@@ -153,6 +168,16 @@ export async function uploadAttachment(
   original: File,
 ): Promise<ReceivedAttachment> {
   const file = isImageFile(original) ? await shrunk(original) : original;
+  /*
+   * A HEIC THAT COULD NOT BE CONVERTED IS NOT SENT. The picker offers .heic because the surface
+   * turns it into a JPEG — which WebKit can and Chromium cannot, and the Windows app is Chromium
+   * (WebView2). Sent as it was, the server does not take HEIC and said "어떤 파일인지 알아볼 수
+   * 없어요. 사진…을 붙여 주세요" to somebody who had just attached a photo, after uploading up to
+   * 40 MB to be told so. The refusal is said here, in words that name what to do.
+   */
+  if (file === original && isHeicFile(original)) {
+    throw new AttachmentUploadError("laf:attachment_heic_unconverted");
+  }
   const form = new FormData();
   form.append("file", file, file.name);
   const response = await fetch(

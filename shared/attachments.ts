@@ -54,7 +54,11 @@ export const ATTACHMENT_TYPES: Readonly<
   "application/pdf": { kind: "pdf", extension: "pdf" },
 };
 
-/** What the picker offers. Wider than the list above only by HEIC, which the surface converts. */
+/**
+ * What the picker offers. Wider than the list above only by HEIC, which the surface converts where
+ * it can decode one (WebKit) and refuses before uploading where it cannot (Chromium, the Windows
+ * app's WebView2) — `uploadAttachment` in `app/src/lib/attachments/upload.ts`.
+ */
 export const ATTACHMENT_PICKER_ACCEPT =
   ".jpg,.jpeg,.png,.webp,.heic,.heif,.xlsx,.xls,.csv,.pdf";
 

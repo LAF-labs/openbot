@@ -2637,6 +2637,8 @@ export const ko: Record<string, string> = {
     "파일을 열 수 없어요. 손상됐거나 암호가 걸려 있을 수 있어요.",
   "The file could not be attached. Please try again.":
     "파일을 붙이지 못했어요. 다시 해 주세요.",
+  "This photo is in HEIC format, which cannot be opened here. Save it as a JPG and attach it again.":
+    "이 사진은 HEIC 형식이라 여기서 열 수 없어요. JPG로 저장해서 다시 붙여 주세요.",
   // notebook
   Notebook: "수첩",
   "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.":
