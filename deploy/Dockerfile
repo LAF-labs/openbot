@@ -39,7 +39,7 @@ COPY agent-computer/seccomp_profile.json /deploy/agent-computer/
 # The mode is set here rather than trusted from the context: the scripts are run by path from the
 # deployment directory, and a checkout on a filesystem that dropped the bit would ship one that
 # `Permission denied`s.
-COPY --chmod=755 scripts/upgrade.sh scripts/restore.sh /deploy/scripts/
+COPY --chmod=755 scripts/upgrade.sh scripts/restore.sh scripts/laf-browser-firewall.sh /deploy/scripts/
 # The terms and the privacy policy as static pages — `terms.html`, `privacy.html` and `version` —
 # which the front door serves before anybody has an account (self-serve contract §4.1). RENDERED
 # BEFORE THIS BUILD, not in it: images.yml runs `bun app/scripts/render-legal.ts deploy/legal` first,

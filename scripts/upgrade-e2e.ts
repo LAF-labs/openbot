@@ -97,6 +97,7 @@ export const BUNDLE_FILES = [
   "agent-computer/seccomp_profile.json",
   "scripts/upgrade.sh",
   "scripts/restore.sh",
+  "scripts/laf-browser-firewall.sh",
   /*
    * The legal pages, which are RENDERED before the build (`app/scripts/render-legal.ts`) and are in
    * no commit — so a rebuild from git finds nothing here, which is right: no revision old enough to
@@ -1078,6 +1079,7 @@ async function main(): Promise<number> {
   let outages = new Map<string, Outage>();
   let measuredRevision: string | null = null;
   let stackStarted = false;
+  let hostFirewallApplied = false;
   let finished = false;
   const takeAway = async () => {
     if (finished) return;
@@ -1091,6 +1093,14 @@ async function main(): Promise<number> {
       return;
     }
     say("Taking away what this run made");
+    if (hostFirewallApplied) {
+      await run([
+        "sudo",
+        "-n",
+        join(deployment, "scripts/laf-browser-firewall.sh"),
+        "remove",
+      ]);
+    }
     if (stackStarted) {
       await compose([
         "down",
@@ -1706,6 +1716,39 @@ async function main(): Promise<number> {
       throw new Error(
         "scripts/upgrade.sh did not succeed; nothing after it means anything.",
       );
+
+    /*
+     * THE HOST'S BROWSER RULES, AS A VM HOLDS THEM. Since 2026-09-26 the Bot's browser refuses to
+     * browse (`laf:egress_unguarded`) until the host rejects its way to the metadata endpoint and
+     * private ranges — the fleet installs those rules before every stack, and a self-hosted VM runs
+     * the bundle's `scripts/laf-browser-firewall.sh`. The first run of this e2e after that change
+     * failed on exactly this: the upgraded computer, correctly, would not open a page on a host
+     * with no rules. So the upgraded directory's own script is applied here, as root, the way a VM
+     * does it — and taken away with the rest of the run. A bundle without the script is a release
+     * from before the rules moved to the host, whose computer holds its own.
+     */
+    const firewall = join(deployment, "scripts/laf-browser-firewall.sh");
+    if (existsSync(firewall)) {
+      const applied = await run(
+        [
+          "sudo",
+          "-n",
+          "env",
+          `LAF_ENV_FILE=${join(deployment, ".env")}`,
+          firewall,
+          "apply",
+        ],
+        { cwd: deployment },
+      );
+      hostFirewallApplied = applied.code === 0;
+      report.check(
+        "the host's browser rules applied from the upgraded bundle",
+        hostFirewallApplied,
+        hostFirewallApplied
+          ? applied.stdout.trim()
+          : `exit ${applied.code}: ${applied.stderr.trim().slice(0, 200)} (no passwordless sudo here — run on CI or as root)`,
+      );
+    }
 
     // Probing on until every door has answered ok for five seconds straight, so the last window closes.
     await until(

@@ -223,6 +223,11 @@ holds no capability at all (`cap_drop: [ALL]`, no new privileges). The fleet
 tool installs `/usr/local/sbin/laf-browser-firewall` and a systemd unit ordered
 after, and part of, `docker.service` (laf-control `core/host-firewall.ts`) at
 provision, spare prepare, claim and every upgrade — before compose comes up.
+The same script ships in the deploy bundle as `scripts/laf-browser-firewall.sh`: a VM
+the fleet does not manage runs `sudo ./scripts/laf-browser-firewall.sh apply` after
+every boot and upgrade (it reads the deployment's `.env` from `LAF_ENV_FILE`, default
+`/home/ubuntu/openbot/.env`), and `remove` takes the rules away. The upgrade e2e applies
+it the same way before it checks the browser.
 It rejects, with ICMP "administratively prohibited", every NEW connection coming
 in from that bridge to 169.254.0.0/16 (the metadata endpoint on OCI, AWS and GCP
 alike), RFC 1918, CGNAT, loopback and the reserved ranges (in `DOCKER-USER`), to
