@@ -21,9 +21,17 @@
  * holds the fact that something is in flight. They are different questions.
  */
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { lafThreadRuns } from "../db/schema";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
+import {
+  ENDING_CODE_SOURCE,
+  endingOf,
+  WITH_PERSON,
+} from "../telemetry/run-ending";
+import type { RunMeasure } from "../telemetry/run-meter";
 
 /**
  * What starts a run, of what the enum column accepts.
@@ -56,6 +64,12 @@ export type RunStart = {
    * all have to agree on it. Everything else lets the ledger mint one.
    */
   runId?: string;
+  /**
+   * This run carries on a step an earlier run of the same turn handed to a window: its input ends
+   * on the step's result, not on anything the person said. It joins that run's turn rather than
+   * opening one, so the report counts the person's errand once however many steps it took.
+   */
+  continues?: boolean;
 };
 
 /** How a run ended, as the events reported it. See `runOutcome` in `laf-runner.ts`. */
@@ -65,6 +79,13 @@ export type RunOutcome = {
   error?: string | null;
   /** How big the turn was. Zero for a run whose path does not stream events. */
   eventCount?: number;
+  /**
+   * What the run measured (`telemetry/run-meter.ts`). Absent on an ending written after the fact —
+   * a step that came back or never did — which keeps what the run itself measured.
+   */
+  measure?: RunMeasure;
+  /** A routine that stopped because a person has to answer something: 사장님 차례. */
+  awaiting?: boolean;
 };
 
 /**
@@ -154,12 +175,147 @@ export type RunLedger = {
   ): Promise<void>;
 };
 
+const WHOLE_CODE = new RegExp(ENDING_CODE_SOURCE);
+
+/** A column's worth of a count: whole, not negative, and inside an `integer`. */
+const whole = (value: number | null): number | null =>
+  value === null || !Number.isFinite(value)
+    ? null
+    : Math.min(2_147_483_647, Math.max(0, Math.round(value)));
+
+/** The measure as columns. Nothing but numbers leaves here. */
+function measureColumns(measure: RunMeasure) {
+  return {
+    queuedMs: whole(measure.queuedMs),
+    firstTokenMs: whole(measure.firstTokenMs),
+    streamMs: whole(measure.streamMs),
+    totalMs: whole(measure.totalMs),
+    modelRequests: whole(measure.modelRequests) ?? 0,
+    toolCalls: whole(measure.toolCalls) ?? 0,
+    retries: whole(measure.retries) ?? 0,
+    promptTokens: whole(measure.promptTokens) ?? 0,
+    cachedTokens: whole(measure.cachedTokens) ?? 0,
+    costUsd:
+      Number.isFinite(measure.costUsd) && measure.costUsd > 0
+        ? measure.costUsd
+        : 0,
+  };
+}
+
+/** What the ledger reads about a run's turn before it writes the run's ending. */
+type TurnSoFar = {
+  agentId: string | null;
+  /** The provisional code a `waiting` settle left: whose the step was. */
+  endingCode: string | null;
+  /** When the turn's first run was accepted, on the database's clock like the trail's rows. */
+  turnStartedAt: Date | null;
+};
+
+async function turnSoFar(
+  database: Database,
+  runId: string,
+): Promise<TurnSoFar | null> {
+  const rows = await database.execute<{
+    agent_id: string | null;
+    ending_code: string | null;
+    turn_started_at: string | Date | null;
+  }>(sql`
+    SELECT r.agent_id, r.ending_code, coalesce(o.started_at, r.started_at) AS turn_started_at
+      FROM laf_thread_runs r
+      LEFT JOIN laf_thread_runs o ON o.run_id = r.turn_id
+     WHERE r.run_id = ${runId}`);
+  const row = [...rows][0];
+  if (!row) return null;
+  return {
+    agentId: row.agent_id,
+    endingCode: row.ending_code,
+    turnStartedAt:
+      row.turn_started_at === null ? null : new Date(row.turn_started_at),
+  };
+}
+
+/**
+ * The questions asked about this Bot's actions since its turn began, how many a person granted,
+ * and how many nobody has answered.
+ *
+ * BY BOT AND TIME, because the question's row (`approval.requested`, written by the gateway and the
+ * plugin store) names the Bot and the approval and not the run: in a conversation it is asked by a
+ * window, between two runs, and no run is open to name. One person has one Bot, and a routine takes
+ * its Bot's lane, so the questions in a turn's window are that turn's — except for a routine and a
+ * conversation overlapping on the one Bot, which would each count the other's. Paired by the
+ * approval's id, as `notifications/approval-metrics.ts` and the fleet's `approvals` pair them.
+ */
+async function approvalsSince(
+  database: Database,
+  agentId: string,
+  since: Date,
+): Promise<{ asked: number; granted: number; open: number }> {
+  const rows = await database.execute<{
+    asked: number | string;
+    granted: number | string;
+    open: number | string;
+  }>(sql`
+    SELECT count(*) AS asked,
+           count(*) FILTER (WHERE EXISTS (
+             SELECT 1 FROM audit_events d
+              WHERE d.event_type = 'approval.granted'
+                AND d.payload->>'approval' = r.payload->>'approval')) AS granted,
+           count(*) FILTER (WHERE NOT EXISTS (
+             SELECT 1 FROM audit_events d
+              WHERE d.event_type IN ('approval.granted', 'approval.denied')
+                AND d.payload->>'approval' = r.payload->>'approval')) AS open
+      FROM audit_events r
+     WHERE r.event_type = 'approval.requested'
+       AND r.payload->>'bot' = ${agentId}
+       AND r.created_at >= ${since}`);
+  const row = [...rows][0];
+  return {
+    asked: Number(row?.asked ?? 0),
+    granted: Number(row?.granted ?? 0),
+    open: Number(row?.open ?? 0),
+  };
+}
+
 export function createRunLedger(database: Database): RunLedger {
   const settle: RunLedger["settle"] = async (
     runId,
     outcome,
     executor = database,
   ) => {
+    /*
+     * THE TURN'S FACTS ARE READ ON THE POOL, and never allowed to cost the ending. A routine settles
+     * inside its own transaction (`routines/settlement.ts`), and what these read — the run's own
+     * row, opened on the pool at `begin`, and the trail — is committed already. A read that fails
+     * leaves the ending written without them: a lost measurement is a gap in a report, and a lost
+     * ending is a Bot the roster calls busy.
+     */
+    let turn: TurnSoFar | null = null;
+    let approvals: { asked: number; granted: number; open: number } | null =
+      null;
+    try {
+      turn = await turnSoFar(database, runId);
+      if (outcome.status !== "waiting" && turn?.agentId && turn.turnStartedAt) {
+        approvals = await approvalsSince(
+          database,
+          turn.agentId,
+          turn.turnStartedAt,
+        );
+      }
+    } catch (error) {
+      log.warn("run_measure_unread", {
+        run: runId,
+        reason: describeFailure(error),
+      });
+    }
+    const { ending, code } = endingOf({
+      status: outcome.status,
+      error: outcome.error ?? null,
+      personNeeded:
+        outcome.measure?.personNeeded ?? turn?.endingCode === WITH_PERSON,
+      emptyAnswer: outcome.measure?.emptyAnswer ?? false,
+      awaiting: outcome.awaiting ?? false,
+      approvalsOpen: approvals?.open ?? null,
+    });
     await executor
       .update(lafThreadRuns)
       .set({
@@ -169,8 +325,34 @@ export function createRunLedger(database: Database): RunLedger {
           ? {}
           : { eventCount: outcome.eventCount }),
         finishedAt: new Date(),
+        ending,
+        // Only a code's shape is ever written; anything else was never a code.
+        endingCode: code !== null && WHOLE_CODE.test(code) ? code : null,
+        ...(outcome.measure ? measureColumns(outcome.measure) : {}),
+        ...(approvals
+          ? {
+              approvalsAsked: approvals.asked,
+              approvalsGranted: approvals.granted,
+            }
+          : {}),
       })
       .where(eq(lafThreadRuns.runId, runId));
+  };
+
+  /**
+   * The turn a run carrying a step on belongs to: the thread's newest run's, which is the run that
+   * handed the step over. Its own id when there is none to join — a thread whose rows predate
+   * turns, or none — so a continuation is never counted as nobody's.
+   */
+  const turnOf = async (runId: string, start: RunStart): Promise<string> => {
+    if (!start.continues || !start.threadId) return runId;
+    const [latest] = await database
+      .select({ runId: lafThreadRuns.runId, turnId: lafThreadRuns.turnId })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.threadId, start.threadId))
+      .orderBy(desc(lafThreadRuns.startedAt))
+      .limit(1);
+    return latest ? (latest.turnId ?? latest.runId) : runId;
   };
 
   return {
@@ -185,6 +367,7 @@ export function createRunLedger(database: Database): RunLedger {
         origin: start.origin,
         dedupeKey: start.dedupeKey ?? null,
         status: "running",
+        turnId: await turnOf(runId, start),
       });
       return runId;
     },

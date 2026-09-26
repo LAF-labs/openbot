@@ -40,6 +40,8 @@ import { channelThreads, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
+import { STEP_NOT_RETURNED } from "../telemetry/run-ending";
+import { createRunMeter, type RunMeter } from "../telemetry/run-meter";
 import type { WorkInFlight } from "./in-flight";
 import { settleReplay } from "./replay";
 import {
@@ -270,11 +272,8 @@ function carriesAStepOn(messages: readonly Message[]): boolean {
   return messages.at(-1)?.role === "tool";
 }
 
-/**
- * Why a run that handed a step to a window was recorded `stopped` without anybody pressing Stop:
- * the step never came back — its window closed, or the person said something new instead.
- */
-export const STEP_NOT_RETURNED = "laf:step_not_returned";
+/** Why a run whose step never came back was recorded `stopped`. See `telemetry/run-ending.ts`. */
+export { STEP_NOT_RETURNED };
 
 /**
  * A run that handed its step to a window and has not heard back, as the ledger has to finish it.
@@ -517,6 +516,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   }
 
   override run(request: AgentRunnerRunRequest) {
+    // The run is accepted now: what the meter calls queued is measured from here.
+    const meter = createRunMeter();
     const agentId = request.agent.agentId ?? null;
     const inputMessages = [...(request.input.messages ?? [])] as Message[];
     const forwarded = (request.input.forwardedProps ?? {}) as Record<
@@ -602,6 +603,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     events.subscribe({
       next: (event) => {
         collected.push(event);
+        meter.observe(event);
         const started = event as BaseEvent & { messageId?: string };
         if (
           String(event.type) === "TEXT_MESSAGE_START" &&
@@ -612,6 +614,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         }
       },
       error: (error: unknown) => {
+        meter.end();
         this.ended(live);
         void this.finishRun(
           opened,
@@ -622,9 +625,11 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           startedAt,
           error instanceof Error ? error.message : String(error),
           live,
+          meter,
         );
       },
       complete: () => {
+        meter.end();
         this.ended(live);
         void this.finishRun(
           opened,
@@ -635,6 +640,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
           startedAt,
           null,
           live,
+          meter,
         );
       },
     });
@@ -926,6 +932,8 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         // What the person asked, for 오늘 to name the turn by. Null on a run a browser step started.
         label: origin === "chat" ? chatLabelOf(messages) : null,
         dedupeKey,
+        // A browser step's result joins the turn that handed the step over.
+        continues: carriesAStepOn(messages),
       });
       await appendMessages(this.database, threadId, messages, { runId });
       return { runId, owner };
@@ -947,6 +955,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     startedAt: Map<string, string>,
     errorMessage: string | null,
     live: LiveRun,
+    meter: RunMeter,
   ): Promise<void> {
     /** Says this run's `waiting` row is written, where it has one. Called on every way out. */
     let waited: (() => void) | undefined;
@@ -988,6 +997,7 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
         await this.ledger.settle(runId, {
           ...outcome,
           eventCount: events.length,
+          measure: meter.read(),
         });
         waited?.();
         /*

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   customType,
+  doublePrecision,
   index,
   integer,
   pgEnum,
@@ -112,6 +113,20 @@ export const runStatus = pgEnum("laf_run_status", [
   "stopped",
   "unknown",
   "waiting",
+]);
+
+/**
+ * How a turn ended for the owner: 끝남, 못 끝냄, 멈춤, 사장님 차례 (`telemetry/run-ending.ts`).
+ *
+ * Beside `status`, not instead of it: `status` is what happened to the stream, and the roster, the
+ * boot reconciler and the failure line read it as that. A step that never came back is `stopped`
+ * there whether the window closed or the owner never pressed 허용, and this is where those differ.
+ */
+export const runEnding = pgEnum("laf_run_ending", [
+  "finished",
+  "unfinished",
+  "stopped",
+  "owner",
 ]);
 
 /** `interval` runs every N minutes; `daily` runs once a day at `dailyLocal` in `dailyTimeZone`. */
@@ -235,6 +250,43 @@ export const lafThreadRuns = pgTable(
       .notNull()
       .defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /*
+     * WHAT THE TURN MEASURED (P3, 2026-09-26): times, counts and codes, and nothing anybody wrote.
+     * Every column below is a number, the enum, or a code matched to `laf:` and a closed shape
+     * before it is written (`runner/run-ledger.ts`), so none of them can hold a word of the
+     * conversation. `label` above predates them and is 오늘's.
+     *
+     * A person's turn can be several rows: a step handed to a window ends a run, and the step's
+     * result starts the next. `turnId` is the run that opened the turn — its own id for the
+     * opener, a routine and a wake — so the report reads turns, not the runs a browser split
+     * them into. Null on rows from before this was measured, which the report leaves out.
+     */
+    turnId: text("turn_id"),
+    /** Null while the step is with a window, and on rows from before this was measured. */
+    ending: runEnding("ending"),
+    /** Why it ended that way, as a `laf:` code; a `waiting` row's says whose the step is. */
+    endingCode: text("ending_code"),
+    /** Accepted → the Bot's service started the run. */
+    queuedMs: integer("queued_ms"),
+    /** Started → the model's first text or tool call. */
+    firstTokenMs: integer("first_token_ms"),
+    /** First output → the stream ended. */
+    streamMs: integer("stream_ms"),
+    /** Accepted → the stream ended. */
+    totalMs: integer("total_ms"),
+    modelRequests: integer("model_requests").notNull().default(0),
+    toolCalls: integer("tool_calls").notNull().default(0),
+    retries: integer("retries").notNull().default(0),
+    /**
+     * Questions asked about this Bot's actions since its turn began, and how many were granted.
+     * For the turn so far, not this row alone: in a conversation the question is asked while the
+     * row before is `waiting`, between runs. The report takes the turn's largest.
+     */
+    approvalsAsked: integer("approvals_asked").notNull().default(0),
+    approvalsGranted: integer("approvals_granted").notNull().default(0),
+    promptTokens: integer("prompt_tokens").notNull().default(0),
+    cachedTokens: integer("cached_tokens").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
   },
   (table) => [
     /*
@@ -253,6 +305,11 @@ export const lafThreadRuns = pgTable(
      * first day and is exactly the query that gets slower every day after it.
      */
     index("laf_thread_runs_started_at_idx").on(table.startedAt),
+    /*
+     * A run carrying a step on finds its turn from the thread's newest run (`run-ledger.ts`
+     * `begin`), once per browser step. Without this that is a scan of every run ever recorded.
+     */
+    index("laf_thread_runs_thread_idx").on(table.threadId, table.startedAt),
   ],
 );
 

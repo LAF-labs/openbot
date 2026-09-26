@@ -22,7 +22,7 @@
  * had never been given.
  */
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent, Message, Tool } from "@ag-ui/client";
+import type { AbstractAgent, BaseEvent, Message, Tool } from "@ag-ui/client";
 import { jsonObjectOf } from "../../../shared/json-object";
 import type { PromptMode, RoutineNote } from "../../../shared/prompt";
 import {
@@ -118,6 +118,12 @@ export type UnattendedRunOptions = {
    * {@link RunStopped}, which every caller records as a stop and never as a failure.
    */
   signal?: AbortSignal;
+  /**
+   * Every event of every step, for the run's meter (`telemetry/run-meter.ts`). The routine's ledger
+   * row is one run however many times the model is asked, and each ask is an AG-UI run of its own
+   * with its own id — so the steps are handed over here, where they are still the routine's.
+   */
+  observe?: (event: BaseEvent) => void;
 };
 
 /** One turn of the model, for the record a routine keeps and an operator reads. */
@@ -365,6 +371,10 @@ export async function runUnattended(
           },
         },
         {
+          onEvent: ({ event }) => {
+            options.observe?.(event);
+            return {};
+          },
           onRunErrorEvent: ({ event }) => {
             failure = event.message || "no reason was given";
             return {};

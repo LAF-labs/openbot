@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent } from "@ag-ui/client";
+import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
@@ -17,6 +17,7 @@ import {
   UnattendedRunError,
   type UnattendedToolkit,
 } from "../runner/unattended";
+import { createRunMeter, type RunMeter } from "../telemetry/run-meter";
 import { isSilentAnswer } from "./deliver";
 import {
   draftOf,
@@ -152,6 +153,11 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
           return true;
         },
       });
+      /*
+       * Queued from here, before the lane: the time a run waits behind another on the same Bot is
+       * time the owner waits, and the ledger row only opens once the lane lets it through.
+       */
+      const meter = createRunMeter();
       try {
         /*
          * One unattended run per Bot at a time, through the lane every server-side path shares.
@@ -164,9 +170,9 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
          */
         await (options.lane
           ? options.lane.run(row.agentId, () =>
-              executeNow(options, row, stopping.signal, scheduledFor),
+              executeNow(options, row, stopping.signal, meter, scheduledFor),
             )
-          : executeNow(options, row, stopping.signal, scheduledFor));
+          : executeNow(options, row, stopping.signal, meter, scheduledFor));
       } finally {
         done?.();
       }
@@ -230,6 +236,8 @@ async function executeNow(
   row: RoutineRow,
   /** A person's stop (`모두 멈추기`). Already aborted when the run was stopped in the queue. */
   signal: AbortSignal,
+  /** Started when the run was claimed, fed every event the Bot's steps produce. */
+  meter: RunMeter,
   /** The window the clock claimed; absent for Run now and the webhook. */
   scheduledFor?: Date,
 ): Promise<void> {
@@ -246,7 +254,15 @@ async function executeNow(
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author, runId);
-  const attempt = await askTheBot(options, row, author, signal, scheduledFor);
+  const attempt = await askTheBot(
+    options,
+    row,
+    author,
+    signal,
+    meter.observe,
+    scheduledFor,
+  );
+  meter.end();
 
   /*
    * Nothing to report, said the way the routine prompt asks for it.
@@ -272,6 +288,8 @@ async function executeNow(
     silent,
     notepad: attempt.notepad,
     stopped: attempt.stopped,
+    measure: meter.read(),
+    awaiting: attempt.awaiting,
   });
 
   // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
@@ -340,6 +358,8 @@ async function askTheBot(
   row: RoutineRow,
   author: string | null,
   signal: AbortSignal,
+  /** The run's meter, handed every event. See `UnattendedRunOptions.observe`. */
+  observe: (event: BaseEvent) => void,
   scheduledFor?: Date,
 ): Promise<Attempt> {
   let notepad: NotepadDraft | null = null;
@@ -413,6 +433,7 @@ async function askTheBot(
         notepad: notepad.read,
         routineRun,
         signal,
+        observe,
       });
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
@@ -443,6 +464,7 @@ async function askTheBot(
       options.runTimeoutMs,
       signal,
       routineRun,
+      observe,
     );
     return {
       ok: true,

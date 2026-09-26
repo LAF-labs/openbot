@@ -14,6 +14,7 @@ import {
 import type { RunLedger } from "../runner/run-ledger";
 import type { Executor } from "../runner/thread-store";
 import type { UnattendedRunResult } from "../runner/unattended";
+import type { RunMeasure } from "../telemetry/run-meter";
 import type {
   Delivered,
   DeliverRoutineAnswer,
@@ -87,6 +88,10 @@ export type RunToSettle = {
    * Optional so a caller that cannot be stopped says nothing, which is "not stopped".
    */
   stopped?: boolean;
+  /** What the run measured, for its ledger row (`telemetry/run-meter.ts`). */
+  measure?: RunMeasure;
+  /** The run stopped because a person has to answer something: 사장님 차례 on the ledger row. */
+  awaiting?: boolean;
 };
 
 /** What the record came to, and the announcements it earned — to be made by the caller. */
@@ -201,12 +206,16 @@ async function writeRecord(
   if (run.ledgerRunId) {
     await options.ledger?.settle(
       run.ledgerRunId,
-      run.ok
-        ? { status: "done", error: null }
-        : run.stopped
-          ? // The status the conversation's failure reader passes over, as it does a chat's Stop.
-            { status: "stopped", error: null }
-          : { status: "error", error: run.failure },
+      {
+        ...(run.ok
+          ? { status: "done" as const, error: null }
+          : run.stopped
+            ? // The status the conversation's failure reader passes over, as it does a chat's Stop.
+              { status: "stopped" as const, error: null }
+            : { status: "error" as const, error: run.failure }),
+        ...(run.measure ? { measure: run.measure } : {}),
+        awaiting: run.awaiting === true,
+      },
       transaction,
     );
   }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AbstractAgent } from "@ag-ui/client";
+import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
 import type { RefusalCode } from "../failure-text";
 import { routineForwarded } from "../runner/unattended";
 
@@ -51,6 +51,8 @@ export async function runAgentOnce(
   signal?: AbortSignal,
   /** When the run was meant for, told to the Bot by the prompt middleware. See `runUnattended`. */
   routineRun?: { scheduledFor: Date | null },
+  /** Every event of the run, for its meter. See `UnattendedRunOptions.observe`. */
+  observe?: (event: BaseEvent) => void,
 ): Promise<string> {
   if (signal?.aborted) throw stopped();
   target.setMessages([{ id: randomUUID(), role: "user", content: message }]);
@@ -68,12 +70,22 @@ export async function runAgentOnce(
 
   const outcome = await Promise.race([
     stop,
-    target.runAgent({
-      forwardedProps: {
-        mode: "routine",
-        ...(routineRun ? { routine: routineForwarded(routineRun) } : {}),
+    target.runAgent(
+      {
+        forwardedProps: {
+          mode: "routine",
+          ...(routineRun ? { routine: routineForwarded(routineRun) } : {}),
+        },
       },
-    }),
+      observe
+        ? {
+            onEvent: ({ event }) => {
+              observe(event);
+              return {};
+            },
+          }
+        : undefined,
+    ),
     new Promise<never>((_, reject) => {
       setTimeout(
         () =>
