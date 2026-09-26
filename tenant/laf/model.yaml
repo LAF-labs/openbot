@@ -10,9 +10,10 @@ model:
   # product, and no one of them was the truth. agent-bot and the eval now carry none and refuse to
   # run without BOT_MODEL; this is the fallback, and it is the model the eval certified.
   #
-  # Xiaomi's MiMo-V2.6-Pro since 2026-09-25, the owner's decision, put through the same ritual
-  # (docs/laf/eval-pack.md, "MiMo-V2.6-Pro").
-  default_model: ${BOT_MODEL:-xiaomi/mimo-v2.6-pro}
+  # DeepSeek V4.1 Flash since 2026-09-26, the owner's decision for the development stage ("a cheap
+  # model that swaps in at once"; docs/laf/eval-pack.md, "DeepSeek V4.1 Flash"). Xiaomi's
+  # MiMo-V2.6-Pro before it, from 2026-09-25.
+  default_model: ${BOT_MODEL:-deepseek/deepseek-v4.1-flash}
   # Whether this deployment's model reasons, and therefore takes an effort setting.
   #
   # AN ASSERTION, NOT A DESCRIPTION. The model provider decides on its own whether to send an effort
@@ -25,16 +26,17 @@ model:
   # model it recognises as reasoning. Set it false on a model that does not reason: nothing is sent,
   # and the control disappears from the Bot's profile rather than sitting there doing nothing.
   #
-  # FALSE BY DEFAULT SINCE THE DEFAULT IS MIMO, which reasons but defines no effort: thinking is on
-  # or off, and every effort word measured through OpenRouter thought the same length
-  # (agent-bot/src/transcript.ts `MODEL_EFFORTS`). Three settings that make one request are a control
-  # that lies, so it is not drawn, and MiMo thinks as it does by default — on. A deployment on a model
-  # with levels of its own (GLM-5.3: low, high, max) sets BOT_MODEL_EFFORT=true.
-  supports_effort: ${BOT_MODEL_EFFORT:-false}
+  # TRUE BY DEFAULT SINCE THE DEFAULT IS DEEPSEEK V4.1 FLASH, which defines low, high and max
+  # (OpenRouter `supported_efforts`, default high) — sent as quick, balanced, thorough
+  # (agent-bot/src/transcript.ts `MODEL_EFFORTS`). A deployment on MiMo-V2.6, which thinks or does
+  # not and whose effort words all made the same request, sets BOT_MODEL_EFFORT=false: the control is
+  # then not drawn rather than saving and doing nothing.
+  supports_effort: ${BOT_MODEL_EFFORT:-true}
   # Whether this deployment's model sees pictures: a photo the owner attaches (a receipt, a menu
-  # board) is handed to it as a picture. MEASURED, NOT ASSUMED: OpenRouter lists MiMo-V2.6-Pro's
-  # input as text, image, video and audio, and a receipt sent through the real stack on 2026-09-26
-  # came back read (server/src/attachments/). Set it false on a model that does not see: photos are
+  # board) is handed to it as a picture. MEASURED, NOT ASSUMED: OpenRouter lists DeepSeek V4.1
+  # Flash's input as text and image, and a receipt photo sent to it on 2026-09-26 came back read —
+  # shop, date and total (MiMo-V2.6-Pro before it: the same, through the real stack,
+  # server/src/attachments/). Set it false on a model that does not see: photos are
   # then refused at the door and the composer stops offering them, rather than accepting a picture
   # nobody can look at.
   supports_images: ${BOT_MODEL_IMAGES:-true}

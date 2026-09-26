@@ -734,6 +734,34 @@ did not know the plan. Day 3 (two days ahead): the close was told the forgotten 
 new summary held neither 2호점 nor 성수. 수첩 rendered the evidence box, the badge 사장님 말과 맞음 and 일하는 방식;
 오늘 showed 밤사이 일하는 방식 정리함; a guidance edit (200), a removal (204) and a standing order refused (400).
 
+## DeepSeek V4.1 Flash — 2026-09-26 swap
+
+The owner's decision for the development stage: a cheap model that swaps in at once (Muse Spark 1.3
+Contributor was dropped). A sanity pass, not the full ritual — the owner asked to keep it light.
+`deepseek/deepseek-v4.1-flash`, OpenRouter list $0.30/M in · $1.20/M out, but ~25 endpoints from
+$0.035–0.375/M in; input text and image (`supports_images: true`); efforts low, high, max, default
+high (`supports_effort: true`; quick → low, balanced → high, thorough → max).
+
+- **Efforts** (DeepInfra and Together pinned, a week of stock arithmetic): `low` 309–353 reasoning
+  tokens, `high` 699–1,083, `max` 566–1,186; every answer right (103, and 41,545 on the VAT sum).
+- **Cache** (one check per endpoint, a 15K prompt, three turns 20 s apart): ten endpoints read the
+  second turn from cache at $0.00005–0.00023 a request. CoreWeave read nothing on turn 2, Wafer's
+  reads cost $0.00093 (~7×), OpenInference (fp4) took 10–14 s — the three are ignored
+  (`MEASURED_PROVIDER_POLICY`). DeepSeek's own endpoint is excluded by the account's data policy.
+- **`eval:model`** (one run, unpinned with that policy, deferral arm skipped; prompt `61ed958eb6d49a7c`
+  · catalogue `8c00eb7da3fab618`): **31/32** (MiMo-V2.6-Pro: 29–32/32), median 6.5 s a scenario,
+  first chunk median 685 ms (p90 1.3 s). The miss is `watch-signals-triaged`, 0/3 on its own: the
+  model names the failure in owner words — "자료 저장소 연결은 끊김" — where the judge wants DB or
+  데이터베이스, and questions the scenario's month-old `since`. Tool use, the bridge (mail, 알림톡) and
+  the twelve-step read all passed.
+- **`eval:browse`** (two tasks, agent-computer from source because Docker Desktop was down):
+  naver-weather PASS, 2 steps, $0.0012, 10.1 s; naver-shopping PASS, 4 steps, $0.0016, 21.3 s.
+- **A receipt photo** sent straight to the model came back with shop, date and total right (8 s,
+  CoreWeave, 521 reasoning tokens).
+
+Fleet: `LAF_FLEET_BOT_MODEL=deepseek/deepseek-v4.1-flash` (VM `BOT_MODEL`), and `BOT_MODEL_EFFORT`
+true or unset — a VM that still says `false` from the MiMo days keeps the effort control hidden.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

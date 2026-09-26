@@ -109,12 +109,18 @@ export function createProvider(
 /**
  * THE MEASURED LINES, used when `BOT_PROVIDER_POLICY` is unset. The fleet's VMs are written by
  * laf-control, whose env writer takes plain values only — JSON cannot travel that way — so a policy
- * that lived only in `.env` never reached a customer. These two are the measured ones
+ * that lived only in `.env` never reached a customer. These are the measured ones
  * (docs/laf/eval-pack.md): MiMo on Xiaomi read 99.8% of a week-long conversation from cache where
  * DeepInfra read 79.9% with tails past 160 s; GLM on Z.AI, without Wafer's empty arguments and
- * Relace's cold cache. Setting the variable replaces them entirely, `{}` included.
+ * Relace's cold cache. DeepSeek V4.1 Flash (2026-09-26, one quick check, three turns 20 s apart on a
+ * 15K prompt): ten endpoints read the second turn from cache; CoreWeave read nothing, Wafer's reads
+ * cost ~7x the others' ($0.00093 against $0.00005–0.00023), and OpenInference (fp4) took 10–14 s.
+ * Setting the variable replaces them entirely, `{}` included.
  */
 export const MEASURED_PROVIDER_POLICY: Record<string, ProviderRouting> = {
+  "deepseek/deepseek-v4.1-flash": {
+    ignore: ["coreweave", "wafer", "open-inference"],
+  },
   "xiaomi/mimo-v2.6-pro": { order: ["xiaomi"] },
   "z-ai/glm-5.3-flash": { order: ["z-ai"], ignore: ["wafer", "relace"] },
 };

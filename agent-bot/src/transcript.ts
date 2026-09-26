@@ -200,6 +200,12 @@ export type ProviderEffort = "low" | "medium" | "high" | "max";
  * is not drawn, and this line is the floor under that: a model with no words of its own is sent
  * nothing, whatever arrives, and thinks as its provider defaults — on.
  *
+ * DEEPSEEK V4.1 FLASH DEFINES low, high AND max (OpenRouter `supported_efforts`, default high), so
+ * GLM's words fit it as they are, and `balanced` is the model's own default. Measured 2026-09-26
+ * (docs/laf/eval-pack.md): on a week of stock arithmetic `low` thought 309–353 reasoning tokens and
+ * `high` 699–1,083, all answering right; `max` was 566–1,186 — no longer than `high` on that task,
+ * but a different request, and the provider's own top.
+ *
  * Matched on the name `BOT_MODEL` sends, because that is the only thing this service knows about
  * the model. Any other model keeps the OpenAI words, which every OpenAI reasoning model defines.
  */
@@ -215,6 +221,10 @@ const MODEL_EFFORTS: ReadonlyArray<{
   {
     model: /(^|\/)mimo-v2\.6/i,
     words: null,
+  },
+  {
+    model: /(^|\/)deepseek-v4\.1/i,
+    words: { quick: "low", balanced: "high", thorough: "max" },
   },
 ];
 
