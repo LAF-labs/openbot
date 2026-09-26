@@ -13,6 +13,7 @@ import {
   NotificationPermission,
   noticeWindowNote,
 } from "@/components/notifications/notification-permission";
+import { SummonShortcutRow } from "@/components/settings/summon-shortcut";
 import { TodayUsageSection } from "@/components/settings/today-usage";
 import { VersionLine } from "@/components/settings/version-line";
 import { useTheme } from "@/components/theme-provider";
@@ -320,6 +321,8 @@ function RouteComponent() {
               />
             </ItemContent>
           </Item>
+          {/* The installed app's summon keys. Draws nothing in a browser tab. */}
+          {inShell() ? <SummonShortcutRow /> : null}
         </PageRows>
       </PageSection>
       {/*

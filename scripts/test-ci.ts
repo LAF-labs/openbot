@@ -542,6 +542,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-09-26 with the 0.5.5 final QA's fixes: two to `app` (a retry in place retiring the
  * failure a task that died between two steps left; a failed turn marking the room read as it
  * ends). Each floor rises by exactly what was added.
+ * RAISED 2026-09-26 with the shell kept awake and reachable (P2): eight to `app` (every pill kind
+ * folded into the tray's three codes and sent through the command; the update read back, refused
+ * and listened for; the summon choices the shell lists all drawable, read only in the shell's
+ * shape, and absent in a tab or an older shell) and three to `root` (the shell's commands handled,
+ * declared and granted as one list; no capability granting a plugin that acts on the machine; the
+ * window not suspended when put away). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -549,9 +555,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 2761, roots: ["server"] },
-  { name: "app", floor: 1349, roots: ["app"] },
+  { name: "app", floor: 1357, roots: ["app"] },
   { name: "agent-computer", floor: 288, roots: ["agent-computer"] },
-  { name: "root", floor: 428, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 431, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

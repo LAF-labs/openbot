@@ -20,7 +20,8 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
-        "zoomHotkeysEnabled": false
+        "zoomHotkeysEnabled": false,
+        "backgroundThrottling": "disabled"
       }
     ],
     "security": {

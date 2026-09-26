@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-summon-shortcut"
+description = "Enables the summon_shortcut command without any pre-configured scope."
+commands.allow = ["summon_shortcut"]
+
+[[permission]]
+identifier = "deny-summon-shortcut"
+description = "Denies the summon_shortcut command without any pre-configured scope."
+commands.deny = ["summon_shortcut"]

@@ -336,8 +336,84 @@ test("the tray's first line is the shell's own name and version, and is not a bu
   expect(tray).toMatch(
     /MenuItem::with_id\(\s*app,\s*"about",\s*format!\("\{\} \{\}", info\.name, info\.version\),\s*false,/,
   );
-  // First in the menu, so it reads as a title rather than as one more thing to click.
-  expect(tray).toMatch(/&\[\s*&about,\s*&PredefinedMenuItem::separator/);
+  // First in the menu, so it reads as a title rather than as one more thing to click — and the
+  // Bot's status right under it, the other fact the menu states before anything to press.
+  expect(tray).toMatch(
+    /&\[\s*&about,\s*&status,\s*&PredefinedMenuItem::separator/,
+  );
+  expect(tray).toMatch(
+    /MenuItem::with_id\(\s*app,\s*"status",\s*BotStatus::Idle\.words\(\),\s*false,/,
+  );
+});
+
+/**
+ * WHAT THE SHELL HANDLES, WHAT IT DECLARES AND WHAT IT GRANTS ARE ONE LIST, READ THREE TIMES.
+ *
+ * A command in `generate_handler!` that is missing from `build.rs`'s app manifest, or whose
+ * `allow-*` is missing from the capability, is refused at runtime for a remote origin — which this
+ * window always is — with no error at build time and a rejected promise the bridge reads as "no
+ * shell". That is how the dock badge and the link opener were dead for a release (build.rs). And
+ * an `allow-*` for a command the shell does not handle is a grant nobody reviewed. So the three
+ * are read here and must be the same set.
+ */
+test("every command the shell handles is declared and granted, and nothing else is", () => {
+  const shell = read("desktop/src-tauri/src/lib.rs");
+  const handled = shell
+    .match(/generate_handler!\[([^\]]*)\]/)?.[1]
+    ?.split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const declared = read("desktop/src-tauri/build.rs")
+    .match(/\.commands\(&\[([^\]]*)\]\)/)?.[1]
+    ?.split(",")
+    .map((name) => name.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+  const granted = capability("default")
+    .permissions.filter((permission) => permission.startsWith("allow-"))
+    .map((permission) => permission.slice("allow-".length).replace(/-/g, "_"));
+
+  // Asserted rather than assumed: three empty reads would agree with each other.
+  expect(handled?.length).toBeGreaterThanOrEqual(8);
+  expect([...(declared ?? [])].sort()).toEqual([...(handled ?? [])].sort());
+  expect([...granted].sort()).toEqual([...(handled ?? [])].sort());
+});
+
+/**
+ * THE PAGE IS NEVER HANDED A PLUGIN THAT ACTS ON THE MACHINE.
+ *
+ * The shell updates itself, restarts itself, registers its summon shortcut, starts with the login
+ * and opens links from Rust, and offers the page narrow commands of its own for each — a restart
+ * only into the update it fetched, a shortcut only from its list. Granting the plugin instead would
+ * hand a page running somebody else's script the general version: install anything, restart at
+ * will, take Cmd+C from every other program. Checked in both capabilities, since a development
+ * grant that differs is not testing what people install.
+ */
+test("no capability grants the updater, the process, the global shortcut or any other plugin that acts on the machine", () => {
+  for (const identifier of ["default", "dev"]) {
+    for (const permission of capability(identifier).permissions) {
+      expect(permission).not.toMatch(
+        /^(updater|process|global-shortcut|autostart|store|deep-link|opener|shell|fs):/,
+      );
+    }
+  }
+});
+
+/**
+ * A HIDDEN WINDOW KEEPS ITS PAGE RUNNING.
+ *
+ * Closing the window hides it, and every notice the shell posts comes from that page. tauri-utils
+ * 2.9.3 documents WebKit's default for a view that is not on screen as a suspend policy, which
+ * would make "a Bot needs you" go quiet exactly when the window is away. So the policy is set to
+ * `disabled` rather than left to a default. What was measured on macOS 26.6 is in desktop/README.md
+ * ("And the hidden page keeps running"); the setting reaches macOS 14 and later only.
+ */
+test("the window is not suspended when it is put away", () => {
+  for (const path of [RELEASE_CONFIG, DEV_CONFIG]) {
+    const window = json<{
+      app?: { windows?: { backgroundThrottling?: string }[] };
+    }>(path).app?.windows?.[0];
+    expect(window?.backgroundThrottling).toBe("disabled");
+  }
 });
 
 /**

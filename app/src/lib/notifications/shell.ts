@@ -22,7 +22,13 @@
  * nothing at all. `openExternal` hands it to the person's own browser. It goes through the shell's
  * own `open_external` command rather than the opener plugin, because a general-purpose opener
  * reachable from a web page can launch whatever a scheme handler is registered for.
+ *
+ * And, since 2026-09-26, what keeps the installed app awake and reachable with its window put away:
+ * the tray's status, the summon shortcut's setting and the update waiting for a restart — at the
+ * end of this file.
  */
+
+import type { PresenceKind } from "@/lib/agents/presence";
 
 type TauriGlobal = {
   core?: {
@@ -43,6 +49,13 @@ type TauriGlobal = {
   /** The shell's own version — `core:app:default`, part of `core:default` in the capability. */
   app?: {
     getVersion?: () => Promise<string>;
+  };
+  /** `core:event:default`, also part of `core:default`: how the shell says an update is ready. */
+  event?: {
+    listen?: (
+      event: string,
+      handler: (event: { payload: unknown }) => void,
+    ) => Promise<() => void>;
   };
 };
 
@@ -192,4 +205,185 @@ export async function showShellNotice(options: {
   } catch {
     return false;
   }
+}
+
+/*
+ * —— Awake and reachable (2026-09-26) ————————————————————————————————————————————————————————————
+ *
+ * Each of these is one of the shell's own commands, named in `build.rs` and granted in
+ * `capabilities/default.json`. Each answers "no shell" — null or false — when the shell is absent or
+ * too old to have the command, so a browser tab, and an app installed before this change, draw
+ * nothing rather than a control that does nothing.
+ */
+
+async function ask<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T | null> {
+  const invoke = shell()?.core?.invoke;
+  if (!invoke) return null;
+  try {
+    return ((await invoke(command, args)) ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the shell took the command, for the ones that answer nothing when they succeed. */
+async function tell(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<boolean> {
+  const invoke = shell()?.core?.invoke;
+  if (!invoke) return false;
+  try {
+    await invoke(command, args);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** What the tray says the Bot is doing. Three codes; the shell holds the words. */
+export type ShellStatus = "working" | "waiting" | "idle";
+
+/**
+ * The pill's answer, folded to the tray's three.
+ *
+ * The person's turn is its own word because it is the one worth seeing from the menu bar. Every
+ * kind of busy is one word there: the tray is not where somebody reads which kind.
+ */
+export function shellStatusOf(kind: PresenceKind): ShellStatus {
+  switch (kind) {
+    case "approval":
+    case "help":
+      return "waiting";
+    case "working":
+    case "routine":
+    case "answering":
+    case "thinking":
+      return "working";
+    case "idle":
+      return "idle";
+  }
+}
+
+export function setShellStatus(status: ShellStatus): Promise<boolean> {
+  return tell("set_status", { status });
+}
+
+/** The version the shell has fetched and is holding for a restart, or null when there is none. */
+export async function shellUpdateReady(): Promise<string | null> {
+  const version = await ask<unknown>("update_ready");
+  return typeof version === "string" && version.trim() ? version.trim() : null;
+}
+
+/**
+ * Called when the shell says an update has arrived. Only a nudge — a page can emit events too — so
+ * the caller reads the version back with `shellUpdateReady`.
+ */
+export function onShellUpdateReady(handler: () => void): () => void {
+  const listen = shell()?.event?.listen;
+  if (!listen) return () => {};
+  let unlisten: (() => void) | null = null;
+  let isStopped = false;
+  listen("update-ready", () => handler())
+    .then((stop) => {
+      if (isStopped) stop();
+      else unlisten = stop;
+    })
+    .catch(() => undefined);
+  return () => {
+    isStopped = true;
+    unlisten?.();
+  };
+}
+
+/**
+ * Restart into the update the shell is holding. The shell refuses when it holds none, and this is
+ * false then. When it succeeds the page is gone before anything reads the answer.
+ */
+export function restartToUpdate(): Promise<boolean> {
+  return tell("restart_to_update");
+}
+
+/** The summon shortcut: the one chosen, the ids to choose from, and whether it is really held. */
+export type SummonSetting = {
+  choice: string;
+  choices: string[];
+  active: boolean;
+};
+
+export function summonSettingOf(value: unknown): SummonSetting | null {
+  if (!value || typeof value !== "object") return null;
+  const { choice, choices, active } = value as Record<string, unknown>;
+  if (typeof choice !== "string" || !Array.isArray(choices)) return null;
+  return {
+    choice,
+    choices: choices.filter((id): id is string => typeof id === "string"),
+    active: active === true,
+  };
+}
+
+export async function shellSummonShortcut(): Promise<SummonSetting | null> {
+  return summonSettingOf(await ask<unknown>("summon_shortcut"));
+}
+
+export async function setShellSummonShortcut(
+  choice: string,
+): Promise<SummonSetting | null> {
+  return summonSettingOf(await ask<unknown>("set_summon_shortcut", { choice }));
+}
+
+const SUMMON_KEYS: Readonly<Record<string, readonly [string[], string]>> = {
+  "control-alt-l": [["control", "alt"], "L"],
+  "alt-shift-l": [["alt", "shift"], "L"],
+  "alt-space": [["alt"], "Space"],
+};
+const MAC_MODIFIERS: Readonly<Record<string, string>> = {
+  control: "⌃",
+  alt: "⌥",
+  shift: "⇧",
+};
+const PC_MODIFIERS: Readonly<Record<string, string>> = {
+  control: "Ctrl",
+  alt: "Alt",
+  shift: "Shift",
+};
+
+/**
+ * The keys a summon id means, drawn the way the person's keyboard labels them: symbols on a Mac,
+ * where the menus print ⌃⌥⇧, and names elsewhere, where the keycaps say Ctrl and Alt. Null for
+ * `off` and for an id this build does not know; the caller has its own word for off.
+ */
+export function summonKeysOf(id: string, isMac: boolean): string | null {
+  const found = SUMMON_KEYS[id];
+  if (!found) return null;
+  const [modifiers, key] = found;
+  return isMac
+    ? `${modifiers.map((name) => MAC_MODIFIERS[name]).join("")}${key}`
+    : [...modifiers.map((name) => PC_MODIFIERS[name]), key].join("+");
+}
+
+let isHoldingAwake = false;
+
+/**
+ * Keep this page from being put to sleep while the window is put away — on Windows.
+ *
+ * On macOS 14 and later the shell's own `backgroundThrottling: "disabled"` does this (measured:
+ * desktop/README.md, "And the hidden page keeps running"). WebView2 on Windows has no such setting;
+ * tauri-utils 2.9.3 names it unsupported there and points at a held Web Lock as the workaround. So
+ * the page takes one lock and never lets it go. Unmeasured on Windows — there is no Windows machine
+ * here — and it changes nothing where it is not needed. Once per page.
+ */
+export function holdShellAwake(): void {
+  if (isHoldingAwake || !inShell()) return;
+  const locks = globalThis.navigator?.locks;
+  if (!locks?.request) return;
+  isHoldingAwake = true;
+  locks
+    .request("laf-shell-awake", () => new Promise<never>(() => {}))
+    .catch(() => {
+      isHoldingAwake = false;
+    });
 }

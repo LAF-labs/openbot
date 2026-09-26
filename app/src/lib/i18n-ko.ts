@@ -2710,4 +2710,21 @@ export const ko: Record<string, string> = {
   "Noted how you like to work": "일하는 방식 정리함",
   "Overnight: tidied {count} memories": "밤사이 기억 {count}개 정리함",
   "Tidied {count} memories": "기억 {count}개 정리함",
+  // shell
+  "A new version is ready": "새 버전이 준비됐어요",
+  "Restart to start using version {version}.":
+    "다시 시작하면 {version} 버전을 쓸 수 있어요.",
+  "Your Bot is working. Restart once it is done.":
+    "봇이 일하는 중이에요. 일이 끝나면 다시 시작해 주세요.",
+  "Could not restart. Quit the app and open it again.":
+    "다시 시작하지 못했어요. 앱을 종료했다가 다시 열어 주세요.",
+  Later: "나중에",
+  "Restart now": "지금 다시 시작",
+  "Restarting…": "다시 시작하는 중…",
+  "Open with a shortcut": "단축키로 열기",
+  "Press it in any app to bring {product} to the front.":
+    "어느 앱에서든 누르면 {product} 창이 앞으로 나와요.",
+  "This shortcut could not be turned on. Another app may be using it — choose another.":
+    "이 단축키를 켜지 못했어요. 다른 앱이 쓰고 있을 수 있으니 다른 것을 골라 주세요.",
+  Off: "끄기",
 };

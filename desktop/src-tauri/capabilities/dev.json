@@ -20,6 +20,11 @@
     "core:window:allow-set-badge-label",
     "allow-set-badge",
     "allow-open-external",
-    "allow-post-notice"
+    "allow-post-notice",
+    "allow-set-status",
+    "allow-summon-shortcut",
+    "allow-set-summon-shortcut",
+    "allow-update-ready",
+    "allow-restart-to-update"
   ]
 }

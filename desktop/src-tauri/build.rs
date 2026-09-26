@@ -18,13 +18,22 @@
  * polyfill instead, which is the only reason anything appeared at all.
  *
  * Naming the commands here generates an `allow-$command` permission for each; `capabilities/
- * default.json` grants those three to the origin, and only those three. The two lists move
- * together — a command added to `generate_handler!` and not to this one is refused at runtime with
- * no compile error anywhere.
+ * default.json` grants exactly these to the origin. The lists move together — a command added to
+ * `generate_handler!` and not to this one is refused at runtime with no compile error anywhere —
+ * and `tests/desktop-shell.test.ts` reads all three and fails when they differ.
  */
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(&["set_badge", "open_external", "post_notice"]),
+        tauri_build::AppManifest::new().commands(&[
+            "set_badge",
+            "open_external",
+            "post_notice",
+            "set_status",
+            "summon_shortcut",
+            "set_summon_shortcut",
+            "update_ready",
+            "restart_to_update",
+        ]),
     ))
     .expect("the shell's own commands could not be declared");
 }

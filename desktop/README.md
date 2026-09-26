@@ -90,26 +90,49 @@ call the notification plugin's own binding; it comes through a command of the
 shell's so that the tray's mute cannot be routed around, and so the notice's
 destination is recorded somewhere the shell can act on it.
 
-**The three that are the shell's own commands — `set_badge`, `open_external`
-and `post_notice` — are declared twice, and both declarations are
+Since 2026-09-26, five more, each for keeping the app awake and reachable with
+its window put away: **`set_status`** (the tray's line — one of three codes,
+never text), **`summon_shortcut`** and **`set_summon_shortcut`** (the settings
+row for the summon keys — an id from the shell's list, never a key
+combination), and **`update_ready`** and **`restart_to_update`** (the update
+notice — the second refuses unless the shell is holding an update it fetched
+and verified itself).
+
+**The shell's own commands — `set_badge`, `open_external`, `post_notice` and
+the five above — are declared twice, and both declarations are
 load-bearing.** The notification plugin, which the page still asks for
 permission, is a plugin and is granted by `notification:default` alone.
-`build.rs` names the three in the app manifest, and `capabilities/default.json`
-grants the resulting `allow-*` permissions. Tauri refuses an app command
-arriving from a **remote** origin unless it is in both — and this window's URL
-is always a remote origin. Measured 2026-09 in a real bundle: without the app
+`build.rs` names them in the app manifest, and `capabilities/default.json`
+grants the resulting `allow-*` permissions; `tests/desktop-shell.test.ts` reads
+`generate_handler!`, the manifest and the grant and fails when they differ.
+Tauri refuses an app command arriving from a **remote** origin unless it is in
+both — and this window's URL is always a remote origin. Measured 2026-09 in a real bundle: without the app
 manifest the dock badge and `open_external` were rejected on every call, the
 bridge caught the rejection and answered "no shell", and the two things this
 process exists for had never once run. Nothing errors, nothing logs. A command
 added to `generate_handler!` and not to those two lists behaves the same way.
 
 `open_external` takes http and https and refuses every other scheme, and the
-opener plugin is NOT granted to the origin. Neither is the updater, nor the
-process plugin: the shell checks for updates from Rust, on release builds
-only, and installs them for the next launch rather than restarting an app
-somebody is using. So a page running somebody else's script cannot make this
-process install software, restart itself, or hand an arbitrary scheme to the
-operating system.
+opener plugin is NOT granted to the origin. Neither is the updater, the process
+plugin, nor the global-shortcut plugin. The shell checks for updates from Rust,
+on release builds only, and never restarts an app somebody is using on its own:
+the page shows one quiet 새 버전이 준비됐어요 card with 지금 다시 시작, withheld
+while the Bot is working or waiting on the person — the window drives the turn,
+so a restart would end it. So a page running somebody else's script cannot make
+this process install software, restart itself into anything but the signed
+update it already holds, take a key combination from the rest of the machine,
+or hand an arbitrary scheme to the operating system.
+
+**On Windows the update waits for that press, and until 2026-09-26 it did not.**
+The updater's Windows `install()` launches the NSIS installer and then calls
+`std::process::exit(0)` (tauri-plugin-updater 2.10.1, `updater.rs`), so the
+`download_and_install` the shell ran at launch ended the app a minute after
+somebody opened it whenever there was an update. Now Windows downloads and
+verifies at launch and installs only on 지금 다시 시작; macOS installs at once
+(`install()` there replaces the bundle and the process runs on), so it applies
+on the next launch whether or not the person presses anything. A development
+build never checks; `LAF_SHELL_PRETEND_UPDATE=<version>` makes it hold a pretend
+update so the card and the restart can be seen outside a release.
 
 ## Awake when the window is not
 
@@ -117,13 +140,60 @@ Closing the window used to end the process, which meant "a Bot is waiting for
 you" could only be said by a page already on screen — the one moment nobody
 needs telling. So:
 
-- **A tray icon**, with 열기 / 알림 받기 / 로그인할 때 자동 실행 / 종료. Its four
+- **A tray icon**, with 열기 / 알림 받기 / 로그인할 때 자동 실행 / 종료. Its
   strings are Korean and live in `lib.rs`, because a tray menu is drawn by the
   operating system out of strings this process holds: there is no page to ask.
+- **The Bot's status in the tray**: 일하는 중 / 사장님 차례 / 쉬는 중, as a line
+  under the version, in the tooltip, and as a dot on the icon (amber for the
+  person's turn, green while working, none at rest). The page derives it — the
+  same answer as the pill under the Bot's face (`app/src/lib/agents/presence.ts`)
+  — and sends one of three codes; the words stay here for the reason above, and a
+  page cannot put text of its own into a native menu. Every page load starts it
+  at 쉬는 중, so a page that went away cannot leave it saying the Bot is busy.
+- **A summon shortcut**, ⌃⌥L (Ctrl+Alt+L) unless the person picks another or
+  turns it off on Settings. Registered from Rust through the official
+  global-shortcut plugin, from a fixed list (`SUMMON_CHOICES`, with why each
+  one), and brings the window forward the way 열기 does. The settings row says
+  when the operating system refused the keys rather than reading as on.
 - **Closing hides.** Quit is the tray's 종료 or the platform's own Quit, and both
   really end the process. On macOS the app hides with its window, so the
   foreground goes back to whatever the person was using, and `RunEvent::Reopen`
   brings it back from the dock.
+- **And the hidden page keeps running** — `backgroundThrottling: "disabled"` on
+  the window, in both configs. Every notice comes from the page, and WKWebView's
+  default policy suspends a web view that is off screen after about five
+  minutes, so "a Bot needs you" could go quiet exactly when the window was away.
+  **Measured 2026-09-26** on macOS 26.6, a development build against a local
+  stack, the window closed to the tray (`hide()` and `app.hide()`), a routine
+  answering in the Bot's conversation, sampling the web content process's CPU
+  time every 30 s:
+  - *Without the setting*, the page was still awake at 7 min 31 s hidden and the
+    notice came in the same second the routine finished. But the web content
+    process stopped using any CPU 8 min 13 s after the window was hidden, and at
+    12 min 34 s the routine's answer produced **no notice at all — and no outbox
+    row either**: the page's socket stayed open while the page slept, so the
+    server believed somebody was listening and wrote nothing for later.
+    (The machine's display went to sleep about a minute after the page stopped,
+    so an idle Mac may be part of it; the page stopped first.)
+  - *With the setting*, the notice came in the same second at 7 min 28 s, 12 min
+    24 s and 20 min 33 s hidden, and the web content process kept running
+    throughout, the display going to sleep in the middle of it included.
+  - Not covered: a window left OPEN on a locked screen. In one run like that a
+    40-second routine produced no notice and no tray change while the web content
+    process sat nearly idle. The setting governs a view that is off screen, not
+    one that is on screen behind a lock; this was not pursued.
+  - The first run of the "without" measurement was thrown away: files the dev
+    server was serving were edited while the window was hidden, and each edit
+    reloaded the hidden page, which woke it. Measure a hidden page with the
+    source left alone.
+
+  It reaches macOS 14 and later only: wry sets `inactiveSchedulingPolicy` when
+  `os_major_version >= 14` and does nothing below, and the bundle's minimum is
+  12.0, so on macOS 12 and 13 the gap remains and was not measured here. WebView2
+  has no such setting (tauri-utils names it unsupported on Windows); the page
+  holds a Web Lock (`holdShellAwake`), the workaround tauri-utils points to.
+  Unmeasured — there is no Windows machine here. The lasting fix for both is a
+  notice that does not depend on the page, which waits for the server-owned turn.
 - **Autostart**, off until somebody ticks it, remembered by the operating system
   itself — `is_enabled()` reads the LaunchAgent plist or the Run key, so the tick
   cannot disagree with the behaviour and there is no second copy to lose.

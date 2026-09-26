@@ -42,9 +42,10 @@ use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_store::StoreExt;
@@ -71,6 +72,29 @@ const SETTINGS_FILE: &str = "shell.json";
 const NOTICES_KEY: &str = "notices";
 /// The deployment this app was last used on, so the next launch opens there.
 const ORIGIN_KEY: &str = "origin";
+/// Which summon shortcut the person chose, by its id in `SUMMON_CHOICES`, or `off`.
+const SUMMON_KEY: &str = "summon";
+
+/// The summon shortcuts a person can choose between, by the id the page sends, and `off`.
+///
+/// A LIST, NOT A RECORDER. A global shortcut takes a key combination away from every other program
+/// on the machine while this one runs, so a page that could register any combination could take
+/// Cmd+C from the person's whole computer. The page names an id; this list decides what it means.
+///
+/// THE DEFAULT IS ⌃⌥L (Ctrl+Alt+L), and each of these was chosen by what it does NOT collide with.
+/// Space with Ctrl, Cmd or Option is taken on the machines this product is for: ⌃Space and ⌃⌥Space
+/// switch the input source on macOS — the 한/영 key of a Korean Mac — ⌘Space is Spotlight, and
+/// ⌥Space, ⌘⇧Space and Ctrl+Shift+Space are what ChatGPT, Raycast and 1Password install. Ctrl/Cmd+
+/// Shift+letter is every browser's and Excel's (Ctrl+Shift+L is Excel's filter). ⌃⌥ with a letter
+/// is VoiceOver's only while VoiceOver is on, and L is the product's own letter. ⌥Space stays on
+/// the list for the person who has none of those apps and wants the familiar one.
+const SUMMON_CHOICES: [&str; 4] = ["control-alt-l", "alt-shift-l", "alt-space", "off"];
+const SUMMON_DEFAULT: &str = "control-alt-l";
+const SUMMON_OFF: &str = "off";
+
+/// What the page is told when an update is ready. A nudge only: the version is read back through
+/// `update_ready`, because the page can emit events too and an event is not a fact.
+const UPDATE_READY_EVENT: &str = "update-ready";
 
 /// The product's domain. The front door is this name; every customer is ONE name under it.
 ///
@@ -114,6 +138,70 @@ struct ShellState {
     /// close to "they clicked the notice" as this platform can honestly get. Everything else about
     /// finding the waiting question is the app's own routing, unchanged.
     notice_destination: Mutex<Option<(String, Instant)>>,
+    /// The tray's status line, once the tray exists, and what it says now.
+    status_line: Mutex<Option<MenuItem<tauri::Wry>>>,
+    status: Mutex<Option<BotStatus>>,
+    /// A newer version, verified and in hand, once the updater has fetched one.
+    update: Mutex<Option<ReadyUpdate>>,
+}
+
+/// What the Bot is doing, as the tray says it.
+///
+/// THE PAGE DERIVES IT AND SENDS A CODE; THE WORDS ARE HERE. The pill in the app decides from facts
+/// only the page has (`app/src/lib/agents/presence.ts`), so the shell repeats its answer rather
+/// than guessing one. But a tray menu is drawn by the operating system out of strings this process
+/// holds — the same reason 열기 and 종료 are Korean literals below — and a page that could put any
+/// text it liked into a native menu is a page that could make the menu say anything. Three codes,
+/// three sentences, and a code this list does not know is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BotStatus {
+    Working,
+    Waiting,
+    Idle,
+}
+
+impl BotStatus {
+    fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "working" => Some(Self::Working),
+            "waiting" => Some(Self::Waiting),
+            "idle" => Some(Self::Idle),
+            _ => None,
+        }
+    }
+
+    fn words(self) -> &'static str {
+        match self {
+            Self::Working => "일하는 중",
+            Self::Waiting => "사장님 차례",
+            Self::Idle => "쉬는 중",
+        }
+    }
+
+    /// The dot drawn on the tray icon: amber when the person is being waited on — the pill's own
+    /// colour for it — green while the Bot works, and none at rest, so the ordinary state is the
+    /// ordinary icon.
+    fn dot(self) -> Option<[u8; 3]> {
+        match self {
+            Self::Waiting => Some([0xF5, 0x9E, 0x0B]),
+            Self::Working => Some([0x22, 0xC5, 0x5E]),
+            Self::Idle => None,
+        }
+    }
+}
+
+/// A newer version the updater has fetched and verified, waiting for a restart.
+///
+/// ON WINDOWS IT IS NOT YET INSTALLED, and that is the point of holding the bytes. The updater's
+/// Windows `install()` launches the NSIS installer and then calls `std::process::exit(0)`
+/// (tauri-plugin-updater 2.10.1, `updater.rs`), so the `download_and_install` this shell used to
+/// call at launch ended the app a minute after somebody opened it — mid-task, the thing it promised
+/// never to do. On macOS `install()` replaces the bundle in place and the process runs on, so there
+/// the update is installed at once and waits only for the next launch or 지금 다시 시작.
+struct ReadyUpdate {
+    version: String,
+    #[cfg(all(windows, not(debug_assertions)))]
+    installer: (tauri_plugin_updater::Update, Vec<u8>),
 }
 
 /// The address this build was compiled pointing at: the product's front door.
@@ -207,7 +295,9 @@ fn remember_origin(app: &tauri::AppHandle) {
         return;
     }
     let Ok(store) = app.store(SETTINGS_FILE) else {
-        log::warn!("the shell's settings could not be opened; the next launch starts at the front door");
+        log::warn!(
+            "the shell's settings could not be opened; the next launch starts at the front door"
+        );
         return;
     };
     log::info!("remembering {here} for the next launch");
@@ -249,9 +339,9 @@ fn reachable(origin: &str) -> bool {
         let answered = (host.as_str(), port)
             .to_socket_addrs()
             .map(|addresses| {
-                addresses.into_iter().any(|address| {
-                    TcpStream::connect_timeout(&address, PROBE_BUDGET).is_ok()
-                })
+                addresses
+                    .into_iter()
+                    .any(|address| TcpStream::connect_timeout(&address, PROBE_BUDGET).is_ok())
             })
             .unwrap_or(false);
         let _ = sender.send(answered);
@@ -572,15 +662,264 @@ fn web_url(url: &str) -> Result<String, String> {
     }
 }
 
-/// Fetch and install a newer version, if the release the endpoint points at is newer than this one.
+/// What the Bot is doing, from the page, onto the tray.
+#[tauri::command]
+fn set_status(app: tauri::AppHandle, status: String) -> Result<(), String> {
+    let status =
+        BotStatus::from_code(&status).ok_or_else(|| format!("{status:?} is not a status"))?;
+    show_status(&app, status);
+    Ok(())
+}
+
+/// Put a status on the tray: its line in the menu, its tooltip and the dot on its icon.
 ///
-/// Release builds only: a development launch has no business asking GitHub, and the version it
-/// would compare is whatever happens to be in the config. Failure is logged and nothing else — an
+/// Skipped when nothing changed, because the page says it on every render that could have changed
+/// it and a tray icon rebuilt that often is a menu bar that flickers.
+fn show_status(app: &tauri::AppHandle, status: BotStatus) {
+    let state = app.state::<ShellState>();
+    {
+        let Ok(mut current) = state.status.lock() else {
+            return;
+        };
+        if *current == Some(status) {
+            return;
+        }
+        current.replace(status);
+    }
+    log::info!("tray status: {status:?}");
+    if let Some(line) = state.status_line.lock().ok().and_then(|line| line.clone()) {
+        let _ = line.set_text(status.words());
+    }
+    let Some(tray) = app.tray_by_id("main") else {
+        return;
+    };
+    let name = app.config().product_name.clone().unwrap_or_default();
+    let _ = tray.set_tooltip(Some(format!("{name} · {}", status.words())));
+    if let Some(icon) = app.default_window_icon() {
+        let icon = match status.dot() {
+            Some(colour) => tauri::image::Image::new_owned(
+                with_dot(icon.rgba(), icon.width(), icon.height(), colour),
+                icon.width(),
+                icon.height(),
+            ),
+            None => icon.clone(),
+        };
+        if let Err(error) = tray.set_icon(Some(icon)) {
+            log::warn!("the tray icon could not show {status:?}: {error}");
+        }
+    }
+}
+
+/// The icon with a round dot in its lower right corner, ringed in white so it reads on a dark menu
+/// bar and a light one alike. Pixels in, pixels out, so it can be tested without a tray.
+fn with_dot(rgba: &[u8], width: u32, height: u32, colour: [u8; 3]) -> Vec<u8> {
+    let mut out = rgba.to_vec();
+    if out.len() != (width as usize) * (height as usize) * 4 {
+        return out;
+    }
+    let size = width.min(height) as f32;
+    let radius = size * 0.2;
+    let ring = radius + size * 0.05;
+    let (centre_x, centre_y) = (width as f32 - ring, height as f32 - ring);
+    for y in 0..height {
+        for x in 0..width {
+            let (dx, dy) = (x as f32 + 0.5 - centre_x, y as f32 + 0.5 - centre_y);
+            let distance = (dx * dx + dy * dy).sqrt();
+            let at = ((y * width + x) * 4) as usize;
+            if distance <= radius {
+                out[at..at + 4].copy_from_slice(&[colour[0], colour[1], colour[2], 255]);
+            } else if distance <= ring {
+                out[at..at + 4].copy_from_slice(&[255, 255, 255, 255]);
+            }
+        }
+    }
+    out
+}
+
+/// The key combination a summon choice names, or nothing for `off` and for anything unknown.
+fn summon_shortcut_for(choice: &str) -> Option<Shortcut> {
+    match choice {
+        "control-alt-l" => Some(Shortcut::new(
+            Some(Modifiers::CONTROL | Modifiers::ALT),
+            Code::KeyL,
+        )),
+        "alt-shift-l" => Some(Shortcut::new(
+            Some(Modifiers::ALT | Modifiers::SHIFT),
+            Code::KeyL,
+        )),
+        "alt-space" => Some(Shortcut::new(Some(Modifiers::ALT), Code::Space)),
+        _ => None,
+    }
+}
+
+fn is_summon_choice(choice: &str) -> bool {
+    choice == SUMMON_OFF || summon_shortcut_for(choice).is_some()
+}
+
+/// The summon choice in force: what the person picked, or the default when they never have.
+fn summon_choice(app: &tauri::AppHandle) -> String {
+    app.store(SETTINGS_FILE)
+        .ok()
+        .and_then(|store| store.get(SUMMON_KEY))
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .filter(|choice| is_summon_choice(choice))
+        .unwrap_or_else(|| SUMMON_DEFAULT.to_owned())
+}
+
+/// Hold the chosen shortcut and nothing else. False when it is off or could not be had.
+///
+/// Registration can fail for reasons outside this process — the operating system decides, and the
+/// plugin returns its refusal as an error. So the answer is reported back to the settings row
+/// rather than assumed: a choice that reads "on" over a key that does nothing is the control that
+/// saves and does nothing.
+fn apply_summon(app: &tauri::AppHandle, choice: &str) -> bool {
+    let shortcuts = app.global_shortcut();
+    if let Err(error) = shortcuts.unregister_all() {
+        log::warn!("the previous summon shortcut could not be released: {error}");
+    }
+    let Some(shortcut) = summon_shortcut_for(choice) else {
+        log::info!("no summon shortcut ({choice})");
+        return false;
+    };
+    match shortcuts.register(shortcut) {
+        Ok(()) => {
+            log::info!("summon shortcut: {choice}");
+            true
+        }
+        Err(error) => {
+            log::warn!("the summon shortcut {choice} could not be registered: {error}");
+            false
+        }
+    }
+}
+
+/// What the settings row draws: the choice, the list it is from, and whether it is really held.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SummonSetting {
+    choice: String,
+    choices: [&'static str; 4],
+    active: bool,
+}
+
+fn summon_setting(app: &tauri::AppHandle) -> SummonSetting {
+    let choice = summon_choice(app);
+    let active =
+        summon_shortcut_for(&choice).is_some_and(|it| app.global_shortcut().is_registered(it));
+    SummonSetting {
+        choice,
+        choices: SUMMON_CHOICES,
+        active,
+    }
+}
+
+#[tauri::command]
+fn summon_shortcut(app: tauri::AppHandle) -> SummonSetting {
+    summon_setting(&app)
+}
+
+/// Change the summon shortcut to one of the list, or turn it off.
+#[tauri::command]
+fn set_summon_shortcut(app: tauri::AppHandle, choice: String) -> Result<SummonSetting, String> {
+    if !is_summon_choice(&choice) {
+        return Err(format!("{choice:?} is not one of the summon shortcuts"));
+    }
+    match app.store(SETTINGS_FILE) {
+        Ok(store) => {
+            store.set(SUMMON_KEY, choice.as_str());
+            if let Err(error) = store.save() {
+                log::warn!("the shell's settings could not be written: {error}");
+            }
+        }
+        Err(error) => log::warn!("the shell's settings could not be opened: {error}"),
+    }
+    apply_summon(&app, &choice);
+    Ok(summon_setting(&app))
+}
+
+/// Hold a fetched update and tell the page, which shows the one quiet notice about it.
+fn mark_update_ready(app: &tauri::AppHandle, ready: ReadyUpdate) {
+    let version = ready.version.clone();
+    if let Ok(mut held) = app.state::<ShellState>().update.lock() {
+        held.replace(ready);
+    }
+    if let Err(error) = app.emit(UPDATE_READY_EVENT, &version) {
+        log::warn!("the page could not be told about {version}: {error}");
+    }
+}
+
+/// The version waiting for a restart, if there is one.
+#[tauri::command]
+fn update_ready(app: tauri::AppHandle) -> Option<String> {
+    app.state::<ShellState>()
+        .update
+        .lock()
+        .ok()
+        .and_then(|held| held.as_ref().map(|ready| ready.version.clone()))
+}
+
+/// The update being held, taken out to be applied — or the refusal when there is none.
+fn take_ready_update(held: &Mutex<Option<ReadyUpdate>>) -> Result<ReadyUpdate, String> {
+    held.lock()
+        .map_err(|_| "the update could not be read".to_string())?
+        .take()
+        .ok_or_else(|| "no update is waiting".to_string())
+}
+
+/// Restart into the update this shell fetched — and ONLY that.
+///
+/// The process plugin is still not granted to the page, and this is not a way round that: with no
+/// verified update in hand it refuses, so a page running somebody else's script can at most restart
+/// the app into the signed version the shell itself downloaded, which is what the person's own
+/// press of 지금 다시 시작 would do. It is never called by anything but that press; the notice
+/// withholds the button while the Bot is working, because the window drives the turn and a restart
+/// would end it.
+#[tauri::command]
+fn restart_to_update(app: tauri::AppHandle) -> Result<(), String> {
+    let ready = take_ready_update(&app.state::<ShellState>().update).inspect_err(|refusal| {
+        log::warn!("a restart was asked for and refused: {refusal}");
+    })?;
+    log::info!("restarting into {}", ready.version);
+    remember_origin(&app);
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        let (update, bytes) = &ready.installer;
+        // Runs the installer and ends this process; the installer brings the new version up.
+        update.install(bytes).map_err(|error| error.to_string())?;
+    }
+    app.restart()
+}
+
+/// A development build never asks the updater anything (see `install_updates`), so without this the
+/// notice and its restart could only ever be seen in a release. `LAF_SHELL_PRETEND_UPDATE=<version>`
+/// holds a pretend update after a few seconds — late enough that the page is already listening.
+/// Absent from a release build, like `DEV_ORIGIN`.
+#[cfg(debug_assertions)]
+fn pretend_update(app: &tauri::AppHandle) {
+    let Ok(version) = std::env::var("LAF_SHELL_PRETEND_UPDATE") else {
+        return;
+    };
+    let handle = app.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_secs(8));
+        log::info!("pretending update {version} is ready (development build)");
+        mark_update_ready(&handle, ReadyUpdate { version });
+    });
+}
+
+/// Fetch a newer version, if the release the endpoint points at is newer than this one, and hold it
+/// for a restart.
+///
+/// Release builds only: a development launch has no business asking the endpoint, and the version
+/// it would compare is whatever happens to be in the config. Failure is logged and nothing else — an
 /// app that cannot reach its update endpoint is an app that still has to run.
 ///
-/// Installed rather than merely downloaded, and WITHOUT a restart: the new version is in place for
-/// the next launch. Restarting an app somebody is using, to deliver a change they did not ask for,
-/// is the behaviour that teaches people to dread updates.
+/// NEVER A RESTART THE PERSON DID NOT ASK FOR. Restarting an app somebody is using, to deliver a
+/// change they did not ask for, is the behaviour that teaches people to dread updates — and here it
+/// would also end whatever the Bot was doing, because the window drives the turn. So the update is
+/// fetched and verified, the page is told, and it shows one quiet notice with 지금 다시 시작. On
+/// macOS it is also installed at once, so it applies on the next launch whether or not they press
+/// it; on Windows installing IS exiting (see `ReadyUpdate`), so it waits for the press.
 #[cfg(not(debug_assertions))]
 fn install_updates(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -591,30 +930,59 @@ fn install_updates(app: tauri::AppHandle) {
                 return;
             }
         };
-        match updater.check().await {
-            Ok(Some(update)) => {
-                log::info!("update {} is available; installing", update.version);
-                match update.download_and_install(|_, _| {}, || {}).await {
-                    Ok(()) => log::info!("update installed; it applies on the next launch"),
-                    Err(error) => log::warn!("update could not be installed: {error}"),
-                }
+        let update = match updater.check().await {
+            Ok(Some(update)) => update,
+            Ok(None) => {
+                log::info!("no update available");
+                return;
             }
-            Ok(None) => log::info!("no update available"),
-            Err(error) => log::warn!("update check failed: {error}"),
+            Err(error) => {
+                log::warn!("update check failed: {error}");
+                return;
+            }
+        };
+        let version = update.version.clone();
+        log::info!("update {version} is available; fetching");
+        // `download` verifies the signature against the pubkey in `tauri.conf.json` before it
+        // answers, so what is held below is already the signed release or nothing.
+        let bytes = match update.download(|_, _| {}, || {}).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                log::warn!("update {version} could not be fetched: {error}");
+                return;
+            }
+        };
+        #[cfg(windows)]
+        {
+            log::info!("update {version} fetched; it installs when the person restarts");
+            mark_update_ready(
+                &app,
+                ReadyUpdate {
+                    version,
+                    installer: (update, bytes),
+                },
+            );
+        }
+        #[cfg(not(windows))]
+        match update.install(bytes) {
+            Ok(()) => {
+                log::info!("update {version} installed; it applies on the next launch");
+                mark_update_ready(&app, ReadyUpdate { version });
+            }
+            Err(error) => log::warn!("update {version} could not be installed: {error}"),
         }
     });
 }
 
-/// The icon in the menu bar, and the four things reachable from it.
+/// The icon in the menu bar, the two facts it states and the four things reachable from it.
 ///
 /// KOREAN, IN THE SHELL. Everywhere else in this product the surface owns the words and the server
 /// sends facts, but a tray menu is drawn by the operating system out of strings this process holds:
-/// there is no page to ask. So these four are written here, in the language the product leads in,
-/// the same way `public/index.html` is.
+/// there is no page to ask. So these are written here, in the language the product leads in, the
+/// same way `public/index.html` is — the Bot's status included, which the page sends as a code.
 ///
-/// The menu is the whole of the shell's UI, and each item is one of the things a window cannot do
-/// for itself once it has been put away: come back, stop making noise, start with the machine, and
-/// end.
+/// Each item is one of the things a window cannot do for itself once it has been put away: say
+/// what the Bot is doing, come back, stop making noise, start with the machine, and end.
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     /*
      * WHICH SHELL THIS IS, as the first line of the menu and as a fact rather than a button.
@@ -633,6 +1001,17 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
+    /*
+     * WHAT THE BOT IS DOING, under which shell this is. A fact rather than a button, like the line
+     * above it, so a person can see "사장님 차례" without opening the window — which is the only
+     * question most people open a tray menu to answer. It says 쉬는 중 until the page first
+     * reports, and again whenever the window starts loading a page (`on_page_load` in `run`): a page
+     * that is gone cannot still be saying the Bot is working.
+     */
+    let status = MenuItem::with_id(app, "status", BotStatus::Idle.words(), false, None::<&str>)?;
+    if let Ok(mut line) = app.state::<ShellState>().status_line.lock() {
+        line.replace(status.clone());
+    }
     let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
     let notices = CheckMenuItem::with_id(
         app,
@@ -664,6 +1043,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         app,
         &[
             &about,
+            &status,
             &PredefinedMenuItem::separator(app)?,
             &open,
             &PredefinedMenuItem::separator(app)?,
@@ -739,8 +1119,24 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_badge,
             open_external,
-            post_notice
+            post_notice,
+            set_status,
+            summon_shortcut,
+            set_summon_shortcut,
+            update_ready,
+            restart_to_update
         ])
+        /*
+         * A PAGE THAT IS LOADING IS NOT A BOT THAT IS WORKING. The tray's status is whatever the page
+         * last said, and a page that navigated away, reloaded or was replaced by the connection page
+         * can no longer take it back — so every load starts the tray at rest, and the page that
+         * arrives says otherwise if it has reason to.
+         */
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                show_status(webview.app_handle(), BotStatus::Idle);
+            }
+        })
         /*
          * SINGLE INSTANCE FIRST, AND BEFORE ANY WINDOW EXISTS.
          *
@@ -772,6 +1168,22 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_log::Builder::new().build())
+        /*
+         * THE SUMMON SHORTCUT, held from Rust. No `global-shortcut:` permission is granted to the
+         * page (`removeUnusedCommands` strips the plugin's commands from the build): the page names
+         * one of `SUMMON_CHOICES` through `set_summon_shortcut` and this process registers it.
+         * Pressed only — the release of the same keys would otherwise summon twice.
+         */
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        log::info!("summoned by the shortcut");
+                        present_where_the_notice_pointed(app);
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -791,7 +1203,9 @@ pub fn run() {
                                 log::error!("could not open the remembered deployment: {error}");
                             }
                         }
-                        Err(error) => log::error!("the remembered deployment is not a URL: {error}"),
+                        Err(error) => {
+                            log::error!("the remembered deployment is not a URL: {error}")
+                        }
                     }
                 }
                 // It is surfaced only once the webview exists, which avoids a white flash on launch
@@ -863,6 +1277,9 @@ pub fn run() {
                 // a process with no way back to it and no way to quit it.
                 log::error!("no tray icon: {error}");
             }
+            apply_summon(app.handle(), &summon_choice(app.handle()));
+            #[cfg(debug_assertions)]
+            pretend_update(app.handle());
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
@@ -915,9 +1332,101 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{connection_page_url, deep_link_url, fleet_origin, link_target, web_url};
+    use super::{
+        connection_page_url, deep_link_url, fleet_origin, is_summon_choice, link_target,
+        summon_shortcut_for, take_ready_update, web_url, with_dot, BotStatus, ReadyUpdate,
+        SUMMON_CHOICES, SUMMON_DEFAULT, SUMMON_OFF,
+    };
+    use std::sync::Mutex;
 
     const ORIGIN: &str = "https://agent.laf-co.com";
+
+    /// The tray says one of three things, and a page cannot make it say a fourth.
+    #[test]
+    fn the_tray_takes_three_codes_and_nothing_else() {
+        assert_eq!(BotStatus::from_code("working"), Some(BotStatus::Working));
+        assert_eq!(BotStatus::from_code("waiting"), Some(BotStatus::Waiting));
+        assert_eq!(BotStatus::from_code("idle"), Some(BotStatus::Idle));
+        for refused in ["Working", "idle ", "", "busy", "사장님 차례", "<b>idle</b>"] {
+            assert_eq!(
+                BotStatus::from_code(refused),
+                None,
+                "should refuse {refused:?}"
+            );
+        }
+        // The words are the tray's own, and the person's turn is the only one with a dot of amber.
+        assert_eq!(BotStatus::Waiting.words(), "사장님 차례");
+        assert_eq!(BotStatus::Idle.dot(), None);
+        assert_ne!(BotStatus::Waiting.dot(), BotStatus::Working.dot());
+    }
+
+    /// The page names a summon shortcut by id; only the list decides which keys that is.
+    #[test]
+    fn the_summon_shortcut_is_one_of_the_list_or_off() {
+        assert!(SUMMON_CHOICES.contains(&SUMMON_DEFAULT));
+        assert!(SUMMON_CHOICES.contains(&SUMMON_OFF));
+        for choice in SUMMON_CHOICES {
+            assert!(is_summon_choice(choice), "{choice} should be a choice");
+            assert_eq!(summon_shortcut_for(choice).is_some(), choice != SUMMON_OFF);
+        }
+        // Every one of them has a modifier: a bare key taken system-wide is a key nobody can type.
+        let keys: Vec<_> = SUMMON_CHOICES
+            .iter()
+            .filter_map(|choice| summon_shortcut_for(choice))
+            .collect();
+        for key in &keys {
+            assert!(!key.mods.is_empty(), "{key:?} has no modifier");
+        }
+        let mut ids: Vec<_> = keys.iter().map(|key| key.id()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), keys.len(), "two choices name the same keys");
+        for refused in ["ctrl+c", "Control+Alt+L", "super+space", "", "OFF"] {
+            assert!(!is_summon_choice(refused), "should refuse {refused:?}");
+        }
+    }
+
+    /// No update in hand, no restart: the one thing that stops `restart_to_update` being a way for
+    /// a page to restart the app whenever it likes. (A Windows release build holds the installer as
+    /// well, which a test has no signed update to make one of.)
+    #[cfg(not(all(windows, not(debug_assertions))))]
+    #[test]
+    fn a_restart_is_refused_without_an_update_in_hand() {
+        let held = Mutex::new(None);
+        assert!(take_ready_update(&held).is_err());
+        held.lock().unwrap().replace(ReadyUpdate {
+            version: "9.9.9".to_string(),
+        });
+        assert_eq!(
+            take_ready_update(&held)
+                .map(|ready| ready.version)
+                .as_deref(),
+            Ok("9.9.9")
+        );
+        // Taken, not copied: a second press has nothing to restart into.
+        assert!(take_ready_update(&held).is_err());
+    }
+
+    #[test]
+    fn the_status_dot_sits_in_the_corner_and_leaves_the_rest_alone() {
+        let (width, height) = (40, 40);
+        let icon = vec![10u8; (width * height * 4) as usize];
+        let dotted = with_dot(&icon, width, height, [1, 2, 3]);
+        assert_eq!(dotted.len(), icon.len());
+        let pixel = |x: u32, y: u32| {
+            let at = ((y * width + x) * 4) as usize;
+            dotted[at..at + 4].to_vec()
+        };
+        assert_eq!(pixel(0, 0), vec![10, 10, 10, 10]);
+        assert_eq!(pixel(width / 2, height / 2), vec![10, 10, 10, 10]);
+        // The dot's centre is a ring's width in from the corner.
+        assert_eq!(pixel(width - 11, height - 11), vec![1, 2, 3, 255]);
+        // A buffer that is not the size it claims is handed back untouched.
+        assert_eq!(
+            with_dot(&icon[..10], width, height, [1, 2, 3]),
+            icon[..10].to_vec()
+        );
+    }
 
     #[test]
     fn a_link_lands_on_the_page_it_names() {
@@ -975,7 +1484,9 @@ mod tests {
             let url = link_target(ORIGIN, "connected", id).expect("an id is still an id");
             assert_eq!(
                 url,
-                format!("https://agent.laf-co.com/settings/connected-accounts?connected={expected}")
+                format!(
+                    "https://agent.laf-co.com/settings/connected-accounts?connected={expected}"
+                )
             );
         }
         assert!(link_target(ORIGIN, "connected", "").is_none());
@@ -1144,7 +1655,10 @@ mod tests {
         if cfg!(debug_assertions) {
             assert_eq!(opened.as_deref(), Some("http://localhost:3010"));
         } else {
-            assert!(opened.is_none(), "a release build opened the development server");
+            assert!(
+                opened.is_none(),
+                "a release build opened the development server"
+            );
         }
     }
 }

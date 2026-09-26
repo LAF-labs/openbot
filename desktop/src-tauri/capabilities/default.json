@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can. The updater, the process plugin, the store, autostart, deep-link and the shell's opener are deliberately absent: the shell updates itself from Rust, owns its own tray settings, and exposes three narrow commands, so a page that runs somebody else's script cannot make this process install software, restart itself, register a URL scheme, start with the machine, or hand a URL of any scheme to the operating system. The three `allow-*` entries at the end are the shell's own commands: an app command reaching this window from a REMOTE origin is refused unless it is named here AND in build.rs's app manifest, with no error at build time and a rejected promise the bridge reads as 'no shell' — which is how the badge and the link opener were dead for a release without anybody noticing.",
+  "description": "What the remote app may ask of the shell. The app is the deployed origin, not bundled code, so it is granted exactly what a browser tab could not do for itself and nothing a tab already can. The updater, the process plugin, the store, autostart, deep-link, the global-shortcut plugin and the shell's opener are deliberately absent: the shell updates itself from Rust, owns its own tray settings, registers the summon shortcut itself from a fixed list, and exposes narrow commands of its own, so a page that runs somebody else's script cannot make this process install software, restart itself except into the signed update the shell already fetched (`restart_to_update` refuses without one), take a key combination from the rest of the machine, register a URL scheme, start with the machine, write text into the tray (`set_status` takes one of three codes), or hand a URL of any scheme to the operating system. The `allow-*` entries at the end are the shell's own commands: an app command reaching this window from a REMOTE origin is refused unless it is named here AND in build.rs's app manifest, with no error at build time and a rejected promise the bridge reads as 'no shell' — which is how the badge and the link opener were dead for a release without anybody noticing.",
   "windows": ["main"],
   "remote": {
     "urls": [
@@ -25,6 +25,11 @@
     "core:window:allow-set-badge-label",
     "allow-set-badge",
     "allow-open-external",
-    "allow-post-notice"
+    "allow-post-notice",
+    "allow-set-status",
+    "allow-summon-shortcut",
+    "allow-set-summon-shortcut",
+    "allow-update-ready",
+    "allow-restart-to-update"
   ]
 }

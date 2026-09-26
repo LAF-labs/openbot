@@ -4,11 +4,13 @@ import { useEffect } from "react";
 import { ShellConnectionCheck } from "../components/help/connection-check-dialog";
 import { ConnectionNotice } from "../components/layout/connection-notice";
 import { SectionBoundary } from "../components/layout/section-boundary";
+import { ShellSync } from "../components/layout/shell-sync";
 import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useBotAccent } from "../lib/avatar/accent";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
+import { inShell } from "../lib/notifications/shell";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
 import { reportDevice } from "../lib/whereabouts/queries";
@@ -112,6 +114,12 @@ function AuthedShell() {
        * the check away from the one page that still offers it.
        */}
       <ShellConnectionCheck />
+      {/* The installed app's tray status, wakefulness and update notice; nothing in a tab. */}
+      {inShell() ? (
+        <SectionBoundary layout="line" section="notices">
+          <ShellSync />
+        </SectionBoundary>
+      ) : null}
       <Outlet />
     </>
   );
