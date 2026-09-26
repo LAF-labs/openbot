@@ -19,11 +19,19 @@ import { mount, unmountAll } from "./support/mount";
  * what reached the screen.
  */
 
-beforeAll(() => {
+beforeAll(async () => {
   GlobalRegistrator.register();
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+  /*
+   * The renderer is a megabyte behind a lazy import. Loaded here, before anything waits on it, so
+   * a cold import on a slow runner is paid outside the poll below rather than inside it.
+   */
+  await Promise.all([
+    import("streamdown"),
+    import("../src/lib/markdown-plugins"),
+  ]);
 });
 
 afterAll(async () => {
@@ -40,7 +48,7 @@ async function renderedAnswer(
   settle: (ms?: number) => Promise<void>,
   host: HTMLElement,
 ) {
-  for (let tries = 0; tries < 100; tries++) {
+  for (let tries = 0; tries < 250; tries++) {
     if (host.querySelector("li")) break;
     await settle(20);
   }
