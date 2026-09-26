@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { AbstractAgent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import type { AuditEventInput } from "../src/audit";
+import { withOutboxWatch } from "../src/notifications/from-audit";
+import type { NotificationOutbox } from "../src/notifications/outbox";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -108,7 +110,12 @@ async function until(ready: () => boolean, label: string) {
   }
 }
 
-function harness(bot: AbstractAgent, lane = createBotLane()) {
+function harness(
+  bot: AbstractAgent,
+  lane = createBotLane(),
+  /** False builds a service no stop can reach, so only the guards inside the run are exercised. */
+  tracked = true,
+) {
   const work = createWorkInFlight();
   const rows: AuditEventInput[] = [];
   const delivered: string[] = [];
@@ -128,7 +135,7 @@ function harness(bot: AbstractAgent, lane = createBotLane()) {
     },
     tools: async () => ({ tools: [], execute: async () => ({ ok: true }) }),
     lane,
-    work,
+    ...(tracked ? { work } : {}),
   });
   return { service, work, rows, delivered, marked };
 }
@@ -205,3 +212,194 @@ describe("a routine stopped by a person", () => {
     });
   });
 });
+
+/** A Bot that answers when it is let go, and says whether it was aborted instead. */
+function answeringBot() {
+  let asked = 0;
+  let aborted = 0;
+  const releases: Array<() => void> = [];
+  const agent = {
+    messages: [] as Message[],
+    setMessages(messages: Message[]) {
+      agent.messages = [...messages];
+    },
+    addMessage(message: Message) {
+      agent.messages.push(message);
+    },
+    async runAgent(
+      _input: unknown,
+      subscriber?: { onRunFinishedEvent?: () => unknown },
+    ) {
+      asked += 1;
+      await new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
+      agent.messages.push({
+        id: randomUUID(),
+        role: "assistant",
+        content: "공급처에 발주 넣었어요.",
+      } as Message);
+      subscriber?.onRunFinishedEvent?.();
+      return { result: undefined, newMessages: [] };
+    },
+    abortRun() {
+      aborted += 1;
+      for (const release of releases.splice(0)) release();
+    },
+  };
+  return {
+    agent: agent as unknown as AbstractAgent,
+    asked: () => asked,
+    aborted: () => aborted,
+    release: () => releases.shift()?.(),
+  };
+}
+
+/** What the outbox watch makes of the trail rows: the only road from `routine.ran` to `run.failed`. */
+async function notificationsFrom(rows: AuditEventInput[]) {
+  const asked: string[] = [];
+  const outbox = {
+    enqueue: async (input: { kind: string }) => {
+      asked.push(input.kind);
+      return null;
+    },
+    offer: async (id: string) => {
+      asked.push(`offer:${id}`);
+      return null;
+    },
+  } as unknown as NotificationOutbox;
+  const watched = withOutboxWatch({ insert: async () => undefined }, outbox);
+  for (const row of rows) await watched.insert(row);
+  return asked;
+}
+
+async function ledgerOf(runId: unknown) {
+  const [row] = await database
+    .select({ status: lafThreadRuns.status })
+    .from(lafThreadRuns)
+    .where(eq(lafThreadRuns.runId, String(runId)));
+  return row?.status;
+}
+
+describe("a routine taken back while its run is out", () => {
+  test("deleted while its Bot is working: the Bot is stopped, nothing is delivered, nobody is told it failed", async () => {
+    const bot = answeringBot();
+    const { service, rows, delivered, marked, work } = harness(bot.agent);
+    const routine = await aRoutine(service, "발주");
+
+    const running = service.runNow(PERSON, routine.id);
+    await until(() => bot.asked() === 1, "the Bot to be asked");
+    await service.remove(PERSON, routine.id);
+    await running;
+
+    expect(bot.aborted()).toBe(1);
+    expect(work.of(PERSON.id)).toEqual([]);
+    expect(delivered).toEqual([]);
+    expect(marked).toEqual([]);
+    const ran = rows.find((row) => row.eventType === "routine.ran");
+    expect(ran?.payload).toMatchObject({
+      ok: false,
+      stopped: true,
+      withdrawn: "gone",
+    });
+    expect(ran?.payload).not.toHaveProperty("failure");
+    expect(await ledgerOf(ran?.payload.runId)).toBe("stopped");
+    expect(await notificationsFrom(rows)).toEqual([]);
+  });
+
+  test("deleted mid-run where no stop reaches it: recorded as stopped, never as the model failing", async () => {
+    // Before: the receipt failed its foreign key, the record rolled back, and the trail said
+    // `failure: laf:turn_model_failed` — a run.failed notice for a routine the person had deleted.
+    const bot = answeringBot();
+    const { service, rows, delivered } = harness(
+      bot.agent,
+      createBotLane(),
+      false,
+    );
+    const routine = await aRoutine(service, "발주");
+
+    const running = service.runNow(PERSON, routine.id);
+    await until(() => bot.asked() === 1, "the Bot to be asked");
+    await service.remove(PERSON, routine.id);
+    bot.release();
+    await running;
+
+    expect(bot.aborted()).toBe(0);
+    // Its answer is for a routine nobody has any more.
+    expect(delivered).toEqual([]);
+    const ran = rows.find((row) => row.eventType === "routine.ran");
+    expect(ran?.payload).toMatchObject({
+      ok: false,
+      stopped: true,
+      withdrawn: "gone",
+    });
+    expect(ran?.payload).not.toHaveProperty("failure");
+    expect(await ledgerOf(ran?.payload.runId)).toBe("stopped");
+    expect(await notificationsFrom(rows)).toEqual([]);
+  });
+
+  test("switched off while queued behind another: its Bot is never asked, and its record says stopped", async () => {
+    const bot = answeringBot();
+    // Untracked, so what stops it is the read inside the lane and nothing else.
+    const { service, rows } = harness(bot.agent, createBotLane(), false);
+    const first = await aRoutine(service, "첫 번째");
+    const second = await aRoutine(service, "두 번째");
+
+    const firstRun = service.runNow(PERSON, first.id);
+    await until(() => bot.asked() === 1, "the first routine to be asked");
+    // The webhook, not Run now: an explicit Run now runs a routine that is switched off.
+    const fired = await service.trigger(second.id, second.triggerToken);
+    expect(fired.ran).toBe(true);
+    await service.setEnabled(PERSON, second.id, false);
+    bot.release();
+    await firstRun;
+    if (fired.ran) await fired.finished;
+
+    expect(bot.asked()).toBe(1);
+    const [receipt] = await service.runs(PERSON, second.id);
+    expect(receipt).toMatchObject({ ok: false, error: "laf:run_stopped" });
+    const ran = rows.find(
+      (row) => row.eventType === "routine.ran" && row.targetId === second.id,
+    );
+    expect(ran?.payload).toMatchObject({
+      ok: false,
+      stopped: true,
+      withdrawn: "off",
+    });
+    expect(await ledgerOf(ran?.payload.runId)).toBe("stopped");
+    expect(await notificationsFrom(rows)).toEqual([]);
+  });
+
+  test("switched off while its Bot is working: stopped, the way 모두 멈추기 stops it", async () => {
+    const bot = answeringBot();
+    const { service, rows } = harness(bot.agent);
+    const routine = await aRoutine(service, "주문 정리");
+
+    const running = service.runNow(PERSON, routine.id);
+    await until(() => bot.asked() === 1, "the Bot to be asked");
+    await service.setEnabled(PERSON, routine.id, false);
+    await running;
+
+    expect(bot.aborted()).toBe(1);
+    const [receipt] = await service.runs(PERSON, routine.id);
+    expect(receipt).toMatchObject({ ok: false, error: "laf:run_stopped" });
+    expect(
+      rows.find((row) => row.eventType === "routine.ran")?.payload,
+    ).toMatchObject({ ok: false, stopped: true });
+  });
+
+  test("Run now on a routine that is switched off still runs it: a person pressed the button", async () => {
+    const bot = answeringBot();
+    const { service, delivered } = harness(bot.agent);
+    const routine = await aRoutine(service, "한 번만");
+    await service.setEnabled(PERSON, routine.id, false);
+
+    const running = service.runNow(PERSON, routine.id);
+    await until(() => bot.asked() === 1, "the Bot to be asked");
+    bot.release();
+    await running;
+
+    expect(delivered).toEqual(["공급처에 발주 넣었어요."]);
+  });
+});
+

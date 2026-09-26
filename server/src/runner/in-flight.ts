@@ -31,6 +31,8 @@ export type Work = {
   agentId: string | null;
   /** The conversation, for a chat: the thread is what the window that pressed Stop holds. */
   threadId?: string | null;
+  /** The routine, for a routine's run: what deleting or switching it off stops (`routines/service.ts`). */
+  routineId?: string;
   /**
    * Stop it. Resolves whether it was stopped. Never expected to throw — a stop that cannot reach
    * what it stops says false — but the reader catches anyway.
@@ -45,6 +47,8 @@ export type WorkInFlight = {
   of: (userId: string) => Work[];
   /** Whether an entry `of` handed out is still going — false once its work said it was over. */
   isGoing: (entry: Work) => boolean;
+  /** Every run of one routine going on or queued, whoever it is being done for. */
+  ofRoutine: (routineId: string) => Work[];
 };
 
 export function createWorkInFlight(): WorkInFlight {
@@ -63,6 +67,11 @@ export function createWorkInFlight(): WorkInFlight {
     },
     isGoing(entry) {
       return going.has(entry);
+    },
+    ofRoutine(routineId) {
+      return [...going].filter(
+        (entry) => entry.kind === "routine" && entry.routineId === routineId,
+      );
     },
   };
 }

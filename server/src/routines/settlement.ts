@@ -1,6 +1,7 @@
+import { eq } from "drizzle-orm";
 import { classifyTurnFailure } from "../channels/turn-failures";
 import type { Database } from "../db/client";
-import type { lafRoutines } from "../db/schema";
+import { lafRoutines } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import {
@@ -13,7 +14,7 @@ import {
 } from "../notifications/failure-groups";
 import type { RunLedger } from "../runner/run-ledger";
 import type { Executor } from "../runner/thread-store";
-import type { UnattendedRunResult } from "../runner/unattended";
+import { RUN_STOPPED, type UnattendedRunResult } from "../runner/unattended";
 import type {
   Delivered,
   DeliverRoutineAnswer,
@@ -87,7 +88,15 @@ export type RunToSettle = {
    * Optional so a caller that cannot be stopped says nothing, which is "not stopped".
    */
   stopped?: boolean;
+  /**
+   * The routine was taken back before the Bot was asked: deleted (`gone`) or switched off (`off`)
+   * while the run waited its turn (`run.ts`). A stop, with the reason the trail keeps.
+   */
+  withdrawn?: Withdrawn;
 };
+
+/** Why a run stopped without a person pressing stop: its routine went, or was switched off. */
+export type Withdrawn = "gone" | "off";
 
 /** What the record came to, and the announcements it earned — to be made by the caller. */
 export type Settlement = {
@@ -96,6 +105,8 @@ export type Settlement = {
   failure: string;
   /** A person stopped the run, and its record says so. False when the record rolled back. */
   stopped: boolean;
+  /** Its routine was deleted or switched off under it. Null for every other run. */
+  withdrawn: Withdrawn | null;
   delivered: Delivered | null;
   failedIn: Delivered | null;
   /** What became of the notepad the run changed. Null when it changed nothing. */
@@ -114,14 +125,15 @@ export async function settleRun(
   run: RunToSettle,
 ): Promise<Settlement> {
   try {
-    const { delivered, failedIn, notepad, group } =
+    const { delivered, failedIn, notepad, group, gone } =
       await options.database.transaction(async (transaction) =>
         writeRecord(options, transaction, run),
       );
     return {
-      ok: run.ok,
-      failure: run.failure,
-      stopped: run.stopped === true,
+      ok: run.ok && !gone,
+      failure: gone ? RUN_STOPPED : run.failure,
+      stopped: run.stopped === true || gone,
+      withdrawn: gone ? "gone" : (run.withdrawn ?? null),
       delivered,
       failedIn,
       notepad,
@@ -159,6 +171,7 @@ export async function settleRun(
       ok: false,
       failure,
       stopped: false,
+      withdrawn: null,
       delivered: null,
       failedIn: null,
       notepad: run.notepad?.changed ? "discarded" : null,
@@ -171,7 +184,50 @@ async function writeRecord(
   options: SettlementOptions,
   transaction: Executor,
   run: RunToSettle,
-): Promise<Omit<Settlement, "ok" | "failure" | "stopped">> {
+): Promise<
+  Omit<Settlement, "ok" | "failure" | "stopped" | "withdrawn"> & {
+    gone: boolean;
+  }
+> {
+  /*
+   * THE ROUTINE FIRST, HELD FOR THE LENGTH OF THE RECORD. Every write below that names it — the
+   * notepad, the receipt — takes this same key-share lock through its foreign key, so taking it
+   * first changes no lock order; what it adds is the answer to "is the routine still there", held
+   * true until commit, since a delete has to wait for it.
+   *
+   * A ROUTINE DELETED WHILE ITS RUN WAS OUT is recorded as the stop it is. Its receipt could not be
+   * written — the foreign key refused it — so the whole record rolled back and the run was told to
+   * the person as `run.failed`, the model's fault, for a routine they had just deleted (review
+   * 2026-09-26). Now its ledger row closes as `stopped`, nothing is delivered for a routine nobody
+   * has any more, and the trail says why.
+   */
+  const [still] = await transaction
+    .select({ id: lafRoutines.id })
+    .from(lafRoutines)
+    .where(eq(lafRoutines.id, run.row.id))
+    .for("key share");
+  if (!still) {
+    if (run.ledgerRunId) {
+      await options.ledger?.settle(
+        run.ledgerRunId,
+        { status: "stopped", error: null },
+        transaction,
+      );
+    }
+    log.info("routine_run_withdrawn", {
+      routine: run.row.id,
+      why: "gone",
+      ...(run.ledgerRunId ? { run: run.ledgerRunId } : {}),
+    });
+    return {
+      delivered: null,
+      failedIn: null,
+      notepad: run.notepad?.changed ? "discarded" : null,
+      group: null,
+      gone: true,
+    };
+  }
+
   /*
    * WHERE THE NEXT RUN STARTS FROM IS ONE DECISION, taken here for both of its halves. A success
    * lands the notepad and closes the routine's open failure groups; a failure discards the notepad
@@ -221,7 +277,7 @@ async function writeRecord(
     error: run.ok ? null : run.failure,
     steps: run.steps,
   });
-  return { delivered, failedIn, notepad, group };
+  return { delivered, failedIn, notepad, group, gone: false };
 }
 
 /**

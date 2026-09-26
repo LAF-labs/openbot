@@ -181,6 +181,17 @@ export function createRoutineService(options: RoutineServiceOptions) {
     ...(options.personZone ? { personZone: options.personZone } : {}),
   };
   const firing: Firing = { database, now, routine };
+  /*
+   * DELETED OR SWITCHED OFF IS TAKEN BACK FROM WHAT IS ALREADY GOING. A run queued on the Bot's lane
+   * is caught by the read `run.ts` makes before asking the Bot; one already asking is stopped here,
+   * the way `모두 멈추기` stops it, so a routine somebody deleted mid-run does not go on clicking for
+   * the rest of its ten minutes. Its record says `stopped`, with why (`settlement.ts`).
+   */
+  const takeBack = async (routineId: string) => {
+    for (const entry of options.work?.ofRoutine(routineId) ?? []) {
+      await entry.stop().catch(() => false);
+    }
+  };
   const ticker = createRoutineTicker({
     database,
     auditStore: options.auditStore,
@@ -209,8 +220,10 @@ export function createRoutineService(options: RoutineServiceOptions) {
       return listRuns(store, actor, routineId);
     },
 
-    setEnabled(actor: AgentActor, id: string, enabled: boolean) {
-      return setRoutineEnabled(store, actor, id, enabled);
+    async setEnabled(actor: AgentActor, id: string, enabled: boolean) {
+      const routine = await setRoutineEnabled(store, actor, id, enabled);
+      if (!enabled) await takeBack(id);
+      return routine;
     },
 
     /** Its name, what it says, when it runs — in place. See `updateRoutine`. */
@@ -232,8 +245,9 @@ export function createRoutineService(options: RoutineServiceOptions) {
       return resumeUnreadPaused(store, actor, agentId, resume);
     },
 
-    remove(actor: AgentActor, id: string) {
-      return removeRoutine(store, actor, id);
+    async remove(actor: AgentActor, id: string) {
+      await removeRoutine(store, actor, id);
+      await takeBack(id);
     },
 
     /** What the routine noted for its next run. Scoped like its runs: a note is the routine's work. */

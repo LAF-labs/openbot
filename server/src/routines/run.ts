@@ -6,8 +6,9 @@ import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloChannelFor } from "../channels/solo-channel";
 import type { ActionActor } from "../computer/gateway";
+import { eq } from "drizzle-orm";
 import type { Database } from "../db/client";
-import type { lafRoutines } from "../db/schema";
+import { lafRoutines } from "../db/schema";
 import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
@@ -123,7 +124,7 @@ export type RoutineRun = {
 /** What asking the Bot came to, before any of it is written down. */
 type Attempt = Pick<
   RunToSettle,
-  "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped"
+  "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped" | "withdrawn"
 > & {
   /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
   awaiting: boolean;
@@ -147,6 +148,8 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
         kind: "routine",
         userId: row.createdById,
         agentId: row.agentId,
+        // So deleting or switching the routine off reaches this run too (`service.ts`).
+        routineId: row.id,
         stop: async () => {
           stopping.abort();
           return true;
@@ -164,9 +167,9 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
          */
         await (options.lane
           ? options.lane.run(row.agentId, () =>
-              executeNow(options, row, stopping.signal, scheduledFor),
+              executeNow(options, row, door, stopping.signal, scheduledFor),
             )
-          : executeNow(options, row, stopping.signal, scheduledFor));
+          : executeNow(options, row, door, stopping.signal, scheduledFor));
       } finally {
         done?.();
       }
@@ -228,6 +231,8 @@ async function authorIsAdmitted(
 async function executeNow(
   options: RoutineRunOptions,
   row: RoutineRow,
+  /** Which door fired it: an explicit run-now runs a routine that is switched off. */
+  door: RoutineDoor,
   /** A person's stop (`모두 멈추기`). Already aborted when the run was stopped in the queue. */
   signal: AbortSignal,
   /** The window the clock claimed; absent for Run now and the webhook. */
@@ -246,7 +251,14 @@ async function executeNow(
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author, runId);
-  const attempt = await askTheBot(options, row, author, signal, scheduledFor);
+  const attempt = await askTheBot(
+    options,
+    row,
+    door,
+    author,
+    signal,
+    scheduledFor,
+  );
 
   /*
    * Nothing to report, said the way the routine prompt asks for it.
@@ -272,6 +284,7 @@ async function executeNow(
     silent,
     notepad: attempt.notepad,
     stopped: attempt.stopped,
+    ...(attempt.withdrawn ? { withdrawn: attempt.withdrawn } : {}),
   });
 
   // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
@@ -334,10 +347,36 @@ async function openLedger(
     });
 }
 
+/**
+ * Whether the routine is still one this door may run, read inside the Bot's lane.
+ *
+ * The row the run carries is the one the claim returned, and a run can wait on the lane behind
+ * another for as long as that one takes — ten minutes for a routine with tools. A routine deleted or
+ * switched off in that time still ran on the row it was claimed with: the Bot was asked, it acted,
+ * and a deleted routine's settlement then failed on its own foreign key and was told to the person as
+ * the model failing (review 2026-09-26). So it is read again here, the last moment before the Bot is
+ * asked: gone is gone for every door, and off is off for the clock and the webhook. Run now is a
+ * person pressing the button on this routine, and it has always run one that is switched off.
+ */
+async function withdrawnBefore(
+  database: Database,
+  row: RoutineRow,
+  door: RoutineDoor,
+): Promise<Attempt["withdrawn"]> {
+  const [now] = await database
+    .select({ enabled: lafRoutines.enabled })
+    .from(lafRoutines)
+    .where(eq(lafRoutines.id, row.id))
+    .limit(1);
+  if (!now) return "gone";
+  return now.enabled || door === "run_now" ? undefined : "off";
+}
+
 /** The Bot, asked the routine's instruction as its author would see the roster. Never throws. */
 async function askTheBot(
   options: RoutineRunOptions,
   row: RoutineRow,
+  door: RoutineDoor,
   author: string | null,
   signal: AbortSignal,
   scheduledFor?: Date,
@@ -366,6 +405,9 @@ async function askTheBot(
   });
   if (signal.aborted) return stopped(null);
   try {
+    // Deleted or switched off while it waited its turn: stopped, and the Bot is asked nothing.
+    const withdrawn = await withdrawnBefore(options.database, row, door);
+    if (withdrawn) return { ...stopped(null), withdrawn };
     if (!author) {
       throw new Error(
         "The person who created this routine no longer has an account.",

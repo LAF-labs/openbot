@@ -65,6 +65,8 @@ export async function reportRun(
           : ok
             ? {}
             : { failure: classifyTurnFailure(failure) }),
+        // A stop nobody pressed: its routine was deleted or switched off while the run waited.
+        ...(settled.withdrawn ? { withdrawn: settled.withdrawn } : {}),
         ...(settled.failedIn ? { channelId: settled.failedIn.channelId } : {}),
         /*
          * What became of the notepad the run changed, as a word and never its contents: whether the
