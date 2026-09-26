@@ -1410,6 +1410,46 @@ async function main(): Promise<number> {
       );
     }
 
+    /*
+     * THE HOST'S BROWSER RULES, AS A VM HOLDS THEM — before the stack, as a VM does. Since
+     * 2026-09-26 the Bot's browser refuses to browse (`laf:egress_unguarded`) until the host rejects
+     * its way to the metadata endpoint and private ranges; the fleet installs those rules before
+     * every stack, and a self-hosted VM runs the bundle's `scripts/laf-browser-firewall.sh` before
+     * `compose up`. The first run after that change failed on the UPGRADED computer, so the rules
+     * were applied after upgrade.sh; the first run from a :stable that has the check (v0.5.6,
+     * 2026-09-27) failed while seeding, on the computer from BEFORE the upgrade. So: applied from
+     * the directory in place before it comes up, and again after the upgrade from the new one. A
+     * bundle without the script is a release from before the rules moved to the host, whose
+     * computer holds its own; the rules are taken away with the rest of the run.
+     */
+    const applyHostFirewall = async (check: string) => {
+      const firewall = join(deployment, "scripts/laf-browser-firewall.sh");
+      if (!existsSync(firewall)) return;
+      const applied = await run(
+        [
+          "sudo",
+          "-n",
+          "env",
+          `LAF_ENV_FILE=${join(deployment, ".env")}`,
+          firewall,
+          "apply",
+        ],
+        { cwd: deployment },
+      );
+      const ok = applied.code === 0;
+      hostFirewallApplied ||= ok;
+      report.check(
+        check,
+        ok,
+        ok
+          ? applied.stdout.trim()
+          : `exit ${applied.code}: ${applied.stderr.trim().slice(0, 200)} (no passwordless sudo here — run on CI or as root)`,
+      );
+    };
+    await applyHostFirewall(
+      `the host's browser rules applied from :${options.from}'s bundle, before it came up`,
+    );
+
     const up = clock();
     const pulled = await compose(["pull"], { echo: false });
     if (pulled.code !== 0) {
@@ -1717,38 +1757,10 @@ async function main(): Promise<number> {
         "scripts/upgrade.sh did not succeed; nothing after it means anything.",
       );
 
-    /*
-     * THE HOST'S BROWSER RULES, AS A VM HOLDS THEM. Since 2026-09-26 the Bot's browser refuses to
-     * browse (`laf:egress_unguarded`) until the host rejects its way to the metadata endpoint and
-     * private ranges — the fleet installs those rules before every stack, and a self-hosted VM runs
-     * the bundle's `scripts/laf-browser-firewall.sh`. The first run of this e2e after that change
-     * failed on exactly this: the upgraded computer, correctly, would not open a page on a host
-     * with no rules. So the upgraded directory's own script is applied here, as root, the way a VM
-     * does it — and taken away with the rest of the run. A bundle without the script is a release
-     * from before the rules moved to the host, whose computer holds its own.
-     */
-    const firewall = join(deployment, "scripts/laf-browser-firewall.sh");
-    if (existsSync(firewall)) {
-      const applied = await run(
-        [
-          "sudo",
-          "-n",
-          "env",
-          `LAF_ENV_FILE=${join(deployment, ".env")}`,
-          firewall,
-          "apply",
-        ],
-        { cwd: deployment },
-      );
-      hostFirewallApplied = applied.code === 0;
-      report.check(
-        "the host's browser rules applied from the upgraded bundle",
-        hostFirewallApplied,
-        hostFirewallApplied
-          ? applied.stdout.trim()
-          : `exit ${applied.code}: ${applied.stderr.trim().slice(0, 200)} (no passwordless sudo here — run on CI or as root)`,
-      );
-    }
+    // The upgraded directory's own rules, applied again the way a VM re-runs them after `laf upgrade`.
+    await applyHostFirewall(
+      "the host's browser rules applied from the upgraded bundle",
+    );
 
     // Probing on until every door has answered ok for five seconds straight, so the last window closes.
     await until(
