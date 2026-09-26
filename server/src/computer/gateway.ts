@@ -164,7 +164,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       snapshots,
       withoutSecrets: secrets.withoutSecrets,
     }),
-    ...createHandovers({ client, as, auditStore, secrets }),
+    ...createHandovers({ client, as, auditStore, secrets, snapshots }),
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,
     ...createNavigation({ as, govern, siteSeen: options.siteSeen }),

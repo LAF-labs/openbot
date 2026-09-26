@@ -9,6 +9,7 @@ import type { AuditStore } from "../../audit";
 import type { ComputerClient } from "../client";
 import type { ActionActor } from "./caller";
 import type { Secrets } from "./secrets";
+import type { SnapshotCache } from "./snapshots";
 import { writeControlEvent } from "./trail";
 
 export function createHandovers(deps: {
@@ -17,8 +18,10 @@ export function createHandovers(deps: {
   as: (botId: string) => ComputerClient;
   auditStore: AuditStore;
   secrets: Pick<Secrets, "forgetTypedInto" | "targetOf">;
+  /** What this server believes is on the screen, which a hand-back, a stop or a reset makes untrue. */
+  snapshots: Pick<SnapshotCache, "invalidate" | "forget">;
 }) {
-  const { client, as, auditStore, secrets } = deps;
+  const { client, as, auditStore, secrets, snapshots } = deps;
 
   return {
     /**
@@ -65,6 +68,12 @@ export function createHandovers(deps: {
       actor: ActionActor,
     ) {
       const state = await as(botId).releaseControl();
+      /*
+       * Whatever the person did in the tab, this server saw none of it — their clicks go down the
+       * socket, not through here. The page the last snapshot described is a guess from now until the
+       * Bot looks again, and a rule about the host must not read the guess as the page.
+       */
+      snapshots.invalidate(computerId);
       await writeControlEvent(auditStore, "computer.control_released", {
         botId,
         actor,
@@ -106,6 +115,7 @@ export function createHandovers(deps: {
       const result = await as(botId).stopComputer();
       // The pages those refs named are gone, and a restarted browser counts its refs from `e1` again.
       secrets.forgetTypedInto(computerId);
+      snapshots.invalidate(computerId);
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
         actor,
@@ -127,6 +137,8 @@ export function createHandovers(deps: {
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
       const result = await as(botId).resetComputer();
       secrets.forgetTypedInto(computerId);
+      // The computer forgot this Bot's session, generations and all (`/computers/reset`).
+      snapshots.forget(computerId);
       await writeControlEvent(auditStore, "computer.reset", {
         botId,
         actor,

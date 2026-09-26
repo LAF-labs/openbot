@@ -37,7 +37,7 @@ export function actionFailure(error: unknown): Response {
   // A stale ref is the caller's mistake and is fixable by taking a new snapshot, so it is a 409
   // rather than a 502: the computer is fine and retrying the same call unchanged will not help.
   if (error instanceof StaleSnapshotError) {
-    return fact(STALE_REFS, { stale: true });
+    return fact(STALE_REFS, { stale: true, ...(error.page ?? {}) });
   }
   // Same status, because the instruction is the same — take a new snapshot — but its own code:
   // the control is still there under another name, and the Bot must look before it acts on it.

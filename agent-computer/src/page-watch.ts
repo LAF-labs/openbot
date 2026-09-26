@@ -16,6 +16,8 @@ export function watchPage(
   botId: string,
   page: Page,
   workspace: Workspace,
+  /** Whether this is the tab the Bot's next action lands on. Absent: every tab counts. */
+  isActive: () => boolean = () => true,
 ): void {
   /*
    * A different document means every ref from the last snapshot names something nobody is looking
@@ -23,8 +25,22 @@ export function watchPage(
    */
   session.snapshotId += 1;
 
+  /*
+   * AND FOR A NEW DOCUMENT IN THE TAB THE BOT IS ON, WHOEVER SENT IT THERE.
+   *
+   * The generation moved for a `/navigate`, a tab, a snapshot — and not when the page's own script
+   * sent the tab somewhere, nor when a person did during a takeover. A key pressed with no ref is
+   * held to the generation the server judged it against (`actions.ts`), so a document nobody asked
+   * for has to move it too, or the key lands on a page the server never saw. Only the tab the Bot
+   * is on: a background tab that reloads itself changes nothing the Bot's next action lands on, and
+   * moving the generation for it would retire refs that are still good.
+   */
+  const onDocument = () => {
+    if (isActive()) session.snapshotId += 1;
+  };
+
   // Whether its next document is on its way, which is the one thing a look at it cannot ask it.
-  followArrivals(page);
+  followArrivals(page, { onDocument });
 
   page.on("dialog", (dialog) => {
     const kind = dialog.type();

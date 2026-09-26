@@ -175,6 +175,8 @@ function heldNavigation(
       text: "",
       truncated: false,
       redirect: held,
+      // See `act` in actions.ts: the generation the server holds its next ref-less key to.
+      generation: session.snapshotId,
       elapsedMs: Date.now() - startedAt,
     }),
   );
@@ -386,6 +388,8 @@ export const navigate: BotRoute = async (
             ...((response?.status() ?? 0) >= 400
               ? { httpStatus: response?.status() }
               : {}),
+            // See `act` in actions.ts: the generation the server holds its next ref-less key to.
+            generation: session.snapshotId,
             elapsedMs: Date.now() - startedAt,
           }),
         );

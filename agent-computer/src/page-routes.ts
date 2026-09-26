@@ -47,6 +47,8 @@ export const readPage: BotRoute = async (
         ...(extract.reader ? { reader: true } : {}),
         ...(extract.fromMissing ? { fromMissing: true } : {}),
         ...(extract.frames ? { frames: extract.frames } : {}),
+        // See `act` in actions.ts: the generation the server holds its next ref-less key to.
+        generation: session.snapshotId,
       }),
     );
   } catch (error) {
@@ -193,6 +195,8 @@ export const switchTab: BotRoute = async (
         index: body.index,
         tabs,
         url: target.url(),
+        // See `act` in actions.ts: the generation the server holds its next ref-less key to.
+        generation: session.snapshotId,
       }),
     );
   } catch (error) {

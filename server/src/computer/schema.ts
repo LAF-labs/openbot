@@ -64,6 +64,13 @@ export type NavigateResult = {
    * Absent on every navigation that arrived.
    */
   redirect?: { to: string; from: string; referer?: string };
+  /**
+   * Which generation of the Bot's page the computer was on when it answered (`agent-computer`'s
+   * `snapshotId`, which a snapshot, a new document, a new tab and a hand-back all move). The gateway
+   * keeps it beside the address, holds its next ref-less key to it, and strips it before the Bot
+   * sees the answer. Absent from an older computer.
+   */
+  generation?: number;
 };
 
 export type ScreenshotResult = {
@@ -179,6 +186,8 @@ export type SwitchTabResult = {
   tabs: TabSummary[];
   url: string;
   notes?: ComputerNote[];
+  /** See `NavigateResult.generation`. */
+  generation?: number;
 };
 
 /** A file from the Bot's own workspace, handed to a file input on the page. */
@@ -216,7 +225,11 @@ export type TypeInput = ActionTarget & {
   submit?: boolean;
 };
 export type KeyInput = Partial<ActionTarget> & { key: string };
-export type ScrollInput = { deltaY?: number };
+/**
+ * A scroll lands on whatever page the Bot is on, like a key with no ref, and carries the generation
+ * the gateway judged it against for the same reason. Set by the gateway, never by the caller.
+ */
+export type ScrollInput = { deltaY?: number; snapshotId?: number };
 
 /**
  * What an action reports back.
@@ -243,6 +256,8 @@ export type ActionResult = {
   /** Where the page ended up, which is how a Bot notices that its click navigated. */
   url: string;
   elapsedMs: number;
+  /** See `NavigateResult.generation`. */
+  generation?: number;
   /**
    * The page the action went to, read as `/navigate` reads one — present only when it went somewhere
    * (another address, or a tab it opened). Saves the `computer_read` that always followed.

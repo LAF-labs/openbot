@@ -44,6 +44,26 @@ function heldTo<I extends { element?: JudgedElement }>(
   return (judged ? { ...rest, element: judged } : rest) as I;
 }
 
+/**
+ * An action that names no element, held to the page it was judged against.
+ *
+ * A key with no ref and a scroll land on whatever tab the Bot is on, so the only way the computer can
+ * know they are landing where the policy looked is the generation of that page, which is this
+ * server's to give: its snapshot is what the rule read. The computer refuses when the page has moved
+ * since (`laf:stale_refs`) — a tab a page's own script opened, a document it replaced, a hand-back —
+ * and the Bot looks again and is judged on what it sees. Whatever the caller put there is dropped,
+ * like its `element`: a Bot that could name the generation could name a page the rule never read.
+ */
+function onThePage<I extends { snapshotId?: number }>(
+  input: I,
+  generation: number | undefined,
+): I {
+  const { snapshotId: _fromCaller, ...rest } = input;
+  return (
+    generation === undefined ? rest : { ...rest, snapshotId: generation }
+  ) as I;
+}
+
 export function createActs(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
   as: (botId: string) => ComputerClient;
@@ -122,8 +142,12 @@ export function createActs(deps: {
           ...(approvalId ? { approvalId } : {}),
         },
         // A keypress on a control is held to that control's label like a click; one on the page
-        // itself resolves no ref, so there is nothing to hold it to.
-        (judged) => as(botId).key(heldTo(input, judged), signal),
+        // itself resolves no ref, so it is held to the page instead (`onThePage`).
+        (judged, generation) =>
+          as(botId).key(
+            heldTo(input.ref ? input : onThePage(input, generation), judged),
+            signal,
+          ),
       );
     },
 
@@ -140,7 +164,7 @@ export function createActs(deps: {
         botId,
         actor,
         { ...(approvalId ? { approvalId } : {}) },
-        () => as(botId).scroll(input),
+        (_judged, generation) => as(botId).scroll(onThePage(input, generation)),
       );
     },
 

@@ -62,8 +62,15 @@ const SAME_DOCUMENT = new Set(["sameDocument", "historySameDocument"]);
  *
  * Never throws and never waits: a tab this cannot follow is a tab whose looks wait out their bounds
  * and answer as a page that did not answer (`laf:browser_failed`), never one that is loading.
+ *
+ * `onDocument` is told each time the tab's main frame commits a NEW document — the same event that
+ * moves `documentOf`, and never a `pushState`, which Playwright's own `framenavigated` does report
+ * (measured 2026-09-26: a page's `history.pushState` fired it). See `watchPage` for who listens.
  */
-export function followArrivals(page: Page): void {
+export function followArrivals(
+  page: Page,
+  hooks: { onDocument?: () => void } = {},
+): void {
   void (async () => {
     let session: CDPSession | undefined;
     try {
@@ -85,6 +92,7 @@ export function followArrivals(page: Page): void {
         if (event.frame.parentId) return;
         tab.documents += 1;
         ended();
+        hooks.onDocument?.();
       });
       session.on("Page.frameStoppedLoading", (event) => {
         if (event.frameId === main) ended();

@@ -134,5 +134,13 @@ export const takeControl: BotRoute = ({ session }) =>
  */
 export const releaseControl: BotRoute = async ({ session }) => {
   await inTurn(session, () => settleTyping(session, { every: true }));
+  /*
+   * AND THE PAGE THE BOT GETS BACK IS NOT THE ONE ITS LAST SNAPSHOT SAW. A person held the wheel:
+   * they may have opened a layer, moved the focus, logged in, gone to another site in the same tab.
+   * A new document already moves the generation (`watchPage`); what they did inside one does not,
+   * and a ref-less Enter pressed on it would be judged against the snapshot from before they took
+   * over. So the Bot looks again before it acts.
+   */
+  session.snapshotId += 1;
   return json(session.control.release());
 };

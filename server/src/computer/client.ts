@@ -244,6 +244,11 @@ export class WorkspaceRequestError extends Error {
  * try again. Collapsed into a generic failure, the Bot apologises to the person instead.
  */
 export class StaleSnapshotError extends Error {
+  /**
+   * Where the Bot is now, when the computer refused a ref-less key for being held to a page it has
+   * left: the address and generation it said. See `govern`, which moves its cache there.
+   */
+  page?: { url: string; generation?: number };
   constructor(reason: string) {
     super(reason);
     this.name = "StaleSnapshotError";
@@ -329,7 +334,17 @@ function failureOf(body: Record<string, unknown> | null): Error {
   const Failure = Object.hasOwn(COMPUTER_ANSWERS, code)
     ? COMPUTER_ANSWERS[code as keyof typeof COMPUTER_ANSWERS]
     : ComputerUnavailableError;
-  return new Failure(code);
+  const failure = new Failure(code);
+  // The one fact beside a code this reads: where the Bot is, when the page moved under a ref-less key.
+  if (failure instanceof StaleSnapshotError && typeof body?.url === "string") {
+    failure.page = {
+      url: body.url,
+      ...(typeof body.generation === "number"
+        ? { generation: body.generation }
+        : {}),
+    };
+  }
+  return failure;
 }
 
 export function createComputerClient(options: ComputerClientOptions) {

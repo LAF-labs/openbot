@@ -12,7 +12,11 @@ import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
 import { type ApprovalRegistry, fingerprintOf } from "../approvals";
 import type { ReviewSubject, ReviewVerdict } from "../auto-review";
-import { ComputerUnavailableError, STOPPED } from "../client";
+import {
+  ComputerUnavailableError,
+  STOPPED,
+  StaleSnapshotError,
+} from "../client";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
@@ -92,8 +96,15 @@ export function createGovern(options: {
      * The action itself, handed the role and name the policy judged the ref as — from this server's
      * snapshot, never from the request — so the computer can refuse if the control is called
      * something else by the time it acts. Undefined where no ref resolved.
+     *
+     * And the generation of the page it was judged against (`CachedSnapshot.snapshotId`), for an
+     * action that names no element and so lands on whatever page the Bot is on: the computer
+     * refuses it if the page has moved since (`acts.ts`). Undefined where this server has no page.
      */
-    run: (judged: JudgedElement | undefined) => Promise<T>,
+    run: (
+      judged: JudgedElement | undefined,
+      generation: number | undefined,
+    ) => Promise<T>,
   ): Promise<T> {
     /*
      * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
@@ -420,8 +431,24 @@ export function createGovern(options: {
       if (subject.signal?.aborted) throw stopped();
       result = await run(
         element ? { role: element.role, name: element.name } : undefined,
+        cached?.snapshotId,
       );
     } catch (error) {
+      /*
+       * THE COMPUTER SAID THE PAGE THIS WAS JUDGED AGAINST IS GONE. For an action with no ref that is
+       * this server's own snapshot being refused, not the Bot's refs: a tab opened, or a document was
+       * replaced, where no answer of ours saw it. The picture is not trusted from here until the Bot
+       * looks again, so the next action is judged blind — on the address the computer says the Bot
+       * is at — rather than against the page it just failed to land on. Not for a ref: a Bot holding refs from an older look than ours — a chat beside a
+       * routine on one tab — is its own staleness, and must not make the other one look again.
+       */
+      if (error instanceof StaleSnapshotError && !ref) {
+        // Where the computer said the Bot is now, so the refusals until it looks name that page.
+        if (error.page) {
+          pageMoved(computerId, error.page.url, error.page.generation);
+        }
+        snapshots.invalidate(computerId);
+      }
       /**
        * A permitted action that did not happen gets its own row.
        *
@@ -463,25 +490,59 @@ export function createGovern(options: {
       });
       throw error;
     }
-    // Where the browser is now, from the action's own report. A click that followed a link, a
-    // navigation, a tab switch: each moves the page under the cache, and the cache follows.
-    const movedTo =
-      result && typeof result === "object" && "url" in result
-        ? (result as { url?: unknown }).url
+    /*
+     * Where the browser is now, from the action's own report. A click that followed a link, a
+     * navigation, a tab switch: each moves the page under the cache, and the cache follows.
+     *
+     * THE PAGE IT WENT TO BEFORE THE PAGE IT WAS ON. A click that opens a tab answers with the tab
+     * it was pressed in as `url` and the tab it opened as `page.url`, and the Bot is on the second
+     * one. Reading `url` alone kept the cache on the first, not even stale — measured 2026-09-26: a
+     * `target=_blank` link to kbstar.com, then Enter with no ref, judged on the blog it was clicked
+     * from, asked nobody, and the audit row named the blog.
+     */
+    const reported =
+      result && typeof result === "object"
+        ? (result as { url?: unknown; page?: { url?: unknown } })
         : undefined;
-    if (typeof movedTo === "string" && movedTo) pageMoved(computerId, movedTo);
+    const movedTo =
+      typeof reported?.page?.url === "string" && reported.page.url
+        ? reported.page.url
+        : reported?.url;
+    const { generation, bare } = withoutGeneration(result);
+    if (typeof movedTo === "string" && movedTo) {
+      pageMoved(computerId, movedTo, generation);
+    }
     // The element's label, attached on the way out, so the transcript can say what was acted on
     // instead of quoting a ref. The computer cannot supply this: it knows the ref, and the resolved
     // snapshot lives here. File calls carry their own path already, so there is nothing to add.
-    return element && result && typeof result === "object"
-      ? { ...result, element: { role: element.role, name: element.name } }
-      : result;
+    return element && bare && typeof bare === "object"
+      ? { ...bare, element: { role: element.role, name: element.name } }
+      : bare;
   }
 
   return govern;
 }
 
 export type Govern = ReturnType<typeof createGovern>;
+
+/**
+ * The answer without the computer's generation, and the generation. It is this gateway's bookkeeping
+ * (`CachedSnapshot.snapshotId`), not something the Bot can act on — and a tool result that grew a
+ * number on every call would be tokens in front of every step after it.
+ */
+function withoutGeneration<T>(result: T): {
+  generation: number | undefined;
+  bare: T;
+} {
+  if (!result || typeof result !== "object" || !("generation" in result)) {
+    return { generation: undefined, bare: result };
+  }
+  const { generation, ...bare } = result as T & { generation?: unknown };
+  return {
+    generation: typeof generation === "number" ? generation : undefined,
+    bare: bare as T,
+  };
+}
 
 /** What a stopped caller is told: the same error, and the same fact, the client throws for one. */
 function stopped(): ComputerUnavailableError {

@@ -865,6 +865,19 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       return page;
     },
 
+    /**
+     * The tab this Bot's next action would land on, if it has one — found, never made.
+     *
+     * The same tab `page` would answer with, without its two side effects: no browser is started and
+     * the Bot is not marked as busy. For the questions that must not keep a computer alive by being
+     * asked — which tab a new document belongs to, which tab the live screen follows.
+     */
+    activePage(botId: string): Page | undefined {
+      const existing = live.get(botId);
+      if (existing && !existing.page.isClosed()) return existing.page;
+      return pagesOf(botId).at(-1);
+    },
+
     /** Where the deployment's one browser profile is, for anything that has to look at it. */
     profileDirectory,
 

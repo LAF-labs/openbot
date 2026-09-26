@@ -22,7 +22,15 @@ import type { BotSession } from "./sessions";
 export const STALE_REFS = "laf:stale_refs";
 
 export class StaleSnapshotError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /**
+     * Where the Bot is now, when what went stale was the page itself rather than a ref: the address
+     * and generation a ref-less key was refused for not being on (`actions.ts`). The server's cache
+     * takes them, so the refusals after this name the page the Bot is really on.
+     */
+    readonly page?: { url: string; generation: number },
+  ) {
     super(message);
     this.name = "StaleSnapshotError";
   }

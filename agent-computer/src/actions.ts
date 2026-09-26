@@ -70,6 +70,32 @@ function watchForTab(
 }
 
 /**
+ * A key or a scroll with no ref lands on whatever page the Bot is on — so it is held to the page the
+ * server judged it against, which is the generation it carries.
+ *
+ * WITHOUT THIS THE BOUNDARY JUDGED ONE PAGE AND THE KEY LANDED ON ANOTHER. Measured 2026-09-26 on
+ * the real computer: a page's script opened a tab 1.5 s after the Bot's snapshot, the tab became the
+ * Bot's, and the next `/key Enter` pressed the new page's autofocused 송금하기 — while the gateway,
+ * whose snapshot still said the page before, judged it there and let the money-host rule pass and
+ * wrote the old page into the audit row. A ref cannot do this: `resolveRef` refuses one from another
+ * generation. A ref-less key had nothing to refuse with.
+ *
+ * Absent — an older server — is held to nothing, as it always was.
+ */
+function assertSameGeneration(
+  session: BotSession,
+  target: Page,
+  expected: number | undefined,
+): void {
+  if (expected !== undefined && expected !== session.snapshotId) {
+    throw new StaleSnapshotError(STALE_REFS, {
+      url: target.url(),
+      generation: session.snapshotId,
+    });
+  }
+}
+
+/**
  * Carry out one action on the page.
  *
  * Every action that addresses an element goes through `resolveRef`, so the staleness check
@@ -152,6 +178,7 @@ async function performAction(
       await onElement(() => control.press(key, acting));
       await opening();
     } else {
+      assertSameGeneration(session, target, expected);
       const opening = watchForTab(target, actionTimeoutMs);
       await target.keyboard.press(key);
       await opening();
@@ -161,6 +188,7 @@ async function performAction(
 
   // Scroll. A plain wheel event on the page, which is what moves a long form, rather than scrolling a
   // specific element into view: the Bot asked to see further down, not to hunt for one control.
+  assertSameGeneration(session, target, expected);
   const deltaY = typeof body.deltaY === "number" ? body.deltaY : 600;
   await target.mouse.wheel(0, deltaY);
   return { action: "scroll", deltaY, url: target.url() };
@@ -282,6 +310,12 @@ export const act: BotRoute = async (
       withNotes(session, {
         ...detail,
         ...(arrived ?? {}),
+        /*
+         * Which generation the page this answer describes is. The server keeps it beside the address
+         * it believes the Bot is on, and holds its next ref-less key to it (`assertSameGeneration`):
+         * the address alone cannot say that a tab opened or a document was replaced under it.
+         */
+        generation: session.snapshotId,
         elapsedMs: Date.now() - startedAt,
       }),
     );

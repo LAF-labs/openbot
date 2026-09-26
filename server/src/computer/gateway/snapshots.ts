@@ -54,17 +54,42 @@ export function createSnapshotCache() {
    * The browser is somewhere else now: keep the address, forget the elements.
    *
    * Called with every URL an action or a navigation reports back, so the cache follows the browser
-   * rather than the last snapshot. The same address as the cache holds is not a move.
+   * rather than the last snapshot. The same address as the cache holds is not a move — unless the
+   * computer says the page's generation moved under it (`NavigateResult.generation`): a tab that
+   * opened on the same address, a document reloaded in place, a hand-back after a takeover. The
+   * generation the computer named is kept, because it is the one the next ref-less key is held to.
    */
-  function pageMoved(computerId: string, url: string): void {
+  function pageMoved(
+    computerId: string,
+    url: string,
+    generation?: number,
+  ): void {
     const cached = snapshots.get(computerId);
-    if (cached && cached.url === url) return;
+    if (
+      cached &&
+      cached.url === url &&
+      (generation === undefined || generation === cached.snapshotId)
+    ) {
+      return;
+    }
     snapshots.set(computerId, {
-      snapshotId: cached?.snapshotId ?? 0,
+      snapshotId: generation ?? cached?.snapshotId ?? 0,
       url,
       elements: new Map(),
       stale: true,
     });
+  }
+
+  /**
+   * What the server believed about the screen may be wrong now, and it does not know what is right:
+   * a person handed the wheel back, the Bot's tabs were closed, or the computer refused a key held to
+   * this generation. The address is kept for the trail; the elements are not trusted until the Bot
+   * looks again.
+   */
+  function invalidate(computerId: string): void {
+    const cached = snapshots.get(computerId);
+    if (!cached || cached.stale) return;
+    snapshots.set(computerId, { ...cached, elements: new Map(), stale: true });
   }
 
   /**
@@ -88,6 +113,14 @@ export function createSnapshotCache() {
       snapshots.set(computerId, entry);
     },
     pageMoved,
+    invalidate,
+    /**
+     * Forget the computer's page altogether. After a reset the computer counts its generations from
+     * nothing again, so a number kept from before would name a page that never existed there.
+     */
+    forget: (computerId: string) => {
+      snapshots.delete(computerId);
+    },
     resolve,
   };
 }
@@ -160,8 +193,8 @@ export function createPageReads(deps: {
     botId: string,
     options: ReadOptions = {},
   ): Promise<ReadResult> {
-    const result = await as(botId).read(options);
-    snapshots.pageMoved(botId, result.url);
+    const { generation, ...result } = await as(botId).read(options);
+    snapshots.pageMoved(botId, result.url, generation);
     return result;
   }
 

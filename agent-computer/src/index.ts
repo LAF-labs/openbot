@@ -123,7 +123,13 @@ const rememberFrame = (botId: string, page: Page): void => {
 const profiles = createProfiles(config.profilesDir, {
   onPage: (botId, page) => {
     rememberFrame(botId, page);
-    watchPage(sessions.sessionFor(botId), botId, page, workspace);
+    watchPage(
+      sessions.sessionFor(botId),
+      botId,
+      page,
+      workspace,
+      () => profiles.activePage(botId) === page,
+    );
   },
   // Before the first page is handed out, so no request this browser ever makes goes unjudged. Once
   // for the browser, not once per Bot: there is one browser.
