@@ -16,12 +16,14 @@ import type { ChannelStore } from "../channels/types";
 import type { AttachmentRefusal, AttachmentService } from "./service";
 
 /** A refusal's status. A code and no sentence, as every channel refusal is answered. */
-const STATUS: Record<AttachmentRefusal, 400 | 413 | 415 | 422> = {
+const STATUS: Record<AttachmentRefusal, 400 | 413 | 415 | 422 | 503> = {
   "laf:attachment_empty": 400,
   "laf:attachment_too_large": 413,
   "laf:attachment_type_unsupported": 415,
   "laf:attachment_image_unsupported": 415,
   "laf:attachment_unreadable": 422,
+  // The file is fine; nothing here may read it right now (no converter). Not the person's doing.
+  "laf:attachment_converter_unavailable": 503,
 };
 
 /** Room for the multipart envelope around the largest file allowed. */

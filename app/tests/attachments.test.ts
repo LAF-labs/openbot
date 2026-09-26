@@ -133,6 +133,7 @@ describe("what the composer says before anything is sent", () => {
       "laf:attachment_image_unsupported",
       "laf:attachment_empty",
       "laf:attachment_unreadable",
+      "laf:attachment_converter_unavailable",
       "laf:attachment_network",
     ]) {
       const said = uploadRefusalText(code);

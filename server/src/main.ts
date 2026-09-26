@@ -78,6 +78,10 @@ import {
   conversationPersistence,
   createConversationStore,
 } from "./context/conversations";
+import {
+  converterSettingFor,
+  createConverter,
+} from "./attachments/converter-client";
 import { createAttachmentService } from "./attachments/service";
 import { messagesFor } from "./runner/thread-store";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
@@ -315,6 +319,8 @@ const attachmentService = createAttachmentService({
   database,
   ...(computerClient ? { computer: computerClient } : {}),
   imagesAccepted: tenantPackage.model.supportsImages !== false,
+  // Every uploaded byte is read outside this process: the sidecar, or a local child on a laptop.
+  converter: createConverter(converterSettingFor(config.converter)),
 });
 const runMeter = {
   auditStore: bootAuditStore,

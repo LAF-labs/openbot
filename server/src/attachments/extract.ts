@@ -28,7 +28,7 @@ const PDF_PAGES = 60;
  * The most the readable whole may be: under the computer's write limit (1,000,000 bytes,
  * `agent-computer/src/workspace.ts`), with room for the line that says it was cut.
  */
-const WHOLE_BYTES = 900_000;
+export const WHOLE_BYTES = 900_000;
 
 export type Extracted = {
   /** What the model reads, already bounded. */

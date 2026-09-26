@@ -216,12 +216,13 @@ test("every built service names its published image, on one switchable channel",
   expect(compose).toContain(
     "image: ${COMPUTER_IMAGE:-ghcr.io/laf-labs/openbot-agent-computer:${IMAGE_TAG:-stable}}",
   );
-  // The migration one-shot runs the server image, so a pull-mode deployment builds nothing at all.
+  // The migration one-shot and the file converter run the server image, so a pull-mode deployment
+  // builds nothing at all and pulls nothing new for them.
   expect(
     compose.match(
       /image: ghcr\.io\/laf-labs\/openbot-server:\$\{IMAGE_TAG:-stable\}/g,
     ),
-  ).toHaveLength(2);
+  ).toHaveLength(3);
 });
 
 /*
@@ -382,4 +383,31 @@ test("hands the spare's lock to the front door, open by default", () => {
   expect(parsedCompose.services.web?.environment?.LAF_FRONT_LOCKED).toBe(
     "${LAF_FRONT_LOCKED:-}",
   );
+});
+
+/**
+ * Where an uploaded file is read (security package item 11): the converter, as nobody, with no
+ * network, no capability, no new privileges and a read-only root — the Docker-native bubblewrap.
+ * The daemon checks the same facts before it listens (`--require-isolation`); this keeps compose
+ * from quietly dropping one of them.
+ */
+test("reads uploaded files as nobody, with no network and nothing to escalate with", () => {
+  const converter = parsedCompose.services.converter as Record<string, unknown>;
+  expect(converter).toBeDefined();
+  expect(converter.user).toBe("65534:65534");
+  expect(converter.network_mode).toBe("none");
+  expect(converter.read_only).toBe(true);
+  expect(converter.cap_drop).toEqual(["ALL"]);
+  expect(converter.security_opt).toEqual(["no-new-privileges:true"]);
+  expect(converter.ports).toBeUndefined();
+  expect((converter.command as string[]).includes("--require-isolation")).toBe(
+    true,
+  );
+  // The socket is the one thing it shares, and only with the server.
+  const server = parsedCompose.services.server as Record<string, unknown>;
+  expect(server.volumes).toEqual(["converter-socket:/run/laf-converter"]);
+  expect(converter.volumes).toEqual(["converter-socket:/run/laf-converter"]);
+  expect(
+    (server.environment as Record<string, string>).LAF_CONVERTER_SOCKET,
+  ).toBe("/run/laf-converter/converter.sock");
 });

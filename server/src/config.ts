@@ -105,6 +105,8 @@ export const ENVIRONMENT = {
   LAF_CLOCK_OFFSET_MS: "development",
   BOT_TIME_ZONE: "compose",
   AGENT_STALL_TIMEOUT_MS: "compose",
+  // Where uploaded files are read: the `converter` sidecar's socket (attachments/converter-client.ts).
+  LAF_CONVERTER_SOCKET: "compose",
   // The Bot's computer and its boundary.
   AGENT_COMPUTER_URL: "compose",
   COMPUTER_TOKEN: "operator",
@@ -205,6 +207,12 @@ export type DeploymentConfig = {
    * and the fallback is said at boot, where it used to be silent in two places.
    */
   botTimeZone: string;
+  /**
+   * Where uploaded files are read (`attachments/converter-client.ts`): the `converter` sidecar's
+   * socket when compose names one, a local child on a laptop, and nowhere at all in production
+   * without the sidecar — never inside this process.
+   */
+  converter: { socketPath: string | undefined; production: boolean };
   /**
    * How long the audit trail and the run records are kept, in days. Zero keeps everything and
    * switches the sweep off. See `account/retention.ts`.
@@ -1369,6 +1377,10 @@ export function loadConfig(
     model: modelEndpoint(environment),
     tenantPackageVariables: tenantPackageVariables(environment),
     botTimeZone: botTimeZone(environment),
+    converter: {
+      socketPath: optional(environment, "LAF_CONVERTER_SOCKET"),
+      production: environment.NODE_ENV === "production",
+    },
     auditRetentionDays: retentionDays(environment),
     harness: harnessConfig(environment),
     trial: trialConfig(environment),

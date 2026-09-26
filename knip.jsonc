@@ -52,6 +52,9 @@
     "server": {
       "entry": [
         "src/index.ts",
+        // The attachment converter's own process: bundled as `dist/converter.js` by the Dockerfile
+        // and run by the `converter` service, and the child it starts per file.
+        "src/converter.ts",
         "scripts/*.ts",
         "drizzle.config.ts",
         "tests/**/*.test.ts",

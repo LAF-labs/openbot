@@ -99,6 +99,11 @@ export function uploadRefusalText(code: unknown): string {
       return t(
         "This file could not be opened. It may be damaged or password-protected.",
       );
+    case "laf:attachment_converter_unavailable":
+      // The file is not at fault: what reads files safely on this deployment is not running.
+      return t(
+        "Files cannot be read right now. Try again in a moment, and tell us if it keeps happening.",
+      );
     default:
       return t("The file could not be attached. Please try again.");
   }

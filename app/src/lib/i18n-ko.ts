@@ -2781,6 +2781,8 @@ export const ko: Record<string, string> = {
   "[password reset link, hidden from the Bot]":
     "[비밀번호 재설정 링크 — 봇에게는 가림]",
   "[sign-in link, hidden from the Bot]": "[로그인 링크 — 봇에게는 가림]",
+  "Files cannot be read right now. Try again in a moment, and tell us if it keeps happening.":
+    "지금은 파일을 읽을 수 없어요. 잠시 뒤 다시 올려 주시고, 계속되면 알려 주세요.",
   "The Bot's browser did not start, because this machine's security rules for it are not in place.":
     "이 기계에 봇 브라우저를 지키는 보안 규칙이 걸려 있지 않아서 브라우저를 열지 않았어요.",
   "The Bot's browser was kept closed for safety":

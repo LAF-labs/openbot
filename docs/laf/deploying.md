@@ -248,6 +248,13 @@ Desktop has no host to hold the rules) and is logged at every start. The VM's
 metadata service should also refuse tokenless requests (IMDSv2 on AWS, legacy
 endpoints off on OCI) — that is set at launch by the fleet tool, not here.
 
+**Uploaded files are read by the `converter` service** (security package item
+11): the server's image as nobody (65534), `network_mode: none`, `read_only`,
+`cap_drop: [ALL]`, no new privileges, a fresh child per file bounded at 20 s and
+512 MB. It shares one volume with the server — its socket — and nothing else. A
+production server without `LAF_CONVERTER_SOCKET` refuses every file
+(`laf:attachment_converter_unavailable`) rather than parsing it as root.
+
 ## Images: CI bakes, deployments pull
 
 Five images are published to GHCR by `.github/workflows/images.yml` — the

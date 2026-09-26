@@ -13,6 +13,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_TYPES,
   type AttachmentKind,
   IMAGE_MAX_BYTES,
 } from "../../../shared/attachments";
@@ -26,12 +27,9 @@ import type { WriteFileInput, WriteFileResult } from "../computer/schema";
 import type { Database } from "../db/client";
 import { lafAttachments } from "../db/schema";
 import { log } from "../log";
-import { type Extracted, readPdf, readSheets } from "./extract";
-import {
-  detectAttachmentType,
-  safeAttachmentName,
-  workspacePathFor,
-} from "./files";
+import { type Converter, createConverter } from "./converter-client";
+import type { Extracted } from "./extract";
+import { safeAttachmentName, workspacePathFor } from "./files";
 
 /** Why a file was not taken. Codes, never sentences: the surface owns the words. */
 export type AttachmentRefusal =
@@ -39,7 +37,9 @@ export type AttachmentRefusal =
   | "laf:attachment_too_large"
   | "laf:attachment_type_unsupported"
   | "laf:attachment_image_unsupported"
-  | "laf:attachment_unreadable";
+  | "laf:attachment_unreadable"
+  /** Nothing could read it safely: the deployment's converter is missing or not answering. */
+  | "laf:attachment_converter_unavailable";
 
 /** What the surface is told about a file it sent, to draw the chip and to put in the message. */
 export type ReceivedAttachment = {
@@ -102,28 +102,18 @@ export function createAttachmentService(options: {
   /** Absent: nothing is written to a computer, and the model is told the whole cannot be read. */
   computer?: AttachmentFiler;
   imagesAccepted: boolean;
+  /** Where uploaded bytes are read. Absent: a local child, as on a laptop (`converter-client.ts`). */
+  converter?: Converter;
 }): AttachmentService {
   const { database, computer, imagesAccepted } = options;
 
-  const extract = async (
-    kind: AttachmentKind,
-    mimeType: string,
-    bytes: Uint8Array,
-  ): Promise<Extracted | null> => {
-    try {
-      if (kind === "sheet") return readSheets(bytes, mimeType);
-      if (kind === "pdf") return await readPdf(bytes);
-      return { body: "", whole: null };
-    } catch (error) {
-      // A file the library could not read is refused, not kept half-understood. The words are never
-      // logged — only that it failed, and on what kind.
-      log.warn("attachment_unreadable", {
-        kind,
-        reason: error instanceof Error ? error.name : "unknown",
-      });
-      return null;
-    }
-  };
+  /*
+   * EVERY BYTE OF AN UPLOAD IS READ ELSEWHERE (security package item 11): the type sniff and the
+   * sheet and PDF parsers run in a fresh, unprivileged child with no network — the `converter`
+   * sidecar in a deployment, a local child on a laptop — never in this process, which runs beside
+   * the database and every sealed token. See `converter-client.ts`.
+   */
+  const converter = options.converter ?? createConverter({ kind: "local" }, {});
 
   /** The readable whole onto the Bot's computer. Null when it could not be put there. */
   const fileOnComputer = async (
@@ -153,8 +143,38 @@ export function createAttachmentService(options: {
       if (bytes.byteLength > ATTACHMENT_MAX_BYTES)
         return { ok: false, code: "laf:attachment_too_large" };
 
-      const type = await detectAttachmentType(bytes, claimedName);
-      if (!type) return { ok: false, code: "laf:attachment_type_unsupported" };
+      const converted = await converter.convert({ name: claimedName, bytes });
+      if (!converted.ok) {
+        // Names only, never the file: which wall the reading hit.
+        log.warn("attachment_unreadable", {
+          reason: converted.failure,
+          setting: converter.setting,
+        });
+        if (converted.failure === "too_large") {
+          return { ok: false, code: "laf:attachment_too_large" };
+        }
+        return {
+          ok: false,
+          code:
+            converted.failure === "unavailable"
+              ? "laf:attachment_converter_unavailable"
+              : "laf:attachment_unreadable",
+        };
+      }
+      const conversion = converted.conversion;
+      if (conversion.outcome === "unsupported") {
+        return { ok: false, code: "laf:attachment_type_unsupported" };
+      }
+      const known = ATTACHMENT_TYPES[conversion.mimeType];
+      if (!known) return { ok: false, code: "laf:attachment_type_unsupported" };
+      const type = { mimeType: conversion.mimeType, ...known };
+      if (conversion.outcome === "unreadable") {
+        log.warn("attachment_unreadable", {
+          kind: type.kind,
+          reason: conversion.reason,
+        });
+        return { ok: false, code: "laf:attachment_unreadable" };
+      }
       if (type.kind === "image") {
         if (!imagesAccepted)
           return { ok: false, code: "laf:attachment_image_unsupported" };
@@ -173,7 +193,8 @@ export function createAttachmentService(options: {
       if (type.kind === "image") {
         modelText = imageAttachmentText(name, bytes.byteLength);
       } else {
-        const extracted = await extract(type.kind, type.mimeType, bytes);
+        const extracted: Extracted | null =
+          conversion.outcome === "read" ? conversion.extracted : null;
         if (!extracted) return { ok: false, code: "laf:attachment_unreadable" };
         if (extracted.whole) {
           workspacePath = await fileOnComputer(

@@ -284,6 +284,12 @@ services:
       LAF_TRIAL_ENDS_AT: ${LAF_TRIAL_ENDS_AT:-}
       LAF_TRIAL_HOLD_DAYS: ${LAF_TRIAL_HOLD_DAYS:-}
       LAF_DAILY_TOKEN_BUDGET: ${LAF_DAILY_TOKEN_BUDGET:-}
+      # Where an uploaded file is read: the `converter` service's socket, on the volume below. Set,
+      # it is the only place a file is read; a production server without it refuses every file
+      # rather than parsing one as root beside the database (attachments/converter-client.ts).
+      LAF_CONVERTER_SOCKET: /run/laf-converter/converter.sock
+    volumes:
+      - converter-socket:/run/laf-converter
     logging: *logging
     # ON BOTH NETWORKS, BECAUSE IT IS THE ONE THING THAT CALLS THE COMPUTER. `agent-computer` lives
     # alone on `browser` (see `networks:` at the end), so this is the only service that can reach
@@ -568,12 +574,56 @@ services:
     # A person's VM reboots; their Bots are supposed to still be there when it does.
     restart: unless-stopped
 
+  # WHERE AN UPLOADED FILE IS READ, AND NOWHERE ELSE (security package item 11, 2026-09-26).
+  #
+  # SheetJS, pdf.js and the type sniff parse whatever somebody chose to send, and each has had a CVE
+  # (prototype pollution, an infinite loop). The API server that used to run them is root, beside
+  # the database, every sealed token and the model key. So they run here: the server's own image,
+  # started as a different command, as nobody (65534), with no network at all, no capability, no new
+  # privileges and a read-only root — and each file in a fresh child that is killed at 20 s or
+  # 512 MB (attachments/converter-process.ts). The daemon checks all of that before it listens
+  # (`--require-isolation`) and refuses to start where compose's promise is not kept.
+  #
+  # It talks to the server over a unix socket on the volume below — the one thing the two share. No
+  # port, no network, no healthcheck that could reach one: `docker compose ps` shows it running, and
+  # the server says `laf:attachment_converter_unavailable` when it is not.
+  converter:
+    image: ghcr.io/laf-labs/openbot-server:${IMAGE_TAG:-stable}
+    command:
+      [
+        "bun",
+        "--no-env-file",
+        "--no-install",
+        "dist/converter.js",
+        "--socket",
+        "/run/laf-converter/converter.sock",
+        "--require-isolation",
+      ]
+    user: "65534:65534"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - converter-socket:/run/laf-converter
+    logging: *logging
+    # Two children at once, each bounded at 512 MB by the daemon, and the daemon itself.
+    mem_limit: 1280m
+    # A daemon and two children, each a bun with its threads; a file that forks is stopped here.
+    pids_limit: 128
+    restart: unless-stopped
+
 volumes:
   caddy-data:
   caddy-config:
   postgres-data:
   agent-workspace:
   agent-profiles:
+  # The converter's socket, shared with the server and nothing else. Owned by 65534 in the image,
+  # which a fresh volume takes on first mount (server/Dockerfile).
+  converter-socket:
 
 networks:
   # Every service but the computer, as it always was.

@@ -48,6 +48,9 @@ COPY server/tsconfig.json server/
 COPY server/src server/src
 COPY shared shared
 RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js
+# The attachment converter (docker-compose.yml, `converter`): the same code, a second entry, run as
+# nobody with no network. Its own bundle, so a child it starts loads only the parsers it runs.
+RUN bun build server/src/converter.ts --target=bun --outfile server/dist/converter.js
 
 # oven/bun:1.3.14 — the same digest as the install stage, so the two never run different runtimes.
 FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
@@ -88,6 +91,11 @@ ENV GIT_SHA=${REVISION} \
     BUILD_CHANNEL=${CHANNEL}
 
 WORKDIR /app/server
+
+# The converter's socket directory, owned by the user it runs as (65534, `nobody`). A named volume
+# mounted here for the first time takes this directory's ownership, so the converter can create its
+# socket and the server (root) can connect to it; nothing else lives on that volume.
+RUN mkdir -p /run/laf-converter && chown 65534:65534 /run/laf-converter
 
 # The migration service overrides this with its own command; everything else wants the API, as the
 # bundle built above.

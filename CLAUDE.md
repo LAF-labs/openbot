@@ -112,7 +112,9 @@ first. And it refuses to start without `COMPUTER_TOKEN`, which compose does not
 supply on its own. Its egress firewall is the VM host's (laf-control installs it
 on the `laf-browser` bridge), and it refuses to browse (`laf:egress_unguarded`)
 where the host is not refusing the metadata endpoint — which on a laptop it never
-is, hence `AGENT_COMPUTER_EGRESS_FIREWALL=off` above.
+is, hence `AGENT_COMPUTER_EGRESS_FIREWALL=off` above. Uploaded files are read in
+a local child process unless `LAF_CONVERTER_SOCKET` names the `converter`
+service's socket.
 
 Deployments never build: CI publishes the four runtime images (server, web,
 agent-bot, agent-computer) and the `openbot-deploy` bundle to GHCR
