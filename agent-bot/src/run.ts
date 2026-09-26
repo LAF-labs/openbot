@@ -1,8 +1,8 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
+import { textOf } from "../../shared/message-content";
 import { answerNowText } from "../../shared/prompt/context.ko";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
-import { textOf } from "../../shared/message-content";
 import { describedToolNames } from "../../shared/tools/bridge";
 import { nowResultText } from "../../shared/tools/now";
 import {
@@ -29,13 +29,13 @@ import {
   TOOL_LOOP_LIMIT,
 } from "./guards";
 import { isRetryable, log, runErrorCodeOf, runFailureOf } from "./log";
-import { carriedReasoning } from "./reasoning";
 import {
   type CompletionProvider,
   liveProvider,
   MODEL,
   REQUEST_TIMEOUT_MS,
 } from "./provider";
+import { carriedReasoning } from "./reasoning";
 import {
   botIdOf,
   parseToolArguments,
@@ -483,6 +483,15 @@ async function runRounds(context: RunContext): Promise<void> {
      * open call and no surface executes half an argument list.
      */
     if (turn.cut) {
+      /*
+       * Closed the same way whoever ended it; said as who did. The request outliving its bound is
+       * "the model took too long", not "the connection dropped", and the two want different
+       * sentences under the half answer (`TURN_FAILURE_SENTENCES`).
+       */
+      const cutCode =
+        turn.cut.reason === "timed_out"
+          ? "laf:model_timed_out"
+          : "laf:provider_stream_cut";
       for (const call of toolCalls.values()) {
         if (!call.started || call.held || !call.id) continue;
         emit({ type: "TOOL_CALL_END", toolCallId: call.id } as BaseEvent);
@@ -490,6 +499,7 @@ async function runRounds(context: RunContext): Promise<void> {
           type: "TOOL_CALL_RESULT",
           messageId: `tool_${call.id}`,
           toolCallId: call.id,
+          // Its arguments were cut short either way, and that is the fact the model reads.
           content: factResult("laf:provider_stream_cut"),
           role: "tool",
         } as BaseEvent);
@@ -497,15 +507,13 @@ async function runRounds(context: RunContext): Promise<void> {
       log.error("reply_cut", {
         bot: botId,
         run: input.runId,
+        code: cutCode,
         ...turn.cut,
         // How much arrived, in characters: enough to tell half a sentence from nearly all of one.
         chars: text.length,
         ms: Date.now() - context.startedAt,
       });
-      emit({
-        type: "RUN_ERROR",
-        message: "laf:provider_stream_cut",
-      } as BaseEvent);
+      emit({ type: "RUN_ERROR", message: cutCode } as BaseEvent);
       return;
     }
 

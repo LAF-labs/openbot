@@ -44,6 +44,16 @@ export type Behaviour =
       /** A pause before each chunk, so a hang mid-answer can be modelled. */
       chunkDelayMs?: number;
     }
+  /**
+   * Begin the stream at once — headers and OpenRouter's `: OPENROUTER PROCESSING` comment — send
+   * these choices, and then say nothing more until the client gives up.
+   *
+   * What a hung provider looks like from behind OpenRouter, and what a reasoning model thinking
+   * past the bound looks like anywhere. `hang` cannot model it: it holds the HEADERS back, so the
+   * SDK is still waiting in `create()` when the bound fires, and the abort throws. Here the SDK is
+   * already iterating, and there the abort does not throw (`turn.ts`, "UNLESS OUR OWN BOUND").
+   */
+  | { kind: "stall"; choices?: Choice[] }
   /** Answer with a status and no stream. */
   | { kind: "status"; status: number; retryAfter?: string }
   /** Accept the request and say nothing for this long, then behave as `then` (or hang for ever). */
@@ -143,6 +153,14 @@ export function startFakeProvider(
           await sleep(behaviour.ms);
           return respond(behaviour.then);
         }
+        if (behaviour.kind === "stall") {
+          return new Response(stallBody(behaviour, record, now, request), {
+            headers: {
+              "content-type": "text/event-stream",
+              "cache-control": "no-cache",
+            },
+          });
+        }
         return new Response(
           sseBody(behaviour, record, now, () => server.stop(true)),
           {
@@ -163,6 +181,47 @@ export function startFakeProvider(
     now,
     stop: () => server.stop(true),
   };
+}
+
+function stallBody(
+  behaviour: Extract<Behaviour, { kind: "stall" }>,
+  record: RecordedRequest,
+  now: () => number,
+  request: Request,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      // A comment first: Bun holds the headers back until the body has something in it.
+      controller.enqueue(encoder.encode(": OPENROUTER PROCESSING\n\n"));
+      for (const choice of behaviour.choices ?? []) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({
+              id: "chatcmpl-fake",
+              object: "chat.completion.chunk",
+              created: 0,
+              model: "fake-model",
+              choices: [
+                {
+                  index: 0,
+                  delta: choice.delta ?? {},
+                  finish_reason: choice.finish_reason ?? null,
+                },
+              ],
+            })}\n\n`,
+          ),
+        );
+      }
+      request.signal.addEventListener("abort", () => {
+        record.endedAt = now();
+        try {
+          controller.close();
+        } catch {
+          // Already closed from the client's side.
+        }
+      });
+    },
+  });
 }
 
 function sseBody(

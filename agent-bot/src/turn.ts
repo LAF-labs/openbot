@@ -46,10 +46,13 @@ export type ToolCallRecord = {
  * - `failed_midway`: the read threw after some of the answer had been flushed — the connection
  *   dropped, or the provider sent an error event in the middle. `failure` says which kind, in the
  *   closed words `describeFailure` gives a provider's error, never in the provider's own.
+ * - `timed_out`: this service's own bound (`REQUEST_TIMEOUT_MS`) ended the request after some of
+ *   the answer had gone out. Not the provider's cut, and the run ends on `laf:model_timed_out`.
  */
 export type Cut =
   | { reason: "ended_without_finish" }
-  | { reason: "failed_midway"; failure: string };
+  | { reason: "failed_midway"; failure: string }
+  | { reason: "timed_out" };
 
 /** Everything a finished request produced, for the loop to act on. */
 export type Turn = {
@@ -351,13 +354,32 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
      *
      * Nothing delivered is not a cut: it is an empty turn, and the loop already asks an empty
      * turn again, which is the same recovery a cut before the first token wants.
+     *
+     * UNLESS OUR OWN BOUND ENDED IT, which the SDK does not say either. Once the response has
+     * begun, aborting it makes the SDK's iterator RETURN rather than throw (openai 4.104,
+     * `streaming.js`: an `AbortError` is swallowed), so the `catch` below never sees the timeout.
+     * Measured 2026-09-26 with the real client against a local endpoint that sent a reasoning chunk
+     * and then went quiet: the bound came out as an empty answer, was asked again for a second full
+     * bound, and the run ended RUN_FINISHED with `laf.empty_answer` — filed as done. With prose
+     * already on the wire it came out as `laf:provider_stream_cut`, "the connection dropped". Every
+     * OpenRouter request is in that state within a second, because OpenRouter sends its headers
+     * and a `: OPENROUTER PROCESSING` comment before the model has said anything; the hung provider
+     * the bound exists for was never reported as one.
      */
+    if (expired) {
+      if (delivered) return turn({ reason: "timed_out" });
+      throw new RequestTimedOut();
+    }
     const ended = finishReason !== null || usage !== null;
     return turn(
       delivered && !ended ? { reason: "ended_without_finish" } : null,
     );
   } catch (error) {
-    if (expired) throw new RequestTimedOut();
+    if (expired) {
+      // What went out stays on the wire and is closed by the loop, as a cut's is.
+      if (delivered) return turn({ reason: "timed_out" });
+      throw error instanceof RequestTimedOut ? error : new RequestTimedOut();
+    }
     // Nobody is reading: not the provider's cut, and nothing more is to be sent.
     if (error instanceof ConsumerGone) throw error;
     /*
