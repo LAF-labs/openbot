@@ -54,6 +54,19 @@ describe("turn failure sentences", () => {
 });
 
 describe("liveTurnFailureCode", () => {
+  // A turn the server owns sends the fact itself (`server/src/turns/engine.ts`, review M4).
+  it("reads a turn-failure fact as itself, and the turn's own deadline as running out of time", () => {
+    expect(liveTurnFailureCode("laf:turn_unreachable")).toBe(
+      "laf:turn_unreachable",
+    );
+    expect(liveTurnFailureCode("laf:turn_stalled")).toBe("laf:turn_stalled");
+    expect(liveTurnFailureCode("laf:run_timed_out")).toBe("laf:turn_timed_out");
+    // And a Bot that had started answering is still a Bot that stopped partway.
+    expect(
+      liveTurnFailureCode("laf:turn_failed", { answerStarted: true }),
+    ).toBe("laf:turn_bot_dropped");
+  });
+
   /*
    * MEASURED 2026-09-24: agent-bot killed two seconds into a reply left the same "Unable to
    * connect" a Bot that never answered leaves, and the screen said the Bot "did not answer" under

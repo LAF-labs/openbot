@@ -17,6 +17,7 @@ import {
   useScreenPanelViewport,
 } from "@/lib/computer/screen-panel";
 import { t } from "@/lib/i18n";
+import { useServerOwnsTurn } from "@/lib/turns/answers";
 import { cn } from "@/lib/utils";
 import { pokeControl } from "./control-poll";
 import {
@@ -73,6 +74,7 @@ export function HelpCard({
     status === "complete" ? undefined : botId,
     status === "executing",
   );
+  const serverOwned = useServerOwnsTurn();
   const isWaiting =
     status === "executing" ||
     (status === "inProgress" && isOwnRequestOpen(kind, said, control));
@@ -104,7 +106,8 @@ export function HelpCard({
 
   const handleSkip = async () => {
     // The skip first: the release below is read by the waiting call as "done" unless it knows.
-    await skipHelp(toolCallId, botId);
+    // Told to the turn only where the server owns it; the window's own wait reads the skip here.
+    await skipHelp(toolCallId, serverOwned ? botId : undefined);
     await handleDone();
   };
 

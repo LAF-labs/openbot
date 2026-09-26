@@ -229,6 +229,11 @@ function classifyLive(reported: unknown): TurnFailureCode {
     .trim()
     .toLowerCase();
   if (!said) return "laf:turn_failed";
+  // Already one of these: a turn the server owns sends the fact itself (`server/src/turns/engine.ts`).
+  const named = TURN_FAILURE_CODES.find((code) => code === said);
+  if (named) return named;
+  // A turn that ran out of its whole time, by its fact rather than its sentence.
+  if (said.includes("laf:run_timed_out")) return "laf:turn_timed_out";
 
   if (said.includes("laf:model_rate_limited")) return "laf:turn_rate_limited";
   if (said.includes("laf:model_timed_out")) return "laf:turn_timed_out";

@@ -40,3 +40,12 @@ export function useServerRespond(
   }
   return (value: unknown) => answers.answer(toolCallId, value);
 }
+
+/**
+ * Whether this conversation's turns are the server's (inside `ServerChannelChat`). What a card asks
+ * before telling the server anything: in a conversation the window drives there is nobody there to
+ * tell, and the door does not exist (review L8).
+ */
+export function useServerOwnsTurn(): boolean {
+  return useContext(Answers) !== null;
+}
