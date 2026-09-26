@@ -181,7 +181,7 @@ async function runOnce(
           scenario.mode ?? "chat",
           scenario.person,
           scenario.frozenAt,
-          undefined,
+          scenario.skills,
           notebook,
           scenario.summary,
         ),
@@ -191,7 +191,7 @@ async function runOnce(
   let totalTokens: number | null = null;
   let promptTokens: number | null = null;
 
-  for (let turn = 1; turn <= MAX_TURNS; turn++) {
+  for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {
     const runId = `eval_${scenario.id}_${attempt}_t${turn}_${Date.now()}`;
     const response = await runAgent(
       {
@@ -277,7 +277,7 @@ async function runOnce(
         id: `t_${call.id}`,
         role: "tool",
         toolCallId: call.id,
-        content: scenario.stub?.(call) ?? stubResult(call.name),
+        content: (await scenario.stub?.(call)) ?? stubResult(call.name),
       });
     }
   }

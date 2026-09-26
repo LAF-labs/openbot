@@ -24,8 +24,10 @@
  */
 
 import type { PromptPerson } from "../shared/prompt/person.ko";
+import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
+import { SKILL_VIEW } from "../shared/tools/skills";
 import { REALISTIC_TOOLSET } from "./deferral";
 import { longPage } from "./fixtures";
 import { forgottenAcrossADay } from "./memory";
@@ -67,6 +69,13 @@ import {
   TYPE,
   UPDATE_PROFILE,
 } from "./tools";
+import {
+  judgeSupportAnswer,
+  liveSupportSearch,
+  PACKAGE_SKILLS,
+  SUPPORT_SEARCH,
+  skillViewAnswer,
+} from "./support-programs";
 
 export type Turn = {
   text: string;
@@ -95,8 +104,20 @@ export type Scenario = {
    * who has set nothing, on the deployment's clock — what every scenario before these measured.
    */
   person?: PromptPerson;
-  /** A page of this scenario's own for a call, before the pack's shared stubs are asked. */
-  stub?: (call: ObservedCall) => string | undefined;
+  /**
+   * A page of this scenario's own for a call, before the pack's shared stubs are asked. It may be
+   * awaited: the 지원사업 scenario answers from the real portal (`./support-programs.ts`).
+   */
+  stub?: (
+    call: ObservedCall,
+  ) => string | undefined | Promise<string | undefined>;
+  /** The skills the Bot holds, listed in its prompt as the server lists them. Absent is none. */
+  skills?: readonly PromptSkill[];
+  /**
+   * How many client-loop continuations this scenario may spend. Absent is the pack's four; a job
+   * that searches six times before it answers needs more rounds than a single lookup does.
+   */
+  maxTurns?: number;
   /** Where the run happens. Absent is a chat. */
   mode?: PromptMode;
   /**
@@ -699,6 +720,7 @@ export const SCENARIOS: Scenario[] = [
       ]);
     },
   },
+  supportProgramsFromThePortal(),
   /*
    * THE THREE THE 0.5.3 AUDIT READ OFF A SHOP OWNER'S SCREEN.
    *
@@ -1346,6 +1368,56 @@ export const SCENARIOS: Scenario[] = [
       ]),
   },
 ];
+
+/**
+ * 지원사업 비서 — the first task a fresh Bot is offered wherever the fleet's key is (brief
+ * 2026-09-27; `app/src/lib/agents/first-tasks.ts`), answered from 기업마당 itself.
+ *
+ * The owner has already said the four facts, so the Bot must not ask them again: it reads the
+ * package's 지원사업 skill, finds the search behind the bridge, and answers with a short list. What
+ * is judged is what the portal returned in THIS attempt (`./support-programs.ts`): the search was
+ * made, and no programme, link, amount or deadline in the answer is one it did not return. Live,
+ * so a verdict is about today's notices; without the key or the portal, it fails and says so.
+ */
+function supportProgramsFromThePortal(): Scenario {
+  const search = liveSupportSearch();
+  const { date: today } = zonedParts(EVAL_NOW, EVAL_TIME_ZONE);
+  return {
+    id: "support-programs-only-from-the-portal",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "우리 가게가 받을 수 있는 지원사업 찾아줘. 춘천에서 한식당 하고, 2024년에 열었어. 직원은 2명이야.",
+      ),
+    ],
+    tools: [...REALISTIC_TOOLSET, SKILL_VIEW],
+    skills: PACKAGE_SKILLS,
+    // Up to four searches and a remember or two; a model that makes them one per round needs rounds.
+    maxTurns: 10,
+    prepare: async () => {
+      search.reset();
+      return {};
+    },
+    stub: (call) => {
+      if (call.name === SUPPORT_SEARCH) return search.answer(call);
+      if (call.name === SKILL_VIEW.name) return skillViewAnswer(call);
+      return undefined;
+    },
+    check: (turn) =>
+      verdict([
+        ...search.problems.map((problem): [string, boolean] => [
+          problem,
+          false,
+        ]),
+        ...judgeSupportAnswer({
+          text: turn.text,
+          calls: turn.calls,
+          returned: search.returned,
+          today,
+        }),
+      ]),
+  };
+}
 
 /**
  * The URLs a turn opened, decoded — a search for "강남 날씨" arrives as `%EA%B0%95…` or with `+`.

@@ -462,6 +462,7 @@
   "tests/eval-from-failures.test.ts",
   "tests/eval-lib.test.ts",
   "tests/eval-owner-words.test.ts",
+  "tests/eval-support-programs.test.ts",
   "tests/knip.test.ts",
   "tests/laf-package.test.ts",
   "tests/legal-bundle.test.ts",

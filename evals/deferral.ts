@@ -27,6 +27,10 @@ import { listTools as calendarTools } from "../server/src/plugins/google-calenda
 import { listTools as driveTools } from "../server/src/plugins/google-drive-rest";
 import { listTools as sheetsTools } from "../server/src/plugins/google-sheets-rest";
 import type { McpTool } from "../server/src/plugins/mcp";
+import {
+  PUBLIC_DATA_KEY,
+  PUBLIC_DATA_TOOLS,
+} from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
 import { BRIDGE_TOOLS, type WireTool } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
@@ -54,6 +58,8 @@ export async function connectedServiceFamilies(): Promise<ToolFamily[]> {
     ["google-business-profile", await businessTools(NO_CONNECTION)],
     ["cafe24", await cafe24Tools(NO_CONNECTION)],
     ["kakao-alimtalk", ALIMTALK_TOOLS],
+    // Every Bot on a VM holding the fleet's data.go.kr key has these from boot, connected or not.
+    [PUBLIC_DATA_KEY, PUBLIC_DATA_TOOLS],
   ];
   return families.map(([key, tools]) => ({
     key,
