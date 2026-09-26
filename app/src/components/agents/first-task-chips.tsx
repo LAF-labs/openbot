@@ -137,6 +137,26 @@ export const FirstTaskChips = ({
   );
   const connects = tasks.filter((task) => task.kind === "connect");
 
+  /*
+   * The weather is the one section every briefing has, and a routine cannot ask where the shop is
+   * (`placeText`, routine mode): without a place it says every morning that it could not look. Said
+   * here, where the place can still be given — BEFORE THE BRIEFING IS MADE AND AFTER. It used to go
+   * with the chip, so the press that made the routine also took away the only line saying it would
+   * be missing its weather; the first run, pressed on Routines a minute later, said exactly that
+   * (the first-hour walk, 2026-09-27).
+   */
+  const placeLine = placeKnown ? null : (
+    <p className="text-muted-foreground text-xs">
+      {t("Weather needs your shop's location.")}{" "}
+      <Link
+        className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+        to="/settings/shop"
+      >
+        {t("Add it on My shop")}
+      </Link>
+    </p>
+  );
+
   return (
     <section
       aria-label={t("Try one of these first")}
@@ -190,6 +210,7 @@ export const FirstTaskChips = ({
           </>
         ) : null}
       </LiveRegion>
+      {made ? placeLine : null}
       {made ? null : (
         <div className="flex flex-col gap-1">
           <button
@@ -230,22 +251,7 @@ export const FirstTaskChips = ({
               { contents: briefingContents(briefing, t) },
             )}
           </p>
-          {/*
-           * The weather is the one section every briefing has, and a routine cannot ask where the
-           * shop is (`placeText`, routine mode): without a place it says every morning that it could
-           * not look. Said here, where the place can still be given.
-           */}
-          {placeKnown ? null : (
-            <p className="text-muted-foreground text-xs">
-              {t("Weather needs your shop's location.")}{" "}
-              <Link
-                className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
-                to="/settings/shop"
-              >
-                {t("Add it on My shop")}
-              </Link>
-            </p>
-          )}
+          {placeLine}
           <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
             {makeRoutine.error ? failureSentence(makeRoutine.error) : null}
           </LiveRegion>

@@ -230,6 +230,32 @@ describe("the first-task chips", () => {
     );
   });
 
+  /*
+   * The first-hour walk, 2026-09-27: pressing the chip took the place line away with it, and the
+   * first run a minute later said it could not see the weather — the one thing the line had warned.
+   */
+  test("a briefing made without a place still says the weather needs one", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const view = await mounted({
+      briefingMade: true,
+      onAsk: () => {},
+      placeKnown: false,
+    });
+    const text = view.host.textContent ?? "";
+    expect(text).toContain(t("The routine is made."));
+    expect(text).toContain(t("Weather needs your shop's location."));
+    expect(
+      view
+        .links()
+        .some((link) => link.getAttribute("href") === "/settings/shop"),
+    ).toBe(true);
+
+    const placed = await mounted({ briefingMade: true, onAsk: () => {} });
+    expect(placed.host.textContent).not.toContain(
+      t("Weather needs your shop's location."),
+    );
+  });
+
   test("a Bot that already has its briefing is told so, and offered no second one", async () => {
     const { t } = await import("../src/lib/i18n");
     const view = await mounted({ briefingMade: true, onAsk: () => {} });
