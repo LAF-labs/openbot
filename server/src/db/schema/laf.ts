@@ -199,8 +199,8 @@ export const lafThreadRuns = pgTable(
      * a Bot being torn out of the deployment does not un-happen the afternoon it worked. The column
      * was already nullable and the roster already ignores a run with no Bot (`runner/working.ts`),
      * so a hard-deleted Bot leaves history that reads as "somebody's, no longer named" rather than
-     * a hole. Bots are soft-deleted in normal use (`agents/profile-store.ts`), so this fires only
-     * on the hard-delete path, which nothing in `src` takes today.
+     * a hole. Deleting a Bot (`agents/bot-deletion.ts`) and a person (`account/deletion.ts`) both
+     * remove their runs explicitly first; this is for any other way the row goes.
      */
     agentId: text("agent_id").references(() => agents.id, {
       onDelete: "set null",
@@ -282,8 +282,9 @@ export const lafRoutines = pgTable("laf_routines", {
    *
    * `agent_id` was plain text, so deleting a Bot left its routines `enabled`, due, and failing
    * with "the Bot is no longer in the roster" once a minute for as long as the deployment lives.
-   * Normal deletion is soft (`agents/profile-store.ts`), so this fires only on the hard-delete
-   * path; it is the one that used to leave the wreckage.
+   * Deletion was soft until 2026-09-26 and left exactly that wreckage behind the soft delete: the
+   * ticker refuses a soft-deleted Bot's routine now, and migration 0056 turned those off. Deleting a
+   * Bot removes its routines itself (`agents/bot-deletion.ts`) so it can count them.
    */
   agentId: text("agent_id")
     .notNull()

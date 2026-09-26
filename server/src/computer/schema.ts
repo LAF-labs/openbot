@@ -340,6 +340,10 @@ export type WriteFileResult = {
   appended: boolean;
 };
 
+export type RemoveFileInput = { path: string };
+/** `removed` is false when there was no file there: already gone is not a failure. */
+export type RemoveFileResult = { path: string; removed: boolean };
+
 /**
  * Who is driving the computer.
  *

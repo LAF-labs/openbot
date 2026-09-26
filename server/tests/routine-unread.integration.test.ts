@@ -98,7 +98,7 @@ afterAll(async () => {
     .where(inArray(lafThreadMessages.threadId, madeThreads));
   await database.delete(channels).where(inArray(channels.id, madeChannels));
   for (const { botId, owner } of madeBots) {
-    await profiles.softDelete(owner, botId).catch(() => {});
+    await profiles.delete(owner, botId).catch(() => {});
   }
   await database
     .delete(users)

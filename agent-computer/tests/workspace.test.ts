@@ -299,3 +299,54 @@ describe("emptying the workspace when the account leaves", () => {
     );
   });
 });
+
+describe("removing one file a deleted Bot's attachment left", () => {
+  test("removes the file and says so, and a second time says it was already gone", async () => {
+    const ws = workspace();
+    const path = "uploads/2026-09-26-1a2b3c4d-8월 매출.csv";
+    await ws.write(path, "메뉴,수량\n아메리카노,42\n");
+    await ws.write("uploads/2026-09-26-5e6f7a8b-다른 파일.csv", "a,b\n");
+
+    expect(await ws.remove(path)).toEqual({ path, removed: true });
+    expect(await Bun.file(join(root, path)).exists()).toBe(false);
+    // Already gone is an answer, not a failure — the delete it belongs to has happened.
+    expect(await ws.remove(path)).toEqual({ path, removed: false });
+    expect(await ws.remove("uploads/never-was/x.csv")).toEqual({
+      path: "uploads/never-was/x.csv",
+      removed: false,
+    });
+    // Only that file: its neighbour in the same folder is somebody else's.
+    expect(
+      (await ws.list("uploads")).entries.map((entry) => entry.path),
+    ).toEqual(["uploads/2026-09-26-5e6f7a8b-다른 파일.csv"]);
+  });
+
+  test("refuses a folder rather than emptying it", async () => {
+    const ws = workspace();
+    await ws.write("uploads/a.csv", "a\n");
+    await expect(ws.remove("uploads")).rejects.toMatchObject({
+      code: "laf:file_wrong_kind",
+    });
+    expect((await ws.read("uploads/a.csv")).text).toBe("a\n");
+  });
+
+  test("never reaches outside, by a path or through a link", async () => {
+    const ws = workspace();
+    for (const path of ["../outside/secret.txt", "/etc/passwd", ".."]) {
+      await expect(ws.remove(path)).rejects.toThrow(WorkspacePathError);
+    }
+    await symlink(outside, join(root, "escape"));
+    await expect(ws.remove("escape/secret.txt")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    // A link inside the workspace is removed as a link: what it pointed at stays.
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    expect(await ws.remove("innocent.txt")).toEqual({
+      path: "innocent.txt",
+      removed: true,
+    });
+    expect(await Bun.file(join(outside, "secret.txt")).text()).toBe(
+      "a private key",
+    );
+  });
+});

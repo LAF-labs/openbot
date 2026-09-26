@@ -1,5 +1,7 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { channelKeys } from "../channels/queries";
 import { t } from "../i18n";
+import { routineKeys } from "../routines/queries";
 import { type AgentEffort, type AgentProfile, agentKeys } from "./queries";
 
 /**
@@ -221,6 +223,16 @@ export function deleteAgentMutationOptions(queryClient: QueryClient) {
     mutationFn: async (agentId: string) => {
       await agentRequest(`/api/agents/${agentId}`, { method: "DELETE" });
     },
-    onSuccess: () => invalidateAgents(queryClient),
+    /*
+     * Its conversation and its routines went with it on the server, so the roster and the Routines
+     * screen are refetched too. Only the Bots were, while a deleted Bot's conversation stayed behind
+     * as history; now a cached row would be a conversation that answers 404 when pressed.
+     */
+    onSuccess: () =>
+      Promise.all([
+        invalidateAgents(queryClient),
+        queryClient.invalidateQueries({ queryKey: channelKeys.all }),
+        queryClient.invalidateQueries({ queryKey: routineKeys.all }),
+      ]),
   });
 }

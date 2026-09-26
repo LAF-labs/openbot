@@ -158,10 +158,14 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
  * Deleted coworkers the caller still has history with.
  *
  * Registered so the runtime can restore the thread the person is reading. Membership of a channel
- * the agent worked in is what authorizes this, not whose the Bot is, which is why deleting a
- * coworker leaves its conversations readable instead of erasing them. It does not widen anything:
+ * the agent worked in is what authorizes this, not whose the Bot is. It does not widen anything:
  * a channel is only ever somebody's own, so the only deleted Bots this reaches are ones they
  * already talked to.
+ *
+ * ONLY BOTS DELETED BEFORE 2026-09-26. Deletion set `deleted_at` and left the conversation until
+ * then; it removes the Bot, its row and its conversation now (`bot-deletion.ts`), so a Bot deleted
+ * since has no history and no row for this to find. The old rows are still in deployed databases,
+ * and purging them is the owner's call.
  */
 function selectTombstoneAgents(database: Database, actor: AgentActor) {
   return database

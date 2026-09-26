@@ -625,7 +625,13 @@ describe("channel store integration", () => {
     );
   });
 
-  test("keeps a historical channel readable but inactive after a linked profile is deleted", async () => {
+  /*
+   * A deleted Bot's own conversation goes with it (`bot-deletion.integration.test.ts`). A channel it
+   * shared with another Bot — a room from before 2026-09-24; the route refuses to make one now — is
+   * the other Bot's conversation too, so it stays, readable and live, with the deleted Bot gone
+   * from it. It used to stay as history, inactive, with the deleted Bot still named in it.
+   */
+  test("keeps a channel another Bot shares, without the deleted one, after a linked Bot is deleted", async () => {
     const actor = await createPersistentUser();
     const activeAgentId = await createPersistentAgent({
       name: "Active historical agent",
@@ -640,12 +646,31 @@ describe("channel store integration", () => {
       [activeAgentId, deletedAgentId].sort(),
     );
     createdChannelIds.push(created.id);
-    await profileStore.softDelete(actor, deletedAgentId);
+    await profileStore.delete(actor, deletedAgentId);
 
     expect(await persistentStore.get(actor, created.id)).toEqual({
       ...created,
-      active: false,
+      agentIds: [activeAgentId],
+      active: true,
     });
+  });
+
+  test("a deleted Bot's own conversation cannot be read afterwards", async () => {
+    const actor = await createPersistentUser();
+    const agentId = await createPersistentAgent({
+      name: "Deleted solo agent",
+      owner: actor,
+    });
+    const created = await persistentStore.create(actor, [agentId]);
+    createdChannelIds.push(created.id);
+    await profileStore.delete(actor, agentId);
+
+    expect(await persistentStore.get(actor, created.id)).toBeNull();
+    expect(
+      (await persistentStore.list(actor)).some(
+        (channel) => channel.id === created.id,
+      ),
+    ).toBe(false);
   });
 
   test("returns null when the member's channel mapping is missing", async () => {
@@ -766,7 +791,7 @@ describe("channel store integration", () => {
     );
   });
 
-  test.each(["inaccessible private", "soft-deleted"] as const)(
+  test.each(["inaccessible private", "deleted"] as const)(
     "rejects an %s agent and leaves every channel table unchanged",
     async (scenario) => {
       const actor = await createPersistentUser();
@@ -782,8 +807,8 @@ describe("channel store integration", () => {
         name: `${scenario} agent`,
         owner,
       });
-      if (scenario === "soft-deleted") {
-        await profileStore.softDelete(actor, agentId);
+      if (scenario === "deleted") {
+        await profileStore.delete(actor, agentId);
       }
       const before = await channelTableSnapshot();
 

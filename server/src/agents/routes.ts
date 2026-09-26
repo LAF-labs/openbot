@@ -952,7 +952,7 @@ export function createAgentRoutes(
 
   routes.delete("/:agentId", requireUser, async (context) => {
     try {
-      await store.softDelete(context.var.actor, context.req.param("agentId"));
+      await store.delete(context.var.actor, context.req.param("agentId"));
       return context.body(null, 204);
     } catch (error) {
       return mapStoreError(context, error);

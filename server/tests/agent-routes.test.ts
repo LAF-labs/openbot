@@ -91,8 +91,8 @@ function fakeStore(
     async setPreferences(receivedActor, id, patch) {
       calls.push(["setPreferences", receivedActor, id, patch]);
     },
-    async softDelete(receivedActor, id) {
-      calls.push(["softDelete", receivedActor, id]);
+    async delete(receivedActor, id) {
+      calls.push(["delete", receivedActor, id]);
     },
   };
 
@@ -299,7 +299,7 @@ describe("agent lifecycle routes", () => {
       ["update", actor, "agent-1", validInput],
       ["setHidden", actor, "agent-1", true],
       ["setHidden", actor, "agent-1", false],
-      ["softDelete", actor, "agent-1"],
+      ["delete", actor, "agent-1"],
     ]);
   });
 

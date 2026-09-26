@@ -641,6 +641,8 @@ export const ko: Record<string, string> = {
   "The computer was reset": "컴퓨터를 초기화함",
   // 봇을 지웠을 때. 브라우저는 계정의 것이고 로그인은 남는다 — 지운 것은 그 봇의 탭과 운전대뿐이다.
   "A deleted Bot let go of the computer": "지운 봇이 컴퓨터에서 손을 뗌",
+  "A deleted Bot could not let go of the computer":
+    "지운 봇이 컴퓨터에서 손을 떼지 못함",
   "The computers could not be listed.": "컴퓨터 목록을 불러오지 못했어요.",
   "The computers could not be reached.": "컴퓨터에 닿지 못했어요.",
   "The connection could not be removed. Please try again.":
@@ -1157,6 +1159,7 @@ export const ko: Record<string, string> = {
   // 감사 기록의 두 줄 — 내보내기와 계정 삭제.
   "A person took a copy of their data": "사람이 자기 데이터를 내려받음",
   "An account was deleted": "계정이 삭제됨",
+  "A Bot was deleted": "봇이 삭제됨",
   // 가입·탈퇴가 함대(VM을 만들고 없애는 쪽)에 닿았는지.
   "The fleet was told": "함대에 전달됨",
   "The fleet could not be told": "함대에 전달하지 못함",
@@ -1720,6 +1723,7 @@ export const ko: Record<string, string> = {
   "A component": "컴포넌트",
   "A component's data": "컴포넌트 데이터",
   "An account": "계정",
+  "A Bot": "봇",
   "The fleet": "플릿",
   // 봇이 답을 멈춘 줄
   "Silent for {seconds}s, having said nothing at all":

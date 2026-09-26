@@ -21,6 +21,13 @@
  *
  * Addressed the same way it always was — `forBot`, which sets the header the computer keys
  * everything on.
+ *
+ * AND WHAT IT LEFT THERE (2026-09-26). A sheet or a PDF the person handed the Bot was also filed in
+ * the workspace as text (`attachments/service.ts`), and a long tool result from its conversations was
+ * filed whole (`spillover.ts`); deleting the Bot's rows cannot reach a file. So the deletion hands
+ * their paths here, and they are removed once the tabs are closed. Only those paths: the workspace is
+ * the deployment's, like the profile, and a file somebody else put there — a download, another Bot's
+ * notes — is not this Bot's to take.
  */
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, recordAuditEvent } from "../audit";
@@ -39,7 +46,19 @@ import type { ComputerClient } from "./client";
 export type BotRelease = (
   botId: string,
   actor: Pick<AgentActor, "id">,
+  /** What the deleted Bot's attachments and conversations left in the workspace, removed last. */
+  files?: readonly string[],
 ) => Promise<boolean>;
+
+/** The two things a release asks of the computer, so a test can hand in a workspace of its own. */
+export type ReleasingComputer = {
+  forBot(
+    botId: string,
+  ): Pick<ReturnType<ComputerClient["forBot"]>, "stopComputer" | "removeFile">;
+};
+
+/** What became of the files a deletion handed over. Counts, never the paths: a name is content. */
+type FilesOutcome = { removed: number; alreadyGone: number; failed: number };
 
 /**
  * The release a deployment hands its Bot store — and its account deletion, for a leftover account
@@ -48,15 +67,15 @@ export type BotRelease = (
  *
  * Never throws. The Bot's row is already gone, or about to be, when this runs, so there is nobody to
  * answer an error to who could act on it; what happened is written down instead — a
- * `computer.released` row when the tabs closed, a `computer.reset_failed` row when the computer could
- * not be reached at all, so that the trail never shows a deleted Bot without saying what became of
- * its browser.
+ * `computer.released` row when the tabs closed, a `computer.release_failed` row when the computer
+ * could not be reached at all, so that the trail never shows a deleted Bot without saying what
+ * became of its browser and its files.
  */
 export function releaseComputerFor(
-  client: ComputerClient | undefined,
+  client: ReleasingComputer | undefined,
   auditStore: AuditStore,
 ): BotRelease {
-  return async (botId, actor) => {
+  return async (botId, actor, files = []) => {
     if (!client) return false;
     // Attribution as the computer routes do it: the local fixture is not a person and does not
     // become the actor of a row. The FK on `actor_user_id` is the other reason.
@@ -79,7 +98,7 @@ export function releaseComputerFor(
       // row is the same rule again — an audit store that is down must not turn one lost row into
       // an exception nobody can act on.
       await recordAuditEvent(auditStore, {
-        eventType: "computer.reset_failed",
+        eventType: "computer.release_failed",
         targetType: "computer",
         targetId: botId,
         ...(actorUserId ? { actorUserId } : {}),
@@ -87,10 +106,20 @@ export function releaseComputerFor(
           bot: botId,
           actor: actor.id,
           reason: describeFailure(error),
+          /*
+           * Not tried: a computer that did not answer the stop would make each file wait out the
+           * client's timeout in turn, under a delete the person is watching. Said as a number so
+           * the files still on the volume are on the record rather than implied away.
+           */
+          ...(files.length > 0 ? { filesLeft: files.length } : {}),
         },
       }).catch(rowLost);
       return false;
     }
+    const filesOutcome =
+      files.length > 0
+        ? await removeFiles(client.forBot(botId), botId, files)
+        : null;
     /*
      * The tabs are closed whatever becomes of this row, so a row that cannot be written is logged as
      * lost rather than recorded as a release that failed — which is what it used to become.
@@ -109,8 +138,36 @@ export function releaseComputerFor(
         // Said as a fact rather than implied by the absence of a `computer.reset` row: an
         // investigator reading this a month later must not have to know which release this was.
         loginsKept: true,
+        ...(filesOutcome ? { files: filesOutcome } : {}),
       },
     }).catch(rowLost);
     return true;
   };
+}
+
+/**
+ * Each file on its own, so one that cannot be removed does not keep the rest. A file already gone
+ * — the person emptied the folder, or an older delete got there first — is counted as gone, never as
+ * a failure: the delete it belongs to has already happened.
+ */
+async function removeFiles(
+  computer: Pick<ReturnType<ComputerClient["forBot"]>, "removeFile">,
+  botId: string,
+  files: readonly string[],
+): Promise<FilesOutcome> {
+  const outcome: FilesOutcome = { removed: 0, alreadyGone: 0, failed: 0 };
+  for (const path of files) {
+    try {
+      const { removed } = await computer.removeFile({ path });
+      if (removed) outcome.removed += 1;
+      else outcome.alreadyGone += 1;
+    } catch (error) {
+      outcome.failed += 1;
+      log.error("agent_computer_file_not_removed", {
+        bot: botId,
+        reason: describeFailure(error),
+      });
+    }
+  }
+  return outcome;
 }

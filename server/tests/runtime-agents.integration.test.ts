@@ -197,19 +197,40 @@ describe("runtime agent loading", () => {
     const owner = await createUser();
     const profile = await createCoworker(owner);
 
-    await profileStore.softDelete(owner, profile.id);
+    await profileStore.delete(owner, profile.id);
 
     expect(idsOf(await loadAgents(owner))).not.toContain(profile.id);
   });
 
-  test("keeps a deleted coworker as a tombstone for a channel member", async () => {
+  test("drops a deleted coworker whose conversation went with it", async () => {
+    // Deleting a Bot deletes its conversation (bot-deletion.ts), so there is no history left for a
+    // tombstone to restore — and nothing named after it for the runtime to mount.
+    const owner = await createUser();
+    const profile = await createCoworker(owner);
+    const channel = await channelStore.create(owner, [profile.id]);
+    createdChannelIds.push(channel.id);
+
+    await profileStore.delete(owner, profile.id);
+
+    expect(idsOf(await loadAgents(owner))).not.toContain(profile.id);
+  });
+
+  /*
+   * A Bot deleted before 2026-09-26 only had `deleted_at` set, and its conversation is still in the
+   * database; those rows are left for the owner to decide about. Until then the tombstone is what
+   * lets the runtime restore the thread its member is reading.
+   */
+  test("keeps a Bot deleted the old way as a tombstone for a channel member", async () => {
     const owner = await createUser();
     const otherUser = await createUser();
     const profile = await createCoworker(owner);
     const channel = await channelStore.create(owner, [profile.id]);
     createdChannelIds.push(channel.id);
 
-    await profileStore.softDelete(owner, profile.id);
+    await database
+      .update(agentProfiles)
+      .set({ deletedAt: new Date() })
+      .where(eq(agentProfiles.agentId, profile.id));
 
     expect(await loadAgents(owner)).toContainEqual({
       id: profile.id,

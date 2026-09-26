@@ -202,10 +202,16 @@ export const auditEventTypes = [
   "computer.released",
   /*
    * A release that was asked for and did not happen — the computer could not be reached at all. The
-   * Bot is gone from the roster either way, so a trail that showed only the rows above would read as
-   * though every deleted Bot's browser had been tidied up, and the one that was not is the row an
-   * investigator needs.
+   * Bot is gone either way, so a trail that showed only the rows above would read as though every
+   * deleted Bot's browser had been tidied up, and the one that was not is the row an investigator
+   * needs. It carries how many of the Bot's attachment files were left on the computer with it.
+   *
+   * `computer.reset_failed` was this row's name until 2026-09-26, and it said the wrong thing:
+   * deleting a Bot has not reset anything since 2026-09-16, so an unreachable computer read on the
+   * trail as a failed wipe of every login. Nothing writes the old name now; it stays listed for the
+   * rows already written under it, which the append-only trail keeps.
    */
+  "computer.release_failed",
   "computer.reset_failed",
   /**
    * A business site's sign-in, as the Bot's own browser found it: begun, and run out.
@@ -391,6 +397,15 @@ export const auditEventTypes = [
    */
   "account.exported",
   "account.deleted",
+
+  /*
+   * A person deleted one of their Bots (`agents/bot-deletion.ts`), and what went with it, counted
+   * per table — conversations, messages, attachments, memories, routines, allowances — in the same
+   * transaction as the deletion, so the row and the deletion commit or roll back together. Counts
+   * and the Bot's id; never a name, a message or a memory. What became of its browser and of its
+   * files on the computer is the computer's own row beside it.
+   */
+  "agent.deleted",
 
   /*
    * The fleet tool being told that somebody arrived or left, and the times it could not be told.

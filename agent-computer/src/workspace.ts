@@ -21,12 +21,14 @@
  * can be tested against a temporary directory instead of being taken on trust.
  */
 import {
+  lstat,
   mkdir,
   readdir,
   readFile,
   realpath,
   rm,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -360,6 +362,42 @@ export function createWorkspace(
         flag: options.append ? "a" : "w",
       });
       return { path: requested, bytes, appended: options.append === true };
+    },
+
+    /**
+     * Remove one file, answering whether there was one to remove.
+     *
+     * Only the server asks (`/files/delete`), for what a deleted Bot's attachments and conversations
+     * left here; no tool a Bot holds reaches it. A file already gone is an answer, not a failure —
+     * the deletion it belongs to has happened, and a folder somebody emptied first must not turn it
+     * into an error.
+     *
+     * Resolved the way a write is: the folder it sits in must be inside the workspace after symlinks,
+     * and the entry itself is unlinked rather than followed, so a link planted in the workspace is
+     * removed as a link and never reaches what it points at.
+     */
+    async remove(
+      requested: string,
+    ): Promise<{ path: string; removed: boolean }> {
+      const full = await resolvePath(requested, true);
+      const info = await lstat(full).catch(() => null);
+      if (!info) return { path: requested, removed: false };
+      if (info.isDirectory()) {
+        throw new WorkspaceFileError(
+          `${requested} is a directory, not a file.`,
+          "laf:file_wrong_kind",
+        );
+      }
+      try {
+        await unlink(full);
+      } catch (error) {
+        // Gone between the look and the unlink: the same answer as gone before it.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return { path: requested, removed: false };
+        }
+        throw error;
+      }
+      return { path: requested, removed: true };
     },
 
     /**

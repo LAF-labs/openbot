@@ -1,4 +1,6 @@
 import { and, count, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { recordAuditEvent } from "../audit";
+import { DEV_ACTOR } from "../auth/dev-actor";
 import { BOTS_PER_ACCOUNT } from "../computer/assignment";
 import type { CredentialStore } from "../credentials";
 import type { Database } from "../db/client";
@@ -6,10 +8,12 @@ import {
   agentPreferences,
   agentProfiles,
   agents,
+  auditEvents,
   deploymentPackages,
 } from "../db/schema";
 import { log } from "../log";
 import { authFromConfiguration, storeAgentAuth } from "./auth-header";
+import { removeBotRows } from "./bot-deletion";
 import { canManageAgent, visibleToActor } from "./profile-policy";
 import type {
   AgentActor,
@@ -60,11 +64,15 @@ export type AgentProfileStore = {
     patch: AgentPreferencePatch,
   ): Promise<void>;
   /**
-   * Retire a Bot: gone from the roster, its seat freed, and — through the hook the store was
-   * built with — its tabs closed on the deployment's browser, whose logins stay for the other Bots
-   * (`computer/release.ts`).
+   * Delete a Bot and everything it owns (`bot-deletion.ts`), with one `agent.deleted` row counting
+   * what went; then — through the hook the store was built with — its tabs closed on the
+   * deployment's browser, whose logins stay for the other Bots, and what its attachments and
+   * conversations left on the computer removed (`computer/release.ts`).
+   *
+   * It was `softDelete` while it set `deleted_at` and nothing else. Rows already soft-deleted that
+   * way stay as they are: nothing here reaches them, and purging them is a decision of its own.
    */
-  softDelete(actor: AgentActor, id: string): Promise<void>;
+  delete(actor: AgentActor, id: string): Promise<void>;
 };
 
 /**
@@ -77,6 +85,8 @@ export type AgentProfileStore = {
 export type ComputerRelease = (
   agentId: string,
   actor: AgentActor,
+  /** What the Bot's attachments and conversations left in the computer's workspace, to go now. */
+  files: readonly string[],
 ) => Promise<unknown>;
 
 /*
@@ -349,7 +359,9 @@ export function createAgentProfileStore(
    * MEASURED 2026-09-10 (audit A3): `DELETE /api/agents/:id` set `deleted_at` and nothing else,
    * and the Bot's Chromium stayed running until the idle sweep found it. Its tabs close now. Its
    * logins do not go with it: since 2026-09-16 they are the deployment's, shared by every Bot the
-   * person has, and emptying them is a reset somebody confirms (`computer/release.ts`).
+   * person has, and emptying them is a reset somebody confirms (`computer/release.ts`). What its
+   * attachments and conversations left in the workspace is handed over too, since only the computer
+   * can remove it.
    * Absent on a deployment with no computer, where there is nothing to release.
    */
   released?: ComputerRelease,
@@ -531,24 +543,45 @@ export function createAgentProfileStore(
       });
     },
 
-    async softDelete(actor, id) {
-      await database.transaction(
+    async delete(actor, id) {
+      const { files } = await database.transaction(
         async (transaction) => {
           await lockProfileMutationRows(transaction, id);
           const profile = await findAccessibleProfile(transaction, actor, id);
           if (!profile) throw new AgentNotFoundError(id);
           requireManageable(actor, profile);
 
-          const deletedAt = new Date();
-          await transaction
-            .update(agentProfiles)
-            .set({ deletedAt, updatedAt: deletedAt })
-            .where(eq(agentProfiles.agentId, id));
+          const removal = await removeBotRows(transaction, id);
+          /*
+           * On the TRANSACTION, not through a pooled audit store: a row written beside it would
+           * survive a rollback and claim a deletion that did not happen — and the deletion must not
+           * commit without the row that says what it took.
+           */
+          await recordAuditEvent(
+            {
+              insert: (event) => transaction.insert(auditEvents).values(event),
+            },
+            {
+              eventType: "agent.deleted",
+              targetType: "agent",
+              targetId: id,
+              // The local fixture is not a person and does not become the actor of a row.
+              ...(actor.id === DEV_ACTOR.id ? {} : { actorUserId: actor.id }),
+              payload: {
+                bot: id,
+                counts: removal.counts,
+                // Said, not implied: the files are removed after the commit and their outcome is on
+                // the computer's own row (`computer.released` or `computer.release_failed`).
+                filesOnComputer: removal.files.length,
+              },
+            },
+          );
+          return removal;
         },
         { isolationLevel: "read committed" },
       );
       /*
-       * THE BROWSER AND ITS LOGINS, AFTER THE ROW.
+       * THE BROWSER, AND THE FILES ON THE COMPUTER, AFTER THE ROWS.
        *
        * After, so a computer that is down cannot keep a Bot on the roster: the seat is freed and
        * the Bot is gone whatever happens next, and the hook records what it could not do. The
@@ -557,7 +590,7 @@ export function createAgentProfileStore(
        */
       if (released) {
         try {
-          await released(id, actor);
+          await released(id, actor, files);
         } catch (error) {
           log.error("agent_computer_release_failed", {
             agent: id,

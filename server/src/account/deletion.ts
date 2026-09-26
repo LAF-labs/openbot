@@ -1,12 +1,12 @@
 /**
  * A person leaving, and everything that has to be true afterwards.
  *
- * THE HARD-DELETE PATH THE FOREIGN KEYS WERE WRITTEN FOR. Normal deletion in this product is soft:
- * a Bot gets `agent_profiles.deleted_at` and stays in the database (`agents/profile-store.ts`), and
- * several of the cascades added over the last month carry comments saying "this fires only on the
- * hard-delete path, which nothing in `src` takes today". This is that path. It is the first caller
- * those cascades have ever had, which is exactly why the order below is written out rather than
- * left to the database to work out.
+ * THE HARD-DELETE PATH THE FOREIGN KEYS WERE WRITTEN FOR. When this was written, deleting a Bot only
+ * set `agent_profiles.deleted_at`, and several of the cascades carried comments saying "this fires
+ * only on the hard-delete path, which nothing in `src` takes today". This was that path, the first
+ * caller those cascades had, which is exactly why the order below is written out rather than left to
+ * the database to work out. Deleting one Bot has been a hard delete too since 2026-09-26, the same
+ * way round (`agents/bot-deletion.ts`).
  *
  * WHAT THE DATABASE DOES ON ITS OWN when `users` goes, and what it does NOT:
  *

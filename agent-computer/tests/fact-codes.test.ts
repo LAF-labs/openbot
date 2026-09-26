@@ -458,6 +458,30 @@ describe("the computer's refusals, over HTTP", () => {
     });
   }, 30_000);
 
+  test("a file a deleted Bot left is removed over HTTP, and a second removal is not a failure", async () => {
+    const path = "uploads/2026-09-26-1a2b3c4d-8월 매출.csv";
+    expect(
+      (await post("/files/write", { path, contents: "메뉴,수량\n" })).status,
+    ).toBe(200);
+    expect(existsSync(join(workspaceDir, path))).toBe(true);
+
+    const removed = await post("/files/delete", { path });
+    expect([removed.status, removed.body]).toEqual([
+      200,
+      { path, removed: true },
+    ]);
+    expect(existsSync(join(workspaceDir, path))).toBe(false);
+
+    const again = await post("/files/delete", { path });
+    expect([again.status, again.body]).toEqual([200, { path, removed: false }]);
+
+    const outside = await post("/files/delete", { path: "../../etc/passwd" });
+    expect([outside.status, outside.body.code]).toEqual([
+      403,
+      "laf:file_path_refused",
+    ]);
+  }, 30_000);
+
   test("the value of a secret nobody asked for is not in the refusal", async () => {
     const refused = await post("/human/secret", {
       text: "UNASKED-SECRET-3141",

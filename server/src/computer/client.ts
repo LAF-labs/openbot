@@ -21,6 +21,8 @@ import type {
   ReadFileResult,
   ReadOptions,
   ReadResult,
+  RemoveFileInput,
+  RemoveFileResult,
   ScreenshotResult,
   ScrollInput,
   SecretRequest,
@@ -648,6 +650,15 @@ export function createComputerClient(options: ComputerClientOptions) {
 
       async listFiles(input: ListFilesInput): Promise<ListFilesResult> {
         return (await post("/files/list", input)) as ListFilesResult;
+      },
+
+      /**
+       * Remove one file. The server's alone: no tool reaches it, and its one caller is a deleted
+       * Bot's release removing what its attachments and conversations left (`release.ts`).
+       * `removed` is false for a file that was already gone, which is an answer, not a failure.
+       */
+      async removeFile(input: RemoveFileInput): Promise<RemoveFileResult> {
+        return (await post("/files/delete", input)) as RemoveFileResult;
       },
 
       /** Who has the wheel, and whether the Bot is waiting for a person. */

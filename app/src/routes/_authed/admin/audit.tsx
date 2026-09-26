@@ -264,7 +264,9 @@ function Row({
     event.eventType === "mcp.call_failed" ||
     event.eventType === "component.function_failed" ||
     event.eventType === "credential.rotation_refused" ||
-    // A deleted Bot whose browser could not be wiped: its logins are still on the volume.
+    // A deleted Bot whose computer could not be reached: its tabs, and any files its attachments
+    // left, are still there. The older name is the same failure, written before 2026-09-26.
+    event.eventType === "computer.release_failed" ||
     event.eventType === "computer.reset_failed" ||
     stalled;
   const verdict = decisionOf(event.eventType, refused, failed);
@@ -593,7 +595,9 @@ export const DECISIONS: Record<string, string> = {
   "computer.reset": "The computer was reset",
   // A deleted Bot let go of the shared computer: its tabs closed, the account's logins stayed.
   "computer.released": "A deleted Bot let go of the computer",
-  // Written when deleting a Bot could not reach its browser at all.
+  // Written when deleting a Bot could not reach its browser at all. Nothing was reset: a deleted
+  // Bot only lets go, so the words say that, and the older name below keeps the words its rows had.
+  "computer.release_failed": "A deleted Bot could not let go of the computer",
   "computer.reset_failed": "The computer could not be reset",
   "computer.stopped": "A person pressed stop",
   // Not "Blocked". Nothing refused this; the Bot did the same thing again and the trail is saying so.
@@ -680,6 +684,9 @@ export const DECISIONS: Record<string, string> = {
   // no name left to write.
   "account.exported": "A person took a copy of their data",
   "account.deleted": "An account was deleted",
+  // One Bot, and everything it had, gone at a person's word. Neither a permission nor a refusal;
+  // the payload counts what went with it.
+  "agent.deleted": "A Bot was deleted",
 
   // Not a permission and not a refusal either: the machine this deployment runs on is created and
   // destroyed elsewhere, and these two say whether that elsewhere heard about it. The failure is
@@ -958,6 +965,7 @@ export const EVENTS: Record<string, string> = {
   "computer.stopped": "The computer",
   "computer.reset": "The computer",
   "computer.released": "The computer",
+  "computer.release_failed": "The computer",
   "computer.reset_failed": "The computer",
   "site.signed_in": "A site's sign-in",
   "site.login_lapsed": "A site's sign-in",
@@ -986,6 +994,7 @@ export const EVENTS: Record<string, string> = {
   "component.function_failed": "A component's data",
   "account.exported": "An account",
   "account.deleted": "An account",
+  "agent.deleted": "A Bot",
   "fleet.notified": "The fleet",
   "fleet.notify_failed": "The fleet",
   "support.feedback_sent": "A message to the operator",

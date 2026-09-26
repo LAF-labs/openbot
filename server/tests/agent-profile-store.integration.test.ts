@@ -426,9 +426,9 @@ describe("agent profile store integration", () => {
     await expect(
       store.update(owner, source.agentId, input),
     ).rejects.toBeInstanceOf(ProtectedAgentError);
-    await expect(
-      store.softDelete(owner, source.agentId),
-    ).rejects.toBeInstanceOf(ProtectedAgentError);
+    await expect(store.delete(owner, source.agentId)).rejects.toBeInstanceOf(
+      ProtectedAgentError,
+    );
   });
 
   test("serializes update authorization against concurrent package attachment", async () => {
@@ -479,7 +479,7 @@ describe("agent profile store integration", () => {
     const { blocked, outcome } = await racePackageAttachment(
       source.agentId,
       deploymentPackage.id,
-      (namedStore) => namedStore.softDelete(owner, source.agentId),
+      (namedStore) => namedStore.delete(owner, source.agentId),
     );
 
     expect(outcome.status).toBe("rejected");
@@ -524,7 +524,7 @@ describe("agent profile store integration", () => {
       ownerUserId: admin.id,
     });
 
-    await store.softDelete(admin, source.agentId);
+    await store.delete(admin, source.agentId);
     expect(await store.get(admin, source.agentId)).toBeNull();
   });
 
@@ -539,7 +539,7 @@ describe("agent profile store integration", () => {
 
     for (const attempt of [
       () => store.update(admin, source.agentId, input),
-      () => store.softDelete(admin, source.agentId),
+      () => store.delete(admin, source.agentId),
       () => store.setHidden(admin, source.agentId, true),
       () => store.setPreferences(admin, source.agentId, { notify: false }),
     ]) {
@@ -556,29 +556,36 @@ describe("agent profile store integration", () => {
     });
   });
 
-  test("soft deletes a profile from reads and lists while retaining its raw rows", async () => {
+  /*
+   * It retained them until 2026-09-26 — `deleted_at` and nothing else, under a dialog promising the
+   * Bot's conversations, routines and memories would go. What goes with it now is
+   * `bot-deletion.integration.test.ts`; this is the row itself, and the verbs that come after it.
+   */
+  test("deletes a Bot's own rows, not only its place on the roster", async () => {
     const owner = await createUser();
     const source = await createProfileFixture({ owner });
 
-    await store.softDelete(owner, source.agentId);
+    await store.delete(owner, source.agentId);
 
     expect(await store.get(owner, source.agentId)).toBeNull();
     expectListed(await store.list(owner), source.agentId, false);
     expectListed(await store.list(owner, true), source.agentId, false);
-    const [canonical] = await database
+    const canonical = await database
       .select()
       .from(agents)
       .where(eq(agents.id, source.agentId));
-    const [profile] = await database
+    const profile = await database
       .select()
       .from(agentProfiles)
       .where(eq(agentProfiles.agentId, source.agentId));
-    expect(canonical?.id).toBe(source.agentId);
-    expect(profile?.agentId).toBe(source.agentId);
-    expect(profile?.deletedAt).toBeInstanceOf(Date);
+    expect(canonical).toEqual([]);
+    expect(profile).toEqual([]);
     await expect(
       store.setHidden(owner, source.agentId, true),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
+    await expect(store.delete(owner, source.agentId)).rejects.toBeInstanceOf(
+      AgentNotFoundError,
+    );
   });
 
   test("rolls back canonical creation when the profile insert fails", async () => {
@@ -733,7 +740,7 @@ describe("the seat cap", () => {
     // A freed seat is a usable seat: soft-delete one and the same create goes through.
     const [freed] = seeded;
     if (!freed) throw new Error("the fixtures did not seat anybody");
-    await capped.softDelete(owner, freed);
+    await capped.delete(owner, freed);
     const created = await capped.create(owner, input);
     createdAgentIds.push(created.id);
     expect(created.name).toBe(input.name);
@@ -745,22 +752,27 @@ describe("the seat cap", () => {
      * so a deleted Bot's browser stayed running and its profile — its logins — stayed on disk. The
      * store now hands the deleted Bot to the release hook after the row is gone.
      */
-    const released: Array<{ agentId: string; actorId: string }> = [];
+    const released: Array<{
+      agentId: string;
+      actorId: string;
+      files: readonly string[];
+    }> = [];
     const withRelease = createAgentProfileStore(
       database,
       managedAgentAgUiUrl,
       undefined,
       undefined,
-      async (agentId, actor) => {
-        released.push({ agentId, actorId: actor.id });
+      async (agentId, actor, files) => {
+        released.push({ agentId, actorId: actor.id, files });
       },
     );
     const owner = await createUser();
     const { agentId } = await createProfileFixture({ owner });
 
-    await withRelease.softDelete(owner, agentId);
+    await withRelease.delete(owner, agentId);
 
-    expect(released).toEqual([{ agentId, actorId: owner.id }]);
+    // No attachments, so no files handed over with it.
+    expect(released).toEqual([{ agentId, actorId: owner.id, files: [] }]);
     // And the row really is gone, so the release is not instead of the delete.
     expect(await withRelease.get(owner, agentId)).toBeNull();
   });
@@ -781,7 +793,7 @@ describe("the seat cap", () => {
     const { agentId } = await createProfileFixture({ owner });
 
     await expect(
-      withFailingRelease.softDelete(owner, agentId),
+      withFailingRelease.delete(owner, agentId),
     ).resolves.toBeUndefined();
     expect(await withFailingRelease.get(owner, agentId)).toBeNull();
   });

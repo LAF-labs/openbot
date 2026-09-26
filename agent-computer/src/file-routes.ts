@@ -1,9 +1,10 @@
 /**
- * The Bot's files, over HTTP: `/files/read`, `/files/list` and `/files/write`.
+ * The Bot's files, over HTTP: `/files/read`, `/files/list`, `/files/write` and `/files/delete`.
  *
  * They reach the durable workspace volume, confined to it by workspace.ts. Reading and writing are
  * the two operations a Bot needs to keep notes between turns. Nothing here decides whether a Bot
- * MAY touch a path: the gateway in front of this process does that.
+ * MAY touch a path: the gateway in front of this process does that. Deleting is the server's alone —
+ * no tool asks for it — for the files a deleted Bot's attachments and conversations left behind.
  */
 import type { BotRoute } from "./computer";
 import { fileFailure } from "./failures";
@@ -65,6 +66,15 @@ export const writeFile: BotRoute = async ({ request }, { workspace }) => {
         append: body.append === true,
       }),
     );
+  } catch (error) {
+    return fileFailure(error);
+  }
+};
+
+export const deleteFile: BotRoute = async ({ request }, { workspace }) => {
+  const body = await bodyOf<{ path?: unknown }>(request);
+  try {
+    return json(await workspace.remove(String(body?.path ?? "")));
   } catch (error) {
     return fileFailure(error);
   }

@@ -1,7 +1,7 @@
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, isNotNull, lte, notExists } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
-import { lafRoutines } from "../db/schema";
+import { agentProfiles, lafRoutines } from "../db/schema";
 import { log } from "../log";
 import {
   CAUGHT_UP_AFTER_MS,
@@ -89,7 +89,32 @@ async function pass(options: RoutineTickerOptions): Promise<number> {
   const due = await options.database
     .select()
     .from(lafRoutines)
-    .where(and(eq(lafRoutines.enabled, true), lte(lafRoutines.nextRunAt, at)))
+    .where(
+      and(
+        eq(lafRoutines.enabled, true),
+        lte(lafRoutines.nextRunAt, at),
+        /*
+         * NEVER A DELETED BOT'S. Deleting a Bot takes its routines with it now
+         * (`agents/bot-deletion.ts`), but until 2026-09-26 it only set `deleted_at`, and databases
+         * already hold Bots deleted that way with their routines still on — claimed every tick,
+         * failing `laf:turn_failed` every run, each failure a `run.failed` notice to the person who
+         * deleted the Bot. Migration 0056 turns those off; this is the same rule where the clock
+         * reads, so a row the migration did not reach, or a Bot soft-deleted by anything later, is
+         * still never run.
+         */
+        notExists(
+          options.database
+            .select({ agentId: agentProfiles.agentId })
+            .from(agentProfiles)
+            .where(
+              and(
+                eq(agentProfiles.agentId, lafRoutines.agentId),
+                isNotNull(agentProfiles.deletedAt),
+              ),
+            ),
+        ),
+      ),
+    )
     // Oldest due first, then creation order: a pass is one sequential lane, and which routine
     // goes first must not depend on the order Postgres happened to return the rows.
     .orderBy(

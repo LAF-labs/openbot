@@ -230,6 +230,7 @@
   "server/tests/authorization-matrix.integration.test.ts",
   "server/tests/auto-review.test.ts",
   "server/tests/boot-background.test.ts",
+  "server/tests/bot-deletion.integration.test.ts",
   "server/tests/bot-id.test.ts",
   "server/tests/bot-lane.test.ts",
   "server/tests/built-in-skills.integration.test.ts",
