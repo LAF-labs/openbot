@@ -8,7 +8,7 @@
  */
 import { isBotId } from "./authorisation";
 import type { BotRoute, Computer } from "./computer";
-import { stopViewer } from "./live-screen";
+import { endScreens } from "./live-screen";
 import { bodyOf, json } from "./respond";
 import { forgetSecretFields } from "./secret-fields";
 
@@ -64,6 +64,9 @@ export const stopComputer: BotRoute = async (
   { botId, session },
   { profiles },
 ) => {
+  // Its screens first: a screen left open is a person looking at a tab that is about to close, and
+  // until 2026-09-26 it was also the thing that opened a new one (live-screen.ts, `endScreens`).
+  await endScreens(session);
   const wasRunning = await profiles.stop(botId);
   // The wheel goes back to the Bot because the controlled browser no longer exists.
   session.control.release();
@@ -104,7 +107,7 @@ export const resetComputer: BotRoute = async (
    */
   sessions.drop(botId);
   forgetSecretFields(session);
-  await stopViewer(session).catch(() => undefined);
+  await endScreens(session);
   // Always answers: a browser that will not close is killed (profiles.ts, closeAndWait), so a
   // reset cannot be the fourth thing queued behind a page that never loaded.
   await profiles.reset(botId);

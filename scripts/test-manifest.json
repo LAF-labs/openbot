@@ -34,6 +34,7 @@
   "agent-computer/tests/person-typing.test.ts",
   "agent-computer/tests/reader.test.ts",
   "agent-computer/tests/sandbox.test.ts",
+  "agent-computer/tests/screen-stop.test.ts",
   "agent-computer/tests/screencast-site.test.ts",
   "agent-computer/tests/secret-snapshot.test.ts",
   "agent-computer/tests/shared-profile.test.ts",

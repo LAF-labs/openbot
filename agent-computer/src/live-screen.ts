@@ -69,6 +69,7 @@ async function applyInput(
   ws: ServerWebSocket<StreamData>,
   session: BotSession,
   message: InputMessage,
+  profiles: Computer["profiles"],
 ): Promise<void> {
   const viewer = session.viewer;
   if (!viewer) return;
@@ -77,6 +78,12 @@ async function applyInput(
     ws.send(screenError(TAKE_CONTROL_FIRST));
     return;
   }
+  /*
+   * A person driving is the Bot's computer in use, and the one thing that says so down this socket:
+   * the loop that follows the Bot's tab no longer counts as use (see `attach`), so without this a
+   * sign-in that took ten minutes would have its tab closed by the idle sweep under the person's hands.
+   */
+  profiles.markUsed(ws.data.botId);
   try {
     if (message.type === "text") {
       await followTyping(session, viewer.page, message.text);
@@ -185,6 +192,33 @@ const follows = new WeakMap<
   ReturnType<typeof setInterval>
 >();
 
+/**
+ * End every live screen of one Bot: its cast, and each socket watching it.
+ *
+ * FOR STOP. `/computers/stop` closed the Bot's tabs and left its screens open, and each screen's loop
+ * asked for the Bot's page every second — which opened a tab, and started the browser if it had to.
+ * Measured 2026-09-26: stop answered `{"stopped":true}` with the live screen open, and six seconds
+ * later `/health` said the browser was running, on a fresh blank tab the idle sweep would never close
+ * because the same loop kept marking it used. A deleted Bot's open screen did the same for as long as
+ * anybody left it open. Closing the sockets says the screen ended; a screen that reconnects finds no
+ * page and shows none, because opening one is not the screen's to do (see `attach`).
+ */
+export async function endScreens(session: BotSession): Promise<void> {
+  const open = watching.get(session) ?? [];
+  for (const ws of open) {
+    clearInterval(follows.get(ws));
+    follows.delete(ws);
+  }
+  await stopViewer(session).catch(() => undefined);
+  for (const ws of open) {
+    try {
+      ws.close();
+    } catch {
+      // Already closing: its own `close` does the rest.
+    }
+  }
+}
+
 export function liveScreen({
   profiles,
   sessions,
@@ -222,8 +256,28 @@ export function liveScreen({
          * underneath us without a listener per page.
          */
         let casting: Page | undefined;
+        /*
+         * THE BOT'S PAGE IF IT HAS ONE — NEVER A PAGE MADE FOR THE SCREEN. This asked `profiles.page`,
+         * which opens a tab when the Bot has none, starts the browser when there is none, and marks
+         * the Bot as busy: once a second, for as long as a screen was open, so a stopped computer came
+         * straight back and an idle one never closed. A screen shows what the Bot has; when it has
+         * nothing, the screen waits, and picks the page up the moment the Bot opens one.
+         */
         const attach = async () => {
-          const target = await profiles.page(ws.data.botId);
+          const target = profiles.activePage(ws.data.botId);
+          if (!target) {
+            /*
+             * The tab it was showing is gone: its cast goes, the socket and this loop stay. Not
+             * `stopViewer`, which also stops the loop — and the loop is what finds the next page.
+             */
+            const showing = session.viewer;
+            if (showing?.socket === ws && showing.page.isClosed()) {
+              session.viewer = undefined;
+              casting = undefined;
+              await showing.cast.stop().catch(() => undefined);
+            }
+            return;
+          }
           if (
             !isNewest() ||
             (target === casting && session.viewer?.socket === ws)
@@ -290,7 +344,7 @@ export function liveScreen({
         ws.send(screenError(TAKE_CONTROL_FIRST));
         return;
       }
-      await inTurn(session, () => applyInput(ws, session, message));
+      await inTurn(session, () => applyInput(ws, session, message, profiles));
     },
 
     drain(ws) {
@@ -310,7 +364,13 @@ export function liveScreen({
     },
 
     async close(ws) {
-      const session = sessions.sessionFor(ws.data.botId);
+      /*
+       * The session if there still is one — never a new one. `/computers/reset` drops the Bot's
+       * session and then ends its screens (`endScreens`), and a close that made a session again would
+       * read the control file the reset has not deleted yet: a Bot starting over as though a person
+       * still held its wheel.
+       */
+      const session = sessions.existing(ws.data.botId);
       // Frames waiting on a socket that will never take them: let Chrome go on for whoever is next.
       for (const ack of draining.get(ws) ?? []) ack();
       draining.delete(ws);
@@ -321,6 +381,7 @@ export function liveScreen({
       clearInterval(follows.get(ws));
       follows.delete(ws);
       resumes.delete(ws);
+      if (!session) return;
       const rest = (watching.get(session) ?? []).filter((open) => open !== ws);
       watching.set(session, rest);
       const wasViewer = session.viewer?.socket === ws;

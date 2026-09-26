@@ -878,6 +878,15 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       return pagesOf(botId).at(-1);
     },
 
+    /**
+     * Count this Bot's tab as in use now, if it has one, without opening anything: a person driving
+     * it down the live screen, which reaches the tab without asking `page` for it.
+     */
+    markUsed(botId: string): void {
+      const existing = live.get(botId);
+      if (existing) existing.usedAt = now();
+    },
+
     /** Where the deployment's one browser profile is, for anything that has to look at it. */
     profileDirectory,
 
