@@ -439,14 +439,12 @@ describeDb("a routine's ending, written inside its own transaction", () => {
   });
 
   test("is written on a pool of one, with the turn's facts read beside it", async () => {
-    await database
-      .insert(agents)
-      .values({
-        id: botId,
-        name: botId,
-        type: "remote_ag_ui",
-        configuration: {},
-      });
+    await database.insert(agents).values({
+      id: botId,
+      name: botId,
+      type: "remote_ag_ui",
+      configuration: {},
+    });
     runId = await ledger.begin({
       agentId: botId,
       userId: "turns-one",
