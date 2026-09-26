@@ -2736,4 +2736,6 @@ export const ko: Record<string, string> = {
   "Reload page": "페이지 다시 불러오기",
   "The server cannot be reached right now. This part comes back once the connection does.":
     "지금 서버에 닿지 않아요. 연결이 돌아오면 이 부분도 돌아와요.",
+  // notebook forget
+  "Press again to forget": "한 번 더 누르면 잊어요",
 };

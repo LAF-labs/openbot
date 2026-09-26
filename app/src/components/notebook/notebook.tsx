@@ -6,7 +6,7 @@ import {
 } from "@shared/notebook";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
@@ -337,14 +337,11 @@ function GuidanceRow({
             >
               {t("Edit")}
             </Button>
-            <Button
+            <ForgetButton
               disabled={Boolean(busy)}
-              onClick={() => void onForget()}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Clear it")}
-            </Button>
+              label={t("Clear it")}
+              onConfirm={() => void onForget()}
+            />
           </div>
         )}
       </div>
@@ -534,14 +531,11 @@ function SlotRow({
               >
                 {t("Edit")}
               </Button>
-              <Button
+              <ForgetButton
                 disabled={Boolean(busy)}
-                onClick={() => void onForget(line)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("Clear it")}
-              </Button>
+                label={t("Clear it")}
+                onConfirm={() => void onForget(line)}
+              />
             </div>
           </div>
         ) : (
@@ -739,17 +733,61 @@ function MemoryRow({
             >
               {t("Edit")}
             </Button>
-            <Button
+            <ForgetButton
               disabled={Boolean(busy)}
-              onClick={() => void onForget()}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Forget")}
-            </Button>
+              label={t("Forget")}
+              onConfirm={() => void onForget()}
+            />
           </div>
         )}
       </div>
     </li>
+  );
+}
+
+/** How long the second press counts, after the first one arms it. */
+const FORGET_ARMED_MS = 4_000;
+
+/*
+ * FORGETTING IS FOR GOOD, SO IT TAKES TWO PRESSES. Since 0.5.5 a forgotten line also leaves the day's
+ * summary and cannot be written back word for word — there is no undo to offer. The 0.5.5 QA found
+ * one press did it at once. The first press arms the button for a few seconds and says so; the
+ * second forgets. No dialog: the confirmation stays where the finger already is (Q6, modal-less).
+ */
+export function ForgetButton({
+  disabled,
+  label,
+  onConfirm,
+}: {
+  disabled: boolean;
+  label: string;
+  onConfirm: () => void;
+}) {
+  const [isArmed, setIsArmed] = useState(false);
+
+  useEffect(() => {
+    if (!isArmed) return;
+    const timer = setTimeout(() => setIsArmed(false), FORGET_ARMED_MS);
+    return () => clearTimeout(timer);
+  }, [isArmed]);
+
+  function handleClick() {
+    if (!isArmed) {
+      setIsArmed(true);
+      return;
+    }
+    setIsArmed(false);
+    onConfirm();
+  }
+
+  return (
+    <Button
+      disabled={disabled}
+      onClick={handleClick}
+      size="sm"
+      variant={isArmed ? "destructive" : "ghost"}
+    >
+      {isArmed ? t("Press again to forget") : label}
+    </Button>
   );
 }
