@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { deflateRawSync, constants as zlib } from "node:zlib";
+import { crc32, deflateRawSync, constants as zlib } from "node:zlib";
 import type { MiddlewareHandler } from "hono";
 import * as XLSX from "xlsx";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
@@ -15,12 +15,14 @@ import {
   workspacePathFor,
 } from "../src/attachments/files";
 import { createAttachmentRoutes } from "../src/attachments/routes";
-import type {
-  AttachmentForModel,
-  AttachmentService,
+import {
+  type AttachmentForModel,
+  type AttachmentService,
+  createAttachmentService,
 } from "../src/attachments/service";
 import type { AppVariables } from "../src/auth/guards";
 import type { AgentChannel } from "../src/channels/types";
+import type { Database } from "../src/db/client";
 
 /**
  * Files the owner hands their Bot: what they are, what they may be called, what the model reads for
@@ -142,6 +144,129 @@ function workbook(rows: (string | number)[][], name = "매출"): Uint8Array {
   return new Uint8Array(
     XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer,
   );
+}
+
+const XLSX_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/** One part of a zip as written: its bytes on disk, how, and the size it CLAIMS to inflate to. */
+type ZipPart = {
+  name: string;
+  packed: Uint8Array;
+  method: 0 | 8;
+  size: number;
+  crc?: number;
+};
+
+/** A zip written by hand, so its headers can say whatever a test needs them to. */
+function zipOf(parts: ZipPart[]): Uint8Array {
+  const local: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const part of parts) {
+    const name = new TextEncoder().encode(part.name);
+    const head = new DataView(new ArrayBuffer(30));
+    head.setUint32(0, 0x04034b50, true);
+    head.setUint16(4, 20, true);
+    head.setUint16(8, part.method, true);
+    head.setUint32(14, part.crc ?? 0, true);
+    head.setUint32(18, part.packed.length, true);
+    head.setUint32(22, part.size, true);
+    head.setUint16(26, name.length, true);
+    local.push(new Uint8Array(head.buffer), name, part.packed);
+    const entry = new DataView(new ArrayBuffer(46));
+    entry.setUint32(0, 0x02014b50, true);
+    entry.setUint16(4, 20, true);
+    entry.setUint16(6, 20, true);
+    entry.setUint16(10, part.method, true);
+    entry.setUint32(16, part.crc ?? 0, true);
+    entry.setUint32(20, part.packed.length, true);
+    entry.setUint32(24, part.size, true);
+    entry.setUint16(28, name.length, true);
+    entry.setUint32(42, offset, true);
+    central.push(new Uint8Array(entry.buffer), name);
+    offset += 30 + name.length + part.packed.length;
+  }
+  const directory = Buffer.concat(central);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, parts.length, true);
+  end.setUint16(10, parts.length, true);
+  end.setUint32(12, directory.length, true);
+  end.setUint32(16, offset, true);
+  return Buffer.concat([...local, directory, new Uint8Array(end.buffer)]);
+}
+
+/** A part deflated honestly: it says what it is. */
+function deflatedPart(name: string, text: string): ZipPart {
+  const bytes = new TextEncoder().encode(text);
+  return {
+    name,
+    packed: deflateRawSync(bytes),
+    method: 8,
+    size: bytes.length,
+    crc: crc32(bytes),
+  };
+}
+
+const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+
+/** One worksheet's XML: its rows, and the range it declares, which nothing obliges to be true. */
+function sheetXml(rows: string, declared?: string): string {
+  return `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${declared ? `<dimension ref="${declared}"/>` : ""}<sheetData>${rows}</sheetData></worksheet>`;
+}
+
+/**
+ * The fewest parts Excel and SheetJS accept as a workbook, written by hand, one sheet per entry: XML
+ * is deflated honestly, a `ZipPart` goes in as it is.
+ */
+function xlsxOf(sheets: Array<string | Omit<ZipPart, "name">>): Uint8Array {
+  const ids = sheets.map((_, i) => i + 1);
+  const relationships =
+    "http://schemas.openxmlformats.org/package/2006/relationships";
+  const officeDocument =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  return zipOf([
+    deflatedPart(
+      "[Content_Types].xml",
+      `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${ids.map((i) => `<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`,
+    ),
+    deflatedPart(
+      "_rels/.rels",
+      `${XML_HEAD}<Relationships xmlns="${relationships}"><Relationship Id="rId1" Type="${officeDocument}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    ),
+    deflatedPart(
+      "xl/workbook.xml",
+      `${XML_HEAD}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${officeDocument}"><sheets>${ids.map((i) => `<sheet name="S${i}" sheetId="${i}" r:id="rId${i}"/>`).join("")}</sheets></workbook>`,
+    ),
+    deflatedPart(
+      "xl/_rels/workbook.xml.rels",
+      `${XML_HEAD}<Relationships xmlns="${relationships}">${ids.map((i) => `<Relationship Id="rId${i}" Type="${officeDocument}/worksheet" Target="worksheets/sheet${i}.xml"/>`).join("")}</Relationships>`,
+    ),
+    ...sheets.map((sheet, i) => {
+      const name = `xl/worksheets/sheet${i + 1}.xml`;
+      return typeof sheet === "string"
+        ? deflatedPart(name, sheet)
+        : { ...sheet, name };
+    }),
+  ]);
+}
+
+/** A sheet part of `mebibytes` MiB of the same byte, in about a thousandth of that on disk. */
+function bombSheet(mebibytes: number): { packed: Uint8Array; size: number } {
+  const chunk = new Uint8Array(64 * 1024).fill(0x20);
+  const copies = mebibytes * 16;
+  return { packed: deflateBomb(chunk, copies), size: chunk.length * copies };
+}
+
+/** The name of what `work` threw, or null when it returned. */
+function refusal(work: () => unknown): string | null {
+  try {
+    work();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.name : "unknown";
+  }
 }
 
 /** The first bytes of a PNG, which is all `file-type` reads. */
@@ -280,6 +405,79 @@ describe("what the model reads of a sheet or a PDF", () => {
     );
     expect(read.whole).toBe("합계\n30");
     expect(read.body).not.toContain("HYPERLINK");
+  });
+
+  test("a workbook written by hand reads, through the same rewrite every zip now takes", () => {
+    const read = readSheets(
+      xlsxOf([
+        sheetXml(
+          '<row r="1"><c r="A1" t="inlineStr"><is><t>메뉴</t></is></c><c r="B1"><v>3</v></c></row>',
+        ),
+      ]),
+      XLSX_TYPE,
+    );
+    expect(read.whole).toBe("메뉴,3");
+  });
+
+  test("a workbook that says it inflates to a gigabyte is refused before anything is inflated", async () => {
+    const bomb = bombSheet(1024);
+    // 1.4 MB on disk, and every header honest about the gigabyte.
+    const [one, oneMs] = await timed(() =>
+      refusal(() => readSheets(xlsxOf([{ ...bomb, method: 8 }]), XLSX_TYPE)),
+    );
+    expect(one).toBe("WorkbookRefused");
+    expect(oneMs).toBeLessThan(HOSTILE_MS);
+
+    // No single part is large; together they are.
+    const eight = bombSheet(8);
+    const [many, manyMs] = await timed(() =>
+      refusal(() =>
+        readSheets(
+          xlsxOf(
+            Array.from({ length: 5 }, () => ({ ...eight, method: 8 as const })),
+          ),
+          XLSX_TYPE,
+        ),
+      ),
+    );
+    expect(many).toBe("WorkbookRefused");
+    expect(manyMs).toBeLessThan(HOSTILE_MS);
+  });
+
+  test("a workbook that lies about its size costs no more than the size it told", async () => {
+    // Told 1,000 bytes, or none at all; the stream is a gigabyte either way. SheetJS believed the
+    // header and decoded the whole stream regardless: 22 s and 2.2 GB for the same file here.
+    const { packed } = bombSheet(1024);
+    for (const size of [1_000, 0]) {
+      const [refused, ms] = await timed(() =>
+        refusal(() =>
+          readSheets(xlsxOf([{ packed, method: 8, size }]), XLSX_TYPE),
+        ),
+      );
+      expect(refused).toBe("WorkbookRefused");
+      expect(ms).toBeLessThan(HOSTILE_MS);
+    }
+  });
+
+  test("a bomb is refused as a file that could not be read, through the door the owner uses", async () => {
+    const service = createAttachmentService({
+      // Never reached: a refused file is not kept, and a stub that was reached would throw.
+      database: {} as Database,
+      imagesAccepted: false,
+    });
+    const bytes = xlsxOf([{ ...bombSheet(1024), method: 8 }]);
+    expect(bytes.byteLength).toBeLessThan(ATTACHMENT_MAX_BYTES);
+    const [received, ms] = await timed(() =>
+      service.receive({
+        userId: "user-1",
+        channelId: "channel-1",
+        botId: "bot-1",
+        claimedName: "거래처 매출.xlsx",
+        bytes,
+      }),
+    );
+    expect(received).toEqual({ ok: false, code: "laf:attachment_unreadable" });
+    expect(ms).toBeLessThan(HOSTILE_MS);
   });
 
   test("a PDF's text, by page; a PDF with none says it has none", async () => {
