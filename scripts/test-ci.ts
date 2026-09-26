@@ -597,16 +597,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-09-27: six to `root` — three for this week's Friday graded on a weekend's calendar
  * (evals), three for the upgrade e2e's chat turn through the front door (a turn that ends done with
  * its phrase, one that ends in error, a send the door refuses).
+ * RAISED 2026-09-27 with 지원사업 비서: four to `server` (a tag nothing carries is an empty answer, not
+ * a refusal; a field list; unknown codes dropped; the widening described), seven to `app` (the chip
+ * offered only where the Bot holds the grant, its place in the row, its press reported, the day card
+ * drawing it) and thirteen to `root` (the eval judge reading only what 기업마당 returned, and the
+ * runner's awaited stubs, skills and round limit). Each floor rises by exactly what was added.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3024, roots: ["server"] },
-  { name: "app", floor: 1426, roots: ["app"] },
+  { name: "server", floor: 3028, roots: ["server"] },
+  { name: "app", floor: 1433, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 486, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 499, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
