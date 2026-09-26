@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
 import { BotHeader, PresencePill } from "@/components/channels/bot-header";
 import { ChannelChat } from "@/components/channels/channel-chat";
+import { ServerChannelChat } from "@/components/channels/server-channel-chat";
 import {
   offerDraft,
   withdrawDraft,
@@ -31,6 +32,7 @@ import {
   useScreenPanel,
   useScreenPanelWidth,
 } from "@/lib/computer/screen-panel";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 
@@ -301,6 +303,15 @@ function ChannelBody({
   /** The server answered that this conversation does not exist, rather than failing to answer. */
   isGone: boolean;
 }) {
+  /*
+   * WHO DRIVES THE TURN. With `SERVER_TURNS` on the server runs it and this window watches
+   * (`ServerChannelChat`); off, the window drives it through CopilotKit as it always has.
+   */
+  const signedIn = useQuery(currentUserQueryOptions()).data;
+  const serverTurns =
+    typeof signedIn === "object" &&
+    signedIn !== null &&
+    signedIn.deployment.serverTurns === true;
   if (isPending) {
     return (
       <p className="p-8 text-sm text-muted-foreground">
@@ -347,7 +358,13 @@ function ChannelBody({
     );
   }
 
-  return (
+  return serverTurns ? (
+    <ServerChannelChat
+      channel={channel}
+      key={channel.id}
+      runtimeAgentId={defaultAgentId}
+    />
+  ) : (
     <ChannelChat
       channel={channel}
       key={channel.id}

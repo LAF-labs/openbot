@@ -18,6 +18,7 @@ import {
   galleryManifest,
 } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
+import { useServerRespond } from "@/lib/turns/answers";
 
 /**
  * Register compiled gallery components once per name, scoped to the active Bot with `available`.
@@ -171,7 +172,7 @@ function GrantedDecision({
   const Render = useMemo(
     () =>
       function DecisionRender(props: Record<string, unknown>) {
-        if (isHeld) return <Component {...props} />;
+        if (isHeld) return <DecisionCard Component={Component} props={props} />;
         return (
           <RefusedDecision
             respond={
@@ -193,6 +194,28 @@ function GrantedDecision({
   });
 
   return null;
+}
+
+/**
+ * A decision card, answerable wherever its call is waiting: in this window while CopilotKit carries
+ * the call out here, or on the server while a turn the server owns waits for it there
+ * (`lib/turns/answers.tsx`) — which hands the card the `respond` CopilotKit never will.
+ */
+function DecisionCard({
+  Component,
+  props,
+}: {
+  Component: GalleryComponent["Component"];
+  props: Record<string, unknown>;
+}) {
+  const serverRespond = useServerRespond(
+    typeof props.toolCallId === "string" ? props.toolCallId : undefined,
+  );
+  const shown =
+    serverRespond && props.status !== "complete"
+      ? { ...props, status: "executing", respond: serverRespond }
+      : props;
+  return <Component {...shown} />;
 }
 
 /**

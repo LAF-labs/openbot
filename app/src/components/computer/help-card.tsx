@@ -104,7 +104,7 @@ export function HelpCard({
 
   const handleSkip = async () => {
     // The skip first: the release below is read by the waiting call as "done" unless it knows.
-    skipHelp(toolCallId);
+    await skipHelp(toolCallId, botId);
     await handleDone();
   };
 

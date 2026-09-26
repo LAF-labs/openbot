@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ChatTranscript,
+  type OlderPages,
   type RetriedMessage,
 } from "@/components/channels/chat-transcript";
 import {
@@ -46,6 +47,7 @@ export function ConversationView({
   onStop,
   placeholder,
   attach,
+  older,
 }: {
   /** Files as well as words; see `ComposerProps.attach`. Absent draws no paperclip. */
   attach?: { channelId: string; images: boolean } | undefined;
@@ -126,6 +128,8 @@ export function ConversationView({
   onSubmit: (draft: ComposerDraft) => void | Promise<void>;
   /** Stop the Bot mid-answer; forwarded to turn the send button into a stop button. */
   onStop?: () => void;
+  /** The conversation above what is held, a page at a time. See `ChatTranscriptProps.older`. */
+  older?: OlderPages;
 }) {
   /*
    * THE QUEUE LIVES HERE BECAUSE BOTH HALVES OF IT DO.
@@ -293,6 +297,7 @@ export function ConversationView({
             {...(noticeCode ? { noticeCode } : {})}
             {...(failures ? { failures } : {})}
             {...(onRetry ? { onRetry } : {})}
+            {...(older ? { older } : {})}
           />
         </SectionBoundary>
       </div>

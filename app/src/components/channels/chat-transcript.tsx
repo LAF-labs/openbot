@@ -152,6 +152,18 @@ type ChatTranscriptProps = {
    * somebody has asked past, and never under a routine's heading, which nobody asked.
    */
   onRetry?: (message: RetriedMessage) => void;
+  /**
+   * Messages the server holds above the ones handed in, a page at a time. The drawn window reaches
+   * the top of what it was given first; then the sentinel asks for the page above (G2).
+   */
+  older?: OlderPages;
+};
+
+/** More of the conversation, above what the window holds. */
+export type OlderPages = {
+  has: boolean;
+  loading: boolean;
+  onLoad: () => void;
 };
 
 /** What a press of 다시 시도 hands back: the failed message as it is in the thread. */
@@ -1186,6 +1198,7 @@ export function ChatTranscript({
   stoppedCode,
   noticeCode,
   failures = EMPTY_FAILURES,
+  older,
 }: ChatTranscriptProps) {
   /*
    * MEMOISED ON `messages`, WHICH IS SAFE ONLY BECAUSE NOTHING HANDS THIS THE AGENT'S OWN ARRAY.
@@ -1454,7 +1467,9 @@ export function ChatTranscript({
     jumpId,
   );
   const firstShownId = items[start]?.id ?? null;
-  const hasEarlier = start > 0;
+  /** Past the top of what this window holds, the server has more: the page above is asked for. */
+  const hasOlderPages = start === 0 && older?.has === true;
+  const hasEarlier = start > 0 || hasOlderPages;
   /*
    * Pinned to the row the window starts at: once the conversation has arrived, and again whenever
    * the unread line or a jump reached further back — so the window only ever grows, and a jump that
@@ -1469,7 +1484,12 @@ export function ChatTranscript({
   const earlierId =
     items[Math.max(0, start - TRANSCRIPT_WINDOW_ROWS)]?.id ?? null;
   const handleShowEarlier = () => {
-    if (earlierId !== null) setPinnedId(earlierId);
+    if (start > 0) {
+      if (earlierId !== null) setPinnedId(earlierId);
+      return;
+    }
+    // Drawn above the window once it arrives: the pin keeps the rows on screen where they were.
+    if (older?.has && !older.loading) older.onLoad();
   };
   /*
    * Scrolled near the top, the next page is drawn above. The scroller keeps what was on screen where
@@ -1496,7 +1516,8 @@ export function ChatTranscript({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasEarlier, firstShownId]);
+    // `start` too: a page that arrived above moves the window's start without moving its first row.
+  }, [hasEarlier, firstShownId, start]);
 
   const view = (
     <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>

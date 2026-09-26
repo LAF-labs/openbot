@@ -7,13 +7,20 @@
  * as "done", and tell the model a login it never got had happened. So the skip is also written here,
  * by the call's id, and the wait reads it first (`computer-tools.tsx`).
  *
- * In this tab only, which is where the waiting call is. A reload ends the call anyway: its card then
- * shows how it ended and offers nothing to press.
+ * In this tab, where the waiting call is when the window drives the turn — and on the server too,
+ * where it is when the server owns it (`server/src/turns/people.ts`): the skip is sent there before
+ * the release that follows it, so the call reads the skip first there as well.
  */
+import { skipOnServer } from "@/lib/turns/client";
+
 const skipped = new Set<string>();
 
-export function skipHelp(toolCallId: string): void {
+export async function skipHelp(
+  toolCallId: string,
+  botId?: string,
+): Promise<void> {
   skipped.add(toolCallId);
+  if (botId) await skipOnServer(botId, toolCallId);
 }
 
 /** Read once by the waiting call, which forgets it: a skip answers one request. */

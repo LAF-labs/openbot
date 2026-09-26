@@ -62,6 +62,12 @@ export type Deployment = {
   attachments?: boolean;
   images?: boolean;
   /**
+   * Whether a chat turn runs on the server and every window only watches it (`SERVER_TURNS`).
+   * Absent reads as NO: a server that says nothing about it is one from before it, and its window
+   * drives the turn itself.
+   */
+  serverTurns?: boolean;
+  /**
    * A free trial, as the server described it — absent on every deployment that is not one, and then
    * no banner exists to draw. See `components/layout/trial-banner.tsx`.
    */
@@ -246,6 +252,7 @@ async function currentUser(): Promise<CurrentUserResult> {
       autoReview: body.deployment?.autoReview !== false,
       attachments: body.deployment?.attachments === true,
       images: body.deployment?.images === true,
+      serverTurns: body.deployment?.serverTurns === true,
       ...(trial ? { trial } : {}),
     },
   };
