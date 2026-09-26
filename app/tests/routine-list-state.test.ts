@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { ko } from "../src/lib/i18n-ko";
 import type { Reading } from "../src/lib/reading";
-import { routineListView, runOutcome } from "../src/lib/routines/list-state";
+import {
+  AWAITING_APPROVAL,
+  routineListView,
+  runOutcome,
+} from "../src/lib/routines/list-state";
 import type { Routine, RoutineRun } from "../src/lib/routines/queries";
 import { RUN_STOPPED } from "../src/lib/work/stop-all";
 
@@ -123,6 +127,30 @@ describe("a run's row", () => {
       tone: "done",
       text: "오늘은 9월 18일이에요.",
     });
+  });
+
+  test("a run that stopped for the person's yes says so in the surface's words", () => {
+    // The Bot's own words stand; the label is ours, from the receipt's fact.
+    expect(
+      runOutcome(
+        run({
+          ok: true,
+          answer: "결제 버튼 앞에서 사장님 확인을 기다리고 있어요.",
+          awaiting: AWAITING_APPROVAL,
+        }),
+      ),
+    ).toEqual({
+      label: "Needs your yes",
+      tone: "waiting",
+      text: "결제 버튼 앞에서 사장님 확인을 기다리고 있어요.",
+    });
+    // A Bot that said nothing still leaves a true sentence, never a blank row.
+    const blank = runOutcome(
+      run({ ok: true, answer: "", awaiting: AWAITING_APPROVAL }),
+    );
+    expect(blank.text).toBe("It stopped at a step that needs your yes.");
+    expect(ko[blank.text]).toBeTruthy();
+    expect(ko[blank.label]).toBeTruthy();
   });
 
   test("a run somebody stopped is a stop, not a failure", () => {

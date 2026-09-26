@@ -420,6 +420,14 @@ export const lafRoutineRuns = pgTable("laf_routine_runs", {
   answer: text("answer"),
   error: text("error"),
   /**
+   * The run stopped for a question only a person can answer: `laf:awaiting_approval`, or null.
+   *
+   * A fact beside the answer and never inside it. It was a sentence appended to `answer` — the one
+   * written for the model — which the person then read and the next run was fed back as its own
+   * report (migration 0057). The Routines page says it in its own words.
+   */
+  awaiting: text("awaiting"),
+  /**
    * The turns the run took: how many, how long each, which tools each asked for and whether they
    * went through. An operator reading "Failed: the Bot stopped before it finished" wants to know
    * how far it got; the answer alone cannot say. Null on rows written before this existed.

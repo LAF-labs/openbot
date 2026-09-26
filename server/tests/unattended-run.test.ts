@@ -157,9 +157,10 @@ describe("an unattended run", () => {
     expect(agent.forwardedProps).toEqual({ mode: "routine" });
   });
 
-  test("reports what it is waiting for when a tool needs a person", async () => {
-    // An ask-rule cannot be answered at six in the morning. The run must not hang on it, and the
-    // answer must say what it was — that is the whole value of the run to the person reading it.
+  test("reports that it stopped for a person, as a fact and never as the model's words", async () => {
+    // An ask-rule cannot be answered at six in the morning. The run must not hang on it, and it must
+    // say it stopped for one — as a code. It was the envelope's `reason`, the sentence written for
+    // the model, which the routine then showed the person and fed to its next run.
     const agent = fakeAgent([
       call("t1", "computer_navigate", { url: "https://bank.example" }),
       say("I could not open the bank: a person has to allow that first."),
@@ -174,7 +175,11 @@ describe("an unattended run", () => {
       timeoutMs: 5_000,
       mode: "routine",
     });
-    expect(result.awaiting).toBe("Open bank.example?");
+    expect(result.awaiting).toBe("laf:awaiting_approval");
+    // The Bot's own words are the answer; nothing of the envelope is.
+    expect(result.answer).toBe(
+      "I could not open the bank: a person has to allow that first.",
+    );
     expect(result.steps[0]?.calls).toEqual([
       { name: "computer_navigate", ok: false },
     ]);

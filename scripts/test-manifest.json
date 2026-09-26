@@ -371,6 +371,7 @@
   "server/tests/roles.test.ts",
   "server/tests/roster-preview-per-person.integration.test.ts",
   "server/tests/route-error-boundary.integration.test.ts",
+  "server/tests/routine-awaiting.integration.test.ts",
   "server/tests/routine-edit.integration.test.ts",
   "server/tests/routine-notepad-kill.integration.test.ts",
   "server/tests/routine-notepad.integration.test.ts",

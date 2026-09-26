@@ -14,7 +14,11 @@ import {
 } from "../notifications/failure-groups";
 import type { RunLedger } from "../runner/run-ledger";
 import type { Executor } from "../runner/thread-store";
-import { RUN_STOPPED, type UnattendedRunResult } from "../runner/unattended";
+import {
+  type AwaitingCode,
+  RUN_STOPPED,
+  type UnattendedRunResult,
+} from "../runner/unattended";
 import type {
   Delivered,
   DeliverRoutineAnswer,
@@ -93,6 +97,8 @@ export type RunToSettle = {
    * while the run waited its turn (`run.ts`). A stop, with the reason the trail keeps.
    */
   withdrawn?: Withdrawn;
+  /** The run stopped for a question only a person can answer. A fact beside the answer. */
+  awaiting?: AwaitingCode | null;
 };
 
 /** Why a run stopped without a person pressing stop: its routine went, or was switched off. */
@@ -275,6 +281,7 @@ async function writeRecord(
     ok: run.ok,
     answer: run.ok ? run.answer : null,
     error: run.ok ? null : run.failure,
+    awaiting: run.ok ? (run.awaiting ?? null) : null,
     steps: run.steps,
   });
   return { delivered, failedIn, notepad, group, gone: false };

@@ -52,11 +52,17 @@ export function routineListView(
   };
 }
 
+/**
+ * A run that stopped for a question only the person can answer, as its receipt records it
+ * (`server/src/runner/unattended.ts`, `AWAITING_APPROVAL`). A code, so the words are ours.
+ */
+export const AWAITING_APPROVAL = "laf:awaiting_approval";
+
 /** How one run ended, as its row in the history says it. */
 export type RunOutcome = {
   label: string;
   /** Only a failure is drawn in the destructive colour; a stop somebody asked for is not one. */
-  tone: "done" | "stopped" | "failed";
+  tone: "done" | "waiting" | "stopped" | "failed";
   /** The answer, or what went wrong — in this surface's words, never the server's. */
   text: string;
 };
@@ -71,6 +77,21 @@ export type RunOutcome = {
  * A stop is its own fact (`RUN_STOPPED`), and not a failure.
  */
 export function runOutcome(run: RoutineRun): RunOutcome {
+  /*
+   * STOPPED FOR THE PERSON'S YES. The run worked — finding out was its job — and its answer says
+   * so in the Bot's own words. The receipt used to carry that in the answer as a line the server
+   * appended, and the line was the instruction written for the model; now it is a fact, and this is
+   * the sentence for it. The question itself reaches the person through its own notification.
+   */
+  if (run.ok && run.awaiting === AWAITING_APPROVAL) {
+    return {
+      label: t("Needs your yes"),
+      tone: "waiting",
+      text: run.answer?.trim()
+        ? run.answer
+        : t("It stopped at a step that needs your yes."),
+    };
+  }
   if (run.ok) {
     return { label: t("Ran"), tone: "done", text: run.answer ?? "" };
   }

@@ -13,6 +13,8 @@ import type { Settlement } from "./settlement";
  */
 export type RunReport = {
   row: typeof lafRoutines.$inferSelect;
+  /** The run stopped for a question only a person can answer. The code, never its words. */
+  awaiting?: string | null;
   /** Who the run was made as. Null when that person's account is gone. */
   author: string | null;
   ledgerRunId: string | null | undefined;
@@ -23,7 +25,7 @@ export type RunReport = {
 
 export async function reportRun(
   auditStore: AuditStore | undefined,
-  { row, author, ledgerRunId, silent, settled }: RunReport,
+  { row, author, ledgerRunId, silent, settled, awaiting }: RunReport,
 ): Promise<void> {
   const { ok, failure } = settled;
   try {
@@ -67,6 +69,8 @@ export async function reportRun(
             : { failure: classifyTurnFailure(failure) }),
         // A stop nobody pressed: its routine was deleted or switched off while the run waited.
         ...(settled.withdrawn ? { withdrawn: settled.withdrawn } : {}),
+        // It stopped for a person's answer: the fact the Routines page says in its own words.
+        ...(ok && awaiting ? { awaiting } : {}),
         ...(settled.failedIn ? { channelId: settled.failedIn.channelId } : {}),
         /*
          * What became of the notepad the run changed, as a word and never its contents: whether the

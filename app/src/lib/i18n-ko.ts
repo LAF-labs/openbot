@@ -803,6 +803,10 @@ export const ko: Record<string, string> = {
   "Every {minutes} minutes": "{minutes}분마다",
   Ran: "성공",
   Failed: "실패",
+  // 사장님 허락이 필요한 단계에서 멈춘 루틴 실행. `lib/routines/list-state.ts`의 runOutcome.
+  "Needs your yes": "허락 필요",
+  "It stopped at a step that needs your yes.":
+    "사장님 허락이 필요한 단계에서 멈췄어요.",
   "This routine has not run yet.": "아직 실행된 적이 없어요.",
   // What the routines API refuses with. See ROUTINE_REFUSALS in lib/routines/queries.ts.
   "This account already holds as many routines as it can. Delete one to make room.":

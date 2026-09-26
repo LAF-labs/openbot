@@ -13,6 +13,7 @@ import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import {
+  type AwaitingCode,
   RUN_STOPPED,
   runUnattended,
   UnattendedRunError,
@@ -126,8 +127,11 @@ type Attempt = Pick<
   RunToSettle,
   "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped" | "withdrawn"
 > & {
-  /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
-  awaiting: boolean;
+  /**
+   * The run stopped for a person. Such a run is never silent, whatever its first line says. A code,
+   * written beside the answer (`laf_routine_runs.awaiting`, the trail) and never into it.
+   */
+  awaiting: AwaitingCode | null;
 };
 
 /** What runs a routine that has been claimed: the clock's, Run now's and the webhook's. */
@@ -269,7 +273,7 @@ async function executeNow(
    * a person is never silent — the marker would swallow the one line the person has to read.
    */
   const silent =
-    attempt.ok && !attempt.awaiting && isSilentAnswer(attempt.answer);
+    attempt.ok && attempt.awaiting === null && isSilentAnswer(attempt.answer);
 
   const settled = await settleRun(options, {
     row,
@@ -285,6 +289,7 @@ async function executeNow(
     notepad: attempt.notepad,
     stopped: attempt.stopped,
     ...(attempt.withdrawn ? { withdrawn: attempt.withdrawn } : {}),
+    awaiting: attempt.awaiting,
   });
 
   // Committed, so the roster rows may move on every open tab. Never from inside the transaction.
@@ -297,6 +302,7 @@ async function executeNow(
     ledgerRunId,
     silent,
     settled,
+    awaiting: attempt.awaiting,
   });
 }
 
@@ -398,7 +404,7 @@ async function askTheBot(
     answer: "",
     failure: RUN_STOPPED,
     steps,
-    awaiting: false,
+    awaiting: null,
     // Kept so the trail can say its writes were discarded, exactly as a failed run's are.
     notepad,
     stopped: true,
@@ -458,19 +464,18 @@ async function askTheBot(
       });
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
-       * which was to find out — but the person has to be told, and a routine's answer is the one
-       * place they will read it.
+       * which was to find out, and its answer says so in its own words. That it stopped is carried
+       * beside the answer as a fact, for the Routines page to say in its own; the question itself
+       * reaches the person through its own notification. Nothing is appended to the answer: the
+       * line that was appended here was the model's instruction, read by the person and then fed
+       * back to the next run as what it had reported (review 2026-09-26).
        */
-      const answer = run.awaiting
-        ? `${run.answer}\n\n⏸ ${run.awaiting}`.trim()
-        : run.answer;
-      const awaiting = Boolean(run.awaiting);
       return {
         ok: true,
-        answer,
+        answer: run.answer,
         failure: "",
         steps: run.steps,
-        awaiting,
+        awaiting: run.awaiting,
         notepad,
         stopped: false,
       };
@@ -491,7 +496,7 @@ async function askTheBot(
       answer,
       failure: "",
       steps: null,
-      awaiting: false,
+      awaiting: null,
       notepad: null,
       stopped: false,
     };
@@ -505,7 +510,7 @@ async function askTheBot(
       failure: error instanceof Error ? error.message : String(error),
       // A failed loop still took its turns; they are the record of how far it got.
       steps: error instanceof UnattendedRunError ? error.steps : null,
-      awaiting: false,
+      awaiting: null,
       // Kept so the trail can say a failed run's writes were discarded — never so they are written.
       notepad,
       stopped: false,

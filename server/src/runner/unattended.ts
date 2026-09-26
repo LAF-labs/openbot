@@ -140,9 +140,21 @@ export type UnattendedRunResult = {
   answer: string;
   /** The turns, in order. The shape of the run: how many, how long, what each asked for. */
   steps: UnattendedStep[];
-  /** The run stopped because something needs a person, and this is what. */
-  awaiting: string | null;
+  /**
+   * The run met a question only a person can answer: the fact, and never the words.
+   *
+   * It was the words, taken from the refusal envelope's `reason` — which is the sentence written FOR
+   * THE MODEL ("…말하고 멈춰라. 다른 길로 돌아가지 마라.") — and the routine appended it to the
+   * answer the person read, and the next run read it back as what it had reported (review
+   * 2026-09-26). The question itself reaches the person through the approval registry and its
+   * notification; what the run carries is only that it stopped for one.
+   */
+  awaiting: AwaitingCode | null;
 };
+
+/** Why a run stopped for a person. One kind today: a boundary asked, and nobody could answer. */
+export const AWAITING_APPROVAL = "laf:awaiting_approval";
+export type AwaitingCode = typeof AWAITING_APPROVAL;
 
 /** Exported for the one reader that counts runs which met it (`insights/read.ts`, `limits`). */
 export const DEFAULT_MAX_STEPS = 12;
@@ -275,7 +287,7 @@ export async function runUnattended(
   const deadline = Date.now() + options.timeoutMs;
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
   const steps: UnattendedStep[] = [];
-  let awaiting: string | null = null;
+  let awaiting: AwaitingCode | null = null;
   /** How many of the last step's calls the Bot service answered itself. See `turn`. */
   let settledAhead = 0;
 
@@ -495,9 +507,7 @@ export async function runUnattended(
         );
       }
       record(index, outcome.ok);
-      if (outcome.awaitingApproval === true && awaiting === null) {
-        awaiting = String(outcome.question ?? outcome.reason ?? "");
-      }
+      if (outcome.awaitingApproval === true) awaiting = AWAITING_APPROVAL;
       target.addMessage({
         id: randomUUID(),
         role: "tool",

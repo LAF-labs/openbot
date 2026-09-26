@@ -42,6 +42,11 @@ export type RoutineRun = {
   ok: boolean | null;
   answer: string | null;
   error: string | null;
+  /**
+   * The run stopped for a question only the person can answer: `laf:awaiting_approval`, or null.
+   * A fact beside the answer; the words are `runOutcome`'s. Absent from an older server.
+   */
+  awaiting?: string | null;
   /** The turns the run took; null on runs recorded before the server kept them. */
   steps: Array<{
     ms: number;
