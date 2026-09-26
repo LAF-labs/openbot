@@ -109,8 +109,17 @@ export function taskOf(
   }
   text = text.replace(/[\s.!?~。…]+$/u, "");
   text = text.replace(REQUEST_ENDING, "").trim();
+  if (FOLLOW_UP_ONLY.test(text)) return null;
   return text || null;
 }
+
+/**
+ * A request that only points back at the one before it — "다시", "한 번 더", "그거 계속" — says
+ * nothing about the task, and the card read "네이버 · 다시" (UX review 0.5.4, item 11). The site
+ * alone is the truer title.
+ */
+const FOLLOW_UP_ONLY =
+  /^(?:(?:그럼|그러면|아까|방금|그|그거|그것|이거|이것)\s*)?(?:다시|한\s?번\s?더|또|계속|이어서|마저|재시도)(?:\s*(?:해|해봐|해볼래|하자|시도))?$/;
 
 /** A request that starts with the address it goes to, and the verb that opens it. */
 const LEADING_ADDRESS =

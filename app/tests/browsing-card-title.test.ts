@@ -60,6 +60,25 @@ describe("what was asked, as half a title", () => {
     expect(taskOf("우리 동네 날씨", null)).toBe("우리 동네 날씨");
   });
 
+  test("a request that only points back at the last one names no task", () => {
+    for (const asked of [
+      "다시",
+      "다시 해줘",
+      "한 번 더 해 줘",
+      "그거 계속",
+      "또",
+    ]) {
+      expect(taskOf(asked, "네이버")).toBeNull();
+    }
+    // A real task that happens to start with 다시 keeps its words.
+    expect(taskOf("다시 원두 가격 비교해 줘", null)).toBe(
+      "다시 원두 가격 비교",
+    );
+    expect(taskTitle(["search.naver.com"], "다시 해줘")).toBe(
+      siteNameOf("search.naver.com"),
+    );
+  });
+
   test("without the '…에서' the site half already says", () => {
     expect(
       taskOf("네이버 쇼핑에서 원두 1kg 가격 비교해 줘", "네이버 쇼핑"),
