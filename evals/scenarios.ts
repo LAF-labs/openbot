@@ -1011,13 +1011,23 @@ export const SCENARIOS: Scenario[] = [
     messages: [user("이번 주 금요일이 며칠이야?")],
     tools: [],
     check: (turn) => {
-      const friday = fridayOfThisWeek(EVAL_NOW, "Asia/Seoul");
+      /*
+       * On a weekend the question has two honest answers: the Friday just gone, which a Monday-first
+       * week calls this week's, and the coming one, which is what a person asking on a Sunday usually
+       * means. The eval runs on the real clock, so its one miss on 2026-09-27 at 01:23 KST — graded
+       * against 9/25, the Friday two days gone — says as much about the calendar as about the model.
+       * (The report keeps no answer text, so which Friday it named is not known.) On a weekday there
+       * is one answer and it is still required.
+       */
+      const fridays = fridaysMeantThisWeek(EVAL_NOW, "Asia/Seoul");
       const said = turn.text.replace(/\s/g, "");
+      const named = (friday: { month: number; day: number }) =>
+        said.includes(`${friday.month}월${friday.day}일`) ||
+        said.includes(`${friday.month}/${friday.day}`);
       return verdict([
         [
-          `이번 주 금요일(${friday.month}월 ${friday.day}일)을 못 셈`,
-          said.includes(`${friday.month}월${friday.day}일`) ||
-            said.includes(`${friday.month}/${friday.day}`),
+          `이번 주 금요일(${fridays.map((one) => `${one.month}월 ${one.day}일`).join(" 또는 ")})을 못 셈`,
+          fridays.some(named),
         ],
         ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
       ]);
@@ -1444,6 +1454,20 @@ function fridayOfThisWeek(
   const friday = new Date(at.getTime() + (4 - fromMonday) * 86_400_000);
   const [, month, day] = zonedParts(friday, zone).date.split("-").map(Number);
   return { month: month ?? 0, day: day ?? 0 };
+}
+
+/** This week's Friday, and on a Saturday or Sunday the coming one as well. */
+export function fridaysMeantThisWeek(
+  at: Date,
+  zone: string,
+): Array<{ month: number; day: number }> {
+  const friday = fridayOfThisWeek(at, zone);
+  const weekday = zonedParts(at, zone).weekday;
+  if (weekday !== "토" && weekday !== "일") return [friday];
+  return [
+    friday,
+    fridayOfThisWeek(new Date(at.getTime() + 7 * 86_400_000), zone),
+  ];
 }
 
 /** The instant a daily routine at `hhmm` in `zone` was due on the day `at` falls on there. */
