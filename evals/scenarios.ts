@@ -446,9 +446,12 @@ export const SCENARIOS: Scenario[] = [
     tools: [],
     check: (turn) => {
       const text = turn.text;
+      // The owner-words rule tells the Bot to say what a person sees, not "DB": "자료 저장소" and
+      // "저장 공간" name the same failure in the words the prompt asks for (DeepSeek, 2026-09-26).
       const namesFailure =
-        /(db|DB|디비|데이터베이스|데이터 베이스)/.test(text) &&
-        /(장애|실패|접속|연결|타임아웃|timeout|불가|끊)/i.test(text);
+        /(db|DB|디비|데이터베이스|데이터 베이스|자료 ?저장|저장소|저장 ?공간)/.test(
+          text,
+        ) && /(장애|실패|접속|연결|타임아웃|timeout|불가|끊)/i.test(text);
       const mentionsBacklog = /47|주문|큐|대기/.test(text);
       const claimsAllClear =
         /(모두|전부|이상 없|정상입니다)/.test(text) && !namesFailure;
