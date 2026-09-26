@@ -436,6 +436,77 @@ describe("search_support_programs", () => {
     });
   });
 
+  test("a tag nothing carries is none, not the portal refusing", async () => {
+    // Exactly what the portal answered for the tag 한식 on 2026-09-27.
+    const { transport } = transportAnswering(() =>
+      json({
+        response: {
+          header: { resultCode: "03", resultMsg: "NODATA_ERROR" },
+          body: { items: {}, numOfRows: 0, pageNo: 1, totalCount: 0 },
+        },
+      }),
+    );
+
+    const result = await transport.callTool(
+      connection,
+      "search_support_programs",
+      { hashtags: "한식" },
+    );
+
+    expect(result.isError).toBe(false);
+    const facts = JSON.parse(result.text) as {
+      totalCount: number;
+      rows: unknown[];
+    };
+    expect(facts.totalCount).toBe(0);
+    expect(facts.rows).toEqual([]);
+  });
+
+  test("any other code is still the portal refusing, with its words kept", async () => {
+    const { transport } = transportAnswering(() =>
+      json({
+        response: {
+          header: { resultCode: "10", resultMsg: "INVALID_REQUEST_PARAMETER" },
+        },
+      }),
+    );
+    const refused = await refusalOf(() =>
+      transport.callTool(connection, "search_support_programs", {}),
+    );
+    expect(refused.code).toBe("laf:public_data_refused");
+    expect(refused.message).toContain("10 INVALID_REQUEST_PARAMETER");
+  });
+
+  test("the tag's description says a comma widens rather than narrows", () => {
+    const tool = PUBLIC_DATA_TOOLS.find(
+      (entry) => entry.name === "search_support_programs",
+    );
+    if (!tool) throw new Error("search_support_programs is not declared");
+    const { properties } = tool.inputSchema as {
+      properties: Record<string, { description: string }>;
+    };
+    // The words a Bot reads before it calls: "서울,소상공인" once read as both, and it is either.
+    expect(properties.hashtags?.description).toContain("좁혀지지 않고");
+    expect(properties.field?.description).toContain("둘 다 맞는 것만");
+  });
+
+  test("several fields travel as one filter; a code the portal does not know is dropped", async () => {
+    const { transport, asked } = transportAnswering(() => programsAnswer([]));
+
+    await transport.callTool(connection, "search_support_programs", {
+      hashtags: "강원",
+      field: "05, 07,08,05",
+    });
+    await transport.callTool(connection, "search_support_programs", {
+      field: "금융",
+    });
+
+    const [several, none] = asked.map((call) => new URL(call.url));
+    // One call, not two: the boundary counts calls to one tool, and asks the owner at the fifth.
+    expect(several?.searchParams.get("searchLclasId")).toBe("05,07");
+    expect(none?.searchParams.has("searchLclasId")).toBe(false);
+  });
+
   test("a tool that does not exist is refused by name", async () => {
     const { transport } = transportAnswering(() => programsAnswer([]));
     expect(

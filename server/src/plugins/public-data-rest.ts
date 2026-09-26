@@ -69,6 +69,8 @@ export const MAX_ROWS = 10;
 export const RAW_RESPONSE_CAP_CHARS = 1_000_000;
 /** A 사업개요 is HTML paragraphs of the whole announcement. This much says what it is about. */
 const SUMMARY_CHARS = 160;
+/** data.go.kr's standard code for a query nothing matched. An answer, not a refusal. */
+const NO_DATA = "03";
 
 /*
  * The descriptions are Korean and short because they are prompt, in every turn's context for the
@@ -110,22 +112,33 @@ export const PUBLIC_DATA_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
     },
     annotations: { readOnlyHint: true },
   },
+  /*
+   * THE HASHTAGS ARE "OR", AND A PART OF A TAG IS ENOUGH — measured 2026-09-27 with the fleet's key,
+   * and the old description ("쉼표로 여러 개") read as narrowing. 강원 alone was 542 notices, 소상공인
+   * alone 258, and "강원,소상공인" 734: every 소상공인 notice in the country joined the 강원 ones. Inside
+   * field 01 it was 54, 86 and 120. The field is the one filter that narrows with a tag.
+   *
+   * The spelling of a region is the other trap. A tag matches as a substring, and a nationwide
+   * notice carries every 시도's short name — so 강원 (542) finds 강원's own notices and the whole
+   * country's, 강원특별자치도 (80) only the ones that spelled it out, and 강원도 (1) almost nothing.
+   * 춘천 (12) also finds 춘천시 (10). No match at all is resultCode 03, which `ask` reads as none.
+   */
   {
     name: "search_support_programs",
     description:
-      "기업마당(중소벤처기업부)의 정부·지자체 지원사업 공고를 최신순으로 찾는다. 해시태그(지역·업종·키워드, 쉼표로 여러 개)와 분야 코드로 거른다. 결과는 공고명·소관기관·신청기간·대상·링크가 든 JSON.",
+      "기업마당(중소벤처기업부)의 정부·지자체 지원사업 공고를 최신순으로, 한 번에 최대 10개 찾는다. 해시태그와 분야 코드로 거른다. 결과는 공고명·소관기관·신청기간·대상·링크가 든 JSON.",
     inputSchema: {
       type: "object",
       properties: {
         hashtags: {
           type: "string",
-          description: "쉼표로 나눈 해시태그. 예: 서울,소상공인 또는 제조,수출",
+          description:
+            "해시태그 하나. 쉼표로 여러 개를 주면 좁혀지지 않고 그중 하나라도 붙은 공고가 다 나온다. 지역은 시도의 짧은 이름(강원, 서울, 경기. 강원도는 거의 안 걸린다), 시군구는 시·군을 뺀 이름(춘천). 전국 공고에는 모든 시도 태그가 붙어 있다",
         },
         field: {
           type: "string",
           description:
-            "분야 코드. 01 금융, 02 기술, 03 인력, 04 수출, 05 내수, 06 창업, 07 경영, 09 기타",
-          enum: ["01", "02", "03", "04", "05", "06", "07", "09"],
+            "분야 코드. 해시태그와 함께 주면 둘 다 맞는 것만 나온다. 쉼표로 여러 개(예: 05,07)면 그중 하나인 것. 01 금융, 02 기술, 03 인력, 04 수출, 05 내수, 06 창업, 07 경영, 09 기타",
         },
         max: {
           type: "number",
@@ -137,6 +150,36 @@ export const PUBLIC_DATA_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
     annotations: { readOnlyHint: true },
   },
 ]);
+
+/** The 분야 codes 기업마당 knows. */
+const PROGRAM_FIELDS = new Set([
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "09",
+]);
+
+/**
+ * The field filter as the portal takes it: known codes, comma-joined, or nothing.
+ *
+ * SEVERAL AT ONCE, BECAUSE THE BOUNDARY COUNTS CALLS. The portal reads "01,07" as either (measured
+ * 2026-09-27: 강원 with 01 was 54, with 07 146, with "01,07" 200), and a Bot covering 금융·내수·창업·
+ * 경영 one call each, plus its own 시군구, made the fifth call of one tool inside three minutes —
+ * which the deployment's `repeat.count >= 5` rule turns into a question to the owner on their first
+ * task. A code the portal does not know is dropped rather than sent: a typo would otherwise come
+ * back as "nothing matched".
+ */
+function fieldsOf(raw: string | null): string | null {
+  const codes = (raw ?? "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter((code) => PROGRAM_FIELDS.has(code));
+  return codes.length > 0 ? [...new Set(codes)].join(",") : null;
+}
 
 /** A refusal a Bot reads as Korean, with the vendor's own words kept for the trail. */
 function refuseWith(code: string, detail?: string): never {
@@ -331,10 +374,17 @@ export function createPublicDataTransport(input: {
 
     const header = vendorHeaderOf(parsed);
     if (!header) refuse("laf:public_data_unreadable", "no header");
-    if (String(header.resultCode) !== "00") {
+    /*
+     * 03 IS "NOTHING MATCHED", NOT A REFUSAL. data.go.kr answers a filter no notice carries — the
+     * tag 한식, measured 2026-09-27 — as `{"resultCode":"03","resultMsg":"NODATA_ERROR"}` with an
+     * empty body, and this line used to turn that into "포털이 거절했다, 잠시 뒤 다시": a Bot told a
+     * shop owner the government was down when the honest answer was none.
+     */
+    const resultCode = String(header.resultCode);
+    if (resultCode !== "00" && resultCode !== NO_DATA) {
       refuse(
         "laf:public_data_refused",
-        `${String(header.resultCode)} ${String(header.resultMsg ?? "")}`.trim(),
+        `${resultCode} ${String(header.resultMsg ?? "")}`.trim(),
       );
     }
     const body = (parsed as { response?: { body?: VendorBody } }).response
@@ -401,7 +451,7 @@ export function createPublicDataTransport(input: {
   ): Promise<string> {
     const rows = countArg(args, "max", DEFAULT_ROWS, MAX_ROWS);
     const hashtags = stringArg(args, "hashtags");
-    const field = stringArg(args, "field");
+    const field = fieldsOf(stringArg(args, "field"));
 
     const { body } = await ask(PROGRAMS_URL, {
       pageNo: "1",
