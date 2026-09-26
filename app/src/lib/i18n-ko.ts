@@ -1018,7 +1018,7 @@ export const ko: Record<string, string> = {
   "Unpublished, no Bot may use it": "미게시 — 어떤 봇도 쓸 수 없음",
   Language: "언어",
   "Which language the interface uses. Changing it reloads the screen.":
-    "인터페이스가 사용할 언어. 바꾸면 화면을 다시 불러와요.",
+    "화면에 쓰는 말이에요. 바꾸면 화면을 다시 불러와요.",
   System: "시스템 설정 따름",
   Korean: "한국어",
   English: "English",
@@ -2703,8 +2703,12 @@ export const ko: Record<string, string> = {
   "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.":
     "봇이 가게와 사장님에 대해 아는 것이에요. 틀린 게 있으면 여기서 고치세요. 다음 메시지부터 봇이 알아요.",
   "The Notebook could not be loaded.": "수첩을 불러오지 못했어요.",
-  "Room in the Notebook": "수첩에 남은 자리",
-  "{used} of {cap} characters": "{cap}자 중 {used}자",
+  /*
+   * 쓴 양이지 남은 양이 아니다. "수첩에 남은 자리 · 2,200자 중 41자"는 41자가 남았다고 읽혔다
+   * (2026-09-27 첫 시간 걷기) — 막대가 채우는 것도, 숫자가 세는 것도 쓴 글자다.
+   */
+  "Room in the Notebook": "수첩 공간",
+  "{used} of {cap} characters": "{cap}자 중 {used}자 씀",
   "The shop": "가게",
   "What your Bot reads about the shop before every conversation.":
     "봇이 대화를 시작할 때마다 읽는 가게 정보예요.",
@@ -2747,7 +2751,7 @@ export const ko: Record<string, string> = {
   "Forgotten. Your Bot no longer reads it.": "잊었어요. 이제 봇이 읽지 않아요.",
   "Cleared. Your Bot no longer reads it.": "지웠어요. 이제 봇이 읽지 않아요.",
   "{count} lines in the Notebook · {used} of {cap} characters":
-    "수첩에 {count}줄 · {cap}자 중 {used}자",
+    "수첩에 {count}줄 · {cap}자 중 {used}자 씀",
   "Open the Notebook": "수첩 열기",
   "That reads like an order to the Bot. Write what is true here, and ask the Bot for things in a conversation.":
     "봇에게 시키는 말처럼 읽혀요. 여기에는 사실을 적고, 부탁은 대화로 해 주세요.",

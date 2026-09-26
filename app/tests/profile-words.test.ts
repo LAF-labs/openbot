@@ -32,6 +32,21 @@ describe("the several-people words", () => {
   });
 });
 
+describe("the Notebook's meter", () => {
+  /*
+   * "수첩에 남은 자리 · 2,200자 중 41자" — the label said room LEFT and the number counted characters
+   * USED, so a notebook with one line in it read as nearly full (the first-hour walk, 2026-09-27).
+   * Both places that print the count say it is what has been written.
+   */
+  test("the count is what has been written, and nothing calls it what is left", () => {
+    expect(ko["Room in the Notebook"]).not.toContain("남은");
+    expect(ko["{used} of {cap} characters"]).toBe("{cap}자 중 {used}자 씀");
+    expect(
+      ko["{count} lines in the Notebook · {used} of {cap} characters"],
+    ).toEndWith("{cap}자 중 {used}자 씀");
+  });
+});
+
 describe("the Bot's profile", () => {
   test("no card draws an error's own message", () => {
     const profile = read("components/agents/agent-profile.tsx");

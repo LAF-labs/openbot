@@ -73,6 +73,8 @@ const FORBIDDEN: Record<string, string> = {
   토큰: "(운영자 화면에만)",
   플러그인: "연결",
   컴포넌트: "(운영자 화면에만)",
+  // "인터페이스가 사용할 언어" was the language row's whole explanation (first-hour walk, 2026-09-27).
+  인터페이스: "화면",
 };
 
 /**
