@@ -54,6 +54,11 @@ export type Behaviour =
    * already iterating, and there the abort does not throw (`turn.ts`, "UNLESS OUR OWN BOUND").
    */
   | { kind: "stall"; choices?: Choice[] }
+  /**
+   * Begin the stream, then fail inside it: `data: {"error":{"code":…}}`, as OpenRouter reports an
+   * upstream failure once its response has begun. The SDK throws this with no HTTP status.
+   */
+  | { kind: "stream-error"; code: number | string }
   /** Answer with a status and no stream. */
   | { kind: "status"; status: number; retryAfter?: string }
   /** Accept the request and say nothing for this long, then behave as `then` (or hang for ever). */
@@ -152,6 +157,29 @@ export function startFakeProvider(
           }
           await sleep(behaviour.ms);
           return respond(behaviour.then);
+        }
+        if (behaviour.kind === "stream-error") {
+          record.endedAt = now();
+          const body = [
+            ": OPENROUTER PROCESSING\n\n",
+            `data: ${JSON.stringify({
+              id: "chatcmpl-fake",
+              object: "chat.completion.chunk",
+              created: 0,
+              model: "fake-model",
+              error: {
+                code: behaviour.code,
+                message: "Provider returned error",
+              },
+              choices: [
+                { index: 0, delta: { content: "" }, finish_reason: "error" },
+              ],
+            })}\n\n`,
+            "data: [DONE]\n\n",
+          ].join("");
+          return new Response(body, {
+            headers: { "content-type": "text/event-stream" },
+          });
         }
         if (behaviour.kind === "stall") {
           return new Response(stallBody(behaviour, record, now, request), {

@@ -3,6 +3,7 @@
   "agent-bot/tests/context-budget.test.ts",
   "agent-bot/tests/deferral.test.ts",
   "agent-bot/tests/harness.test.ts",
+  "agent-bot/tests/in-stream-errors.test.ts",
   "agent-bot/tests/provider-policy.test.ts",
   "agent-bot/tests/reasoning.test.ts",
   "agent-bot/tests/request-bound.test.ts",

@@ -45,13 +45,38 @@ export function isRetryable(error: unknown): boolean {
   return status === 408 || (status >= 500 && status <= 599);
 }
 
-/** The HTTP status a provider's error carries, whatever client shape it arrived in. */
+/**
+ * The HTTP status a provider's error carries, whatever client shape it arrived in.
+ *
+ * INCLUDING ONE SENT INSIDE THE STREAM, which has no status of its own. A provider that fails after
+ * its response has begun — OpenRouter, whose response begins with a processing comment before the
+ * model has answered — sends `data: {"error":{"code":429,…}}`, and the SDK throws that as an
+ * `APIError` with `status` undefined and the provider's number in `code` (and in `error.code`).
+ * Read by `.status` alone it was `laf:model_failed`, "ask again", in front of a rate limit —
+ * measured 2026-09-26 against a local endpoint — and a 5xx sent that way was never retried. Only a
+ * number in the HTTP range counts: `code` is also where Node puts `ECONNRESET`.
+ */
 export function statusOf(error: unknown): number | undefined {
-  const status =
-    typeof error === "object" && error !== null && "status" in error
-      ? (error as { status?: unknown }).status
-      : undefined;
-  return typeof status === "number" ? status : undefined;
+  if (typeof error !== "object" || error === null) return undefined;
+  const said = error as {
+    status?: unknown;
+    code?: unknown;
+    error?: { code?: unknown } | null;
+  };
+  if (typeof said.status === "number") return said.status;
+  return httpStatus(said.code) ?? httpStatus(said.error?.code);
+}
+
+function httpStatus(value: unknown): number | undefined {
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d{3}$/.test(value)
+        ? Number(value)
+        : Number.NaN;
+  return Number.isInteger(number) && number >= 100 && number <= 599
+    ? number
+    : undefined;
 }
 
 /**
