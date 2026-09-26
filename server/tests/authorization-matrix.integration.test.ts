@@ -1291,7 +1291,9 @@ describe("the matrix", () => {
     });
 
     const response = await app.request(
-      "http://laf.local/api/admin/audit-events?limit=100",
+      // Narrowed to the kind this test writes: other suites' routine runs share the table, and
+      // on 2026-09-26 a hundred of them, dated days ahead, pushed this row off the first page.
+      "http://laf.local/api/admin/audit-events?limit=100&eventType=computer.action_failed&targetType=agent",
       { headers: { cookie: `session=${ADMIN.id}` } },
     );
     const body = await response.text();
