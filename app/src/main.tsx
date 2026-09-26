@@ -8,6 +8,7 @@ import { authKeys } from "./lib/auth/queries";
 import { watchSession } from "./lib/auth/session-watch";
 import { listenForStaleChunks } from "./lib/build-reload";
 import { inShell } from "./lib/notifications/shell";
+import { guardStrayDrops } from "./lib/stray-drops";
 import {
   configureScreenErrorReports,
   listenForScreenErrors,
@@ -47,6 +48,12 @@ listenForScreenErrors();
  * the first route's own chunk can be the one that fails.
  */
 listenForStaleChunks();
+/*
+ * A file dropped where nothing takes it is refused rather than opened in place of the app — which in
+ * the installed app, with no Back, is the app gone (`lib/stray-drops.ts`). Before anything renders,
+ * so the sign-in screen is covered as well as the conversation.
+ */
+guardStrayDrops();
 
 const rootElement = document.getElementById("root");
 

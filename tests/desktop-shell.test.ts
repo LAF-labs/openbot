@@ -417,6 +417,28 @@ test("the window is not suspended when it is put away", () => {
 });
 
 /**
+ * A FILE DROPPED ON THE WINDOW REACHES THE PAGE.
+ *
+ * Tauri takes the operating system's file drops for itself unless the window says otherwise
+ * (`dragDropEnabled`, true by default; its own docs: disabling it is required for HTML5 drag and
+ * drop on Windows). With it on, a receipt dragged onto the composer drew no outline, attached
+ * nothing and said nothing, in the installed app only — the browser has no such layer. The page
+ * guards the rest of the window itself, so a drop anywhere else does not navigate a window that has
+ * no back button (`app/src/lib/stray-drops.ts`).
+ */
+test("the page, not the shell, receives a file dropped on the window", () => {
+  for (const path of [RELEASE_CONFIG, DEV_CONFIG]) {
+    const windows =
+      json<{ app?: { windows?: { dragDropEnabled?: boolean }[] } }>(path).app
+        ?.windows ?? [];
+    expect(windows.length).toBeGreaterThan(0);
+    for (const window of windows) {
+      expect(window.dragDropEnabled).toBe(false);
+    }
+  }
+});
+
+/**
  * THE SHELL'S OWN POLICY HOLDS THE DEPLOYMENT'S FLOOR.
  *
  * The window shows the deployment, whose pages carry the front door's headers (app/Caddyfile); the

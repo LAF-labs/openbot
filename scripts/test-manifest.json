@@ -190,6 +190,7 @@
   "app/tests/stop-all.test.ts",
   "app/tests/stopped-turn.test.ts",
   "app/tests/stranded-steps.test.ts",
+  "app/tests/stray-drops.test.ts",
   "app/tests/take-the-wheel.test.ts",
   "app/tests/task-state.test.ts",
   "app/tests/theme-preference.test.ts",

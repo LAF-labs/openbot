@@ -21,7 +21,8 @@
         "hiddenTitle": true,
         "visible": false,
         "zoomHotkeysEnabled": false,
-        "backgroundThrottling": "disabled"
+        "backgroundThrottling": "disabled",
+        "dragDropEnabled": false
       }
     ],
     "security": {
