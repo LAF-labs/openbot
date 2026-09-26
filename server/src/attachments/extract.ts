@@ -22,20 +22,30 @@ const SHEET_ROWS = 20_000;
 /** Sheets read. A workbook of forty tabs is summarised by its first few. */
 const SHEETS = 8;
 
+/** Columns read per sheet. A year of days laid across a sheet fits, with room for its labels. */
+const SHEET_COLUMNS = 512;
+
+/**
+ * Cells walked turning a workbook into CSV, all sheets together. `sheet_to_csv` visits every cell of
+ * the range it is handed, empty or not, at about half a microsecond each here; a million is half a
+ * second, and more than the whole can hold of any sheet whose rows are not mostly empty.
+ */
+const SHEET_CELLS = 1_000_000;
+
 /**
  * The most a workbook's parts may inflate to, all together, before SheetJS is handed any of it.
  *
  * `sheetRows` bounds nothing here: SheetJS inflates a part whole before it reads a row, and a 997 KB
- * .xlsx whose sheet inflated to 1 GB took 4.6 s and 2 GB inside `XLSX.read` (22 s and 2.2 GB here).
- * What SheetJS then holds is ten to fourteen times the XML it parses (50 MB of Korean text measured
- * at +510 MB and 2.3 s), on a VM of 3 GB it shares with the Bot's browser and Postgres. 32 MiB keeps
- * that under half a gigabyte and two seconds, and still takes a sheet of 20,000 rows and thirty
- * columns (26 MB: +360 MB, 1.3 s), as many rows as are read of any sheet.
+ * .xlsx whose sheet inflated to 1 GB took 4.6 s and 2 GB inside `XLSX.read` (the same here).
+ * Parsed sparse (see `readSheets`), SheetJS then holds some twenty times the XML it reads — 23.6 MB
+ * of numeric cells measured at +470 MB and 2.3 s — on a VM of 3 GB it shares with the Bot's browser
+ * and Postgres. 24 MiB keeps the worst under half a gigabyte and still takes a sheet of 20,000 rows
+ * and twenty-five columns (+430 MB, 1.8 s), as many rows as are read of any sheet.
  *
  * A ratio test would refuse a harmless 2 MB part of repeated cells and pass a 200 MB one of varied
  * text; it is the inflated size that costs, so that is what is bounded.
  */
-const WORKBOOK_BYTES = 32 * 1024 * 1024;
+const WORKBOOK_BYTES = 24 * 1024 * 1024;
 
 /** Parts in a workbook: one per sheet, drawing and picture, and a handful more. No real one nears it. */
 const WORKBOOK_PARTS = 5_000;
@@ -237,13 +247,74 @@ function storedZip(parts: Part[]): Buffer {
   return out;
 }
 
+/**
+ * The range of a sheet that is read — where its cells really end, not where the file says they do —
+ * set as the sheet's `!ref`, since that range is all `sheet_to_csv` walks.
+ *
+ * `sheet_to_csv` visits every cell of the range, empty or not. Two cells, at A1 and XFD20000,
+ * declared 20,000 × 16,384 of them: 16 s per sheet here, 217 s for the red team's eight. The range
+ * now ends at the last row and column that hold something, at most `SHEET_COLUMNS` wide and at most
+ * `budget` cells in all. It still starts where the sheet says, so the CSV of any sheet inside those
+ * bounds is what it was: the empty rows and columns cut off were dropped by `blankrows` and `strip`.
+ */
+function clampRange(
+  sheet: XLSX.WorkSheet,
+  budget: number,
+): { columns: number; walked: number; cut: boolean } {
+  const declared = sheet["!ref"]
+    ? XLSX.utils.decode_range(sheet["!ref"])
+    : null;
+  if (!declared) return { columns: 0, walked: 0, cut: false };
+  const last = Math.min(declared.e.c, declared.s.c + SHEET_COLUMNS - 1);
+  let right = -1;
+  let bottom = -1;
+  let cut = false;
+  for (const address in sheet) {
+    if (address.startsWith("!")) continue;
+    const cell = sheet[address] as XLSX.CellObject;
+    // What `sheet_to_csv` writes as nothing.
+    if (cell.v == null && cell.f == null) continue;
+    const { r, c } = XLSX.utils.decode_cell(address);
+    if (r < declared.s.r || r > declared.e.r) continue;
+    if (c < declared.s.c || c > declared.e.c) continue;
+    if (c > last) {
+      cut = true;
+      continue;
+    }
+    right = Math.max(right, c);
+    bottom = Math.max(bottom, r);
+  }
+  const columns = right < 0 ? 0 : right - declared.s.c + 1;
+  const height = bottom - declared.s.r + 1;
+  const rows =
+    columns === 0 ? 0 : Math.min(height, Math.floor(budget / columns));
+  if (rows < height) cut = true;
+  sheet["!ref"] =
+    rows === 0
+      ? undefined
+      : XLSX.utils.encode_range({
+          s: declared.s,
+          e: { r: declared.s.r + rows - 1, c: right },
+        });
+  // Out of cells before a single row: the budget is spent, so no later sheet is walked either.
+  return {
+    columns,
+    walked: rows === 0 && columns > 0 ? budget : rows * columns,
+    cut,
+  };
+}
+
 export function readSheets(bytes: Uint8Array, mimeType: string): Extracted {
   const options = {
     cellFormula: false,
     cellHTML: false,
     cellText: true,
     sheetRows: SHEET_ROWS,
-    dense: true,
+    // Sparse, keyed by address. Dense rows are arrays indexed by column, and one cell in column SR
+    // makes a row 512 slots long: 22 sheets of 20,000 such rows, 2.9 MB, took 8.6 s and 4.1 GB to
+    // parse dense, and 1.9 s and 400 MB like this. A real sheet costs more per cell this way, which
+    // is what `WORKBOOK_BYTES` is set for.
+    dense: false,
   } as const;
   const workbook =
     mimeType === "text/csv"
@@ -257,21 +328,27 @@ export function readSheets(bytes: Uint8Array, mimeType: string): Extracted {
   const wholeParts: string[] = [];
   const summaryParts: string[] = [];
   let budget = SUMMARY_CHARS;
+  let cells = SHEET_CELLS;
   let cut = false;
 
   for (const name of names) {
     const sheet = workbook.Sheets[name];
     if (!sheet) continue;
+    if (cells <= 0) {
+      cut = true;
+      break;
+    }
+    const range = clampRange(sheet, cells);
+    cells -= range.walked;
+    if (range.cut) cut = true;
     const csv = XLSX.utils
       .sheet_to_csv(sheet, { blankrows: false, strip: true })
       .trim();
     const lines = csv ? csv.split("\n") : [];
-    const range = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]) : null;
-    const columns = range ? range.e.c - range.s.c + 1 : 0;
     const label =
       names.length > 1 || mimeType !== "text/csv"
-        ? `시트 "${name}" — ${lines.length}행 ${columns}열`
-        : `${lines.length}행 ${columns}열`;
+        ? `시트 "${name}" — ${lines.length}행 ${range.columns}열`
+        : `${lines.length}행 ${range.columns}열`;
     wholeParts.push(names.length > 1 ? `# 시트: ${name}\n${csv}` : csv);
 
     const kept: string[] = [];

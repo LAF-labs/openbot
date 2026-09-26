@@ -419,6 +419,52 @@ describe("what the model reads of a sheet or a PDF", () => {
     expect(read.whole).toBe("메뉴,3");
   });
 
+  test("a sheet is walked where its cells are, not across the range it declares", async () => {
+    // The red team's: eight sheets, each one cell at A1 and one at XFD20000, 4 KB in all. Before,
+    // `sheet_to_csv` walked the declared 20,000 × 16,384 of every sheet: 16 s a sheet here.
+    const corners = sheetXml(
+      '<row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row><row r="20000"><c r="XFD20000" t="inlineStr"><is><t>z</t></is></c></row>',
+      "A1:XFD20000",
+    );
+    const [read, ms] = await timed(() =>
+      readSheets(xlsxOf(Array.from({ length: 8 }, () => corners)), XLSX_TYPE),
+    );
+    expect(ms).toBeLessThan(HOSTILE_MS);
+    expect(read.body).toStartWith('시트 "S1" — 1행 1열\na\n');
+    // XFD is past the columns read, and the summary says it is not everything.
+    expect(read.shown).toBe("파일의 앞부분");
+    expect(read.whole?.length).toBeLessThan(200);
+
+    // And a cell at XFD on every one of 20,000 rows: each row was 16,384 cells wide.
+    let farRows = "";
+    for (let r = 1; r <= 20_000; r += 1) {
+      farRows += `<row r="${r}"><c r="A${r}"><v>1</v></c><c r="XFD${r}"><v>2</v></c></row>`;
+    }
+    const [far, farMs] = await timed(() =>
+      readSheets(xlsxOf([sheetXml(farRows)]), XLSX_TYPE),
+    );
+    expect(farMs).toBeLessThan(HOSTILE_MS);
+    expect(far.body).toStartWith('시트 "S1" — 20000행 1열');
+    expect(far.shown).toBe("파일의 앞부분");
+  });
+
+  test("rows that reach far to the right cost the cells they hold, not their width", async () => {
+    // A cell at A and one at SR on each of 20,000 rows, two sheets, 0.26 MB. Parsed dense, every row
+    // was an array 512 slots long, then walked 512 cells a row: 5.1 s and +840 MB before.
+    let rows = "";
+    for (let r = 1; r <= 20_000; r += 1) {
+      rows += `<row r="${r}"><c r="A${r}"><v>1</v></c><c r="SR${r}"><v>2</v></c></row>`;
+    }
+    const bytes = xlsxOf([sheetXml(rows), sheetXml(rows)]);
+    Bun.gc(true);
+    const before = process.memoryUsage().rss;
+    const [read, ms] = await timed(() => readSheets(bytes, XLSX_TYPE));
+    expect(ms).toBeLessThan(HOSTILE_MS);
+    expect(process.memoryUsage().rss - before).toBeLessThan(500 * 1024 * 1024);
+    expect(read.shown).toBe("파일의 앞부분");
+    expect(Buffer.byteLength(read.whole ?? "")).toBeLessThanOrEqual(1_000_000);
+  });
+
   test("a workbook that says it inflates to a gigabyte is refused before anything is inflated", async () => {
     const bomb = bombSheet(1024);
     // 1.4 MB on disk, and every header honest about the gigabyte.
