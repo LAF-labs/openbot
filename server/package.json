@@ -31,6 +31,6 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@copilotkit/aimock": "^1.38.0"
+    "@copilotkit/aimock": "^1.42.1"
   }
 }
