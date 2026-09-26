@@ -610,14 +610,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * two lines, the fallbacks) and three to `root` (a retry after a cut leaving the half call out and
  * routed afresh, only the cut calls left out, a turn of nothing but cut calls gone). Each floor
  * rises by exactly what was added.
+ * RAISED 2026-09-27: one to `server` (a plain write beside a rolled-back transaction survives it —
+ * the two-pool guard against Bun's pre-1.4 pool, `db/client.ts`) and one to `app` (a failed remember
+ * line names what was tried).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3033, roots: ["server"] },
-  { name: "app", floor: 1438, roots: ["app"] },
+  { name: "server", floor: 3034, roots: ["server"] },
+  { name: "app", floor: 1439, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 502, roots: ["tests", "agent-bot"] },
 ] as const;
