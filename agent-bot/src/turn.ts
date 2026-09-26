@@ -142,6 +142,11 @@ export type TurnOptions = {
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   tools: OpenAI.Chat.ChatCompletionTool[] | undefined;
   timeoutMs: number;
+  /**
+   * Aborted when the run's reader has gone (`runAgent`'s `cancel`). Optional, so a caller with no
+   * reader to lose — a test driving one turn — need not make one.
+   */
+  gone?: AbortSignal;
   emit: (event: BaseEvent) => void;
   /** Whether a call by this name is held back whole rather than forwarded as it streams. */
   holdOf: (name: string) => ToolCallRecord["held"];
@@ -174,6 +179,17 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     abort.abort();
   }, options.timeoutMs);
   expiry.unref?.();
+  /*
+   * And stopped the moment nobody is reading, which the SDK does not report either once the
+   * response has begun: the iterator returns, and `left` is how the loop below knows it was this.
+   */
+  let left = false;
+  const leave = () => {
+    left = true;
+    abort.abort();
+  };
+  if (options.gone?.aborted) leave();
+  else options.gone?.addEventListener("abort", leave, { once: true });
 
   const messageId = round === 0 ? `msg_${runId}` : `msg_${runId}_${round}`;
   const requestedAt = Date.now();
@@ -254,6 +270,8 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     );
 
     for await (const chunk of completion) {
+      // The real client stops on the abort by itself; a provider that ignores its signal is let go.
+      if (left || expired) break;
       firstChunkMs ??= Date.now() - requestedAt;
       // The usage chunk has no choices; read it before the delta guard skips it.
       if (chunk.usage) usage = chunk.usage;
@@ -366,6 +384,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
      * and a `: OPENROUTER PROCESSING` comment before the model has said anything; the hung provider
      * the bound exists for was never reported as one.
      */
+    if (left) throw new ConsumerGone();
     if (expired) {
       if (delivered) return turn({ reason: "timed_out" });
       throw new RequestTimedOut();
@@ -375,13 +394,13 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
       delivered && !ended ? { reason: "ended_without_finish" } : null,
     );
   } catch (error) {
+    // Nobody is reading: not the provider's cut, and nothing more is to be sent.
+    if (left || error instanceof ConsumerGone) throw new ConsumerGone();
     if (expired) {
       // What went out stays on the wire and is closed by the loop, as a cut's is.
       if (delivered) return turn({ reason: "timed_out" });
       throw error instanceof RequestTimedOut ? error : new RequestTimedOut();
     }
-    // Nobody is reading: not the provider's cut, and nothing more is to be sent.
-    if (error instanceof ConsumerGone) throw error;
     /*
      * The connection went after the flush, or the provider failed in the middle: the same
      * half-answer, arriving as a throw. What arrived is already on the wire, and ending the run on
@@ -393,5 +412,6 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
     throw error;
   } finally {
     clearTimeout(expiry);
+    options.gone?.removeEventListener("abort", leave);
   }
 }

@@ -113,6 +113,8 @@ type RunContext = {
   botId: string;
   /** When the run began, so the log can say how long a turn took without saying what it said. */
   startedAt: number;
+  /** Aborted when whoever was reading this run has gone. Every request of the run listens to it. */
+  gone: AbortSignal;
 };
 
 export async function runAgent(
@@ -122,7 +124,22 @@ export async function runAgent(
 ): Promise<Response> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const encoder = new EventEncoder();
+  /*
+   * THE READER LEAVING REACHES THE MODEL REQUEST, not only the next thing this run tries to send.
+   *
+   * It used to be noticed only by an `emit` that threw. A reasoning model thinks for a minute
+   * without a single event going out, so a person who pressed Stop in that minute left the provider
+   * thinking — and billing — until its first word arrived, or until the bound; measured 2026-09-26,
+   * the provider's signal was never aborted at all. `cancel()` is what the stream is told when the
+   * runtime drops the request, and it aborts the request in flight (`runTurn`).
+   */
+  const leaving = new AbortController();
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      clearInterval(heartbeat);
+      leaving.abort();
+    },
     async start(controller) {
       const utf8 = new TextEncoder();
       /*
@@ -149,7 +166,7 @@ export async function runAgent(
        * AG-UI parser drops it without reading it. Sent between tokens too — the quiet can come
        * mid-answer, when a model stops to think before a tool call.
        */
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         try {
           controller.enqueue(utf8.encode(": keepalive\n\n"));
         } catch {
@@ -164,6 +181,7 @@ export async function runAgent(
         emit,
         botId: botIdOf(input),
         startedAt: Date.now(),
+        gone: leaving.signal,
       };
 
       try {
@@ -365,6 +383,7 @@ async function runRounds(context: RunContext): Promise<void> {
         messages,
         tools,
         timeoutMs: context.timeoutMs,
+        gone: context.gone,
         emit,
         /*
          * A bridge call is held back whole: its fragments are the arguments of a call whose

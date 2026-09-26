@@ -5,6 +5,7 @@
   "agent-bot/tests/harness.test.ts",
   "agent-bot/tests/in-stream-errors.test.ts",
   "agent-bot/tests/provider-policy.test.ts",
+  "agent-bot/tests/reader-leaves.test.ts",
   "agent-bot/tests/reasoning.test.ts",
   "agent-bot/tests/request-bound.test.ts",
   "agent-bot/tests/stream-cut.test.ts",
