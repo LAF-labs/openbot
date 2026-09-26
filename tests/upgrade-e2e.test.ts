@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   answerTo,
   BUNDLE_FILES,
+  chatTurnThroughFrontDoor,
   classifyHealth,
   compareSnapshots,
   composeVariables,
@@ -624,5 +625,134 @@ describe(".github/workflows/upgrade-e2e.yml", () => {
     const script = steps.map((step) => step.run ?? "").join("\n");
     expect(script).toContain("bun scripts/upgrade-e2e.ts");
     expect(script).not.toContain("docker compose");
+  });
+});
+
+describe("the chat turn through the front door", () => {
+  /** A front door with the three routes the check uses, answering a turn the way the hub frames one. */
+  const frontDoor = (ending: { status: string; code?: string }) => {
+    let push: ((frame: unknown) => void) | null = null;
+    const encoder = new TextEncoder();
+    let seq = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        const { pathname } = new URL(request.url);
+        if (request.headers.get("cookie") !== "c=1") {
+          return new Response("{}", { status: 401 });
+        }
+        if (pathname === "/api/channels" && request.method === "POST") {
+          return Response.json(
+            { channel: { threadId: "t-1" } },
+            { status: 201 },
+          );
+        }
+        if (pathname === "/api/turns/t-1/stream") {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ kind: "snapshot" })}\n\n`,
+                  ),
+                );
+                push = (frame) => {
+                  seq += 1;
+                  controller.enqueue(
+                    encoder.encode(
+                      `id: 1:${seq}\ndata: ${JSON.stringify({ seq, ...(frame as object) })}\n\n`,
+                    ),
+                  );
+                };
+              },
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }
+        if (pathname === "/api/turns/t-1" && request.method === "POST") {
+          const body = (await request.json()) as { botId?: string };
+          if (body.botId !== "bot-1")
+            return new Response("{}", { status: 409 });
+          setTimeout(() => {
+            push?.({
+              kind: "turn",
+              turn: { id: "r1", status: "running", asked: [] },
+            });
+            push?.({
+              kind: "event",
+              turn: "r1",
+              event: { type: "TEXT_MESSAGE_CONTENT", delta: "확인했습니다. " },
+            });
+            push?.({
+              kind: "event",
+              turn: "r1",
+              event: {
+                type: "TEXT_MESSAGE_CHUNK",
+                delta: "업그레이드 후 AB12",
+              },
+            });
+            push?.({ kind: "turn", turn: { id: "r1", asked: [], ...ending } });
+          }, 20);
+          return Response.json({ turnId: "r1" }, { status: 202 });
+        }
+        return new Response("{}", { status: 404 });
+      },
+    });
+    return {
+      origin: `http://localhost:${server.port}`,
+      stop: () => server.stop(true),
+    };
+  };
+
+  test("a turn that ends done with the phrase passes, and the note says when chunks came", async () => {
+    const door = frontDoor({ status: "done" });
+    try {
+      const result = await chatTurnThroughFrontDoor({
+        botId: "bot-1",
+        cookie: "c=1",
+        expect: "업그레이드 후 AB12",
+        origin: door.origin,
+        timeoutMs: 5_000,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.detail).toContain("ended done");
+      expect(result.detail).toContain("업그레이드 후 AB12");
+    } finally {
+      door.stop();
+    }
+  });
+
+  test("a turn that ends in error fails and names the code", async () => {
+    const door = frontDoor({ status: "error", code: "laf:turn_failed" });
+    try {
+      const result = await chatTurnThroughFrontDoor({
+        botId: "bot-1",
+        cookie: "c=1",
+        expect: "업그레이드 후 AB12",
+        origin: door.origin,
+        timeoutMs: 5_000,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("ended error laf:turn_failed");
+    } finally {
+      door.stop();
+    }
+  });
+
+  test("a send the door refuses is a failure with its status, not a hang", async () => {
+    const door = frontDoor({ status: "done" });
+    try {
+      const result = await chatTurnThroughFrontDoor({
+        botId: "someone-else",
+        cookie: "c=1",
+        expect: "x",
+        origin: door.origin,
+        timeoutMs: 5_000,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("POST /api/turns answered 409");
+    } finally {
+      door.stop();
+    }
   });
 });

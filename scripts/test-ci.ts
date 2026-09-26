@@ -594,6 +594,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * fraction and a file with no name refused, a path trimmed, a failed listing keeping the last tools;
  * the server's classifier reading the new facts) and one to `app` (its classifier reading them too).
  * Each floor rises by exactly what was added.
+ * RAISED 2026-09-27: six to `root` — three for this week's Friday graded on a weekend's calendar
+ * (evals), three for the upgrade e2e's chat turn through the front door (a turn that ends done with
+ * its phrase, one that ends in error, a send the door refuses).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -603,7 +606,7 @@ const GROUPS = [
   { name: "server", floor: 3024, roots: ["server"] },
   { name: "app", floor: 1426, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 480, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 486, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

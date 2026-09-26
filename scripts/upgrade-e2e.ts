@@ -705,6 +705,139 @@ export function answerTo(
   return { kind: "stream", choices: says(phrase) };
 }
 
+// --- the chat turn -------------------------------------------------------------------------------
+
+/**
+ * One chat turn the way a window has it since the server owns the turn: a conversation with the Bot,
+ * its frame stream opened through the front door BEFORE the send — so what arrives is the live turn
+ * and not a snapshot of one already over — the person's message sent, and the frames read until the
+ * turn ends. The arrival times go in the note: one chunk at the very end would be a front door that
+ * held the stream back, which is what this path exists to rule out.
+ */
+export async function chatTurnThroughFrontDoor(input: {
+  botId: string;
+  cookie: string;
+  expect: string;
+  origin?: string;
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; detail: string }> {
+  const origin = input.origin ?? "http://localhost";
+  const headers = {
+    cookie: input.cookie,
+    origin,
+    "content-type": "application/json",
+  };
+  const created = await fetch(`${origin}/api/channels`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ agentIds: [input.botId] }),
+  });
+  const channel = (
+    (await created.json().catch(() => null)) as {
+      channel?: { threadId?: string };
+    } | null
+  )?.channel;
+  if (!created.ok || !channel?.threadId) {
+    return {
+      ok: false,
+      detail: `POST /api/channels answered ${created.status}`,
+    };
+  }
+  const thread = encodeURIComponent(channel.threadId);
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), input.timeoutMs ?? 120_000);
+  const started = Date.now();
+  try {
+    const stream = await fetch(`${origin}/api/turns/${thread}/stream`, {
+      headers: {
+        cookie: input.cookie,
+        accept: "text/event-stream",
+        "accept-encoding": "gzip, zstd",
+      },
+      signal: abort.signal,
+    });
+    if (!stream.ok || !stream.body) {
+      return { ok: false, detail: `the stream answered ${stream.status}` };
+    }
+    const sent = await fetch(`${origin}/api/turns/${thread}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        botId: input.botId,
+        messages: [
+          {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: "지금 몇 건이에요?",
+          },
+        ],
+        tools: null,
+      }),
+    });
+    if (sent.status !== 202) {
+      return {
+        ok: false,
+        detail: `POST /api/turns answered ${sent.status} ${(await sent.text()).slice(0, 200)}`,
+      };
+    }
+    const reader = stream.body.getReader();
+    const decoder = new TextDecoder();
+    const arrivals: number[] = [];
+    let buffer = "";
+    let said = "";
+    let ending: string | null = null;
+    while (ending === null) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      arrivals.push(Date.now() - started);
+      buffer += decoder.decode(value, { stream: true });
+      for (
+        let cut = buffer.indexOf("\n\n");
+        cut >= 0;
+        cut = buffer.indexOf("\n\n")
+      ) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const data = block
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("\n");
+        if (!data) continue;
+        const frame = JSON.parse(data) as {
+          kind?: string;
+          turn?: { status?: string; code?: string };
+          event?: { type?: string; delta?: string };
+        };
+        if (
+          frame.kind === "event" &&
+          (frame.event?.type === "TEXT_MESSAGE_CONTENT" ||
+            frame.event?.type === "TEXT_MESSAGE_CHUNK")
+        ) {
+          said += frame.event.delta ?? "";
+        }
+        const status = frame.kind === "turn" ? frame.turn?.status : undefined;
+        if (status === "done" || status === "error" || status === "stopped") {
+          ending = `${status}${frame.turn?.code ? ` ${frame.turn.code}` : ""}`;
+        }
+      }
+    }
+    const shown = arrivals.slice(0, 8).join(", ");
+    return {
+      ok: ending === "done" && said.includes(input.expect),
+      detail: `ended ${ending ?? "never"}; ${arrivals.length} chunk(s) at ${shown}${arrivals.length > 8 ? ", …" : ""} ms after the stream opened; said ${JSON.stringify(said.slice(0, 60))}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `the stream: ${String(error).slice(0, 200)}`,
+    };
+  } finally {
+    clearTimeout(timer);
+    abort.abort();
+  }
+}
+
 // --- the run -------------------------------------------------------------------------------------
 
 type RunResult = { code: number; stdout: string; stderr: string };
@@ -1978,6 +2111,34 @@ async function main(): Promise<number> {
         asked.length > 0,
       `the routine from before the upgrade ran: ${JSON.stringify({ ok: turned?.ok, answer: turned?.answer?.slice(0, 60), error: turned?.error })}; the model was asked ${asked.length} time(s) since`,
     );
+
+    /*
+     * ONE CHAT TURN THROUGH THE FRONT DOOR. Since 2026-09-27 the server owns a chat turn and a window
+     * watches it as numbered frames on an EventSource (`server/src/turns`). Every other turn in this
+     * run is a routine's; this is the path a person types into, and the one check that the front
+     * door — Caddy, with `encode` on — hands the stream on as it is written. A build whose
+     * `deployment.serverTurns` is not true drives turns from the window; there is nothing to check.
+     */
+    const meNow = await api("/api/me");
+    const ownsTurns =
+      (meNow.body.deployment as { serverTurns?: unknown } | undefined)
+        ?.serverTurns === true;
+    if (!ownsTurns) {
+      report.finding(
+        "The upgraded build does not own chat turns (deployment.serverTurns is not true); the chat-turn check was skipped.",
+      );
+    } else {
+      const chat = await chatTurnThroughFrontDoor({
+        botId: orders,
+        cookie,
+        expect: `업그레이드 후 ${nonce}`,
+      });
+      report.check(
+        "a chat turn streams through the front door",
+        chat.ok,
+        chat.detail,
+      );
+    }
 
     report.time("everything, first command to last check", total());
   } catch (error) {
