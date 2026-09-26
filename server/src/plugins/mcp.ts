@@ -55,6 +55,48 @@ export const trimDetail = (value: string): string =>
     ? `${value.slice(0, VENDOR_DETAIL_CHARS)}…`
     : value;
 
+/** What stands where a vendor wrote back the credential it was sent. */
+export const CREDENTIAL_REDACTED = "[redacted]";
+
+/**
+ * The shortest value treated as a credential worth cutting out of a vendor's text.
+ *
+ * A guard, not a policy: every credential this deployment sends is far longer, and an empty or
+ * one-letter value "cut out" of a sentence would shred it into brackets without protecting anything.
+ */
+const MIN_CREDENTIAL_CHARS = 8;
+
+/**
+ * A vendor's text with the credential this deployment just sent it cut out, wherever it appears.
+ *
+ * WHY THIS EXISTS (security package item 10, 2026-09-26). No credential reaches `agent-bot` or the
+ * model by construction: the token is decrypted inside the call path, spent on one request, and
+ * nothing that composes a run — the prompt, the tool list, `forwardedProps`, a refusal — holds it.
+ * What the model DOES read is the vendor's own text: a result, and on a failure the vendor's own
+ * sentence (the one that names the API that is not enabled). A vendor that echoes the request back
+ * — a custom server's debugging tool answering with the headers it saw, an error body quoting the
+ * `Authorization` it refused — put the credential into that text, and from there into the
+ * transcript every later turn replays, the audit row, the export and a file on the Bot's computer.
+ * A model holding a live credential is one injected page away from sending it somewhere.
+ *
+ * Cut exactly, before anything trims or shapes the text: a cap applied first can leave half a token
+ * standing where the whole one would have matched. Each spelling the vendor might echo is passed —
+ * a key that travels URL-encoded may come back decoded.
+ */
+export function withoutCredential(
+  text: string,
+  ...credentials: ReadonlyArray<string | undefined>
+): string {
+  let out = text;
+  for (const credential of credentials) {
+    if (!credential || credential.length < MIN_CREDENTIAL_CHARS) continue;
+    if (out.includes(credential)) {
+      out = out.replaceAll(credential, CREDENTIAL_REDACTED);
+    }
+  }
+  return out;
+}
+
 /**
  * Text as a model will read it: the empty case named, the enormous case cut where it can see.
  *
@@ -98,7 +140,11 @@ export function shapeResult(joined: string): {
  * {@link callTool} means it can be asserted without a server to talk to; the empty and enormous
  * cases are {@link shapeResult}'s, shared with every other transport.
  */
-export function resultText(content: unknown): {
+export function resultText(
+  content: unknown,
+  /** What this call was sent with, cut out of the text before it is shaped. See `withoutCredential`. */
+  credential?: string,
+): {
   text: string;
   truncated: boolean;
 } {
@@ -114,7 +160,7 @@ export function resultText(content: unknown): {
       return `[${item.type ?? "unknown"}]`;
     })
     .join("\n");
-  return shapeResult(joined);
+  return shapeResult(withoutCredential(joined, credential));
 }
 
 export type McpTool = {
@@ -359,8 +405,12 @@ type Connection = {
  * the explanation as text under `isError`. Both are worth surfacing; the tool list, which arrives in
  * the same position under a 403, is not.
  */
-function reasonFrom(error: unknown): string | null {
-  const message = error instanceof Error ? error.message : String(error);
+function reasonFrom(error: unknown, credential?: string): string | null {
+  // Cut before it is parsed and trimmed: a 403 body is where a vendor quotes the header it refused.
+  const message = withoutCredential(
+    error instanceof Error ? error.message : String(error),
+    credential,
+  );
   const body = message.slice(message.indexOf("{"));
   if (!body.startsWith("{")) return null;
 
@@ -410,7 +460,7 @@ function reasonFrom(error: unknown): string | null {
  * where there is one, because that is where Google says which API is not enabled — and each Workspace
  * product is two APIs, so nothing else can tell "I enabled it" from "it is enabled".
  */
-function vendorFailure(error: unknown): string {
+function vendorFailure(error: unknown, credential?: string): string {
   const status = statusOf(error);
 
   if (status === 401) {
@@ -434,7 +484,7 @@ function vendorFailure(error: unknown): string {
      * with a full, valid list under a 403 — and a wall of JSON is what made the original error
      * unreadable.
      */
-    const detail = reasonFrom(error);
+    const detail = reasonFrom(error, credential);
     return detail
       ? `The vendor accepted the credential and refused the request (403). It said: ${detail}`
       : "The vendor accepted the credential and refused the request (403). The account may lack access, or the API may not be enabled for this project.";
@@ -442,7 +492,10 @@ function vendorFailure(error: unknown): string {
   if (typeof status === "number") {
     return `The vendor answered ${status}.`;
   }
-  return error instanceof Error ? error.message : String(error);
+  return withoutCredential(
+    error instanceof Error ? error.message : String(error),
+    credential,
+  );
 }
 
 /**
@@ -489,7 +542,10 @@ async function withClient<T>(
     // Rewrapped so a caller never has to care whether the failure came from the transport, the
     // handshake or the call, and so the message that reaches an audit row and an admin page is one
     // sentence rather than a stack. The status rides beside it for the one reader that judges on it.
-    throw new McpServerError(vendorFailure(error), status ?? null);
+    throw new McpServerError(
+      vendorFailure(error, connection.token),
+      status ?? null,
+    );
   } finally {
     await client.close().catch(() => {
       // A server that will not say goodbye is not a failure of the work that just succeeded.
@@ -576,7 +632,7 @@ export async function callTool(
       { timeout: bounds.timeoutMs },
     );
 
-    const { text, truncated } = resultText(result.content);
+    const { text, truncated } = resultText(result.content, connection.token);
     return { text, isError: result.isError === true, truncated };
   });
 }

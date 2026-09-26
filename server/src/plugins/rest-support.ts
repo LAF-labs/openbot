@@ -1,4 +1,9 @@
-import { type McpCallResult, shapeResult, trimDetail } from "./mcp";
+import {
+  type McpCallResult,
+  shapeResult,
+  trimDetail,
+  withoutCredential,
+} from "./mcp";
 import { TIMEOUT_MS } from "./timeouts";
 
 /**
@@ -179,11 +184,17 @@ export async function vendorRequest(
     } catch {
       // Not JSON. The status alone is still worth saying.
     }
+    /*
+     * The token this request carried, cut out of the vendor's sentence before it is trimmed: the
+     * sentence is what the model reads as the tool's result, and a vendor that quotes the credential
+     * it refused would otherwise hand the model a live one (`withoutCredential` in `./mcp`).
+     */
+    const said = withoutCredential(detail, connection.token);
     return {
       ok: false,
       status: response.status,
-      message: detail
-        ? `${vendor} refused this request (${response.status}): ${trimDetail(detail)}`
+      message: said
+        ? `${vendor} refused this request (${response.status}): ${trimDetail(said)}`
         : `${vendor} refused this request (${response.status}).`,
     };
   }

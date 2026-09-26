@@ -31,7 +31,7 @@ import { log } from "../log";
 import type { PluginStore } from "./store";
 import { PluginRefusedError } from "./store";
 import type { DeploymentKeyFamily } from "./catalogue";
-import type { McpCallResult } from "./mcp";
+import { type McpCallResult, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
 import { asResult, countArg, stringArg } from "./rest-support";
 import { type DeploymentKeyLookup, keyLookupOver } from "./shared-clients";
@@ -147,6 +147,16 @@ function refuseWith(code: string, detail?: string): never {
   );
 }
 
+/** The decoded spelling of the encoded key, or nothing when it does not decode. */
+function decodedKey(encoded: string): string | undefined {
+  try {
+    const decoded = decodeURIComponent(encoded);
+    return decoded === encoded ? undefined : decoded;
+  } catch {
+    return undefined;
+  }
+}
+
 /** What the portal wraps every answer in, on both services. */
 type VendorHeader = { resultCode?: unknown; resultMsg?: unknown };
 type VendorBody = { totalCount?: unknown; items?: unknown };
@@ -240,6 +250,18 @@ export function createPublicDataTransport(input: {
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? (() => new Date());
 
+  /*
+   * The key, in both spellings a portal page could quote it back in, cut out of every detail a
+   * refusal carries. The model reads only the code's Korean, but the detail is the `mcp.call_failed`
+   * row's `failure`, and that row goes to the admin page and into the person's export. The key rides
+   * on the query string, so an error page that echoes the request echoes it.
+   */
+  const spellings = [input.serviceKey, decodedKey(input.serviceKey)];
+  // A declaration rather than an arrow, so a call to it narrows like the `never` it returns.
+  function refuse(code: string, detail: string): never {
+    return refuseWith(code, withoutCredential(detail, ...spellings));
+  }
+
   /**
    * One request to the portal, with the key in front of everything else, and the answer's rows.
    *
@@ -267,7 +289,7 @@ export function createPublicDataTransport(input: {
         signal: AbortSignal.timeout(TIMEOUT_MS.rest),
       });
     } catch (error) {
-      refuseWith(
+      refuse(
         "laf:public_data_unreachable",
         error instanceof Error ? error.message : String(error),
       );
@@ -275,10 +297,10 @@ export function createPublicDataTransport(input: {
 
     const raw = await response.text().catch(() => "");
     if (raw.length > RAW_RESPONSE_CAP_CHARS) {
-      refuseWith("laf:public_data_too_large", `${raw.length} characters`);
+      refuse("laf:public_data_too_large", `${raw.length} characters`);
     }
     if (!response.ok) {
-      refuseWith("laf:public_data_refused", `HTTP ${response.status}`);
+      refuse("laf:public_data_refused", `HTTP ${response.status}`);
     }
 
     let parsed: unknown = null;
@@ -296,18 +318,21 @@ export function createPublicDataTransport(input: {
       );
       const message = /<returnAuthMsg>([^<]*)<\/returnAuthMsg>/.exec(raw);
       if (code) {
-        refuseWith(
+        refuse(
           "laf:public_data_refused",
           `gateway ${code[1]}${message ? ` ${message[1].trim()}` : ""}`,
         );
       }
-      refuseWith("laf:public_data_unreadable", raw.slice(0, 120));
+      refuse(
+        "laf:public_data_unreadable",
+        withoutCredential(raw, ...spellings).slice(0, 120),
+      );
     }
 
     const header = vendorHeaderOf(parsed);
-    if (!header) refuseWith("laf:public_data_unreadable", "no header");
+    if (!header) refuse("laf:public_data_unreadable", "no header");
     if (String(header.resultCode) !== "00") {
-      refuseWith(
+      refuse(
         "laf:public_data_refused",
         `${String(header.resultCode)} ${String(header.resultMsg ?? "")}`.trim(),
       );
