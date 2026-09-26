@@ -103,7 +103,7 @@ export function repeatedFailureLine(
  * already had translated, so the Korean is one register and not two.
  *
  * `t()` on a variable is invisible to `i18n-coverage.test.ts`, so `turn-failure.test.ts` walks this
- * table the way `agent-presets.test.ts` walks its own.
+ * table.
  */
 export const TURN_FAILURE_SENTENCES: Record<string, string> = {
   /*

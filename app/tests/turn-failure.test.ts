@@ -6,7 +6,7 @@
  * access the url?` — in red, in English, on a screen belonging to somebody who runs a shop.
  *
  * `t()` reads these through a variable, so `i18n-coverage.test.ts` cannot see them: it only walks
- * literal `t("…")`. This walks the table instead, the way `agent-presets.test.ts` walks its own.
+ * literal `t("…")`. This walks the table instead.
  */
 import { describe, expect, it } from "bun:test";
 import { sittingLabel } from "@/lib/channels/message-time";

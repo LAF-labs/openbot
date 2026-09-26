@@ -11,8 +11,7 @@
  *
  * IT IS DATA, AND ONLY DATA. Every string here is an English key; the Korean is in
  * `app/src/lib/i18n-ko.ts` and `app/tests/site-catalogue.test.ts` walks this table to prove it is
- * there — `t(site.name)` is a variable call and the literal-scanning coverage test cannot see it,
- * the same trap `agent-presets.test.ts` was written for.
+ * there — `t(site.name)` is a variable call and the literal-scanning coverage test cannot see it.
  *
  * IT LIVES IN `shared/` BECAUSE BOTH SIDES NEED THE SAME TABLE. The surface draws the cards; the
  * server matches the host on every successful navigation — a routine that opens 배민 at 6am is what

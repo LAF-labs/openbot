@@ -17,7 +17,7 @@ import {
  * the whole of that last day, not the hours after midnight UTC.
  *
  * The sentences are read through `t(variable)`, which `i18n-coverage.test.ts` cannot see, so the
- * table is walked here the way `agent-presets.test.ts` walks its own.
+ * table is walked here.
  */
 
 /** 23:59:59.999 in Seoul on 2026-09-29, as `.env` carries it. */

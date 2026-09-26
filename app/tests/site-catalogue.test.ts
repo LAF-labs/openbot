@@ -14,8 +14,7 @@ import {
  * `i18n-coverage.test.ts` reads literal `t("…")` calls out of the source, which is all it can
  * honestly do — and it means `t(site.name)` is invisible to it. A site added without Korean fails
  * nowhere: the card renders "Baemin for Owners" in a Korean product, and the suggestion chips fill
- * somebody's chat with English. So the table is walked here, exactly as `agent-presets.test.ts`
- * walks the presets.
+ * somebody's chat with English. So the table is walked here.
  *
  * The other half of this file is the `signedIn` predicate, which is the one piece of logic in the
  * catalogue and the one thing that can make a card lie. Every case below is a URL and a page these

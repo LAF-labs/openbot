@@ -33,7 +33,7 @@ export function useBotNames(): (botId: string) => string {
  * made it. 초롱 has not, and is renamed in one tap when it turns out to be something.
  *
  * Read through `t(variable)`, which `i18n-coverage.test.ts` cannot see — so `bot-names.test.ts`
- * walks the table, the same pair `AGENT_PRESETS` and `agent-presets.test.ts` make.
+ * walks the table.
  */
 export const BOT_NAME_WORDS: readonly string[] = [
   "Lantern",

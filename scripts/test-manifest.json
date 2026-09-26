@@ -66,6 +66,7 @@
   "app/tests/auth-queries.test.ts",
   "app/tests/bot-avatar.test.ts",
   "app/tests/bot-day.test.tsx",
+  "app/tests/bot-names.test.ts",
   "app/tests/bot-notifications.test.ts",
   "app/tests/bot-profile.test.ts",
   "app/tests/browsing-card-decisions.test.tsx",

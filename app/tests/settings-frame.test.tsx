@@ -194,7 +194,7 @@ describe("which link is lit", () => {
   test("every link in either table has Korean", () => {
     /*
      * Read through `t(variable)` by `RailNav`, so `i18n-coverage.test.ts` cannot see them — the
-     * same hole `agent-presets.test.ts` exists to cover. Under the test runner `t()` answers in
+     * same hole `turn-failure.test.ts` covers for its table. Under the test runner `t()` answers in
      * English, so a title IS its dictionary key.
      */
     const missing = [...SETTINGS_NAV, ...ADMIN_NAV]

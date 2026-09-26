@@ -50,7 +50,7 @@ import { BUSINESS_SITES } from "@/lib/sites/catalogue";
  *
  * Every sentence here is an English key with Korean in `i18n-ko.ts`, read through `t(variable)`
  * where it is drawn — invisible to `i18n-coverage.test.ts`, so `first-tasks.test.ts` walks these
- * tables the way `agent-presets.test.ts` walks the presets.
+ * tables.
  */
 
 export type FirstTask =

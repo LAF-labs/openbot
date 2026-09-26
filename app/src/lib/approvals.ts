@@ -212,8 +212,7 @@ export type Phrase = { key: string; params: Record<string, string | number> };
  *
  * Exported as keys rather than as finished text so a test can walk every intent and reason the
  * server can emit and check the dictionary has each one — `t()` on a variable is invisible to
- * `i18n-coverage.test.ts`, which is why `approval-subject.test.ts` exists (the arrangement
- * `agent-presets.test.ts` set up for the presets).
+ * `i18n-coverage.test.ts`, which is why `approval-subject.test.ts` exists.
  */
 export function subjectPhrases(subject: AskSubject): {
   action: Phrase;
