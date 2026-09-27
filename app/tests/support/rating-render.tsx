@@ -133,7 +133,11 @@ const view = await mountApp({
 });
 
 const body = document.body;
-const rows = () => [...body.querySelectorAll('[data-slot="message"]')];
+// The conversation's rows, not the greeting drawn above them (`components/agents/greeting.tsx`).
+const rows = () =>
+  [...body.querySelectorAll('[data-slot="message"]')].filter(
+    (row) => !row.closest("[data-greeting]"),
+  );
 const answerRow = () =>
   rows().find((row) => row.textContent?.includes("1,234,000원"));
 const button = (root: Element | null | undefined, label: string) =>

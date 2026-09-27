@@ -1,3 +1,4 @@
+import { type Persona, personaFrom } from "@shared/persona";
 import type { ShopProfile } from "@shared/shop/catalogue";
 import type { Whereabouts } from "@shared/whereabouts";
 import { queryOptions } from "@tanstack/react-query";
@@ -31,6 +32,13 @@ export type AuthenticatedUser = {
    * (`today-usage-render.test.tsx`, merged beside this) — and would break the next one too.
    */
   shop?: ShopProfile;
+  /**
+   * Who they said they are — 학생, 직장인, 사장님 or 기타 — as pressed in the Bot's greeting or in
+   * Settings; null when they have not said. The stored answer, not the effective one: order by
+   * `effectivePersona(user.persona, user.shop)` (`shared/persona.ts`). Optional for the reason
+   * `shop` is.
+   */
+  persona?: Persona | null;
   /**
    * The person's clock and place, as the server keeps them: the zone this device last reported, and
    * the place set on 내 가게 or said to the Bot. Optional for the same reason `shop` is.
@@ -226,9 +234,10 @@ async function currentUser(): Promise<CurrentUserResult> {
   const body = (await response.json()) as {
     user: Omit<
       AuthenticatedUser,
-      "consentRequired" | "shop" | "whereabouts"
+      "consentRequired" | "shop" | "whereabouts" | "persona"
     > & {
       shop?: unknown;
+      persona?: unknown;
       whereabouts?: unknown;
     };
     deployment?: Partial<Omit<Deployment, "trial">> & { trial?: unknown };
@@ -243,6 +252,7 @@ async function currentUser(): Promise<CurrentUserResult> {
     ...body.user,
     // Read forgivingly: a deployment that keeps no answers sends no key, and that is no answer.
     shop: parseShop(body.user.shop),
+    persona: personaFrom(body.user.persona),
     whereabouts: parseWhereabouts(body.user.whereabouts),
     consentRequired:
       body.consent !== undefined &&

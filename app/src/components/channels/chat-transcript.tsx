@@ -158,6 +158,13 @@ type ChatTranscriptProps = {
    * the top of what it was given first; then the sentinel asks for the page above (G2).
    */
   older?: OlderPages;
+  /**
+   * What sits above the conversation's first message — the Bot's greeting
+   * (`components/agents/greeting.tsx`). Drawn only once nothing is above the window: while there
+   * are earlier messages, their button stands in its place, so the greeting is always the top of
+   * the whole conversation and never a block in the middle of it.
+   */
+  head?: React.ReactNode;
 };
 
 /** More of the conversation, above what the window holds. */
@@ -1201,6 +1208,7 @@ export function ChatTranscript({
   noticeCode,
   failures = EMPTY_FAILURES,
   older,
+  head,
 }: ChatTranscriptProps) {
   /*
    * MEMOISED ON `messages`, WHICH IS SAFE ONLY BECAUSE NOTHING HANDS THIS THE AGENT'S OWN ARRAY.
@@ -1543,6 +1551,12 @@ export function ChatTranscript({
                 {t("Show earlier messages")}
               </Button>
             </div>
+          ) : head ? (
+            /*
+             * WHERE THE BUTTON WAS, and outside the content for the same reason: the scroller keeps
+             * the reading position by the content's first child, and the greeting is not a row.
+             */
+            <div className="px-4 pt-4">{head}</div>
           ) : null}
           <MessageScrollerContent
             aria-busy={busy}
@@ -1554,8 +1568,12 @@ export function ChatTranscript({
              * transcript from the rows instead: 2px above and below each, and 12px on the row that
              * starts a new turn — 4px inside a run, 16px when the speaker changes. The bubble caps
              * its own measure, so the column does not need to.
+             *
+             * `min-h-0` UNDER THE GREETING: the content is at least the viewport's height so a short
+             * conversation sits at the bottom, and with the greeting above it that minimum pushed
+             * the greeting a whole screen up, out of sight on a conversation with nothing in it.
              */
-            className="mx-auto w-full max-w-none gap-0 px-4 py-4"
+            className={`mx-auto w-full max-w-none gap-0 px-4 py-4 ${head && !hasEarlier ? "min-h-0" : ""}`}
           >
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`

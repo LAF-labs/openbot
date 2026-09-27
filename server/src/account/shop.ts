@@ -10,11 +10,21 @@
  *
  * Read on `/api/me`, beside who is asking, and on every run by `agents/shop-context.ts`.
  *
+ * AND WHO THE PERSON IS (`shared/persona.ts`): 학생, 직장인, 사장님 or 기타, pressed in the Bot's
+ * greeting or in Settings and written through `PUT /api/me/persona` below — the same one door, the
+ * same session, the same walk in `shop-boundary.test.ts` saying no tool reaches it. It orders what
+ * the person is offered and how the Bot addresses them; it never decides whether anything stops.
+ *
  * A store rather than a query in the route, because `app.ts` takes services and never a connection.
  */
 import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import {
+  type Persona,
+  parsePersonaAnswer,
+  personaFrom,
+} from "../../../shared/persona";
 import {
   EMPTY_SHOP,
   parseShopAnswer,
@@ -30,9 +40,30 @@ export type ShopStore = {
   read: (userId: string) => Promise<ShopProfile>;
   /** Replace the answer whole, and hand back what is held now. */
   save: (userId: string, shop: ShopProfile) => Promise<ShopProfile>;
+  /**
+   * Who the person is, as they pressed it, and the name the Bot addresses them by. Null for either
+   * when there is none — never a guess: the effective persona is the reader's (`effectivePersona`).
+   */
+  readPerson: (
+    userId: string,
+  ) => Promise<{ persona: Persona | null; name: string | null }>;
+  /** Replace the persona, and hand back what is held now. */
+  savePersona: (
+    userId: string,
+    persona: Persona | null,
+  ) => Promise<Persona | null>;
 };
 
 export function createShopStore(database: Database): ShopStore {
+  const readPerson = async (userId: string) => {
+    const [row] = await database
+      .select({ persona: users.persona, name: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const name = row?.name?.trim();
+    return { persona: personaFrom(row?.persona), name: name ? name : null };
+  };
   const read = async (userId: string): Promise<ShopProfile> => {
     const [row] = await database
       .select({ kind: users.businessKind, places: users.dailyPlaces })
@@ -50,6 +81,11 @@ export function createShopStore(database: Database): ShopStore {
         .where(eq(users.id, userId));
       // Read back rather than echoed: what the person is shown is what every Bot will be told.
       return read(userId);
+    },
+    readPerson,
+    savePersona: async (userId, persona) => {
+      await database.update(users).set({ persona }).where(eq(users.id, userId));
+      return (await readPerson(userId)).persona;
     },
   };
 }
@@ -74,6 +110,21 @@ export function createShopRoutes(
     }
     const shop = await store.save(context.var.actor.id, parsed.value);
     return context.json({ shop });
+  });
+
+  /*
+   * `PUT /api/me/persona`: one of the four, or null. Called by the greeting's rows and Settings — a
+   * person's press, through their own session. Read back, like the shop.
+   */
+  routes.put("/me/persona", requireUser, async (context) => {
+    const parsed = parsePersonaAnswer(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.ok) {
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
+    }
+    const persona = await store.savePersona(context.var.actor.id, parsed.value);
+    return context.json({ persona });
   });
 
   return routes;

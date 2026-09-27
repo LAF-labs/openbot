@@ -1,3 +1,4 @@
+import type { Persona } from "@shared/persona";
 import {
   shopPatternOrder,
   WORK_PATTERNS,
@@ -47,6 +48,12 @@ import { BUSINESS_SITES } from "@/lib/sites/catalogue";
  * connected site's in the same kind of work. The row is still four sentences. And a place they
  * picked that the Bot cannot use yet is the one thing worth doing before any of them, so its
  * connect chip goes first — only for a place this deployment can actually connect.
+ *
+ * WHO THE PERSON SAID THEY ARE LEADS, AND HIDES NOTHING (2026-09-27, `shared/persona.ts`). A 학생
+ * sees two study sentences first and a 직장인 two office ones, each with the lookup and one sentence
+ * from the other's table beside them; a 사장님 — or somebody who answered the shop questions and not
+ * this one — sees the shop row exactly as before; somebody who said 기타 sees the lookup and one of
+ * each. The persona orders a row of four. It never takes a kind of work off the table.
  *
  * Every sentence here is an English key with Korean in `i18n-ko.ts`, read through `t(variable)`
  * where it is drawn — invisible to `i18n-coverage.test.ts`, so `first-tasks.test.ts` walks these
@@ -118,7 +125,7 @@ export const SUPPORT_PROGRAMS_TOOL = "public-data/search_support_programs";
  * nobody could have written from their own head (`~/laf/docs/korean-smb-needs-2026-09.md` §7.2).
  *
  * Not in `NO_CONNECTION_TASKS`: that table is one sentence per kind of work, all answerable on
- * every deployment, and the server reads `pattern` + `via` as naming a sentence exactly. This one is
+ * every deployment, and the server reads `pattern` + `via` as naming the kind of work. This one is
  * answerable only where the fleet's key is, so it travels as what it is — a sentence the public-data
  * entry made answerable, named by that entry's catalogue key, which the press route already accepts.
  * The package's 지원사업 skill (`tenant/laf/skills/support-programs.md`) is how the Bot does it.
@@ -184,6 +191,38 @@ export const NO_CONNECTION_TASKS: readonly Sentence[] = [
       "Tell me which receipts a small business has to keep, and for how long.",
   },
 ];
+
+/**
+ * The sentences a 학생 and a 직장인 lead with — answerable with nothing connected, from the model's
+ * own head, like the table above (`~/laf/docs/muse-shape-plan-2026-09-27.md` §2.3).
+ *
+ * A TABLE OF ITS OWN, not rows in `NO_CONNECTION_TASKS`: that one is one sentence per kind of work,
+ * the padding every row draws from, and a shop owner's padding should not turn into a quiz. These
+ * are offered to everyone who is not an owner, the persona deciding which table goes first.
+ *
+ * `pattern` is the nearest of the eight kinds of work, because the press route and the fleet's
+ * insights count presses by it (`server/src/agents/first-task.ts`) — so a study plan counts as
+ * schedule work. With these, `pattern` + `via` no longer names one sentence exactly; it names the
+ * kind of work, which is what the insights ask.
+ */
+export const PERSONA_TASKS: Readonly<
+  Record<"student" | "worker", readonly Sentence[]>
+> = {
+  student: [
+    {
+      pattern: "schedule",
+      sentence: "Make me a study plan counting back from my exam date.",
+    },
+    { pattern: "paperwork", sentence: "Quiz me on ten English words." },
+  ],
+  worker: [
+    {
+      pattern: "enquiries",
+      sentence: "Draft a polite email turning down a request.",
+    },
+    { pattern: "paperwork", sentence: "Make a template for meeting minutes." },
+  ],
+};
 
 /**
  * The first thing to ask through each OAuth account, keyed by the catalogue key the overview
@@ -338,10 +377,19 @@ export function pickFirstTasks(
      * tool the Bot does not have is a first task that fails.
      */
     supportPrograms?: boolean;
+    /**
+     * Who the person is, EFFECTIVE (`effectivePersona`): absent, null and `owner` all deal the shop
+     * row, which is what everybody was dealt before the question existed.
+     */
+    persona?: Persona | null;
   } = {},
 ): FirstTask[] {
   const count = options.count ?? FIRST_TASK_COUNT;
   const shop = options.shop ?? EMPTY_SHOP;
+  const persona = options.persona ?? null;
+  if (persona === "student" || persona === "worker" || persona === "other") {
+    return pickForPersona(overview, persona, shop, count);
+  }
   const shopPatterns = shopPatternOrder(shop);
   const order = patternOrder(shopPatterns);
   const candidates = connectedCandidates(overview, shop.places);
@@ -442,6 +490,74 @@ export function pickFirstTasks(
 }
 
 /**
+ * The row for somebody who is not running a business: their own table first, then what they have
+ * connected, then the lookup, then the other table, then the shop padding — four of them.
+ *
+ * The same rules as the shop row where they apply: one chip goes out on the Bot's computer; a place
+ * they picked and have not connected goes first; with nothing connected the way to 연결 follows.
+ * 지원사업 is not offered — its sentence is about "our shop".
+ */
+function pickForPersona(
+  overview: Pick<ConnectionsOverview, "sites" | "accounts">,
+  persona: "student" | "worker" | "other",
+  shop: ShopProfile,
+  count: number,
+): FirstTask[] {
+  const [student1, student2] = PERSONA_TASKS.student;
+  const [worker1, worker2] = PERSONA_TASKS.worker;
+  const own: Sentence[] =
+    persona === "student"
+      ? [student1, student2]
+      : persona === "worker"
+        ? [worker1, worker2]
+        : [];
+  const after: Sentence[] =
+    persona === "student"
+      ? [COMPUTER_FIRST_TASK, worker1, worker2]
+      : persona === "worker"
+        ? [COMPUTER_FIRST_TASK, student1, student2]
+        : [COMPUTER_FIRST_TASK, student1, worker1, student2, worker2];
+  const candidates = connectedCandidates(overview, shop.places);
+
+  const picked: FirstTask[] = [];
+  const taken = new Set<string>();
+  const offer = (task: Sentence | undefined, via: FirstTaskAsk["via"]) => {
+    if (!task || picked.length >= count || taken.has(task.sentence)) return;
+    taken.add(task.sentence);
+    picked.push({ kind: "ask", ...task, via });
+  };
+  for (const task of own) offer(task, null);
+  // One connected sentence per kind of work, in the shop row's order.
+  const seen = new Set<WorkPatternId>();
+  for (const candidate of candidates) {
+    if (seen.has(candidate.pattern)) continue;
+    seen.add(candidate.pattern);
+    offer(candidate, candidate.via);
+  }
+  for (const task of after) offer(task, null);
+  for (const task of NO_CONNECTION_TASKS) offer(task, null);
+
+  // The lookup, if connected sentences pushed it off: it takes the last place that needed nothing.
+  const onTheComputer = picked.some(
+    (task) =>
+      task.kind === "ask" &&
+      (task.via?.kind === "site" ||
+        task.sentence === COMPUTER_FIRST_TASK.sentence),
+  );
+  const lastPadding = picked.findLastIndex(
+    (task) => task.kind === "ask" && task.via === null,
+  );
+  if (!onTheComputer && lastPadding >= 0) {
+    picked[lastPadding] = { kind: "ask", ...COMPUTER_FIRST_TASK, via: null };
+  }
+
+  const unconnected = firstUnconnectedPlace(overview, shop.places);
+  if (unconnected) return [{ kind: "connect", place: unconnected }, ...picked];
+  if (candidates.length === 0) picked.push({ kind: "connect" });
+  return picked;
+}
+
+/**
  * Whether this would be the first thing ever said to the Bot.
  *
  * A channel is created on the first send, so a channel holding the Bot is very nearly the same
@@ -467,10 +583,11 @@ export function isFirstConversation(
  * asks — laf-control's `insights` counts which of the eight kinds of work people pick, VM by VM —
  * so the press is also posted to `POST /api/me/first-task` (`server/src/agents/first-task.ts`).
  *
- * THE EVENT CARRIES THE SENTENCE'S KEY; THE REQUEST DOES NOT. `kind`, `pattern` and `via` already
- * name the sentence exactly — one per pattern with nothing connected, one per site, one per
- * account — so the server is given those and never a sentence, and a field that could someday hold
- * somebody's own words does not exist on the wire to hold them.
+ * THE EVENT CARRIES THE SENTENCE'S KEY; THE REQUEST DOES NOT. `kind`, `pattern` and `via` name the
+ * kind of work the chip asked for — which is what the fleet counts — so the server is given those
+ * and never a sentence, and a field that could someday hold somebody's own words does not exist on
+ * the wire to hold them. (They named the sentence exactly until `PERSONA_TASKS` put a second
+ * connection-free sentence under some patterns.)
  */
 export const FIRST_TASK_PRESSED = "laf:first-task-pressed";
 

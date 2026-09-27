@@ -1,10 +1,11 @@
 import type { Message } from "@ag-ui/core";
+import { effectivePersona } from "@shared/persona";
 import { IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { FirstTaskChips } from "@/components/agents/first-task-chips";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
+import { Greeting } from "@/components/agents/greeting";
 import { BotHeader } from "@/components/channels/bot-header";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { PresenceDrawer } from "@/components/channels/presence-drawer";
@@ -130,6 +131,8 @@ function FirstConversation({ botId }: { botId: string }) {
    */
   const routines = useQuery(routineListQueryOptions());
   const supportPrograms = holdsSupportPrograms(granted.data);
+  // Who they said they are, or an owner by their shop answers — the order, never a filter.
+  const persona = effectivePersona(user?.persona, user?.shop);
   const firstTasks =
     bot &&
     overview &&
@@ -137,7 +140,13 @@ function FirstConversation({ botId }: { botId: string }) {
     !granted.isPending &&
     !routines.isPending &&
     isFirstConversation(channels, bot.id)
-      ? pickFirstTasks(overview, { shop: user?.shop, supportPrograms })
+      ? pickFirstTasks(overview, {
+          shop: user?.shop,
+          // 지원사업 is about "our shop": offered where the person runs one, or has not said.
+          supportPrograms:
+            supportPrograms && (persona === null || persona === "owner"),
+          persona,
+        })
       : null;
   const briefingMade = (routines.data ?? []).some(
     (routine) =>
@@ -203,53 +212,41 @@ function FirstConversation({ botId }: { botId: string }) {
       <ConversationView
         // Commands must be loaded before the first channel message is sent.
         commands={skillCommands}
-        emptyState={
+        /*
+         * THE BOT SPEAKS FIRST (2026-09-27). It was a welcome card — the face at its largest, the
+         * name, one line, the chips — and the person had to know what to type. Now the Bot
+         * introduces itself, asks who the person is and follows up, drawn by the app at no model
+         * cost (`components/agents/greeting.tsx`); the chips come after, ordered by the answer.
+         * In the transcript's head, so the first message sent lands under it rather than replacing
+         * it — the same place the conversation draws it once something has been said.
+         */
+        head={
           bot ? (
-            /*
-             * A WELCOME, NOT A FORM. The face at its largest in the app, on a soft wash of its own
-             * colour, then its name and one line — and the first things to ask, to press. The wash
-             * is static: the face already moves, and a glow that pulsed beside it would be the
-             * screensaver the avatar engine was written to avoid.
-             */
-            <div className="pointer-events-auto flex w-full max-w-xl flex-col items-center gap-5 px-6 text-center">
-              <div className="relative flex items-center justify-center">
-                <span
-                  aria-hidden="true"
-                  className="absolute size-40 rounded-full bg-primary/10 blur-2xl"
-                />
-                <BotAvatar
-                  className="relative"
-                  seed={bot.avatarSeed}
-                  size={96}
-                  state="curious"
-                />
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <h2 className="font-semibold text-xl">{bot.name}</h2>
-                <p className="text-muted-foreground text-sm">
-                  {t("Tell {name} what you need.", { name: bot.name })}
-                </p>
-              </div>
-              {/*
-               * THE FIRST THING TO ASK, AS SOMETHING TO PRESS — for a Bot nobody has spoken to.
-               * Keyed on the Bot: a routine made for one Bot must not show as made for the next.
-               */}
-              {firstTasks ? (
-                <FirstTaskChips
-                  agent={bot}
-                  briefing={briefing}
-                  briefingMade={briefingMade}
-                  disabled={pending || sent !== null}
-                  key={`first-tasks:${bot.id}`}
-                  onAsk={(sentence) => {
-                    // The failure is already on screen as the notice; nothing else to do with it.
-                    void send(sentence).catch(() => undefined);
-                  }}
-                  placeKnown={placeKnown}
-                  tasks={firstTasks}
-                />
-              ) : null}
-            </div>
+            <Greeting
+              after={
+                /*
+                 * THE FIRST THING TO ASK, AS SOMETHING TO PRESS — for a Bot nobody has spoken to.
+                 * Keyed on the Bot: a routine made for one Bot must not show as made for the next.
+                 */
+                firstTasks ? (
+                  <FirstTaskChips
+                    agent={bot}
+                    briefing={briefing}
+                    briefingMade={briefingMade}
+                    disabled={pending || sent !== null}
+                    key={`first-tasks:${bot.id}`}
+                    onAsk={(sentence) => {
+                      // The failure is already on screen as the notice; nothing else to do with it.
+                      void send(sentence).catch(() => undefined);
+                    }}
+                    placeKnown={placeKnown}
+                    tasks={firstTasks}
+                  />
+                ) : null
+              }
+              agentId={bot.id}
+              mode="compose"
+            />
           ) : null
         }
         disabled={!bot}

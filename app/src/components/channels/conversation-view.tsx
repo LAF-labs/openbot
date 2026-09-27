@@ -48,6 +48,7 @@ export function ConversationView({
   placeholder,
   attach,
   older,
+  head,
 }: {
   /** Files as well as words; see `ComposerProps.attach`. Absent draws no paperclip. */
   attach?: { channelId: string; images: boolean } | undefined;
@@ -130,6 +131,8 @@ export function ConversationView({
   onStop?: () => void;
   /** The conversation above what is held, a page at a time. See `ChatTranscriptProps.older`. */
   older?: OlderPages;
+  /** Above the first message: the Bot's greeting. See `ChatTranscriptProps.head`. */
+  head?: ReactNode;
 }) {
   /*
    * THE QUEUE LIVES HERE BECAUSE BOTH HALVES OF IT DO.
@@ -298,6 +301,7 @@ export function ConversationView({
             {...(failures ? { failures } : {})}
             {...(onRetry ? { onRetry } : {})}
             {...(older ? { older } : {})}
+            {...(head ? { head } : {})}
           />
         </SectionBoundary>
       </div>

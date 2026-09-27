@@ -12,9 +12,10 @@
  * work pattern, which site or account made the sentence answerable, and what the Bot's card
  * suggested — each one checked against the table it comes from, so nothing that reaches the row
  * can be anything but a key this product ships. The SENTENCE is never read: it is an English key
- * today, but `kind`, `pattern` and `via` already name it exactly (one sentence per pattern with
- * nothing connected, one per site, one per account), and a field that carries a sentence is a field
- * one change away from carrying what somebody typed.
+ * today, but `kind`, `pattern` and `via` already name the kind of work it asked for — which is what
+ * the insights count — and a field that carries a sentence is a field one change away from carrying
+ * what somebody typed. (They named it exactly until 2026-09-27, when a 학생's and a 직장인's
+ * sentences joined the connection-free ones under the same eight patterns: `PERSONA_TASKS`.)
  *
  * A BOT THE PERSON CAN SEE, or 404 — the same answer `GET /api/agents/:agentId` gives, from the same
  * store, so a press cannot put a row in the trail naming somebody else's private Bot.

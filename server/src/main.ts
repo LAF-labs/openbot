@@ -445,6 +445,7 @@ const loadAgentsForActor = withPersonContext(
   withShopProfile(
     withGrantedSkills(createRuntimeAgentLoader(database, agentVault), database),
     shopStore.read,
+    shopStore.readPerson,
   ),
   whereaboutsStore.read,
 );

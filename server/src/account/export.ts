@@ -135,6 +135,8 @@ export function createAccountExport(database: Database): AccountExport {
             // Bot on every run. The row as it stands, so a key the catalogue has since dropped
             // leaves with them too rather than being tidied away on the way out.
             shop: { kind: person.businessKind, places: person.dailyPlaces },
+            // Who they said they are — 학생, 직장인, 사장님 or 기타 — told to every run the same way.
+            persona: person.persona,
             // Their clock and place, told to every run and to the Bot's browser: theirs to see.
             whereabouts: {
               timeZone: person.timeZone,

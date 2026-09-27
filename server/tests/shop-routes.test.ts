@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import type { ShopStore } from "../src/account/shop";
 import { createApp } from "../src/app";
@@ -27,9 +28,14 @@ const signedIn = {
 };
 const roles = { rolesForUser: async () => ["user" as const] };
 
-function shopStore(initial: ShopProfile = { kind: null, places: [] }) {
+function shopStore(
+  initial: ShopProfile = { kind: null, places: [] },
+  initialPersona: Persona | null = null,
+) {
   let held: ShopProfile = initial;
+  let persona: Persona | null = initialPersona;
   const saved: Array<{ userId: string; shop: ShopProfile }> = [];
+  const personas: Array<{ userId: string; persona: Persona | null }> = [];
   const store: ShopStore = {
     read: async () => held,
     save: async (userId, shop) => {
@@ -37,8 +43,14 @@ function shopStore(initial: ShopProfile = { kind: null, places: [] }) {
       held = shop;
       return held;
     },
+    readPerson: async () => ({ persona, name: "민수" }),
+    savePersona: async (userId, next) => {
+      personas.push({ userId, persona: next });
+      persona = next;
+      return persona;
+    },
   };
-  return { store, saved };
+  return { store, saved, personas };
 }
 
 /**
@@ -92,6 +104,10 @@ describe("what /api/me says about the shop", () => {
         throw new Error("the database went away");
       },
       save: async (_userId, shop) => shop,
+      readPerson: async () => {
+        throw new Error("the database went away");
+      },
+      savePersona: async (_userId, persona) => persona,
     };
     const response = await surface(broken).request("http://laf.local/api/me");
     expect(response.status).toBe(200);
@@ -174,5 +190,81 @@ describe("PUT /api/me/shop", () => {
     // than no control.
     const response = await put(surface(), { kind: "food", places: [] });
     expect(response.status).toBe(404);
+  });
+});
+
+/*
+ * WHO THE PERSON IS, through the same door and the same session (`shared/persona.ts`). Pressed in
+ * the Bot's greeting or in Settings; nothing else writes it.
+ */
+describe("PUT /api/me/persona", () => {
+  const putPersona = (app: ReturnType<typeof createApp>, body: unknown) =>
+    app.request("http://laf.local/api/me/persona", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("keeps one of the four for the person asking, and /api/me says it back", async () => {
+    const { store, personas } = shopStore();
+    const app = surface(store);
+    const response = await putPersona(app, { persona: "student" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ persona: "student" });
+    expect(personas).toEqual([{ userId: "owner", persona: "student" }]);
+    const me = await (await app.request("http://laf.local/api/me")).json();
+    expect(me.user.persona).toBe("student");
+  });
+
+  test("/api/me says null for somebody who has not answered — never a guess", async () => {
+    // Even with a shop answered: the effective persona is the reader's, computed, never stored.
+    const { store } = shopStore({ kind: "food", places: [] });
+    const me = await (
+      await surface(store).request("http://laf.local/api/me")
+    ).json();
+    expect(me.user.persona).toBeNull();
+  });
+
+  test("takes null, which is how a person clears it", async () => {
+    const { store, personas } = shopStore(undefined, "worker");
+    const response = await putPersona(surface(store), { persona: null });
+    expect(response.status).toBe(200);
+    expect(personas.at(-1)?.persona).toBeNull();
+  });
+
+  test("refuses anything but the four, with a code and without saving", async () => {
+    const { store, personas } = shopStore();
+    for (const body of [{ persona: "teacher" }, {}, { persona: 1 }, []]) {
+      const response = await putPersona(surface(store), body);
+      expect(response.status).toBe(400);
+      expect((await response.json()).code).toBe("laf:persona_invalid");
+    }
+    expect(personas).toEqual([]);
+  });
+
+  test("needs a session", async () => {
+    const { store, personas } = shopStore();
+    const noSession = {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => null },
+    };
+    const response = await putPersona(surface(store, noSession), {
+      persona: "owner",
+    });
+    expect(response.status).toBe(401);
+    expect(personas).toEqual([]);
+  });
+
+  test("/api/me still answers when it cannot be read, and leaves it out", async () => {
+    const { store } = shopStore();
+    const broken: ShopStore = {
+      ...store,
+      readPerson: async () => {
+        throw new Error("the database went away");
+      },
+    };
+    const response = await surface(broken).request("http://laf.local/api/me");
+    expect(response.status).toBe(200);
+    expect((await response.json()).user).not.toHaveProperty("persona");
   });
 });

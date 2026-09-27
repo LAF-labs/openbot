@@ -291,8 +291,8 @@ export function reminderLines(
   if (current.shop !== known.shop) {
     lines.push(
       current.shop
-        ? `사장님 가게 정보가 바뀌었다. ${current.shop}`
-        : "사장님이 가게 정보를 지웠다. 전에 알던 가게 정보는 더는 쓰지 않는다.",
+        ? `이 사람에 대한 정보가 바뀌었다. ${current.shop}`
+        : "이 사람이 자기 정보를 지웠다. 전에 알던 호칭과 가게 정보는 더는 쓰지 않는다.",
     );
   }
   if (current.skills !== known.skills) {

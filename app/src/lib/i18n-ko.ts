@@ -2393,7 +2393,6 @@ export const ko: Record<string, string> = {
   "Your Bots": "내 봇들",
   "Your Bot could not be loaded.": "봇을 불러오지 못했어요.",
   "Delete this Bot": "이 봇 삭제",
-  "Tell {name} what you need.": "{name}에게 필요한 일을 말해 보세요.",
   "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.":
     "이 대화는 이제 없어요. 여러 봇이 함께하던 대화는 정리되면서 그 안의 내용도 함께 지워졌어요.",
   "Go to your Bot": "내 봇과 대화하기",
@@ -2733,7 +2732,7 @@ export const ko: Record<string, string> = {
   "Write it down": "적기",
   "Nothing yet. What your Bot learns in conversations appears here.":
     "아직 없어요. 봇이 대화에서 알게 된 것이 여기에 쌓여요.",
-  "You wrote this · {date}": "사장님이 적음 · {date}",
+  "You wrote this · {date}": "내가 적음 · {date}",
   "Your Bot wrote this in a conversation · {date}":
     "봇이 대화에서 적음 · {date}",
   "You said it is right": "맞다고 확인함",
@@ -2767,7 +2766,7 @@ export const ko: Record<string, string> = {
   "Nothing yet. After a day of conversations, your Bot notes here how you like to work.":
     "아직 없어요. 하루 대화가 쌓이면 봇이 여기에 사장님이 일하는 방식을 적어 둬요.",
   "Edit how you like to work": "일하는 방식 고치기",
-  "You wrote this": "사장님이 적음",
+  "You wrote this": "내가 적음",
   "Your Bot noticed this in your conversations": "봇이 대화에서 알아챔",
   "Removed. Your Bot stops reading it from the next day.":
     "지웠어요. 다음 날부터 봇이 읽지 않아요.",
@@ -2858,4 +2857,63 @@ export const ko: Record<string, string> = {
     "이 기계에 봇 브라우저를 지키는 보안 규칙이 걸려 있지 않아서 브라우저를 열지 않았어요.",
   "The Bot's browser was kept closed for safety":
     "안전을 위해 브라우저를 열지 않음",
+
+  // The Bot's greeting and who the person is (`components/agents/greeting.tsx`, `shared/persona.ts`).
+  "Hello, I'm {name}. Ask me, and I'll look things up, sort them out and get them done myself.":
+    "안녕하세요, 저는 {name}{copula}. 부탁하시면 제가 직접 찾아보고, 정리하고, 처리해 드려요.",
+  "This is how I work:": "제가 일하는 방식은 이래요.",
+  "Anything that cannot be undone — paying, sending, posting — I ask you first, unless you have allowed it ahead of time.":
+    "결제·보내기·올리기처럼 되돌릴 수 없는 일은 먼저 여쭤봐요. 미리 허락해 두신 일만 빼고요.",
+  "I have a computer and a browser of my own, so what you hand me gets finished even with the app closed.":
+    "제 컴퓨터와 브라우저가 따로 있어서, 앱을 닫아 두셔도 맡기신 일은 끝까지 해요.",
+  "At the times you set, I check on things by myself and tell you.":
+    "정해 두신 시간마다 알아서 확인하고 알려 드려요.",
+  "First, one question. Which of these are you?":
+    "먼저 하나만 여쭤볼게요. 어떤 분이세요?",
+  "{name}'s greeting": "{name}의 인사",
+  Student: "학생",
+  "Office worker": "직장인",
+  "Business owner": "사장님",
+  Other: "기타",
+  Change: "바꾸기",
+  "What kind of business do you run?": "어떤 가게를 하세요?",
+  "Which neighbourhood is the shop in? The weather and places nearby are looked up there.":
+    "가게는 어느 동네에 있어요? 날씨와 가까운 곳은 거기를 기준으로 찾아요.",
+  "e.g. Mapo-gu, Seoul": "예: 서울 마포구",
+  "What are you studying?": "무엇을 공부하고 있어요?",
+  "What kind of work do you do?": "어떤 일을 하세요?",
+  "If you have a major or an exam you are preparing for, write it here.":
+    "전공이나 준비 중인 시험이 있으면 적어 주세요.",
+  "What industry is the company in? You can leave this out.":
+    "회사는 어떤 업종이에요? 적지 않으셔도 돼요.",
+  "Tell me in one line what you would like me for.":
+    "저를 어디에 쓰실지 한 줄로 적어 주세요.",
+  "e.g. Business, TOEIC in December": "예: 경영학과, 12월 토익",
+  "e.g. Food distribution": "예: 식품 유통",
+  "e.g. Running a blog after retiring": "예: 은퇴 후 블로그 운영",
+  "Work: {detail}": "직무: {detail}",
+  "What I want help with: {detail}": "맡기고 싶은 일: {detail}",
+  "Student: {detail}": "학생, {detail}",
+  "I wrote it in the Notebook, where you can change it any time.":
+    "수첩에 적어 뒀어요. 언제든 거기서 고칠 수 있어요.",
+  "Good. Shall we start with one of these?": "좋아요, 이런 것부터 해 볼까요?",
+  "Middle or high school": "중·고등학생",
+  University: "대학생",
+  "Graduate school": "대학원생",
+  "Preparing for an exam or a job": "시험·취업 준비",
+  "Office and planning": "사무·기획",
+  "Sales and marketing": "영업·마케팅",
+  "Software and IT": "개발·IT",
+  "Design and content": "디자인·콘텐츠",
+  "Teaching and research": "교육·연구",
+  "Health and care": "의료·돌봄",
+  "Production and field work": "생산·현장",
+  "Make me a study plan counting back from my exam date.":
+    "시험 날짜에서 거꾸로 공부 계획표 만들어 줘",
+  "Quiz me on ten English words.": "영어 단어 10개로 퀴즈 내 줘",
+  "Draft a polite email turning down a request.": "정중한 거절 메일 초안 써 줘",
+  "Make a template for meeting minutes.": "회의록 양식 만들어 줘",
+  "I am": "나는",
+  "Your Bot reads this to decide what to suggest first and how to address you. Every menu and feature stays the same for everyone.":
+    "봇이 무엇을 먼저 권할지, 어떻게 부를지 정할 때 참고해요. 메뉴와 기능은 누구에게나 같아요.",
 };

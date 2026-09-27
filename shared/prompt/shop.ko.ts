@@ -17,6 +17,7 @@
  * 이름은 사람 화면의 한국어(`app/src/lib/i18n-ko.ts`)와 같은 말이어야 한다 — 사장님이 "배달의민족"
  * 이라고 고른 곳을 봇이 다른 이름으로 부르면 안 된다. `app/tests/shop-copy.test.ts`가 둘을 맞춰 본다.
  */
+import type { Persona } from "../persona";
 import {
   type BusinessKindId,
   dailyPlaceById,
@@ -116,4 +117,61 @@ export function shopText(shop: ShopProfile | undefined): string {
     facts.join(" "),
     "할 일을 제안하거나 어디서 찾을지 정할 때 이 곳들을 먼저 떠올리고, 필요한 곳이 아직 연결되어 있지 않으면 연결부터 권한다.",
   ].join("\n");
+}
+
+/**
+ * 부를 수 있는 이름인가. 이메일 주소(개발용 계정의 이름이 그렇다)나 너무 긴 글은 이름이 아니다 —
+ * "dev@laf.local님"이라고 부르느니 호칭 없이 말하는 편이 낫다.
+ */
+function callableName(name: string | null | undefined): string | null {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed || trimmed.includes("@") || [...trimmed].length > 20) {
+    return null;
+  }
+  return trimmed;
+}
+
+/** 사람이 고른 답마다, 예를 들 때 무엇에 맞추는지. 기타와 모름은 짐작하지 않는다. */
+export const PERSONA_KO: Readonly<Record<Persona, string>> = {
+  owner:
+    "이 사람은 가게나 사업을 하는 사장님이다. 예를 들거나 할 일을 제안할 때는 가게 일에 맞춘다.",
+  student:
+    "이 사람은 학생이다(스스로 고른 답). 예를 들거나 할 일을 제안할 때는 공부·과제·시험·용돈에 맞춘다.",
+  worker:
+    "이 사람은 직장인이다(스스로 고른 답). 예를 들거나 할 일을 제안할 때는 회사 일에 맞춘다.",
+  other:
+    "이 사람은 학생·직장인·사장님 어디에도 들지 않는다고 답했다. 예를 들 때 한쪽으로 짐작하지 않는다.",
+};
+
+/**
+ * 이 사람에 대한 문단 — 호칭, 누구인지, 가게. 맥락 층의 한 자리(`ContextFacts.shop`)에 선다.
+ *
+ * 2026-09-27부터 이 제품은 사장님만의 것이 아니다(`shared/persona.ts`). 호칭이 정적 층의
+ * "사장님"에서 여기로 내려왔다: 사장님에게는 "사장님", 다른 사람에게는 "{이름}님"이나 호칭 없이.
+ * 정적 층은 배포마다 바이트까지 같아야 하므로 사람마다 다른 것은 전부 이쪽이다.
+ *
+ * 끝 문장이 늘 붙는다: 누구인지는 예를 드는 방향일 뿐 거절할 이유가 아니다. 사장님도 공부 계획을,
+ * 학생도 가게 소개 문구를 부탁할 수 있다.
+ *
+ * `about`이 없으면(읽지 못했거나, 테스트와 평가) 예전 그대로 가게 줄만.
+ */
+export function aboutText(
+  about: { persona: Persona | null; name: string | null } | undefined,
+  shop: ShopProfile | undefined,
+): string {
+  const shopLines = shopText(shop);
+  if (!about) return shopLines;
+  const name = callableName(about.name);
+  const address =
+    about.persona === "owner"
+      ? "호칭: 사장님."
+      : name
+        ? `호칭: ${name}님. '사장님'이라고 부르지 않는다.`
+        : "호칭: 따로 없다. 이름이나 '사장님' 같은 호칭 없이 해요체로만 말한다.";
+  const who = about.persona
+    ? PERSONA_KO[about.persona]
+    : "이 사람이 학생·직장인·사장님 중 누구인지 아직 모른다. 예를 들 때 한쪽으로 짐작하지 않는다.";
+  return [address, `${who} 다른 종류의 일을 부탁하면 그대로 돕는다.`, shopLines]
+    .filter(Boolean)
+    .join("\n");
 }

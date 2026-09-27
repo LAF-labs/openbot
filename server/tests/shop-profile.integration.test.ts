@@ -37,6 +37,7 @@ const profileStore = createAgentProfileStore(
 const loadAgents = withShopProfile(
   createRuntimeAgentLoader(database),
   shops.read,
+  shops.readPerson,
 );
 
 const suite = `shop-${randomUUID().slice(0, 8)}`;
@@ -179,6 +180,59 @@ describe("every Bot's run", () => {
     const after = await promptFor(owner, bot.id);
     expect(after).toContain("온라인 판매");
     expect(after).not.toContain("음식점·카페");
+  });
+});
+
+/*
+ * WHO THE PERSON IS, told to every run in the context layer (2026-09-27): the 호칭 and what to
+ * assume. Never a guess — a shop answered and nothing pressed reads as 사장님, nothing at all reads
+ * as not known.
+ */
+describe("who the person is", () => {
+  test("a 학생 is addressed by name, told not to be called 사장님, and helped with anything", async () => {
+    const owner = await person();
+    await database
+      .update(users)
+      .set({ name: "민수" })
+      .where(eq(users.id, owner.id));
+    const bot = await botOf(owner, "초롱");
+    await shops.savePersona(owner.id, "student");
+    const prompt = await promptFor(owner, bot.id);
+    expect(prompt).toContain("호칭: 민수님. '사장님'이라고 부르지 않는다.");
+    expect(prompt).toContain("이 사람은 학생이다");
+    expect(prompt).toContain("다른 종류의 일을 부탁하면 그대로 돕는다.");
+    expect(prompt).not.toContain("호칭: 사장님");
+  });
+
+  test("somebody who answered the shop and not the question is a 사장님, computed and not stored", async () => {
+    const owner = await person();
+    const bot = await botOf(owner, "초롱");
+    await shops.save(owner.id, { kind: "food", places: [] });
+    expect(await promptFor(owner, bot.id)).toContain("호칭: 사장님.");
+    expect((await shops.readPerson(owner.id)).persona).toBeNull();
+  });
+
+  test("nothing answered is not known, and nobody is called by an email address", async () => {
+    const owner = await person();
+    await database
+      .update(users)
+      .set({ name: "someone@example.test" })
+      .where(eq(users.id, owner.id));
+    const bot = await botOf(owner, "초롱");
+    const prompt = await promptFor(owner, bot.id);
+    expect(prompt).toContain("누구인지 아직 모른다");
+    expect(prompt).toContain("호칭: 따로 없다.");
+    expect(prompt).not.toContain("someone@example.test님");
+  });
+
+  test("the persona is written whole and read back; a word the list dropped reads as unanswered", async () => {
+    const owner = await person();
+    expect(await shops.savePersona(owner.id, "worker")).toBe("worker");
+    await database
+      .update(users)
+      .set({ persona: "astronaut" })
+      .where(eq(users.id, owner.id));
+    expect((await shops.readPerson(owner.id)).persona).toBeNull();
   });
 });
 

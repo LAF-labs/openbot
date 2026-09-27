@@ -93,6 +93,16 @@ export const users = pgTable("users", {
   businessKind: text("business_kind"),
   dailyPlaces: text("daily_places").array().notNull().default([]),
   /**
+   * Who the person is: student, worker, owner or other (`shared/persona.ts`) — the first thing the
+   * Bot's greeting asks, changed later in Settings. Beside the shop answers for the same reasons,
+   * written by the same store and never by a tool. It orders suggestions and sets how the Bot
+   * addresses the person; it never gates anything.
+   *
+   * Null is "not answered", and NOTHING IS BACKFILLED: somebody who answered the shop questions
+   * reads as an owner, but that is computed on every read (`effectivePersona`), never stored.
+   */
+  persona: text("persona"),
+  /**
    * The person's clock and place, which are not the Bot's: its browser runs on a cloud VM whose
    * address, zone and place a website reads as the visitor's (a Bot once told its owner the weather
    * "in 제주시, 사장님 위치", from the VM's address). `account/whereabouts.ts` writes them;

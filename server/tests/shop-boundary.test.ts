@@ -17,6 +17,9 @@ import { join, relative } from "node:path";
  *    tools run in the person's browser, with the person's session, so "the route needs a session"
  *    is not enough on its own: no tool handler may reach the route. And on the server nothing but
  *    the shop store may touch the two columns — the export reads them, and that is all.
+ *
+ * Both hold for the persona too (2026-09-27): 학생·직장인·사장님·기타 orders suggestions and sets how
+ * the Bot addresses the person, and it is written by the same store through the same kind of door.
  */
 
 const root = join(import.meta.dir, "../..");
@@ -49,6 +52,14 @@ const SHOP_READS = [
   "business_kind",
   "daily_places",
   "profile.shop",
+  // Who the person is (`shared/persona.ts`): a hint that orders, which no boundary may read.
+  // Spelled out rather than the bare word, which "personal data" contains.
+  "shared/persona",
+  "effectivePersona",
+  "profile.persona",
+  "users.persona",
+  "readPerson",
+  "savePersona",
 ];
 
 describe("the boundary", () => {
@@ -104,7 +115,9 @@ describe("who writes the answers", () => {
         return (
           text.includes("/me/shop") ||
           text.includes("saveShop") ||
-          text.includes("createShopStore")
+          text.includes("createShopStore") ||
+          text.includes("/me/persona") ||
+          text.includes("savePersona")
         );
       })
       .map(at);
@@ -115,7 +128,11 @@ describe("who writes the answers", () => {
     const touching = sources(join(root, "server/src"))
       .filter((path) => {
         const text = read(path);
-        return text.includes("businessKind") || text.includes("dailyPlaces");
+        return (
+          text.includes("businessKind") ||
+          text.includes("dailyPlaces") ||
+          text.includes("users.persona")
+        );
       })
       .map(at)
       .toSorted();
@@ -137,6 +154,9 @@ describe("who writes the answers", () => {
     ]);
     expect(read(join(root, "server/src/account/shop.ts"))).toContain(
       'routes.put("/me/shop", requireUser,',
+    );
+    expect(read(join(root, "server/src/account/shop.ts"))).toContain(
+      'routes.put("/me/persona", requireUser,',
     );
   });
 });

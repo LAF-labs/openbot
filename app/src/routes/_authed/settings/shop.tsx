@@ -5,6 +5,7 @@ import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
 import { BusinessKindPicker } from "@/components/shop/business-kind-picker";
+import { PersonaRow } from "@/components/shop/persona-row";
 import { ShopLocation } from "@/components/shop/shop-location";
 import {
   DailyPlacePicker,
@@ -100,6 +101,8 @@ const ShopSettings = () => {
       )}
       title={t("My shop")}
     >
+      {/* First: who the person is, which the Bot's greeting asked (`shared/persona.ts`). */}
+      <PersonaRow />
       <PageSection title={t("What you do")}>
         <div className="mt-4">
           <BusinessKindPicker

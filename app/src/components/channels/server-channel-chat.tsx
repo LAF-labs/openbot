@@ -1,4 +1,5 @@
 import type { Message, Tool } from "@ag-ui/core";
+import { Greeting } from "@/components/agents/greeting";
 import { useCopilotKit } from "@copilotkit/react-core/v2";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
@@ -631,6 +632,8 @@ export function ServerChannelChat({
         {/* The composer below takes a sentence offered to this conversation (`?draft=`), and no other. */}
         <DraftScope.Provider value={channel.id}>
           <ConversationView
+            // The Bot's greeting, at the top of the whole conversation (`greeting.tsx`).
+            head={<Greeting agentId={runtimeAgentId} mode="head" />}
             banner={
               <BrowsingBanner
                 asked={openTask?.asked}

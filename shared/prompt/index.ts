@@ -25,6 +25,7 @@
  * 순서로 말했는데, 모드의 문단들은 신원이나 기억과 부딪히지 않는다(부를 사람이 있는가, 답은 누가
  * 읽는가).
  */
+import type { Persona } from "../persona";
 import type { ShopProfile } from "../shop/catalogue";
 import { BASE_KO } from "./base.ko";
 import {
@@ -37,7 +38,7 @@ import { CHAT_KO } from "./mode/chat.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
 import { type PromptPerson, placeText } from "./person.ko";
-import { shopText } from "./shop.ko";
+import { aboutText } from "./shop.ko";
 import { deferredToolsText } from "../tools/bridge";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
@@ -108,6 +109,11 @@ export type ComposePromptInput = {
    * 줄을 읽는다. 비어 있거나 없으면 아무 줄도 없다.
    */
   shop?: ShopProfile;
+  /**
+   * 이 사람이 누구인지 — 사람이 고른 학생·직장인·사장님·기타(가게 답만 있으면 사장님), 그리고 부를
+   * 이름(`shared/persona.ts`). 맥락 층의 호칭 줄과 짐작 줄이 된다. 없으면 모른다고 적는다.
+   */
+  about?: { persona: Persona | null; name: string | null };
   /** 이 봇이 읽는 기억, 싣는 순서대로(`shared/notebook.ts`). */
   memories?: readonly string[];
   /** 그중 사장님이 수첩에 적었거나 맞다고 확인한 것. */
@@ -195,7 +201,7 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
     ...(input.timeZone ? { timeZone: input.timeZone } : {}),
     name: input.bot.name,
     role: role || unassignedRoleText(input.mode),
-    shop: shopText(input.shop),
+    shop: aboutText(input.about, input.shop),
     place: placeText(input.person, input.mode),
     ...(input.memories ? { memories: input.memories } : {}),
     ...(input.confirmedMemories

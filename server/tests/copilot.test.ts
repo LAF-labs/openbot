@@ -683,6 +683,73 @@ function fakeAgUiEndpoint() {
  * the request that leaves, and the middleware is an implementation detail a version bump is free
  * to rename.
  */
+/*
+ * WHO THE PERSON IS, in the context layer and nowhere else (2026-09-27, `shared/persona.ts`). Two
+ * people — a 학생 and a 사장님 — must send the same static layer and the same tools, byte for byte:
+ * the static layer is what every conversation reads from the provider's cache.
+ */
+describe("the 호칭 on every run", () => {
+  const withAbout = (
+    endpoint: string,
+    about: { persona: "student" | "owner"; name: string | null },
+  ) => {
+    const agent = remoteAgent(endpoint);
+    return { ...agent, profile: { ...agent.profile, about } };
+  };
+
+  async function requestFor(about: {
+    persona: "student" | "owner";
+    name: string | null;
+  }) {
+    await using endpoint = fakeAgUiEndpoint();
+    const agent = buildAgents(
+      [withAbout(endpoint.url, about)],
+      model,
+    ).agent_expense;
+    agent?.setMessages([userMessage("오늘 뭐부터 할까?")]);
+    await agent?.runAgent();
+    return endpoint.requests.at(-1) as Record<string, unknown>;
+  }
+
+  test("a 학생 and a 사장님 differ only after the static layer", async () => {
+    const student = await requestFor({ persona: "student", name: "민수" });
+    const owner = await requestFor({ persona: "owner", name: "민수" });
+    const studentSystem = firstSystemMessage(student);
+    const ownerSystem = firstSystemMessage(owner);
+    expect(studentSystem.startsWith(staticPrompt("chat"))).toBe(true);
+    expect(ownerSystem.startsWith(staticPrompt("chat"))).toBe(true);
+    expect(studentSystem).toContain(
+      "호칭: 민수님. '사장님'이라고 부르지 않는다.",
+    );
+    expect(ownerSystem).toContain("호칭: 사장님.");
+    expect(JSON.stringify(student.tools)).toBe(JSON.stringify(owner.tools));
+    // Nothing that names the persona leaves the system message.
+    const rest = (request: Record<string, unknown>) =>
+      JSON.stringify({
+        ...request,
+        messages: undefined,
+        threadId: undefined,
+        runId: undefined,
+      });
+    expect(rest(student)).toBe(rest(owner));
+  });
+
+  test("takes nothing a run forwards about who the person is", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const agent = buildAgents(
+      [withAbout(endpoint.url, { persona: "student", name: null })],
+      model,
+    ).agent_expense;
+    agent?.setMessages([userMessage("오늘 뭐부터 할까?")]);
+    await agent?.runAgent({
+      forwardedProps: { persona: "owner", about: { persona: "owner" } },
+    } as never);
+    const system = firstSystemMessage(endpoint.requests.at(-1));
+    expect(system).toContain("이 사람은 학생이다");
+    expect(system).not.toContain("호칭: 사장님");
+  });
+});
+
 describe("a remote Bot's run", () => {
   const risk = remoteAgent("http://risk.internal/ag-ui", {
     name: "Risk",

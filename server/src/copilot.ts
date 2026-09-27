@@ -20,6 +20,7 @@ import {
   systemPromptText,
 } from "../../shared/prompt";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
+import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName } from "../../shared/tools/bridge";
 import { deviceOf } from "../../shared/whereabouts";
@@ -153,6 +154,12 @@ export type AgentStandingProfile = {
    */
   shop?: ShopProfile;
   /**
+   * Who the person is — the EFFECTIVE persona (`shared/persona.ts`) — and the name the Bot addresses
+   * them by, attached by `agents/shop-context.ts` beside the shop and for the same reasons. Drawn in
+   * the context layer as the 호칭 and one line of what to assume; never read by a boundary.
+   */
+  about?: { persona: Persona | null; name: string | null };
+  /**
    * The person's clock and place as they were last kept (`agents/person-context.ts`): the zone and
    * language their device last reported, the place they set or said. A chat run's own device
    * overrides the clock in the middleware below; a routine, which has no device, reads these.
@@ -235,6 +242,7 @@ function composeInputOf(
     bot: { id: profile.id, name: profile.name },
     standingRole: profile.roleDescription,
     ...(profile.shop ? { shop: profile.shop } : {}),
+    ...(profile.about ? { about: profile.about } : {}),
     ...(profile.memories ? { memories: profile.memories } : {}),
     ...(profile.confirmedMemories
       ? { confirmedMemories: profile.confirmedMemories }

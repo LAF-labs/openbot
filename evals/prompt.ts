@@ -52,6 +52,13 @@ export const EVAL_BOT = {
 export const EVAL_STANDING_ROLE =
   "우리 온라인 가게의 주문과 영수증을 챙긴다. 아침마다 새 주문을 확인하고, 경비를 정리하고, 사장님이 물어보면 가게 관련해서 아는 것을 답한다.";
 
+/**
+ * Who the pack's person is: a shop owner, as the fixture's role and memories say, so the 호칭 line
+ * production draws for them (`shared/prompt/shop.ko.ts` `aboutText`) is in the prompt too. Without
+ * it the pack measured a Bot told to use a 호칭 that no line gave it (2026-09-27).
+ */
+export const EVAL_ABOUT = { persona: "owner" as const, name: null };
+
 /*
  * DELIBERATELY NOT ABOUT SUNDAY.
  *
@@ -98,6 +105,7 @@ export function systemMessageFor(
     timeZone: EVAL_TIME_ZONE,
     bot: EVAL_BOT,
     standingRole: EVAL_STANDING_ROLE,
+    about: EVAL_ABOUT,
     ...notebookInput(notebook),
     ...(person ? { person } : {}),
     ...(skills ? { skills } : {}),
@@ -166,6 +174,7 @@ export function factsFor(
     timeZone: EVAL_TIME_ZONE,
     bot: EVAL_BOT,
     standingRole: EVAL_STANDING_ROLE,
+    about: EVAL_ABOUT,
     ...notebookInput(notebook),
     ...(person ? { person } : {}),
   });

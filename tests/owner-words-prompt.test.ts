@@ -29,9 +29,15 @@ describe("the base prompt", () => {
     );
   });
 
-  test("calls the person 사장님, in 해요체, and says the tools' 사람 is them", () => {
-    expect(BASE_KO).toContain("'사장님'이라고 부르고 해요체로");
-    expect(BASE_KO).toContain("'사람'이 바로 사장님이다");
+  /*
+   * The 호칭 left the static layer on 2026-09-27: 학생 and 직장인 use this too, and what differs per
+   * person cannot stand in a layer that is byte-identical across deployments. The context layer's
+   * "호칭:" line says it (`shared/prompt/shop.ko.ts` `aboutText`); this line points there.
+   */
+  test("calls the person by the context layer's 호칭, in 해요체, and says the tools' 사람 and 사장님 are them", () => {
+    expect(BASE_KO).toContain("'호칭:' 줄대로 부르고 해요체로");
+    expect(BASE_KO).toContain("'사람'과 '사장님'은 모두 이 사람을 가리키는 말");
+    expect(BASE_KO).not.toContain("'사장님'이라고 부르고");
   });
 
   test("says what the composer takes, and that the Bot may ask for it", () => {

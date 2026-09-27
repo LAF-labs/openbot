@@ -1,3 +1,4 @@
+import { effectivePersona, type Persona } from "../../../shared/persona";
 import type { ShopProfile } from "../../../shared/shop/catalogue";
 import type { LoadAgentsForActor } from "../copilot";
 import { log } from "../log";
@@ -11,6 +12,11 @@ import { log } from "../log";
  * the chat runtime, a routine, a room's turn, one Bot asking another — resolves its agents through
  * the loader this wraps (`main.ts`), so every run of every Bot carries the same line.
  *
+ * AND WHO THE PERSON IS (2026-09-27, `shared/persona.ts`): the EFFECTIVE persona — what they
+ * pressed, or 사장님 for somebody who answered the shop questions and not that one — and the name
+ * the Bot addresses them by. The prompt turns both into the 호칭 and one line of what to assume
+ * (`shared/prompt/shop.ko.ts` `aboutText`), in the context layer, never the static one.
+ *
  * READ ON EVERY REQUEST, so an answer changed in Settings is what the very next run is told.
  *
  * A READ THAT FAILS IS LOGGED AND THE RUN GOES ON WITHOUT THE LINE. The line is context, not
@@ -21,6 +27,9 @@ import { log } from "../log";
 export function withShopProfile(
   loadAgents: LoadAgentsForActor,
   readShop: (userId: string) => Promise<ShopProfile>,
+  readPerson?: (
+    userId: string,
+  ) => Promise<{ persona: Persona | null; name: string | null }>,
 ): LoadAgentsForActor {
   return async (actor) => {
     const registered = await loadAgents(actor);
@@ -34,8 +43,24 @@ export function withShopProfile(
       log.warn("shop_read_failed", { error });
       return registered;
     }
-    if (shop.kind === null && shop.places.length === 0) return registered;
-    for (const agent of remote) agent.profile.shop = shop;
+    let person: { persona: Persona | null; name: string | null } | null = null;
+    if (readPerson) {
+      try {
+        person = await readPerson(actor.id);
+      } catch (error) {
+        log.warn("persona_read_failed", { error });
+      }
+    }
+    const answered = shop.kind !== null || shop.places.length > 0;
+    for (const agent of remote) {
+      if (answered) agent.profile.shop = shop;
+      if (person) {
+        agent.profile.about = {
+          persona: effectivePersona(person.persona, shop),
+          name: person.name,
+        };
+      }
+    }
     return registered;
   };
 }

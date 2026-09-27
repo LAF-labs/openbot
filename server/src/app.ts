@@ -690,6 +690,14 @@ export function createApp(
      * every screen waits on must not fall over for one optional fact.
      */
     const answered = shop ? await shop.read(actor.id).catch(() => null) : null;
+    /*
+     * Who they said they are, as stored — null when they have not said. Not the effective persona:
+     * the surface computes that from this and the shop (`shared/persona.ts`), so the one thing
+     * Settings shows as chosen is the thing a person actually pressed.
+     */
+    const person = shop
+      ? await shop.readPerson(actor.id).catch(() => null)
+      : null;
     // The person's own place and clock, for 내 가게 to show and clear. The same failure rule.
     const where = whereabouts
       ? await whereabouts.read(actor.id).catch(() => null)
@@ -699,6 +707,7 @@ export function createApp(
         ...actor,
         onboarded,
         ...(answered ? { shop: answered } : {}),
+        ...(person ? { persona: person.persona } : {}),
         ...(where ? { whereabouts: where } : {}),
       },
       deployment: { ...(await capabilities()), ...trial },
