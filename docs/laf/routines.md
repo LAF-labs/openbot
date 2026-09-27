@@ -457,6 +457,10 @@ the first one, so the chips stay. It is named 아침 브리핑, which hides the
 Routines page's own 아침 브리핑 card, and a Bot that has one is shown "made"
 rather than offered a second.
 
+**Since 소식 (2026-09-27) the chip is 매일 아침 브리핑과 소식 받기**: the same
+press also makes the 06:30 소식 routine with the persona's topics — see the
+next section.
+
 ## 소식 — a routine whose result is posts
 
 `laf_routines.delivery` is `chat` for every routine but one kind: 소식, made by a

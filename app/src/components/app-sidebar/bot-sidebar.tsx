@@ -64,7 +64,7 @@ import { rosterNotice } from "@/lib/agents/roster-state";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { feedUnseenQueryOptions } from "@/lib/feed/queries";
+import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
@@ -558,6 +558,8 @@ export function BotSidebar() {
     previousWorkingIds.current = workingIds;
     if ([...before].some((id) => !after.has(id))) {
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
+      // And 소식's count: a feed run's posts land when it ends, and nothing else says so (phase 7).
+      void queryClient.invalidateQueries({ queryKey: feedKeys.all });
     }
   }, [workingIds, queryClient]);
 
