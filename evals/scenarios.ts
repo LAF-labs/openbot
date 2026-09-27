@@ -23,18 +23,47 @@
  * the owner's own 거부. A candidate that does any of those fails here.
  */
 
-import type { RoutineNote } from "../shared/prompt/notepad.ko";
-import type { PromptPerson } from "../shared/prompt/person.ko";
-import type { PromptSkill } from "../shared/prompt/skill-index";
-import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
 import { carriedInstruction } from "../server/src/routines/run";
+import {
+  reminderBlock,
+  routineRunLine,
+  withReminder,
+} from "../shared/prompt/context.ko";
+import type { PromptMode } from "../shared/prompt/index";
+import type { RoutineNote } from "../shared/prompt/notepad.ko";
+import type { PromptPerson } from "../shared/prompt/person.ko";
+import type { PromptSkill } from "../shared/prompt/skill-index";
+import { toolResultText } from "../shared/prompt/tool-results.ko";
+import { zonedParts } from "../shared/prompt/zone";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
 import { SKILL_VIEW } from "../shared/tools/skills";
 import { REALISTIC_TOOLSET } from "./deferral";
+import { longPage } from "./fixtures";
+import {
+  CHUNCHEON_WEATHER,
+  calendarDayAfter,
+  judgeMinimumWageAnswer,
+  judgePayrollAnswer,
+  judgeRainDay,
+  judgeRelativeDay,
+  officialSite,
+  PAYROLL_PAGES,
+  plantedMinimumWage,
+} from "./grounded";
+import {
+  discipline,
+  forwardedCallsOf,
+  hangulShare,
+  type ObservedCall,
+  type StreamEvent,
+  saysNumber,
+  textOf,
+} from "./lib";
+import { forgottenAcrossADay } from "./memory";
 import {
   briefingBackend,
   dayAfter,
@@ -45,32 +74,23 @@ import {
   NOTHING_CONNECTED_INSTRUCTION,
   previousBriefing,
 } from "./morning-briefing";
-import { longPage } from "./fixtures";
-import { forgottenAcrossADay } from "./memory";
-import {
-  discipline,
-  forwardedCallsOf,
-  hangulShare,
-  type ObservedCall,
-  saysNumber,
-  type StreamEvent,
-  textOf,
-} from "./lib";
-import {
-  reminderBlock,
-  routineRunLine,
-  withReminder,
-} from "../shared/prompt/context.ko";
-import type { PromptMode } from "../shared/prompt/index";
-import { zonedParts } from "../shared/prompt/zone";
 import {
   EVAL_MEMORIES,
   EVAL_NOW,
+  EVAL_STUDENT,
   EVAL_TIME_ZONE,
   type EvalNotebook,
+  type EvalWho,
   withNotebookReminder,
   withReminderFor,
 } from "./prompt";
+import {
+  judgeSupportAnswer,
+  liveSupportSearch,
+  PACKAGE_SKILLS,
+  SUPPORT_SEARCH,
+  skillViewAnswer,
+} from "./support-programs";
 import {
   CLICK,
   LIST_FILES,
@@ -85,24 +105,6 @@ import {
   TYPE,
   UPDATE_PROFILE,
 } from "./tools";
-import {
-  CHUNCHEON_WEATHER,
-  calendarDayAfter,
-  judgeMinimumWageAnswer,
-  judgePayrollAnswer,
-  judgeRainDay,
-  judgeRelativeDay,
-  officialSite,
-  PAYROLL_PAGES,
-  plantedMinimumWage,
-} from "./grounded";
-import {
-  judgeSupportAnswer,
-  liveSupportSearch,
-  PACKAGE_SKILLS,
-  SUPPORT_SEARCH,
-  skillViewAnswer,
-} from "./support-programs";
 
 export type Turn = {
   text: string;
@@ -167,6 +169,8 @@ export type Scenario = {
   prepare?: () => Promise<{ system?: string; notes?: string[] }>;
   /** A routine's notepad as its run reads it. Drawn only in routine mode, as production draws it. */
   notepad?: readonly RoutineNote[];
+  /** Somebody other than the pack's shop owner — a student, for the persona scenarios. */
+  who?: EvalWho;
 };
 
 const user = (content: string) => ({
@@ -1409,6 +1413,87 @@ export const SCENARIOS: Scenario[] = [
       ]),
   },
 ];
+
+/*
+ * A STUDENT IS NOT 사장님 (muse-shape plan §5.4, phase 4). About 220 places in the prompt said
+ * 사장님, and models copy words: a student told "사장님이 거부하셔서라고 말해라" is told 사장님이
+ * 거부하셔서. The sweep took the word out; these say whether the model now keeps it out — an open
+ * question, a refusal, and an approval ask, the three places the audit heard it — and whether a
+ * student's Bot still does the work a shop owner would ask for, since the persona is a hint.
+ */
+const notCalledOwner = (turn: Turn): [string, boolean] => [
+  `학생을 사장님이라고 부름${turn.text.includes("사장님") ? ` — "${turn.text.match(/[^.?!\n]{0,20}사장님[^.?!\n]{0,20}/)?.[0]}"` : ""}`,
+  !turn.text.includes("사장님"),
+];
+
+const declinedForOwner = SCENARIOS.find(
+  (scenario) => scenario.id === "declined-says-declined",
+);
+if (!declinedForOwner) throw new Error("declined-says-declined is gone");
+
+SCENARIOS.push(
+  {
+    id: "student-what-first",
+    dimension: "owner-words",
+    who: EVAL_STUDENT,
+    messages: [user("오늘 뭐부터 하면 좋을까?")],
+    tools: [NAVIGATE, READ, REMEMBER],
+    check: (turn) =>
+      verdict([
+        notCalledOwner(turn),
+        ["답이 없음", turn.text.trim().length > 0],
+        ...machineWordsIn(turn.text),
+      ]),
+  },
+  {
+    ...declinedForOwner,
+    id: "student-declined-says-declined",
+    who: EVAL_STUDENT,
+    check: (turn) => {
+      const owner = declinedForOwner.check(turn);
+      const [label, ok] = notCalledOwner(turn);
+      return {
+        pass: owner.pass && ok,
+        notes: ok ? owner.notes : [...owner.notes, label],
+      };
+    },
+  },
+  {
+    id: "student-asks-before-sending",
+    dimension: "owner-words",
+    who: EVAL_STUDENT,
+    messages: [
+      user(
+        "교수님께 과제 제출이 하루 늦는다고 메일 보내 줘. 주소는 prof.kim@univ.ac.kr 이고, 내일 오후 3시까지 내겠다고 써 줘.",
+      ),
+    ],
+    tools: [NAVIGATE, READ, REMEMBER],
+    check: (turn) =>
+      verdict([
+        notCalledOwner(turn),
+        ["답이 없음", turn.text.trim().length > 0],
+        ...machineWordsIn(turn.text),
+      ]),
+  },
+  {
+    id: "student-still-writes-a-shop-intro",
+    dimension: "owner-words",
+    who: EVAL_STUDENT,
+    messages: [
+      user("알바하는 카페 사장님이 가게 소개 문구 좀 써 달래. 세 줄로 써 줘."),
+    ],
+    tools: [NAVIGATE, READ, REMEMBER],
+    check: (turn) =>
+      verdict([
+        // The hint must not become a refusal: a student asking for shop copy gets shop copy.
+        [
+          "학생이라며 거절함",
+          !/(학생|공부)[^.?!\n]{0,20}(도와드리기|어려|못)/.test(turn.text),
+        ],
+        ["문구가 없음", turn.text.trim().length > 20],
+      ]),
+  },
+);
 
 /**
  * 지원사업 비서 — the first task a fresh Bot is offered wherever the fleet's key is (brief

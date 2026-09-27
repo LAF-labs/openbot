@@ -253,6 +253,7 @@ export const DAY_SUMMARY_SYSTEM = [
   "The user message is JSON: `previous` is the summary so far (may be empty), `transcript` is the conversation since, with day headers, and `day` is today.",
   "Write the new summary that replaces both. Rules:",
   "- Write in Korean, as short dated bullet lines (`- 9/21: …`), oldest first. Carry over what `previous` said unless the transcript settled or replaced it.",
+  "- Call the owner 이 사람 (`- 9/21: 이 사람이 …`), never 사장님 or any other title, whatever the transcript's labels say: the person may be a student or an office worker.",
   "- Keep every concrete fact the owner may ask about later: names of people and suppliers, quantities, prices and amounts, order numbers, dates and times, reasons (a refund reason, a customer's request), promises and deadlines, the owner's preferences and rules.",
   "- Keep details the assistant read on web pages that it did not repeat to the owner, when they could matter later.",
   "- Keep what is still open or waiting. Drop greetings, small talk, and steps of browsing that led nowhere.",

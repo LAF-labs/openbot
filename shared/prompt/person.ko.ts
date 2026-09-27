@@ -33,7 +33,7 @@ export type PromptPerson = {
 
 /** 사이트가 짐작한 위치를 사장님 위치로 옮기지 않는다 — 이 파일이 생긴 실패 그 자체. */
 const NOT_THE_SITES_GUESS =
-  "사이트가 알아서 보여 주는 위치(현위치 같은)는 네 컴퓨터가 있는 곳이지 사장님 위치가 아니다.";
+  "사이트가 알아서 보여 주는 위치(현위치 같은)는 네 컴퓨터가 있는 곳이지 이 사람의 위치가 아니다.";
 
 /**
  * 위치가 있을 때 그것을 어떻게 쓰는지. 이름을 대야 사장님이 틀린 곳을 바로잡을 수 있다.
@@ -58,14 +58,14 @@ export function placeText(
 ): string {
   const place = person?.place?.trim();
   if (place) {
-    return `사장님 가게 위치: ${place}. ${useIt(place)} ${NOT_THE_SITES_GUESS}`;
+    return `이 사람의 위치(가게나 주로 지내는 곳): ${place}. ${useIt(place)} ${NOT_THE_SITES_GUESS}`;
   }
   const at = person?.coordinates;
   if (at) {
     return [
-      `사장님 위치: 위도 ${at.latitude.toFixed(2)}, 경도 ${at.longitude.toFixed(2)} 부근(사장님 기기에서 받은 대략적인 값). 날씨·가까운 곳처럼 위치가 필요한 일은 이 부근 기준으로 하고, 답할 때 어느 곳 기준인지 말한다.`,
+      `이 사람의 위치: 위도 ${at.latitude.toFixed(2)}, 경도 ${at.longitude.toFixed(2)} 부근(이 사람 기기에서 받은 대략적인 값). 날씨·가까운 곳처럼 위치가 필요한 일은 이 부근 기준으로 하고, 답할 때 어느 곳 기준인지 말한다.`,
       mode === "chat"
-        ? "동네 이름이 필요하면 사장님께 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한다."
+        ? "동네 이름이 필요하면 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한다."
         : "",
       NOT_THE_SITES_GUESS,
     ]
@@ -73,6 +73,6 @@ export function placeText(
       .join(" ");
   }
   return mode === "chat"
-    ? `사장님 가게 위치는 아직 모른다. 날씨·가까운 곳처럼 위치가 필요한 일이면 먼저 사장님께 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한 다음 그 곳 기준으로 한다. ${NOT_THE_SITES_GUESS}`
-    : `사장님 위치를 모른다. 위치가 필요한 일이면 위치를 몰라 하지 못했다고 적는다. ${NOT_THE_SITES_GUESS}`;
+    ? `이 사람의 위치(가게나 주로 지내는 곳)는 아직 모른다. 날씨·가까운 곳처럼 위치가 필요한 일이면 먼저 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한 다음 그 곳 기준으로 한다. ${NOT_THE_SITES_GUESS}`
+    : `이 사람의 위치를 모른다. 위치가 필요한 일이면 위치를 몰라 하지 못했다고 적는다. ${NOT_THE_SITES_GUESS}`;
 }

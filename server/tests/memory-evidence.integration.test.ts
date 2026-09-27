@@ -480,7 +480,7 @@ describe("the nightly dream", () => {
             timeZone: "Asia/Seoul",
           }).content
         : "";
-    expect(system).toContain("사장님과 일하는 방식");
+    expect(system).toContain("이 사람과 일하는 방식");
     expect(system).toContain("짧은 답을 좋아한다");
   });
 

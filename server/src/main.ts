@@ -851,6 +851,7 @@ const chatTools = createChatTools({
   routines: routineService,
   whereabouts: whereaboutsStore,
   components: componentStore,
+  persona: shopStore,
   auditStore: bootAuditStore,
 });
 const turnEngine = config.harness.serverTurns

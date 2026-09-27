@@ -29,10 +29,12 @@ import { isImeKey } from "@/lib/ime";
  * 수 있음). 무슨 일을 시킬건지도 적지 않는다. 그냥 모든걸 채팅으로 처리한다."
  *
  * It was four screens: the agreement, what kind of business this is, the places the owner uses
- * every day, and a press that made the first Bot with a name and face it chose itself. The two
- * questions are still asked — in Settings, and by the Bot in its own conversation — and nothing on
- * this screen asks what the Bot is for, because there is no answer to give: it is for whatever it
- * is asked.
+ * every day, and a press that made the first Bot with a name and face it chose itself. Who the
+ * person is (학생 · 직장인 · 사장님 · 기타) is asked by the Bot's greeting in its own conversation,
+ * drawn by the app at no model cost (`components/agents/greeting.tsx`, 2026-09-27), which asks the
+ * business kind and place only of somebody who answered 사장님; Settings → 내 정보 keeps all of it.
+ * Nothing on this screen asks what the Bot is for, because there is no answer to give: it is for
+ * whatever it is asked.
  *
  * The name is filled in and the face is already one, so the only thing anybody HAS to do here is
  * press 시작하기; both are changed later on the Bot's profile. The agreement is the sentence under

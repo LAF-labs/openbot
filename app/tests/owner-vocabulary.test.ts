@@ -220,6 +220,33 @@ describe("the owner's vocabulary", () => {
     expect(offences).toEqual([]);
   });
 
+  /*
+   * "YOU" IS NOT 사장님 (muse-shape plan §2.5, phase 4). Since 2026-09-27 a student and an office
+   * worker read these screens too, and a status that says 사장님이 거부함 to a student is a screen
+   * written for somebody else. Where a line says WHO did it, it says 내가 (내가 거부함, 나만 볼 수
+   * 있어요); where it need not, it drops the noun (확인 필요, 내 차례).
+   *
+   * The whole dictionary, not only the owner-surface walk above: the word is wrong on every screen,
+   * and one VM's admin is that same person. What may say 사장님 is a platform's own name for its
+   * sellers' side (배달의민족 사장님) and the persona answer itself.
+   */
+  test("never calls the person 사장님, except a platform's name and the answer 사장님", () => {
+    const allowed = new Set([
+      "Baemin for Owners",
+      "Yogiyo for Owners",
+      "CatchTable for Owners",
+      "Business owner",
+    ]);
+    const saying = Object.entries(ko)
+      .filter(([key, korean]) => korean.includes("사장님") && !allowed.has(key))
+      .map(([key, korean]) => `${key} → ${korean}`);
+    expect(saying).toEqual([]);
+    for (const key of allowed) expect(ko[key]).toContain("사장님");
+    // The manual a person opens from 도움말 is read by the same people.
+    const guide = readFileSync(join(SOURCE, "help/guide.md"), "utf8");
+    expect(guide).not.toContain("사장님");
+  });
+
   test("checks enough of the app to be worth having", () => {
     // A walker that silently stopped finding anything would pass the test above for the wrong
     // reason, the same way `i18n-coverage.test.ts` guards its own regex.

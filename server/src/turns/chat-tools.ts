@@ -20,6 +20,7 @@
  * carry out, so the model is never offered a call nothing here would run.
  */
 import type { Tool } from "@ag-ui/client";
+import { isPersona } from "../../../shared/persona";
 import {
   routineListResult,
   routineSavedText,
@@ -46,6 +47,7 @@ import {
   UPDATE_PROFILE_WITHOUT_EFFORT,
 } from "../../../shared/tools/self";
 import { normalizeSkillName, SKILL_VIEW } from "../../../shared/tools/skills";
+import type { ShopStore } from "../account/shop";
 import { placeAnswerOf, type WhereaboutsStore } from "../account/whereabouts";
 import type { AgentMemoryStore } from "../agents/memory-store";
 import type { AgentProfileStore } from "../agents/profile-store";
@@ -59,13 +61,13 @@ import {
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ComponentStore } from "../components/store";
 import type { ApprovalRegistry } from "../computer/approvals";
+import { STALE_REFS } from "../computer/client";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
   ActionRefusedError,
   type ComputerGateway,
 } from "../computer/gateway";
-import { STALE_REFS } from "../computer/client";
 import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
@@ -81,8 +83,8 @@ import {
   type PluginStore,
 } from "../plugins/store";
 import { RoutineError } from "../routines/errors";
-import type { RoutineService } from "../routines/service";
 import type { RoutineSchedule } from "../routines/schedule";
+import type { RoutineService } from "../routines/service";
 import type { LoopExecutor, LoopOutcome } from "../runner/turn-loop";
 import { awaitApproval, type PersonAnswers } from "./people";
 
@@ -102,6 +104,12 @@ export type ChatToolsDeps = {
   >;
   whereabouts?: Pick<WhereaboutsStore, "savePlace">;
   components?: Pick<ComponentStore, "listForAgent" | "decide" | "mayCall">;
+  /**
+   * Where a person's answer to a persona question is written: the same store `PUT /api/me/persona`
+   * writes through. Reached only with what a person pressed (`component`, below), never with
+   * anything the Bot's call carried.
+   */
+  persona?: Pick<ShopStore, "savePersona">;
   auditStore?: AuditStore;
   /** How long a person may take over a help request. The window's own ten minutes by default. */
   personWaitMs?: number;
@@ -915,6 +923,27 @@ export function createChatTools(deps: ChatToolsDeps) {
           : toolResultText("laf:nobody_answered");
       }
       const value = answered.value;
+      /*
+       * WHO THE PERSON IS, SAVED ON THEIR PRESS. The Bot's call only asked: `saves` made the card
+       * draw the four fixed choices, and nothing was written when it was called. What is written
+       * is what arrived here from the person's own session (`routes.ts`, answers), and only if it
+       * is one of the four — a Bot cannot reach this line with a value of its choosing.
+       */
+      if (name === "askChoice" && args.saves === "persona") {
+        const chosen =
+          value && typeof value === "object"
+            ? (value as { choice?: unknown }).choice
+            : undefined;
+        if (isPersona(chosen) && deps.persona) {
+          const held = await deps.persona
+            .savePersona(owner.id, chosen)
+            .catch(() => undefined);
+          return JSON.stringify({
+            choice: chosen,
+            saved: held === chosen,
+          });
+        }
+      }
       return typeof value === "string" ? value : JSON.stringify(value ?? "");
     };
 

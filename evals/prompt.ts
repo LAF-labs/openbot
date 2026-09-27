@@ -12,6 +12,7 @@
  * role message, and the fixed overhead it adds is part of what the model has to work through.
  */
 import { createHash } from "node:crypto";
+import type { Persona } from "../shared/persona";
 import {
   composePrompt,
   contextFactsFor,
@@ -59,6 +60,20 @@ export const EVAL_STANDING_ROLE =
  */
 export const EVAL_ABOUT = { persona: "owner" as const, name: null };
 
+/** Who a scenario's person is, when it is not the pack's shop owner. */
+export type EvalWho = {
+  about: { persona: Persona | null; name: string | null };
+  standingRole?: string;
+};
+
+/**
+ * A student, for the persona scenarios (muse-shape plan §5.4, phase 4): 학생, named, with no
+ * standing role — a fresh Bot has none, and the pack's role is a shop's.
+ */
+export const EVAL_STUDENT: EvalWho = {
+  about: { persona: "student", name: "민지" },
+};
+
 /*
  * DELIBERATELY NOT ABOUT SUNDAY.
  *
@@ -98,14 +113,20 @@ export function systemMessageFor(
   summary?: string,
   /** A routine's notepad, as its run reads it (`forwardedProps.notepad`). Drawn in routine mode. */
   notepad?: readonly RoutineNote[],
+  /**
+   * Somebody other than the pack's shop owner (`EvalWho`): a student's Bot has no shop role, and
+   * the 호칭 line is theirs. Absent is the owner every other scenario is about.
+   */
+  who?: EvalWho,
 ) {
+  const role = who ? who.standingRole : EVAL_STANDING_ROLE;
   const composed = composePrompt({
     mode,
     now: frozenAt,
     timeZone: EVAL_TIME_ZONE,
     bot: EVAL_BOT,
-    standingRole: EVAL_STANDING_ROLE,
-    about: EVAL_ABOUT,
+    ...(role ? { standingRole: role } : {}),
+    about: who?.about ?? EVAL_ABOUT,
     ...notebookInput(notebook),
     ...(person ? { person } : {}),
     ...(skills ? { skills } : {}),

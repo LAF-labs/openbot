@@ -15,8 +15,8 @@ export const ko: Record<string, string> = {
     "페이지가 다른 이름을 붙인 비밀번호 칸은 잡히지 않아요. 규칙은 라벨을 봐요.",
   "A person allowed it": "사람이 허용함",
   "A person connected their own account": "사람이 자기 계정을 연결함",
-  "A person declined it": "사장님이 거부함",
-  "A person declined that": "사장님이 거부함",
+  "A person declined it": "내가 거부함",
+  "A person declined that": "내가 거부함",
   "A letter was pressed as a key": "글자를 키처럼 눌렀음",
   "A person has the computer": "사람이 컴퓨터를 잡고 있음",
   "A person pressed stop": "사람이 정지를 누름",
@@ -277,8 +277,9 @@ export const ko: Record<string, string> = {
   "KakaoTalk Channel": "카카오톡 채널",
   Instagram: "인스타그램",
   "Toss Payments": "토스페이먼츠",
-  "My shop": "내 가게",
+  "My shop": "내 정보",
   "What you do": "하는 일",
+  "Shop or business, if you have one": "가게·사업 (있다면)",
   "Places you use every day": "매일 쓰는 곳",
   "Your Bots look there first, and ask you to connect any that are not connected yet.":
     "봇이 이곳부터 살피고, 아직 연결하지 않은 곳은 먼저 연결하자고 알려 드려요.",
@@ -608,7 +609,7 @@ export const ko: Record<string, string> = {
   "Remembered something": "기억해 두었어요",
   // A failed line's action: "기억하기 — 실패", never "기억해 두었어요 — 실패".
   "Remember something": "기억하기",
-  "Save the shop's location": "가게 위치 저장",
+  "Save the shop's location": "위치 저장",
   Remembering: "기억하는 중",
   "Something went wrong.": "문제가 생겼어요.",
   "Stay off social media": "소셜미디어 접근 안 하기",
@@ -1097,7 +1098,7 @@ export const ko: Record<string, string> = {
   "Ask me again": "다시 묻게 하기",
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
-  "A person took back their no": "사장님이 거부를 거둠",
+  "A person took back their no": "내가 거부를 거둠",
   "How hard it thinks": "얼마나 깊이 생각할지",
   "Thinking longer costs time. It is worth it on the hard ones.":
     "오래 생각하면 그만큼 시간이 걸려요. 어려운 일에는 그럴 값어치가 있어요.",
@@ -1932,9 +1933,8 @@ export const ko: Record<string, string> = {
   "Get a briefing every morning at 7:30": "매일 아침 7:30에 브리핑 받기",
   "What it will have: {contents}. It comes to this conversation, and you can change it on Routines.":
     "넣을 것: {contents}. 이 대화로 알려 드리고, 루틴 화면에서 언제든 바꿀 수 있어요.",
-  "Weather needs your shop's location.":
-    "날씨는 가게 위치를 알아야 볼 수 있어요.",
-  "Add it on My shop": "내 가게에서 위치 적기",
+  "Weather needs your shop's location.": "날씨는 위치를 알아야 볼 수 있어요.",
+  "Add it on My shop": "내 정보에서 위치 적기",
   "Morning briefing": "아침 브리핑",
   "Send this morning's briefing in one message, the way the {skill} skill says:":
     "오늘 아침 브리핑을 {skill} 스킬대로 한 메시지로 보내 줘:",
@@ -2542,7 +2542,7 @@ export const ko: Record<string, string> = {
   // 0.5.3 A — 대화 기록: 한 턴에 카드 하나, 사람이 부르는 사이트 이름, 끊긴 답, 보내지 못한 말.
   Finished: "끝남",
   Halted: "멈춤",
-  "Your turn": "사장님 차례",
+  "Your turn": "내 차례",
   "Naver Shopping": "네이버 쇼핑",
   "Naver Map": "네이버 지도",
   "Naver Weather": "네이버 날씨",
@@ -2581,10 +2581,10 @@ export const ko: Record<string, string> = {
     "인터넷 연결이 끊겼어요. 연결을 확인해 주세요.",
   // ctx
   "What kind of business this is, where you work every day, and where the shop is. Your Bot reads all of it before it starts. Only the location can also be saved from a conversation.":
-    "어떤 일을 하는지, 매일 어디서 일하는지, 가게가 어디 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 가게 위치만 대화에서도 저장될 수 있어요.",
-  "Shop location": "가게 위치",
+    "내가 누구인지, 가게가 있다면 어떤 가게인지, 매일 어디를 쓰는지, 어디에 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 위치만 대화에서도 저장될 수 있어요.",
+  "Shop location": "위치",
   "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, the Bot asks you once when it needs one and saves your answer here.":
-    "가게나 주로 계신 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
+    "가게나 주로 지내는 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
   "City and district": "시·구",
   "e.g. Seoul Gangnam-gu": "예: 서울 강남구",
   "This device's location, around {latitude}, {longitude}":
@@ -2598,10 +2598,10 @@ export const ko: Record<string, string> = {
   "This device did not say where it is.": "이 기기의 위치를 알 수 없었어요.",
   "That place was not saved. Only a city and district can be kept.":
     "위치를 저장하지 못했어요. 시·구까지만 적을 수 있어요.",
-  "Saved the shop's location": "가게 위치를 저장했어요",
+  "Saved the shop's location": "위치를 저장했어요",
   // design
-  "Needs your OK": "사장님 확인 필요",
-  "Needs your help": "사장님 도움 필요",
+  "Needs your OK": "확인 필요",
+  "Needs your help": "도움 필요",
   "Busy working": "일하는 중",
   Answering: "답하는 중",
   Ready: "쉬는 중",
@@ -2634,16 +2634,16 @@ export const ko: Record<string, string> = {
   // 0.5.4 BC
   "Couldn't finish": "못 끝냄",
   "The site turned the Bot away": "사이트가 봇을 막았어요",
-  "You said no": "사장님이 거절함",
+  "You said no": "내가 거절함",
   "Try it again": "다시 해 보기",
   "No page is open now.": "지금 열린 페이지가 없어요.",
-  "Waiting for your OK": "사장님 확인 기다리는 중",
+  "Waiting for your OK": "확인 기다리는 중",
   "Go to the question": "확인할 곳으로 가기",
   "Remembered {count}": "기억함 {count}",
   Stop: "멈추기",
   // 0.5.4 A
   "Carry on": "이어서 하기",
-  "You stopped this task partway.": "사장님이 중간에 멈춘 일이에요.",
+  "You stopped this task partway.": "내가 중간에 멈춘 일이에요.",
   "This task stopped before its last step finished.":
     "마지막 단계를 마치기 전에 일이 멈췄어요.",
   "Please carry on with the task you were doing.": "하던 일 이어서 해 주세요.",
@@ -2709,7 +2709,7 @@ export const ko: Record<string, string> = {
   // notebook
   Notebook: "수첩",
   "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.":
-    "봇이 가게와 사장님에 대해 아는 것이에요. 틀린 게 있으면 여기서 고치세요. 다음 메시지부터 봇이 알아요.",
+    "봇이 나에 대해 아는 것이에요. 틀린 게 있으면 여기서 고치세요. 다음 메시지부터 봇이 알아요.",
   "The Notebook could not be loaded.": "수첩을 불러오지 못했어요.",
   /*
    * 쓴 양이지 남은 양이 아니다. "수첩에 남은 자리 · 2,200자 중 41자"는 41자가 남았다고 읽혔다
@@ -2717,9 +2717,9 @@ export const ko: Record<string, string> = {
    */
   "Room in the Notebook": "수첩 공간",
   "{used} of {cap} characters": "{cap}자 중 {used}자 씀",
-  "The shop": "가게",
+  "The shop": "가게 (있다면)",
   "What your Bot reads about the shop before every conversation.":
-    "봇이 대화를 시작할 때마다 읽는 가게 정보예요.",
+    "가게가 있다면, 봇이 대화를 시작할 때마다 읽는 가게 정보예요. 없으면 비워 두세요.",
   "Shop name": "가게 이름",
   "e.g. Miso Café": "예: 미소카페",
   "Write the shop name": "가게 이름 적기",
@@ -2732,9 +2732,9 @@ export const ko: Record<string, string> = {
   "Write what you sell": "파는 것 적기",
   "Clear it": "지우기",
   "Not set": "아직 없음",
-  "Change these on My shop": "내 가게에서 바꾸기",
+  "Change these on My shop": "내 정보에서 바꾸기",
   "What your Bot has learned in conversations, and what you wrote down. Edit anything that is wrong.":
-    "봇이 대화에서 알게 된 것과 사장님이 적은 것이에요. 틀린 건 바로 고치세요.",
+    "봇이 대화에서 알게 된 것과 내가 적은 것이에요. 틀린 건 바로 고치세요.",
   "Write something down for your Bot": "봇에게 알려 줄 것 적기",
   "e.g. Parcels go by the post office. Regulars get a free drink.":
     "예: 택배는 우체국으로 보내요. 단골손님께는 음료 한 잔을 서비스해요.",
@@ -2768,12 +2768,12 @@ export const ko: Record<string, string> = {
   // memory
   "Where it learned this": "어디서 알게 됐나",
   "Show it in the conversation": "대화에서 보기",
-  "Matches what you said": "사장님 말과 맞음",
+  "Matches what you said": "내 말과 맞음",
   "How you like to work": "일하는 방식",
   "Each night your Bot notes how you like to work from the day's conversations. Changes here reach it from the next day.":
-    "봇이 밤마다 그날 대화를 보고 사장님이 일하는 방식을 적어 둬요. 여기서 고친 것은 다음 날부터 봇이 알아요.",
+    "봇이 밤마다 그날 대화를 보고 내가 일하는 방식을 적어 둬요. 여기서 고친 것은 다음 날부터 봇이 알아요.",
   "Nothing yet. After a day of conversations, your Bot notes here how you like to work.":
-    "아직 없어요. 하루 대화가 쌓이면 봇이 여기에 사장님이 일하는 방식을 적어 둬요.",
+    "아직 없어요. 하루 대화가 쌓이면 봇이 여기에 내가 일하는 방식을 적어 둬요.",
   "Edit how you like to work": "일하는 방식 고치기",
   "You wrote this": "내가 적음",
   "Your Bot noticed this in your conversations": "봇이 대화에서 알아챔",
@@ -2782,7 +2782,7 @@ export const ko: Record<string, string> = {
   "Saved. Your Bot reads it from the next day.":
     "저장했어요. 다음 날부터 봇이 읽어요.",
   "You had this forgotten, so it was not written down again.":
-    "사장님이 잊게 한 내용이라 다시 적지 않았어요.",
+    "내가 잊게 한 내용이라 다시 적지 않았어요.",
   "Overnight: noted how you like to work": "밤사이 일하는 방식 정리함",
   "Noted how you like to work": "일하는 방식 정리함",
   "Overnight: tidied {count} memories": "밤사이 기억 {count}개 정리함",
@@ -2845,11 +2845,11 @@ export const ko: Record<string, string> = {
   "It would send someone's personal details to the site, so you are asked every time.":
     "개인정보를 사이트로 보내게 돼서 매번 여쭤봐요.",
   "This mail had a one-time code. Only you can see it.":
-    "메일에 인증번호가 있었어요. 사장님만 볼 수 있어요.",
+    "메일에 인증번호가 있었어요. 나만 볼 수 있어요.",
   "This mail had a password reset link. Only you can see it.":
-    "메일에 비밀번호 재설정 링크가 있었어요. 사장님만 볼 수 있어요.",
+    "메일에 비밀번호 재설정 링크가 있었어요. 나만 볼 수 있어요.",
   "This mail had a sign-in link. Only you can see it.":
-    "메일에 로그인 링크가 있었어요. 사장님만 볼 수 있어요.",
+    "메일에 로그인 링크가 있었어요. 나만 볼 수 있어요.",
   "Not kept: it was read while nobody was watching.":
     "아무도 보고 있지 않을 때 읽은 메일이라 남겨 두지 않았어요.",
   "It is no longer kept. Ask the site to send a new one.":

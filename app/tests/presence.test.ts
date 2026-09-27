@@ -156,7 +156,7 @@ describe("the pill speaks Korean", () => {
       (label) => !(label in ko),
     );
     expect(missing).toEqual([]);
-    expect(ko["Needs your OK"]).toBe("사장님 확인 필요");
+    expect(ko["Needs your OK"]).toBe("확인 필요");
     expect(ko["Busy working"]).toBe("일하는 중");
     expect(ko.Answering).toBe("답하는 중");
   });

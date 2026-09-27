@@ -1,8 +1,12 @@
+import { PERSONAS } from "@shared/persona";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { authKeys } from "@/lib/auth/queries";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
+import { PERSONA_LABELS } from "@/lib/persona/labels";
 import { Badge, GalleryFrame } from "./frame";
 
 /**
@@ -147,13 +151,42 @@ export const ChoiceCardProps = z.object({
         description: z.string().optional(),
       }),
     )
-    .describe("The options, in the order they should be offered"),
+    .describe(
+      'The options, in the order they should be offered. Ignored when saves is "persona"',
+    ),
+  saves: z
+    .enum(["persona"])
+    .optional()
+    .describe(
+      'Set to "persona" only to ask whether the person is a student, an office worker, a business owner or something else. The card then shows those four fixed choices itself and your options are ignored; the answer is saved only when the person presses one',
+    ),
 });
 
 type ChoiceArgs = z.infer<typeof ChoiceCardProps>;
 
+/**
+ * The four answers a persona question offers, in the surface's own words and ids.
+ *
+ * A BOT ASKS, A PERSON ANSWERS. With `saves: "persona"` the Bot's `options` are never drawn: a Bot
+ * that labelled `owner` as 학생 would otherwise have a person save the opposite of what they
+ * pressed. The server takes only these four ids and writes only once somebody pressed one
+ * (`server/src/turns/chat-tools.ts`).
+ */
+export function choiceOptions(
+  args: Partial<ChoiceArgs>,
+): { id: string; label: string; description?: string }[] {
+  if (args.saves === "persona") {
+    return PERSONAS.map((persona) => ({
+      id: persona,
+      label: t(PERSONA_LABELS[persona]),
+    }));
+  }
+  return args.options ?? [];
+}
+
 export function ChoiceCard(props: Waiting<ChoiceArgs>) {
   const { args, status, respond } = props;
+  const queryClient = useQueryClient();
   const [sending, setSending] = useState<string | null>(null);
 
   if (status === "inProgress") {
@@ -181,7 +214,7 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
       title={args.title}
     >
       <ul className="space-y-2">
-        {(args.options ?? []).map((option) => {
+        {choiceOptions(args).map((option) => {
           const picked = chosen === option.id;
           return (
             <li key={option.id}>
@@ -198,6 +231,12 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
                   if (!respond) return;
                   setSending(option.id);
                   await respond({ choice: option.id, label: option.label });
+                  // The server saved it on this answer; the screens that order by it read /api/me.
+                  if (args.saves === "persona") {
+                    void queryClient.invalidateQueries({
+                      queryKey: authKeys.currentUser(),
+                    });
+                  }
                 }}
                 type="button"
               >

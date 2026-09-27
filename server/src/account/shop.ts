@@ -1,8 +1,8 @@
 /**
  * What kind of business the person runs and where they work every day — kept, and changed.
  *
- * The first run asks it (`app/src/routes/_authed/welcome.tsx`) and Settings → 내 가게 changes it;
- * both write through `PUT /api/me/shop` and nothing else writes at all. That is the whole security
+ * The Bot's greeting asks it of a 사장님 (`app/src/components/agents/greeting.tsx`) and Settings →
+ * 내 정보 changes it; both write through `PUT /api/me/shop` and nothing else writes at all. That is the whole security
  * property, and it is structural rather than checked: the only caller of `save` is the route below,
  * the route needs a person's session, and no tool any Bot holds posts to it
  * (`server/tests/shop-boundary.test.ts` walks the tool handlers to say so). A Bot that could rewrite
@@ -14,6 +14,11 @@
  * greeting or in Settings and written through `PUT /api/me/persona` below — the same one door, the
  * same session, the same walk in `shop-boundary.test.ts` saying no tool reaches it. It orders what
  * the person is offered and how the Bot addresses them; it never decides whether anything stops.
+ *
+ * ONE MORE WAY IN, AND IT IS STILL A PRESS. A Bot may ASK with askChoice `saves: "persona"`; the card
+ * draws the four fixed answers in the surface's own words, and the turn writes `savePersona` only
+ * with what the person pressed, arriving on their session (`server/src/turns/chat-tools.ts`, tested
+ * in `chat-tools.test.ts`). The Bot's call carries no value that is ever written.
  *
  * A store rather than a query in the route, because `app.ts` takes services and never a connection.
  */

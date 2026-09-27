@@ -296,7 +296,7 @@ describe("the memory's background work never breaks a running epoch", () => {
     h.thread.push(user("d1u0", "좋은 아침", at(1)));
     const morning = h.run(at(1), { memories: [PLAN], guidance });
     expect(morning.epoch.reason).toBe("day_boundary");
-    expect(morning.system).toContain("사장님과 일하는 방식");
+    expect(morning.system).toContain("이 사람과 일하는 방식");
     expect(morning.system).toContain("짧은 답을 좋아한다");
   });
 

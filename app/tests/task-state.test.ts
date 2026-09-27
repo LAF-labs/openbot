@@ -32,7 +32,7 @@ describe("how a task stands, in words", () => {
     // The owner's own words, the ones the review settled on.
     expect(words.map((word) => ko[word])).toEqual([
       "하는 중",
-      "사장님 차례",
+      "내 차례",
       "끝남",
       "멈춤",
       "못 끝냄",

@@ -31,7 +31,7 @@ export const NOW_TOOL: {
 } = {
   name: NOW_TOOL_NAME,
   description:
-    "사장님 시계로 지금의 날짜·요일·시각·시간대를 본다. 몇 시 몇 분인지가 필요할 때 부른다.",
+    "이 사람의 시계로 지금의 날짜·요일·시각·시간대를 본다. 몇 시 몇 분인지가 필요할 때 부른다.",
   parameters: { type: "object", properties: {} },
 };
 

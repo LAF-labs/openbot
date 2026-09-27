@@ -168,9 +168,13 @@ export function aboutText(
       : name
         ? `호칭: ${name}님. '사장님'이라고 부르지 않는다.`
         : "호칭: 따로 없다. 이름이나 '사장님' 같은 호칭 없이 해요체로만 말한다.";
+  /*
+   * 봇은 묻기만 한다. askChoice의 `saves: "persona"`는 표면이 네 칸을 자기 말로 그리고, 사람이
+   * 누른 답만 서버가 적는다(`server/src/turns/chat-tools.ts`) — 봇의 호출은 아무것도 적지 않는다.
+   */
   const who = about.persona
-    ? PERSONA_KO[about.persona]
-    : "이 사람이 학생·직장인·사장님 중 누구인지 아직 모른다. 예를 들 때 한쪽으로 짐작하지 않는다.";
+    ? `${PERSONA_KO[about.persona]} 학생·직장인·사장님이 바뀌었다고 하면 askChoice(saves: "persona")로 확인받는다.`
+    : `이 사람이 학생·직장인·사장님 중 누구인지 아직 모른다. 예를 들 때 한쪽으로 짐작하지 않는다. 필요할 때 한 번 askChoice(saves: "persona")로 묻는다.`;
   return [address, `${who} 다른 종류의 일을 부탁하면 그대로 돕는다.`, shopLines]
     .filter(Boolean)
     .join("\n");

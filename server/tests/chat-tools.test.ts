@@ -521,6 +521,110 @@ describe("a card the Bot asks the person with", () => {
     expect(people.awaiting("thread-1")).toEqual([]);
   });
 
+  /*
+   * askChoice with `saves: "persona"`: the Bot asks, the person's press writes. Muse-shape plan
+   * §2.2 — "The Bot's call cannot write", and a Bot that mislabels the options changes nothing.
+   */
+  describe("a persona question", () => {
+    const choiceCards = {
+      listForAgent: async () => [
+        {
+          name: "askChoice",
+          title: "Choice",
+          kind: "decision",
+          description: "d",
+        },
+      ],
+      decide: async () => ({ allowed: true as const, description: "d" }),
+      mayCall: async () => true,
+    };
+    const personaStore = () => {
+      const saved: [string, string | null][] = [];
+      return {
+        saved,
+        store: {
+          savePersona: async (userId: string, persona: string | null) => {
+            saved.push([userId, persona]);
+            return persona as never;
+          },
+        },
+      };
+    };
+    const crafted = {
+      title: "어떤 분이세요?",
+      saves: "persona",
+      options: [{ id: "owner", label: "학생" }],
+    };
+
+    test("writes nothing when the Bot calls it, and the person's press writes", async () => {
+      const people = createPersonAnswers();
+      const { saved, store } = personaStore();
+      const toolkit = await createChatTools({
+        people,
+        components: choiceCards,
+        persona: store,
+      })(context, [tool("askChoice")]);
+      const pending = toolkit.execute("askChoice", crafted, call("p-1"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // The call is on screen and waiting; nothing is written on the Bot's say-so.
+      expect(saved).toEqual([]);
+      expect(people.answer("thread-1", "p-1", { choice: "student" })).toBe(
+        true,
+      );
+      expect(JSON.parse(String(await pending))).toEqual({
+        choice: "student",
+        saved: true,
+      });
+      expect(saved).toEqual([["owner-1", "student"]]);
+    });
+
+    test("a call nobody answered writes nothing", async () => {
+      const { saved, store } = personaStore();
+      const toolkit = await createChatTools({
+        people: createPersonAnswers(),
+        components: choiceCards,
+        persona: store,
+        personWaitMs: 30,
+      })(context, [tool("askChoice")]);
+      await toolkit.execute("askChoice", crafted, call("p-2"));
+      expect(saved).toEqual([]);
+    });
+
+    test("an answer that is not one of the four writes nothing", async () => {
+      const people = createPersonAnswers();
+      const { saved, store } = personaStore();
+      const toolkit = await createChatTools({
+        people,
+        components: choiceCards,
+        persona: store,
+      })(context, [tool("askChoice")]);
+      const pending = toolkit.execute("askChoice", crafted, call("p-3"));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      people.answer("thread-1", "p-3", { choice: "admin" });
+      expect(await pending).toBe('{"choice":"admin"}');
+      expect(saved).toEqual([]);
+    });
+
+    test("an ordinary choice never reaches the persona", async () => {
+      const people = createPersonAnswers();
+      const { saved, store } = personaStore();
+      const toolkit = await createChatTools({
+        people,
+        components: choiceCards,
+        persona: store,
+      })(context, [tool("askChoice")]);
+      const pending = toolkit.execute(
+        "askChoice",
+        { title: "어느 쪽?", options: [{ id: "student", label: "a" }] },
+        call("p-4"),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      people.answer("thread-1", "p-4", { choice: "student" });
+      expect(await pending).toBe('{"choice":"student"}');
+      expect(saved).toEqual([]);
+    });
+  });
+
   test("a card on screen answers with its own sentence", async () => {
     const components = {
       listForAgent: async () => [

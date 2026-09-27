@@ -109,7 +109,7 @@ describe("the clock a run is told", () => {
     // The date and the week after it, never the minute: the minute is the `now` tool's
     // (shared/tools/now.ts), and the week is days only (`weekAheadText`).
     expect(clock).toMatch(
-      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai, 기기 언어 ko-KR 기준\)\. 앞으로 7일: 내일 \d{1,2}\/\d{1,2}\(.\) · 모레 [^:]+\.$/,
+      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(이 사람 기기의 시간대 Asia\/Dubai, 기기 언어 ko-KR 기준\)\. 앞으로 7일: 내일 \d{1,2}\/\d{1,2}\(.\) · 모레 [^:]+\.$/,
     );
     expect(clock).not.toContain("KST");
   });
@@ -125,7 +125,7 @@ describe("the clock a run is told", () => {
       await systemMessageOf(endpoint, registered, { mode: "routine" }),
     );
     expect(clock).toMatch(
-      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai/,
+      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(이 사람 기기의 시간대 Asia\/Dubai/,
     );
   });
 
@@ -161,8 +161,10 @@ describe("the place a run is told", () => {
       place: "서울 강남구",
     });
     const prompt = await systemMessageOf(endpoint, registered);
-    expect(prompt).toContain("사장님 가게 위치: 서울 강남구.");
-    expect(prompt).toContain("네 컴퓨터가 있는 곳이지 사장님 위치가 아니다");
+    expect(prompt).toContain(
+      "이 사람의 위치(가게나 주로 지내는 곳): 서울 강남구.",
+    );
+    expect(prompt).toContain("네 컴퓨터가 있는 곳이지 이 사람의 위치가 아니다");
   });
 
   test("a run's props cannot name a place — it is the person's, kept on the account", async () => {
@@ -173,7 +175,9 @@ describe("the place a run is told", () => {
       person: { place: "제주시" },
     });
     expect(prompt).not.toContain("제주시");
-    expect(prompt).toContain("사장님 가게 위치는 아직 모른다");
+    expect(prompt).toContain(
+      "이 사람의 위치(가게나 주로 지내는 곳)는 아직 모른다",
+    );
     expect(prompt).toContain("remember의 place로 저장");
   });
 
@@ -183,7 +187,7 @@ describe("the place a run is told", () => {
     const prompt = await systemMessageOf(endpoint, registered, {
       mode: "routine",
     });
-    expect(prompt).toContain("사장님 위치를 모른다");
+    expect(prompt).toContain("이 사람의 위치를 모른다");
     expect(prompt).not.toContain("여쭤보고");
   });
 
@@ -197,7 +201,9 @@ describe("the place a run is told", () => {
     );
     const registered = await load({ id: "owner", role: "user" });
     const prompt = await systemMessageOf(endpoint, registered);
-    expect(prompt).toContain("사장님 가게 위치는 아직 모른다");
+    expect(prompt).toContain(
+      "이 사람의 위치(가게나 주로 지내는 곳)는 아직 모른다",
+    );
     expect(dateLineOf(prompt)).toContain("Asia/Seoul(KST) 기준");
   });
 });

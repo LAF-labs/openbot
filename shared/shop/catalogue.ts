@@ -1,11 +1,13 @@
 /**
  * What kind of business a person runs, and the places they work in every day.
  *
- * Two questions the first run asks between the agreement and the first Bot, each skippable, and
- * both answered by pressing rather than typing. The answers belong to the person — one account per
- * deployment, so to the deployment — and every Bot reads them before every run
- * (`shared/prompt/shop.ko.ts`). Nothing but the person, through Settings and the first run, ever
- * writes them: no tool a Bot holds reaches them.
+ * Two questions, each skippable and both answered by pressing rather than typing. The first run
+ * asked them until 2026-09-24; now the Bot's greeting asks the kind of anybody who answers 사장님
+ * (`shared/persona.ts`, `components/agents/greeting.tsx`), and Settings → 내 정보 keeps both for
+ * everyone — optional, since a student or an office worker may have no shop at all. The answers
+ * belong to the person — one account per deployment, so to the deployment — and every Bot reads
+ * them before every run (`shared/prompt/shop.ko.ts`). Nothing but the person's own press, in the
+ * greeting or in Settings, ever writes them: no tool a Bot holds reaches them.
  *
  * IT IS DATA, AND ONLY DATA, like the site catalogue beside it. Every name here is an English key
  * with its Korean in `app/src/lib/i18n-ko.ts`; the Korean the Bot reads is in

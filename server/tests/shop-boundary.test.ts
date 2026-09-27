@@ -124,6 +124,26 @@ describe("who writes the answers", () => {
     expect(reaching).toEqual([]);
   });
 
+  /*
+   * The one tool path that ends in a persona write: askChoice `saves: "persona"`. It is a person's
+   * press arriving on their own session, carried to the waiting turn — so the write must come
+   * AFTER the wait for the person, in the one turn file that waits, and from nothing the Bot sent.
+   * `chat-tools.test.ts` holds the behaviour; this holds the shape, so a second caller shows up.
+   */
+  test("the turn writes the persona only after a person answered, and only there", () => {
+    const turns = sources(join(root, "server/src/turns"));
+    const writing = turns
+      .filter((path) => read(path).includes("savePersona"))
+      .map(at);
+    expect(writing).toEqual(["server/src/turns/chat-tools.ts"]);
+    const text = read(join(root, "server/src/turns/chat-tools.ts"));
+    const waited = text.indexOf("deps.people.wait(");
+    const saved = text.indexOf(".savePersona(owner.id, chosen)");
+    expect(waited).toBeGreaterThan(0);
+    expect(saved).toBeGreaterThan(waited);
+    expect(text.split(".savePersona(").length - 1).toBe(1);
+  });
+
   test("on the server, only the store and the export touch the columns", () => {
     const touching = sources(join(root, "server/src"))
       .filter((path) => {

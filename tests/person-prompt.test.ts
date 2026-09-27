@@ -29,11 +29,13 @@ const BOT = { id: "bot_miso", name: "미소" };
 describe("the place line", () => {
   test("names the person's place, how to use it, and why not a site's", () => {
     const line = placeText({ place: "서울 강남구" }, "chat");
-    expect(line).toStartWith("사장님 가게 위치: 서울 강남구.");
+    expect(line).toStartWith(
+      "이 사람의 위치(가게나 주로 지내는 곳): 서울 강남구.",
+    );
     expect(line).toContain("네이버 검색 '서울 강남구 날씨'");
     expect(line).toContain("이 곳이 아니면 그 숫자는 전하지 않는다");
     expect(line).toContain("어느 곳 기준인지 말한다");
-    expect(line).toContain("네 컴퓨터가 있는 곳이지 사장님 위치가 아니다");
+    expect(line).toContain("네 컴퓨터가 있는 곳이지 이 사람의 위치가 아니다");
   });
 
   test("with only the device's coordinates, says them coarse and asks for a name once", () => {
@@ -52,9 +54,9 @@ describe("the place line", () => {
     expect(chat).toContain("remember의 place로 저장");
 
     const routine = placeText({}, "routine");
-    expect(routine).toContain("사장님 위치를 모른다");
+    expect(routine).toContain("이 사람의 위치를 모른다");
     expect(routine).not.toContain("여쭤보고");
-    expect(routine).toContain("사장님 위치가 아니다");
+    expect(routine).toContain("이 사람의 위치가 아니다");
   });
 
   test("stands after the shop and before what the Bot learned — the person's word first", () => {
@@ -67,7 +69,9 @@ describe("the place line", () => {
       person: { place: "서울 강남구" },
     });
     const shop = prompt.indexOf("음식점·카페");
-    const place = prompt.indexOf("사장님 가게 위치: 서울 강남구");
+    const place = prompt.indexOf(
+      "이 사람의 위치(가게나 주로 지내는 곳): 서울 강남구",
+    );
     const memories = prompt.indexOf("택배는 우체국을 쓴다");
     expect(shop).toBeGreaterThan(-1);
     expect(place).toBeGreaterThan(shop);
@@ -91,7 +95,7 @@ describe("the date line", () => {
       person: { timeZone: "Asia/Dubai", locale: "ko-KR" },
     });
     expect(prompt).toContain(
-      "오늘은 2026-09-24 (목)이다(사장님 기기 시간대 Asia/Dubai, 기기 언어 ko-KR 기준).",
+      "오늘은 2026-09-24 (목)이다(이 사람 기기의 시간대 Asia/Dubai, 기기 언어 ko-KR 기준).",
     );
   });
 
@@ -104,7 +108,7 @@ describe("the date line", () => {
       person: { place: "서울 강남구" },
     });
     expect(prompt).toContain(
-      "오늘은 2026-09-24 (목)이다(사장님 시간대를 몰라 이 배포의 시간대 Asia/Seoul(KST) 기준).",
+      "오늘은 2026-09-24 (목)이다(이 사람의 시간대를 몰라 이 배포의 시간대 Asia/Seoul(KST) 기준).",
     );
   });
 
@@ -144,7 +148,7 @@ describe("the date line", () => {
       person: { timeZone: "Asia/Seoul" },
     });
     expect(prompt).toContain(
-      "오늘은 2026-09-27 (일)이다(사장님 기기 시간대 Asia/Seoul(KST) 기준). 앞으로 7일: 내일 9/28(월) · 모레 9/29(화) · 글피 9/30(수) · 10/1(목) · 10/2(금) · 10/3(토) · 10/4(일).",
+      "오늘은 2026-09-27 (일)이다(이 사람 기기의 시간대 Asia/Seoul(KST) 기준). 앞으로 7일: 내일 9/28(월) · 모레 9/29(화) · 글피 9/30(수) · 10/1(목) · 10/2(금) · 10/3(토) · 10/4(일).",
     );
     expect(prompt).toContain("'앞으로 7일' 줄에 그 날짜와 함께 적힌 대로만");
   });

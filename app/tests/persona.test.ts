@@ -7,6 +7,7 @@ import {
   WORK_FIELDS,
 } from "@shared/persona";
 import { parseFirstTaskPress } from "../../server/src/agents/first-task";
+import { choiceOptions } from "../src/components/gallery/decisions";
 import {
   COMPUTER_FIRST_TASK,
   type FirstTask,
@@ -16,6 +17,7 @@ import {
   pickFirstTasks,
   SUPPORT_PROGRAMS_FIRST_TASK,
 } from "../src/lib/agents/first-tasks";
+import { t } from "../src/lib/i18n";
 import { ko } from "../src/lib/i18n-ko";
 import { PERSONA_LABELS } from "../src/lib/persona/labels";
 
@@ -213,5 +215,36 @@ describe("the effective persona", () => {
     for (const body of [{ persona: "teacher" }, {}, null, [], "student"]) {
       expect(parsePersonaAnswer(body).ok).toBe(false);
     }
+  });
+});
+
+/*
+ * The Bot's own question, askChoice with `saves: "persona"` (muse-shape plan §2.2, phase 4). The
+ * card draws the four answers itself: a Bot that labels `owner` as 학생 would otherwise have a
+ * person save the opposite of what they pressed.
+ */
+describe("a persona question the Bot asks", () => {
+  test("draws the four fixed answers in the surface's words, whatever options the Bot sent", () => {
+    const drawn = choiceOptions({
+      title: "어떤 분이세요?",
+      saves: "persona",
+      options: [
+        { id: "owner", label: "학생" },
+        { id: "admin", label: "관리자" },
+      ],
+    });
+    expect(drawn.map((option) => option.id)).toEqual([...PERSONAS]);
+    expect(drawn.map((option) => option.label)).toEqual(
+      PERSONAS.map((persona) => t(PERSONA_LABELS[persona])),
+    );
+    // And every one of those words has its Korean.
+    for (const persona of PERSONAS) {
+      expect(ko[PERSONA_LABELS[persona]]).toBeTruthy();
+    }
+  });
+
+  test("an ordinary question draws the Bot's own options", () => {
+    const options = [{ id: "a", label: "하나" }];
+    expect(choiceOptions({ title: "어느 쪽?", options })).toEqual(options);
   });
 });

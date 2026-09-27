@@ -653,16 +653,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * composer's; the tab that is the page; the unread mark; 메뉴 holding the sidebar's own places, and
  * 관리 and 봇 프로필 where they belong; 소식 with a line for an empty day) and one of the two sheet
  * tests taken with the sheet (the other now says there is none).
+ * RAISED 2026-09-27 with the persona wording sweep (phase 4): five to `server` (askChoice
+ * `saves: "persona"` writes nothing on the Bot's call, writes the person's press, ignores an answer
+ * outside the four and an ordinary choice; the write only after the wait, in the one turn file),
+ * three to `app` (the card's four fixed answers whatever the Bot sent, and a plain question's own
+ * options; no 사장님 as "you" anywhere in the dictionary) and two to `root` (no 사장님 in the tool
+ * results, and one line of the base prompt naming it).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3053, roots: ["server"] },
-  { name: "app", floor: 1496, roots: ["app"] },
+  { name: "server", floor: 3058, roots: ["server"] },
+  { name: "app", floor: 1499, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 552, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

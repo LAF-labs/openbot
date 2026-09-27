@@ -29,7 +29,9 @@ import {
 import { saveShop } from "@/lib/shop/queries";
 
 /**
- * 내 가게 — the first run's two answers, where a person can see them and change them.
+ * 내 정보 (was 내 가게 until 2026-09-27) — who the person is and the shop answers, where they can
+ * see them and change them. Renamed because a student and an office worker use it too: the
+ * sections are 나는 · 가게·사업 (있다면) · 매일 쓰는 곳 · 위치, and every one is there for everyone.
  *
  * WHAT IS PRESSED HERE IS WHAT EVERY BOT IS TOLD. The answers ride in front of every run of every
  * Bot (`shared/prompt/shop.ko.ts`), so this screen is the one place somebody can check what their
@@ -103,11 +105,15 @@ const ShopSettings = () => {
     >
       {/* First: who the person is, which the Bot's greeting asked (`shared/persona.ts`). */}
       <PersonaRow />
-      <PageSection title={t("What you do")}>
+      {/*
+       * 가게·사업 (있다면): the same eight kinds, optional for everyone. A student leaves it empty
+       * and nothing on any screen is hidden for it (muse-shape plan §2.5).
+       */}
+      <PageSection title={t("Shop or business, if you have one")}>
         <div className="mt-4">
           <BusinessKindPicker
             disabled={saving}
-            label={{ name: t("What you do") }}
+            label={{ name: t("Shop or business, if you have one") }}
             onChange={setKind}
             value={kind}
           />
