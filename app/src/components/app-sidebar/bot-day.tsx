@@ -240,7 +240,23 @@ export function BotDay({
               zone={day.data?.zone ?? ""}
             />
           ))}
-          {hidden > 0 ? (
+          {hidden > 0 && placement === "sidebar" ? (
+            /*
+             * THE SIDEBAR'S 오늘 IS SHORT AND POINTS AT THE WHOLE ONE (muse-shape plan §3.2, §4):
+             * with 소식's row above it, the column at 1024×640 has room for 기다리는 일 and three
+             * rows, and the rest is a page away on 소식, where 오늘 is drawn in full.
+             */
+            <Link
+              className={cn(
+                "self-start rounded-sm px-1 font-medium text-link text-xs underline-offset-4 hover:underline",
+                focusRing,
+              )}
+              onClick={onLeave}
+              to="/feed"
+            >
+              {t("See it all on Updates")}
+            </Link>
+          ) : hidden > 0 ? (
             <button
               className={cn(
                 "self-start rounded-sm px-1 font-medium text-link text-xs underline-offset-4 hover:underline",
@@ -293,10 +309,10 @@ export function BotDay({
 /** Six, then "n개 더 보기": the drawer is a glance, and the conversation holds the rest. */
 const VISIBLE_ROWS = 6;
 /**
- * Four in the sidebar: at the PC app's smallest window (1024×640) the column under the Bot and its
- * conversation has room for 기다리는 일, four of 한 일 and 다음 before it has to scroll.
+ * Three in the sidebar (muse-shape plan §4, phase 7): four fitted under the Bot and its conversation
+ * at the PC app's smallest window (1024×640) until 소식, 아이디어 and 만든 것 took rows above it.
  */
-const SIDEBAR_ROWS = 4;
+const SIDEBAR_ROWS = 3;
 
 function DayGroup({
   children,

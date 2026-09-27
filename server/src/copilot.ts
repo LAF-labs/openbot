@@ -27,6 +27,8 @@ import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
 import { withAttachments } from "./attachments/for-model";
+import { withFeedQuotes } from "./feed/quote";
+import type { FeedStore } from "./feed/store";
 import type { AttachmentService } from "./attachments/service";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
@@ -440,6 +442,12 @@ export type RunMeter = {
    * Absent, an attachment reaches the endpoint as the bare reference it is stored as.
    */
   attachments?: Pick<AttachmentService, "forModel">;
+  /**
+   * 소식's posts, for a message that quotes one (이야기하기): the post read again by its id and put in
+   * the message in its place (`feed/quote.ts`). On the fetch for the attachments' reason. Absent, a
+   * quote reaches the endpoint as the bare reference it is stored as.
+   */
+  feedQuotes?: Pick<FeedStore, "forQuote">;
 };
 
 /**
@@ -563,13 +571,20 @@ function remoteAgentWithPrompt(
         watched ?? ((url, requestInit) => fetch(url, requestInit)),
       )
     : watched;
-  const reach: AgentFetch | undefined = meter?.attachments
+  const filed: AgentFetch | undefined = meter?.attachments
     ? withAttachments(
         meter.attachments,
         agent.id,
         budgeted ?? ((url, requestInit) => fetch(url, requestInit)),
       )
     : budgeted;
+  const reach: AgentFetch | undefined = meter?.feedQuotes
+    ? withFeedQuotes(
+        meter.feedQuotes,
+        agent.id,
+        filed ?? ((url, requestInit) => fetch(url, requestInit)),
+      )
+    : filed;
   const remote = new HttpAgent({
     url: agent.endpoint,
     agentId: agent.id,

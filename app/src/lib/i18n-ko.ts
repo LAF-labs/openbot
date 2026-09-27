@@ -2615,8 +2615,6 @@ export const ko: Record<string, string> = {
   Places: "이동",
   Updates: "소식",
   Menu: "메뉴",
-  "What your Bot did today, what is waiting on you, and what it does next.":
-    "봇이 오늘 한 일, 기다리는 일, 다음에 할 일이에요.",
   "Nothing yet today. What you hand over in the conversation shows up here.":
     "오늘은 아직 한 일이 없어요. 대화에서 맡기신 일이 여기에 모여요.",
   // today
@@ -3093,4 +3091,63 @@ export const ko: Record<string, string> = {
   "Write an introduction for this: ": "소개 글 써 줘: ",
   "Make this for me: ": "만들어 줘: ",
   "That Bot is not yours to see.": "볼 수 없는 봇이에요.",
+  "What it found": "찾은 소식",
+  "What your Bot did today, what is waiting on you, and what it found for you.":
+    "봇이 오늘 한 일과 기다리는 일, 그리고 찾아 온 소식이에요.",
+  "Updates could not be loaded.": "소식을 불러오지 못했어요.",
+  "This deployment does not post updates.":
+    "이 배포에서는 소식을 올리지 않아요.",
+  "Hidden. The next updates will pick fewer like it.":
+    "숨겼어요. 다음 소식부터 이런 것은 덜 골라요.",
+  Undo: "되돌리기",
+  "Nothing posted yet. The first updates come at the next run, or press Make now.":
+    "아직 올라온 소식이 없어요. 다음 실행 때 올라오고, 지금 만들기를 눌러도 돼요.",
+  "Next updates: {when}": "다음 소식: {when}",
+  "Paused: updates piled up unseen for a week.":
+    "멈춤: 보지 않은 소식이 일주일 동안 쌓였어요.",
+  "Paused.": "멈춤",
+  "Looks for: {topics}": "찾는 것: {topics}",
+  "Making them — they appear here in a few minutes":
+    "만드는 중이에요 — 몇 분 뒤 여기에 올라와요",
+  "Make now": "지금 만들기",
+  "Change in the conversation": "대화에서 바꾸기",
+  "Turn it back on in Routines": "루틴에서 다시 켜기",
+  "What I find comes here": "제가 찾은 소식이 여기에 올라와요",
+  "Every morning I look up what changed and post up to three, each with where it came from. Tell me in the conversation what to look for.":
+    "매일 아침 바뀐 것을 찾아 출처와 함께 세 개까지 올려요. 무엇을 찾을지는 대화에서 말씀해 주세요.",
+  "Not sure what to ask?": "무엇을 맡길지 모르겠다면",
+  "Ideas has things I can do for you.":
+    "아이디어에 제가 할 수 있는 일이 있어요.",
+  "See ideas": "아이디어 보기",
+  "It starts by looking for: {topics}": "처음에는 이것부터 찾아요: {topics}",
+  "Get updates every morning": "매일 아침 소식 받기",
+  Like: "좋아요",
+  "Talk about it": "이야기하기",
+  Hide: "숨기기",
+  "Why this: the {routine} routine, looking for “{topic}”, on {sites}":
+    "왜 이 소식: {routine} 루틴 · 찾던 것 ‘{topic}’ · 출처 {sites}",
+  "About this update": "이 소식에 대해",
+  "Remove “{title}”": "‘{title}’ 빼기",
+  "{count} new": "새 소식 {count}개",
+  "See it all on Updates": "소식에서 모두 보기",
+  "That post is no longer there.": "그 소식은 이제 없어요.",
+  "News about my line of business": "업종 뉴스",
+  "Changes to rules and support for small businesses":
+    "소상공인 정책·제도 변화",
+  "Exam and certificate dates": "시험·자격증 일정",
+  "Scholarships and competitions": "장학금·공모전",
+  "News in the field I study": "관심 분야 뉴스",
+  "News about my industry": "업계 뉴스",
+  "Today's economy in three lines": "경제 뉴스 세 줄",
+  "Tax season reminders such as year-end settlement": "연말정산·세금 시기 알림",
+  "News about what I am interested in": "관심 있는 분야 뉴스",
+  "This week's weather": "이번 주 날씨",
+  "Post today's updates the way the {skill} skill says, on these topics:":
+    "{skill} 스킬대로 아래 주제의 새 소식을 찾아 올려 줘:",
+  "Every morning at 6:30: {topics}": "매일 아침 6:30, {topics} 소식",
+  "See Updates": "소식 보기",
+  "Get a briefing and updates every morning": "매일 아침 브리핑과 소식 받기",
+  "And at 6:30, up to three updates on Updates, looking for: {topics}.":
+    "소식은 아침 6:30에 세 개까지 소식 화면에 올라와요. 찾는 것: {topics}.",
+  "Your Bot already has its updates.": "봇의 소식은 이미 있어요.",
 };

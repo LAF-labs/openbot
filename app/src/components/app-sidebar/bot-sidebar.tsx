@@ -2,6 +2,7 @@ import {
   IconBulb,
   IconDots,
   IconLayoutGrid,
+  IconLayoutList,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
@@ -63,6 +64,7 @@ import { rosterNotice } from "@/lib/agents/roster-state";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import { feedUnseenQueryOptions } from "@/lib/feed/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
@@ -321,13 +323,39 @@ function BotIdentity({
 /**
  * THE PLACES A PERSON GOES TO LOOK (muse-shape plan §4): the rows under the conversation, rather than
  * the footer's places that change how the Bot works. 아이디어 came first (phase 5), 만든 것 with its
- * page (phase 6); 소식 and 목표 join them with theirs. One line each, a desktop row like the footer's,
+ * page (phase 6), 소식 on top with its posts (phase 7); 목표 joins them with its own. One line each, a desktop row like the footer's,
  * because the column's height at 1024×640 is what 오늘 lives on.
  */
 const LOOK_ROWS = [
+  { to: "/feed", icon: IconLayoutList, label: "Updates", row: "feed" },
   { to: "/ideas", icon: IconBulb, label: "Ideas", row: "ideas" },
   { to: "/made", icon: IconLayoutGrid, label: "Made", row: "made" },
 ] as const;
+
+/**
+ * 소식's count of posts not yet seen (phase 7): the one number on these rows, because it is the one
+ * that changes without the person doing anything. Nothing drawn at zero or while it loads.
+ */
+function UnseenCount({ isCompact }: { isCompact: boolean }) {
+  const unseen = useQuery(feedUnseenQueryOptions());
+  const count = unseen.data ?? 0;
+  if (count <= 0) return null;
+  const label = t("{count} new", { count });
+  return isCompact ? (
+    <span
+      aria-hidden="true"
+      className="absolute top-1 right-2 size-2 rounded-full bg-mark"
+    />
+  ) : (
+    <span
+      className="ml-auto rounded-full bg-mark px-1.5 font-medium text-white text-xs leading-5"
+      data-unseen-count
+    >
+      <span aria-hidden="true">{count}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
 
 function LookRow({
   icon: Icon,
@@ -344,12 +372,13 @@ function LookRow({
           render={
             <Link
               aria-label={t(label)}
-              className={cn(NAV_LINK_CLASS, "justify-center")}
+              className={cn(NAV_LINK_CLASS, "relative justify-center")}
               to={to}
             />
           }
         >
           {icon}
+          {row === "feed" ? <UnseenCount isCompact /> : null}
         </TooltipTrigger>
         <TooltipContent side="right">{t(label)}</TooltipContent>
       </Tooltip>
@@ -363,6 +392,7 @@ function LookRow({
     >
       {icon}
       {t(label)}
+      {row === "feed" ? <UnseenCount isCompact={false} /> : null}
     </Link>
   );
 }

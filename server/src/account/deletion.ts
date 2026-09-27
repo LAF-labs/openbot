@@ -92,6 +92,7 @@ import {
   credentials,
   lafAnswerRatings,
   lafAttachments,
+  lafFeedPosts,
   lafConversationContexts,
   lafRoutineRuns,
   lafRoutines,
@@ -423,6 +424,15 @@ export function createAccountDeletion(
             .delete(lafAttachments)
             .where(eq(lafAttachments.userId, userId))
             .returning({ id: lafAttachments.id }),
+        );
+
+        // 소식's posts: the cascade would take them too; taken here so the tally says how many.
+        record(
+          "feedPosts",
+          await transaction
+            .delete(lafFeedPosts)
+            .where(eq(lafFeedPosts.userId, userId))
+            .returning({ id: lafFeedPosts.id }),
         );
 
         const memberOf = await transaction

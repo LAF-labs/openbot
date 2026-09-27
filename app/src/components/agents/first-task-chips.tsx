@@ -15,6 +15,7 @@ import {
 import type { AgentProfile } from "@/lib/agents/queries";
 import { t } from "@/lib/i18n";
 import { createChannelMutationOptions } from "@/lib/channels/mutations";
+import { makeFeedRoutine } from "@/lib/feed/queries";
 import { failureSentence } from "@/lib/press";
 import { routineKeys } from "@/lib/routines/queries";
 import { dailyPlaceById } from "@/lib/shop/catalogue";
@@ -42,6 +43,7 @@ export const FirstTaskChips = ({
   briefing,
   briefingMade = false,
   disabled,
+  feedTopics = [],
   onAsk,
   placeKnown,
   tasks,
@@ -53,6 +55,11 @@ export const FirstTaskChips = ({
   briefingMade?: boolean;
   /** A first message is already on its way; a second chip must not start a second channel. */
   disabled: boolean;
+  /**
+   * What 소식 starts by looking for (`lib/feed/queries.ts`, `feedTopics`): the chip makes 소식 with
+   * the briefing — "매일 아침 브리핑과 소식 받기" (muse-shape plan §3.2, D3). None, no 소식.
+   */
+  feedTopics?: readonly string[];
   onAsk: (sentence: string) => void;
   /** Whether the person's place — named, or from the device — is known. The weather needs it. */
   placeKnown: boolean;
@@ -74,7 +81,9 @@ export const FirstTaskChips = ({
        * makes, which answers with the Bot's conversation if it already has one.
        */
       await openConversation.mutateAsync([agent.id]);
-      return makeMorningReport({
+      const timeZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const briefing = await makeMorningReport({
         agentId: agent.id,
         instruction,
         /*
@@ -84,8 +93,21 @@ export const FirstTaskChips = ({
          */
         name: t("Morning briefing"),
         // The person's own clock, the way the Routines page reads it: 7:30 means 7:30 here.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        timeZone,
       });
+      /*
+       * AND 소식, IN THE SAME PRESS (plan D3: made by a press, never by default). Its own routine at
+       * 06:30 whose result is posts on 소식 rather than a message here; a Bot that already has one
+       * answers `laf:routine_feed_exists`, which `makeFeedRoutine` takes as made.
+       */
+      if (feedTopics.length > 0) {
+        await makeFeedRoutine(queryClient, {
+          agentId: agent.id,
+          topics: feedTopics,
+          timeZone,
+        });
+      }
+      return briefing;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: routineKeys.all });
@@ -207,6 +229,17 @@ export const FirstTaskChips = ({
             >
               {t("See it on Routines")}
             </Link>
+            {feedTopics.length > 0 ? (
+              <>
+                {" · "}
+                <Link
+                  className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+                  to="/feed"
+                >
+                  {t("See Updates")}
+                </Link>
+              </>
+            ) : null}
           </>
         ) : null}
       </LiveRegion>
@@ -237,7 +270,9 @@ export const FirstTaskChips = ({
           >
             {makeRoutine.isPending
               ? t("Making the routine…")
-              : t("Get a briefing every morning at 7:30")}
+              : feedTopics.length > 0
+                ? t("Get a briefing and updates every morning")
+                : t("Get a briefing every morning at 7:30")}
           </button>
           {/*
            * WHAT ARRIVES, SAID BEFORE IT IS MADE. The chip used to name the one sentence it repeated
@@ -251,6 +286,14 @@ export const FirstTaskChips = ({
               { contents: briefingContents(briefing, t) },
             )}
           </p>
+          {feedTopics.length > 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {t(
+                "And at 6:30, up to three updates on Updates, looking for: {topics}.",
+                { topics: feedTopics.join(", ") },
+              )}
+            </p>
+          ) : null}
           {placeLine}
           <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
             {makeRoutine.error ? failureSentence(makeRoutine.error) : null}

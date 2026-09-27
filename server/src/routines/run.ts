@@ -25,6 +25,13 @@ import {
   readNotepad,
   withNotepad,
 } from "./notepad";
+import {
+  type FeedDraft,
+  feedDraftOf,
+  reactionsFor,
+  recentPostKeys,
+  withFeed,
+} from "./feed";
 import { lastReport } from "./receipts";
 import { runAgentOnce } from "./run-once";
 import { reportRun } from "./run-report";
@@ -130,7 +137,7 @@ export type RoutineRun = {
 /** What asking the Bot came to, before any of it is written down. */
 type Attempt = Pick<
   RunToSettle,
-  "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped"
+  "ok" | "answer" | "failure" | "steps" | "notepad" | "stopped" | "feed"
 > & {
   /** The run stopped for a person. Such a run is never silent, whatever its first line says. */
   awaiting: boolean;
@@ -293,6 +300,7 @@ async function executeNow(
     steps: attempt.steps,
     silent,
     notepad: attempt.notepad,
+    feed: attempt.feed,
     stopped: attempt.stopped,
     measure: meter.read(),
     awaiting: attempt.awaiting,
@@ -369,6 +377,8 @@ async function askTheBot(
   scheduledFor?: Date,
 ): Promise<Attempt> {
   let notepad: NotepadDraft | null = null;
+  /** 소식's posts, held until the settlement. Only for a routine whose `delivery` is `feed`. */
+  let feed: FeedDraft | null = null;
   /*
    * When this run was meant for, beside the instruction. The prompt middleware appends it to the
    * instruction as a reminder (`context/conversations.ts`): "오늘 주문 확인" at 07:30 has to know it
@@ -388,6 +398,7 @@ async function askTheBot(
     awaiting: false,
     // Kept so the trail can say its writes were discarded, exactly as a failed run's are.
     notepad,
+    feed,
     stopped: true,
   });
   if (signal.aborted) return stopped(null);
@@ -405,7 +416,7 @@ async function askTheBot(
     if (!target) {
       throw new Error(`The Bot "${row.agentId}" is no longer in the roster.`);
     }
-    const instruction = await instructionFor(options.database, row);
+    const instruction = await instructionFor(options.database, row, author);
 
     if (options.tools) {
       const actor: ActionActor = {
@@ -425,10 +436,28 @@ async function askTheBot(
         await readNotepad(options.database, row.id),
         options.now,
       );
-      const toolkit = withNotepad(
+      const noted = withNotepad(
         await options.tools(row.agentId, actor),
         notepad,
       );
+      /*
+       * 소식: `feed_post` beside the other tools, and every other result read for the addresses a
+       * post may cite (`feed.ts`). Read inside the lane too, so a second run queued behind the first
+       * sees what the first posted and does not post it again.
+       */
+      if (row.delivery === "feed") {
+        feed = feedDraftOf({
+          routineId: row.id,
+          agentId: row.agentId,
+          userId: author,
+          recent: await recentPostKeys(options.database, {
+            userId: author,
+            agentId: row.agentId,
+            now: options.now(),
+          }),
+        });
+      }
+      const toolkit = feed ? withFeed(noted, feed) : noted;
       const run = await runUnattended(target, instruction, {
         toolkit,
         timeoutMs: options.runTimeoutMs,
@@ -457,6 +486,7 @@ async function askTheBot(
         steps: run.steps,
         awaiting,
         notepad,
+        feed,
         stopped: false,
       };
     }
@@ -479,6 +509,7 @@ async function askTheBot(
       steps: null,
       awaiting: false,
       notepad: null,
+      feed: null,
       stopped: false,
     };
   } catch (error) {
@@ -494,22 +525,36 @@ async function askTheBot(
       awaiting: false,
       // Kept so the trail can say a failed run's writes were discarded — never so they are written.
       notepad,
+      feed,
       stopped: false,
     };
   }
 }
 
-/** The routine's instruction, with the last thing it reported carried after it when there is one. */
+/**
+ * The routine's instruction, with the last thing it reported carried after it when there is one —
+ * and, for 소식, what the person liked and hid lately (`feed.ts`, `reactionsFor`): the buttons on
+ * 소식 are read here or nowhere, and a like the next run never read would be a control that saves
+ * and does nothing (muse-shape plan §3.2).
+ */
 async function instructionFor(
   database: Database,
   row: RoutineRow,
+  author: string,
 ): Promise<string> {
   const previous = await lastReport(database, row.id);
-  if (!previous) return row.instruction;
-  return carriedInstruction(
-    row.instruction,
-    previous.length > CARRIED_ANSWER_MAX_CHARS
-      ? `${previous.slice(0, CARRIED_ANSWER_MAX_CHARS)}\n\n[truncated]`
-      : previous,
-  );
+  const carried = previous
+    ? carriedInstruction(
+        row.instruction,
+        previous.length > CARRIED_ANSWER_MAX_CHARS
+          ? `${previous.slice(0, CARRIED_ANSWER_MAX_CHARS)}\n\n[truncated]`
+          : previous,
+      )
+    : row.instruction;
+  if (row.delivery !== "feed") return carried;
+  const reactions = await reactionsFor(database, {
+    userId: author,
+    agentId: row.agentId,
+  });
+  return reactions ? `${carried}\n\n${reactions}` : carried;
 }

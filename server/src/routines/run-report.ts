@@ -51,6 +51,8 @@ export async function reportRun(
          * is a run whose Bot has no conversation with its author. Only when true, like `silent`.
          */
         ...(settled.delivered ? { delivered: true } : {}),
+        // 소식: how many posts the run landed. Only when some did, like `delivered`.
+        ...(settled.posted > 0 ? { posted: settled.posted } : {}),
         /*
          * The failure as a fact code, never the sentence that threw — the same table the
          * transcript reads, so the notification and the red line agree — and the conversation

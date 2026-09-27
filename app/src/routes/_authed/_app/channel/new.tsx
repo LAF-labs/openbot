@@ -22,6 +22,7 @@ import {
   pickFirstTasks,
 } from "@/lib/agents/first-tasks";
 import { briefingSections } from "@/lib/agents/morning-briefing";
+import { feedTopics } from "@/lib/feed/queries";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { usePublishTurn } from "@/lib/agents/presence";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
@@ -263,6 +264,7 @@ function FirstConversation({
                     briefing={briefing}
                     briefingMade={briefingMade}
                     disabled={pending || sent !== null}
+                    feedTopics={feedTopics(persona, user?.shop?.kind)}
                     key={`first-tasks:${bot.id}`}
                     onAsk={(sentence) => {
                       // The failure is already on screen as the notice; nothing else to do with it.

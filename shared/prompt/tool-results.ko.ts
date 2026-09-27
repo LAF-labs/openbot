@@ -517,6 +517,23 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "메모장에 그 이름의 칸이 없어서 지울 것이 없다. 프롬프트의 메모장에 적힌 이름을 그대로 써라.",
 
   /*
+   * 소식에 글 올리기(`feed_post`, `routines/feed.ts`). 출처는 이 실행이 툴로 받은 결과에 나온
+   * 주소여야 한다 — 기억이나 짐작으로 적은 주소는 사실처럼 보이는 글을 만든다(계획 §5.4).
+   */
+  // 사람이 누른 소식 버튼만 소식 루틴을 만든다. 봇이 이 코드를 만날 일은 없지만, 루틴 문의 거절은 모두 말이 있다.
+  "laf:routine_feed_exists":
+    "이 봇에는 이미 소식 루틴이 있어서 새로 만들지 않았다. 무엇을 찾을지 바꾸려면 그 루틴의 지시에서 주제 줄을 고쳐라.",
+  "laf:feed_staged": "소식에 올렸다. 이 실행이 끝까지 가면 소식 화면에 보인다.",
+  "laf:feed_full":
+    "이번 실행에는 이미 세 개를 올려서 더 올리지 않았다. 올린 것으로 마치고, 남은 것은 다음 실행에 맡겨라.",
+  "laf:feed_post_invalid":
+    "feed_post에 넘긴 값이 모양에 맞지 않아 올리지 않았다. field에 적힌 칸을 고쳐 다시 불러라: topic은 20자, title은 80자, body는 600자까지이고, sources에는 제목과 http 주소를 가진 출처가 하나에서 셋까지 있어야 한다.",
+  "laf:feed_source_unseen":
+    "그 출처 주소는 이번 실행에서 툴로 열거나 받은 결과에 없어서 올리지 않았다. 이번 실행에서 실제로 연 페이지나 검색 결과에 나온 주소만 적어라. 없다면 그 페이지를 먼저 열어라.",
+  "laf:feed_repeat":
+    "같은 제목이나 같은 출처의 글을 최근에 이미 올렸다. 다시 올리지 말고, 새로 바뀐 것만 올려라. 새것이 없으면 [SILENT]로 답해도 된다.",
+
+  /*
    * 연결이 낸 거절들. 여기 없는 코드는 `toolResultText`가 코드를 그대로 돌려주고, 봇은
    * "laf:alimtalk_template_pending"을 답으로 읽는다 — 2026-09까지 이 표에는 커넥터 코드가 하나도
    * 없었고, 그것이 실제로 일어난 일이다.
@@ -860,7 +877,16 @@ function routineLine(routine: unknown): string | undefined {
       : row.pausedReason === "unread"
         ? "멈춤(결과를 한동안 읽지 않아 저절로 멈춤)"
         : "멈춤";
-  return `- ${name} (id: ${row.id}) — ${when}, ${state}`;
+  const line = `- ${name} (id: ${row.id}) — ${when}, ${state}`;
+  /*
+   * 소식 루틴만은 지시를 싣는다(phase 7). 무엇을 찾을지가 곧 지시의 주제 줄이라, "소식에 부동산 뉴스도
+   * 넣어 줘"는 지시를 읽어야 고칠 수 있다 — 싣지 않았을 때 봇은 지금 주제가 무엇이냐고 사람에게
+   * 되물었다(실측, 2026-09-27). 이름처럼 JSON 따옴표 안에 넣어 줄을 닫지 못하게 한다.
+   */
+  if (row.delivery === "feed" && typeof row.instruction === "string") {
+    return `${line}, 소식 루틴(결과는 대화가 아니라 소식 화면의 글)\n  지시: ${JSON.stringify(row.instruction)}\n  주제를 더하거나 빼 달라면 이 지시의 "- " 주제 줄만 고치고 첫 줄과 다른 주제 줄은 그대로 둔다. 스킬 본문을 지시에 옮겨 적지 않는다.`;
+  }
+  return line;
 }
 
 /** 저장된 행의 이름을 따옴표 안에. 이름이 글자가 아니면 undefined. */

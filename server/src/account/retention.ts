@@ -27,7 +27,7 @@
  */
 import { lt, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import { lafRoutineRuns, lafThreadRuns } from "../db/schema";
+import { lafFeedPosts, lafRoutineRuns, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { purgeNotificationsBefore } from "../notifications/outbox";
 
@@ -50,6 +50,14 @@ export const DEFAULT_RETENTION_DAYS = 365;
  */
 export const NOTIFICATION_RETENTION_DAYS = 30;
 
+/**
+ * Ninety days for 소식's posts (muse-shape plan §3.2). A post is a day's news; a quarter of them is
+ * more than anybody scrolls back through, and what was worth keeping was liked or talked about in
+ * the conversation, which keeps its own history. Rides the same tick, and `AUDIT_RETENTION_DAYS=0`
+ * keeps these too, for the reason the outbox's note gives.
+ */
+export const FEED_RETENTION_DAYS = 90;
+
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export type RetentionOutcome = {
@@ -59,6 +67,8 @@ export type RetentionOutcome = {
   routineRuns: number;
   /** Outbox rows, on their own thirty-day cutoff. See NOTIFICATION_RETENTION_DAYS. */
   notifications: number;
+  /** 소식's posts, on their own ninety-day cutoff. See FEED_RETENTION_DAYS. */
+  feedPosts: number;
 };
 
 export type RetentionJob = {
@@ -145,12 +155,23 @@ export function createRetentionJob(input: {
         new Date(now().getTime() - NOTIFICATION_RETENTION_DAYS * DAY_MS),
       );
 
+      const feedPosts = await database
+        .delete(lafFeedPosts)
+        .where(
+          lt(
+            lafFeedPosts.createdAt,
+            new Date(now().getTime() - FEED_RETENTION_DAYS * DAY_MS),
+          ),
+        )
+        .returning({ id: lafFeedPosts.id });
+
       const outcome: RetentionOutcome = {
         cutoff: cutoff.toISOString(),
         auditEvents: auditEventCount,
         threadRuns: threadRuns.length,
         routineRuns: routineRuns.length,
         notifications,
+        feedPosts: feedPosts.length,
       };
       /*
        * ONE LINE, ALWAYS, INCLUDING THE RUN THAT REMOVED NOTHING. A job that logs only when it did
@@ -162,7 +183,8 @@ export function createRetentionJob(input: {
         `retention: kept ${days} days (before ${outcome.cutoff}) — ` +
           `${outcome.auditEvents} audit, ${outcome.threadRuns} runs, ` +
           `${outcome.routineRuns} routine runs removed; ` +
-          `${outcome.notifications} notifications removed (kept ${NOTIFICATION_RETENTION_DAYS} days)`,
+          `${outcome.notifications} notifications removed (kept ${NOTIFICATION_RETENTION_DAYS} days); ` +
+          `${outcome.feedPosts} 소식 posts removed (kept ${FEED_RETENTION_DAYS} days)`,
       );
       return outcome;
     } finally {

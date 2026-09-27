@@ -445,6 +445,16 @@ export const lafRoutines = pgTable("laf_routines", {
    * conversation — would pause it again on the next tick.
    */
   resumedAt: timestamp("resumed_at", { withTimezone: true }),
+  /**
+   * Where the run's result goes: `chat`, the Bot's conversation, as every routine did until 소식; or
+   * `feed`, posts on 소식 written through `feed_post` (`routines/feed.ts`), with only what needs the
+   * person — an approval, a sign-in, a failure — still landing in the conversation.
+   *
+   * Set only when a person makes the routine by pressing 소식's button (`POST /api/routines` with
+   * `delivery`, muse-shape plan D3); `manage_routine` never names it, so a Bot can neither make a
+   * feed nor turn its conversation's routine into one. Text for the reason `paused_reason` is.
+   */
+  delivery: text("delivery").$type<RoutineDelivery>().notNull().default("chat"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -455,6 +465,61 @@ export const lafRoutines = pgTable("laf_routines", {
 
 /** Why a routine is off when its person did not turn it off. See `laf_routines.paused_reason`. */
 export type RoutinePauseReason = "unread";
+
+/** Where a routine's result goes. See `laf_routines.delivery`. */
+export type RoutineDelivery = "chat" | "feed";
+
+/**
+ * 소식: WHAT A FEED RUN FOUND, AS POSTS (muse-shape plan §3.2, phase 7).
+ *
+ * Written by a routine whose `delivery` is `feed`, through `feed_post` — at most three a run, each
+ * citing only pages that run's own tools returned — and landed by the run's settlement, in its
+ * transaction, only when the run succeeded (`routines/feed.ts`). Read, liked and hidden by the
+ * person on 소식; what they liked and hid is read back into the next run's instruction, so the
+ * buttons reach something.
+ *
+ * Kept 90 days (`retention.ts`); the person's own, so it goes with their account and comes with
+ * their export (`docs/laf/data-lifecycle.md`).
+ */
+export const lafFeedPosts = pgTable(
+  "laf_feed_posts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /** Set null: a post outlives the routine that wrote it, the way a delivered answer does. */
+    routineId: text("routine_id").references(() => lafRoutines.id, {
+      onDelete: "set null",
+    }),
+    /** The run that wrote it: the receipt's id and the ledger row's. */
+    runId: text("run_id"),
+    /** A short label over the title — 업종 뉴스, 장학금 — the Bot's word for what the post is about. */
+    topic: text("topic").notNull(),
+    title: text("title").notNull(),
+    /** Three or four lines. Markdown is not drawn; line breaks are. */
+    body: text("body").notNull(),
+    /** Up to three `{title, url}`, every url one the run's own tools returned. */
+    sources: jsonb("sources").$type<FeedSource[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** When 소식 first showed it. Null counts toward the unseen badge and the unread pause. */
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    likedAt: timestamp("liked_at", { withTimezone: true }),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("laf_feed_posts_user_created_idx").on(table.userId, table.createdAt),
+    index("laf_feed_posts_routine_idx").on(table.routineId),
+  ],
+);
+
+/** One page a post cites. */
+export type FeedSource = { title: string; url: string };
 
 /**
  * What happened the last twenty times a routine ran.

@@ -47,6 +47,7 @@ import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { createAccountDeletion } from "../src/account/deletion";
 import { createMadeReader } from "../src/agents/made";
+import { createFeedStore } from "../src/feed/store";
 import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
@@ -378,6 +379,8 @@ function deployment() {
     undefined,
     // 만든 것: mounted, so its one door is pressed by every person below.
     createMadeReader({ database }),
+    // 소식: the posts and the person's three presses on them.
+    createFeedStore({ database }),
   );
   return { app, routineService, approvals };
 }
@@ -797,6 +800,9 @@ const B_ALLOWED = [
   "GET /api/components",
   "GET /api/components/functions",
   "GET /api/connections/overview",
+  // 소식: the person's own posts, their count, and the presses on them — nobody else's.
+  "GET /api/feed",
+  "GET /api/feed/unseen",
   "GET /api/health",
   // 아이디어: the person's own cards, in their order — keys and connection states, nobody else's.
   "GET /api/ideas",
@@ -817,6 +823,8 @@ const B_ALLOWED = [
   "GET /health",
   "POST /api/agents/test-connection",
   "POST /api/auth/*",
+  // 소식's like and hide name a post by id, and the matrix's made-up id is nobody's: 404 for all.
+  "POST /api/feed/seen",
   "POST /api/me/consent",
   "POST /api/me/onboarded",
   "POST /api/plugins/servers/:id/disconnect",

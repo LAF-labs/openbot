@@ -12,6 +12,7 @@ import { usePresence } from "@/components/channels/use-presence";
 import { focusRing } from "@/components/ui/focus";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { feedUnseenQueryOptions } from "@/lib/feed/queries";
 import { t } from "@/lib/i18n";
 import { useIsKeyboardUp } from "@/lib/use-keyboard-up";
 import { cn } from "@/lib/utils";
@@ -76,6 +77,7 @@ export function PhoneTabBar() {
         </li>
         <li className="contents">
           <Tab
+            badge={<UpdatesMark />}
             icon={IconLayoutList}
             isActive={isUpdates}
             label={t("Updates")}
@@ -140,6 +142,25 @@ function Tab({
       </span>
       {label}
     </Link>
+  );
+}
+
+/** 소식's unseen count, on its tab (phase 7). Nothing at zero. */
+function UpdatesMark() {
+  const unseen = useQuery(feedUnseenQueryOptions());
+  const count = unseen.data ?? 0;
+  if (count <= 0) return null;
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="-top-1 -right-2.5 absolute min-w-4 rounded-full bg-mark px-1 text-center font-medium text-white text-xs leading-4 ring-2 ring-sidebar"
+        data-mark="unseen"
+      >
+        {count}
+      </span>
+      <span className="sr-only">{t("{count} new", { count })}</span>
+    </>
   );
 }
 

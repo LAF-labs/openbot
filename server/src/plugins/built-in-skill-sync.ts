@@ -24,6 +24,7 @@
  */
 import { COMPUTER_TOOLS } from "../../../shared/tools/computer";
 import { NOW_TOOL_NAME } from "../../../shared/tools/now";
+import { FEED_POST } from "../../../shared/tools/feed-post";
 import { ROUTINE_NOTE } from "../../../shared/tools/routine-note";
 import { SELF_TOOLS } from "../../../shared/tools/self";
 import { SKILL_TOOLS } from "../../../shared/tools/skills";
@@ -38,7 +39,7 @@ import type { PluginStore } from "./store";
 
 /**
  * The tools a deployment offers, by name: every Bot's own (its computer, itself, its skills, the
- * clock, a routine's notepad) and the deployment-key tools where the key is. What `requires:` is
+ * clock, a routine's notepad, 소식's posts) and the deployment-key tools where the key is. What `requires:` is
  * held to; `built-in-skills.test.ts` holds every name the package writes there to this list, so a
  * misspelt one fails a test rather than hiding a skill on every deployment.
  */
@@ -49,6 +50,7 @@ export function offeredTools(options: { publicData: boolean }): Set<string> {
     ...SKILL_TOOLS.map((tool) => tool.name),
     NOW_TOOL_NAME,
     ROUTINE_NOTE.name,
+    FEED_POST.name,
     ...(options.publicData ? PUBLIC_DATA_TOOLS.map((tool) => tool.name) : []),
   ]);
 }

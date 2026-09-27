@@ -2,6 +2,7 @@ import {
   ATTACHMENT_PICKER_ACCEPT,
   ATTACHMENTS_PER_MESSAGE,
 } from "@shared/attachments";
+import type { FeedQuotePart } from "@shared/feed";
 import {
   IconArrowUp,
   IconPaperclip,
@@ -28,8 +29,10 @@ import {
   uploadAttachment,
   uploadRefusalText,
 } from "@/lib/attachments/upload";
+import { FeedQuoteChip } from "@/components/feed/feed-quote-chip";
 import { holdDraft, takeKeptDraft } from "@/lib/build-reload";
 import { ensure } from "@/lib/ensure";
+import { takeFeedQuote, useOfferedFeedQuote } from "@/lib/feed/quote-offer";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
@@ -182,6 +185,12 @@ export function Composer({
   const [attachments, setAttachments] = useState<readonly PendingAttachment[]>(
     [],
   );
+  /**
+   * The 소식 post this message is about (이야기하기, `lib/feed/quote-offer.ts`): a chip over the box,
+   * sent as a part of the message by its id. Not a file, so it is held whether or not this
+   * deployment takes files.
+   */
+  const [quote, setQuote] = useState<FeedQuotePart | null>(null);
   /** Why the last file offered was not taken, in the owner's words. Cleared by the next offer. */
   const [attachNotice, setAttachNotice] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -381,14 +390,18 @@ export function Composer({
     async (segments: Segment[]) => {
       const typed = toDraft(segments);
       const sentAttachments = attachments;
-      const parts = sentAttachments.flatMap((attachment) =>
+      const sentQuote = quote;
+      const files = sentAttachments.flatMap((attachment) =>
         attachment.part ? [attachment.part] : [],
       );
+      // The post first, the way it is shown: what the words under it are about.
+      const parts = sentQuote ? [sentQuote, ...files] : files;
       const submitted: ComposerDraft = parts.length
         ? { ...typed, attachments: parts }
         : typed;
-      // A file still going up holds the send: the message would leave without it.
-      if ((typed.isEmpty && parts.length === 0) || disabled || isUploading) {
+      // A file still going up holds the send: the message would leave without it. A post alone is
+      // not a message: the words say what about it.
+      if ((typed.isEmpty && files.length === 0) || disabled || isUploading) {
         return;
       }
 
@@ -410,6 +423,7 @@ export function Composer({
         }
         setValue([]);
         setAttachments([]);
+        setQuote(null);
         releasePreviews(sentAttachments);
         onQueue(submitted);
         return;
@@ -424,6 +438,7 @@ export function Composer({
       // Clear optimistically; restore if the send fails before becoming a message.
       setValue([]);
       setAttachments([]);
+      setQuote(null);
       // `try`…`catch`…`finally`, the `finally` through `ensure`: the React Compiler cannot compile
       // a `finally` in the component itself. The draft is put back first, then the flags come down.
       await ensure(
@@ -434,6 +449,7 @@ export function Composer({
           } catch (error) {
             setValue(segments);
             setAttachments(sentAttachments);
+            setQuote(sentQuote);
             throw error;
           }
         },
@@ -446,7 +462,7 @@ export function Composer({
         },
       );
     },
-    [attachments, disabled, isBusy, isUploading, onQueue, onSubmit],
+    [attachments, quote, disabled, isBusy, isUploading, onQueue, onSubmit],
   );
 
   /**
@@ -522,6 +538,22 @@ export function Composer({
     promptAreaRef.current?.focus();
   }, [offered, draftKey, disabled, draft.isEmpty]);
 
+  /** A post pressed 이야기하기 on 소식: taken as the chip, and the caret given to the box under it. */
+  const offeredQuote = useOfferedFeedQuote(draftKey);
+  useEffect(() => {
+    if (offeredQuote === null || disabled) return;
+    const taken = takeFeedQuote(draftKey);
+    if (taken === null) return;
+    setQuote(taken);
+    promptAreaRef.current?.focus();
+  }, [offeredQuote, draftKey, disabled]);
+
+  const quoteChip = quote ? (
+    <div className="mb-2 flex">
+      <FeedQuoteChip onRemove={() => setQuote(null)} part={quote} />
+    </div>
+  ) : null;
+
   /*
    * WHAT IS TYPED SURVIVES A RELOAD FOR A NEW BUILD (`lib/build-reload.ts`). Held while it is here,
    * written down in the moment before the page goes, and offered back to this box when it is drawn
@@ -574,6 +606,7 @@ export function Composer({
   if (compact) {
     return (
       <div className={cn("flex flex-col", className)}>
+        {quoteChip}
         {attach ? (
           <AttachmentChips
             attachments={attachments}
@@ -710,6 +743,7 @@ export function Composer({
 
   return (
     <div className={cn("w-xl", className)}>
+      {quoteChip}
       <form
         aria-busy={isBusy}
         // The same surface as the in-conversation composer, squared off because it grows a toolbar.

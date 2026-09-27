@@ -457,6 +457,42 @@ the first one, so the chips stay. It is named 아침 브리핑, which hides the
 Routines page's own 아침 브리핑 card, and a Bot that has one is shown "made"
 rather than offered a second.
 
+## 소식 — a routine whose result is posts
+
+`laf_routines.delivery` is `chat` for every routine but one kind: 소식, made by a
+person's press — the button on 소식's empty page, or the 7:30 chip, which
+became 매일 아침 브리핑과 소식 받기 (muse-shape plan §3.2, D3: made by a press,
+never by default). `POST /api/routines` takes `delivery: "feed"`; one per Bot
+(`laf:routine_feed_exists`); `manage_routine` never names it, so a Bot can neither
+make a feed nor turn a routine into one. It runs daily at 06:30 in the
+person's zone with an instruction naming the package's `소식` skill
+(`tenant/laf/skills/feed.md`) and one topic per line, the persona's defaults
+(`app/src/lib/feed/queries.ts`, `FEED_TOPICS`).
+
+**Its result goes to 소식, not the conversation.** Only a feed run gets
+`feed_post` (`shared/tools/feed-post.ts`, `server/src/routines/feed.ts`), the
+rung `routine_note` is on. A post is refused in the same run when a source is
+not an address that run's own tools returned (`laf:feed_source_unseen`), when
+the run already posted three (`laf:feed_full`), or when its title or a source
+was posted in the last 30 days (`laf:feed_repeat`). Posts are held in memory
+and written in the settlement's transaction, only for a run that succeeded.
+The answer is delivered to the conversation only when the run stopped for the
+person; a failure is marked there as any routine's is.
+
+**What the person pressed reaches the next run.** The instruction a feed run
+receives carries, after it, the titles of the last five posts liked and the
+last five hidden (`reactionsFor`). The Bot's routine list shows a feed
+routine's instruction, so "소식에 부동산 뉴스도 넣어 줘" edits its topic lines.
+
+**Unread counts posts.** A feed run whose posts 소식 has not shown counts as one
+unread result for the pause above, three of them and a week old pausing it.
+
+**Measured (2026-09-27, DeepSeek V4.1 Flash, local stack):** three runs of a
+two-topic 소식 cost $0.030, $0.035 and $0.033 by their `model.usage` rows —
+7–15 model calls and 129–248K prompt tokens each, most of them cached, because
+every search page and article opened rides along in the next call. That is
+about $1 a month for one daily 소식, above the plan's estimate (§5.3).
+
 ## Triggers
 
 Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the

@@ -1,4 +1,5 @@
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
+import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
 import type { Message, ToolCall } from "@ag-ui/core";
 import {
   BROWSING_TOOLS,
@@ -20,6 +21,8 @@ export type VisibleChatItem =
       at?: string;
       /** The files a person's message carried, drawn above their words (`@shared/attachments`). */
       attachments?: AttachmentPart[];
+      /** The 소식 post a person's message is about (이야기하기, `@shared/feed`). */
+      quotes?: FeedQuotePart[];
     }
   | {
       kind: "tool";
@@ -270,6 +273,7 @@ export function toVisibleChatItems(
             .join("\n");
     // A message of files alone is still something said: a receipt handed over without a word.
     const attachments = attachmentPartsOf(message.content);
+    const quotes = feedQuotesOf(message.content);
 
     return text || attachments.length > 0
       ? [
@@ -279,6 +283,7 @@ export function toVisibleChatItems(
             role: "user",
             text,
             ...(attachments.length > 0 ? { attachments } : {}),
+            ...(quotes.length > 0 ? { quotes } : {}),
             ...(times[message.id] ? { at: times[message.id] } : {}),
           },
         ]

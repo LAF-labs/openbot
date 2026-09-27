@@ -10,6 +10,8 @@ import {
 } from "./account/whereabouts";
 import { createDayRoutes, type DayReader } from "./agents/day";
 import { createMadeRoutes, type MadeReader } from "./agents/made";
+import { createFeedRoutes } from "./feed/routes";
+import type { FeedStore } from "./feed/store";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -441,6 +443,13 @@ export function createApp(
    * rather than an empty shelf that reads as a Bot that made nothing.
    */
   readMade?: MadeReader,
+  /**
+   * 소식: the posts a feed routine wrote (feed/). Last, like everything new.
+   *
+   * Absent leaves `/api/feed` unmounted — the page then says it could not read 소식, rather than
+   * drawing an empty feed that reads as a Bot that found nothing.
+   */
+  feed?: FeedStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1012,6 +1021,10 @@ export function createApp(
       "/api/admin/metrics",
       createInsightsRoutes({ token: config.fleetMetricsToken, read: insights }),
     );
+  }
+
+  if (feed) {
+    app.route("/api/feed", createFeedRoutes(feed, requireUser));
   }
 
   if (agentProfileStore) {

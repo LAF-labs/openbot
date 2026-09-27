@@ -671,14 +671,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * shelf; nobody else's; the pages walking back; the door's refusals) and nine to `app` (every
  * gallery card filed; the shelves' cards; a table's title four ways; the page's words, shelves,
  * kinds and stems).
+ * RAISED 2026-09-27 with 소식 (phase 7): sixteen to `server` (a source only from this run's tools,
+ * a navigation's page, a failed one not, addresses compared as pages; three a run, no repeats, the
+ * shape; `feed_post` only where it was put; made once and kept `feed` through an edit; the list
+ * showing its instruction; posts landing with a run that succeeded and no answer delivered; none
+ * for a failed run and the answer for one that stopped for the person; the presses scoped to the
+ * person; likes and hides carried to the next run; a quote read again by its id; unseen posts
+ * pausing it) and eight to `app` (the topics, refusals and instruction; why a post is here; the
+ * quote's part and its chip in the transcript; the chip making briefing and 소식 in one press).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3074, roots: ["server"] },
-  { name: "app", floor: 1520, roots: ["app"] },
+  { name: "server", floor: 3090, roots: ["server"] },
+  { name: "app", floor: 1528, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 552, roots: ["tests", "agent-bot"] },
 ] as const;

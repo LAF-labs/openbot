@@ -7,7 +7,11 @@ import {
   lookupBotOwner,
 } from "../auth/guards";
 import type { Database } from "../db/client";
-import { lafRoutineRuns, lafRoutines } from "../db/schema";
+import {
+  lafRoutineRuns,
+  lafRoutines,
+  type RoutineDelivery,
+} from "../db/schema";
 import { noSuchRoutine, RoutineError } from "./errors";
 import { mine, scopeOf } from "./ownership";
 import { KEPT_RUNS } from "./receipts";
@@ -47,6 +51,12 @@ export type RoutineInput = {
    * sets it — the create route does not read it out of a body.
    */
   suggestionKey?: string;
+  /**
+   * Where its result goes (`laf_routines.delivery`). Only the create route reads it out of a body —
+   * a person's press on 소식 — and `manage_routine` never passes it, so a Bot cannot make a feed.
+   * Absent is the conversation, as every routine was.
+   */
+  delivery?: RoutineDelivery;
 };
 
 /**
@@ -153,6 +163,8 @@ const publishedColumns = {
   createdById: lafRoutines.createdById,
   createdByRole: lafRoutines.createdByRole,
   suggestionKey: lafRoutines.suggestionKey,
+  // Where its result goes: the conversation, or 소식's posts.
+  delivery: lafRoutines.delivery,
   // Why it is off when its person did not turn it off, and their 계속 돌리기. See `unread.ts`.
   pausedReason: lafRoutines.pausedReason,
   pausedAt: lafRoutines.pausedAt,
@@ -208,6 +220,9 @@ export async function createRoutine(
 
   return store.database.transaction(async (transaction) => {
     await refuseAtCap(transaction, actor);
+    if (input.delivery === "feed") {
+      await refuseSecondFeed(transaction, input.agentId);
+    }
     const at = store.now();
     // Shown once, in the create response, and kept only as a hash. See the schema note.
     const triggerToken = randomBytes(24).toString("base64url");
@@ -278,6 +293,30 @@ async function refuseSomebodyElsesBot(
   }
 }
 
+/**
+ * ONE 소식 PER BOT. A second would post the same morning's news twice, and the page draws one
+ * routine's line and one "지금 만들기". Asked inside the transaction that inserts, like the cap, and
+ * answered with a code the surface turns into "already made" rather than an error.
+ */
+async function refuseSecondFeed(
+  transaction: Pick<Database, "select">,
+  agentId: string,
+): Promise<void> {
+  const [held] = await transaction
+    .select({ count: count() })
+    .from(lafRoutines)
+    .where(
+      and(eq(lafRoutines.agentId, agentId), eq(lafRoutines.delivery, "feed")),
+    );
+  if (Number(held?.count ?? 0) > 0) {
+    throw new RoutineError(
+      "This Bot already has its 소식.",
+      409,
+      "laf:routine_feed_exists",
+    );
+  }
+}
+
 /** This person's routines, not the deployment's. See MAX_ROUTINES. */
 async function refuseAtCap(
   transaction: Pick<Database, "select">,
@@ -323,6 +362,7 @@ async function insertRoutine(
       createdById: actor.id,
       createdByRole: actor.role,
       suggestionKey: input.suggestionKey ?? null,
+      delivery: input.delivery ?? "chat",
       createdAt: at,
       updatedAt: at,
     })

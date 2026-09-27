@@ -18,6 +18,7 @@ import {
   briefingInstruction,
 } from "../src/lib/agents/morning-briefing";
 import type { AgentProfile } from "../src/lib/agents/queries";
+import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
 
 /**
@@ -90,6 +91,8 @@ async function mounted(props: {
   /** Whether this Bot already has its briefing. Not unless a test says so. */
   briefingMade?: boolean;
   disabled?: boolean;
+  /** What 소식 starts with. None unless a test says so: the chip then makes the briefing alone. */
+  feedTopics?: string[];
   onAsk: (sentence: string) => void;
   /** Whether the person's place is known. Known unless a test says otherwise. */
   placeKnown?: boolean;
@@ -114,6 +117,7 @@ async function mounted(props: {
         briefing,
         briefingMade: props.briefingMade ?? false,
         disabled: props.disabled ?? false,
+        feedTopics: props.feedTopics ?? [],
         onAsk: props.onAsk,
         placeKnown: props.placeKnown ?? true,
         tasks: props.tasks ?? tasks,
@@ -445,5 +449,54 @@ describe("the first-task chips", () => {
     } finally {
       window.removeEventListener(FIRST_TASK_PRESSED, listener);
     }
+  });
+
+  test("with 소식's topics the chip is 매일 아침 브리핑과 소식 받기, and one press makes both routines", async () => {
+    const { t } = await import("../src/lib/i18n");
+    const requests: { url: string; body: unknown }[] = [];
+    globalThis.fetch = stubFetch(async (url, init) => {
+      requests.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return new Response(JSON.stringify({ routine: { id: "routine-1" } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const view = await mounted({
+      feedTopics: ["업종 뉴스", "소상공인 정책·제도 변화"],
+      onAsk: () => {},
+    });
+    const chip = view
+      .buttons()
+      .find(
+        (button) =>
+          button.textContent === t("Get a briefing and updates every morning"),
+      );
+    if (!chip)
+      throw new Error("the briefing-and-updates chip is not on screen");
+    expect(ko["Get a briefing and updates every morning"]).toBe(
+      "매일 아침 브리핑과 소식 받기",
+    );
+    await view.press(chip);
+    await view.settle(50);
+    const routines = requests.filter((one) => one.url === "/api/routines");
+    expect(routines).toHaveLength(2);
+    expect(routines[1]?.body).toMatchObject({
+      agentId: "bot-1",
+      name: t("Updates"),
+      delivery: "feed",
+      schedule: { kind: "daily", time: "06:30" },
+    });
+    expect(
+      String(
+        (routines[1]?.body as { instruction?: string } | undefined)
+          ?.instruction,
+      ),
+    ).toContain("- 소상공인 정책·제도 변화");
+    expect(
+      view.links().some((link) => link.getAttribute("href") === "/feed"),
+    ).toBe(true);
   });
 });

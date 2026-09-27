@@ -183,29 +183,33 @@ async function day(
 
 describe("오늘", () => {
   test("each kind of work is a row, newest first, marked only when it did not finish", async () => {
-    const view = await day({
-      items: [
-        {
-          kind: "routine",
-          runId: "r-silent",
-          routineId: "rt-1",
-          at: at(2, 30),
-          status: "done",
-          name: "아침 주문 확인",
-          silent: true,
-          channelId: "ch-1",
-          messageId: null,
-        },
-        {
-          kind: "learned",
-          memoryId: "m-1",
-          at: at(2),
-          head: "월요일은 쉰다",
-        },
-        chat("c-1", { frameToolCallId: "call-1" }),
-        chat("c-2", { status: "error", label: "주문서 만들어 줘" }),
-      ],
-    });
+    const view = await day(
+      {
+        items: [
+          {
+            kind: "routine",
+            runId: "r-silent",
+            routineId: "rt-1",
+            at: at(2, 30),
+            status: "done",
+            name: "아침 주문 확인",
+            silent: true,
+            channelId: "ch-1",
+            messageId: null,
+          },
+          {
+            kind: "learned",
+            memoryId: "m-1",
+            at: at(2),
+            head: "월요일은 쉰다",
+          },
+          chat("c-1", { frameToolCallId: "call-1" }),
+          chat("c-2", { status: "error", label: "주문서 만들어 줘" }),
+        ],
+      },
+      // Four rows: the drawer's, since the sidebar shows three (phase 7).
+      { placement: "drawer" },
+    );
     expect(view.groups()).toEqual(["What it did"]);
     const rows = view.rows();
     expect(rows[0]).toContain("아침 주문 확인 · Nothing new");
@@ -251,19 +255,24 @@ describe("오늘", () => {
     expect(view.router.state.location.pathname).toBe("/channel/ch-1");
   });
 
-  test("four rows in the sidebar, six in the drawer, then the rest behind one press", async () => {
-    // At the PC app's smallest window the sidebar has room for four (UX review 0.5.4, item 4).
+  test("three rows in the sidebar and a way to 소식 for the rest; six in the drawer, then the rest behind one press", async () => {
+    // Three since 소식, 아이디어 and 만든 것 took rows above it (muse-shape plan §4, phase 7).
     const items = Array.from({ length: 8 }, (_, index) =>
       chat(`c-${index}`, { label: `일 ${index}` }),
     );
     const view = await day({ items });
-    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(4);
-    await view.press(view.button("Show 4 more"));
-    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(8);
+    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(3);
+    const all = [...view.host.querySelectorAll("a")].find(
+      (link) => link.textContent === "See it all on Updates",
+    );
+    expect(all?.getAttribute("href")).toBe("/feed");
+    expect(view.button("more")).toBeUndefined();
     await unmountAll();
 
     const drawer = await day({ items }, { placement: "drawer" });
     expect(drawer.rows().filter((row) => row.startsWith("일"))).toHaveLength(6);
+    await drawer.press(drawer.button("Show 2 more"));
+    expect(drawer.rows().filter((row) => row.startsWith("일"))).toHaveLength(8);
   });
 
   test("the card's words: 못 끝냄 with why, 멈춤 for a stop, 하는 중", async () => {

@@ -37,6 +37,7 @@ import {
   computerStandingApprovals,
   lafAnswerRatings,
   lafAttachments,
+  lafFeedPosts,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -364,6 +365,30 @@ export function createAccountExport(database: Database): AccountExport {
         .from(lafAttachments)
         .where(eq(lafAttachments.userId, userId))
         .orderBy(asc(lafAttachments.createdAt)),
+    )}`;
+
+    /*
+     * 소식: what their Bot posted for them, with what they liked and hid. Whole, since the sources
+     * and the words are the post.
+     */
+    yield `,\n"feedPosts":${JSON.stringify(
+      await database
+        .select({
+          id: lafFeedPosts.id,
+          agentId: lafFeedPosts.agentId,
+          routineId: lafFeedPosts.routineId,
+          topic: lafFeedPosts.topic,
+          title: lafFeedPosts.title,
+          body: lafFeedPosts.body,
+          sources: lafFeedPosts.sources,
+          createdAt: lafFeedPosts.createdAt,
+          seenAt: lafFeedPosts.seenAt,
+          likedAt: lafFeedPosts.likedAt,
+          hiddenAt: lafFeedPosts.hiddenAt,
+        })
+        .from(lafFeedPosts)
+        .where(eq(lafFeedPosts.userId, userId))
+        .orderBy(asc(lafFeedPosts.createdAt)),
     )}`;
 
     /*

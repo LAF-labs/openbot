@@ -20,6 +20,7 @@ import type {
   DeliverRoutineAnswer,
   DeliverRoutineFailure,
 } from "./deliver";
+import { type FeedDraft, settleFeed } from "./feed";
 import { type NotepadDraft, type NotepadWrite, settleNotepad } from "./notepad";
 import { writeReceipt } from "./receipts";
 
@@ -83,6 +84,11 @@ export type RunToSettle = {
   /** What the run staged for its notepad. Null for a run that was never offered one. */
   notepad: NotepadDraft | null;
   /**
+   * 소식's posts, held by the run (`feed.ts`). Null for a routine whose `delivery` is not `feed`.
+   * Optional so a caller from before 소식 says nothing, which is "not a feed".
+   */
+  feed?: FeedDraft | null;
+  /**
    * A person stopped it (`모두 멈추기`). Not ok, and not a failure either: see `writeRecord`.
    *
    * Optional so a caller that cannot be stopped says nothing, which is "not stopped".
@@ -105,6 +111,8 @@ export type Settlement = {
   failedIn: Delivered | null;
   /** What became of the notepad the run changed. Null when it changed nothing. */
   notepad: NotepadWrite | null;
+  /** How many posts 소식 received from this run: zero for a failed run and for any other routine. */
+  posted: number;
   /**
    * The failure group this run's failure was counted into. Null for a success, for a failure with
    * nobody to tell, and for one the group could not be recorded for — which is then told the way
@@ -119,7 +127,7 @@ export async function settleRun(
   run: RunToSettle,
 ): Promise<Settlement> {
   try {
-    const { delivered, failedIn, notepad, group } =
+    const { delivered, failedIn, notepad, group, posted } =
       await options.database.transaction(async (transaction) =>
         writeRecord(options, transaction, run),
       );
@@ -131,6 +139,7 @@ export async function settleRun(
       failedIn,
       notepad,
       group,
+      posted,
     };
   } catch (error) {
     /*
@@ -168,6 +177,7 @@ export async function settleRun(
       failedIn: null,
       notepad: run.notepad?.changed ? "discarded" : null,
       group: null,
+      posted: 0,
     };
   }
 }
@@ -202,6 +212,11 @@ async function writeRecord(
   }
   const { failedIn, group } = await markOrCount(options, transaction, run);
   const delivered = await deliverAnswer(options, transaction, run);
+  // 소식's posts land with the record, and only for a run that succeeded (`feed.ts`).
+  const posted =
+    run.ok && run.feed
+      ? await settleFeed(transaction, run.feed, run.runId, options.now())
+      : 0;
 
   if (run.ledgerRunId) {
     await options.ledger?.settle(
@@ -230,7 +245,7 @@ async function writeRecord(
     error: run.ok ? null : run.failure,
     steps: run.steps,
   });
-  return { delivered, failedIn, notepad, group };
+  return { delivered, failedIn, notepad, group, posted };
 }
 
 /**
@@ -324,6 +339,12 @@ async function deliverAnswer(
   run: RunToSettle,
 ): Promise<Delivered | null> {
   const { row, author, ledgerRunId } = run;
+  /*
+   * 소식'S RESULT IS ITS POSTS. Its answer goes to the conversation only when it stopped for the
+   * person — an approval, a sign-in — which is the one thing that must land where they read
+   * (`deliver.ts`); a failure is marked there by `markFailure`, as any routine's is.
+   */
+  if (row.delivery === "feed" && !run.awaiting) return null;
   return run.ok && author && !run.silent && run.answer.trim().length > 0
     ? ((await options.deliver?.(
         {

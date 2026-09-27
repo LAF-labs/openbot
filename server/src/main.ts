@@ -11,6 +11,7 @@ import {
 } from "./account/whereabouts";
 import { createDayReader } from "./agents/day";
 import { createMadeReader } from "./agents/made";
+import { createFeedStore } from "./feed/store";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createDream } from "./agents/dream";
 import { createGuidanceStore } from "./agents/guidance-store";
@@ -332,11 +333,14 @@ const attachmentService = createAttachmentService({
   // Every uploaded byte is read outside this process: the sidecar, or a local child on a laptop.
   converter: createConverter(converterSettingFor(config.converter)),
 });
+/** 소식's posts: the page's reads and presses, and a quoted post read again for the model. */
+const feedStore = createFeedStore({ database });
 const runMeter = {
   auditStore: bootAuditStore,
   ...(dailyBudget ? { dailyBudget } : {}),
   conversations,
   attachments: attachmentService,
+  feedQuotes: feedStore,
 };
 /**
  * Every socket open on this server, and the one thing that fans an event out to them.
@@ -1082,6 +1086,8 @@ const app = createApp(
     : undefined,
   // 만든 것: the cards and tables a Bot made, read out of its conversation.
   createMadeReader({ database }),
+  // 소식: the posts a feed routine wrote, and the person's presses on them.
+  feedStore,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

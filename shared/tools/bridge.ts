@@ -10,7 +10,7 @@
  * — 구조화된 질문이 산문으로 무너졌다(18/18 → 7/18). 그래서 여기서 갈리는 규칙은 하나다:
  *
  * **스키마에 실리는 것은 고정된 핵심 목록뿐이다** — 이 저장소의 카탈로그(`shared/tools`)에 있는
- * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `now`, 그리고 다리 둘. 그 밖의 모든 것은 다리
+ * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `feed_post`, `now`, 그리고 다리 둘. 그 밖의 모든 것은 다리
  * 뒤에 선다: 연결된 서비스의 툴(`mcp__<서버>__<툴>`), 화면 카드(갤러리), 배포가 만든 컴포넌트.
  * 사람에게 손을 내미는 툴(`computer_request_help`, `computer_request_secret`)은 핵심 목록에 있으니
  * 절대 미뤄지지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
@@ -36,6 +36,7 @@
  * 제안(issue #49645)이다. 그래서 Hermes Agent의 다리를 따른 이 작은 구현을 유지한다.
  */
 import { COMPUTER_TOOLS } from "./computer";
+import { FEED_POST } from "./feed-post";
 import { NOW_TOOL_NAME } from "./now";
 import { ROUTINE_NOTE } from "./routine-note";
 import { SELF_TOOLS } from "./self";
@@ -64,6 +65,8 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...SELF_TOOLS.map((tool) => tool.name),
   SKILL_VIEW.name,
   ROUTINE_NOTE.name,
+  // 소식 실행에만 있다(`feed-post.ts`). routine_note처럼, 있는 곳에서는 스키마에 실린다.
+  FEED_POST.name,
   NOW_TOOL_NAME,
 ]);
 

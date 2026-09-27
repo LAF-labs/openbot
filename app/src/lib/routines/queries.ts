@@ -144,6 +144,8 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
   // so this screen should never meet it — but the route can send it, and a code with no words here
   // would print the generic failure for what is not a failure.
   "laf:routine_nothing_to_change": "Nothing was changed.",
+  // 소식 made twice from its button or the 7:30 chip. `makeFeedRoutine` takes it as made.
+  "laf:routine_feed_exists": "Your Bot already has its updates.",
   "laf:routine_trigger_token_missing": "That link is missing its key.",
   /*
    * "Run now" on a routine an account this place no longer admits wrote — one left from before a

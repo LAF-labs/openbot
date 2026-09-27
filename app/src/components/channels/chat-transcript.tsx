@@ -1,4 +1,5 @@
 import type { AttachmentPart } from "@shared/attachments";
+import type { FeedQuotePart } from "@shared/feed";
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import {
@@ -24,6 +25,7 @@ import {
 import { Streamdown } from "streamdown";
 import { offerDraft } from "@/components/channels/composer/prefill";
 import { BrowsingCard } from "@/components/computer/browsing-card";
+import { FeedQuoteChip } from "@/components/feed/feed-quote-chip";
 import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -882,6 +884,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   joinedNext = false,
   joinedPrev = false,
   partial = false,
+  quotes,
   rateable = false,
   role,
   sources,
@@ -892,6 +895,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
    * the memo compares primitives. Absent draws nothing.
    */
   attachments?: string;
+  /** The 소식 posts a person's message is about, as a string for the memo's sake like `attachments`. */
+  quotes?: string;
   /** The pages this answer was read from, as JSON (`sources.ts`). Absent draws no row. */
   sources?: string;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
@@ -923,6 +928,13 @@ const TranscriptMessage = memo(function TranscriptMessage({
     <MessageRow align={align}>
       <MessageContent>
         <Arriving delay={delay}>
+          {isUser && quotes ? (
+            <div className="mb-1.5 flex flex-col items-end gap-1">
+              {(JSON.parse(quotes) as FeedQuotePart[]).map((part) => (
+                <FeedQuoteChip key={part.id} part={part} />
+              ))}
+            </div>
+          ) : null}
           {isUser && attachments ? (
             <MessageAttachments
               attachments={JSON.parse(attachments) as AttachmentPart[]}
@@ -1758,6 +1770,9 @@ export function ChatTranscript({
                         : {})}
                       {...(item.attachments
                         ? { attachments: JSON.stringify(item.attachments) }
+                        : {})}
+                      {...(item.quotes
+                        ? { quotes: JSON.stringify(item.quotes) }
                         : {})}
                       text={item.text}
                     />

@@ -119,6 +119,11 @@ function addCollection(
         // routine somebody wrote by hand is already in their own words.
         ...(typeof body.summary === "string" ? { summary: body.summary } : {}),
         schedule: body.schedule,
+        /*
+         * 소식, made by a person's press (muse-shape plan D3). Anything but the one other word is the
+         * conversation, as a routine has always been.
+         */
+        ...(body.delivery === "feed" ? { delivery: "feed" as const } : {}),
       });
       return context.json({ routine }, 201);
     } catch (error) {

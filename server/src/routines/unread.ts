@@ -1,9 +1,14 @@
-import { and, asc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { AuditStore } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloConversationOf } from "../channels/solo-channel";
 import type { Database } from "../db/client";
-import { auditEvents, channelMemberships, lafRoutines } from "../db/schema";
+import {
+  auditEvents,
+  channelMemberships,
+  lafFeedPosts,
+  lafRoutines,
+} from "../db/schema";
 
 /**
  * Routines whose results pile up unread stop on their own.
@@ -264,15 +269,40 @@ async function unreadDeliveries(
       ),
     )
     .orderBy(asc(auditEvents.createdAt));
+  /*
+   * 소식'S RESULTS ARE ITS POSTS (phase 7), and they are unread until 소식 has shown them — not until
+   * the conversation is opened, which they never land in. A run that posted anything the person has
+   * not seen is one unread result, counted the way an undelivered answer is; a post they hid was
+   * seen. The same three-and-a-week rule then pauses a feed nobody opens.
+   */
+  const feeds = await database
+    .select({
+      routineId: lafFeedPosts.routineId,
+      at: sql<Date>`min(${lafFeedPosts.createdAt})`,
+    })
+    .from(lafFeedPosts)
+    .where(
+      and(
+        inArray(
+          lafFeedPosts.routineId,
+          group.map((routine) => routine.id),
+        ),
+        isNull(lafFeedPosts.seenAt),
+        isNull(lafFeedPosts.hiddenAt),
+      ),
+    )
+    .groupBy(lafFeedPosts.routineId, lafFeedPosts.runId);
   const resumed = new Map(
     group.map((routine) => [routine.id, routine.resumedAt]),
   );
-  return runs.flatMap(({ routineId, at }) => {
-    if (!routineId) return [];
-    const since = resumed.get(routineId);
-    if (since && at.getTime() <= since.getTime()) return [];
-    return [{ routineId, at }];
-  });
+  return [...runs, ...feeds.map((feed) => ({ ...feed, at: new Date(feed.at) }))]
+    .flatMap(({ routineId, at }) => {
+      if (!routineId) return [];
+      const since = resumed.get(routineId);
+      if (since && at.getTime() <= since.getTime()) return [];
+      return [{ routineId, at }];
+    })
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
 /**

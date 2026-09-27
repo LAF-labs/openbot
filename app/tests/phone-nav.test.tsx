@@ -108,6 +108,9 @@ function server(
       });
     }
     if (url === "/api/routines") return json({ routines: [] });
+    if (url === "/api/feed") {
+      return json({ posts: [], next: null, unseen: 0, routines: [] });
+    }
     if (url.startsWith("/api/computers/")) return json({ requested: false });
     return json({}, 404);
   });
@@ -339,8 +342,14 @@ describe("소식", () => {
     ).toBeString();
     expect(
       ko[
-        "What your Bot did today, what is waiting on you, and what it does next."
+        "What your Bot did today, what is waiting on you, and what it found for you."
       ],
     ).toBeString();
+    // Before there is a 소식 routine: what would come here, and the one press (plan D3).
+    expect(view.host.querySelector("[data-feed-make]")).not.toBeNull();
+    expect(view.host.querySelector("[data-feed-start]")?.textContent).toBe(
+      "Get updates every morning",
+    );
+    expect(ko["Get updates every morning"]).toBe("매일 아침 소식 받기");
   });
 });
