@@ -130,10 +130,13 @@ function RouteComponent() {
        * the appearance are written to this browser's storage (`lib/i18n.ts`, `theme-provider.tsx`)
        * and notifications are this browser's or this app's permission. None of them follows the
        * account to another machine.
+       *
+       * AND "THE ACCOUNT" BESIDE IT, WITHOUT THE PRODUCT'S NAME (first-hour walk, 2026-09-27). The
+       * line said the whole page changed on this device only, over an account row and a usage count
+       * that are the account's everywhere; and it opened with "LAF Agent", in English, on a Korean
+       * screen. The account is the account; what looks a certain way is this device's.
        */
-      description={t("How {product} looks and behaves on this device.", {
-        product: appConfig.brand.productName,
-      })}
+      description={t("Your account, and how the app looks on this device.")}
       title={t("Preferences")}
     >
       {/*

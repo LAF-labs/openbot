@@ -4,7 +4,7 @@
  * MEASURED 2026-09-24 (UI/UX audit, item 13), and again the same day on a local stack with
  * "네이버에서 서울, 부산, 제주 오늘 날씨": the cards were titled `search.naver.com` and said
  * "완료 · 3단계" — a host a person never typed and a count nobody asked for. The title is now the
- * site as people call it and what they asked for there.
+ * site as people call it and what the Bot looked up there (2026-09-27: not the person's sentence).
  *
  * `t()` reads the site names through a variable, which `i18n-coverage.test.ts` cannot see, so this
  * walks the table the way `agent-refusals.test.ts` walks its own.
@@ -15,9 +15,13 @@ import {
   plainLine,
   siteNameOf,
   siteNamesOf,
-  taskOf,
   taskTitle,
 } from "../src/components/computer/task-title";
+import {
+  type BrowsingStep,
+  lookedUpOf,
+  sitesOf,
+} from "../src/lib/computer/browsing";
 import { ko } from "../src/lib/i18n-ko";
 
 describe("the site's name", () => {
@@ -53,111 +57,120 @@ describe("the site's name", () => {
   });
 });
 
-describe("what was asked, as half a title", () => {
-  test("the request without its 'please'", () => {
-    expect(taskOf("원두 1kg 가격 비교해 줘", null)).toBe("원두 1kg 가격 비교");
-    expect(taskOf("오늘 날씨 알려줘.", null)).toBe("오늘 날씨");
-    expect(taskOf("우리 동네 날씨", null)).toBe("우리 동네 날씨");
+/** A navigation as the transcript holds it, with the page it reached. */
+function went(url: string, title?: string, reached = url): BrowsingStep {
+  return {
+    id: `call-${url}`,
+    name: "computer_navigate",
+    args: JSON.stringify({ url }),
+    result: JSON.stringify({ ok: true, url: reached, title }),
+  };
+}
+
+describe("what the Bot looked up, as half a title", () => {
+  test("the words of the search it opened", () => {
+    expect(
+      lookedUpOf([
+        went(
+          "https://search.naver.com/search.naver?query=%EC%B6%98%EC%B2%9C+%ED%9A%A8%EC%9E%90%EB%8F%99+%EB%82%A0%EC%94%A8",
+          "춘천 효자동 날씨 : 네이버 검색",
+        ),
+      ]),
+    ).toBe("춘천 효자동 날씨");
+    expect(
+      lookedUpOf([went("https://www.google.com/search?q=kraft+bag")]),
+    ).toBe("kraft bag");
+    expect(
+      lookedUpOf([
+        went("https://www.youtube.com/results?search_query=김치찌개"),
+      ]),
+    ).toBe("김치찌개");
+    // 네이버 지도 puts the words in the path.
+    expect(
+      lookedUpOf([
+        went("https://map.naver.com/p/search/%EC%B6%98%EC%B2%9C%EC%97%AD"),
+      ]),
+    ).toBe("춘천역");
   });
 
-  test("a request that only points back at the last one names no task", () => {
-    for (const asked of [
-      "다시",
-      "다시 해줘",
-      "한 번 더 해 줘",
-      "그거 계속",
-      "또",
-    ]) {
-      expect(taskOf(asked, "네이버")).toBeNull();
-    }
-    // A real task that happens to start with 다시 keeps its words.
-    expect(taskOf("다시 원두 가격 비교해 줘", null)).toBe(
-      "다시 원두 가격 비교",
-    );
-    expect(taskTitle(["search.naver.com"], "다시 해줘")).toBe(
-      siteNameOf("search.naver.com"),
-    );
+  test("the last search, even after a page it opened from it", () => {
+    expect(
+      lookedUpOf([
+        went("https://search.naver.com/search.naver?query=원두"),
+        went("https://search.naver.com/search.naver?query=원두 1kg"),
+        went("https://blog.naver.com/some/1", "원두 고르는 법 : 네이버 블로그"),
+      ]),
+    ).toBe("원두 1kg");
   });
 
-  test("without the '…에서' the site half already says", () => {
+  test("with no search, the page it opened, without the site's name after it", () => {
     expect(
-      taskOf("네이버 쇼핑에서 원두 1kg 가격 비교해 줘", "네이버 쇼핑"),
-    ).toBe("원두 1kg 가격 비교");
-    expect(taskOf("예스24 홈페이지에서 소년이 온다 찾아줘", "예스24")).toBe(
-      "소년이 온다",
-    );
-    // A part of the site named more exactly is still the site the other half names.
+      lookedUpOf([
+        went("https://www.yes24.com/Product/Goods/1", "소년이 온다 - 예스24"),
+      ]),
+    ).toBe("소년이 온다");
+    // A title that is only the site's name says nothing the other half does not.
     expect(
-      taskOf("네이버 쇼핑에서 크라프트 봉투 찾아서 알려줘", "네이버"),
-    ).toBe("크라프트 봉투 찾아서");
-    // A different place is part of the request and stays.
-    expect(taskOf("쿠팡에서 원두 찾아줘", "네이버 쇼핑")).toBe("쿠팡에서 원두");
+      lookedUpOf([went("https://www.naver.com/", "NAVER")]),
+    ).toBeUndefined();
   });
 
-  test("without the address the request opened with", () => {
+  test("never the person's sentence, and never what was typed", () => {
+    const typed: BrowsingStep = {
+      id: "call-type",
+      name: "computer_type",
+      args: JSON.stringify({ ref: "e3", text: "secret-password-1234" }),
+      result: JSON.stringify({ ok: true }),
+    };
+    expect(lookedUpOf([typed])).toBeUndefined();
     expect(
-      taskOf(
-        "https://httpbin.org/forms/post 열어서 이름 칸에 '복실빵집' 넣어줘",
-        "httpbin.org",
+      JSON.stringify(
+        lookedUpOf([
+          went("https://nid.naver.com/nidlogin.login", "네이버 : 로그인"),
+          typed,
+        ]),
       ),
-    ).toBe("이름 칸에 '복실빵집' 넣어");
-    // An address alone leaves the site half to say it.
-    expect(taskOf("https://httpbin.org/forms/post", "httpbin.org")).toBeNull();
+    ).not.toContain("secret-password-1234");
   });
 
-  test("the first sentence says what the task is; the rest says how", () => {
-    expect(
-      taskOf(
-        "서울, 부산 오늘 날씨 확인해 줘. 도시 하나 열기 전에 한 줄씩 말해 줘.",
-        null,
-      ),
-    ).toBe("서울, 부산 오늘 날씨 확인");
-  });
-
-  test("the first line only, and a skill chip is not the task", () => {
-    expect(taskOf("/weekly-report 이번 주 매출\n자세히", null)).toBe(
-      "이번 주 매출",
-    );
-  });
-
-  test("nothing left is no half at all", () => {
-    expect(taskOf("해 줘", null)).toBeNull();
-    expect(taskOf(undefined, "네이버")).toBeNull();
+  test("a long one is cut to one line", () => {
+    const words = "가".repeat(60);
+    const found = lookedUpOf([
+      went(`https://search.naver.com/search.naver?query=${words}`),
+    ]);
+    expect(found?.length).toBe(40);
+    expect(found?.endsWith("…")).toBe(true);
   });
 });
 
 describe("the whole title", () => {
-  test("site · task, named for where the task ended up", () => {
-    // Tests read the English keys; on a Korean screen this is "네이버 쇼핑 · 원두 1kg 가격 비교".
+  test("site · what was looked up, named for where the task ended up", () => {
+    // Tests read the English keys; on a Korean screen this is "네이버 쇼핑 · 원두 1kg".
     expect(
-      taskTitle(
-        ["naver.com", "search.shopping.naver.com"],
-        "원두 1kg 가격 비교해 줘",
-      ),
-    ).toBe("Naver Shopping · 원두 1kg 가격 비교");
+      taskTitle(["naver.com", "search.shopping.naver.com"], "원두 1kg"),
+    ).toBe("Naver Shopping · 원두 1kg");
   });
 
-  test("the person's own, more exact name for the site, said once", () => {
+  test("the walk's card: a sentence about the shop is not the title", () => {
     /*
-     * Measured on MiMo: the price comparison lives on search.naver.com, and the card read
-     * "네이버 · 네이버 쇼핑에서 빵 포장용 크라프트 봉투 …". Tests read the English keys, so the person
-     * says the English name here; on a Korean screen both halves are Korean and match the same way.
+     * 2026-09-27: "우리 가게는 춘천 효자동에 있는 한식당이에요" started a weather search, and the card
+     * was titled with the sentence. The card now says what was searched for.
      */
-    expect(
-      taskTitle(
-        ["search.naver.com"],
-        "Naver Shopping에서 크라프트 봉투 가격 비교해 줘",
+    const steps = [
+      went(
+        "https://search.naver.com/search.naver?query=춘천 효자동 날씨",
+        "춘천 효자동 날씨 : 네이버 검색",
       ),
-    ).toBe("Naver Shopping · 크라프트 봉투 가격 비교");
-    // A different place is not the site named more exactly.
-    expect(taskTitle(["search.naver.com"], "쿠팡에서 원두 찾아줘")).toBe(
-      "Naver · 쿠팡에서 원두",
+    ];
+    expect(taskTitle(sitesOf(steps), lookedUpOf(steps))).toBe(
+      "Naver · 춘천 효자동 날씨",
     );
   });
 
   test("either half alone, and nothing for neither", () => {
-    expect(taskTitle([], "소년이 온다 가격 알려줘")).toBe("소년이 온다 가격");
+    expect(taskTitle([], "소년이 온다")).toBe("소년이 온다");
     expect(taskTitle(["yes24.com"], undefined)).toBe("YES24");
+    expect(taskTitle(["yes24.com"], "  ")).toBe("YES24");
     expect(taskTitle([], undefined)).toBeNull();
   });
 });

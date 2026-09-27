@@ -361,6 +361,27 @@ describe("오늘", () => {
     expect(view.host.textContent).toContain("See all routines");
   });
 
+  test("with only what comes next, no 오늘 heading over nothing of today", async () => {
+    // First-hour walk, 2026-09-27: "오늘 / 다음 / 아침 브리핑" before the briefing had ever run.
+    const view = await day({
+      items: [],
+      routines: [routine("rt-1", "아침 브리핑", later(1))],
+    });
+    expect(view.groups()).toEqual(["Up next"]);
+    expect(view.host.querySelector("h2")).toBeNull();
+    expect(view.host.querySelector("section")?.getAttribute("aria-label")).toBe(
+      "Up next",
+    );
+    await unmountAll();
+
+    // With something of today, the heading is back.
+    const busy = await day({
+      items: [chat("c-1")],
+      routines: [routine("rt-1", "아침 브리핑", later(1))],
+    });
+    expect(busy.host.querySelector("h2")?.textContent).toBe("Today");
+  });
+
   test("a quiet day draws nothing for what it did; a Bot nobody has spoken to is offered first things", async () => {
     const quiet = await day({ items: [] });
     expect(quiet.groups()).toEqual([]);

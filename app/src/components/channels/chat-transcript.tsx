@@ -46,6 +46,7 @@ import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
+import { spokenText } from "@/lib/channels/spoken-text";
 import {
   type FailureGroup,
   repeatedFailureLine,
@@ -1388,7 +1389,9 @@ export function ChatTranscript({
     wasBusy.current = false;
     const last = items.at(-1);
     if (last?.kind === "text" && last.role === "assistant") {
-      setAnnouncement(t("Reply: {text}", { text: last.text.slice(0, 240) }));
+      setAnnouncement(
+        t("Reply: {text}", { text: spokenText(last.text).slice(0, 240) }),
+      );
     }
   }, [busy, items]);
 

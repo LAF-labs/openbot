@@ -565,7 +565,7 @@ export function ServerChannelChat({
       ),
   ];
 
-  const openTask = useBrowsingTasks({
+  useBrowsingTasks({
     channelId: channel.id,
     botId: runtimeAgentId,
     messages: drawn,
@@ -636,7 +636,6 @@ export function ServerChannelChat({
             head={<Greeting agentId={runtimeAgentId} mode="head" />}
             banner={
               <BrowsingBanner
-                asked={openTask?.asked}
                 botId={runtimeAgentId}
                 isStoppable={going}
                 onStop={handleStop}

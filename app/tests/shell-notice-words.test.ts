@@ -50,7 +50,7 @@ describe("when notices arrive, said where the page runs", () => {
 describe("the words that replaced them", () => {
   test("say nothing of 배포, 방, 주소창, 탭 or the model", () => {
     const keys = [
-      "How {product} looks and behaves on this device.",
+      "Your account, and how the app looks on this device.",
       "Tell me when my Bot speaks in a conversation I am not looking at.",
       "While the app is running. Quitting the app stops them.",
       "This computer has notifications turned off for this app.",

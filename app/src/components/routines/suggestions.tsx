@@ -223,10 +223,20 @@ export const RoutineSuggestions = () => {
               <h2 className="font-medium text-sm" id={headingId}>
                 {t("Routines you might want")}
               </h2>
+              {/*
+               * "PICKED FROM WHAT YOU CONNECTED" ONLY WHEN SOMETHING WAS. With nothing connected every
+               * card here is one that needs nothing (`via` is empty only then), and the line told a
+               * person who had connected nothing that it had read their connections (first-hour
+               * walk, 2026-09-27).
+               */}
               <p className="mt-1 text-muted-foreground text-xs">
-                {t(
-                  "Made from what you have connected. Nothing is created until you press Make.",
-                )}
+                {cards.some((card) => card.via.length > 0)
+                  ? t(
+                      "Made from what you have connected. Nothing is created until you press Make.",
+                    )
+                  : t(
+                      "These work without connecting anything. Nothing is created until you press Make.",
+                    )}
               </p>
             </>
           ) : null}

@@ -302,6 +302,37 @@ describe("the section", () => {
     expect(view.cards()).toHaveLength(1);
   });
 
+  test("says it read the connections only when a card uses one", async () => {
+    // First-hour walk, 2026-09-27: nothing connected, and the line said it had picked from them.
+    server({ cards: [card()] });
+    const bare = await mountedSection();
+    expect(bare.host.textContent).toContain(
+      "These work without connecting anything.",
+    );
+    expect(bare.host.textContent).not.toContain("what you have connected");
+    await bare.unmount();
+
+    server({
+      cards: [
+        card({
+          via: [{ kind: "site", id: "baemin-ceo", title: "Baemin for Owners" }],
+        }),
+      ],
+    });
+    const connected = await mountedSection();
+    expect(connected.host.textContent).toContain(
+      "Made from what you have connected.",
+    );
+    await connected.unmount();
+    expect(
+      ko[
+        "These work without connecting anything. Nothing is created until you press Make."
+      ],
+    ).toBe(
+      "연결 없이 바로 쓸 수 있는 것들이에요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
+    );
+  });
+
   test("draws nothing when there is nothing to offer", async () => {
     server({ cards: [] });
     const view = await mountedSection();

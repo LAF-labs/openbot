@@ -143,6 +143,96 @@ export function sitesOf(steps: readonly BrowsingStep[]): string[] {
   return sites;
 }
 
+/**
+ * The address parameters a search puts its words in: 네이버 and 네이버 쇼핑 `query`, Google, Daum and
+ * 쿠팡 `q`, YouTube `search_query`, G마켓 `keyword`, 11번가 `kwd`, and the rest of the everyday
+ * sites' spellings. Only these: an address's other parameters are the site's business, and the
+ * card names what was searched for, never anything else a page was handed.
+ */
+const SEARCH_PARAMS = [
+  "query",
+  "q",
+  "search_query",
+  "keyword",
+  "kwd",
+  "searchWord",
+  "searchKeyword",
+] as const;
+
+/** The longest a looked-up half may be before it is cut: the card's title is one line. */
+const LOOKED_UP_MAX = 40;
+
+function clipped(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > LOOKED_UP_MAX
+    ? `${flat.slice(0, LOOKED_UP_MAX - 1)}…`
+    : flat;
+}
+
+/** The words a search address carries: `?query=춘천+날씨`, or 네이버 지도's `/p/search/춘천`. */
+function searchedAt(address: unknown): string | null {
+  if (typeof address !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(address.trim());
+  } catch {
+    return null;
+  }
+  for (const name of SEARCH_PARAMS) {
+    const value = url.searchParams.get(name)?.trim();
+    if (value) return value;
+  }
+  const path = /\/search\/([^/?#]+)/.exec(url.pathname)?.[1];
+  if (!path) return null;
+  try {
+    return decodeURIComponent(path).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The page's own title without the site's name after it: "소년이 온다 - 예스24" is 소년이 온다, and a
+ * title that is only the site's name ("NAVER") says nothing the other half does not.
+ */
+function pageTitleAt(title: unknown, host: string | null): string | null {
+  if (typeof title !== "string") return null;
+  const first = title.split(/\s+[:|\-–—]\s+/)[0]?.trim() ?? "";
+  if (!first) return null;
+  const squash = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+  const named = host ? [squash(siteNameOf(host)), squash(host)] : [];
+  const label = host?.split(".").at(-2);
+  if (label) named.push(squash(label));
+  return named.includes(squash(first)) ? null : first;
+}
+
+/**
+ * WHAT THE BOT LOOKED UP, FOR THE SECOND HALF OF A TASK'S TITLE (`task-title.ts`): the words of the
+ * last search it opened, or, with no search, the title of the last page it opened. Undefined for
+ * neither, and the title is the site alone.
+ *
+ * FROM THE PAGES IT OPENED, NEVER FROM WHAT IT TYPED. A search typed into a box and a password
+ * typed into a box are the same call, and the card must not be the one place the second is shown
+ * (CLAUDE.md, "Never record what somebody typed"). An address the Bot navigated to is already on
+ * the card's own list of steps.
+ */
+export function lookedUpOf(steps: readonly BrowsingStep[]): string | undefined {
+  let searched: string | null = null;
+  let page: string | null = null;
+  for (const step of steps) {
+    if (step.name !== "computer_navigate") continue;
+    const outcome = outcomeOf(step.result);
+    const reached = outcome.ok === true ? outcome.url : undefined;
+    const address = reached ?? argsOf(step.args).url;
+    searched = searchedAt(address) ?? searched;
+    if (outcome.ok === true) {
+      page = pageTitleAt(outcome.title, hostOf(address)) ?? page;
+    }
+  }
+  const found = searched ?? page;
+  return found ? clipped(found) : undefined;
+}
+
 /** One line of the task's list of what it did: the existing transcript grammar, word for word. */
 export type StepLine = {
   label: string;

@@ -172,15 +172,22 @@ export function BotDay({
     return null;
   }
 
+  /*
+   * 오늘 ONLY OVER SOMETHING OF TODAY. With a routine made and nothing run yet, the sidebar read
+   * "오늘 / 다음 / 아침 브리핑" — a heading for today over nothing but tomorrow's plan (first-hour walk,
+   * 2026-09-27). 다음 says what it is by itself.
+   */
+  const hasToday = waiting.length > 0 || items.length > 0 || isFirstThings;
+
   return (
     <section
-      aria-label={t("Today")}
+      aria-label={hasToday ? t("Today") : t("Up next")}
       className={cn(
         "flex flex-col",
         isSidebar ? "mt-3 gap-3 px-2" : "divide-y divide-border",
       )}
     >
-      {isSidebar ? (
+      {isSidebar && hasToday ? (
         <h2 className="font-medium text-muted-foreground text-xs">
           {t("Today")}
         </h2>

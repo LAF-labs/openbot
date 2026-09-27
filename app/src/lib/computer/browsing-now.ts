@@ -20,6 +20,8 @@ export type OpenTask = {
   /** The first call's id: the task's identity, the same as its card's. */
   taskId: string;
   sites: readonly string[];
+  /** What it looked up, for the banner's title (`lookedUpOf`). */
+  lookedUp?: string;
   /** What it is doing right now, already in the person's words (`doingNow`). */
   doing: string;
   /**
@@ -79,6 +81,7 @@ function sameTask(left: OpenTask | null, right: OpenTask | null): boolean {
     left.doing === right.doing &&
     left.askingOn === right.askingOn &&
     left.channelId === right.channelId &&
+    left.lookedUp === right.lookedUp &&
     left.sites.join("\n") === right.sites.join("\n")
   );
 }

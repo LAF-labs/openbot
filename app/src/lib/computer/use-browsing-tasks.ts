@@ -12,7 +12,12 @@ import {
   withBrowsingTasks,
 } from "@/components/channels/chat-messages";
 import { questionOn, watchQuestions } from "@/lib/approvals";
-import { doingNow, pictureStepOf, sitesOf } from "@/lib/computer/browsing";
+import {
+  doingNow,
+  lookedUpOf,
+  pictureStepOf,
+  sitesOf,
+} from "@/lib/computer/browsing";
 import { publishOpenTask } from "@/lib/computer/browsing-now";
 import { keepHeldFrames, keepLastFrame } from "@/lib/computer/last-frame";
 import { t } from "@/lib/i18n";
@@ -58,6 +63,7 @@ export function useBrowsingTasks({
     : "";
   const sites = open ? sitesOf(open.steps) : [];
   const sitesKey = sites.join("\n");
+  const lookedUp = open ? lookedUpOf(open.steps) : undefined;
 
   // Read by the effect below after a task closes; written after every commit, never during render.
   const itemsRef = useRef<readonly TranscriptItem[]>(items);
@@ -73,13 +79,14 @@ export function useBrowsingTasks({
             botId,
             taskId: openId,
             sites,
+            ...(lookedUp ? { lookedUp } : {}),
             doing,
             channelId,
             ...(askingOn ? { askingOn } : {}),
           }
         : null,
     );
-  }, [openId, doing, sitesKey, botId, askingOn, channelId]);
+  }, [openId, doing, sitesKey, lookedUp, botId, askingOn, channelId]);
 
   // Leaving the conversation leaves nothing claiming the browser is in use.
   useEffect(() => () => publishOpenTask(null), []);

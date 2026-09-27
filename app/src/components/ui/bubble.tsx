@@ -31,9 +31,15 @@ const bubbleVariants = cva(
          * is a #777777 alpha, and the person's is solid near-black in light and a mid grey in dark,
          * which no combination of the shadcn names reproduces. Bubbles are the most-looked-at
          * surface in the product; they get the tokens that were measured for them.
+         *
+         * THE BOT'S BUBBLE TAKES THE PHONE'S WIDTH. The cap above keeps an 82px gutter, and at 375
+         * wide that gutter was empty while an answer sat in 261px: a table scrolled inside a 217px
+         * box and a long answer ran twice as tall (first-hour walk, 2026-09-27). Below `sm` it keeps
+         * 24px, enough to tell the sides apart. The person's bubble keeps the cap, so their side
+         * still reads as theirs; the desktop cap is untouched.
          */
         agent:
-          "*:data-[slot=bubble-content]:bg-bubble-agent *:data-[slot=bubble-content]:text-foreground",
+          "max-sm:max-w-[calc(100%-24px)] *:data-[slot=bubble-content]:bg-bubble-agent *:data-[slot=bubble-content]:text-foreground",
         user: "*:data-[slot=bubble-content]:bg-bubble-user *:data-[slot=bubble-content]:text-on-color",
         tinted:
           "*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.93_calc(c*0.4)_h)] *:data-[slot=bubble-content]:text-foreground dark:*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.3_calc(c*0.4)_h)] [&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.88_calc(c*0.5)_h)] dark:[&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.35_calc(c*0.5)_h)]",

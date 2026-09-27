@@ -34,11 +34,9 @@ type BannerProps = {
   botId: string;
   onStop: () => void;
   isStoppable: boolean;
-  /** The person's words that started the task, for its title (`task-title.ts`). */
-  asked?: string | undefined;
 };
 
-function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
+function Banner({ botId, onStop, isStoppable }: BannerProps) {
   const now = useBrowsingNow();
   const task = now.task?.botId === botId ? now.task : null;
   const isShown = task !== null && !now.dismissed.has(task.taskId);
@@ -75,7 +73,7 @@ function Banner({ botId, onStop, isStoppable, asked }: BannerProps) {
    * "예스24 · 소년이 온다 가격" rather than `yes24.com` or "봇의 브라우저": the same title the card below
    * it carries, so the line and the card read as one task.
    */
-  const title = taskTitle(where ? [where] : [], asked);
+  const title = taskTitle(where ? [where] : [], task.lookedUp);
   /*
    * WHILE THE BOT WAITS FOR THE OWNER, THE LINE SAYS SO AND THE PRESS GOES TO THE QUESTION. The live
    * screen shows the page the click is on, not the buttons that answer it; the card with 허용 is

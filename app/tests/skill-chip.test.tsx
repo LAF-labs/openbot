@@ -9,7 +9,6 @@ import {
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import { LEADING_SKILL } from "../src/components/channels/composer/draft";
-import { taskOf } from "../src/components/computer/task-title";
 import { mount, unmountAll } from "./support/mount";
 
 /**
@@ -47,10 +46,6 @@ describe("a leading /name", () => {
   test("is still not a path or a sentence that happens to start with a slash", () => {
     expect(LEADING_SKILL.exec("/etc/hosts is broken")).toBeNull();
     expect(LEADING_SKILL.exec("안녕 /리뷰답장")).toBeNull();
-  });
-
-  test("is not the task a browsing card is titled with", () => {
-    expect(taskOf("/리뷰답장 새 리뷰 확인해 줘", null)).toBe("새 리뷰 확인");
   });
 });
 

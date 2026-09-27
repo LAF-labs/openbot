@@ -638,6 +638,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * walk's 모레 on the weather page) and three for the week line (seven days across a month's end, the
  * person's zone deciding the week, a new day's reminder carrying it). The floor rises by exactly
  * what was added.
+ * RAISED 2026-09-27 with the phone and the words: six to `app` — seventeen added (a reply heard
+ * without its markdown, five ways; the Bot's bubble on a phone and the person's; the suggestions'
+ * line when nothing is connected; no 오늘 heading over only 다음; eight for a browsing card titled
+ * with what the Bot looked up) and eleven taken with the person's sentence as that title, which it
+ * no longer is.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -645,7 +650,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3050, roots: ["server"] },
-  { name: "app", floor: 1479, roots: ["app"] },
+  { name: "app", floor: 1485, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
 ] as const;

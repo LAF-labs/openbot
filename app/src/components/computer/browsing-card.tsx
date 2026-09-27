@@ -29,6 +29,7 @@ import { framedCallsQueryOptions } from "@/lib/channels/queries";
 import {
   type CutOff,
   endingOf,
+  lookedUpOf,
   pictureStepOf,
   sitesOf,
   stepLine,
@@ -151,7 +152,7 @@ function TaskCard({
   const asked = item.asked;
   const canAskAgain =
     canRetry(state) && asked !== undefined && conversation !== null;
-  const title = taskTitle(sitesOf(item.steps), item.asked);
+  const title = taskTitle(sitesOf(item.steps), lookedUpOf(item.steps));
   const latest = item.notes.at(-1);
 
   const picture = (

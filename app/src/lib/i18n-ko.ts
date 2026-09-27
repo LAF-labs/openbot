@@ -440,7 +440,7 @@ export const ko: Record<string, string> = {
   "Granted access": "가져온 권한",
   "Granted to this Bot": "이 봇에게 부여됨",
   "How {product} looks. Following the system flips with it.":
-    "{product}의 화면 모드예요. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀌어요.",
+    "밝은 화면과 어두운 화면 중 무엇으로 볼지예요. 시스템 설정을 따르면 시스템에 맞춰 함께 바뀌어요.",
   "Isolation at start-up": "시작 시 격리 적용",
   "It answered: {events}": "응답함: {events}",
   "It is removed from this deployment. Any Bot that could draw it no longer can, and this cannot be undone.":
@@ -842,7 +842,7 @@ export const ko: Record<string, string> = {
   "Which Bot": "어느 봇이",
   "What should it do? e.g. Check the store reviews and summarize the new ones.":
     "무엇을 할까요? 예: 스토어 리뷰를 확인하고 새 리뷰만 요약해줘.",
-  "Every N minutes": "N분마다",
+  "Every N minutes": "몇 분마다",
   Minutes: "분",
   "Every {minutes} minutes": "{minutes}분마다",
   Ran: "성공",
@@ -884,8 +884,8 @@ export const ko: Record<string, string> = {
   "Hand back": "제어 반환",
   "Held for this deployment and never shown again once saved.":
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않아요.",
-  "How {product} looks and behaves on this device.":
-    "{product}의 모양과 동작이에요. 이 기기에서만 바뀌어요.",
+  "Your account, and how the app looks on this device.":
+    "내 계정과, 이 기기에서 앱이 보이는 방식을 정하는 곳이에요.",
   "Install skill": "스킬 설치",
   Instructions: "지시문",
   "It may never": "절대 허용 안 함",
@@ -1359,7 +1359,7 @@ export const ko: Record<string, string> = {
   Accounts: "계정",
   Sites: "사이트",
   "Everything your Bot works with, in one place. Turn one on and it walks you through the rest — there is no key to obtain and no developer account anywhere on this screen.":
-    "봇이 함께 쓰는 것들을 한곳에 모았어요. 스위치만 켜면 나머지는 화면이 안내해요. 여기서 발급받을 키도, 따로 만들 개발자 계정도 없어요.",
+    "봇이 함께 쓰는 것들을 한곳에 모았어요. 스위치만 켜면 나머지는 화면이 안내해요.",
   "The connections could not be loaded.": "연결 목록을 불러오지 못했어요.",
   "Sign in once at the service and your Bot works with your own account.":
     "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일해요.",
@@ -1823,6 +1823,8 @@ export const ko: Record<string, string> = {
   "Routines you might want": "이런 루틴은 어떠세요",
   "Made from what you have connected. Nothing is created until you press Make.":
     "연결해 둔 것을 보고 골랐어요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
+  "These work without connecting anything. Nothing is created until you press Make.":
+    "연결 없이 바로 쓸 수 있는 것들이에요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
   "Using {connections}": "{connections} 연결로",
   "Needs no connection": "연결 없이 바로",
   Make: "만들기",
@@ -2581,7 +2583,7 @@ export const ko: Record<string, string> = {
     "어떤 일을 하는지, 매일 어디서 일하는지, 가게가 어디 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 가게 위치만 대화에서도 저장될 수 있어요.",
   "Shop location": "가게 위치",
   "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, the Bot asks you once when it needs one and saves your answer here.":
-    "가게가 있는 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 봇의 서버가 있는 곳이 아니라 이 곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
+    "가게나 주로 계신 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
   "City and district": "시·구",
   "e.g. Seoul Gangnam-gu": "예: 서울 강남구",
   "This device's location, around {latitude}, {longitude}":
