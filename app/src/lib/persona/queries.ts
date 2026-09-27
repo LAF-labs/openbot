@@ -46,3 +46,42 @@ export async function savePersona(
   );
   return held;
 }
+
+/**
+ * The greeting's follow-up for `persona` is settled — answered or skipped — and is not asked again
+ * (`PUT /api/me/persona/follow-up`). Called BEFORE the 수첩 line is written, so an answer given
+ * twice — a reload, a second tab — writes the line at most once.
+ */
+export async function savePersonaFollowUp(
+  persona: Persona,
+  queryClient: QueryClient,
+): Promise<Persona | null> {
+  let response: Response;
+  try {
+    response = await fetch("/api/me/persona/follow-up", {
+      method: "PUT",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ persona }),
+    });
+  } catch {
+    throw new Error(
+      t("That was not saved. Check the connection and try again."),
+    );
+  }
+  if (!response.ok) {
+    throw new Error(t("That was not saved. Try again."));
+  }
+  const body = (await response.json().catch(() => null)) as {
+    followedUp?: unknown;
+  } | null;
+  const held = personaFrom(body?.followedUp);
+  queryClient.setQueryData<CurrentUserResult>(
+    authKeys.currentUser(),
+    (current) =>
+      current && typeof current === "object"
+        ? { ...current, personaFollowUp: held }
+        : current,
+  );
+  return held;
+}

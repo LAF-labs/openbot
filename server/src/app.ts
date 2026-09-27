@@ -707,7 +707,9 @@ export function createApp(
         ...actor,
         onboarded,
         ...(answered ? { shop: answered } : {}),
-        ...(person ? { persona: person.persona } : {}),
+        ...(person
+          ? { persona: person.persona, personaFollowUp: person.followedUp }
+          : {}),
         ...(where ? { whereabouts: where } : {}),
       },
       deployment: { ...(await capabilities()), ...trial },

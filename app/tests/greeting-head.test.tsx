@@ -42,13 +42,18 @@ afterAll(async () => {
 
 const BOT = "bot-1";
 
-const me = (persona: string | null, shop = { kind: null, places: [] }) =>
+const me = (
+  persona: string | null,
+  shop = { kind: null, places: [] },
+  personaFollowUp: string | null = null,
+) =>
   json({
     user: {
       ...CURRENT_USER,
       role: "user",
       onboarded: true,
       persona,
+      personaFollowUp,
       shop,
       whereabouts: {
         timeZone: null,
@@ -76,17 +81,23 @@ const beyondTheApp = (requests: ApiRequest[]) =>
 async function composeScreen(options: {
   persona: string | null;
   shop?: { kind: string | null; places: string[] };
+  followedUp?: string | null;
 }) {
   let persona = options.persona;
+  let followedUp = options.followedUp ?? null;
   let shop = options.shop ?? { kind: null, places: [] };
   const view = await mountApp({
     path: `/channel/new?agent=${BOT}`,
     api: ({ pathname, method, body }) => {
       if (pathname === "/api/me") {
-        return me(persona, shop as { kind: null; places: never[] });
+        return me(persona, shop as { kind: null; places: never[] }, followedUp);
       }
       if (pathname === "/api/agents") {
         return json({ agents: [agentFixture({ id: BOT, name: "초롱" })] });
+      }
+      if (pathname === "/api/me/persona/follow-up" && method === "PUT") {
+        followedUp = (body as { persona: string }).persona;
+        return json({ followedUp });
       }
       if (pathname === "/api/me/persona" && method === "PUT") {
         persona = (body as { persona: string | null }).persona;
@@ -195,6 +206,81 @@ describe("the empty conversation", () => {
       slot: null,
     });
     expect(beyondTheApp(view.requests)).toEqual([]);
+  });
+
+  test("the follow-up is settled before its line is written, so a second answer cannot add one", async () => {
+    const view = await composeScreen({ persona: "other" });
+    const field = view.host.querySelector<HTMLInputElement>(
+      '[data-greeting] input[placeholder="e.g. Running a blog after retiring"]',
+    );
+    await view.type(field as HTMLInputElement, "은퇴 후 블로그 운영");
+    await view.click(view.buttonNamed("Save") as HTMLButtonElement);
+    await view.waitFor(
+      () =>
+        view.requests.some((request) => request.pathname.endsWith("/notebook")),
+      "the notebook write",
+    );
+    const order = view.requests
+      .filter(
+        (request) =>
+          request.method !== "GET" &&
+          (request.pathname === "/api/me/persona/follow-up" ||
+            request.pathname.endsWith("/notebook")),
+      )
+      .map((request) => [request.pathname, request.body]);
+    expect(order).toEqual([
+      ["/api/me/persona/follow-up", { persona: "other" }],
+      [
+        `/api/agents/${BOT}/notebook`,
+        { content: "What I want help with: 은퇴 후 블로그 운영", slot: null },
+      ],
+    ]);
+  });
+
+  test("a follow-up already settled is not asked again, and the chips are there", async () => {
+    for (const persona of ["student", "worker", "other"]) {
+      const view = await composeScreen({ persona, followedUp: persona });
+      await view.waitFor(
+        () =>
+          (view.host.textContent ?? "").includes(
+            "Good. Shall we start with one of these?",
+          ),
+        "the chips",
+      );
+      const text = view.host.textContent ?? "";
+      expect(text).not.toContain("What are you studying?");
+      expect(text).not.toContain("What kind of work do you do?");
+      expect(text).not.toContain(
+        "Tell me in one line what you would like me for.",
+      );
+      expect(
+        view.host.querySelector("[data-greeting] input:not([type=hidden])"),
+      ).toBeNull();
+      await view.unmount();
+    }
+  });
+
+  test("a follow-up settled for another persona is asked for this one", async () => {
+    const view = await composeScreen({
+      persona: "worker",
+      followedUp: "student",
+    });
+    expect(view.host.textContent).toContain("What kind of work do you do?");
+  });
+
+  test("skipping settles it too, and writes nothing", async () => {
+    const view = await composeScreen({ persona: "other" });
+    await view.click(view.buttonNamed("Skip") as HTMLButtonElement);
+    await view.waitFor(
+      () =>
+        view.requests.some(
+          (request) => request.pathname === "/api/me/persona/follow-up",
+        ),
+      "the follow-up settled",
+    );
+    expect(
+      view.requests.some((request) => request.pathname.endsWith("/notebook")),
+    ).toBe(false);
   });
 
   test("사장님's follow-up saves the kind through the shop's one door, keeping the places", async () => {

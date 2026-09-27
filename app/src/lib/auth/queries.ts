@@ -40,6 +40,11 @@ export type AuthenticatedUser = {
    */
   persona?: Persona | null;
   /**
+   * Which persona's greeting follow-up is settled — answered or skipped — so it is not asked again.
+   * Null for none. Optional for the reason `shop` is.
+   */
+  personaFollowUp?: Persona | null;
+  /**
    * The person's clock and place, as the server keeps them: the zone this device last reported, and
    * the place set on 내 가게 or said to the Bot. Optional for the same reason `shop` is.
    */
@@ -234,10 +239,11 @@ async function currentUser(): Promise<CurrentUserResult> {
   const body = (await response.json()) as {
     user: Omit<
       AuthenticatedUser,
-      "consentRequired" | "shop" | "whereabouts" | "persona"
+      "consentRequired" | "shop" | "whereabouts" | "persona" | "personaFollowUp"
     > & {
       shop?: unknown;
       persona?: unknown;
+      personaFollowUp?: unknown;
       whereabouts?: unknown;
     };
     deployment?: Partial<Omit<Deployment, "trial">> & { trial?: unknown };
@@ -253,6 +259,7 @@ async function currentUser(): Promise<CurrentUserResult> {
     // Read forgivingly: a deployment that keeps no answers sends no key, and that is no answer.
     shop: parseShop(body.user.shop),
     persona: personaFrom(body.user.persona),
+    personaFollowUp: personaFrom(body.user.personaFollowUp),
     whereabouts: parseWhereabouts(body.user.whereabouts),
     consentRequired:
       body.consent !== undefined &&

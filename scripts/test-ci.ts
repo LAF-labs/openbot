@@ -630,7 +630,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-09-27 with the Bot speaking first (phase 1a/1b): twenty-one to `app` (the persona
  * tables walked and the rows each persona deals; the greeting pressed with no turn, its follow-ups
  * through the shop's and 수첩's own doors, and its head above a conversation) and twelve to `server`
- * (`PUT /api/me/persona`; the 호칭 on the profile and in the context layer only).
+ * (`PUT /api/me/persona`; the 호칭 on the profile and in the context layer only). Then four more to
+ * each for the follow-up asked once: settled before its 수첩 line, not asked again on reload.
  * RAISED 2026-09-27 with grounded answers: thirty-two to `root` — twenty-nine for the judges of the
  * 세금노무 and relative-day scenarios (a small shop exempted by head count six ways and not exempted
  * seven, the payroll and 최저임금 verdicts, the official pages' browser, dates beside weekdays, the
@@ -643,8 +644,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3046, roots: ["server"] },
-  { name: "app", floor: 1475, roots: ["app"] },
+  { name: "server", floor: 3050, roots: ["server"] },
+  { name: "app", floor: 1479, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
 ] as const;

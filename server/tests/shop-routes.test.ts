@@ -34,6 +34,8 @@ function shopStore(
 ) {
   let held: ShopProfile = initial;
   let persona: Persona | null = initialPersona;
+  let followedUp: Persona | null = null;
+  const followUps: Array<{ userId: string; persona: Persona }> = [];
   const saved: Array<{ userId: string; shop: ShopProfile }> = [];
   const personas: Array<{ userId: string; persona: Persona | null }> = [];
   const store: ShopStore = {
@@ -43,14 +45,19 @@ function shopStore(
       held = shop;
       return held;
     },
-    readPerson: async () => ({ persona, name: "민수" }),
+    readPerson: async () => ({ persona, name: "민수", followedUp }),
     savePersona: async (userId, next) => {
       personas.push({ userId, persona: next });
       persona = next;
       return persona;
     },
+    savePersonaFollowUp: async (userId, next) => {
+      followUps.push({ userId, persona: next });
+      followedUp = next;
+      return followedUp;
+    },
   };
-  return { store, saved, personas };
+  return { store, saved, personas, followUps };
 }
 
 /**
@@ -108,6 +115,7 @@ describe("what /api/me says about the shop", () => {
         throw new Error("the database went away");
       },
       savePersona: async (_userId, persona) => persona,
+      savePersonaFollowUp: async (_userId, persona) => persona,
     };
     const response = await surface(broken).request("http://laf.local/api/me");
     expect(response.status).toBe(200);
@@ -266,5 +274,48 @@ describe("PUT /api/me/persona", () => {
     const response = await surface(broken).request("http://laf.local/api/me");
     expect(response.status).toBe(200);
     expect((await response.json()).user).not.toHaveProperty("persona");
+  });
+});
+
+describe("PUT /api/me/persona/follow-up", () => {
+  const putFollowUp = (app: ReturnType<typeof createApp>, body: unknown) =>
+    app.request("http://laf.local/api/me/persona/follow-up", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("settles the follow-up for one persona, and /api/me says which", async () => {
+    const { store, followUps } = shopStore(undefined, "student");
+    const app = surface(store);
+    const response = await putFollowUp(app, { persona: "student" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ followedUp: "student" });
+    expect(followUps).toEqual([{ userId: "owner", persona: "student" }]);
+    const me = await (await app.request("http://laf.local/api/me")).json();
+    expect(me.user.personaFollowUp).toBe("student");
+  });
+
+  test("refuses null and anything but the four, without saving", async () => {
+    const { store, followUps } = shopStore();
+    for (const body of [{ persona: null }, { persona: "teacher" }, {}]) {
+      const response = await putFollowUp(surface(store), body);
+      expect(response.status).toBe(400);
+      expect((await response.json()).code).toBe("laf:persona_invalid");
+    }
+    expect(followUps).toEqual([]);
+  });
+
+  test("needs a session", async () => {
+    const { store, followUps } = shopStore();
+    const noSession = {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => null },
+    };
+    const response = await putFollowUp(surface(store, noSession), {
+      persona: "worker",
+    });
+    expect(response.status).toBe(401);
+    expect(followUps).toEqual([]);
   });
 });

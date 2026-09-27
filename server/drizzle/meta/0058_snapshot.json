@@ -1,5 +1,5 @@
 {
-  "id": "108643fe-58d9-470d-9bc0-93cab7a7b918",
+  "id": "ecfbf559-aef4-4846-b91c-da22104fff9c",
   "prevId": "d7447945-1a04-4da1-a8bd-f0bac6c11202",
   "version": "7",
   "dialect": "postgresql",
@@ -1003,6 +1003,12 @@
         },
         "persona": {
           "name": "persona",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "persona_follow_up": {
+          "name": "persona_follow_up",
           "type": "text",
           "primaryKey": false,
           "notNull": false

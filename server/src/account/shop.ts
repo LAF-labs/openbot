@@ -21,6 +21,7 @@ import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import {
+  PERSONA_INVALID,
   type Persona,
   parsePersonaAnswer,
   personaFrom,
@@ -44,25 +45,44 @@ export type ShopStore = {
    * Who the person is, as they pressed it, and the name the Bot addresses them by. Null for either
    * when there is none — never a guess: the effective persona is the reader's (`effectivePersona`).
    */
-  readPerson: (
-    userId: string,
-  ) => Promise<{ persona: Persona | null; name: string | null }>;
+  readPerson: (userId: string) => Promise<{
+    persona: Persona | null;
+    name: string | null;
+    /** Which persona's greeting follow-up is settled — answered or skipped. Null for none. */
+    followedUp: Persona | null;
+  }>;
   /** Replace the persona, and hand back what is held now. */
   savePersona: (
     userId: string,
     persona: Persona | null,
+  ) => Promise<Persona | null>;
+  /**
+   * The greeting's follow-up for this persona is settled: never asked again for it. Idempotent —
+   * the app marks it BEFORE writing the 수첩 line, so a line is written at most once.
+   */
+  savePersonaFollowUp: (
+    userId: string,
+    persona: Persona,
   ) => Promise<Persona | null>;
 };
 
 export function createShopStore(database: Database): ShopStore {
   const readPerson = async (userId: string) => {
     const [row] = await database
-      .select({ persona: users.persona, name: users.name })
+      .select({
+        persona: users.persona,
+        name: users.name,
+        followedUp: users.personaFollowUp,
+      })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);
     const name = row?.name?.trim();
-    return { persona: personaFrom(row?.persona), name: name ? name : null };
+    return {
+      persona: personaFrom(row?.persona),
+      name: name ? name : null,
+      followedUp: personaFrom(row?.followedUp),
+    };
   };
   const read = async (userId: string): Promise<ShopProfile> => {
     const [row] = await database
@@ -86,6 +106,13 @@ export function createShopStore(database: Database): ShopStore {
     savePersona: async (userId, persona) => {
       await database.update(users).set({ persona }).where(eq(users.id, userId));
       return (await readPerson(userId)).persona;
+    },
+    savePersonaFollowUp: async (userId, persona) => {
+      await database
+        .update(users)
+        .set({ personaFollowUp: persona })
+        .where(eq(users.id, userId));
+      return (await readPerson(userId)).followedUp;
     },
   };
 }
@@ -125,6 +152,27 @@ export function createShopRoutes(
     }
     const persona = await store.savePersona(context.var.actor.id, parsed.value);
     return context.json({ persona });
+  });
+
+  /*
+   * `PUT /api/me/persona/follow-up`: the greeting's follow-up for `{ persona }` is settled —
+   * answered or skipped — and is not asked again. One of the four; null is not an answer here.
+   */
+  routes.put("/me/persona/follow-up", requireUser, async (context) => {
+    const parsed = parsePersonaAnswer(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.ok || parsed.value === null) {
+      return context.json(
+        { error: PERSONA_INVALID, code: PERSONA_INVALID },
+        400,
+      );
+    }
+    const followedUp = await store.savePersonaFollowUp(
+      context.var.actor.id,
+      parsed.value,
+    );
+    return context.json({ followedUp });
   });
 
   return routes;

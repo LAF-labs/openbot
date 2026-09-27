@@ -234,6 +234,19 @@ describe("who the person is", () => {
       .where(eq(users.id, owner.id));
     expect((await shops.readPerson(owner.id)).persona).toBeNull();
   });
+
+  test("the follow-up is settled per persona and read back", async () => {
+    const owner = await person();
+    expect((await shops.readPerson(owner.id)).followedUp).toBeNull();
+    expect(await shops.savePersonaFollowUp(owner.id, "student")).toBe(
+      "student",
+    );
+    // Settled twice is still once: the value, not a count.
+    expect(await shops.savePersonaFollowUp(owner.id, "student")).toBe(
+      "student",
+    );
+    expect((await shops.readPerson(owner.id)).followedUp).toBe("student");
+  });
 });
 
 describe("leaving with it", () => {

@@ -25,7 +25,7 @@ import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { hasFinalConsonant } from "@/lib/josa";
 import { PERSONA_LABELS } from "@/lib/persona/labels";
-import { savePersona } from "@/lib/persona/queries";
+import { savePersona, savePersonaFollowUp } from "@/lib/persona/queries";
 import { BUSINESS_KINDS, type BusinessKindId } from "@/lib/shop/catalogue";
 import { saveShop } from "@/lib/shop/queries";
 import { savePlace } from "@/lib/whereabouts/queries";
@@ -371,6 +371,8 @@ function OwnerFollowUp() {
   const [kindHere, setKindHere] = useState<BusinessKindId | null>(null);
   const [placeHere, setPlaceHere] = useState<string | null>(null);
   const [placeSkipped, setPlaceSkipped] = useState(false);
+  // Decided at mount, for the reason `NotebookFollowUp` gives: asked once, never re-asked.
+  const [isPlaceAsked] = useState(user?.personaFollowUp !== "owner");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -378,7 +380,9 @@ function OwnerFollowUp() {
   const kind = shop.kind;
   const showKind = kind === null || kindHere !== null;
   const showPlace =
-    kind !== null && !placeSkipped && (!placeKnown || placeHere !== null);
+    kind !== null &&
+    !placeSkipped &&
+    (placeHere !== null || (!placeKnown && isPlaceAsked));
 
   const handleKind = async (id: string) => {
     const picked = BUSINESS_KINDS.find((known) => known.id === id);
@@ -411,7 +415,11 @@ function OwnerFollowUp() {
           { place, coordinates: user?.whereabouts?.coordinates ?? null },
           queryClient,
         )
-          .then(() => setPlaceHere(place))
+          .then(async () => {
+            setPlaceHere(place);
+            // Best effort: the place is kept either way, and a place kept is not asked for again.
+            await savePersonaFollowUp("owner", queryClient).catch(() => null);
+          })
           .catch((caught: unknown) => {
             setProblem(
               caught instanceof Error
@@ -463,7 +471,12 @@ function OwnerFollowUp() {
                 label={t("Shop location")}
                 maxLength={PLACE_MAX_CHARS}
                 onSave={(text) => void handlePlace(text)}
-                onSkip={() => setPlaceSkipped(true)}
+                onSkip={() => {
+                  setPlaceSkipped(true);
+                  void savePersonaFollowUp("owner", queryClient).catch(
+                    () => null,
+                  );
+                }}
                 placeholder={t("e.g. Mapo-gu, Seoul")}
               />
             ) : null}
@@ -483,15 +496,25 @@ function OwnerFollowUp() {
  *
  * Nothing is written until the last step: the line is the pick and the words together. 건너뛰기 on
  * the typed half writes the pick alone; 그 밖에 with nothing typed writes nothing.
+ *
+ * ASKED ONCE. It used to come back on every reload of the empty conversation, and a second answer
+ * wrote a second line. Now the finish is recorded on the person (`PUT /api/me/persona/follow-up`)
+ * BEFORE the line is written: a reload after it does not ask, and no second answer can reach 수첩.
+ * Whether to ask is decided when the step mounts, so recording it does not take the step away from
+ * under the person who just answered it.
  */
 function NotebookFollowUp({
   agentId,
   persona,
+  settled,
 }: {
   agentId: string;
   persona: "student" | "worker" | "other";
+  /** This persona's follow-up was answered or skipped before: it is not asked again. */
+  settled: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [isAsked] = useState(!settled);
   const questionId = useId();
   const [pick, setPick] = useState<string | null>(null);
   const [typed, setTyped] = useState<string | null>(null);
@@ -526,16 +549,30 @@ function NotebookFollowUp({
   };
 
   const handleFinish = async (detail: string | null) => {
+    if (busy) return;
     const line = lineFor(detail);
     if (detail) setTyped(detail);
-    if (!line) {
-      setSkipped(true);
-      return;
-    }
     setProblem(null);
     setBusy(true);
     await ensure(
       async () => {
+        // Settled first: whatever happens next, this answer is never asked for again.
+        const settledNow = await savePersonaFollowUp(persona, queryClient)
+          .then(() => true)
+          .catch((caught: unknown) => {
+            setTyped(null);
+            setProblem(
+              caught instanceof Error
+                ? caught.message
+                : t("That was not saved. Try again."),
+            );
+            return false;
+          });
+        if (!settledNow) return;
+        if (!line) {
+          setSkipped(true);
+          return;
+        }
         const refused = await writeLine(queryClient, agentId, line);
         if (refused) {
           setTyped(null);
@@ -548,6 +585,7 @@ function NotebookFollowUp({
     );
   };
 
+  if (!isAsked) return null;
   if (skipped && written === null && typed === null) return null;
 
   const typedQuestion =
@@ -687,7 +725,12 @@ export function Greeting({
       {mode === "compose" && persona === "owner" ? <OwnerFollowUp /> : null}
       {mode === "compose" &&
       (persona === "student" || persona === "worker" || persona === "other") ? (
-        <NotebookFollowUp agentId={agentId} key={persona} persona={persona} />
+        <NotebookFollowUp
+          agentId={agentId}
+          key={persona}
+          persona={persona}
+          settled={user.personaFollowUp === persona}
+        />
       ) : null}
       {mode === "compose" && effective && after ? (
         <>

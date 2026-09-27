@@ -103,6 +103,14 @@ export const users = pgTable("users", {
    */
   persona: text("persona"),
   /**
+   * Which persona's follow-up the greeting has settled — answered or skipped — so it is asked once
+   * and never again for that answer (`components/agents/greeting.tsx`). It re-asked on every reload
+   * of the empty conversation, and a second answer wrote a second line on 수첩. A persona value
+   * rather than a boolean: somebody who changes 학생 to 직장인 in Settings is asked the 직장인
+   * question, once. Null is "never settled". Written by the person's press only, like the persona.
+   */
+  personaFollowUp: text("persona_follow_up"),
+  /**
    * The person's clock and place, which are not the Bot's: its browser runs on a cloud VM whose
    * address, zone and place a website reads as the visitor's (a Bot once told its owner the weather
    * "in 제주시, 사장님 위치", from the VM's address). `account/whereabouts.ts` writes them;
