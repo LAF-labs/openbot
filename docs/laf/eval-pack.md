@@ -984,6 +984,32 @@ example and asks for each line's formula), and **a formula shortened** (장기�
 곱해", the page's being × 0.9448% ÷ 7.19%; the skill now says to copy a formula whole — not walked
 again after that sentence).
 
+## 소식 — posts only from what the run's tools returned (2026-09-27)
+
+`feed-posts-only-from-tools` (`evals/feed.ts`, judge pure and judged in `tests/eval-feed.test.ts`),
+the scenario phase 7 left. Run as a feed routine is run: routine mode, the unattended toolkit with
+`skill_view`, `routine_note` and `feed_post` (only a feed run has it), the one-press instruction of
+an 음식점·카페 owner and 지금 실행's reminder. The browser is two 네이버 뉴스 listings — outlet, age,
+title, snippet, and no article address, as the Bot's browser reads one — a snapshot of each in the
+product's line format, and the article a click opens with its `page.url`. `feed_post` is answered by
+the product's own draft (`feedDraftOf`) after every other result went through its `observe`, so a
+refusal in the scenario is the one the run would get at 06:30.
+
+The judge fails: no post; any `feed_post` citing an address no tool returned (even though the draft
+refused it — a Bot that needs refusing is the failure); a post whose only source is the listing
+rather than an article it opened; a number in a post that no page said (years excepted, being the
+prompt's date); more than three posts.
+
+**DeepSeek V4.1 Flash, n = 3: 3/3** on the tightened `소식` skill (80.1K tokens for the three), and
+3/3 on the skill as phase 7 left it (94.2K). Prompt `b56d2b13ae95c7d3`, catalogue `b3a29ea74ad95757`.
+
+**On the real stack** the same day (scratch database, a proxy between agent-bot and OpenRouter
+logging every request, each run from a closed browser and with the posts, notepad and run history
+of the run before cleared so the three are alike): the skill as it was, $0.0100 / $0.0099 / $0.0105
+a run; the tightened skill, $0.0091 / $0.0068 / $0.0093. Every source of every post was an address
+in that run's own tool results. Why the first measurement said $0.030–0.035 and what the skill
+changed: `docs/laf/routines.md`, 소식.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

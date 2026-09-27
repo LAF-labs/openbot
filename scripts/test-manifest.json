@@ -476,6 +476,7 @@
   "tests/dockerfiles.test.ts",
   "tests/eval-calendar.test.ts",
   "tests/eval-deferral.test.ts",
+  "tests/eval-feed.test.ts",
   "tests/eval-from-failures.test.ts",
   "tests/eval-grounded.test.ts",
   "tests/eval-lib.test.ts",

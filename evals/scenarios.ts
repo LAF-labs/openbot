@@ -39,9 +39,11 @@ import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
+import { FEED_POST } from "../shared/tools/feed-post";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
 import { SKILL_VIEW } from "../shared/tools/skills";
 import { REALISTIC_TOOLSET } from "./deferral";
+import { FEED_EVAL_INSTRUCTION, feedBackend, judgeFeedRun } from "./feed";
 import { longPage } from "./fixtures";
 import {
   CHUNCHEON_WEATHER,
@@ -756,6 +758,7 @@ export const SCENARIOS: Scenario[] = [
   supportProgramsFromThePortal(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
+  feedPostsOnlyFromTools(),
   payrollFromTheOfficialPages(),
   minimumWageFromItsPage(),
   ...relativeDays(),
@@ -1724,6 +1727,64 @@ function rainDayOnTheWalksSunday(sunday: Date): Scenario {
           rainy: calendarDayAfter(today, 3),
         }),
       ]),
+  };
+}
+
+/**
+ * 소식 — POSTS ONLY FROM WHAT THE RUN'S TOOLS RETURNED (`./feed.ts`).
+ *
+ * Run as a feed routine is run: routine mode, the unattended toolkit with `skill_view`,
+ * `routine_note` and `feed_post` (only a feed run has it), the one-press instruction for an
+ * 음식점·카페 owner, and 지금 실행's reminder. The browser is two 네이버 뉴스 listings and their
+ * articles; `feed_post` is answered by the product's own draft, which has read every other result
+ * first — so a refusal here is the refusal the run would get.
+ */
+function feedPostsOnlyFromTools(): Scenario {
+  const zone = "Asia/Seoul";
+  const startedAt = EVAL_NOW;
+  const backend = feedBackend(() => startedAt);
+  return {
+    id: "feed-posts-only-from-tools",
+    dimension: "korean-work",
+    mode: "routine",
+    person: { timeZone: zone, locale: "ko-KR", place: "서울 마포구" },
+    frozenAt: startedAt,
+    skills: PACKAGE_SKILLS,
+    messages: [
+      user(
+        withReminder(
+          FEED_EVAL_INSTRUCTION,
+          reminderBlock([routineRunLine({ startedAt, timeZone: zone })]),
+        ),
+      ),
+    ],
+    tools: [...UNATTENDED_COMPUTER_TOOLS, SKILL_VIEW, ROUTINE_NOTE, FEED_POST],
+    // The skill, then per topic a search, a snapshot, a click and the post.
+    maxTurns: 12,
+    prepare: async () => {
+      backend.reset();
+      return {};
+    },
+    stub: (call) =>
+      call.name === SKILL_VIEW.name
+        ? skillViewAnswer(call)
+        : backend.answer(call),
+    check: (turn) => {
+      for (const post of backend.posts()) {
+        console.log(
+          `    · ${post.title} — ${post.sources.map((source) => source.url).join(", ")}`,
+        );
+      }
+      return verdict(
+        judgeFeedRun({
+          calls: turn.calls.filter((call) => call.name === FEED_POST.name),
+          answers: backend.answers,
+          posts: backend.posts(),
+          returned: backend.returned,
+          opened: backend.opened,
+        }),
+      );
+    },
   };
 }
 

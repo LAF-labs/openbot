@@ -497,6 +497,31 @@ two-topic 소식 cost $0.030, $0.035 and $0.033 by their `model.usage` rows —
 every search page and article opened rides along in the next call. That is
 about $1 a month for one daily 소식, above the plan's estimate (§5.3).
 
+**Measured again the same evening, and cut (n = 3 each way).** The dollars are
+not where that sentence put them. OpenRouter billed these runs about $0.30 per
+million new prompt tokens, $0.006 per million served from cache and $1.20 per
+million out, so a page that "rides along" costs a fiftieth of its first sending;
+what a run pays for is each result the first time, what the model writes, and
+how many calls it takes. Two things inflated the first figure: runs pressed back
+to back find the browser still holding the tabs of the run before, and every
+snapshot lists every tab (2K of a 6K-character snapshot, measured); a daily run
+at 06:30 finds them closed, because the Bot's tabs close after ten idle minutes.
+From a closed browser, the same routine and topics cost **$0.0100, $0.0099,
+$0.0105** (10–11 calls, 22–37K uncached prompt tokens). The calls that were
+wasted: a watermark key with a space in it (refused in every run, one more call),
+two searches opened at once in the one tab (the first thrown away), `now` for a
+time the reminder already gives, and a `feed_post` with no title. The skill now
+says one topic at a time, the key without spaces, the time from the reminder,
+and all four fields. After: **$0.0091, $0.0068, $0.0093** (9 calls each, 16–19K
+uncached) — about $0.25 a month, inside §5.3's estimate. Every source of every
+post in those runs is an address in that run's own tool results (read out of
+the logged requests). Not taken: dropping a page's body once its post is
+written. It rewrites the middle of the conversation, and everything after the
+first changed message is then billed new again — at fifty times the cached
+price, more than the body saved. The article a click opens already arrives as a
+2–2.5K-character preview. The judge is `feed-posts-only-from-tools`
+(`docs/laf/eval-pack.md`).
+
 ## Triggers
 
 Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the
