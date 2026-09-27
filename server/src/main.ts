@@ -110,7 +110,10 @@ import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
 import { createPublicDataRuntime } from "./plugins/public-data-rest";
 import { lookupOver } from "./plugins/shared-clients";
-import { createBuiltInSkills } from "./plugins/built-in-skill-sync";
+import {
+  createBuiltInSkills,
+  offeredTools,
+} from "./plugins/built-in-skill-sync";
 import { allLiveBots } from "./plugins/skills-and-grants";
 import { createPluginStore } from "./plugins/store";
 import {
@@ -370,9 +373,14 @@ const publicDataRuntime = createPublicDataRuntime({
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
  * Read from the same directory the package above was, so a deployment's skills are its package's.
  */
+const deploymentTools = offeredTools({
+  publicData: publicDataRuntime.configured,
+});
 const builtInSkills = createBuiltInSkills({
   packageDir: config.tenantPackageDirectory,
   listBots: () => allLiveBots(database),
+  // A skill whose tool this deployment lacks is not carried at all (`requires:` in its file).
+  hasTool: (name) => deploymentTools.has(name),
 });
 sayConnectors({
   alimtalk: config.partners.alimtalk !== null,

@@ -2,6 +2,7 @@
 name: 지원사업
 title: 지원사업·정책자금 찾기 (기업마당)
 description: "가게가 신청할 만한 정부·지자체 지원사업을 기업마당에서 찾아 걸러 알려 줄 때"
+requires: search_support_programs
 ---
 사장님 가게가 신청할 수 있는 지원사업·정책자금을 찾는 순서. 공고는 search_support_programs(나라장터·기업마당)로 읽는다. 툴 목록에 없으면 tool_search로 찾아 tool_call로 부른다.
 

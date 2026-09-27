@@ -1935,8 +1935,8 @@ export const ko: Record<string, string> = {
     "날씨는 가게 위치를 알아야 볼 수 있어요.",
   "Add it on My shop": "내 가게에서 위치 적기",
   "Morning briefing": "아침 브리핑",
-  "Send this morning's briefing in one message, the way /{skill} says:":
-    "/{skill} 스킬대로 오늘 아침 브리핑을 한 메시지로 보내 줘:",
+  "Send this morning's briefing in one message, the way the {skill} skill says:":
+    "오늘 아침 브리핑을 {skill} 스킬대로 한 메시지로 보내 줘:",
   "Today's weather": "오늘 날씨",
   "Today's schedule on Google Calendar": "오늘 일정 (구글 캘린더)",
   "Mail nobody has answered, in Gmail": "답 안 한 메일 (Gmail)",

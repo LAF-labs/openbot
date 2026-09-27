@@ -185,7 +185,7 @@ describe("what the scenarios send", () => {
 
   test("the chip's own instruction, naming a skill the package ships", async () => {
     expect(NOTHING_CONNECTED_INSTRUCTION.split("\n")).toEqual([
-      `/${BRIEFING_SKILL} 스킬대로 오늘 아침 브리핑을 한 메시지로 보내 줘:`,
+      `오늘 아침 브리핑을 ${BRIEFING_SKILL} 스킬대로 한 메시지로 보내 줘:`,
       "- 오늘 날씨",
       "- 오늘이 월요일이면: 새 지원사업 (기업마당)",
     ]);

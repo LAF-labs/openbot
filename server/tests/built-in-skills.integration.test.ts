@@ -43,6 +43,7 @@ const botB = `agent_builtin_b_${suite}`;
 const later = `agent_builtin_later_${suite}`;
 const shipped = `쇼핑가격${suite}`;
 const second = `네이버뉴스${suite}`;
+const needsKey = `지원사업${suite}`;
 const taken = `taken-${suite}`;
 const bots = [botA, botB, later];
 
@@ -57,10 +58,13 @@ const skill = (
 });
 
 let shipping: BuiltInSkill[] = [];
+/** The tools this test deployment offers; a skill whose `requires:` names another is not carried. */
+let offered = new Set<string>();
 const sync = createBuiltInSkills({
   packageDir: "",
   skills: async () => shipping,
   listBots: async () => [botA, botB],
+  hasTool: (name) => offered.has(name),
 });
 
 async function granted(bot: string): Promise<string[]> {
@@ -107,7 +111,7 @@ afterAll(async () => {
     .where(inArray(pluginGrants.agentId, bots));
   await database
     .delete(skills)
-    .where(inArray(skills.slug, [shipped, second, taken]));
+    .where(inArray(skills.slug, [shipped, second, taken, needsKey]));
   await database.delete(agents).where(inArray(agents.id, bots));
 });
 
@@ -148,6 +152,35 @@ describe("the package's skills at boot", () => {
   test("a Bot made after boot holds them all", async () => {
     await sync.offerTo(store, later, "deployment");
     expect(await granted(later)).toEqual([second, shipped].sort());
+  });
+
+  test("a skill whose tool this deployment lacks is not carried, and comes with the tool", async () => {
+    /*
+     * First-hour walk, 2026-09-27: with no data.go.kr key, 지원사업·정책자금 찾기 was on the Skills
+     * page, the profile and the prompt's index, and its tool was nowhere.
+     */
+    const withTool: BuiltInSkill = {
+      ...skill(needsKey),
+      requires: ["search_support_programs"],
+    };
+    shipping = [skill(shipped, "새 본문."), skill(second), withTool];
+    offered = new Set();
+    await sync.reconcile(store, "deployment");
+    expect(await row(needsKey)).toBeUndefined();
+    expect(await granted(botB)).not.toContain(needsKey);
+    await sync.offerTo(store, later, "deployment");
+    expect(await granted(later)).not.toContain(needsKey);
+
+    // The key is planted and the server restarts: the skill arrives, and every Bot is handed it.
+    offered = new Set(["search_support_programs"]);
+    await sync.reconcile(store, "deployment");
+    expect((await row(needsKey))?.origin).toBe(BUILT_IN_ORIGIN);
+    expect(await granted(botB)).toContain(needsKey);
+
+    // And the key taken away again takes the skill with it.
+    offered = new Set();
+    await sync.reconcile(store, "deployment");
+    expect(await row(needsKey)).toBeUndefined();
   });
 
   test("a skill the package stops shipping goes", async () => {

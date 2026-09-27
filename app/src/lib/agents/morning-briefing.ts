@@ -156,15 +156,27 @@ function instructionLine(section: BriefingSection, t: Translate): string {
  * The Bot's standing order and the person's to read back on Routines, so it is in the person's
  * language like the sentence the chip used to repeat. Eight lines at most, with everything
  * connected; three with nothing but 기업마당.
+ *
+ * THE SKILL BY ITS NAME, WITHOUT THE SLASH. It read "/아침브리핑 스킬대로 …" — a command's syntax, on
+ * Routines under 봇에게 준 지시, in front of a person who has never typed one (first-hour walk,
+ * 2026-09-27). The slash was never what found the skill: a routine's run is not the composer, which
+ * is the only place a leading `/name` is expanded, and the Bot reads the body because the prompt's
+ * index lists 아침브리핑 and `skill_view` takes the name with or without it. So the smaller change
+ * was the sentence, not a way for the server to resolve a skill by id: the words that run stay the
+ * words shown, and the name is still there for the Bot to look up. Measured on the local stack:
+ * 지금 실행 on a routine carrying this sentence called `skill_view` with 아침브리핑 first.
  */
 export function briefingInstruction(
   sections: readonly BriefingSection[],
   t: Translate,
 ): string {
   return [
-    t("Send this morning's briefing in one message, the way /{skill} says:", {
-      skill: BRIEFING_SKILL,
-    }),
+    t(
+      "Send this morning's briefing in one message, the way the {skill} skill says:",
+      {
+        skill: BRIEFING_SKILL,
+      },
+    ),
     ...sections.map((section) => `- ${instructionLine(section, t)}`),
   ].join("\n");
 }

@@ -13,14 +13,45 @@
  *
  * Shaped like the public-data entry (`public-data-rest.ts`): reconciled once at boot with the other
  * background work, offered to a Bot the moment it is made, never fatal.
+ *
+ * WHAT THIS DEPLOYMENT CANNOT DO, IT DOES NOT CARRY. A skill whose `requires:` names a tool this
+ * deployment does not offer is treated as not shipped: no row, so it is on no Skills page, no
+ * profile, no prompt's index and nothing `skill_view` will read — and a row an earlier boot wrote
+ * goes. The Bot is never told about a skill it cannot use. When the tool arrives (the key is
+ * planted and the server restarts), the skill arrives with it as a new one, and every Bot is
+ * handed it then; a person who had taken it off before it went finds it on again, which is the one
+ * place "what a person takes off stays off" gives way, because the grant went with the row.
  */
+import { COMPUTER_TOOLS } from "../../../shared/tools/computer";
+import { NOW_TOOL_NAME } from "../../../shared/tools/now";
+import { ROUTINE_NOTE } from "../../../shared/tools/routine-note";
+import { SELF_TOOLS } from "../../../shared/tools/self";
+import { SKILL_TOOLS } from "../../../shared/tools/skills";
 import { log } from "../log";
 import {
   BUILT_IN_ORIGIN,
   type BuiltInSkill,
   readBuiltInSkills,
 } from "./built-in-skills";
+import { PUBLIC_DATA_TOOLS } from "./public-data-rest";
 import type { PluginStore } from "./store";
+
+/**
+ * The tools a deployment offers, by name: every Bot's own (its computer, itself, its skills, the
+ * clock, a routine's notepad) and the deployment-key tools where the key is. What `requires:` is
+ * held to; `built-in-skills.test.ts` holds every name the package writes there to this list, so a
+ * misspelt one fails a test rather than hiding a skill on every deployment.
+ */
+export function offeredTools(options: { publicData: boolean }): Set<string> {
+  return new Set([
+    ...COMPUTER_TOOLS.map((tool) => tool.name),
+    ...SELF_TOOLS.map((tool) => tool.name),
+    ...SKILL_TOOLS.map((tool) => tool.name),
+    NOW_TOOL_NAME,
+    ROUTINE_NOTE.name,
+    ...(options.publicData ? PUBLIC_DATA_TOOLS.map((tool) => tool.name) : []),
+  ]);
+}
 
 export type BuiltInSkillStore = Pick<
   PluginStore,
@@ -46,10 +77,28 @@ export function createBuiltInSkills(input: {
   packageDir: string;
   /** Every live Bot on this deployment: the set a new skill is handed to. */
   listBots: () => Promise<string[]>;
+  /**
+   * Whether this deployment offers a tool, by name: what a skill's `requires:` is checked against.
+   * `main.ts` answers it from the core tools and the deployment-key tools that are configured.
+   */
+  hasTool: (name: string) => boolean;
   /** For tests: the skills, instead of reading the package. */
   skills?: () => Promise<BuiltInSkill[]>;
 }): BuiltInSkillsRuntime {
-  const shipped = input.skills ?? (() => readBuiltInSkills(input.packageDir));
+  const read = input.skills ?? (() => readBuiltInSkills(input.packageDir));
+  /** What the package ships that this deployment can use; the rest is logged once per boot. */
+  const shipped = async () => {
+    const skills = await read();
+    const usable: BuiltInSkill[] = [];
+    for (const skill of skills) {
+      const missing = (skill.requires ?? []).filter(
+        (name) => !input.hasTool(name),
+      );
+      if (missing.length === 0) usable.push(skill);
+      else log.info("built_in_skill_withheld", { skill: skill.slug, missing });
+    }
+    return usable;
+  };
   /** The slugs this deployment actually carries as built-in, after the last reconcile. */
   let ours: string[] | null = null;
 

@@ -168,7 +168,7 @@ describe("what the routine is told", () => {
     );
     expect(instruction).toBe(
       [
-        `/${BRIEFING_SKILL} 스킬대로 오늘 아침 브리핑을 한 메시지로 보내 줘:`,
+        `오늘 아침 브리핑을 ${BRIEFING_SKILL} 스킬대로 한 메시지로 보내 줘:`,
         "- 오늘 날씨",
         "- 오늘이 월요일이면: 새 지원사업 (기업마당)",
       ].join("\n"),
@@ -184,7 +184,7 @@ describe("what the routine is told", () => {
       korean,
     );
     expect(instruction.split("\n")).toEqual([
-      `/${BRIEFING_SKILL} 스킬대로 오늘 아침 브리핑을 한 메시지로 보내 줘:`,
+      `오늘 아침 브리핑을 ${BRIEFING_SKILL} 스킬대로 한 메시지로 보내 줘:`,
       "- 오늘 날씨",
       "- 답 안 한 메일 (Gmail)",
       "- 네이버 스마트스토어 판매자센터: 오늘 들어온 주문 목록을 정리해줘",

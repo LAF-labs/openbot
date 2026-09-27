@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { skillIndexText } from "../../shared/prompt/skill-index";
 import { SKILL_SLUG_PATTERN } from "../../shared/tools/skills";
+import { offeredTools } from "../src/plugins/built-in-skill-sync";
 import {
   parseSkillFile,
   readBuiltInSkills,
@@ -44,6 +45,48 @@ describe("the package's skills", () => {
         "---\nname: 빈것\ntitle: 빈 것\ndescription: 한 줄\n---\n",
       ),
     ).toThrow("empty.md");
+  });
+
+  test("지원사업 says it needs the 기업마당 tool, and every tool a skill names is one a deployment can offer", async () => {
+    const skills = await readBuiltInSkills(PACKAGE);
+    const support = skills.find((skill) => skill.slug === "지원사업");
+    expect(support?.requires).toEqual(["search_support_programs"]);
+    // Without the key the tool is not offered, and with it it is.
+    expect(
+      offeredTools({ publicData: false }).has("search_support_programs"),
+    ).toBe(false);
+    expect(
+      offeredTools({ publicData: true }).has("search_support_programs"),
+    ).toBe(true);
+    // A misspelt name would withhold a skill on every deployment, with only a log line to say so.
+    const everything = offeredTools({ publicData: true });
+    for (const skill of skills) {
+      for (const name of skill.requires ?? [])
+        expect(everything.has(name)).toBe(true);
+    }
+    // The rest need nothing but what every Bot has: the briefing asks about 지원사업 only where the
+    // chip found the tool (`morning-briefing.ts`), so it is not withheld with it.
+    expect(
+      skills.filter((skill) => skill.requires).map((skill) => skill.slug),
+    ).toEqual(["지원사업"]);
+  });
+
+  test("requires is one tool or a list of them, and anything else is refused by name", () => {
+    const head = "---\nname: 가격\ntitle: 가격\ndescription: 한 줄\n";
+    const body = "---\n본문이 있다.";
+    expect(
+      parseSkillFile("one.md", `${head}requires: now\n${body}`).requires,
+    ).toEqual(["now"]);
+    expect(
+      parseSkillFile("two.md", `${head}requires: [now, skill_view]\n${body}`)
+        .requires,
+    ).toEqual(["now", "skill_view"]);
+    expect(
+      parseSkillFile("none.md", `${head}${body}`).requires,
+    ).toBeUndefined();
+    expect(() =>
+      parseSkillFile("bad.md", `${head}requires: [1]\n${body}`),
+    ).toThrow("bad.md");
   });
 
   test("a package with no skills directory ships none", async () => {

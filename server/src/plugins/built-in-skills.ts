@@ -21,6 +21,17 @@ export type BuiltInSkill = {
   title: string;
   summary: string;
   instructions: string;
+  /**
+   * The tools the skill cannot work without, by name — `requires:` in its front matter. A deployment
+   * that does not offer every one of them does not carry the skill (`built-in-skill-sync.ts`).
+   *
+   * WHY IT EXISTS. On a deployment without the data.go.kr key, 지원사업·정책자금 찾기 was on the Skills
+   * page, on the profile and in every prompt's index, and its tool was nowhere: a Bot told it could
+   * find support programmes, and a person shown a skill that could only fail (first-hour walk,
+   * 2026-09-27; CLAUDE.md, "if a deployment's model cannot do the thing, do not draw the control").
+   * Absent means it needs nothing but what every Bot has.
+   */
+  requires?: readonly string[];
 };
 
 /** What `origin` says on a row this module wrote. Nobody else writes it. */
@@ -41,7 +52,24 @@ export function parseSkillFile(file: string, text: string): BuiltInSkill {
   if (!title || !summary || !instructions) {
     throw new Error(`${file}: title, description and a body are required`);
   }
-  return { slug, title, summary, instructions };
+  const requires = requiresOf(file, head?.requires);
+  return {
+    slug,
+    title,
+    summary,
+    instructions,
+    ...(requires.length > 0 ? { requires } : {}),
+  };
+}
+
+/** `requires:` as one tool name or a list of them. Anything else is a broken file, said by name. */
+function requiresOf(file: string, value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  const names = Array.isArray(value) ? value : [value];
+  if (!names.every((name) => typeof name === "string" && name.trim())) {
+    throw new Error(`${file}: requires names tools, one or a list`);
+  }
+  return names.map((name) => String(name).trim());
 }
 
 /** Every skill a package ships, in file-name order. A package with no `skills/` ships none. */

@@ -643,13 +643,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * line when nothing is connected; no 오늘 heading over only 다음; eight for a browsing card titled
  * with what the Bot looked up) and eleven taken with the person's sentence as that title, which it
  * no longer is.
+ * RAISED 2026-09-27 with skills that need a tool: three to `server` (지원사업 names its tool and every
+ * named tool is one a deployment can offer; `requires:` parsed or refused; a skill withheld where its
+ * tool is not, and arriving and leaving with it).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3050, roots: ["server"] },
+  { name: "server", floor: 3053, roots: ["server"] },
   { name: "app", floor: 1485, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
