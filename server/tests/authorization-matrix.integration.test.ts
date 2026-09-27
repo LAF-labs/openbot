@@ -48,6 +48,7 @@ import { eq, inArray } from "drizzle-orm";
 import { createAccountDeletion } from "../src/account/deletion";
 import { createMadeReader } from "../src/agents/made";
 import { createFeedStore } from "../src/feed/store";
+import { createGoalStore } from "../src/goals/store";
 import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
@@ -381,6 +382,8 @@ function deployment() {
     createMadeReader({ database }),
     // 소식: the posts and the person's three presses on them.
     createFeedStore({ database }),
+    // 목표: the person's goals and their presses on them.
+    createGoalStore({ database }),
   );
   return { app, routineService, approvals };
 }
@@ -803,6 +806,8 @@ const B_ALLOWED = [
   // 소식: the person's own posts, their count, and the presses on them — nobody else's.
   "GET /api/feed",
   "GET /api/feed/unseen",
+  // 목표: the person's own goals. A goal's own doors name it by id, and the matrix's id is nobody's.
+  "GET /api/goals",
   "GET /api/health",
   // 아이디어: the person's own cards, in their order — keys and connection states, nobody else's.
   "GET /api/ideas",

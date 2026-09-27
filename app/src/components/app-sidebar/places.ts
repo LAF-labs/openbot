@@ -18,34 +18,33 @@ import {
  * the 메뉴 page) is the way to its profile, and the same link twice is a list padding itself out.
  */
 export const FOOTER_LINKS = [
-  { to: "/agents", icon: IconUserCircle, label: "Bot profile", primary: true },
+  { to: "/agents", icon: IconUserCircle, label: "Bot profile" },
   /*
    * 수첩 (one-bot direction #2): what the Bot knows about the shop and the person, where a wrong
    * line is fixed. Near the top because it is the one place a person checks the Bot believes the
    * right things — the profile no longer lists them.
    */
-  { to: "/notebook", icon: IconNotebook, label: "Notebook", primary: true },
-  { to: "/routines", icon: IconClock, label: "Routines", primary: true },
+  { to: "/notebook", icon: IconNotebook, label: "Notebook" },
+  { to: "/routines", icon: IconClock, label: "Routines" },
   /*
-   * 스킬 AND 도움말 GO UNDER 더 보기 ON THE PC SIDEBAR (muse-shape plan §4, phase 5). The rows above the
-   * footer grew by 아이디어 and will grow by three more, and at the PC app's smallest window (1024×640)
-   * every row the footer keeps is a row 오늘 loses. 수첩, 루틴 and 연결 stay in sight because they are
-   * the ones a person comes back to; the 메뉴 page lists all of them, `primary` or not.
+   * ONE 메뉴 ROW ON THE PC SIDEBAR SINCE PHASE 9 (muse-shape plan §4). Phase 5 kept 수첩, 루틴 and 연결
+   * in sight with 스킬 and 도움말 under 더 보기; with the fourth row above (목표), that footer cut
+   * 오늘's first row at 1024×640 — measured, see `MenuLinks` in `bot-sidebar.tsx` — so the whole
+   * list moved under one row, the same list the 메뉴 page draws.
    */
-  { to: "/skills", icon: IconBox, label: "Skills", primary: false },
+  { to: "/skills", icon: IconBox, label: "Skills" },
   {
     to: "/settings/connected-accounts",
     icon: IconPlugConnected,
     label: "Connections",
-    primary: true,
   },
   /*
    * ONE `?`, AT THE BOTTOM. The help page and the 문의·의견 box behind it are the only way a person
    * who is stuck can say so; a way out that lives only under Settings is a way out that a person
-   * who does not know where Settings is cannot take. Since phase 5 it is one press under the
-   * sidebar's 더 보기 — still in the column, never under Settings — and a row of its own on 메뉴.
+   * who does not know where Settings is cannot take. It is one press under the sidebar's 메뉴 —
+   * still in the column, never under Settings — and a row of its own on the phone's 메뉴 page.
    */
-  { to: "/help", icon: IconHelp, label: "Help", primary: false },
+  { to: "/help", icon: IconHelp, label: "Help" },
 ] as const;
 
 export type FooterLink = (typeof FOOTER_LINKS)[number];

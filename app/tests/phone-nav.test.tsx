@@ -175,7 +175,7 @@ describe("the phone's bar", () => {
    * FOUR SINCE PHASE 5: 아이디어 came with its page, third, where the plan puts it (§4). FIVE SINCE
    * PHASE 6, with 만든 것 before 메뉴. The bar gains a tab only with the page behind it.
    */
-  test("five labelled tabs, to the conversation, 소식, 아이디어, 만든 것 and 메뉴", async () => {
+  test("six labelled tabs, to the conversation, 소식, 아이디어, 목표, 만든 것 and 메뉴", async () => {
     const view = await bar("/channel/ch-1");
     expect(
       view.tabs().map((tab) => [tab.textContent, tab.getAttribute("href")]),
@@ -183,10 +183,12 @@ describe("the phone's bar", () => {
       ["Conversation", "/"],
       ["Updates", "/feed"],
       ["Ideas", "/ideas"],
+      ["Goals", "/goals"],
       ["Made", "/made"],
       ["Menu", "/menu"],
     ]);
-    expect(view.nav()?.querySelector("ul")?.className).toContain("grid-cols-5");
+    expect(view.nav()?.querySelector("ul")?.className).toContain("grid-cols-6");
+    expect(ko.Goals).toBe("목표");
     expect(ko.Conversation).toBe("대화");
     expect(ko.Updates).toBe("소식");
     expect(ko.Ideas).toBe("아이디어");

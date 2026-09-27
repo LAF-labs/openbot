@@ -70,6 +70,11 @@ export const SERVICE_STEP_LABELS: Readonly<Record<string, string>> = {
   "cafe24/list_products": "Reading products",
   "cafe24/list_board_articles": "Reading board posts",
   "kakao-alimtalk/alimtalk_templates": "Reading KakaoTalk templates",
+  // 목표's own tools (`shared/tools/goals.ts`), served by this deployment, not a connected service.
+  "goals/save_goal": "Saving a goal",
+  "goals/update_goal": "Changing a goal",
+  "goals/log_progress": "Logging progress",
+  "goals/list_goals": "Reading the goals",
 };
 
 /**

@@ -9,7 +9,7 @@ import {
   IconPlayerStopFilled,
 } from "@tabler/icons-react";
 import { PromptArea, type PromptAreaHandle } from "prompt-area";
-import type { Segment } from "prompt-area/helpers";
+import { type Segment, text as textSegment } from "prompt-area/helpers";
 import {
   type ClipboardEvent,
   type DragEvent,
@@ -48,7 +48,9 @@ import {
   DraftScope,
   offerDraft,
   takeOfferedDraft,
+  takeOfferedSend,
   useOfferedDraft,
+  useOfferedSend,
 } from "./prefill";
 import { PLACEHOLDER_COMMANDS } from "./sources";
 import { buildTriggers } from "./triggers";
@@ -537,6 +539,19 @@ export function Composer({
     promptAreaRef.current?.setText(text);
     promptAreaRef.current?.focus();
   }, [offered, draftKey, disabled, draft.isEmpty]);
+
+  /*
+   * A SENTENCE ANOTHER SCREEN SENDS ON THE PERSON'S PRESS (`prefill.ts`, `offerSend`): 목표's
+   * [대화에서 시작]. Through the one submit path, so it lands exactly as if typed and sent — queued
+   * behind a turn in flight, never over words the person is typing.
+   */
+  const offeredSend = useOfferedSend(draftKey);
+  useEffect(() => {
+    if (offeredSend === null || disabled || !draft.isEmpty) return;
+    const sentence = takeOfferedSend(draftKey);
+    if (sentence === null) return;
+    void submitDraft([textSegment(sentence)]);
+  }, [offeredSend, draftKey, disabled, draft.isEmpty, submitDraft]);
 
   /** A post pressed 이야기하기 on 소식: taken as the chip, and the caret given to the box under it. */
   const offeredQuote = useOfferedFeedQuote(draftKey);

@@ -93,6 +93,7 @@ import {
   lafAnswerRatings,
   lafAttachments,
   lafFeedPosts,
+  lafGoals,
   lafConversationContexts,
   lafRoutineRuns,
   lafRoutines,
@@ -433,6 +434,15 @@ export function createAccountDeletion(
             .delete(lafFeedPosts)
             .where(eq(lafFeedPosts.userId, userId))
             .returning({ id: lafFeedPosts.id }),
+        );
+
+        // 목표: the goals, and with them (cascade) their timelines. Taken here for the tally.
+        record(
+          "goals",
+          await transaction
+            .delete(lafGoals)
+            .where(eq(lafGoals.userId, userId))
+            .returning({ id: lafGoals.id }),
         );
 
         const memberOf = await transaction

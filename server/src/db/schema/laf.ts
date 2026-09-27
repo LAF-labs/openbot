@@ -455,6 +455,17 @@ export const lafRoutines = pgTable("laf_routines", {
    * feed nor turn its conversation's routine into one. Text for the reason `paused_reason` is.
    */
   delivery: text("delivery").$type<RoutineDelivery>().notNull().default("chat"),
+  /**
+   * The goal this routine checks (목표, muse-shape plan §3.4). A run of a routine linked here is told
+   * which goal it checks and offered `log_progress` for that goal alone (`goals/tools.ts`).
+   *
+   * Linked by `update_goal` when the person asked for a check-in at a time they named — a Bot does
+   * not decide on its own that a routine checks a goal. Set null when the goal is deleted: the
+   * routine is still the person's, it just checks nothing any more.
+   */
+  goalId: text("goal_id").references(() => lafGoals.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -520,6 +531,80 @@ export const lafFeedPosts = pgTable(
 
 /** One page a post cites. */
 export type FeedSource = { title: string; url: string };
+
+/**
+ * 목표: A GOAL THE PERSON SET, REFINED IN THE ONE CONVERSATION (muse-shape plan §3.4, phase 9).
+ *
+ * Written by the Bot's `save_goal` only after the person pressed 예 on the card it asked with — the
+ * refusal is in code (`goals/tools.ts`, `laf:goal_needs_yes`), not only in the skill. Its status
+ * (완료, 그만두기) is the person's alone, on the page. Momentum is the Bot's three-word reading of
+ * how it is going, set with a check-in (`shared/goals.ts`).
+ *
+ * The person's own record, so it has no retention cutoff: it goes with their account and comes with
+ * their export (`docs/laf/data-lifecycle.md`).
+ */
+export const lafGoals = pgTable(
+  "laf_goals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    /** One of the seven kinds of life everyone gets (`CATEGORIES`, `shared/persona.ts`). */
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    /** What being done looks like, in the person's words as the Bot refined them. */
+    target: text("target").notNull(),
+    /** A number to watch, if the goal has one: `{unit, start, goal}`. */
+    measure: jsonb("measure").$type<GoalMeasure | null>(),
+    /** `YYYY-MM-DD`, a calendar day in the person's zone. Text, because a date has no zone. */
+    dueOn: text("due_on"),
+    status: text("status").notNull().default("active"),
+    /** on_track · at_risk · behind, from the last check-in that set one. Null before any. */
+    momentum: text("momentum"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("laf_goals_user_status_idx").on(table.userId, table.status),
+  ],
+);
+
+/** A number a goal watches. See `shared/goals.ts`. */
+export type GoalMeasure = { unit?: string; start?: number; goal?: number };
+
+/**
+ * One line on a goal's timeline: a check-in a linked routine's run made, progress the person told
+ * the Bot in the conversation ("오늘 단어 30개 했어"), a note or a milestone.
+ */
+export const lafGoalEntries = pgTable(
+  "laf_goal_entries",
+  {
+    id: text("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => lafGoals.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** check_in · note · milestone. */
+    kind: text("kind").notNull().default("check_in"),
+    text: text("text").notNull(),
+    /** The goal's number as measured, when it has one. */
+    value: doublePrecision("value"),
+    momentum: text("momentum"),
+    /** bot · owner — who wrote the line. */
+    source: text("source").notNull().default("bot"),
+    /** The chat turn or the routine run that wrote it. */
+    runId: text("run_id"),
+  },
+  (table) => [index("laf_goal_entries_goal_at_idx").on(table.goalId, table.at)],
+);
 
 /**
  * What happened the last twenty times a routine ran.

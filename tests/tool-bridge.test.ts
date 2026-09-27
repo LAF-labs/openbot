@@ -364,3 +364,46 @@ describe("the words around the bridge", () => {
     expect(oneLine("가".repeat(300)).length).toBeLessThanOrEqual(120);
   });
 });
+
+/*
+ * 목표's tools stand behind the bridge (`shared/tools/goals.ts`, muse-shape plan §3.4): a chat turn
+ * offers them always, and the head of the prompt — the list the model is offered — is byte-identical
+ * with or without them. Measured on the real stack too (a proxy before OpenRouter, the same chat's
+ * request from the server before and after: the same 21 tools, 9,804 bytes).
+ */
+describe("목표's tools cost the head nothing", () => {
+  test("deferred by name, filed under 목표, and the offered list is the same bytes with or without them", async () => {
+    const { GOAL_TOOLS } = await import("../shared/tools/goals");
+    const { exposeTools } = await import("../agent-bot/src/deferral");
+    for (const tool of GOAL_TOOLS) {
+      expect(isDeferredToolName(tool.name)).toBe(true);
+      expect(exposureOf(tool.name)).toBe("deferred");
+    }
+    expect(familiesOf(GOAL_TOOLS.map((tool) => tool.name))).toEqual(["목표"]);
+    const chat: WireTool[] = [
+      ...COMPUTER_TOOLS.map((tool) => wire(tool.name, tool.description)),
+      ...SELF_TOOLS.map((tool) => wire(tool.name, tool.description)),
+    ];
+    const without = exposeTools(chat, true);
+    const withGoals = exposeTools(
+      [
+        ...chat,
+        ...GOAL_TOOLS.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      ],
+      true,
+    );
+    expect(JSON.stringify(withGoals.provider)).toBe(
+      JSON.stringify(without.provider),
+    );
+    expect(withGoals.deferred.map((tool) => tool.name).sort()).toEqual(
+      GOAL_TOOLS.map((tool) => tool.name).sort(),
+    );
+    expect(deferredToolsText(GOAL_TOOLS.map((tool) => tool.name))).toContain(
+      "- 목표: mcp__goals__list_goals, mcp__goals__log_progress, mcp__goals__save_goal, mcp__goals__update_goal",
+    );
+  });
+});

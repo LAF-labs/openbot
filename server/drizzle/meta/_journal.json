@@ -421,6 +421,13 @@
       "when": 1790501492651,
       "tag": "0059_feed_posts",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790508673895,
+      "tag": "0060_goals",
+      "breakpoints": true
     }
   ]
 }

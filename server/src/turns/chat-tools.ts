@@ -46,6 +46,7 @@ import {
   UPDATE_PROFILE,
   UPDATE_PROFILE_WITHOUT_EFFORT,
 } from "../../../shared/tools/self";
+import { isGoalToolName } from "../../../shared/tools/goals";
 import { normalizeSkillName, SKILL_VIEW } from "../../../shared/tools/skills";
 import type { ShopStore } from "../account/shop";
 import { placeAnswerOf, type WhereaboutsStore } from "../account/whereabouts";
@@ -72,6 +73,8 @@ import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
+import type { GoalStore } from "../goals/store";
+import { goalApprovals, goalTools } from "../goals/tools";
 import { log } from "../log";
 import { McpServerError } from "../plugins/mcp";
 import { TOOL_SERVER_FAILED } from "../plugins/routes";
@@ -110,6 +113,14 @@ export type ChatToolsDeps = {
    * anything the Bot's call carried.
    */
   persona?: Pick<ShopStore, "savePersona">;
+  /**
+   * 목표 (`goals/tools.ts`): the four tools behind the bridge, offered in every chat turn whatever the
+   * window declared — the window has no schemas for them. `save_goal` needs a yes this turn collected.
+   */
+  goals?: Pick<
+    GoalStore,
+    "active" | "find" | "create" | "update" | "log" | "linkRoutine"
+  >;
   auditStore?: AuditStore;
   /** How long a person may take over a help request. The window's own ten minutes by default. */
   personWaitMs?: number;
@@ -344,9 +355,34 @@ export function createChatTools(deps: ChatToolsDeps) {
       botId,
       lastListed,
     );
-    const tools = declared
+    /*
+     * 목표's tools, added here rather than declared by a window: they are this server's own and sit
+     * behind the bridge, so they cost the head of the prompt nothing (`shared/tools/goals.ts`). The
+     * yeses are this turn's — a turn starts at the person's message, so a yes collected in it came
+     * after that message.
+     */
+    const approvals = goalApprovals();
+    const goals = deps.goals
+      ? goalTools({
+          store: deps.goals,
+          userId: owner.id,
+          agentId: botId,
+          runId,
+          approvals,
+        })
+      : null;
+    for (const tool of goals?.tools ?? []) names.add(tool.name);
+    const listed = declared
       ? declared.filter((tool) => names.has(tool.name))
       : serverTools(deps, pluginTools, options.effort !== false);
+    const tools = goals
+      ? [
+          ...listed,
+          ...goals.tools.filter(
+            (tool) => !listed.some((one) => one.name === tool.name),
+          ),
+        ]
+      : listed;
     if (declared) {
       const dropped = declared
         .filter((tool) => !names.has(tool.name))
@@ -923,6 +959,15 @@ export function createChatTools(deps: ChatToolsDeps) {
           : toolResultText("laf:nobody_answered");
       }
       const value = answered.value;
+      // A yes, kept for the turn: `save_goal` spends it (`goals/tools.ts`).
+      if (
+        name === "askApproval" &&
+        value &&
+        typeof value === "object" &&
+        (value as { decision?: unknown }).decision === "approved"
+      ) {
+        approvals.approved(args);
+      }
       /*
        * WHO THE PERSON IS, SAVED ON THEIR PRESS. The Bot's call only asked: `saves` made the card
        * draw the four fixed choices, and nothing was written when it was called. What is written
@@ -957,6 +1002,9 @@ export function createChatTools(deps: ChatToolsDeps) {
         if (name === UPDATE_PROFILE.name) return await updateProfile(args);
         if (name === REMEMBER.name) return await remember(args);
         if (name === MANAGE_ROUTINE.name) return await manageRoutine(args);
+        if (goals && isGoalToolName(name)) {
+          return await goals.execute(name, args);
+        }
         return await component(name, args, call);
       } catch (error) {
         /*

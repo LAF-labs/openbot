@@ -534,6 +534,25 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "같은 제목이나 같은 출처의 글을 최근에 이미 올렸다. 다시 올리지 말고, 새로 바뀐 것만 올려라. 새것이 없으면 [SILENT]로 답해도 된다.",
 
   /*
+   * 목표(`mcp__goals__*`, `server/src/goals/tools.ts`). 목표는 사람이 예를 누른 뒤에만 저장된다 —
+   * 봇이 스스로 목표를 만드는 일은 없다(계획 §3.4). 거절의 말은 무엇을 하면 되는지까지 말한다.
+   */
+  "laf:goal_needs_yes":
+    "저장하지 않았다. 목표는 이 사람이 askApproval 카드에서 예를 누른 뒤에만 저장된다. 이 제목·달성 기준·마감을 askApproval 카드(제목에 이 목표의 제목을 그대로)로 보여 주고, 예를 받으면 그 제목 그대로 다시 저장해라. 아니요라면 저장하지 말고 무엇을 바꿀지 물어라.",
+  "laf:goal_saved":
+    "목표를 저장했다. 이 사람은 목표 화면에서 볼 수 있다. 점검을 원하면 시간을 정해 달라고 한 번 물어라 — 시간을 말하면 manage_routine으로 점검 루틴을 만들고 update_goal의 routine으로 잇는다.",
+  "laf:goal_invalid":
+    "목표 툴에 넘긴 값이 모양에 맞지 않아 하지 않았다. field에 적힌 칸을 고쳐 다시 불러라: category는 정해진 일곱 가지, title은 80자, target은 200자, 진행 한 줄은 300자까지, dueOn은 YYYY-MM-DD.",
+  "laf:goal_not_found":
+    "그런 목표가 진행 중인 목표에 없다. goals에 적힌 id를 그대로 써라. 목록에 없으면 어느 목표인지 물어라.",
+  "laf:goals_full":
+    "진행 중인 목표가 이미 스무 개라 더 저장하지 않았다. 끝났거나 그만둔 목표는 이 사람이 목표 화면에서 정리할 수 있다고 말해라.",
+  "laf:goal_updated": "목표를 고쳤다. 목표 화면에 바로 보인다.",
+  "laf:goal_routine_not_found":
+    "그 이름의 루틴이 이 봇에 없어서 잇지 않았다. routines에 적힌 이름 가운데 하나를 그대로 쓰거나, 먼저 manage_routine으로 점검 루틴을 만들어라.",
+  "laf:goal_logged": "목표에 진행을 적었다. 목표 화면의 기록에 보인다.",
+
+  /*
    * 연결이 낸 거절들. 여기 없는 코드는 `toolResultText`가 코드를 그대로 돌려주고, 봇은
    * "laf:alimtalk_template_pending"을 답으로 읽는다 — 2026-09까지 이 표에는 커넥터 코드가 하나도
    * 없었고, 그것이 실제로 일어난 일이다.

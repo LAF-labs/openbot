@@ -244,7 +244,7 @@ async function roster(
           row.querySelector(".text-base")?.textContent === name ||
           row.getAttribute("aria-label")?.startsWith(name),
       ),
-    /** The footer's links, and 더 보기 — the button that holds the rest (phase 5). */
+    /** The footer: one 메뉴 row since phase 9, the button that holds every place. */
     footerLinks: () => [
       ...column().querySelectorAll<HTMLAnchorElement>(
         "[data-sidebar-nav] a, [data-sidebar-nav] button",
@@ -433,7 +433,8 @@ describe("the roster's controls", () => {
     // with nothing on screen saying which one it was on.
     const view = await roster();
     const links = [...view.rows(), ...view.footerLinks()];
-    expect(links.length).toBeGreaterThanOrEqual(8);
+    // The Bots' rows and the footer's one 메뉴 row (phase 9).
+    expect(links.length).toBeGreaterThanOrEqual(4);
     const bare = links
       .filter((link) =>
         focusRing.split(" ").some((cls) => !classes(link).includes(cls)),
@@ -475,13 +476,7 @@ describe("the roster speaks the app's language", () => {
     // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
     const view = await roster();
     const labels = view.footerLinks().map((link) => link.textContent);
-    expect(labels).toEqual([
-      "Bot profile",
-      "Notebook",
-      "Routines",
-      "Connections",
-      "More",
-    ]);
+    expect(labels).toEqual(["Menu"]);
     for (const label of labels) {
       expect(ko[label as string]).toBeTruthy();
     }
@@ -512,16 +507,18 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(identity?.closest("ul")).toBeNull();
   });
 
-  test("its conversation is one row, to its channel, with the last line and the unread mark — and 소식, 아이디어 and 만든 것 under it", async () => {
+  test("its conversation is one row, to its channel, with the last line and the unread mark — and 소식, 아이디어, 목표 and 만든 것 under it", async () => {
     const view = await roster({ bots: one() });
     const rows = view.rows();
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     expect(rows[1]?.getAttribute("href")).toBe("/feed");
     expect(rows[1]?.textContent).toBe("Updates");
     expect(rows[2]?.getAttribute("href")).toBe("/ideas");
     expect(rows[2]?.textContent).toBe("Ideas");
-    expect(rows[3]?.getAttribute("href")).toBe("/made");
-    expect(rows[3]?.textContent).toBe("Made");
+    expect(rows[3]?.getAttribute("href")).toBe("/goals");
+    expect(rows[3]?.textContent).toBe("Goals");
+    expect(rows[4]?.getAttribute("href")).toBe("/made");
+    expect(rows[4]?.textContent).toBe("Made");
     expect(rows[0]?.getAttribute("href")).toBe("/channel/ch-1");
     expect(rows[0]?.textContent).toContain("Conversation");
     expect(rows[0]?.textContent).toContain("3 orders are sorted, take a look");
@@ -530,22 +527,16 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
 
   test("the nav has no second way to the profile, and is pinned below the part that scrolls", async () => {
     const view = await roster({ bots: one() });
-    expect(view.footerLinks().map((link) => link.textContent)).toEqual([
-      "Notebook",
-      "Routines",
-      "Connections",
-      "More",
-    ]);
     /*
-     * 스킬 AND 도움말 ARE UNDER 더 보기 (muse-shape plan §4, phase 5): one press away, still in the
-     * column; the 메뉴 page lists all of them.
+     * ONE 메뉴 ROW (muse-shape plan §4, settled with phase 9): with 목표 the fourth row above it, the
+     * phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut 오늘's first row at 1024×640 (measured: footer
+     * from 420, the row to 426). Every place is one press under it, the same list as the 메뉴 page.
      */
-    const { FOOTER_LINKS } = await import(
-      "../src/components/app-sidebar/places"
-    );
-    expect(
-      FOOTER_LINKS.filter((link) => !link.primary).map((link) => link.to),
-    ).toEqual(["/skills", "/help"]);
+    expect(view.footerLinks().map((link) => link.textContent)).toEqual([
+      "Menu",
+    ]);
+    const nav0 = view.column().querySelector("[data-sidebar-nav]");
+    expect(nav0?.querySelectorAll("a")).toHaveLength(0);
     /*
      * OUT OF THE SCROLLING PART, PINNED ABOVE THE ACCOUNT. At the PC app's smallest window (1024×640)
      * 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold when they scrolled with it (UX review 0.5.4,

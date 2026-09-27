@@ -38,6 +38,8 @@ import {
   lafAnswerRatings,
   lafAttachments,
   lafFeedPosts,
+  lafGoalEntries,
+  lafGoals,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
@@ -389,6 +391,27 @@ export function createAccountExport(database: Database): AccountExport {
         .from(lafFeedPosts)
         .where(eq(lafFeedPosts.userId, userId))
         .orderBy(asc(lafFeedPosts.createdAt)),
+    )}`;
+
+    /*
+     * 목표: the goals they set and every line logged on them, whole — the person's own record, with
+     * no retention cutoff.
+     */
+    const goals = await database
+      .select()
+      .from(lafGoals)
+      .where(eq(lafGoals.userId, userId))
+      .orderBy(asc(lafGoals.createdAt));
+    const goalIds = goals.map((goal) => goal.id);
+    yield `,\n"goals":${JSON.stringify(goals)}`;
+    yield `,\n"goalEntries":${JSON.stringify(
+      goalIds.length
+        ? await database
+            .select()
+            .from(lafGoalEntries)
+            .where(inArray(lafGoalEntries.goalId, goalIds))
+            .orderBy(asc(lafGoalEntries.at))
+        : [],
     )}`;
 
     /*

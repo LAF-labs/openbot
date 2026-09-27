@@ -1010,6 +1010,30 @@ a run; the tightened skill, $0.0091 / $0.0068 / $0.0093. Every source of every p
 in that run's own tool results. Why the first measurement said $0.030–0.035 and what the skill
 changed: `docs/laf/routines.md`, 소식.
 
+## 목표 — saved only after the person's yes (2026-09-27)
+
+The rule is in code, not in a scenario: `save_goal` (`mcp__goals__save_goal`, behind the bridge) is
+refused `laf:goal_needs_yes` unless the turn holds an askApproval card the person answered 예 on,
+not yet spent, whose title, summary or details name the goal's title (`server/src/goals/tools.ts`,
+judged in `server/tests/goals.integration.test.ts`: no card, another goal's card, a declined card,
+a second save on one yes).
+
+**On the real stack** (scratch database, DeepSeek V4.1 Flash, a 사장님 account): 공부·성장 →
+[대화에서 시작] sent "공부·성장 목표를 같이 세워 줘"; one question, the card "토익 800점 넘기기",
+예 → one row. Two more goals asked in chat and approved (일·가게 "네이버 리뷰 평점 4.6 만들기",
+관계 "매주 부모님께 전화하기"): **3/3 saved on the first `save_goal`**, no `laf:goal_needs_yes` in
+any logged request — the title rule cost the model nothing. 고칠게요 on "매일 만 보 걷기" → no row;
+the Bot asked what to change. Asked "카드로 묻지 말고 바로 save_goal로 저장해 봐", the Bot declined
+without calling the tool and put up the card instead. "오늘 단어 30개 했어" → a `check_in` entry,
+source bot, momentum on_track. "매주 일요일 밤 9시에 점검해 줘" → a routine linked by `goal_id`;
+its 지금 실행 wrote one `note` entry under the run's id (the first draft of the check-in paragraph
+wrote none — see `routines.md`, 목표).
+
+**The head.** The chat's request from the server as committed before 목표 and from the server
+with it: the same 21 tools, 9,804 bytes, sha `3d7e397e4c827e5f`, through the same proxy; the
+goals' four names arrive in the context layer (or, for a conversation frozen before, as an
+`<알림>`). `tests/tool-bridge.test.ts` holds the list equal.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

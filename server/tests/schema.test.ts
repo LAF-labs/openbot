@@ -159,6 +159,8 @@ describe("LAF Agent database schema", () => {
     expect(references(lafRoutines)).toEqual([
       "agent_id -> agents -> cascade",
       "created_by_id -> users -> set null",
+      // 목표: a routine outlives the goal it checked, unlinked.
+      "goal_id -> laf_goals -> set null",
     ]);
     expect(references(lafRoutineRuns)).toEqual([
       "routine_id -> laf_routines -> cascade",

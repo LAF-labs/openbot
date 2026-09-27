@@ -1,18 +1,19 @@
 import {
   IconBulb,
-  IconDots,
   IconLayoutGrid,
   IconLayoutList,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
   IconMailOpened,
+  IconMenu2,
   IconMessageCircle,
   IconPencil,
   IconPlayerStop,
   IconRefresh,
   IconSettings,
   IconShieldLock,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -65,6 +66,7 @@ import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
+import { goalKeys, goalsQueryOptions } from "@/lib/goals/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
@@ -131,41 +133,6 @@ const ICON_BUTTON_CLASS = cn(
  * the grey discs it used to sit in made five links look like five avatars.
  */
 const NAV_LINK_CLASS = `flex h-9 items-center rounded-lg border border-transparent bg-clip-padding text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground ${focusRing} data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium data-[status=active]:text-foreground`;
-
-const FooterLink = ({
-  icon: Icon,
-  isCompact,
-  label,
-  to,
-}: FooterPlace & { isCompact: boolean }) => {
-  const icon = <Icon aria-hidden="true" className="size-4.5 shrink-0" />;
-
-  if (isCompact) {
-    return (
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Link
-              aria-label={t(label)}
-              className={cn(NAV_LINK_CLASS, "justify-center")}
-              to={to}
-            />
-          }
-        >
-          {icon}
-        </TooltipTrigger>
-        <TooltipContent side="right">{t(label)}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Link className={cn(NAV_LINK_CLASS, "gap-2.5 px-2.5")} to={to}>
-      {icon}
-      {t(label)}
-    </Link>
-  );
-};
 
 /**
  * The time a row shows: clock for today, weekday inside a week, date beyond it.
@@ -323,14 +290,35 @@ function BotIdentity({
 /**
  * THE PLACES A PERSON GOES TO LOOK (muse-shape plan §4): the rows under the conversation, rather than
  * the footer's places that change how the Bot works. 아이디어 came first (phase 5), 만든 것 with its
- * page (phase 6), 소식 on top with its posts (phase 7); 목표 joins them with its own. One line each, a desktop row like the footer's,
+ * page (phase 6), 소식 on top with its posts (phase 7), and 목표 last, with its own (phase 9), in the
+ * plan's order: 소식 · 아이디어 · 목표 · 만든 것. One line each, a desktop row like the footer's,
  * because the column's height at 1024×640 is what 오늘 lives on.
  */
 const LOOK_ROWS = [
   { to: "/feed", icon: IconLayoutList, label: "Updates", row: "feed" },
   { to: "/ideas", icon: IconBulb, label: "Ideas", row: "ideas" },
+  { to: "/goals", icon: IconTarget, label: "Goals", row: "goals" },
   { to: "/made", icon: IconLayoutGrid, label: "Made", row: "made" },
 ] as const;
+
+/**
+ * 목표's number: how many goals are in progress (plan §3.4, "a sidebar row with the active count").
+ * Quiet, not the mark 소식's count wears — nothing here is new, it is what is being worked on.
+ */
+function ActiveGoals({ isCompact }: { isCompact: boolean }) {
+  const goals = useQuery(goalsQueryOptions());
+  const count = goals.data?.active ?? 0;
+  if (count <= 0 || isCompact) return null;
+  return (
+    <span
+      className="ml-auto text-muted-foreground text-xs tabular-nums"
+      data-active-goals
+    >
+      <span aria-hidden="true">{count}</span>
+      <span className="sr-only">{t("{count} in progress", { count })}</span>
+    </span>
+  );
+}
 
 /**
  * 소식's count of posts not yet seen (phase 7): the one number on these rows, because it is the one
@@ -379,6 +367,7 @@ function LookRow({
         >
           {icon}
           {row === "feed" ? <UnseenCount isCompact /> : null}
+          {row === "goals" ? <ActiveGoals isCompact /> : null}
         </TooltipTrigger>
         <TooltipContent side="right">{t(label)}</TooltipContent>
       </Tooltip>
@@ -393,15 +382,23 @@ function LookRow({
       {icon}
       {t(label)}
       {row === "feed" ? <UnseenCount isCompact={false} /> : null}
+      {row === "goals" ? <ActiveGoals isCompact={false} /> : null}
     </Link>
   );
 }
 
 /**
- * 더 보기: the footer's places that are not kept in sight (`primary: false` in `places.ts`) — 스킬
- * and 도움말 — one press away, in a menu that opens upward from the footer.
+ * 메뉴: THE FOOTER IS ONE ROW (muse-shape plan §4, settled with phase 9). The places that change how
+ * the Bot works — 수첩 · 루틴 · 연결 · 스킬 · 도움말 — open upward from it, the same list the phone's
+ * 메뉴 page draws (`places.ts`).
+ *
+ * MEASURED at 1024×640, the PC app's smallest window, in the Korean app with all four rows above
+ * (소식 · 아이디어 · 목표 · 만든 것 at 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the
+ * footer began at 420 and 오늘's first row ran 382–426 — six pixels under it, so the first thing the
+ * sidebar exists to answer ("is my employee working?") was cut. With this one row the footer begins
+ * at 534 and 오늘 shows its first rows whole. The price is a second press for 수첩 and 루틴.
  */
-function MoreLinks({
+function MenuLinks({
   isCompact,
   links,
 }: {
@@ -409,7 +406,7 @@ function MoreLinks({
   links: readonly FooterPlace[];
 }) {
   if (links.length === 0) return null;
-  const label = t("More");
+  const label = t("Menu");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -421,12 +418,12 @@ function MoreLinks({
               "w-full",
               isCompact ? "justify-center" : "gap-2.5 px-2.5",
             )}
-            data-sidebar-more
+            data-sidebar-menu
             type="button"
           />
         }
       >
-        <IconDots aria-hidden="true" className="size-4.5 shrink-0" />
+        <IconMenu2 aria-hidden="true" className="size-4.5 shrink-0" />
         {isCompact ? null : label}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="p-1.5" side="top">
@@ -560,6 +557,8 @@ export function BotSidebar() {
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
       // And 소식's count: a feed run's posts land when it ends, and nothing else says so (phase 7).
       void queryClient.invalidateQueries({ queryKey: feedKeys.all });
+      // And 목표's: a goal is saved, and progress logged, by a turn or a check-in run (phase 9).
+      void queryClient.invalidateQueries({ queryKey: goalKeys.all });
     }
   }, [workingIds, queryClient]);
 
@@ -789,15 +788,7 @@ export function BotSidebar() {
         className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
         data-sidebar-nav
       >
-        {links
-          .filter((link) => link.primary)
-          .map((link) => (
-            <FooterLink {...link} isCompact={isRail} key={link.to} />
-          ))}
-        <MoreLinks
-          isCompact={isRail}
-          links={links.filter((link) => !link.primary)}
-        />
+        <MenuLinks isCompact={isRail} links={links} />
       </div>
 
       <div className="shrink-0 border-border border-t px-2 py-2">

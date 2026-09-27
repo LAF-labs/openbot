@@ -33,8 +33,10 @@ describe("the package's skills", () => {
   test("the index they add to every prompt stays small", async () => {
     const index = skillIndexText(await readBuiltInSkills(PACKAGE));
     // Every request pays for it (the footprint ladder); four hundred characters is about the
-    // size of one tool's description.
-    expect(index.length).toBeLessThan(500);
+    // size of one tool's description. RAISED 2026-09-27 from 500 to 560 for 목표's skill (phase 9),
+    // the rung below a tool: its one line is what makes "오늘 30분 했어" reach the goal's timeline,
+    // and the four goal tools themselves cost the head nothing (they are behind the bridge).
+    expect(index.length).toBeLessThan(560);
   });
 
   test("a file without front matter, or without a body, is refused by name", () => {

@@ -4,6 +4,7 @@ import {
   IconLayoutList,
   IconMenu2,
   IconMessageCircle,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -26,8 +27,9 @@ import { cn } from "@/lib/utils";
  * from the top corner a thumb reaches last. The bar holds only the places that exist: the one
  * conversation, 소식 (오늘, as a page of its own), and 메뉴 (everything that changes how the Bot
  * works). More tabs come with the pages behind them, never before: 아이디어 came with its page
- * (phase 5), third, where the plan puts it; 만든 것 (phase 6) before 메뉴, with 목표's place
- * between them kept for phase 9.
+ * (phase 5), third, where the plan puts it; 만든 것 (phase 6) before 메뉴, and 목표 (phase 9) between
+ * 아이디어 and 만든 것 — six, the plan's whole bar. At 375 each is 62px wide, and the longest label
+ * (아이디어, 만든 것) fits on one line.
  *
  * LABELLED, because five unlabelled icons were the rail nobody could name (UI/UX audit 0.5.3, item
  * 20). Each is the bar's full 56px tall, over the home indicator's inset.
@@ -50,8 +52,10 @@ export function PhoneTabBar() {
   const isConversation = pathname === "/" || pathname.startsWith("/channel");
   const isUpdates = pathname === "/feed";
   const isIdeas = pathname === "/ideas";
+  const isGoals = pathname === "/goals";
   const isMade = pathname === "/made";
-  const isMenu = !isConversation && !isUpdates && !isIdeas && !isMade;
+  const isMenu =
+    !isConversation && !isUpdates && !isIdeas && !isGoals && !isMade;
 
   return (
     <nav
@@ -60,7 +64,7 @@ export function PhoneTabBar() {
       hidden={isKeyboardUp}
       data-phone-tab-bar
     >
-      <ul className="grid h-14 grid-cols-5">
+      <ul className="grid h-14 grid-cols-6">
         <li className="contents">
           <Tab
             badge={
@@ -90,6 +94,14 @@ export function PhoneTabBar() {
             isActive={isIdeas}
             label={t("Ideas")}
             to="/ideas"
+          />
+        </li>
+        <li className="contents">
+          <Tab
+            icon={IconTarget}
+            isActive={isGoals}
+            label={t("Goals")}
+            to="/goals"
           />
         </li>
         <li className="contents">
@@ -124,7 +136,7 @@ function Tab({
   icon: typeof IconMenu2;
   isActive: boolean;
   label: string;
-  to: "/" | "/feed" | "/ideas" | "/made" | "/menu";
+  to: "/" | "/feed" | "/ideas" | "/goals" | "/made" | "/menu";
 }) {
   return (
     <Link

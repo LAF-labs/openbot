@@ -522,6 +522,22 @@ price, more than the body saved. The article a click opens already arrives as a
 2–2.5K-character preview. The judge is `feed-posts-only-from-tools`
 (`docs/laf/eval-pack.md`).
 
+## 목표 — a routine that checks a goal
+
+`laf_routines.goal_id` links a routine to a goal (muse-shape plan §3.4). It is
+set by `update_goal` with the routine's name, after the person named a time
+("매주 일요일 밤 9시에 점검해 줘") and the Bot made the routine with
+`manage_routine` — never by a Bot deciding on its own. A run of a linked
+routine gets, after its instruction, a paragraph naming the goal
+(`shared/prompt/goals.ko.ts`), and `log_progress` for that goal alone
+(`goals/tools.ts`, `withGoal`): whatever id the model names, the entry goes on
+the goal the routine checks, filed under the run's id. A check-in with nothing
+to measure (a goal only the person's report can move) writes a note line —
+measured 2026-09-27: the first draft of the paragraph let a run that could not
+"ask" write nothing, and the goal's page showed no sign a check had happened.
+Deleting the goal leaves the routine, unlinked (`set null`); a finished or
+stopped goal takes no more entries.
+
 ## Triggers
 
 Every routine is born with a webhook: `POST /api/routines/:id/trigger` with the

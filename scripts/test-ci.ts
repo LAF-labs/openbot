@@ -685,16 +685,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * fixture's snapshot and click, a good post passing, an address nobody returned, a listing cited as
  * the article, a number no page said, no post; a stale ref opening nothing; which listing a search
  * lands on).
+ * RAISED 2026-09-27 with 목표 (phase 9): nine to `server` (saved only after a yes this turn —
+ * none, another goal's card, one yes spent once; a malformed call not spending it; the active
+ * limit; the chat turn carrying 예 to the save with the tools offered though no window declared
+ * them; progress from chat by id and by title and nobody else's; a routine linked by name and its
+ * run logging to that goal alone; the page's own reads, presses and deletion leaving the routine
+ * unlinked), eight to `app` (momentum, status and refusal words; the seven categories' icons; the
+ * sentence the sheet sends; a number to watch; the tools' step lines; a send taken once, never
+ * from the address) and one to `root` (the offered list the same bytes with or without them).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3090, roots: ["server"] },
-  { name: "app", floor: 1528, roots: ["app"] },
+  { name: "server", floor: 3099, roots: ["server"] },
+  { name: "app", floor: 1536, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 562, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 563, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

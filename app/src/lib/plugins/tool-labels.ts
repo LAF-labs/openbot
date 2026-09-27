@@ -55,6 +55,9 @@ export function serviceLabel(server: string): string | undefined {
     // No row on the 연결 screen — nothing to connect — but a step line names it all the same.
     case "public-data":
       return t("Public tenders and support programmes");
+    // Not a service at all: this deployment's own goal tools, behind the bridge by their name.
+    case "goals":
+      return t("Goals");
     default:
       return undefined;
   }

@@ -12,6 +12,7 @@ import {
 import { createDayReader } from "./agents/day";
 import { createMadeReader } from "./agents/made";
 import { createFeedStore } from "./feed/store";
+import { createGoalStore } from "./goals/store";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createDream } from "./agents/dream";
 import { createGuidanceStore } from "./agents/guidance-store";
@@ -335,6 +336,8 @@ const attachmentService = createAttachmentService({
 });
 /** 소식's posts: the page's reads and presses, and a quoted post read again for the model. */
 const feedStore = createFeedStore({ database });
+/** 목표: the goals a person set, for their page, the chat turn's tools and a linked routine's run. */
+const goalStore = createGoalStore({ database });
 const runMeter = {
   auditStore: bootAuditStore,
   ...(dailyBudget ? { dailyBudget } : {}),
@@ -804,6 +807,7 @@ const routineService = createRoutineService({
   deliver: createRoutineDelivery(database, announceFinished),
   deliverFailure: markRoutineFailure,
   tools: unattendedTools,
+  goals: goalStore,
   // The clock a routine made without a zone runs on: the person's device's, else the deployment's.
   timeZone: config.botTimeZone,
   personZone: async (userId) => (await whereaboutsStore.read(userId)).timeZone,
@@ -857,6 +861,7 @@ const chatTools = createChatTools({
   whereabouts: whereaboutsStore,
   components: componentStore,
   persona: shopStore,
+  goals: goalStore,
   auditStore: bootAuditStore,
 });
 const turnEngine = config.harness.serverTurns
@@ -1088,6 +1093,8 @@ const app = createApp(
   createMadeReader({ database }),
   // 소식: the posts a feed routine wrote, and the person's presses on them.
   feedStore,
+  // 목표: the goals the person set, and their timelines.
+  goalStore,
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

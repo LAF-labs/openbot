@@ -11,6 +11,8 @@ import {
 import { createDayRoutes, type DayReader } from "./agents/day";
 import { createMadeRoutes, type MadeReader } from "./agents/made";
 import { createFeedRoutes } from "./feed/routes";
+import { createGoalRoutes } from "./goals/routes";
+import type { GoalStore } from "./goals/store";
 import type { FeedStore } from "./feed/store";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
@@ -450,6 +452,11 @@ export function createApp(
    * drawing an empty feed that reads as a Bot that found nothing.
    */
   feed?: FeedStore,
+  /**
+   * 목표: the goals the person set in the conversation (goals/). Last, like everything new. Absent
+   * leaves `/api/goals` unmounted — the page then says it could not read them.
+   */
+  goals?: GoalStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1021,6 +1028,10 @@ export function createApp(
       "/api/admin/metrics",
       createInsightsRoutes({ token: config.fleetMetricsToken, read: insights }),
     );
+  }
+
+  if (goals) {
+    app.route("/api/goals", createGoalRoutes(goals, requireUser));
   }
 
   if (feed) {

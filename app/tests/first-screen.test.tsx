@@ -328,15 +328,19 @@ describe("the sidebar", () => {
         return undefined;
       },
     });
-    // The conversation, and 소식 (phase 7), 아이디어 (phase 5) and 만든 것 (phase 6) under it.
-    await view.waitFor(() => rows(view).length === 4, "the Bot's row");
-    expect(rows(view)).toEqual(["/channel/c-1", "/feed", "/ideas", "/made"]);
+    // The conversation, and 소식 (phase 7), 아이디어 (phase 5), 목표 (phase 9) and 만든 것 (phase 6).
+    await view.waitFor(() => rows(view).length === 5, "the Bot's row");
+    expect(rows(view)).toEqual([
+      "/channel/c-1",
+      "/feed",
+      "/ideas",
+      "/goals",
+      "/made",
+    ]);
     const text = nav(view).textContent ?? "";
     expect(text).toContain("초롱");
-    // 스킬 and 도움말 are one press away under 더 보기.
-    for (const label of ["Routines", "Connections", "More"]) {
-      expect(text).toContain(label);
-    }
+    // Every place that changes how it works is one press away under the one 메뉴 row (phase 9).
+    expect(text).toContain("Menu");
     // The profile is the Bot itself, at the top of the column (2026-09-24), not a second link.
     expect(
       nav(view).querySelector('a[href^="/agents"]')?.getAttribute("aria-label"),

@@ -1,3 +1,4 @@
+import type { GoalStore } from "../goals/store";
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
 import { resolveTimeZone } from "../../../shared/prompt";
@@ -89,6 +90,12 @@ export const TRIGGER_DEBOUNCE_MS = 30_000;
 /** How much of a trigger payload reaches the Bot. Enough for an event, too little for a novel. */
 const TRIGGER_PAYLOAD_LIMIT = 4_000;
 
+/** What a routine's run reads and writes of 목표. See `goals/store.ts`. */
+export type RoutineGoals = Pick<
+  GoalStore,
+  "forRoutine" | "active" | "find" | "create" | "update" | "log" | "linkRoutine"
+>;
+
 export type RoutineServiceOptions = {
   database: Database;
   /** The same loader the runtime and the coworker call use, scoped to the routine's creator. */
@@ -121,6 +128,12 @@ export type RoutineServiceOptions = {
    * is an agent turn. See runner/unattended.ts for why the loop lives on the server.
    */
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  /**
+   * 목표: a run of a routine linked to a goal is told which goal it checks and offered
+   * `log_progress` for that goal alone (`goals/tools.ts`, `withGoal`). Absent, a linked routine
+   * runs as any other.
+   */
+  goals?: RoutineGoals;
   /**
    * The zone a new daily routine is written in when it names none: `config.botTimeZone`, the clock
    * every Bot is told the time in, so the "7시 반" a Bot heard is half past seven on that clock.

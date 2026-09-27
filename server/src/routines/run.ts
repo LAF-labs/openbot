@@ -32,9 +32,12 @@ import {
   recentPostKeys,
   withFeed,
 } from "./feed";
+import { goalCheckInText } from "../../../shared/prompt/goals.ko";
+import { withGoal } from "../goals/tools";
 import { lastReport } from "./receipts";
 import { runAgentOnce } from "./run-once";
 import { reportRun } from "./run-report";
+import type { RoutineGoals } from "./service";
 import {
   type RunToSettle,
   type SettlementOptions,
@@ -98,6 +101,7 @@ export type RoutineRunOptions = SettlementOptions & {
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
   auditStore?: AuditStore;
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  goals?: RoutineGoals;
   lane?: BotLane;
   runTimeoutMs: number;
   admission?: Pick<DeploymentAdmission, "admitsPerson">;
@@ -273,6 +277,7 @@ async function executeNow(
     author,
     signal,
     meter.observe,
+    runId,
     scheduledFor,
   );
   meter.end();
@@ -374,6 +379,8 @@ async function askTheBot(
   signal: AbortSignal,
   /** The run's meter, handed every event. See `UnattendedRunOptions.observe`. */
   observe: (event: BaseEvent) => void,
+  /** The receipt's id: what a goal's entry is filed under. */
+  runId: string,
   scheduledFor?: Date,
 ): Promise<Attempt> {
   let notepad: NotepadDraft | null = null;
@@ -416,7 +423,18 @@ async function askTheBot(
     if (!target) {
       throw new Error(`The Bot "${row.agentId}" is no longer in the roster.`);
     }
-    const instruction = await instructionFor(options.database, row, author);
+    /*
+     * 목표: the goal this routine checks, if it is linked to one still active. Read here, inside the
+     * lane, like the notepad: a goal the person finished a minute ago is not checked.
+     */
+    const goal =
+      row.goalId && options.goals
+        ? await options.goals.forRoutine(row.goalId)
+        : null;
+    const carried = await instructionFor(options.database, row, author);
+    const instruction = goal
+      ? `${carried}\n\n${goalCheckInText(goal)}`
+      : carried;
 
     if (options.tools) {
       const actor: ActionActor = {
@@ -457,7 +475,17 @@ async function askTheBot(
           }),
         });
       }
-      const toolkit = feed ? withFeed(noted, feed) : noted;
+      const fed = feed ? withFeed(noted, feed) : noted;
+      const toolkit =
+        goal && options.goals
+          ? withGoal(fed, {
+              store: options.goals,
+              userId: author,
+              agentId: row.agentId,
+              runId,
+              goalId: goal.id,
+            })
+          : fed;
       const run = await runUnattended(target, instruction, {
         toolkit,
         timeoutMs: options.runTimeoutMs,
