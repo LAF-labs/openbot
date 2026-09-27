@@ -82,9 +82,16 @@ function BotSays({
 }
 
 /** The person's side: what they pressed or typed, drawn as their answer. Never sent to the Bot. */
-function PersonSays({ children }: { children: ReactNode }) {
+function PersonSays({
+  children,
+  live = true,
+}: {
+  children: ReactNode;
+  /** Arrives and scrolls into view: an answer given on this screen. False for history. */
+  live?: boolean;
+}) {
   return (
-    <Said align="end" animate reveal>
+    <Said align="end" animate={live} reveal={live}>
       <Bubble align="end" className="chat-prose" variant="user">
         <BubbleContent>
           <span className="whitespace-pre-wrap">{children}</span>
@@ -327,7 +334,12 @@ function PersonaQuestion({
         />
         <Problem text={problem} />
       </BotSays>
-      {chosen ? <PersonSays>{t(PERSONA_LABELS[chosen])}</PersonSays> : null}
+      {chosen ? (
+        // As history, the head of a conversation must not move the reader.
+        <PersonSays live={animate || pressed !== null}>
+          {t(PERSONA_LABELS[chosen])}
+        </PersonSays>
+      ) : null}
       {persona ? (
         <p className="px-1 text-right text-muted-foreground text-xs">
           <Link
