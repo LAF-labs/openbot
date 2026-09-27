@@ -646,6 +646,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-09-27 with skills that need a tool: three to `server` (지원사업 names its tool and every
  * named tool is one a deployment can offer; `requires:` parsed or refused; a skill withheld where its
  * tool is not, and arriving and leaving with it).
+ * RAISED 2026-09-27 with reply actions on touch: four to `app` (the row shown and in flow on a touch
+ * screen and hover-only with a pointer; what 인용해 답하기 puts in the composer, three ways).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -653,7 +655,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3053, roots: ["server"] },
-  { name: "app", floor: 1485, roots: ["app"] },
+  { name: "app", floor: 1489, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
 ] as const;

@@ -7,6 +7,7 @@ import {
   IconCheck,
   IconCopy,
   IconInfoCircle,
+  IconQuote,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
@@ -21,6 +22,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Streamdown } from "streamdown";
+import { offerDraft } from "@/components/channels/composer/prefill";
 import { BrowsingCard } from "@/components/computer/browsing-card";
 import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -45,6 +47,7 @@ import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
+import { quotedReply } from "@/lib/channels/quote";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
 import { spokenText } from "@/lib/channels/spoken-text";
 import {
@@ -991,6 +994,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
             <ReplyActions>
               <CopyReply text={text} />
               {channelId && rateable ? (
+                <QuoteReply channelId={channelId} text={text} />
+              ) : null}
+              {channelId && rateable ? (
                 <AnswerRatingControls channelId={channelId} messageId={id} />
               ) : null}
             </ReplyActions>
@@ -1015,15 +1021,47 @@ const TranscriptMessage = memo(function TranscriptMessage({
  * transcript the rest of the time — and held up while a control in it says it is in use
  * (`data-lingering`): a popover the person is typing into, or the line saying a rating arrived,
  * must not vanish because the pointer moved on to read the answer.
+ *
+ * ON A TOUCH SCREEN, SHOWN AND IN FLOW (`pointer-coarse:`). A finger has no hover, so on a phone the
+ * row never appeared: copying a reply to paste somewhere else — a review answer into the 배민 app —
+ * is exactly what a person does on a phone, and it was a long-press-and-drag across a bubble (first-
+ * hour walk, 2026-09-27). There it is always drawn, and in flow, so it takes its own height under
+ * the answer rather than lying over the next bubble 4px below. A pointer keeps the hover row above.
  */
 function ReplyActions({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="-mt-1.5 absolute top-full left-0 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 has-focus-visible:opacity-100 has-data-[lingering=true]:opacity-100"
+      className="-mt-1.5 absolute top-full left-0 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 has-focus-visible:opacity-100 has-data-[lingering=true]:opacity-100 pointer-coarse:static pointer-coarse:mt-0.5 pointer-coarse:opacity-100"
       data-slot="reply-actions"
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * 인용해 답하기: the reply's first line, quoted, in this conversation's composer with the caret under
+ * it — "> 춘천은 오늘 구름많고…" and a new line to answer on. Through the composer's own offer
+ * (`prefill.ts`), so it never writes over something the person was already typing.
+ */
+function QuoteReply({ channelId, text }: { channelId: string; text: string }) {
+  const handleQuote = () => {
+    const quoted = quotedReply(text);
+    if (quoted) offerDraft(channelId, quoted);
+  };
+
+  return (
+    <Button
+      aria-label={t("Quote in a reply")}
+      className="text-muted-foreground"
+      onClick={handleQuote}
+      size="icon-sm"
+      title={t("Quote in a reply")}
+      type="button"
+      variant="ghost"
+    >
+      <IconQuote className="size-3.5" />
+    </Button>
   );
 }
 

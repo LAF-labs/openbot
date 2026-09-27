@@ -62,12 +62,12 @@ describe("rating an answer", () => {
       note,
     });
 
-    // Under the Bot's answer, beside 복사; under the person's own question, nothing.
+    // Under the Bot's answer, beside 복사 and 인용; under the person's own question, nothing.
     expect(shown.controls).toEqual([
       { said: "오늘 매출 얼마야?", buttons: [] },
       {
         said: "오늘 매출은 1,234,000원이에요.",
-        buttons: ["이 답장 복사", "좋아요", "아쉬워요"],
+        buttons: ["이 답장 복사", "인용해 답하기", "좋아요", "아쉬워요"],
       },
     ]);
     expect(shown.pressedOnOpen).toEqual({ up: false, down: false });
@@ -143,8 +143,30 @@ describe("rating an answer", () => {
 
     expect(shown.controls).toEqual([
       { said: "오늘 매출 얼마야?", buttons: [] },
-      { said: "오늘 매출은 1,234,000원이에요.", buttons: ["이 답장 복사"] },
+      {
+        said: "오늘 매출은 1,234,000원이에요.",
+        buttons: ["이 답장 복사", "인용해 답하기"],
+      },
     ]);
     expect(shown.puts).toEqual([]);
+  }, 120_000);
+
+  test("on a touch screen the row is shown and in flow; with a pointer it waits for hover or focus", async () => {
+    /*
+     * First-hour walk, 2026-09-27: copy and rating appeared only on hover, which a finger does not
+     * have. happy-dom evaluates no media query, so this holds the classes; on a 375-wide touch
+     * emulation the row measured opacity 1, position static, and intersecting no other bubble.
+     */
+    const shown = await render({
+      stored: [],
+      ratingsRoute: false,
+      steps: "none",
+      note: "",
+    });
+    expect(shown.actionsRow).toContain("pointer-coarse:opacity-100");
+    expect(shown.actionsRow).toContain("pointer-coarse:static");
+    expect(shown.actionsRow).toContain("opacity-0");
+    expect(shown.actionsRow).toContain("group-hover/message:opacity-100");
+    expect(shown.actionsRow).toContain("has-focus-visible:opacity-100");
   }, 120_000);
 });

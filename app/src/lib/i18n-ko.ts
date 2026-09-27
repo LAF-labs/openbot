@@ -384,6 +384,7 @@ export const ko: Record<string, string> = {
   "Continue with Kakao": "카카오로 계속하기",
   "Continue with Naver": "네이버로 계속하기",
   Copied: "복사됨",
+  "Quote in a reply": "인용해 답하기",
   "Copy this reply": "이 답장 복사",
   "Could not be read": "읽지 못함",
   "Could not load credentials.": "자격증명을 불러오지 못했어요.",

@@ -39,6 +39,8 @@ export type RatingScenario = {
 export type RatingShown = {
   /** The accessible names of the buttons under each bubble, in transcript order. */
   controls: Array<{ said: string; buttons: string[] }>;
+  /** The class list of the row those buttons sit in, under the answer. */
+  actionsRow: string[];
   /** Which of the two is pressed, when the controls first appear. */
   pressedOnOpen: { up: boolean; down: boolean } | null;
   /** Every body the controls put, in order. */
@@ -180,6 +182,9 @@ const shown: RatingShown = {
       (candidate) => candidate.getAttribute("aria-label") ?? "",
     ),
   })),
+  actionsRow: [
+    ...(body.querySelector('[data-slot="reply-actions"]')?.classList ?? []),
+  ],
   pressedOnOpen: pressed(),
   puts,
   upStatus: null,
