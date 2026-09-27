@@ -1,4 +1,6 @@
 import {
+  IconBulb,
+  IconDots,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
@@ -87,6 +89,13 @@ import { cn } from "@/lib/utils";
  *     smallest window (1024×640) 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review
  *     0.5.4, item 4). Now the Bot, its conversation and 오늘 scroll in their own region, and the
  *     links never move.
+ *
+ * SINCE PHASE 5 (muse-shape plan §4): 아이디어 is a row under the conversation, the first of the
+ * places a person goes to look (소식, 목표 and 만든 것 join it later), and the footer keeps 수첩 · 루틴 ·
+ * 연결 in sight with 스킬 and 도움말 under 더 보기. Measured at 1024×640 with the Korean app: the first
+ * row of 오늘 ends at 312 and the footer starts at 420; with three more rows reserved it would end at
+ * 426, six pixels under the footer — and at 382 above a one-row 메뉴 footer starting at 534. Which of
+ * the two the column takes is decided when those rows exist, with 오늘 capped as §4 says.
  *
  * AN ACCOUNT FROM BEFORE THE CAP CAME DOWN keeps every Bot it had, and reaches them the old way: with
  * more than one, the list under "내 봇" is back, a row per Bot, each its own conversation, and 봇
@@ -305,6 +314,91 @@ function BotIdentity({
         className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
       />
     </Link>
+  );
+}
+
+/**
+ * 아이디어 (muse-shape plan §3.3, §4): the first of the rows under the conversation — the places a
+ * person goes to look rather than to change how the Bot works. One line, a desktop row like the
+ * footer's, because the column's height at 1024×640 is what 오늘 lives on.
+ */
+function IdeasRow({ isCompact }: { isCompact: boolean }) {
+  const icon = <IconBulb aria-hidden="true" className="size-4.5 shrink-0" />;
+  if (isCompact) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              aria-label={t("Ideas")}
+              className={cn(NAV_LINK_CLASS, "justify-center")}
+              to="/ideas"
+            />
+          }
+        >
+          {icon}
+        </TooltipTrigger>
+        <TooltipContent side="right">{t("Ideas")}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <Link
+      className={cn(NAV_LINK_CLASS, "gap-2.5 px-2.5")}
+      data-sidebar-row="ideas"
+      to="/ideas"
+    >
+      {icon}
+      {t("Ideas")}
+    </Link>
+  );
+}
+
+/**
+ * 더 보기: the footer's places that are not kept in sight (`primary: false` in `places.ts`) — 스킬
+ * and 도움말 — one press away, in a menu that opens upward from the footer.
+ */
+function MoreLinks({
+  isCompact,
+  links,
+}: {
+  isCompact: boolean;
+  links: readonly FooterPlace[];
+}) {
+  if (links.length === 0) return null;
+  const label = t("More");
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            aria-label={isCompact ? label : undefined}
+            className={cn(
+              NAV_LINK_CLASS,
+              "w-full",
+              isCompact ? "justify-center" : "gap-2.5 px-2.5",
+            )}
+            data-sidebar-more
+            type="button"
+          />
+        }
+      >
+        <IconDots aria-hidden="true" className="size-4.5 shrink-0" />
+        {isCompact ? null : label}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="p-1.5" side="top">
+        {links.map(({ icon: Icon, label: name, to }) => (
+          <DropdownMenuItem
+            className="gap-2 px-2 py-1.5"
+            key={to}
+            render={<Link to={to} />}
+          >
+            <Icon />
+            {t(name)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -575,6 +669,9 @@ export function BotSidebar() {
                   />
                 </BotRowMenu>
               </li>
+              <li>
+                <IdeasRow isCompact={isRail} />
+              </li>
             </ul>
             {/*
              * 오늘: what the Bot did today, between its conversation and the links. Not in the
@@ -645,9 +742,15 @@ export function BotSidebar() {
         className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
         data-sidebar-nav
       >
-        {links.map((link) => (
-          <FooterLink {...link} isCompact={isRail} key={link.to} />
-        ))}
+        {links
+          .filter((link) => link.primary)
+          .map((link) => (
+            <FooterLink {...link} isCompact={isRail} key={link.to} />
+          ))}
+        <MoreLinks
+          isCompact={isRail}
+          links={links.filter((link) => !link.primary)}
+        />
       </div>
 
       <div className="shrink-0 border-border border-t px-2 py-2">

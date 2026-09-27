@@ -1,4 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   afterAll,
   afterEach,
@@ -7,6 +6,7 @@ import {
   expect,
   test,
 } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { focusRing } from "../src/components/ui/focus";
 import { activeLocale } from "../src/lib/i18n";
 import { ko } from "../src/lib/i18n-ko";
@@ -244,8 +244,11 @@ async function roster(
           row.querySelector(".text-base")?.textContent === name ||
           row.getAttribute("aria-label")?.startsWith(name),
       ),
+    /** The footer's links, and 더 보기 — the button that holds the rest (phase 5). */
     footerLinks: () => [
-      ...column().querySelectorAll<HTMLAnchorElement>("[data-sidebar-nav] a"),
+      ...column().querySelectorAll<HTMLAnchorElement>(
+        "[data-sidebar-nav] a, [data-sidebar-nav] button",
+      ),
     ],
     toggle: () =>
       column().querySelector<HTMLButtonElement>(
@@ -476,15 +479,14 @@ describe("the roster speaks the app's language", () => {
       "Bot profile",
       "Notebook",
       "Routines",
-      "Skills",
       "Connections",
-      "Help",
+      "More",
     ]);
     for (const label of labels) {
       expect(ko[label as string]).toBeTruthy();
     }
     await view.unmount();
-    // In the rail the same six words move into the labels.
+    // In the rail the same words move into the labels.
     const rail = await roster({ wide: false });
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),
@@ -510,10 +512,12 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(identity?.closest("ul")).toBeNull();
   });
 
-  test("its conversation is one row, to its channel, with the last line and the unread mark", async () => {
+  test("its conversation is one row, to its channel, with the last line and the unread mark — and 아이디어 under it", async () => {
     const view = await roster({ bots: one() });
     const rows = view.rows();
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]?.getAttribute("href")).toBe("/ideas");
+    expect(rows[1]?.textContent).toBe("Ideas");
     expect(rows[0]?.getAttribute("href")).toBe("/channel/ch-1");
     expect(rows[0]?.textContent).toContain("Conversation");
     expect(rows[0]?.textContent).toContain("3 orders are sorted, take a look");
@@ -525,10 +529,19 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(view.footerLinks().map((link) => link.textContent)).toEqual([
       "Notebook",
       "Routines",
-      "Skills",
       "Connections",
-      "Help",
+      "More",
     ]);
+    /*
+     * 스킬 AND 도움말 ARE UNDER 더 보기 (muse-shape plan §4, phase 5): one press away, still in the
+     * column; the 메뉴 page lists all of them.
+     */
+    const { FOOTER_LINKS } = await import(
+      "../src/components/app-sidebar/places"
+    );
+    expect(
+      FOOTER_LINKS.filter((link) => !link.primary).map((link) => link.to),
+    ).toEqual(["/skills", "/help"]);
     /*
      * OUT OF THE SCROLLING PART, PINNED ABOVE THE ACCOUNT. At the PC app's smallest window (1024×640)
      * 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold when they scrolled with it (UX review 0.5.4,

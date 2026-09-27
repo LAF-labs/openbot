@@ -1,4 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   afterAll,
   afterEach,
@@ -9,6 +8,7 @@ import {
 } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { ReactElement } from "react";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
@@ -116,6 +116,7 @@ function server(
 const PATHS = [
   "/",
   "/feed",
+  "/ideas",
   "/menu",
   "/routines",
   "/notebook",
@@ -166,17 +167,24 @@ async function bar(path: string, options: Parameters<typeof server>[0] = {}) {
 }
 
 describe("the phone's bar", () => {
-  test("three labelled tabs, to the conversation, 소식 and 메뉴", async () => {
+  /*
+   * FOUR SINCE PHASE 5: 아이디어 came with its page, third, where the plan puts it (§4). The
+   * bar gains a tab only with the page behind it.
+   */
+  test("four labelled tabs, to the conversation, 소식, 아이디어 and 메뉴", async () => {
     const view = await bar("/channel/ch-1");
     expect(
       view.tabs().map((tab) => [tab.textContent, tab.getAttribute("href")]),
     ).toEqual([
       ["Conversation", "/"],
       ["Updates", "/feed"],
+      ["Ideas", "/ideas"],
       ["Menu", "/menu"],
     ]);
+    expect(view.nav()?.querySelector("ul")?.className).toContain("grid-cols-4");
     expect(ko.Conversation).toBe("대화");
     expect(ko.Updates).toBe("소식");
+    expect(ko.Ideas).toBe("아이디어");
     expect(ko.Menu).toBe("메뉴");
     expect(ko.Places).toBe("이동");
   });
@@ -238,10 +246,12 @@ describe("the phone's bar", () => {
     Reflect.deleteProperty(window, "visualViewport");
   });
 
-  test("the tab that is the page says so: the conversation, 소식, and 메뉴 for every place under it", async () => {
+  test("the tab that is the page says so: the conversation, 소식, 아이디어, and 메뉴 for every place under it", async () => {
     expect((await bar("/channel/ch-1")).current()).toEqual(["Conversation"]);
     await unmountAll();
     expect((await bar("/feed")).current()).toEqual(["Updates"]);
+    await unmountAll();
+    expect((await bar("/ideas")).current()).toEqual(["Ideas"]);
     await unmountAll();
     for (const path of ["/menu", "/routines", "/notebook", "/skills"]) {
       expect((await bar(path)).current()).toEqual(["Menu"]);

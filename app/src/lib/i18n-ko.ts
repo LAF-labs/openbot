@@ -2925,4 +2925,148 @@ export const ko: Record<string, string> = {
   "I am": "나는",
   "Your Bot reads this to decide what to suggest first and how to address you. Every menu and feature stays the same for everyone.":
     "봇이 무엇을 먼저 권할지, 어떻게 부를지 정할 때 참고해요. 메뉴와 기능은 누구에게나 같아요.",
+  // ideas (muse-shape plan §3.3, phase 5) — shared/ideas/catalogue.ts, shared/persona.ts CATEGORIES
+  "Work and business": "일·가게",
+  "Study and growth": "공부·성장",
+  "Money and tax": "돈·세금",
+  Health: "건강",
+  People: "관계",
+  "Everyday life": "생활",
+  Ideas: "아이디어",
+  More: "더 보기",
+  "Things I can do for you. Press one and its sentence goes into the conversation's box — nothing is sent until you send it, so change it first if you like.":
+    "제가 할 수 있는 일이에요. 누르면 그 문장이 대화 입력칸에 들어가요. 보내기 전까지는 아무것도 보내지 않으니, 먼저 고쳐도 돼요.",
+  "The ideas could not be loaded.": "아이디어를 불러오지 못했어요.",
+  "There are no ideas on this deployment.": "여기서는 아이디어를 볼 수 없어요.",
+  "Nothing left here — you have put every idea away. Ask for anything in the conversation.":
+    "남은 아이디어가 없어요. 무엇이든 대화에서 부탁해 주세요.",
+  "That idea is no longer on offer.": "이제 없는 아이디어예요.",
+  "Options for “{title}”": "‘{title}’ 메뉴",
+  "It repeats at the time in the sentence. Change the time before you send it.":
+    "문장에 적힌 시간마다 해요. 보내기 전에 시간을 바꿔도 돼요.",
+  "Can do this once one is connected: {connections}":
+    "연결하면 할 수 있어요 · {connections}",
+  "Because {connection} is connected": "{connection}{josa} 연결돼 있어서",
+  "Useful for anyone": "누구에게나 쓸모 있어요",
+  "{names} and {count} more": "{names} 외 {count}곳",
+  "Suits a {persona}": "{persona}에게 잘 맞아요",
+  "I'll gather new reviews every morning and draft the replies":
+    "새 리뷰를 매일 아침 모아 답글 초안까지 써 둘게요",
+  "A list each morning with reply drafts. Nothing is posted until you say so.":
+    "매일 아침 리뷰와 답글 초안. 올리는 건 허락하셔야 해요.",
+  "Every morning at 8, gather yesterday's new reviews and draft a reply to each.":
+    "매일 아침 8시에 어제 들어온 리뷰를 모아서 답글 초안까지 써 줘.",
+  "I'll find the support programmes your business could apply for":
+    "받을 수 있는 지원사업을 찾아 드릴게요",
+  "Notices with their deadlines and amounts. No login needed.":
+    "마감일과 금액이 적힌 공고 목록. 로그인은 필요 없어요.",
+  "I'll check every Monday that your settlements came in right":
+    "정산이 제대로 들어왔는지 매주 월요일에 맞춰 볼게요",
+  "A weekly message naming only what does not add up.":
+    "안 맞는 것만 짚어 드리는 주간 메시지",
+  "Every Monday at 9am, check last week's settlements and tell me only what does not add up.":
+    "매주 월요일 아침 9시에 지난주 정산을 확인해서 안 맞는 것만 알려 줘.",
+  "I'll sort out today's orders": "오늘 들어온 주문을 정리해 드릴게요",
+  "Orders by state, and the ones that need you.": "상태별 주문과 손봐야 할 것",
+  "I'll check the hours and number Naver shows for your shop":
+    "네이버에 나온 가게 영업시간·전화번호를 확인할게요",
+  "What Naver shows, and anything that looks out of date.":
+    "네이버에 보이는 그대로와, 고칠 것이 있다면 그 줄",
+  "Search Naver for our shop and check the opening hours and phone number it shows. The shop's name: ":
+    "네이버에서 우리 가게를 검색해서 영업시간이랑 전화번호가 맞게 나오는지 봐 줘. 가게 이름: ",
+  "I'll write three introductions for your shop":
+    "가게 소개 문구를 세 가지로 써 드릴게요",
+  "Three versions to choose from.": "골라 쓸 수 있는 세 가지",
+  "Attach a sales file and I'll sort it by weekday":
+    "매출 파일을 붙여 주시면 요일별로 정리해 드릴게요",
+  "A table by weekday. Attach the Excel or CSV file with the paper clip.":
+    "요일별 표. 엑셀이나 CSV 파일은 입력칸의 클립으로 붙여요.",
+  "Sort the sales file I'm attaching by weekday, and tell me the busiest and quietest days.":
+    "붙이는 매출 파일을 요일별로 정리하고, 가장 바쁜 날과 한가한 날을 알려 줘.",
+  "I'll compare prices on Naver Shopping":
+    "네이버 쇼핑에서 가격을 비교해 드릴게요",
+  "The five lowest prices, with links.": "가장 싼 다섯 곳과 링크",
+  "Compare the five lowest prices on Naver Shopping for this product: ":
+    "네이버 쇼핑에서 이 상품 최저가 다섯 곳 비교해 줘: ",
+  "I'll work out weekly holiday pay by the official rules":
+    "주휴수당을 공식 기준으로 계산해 드릴게요",
+  "The sum with every step shown, and the page it came from.":
+    "식을 모두 보여 드리는 계산과 근거 페이지",
+  "Work out a part-timer's weekly holiday pay. Hourly wage: ○○ won. Hours a week: ○○.":
+    "알바 주휴수당 계산해 줘. 시급은 ○○원, 일주일에 ○○시간 일해.",
+  "I'll list the tax deadlines left this year":
+    "올해 남은 세금 신고 일정을 정리해 드릴게요",
+  "Dates read off the National Tax Service's own pages.":
+    "국세청 페이지에서 읽은 날짜",
+  "From the National Tax Service's pages, list the tax filing deadlines left this year for a sole proprietor.":
+    "국세청 기준으로 개인사업자가 올해 남은 세금 신고 일정 정리해 줘.",
+  "I'll pick out the mail that still needs a reply":
+    "답해야 할 메일만 골라 드릴게요",
+  "One line on what each of them asks.": "메일마다 무엇을 묻는지 한 줄씩",
+  "I'll tell you tomorrow's schedule every evening":
+    "매일 저녁 내일 일정을 알려 드릴게요",
+  "One message each evening.": "매일 저녁 메시지 하나",
+  "Every evening at 9, tell me what is on my calendar tomorrow.":
+    "매일 저녁 9시에 내일 캘린더 일정 알려 줘.",
+  "I'll sum up the news in your field in three lines every morning":
+    "관심 분야 뉴스를 아침마다 세 줄로 요약할게요",
+  "Three lines and their links, each morning.": "매일 아침 세 줄과 링크",
+  "Every morning at 8, sum up the news about ○○ in three lines.":
+    "매일 아침 8시에 ○○ 분야 뉴스를 세 줄로 요약해 줘.",
+  "I'll draft a polite email saying no": "정중한 거절 메일 초안을 써 드릴게요",
+  "A draft to edit. Nothing is sent.": "고쳐 쓸 초안. 보내지는 않아요.",
+  "I'll make you a template for meeting minutes":
+    "회의록 양식을 만들어 드릴게요",
+  "A template to copy.": "복사해 쓰는 양식",
+  "I'll list the year-end tax deductions to check, by the official rules":
+    "연말정산에서 챙길 공제를 공식 기준으로 알려 드릴게요",
+  "A checklist, each item with the page it came from.":
+    "항목마다 근거 페이지가 달린 체크리스트",
+  "From the National Tax Service's pages, list the deductions an employee should check for the year-end tax settlement.":
+    "국세청 기준으로 직장인이 연말정산 때 챙겨야 할 공제 항목 정리해 줘.",
+  "I'll plan your study backwards from the exam date":
+    "시험 날짜에서 거꾸로 공부 계획표를 만들어 드릴게요",
+  "A table, day by day.": "날짜별 계획표",
+  "I'll quiz you on ten English words every evening":
+    "매일 저녁 영어 단어 10개로 퀴즈를 낼게요",
+  "A quiz in the conversation each evening.": "매일 저녁 대화로 오는 퀴즈",
+  "Every evening at 9, quiz me on ten English words.":
+    "매일 저녁 9시에 영어 단어 10개로 퀴즈 내 줘.",
+  "I'll look for scholarships you can apply for now":
+    "지금 신청할 수 있는 장학금을 찾아 드릴게요",
+  "A list by deadline, with links.": "마감일 순 목록과 링크",
+  "Search Naver for scholarships a university student can apply for now, and list them by deadline.":
+    "네이버에서 대학생이 지금 신청할 수 있는 장학금을 찾아서 마감일 순으로 정리해 줘.",
+  "I'll outline a report or an assignment":
+    "보고서·과제의 목차와 초안을 잡아 드릴게요",
+  "An outline and a first draft to build on.": "목차와 고쳐 쓸 초안",
+  "Outline a report on this topic and write a first draft: ":
+    "이 주제로 보고서 목차랑 초안 잡아 줘: ",
+  "I'll make a table for a month's spending":
+    "한 달 용돈·생활비 표를 만들어 드릴게요",
+  "A table to fill in, with the totals.": "채워 쓰는 표와 합계",
+  "Make me a table for a month's spending. My income is ○○ won a month.":
+    "한 달 생활비 표 만들어 줘. 한 달 수입은 ○○원이야.",
+  "I'll tell you the weather every morning, and whether to take an umbrella":
+    "매일 아침 날씨와 우산 챙길지를 알려 드릴게요",
+  "One message each morning.": "매일 아침 메시지 하나",
+  "Every morning at 7:30, tell me today's weather and whether I need an umbrella.":
+    "매일 아침 7시 30분에 오늘 날씨랑 우산 챙겨야 하는지 알려 줘.",
+  "I'll plan a weekend outing around the weather":
+    "주말 날씨를 보고 나들이 계획을 짜 드릴게요",
+  "The weekend's forecast and a half-day plan.": "주말 예보와 반나절 계획",
+  "Check this weekend's weather on Naver and plan a half-day outing near me.":
+    "네이버에서 이번 주말 날씨 보고 가까운 데로 반나절 나들이 계획 짜 줘.",
+  "I'll remind you to stretch every afternoon":
+    "매일 오후 스트레칭할 때를 알려 드릴게요",
+  "A short reminder with three stretches.":
+    "쉬운 동작 세 가지가 담긴 짧은 알림",
+  "Every afternoon at 3, remind me to stretch and suggest three simple stretches.":
+    "매일 오후 3시에 스트레칭하라고 알려 주고, 쉬운 동작 세 가지도 알려 줘.",
+  "I'll write a thank-you or congratulations message":
+    "감사·축하 메시지를 상황에 맞게 써 드릴게요",
+  "Three versions, from warm to formal.":
+    "다정한 것부터 격식 있는 것까지 세 가지",
+  "Write a message for this occasion in three tones: ":
+    "이 상황에 맞는 메시지를 세 가지 말투로 써 줘: ",
 };

@@ -786,6 +786,8 @@ const B_ALLOWED = [
   "GET /api/components/functions",
   "GET /api/connections/overview",
   "GET /api/health",
+  // 아이디어: the person's own cards, in their order — keys and connection states, nobody else's.
+  "GET /api/ideas",
   "GET /api/me",
   "GET /api/me/export",
   "GET /api/me/notifications",

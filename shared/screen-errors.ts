@@ -90,6 +90,7 @@ export const SCREEN_ROUTES = [
   "/consent",
   "/feed",
   "/help",
+  "/ideas",
   "/legal/privacy",
   "/legal/terms",
   "/menu",

@@ -96,3 +96,45 @@ export const WORK_FIELDS = [
 
 /** How long the typed half of a follow-up may be. One line on 수첩, not a paragraph. */
 export const FOLLOW_UP_MAX_LENGTH = 60;
+
+/**
+ * ONE LIST OF KINDS OF LIFE FOR EVERYONE: 일·가게 · 공부·성장 · 돈·세금 · 건강 · 관계 · 생활 · 기타
+ * (muse-shape plan §2.4). The ideas are filed under these now, and the goals will be.
+ *
+ * One list rather than one per persona because a person's persona changes — a 학생 takes a job, a
+ * 직장인 opens a shop — and what they asked for before should still be where it was. "일·가게" reads
+ * right to a 사장님, to an office worker and to a student with a part-time job.
+ */
+export const CATEGORIES = [
+  { id: "work", name: "Work and business" },
+  { id: "study", name: "Study and growth" },
+  { id: "money", name: "Money and tax" },
+  { id: "health", name: "Health" },
+  { id: "relationships", name: "People" },
+  { id: "life", name: "Everyday life" },
+  { id: "other", name: "Other" },
+] as const;
+
+export type Category = (typeof CATEGORIES)[number]["id"];
+
+/** The two categories each persona sees first; the rest keep the list's own order. */
+export const CATEGORY_LEAD: Readonly<Record<Persona, readonly Category[]>> = {
+  owner: ["work", "money"],
+  student: ["study", "money"],
+  worker: ["work", "study"],
+  other: ["life", "health"],
+};
+
+/**
+ * The seven, in the order this person reads them. Every one is always there: the persona puts two
+ * first and hides none. Unknown keeps the list's own order.
+ */
+export function categoryOrder(persona: Persona | null): Category[] {
+  const lead = persona ? CATEGORY_LEAD[persona] : [];
+  return [
+    ...lead,
+    ...CATEGORIES.map((category) => category.id).filter(
+      (id) => !lead.includes(id),
+    ),
+  ];
+}

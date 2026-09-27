@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { IDEAS } from "@shared/ideas/catalogue";
+import { CATEGORIES } from "@shared/persona";
 import { AGENT_REFUSALS } from "../src/lib/agents/mutations";
 import { WORK_PATTERNS } from "../src/lib/agents/work-patterns";
 import {
@@ -197,6 +199,17 @@ function ownerKorean(): [string, string][] {
       const korean = ko[value];
       if (korean) sentences.push([korean, `a site: ${site.id}`]);
     }
+  }
+  // 아이디어's cards and the seven categories: read through `t(idea.title)` and the like (phase 5).
+  for (const idea of IDEAS) {
+    for (const value of [idea.title, idea.makes, idea.sentence]) {
+      const korean = ko[value];
+      if (korean) sentences.push([korean, `an idea: ${idea.key}`]);
+    }
+  }
+  for (const category of CATEGORIES) {
+    const korean = ko[category.name];
+    if (korean) sentences.push([korean, `a category: ${category.id}`]);
   }
   for (const [key, copy] of Object.entries(CATALOGUE_COPY)) {
     for (const value of [copy.summary, copy.can]) {

@@ -3,10 +3,14 @@ import { effectivePersona } from "@shared/persona";
 import { IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FirstTaskChips } from "@/components/agents/first-task-chips";
 import { Greeting } from "@/components/agents/greeting";
 import { BotHeader } from "@/components/channels/bot-header";
+import {
+  COMPOSE_SCREEN_KEY,
+  offerDraft,
+} from "@/components/channels/composer/prefill";
 import { ConversationView } from "@/components/channels/conversation-view";
 import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { seedMessage } from "@/components/channels/transcript-messages";
@@ -28,8 +32,8 @@ import { useActiveBot } from "@/lib/copilot/active-bot";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { t } from "@/lib/i18n";
 import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
-import { routineListQueryOptions } from "@/lib/routines/queries";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
+import { routineListQueryOptions } from "@/lib/routines/queries";
 
 /**
  * The Bot's conversation before its first message. The first send makes the channel.
@@ -40,8 +44,15 @@ import { useSkillCommands } from "@/lib/plugins/skill-commands";
  * one Bot (docs/laf/deployment-model.md, "봇은 하나다").
  */
 export const Route = createFileRoute("/_authed/_app/channel/new")({
-  validateSearch: (search: Record<string, unknown>): { agent?: string } => ({
+  /*
+   * `draft`: a sentence another screen started (an 아이디어 pressed before the Bot was ever spoken
+   * to), for the composer here — or for the conversation this screen hands over to, when there is one.
+   */
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { agent?: string; draft?: string } => ({
     ...(typeof search.agent === "string" ? { agent: search.agent } : {}),
+    ...(typeof search.draft === "string" ? { draft: search.draft } : {}),
   }),
   component: ComposeScreen,
 });
@@ -56,7 +67,7 @@ function ComposeScreen() {
 }
 
 function RouteComponent() {
-  const { agent } = Route.useSearch();
+  const { agent, draft } = Route.useSearch();
   const mine = useMyBots();
   const { data: channels } = useQuery(channelListQueryOptions());
 
@@ -89,15 +100,35 @@ function RouteComponent() {
       <Navigate
         params={{ channelId: existing.id }}
         replace
+        search={draft === undefined ? {} : { draft }}
         to="/channel/$channelId"
       />
     );
   }
 
-  return <FirstConversation botId={bot.id} key={bot.id} />;
+  return <FirstConversation botId={bot.id} draft={draft} key={bot.id} />;
 }
 
-function FirstConversation({ botId }: { botId: string }) {
+function FirstConversation({
+  botId,
+  draft,
+}: {
+  botId: string;
+  draft: string | undefined;
+}) {
+  const navigate = Route.useNavigate();
+  /*
+   * THE SENTENCE GOES TO THIS COMPOSER, AND OUT OF THE ADDRESS — what `$channelId.tsx` does for a
+   * conversation, under the compose screen's own key, so a reload does not type it in twice.
+   */
+  useEffect(() => {
+    if (draft === undefined) return;
+    offerDraft(COMPOSE_SCREEN_KEY, draft);
+    void navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, draft: undefined }),
+    });
+  }, [draft, navigate]);
   const mine = useMyBots();
   const bot = mine.bots?.find((candidate) => candidate.id === botId);
   const { start, pending } = useStartChannel();

@@ -13,6 +13,8 @@ import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
+import { createAttachmentRoutes } from "./attachments/routes";
+import type { AttachmentService } from "./attachments/service";
 import { type AuditReader, type AuditStore, auditQueryFromUrl } from "./audit";
 import { createDevRequireUser } from "./auth/dev-actor";
 import {
@@ -29,8 +31,6 @@ import {
   originRefusalBody,
 } from "./auth/origin";
 import type { SessionAdmission } from "./auth/session-revocation";
-import { createAttachmentRoutes } from "./attachments/routes";
-import type { AttachmentService } from "./attachments/service";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -73,6 +73,8 @@ import {
   type HealthProbes,
   type HealthReport,
 } from "./health";
+import { createIdeaRoutes } from "./ideas/routes";
+import { createIdeaService } from "./ideas/service";
 import type { InsightsReport } from "./insights/report";
 import { createInsightsRoutes } from "./insights/routes";
 import { log } from "./log";
@@ -80,6 +82,7 @@ import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
+import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
 import { createConnectedPageRoute } from "./plugins/connected-page";
 import {
   type ConnectionsOverviewSources,
@@ -88,7 +91,6 @@ import {
 } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
-import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
 import type { PublicDataRuntime } from "./plugins/public-data-rest";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import { connectableCatalogue } from "./plugins/shared-clients";
@@ -1256,6 +1258,44 @@ export function createApp(
         createRoutineRoutes(routineService, requireUser),
       );
     }
+  }
+
+  /*
+   * 아이디어 (muse-shape plan §3.3). The same four facts the routine suggestions stand on — the
+   * connections, the latch, the roster — and two more: who the person said they are, which orders
+   * the cards, and the tools their Bot holds, without which 지원사업 is a card nothing could answer.
+   */
+  if (routineSuggestionDismissals && connectionSources && agentProfileStore) {
+    const sources = connectionSources;
+    const roster = agentProfileStore;
+    app.route(
+      "/api/ideas",
+      createIdeaRoutes(
+        createIdeaService({
+          person: async (userId) => {
+            const [person, answered] = await Promise.all([
+              shop?.readPerson(userId).catch(() => null) ?? null,
+              shop?.read(userId).catch(() => null) ?? null,
+            ]);
+            return {
+              persona: person?.persona ?? null,
+              shop: answered ?? { kind: null, places: [] },
+            };
+          },
+          connections: (userId) => readConnectionsOverview(sources, userId),
+          tools: async (actor) => {
+            const [bot] = await roster.list(actor);
+            if (!bot || !pluginStore) return new Set<string>();
+            const granted = await pluginStore
+              .listForAgent(bot.id)
+              .catch(() => null);
+            return new Set((granted?.tools ?? []).map((tool) => tool.ref));
+          },
+          dismissals: routineSuggestionDismissals,
+        }),
+        requireUser,
+      ),
+    );
   }
 
   return app;

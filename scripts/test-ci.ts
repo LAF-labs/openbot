@@ -659,14 +659,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * three to `app` (the card's four fixed answers whatever the Bot sent, and a plain question's own
  * options; no 사장님 as "you" anywhere in the dictionary) and two to `root` (no 사장님 in the tool
  * results, and one line of the base prompt naming it).
+ * RAISED 2026-09-27 with 아이디어 (phase 5): nine to `server` (the same keys for every persona in
+ * its own order; 사장님 by the shop answers; connect and ready and needs_login; what the deployment
+ * offers no door to and a tool the Bot lacks left out; nothing needed is ready everywhere; 다음에
+ * latched as idea:<key>; that latch never hiding a routine suggestion; the two doors) and twelve to
+ * `app` (the catalogue's Korean, keys, categories and leads, its connections, a routine's time, the
+ * seven categories; the same set in every order, each persona first, ready before connect; why a
+ * card is there and its words; the compose screen taking `draft`).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3058, roots: ["server"] },
-  { name: "app", floor: 1499, roots: ["app"] },
+  { name: "server", floor: 3067, roots: ["server"] },
+  { name: "app", floor: 1511, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 552, roots: ["tests", "agent-bot"] },
 ] as const;

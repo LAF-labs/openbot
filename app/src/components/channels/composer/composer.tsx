@@ -41,6 +41,7 @@ import {
   toDraft,
 } from "./draft";
 import {
+  COMPOSE_SCREEN_KEY,
   DraftScope,
   offerDraft,
   takeOfferedDraft,
@@ -53,7 +54,6 @@ import { buildTriggers } from "./triggers";
  * The compose screen's own key for its text kept through a reload. Parenthesised, so it can never
  * be a conversation's id, and no conversation's offer can reach the compose screen through it.
  */
-const COMPOSE_SCREEN_KEY = "(compose)";
 
 const MAX_HEIGHT_PX = 220;
 /**

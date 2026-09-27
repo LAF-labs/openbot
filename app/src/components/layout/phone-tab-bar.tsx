@@ -1,4 +1,5 @@
 import {
+  IconBulb,
   IconLayoutList,
   IconMenu2,
   IconMessageCircle,
@@ -22,7 +23,8 @@ import { cn } from "@/lib/utils";
  * each screen's header that slid the whole column over the page — one more press to reach anything,
  * from the top corner a thumb reaches last. The bar holds only the places that exist: the one
  * conversation, 소식 (오늘, as a page of its own), and 메뉴 (everything that changes how the Bot
- * works). More tabs come with the pages behind them, never before.
+ * works). More tabs come with the pages behind them, never before: 아이디어 came with its page
+ * (phase 5), third, where the plan puts it.
  *
  * LABELLED, because five unlabelled icons were the rail nobody could name (UI/UX audit 0.5.3, item
  * 20). Each is the bar's full 56px tall, over the home indicator's inset.
@@ -44,7 +46,8 @@ export function PhoneTabBar() {
 
   const isConversation = pathname === "/" || pathname.startsWith("/channel");
   const isUpdates = pathname === "/feed";
-  const isMenu = !isConversation && !isUpdates;
+  const isIdeas = pathname === "/ideas";
+  const isMenu = !isConversation && !isUpdates && !isIdeas;
 
   return (
     <nav
@@ -53,7 +56,7 @@ export function PhoneTabBar() {
       hidden={isKeyboardUp}
       data-phone-tab-bar
     >
-      <ul className="grid h-14 grid-cols-3">
+      <ul className="grid h-14 grid-cols-4">
         <li className="contents">
           <Tab
             badge={
@@ -74,6 +77,14 @@ export function PhoneTabBar() {
             isActive={isUpdates}
             label={t("Updates")}
             to="/feed"
+          />
+        </li>
+        <li className="contents">
+          <Tab
+            icon={IconBulb}
+            isActive={isIdeas}
+            label={t("Ideas")}
+            to="/ideas"
           />
         </li>
         <li className="contents">
@@ -100,7 +111,7 @@ function Tab({
   icon: typeof IconMenu2;
   isActive: boolean;
   label: string;
-  to: "/" | "/feed" | "/menu";
+  to: "/" | "/feed" | "/ideas" | "/menu";
 }) {
   return (
     <Link

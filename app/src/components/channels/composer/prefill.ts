@@ -31,6 +31,13 @@ function announce(): void {
 /** The conversation a composer sits in, for the offers it may take. None: it takes nothing. */
 export const DraftScope = createContext<string | undefined>(undefined);
 
+/**
+ * The compose screen's own key: before the first message there is no conversation to name. A
+ * sentence offered under it is taken by the compose screen's composer and by nothing else — an 아이디어
+ * pressed before the Bot was ever spoken to lands there (`channel/new.tsx`).
+ */
+export const COMPOSE_SCREEN_KEY = "(compose)";
+
 /** Put a sentence in this conversation's composer once it can take it. The latest offer wins. */
 export function offerDraft(channelId: string, text: string): void {
   const trimmed = text.trimStart();

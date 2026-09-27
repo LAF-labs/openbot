@@ -328,11 +328,13 @@ describe("the sidebar", () => {
         return undefined;
       },
     });
-    await view.waitFor(() => rows(view).length === 1, "the Bot's row");
-    expect(rows(view)).toEqual(["/channel/c-1"]);
+    // The conversation, and 아이디어 under it (phase 5).
+    await view.waitFor(() => rows(view).length === 2, "the Bot's row");
+    expect(rows(view)).toEqual(["/channel/c-1", "/ideas"]);
     const text = nav(view).textContent ?? "";
     expect(text).toContain("초롱");
-    for (const label of ["Routines", "Skills", "Connections", "Help"]) {
+    // 스킬 and 도움말 are one press away under 더 보기.
+    for (const label of ["Routines", "Connections", "More"]) {
       expect(text).toContain(label);
     }
     // The profile is the Bot itself, at the top of the column (2026-09-24), not a second link.
