@@ -1,5 +1,6 @@
 import {
   IconBulb,
+  IconLayoutGrid,
   IconLayoutList,
   IconMenu2,
   IconMessageCircle,
@@ -24,7 +25,8 @@ import { cn } from "@/lib/utils";
  * from the top corner a thumb reaches last. The bar holds only the places that exist: the one
  * conversation, 소식 (오늘, as a page of its own), and 메뉴 (everything that changes how the Bot
  * works). More tabs come with the pages behind them, never before: 아이디어 came with its page
- * (phase 5), third, where the plan puts it.
+ * (phase 5), third, where the plan puts it; 만든 것 (phase 6) before 메뉴, with 목표's place
+ * between them kept for phase 9.
  *
  * LABELLED, because five unlabelled icons were the rail nobody could name (UI/UX audit 0.5.3, item
  * 20). Each is the bar's full 56px tall, over the home indicator's inset.
@@ -47,7 +49,8 @@ export function PhoneTabBar() {
   const isConversation = pathname === "/" || pathname.startsWith("/channel");
   const isUpdates = pathname === "/feed";
   const isIdeas = pathname === "/ideas";
-  const isMenu = !isConversation && !isUpdates && !isIdeas;
+  const isMade = pathname === "/made";
+  const isMenu = !isConversation && !isUpdates && !isIdeas && !isMade;
 
   return (
     <nav
@@ -56,7 +59,7 @@ export function PhoneTabBar() {
       hidden={isKeyboardUp}
       data-phone-tab-bar
     >
-      <ul className="grid h-14 grid-cols-4">
+      <ul className="grid h-14 grid-cols-5">
         <li className="contents">
           <Tab
             badge={
@@ -89,6 +92,14 @@ export function PhoneTabBar() {
         </li>
         <li className="contents">
           <Tab
+            icon={IconLayoutGrid}
+            isActive={isMade}
+            label={t("Made")}
+            to="/made"
+          />
+        </li>
+        <li className="contents">
+          <Tab
             icon={IconMenu2}
             isActive={isMenu}
             label={t("Menu")}
@@ -111,7 +122,7 @@ function Tab({
   icon: typeof IconMenu2;
   isActive: boolean;
   label: string;
-  to: "/" | "/feed" | "/ideas" | "/menu";
+  to: "/" | "/feed" | "/ideas" | "/made" | "/menu";
 }) {
   return (
     <Link

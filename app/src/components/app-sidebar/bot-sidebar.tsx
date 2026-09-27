@@ -1,6 +1,7 @@
 import {
   IconBulb,
   IconDots,
+  IconLayoutGrid,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
@@ -318,38 +319,50 @@ function BotIdentity({
 }
 
 /**
- * 아이디어 (muse-shape plan §3.3, §4): the first of the rows under the conversation — the places a
- * person goes to look rather than to change how the Bot works. One line, a desktop row like the
- * footer's, because the column's height at 1024×640 is what 오늘 lives on.
+ * THE PLACES A PERSON GOES TO LOOK (muse-shape plan §4): the rows under the conversation, rather than
+ * the footer's places that change how the Bot works. 아이디어 came first (phase 5), 만든 것 with its
+ * page (phase 6); 소식 and 목표 join them with theirs. One line each, a desktop row like the footer's,
+ * because the column's height at 1024×640 is what 오늘 lives on.
  */
-function IdeasRow({ isCompact }: { isCompact: boolean }) {
-  const icon = <IconBulb aria-hidden="true" className="size-4.5 shrink-0" />;
+const LOOK_ROWS = [
+  { to: "/ideas", icon: IconBulb, label: "Ideas", row: "ideas" },
+  { to: "/made", icon: IconLayoutGrid, label: "Made", row: "made" },
+] as const;
+
+function LookRow({
+  icon: Icon,
+  isCompact,
+  label,
+  row,
+  to,
+}: (typeof LOOK_ROWS)[number] & { isCompact: boolean }) {
+  const icon = <Icon aria-hidden="true" className="size-4.5 shrink-0" />;
   if (isCompact) {
     return (
       <Tooltip>
         <TooltipTrigger
           render={
             <Link
-              aria-label={t("Ideas")}
+              aria-label={t(label)}
               className={cn(NAV_LINK_CLASS, "justify-center")}
-              to="/ideas"
+              to={to}
             />
           }
         >
           {icon}
         </TooltipTrigger>
-        <TooltipContent side="right">{t("Ideas")}</TooltipContent>
+        <TooltipContent side="right">{t(label)}</TooltipContent>
       </Tooltip>
     );
   }
   return (
     <Link
       className={cn(NAV_LINK_CLASS, "gap-2.5 px-2.5")}
-      data-sidebar-row="ideas"
-      to="/ideas"
+      data-sidebar-row={row}
+      to={to}
     >
       {icon}
-      {t("Ideas")}
+      {t(label)}
     </Link>
   );
 }
@@ -669,9 +682,11 @@ export function BotSidebar() {
                   />
                 </BotRowMenu>
               </li>
-              <li>
-                <IdeasRow isCompact={isRail} />
-              </li>
+              {LOOK_ROWS.map((place) => (
+                <li key={place.to}>
+                  <LookRow {...place} isCompact={isRail} />
+                </li>
+              ))}
             </ul>
             {/*
              * 오늘: what the Bot did today, between its conversation and the links. Not in the

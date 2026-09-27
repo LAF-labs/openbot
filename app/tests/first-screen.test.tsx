@@ -328,9 +328,9 @@ describe("the sidebar", () => {
         return undefined;
       },
     });
-    // The conversation, and 아이디어 under it (phase 5).
-    await view.waitFor(() => rows(view).length === 2, "the Bot's row");
-    expect(rows(view)).toEqual(["/channel/c-1", "/ideas"]);
+    // The conversation, and 아이디어 (phase 5) and 만든 것 (phase 6) under it.
+    await view.waitFor(() => rows(view).length === 3, "the Bot's row");
+    expect(rows(view)).toEqual(["/channel/c-1", "/ideas", "/made"]);
     const text = nav(view).textContent ?? "";
     expect(text).toContain("초롱");
     // 스킬 and 도움말 are one press away under 더 보기.

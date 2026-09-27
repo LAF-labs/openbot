@@ -26,6 +26,7 @@ import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppFeedRouteImport } from './routes/_authed/_app/feed'
 import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
 import { Route as AuthedAppIdeasRouteImport } from './routes/_authed/_app/ideas'
+import { Route as AuthedAppMadeRouteImport } from './routes/_authed/_app/made'
 import { Route as AuthedAppMenuRouteImport } from './routes/_authed/_app/menu'
 import { Route as AuthedAppNotebookRouteImport } from './routes/_authed/_app/notebook'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
@@ -129,6 +130,11 @@ const AuthedAppHelpRoute = AuthedAppHelpRouteImport.update({
 const AuthedAppIdeasRoute = AuthedAppIdeasRouteImport.update({
   id: '/ideas',
   path: '/ideas',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppMadeRoute = AuthedAppMadeRouteImport.update({
+  id: '/made',
+  path: '/made',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppMenuRoute = AuthedAppMenuRouteImport.update({
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/feed': typeof AuthedAppFeedRoute
   '/help': typeof AuthedAppHelpRoute
   '/ideas': typeof AuthedAppIdeasRoute
+  '/made': typeof AuthedAppMadeRoute
   '/menu': typeof AuthedAppMenuRoute
   '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
@@ -292,6 +299,7 @@ export interface FileRoutesByTo {
   '/feed': typeof AuthedAppFeedRoute
   '/help': typeof AuthedAppHelpRoute
   '/ideas': typeof AuthedAppIdeasRoute
+  '/made': typeof AuthedAppMadeRoute
   '/menu': typeof AuthedAppMenuRoute
   '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
@@ -332,6 +340,7 @@ export interface FileRoutesById {
   '/_authed/_app/feed': typeof AuthedAppFeedRoute
   '/_authed/_app/help': typeof AuthedAppHelpRoute
   '/_authed/_app/ideas': typeof AuthedAppIdeasRoute
+  '/_authed/_app/made': typeof AuthedAppMadeRoute
   '/_authed/_app/menu': typeof AuthedAppMenuRoute
   '/_authed/_app/notebook': typeof AuthedAppNotebookRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
@@ -373,6 +382,7 @@ export interface FileRouteTypes {
     | '/feed'
     | '/help'
     | '/ideas'
+    | '/made'
     | '/menu'
     | '/notebook'
     | '/routines'
@@ -409,6 +419,7 @@ export interface FileRouteTypes {
     | '/feed'
     | '/help'
     | '/ideas'
+    | '/made'
     | '/menu'
     | '/notebook'
     | '/routines'
@@ -448,6 +459,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/feed'
     | '/_authed/_app/help'
     | '/_authed/_app/ideas'
+    | '/_authed/_app/made'
     | '/_authed/_app/menu'
     | '/_authed/_app/notebook'
     | '/_authed/_app/routines'
@@ -602,6 +614,13 @@ declare module '@tanstack/react-router' {
       path: '/ideas'
       fullPath: '/ideas'
       preLoaderRoute: typeof AuthedAppIdeasRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/made': {
+      id: '/_authed/_app/made'
+      path: '/made'
+      fullPath: '/made'
+      preLoaderRoute: typeof AuthedAppMadeRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/menu': {
@@ -802,6 +821,7 @@ interface AuthedAppRouteChildren {
   AuthedAppFeedRoute: typeof AuthedAppFeedRoute
   AuthedAppHelpRoute: typeof AuthedAppHelpRoute
   AuthedAppIdeasRoute: typeof AuthedAppIdeasRoute
+  AuthedAppMadeRoute: typeof AuthedAppMadeRoute
   AuthedAppMenuRoute: typeof AuthedAppMenuRoute
   AuthedAppNotebookRoute: typeof AuthedAppNotebookRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
@@ -817,6 +837,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppFeedRoute: AuthedAppFeedRoute,
   AuthedAppHelpRoute: AuthedAppHelpRoute,
   AuthedAppIdeasRoute: AuthedAppIdeasRoute,
+  AuthedAppMadeRoute: AuthedAppMadeRoute,
   AuthedAppMenuRoute: AuthedAppMenuRoute,
   AuthedAppNotebookRoute: AuthedAppNotebookRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,

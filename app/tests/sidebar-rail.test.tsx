@@ -512,12 +512,14 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(identity?.closest("ul")).toBeNull();
   });
 
-  test("its conversation is one row, to its channel, with the last line and the unread mark — and 아이디어 under it", async () => {
+  test("its conversation is one row, to its channel, with the last line and the unread mark — and 아이디어 and 만든 것 under it", async () => {
     const view = await roster({ bots: one() });
     const rows = view.rows();
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[1]?.getAttribute("href")).toBe("/ideas");
     expect(rows[1]?.textContent).toBe("Ideas");
+    expect(rows[2]?.getAttribute("href")).toBe("/made");
+    expect(rows[2]?.textContent).toBe("Made");
     expect(rows[0]?.getAttribute("href")).toBe("/channel/ch-1");
     expect(rows[0]?.textContent).toContain("Conversation");
     expect(rows[0]?.textContent).toContain("3 orders are sorted, take a look");

@@ -9,6 +9,7 @@ import {
   type WhereaboutsStore,
 } from "./account/whereabouts";
 import { createDayRoutes, type DayReader } from "./agents/day";
+import { createMadeRoutes, type MadeReader } from "./agents/made";
 import { createFirstTaskRoutes } from "./agents/first-task";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
@@ -433,6 +434,13 @@ export function createApp(
   turnRoutes?: (
     requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   ) => Hono<{ Variables: AppVariables }>,
+  /**
+   * 만든 것: what a Bot made, read out of its conversation (agents/made.ts). Last, like everything new.
+   *
+   * Absent leaves `GET /api/agents/:agentId/made` unmounted — a 404 the page says it could not read,
+   * rather than an empty shelf that reads as a Bot that made nothing.
+   */
+  readMade?: MadeReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1007,6 +1015,17 @@ export function createApp(
   }
 
   if (agentProfileStore) {
+    if (readMade) {
+      app.route(
+        "/api/agents",
+        createMadeRoutes(
+          async (actor, agentId) =>
+            (await agentProfileStore.get(actor, agentId)) !== null,
+          requireUser,
+          readMade,
+        ),
+      );
+    }
     if (readDay) {
       app.route(
         "/api/agents",

@@ -117,6 +117,7 @@ const PATHS = [
   "/",
   "/feed",
   "/ideas",
+  "/made",
   "/menu",
   "/routines",
   "/notebook",
@@ -168,10 +169,10 @@ async function bar(path: string, options: Parameters<typeof server>[0] = {}) {
 
 describe("the phone's bar", () => {
   /*
-   * FOUR SINCE PHASE 5: 아이디어 came with its page, third, where the plan puts it (§4). The
-   * bar gains a tab only with the page behind it.
+   * FOUR SINCE PHASE 5: 아이디어 came with its page, third, where the plan puts it (§4). FIVE SINCE
+   * PHASE 6, with 만든 것 before 메뉴. The bar gains a tab only with the page behind it.
    */
-  test("four labelled tabs, to the conversation, 소식, 아이디어 and 메뉴", async () => {
+  test("five labelled tabs, to the conversation, 소식, 아이디어, 만든 것 and 메뉴", async () => {
     const view = await bar("/channel/ch-1");
     expect(
       view.tabs().map((tab) => [tab.textContent, tab.getAttribute("href")]),
@@ -179,12 +180,14 @@ describe("the phone's bar", () => {
       ["Conversation", "/"],
       ["Updates", "/feed"],
       ["Ideas", "/ideas"],
+      ["Made", "/made"],
       ["Menu", "/menu"],
     ]);
-    expect(view.nav()?.querySelector("ul")?.className).toContain("grid-cols-4");
+    expect(view.nav()?.querySelector("ul")?.className).toContain("grid-cols-5");
     expect(ko.Conversation).toBe("대화");
     expect(ko.Updates).toBe("소식");
     expect(ko.Ideas).toBe("아이디어");
+    expect(ko.Made).toBe("만든 것");
     expect(ko.Menu).toBe("메뉴");
     expect(ko.Places).toBe("이동");
   });
@@ -246,12 +249,14 @@ describe("the phone's bar", () => {
     Reflect.deleteProperty(window, "visualViewport");
   });
 
-  test("the tab that is the page says so: the conversation, 소식, 아이디어, and 메뉴 for every place under it", async () => {
+  test("the tab that is the page says so: the conversation, 소식, 아이디어, 만든 것, and 메뉴 for every place under it", async () => {
     expect((await bar("/channel/ch-1")).current()).toEqual(["Conversation"]);
     await unmountAll();
     expect((await bar("/feed")).current()).toEqual(["Updates"]);
     await unmountAll();
     expect((await bar("/ideas")).current()).toEqual(["Ideas"]);
+    await unmountAll();
+    expect((await bar("/made")).current()).toEqual(["Made"]);
     await unmountAll();
     for (const path of ["/menu", "/routines", "/notebook", "/skills"]) {
       expect((await bar(path)).current()).toEqual(["Menu"]);

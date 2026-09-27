@@ -3069,4 +3069,28 @@ export const ko: Record<string, string> = {
     "다정한 것부터 격식 있는 것까지 세 가지",
   "Write a message for this occasion in three tones: ":
     "이 상황에 맞는 메시지를 세 가지 말투로 써 줘: ",
+  Made: "만든 것",
+  "The tables, checklists and notices your Bot made for you. Press one to see it in the conversation.":
+    "봇이 만들어 드린 표, 체크리스트, 안내문이에요. 누르면 대화에서 그 자리를 보여 드려요.",
+  Show: "보기",
+  "What your Bot made could not be read.": "봇이 만든 것을 불러오지 못했어요.",
+  "This deployment does not keep what the Bot made.":
+    "이 배포에서는 봇이 만든 것을 볼 수 없어요.",
+  "Nothing here yet.": "아직 여기엔 없어요.",
+  "Nothing made yet. Ask for a table or a notice in the conversation.":
+    "아직 만든 게 없어요. 대화에서 표나 안내문을 부탁해 보세요.",
+  "Show older": "이전 것 더 보기",
+  "Make something": "새로 만들기",
+  All: "전체",
+  "Tables and charts": "표·차트",
+  Checklists: "체크리스트",
+  Writing: "글",
+  Table: "표",
+  Introduction: "소개 글",
+  "Make this into a table: ": "표로 만들어 줘: ",
+  "Make a checklist for this: ": "체크리스트로 만들어 줘: ",
+  "Write a notice for this: ": "안내문 써 줘: ",
+  "Write an introduction for this: ": "소개 글 써 줘: ",
+  "Make this for me: ": "만들어 줘: ",
+  "That Bot is not yours to see.": "볼 수 없는 봇이에요.",
 };

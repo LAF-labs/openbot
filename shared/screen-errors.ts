@@ -93,6 +93,7 @@ export const SCREEN_ROUTES = [
   "/ideas",
   "/legal/privacy",
   "/legal/terms",
+  "/made",
   "/menu",
   "/no-access",
   "/notebook",

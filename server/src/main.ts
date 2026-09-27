@@ -10,6 +10,7 @@ import {
   createWhereaboutsStore,
 } from "./account/whereabouts";
 import { createDayReader } from "./agents/day";
+import { createMadeReader } from "./agents/made";
 import { withGrantedSkills } from "./agents/granted-skills";
 import { createDream } from "./agents/dream";
 import { createGuidanceStore } from "./agents/guidance-store";
@@ -1079,6 +1080,8 @@ const app = createApp(
           requireUser,
         })
     : undefined,
+  // 만든 것: the cards and tables a Bot made, read out of its conversation.
+  createMadeReader({ database }),
 );
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

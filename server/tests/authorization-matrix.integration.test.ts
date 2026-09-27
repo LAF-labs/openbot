@@ -46,6 +46,7 @@ import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { createAccountDeletion } from "../src/account/deletion";
+import { createMadeReader } from "../src/agents/made";
 import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
@@ -366,6 +367,17 @@ function deployment() {
     },
     (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
     admission,
+    // dailyBudget … turnRoutes: not what this matrix is about, and absent leaves them unmounted.
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    // 만든 것: mounted, so its one door is pressed by every person below.
+    createMadeReader({ database }),
   );
   return { app, routineService, approvals };
 }
@@ -822,6 +834,7 @@ const A_ALLOWED = [
   // The routine's notepad: read and cleared by its person, never written over HTTP.
   "DELETE /api/routines/:id/notepad",
   "GET /api/agents/:agentId",
+  "GET /api/agents/:agentId/made",
   "GET /api/agents/:agentId/memories",
   // What they told their Bot it need not ask about, on its profile (ux-review-0.5.4 §1.7). Theirs,
   // whatever their role; the administrator is not the owner here and gets the 404.
@@ -895,6 +908,8 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   // The roster and what hangs off a profile.
   "DELETE /api/agents/:agentId",
   "GET /api/agents/:agentId",
+  // What A's Bot made, read out of A's conversation with it.
+  "GET /api/agents/:agentId/made",
   "GET /api/agents/:agentId/memories",
   // What A told A's Bot it need not ask about: A's profile, not the operator's boundary page.
   "GET /api/agents/:botId/allowances",

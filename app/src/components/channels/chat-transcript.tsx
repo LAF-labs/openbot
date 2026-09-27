@@ -573,8 +573,33 @@ function JumpToRow({
     settleJump(jump);
     const row = target.closest<HTMLElement>("[data-message-id]");
     const id = row?.dataset.messageId;
-    if (!id || !scrollToMessage(id, { align: "center", behavior: "smooth" })) {
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    /*
+     * A ROW TALLER THAN THE WINDOW IS SHOWN FROM ITS TOP: centred, a long answer with a table in it
+     * showed its middle paragraph and neither its start nor the table (만든 것, phase 6).
+     */
+    const show = () => {
+      const tall = (row?.offsetHeight ?? 0) > window.innerHeight * 0.7;
+      const align = tall ? "start" : "center";
+      if (!id || !scrollToMessage(id, { align, behavior: "auto" })) {
+        target.scrollIntoView({ block: align, behavior: "auto" });
+      }
+    };
+    show();
+    /*
+     * AND AGAIN, IF THE CONVERSATION'S OWN SETTLING TOOK IT AWAY. Pressed from another screen, the
+     * jump lands while the transcript is still placing itself at its newest message, and that
+     * placement came two milliseconds later and won: measured from 오늘 and from 만든 것 on a
+     * production build, the row was marked and stayed 5,000 px above the window. Asked again only
+     * while the row's top is out of sight, within the first second.
+     */
+    const outOfSight = () => {
+      const box = row?.getBoundingClientRect();
+      return !box || box.top < 0 || box.top > window.innerHeight;
+    };
+    for (const delay of [150, 600]) {
+      setTimeout(() => {
+        if (row?.isConnected && outOfSight()) show();
+      }, delay);
     }
     if (jump.waitingCard) {
       target
@@ -1542,6 +1567,17 @@ export function ChatTranscript({
     // Drawn above the window once it arrives: the pin keeps the rows on screen where they were.
     if (older?.has && !older.loading) older.onLoad();
   };
+  /*
+   * A JUMP TO A ROW OLDER THAN WHAT HAS ARRIVED asks for the page above, and again, until the row is
+   * here or there is nothing older. 오늘 only ever named today's rows, which the newest page holds;
+   * 만든 것 names a card from last month, and a jump left waiting for a row that no page asked for
+   * was a press that opened the conversation at its bottom (phase 6).
+   */
+  const isJumpMissing =
+    jumpId !== null && !items.some((item) => item.id === jumpId);
+  useEffect(() => {
+    if (isJumpMissing && older?.has && !older.loading) older.onLoad();
+  }, [isJumpMissing, older]);
   /*
    * Scrolled near the top, the next page is drawn above. The scroller keeps what was on screen where
    * it was (`preserveScrollOnPrepend`, which is why nothing but rows may be the first child of its

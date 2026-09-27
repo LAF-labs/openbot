@@ -666,14 +666,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` (the catalogue's Korean, keys, categories and leads, its connections, a routine's time, the
  * seven categories; the same set in every order, each persona first, ready before connect; why a
  * card is there and its words; the compose screen taking `draft`).
+ * RAISED 2026-09-27 with 만든 것 (phase 6): seven to `server` (the cards that reached the screen and
+ * the written table, newest first; refused, thrown, unanswered and question cards left out; a
+ * shelf; nobody else's; the pages walking back; the door's refusals) and nine to `app` (every
+ * gallery card filed; the shelves' cards; a table's title four ways; the page's words, shelves,
+ * kinds and stems).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3067, roots: ["server"] },
-  { name: "app", floor: 1511, roots: ["app"] },
+  { name: "server", floor: 3074, roots: ["server"] },
+  { name: "app", floor: 1520, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 552, roots: ["tests", "agent-bot"] },
 ] as const;
