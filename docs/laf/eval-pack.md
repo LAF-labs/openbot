@@ -943,15 +943,25 @@ relative day right (24/24). On the weather page it wrote 모레 beside 9/30 or �
 | week line + the shipped rule (dates first) | 20 + 3 | 0 |
 
 The batch-to-batch spread is wide (an old-prompt batch of 20 had none), so 0 of 23 is the direction,
-not a proof. **DeepSeek V4.1 Flash, n = 3, shipped prompt and skill:** the five direct relative days
-15/15, the weather page 3/3, 최저임금 3/3 (every answer 10,987원 with 2026년 and the link; run on the
-draft before the payroll bound, which does not touch it), and 직원 월급 **3/3** (~230 s and ~121K
-tokens a run) — after a batch of 1/3 on the same text whose other two runs ended in agent-bot's
-`laf:model_failed` / `reply_unusable` at the answer round, 62–68 s into it, on Alibaba: the provider,
-not a judged answer. Earlier drafts of the skill are why the round limit is 16 and why the skill bounds the
-payroll question to three pages: at 10 rounds all three runs ran out before answering, and with the
-drafts' "계산은 식으로" a Bot hunted the 지방소득세 rate through 지방세법 and search until the rounds ran
-out, twice in three.
+not a proof. **DeepSeek V4.1 Flash, n = 3, the shipped prompt:** the five direct relative days 15/15,
+the weather page 3/3. Which skill text each skill verdict was about — the committed file has one more
+sentence than any of them ("식을 줄이지 말고 그대로 옮긴다"), which no eval and no walk ran against:
+최저임금 **3/3** (every answer 10,987원 with 2026년 and the link) on the draft before the payroll bound
+as well; 직원 월급 **3/3** (~230 s and ~121K tokens a run) on the draft with the bound — after a batch
+of 1/3 on that same draft whose other two runs ended in agent-bot's `laf:model_failed` /
+`reply_unusable` at the answer round, 62–68 s into it, on Alibaba: the provider, not a judged answer.
+Earlier drafts are why the round limit is 16 and why the skill bounds the payroll question to three
+pages: at 10 rounds all three runs ran out before answering, and with "계산은 식으로" a Bot hunted the
+지방소득세 rate through 지방세법 and search until the rounds ran out, twice in three.
+
+**The rest of the pack's date scenarios on the new prompt** (n = 3): `date-arithmetic-in-korean` (the
+owner's own date, "다음 주 화요일" → 9/1), `todays-orders-without-a-date`, `todays-weekday`,
+`this-weeks-friday`, `routine-at-seven-thirty-on-the-owners-clock` and `morning-briefing-tuesday` all
+3/3. `new-day-by-reminder` 2/3 — the miss was "9/27(일)입니다.", right, in the format the new sentence
+asks for; its judge read only "9월 27일" and "2026-09-27" and now reads "9/27" too (then 3/3).
+`morning-briefing-monday` 10/12 on the new prompt against 6/6 on the old: the two misses said too much
+(named the notices it had left out; "일정과 메일은 … 확인하지 못했어요"), nothing about a date, and the
+last batch of six was 6/6 — noise as far as twelve runs can tell.
 
 **On the real stack** (fresh account and database, `deepseek/deepseek-v4.1-flash`, every round on
 Alibaba): the four questions were answered from the pages the Bot opened — 4대보험 from 4insure's

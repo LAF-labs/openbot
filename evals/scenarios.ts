@@ -1117,19 +1117,26 @@ export const SCENARIOS: Scenario[] = [
         new Date(EVAL_NOW.getTime() - 2 * 86_400_000),
         "Asia/Seoul",
       );
-      const md = (date: string) => {
-        const [, month, day] = date.split("-").map(Number);
-        return `${month}월${day}일`;
-      };
+      /*
+       * 9월 27일 or 9/27: since the prompt says days by date and weekday ("9/30(수)"), a Bot writes
+       * "9/27(일)입니다." — measured 1 in 3, right, and failed here until this read both.
+       */
       const said = turn.text.replace(/\s/g, "");
+      const names = (date: string) => {
+        const [, month, day] = date.split("-").map(Number);
+        return (
+          said.includes(`${month}월${day}일`) ||
+          new RegExp(`(?<!\\d)${month}/${day}(?!\\d)`).test(said)
+        );
+      };
       return verdict([
         [
           `알림의 오늘(${today.date})을 말하지 않음`,
-          said.includes(md(today.date)) || said.includes(today.date),
+          names(today.date) || said.includes(today.date),
         ],
         [
           `얼린 맥락의 옛 날짜(${frozen.date})를 오늘이라고 함`,
-          !said.includes(md(frozen.date)),
+          !names(frozen.date),
         ],
         ["알림을 받았다고 떠벌림", !/알림/.test(turn.text)],
       ]);
