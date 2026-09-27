@@ -339,6 +339,20 @@ export const MOVING_COLUMNS: Record<string, string> = {
     "the tenant package inside the new image, re-recorded at boot",
 };
 
+/**
+ * Rows the package owns, not anybody's data: the skills a package ships (`origin = 'built_in'`,
+ * `server/src/plugins/built-in-skills.ts`). A booting server rewrites them from the image's
+ * package skill files and removes one whose `requires:` tool the deployment does not offer, so a
+ * release that edits a skill's text — or a run with no data.go.kr key, which withholds 지원사업 —
+ * changes or drops them by design. Measured 2026-09-27, stable (v0.5.9) → edge: "public.skills: 1
+ * of 4 rows gone, 1 row's instructions changed", both package rows. They are reported, never a
+ * failure; a skill somebody wrote (`yours`) or installed (`catalogue`) is still watched.
+ */
+export function isPackageRow(table: string, row: Row): boolean {
+  const bare = table.split(".").at(-1) ?? table;
+  return bare === "skills" && row.origin === "built_in";
+}
+
 export function isMoving(table: string, column: string): boolean {
   const bare = table.split(".").at(-1) ?? table;
   return (
@@ -450,6 +464,11 @@ export function compareSnapshots(
     for (const row of was.rows) {
       const candidates = remaining.get(keyOf(row));
       const match = candidates?.shift();
+      if (isPackageRow(name, row)) {
+        const tally = !match ? "package row rewritten away" : "package row";
+        moved[tally] = (moved[tally] ?? 0) + 1;
+        continue;
+      }
       if (!match) {
         lost += 1;
         continue;
@@ -496,7 +515,10 @@ export function compareSnapshots(
         (column) => !now.columns.includes(column),
       ),
       newColumns: now.columns.filter((column) => !was.columns.includes(column)),
-      hashBefore: hashRows(was.rows, compared),
+      hashBefore: hashRows(
+        was.rows.filter((row) => !isPackageRow(name, row)),
+        compared,
+      ),
       hashAfter: hashRows(matched, compared),
     });
   }

@@ -756,3 +756,44 @@ describe("the chat turn through the front door", () => {
     }
   });
 });
+
+describe("rows the package owns", () => {
+  const skills = (rows: Record<string, unknown>[]) => ({
+    "public.skills": {
+      name: "public.skills",
+      columns: ["id", "slug", "instructions", "origin"],
+      primaryKey: ["id"],
+      rows,
+    },
+  });
+
+  test("a shipped skill rewritten or withheld at boot is reported, not a failure", () => {
+    const before = skills([
+      { id: "a", slug: "지원사업", instructions: "old", origin: "built_in" },
+      { id: "b", slug: "아침브리핑", instructions: "old", origin: "built_in" },
+      { id: "c", slug: "mine", instructions: "keep", origin: "yours" },
+    ]);
+    const after = skills([
+      { id: "b", slug: "아침브리핑", instructions: "new", origin: "built_in" },
+      { id: "c", slug: "mine", instructions: "keep", origin: "yours" },
+    ]);
+    const verdict = compareSnapshots(before, after);
+    expect(verdict.failures).toEqual([]);
+    expect(verdict.tables[0]?.moved).toEqual({
+      "package row rewritten away": 1,
+      "package row": 1,
+    });
+  });
+
+  test("a skill somebody wrote is still watched", () => {
+    const before = skills([
+      { id: "c", slug: "mine", instructions: "keep", origin: "yours" },
+    ]);
+    const after = skills([
+      { id: "c", slug: "mine", instructions: "changed", origin: "yours" },
+    ]);
+    expect(compareSnapshots(before, after).failures).toEqual([
+      "public.skills.instructions: 1 row(s) that existed before now hold something else.",
+    ]);
+  });
+});

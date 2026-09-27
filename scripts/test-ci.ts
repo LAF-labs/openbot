@@ -679,6 +679,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * person; likes and hides carried to the next run; a quote read again by its id; unseen posts
  * pausing it) and eight to `app` (the topics, refusals and instruction; why a post is here; the
  * quote's part and its chip in the transcript; the chip making briefing and 소식 in one press).
+ * RAISED 2026-09-27: two to `root` (the upgrade e2e reports a package's own skill rows, rewritten or
+ * withheld at boot, instead of failing on them, and still watches a skill somebody wrote).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -688,7 +690,7 @@ const GROUPS = [
   { name: "server", floor: 3090, roots: ["server"] },
   { name: "app", floor: 1528, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 552, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 554, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
