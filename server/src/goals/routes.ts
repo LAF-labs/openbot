@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { isGoalStatus } from "../../../shared/goals";
 import type { AppVariables } from "../auth/guards";
-import { GoalNotFound, type GoalStore } from "./store";
+import { GoalNotFound, GoalsFull, type GoalStore } from "./store";
 
 /**
  * 목표's doors (muse-shape plan §3.4, phase 9), every one the person's own, behind their session:
@@ -64,6 +64,9 @@ export function createGoalRoutes(
       );
     } catch (error) {
       if (error instanceof GoalNotFound) return context.json(notFound, 404);
+      if (error instanceof GoalsFull) {
+        return context.json({ error: error.code, code: error.code }, 409);
+      }
       throw error;
     }
   });

@@ -221,11 +221,39 @@ export function createGoalStore(input: {
       id: string,
       status: GoalStatus,
     ): Promise<GoalView> {
-      const [row] = await database
-        .update(lafGoals)
-        .set({ status, updatedAt: now() })
-        .where(and(eq(lafGoals.id, id), eq(lafGoals.userId, userId)))
-        .returning();
+      /*
+       * 다시 진행 counts like a new goal (2026-09-27 code sprint): it used to skip the cap `create`
+       * holds, so a finished goal pressed back to active could take a person past
+       * GOALS_ACTIVE_MAX. The same lock as `create`, so a save and a resume racing cannot both pass.
+       */
+      const row = await database.transaction(async (transaction) => {
+        await transaction.execute(
+          sql`select pg_advisory_xact_lock(hashtext(${`laf_goals:${userId}`}))`,
+        );
+        if (status === "active") {
+          const [current] = await transaction
+            .select({ status: lafGoals.status })
+            .from(lafGoals)
+            .where(and(eq(lafGoals.id, id), eq(lafGoals.userId, userId)));
+          if (current && current.status !== "active") {
+            const [active] = await transaction
+              .select({ n: count() })
+              .from(lafGoals)
+              .where(
+                and(eq(lafGoals.userId, userId), eq(lafGoals.status, "active")),
+              );
+            if (Number(active?.n ?? 0) >= GOALS_ACTIVE_MAX) {
+              throw new GoalsFull();
+            }
+          }
+        }
+        const [written] = await transaction
+          .update(lafGoals)
+          .set({ status, updatedAt: now() })
+          .where(and(eq(lafGoals.id, id), eq(lafGoals.userId, userId)))
+          .returning();
+        return written;
+      });
       if (!row) throw new GoalNotFound();
       return oneView(row);
     },

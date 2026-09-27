@@ -468,6 +468,25 @@ describe("the export", () => {
     };
     expect(document.routines[0]?.dailyDays).toEqual([1, 3, 5]);
   });
+
+  test("a routine leaves with where it posts and the goal it checks", async () => {
+    // Migrations 0059 and 0060 added both, and the export's column list was not told (2026-09-27).
+    await database
+      .update(lafRoutines)
+      .set({ delivery: "feed" })
+      .where(eq(lafRoutines.id, leaver.routineId));
+    const document = JSON.parse(
+      await new Response(
+        createAccountExport(database).stream(leaver.id),
+      ).text(),
+    ) as { routines: Array<{ delivery?: unknown; goalId?: unknown }> };
+    expect(document.routines[0]?.delivery).toBe("feed");
+    expect(document.routines[0]).toHaveProperty("goalId");
+    await database
+      .update(lafRoutines)
+      .set({ delivery: "chat" })
+      .where(eq(lafRoutines.id, leaver.routineId));
+  });
 });
 
 describe("deletion", () => {

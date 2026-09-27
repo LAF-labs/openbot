@@ -109,13 +109,39 @@ export function createThreadStore(
     });
   };
 
+  /**
+   * The newest page laid over what is held, by id, and the live turn over that: a window that
+   * resumed past the frames the server still keeps is sent a snapshot, not what it missed.
+   *
+   * SAME PROCESS, FRAMES GONE (2026-09-27 code sprint). Only a restart used to re-read the page, so
+   * a window that went quiet mid-answer (a phone in a pocket) and came back after the turn's frames
+   * were swept kept the half it had streamed — under a turn the snapshot said was done. The stored
+   * message replaces the half by id; nothing held is dropped.
+   */
+  const catchUp = async (going: readonly Message[]) => {
+    const page = await deps.readHistory(threadId, null);
+    if (!page) return;
+    remember(page);
+    set({
+      ...state,
+      messages: mergeMessages(
+        mergeMessages(state.messages, page.messages),
+        going,
+      ),
+      times: { ...state.times, ...page.times },
+    });
+  };
+
   const onFrame = (frame: TurnFrame) => {
     const restarted =
       frame.kind === "snapshot" &&
       state.epoch !== null &&
       frame.epoch !== state.epoch;
+    const resumed =
+      frame.kind === "snapshot" && !restarted && state.loaded && state.seq > 0;
     set({ ...state, ...applyFrame(state, frame) });
     if (restarted && frame.kind === "snapshot") void resync(frame.messages);
+    else if (resumed && frame.kind === "snapshot") void catchUp(frame.messages);
     for (const listener of frameListeners) listener(frame);
   };
 

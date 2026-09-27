@@ -693,16 +693,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * unlinked), eight to `app` (momentum, status and refusal words; the seven categories' icons; the
  * sentence the sheet sends; a number to watch; the tools' step lines; a send taken once, never
  * from the address) and one to `root` (the offered list the same bytes with or without them).
+ * RAISED 2026-09-27 by the code sprint's fixes: twelve to `server` (소식 sources only from what a
+ * page or a service said; a goal's yes read from the card's headline; 다시 진행 under the cap; the
+ * export's routine columns; unknown field codes refused; a yes not carried out after 멈춤), two to
+ * `app` (a resumed snapshot brings the stored answer over a streamed half) and two to `root` (a cut
+ * conversation's retry starts further down the provider order).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3099, roots: ["server"] },
-  { name: "app", floor: 1536, roots: ["app"] },
+  { name: "server", floor: 3111, roots: ["server"] },
+  { name: "app", floor: 1538, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 563, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 565, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

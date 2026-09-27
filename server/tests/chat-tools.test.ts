@@ -331,6 +331,49 @@ describe("a wait on a person while the Bot is let go of", () => {
     expect(clicks).toBe(1);
   });
 
+  test("a yes followed by 멈춤 while the Bot was taken back is not carried out (2026-09-27 code sprint)", async () => {
+    const approvals = createApprovalRegistry();
+    const question = await approvals.request({
+      botId: "bot-1",
+      actor: owner.id,
+      rule: "ask",
+      subject: A_CLICK,
+      fingerprint: "f-stopped",
+      target: { type: "computer", id: "bot-1" },
+    });
+    let clicks = 0;
+    const gateway = {
+      click: async () => {
+        clicks += 1;
+        throw new ActionNeedsApprovalError(question);
+      },
+    } as unknown as ComputerGateway;
+    const stop = new AbortController();
+    // The wait ends with a yes, and the stop wins the race for the lane before the Bot is back.
+    const stoppedOnTheWayBack = {
+      ...context,
+      awaitPerson: async <T>(wait: () => Promise<T>) => {
+        const value = await wait();
+        stop.abort();
+        return { value, moved: false };
+      },
+    };
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+    })(stoppedOnTheWayBack, [tool("computer_click")]);
+    const pending = toolkit.execute(
+      "computer_click",
+      { ref: "e1", snapshotId: 1 },
+      { id: "call-stop", signal: stop.signal },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await approvals.answer(question.id, "bot-1", owner.id, true);
+    expect(await pending).toMatchObject({ ok: false, code: "laf:stopped" });
+    expect(clicks).toBe(1);
+  });
+
   test("an address is not the page: a navigation the person allowed still goes", async () => {
     const approvals = createApprovalRegistry();
     const question = await approvals.request({

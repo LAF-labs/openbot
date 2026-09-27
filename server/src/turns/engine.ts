@@ -622,6 +622,16 @@ export function createTurnEngine(options: TurnEngineOptions) {
 
       const turnId = randomUUID();
       let free: () => void = () => {};
+      /*
+       * ENDED WHEN IT HAS ENDED, FROM THE MOMENT IT IS LISTED (2026-09-27 code sprint). `ended` used to
+       * be an already-resolved promise until the run was started, two awaits later — so `stopFor`
+       * (an account's deletion) aborted a turn still writing its first rows and went straight on,
+       * and those rows landed in a thread being deleted.
+       */
+      let finished: () => void = () => {};
+      const ended = new Promise<void>((resolve) => {
+        finished = resolve;
+      });
       const turn: LiveTurn = {
         id: turnId,
         threadId: input.threadId,
@@ -633,7 +643,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         asked: input.messages.map((message) => message.id),
         stop: new AbortController(),
         free: () => free(),
-        ended: Promise.resolve(),
+        ended,
       };
       // Re-checked after every await below: a second send can arrive while this one is writing.
       if (live.has(input.threadId)) {
@@ -657,11 +667,34 @@ export function createTurnEngine(options: TurnEngineOptions) {
         });
       } catch (error) {
         live.delete(input.threadId);
+        finished();
+        /*
+         * The row `begin` wrote is settled, not left `running` until the next boot calls it
+         * unknown (2026-09-27 code sprint). A failed settle is only logged: the send has already
+         * failed, and the error the caller sees is the one that did it.
+         */
+        await options.ledger
+          .settle(turnId, {
+            status: "error",
+            error: "laf:turn_failed",
+            eventCount: 0,
+          })
+          .catch((settling: unknown) => {
+            log.warn("turn_setup_not_settled", {
+              thread: input.threadId,
+              reason: describeFailure(settling),
+            });
+          });
         throw error;
       }
       const asked = input.messages;
-      options.hub.watchLive(input.threadId, () => [...asked]);
+      /*
+       * The turn first, then what it holds (2026-09-27 code sprint). `announceTurn` names a new turn
+       * id, and the hub starts a new turn by clearing what it was watching — so watching first and
+       * announcing after handed a window that joined while this turn was queued an empty snapshot.
+       */
       announceTurn(turn, "queued");
+      options.hub.watchLive(input.threadId, () => [...asked]);
       /*
        * WHAT WAS ASKED, TO EVERY WINDOW, BEFORE ANY OF THE ANSWER. A window other than the sender's
        * has only the turn's frames to go by; without these it met the question for the first time in
@@ -685,11 +718,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
         done?.();
         if (live.get(input.threadId) === turn) live.delete(input.threadId);
       };
-      turn.ended = run(turn, input)
+      void run(turn, input)
         .catch((error: unknown) => {
           log.error("turn_crashed", { reason: describeFailure(error) });
         })
-        .finally(() => turn.free());
+        .finally(() => {
+          turn.free();
+          finished();
+        });
       return { ok: true, turnId };
     },
 

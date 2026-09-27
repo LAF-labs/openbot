@@ -176,11 +176,20 @@ const PROGRAM_FIELDS = new Set([
  * would otherwise come back as "nothing matched".
  */
 function fieldsOf(raw: string | null): string | null {
-  const codes = (raw ?? "")
+  const given = (raw ?? "")
     .split(",")
     .map((code) => code.trim())
-    .filter((code) => PROGRAM_FIELDS.has(code));
-  return codes.length > 0 ? [...new Set(codes)].join(",") : null;
+    .filter(Boolean);
+  /*
+   * REFUSED, NOT DROPPED (2026-09-27 code sprint). An unknown code used to be dropped, and when every
+   * code was unknown the search ran with no field at all — the whole listing, answered as though it
+   * were the field the Bot asked for. Now the Bot is told which codes exist and asks again.
+   */
+  const unknown = given.filter((code) => !PROGRAM_FIELDS.has(code));
+  if (unknown.length > 0) {
+    return refuseWith("laf:public_data_bad_field", unknown.join(","));
+  }
+  return given.length > 0 ? [...new Set(given)].join(",") : null;
 }
 
 /** A refusal a Bot reads as Korean, with the vendor's own words kept for the trail. */

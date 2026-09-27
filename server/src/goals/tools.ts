@@ -62,34 +62,47 @@ export type GoalApprovals = {
   spend(title: string): boolean;
 };
 
-/** The words a card put in front of the person: its title, its summary and every detail. */
-function cardWords(card: Record<string, unknown>): string {
-  const details = Array.isArray(card.details)
-    ? card.details.map((detail) =>
-        detail && typeof detail === "object"
-          ? `${String((detail as { label?: unknown }).label ?? "")} ${String((detail as { value?: unknown }).value ?? "")}`
-          : "",
-      )
-    : [];
-  return goalWords(
-    [card.title, card.summary, ...details]
-      .map((part) => (typeof part === "string" ? part : ""))
-      .join(" "),
+/**
+ * THE CARD'S HEADLINE, NOT ANY WORD ON IT (2026-09-27 code sprint). A yes used to be matched by the
+ * goal's title appearing anywhere in the card — title, summary, every detail — so a short title
+ * ("운동") was covered by a yes to any card that mentioned it ("운동화 결제"). A yes now counts for
+ * the goal named by the card's title or its summary — the two lines a person reads as what they are
+ * agreeing to (the skill puts the goal's title in the title; a model may ask "이 목표로 할까요?" and
+ * put it in the summary) — and only when the goal's words are that line, or most of it ("목표: 토익
+ * 800점 넘기기" for "토익 800점 넘기기"). Details never carry a yes.
+ */
+const MOST_OF_THE_CARD = 0.6;
+
+function matchesCard(cardTitle: string, wanted: string): boolean {
+  if (!cardTitle || !wanted) return false;
+  if (cardTitle === wanted) return true;
+  return (
+    cardTitle.includes(wanted) &&
+    wanted.length >= cardTitle.length * MOST_OF_THE_CARD
   );
 }
 
 export function goalApprovals(): GoalApprovals {
-  const yeses: { words: string; spent: boolean }[] = [];
+  const yeses: { lines: string[]; spent: boolean }[] = [];
+  const line = (value: unknown) =>
+    typeof value === "string" ? goalWords(value) : "";
   return {
     approved(card) {
-      yeses.push({ words: cardWords(card), spent: false });
+      yeses.push({
+        lines: [line(card.title), line(card.summary)],
+        spent: false,
+      });
     },
     spend(title) {
       const wanted = goalWords(title);
       if (!wanted) return false;
       for (let index = yeses.length - 1; index >= 0; index -= 1) {
         const yes = yeses[index];
-        if (yes && !yes.spent && yes.words.includes(wanted)) {
+        if (
+          yes &&
+          !yes.spent &&
+          yes.lines.some((shown) => matchesCard(shown, wanted))
+        ) {
           yes.spent = true;
           return true;
         }

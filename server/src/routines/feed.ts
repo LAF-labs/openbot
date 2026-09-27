@@ -95,6 +95,44 @@ export async function recentPostKeys(
   return { titles, sources };
 }
 
+/**
+ * Whether a tool's result is something the outside world said, and so may name a source.
+ *
+ * NOT EVERY RESULT (2026-09-27 code sprint). Every result used to be read for addresses, and some
+ * results echo what the Bot itself sent: `routine_note`'s refusal names the key it was given, so
+ * `delete` with a made-up article address as the key made that address "seen";
+ * `computer_write_file` then `computer_read_file` did the same through the workspace. So the
+ * browser counts only through the tools that read a page, the Bot's own tools never count, and a
+ * connected service's answer (a portal search, a partner's lookup) counts as what that service said.
+ * A place anything else names must be opened with `computer_navigate` before it is cited.
+ */
+const PAGE_READERS: ReadonlySet<string> = new Set([
+  "computer_navigate",
+  "computer_click",
+  "computer_snapshot",
+  "computer_read",
+  "computer_scroll",
+  "computer_switch_tab",
+]);
+
+/** The Bot's own tools: what they hand back is what the Bot wrote or what this deployment keeps. */
+const OWN_TOOLS: ReadonlySet<string> = new Set([
+  "routine_note",
+  "skill_view",
+  "now",
+  "remember",
+  "update_profile",
+  "manage_routine",
+  "tool_search",
+  FEED_POST.name,
+]);
+
+export function countsAsSource(name: string): boolean {
+  if (name.startsWith("computer_")) return PAGE_READERS.has(name);
+  if (name.startsWith("mcp__goals__")) return false;
+  return !OWN_TOOLS.has(name);
+}
+
 const text = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
@@ -133,6 +171,8 @@ export function feedDraftOf(input: {
             : true;
         if (ok) remember(args.url);
       }
+      // Only what a page said. A tool that hands back what the Bot itself wrote is no evidence.
+      if (!countsAsSource(name)) return;
       const written =
         typeof outcome === "string" ? outcome : JSON.stringify(outcome ?? "");
       for (const url of urlsIn(written)) remember(url);

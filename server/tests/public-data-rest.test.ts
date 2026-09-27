@@ -490,21 +490,28 @@ describe("search_support_programs", () => {
     expect(properties.field?.description).toContain("둘 다 맞는 것만");
   });
 
-  test("several fields travel as one filter; a code the portal does not know is dropped", async () => {
+  test("several fields travel as one filter, repeats folded", async () => {
     const { transport, asked } = transportAnswering(() => programsAnswer([]));
 
     await transport.callTool(connection, "search_support_programs", {
       hashtags: "강원",
-      field: "05, 07,08,05",
-    });
-    await transport.callTool(connection, "search_support_programs", {
-      field: "금융",
+      field: "05, 07,05",
     });
 
-    const [several, none] = asked.map((call) => new URL(call.url));
-    // One call, not two: the boundary counts calls to one tool, and asks the owner at the fifth.
+    const [several] = asked.map((call) => new URL(call.url));
     expect(several?.searchParams.get("searchLclasId")).toBe("05,07");
-    expect(none?.searchParams.has("searchLclasId")).toBe(false);
+  });
+
+  test("a code the portal does not know is refused, not dropped into an unfiltered search", async () => {
+    // Dropping it used to send "금융" as no field at all — the whole listing, as if filtered.
+    const { transport, asked } = transportAnswering(() => programsAnswer([]));
+    for (const field of ["금융", "05,08"]) {
+      const refusal = await refusalOf(() =>
+        transport.callTool(connection, "search_support_programs", { field }),
+      );
+      expect(refusal.code).toBe("laf:public_data_bad_field");
+    }
+    expect(asked).toHaveLength(0);
   });
 
   test("a tool that does not exist is refused by name", async () => {

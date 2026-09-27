@@ -51,8 +51,33 @@ export type CompletionProvider = (
     signal?: AbortSignal;
     /** Per-request headers — the conversation's `x-session-id` (`./turn`). */
     headers?: Record<string, string>;
+    /** How many times this conversation was cut: the policy's order starts that many places later. */
+    cuts?: number;
   },
 ) => Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>>;
+
+/**
+ * The policy's order, started `cuts` places later.
+ *
+ * A NEW SESSION DID NOT MOVE A CUT CONVERSATION WHILE AN ORDER WAS SET (2026-09-27 code sprint).
+ * `noteCut` gives a cut conversation a new session so its endpoint is chosen afresh, but an `order`
+ * is tried first-to-last on every request whatever the session says — so with DeepSeek's measured
+ * order the retry after a cut went straight back to the endpoint first in line, the one most likely
+ * to have cut it. Each cut now starts the order one place further on; the endpoints it skips stay
+ * in the pool behind it, and a conversation that was never cut is routed exactly as before.
+ */
+export function afterCuts(
+  routing: ProviderRouting,
+  cuts: number,
+): ProviderRouting {
+  const order = routing.order ?? [];
+  if (cuts <= 0 || order.length < 2) return routing;
+  const start = cuts % order.length;
+  return {
+    ...routing,
+    order: [...order.slice(start), ...order.slice(0, start)],
+  };
+}
 
 /**
  * The seam, over a real client.
@@ -71,7 +96,9 @@ export function createProvider(
         ...request,
         stream: true,
         // A caller's own `provider` (the eval's pin) wins over the deployment's policy.
-        ...(routing && !("provider" in request) ? { provider: routing } : {}),
+        ...(routing && !("provider" in request)
+          ? { provider: afterCuts(routing, options?.cuts ?? 0) }
+          : {}),
       } as typeof request & { stream: true },
       {
         ...(options?.signal ? { signal: options.signal } : {}),

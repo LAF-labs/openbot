@@ -201,3 +201,54 @@ describe("the tool is where it was put, and nowhere else", () => {
     expect(inner.tools.map((tool) => tool.name)).not.toContain(FEED_POST.name);
   });
 });
+
+describe("only what a page said counts as a source (2026-09-27 code sprint)", () => {
+  const MADE_UP = "https://www.example-news.co.kr/article/made-up-1";
+
+  test("an address echoed back by routine_note's refusal is not a source", () => {
+    const run = draft();
+    run.observe(
+      "routine_note",
+      { action: "delete", key: MADE_UP },
+      { ok: false, code: "laf:notepad_no_such_key", key: MADE_UP },
+    );
+    expect(
+      run.apply(post({ sources: [{ title: "지어낸 기사", url: MADE_UP }] })),
+    ).toMatchObject({ ok: false, code: "laf:feed_source_unseen" });
+  });
+
+  test("a file the Bot wrote and read back is not a source", () => {
+    const run = draft();
+    run.observe(
+      "computer_write_file",
+      { path: "a.txt", content: MADE_UP },
+      {
+        ok: true,
+        path: "a.txt",
+      },
+    );
+    run.observe(
+      "computer_read_file",
+      { path: "a.txt" },
+      {
+        ok: true,
+        content: MADE_UP,
+      },
+    );
+    expect(
+      run.apply(post({ sources: [{ title: "지어낸 기사", url: MADE_UP }] })),
+    ).toMatchObject({ ok: false, code: "laf:feed_source_unseen" });
+  });
+
+  test("the same address read off a page is a source", () => {
+    const run = draft();
+    run.observe(
+      "computer_read",
+      {},
+      { ok: true, text: `기사 링크 ${MADE_UP}` },
+    );
+    expect(
+      run.apply(post({ sources: [{ title: "기사", url: MADE_UP }] })),
+    ).toMatchObject({ ok: true });
+  });
+});

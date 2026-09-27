@@ -262,3 +262,57 @@ describe("which endpoints may answer", () => {
     expect(typeof round?.firstChunkMs).toBe("number");
   });
 });
+
+describe("a cut conversation's retry starts further down the order (2026-09-27 code sprint)", () => {
+  test("each cut starts the measured order one place later, and nothing leaves the pool", async () => {
+    const { afterCuts } = await import("../src/provider");
+    const policy = {
+      order: ["alibaba", "parasail", "together", "makora"],
+      ignore: ["relace"],
+    };
+    expect(afterCuts(policy, 0)).toBe(policy);
+    expect(afterCuts(policy, 1).order).toEqual([
+      "parasail",
+      "together",
+      "makora",
+      "alibaba",
+    ]);
+    expect(afterCuts(policy, 5).order).toEqual(afterCuts(policy, 1).order);
+    expect(afterCuts(policy, 2).ignore).toEqual(["relace"]);
+    expect(afterCuts({ ignore: ["x"] }, 3)).toEqual({ ignore: ["x"] });
+  });
+
+  test("the request after a cut carries the moved order to the endpoint", async () => {
+    const { noteCut, providerSessionOf } = await import("../src/transcript");
+    const thread = `cut-order-${Math.random().toString(36).slice(2)}`;
+    expect(
+      providerSessionOf({ threadId: thread } as never)?.cuts,
+    ).toBeUndefined();
+    noteCut(thread);
+    expect(providerSessionOf({ threadId: thread } as never)?.cuts).toBe(1);
+
+    const { createProvider } = await import("../src/provider");
+    const bodies: unknown[] = [];
+    const client = {
+      chat: {
+        completions: {
+          create: async (body: unknown) => {
+            bodies.push(body);
+            return (async function* () {})();
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const provider = createProvider(client, {
+      order: ["alibaba", "parasail"],
+    });
+    await provider({ model: "m", messages: [] } as never, { cuts: 1 });
+    await provider({ model: "m", messages: [] } as never, {});
+    expect(
+      (bodies[0] as { provider: { order: string[] } }).provider.order,
+    ).toEqual(["parasail", "alibaba"]);
+    expect(
+      (bodies[1] as { provider: { order: string[] } }).provider.order,
+    ).toEqual(["alibaba", "parasail"]);
+  });
+});

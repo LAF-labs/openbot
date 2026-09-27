@@ -441,6 +441,10 @@ export function createAccountExport(database: Database): AccountExport {
         pausedReason: lafRoutines.pausedReason,
         pausedAt: lafRoutines.pausedAt,
         keepRunning: lafRoutines.keepRunning,
+        // Where it posts (소식 or the conversation) and the goal it checks: migrations 0059 and 0060
+        // added them and this list was not told (2026-09-27 code sprint).
+        delivery: lafRoutines.delivery,
+        goalId: lafRoutines.goalId,
         createdById: lafRoutines.createdById,
         nextRunAt: lafRoutines.nextRunAt,
         lastRunAt: lafRoutines.lastRunAt,

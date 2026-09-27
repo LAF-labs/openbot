@@ -122,6 +122,8 @@ export type ProviderSession = {
   id: string;
   /** Sent as `user`: a stable end-user id — the Bot's, hashed. */
   user: string;
+  /** How many times this conversation's stream was cut (`noteCut`); moves the routing order. */
+  cuts?: number;
 };
 
 export type TurnOptions = {
@@ -247,6 +249,7 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
         ...(options.session
           ? { headers: { "x-session-id": options.session.id } }
           : {}),
+        ...(options.session?.cuts ? { cuts: options.session.cuts } : {}),
       },
     );
 

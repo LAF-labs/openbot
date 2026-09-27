@@ -175,6 +175,54 @@ describe("a goal is saved only after the person's yes", () => {
     );
     for (const goal of extras) await store.remove(B.owner.id, goal.id);
   });
+
+  test("다시 진행 counts like a new goal: a finished one cannot be pressed back past the limit", async () => {
+    const approvals = goalApprovals();
+    const tools = goalTools({
+      store,
+      userId: B.owner.id,
+      agentId: B.botId,
+      runId: "turn",
+      approvals,
+    });
+    // B has one already; fill to the limit, finish one, and fill its place again.
+    for (let index = 1; index < GOALS_ACTIVE_MAX; index += 1) {
+      approvals.approved({ title: `다시 ${index}번` });
+      await tools.execute(SAVE_GOAL, {
+        category: "life",
+        title: `다시 ${index}번`,
+        target: "하기",
+      });
+    }
+    const mine = (await store.list(B.owner.id)).filter((goal) =>
+      goal.title.startsWith("다시 "),
+    );
+    const finished = mine[0];
+    if (!finished) throw new Error("no goal to finish");
+    await store.setStatus(B.owner.id, finished.id, "done");
+    approvals.approved({ title: "다시 채움" });
+    const refill = await tools.execute(SAVE_GOAL, {
+      category: "life",
+      title: "다시 채움",
+      target: "하기",
+    });
+    expect(refill.code).toBe("laf:goal_saved");
+    await expect(
+      store.setStatus(B.owner.id, finished.id, "active"),
+    ).rejects.toThrow("laf:goals_full");
+    // A goal already active can be pressed active again without counting itself twice.
+    const active = (await store.list(B.owner.id)).find(
+      (goal) => goal.title === "다시 채움",
+    );
+    if (!active) throw new Error("no active goal");
+    await expect(
+      store.setStatus(B.owner.id, active.id, "active"),
+    ).resolves.toMatchObject({ status: "active" });
+    const extras = (await store.list(B.owner.id)).filter((goal) =>
+      goal.title.startsWith("다시 "),
+    );
+    for (const goal of extras) await store.remove(B.owner.id, goal.id);
+  });
 });
 
 describe("the chat turn carries the yes to the save", () => {

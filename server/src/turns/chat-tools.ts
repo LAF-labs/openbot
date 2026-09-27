@@ -441,6 +441,12 @@ export function createChatTools(deps: ChatToolsDeps) {
           signal,
         }),
       );
+      /*
+       * STOPPED WHILE TAKING THE BOT BACK (2026-09-27 code sprint). A yes followed by 멈춤 could lose
+       * the race for the lane to the stop, and the approved action then went out anyway — without
+       * the lane, after the person had asked for everything to stop.
+       */
+      if (signal.aborted) return refusal("laf:stopped", { stopped: true });
       if (waited.answer === "granted") {
         /*
          * SOMEBODY ELSE DROVE THE BOT WHILE THE PERSON DECIDED. The lane was let go of for the wait
@@ -801,6 +807,8 @@ export function createChatTools(deps: ChatToolsDeps) {
             signal: call.signal,
           }),
         );
+        // Stopped while the Bot was being taken back: the yes is not carried out (see above).
+        if (call.signal.aborted) return toolResultText("laf:stopped");
         if (waited.answer === "granted") {
           try {
             return said(await send(error.approvalId));

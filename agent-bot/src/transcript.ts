@@ -385,5 +385,6 @@ export function providerSessionOf(
         : `laf-conversation:${input.threadId}:cut-${cuts}`,
     ),
     user: hashed(`laf-bot:${botIdOf(input)}`),
+    ...(cuts > 0 ? { cuts } : {}),
   };
 }
