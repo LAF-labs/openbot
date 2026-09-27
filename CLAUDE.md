@@ -3,8 +3,14 @@
 ## What this is
 
 LAF Agent is a **fork of CopilotKit's OpenBot** (`CopilotKit/openbot`, MIT),
-turned into an everyday agent for people who do not write software — small
-business owners, in Korean first. A deployment belongs to one person, who has
+turned into an everyday agent for people who do not write software — students,
+office workers, small-business owners and anyone else, in Korean first. Small
+businesses are the strongest push, not the whole market (owner, 2026-09-27). The
+first run asks 학생 / 직장인 / 사장님 / 기타. **That answer is a hint and never a gate:** it
+orders suggestions, sets defaults and decides how the Bot addresses the person.
+It never hides or shows a tab, screen, setting or feature, because a 사장님 will
+use what a student uses too. Never write copy that assumes everyone has a 가게.
+A deployment belongs to one person, who has
 **one Bot**: its profile is a name and a face, changed any time, and everything
 else — what it is for included — is settled by talking to it (2026-09-24,
 `docs/laf/deployment-model.md` "봇은 하나다"). Rooms and Bots asking each other
