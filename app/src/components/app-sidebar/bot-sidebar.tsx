@@ -1,24 +1,17 @@
 import {
-  IconBox,
-  IconClock,
-  IconHelp,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconLogout,
   IconMailOpened,
   IconMessageCircle,
-  IconNotebook,
   IconPencil,
   IconPlayerStop,
-  IconPlugConnected,
   IconRefresh,
   IconSettings,
   IconShieldLock,
-  IconUserCircle,
-  IconX,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
 import {
@@ -28,6 +21,10 @@ import {
   RosterRowLines,
   RosterUnreadDot,
 } from "@/components/app-sidebar/bot-row";
+import {
+  type FooterLink as FooterPlace,
+  footerLinksFor,
+} from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
@@ -66,11 +63,6 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
-import {
-  closeMobileNav,
-  registerMobileNav,
-  useMobileNavOpen,
-} from "@/lib/mobile-nav";
 import { settledOf, useReading } from "@/lib/reading";
 import { useNow } from "@/lib/use-now";
 import { useIsWideViewport } from "@/lib/use-wide-viewport";
@@ -104,43 +96,14 @@ import { cn } from "@/lib/utils";
  * their names in tooltips, which the titlebar's toggle puts back to full for as long as somebody
  * wants — measured at an 800px window, the fixed 280 was 35% of everything the person could see.
  * And below `md`, NO COLUMN: at 375px the rail was 15% of the screen and five unlabelled icons
- * (UI/UX audit 0.5.3, item 20). There the whole column, labels and all, is a sheet that slides over
- * the page from the menu button in each screen's header (`lib/mobile-nav.ts`) and goes away when a
- * place is chosen, on Escape, or on a press outside it. The installed app's window cannot be
- * narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so the sheet is the phone's and the
- * browser's, never the PC app's.
+ * (UI/UX audit 0.5.3, item 20). There the phone's bottom bar is the way around — 대화 · 소식 · 메뉴
+ * (`phone-tab-bar.tsx`) — and the sheet this column used to slide in as, from a menu button in each
+ * screen's header, is gone (2026-09-27, muse-shape plan phase 3). The column stays MOUNTED there,
+ * only hidden (`max-md:hidden` on the nav): its watch on the working poll is what refreshes the
+ * conversation's unread mark when a routine's answer lands, and the bar's dot reads the same list. The installed app's window
+ * cannot be narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so the phone's width is the
+ * phone's and the browser's, never the PC app's.
  */
-
-/**
- * The nav that is not the Bot. Every one of these is somewhere a person goes to change how it works.
- *
- * 연결 IS HERE SINCE 2026-09-24. It lived only under Settings, and with the Bot's own screen gone
- * from the roster the places it signs into are the most-used thing a person sets up. 봇 프로필 is
- * drawn only for an account with several Bots: with one, the Bot at the top of the column is the
- * way to its profile, and the same link twice is a list padding itself out.
- */
-const FOOTER_LINKS = [
-  { to: "/agents", icon: IconUserCircle, label: "Bot profile" },
-  /*
-   * 수첩 (one-bot direction #2): what the Bot knows about the shop and the person, where a wrong
-   * line is fixed. Near the top because it is the one place a person checks the Bot believes the
-   * right things — the profile no longer lists them.
-   */
-  { to: "/notebook", icon: IconNotebook, label: "Notebook" },
-  { to: "/routines", icon: IconClock, label: "Routines" },
-  { to: "/skills", icon: IconBox, label: "Skills" },
-  {
-    to: "/settings/connected-accounts",
-    icon: IconPlugConnected,
-    label: "Connections",
-  },
-  /*
-   * ONE `?`, AT THE BOTTOM. The help page and the 문의·의견 box behind it are the only way a person
-   * who is stuck can say so; a way out that lives only under Settings is a way out that a person
-   * who does not know where Settings is cannot take.
-   */
-  { to: "/help", icon: IconHelp, label: "Help" },
-] as const;
 
 /**
  * The titlebar's controls, with a real focus ring. `buttonVariants` is the app's one source for
@@ -162,7 +125,7 @@ const FooterLink = ({
   isCompact,
   label,
   to,
-}: (typeof FOOTER_LINKS)[number] & { isCompact: boolean }) => {
+}: FooterPlace & { isCompact: boolean }) => {
   const icon = <Icon aria-hidden="true" className="size-4.5 shrink-0" />;
 
   if (isCompact) {
@@ -426,14 +389,8 @@ export function BotSidebar() {
    */
   const [isRailExpanded, setIsRailExpanded] = useState(false);
   const isWide = useIsWideViewport();
-  const isMobileOpen = useMobileNavOpen();
-  // The phone's sheet is always the full column: it is there to be read.
-  const isRail = !isWide && !isRailExpanded && !isMobileOpen;
+  const isRail = !isWide && !isRailExpanded;
   const working = useQuery(workingQueryOptions());
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
-  const navRef = useRef<HTMLElement>(null);
   /*
    * What is drawn is what was read — the answer, or the one from before when refreshing it failed —
    * and never data a refusal has said this account cannot have.
@@ -466,28 +423,6 @@ export function BotSidebar() {
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
     }
   }, [workingIds, queryClient]);
-
-  /*
-   * THE PHONE'S SHEET GOES AWAY WHEN A PLACE IS CHOSEN — the new screen is what was asked for, and a
-   * sheet still covering it is a second press nobody asked to make. And on Escape. And while it is
-   * out, the keyboard starts inside it rather than behind it.
-   */
-  useEffect(registerMobileNav, []);
-  const lastPathname = useRef(pathname);
-  useEffect(() => {
-    if (lastPathname.current === pathname) return;
-    lastPathname.current = pathname;
-    closeMobileNav();
-  }, [pathname]);
-  useEffect(() => {
-    if (!isMobileOpen) return;
-    navRef.current?.querySelector<HTMLElement>("a, button")?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMobileNav();
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [isMobileOpen]);
 
   const rows = (mine.bots ?? []).map((agent) => {
     const channel = conversationOf(agent.id, channelList);
@@ -529,7 +464,7 @@ export function BotSidebar() {
   /*
    * Only below `lg`. Above it the full column is the sidebar, and a control whose only effect would
    * be to take it away on a window that has room for it is a control worth not drawing. Not on a
-   * phone either, where the sheet has its own way out.
+   * phone either, where there is no column to narrow.
    */
   const railToggle = isWide ? null : (
     <Tooltip>
@@ -555,279 +490,246 @@ export function BotSidebar() {
   );
 
   const [only] = rows;
-  const links = FOOTER_LINKS.filter(
-    (link) => isLegacy || link.to !== "/agents",
-  );
+  const links = footerLinksFor(isLegacy);
 
   return (
-    <>
-      {/* The press outside the sheet that puts it away, on a phone only. */}
-      {isMobileOpen ? (
-        <button
-          aria-label={t("Close the menu")}
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
-          onClick={closeMobileNav}
-          tabIndex={-1}
-          type="button"
-        />
-      ) : null}
-      <nav
-        aria-label={t("Your Bot")}
+    <nav
+      aria-label={t("Your Bot")}
+      className={cn(
+        "flex h-full shrink-0 select-none flex-col border-border border-r bg-sidebar transition-[width,translate] duration-200 ease-out",
+        isRail ? "w-16" : "w-sidebar",
+        /*
+         * Not drawn on a phone, and HIDDEN HERE rather than by the seam around it: that seam's class
+         * dresses only its own fallback, and with the sheet's classes gone the rail stood 812px tall
+         * in the phone's column and pushed the bar off the screen (measured at 375).
+         */
+        "max-md:hidden",
+      )}
+    >
+      {/*
+       * The title row is the height of the window chrome it sits under, so the desktop build's
+       * traffic lights land in it. AND IT IS THE WINDOW'S HANDLE: the shell sets `titleBarStyle:
+       * "Overlay"`, so without `data-tauri-drag-region` the reserved row could not move the window.
+       * The attribute is inert in a browser tab.
+       */}
+      <div
         className={cn(
-          "flex h-full shrink-0 select-none flex-col border-border border-r bg-sidebar transition-[width,translate] duration-200 ease-out",
-          isRail ? "w-16" : "w-sidebar",
-          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[min(85vw,300px)] max-md:shadow-popover",
-          isMobileOpen
-            ? "max-md:translate-x-0"
-            : "max-md:invisible max-md:-translate-x-full",
+          "flex h-titlebar shrink-0 items-center gap-0.5 px-2.5",
+          isRail ? "justify-center" : "justify-end",
         )}
-        ref={navRef}
+        data-tauri-drag-region
       >
-        {/*
-         * The title row is the height of the window chrome it sits under, so the desktop build's
-         * traffic lights land in it. AND IT IS THE WINDOW'S HANDLE: the shell sets `titleBarStyle:
-         * "Overlay"`, so without `data-tauri-drag-region` the reserved row could not move the window.
-         * The attribute is inert in a browser tab.
-         */}
-        <div
-          className={cn(
-            "flex h-titlebar shrink-0 items-center gap-0.5 px-2.5",
-            isRail ? "justify-center" : "justify-end",
-          )}
-          data-tauri-drag-region
-        >
-          {railToggle}
-          <button
-            aria-label={t("Close the menu")}
-            className={cn(ICON_BUTTON_CLASS, "md:hidden")}
-            onClick={closeMobileNav}
-            type="button"
-          >
-            <IconX className="size-4" />
-          </button>
-        </div>
+        {railToggle}
+      </div>
 
-        {/*
-         * THE LINE, OVER THE ROW AND MOUNTED BEFORE IT SPEAKS. The rail keeps the words for a screen
-         * reader and has no room to show them; its press is the button in the list below.
-         */}
-        <ReadNotice
-          className={
-            isRail ? "sr-only" : "justify-center px-4 pb-2 text-center"
-          }
-          hasButton={!isRail}
-          line={line}
-          onRetry={handleRetry}
-          size="compact"
-        />
+      {/*
+       * THE LINE, OVER THE ROW AND MOUNTED BEFORE IT SPEAKS. The rail keeps the words for a screen
+       * reader and has no room to show them; its press is the button in the list below.
+       */}
+      <ReadNotice
+        className={isRail ? "sr-only" : "justify-center px-4 pb-2 text-center"}
+        hasButton={!isRail}
+        line={line}
+        onRetry={handleRetry}
+        size="compact"
+      />
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-          {mine.bots === undefined && !mine.isError ? (
-            <div className={cn("flex flex-col gap-2 py-2", !isRail && "px-2")}>
-              <Skeleton
-                className={
-                  isRail
-                    ? "mx-auto size-9 rounded-xl"
-                    : "h-11 w-full rounded-xl"
-                }
-              />
-              <Skeleton
-                className={
-                  isRail ? "mx-auto size-9 rounded-xl" : "h-9 w-full rounded-lg"
-                }
-              />
-            </div>
-          ) : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        {mine.bots === undefined && !mine.isError ? (
+          <div className={cn("flex flex-col gap-2 py-2", !isRail && "px-2")}>
+            <Skeleton
+              className={
+                isRail ? "mx-auto size-9 rounded-xl" : "h-11 w-full rounded-xl"
+              }
+            />
+            <Skeleton
+              className={
+                isRail ? "mx-auto size-9 rounded-xl" : "h-9 w-full rounded-lg"
+              }
+            />
+          </div>
+        ) : null}
 
-          {/* One Bot: who it is, then its conversation. */}
-          {!isLegacy && only ? (
-            <>
-              <BotIdentity
-                agent={only.agent}
-                isCompact={isRail}
-                lastMessageAt={only.channel?.lastMessageAt ?? undefined}
-              />
-              <ul className="mt-1 flex flex-col gap-0.5">
-                <li>
-                  <BotRowMenu
+        {/* One Bot: who it is, then its conversation. */}
+        {!isLegacy && only ? (
+          <>
+            <BotIdentity
+              agent={only.agent}
+              isCompact={isRail}
+              lastMessageAt={only.channel?.lastMessageAt ?? undefined}
+            />
+            <ul className="mt-1 flex flex-col gap-0.5">
+              <li>
+                <BotRowMenu
+                  agentId={only.agent.id}
+                  channelId={only.channel?.id}
+                >
+                  <ConversationRow
                     agentId={only.agent.id}
                     channelId={only.channel?.id}
-                  >
-                    <ConversationRow
-                      agentId={only.agent.id}
-                      channelId={only.channel?.id}
+                    isCompact={isRail}
+                    subtitle={only.subtitle}
+                    time={rosterTime(only.at, now)}
+                    unread={only.channel?.unread ?? false}
+                    working={only.working}
+                  />
+                </BotRowMenu>
+              </li>
+            </ul>
+            {/*
+             * 오늘: what the Bot did today, between its conversation and the links. Not in the
+             * rail, which has no room for a sentence — the face's dot already says something waits.
+             */}
+            {isRail ? null : (
+              <BotDay botId={only.agent.id} placement="sidebar" />
+            )}
+          </>
+        ) : null}
+
+        {/* Several, on an account from before the cap: see the component's comment. */}
+        {isLegacy ? (
+          <>
+            {isRail ? null : (
+              <p className="px-2 pt-1 pb-1.5 text-muted-foreground text-xs">
+                {t("Your Bots")}
+              </p>
+            )}
+            <ul aria-label={t("Your Bots")} className="flex flex-col gap-0.5">
+              {rows.map(({ agent, channel, subtitle, at, working: doing }) => (
+                <li key={agent.id}>
+                  <BotRowMenu agentId={agent.id} channelId={channel?.id}>
+                    <BotRow
+                      agentId={agent.id}
+                      avatarSeed={agent.avatarSeed}
+                      channelId={channel?.id}
                       isCompact={isRail}
-                      subtitle={only.subtitle}
-                      time={rosterTime(only.at, now)}
-                      unread={only.channel?.unread ?? false}
-                      working={only.working}
+                      lastMessageAt={rosterTime(at, now)}
+                      name={agent.name}
+                      subtitle={subtitle}
+                      unread={channel?.unread ?? false}
+                      {...(doing ? { working: doing } : {})}
                     />
                   </BotRowMenu>
                 </li>
-              </ul>
-              {/*
-               * 오늘: what the Bot did today, between its conversation and the links. Not in the
-               * rail, which has no room for a sentence — the face's dot already says something waits.
-               */}
-              {isRail ? null : (
-                <BotDay
-                  botId={only.agent.id}
-                  onLeave={closeMobileNav}
-                  placement="sidebar"
-                />
-              )}
-            </>
-          ) : null}
+              ))}
+            </ul>
+          </>
+        ) : null}
 
-          {/* Several, on an account from before the cap: see the component's comment. */}
-          {isLegacy ? (
-            <>
-              {isRail ? null : (
-                <p className="px-2 pt-1 pb-1.5 text-muted-foreground text-xs">
-                  {t("Your Bots")}
-                </p>
-              )}
-              <ul aria-label={t("Your Bots")} className="flex flex-col gap-0.5">
-                {rows.map(
-                  ({ agent, channel, subtitle, at, working: doing }) => (
-                    <li key={agent.id}>
-                      <BotRowMenu agentId={agent.id} channelId={channel?.id}>
-                        <BotRow
-                          agentId={agent.id}
-                          avatarSeed={agent.avatarSeed}
-                          channelId={channel?.id}
-                          isCompact={isRail}
-                          lastMessageAt={rosterTime(at, now)}
-                          name={agent.name}
-                          subtitle={subtitle}
-                          unread={channel?.unread ?? false}
-                          {...(doing ? { working: doing } : {})}
-                        />
-                      </BotRowMenu>
-                    </li>
-                  ),
+        {/*
+         * The rail has no room for a sentence, so it keeps only what somebody has to act on — a
+         * list that could not be read — as a button with its sentence in the tooltip.
+         */}
+        {isRail && line?.kind === "failed" ? (
+          <div className="flex justify-center py-2">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    aria-label={`${line.message} ${t("Try again")}`}
+                    className={ICON_BUTTON_CLASS}
+                    onClick={handleRetry}
+                    type="button"
+                  />
+                }
+              >
+                <IconRefresh className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent side="right">{line.message}</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
+        data-sidebar-nav
+      >
+        {links.map((link) => (
+          <FooterLink {...link} isCompact={isRail} key={link.to} />
+        ))}
+      </div>
+
+      <div className="shrink-0 border-border border-t px-2 py-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={
+                  currentUser?.name || currentUser?.email || t("Account")
+                }
+                className={cn(
+                  "h-10 w-full font-normal text-sm hover:bg-accent",
+                  isRail ? "justify-center px-0" : "justify-start gap-2.5 px-2",
                 )}
-              </ul>
-            </>
-          ) : null}
-
-          {/*
-           * The rail has no room for a sentence, so it keeps only what somebody has to act on — a
-           * list that could not be read — as a button with its sentence in the tooltip.
-           */}
-          {isRail && line?.kind === "failed" ? (
-            <div className="flex justify-center py-2">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      aria-label={`${line.message} ${t("Try again")}`}
-                      className={ICON_BUTTON_CLASS}
-                      onClick={handleRetry}
-                      type="button"
-                    />
-                  }
-                >
-                  <IconRefresh className="size-4" />
-                </TooltipTrigger>
-                <TooltipContent side="right">{line.message}</TooltipContent>
-              </Tooltip>
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
-          data-sidebar-nav
-        >
-          {links.map((link) => (
-            <FooterLink {...link} isCompact={isRail} key={link.to} />
-          ))}
-        </div>
-
-        <div className="shrink-0 border-border border-t px-2 py-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  aria-label={
-                    currentUser?.name || currentUser?.email || t("Account")
-                  }
-                  className={cn(
-                    "h-10 w-full font-normal text-sm hover:bg-accent",
-                    isRail
-                      ? "justify-center px-0"
-                      : "justify-start gap-2.5 px-2",
-                  )}
-                  variant="ghost"
-                />
-              }
-            >
-              {/* The person's own picture when the provider handed one over, which all three do. */}
-              <PersonAvatar
-                email={currentUser?.email}
-                image={currentUser?.image}
-                name={currentUser?.name}
-                size="sm"
+                variant="ghost"
               />
-              {isRail ? null : (
-                <span className="min-w-0 truncate">
-                  {currentUser?.name || currentUser?.email || t("Account")}
-                </span>
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="p-1.5" side="top">
-              {/*
-               * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry: a
-               * conversation and a routine can both be running, and Stop lives inside one
-               * conversation at a time.
-               */}
+            }
+          >
+            {/* The person's own picture when the provider handed one over, which all three do. */}
+            <PersonAvatar
+              email={currentUser?.email}
+              image={currentUser?.image}
+              name={currentUser?.name}
+              size="sm"
+            />
+            {isRail ? null : (
+              <span className="min-w-0 truncate">
+                {currentUser?.name || currentUser?.email || t("Account")}
+              </span>
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="p-1.5" side="top">
+            {/*
+             * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry: a
+             * conversation and a routine can both be running, and Stop lives inside one
+             * conversation at a time.
+             */}
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              onClick={() => setStoppingAll(true)}
+            >
+              <IconPlayerStop />
+              {t("Stop everything")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {currentUser?.role === "admin" ? (
               <DropdownMenuItem
                 className="gap-2 px-2 py-1.5"
-                onClick={() => setStoppingAll(true)}
+                render={<Link to="/admin" />}
               >
-                <IconPlayerStop />
-                {t("Stop everything")}
+                <IconShieldLock />
+                {t("Admin")}
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {currentUser?.role === "admin" ? (
-                <DropdownMenuItem
-                  className="gap-2 px-2 py-1.5"
-                  render={<Link to="/admin" />}
-                >
-                  <IconShieldLock />
-                  {t("Admin")}
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem
-                className="gap-2 px-2 py-1.5"
-                render={<Link to="/settings" />}
-              >
-                <IconSettings />
-                {t("Settings")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="gap-2 px-2 py-1.5"
-                disabled={signOut.isPending}
-                onClick={handleSignOut}
-                variant="destructive"
-              >
-                <IconLogout />
-                {signOut.isPending ? t("Logging out…") : t("Log out")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            ) : null}
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              render={<Link to="/settings" />}
+            >
+              <IconSettings />
+              {t("Settings")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              disabled={signOut.isPending}
+              onClick={handleSignOut}
+              variant="destructive"
+            >
+              <IconLogout />
+              {signOut.isPending ? t("Logging out…") : t("Log out")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-          {/* Outside the menu, which closes on click: an error inside it dies with the interaction. */}
-          {signOutError ? (
-            <p className="px-2 pt-1 text-destructive text-xs" role="alert">
-              {signOutError}
-            </p>
-          ) : null}
-          <StopAllDialog onOpenChange={setStoppingAll} open={stoppingAll} />
-        </div>
-      </nav>
-    </>
+        {/* Outside the menu, which closes on click: an error inside it dies with the interaction. */}
+        {signOutError ? (
+          <p className="px-2 pt-1 text-destructive text-xs" role="alert">
+            {signOutError}
+          </p>
+        ) : null}
+        <StopAllDialog onOpenChange={setStoppingAll} open={stoppingAll} />
+      </div>
+    </nav>
   );
 }

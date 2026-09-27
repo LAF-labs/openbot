@@ -553,48 +553,22 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
   });
 });
 
-describe("on a phone the column is a sheet, out only when asked for", () => {
-  test("put away until the menu opens it, and then the whole column with its words", async () => {
+describe("on a phone there is no sheet", () => {
+  test("the column is only the column: no menu button's sheet, no way to close one", async () => {
+    /*
+     * Retired 2026-09-27 for the phone's bottom bar (`phone-tab-bar.tsx`, muse-shape plan phase 3).
+     * The column is still mounted below `md` — its watch on the working poll refreshes the unread
+     * mark — and hidden there by its own class, the only phone class it has left.
+     */
     const view = await roster({ wide: false });
-    expect(classes(view.column())).toContain("max-md:invisible");
-    expect(classes(view.column())).toContain("max-md:-translate-x-full");
-
-    const { openMobileNav } = await import("../src/lib/mobile-nav");
-    const { act } = await import("react");
-    await act(async () => openMobileNav());
-    await view.settle();
-    expect(classes(view.column())).toContain("max-md:translate-x-0");
-    expect(classes(view.column())).not.toContain("max-md:invisible");
-    // Narrow, and still the full column: the sheet is there to be read, not squinted at.
-    expect(view.width()).toBe("w-sidebar");
-    expect(view.column().textContent).toContain("Your Bots");
-    // The press outside it and the X in it both put it away; so does Escape.
+    const column = classes(view.column());
+    expect(column.filter((cls) => cls.startsWith("max-md:"))).toEqual([
+      "max-md:hidden",
+    ]);
     expect(
       view.host.querySelectorAll('button[aria-label="Close the menu"]'),
-    ).toHaveLength(2);
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
-    await view.settle();
-    expect(classes(view.column())).toContain("max-md:invisible");
-    expect(ko["Open the menu"]).toBe("메뉴 열기");
-    expect(ko["Close the menu"]).toBe("메뉴 닫기");
-  });
-
-  test("the menu button draws only where there is a sidebar to open", async () => {
-    const { MobileNavButton } = await import(
-      "../src/components/layout/mobile-nav-button"
-    );
-    const alone = await mount(<MobileNavButton />);
-    expect(alone.host.querySelector("button")).toBeNull();
-    await alone.unmount();
-
-    const view = await roster();
-    const withSidebar = await mount(<MobileNavButton />);
-    expect(
-      withSidebar.host.querySelector("button")?.getAttribute("aria-label"),
-    ).toBe("Open the menu");
-    await withSidebar.unmount();
-    await view.unmount();
+    ).toHaveLength(0);
+    expect(ko["Open the menu"]).toBeUndefined();
+    expect(ko["Close the menu"]).toBeUndefined();
   });
 });

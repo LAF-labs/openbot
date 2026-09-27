@@ -69,11 +69,18 @@ import { cn } from "@/lib/utils";
  */
 export function BotDay({
   botId,
+  empty = null,
   onLeave,
   placement,
   waitingOnly = false,
 }: {
   botId: string;
+  /**
+   * What to draw when there is nothing in any group. Nothing, in the sidebar and the drawer, where
+   * the column goes on without it; a line on 소식, which is a page of its own and would otherwise be
+   * a title over a blank screen.
+   */
+  empty?: ReactNode;
   /** Called before a press leaves for somewhere else: the drawer closes, the phone's sheet goes. */
   onLeave?: () => void;
   placement: "sidebar" | "drawer";
@@ -169,7 +176,7 @@ export function BotDay({
     !isFirstThings &&
     next.length === 0
   ) {
-    return null;
+    return day.isSuccess ? empty : null;
   }
 
   /*

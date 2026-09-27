@@ -1,6 +1,5 @@
 import type * as React from "react";
 
-import { MobileNavButton } from "@/components/layout/mobile-nav-button";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   pageMeasure,
@@ -78,8 +77,6 @@ export function PageShell({
          * The header is its own component now, so the three sibling pages cannot drift apart: they
          * all reach it through this shell, and it reaches the tokens in `ui/page-header.ts`.
          */}
-        {/* On a phone the sidebar is a sheet, and this is the way to it (`lib/mobile-nav.ts`). */}
-        <MobileNavButton className="mb-2 -ml-2 self-start" />
         <PageHeader action={action} description={description} title={title} />
         {children}
       </div>

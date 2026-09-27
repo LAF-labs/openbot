@@ -133,7 +133,7 @@ describe("where the guide lives", () => {
   });
 
   test("the roster's footer carries it", () => {
-    const sidebar = read("components/app-sidebar/bot-sidebar.tsx");
+    const sidebar = read("components/app-sidebar/places.ts");
     const table = sidebar.slice(
       sidebar.indexOf("const FOOTER_LINKS"),
       sidebar.indexOf("] as const"),

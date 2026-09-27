@@ -423,7 +423,7 @@ describe("a room from before", () => {
       "the sentence",
     );
     expect(view.host.textContent).not.toContain("Could not load this channel.");
-    expect(view.host.querySelector('a[href="/"]')?.textContent).toBe(
+    expect(view.host.querySelector('main a[href="/"]')?.textContent).toBe(
       "Go to your Bot",
     );
     // A 404 is an answer, not a failure: the loader's read and the screen's own, and no retry of

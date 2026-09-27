@@ -648,6 +648,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * tool is not, and arriving and leaving with it).
  * RAISED 2026-09-27 with reply actions on touch: four to `app` (the row shown and in flow on a touch
  * screen and hover-only with a pointer; what 인용해 답하기 puts in the composer, three ways).
+ * RAISED 2026-09-27 with the phone's bottom bar: seven to `app` — eight added (three labelled tabs
+ * and where they go; off the PC app and tall enough; out of a keyboard's way and not a focused
+ * composer's; the tab that is the page; the unread mark; 메뉴 holding the sidebar's own places, and
+ * 관리 and 봇 프로필 where they belong; 소식 with a line for an empty day) and one of the two sheet
+ * tests taken with the sheet (the other now says there is none).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -655,7 +660,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3053, roots: ["server"] },
-  { name: "app", floor: 1489, roots: ["app"] },
+  { name: "app", floor: 1496, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 550, roots: ["tests", "agent-bot"] },
 ] as const;

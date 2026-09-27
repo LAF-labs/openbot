@@ -2611,8 +2611,14 @@ export const ko: Record<string, string> = {
   "Show me": "보기",
   "See all routines": "루틴 모두 보기",
   Conversation: "대화",
-  "Open the menu": "메뉴 열기",
-  "Close the menu": "메뉴 닫기",
+  // the phone's bar
+  Places: "이동",
+  Updates: "소식",
+  Menu: "메뉴",
+  "What your Bot did today, what is waiting on you, and what it does next.":
+    "봇이 오늘 한 일, 기다리는 일, 다음에 할 일이에요.",
+  "Nothing yet today. What you hand over in the conversation shows up here.":
+    "오늘은 아직 한 일이 없어요. 대화에서 맡기신 일이 여기에 모여요.",
   // today
   "Waiting on the owner": "기다리는 일",
   "Up next": "다음",
