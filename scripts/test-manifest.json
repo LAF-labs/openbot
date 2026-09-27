@@ -464,6 +464,7 @@
   "tests/eval-calendar.test.ts",
   "tests/eval-deferral.test.ts",
   "tests/eval-from-failures.test.ts",
+  "tests/eval-grounded.test.ts",
   "tests/eval-lib.test.ts",
   "tests/eval-morning-briefing.test.ts",
   "tests/eval-owner-words.test.ts",

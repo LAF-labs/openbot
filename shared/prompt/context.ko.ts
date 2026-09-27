@@ -19,7 +19,13 @@
  */
 import type { PromptMode, PromptPerson } from "./index";
 import { copula as copulaOf } from "./particles";
-import { dayLabel, resolveTimeZone, zonedParts, zoneLabel } from "./zone";
+import {
+  dayLabel,
+  resolveTimeZone,
+  weekAheadLabel,
+  zonedParts,
+  zoneLabel,
+} from "./zone";
 
 /** 알림을 감싸는 표시. 정적 프롬프트(`CONTEXT_RULES_KO`)가 한 번 설명한다. */
 export const REMINDER_OPEN = "<알림>";
@@ -31,10 +37,16 @@ export const REMINDER_CLOSE = "</알림>";
  * Claude Code가 모델에게 `<system-reminder>`를 설명하는 방식 그대로다: 사람이 쓴 말이 아니고,
  * 쓰되 필요 없으면 말하지 않는다. "앞의 맥락보다 새것"을 적는 이유는 얼린 층이 며칠 묵을 수
  * 있어서다 — 맥락의 날짜가 25일이고 알림이 27일이라고 하면 27일이 맞다.
+ *
+ * 셋째 문단은 날짜와 내일·모레를 짝짓는 자리다. 봇은 곧장 물으면 모레를 맞혔지만 날씨 페이지를
+ * 읽으면서는 "모레(9/30 수)"라고 썼다(2026-09-27, 모레는 9/29). 맥락에 '앞으로 7일' 줄을 둔 것만으로는
+ * 열 번에 두 번 여전히 그랬고, 이 문장이 날짜를 먼저 말하고 이름은 그 줄에서만 옮기게 한 뒤 스무 번
+ * 다 맞혔다(`evals/grounded.ts`의 `relative-day-rain-on-the-weather-page`).
  */
 export const CONTEXT_RULES_KO = [
   `사장님 메시지 끝에 ${REMINDER_OPEN}…${REMINDER_CLOSE}이 붙어 올 때가 있다. 사장님이 쓴 말이 아니라 이 시스템이 알려 주는 새 사실이다 — 바뀐 날짜, 사장님 위치나 시간대, 네 이름, 새로 적힌 기억 같은 것. 아래 맥락보다 알림이 새것이니, 둘이 다르면 알림을 따른다. 일에 필요하면 그대로 쓰고, 묻지 않았으면 알림을 받았다고 말하지 않는다.`,
   "오늘 날짜는 아래 맥락과 알림에 있다. 다만 사장님이 '오늘이 X야'처럼 기준 날짜를 직접 말하면, 맥락의 날짜로 바로잡지 말고 사장님이 말한 날짜로 센다. 몇 시 몇 분인지는 어디에도 적혀 있지 않으니, 시각이 필요하면 짐작하지 말고 now 툴로 본다.",
+  "며칠 뒤의 날은 '9/30(수)'처럼 날짜와 요일로 말한다. 내일·모레·글피라는 말은 '앞으로 7일' 줄에 그 날짜와 함께 적힌 대로만 붙이고, 줄과 맞지 않으면 붙이지 않는다.",
 ].join("\n\n");
 
 /**
@@ -130,13 +142,25 @@ export function knownFacts(value: unknown): ContextFacts {
   };
 }
 
+/**
+ * 앞으로 7일의 한 문장. 날짜와 함께 바뀌므로 하루 안에서는 글자 하나 달라지지 않고, 얼린 층과
+ * 날짜 알림에 같이 실린다 — 알림만 새 날짜를 말하고 얼린 층의 이레가 어제 것이면, 봇은 어제의
+ * "모레"를 읽는다(하루가 닫히지 않은 대화는 그 층을 계속 쓴다, `server/src/context/day-close.ts`).
+ */
+export function weekAheadText(day: string): string {
+  const week = weekAheadLabel(day);
+  return week ? `앞으로 7일: ${week}.` : "";
+}
+
 /** 시계 줄: 오늘이 며칠이고 누구의 시간대로 센 것인지. 시각은 없다 — `now` 툴의 몫이다. */
 export function clockText(facts: ContextFacts): string {
   const locale = facts.locale ? `, 기기 언어 ${facts.locale}` : "";
   const whose = facts.zoneIsPerson
     ? `사장님 기기 시간대 ${zoneLabel(facts.timeZone)}${locale}`
     : `사장님 시간대를 몰라 이 배포의 시간대 ${zoneLabel(facts.timeZone)}`;
-  return `오늘은 ${facts.day}이다(${whose} 기준).`;
+  return [`오늘은 ${facts.day}이다(${whose} 기준).`, weekAheadText(facts.day)]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /** 사장님이 수첩에 적었거나 확인한 기억의 머리말. */
@@ -234,7 +258,13 @@ export function reminderLines(
   const lines: string[] = [];
   if (current.day !== known.day) {
     lines.push(
-      `날짜가 바뀌었다. 오늘은 ${current.day}이다. 새 날짜를 따로 알릴 필요는 없다.`,
+      [
+        `날짜가 바뀌었다. 오늘은 ${current.day}이다.`,
+        weekAheadText(current.day),
+        "새 날짜를 따로 알릴 필요는 없다.",
+      ]
+        .filter(Boolean)
+        .join(" "),
     );
   }
   /*

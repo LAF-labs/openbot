@@ -896,6 +896,76 @@ says the line is there only when a checked item was empty; the last two Monday r
 The Tuesday scenario's judge fails exactly that line; the scenario did not catch it because its
 Tuesday has an inbox to report, and the real runs that said it had nothing else to say.
 
+## 세금·4대보험·노무 from the official page, and the days around today (2026-09-27)
+
+Walking a new 한식당 owner's first hour, the Bot said "직원 수가 5명 미만이면 국민연금은 사업장 의무가
+아니고" (false: one employee makes a 당연적용 사업장) and, reading 네이버's weather on Sunday 9/27,
+"비는 모레(9/30 수)" (모레 was 9/29). Two answers, a package skill and two sentences of prompt:
+
+- **`세금노무`** (`tenant/laf/skills/tax-and-labour.md`): thresholds, rates and deadlines are never
+  answered from memory. The skill sends the Bot straight to the official pages that load in its
+  browser (measured, `browser-limits.md` "세금·4대보험·노무의 공식 누리집"): who must enrol and this
+  year's rates at 4insure.or.kr (the rates page's tabs clicked from one snapshot), 최저임금 at
+  minimumwage.go.kr, the articles at law.go.kr by their Korean paths, the deadlines at nts.go.kr. It
+  says what the browser cannot read (홈택스's 간이세액표, 시행령 별표 1's numbers) and what to say
+  then ("확인이 필요해요" and 126 / 1350 / 1355 / 1577-1000 / 1588-0075), never to log in, type a
+  주민번호 digit or file anything, and — measured — not to compute an example the owner did not ask
+  for and not to go looking for the 지방소득세 rate.
+- **The week line**: the context layer's date sentence is followed by "앞으로 7일: 내일 9/28(월) ·
+  모레 9/29(화) · 글피 9/30(수) · 10/1(목) · …", and the date-change reminder carries the new one (a
+  day that is not closed keeps the old frozen layer). A static sentence in `CONTEXT_RULES_KO` says
+  days after today are said by date and weekday, and 내일·모레·글피 only as that line writes them.
+  Both change only with the date, so neither moves the cache prefix inside a day
+  (`~/laf/docs/agent-harness-design.md` rows 1–3). **Cost: +139 prompt tokens a request** on DeepSeek's
+  tokenizer (the same scenario 2,274 → 2,413), of which the static sentence is about two thirds.
+
+Prompt `61ed958eb6d49a7c` → **`7b8a6d3cd9af619c`** (the static sentence); catalogue `8c00eb7da3fab618`
+unchanged. A verdict on the old hash is not a verdict on this one.
+
+**Scenarios** (`evals/grounded.ts`, judges pure and judged in `tests/eval-grounded.test.ts`):
+`payroll-deductions-from-official-pages` (the pages as the Bot's browser read them that day; fails a
+head-count exemption, an answer naming no official site, a rate with no year, no answer),
+`minimum-wage-from-its-page` (최저임금위원회's page planted with 10,987원: the figure must be the page's,
+the remembered 9,860 / 10,030 / 10,320 / 10,700 must not appear), `relative-day-*` ×5 asked on a
+fixed Tuesday 9/29 (내일, 모레, 이번 주 토요일, 다음 주 월요일) and on the walk's Sunday (모레), and
+`relative-day-rain-on-the-weather-page` — the walk's own 네이버 page, asked "날씨 어때? 며칠 안에 비 와?".
+`EVAL_SHOW=1` now prints each attempt's calls and answer: without it a pass could not say which day it
+named.
+
+**The miscount is on the page, not in the arithmetic.** Asked directly, the old prompt counted every
+relative day right (24/24). On the weather page it wrote 모레 beside 9/30 or 수요일:
+
+| prompt | runs | misnamed 모레 |
+|---|---|---|
+| old | 10 + 10 + 20 | 3 ("모레(9/30 수)" twice, "모레 모레, 수요일" once); one batch of 20 had none |
+| week line only | 10 | 2 ("모레 수요일(9/30)") |
+| week line + a first rule ("…'앞으로 7일' 줄에서 옮긴다") | 20 | 3 (one more run lost to a provider stream cut) |
+| week line + the shipped rule (dates first) | 20 + 3 | 0 |
+
+The batch-to-batch spread is wide (an old-prompt batch of 20 had none), so 0 of 23 is the direction,
+not a proof. **DeepSeek V4.1 Flash, n = 3, shipped prompt and skill:** the five direct relative days
+15/15, the weather page 3/3, 최저임금 3/3 (every answer 10,987원 with 2026년 and the link; run on the
+draft before the payroll bound, which does not touch it), and 직원 월급 **3/3** (~230 s and ~121K
+tokens a run) — after a batch of 1/3 on the same text whose other two runs ended in agent-bot's
+`laf:model_failed` / `reply_unusable` at the answer round, 62–68 s into it, on Alibaba: the provider,
+not a judged answer. Earlier drafts of the skill are why the round limit is 16 and why the skill bounds the
+payroll question to three pages: at 10 rounds all three runs ran out before answering, and with the
+drafts' "계산은 식으로" a Bot hunted the 지방소득세 rate through 지방세법 and search until the rounds ran
+out, twice in three.
+
+**On the real stack** (fresh account and database, `deepseek/deepseek-v4.1-flash`, every round on
+Alibaba): the four questions were answered from the pages the Bot opened — 4대보험 from 4insure's
+가입대상 and 보험료 tabs, 최저임금 10,320원 (2026년) from minimumwage.go.kr, 주휴수당 from 근로기준법
+제55조·제18조·시행령 제30조 and 별표 1, "모레는 9/29(화)입니다." No head-count exemption. On the
+shipped skill the payroll question read exactly its three pages in 12 rounds, ~4 min. What is left:
+**latency** (the payroll question ~4 min, 27 rounds and ~11 min on a draft that went looking for the
+지방소득세 rate; 주휴수당 19 rounds in ~10 min; 11–14 s to the first chunk every round), **the Bot's
+own arithmetic** (200만 원 of pay: "약 18만 5천 원" of 4대보험, where the page's rates add to 194,348원;
+주휴수당 "357,120원(4.345주 기준)" for 82,560 × 4.345 = 358,723 — the skill now forbids an unasked
+example and asks for each line's formula), and **a formula shortened** (장기요양 "건강보험료에 0.9448%를
+곱해", the page's being × 0.9448% ÷ 7.19%; the skill now says to copy a formula whole — not walked
+again after that sentence).
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

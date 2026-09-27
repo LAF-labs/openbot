@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { composePrompt, placeText } from "../shared/prompt";
+import {
+  composePrompt,
+  contextFactsFor,
+  placeText,
+  reminderLines,
+} from "../shared/prompt";
 import {
   coarseCoordinates,
   deviceOf,
@@ -122,6 +127,57 @@ describe("the date line", () => {
     expect(composePrompt({ mode: "chat", now: NOW, bot: BOT })).toContain(
       "now 툴로 본다",
     );
+  });
+
+  /*
+   * THE NEXT SEVEN DAYS, NAMED. On Sunday 9/27 a Bot reading 네이버's weather said "비는 모레(9/30
+   * 수)" — 모레 was 9/29 (화). The layer names the week with its weekdays, and the static rule sends
+   * 내일·모레·글피 there: on that page, 3 of 40 runs misnamed a day before, none of 20 after
+   * (evals/grounded.ts).
+   */
+  test("names the next seven days with their weekdays, across a month's end", () => {
+    const prompt = composePrompt({
+      mode: "chat",
+      now: new Date("2026-09-27T01:00:00Z"),
+      timeZone: "Asia/Seoul",
+      bot: BOT,
+      person: { timeZone: "Asia/Seoul" },
+    });
+    expect(prompt).toContain(
+      "오늘은 2026-09-27 (일)이다(사장님 기기 시간대 Asia/Seoul(KST) 기준). 앞으로 7일: 내일 9/28(월) · 모레 9/29(화) · 글피 9/30(수) · 10/1(목) · 10/2(금) · 10/3(토) · 10/4(일).",
+    );
+    expect(prompt).toContain("'앞으로 7일' 줄에 그 날짜와 함께 적힌 대로만");
+  });
+
+  test("the week is the person's: Dubai's Wednesday night is already Thursday in Seoul", () => {
+    const at = (timeZone: string) =>
+      composePrompt({
+        mode: "chat",
+        now: new Date("2026-09-30T17:00:00Z"),
+        timeZone: "Asia/Seoul",
+        bot: BOT,
+        person: { timeZone },
+      });
+    expect(at("Asia/Dubai")).toContain("앞으로 7일: 내일 10/1(목)");
+    expect(at("Asia/Seoul")).toContain("앞으로 7일: 내일 10/2(금)");
+  });
+
+  test("a new day's reminder carries the new week, not only the new date", () => {
+    const facts = (now: Date) =>
+      contextFactsFor({
+        mode: "chat",
+        now,
+        timeZone: "Asia/Seoul",
+        bot: BOT,
+        person: { timeZone: "Asia/Seoul" },
+      });
+    const lines = reminderLines(
+      facts(new Date("2026-09-26T01:00:00Z")),
+      facts(new Date("2026-09-27T01:00:00Z")),
+    );
+    expect(lines).toEqual([
+      "날짜가 바뀌었다. 오늘은 2026-09-27 (일)이다. 앞으로 7일: 내일 9/28(월) · 모레 9/29(화) · 글피 9/30(수) · 10/1(목) · 10/2(금) · 10/3(토) · 10/4(일). 새 날짜를 따로 알릴 필요는 없다.",
+    ]);
   });
 });
 

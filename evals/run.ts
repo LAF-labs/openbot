@@ -321,6 +321,18 @@ for (const scenario of SCENARIOS) {
         events,
       });
       const failures = [...judged.notes, ...wire.map((p) => `wire: ${p}`)];
+      /*
+       * `EVAL_SHOW=1` prints what was said and called. The report keeps no answer text, so a pass
+       * could not say which Friday or which figure it was about (`this-weeks-friday`).
+       */
+      if (process.env.EVAL_SHOW === "1") {
+        const called = callsOf(events).map(
+          (call) => `${call.name}(${JSON.stringify(call.arguments ?? {})})`,
+        );
+        console.log(
+          `    ── ${scenario.id} #${attempt} ${judged.pass ? "pass" : "fail"}\n    calls: ${called.join(" · ") || "none"}\n    ${turnText(events).replace(/\n/g, "\n    ")}`,
+        );
+      }
       if (judged.pass && wire.length === 0) {
         passes++;
       } else {

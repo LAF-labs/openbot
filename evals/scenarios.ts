@@ -86,6 +86,17 @@ import {
   UPDATE_PROFILE,
 } from "./tools";
 import {
+  CHUNCHEON_WEATHER,
+  calendarDayAfter,
+  judgeMinimumWageAnswer,
+  judgePayrollAnswer,
+  judgeRainDay,
+  judgeRelativeDay,
+  officialSite,
+  PAYROLL_PAGES,
+  plantedMinimumWage,
+} from "./grounded";
+import {
   judgeSupportAnswer,
   liveSupportSearch,
   PACKAGE_SKILLS,
@@ -741,6 +752,9 @@ export const SCENARIOS: Scenario[] = [
   supportProgramsFromThePortal(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
+  payrollFromTheOfficialPages(),
+  minimumWageFromItsPage(),
+  ...relativeDays(),
   /*
    * THE THREE THE 0.5.3 AUDIT READ OFF A SHOP OWNER'S SCREEN.
    *
@@ -1434,6 +1448,188 @@ function supportProgramsFromThePortal(): Scenario {
           calls: turn.calls,
           returned: search.returned,
           today,
+        }),
+      ]),
+  };
+}
+
+/**
+ * 직원 월급에서 뗄 것 — THE WALK'S WRONG ANSWER (`./grounded.ts`).
+ *
+ * Asked on 2026-09-27, the Bot said a workplace under five was exempt from 국민연금. Here it holds the
+ * package's skills and a browser over the official pages as its own browser read them that day: it
+ * must read the 세금노무 skill, open them, and answer with the link and the year — never with a head
+ * count that exempts a shop.
+ */
+function payrollFromTheOfficialPages(): Scenario {
+  const site = officialSite(PAYROLL_PAGES);
+  return {
+    id: "payroll-deductions-from-official-pages",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "직원 월급 줄 때 떼야 하는 세금 알려줘. 우리 가게 직원은 두 명이야.",
+      ),
+    ],
+    tools: [...REALISTIC_TOOLSET, SKILL_VIEW],
+    skills: PACKAGE_SKILLS,
+    /*
+     * The skill, two or three pages, a snapshot and three tabs clicked and read: measured at ten to
+     * twelve calls, one per round, and ten rounds ended all three first runs before the answer. A
+     * chat turn in the product may take a hundred steps (`server/src/turns/engine.ts`).
+     */
+    maxTurns: 16,
+    prepare: async () => {
+      site.reset();
+      return {};
+    },
+    stub: (call) =>
+      call.name === SKILL_VIEW.name ? skillViewAnswer(call) : site.answer(call),
+    check: (turn) =>
+      verdict(judgePayrollAnswer({ text: turn.text, calls: turn.calls })),
+  };
+}
+
+/**
+ * 올해 최저임금 — THE FIGURE FROM THE PAGE, NOT FROM MEMORY. 최저임금위원회's page here says a figure
+ * nobody has set (`plantedMinimumWage`), so the real 10,320원 in an answer is a remembered one.
+ */
+function minimumWageFromItsPage(): Scenario {
+  const planted = plantedMinimumWage(EVAL_NOW, EVAL_TIME_ZONE);
+  const site = officialSite(planted.pages);
+  return {
+    id: "minimum-wage-from-its-page",
+    dimension: "tool-calls",
+    messages: [user("올해 최저임금 얼마야?")],
+    tools: [...REALISTIC_TOOLSET, SKILL_VIEW],
+    skills: PACKAGE_SKILLS,
+    maxTurns: 6,
+    prepare: async () => {
+      site.reset();
+      return {};
+    },
+    stub: (call) =>
+      call.name === SKILL_VIEW.name ? skillViewAnswer(call) : site.answer(call),
+    check: (turn) =>
+      verdict(
+        judgeMinimumWageAnswer({ text: turn.text, calls: turn.calls, planted }),
+      ),
+  };
+}
+
+/**
+ * 내일·모레·이번 주 토요일·다음 주 월요일, ASKED ON A FIXED DAY.
+ *
+ * On Sunday 9/27 the walk heard "비는 모레(9/30 수)"; 모레 was 9/29 (화). The day is fixed so a
+ * verdict is about the arithmetic, not the calendar: a Tuesday whose week crosses the month's end,
+ * where no week convention makes 이번 주 토요일 or 다음 주 월요일 two days (`this-weeks-friday`
+ * documents the weekend's two honest answers), plus the walk's own Sunday for 모레. `now` is still on
+ * the list — agent-bot adds it to every run — and reads the real clock, so a model that asks it gets
+ * a day that is not the prompt's. The prompt says the date is in the context layer, and a run that
+ * calls `now` anyway is judged on what it wrote, as the briefing is.
+ */
+function relativeDays(): Scenario[] {
+  const tuesday = new Date("2026-09-29T01:00:00Z");
+  const sunday = new Date("2026-09-27T01:00:00Z");
+  const asked = (
+    id: string,
+    on: Date,
+    question: string,
+    what: string,
+    offset: number,
+    weekdayNamed = false,
+  ): Scenario => {
+    const today = zonedParts(on, "Asia/Seoul").date;
+    return {
+      id,
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      frozenAt: on,
+      messages: [user(question)],
+      tools: [],
+      check: (turn) =>
+        verdict([
+          ...judgeRelativeDay({
+            text: turn.text,
+            today,
+            expected: calendarDayAfter(today, offset),
+            asked: what,
+            weekdayNamed,
+          }),
+          ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
+        ]),
+    };
+  };
+  return [
+    asked(
+      "relative-day-tomorrow",
+      tuesday,
+      "내일이 며칠이고 무슨 요일이야?",
+      "내일",
+      1,
+    ),
+    asked(
+      "relative-day-day-after-tomorrow",
+      tuesday,
+      "모레는 며칠이고 무슨 요일이야?",
+      "모레",
+      2,
+    ),
+    asked(
+      "relative-day-this-saturday",
+      tuesday,
+      "이번 주 토요일이 며칠이야?",
+      "이번 주 토요일",
+      4,
+      true,
+    ),
+    asked(
+      "relative-day-next-monday",
+      tuesday,
+      "다음 주 월요일이 며칠이야?",
+      "다음 주 월요일",
+      6,
+      true,
+    ),
+    asked(
+      "relative-day-sunday-walk",
+      sunday,
+      "모레 무슨 요일이야? 며칠이고?",
+      "모레",
+      2,
+    ),
+    rainDayOnTheWalksSunday(sunday),
+  ];
+}
+
+/**
+ * THE WALK'S OWN 모레, WHERE IT WAS SAID: reading 네이버's weather on Sunday 9/27, whose hourly list
+ * ends "모레 … 09.30." and whose week puts the rain on 수 9.30. Asked directly, the model counts the
+ * days right; reading this page, it said "비는 모레(9/30 수)".
+ */
+function rainDayOnTheWalksSunday(sunday: Date): Scenario {
+  const today = zonedParts(sunday, "Asia/Seoul").date;
+  return {
+    id: "relative-day-rain-on-the-weather-page",
+    dimension: "whereabouts",
+    person: { timeZone: "Asia/Seoul", locale: "ko-KR", place: "강원 춘천시" },
+    frozenAt: sunday,
+    messages: [user("날씨 어때? 며칠 안에 비 와?")],
+    tools: [NAVIGATE, READ],
+    stub: (call) =>
+      call.name === NAVIGATE.name || call.name === READ.name
+        ? JSON.stringify({ ok: true, ...CHUNCHEON_WEATHER, truncated: false })
+        : undefined,
+    check: (turn) =>
+      verdict([
+        [
+          "날씨 페이지를 열지 않음",
+          called(turn, NAVIGATE.name) || called(turn, READ.name),
+        ],
+        ...judgeRainDay({
+          text: turn.text,
+          today,
+          rainy: calendarDayAfter(today, 3),
         }),
       ]),
   };

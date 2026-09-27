@@ -70,6 +70,30 @@ export function dayLabel(now: Date, timeZone: string): string {
   return `${date} (${weekday})`;
 }
 
+/**
+ * 앞으로 7일, "내일 9/28(월) · 모레 9/29(화) · 글피 9/30(수) · 10/1(목) · …" — `dayLabel`의 날짜에서
+ * 달력으로 센다. 이미 사장님의 날짜이므로 시간대를 다시 볼 일이 없다.
+ *
+ * 봇이 셈을 틀린 것이 이유다. 2026-09-27(일) 네이버 날씨를 읽고 "비는 모레(9/30 수)"라고 했다 —
+ * 모레는 9/29(화)다. 페이지의 시간별 예보가 "모레 …" 뒤에 "09.30."을 잇고 기상청 요약이 "모레 …
+ * 비"라고 쓴 것을 한데 엮은 것이다. 같은 페이지로 마흔 번 물으면 세 번 그랬고, 곧장 "모레 며칠이야"
+ * 라고 물으면 스물네 번 다 맞혔다 — 틀리는 곳은 셈이 아니라 페이지 위에서 날짜를 짝짓는 자리다
+ * (`evals/grounded.ts`). 이 줄만 더했을 때는 열 번에 두 번 여전히 틀렸다: 정적 프롬프트의 한 문장
+ * (`CONTEXT_RULES_KO`)이 내일·모레·글피를 이 줄에서만 옮겨 쓰게 하고 나서야 스무 번 다 맞혔다.
+ */
+export function weekAheadLabel(day: string): string {
+  const [year, month, date] = day.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !date) return "";
+  const names = ["내일", "모레", "글피"];
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const at = new Date(Date.UTC(year, month - 1, date + index + 1));
+    const label = `${at.getUTCMonth() + 1}/${at.getUTCDate()}(${WEEKDAYS_KO[at.getUTCDay()]})`;
+    const name = names[index];
+    return name ? `${name} ${label}` : label;
+  });
+  return days.join(" · ");
+}
+
 /** "Asia/Seoul(KST)", 약자를 모르면 이름만. */
 export function zoneLabel(timeZone: string): string {
   const zone = resolveTimeZone(timeZone);

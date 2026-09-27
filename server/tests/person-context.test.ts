@@ -106,9 +106,10 @@ describe("the clock a run is told", () => {
       device: { timeZone: "Asia/Dubai", locale: "ko-KR" },
     });
     const clock = dateLineOf(prompt);
-    // The date and never the minute: the minute is the `now` tool's (shared/tools/now.ts).
+    // The date and the week after it, never the minute: the minute is the `now` tool's
+    // (shared/tools/now.ts), and the week is days only (`weekAheadText`).
     expect(clock).toMatch(
-      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai, 기기 언어 ko-KR 기준\)\.$/,
+      /^오늘은 \d{4}-\d{2}-\d{2} \(.\)이다\(사장님 기기 시간대 Asia\/Dubai, 기기 언어 ko-KR 기준\)\. 앞으로 7일: 내일 \d{1,2}\/\d{1,2}\(.\) · 모레 [^:]+\.$/,
     );
     expect(clock).not.toContain("KST");
   });
