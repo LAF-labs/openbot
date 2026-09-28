@@ -50,6 +50,10 @@ export function serviceLabel(server: string): string | undefined {
       return t("Cafe24");
     case "notion":
       return t("Notion");
+    case "canva":
+      return t("Canva");
+    case "kakao-playmcp":
+      return t("Kakao");
     case "kakao-alimtalk":
       return t("KakaoTalk notifications");
     // No row on the 연결 screen — nothing to connect — but a step line names it all the same.

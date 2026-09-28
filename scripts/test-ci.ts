@@ -704,8 +704,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3111, roots: ["server"] },
-  { name: "app", floor: 1538, roots: ["app"] },
+  { name: "server", floor: 3116, roots: ["server"] },
+  { name: "app", floor: 1545, roots: ["app"] },
   { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
   { name: "root", floor: 565, roots: ["tests", "agent-bot"] },
 ] as const;

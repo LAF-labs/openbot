@@ -135,6 +135,8 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     "google-business-profile": "구글 비즈니스 프로필",
     cafe24: "카페24",
     notion: "노션",
+    canva: "캔바",
+    "kakao-playmcp": "카카오",
     "kakao-alimtalk": "카카오 알림톡",
     "public-data": "나라장터·기업마당",
     // 연결된 서비스가 아니라 이 배포의 서버가 실행하는 목표 툴(`shared/tools/goals.ts`).

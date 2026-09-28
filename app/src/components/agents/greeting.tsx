@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ConnectionChoices } from "@/components/connections/connection-choices";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,21 @@ import { MessageContent, Message as MessageRow } from "@/components/ui/message";
 import { writeLine } from "@/lib/agents/notebook";
 import { useMyBots } from "@/lib/agents/my-bots";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
+import {
+  SUGGESTED_COUNT,
+  suggestedConnections,
+} from "@/lib/connections/suggested";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { hasFinalConsonant } from "@/lib/josa";
 import { PERSONA_LABELS } from "@/lib/persona/labels";
 import { savePersona, savePersonaFollowUp } from "@/lib/persona/queries";
-import { BUSINESS_KINDS, type BusinessKindId } from "@/lib/shop/catalogue";
+import {
+  BUSINESS_KINDS,
+  type BusinessKindId,
+  EMPTY_SHOP,
+} from "@/lib/shop/catalogue";
 import { saveShop } from "@/lib/shop/queries";
 import { savePlace } from "@/lib/whereabouts/queries";
 
@@ -662,6 +671,90 @@ function NotebookFollowUp({
 }
 
 /**
+ * THE ACCOUNTS, OFFERED ONCE THE BOT KNOWS WHO IT IS TALKING TO (owner, 2026-09-28: "외부서비스
+ * 연결 … 특히 온보딩 때 학생/직장인/사장님 셋 중 1개를 선택했을 때").
+ *
+ * Three of 연결's own switches, in the order the answer suggests (`suggestedConnections`), and a way
+ * to the rest. Nothing to answer: the step is there while the conversation is empty and goes into
+ * history with it, and turning nothing on is as good an answer as any. Muse puts its connectors
+ * first and its name last; ours come after the profile the person already made, because the owner
+ * decided the profile is the one screen and everything after it is the conversation.
+ */
+function ConnectStep({ persona }: { persona: Persona }) {
+  const { data: user } = useQuery(currentUserQueryOptions());
+  const ids = suggestedConnections(persona, user?.shop ?? EMPTY_SHOP);
+  return (
+    <BotSays animate reveal>
+      <p>
+        {t(
+          "Connect the accounts you use and I can look at them and handle things myself. You can skip this and do it any time.",
+        )}
+      </p>
+      <ConnectionChoices ids={ids} limit={SUGGESTED_COUNT} />
+      <p className="mt-2 text-xs">
+        <Link
+          className={`underline underline-offset-2 ${focusRing}`}
+          to="/settings/connected-accounts"
+        >
+          {t("See every connection")}
+        </Link>
+      </p>
+    </BotSays>
+  );
+}
+
+/**
+ * The places beside the conversation, said once as the Bot's own words: what each is for, one line
+ * each, a press away. The same four for everybody, in the sidebar's order — a tour, not a
+ * recommendation — so the persona does not touch it.
+ */
+const PLACES = [
+  {
+    to: "/feed",
+    name: "Updates",
+    what: "Every morning I pick a few pieces of news you care about.",
+  },
+  {
+    to: "/ideas",
+    name: "Ideas",
+    what: "Things worth handing me, one press to start.",
+  },
+  {
+    to: "/goals",
+    name: "Goals",
+    what: "Tell me a goal and I keep track of it with you.",
+  },
+  {
+    to: "/routines",
+    name: "Routines",
+    what: "Checks I run by myself at the times you set.",
+  },
+] as const;
+
+function PlacesStep() {
+  return (
+    <BotSays animate reveal>
+      <p>{t("Beside this conversation there is more:")}</p>
+      <ul className="mt-2 flex min-w-[min(16rem,100%)] flex-col gap-1.5">
+        {PLACES.map((place) => (
+          <li key={place.to}>
+            <Link
+              className={`flex min-h-11 w-full flex-col rounded-xl border border-foreground/25 px-3 py-2 text-left transition-colors hover:border-foreground/50 hover:bg-background/60 ${focusRing}`}
+              to={place.to}
+            >
+              <span className="font-medium">{t(place.name)}</span>
+              <span className="text-muted-foreground text-xs">
+                {t(place.what)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </BotSays>
+  );
+}
+
+/**
  * The greeting, for one Bot.
  *
  * `after` is what the compose screen puts under it once the persona is known — the first things to
@@ -731,6 +824,12 @@ export function Greeting({
           persona={persona}
           settled={user.personaFollowUp === persona}
         />
+      ) : null}
+      {mode === "compose" && effective ? (
+        <>
+          <ConnectStep persona={effective} />
+          <PlacesStep />
+        </>
       ) : null}
       {mode === "compose" && effective && after ? (
         <>

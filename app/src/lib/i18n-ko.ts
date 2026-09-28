@@ -356,6 +356,33 @@ export const ko: Record<string, string> = {
    * exists — they are drawn with `t()` on a variable, which the coverage test cannot see.
    */
   Notion: "노션",
+  Canva: "캔바",
+  Kakao: "카카오",
+  "The Kakao tools in the Kakao toolbox of whoever is asking.":
+    "질문하는 사람이 카카오 도구함에 담은 카카오 도구.",
+  "Uses the Kakao tools in your Kakao toolbox, such as KakaoTalk to yourself, Talk Calendar and Kakao Map, asking you before each one.":
+    "카카오 도구함에 담은 도구(나와의 채팅방, 톡캘린더, 카카오맵 등)를 써요. 쓸 때마다 먼저 여쭤봐요.",
+  "Send tomorrow's schedule to my KakaoTalk.":
+    "내일 일정을 내 카카오톡으로 보내 줘",
+  "Designs in the Canva account of whoever is asking.":
+    "질문하는 사람의 캔바 계정에 있는 디자인.",
+  "Makes slides, posters and social posts in your Canva, and finds the designs you have.":
+    "내 캔바에서 발표 자료·포스터·SNS 이미지를 만들고, 가진 디자인을 찾아 줘요.",
+  "Connect the accounts you use and I can look at them and handle things myself. You can skip this and do it any time.":
+    "쓰시는 계정을 연결해 두면 제가 직접 보고 처리할 수 있어요. 지금 건너뛰고 나중에 연결해도 돼요.",
+  "See every connection": "연결 모두 보기",
+  "Make a one-page poster in Canva for what I am working on.":
+    "지금 하고 있는 일로 캔바에서 한 장짜리 포스터를 만들어 줘",
+  "Open Connections": "연결 열기",
+  "Beside this conversation there is more:": "대화 옆에는 이런 곳도 있어요:",
+  "Every morning I pick a few pieces of news you care about.":
+    "관심 있는 소식을 매일 아침 몇 개 골라 드려요.",
+  "Things worth handing me, one press to start.":
+    "저한테 맡겨 볼 만한 일이에요. 누르면 바로 시작해요.",
+  "Tell me a goal and I keep track of it with you.":
+    "목표를 말해 주시면 함께 챙겨요.",
+  "Checks I run by myself at the times you set.":
+    "정해 둔 시간에 제가 알아서 확인하고 알려 드려요.",
   "Google Drive": "구글 드라이브",
   "Google Sheets": "구글 스프레드시트",
   Gmail: "지메일",

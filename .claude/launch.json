@@ -4,13 +4,33 @@
     {
       "name": "api",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["--cwd", "server", "--env-file=../.env", "src/index.ts"],
+      "runtimeArgs": [
+        "--cwd",
+        "server",
+        "--env-file=../.env",
+        "src/index.ts"
+      ],
       "port": 3001
+    },
+    {
+      "name": "bot",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "--cwd",
+        "agent-bot",
+        "--env-file=../.env",
+        "src/index.ts"
+      ],
+      "port": 4200
     },
     {
       "name": "app",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "--cwd=app", "dev"],
+      "runtimeArgs": [
+        "run",
+        "--cwd=app",
+        "dev"
+      ],
       "port": 3010
     }
   ]

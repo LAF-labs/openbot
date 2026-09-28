@@ -82,6 +82,7 @@ async function composeScreen(options: {
   persona: string | null;
   shop?: { kind: string | null; places: string[] };
   followedUp?: string | null;
+  overview?: unknown;
 }) {
   let persona = options.persona;
   let followedUp = options.followedUp ?? null;
@@ -111,6 +112,9 @@ async function composeScreen(options: {
         return json({ memory: { id: "memory-1" } }, 201);
       }
       if (pathname === "/api/routines") return json({ routines: [] });
+      if (pathname === "/api/connections/overview" && options.overview) {
+        return json(options.overview);
+      }
       return undefined;
     },
   });
@@ -362,5 +366,100 @@ describe("the head of a conversation", () => {
   test("a question never answered stays pressable there", async () => {
     const view = await conversation(null);
     expect(rowNamed(view, "Student")?.disabled).toBe(false);
+  });
+});
+
+/** An OAuth row as `/api/connections/overview` sends it. */
+const account = (id: string, title: string, status = "not_connected") => ({
+  kind: "oauth",
+  id,
+  serverId: null,
+  title,
+  vendor: title,
+  status,
+  connectedAt: null,
+  account: null,
+  needsInstanceName: false,
+  health: {
+    status: "ok",
+    lastOkAt: null,
+    lastFailureAt: null,
+    failureCode: null,
+  },
+});
+
+const OVERVIEW = {
+  generatedAt: "2026-09-28T00:00:00.000Z",
+  accounts: [
+    account("gmail", "Gmail"),
+    account("google-calendar", "Google Calendar"),
+    account("google-drive", "Google Drive"),
+    account("notion", "Notion"),
+    account("canva", "Canva"),
+  ],
+  sites: [],
+  bots: [{ id: BOT, name: "초롱" }],
+};
+
+describe("the accounts and the places, once the Bot knows who it is talking to (2026-09-28)", () => {
+  const connectRows = (view: { host: HTMLElement }) =>
+    [
+      ...view.host.querySelectorAll(
+        '[data-greeting] [data-slot="connection-choices"] [role="switch"]',
+      ),
+    ].map((row) => row.getAttribute("aria-label"));
+
+  test("a student is offered three of 연결's switches, their own first, and pressing nothing connects nothing", async () => {
+    const view = await composeScreen({
+      persona: "student",
+      followedUp: "student",
+      overview: OVERVIEW,
+    });
+    await view.waitFor(
+      () => connectRows(view).length === 3,
+      "the three switches",
+    );
+    const text = view.host.textContent ?? "";
+    expect(text).toContain("Google Calendar");
+    expect(text).toContain("Notion");
+    expect(text).toContain("Canva");
+    // Gmail is the office worker's first, and a student's fifth: on 연결, not here.
+    expect(text).not.toContain("Reads your mail and writes replies");
+    expect(
+      view.requests.some((request) => request.pathname.endsWith("/connect")),
+    ).toBe(false);
+    expect(beyondTheApp(view.requests)).toEqual([]);
+  });
+
+  test("an office worker is offered mail first, from the same pool", async () => {
+    const view = await composeScreen({
+      persona: "worker",
+      followedUp: "worker",
+      overview: OVERVIEW,
+    });
+    await view.waitFor(
+      () => connectRows(view).length === 3,
+      "the three switches",
+    );
+    expect(view.host.textContent ?? "").toContain(
+      "Reads your mail and writes replies",
+    );
+  });
+
+  test("the places beside the conversation are the same four for everybody, each a link", async () => {
+    for (const persona of ["student", "owner"]) {
+      const view = await composeScreen({
+        persona,
+        followedUp: persona,
+        overview: OVERVIEW,
+      });
+      const links = [
+        ...view.host.querySelectorAll<HTMLAnchorElement>("[data-greeting] a"),
+      ].map((link) => link.getAttribute("href"));
+      for (const to of ["/feed", "/ideas", "/goals", "/routines"]) {
+        expect(links).toContain(to);
+      }
+      await unmountApps();
+    }
   });
 });

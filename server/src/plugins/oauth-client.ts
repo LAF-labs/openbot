@@ -435,6 +435,8 @@ export function createOAuthClients(
     /** When the client that was just refused was stored. */
     clientRegisteredAt: Date | null;
     registrationUrl: string | undefined;
+    /** The entry's `registrationAuth`, so a re-registration asks for what the first one did. */
+    registrationAuth?: "client_secret_post" | undefined;
     serverId: string;
     /** What to tell the person once the deployment has registered itself again. */
     refusal: string;
@@ -461,6 +463,7 @@ export function createOAuthClients(
     const fresh = await context.registerClient({
       registrationUrl,
       redirectUri,
+      ...(input.registrationAuth ? { authMethod: input.registrationAuth } : {}),
     });
     // The vendor would not have us either. The first refusal is the one worth reporting: it says
     // what actually stopped the call, where this one says what stopped the recovery.
@@ -525,7 +528,7 @@ export function createOAuthClients(
         return null;
       }
       // Held before the lock, because narrowing does not survive into the closure below.
-      const { registrationUrl } = entry.auth;
+      const { registrationUrl, registrationAuth } = entry.auth;
       const { redirectUri } = options;
 
       const outcome = await withOAuthClientLock(
@@ -542,6 +545,7 @@ export function createOAuthClients(
           const registered = await context.registerClient({
             registrationUrl,
             redirectUri,
+            ...(registrationAuth ? { authMethod: registrationAuth } : {}),
           });
           if (!registered) return null;
 

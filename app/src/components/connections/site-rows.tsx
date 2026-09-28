@@ -103,9 +103,15 @@ const asDate = (iso: string | null): string =>
 export const SiteRows = ({
   sites,
   bots,
+  only,
 }: {
   sites: OverviewSite[];
   bots: { id: string; name: string }[];
+  /**
+   * These sites alone, in this order, with nothing folded behind 더 보기 — the few a conversation
+   * offers (`ConnectionChoices`). Absent is the 연결 screen: every site, this shop's first.
+   */
+  only?: readonly string[];
 }) => {
   const queryClient = useQueryClient();
   const [chosenBotId, setChosenBotId] = useState<string | null>(rememberedBot);
@@ -140,15 +146,18 @@ export const SiteRows = ({
    */
   const ordered = sitesInShopOrder(BUSINESS_SITES, shop);
   const hasShop = ordered.some((site) => siteIsForThisShop(site.id, shop));
-  const shown =
-    isShowingAll || !hasShop
+  const shown = only
+    ? only
+        .map((id) => BUSINESS_SITES.find((site) => site.id === id))
+        .filter((site): site is BusinessSite => site !== undefined)
+    : isShowingAll || !hasShop
       ? ordered
       : ordered.filter(
           (site) =>
             siteIsForThisShop(site.id, shop) ||
             stateOf(byId.get(site.id)) !== "not_connected",
         );
-  const folded = ordered.length - shown.length;
+  const folded = only ? 0 : ordered.length - shown.length;
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: connectionKeys.all });

@@ -37,8 +37,11 @@ type Phase = "settled" | "naming" | "connecting" | "waiting";
 export const OauthRow = ({
   account,
   onWaiting,
+  returnTo = "settings",
 }: {
   account: OauthAccount;
+  /** Where a browser tab comes back to after the vendor: 연결, or the conversation it was pressed in. */
+  returnTo?: "settings" | "chat";
   /**
    * Told whenever this row starts or stops waiting on another window, so the screen can re-ask.
    *
@@ -79,7 +82,7 @@ export const OauthRow = ({
     mutationFn: () =>
       beginConnect(
         account.id,
-        "settings",
+        returnTo,
         account.needsInstanceName ? shopId.trim() : undefined,
       ),
     onMutate: () => {

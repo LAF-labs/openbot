@@ -168,6 +168,37 @@ describe("what a tool does", () => {
   });
 });
 
+describe("an entry that lists its reads (2026-09-28, Canva)", () => {
+  const canva = catalogueEntry("canva")!;
+
+  test("a named read is a read; a named write and anything unnamed are writes", () => {
+    expect(classifyTool(canva, "search-designs", true)).toBe("read");
+    expect(classifyTool(canva, "generate-design", true)).toBe("write");
+    // The side this list exists for: a tool Canva added after the list was written asks first.
+    expect(classifyTool(canva, "brand-new-tool", true)).toBe("write");
+    expect(classifyTool(canva, "search-designs", false)).toBe("write");
+  });
+
+  test("no name is both a read and a write", () => {
+    for (const entry of CATALOGUE) {
+      const writes = new Set(entry.writeTools);
+      for (const read of entry.readTools ?? []) {
+        expect(writes.has(read)).toBe(false);
+      }
+    }
+  });
+
+  test("its reconciliation reports only names neither list carries", () => {
+    expect(
+      unlistedAdvertisedTools(canva, [
+        "search-designs",
+        "generate-design",
+        "brand-new-tool",
+      ]),
+    ).toEqual(["brand-new-tool"]);
+  });
+});
+
 describe("the write-list reconciliation trail", () => {
   test("only a scope-less user-oauth vendor is reconciled, and only unlisted names are reported", () => {
     const notion = catalogueEntry("notion")!;

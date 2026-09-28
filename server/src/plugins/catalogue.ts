@@ -143,6 +143,14 @@ export type CatalogueAuth =
       /** The RFC 7591 endpoint. Pinned https, required when `clientRegistration` is `dynamic`. */
       registrationUrl?: string;
       /**
+       * How the client it registers proves itself at the token endpoint. Absent is a public client
+       * (`none`), whose proof is PKCE — what Notion and Canva take. Some official servers publish no
+       * `none` in `token_endpoint_auth_methods_supported` (Kakao's PlayMCP, 2026-09-28) and would
+       * refuse or silently rewrite a public registration, so those ask for a secret, which the
+       * vendor issues, the vault keeps, and the token request sends in the body.
+       */
+      registrationAuth?: "client_secret_post";
+      /**
        * The fleet-wide OAuth application this entry consents under, when there is one.
        *
        * Present means the client comes from configuration and is the same on every VM: nobody
@@ -218,6 +226,17 @@ export type CatalogueEntry = {
    * over-inclusive.
    */
   writeTools: readonly string[];
+  /**
+   * The tools known to only read, for a vendor whose write list cannot be trusted to be whole.
+   *
+   * PRESENT FLIPS THE DEFAULT. Without it, an advertised tool this entry forgot to name in
+   * {@link CatalogueEntry.writeTools} is a read — the failure mode that list's own note warns about.
+   * With it, anything not named here is a write, named in `writeTools` or not: a tool the vendor
+   * added last week asks first rather than going through as a read. For a vendor whose tool list was
+   * read from its own client rather than reconciled on a live server (Canva, 2026-09-28), this is
+   * the side to be wrong on.
+   */
+  readTools?: readonly string[];
   /**
    * Tools that stop for a person whatever the written boundary says short of `deny`.
    *
@@ -622,6 +641,146 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     ]),
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
   },
+  {
+    key: "canva",
+    title: "Canva",
+    vendor: "Canva",
+    summary: "Designs in the Canva account of whoever is asking.",
+    /*
+     * Canva's hosted MCP server, reached the way Notion's is: the deployment registers itself
+     * (RFC 7591) on the first 연결 and PKCE carries the proof. Chosen for everybody at once — a
+     * student's 발표 자료, an office worker's 보고서 표지 and a shop's 메뉴판 or 전단 are the same
+     * tool — which is why it is the first vendor added after the persona question (2026-09-28).
+     */
+    host: "https://mcp.canva.com",
+    path: "/mcp",
+    auth: {
+      kind: "user-oauth",
+      // From https://mcp.canva.com/.well-known/oauth-authorization-server, read 2026-09-28.
+      authorizationUrl: "https://mcp.canva.com/authorize",
+      tokenUrl: "https://mcp.canva.com/token",
+      // Like Notion, Canva publishes its token endpoint as its revocation_endpoint.
+      revokeUrl: "https://mcp.canva.com/token",
+      /*
+       * From the server's own resource metadata (`/.well-known/oauth-protected-resource/mcp`),
+       * minus the two that publish on the person's behalf beyond their own designs: writing brand
+       * templates and writing answers to Canva's help. Everything a design, a folder, an asset or
+       * a comment needs is here.
+       */
+      scopes: Object.freeze([
+        "profile:read",
+        "design:meta:read",
+        "design:content:read",
+        "design:content:write",
+        "folder:read",
+        "folder:write",
+        "asset:read",
+        "asset:write",
+        "brandtemplate:meta:read",
+        "brandtemplate:content:read",
+        "brandkit:read",
+        "comment:read",
+        "comment:write",
+        "help:answers:read",
+      ]),
+      clientRegistration: "dynamic",
+      registrationUrl: "https://mcp.canva.com/register",
+    },
+    /*
+     * THE READS ARE THE LIST THAT DECIDES (`readTools`), not the writes. The names were read off a
+     * Canva MCP client, not reconciled against a live server this deployment holds a grant on, so
+     * the write list below is documentation and the read list is the barrier: anything Canva
+     * advertises that is not named as a read asks first. Generating a design spends the person's
+     * Canva credits, which is one more reason for that default.
+     */
+    readTools: Object.freeze([
+      "get-assets",
+      "get-brand-template-dataset",
+      "get-create-design-async-job",
+      "get-design",
+      "get-design-content",
+      "get-design-dataset",
+      "get-design-pages",
+      "get-design-thumbnail",
+      "get-export-formats",
+      "get-generate-image-job",
+      "get-separate-image-layers-job",
+      "help",
+      "list-brand-kits",
+      "list-comments",
+      "list-folder-items",
+      "list-replies",
+      "read-design",
+      "resolve-shortlink",
+      "search-brand-templates",
+      "search-designs",
+      "search-folders",
+    ]),
+    writeTools: Object.freeze([
+      "autofill-design",
+      "comment-on-design",
+      "copy-design",
+      "create-brand-template-draft",
+      "create-design",
+      "create-design-from-brand-template",
+      "create-design-from-candidate",
+      "create-folder",
+      "create-upload-url",
+      "edit-design",
+      "export-design",
+      "generate-design",
+      "generate-design-structured",
+      "generate-image",
+      "import-design-from-url",
+      "merge-designs",
+      "move-item-to-folder",
+      "publish-brand-template",
+      "remove-background",
+      "reply-to-comment",
+      "request-outline-review",
+      "resize-design",
+      "separate-image-layers",
+      "upload-asset-from-url",
+    ]),
+    docsUrl: "https://www.canva.dev/docs/connect/canva-mcp-server-setup/",
+  },
+  {
+    key: "kakao-playmcp",
+    // "Kakao" to the person: "MCP" is the operator's word (`owner-vocabulary.test.ts`).
+    title: "Kakao",
+    vendor: "Kakao",
+    summary: "The Kakao tools in the Kakao toolbox of whoever is asking.",
+    /*
+     * KAKAO'S OWN MCP GATEWAY (owner, 2026-09-28: "외부서비스는 최대한 공식 MCP를 이용해서"). One
+     * endpoint serves whatever the person put in their PlayMCP 도구함 — Kakao's own 카카오톡 나와의
+     * 채팅방, 톡캘린더 and 카카오맵 among them — so the tool list is the person's, not ours. Kakao calls
+     * the platform a beta and its servers test versions (kakaocorp.com/page/detail/11674).
+     *
+     * Everything asks first: `readTools` is empty, so no tool here is a read until somebody has read
+     * the live list on a real grant and named the ones that only look.
+     */
+    host: "https://playmcp.kakao.com",
+    path: "/mcp",
+    auth: {
+      kind: "user-oauth",
+      /*
+       * From https://playauth.kakao.com/.well-known/oauth-authorization-server/playmcp, which the
+       * server's resource metadata names (`/.well-known/oauth-protected-resource/mcp`), read
+       * 2026-09-28. Its token endpoint lists no `none`, hence `registrationAuth`.
+       */
+      authorizationUrl: "https://playauth.kakao.com/playmcp/oauth2/authorize",
+      tokenUrl: "https://playauth.kakao.com/playmcp/oauth2/token",
+      revokeUrl: "https://playauth.kakao.com/playmcp/oauth2/revoke",
+      scopes: Object.freeze(["default"]),
+      clientRegistration: "dynamic",
+      registrationUrl:
+        "https://playauth.kakao.com/connect/register?tenant=playmcp",
+      registrationAuth: "client_secret_post",
+    },
+    readTools: Object.freeze([]),
+    writeTools: Object.freeze([]),
+    docsUrl: "https://playmcp.kakao.com/",
+  },
   /*
    * THE PARTNER ENTRY, and what makes it a different shape from everything above.
    *
@@ -842,6 +1001,8 @@ export function classifyTool(
   // can say a tool of theirs only reads. Everything it offers is a write.
   if (!entry) return "write";
   if (!advertised) return "write";
+  if (entry.readTools)
+    return entry.readTools.includes(toolName) ? "read" : "write";
   return entry.writeTools.includes(toolName) ? "write" : "read";
 }
 

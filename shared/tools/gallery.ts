@@ -18,6 +18,8 @@ export const GALLERY_CONFIRMATIONS: Readonly<Record<string, string>> = {
   showLineChart: "The line chart is now on screen for the person.",
   showAreaChart: "The area chart is now on screen for the person.",
   showProgress: "The progress chart is now on screen for the person.",
+  showConnection:
+    "The switches this deployment offers are on screen; one it does not offer is left out, so name the services only as switches to turn on, not as shown. Nothing is connected until the person turns one on, so do not say it is connected.",
   showActivityReport:
     "The report is on screen for the person, filled with figures read from this deployment. You were not given the figures.",
 };

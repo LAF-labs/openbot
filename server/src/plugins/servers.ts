@@ -82,7 +82,17 @@ export function unlistedAdvertisedTools(
   entry: CatalogueEntry | null,
   advertised: readonly string[],
 ): string[] {
-  if (!entry || entry.writeTools.length === 0) return [];
+  if (!entry) return [];
+  /*
+   * An entry that lists its reads already treats every unlisted name as a write, so an unlisted
+   * name is not a hole there — but it is still a name nobody reviewed, and the trail is how the
+   * list catches up with the vendor.
+   */
+  if (entry.readTools) {
+    const known = new Set([...entry.readTools, ...entry.writeTools]);
+    return advertised.filter((name) => !known.has(name)).sort();
+  }
+  if (entry.writeTools.length === 0) return [];
   if (entry.auth.kind !== "user-oauth" || entry.auth.scopes.length > 0) {
     return [];
   }

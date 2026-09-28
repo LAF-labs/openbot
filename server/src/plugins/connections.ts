@@ -599,6 +599,10 @@ export function createConnections(
           error,
           clientRegisteredAt: stored.registeredAt,
           registrationUrl,
+          registrationAuth:
+            entry.auth.kind === "user-oauth"
+              ? entry.auth.registrationAuth
+              : undefined,
           serverId: row.id,
           refusal: clientReplaced,
         });

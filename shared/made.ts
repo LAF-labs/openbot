@@ -44,13 +44,16 @@ export const MADE_CARD_SHELF: Readonly<Record<string, MadeShelf>> = {
 
 /**
  * The gallery's other cards, which are not things the Bot made: two are questions to the person,
- * and a quotation is somebody else's words. `app/tests/made.test.ts` holds every gallery card to
- * one list or the other, so a card added later is filed on purpose.
+ * a quotation is somebody else's words, and a connection card is 연결's own switches.
+ * `app/tests/made.test.ts` holds every gallery card to one list or the other, so a card added later
+ * is filed on purpose.
  */
 export const NOT_MADE: readonly string[] = [
   "askApproval",
   "askChoice",
   "showQuote",
+  // 연결's switches, put in the conversation: a way to connect, not a thing the Bot made.
+  "showConnection",
 ];
 
 export const isMadeShelf = (value: unknown): value is MadeShelf =>

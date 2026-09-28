@@ -27,6 +27,16 @@ export const CATALOGUE_COPY: Readonly<
     summary: "Pages and databases of whoever is asking.",
     can: "Reads the pages you have shared, and writes new ones.",
   },
+  "kakao-playmcp": {
+    mark: "kakao",
+    summary: "The Kakao tools in the Kakao toolbox of whoever is asking.",
+    can: "Uses the Kakao tools in your Kakao toolbox, such as KakaoTalk to yourself, Talk Calendar and Kakao Map, asking you before each one.",
+  },
+  canva: {
+    mark: "canva",
+    summary: "Designs in the Canva account of whoever is asking.",
+    can: "Makes slides, posters and social posts in your Canva, and finds the designs you have.",
+  },
   "google-drive": {
     mark: "google",
     summary: "Files in the Drive of whoever is asking.",

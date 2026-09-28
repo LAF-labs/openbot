@@ -693,7 +693,8 @@ export function createPluginRoutes(
      */
     const asked = context.req.query("returnTo");
     /*
-     * Three names now, and `shell` is the one that is not a page of this app: it lands on this
+     * Four names now (`chat` since 2026-09-28, for a switch pressed in the conversation), and
+     * `shell` is the one that is not a page of this app: it lands on this
      * server's own session-free `/connected`, because in the desktop shell the consent goes out to
      * the person's OWN browser and the app has no session there. Sent by the app when
      * `window.__TAURI__` is present (`lib/plugins/queries.ts`), and still narrowed here rather
@@ -701,7 +702,9 @@ export function createPluginRoutes(
      * state.
      */
     const returnTo: ConnectOrigin =
-      asked === "admin" ? "admin" : asked === "shell" ? "shell" : "settings";
+      asked === "admin" || asked === "shell" || asked === "chat"
+        ? asked
+        : "settings";
 
     const verifier = createVerifier();
     const sealed = await sealConnectState(

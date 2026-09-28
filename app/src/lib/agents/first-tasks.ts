@@ -257,6 +257,14 @@ export const ACCOUNT_FIRST_TASKS: Readonly<Record<string, Sentence>> = {
     pattern: "paperwork",
     sentence: "Sum up what changed in Notion this week.",
   },
+  "kakao-playmcp": {
+    pattern: "schedule",
+    sentence: "Send tomorrow's schedule to my KakaoTalk.",
+  },
+  canva: {
+    pattern: "paperwork",
+    sentence: "Make a one-page poster in Canva for what I am working on.",
+  },
   cafe24: {
     pattern: "enquiries",
     sentence: "Sort out the orders that came in today.",

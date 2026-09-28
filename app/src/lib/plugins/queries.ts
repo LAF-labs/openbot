@@ -295,7 +295,8 @@ export class ConnectRefusedError extends Error {
  */
 export async function beginConnect(
   serverId: string,
-  returnTo: "admin" | "settings",
+  /** `chat`: a switch pressed inside the conversation, which the vendor sends the person back to. */
+  returnTo: "admin" | "settings" | "chat",
   /**
    * The shop's own name at a per-instance vendor — a Cafe24 mall id, which is on the address bar of
    * the shop itself and is not a secret. Sent only where the server said one is needed.

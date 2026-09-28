@@ -59,6 +59,8 @@ export const MARKS: Readonly<Record<string, Mark>> = {
   // from across a room, and its yellow needs a dark ink or the tile reads as blank.
   kakao: { ground: "#FEE500", ink: "#3C1E1E", glyph: "bubble" },
   notion: { ground: "#FFFFFF", ink: "#111111", letters: "N" },
+  // Canva's own turquoise under its initial; the wordmark is too long for a 32px tile.
+  canva: { ground: "#00C4CC", ink: "#FFFFFF", letters: "C" },
   coupang: { ground: "#AE1D2D", ink: "#FFFFFF", letters: "CP" },
   // Its own two letters rather than 쿠팡's: they are different logins, and the rows sit together.
   "coupang-eats": { ground: "#AE1D2D", ink: "#FFFFFF", letters: "CE" },

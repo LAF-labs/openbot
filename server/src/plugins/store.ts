@@ -486,6 +486,7 @@ export type PluginStoreOptions = {
   registerClient?: (input: {
     registrationUrl: string;
     redirectUri: string;
+    authMethod?: "client_secret_post";
   }) => Promise<OAuthClient | null>;
   /** Where the vendor sends people back; needed to (re)register a dynamic client. */
   redirectUri?: string | undefined;
@@ -590,6 +591,7 @@ export type PluginContext = {
   readonly registerClient: (input: {
     registrationUrl: string;
     redirectUri: string;
+    authMethod?: "client_secret_post";
   }) => Promise<OAuthClient | null>;
   /**
    * Held rather than resolved, because the transport is a property of the entry and is not known

@@ -66,7 +66,7 @@ const CALLBACK_PATH = "/api/plugins/oauth/callback";
  * `/connected` instead, which needs no session and hands the browser back to the app through
  * `lafagent://`.
  */
-export type ConnectOrigin = "settings" | "admin" | "shell";
+export type ConnectOrigin = "settings" | "admin" | "shell" | "chat";
 
 export type ConnectState = {
   /** Who is connecting. Taken from their session when the flow starts, never from the callback. */
@@ -271,6 +271,13 @@ export function connectedAccountsUrlFor(
     return `${origin}/admin/plugins?connected=${encodeURIComponent(where.serverId)}`;
   }
 
+  /*
+   * A switch pressed inside the conversation — the first run's 연결 step or a card the Bot put on
+   * screen — comes back to the conversation, where that same switch now reads 연결됨 on its own. A
+   * failure still goes to the list below, which is the one screen that phrases every reason.
+   */
+  if (returnTo === "chat" && "serverId" in where) return `${origin}/`;
+
   const base = `${origin}/settings/connected-accounts`;
   if ("serverId" in where) {
     return `${base}?connected=${encodeURIComponent(where.serverId)}`;
@@ -396,14 +403,14 @@ async function openConnectState(
       verifier: payload.verifier,
       jti: payload.jti,
       exp: payload.exp,
-      // Only the three names are recognised; anything else becomes the default rather than being
+      // Only the four names are recognised; anything else becomes the default rather than being
       // carried. A name cannot express another origin, which is the whole reason this is a name.
       returnTo:
-        payload.returnTo === "admin"
-          ? "admin"
-          : payload.returnTo === "shell"
-            ? "shell"
-            : "settings",
+        payload.returnTo === "admin" ||
+        payload.returnTo === "shell" ||
+        payload.returnTo === "chat"
+          ? payload.returnTo
+          : "settings",
     };
   } catch {
     return null;
@@ -667,6 +674,8 @@ export async function redeemAuthorizationCode(input: {
 export async function registerDynamicClient(input: {
   registrationUrl: string;
   redirectUri: string;
+  /** Absent: a public client. See `registrationAuth` in catalogue.ts. */
+  authMethod?: "client_secret_post";
 }): Promise<{ clientId: string; clientSecret: string } | null> {
   // A transport failure refuses like an HTTP one — same reasoning as `redeemAuthorizationCode`: a
   // throw out of here would surface a person's Connect press as a 500 instead of the 502 the route
@@ -680,7 +689,7 @@ export async function registerDynamicClient(input: {
         redirect_uris: [input.redirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        token_endpoint_auth_method: "none",
+        token_endpoint_auth_method: input.authMethod ?? "none",
         client_name: "LAF Agent",
       }),
       // The registration endpoint is pinned in the catalogue, so a redirect is somebody else

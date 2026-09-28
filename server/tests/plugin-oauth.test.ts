@@ -691,6 +691,15 @@ describe("where the callback puts somebody afterwards", () => {
     );
   });
 
+  test("a switch pressed in the conversation returns to it; its failure still goes to the list", () => {
+    expect(connectedAccountsUrlFor(APP, { serverId: "canva" }, "chat")).toBe(
+      `${APP}/`,
+    );
+    expect(
+      connectedAccountsUrlFor(APP, { failed: true, reason: "denied" }, "chat"),
+    ).toBe(`${APP}/settings/connected-accounts?connected=failed&reason=denied`);
+  });
+
   test("still points somewhere when no app URL is configured", () => {
     // Relative is wrong on a split-port deployment and right on a single-origin one, which is the
     // only case where `appUrl` is absent and the deployment still works.
@@ -745,6 +754,19 @@ describe("registering this deployment as an OAuth client", () => {
       // The fork's name, not upstream's. It is what a person sees on the consent screen.
       client_name: "LAF Agent",
     });
+  });
+
+  test("an entry that asks for a secret registers as a confidential client (PlayMCP, 2026-09-28)", async () => {
+    answer = () => json({ client_id: "dyn-9", client_secret: "s-9" }, 201);
+    const client = await registerDynamicClient({
+      registrationUrl: REGISTRATION_URL,
+      redirectUri: REDIRECT_URI,
+      authMethod: "client_secret_post",
+    });
+    expect(client).toEqual({ clientId: "dyn-9", clientSecret: "s-9" });
+    expect(
+      JSON.parse(asked[0]?.body ?? "null").token_endpoint_auth_method,
+    ).toBe("client_secret_post");
   });
 
   test("a vendor that issues a secret anyway has it kept", async () => {
