@@ -252,6 +252,16 @@ const MODEL_EFFORTS: ReadonlyArray<{
     model: /(^|\/)deepseek-v4\.1/i,
     words: { quick: "low", balanced: "high", thorough: "max" },
   },
+  /*
+   * META'S MUSE SPARK defines minimal through max, reasons always (`mandatory`), and defaults to
+   * medium (OpenRouter `supported_efforts`, read 2026-09-28). So `balanced` is the model's own
+   * default, as it is on DeepSeek, and the OpenAI words fit — named here so the choice is read
+   * rather than fallen into.
+   */
+  {
+    model: /(^|\/)muse-spark-/i,
+    words: { quick: "low", balanced: "medium", thorough: "high" },
+  },
 ];
 
 const OPENAI_EFFORTS: Record<ProductEffort, ProviderEffort> = {
