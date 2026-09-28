@@ -371,6 +371,27 @@ export const ko: Record<string, string> = {
   "Connect the accounts you use and I can look at them and handle things myself. You can skip this and do it any time.":
     "쓰시는 계정을 연결해 두면 제가 직접 보고 처리할 수 있어요. 지금 건너뛰고 나중에 연결해도 돼요.",
   "See every connection": "연결 모두 보기",
+  "Getting started": "시작하기",
+  "Connect what you use, and I can handle it myself":
+    "쓰시는 서비스를 연결하면 제가 직접 처리해요",
+  "Calendar, mail, Notion, Canva, and the sites a shop runs on. What I may do with each is yours to set.":
+    "캘린더, 메일, 노션, 캔바, 그리고 가게를 운영하는 사이트까지. 무엇을 해도 되는지는 직접 정하세요.",
+  "Things worth handing me, one press each":
+    "저한테 맡겨 볼 만한 일, 누르면 바로",
+  "Pick one and it waits in the conversation for you to finish the sentence. Nothing starts until you send it.":
+    "하나 고르면 대화창에 문장이 들어가요. 보내기 전까지는 아무것도 시작하지 않아요.",
+  "Tell me a goal and I keep track of it with you":
+    "목표를 말해 주시면 함께 챙겨요",
+  "An exam, a habit, this month's sales. I save it only when you say yes, and log each step on its timeline.":
+    "시험, 습관, 이번 달 매출까지. 좋다고 하실 때만 저장하고, 한 걸음씩 기록해요.",
+  "Checks I run at the times you set": "정해 둔 시간에 제가 알아서 확인해요",
+  "A morning briefing, a weekly summary, a watch on a price. Say it in the conversation and I set it up.":
+    "아침 브리핑, 주간 요약, 가격 지켜보기. 대화에서 말씀하시면 제가 만들어 둘게요.",
+  "Everything I make, kept in one place": "제가 만든 것은 한곳에 모아 둬요",
+  "Tables, checklists and drafts from our conversation, to open again whenever you need them.":
+    "대화에서 만든 표, 체크리스트, 초안을 필요할 때 다시 열어 보세요.",
+  "Connected. You can ask me this now:":
+    "연결됐어요. 이제 이렇게 부탁해 보세요:",
   "Make a one-page poster in Canva for what I am working on.":
     "지금 하고 있는 일로 캔바에서 한 장짜리 포스터를 만들어 줘",
   "Open Connections": "연결 열기",

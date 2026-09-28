@@ -1,10 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  COMPOSE_SCREEN_KEY,
+  DraftScope,
+  offerDraft,
+} from "@/components/channels/composer/prefill";
 import { ConnectionRowSkeleton } from "@/components/connections/connection-row";
 import { OauthRow } from "@/components/connections/oauth-row";
 import { SiteRows } from "@/components/connections/site-rows";
 import { focusRing } from "@/components/ui/focus";
+import { ACCOUNT_FIRST_TASKS } from "@/lib/agents/first-tasks";
 import { agentKeys } from "@/lib/agents/queries";
 import {
   connectionsOverviewQueryOptions,
@@ -93,13 +99,34 @@ export function ConnectionChoices({
     .map((account) => account.id)
     .join(",");
   const seen = useRef<string | null>(null);
+  /*
+   * WHAT IT CAN DO NOW, SAID THE MOMENT IT CAN (Muse walkthrough 2026-09-28, item 4). An account
+   * that turned on while this was on screen gets its first thing to ask, as a sentence to press —
+   * put in the composer, not sent, so nothing is spent until the person means it. Only accounts
+   * that turned on HERE: one that was already on when the card was drawn is not news.
+   */
+  const [landed, setLanded] = useState<readonly string[]>([]);
   useEffect(() => {
     if (seen.current !== null && seen.current !== connectedKey) {
       void queryClient.invalidateQueries({ queryKey: pluginKeys.all });
       void queryClient.invalidateQueries({ queryKey: agentKeys.all });
+      const before = new Set(seen.current.split(",").filter(Boolean));
+      const fresh = connectedKey
+        .split(",")
+        .filter((id) => id && !before.has(id));
+      if (fresh.length > 0) {
+        setLanded((current) => [
+          ...current,
+          ...fresh.filter((id) => !current.includes(id)),
+        ]);
+      }
     }
     seen.current = connectedKey;
   }, [connectedKey, queryClient]);
+  const draftScope = useContext(DraftScope) ?? COMPOSE_SCREEN_KEY;
+  const nowCan = landed
+    .map((id) => ACCOUNT_FIRST_TASKS[id]?.sentence)
+    .filter((sentence): sentence is string => Boolean(sentence));
 
   if (overview.isPending) {
     return (
@@ -140,6 +167,21 @@ export function ConnectionChoices({
               onWaiting={handleWaiting}
               returnTo="chat"
             />
+          ))}
+        </div>
+      ) : null}
+      {nowCan.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-1.5" data-slot="now-can">
+          <p className="text-sm">{t("Connected. You can ask me this now:")}</p>
+          {nowCan.map((sentence) => (
+            <button
+              className={`flex min-h-11 w-full items-center rounded-xl border border-foreground/25 px-3 py-2 text-left text-sm transition-colors hover:border-foreground/50 hover:bg-background/60 ${focusRing}`}
+              key={sentence}
+              onClick={() => offerDraft(draftScope, t(sentence))}
+              type="button"
+            >
+              {t(sentence)}
+            </button>
           ))}
         </div>
       ) : null}

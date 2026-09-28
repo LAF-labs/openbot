@@ -775,6 +775,33 @@ true or unset — a VM that still says `false` from the MiMo days keeps the effo
 `send-alimtalk-with-the-blanks-named` 6/8 with the public-data tools in the toolset (3/3 without).
 `support-programs-only-from-the-portal` 3/3 at `EVAL_RUNS=3`, ~53 s and ~45K tokens a run.
 
+## Muse Spark 1.3 Contributor — 2026-09-28 swap
+
+`meta/muse-spark-1.3-contributor` through OpenRouter, one provider (Meta), $0.10/M in · $0.20/M out,
+cache reads $0.002/M; input text, image, file, audio, video; reasoning mandatory, efforts
+minimal..max with medium the default (quick/balanced/thorough → low/medium/high). **The contributor
+tier: OpenRouter's provider page says prompts and outputs may be used to improve Meta's products.**
+The owner chose it for the whole fleet knowing that ("전체 교체", 2026-09-28); the official launch
+still moves to a contracted Korean model.
+
+**The pack, `EVAL_RUNS=3`** (prompt `b56d2b13ae95c7d3` · catalogue `b3a29ea74ad95757`): 44 of 48
+scenarios 3/3. By dimension: tool-calls 27/30, boundaries 6/6, korean-work 24/24, laf-watch 2/3,
+whereabouts 46/48, owner-words 21/21, notebook 12/12. The four that are not 3/3:
+
+- `support-programs-only-from-the-portal` 0/3 — no `DATA_GO_KR_SERVICE_KEY` on this laptop, so the
+  scenario reports itself unjudgeable; not the model.
+- `watch-signals-triaged` 2/3 — DeepSeek V4.1 Flash was 0/3 on the same scenario.
+- `todays-weekday` 2/3 — one answer did not say the day's name.
+- `routine-at-seven-thirty-on-the-owners-clock` 2/3 — one run answered without calling
+  `manage_routine`.
+
+Median scenario 6.3 s (DeepSeek: 6.5 s). **First chunk median 2.6 s, p90 5.2 s** over 454 rounds —
+slower than DeepSeek's 685 ms, because this model always reasons before it writes. Cache reads land
+from the second request (2,673 of 2,753 prompt tokens on a repeat). A Korean receipt photo sent
+straight to the model: shop, date and total right, 5 s, $0.00014.
+
+Fleet: `LAF_FLEET_BOT_MODEL=meta/muse-spark-1.3-contributor`; no provider policy (one endpoint).
+
 ## Answer latency — the endpoint, not the prompt or the effort (2026-09-27)
 
 The 지원사업 walk: 75 s from 시작하기 to a five-item list, and the last round — the answer after

@@ -9,6 +9,7 @@ import {
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
+import { FeedTour } from "@/components/feed/feed-tour";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
@@ -256,6 +257,7 @@ function FeedPosts({
           )}
         </p>
       ) : null}
+      {settled && posts.length === 0 ? <FeedTour /> : null}
       {posts.map((post) => (
         <FeedPostCard
           isNew={newIds.has(post.id)}
