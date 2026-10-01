@@ -25,6 +25,7 @@
 
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
+import { WEB_SEARCH_TOOL_NAME } from "../shared/tools/bridge";
 import { toolNameFor } from "../server/src/plugins/store";
 import { carriedInstruction } from "../server/src/routines/run";
 import {
@@ -756,6 +757,7 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   supportProgramsFromThePortal(),
+  quickFactFromSearch(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
   feedPostsOnlyFromTools(),
@@ -1545,6 +1547,73 @@ function supportProgramsFromThePortal(): Scenario {
           today,
         }),
       ]),
+  };
+}
+
+/**
+ * A QUICK FACT GOES TO THE SEARCH, NOT THE BROWSER (2026-10-02).
+ *
+ * The search tool is in the schema so that a "찾아봐 줘" is one request and an answer, not minutes
+ * of pages (`shared/tools/bridge.ts`, `WEB_SEARCH_TOOL_NAME`: 6.1 s against 16.9 s behind the bridge,
+ * measured on muse-spark). A model that holds it and opens its browser anyway has cost the person
+ * exactly what the tool was added to save, so that is what a swap is held to: the first thing it
+ * reaches for is the search, and the answer is the figure the newest result gave — not last
+ * year's from the older result beside it, and not a price it remembered.
+ *
+ * The figure is planted, like `minimum-wage-from-its-page`: nobody charges 15,730원 for this, so
+ * that number in an answer came from the result and any other came from memory. Whether the answer
+ * spells out an address is not judged: the surface lists sources from the result itself, and the
+ * first three runs of this scenario wrote none while getting the figure right (see the tool's
+ * description in `web-search-rest.ts`).
+ */
+function quickFactFromSearch(): Scenario {
+  const PLANTED = "15,730";
+  const SOURCE = "https://www.youtube.com/intl/ko/premium/pricing";
+  return {
+    id: "quick-fact-from-search",
+    dimension: "tool-calls",
+    messages: [user("요즘 유튜브 프리미엄 한국 가격이 얼마야?")],
+    tools: [...REALISTIC_TOOLSET],
+    maxTurns: 6,
+    stub: (call) =>
+      call.name === WEB_SEARCH_TOOL_NAME
+        ? JSON.stringify({
+            source: "웹 검색",
+            queries: ["유튜브 프리미엄 한국 가격"],
+            shown: 2,
+            results: [
+              {
+                title: "YouTube Premium 요금제 - YouTube",
+                url: SOURCE,
+                date: "2026-09-20",
+                snippet: `YouTube Premium 개인 요금제는 월 ${PLANTED}원입니다(웹·Android 결제 기준). iOS 앱에서 결제하면 요금이 다를 수 있습니다.`,
+              },
+              {
+                title: "유튜브 프리미엄 가격 총정리 - 블로그",
+                url: "https://blog.example.kr/youtube-premium-price",
+                date: "2025-03-02",
+                snippet:
+                  "작년 기준 유튜브 프리미엄은 월 14,900원이었습니다. 이후 변동이 있을 수 있습니다.",
+              },
+            ],
+          })
+        : undefined,
+    check: (turn) => {
+      const acted = turn.calls.filter(
+        (call) => call.name !== "now" && call.name !== "tool_search",
+      );
+      return verdict([
+        ["웹 검색을 부르지 않음", called(turn, WEB_SEARCH_TOOL_NAME)],
+        [
+          "검색보다 다른 도구(브라우저 등)를 먼저 집음",
+          acted[0]?.name === WEB_SEARCH_TOOL_NAME,
+        ],
+        [
+          `검색 결과의 금액(${PLANTED}원)이 답에 없음`,
+          turn.text.replace(/\s/g, "").includes(PLANTED),
+        ],
+      ]);
+    },
   };
 }
 

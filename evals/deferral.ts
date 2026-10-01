@@ -32,6 +32,10 @@ import {
   PUBLIC_DATA_TOOLS,
 } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
+import {
+  WEB_SEARCH_KEY,
+  WEB_SEARCH_TOOLS,
+} from "../server/src/plugins/web-search-rest";
 import { BRIDGE_TOOLS, type WireTool } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { SELF_TOOLS } from "../shared/tools/self";
@@ -60,15 +64,30 @@ export async function connectedServiceFamilies(): Promise<ToolFamily[]> {
     ["kakao-alimtalk", ALIMTALK_TOOLS],
     // Every Bot on a VM holding the fleet's data.go.kr key has these from boot, connected or not.
     [PUBLIC_DATA_KEY, PUBLIC_DATA_TOOLS],
+    // And the web search, on the fleet's key for it: the one connected tool that is in the schema
+    // rather than behind the bridge (`shared/tools/bridge.ts`, `WEB_SEARCH_TOOL_NAME`).
+    [WEB_SEARCH_KEY, WEB_SEARCH_TOOLS],
   ];
-  return families.map(([key, tools]) => ({
-    key,
-    tools: tools.map((tool) => ({
-      name: toolNameFor(`${key}/${tool.name}`),
-      description: `${tool.description} (${key})`,
-      parameters: tool.inputSchema,
-    })),
-  }));
+  /*
+   * `EVAL_WITHOUT_FAMILIES=web-search` leaves a service out, for the one question a new tool in
+   * the schema raises: did a scenario's score move because of it, or because it was Tuesday. Asked
+   * the day the search went in (2026-10-02), when three scenarios read 2/3 against a recorded 3/3
+   * and none of their runs had called it.
+   */
+  const without = (process.env.EVAL_WITHOUT_FAMILIES ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+  return families
+    .filter(([key]) => !without.includes(key))
+    .map(([key, tools]) => ({
+      key,
+      tools: tools.map((tool) => ({
+        name: toolNameFor(`${key}/${tool.name}`),
+        description: `${tool.description} (${key})`,
+        parameters: tool.inputSchema,
+      })),
+    }));
 }
 
 /** The same, flat. */

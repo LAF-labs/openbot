@@ -78,12 +78,19 @@ export const DAILY_SEARCH_CAP = 300;
 /*
  * The description is Korean and short because it is prompt. What it has to carry: that this is the
  * way to find a fact, that the browser is not needed for it, and that a result has a date to check.
+ *
+ * It does NOT ask for the addresses to be written into the answer. It did for a day ("답에는 근거가
+ * 된 주소를 쓴다"), and measured in the pack (2026-10-02, muse-spark, three runs) the model wrote
+ * none of them three times in three while getting the figure right each time. The surface lists an
+ * answer's sources from the tool's own result (`app/src/components/channels/sources.ts`), which is
+ * the rule this product already had: where an answer came from is read off what a tool returned,
+ * never off what a model says it read.
  */
 export const WEB_SEARCH_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
   {
     name: "search",
     description:
-      "웹을 검색해 지금의 사실을 찾는다 — 뉴스, 가격, 영업시간, 제도와 기한, 회사와 사람. 브라우저를 열지 않고 결과의 제목·주소·날짜·발췌를 바로 받는다. 날짜를 보고 최신인지 확인하고, 답에는 근거가 된 주소를 쓴다. 로그인하거나 눌러야 하는 일은 브라우저로 한다.",
+      "웹을 검색해 지금의 사실을 찾는다 — 뉴스, 가격, 영업시간, 제도와 기한, 회사와 사람. 브라우저를 열지 않고 결과의 제목·주소·날짜·발췌를 바로 받는다. 결과마다 날짜를 보고 가장 최근 것으로 답한다. 로그인하거나 눌러야 하는 일은 브라우저로 한다.",
     inputSchema: {
       type: "object",
       properties: {
