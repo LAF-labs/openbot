@@ -282,6 +282,124 @@ describe("escaping the workspace", () => {
   });
 });
 
+/*
+ * A FILE HANDED TO THE PERSON (phase 8, 2026-10-02). `read` is a Bot's: text, cut for a model. These
+ * two are for the person the Bot works for — whether the file is there, and the file itself — and
+ * they go through the same three layers as everything above, tried with the same escapes.
+ */
+describe("handing a file to the person", () => {
+  /** Every byte value, a NUL among them, and no valid UTF-8: what `read` would turn into `�`. */
+  const BINARY = Uint8Array.from({ length: 512 }, (_, index) => index % 256);
+
+  test("the bytes come back exactly as they are on disk", async () => {
+    await writeFile(join(root, "chart.png"), BINARY);
+    const file = await workspace().download("chart.png");
+    expect(file.path).toBe("chart.png");
+    expect(new Uint8Array(file.bytes)).toEqual(BINARY);
+  });
+
+  test("a Korean name in a Korean folder is a file like any other", async () => {
+    const ws = workspace();
+    await ws.write("보고서/9월 정산내역 (2).csv", "합계,12000\n");
+
+    expect(await ws.stat("보고서/9월 정산내역 (2).csv")).toEqual({
+      path: "보고서/9월 정산내역 (2).csv",
+      kind: "file",
+      bytes: Buffer.byteLength("합계,12000\n"),
+    });
+    const file = await ws.download("보고서/9월 정산내역 (2).csv");
+    expect(file.bytes.toString("utf8")).toBe("합계,12000\n");
+  });
+
+  test("an empty file is a file, and is handed over as nothing", async () => {
+    await writeFile(join(root, "empty.txt"), "");
+    expect(await workspace().stat("empty.txt")).toMatchObject({ bytes: 0 });
+    expect((await workspace().download("empty.txt")).bytes.byteLength).toBe(0);
+  });
+
+  test("a folder is refused as the wrong kind, and nothing there as not found", async () => {
+    const ws = workspace();
+    await ws.write("reports/one.txt", "1");
+
+    for (const ask of [ws.stat("reports"), ws.download("reports")]) {
+      const refused = await ask.catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(WorkspaceFileError);
+      expect((refused as WorkspaceFileError).code).toBe("laf:file_wrong_kind");
+    }
+    for (const ask of [ws.stat("nope.txt"), ws.download("nope.txt")]) {
+      const refused = await ask.catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(WorkspaceFileError);
+      expect((refused as WorkspaceFileError).code).toBe("laf:file_not_found");
+    }
+  });
+
+  test.each([
+    ["parent traversal", "../outside/secret.txt"],
+    ["traversal in the middle", "reports/../../outside/secret.txt"],
+    ["absolute path", "/etc/passwd"],
+    ["backslash traversal", "..\\outside\\secret.txt"],
+    ["bare parent", ".."],
+    ["a blank path", "   "],
+  ])("refuses %s", async (_label, path) => {
+    await expect(workspace().stat(path)).rejects.toThrow(WorkspacePathError);
+    await expect(workspace().download(path)).rejects.toThrow(
+      WorkspacePathError,
+    );
+  });
+
+  test("refuses to hand over THROUGH a symlink that points outside", async () => {
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    await expect(workspace().stat("innocent.txt")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    await expect(workspace().download("innocent.txt")).rejects.toThrow(
+      WorkspacePathError,
+    );
+  });
+
+  test("a file over the bound is refused with both numbers, and one at the bound is not", async () => {
+    const ws = createWorkspace(root, {
+      readBytes: 1000,
+      writeBytes: 1000,
+      listEntries: 500,
+      downloadBytes: 8,
+    });
+    await writeFile(join(root, "exact.bin"), "12345678");
+    await writeFile(join(root, "over.bin"), "123456789");
+
+    expect((await ws.download("exact.bin")).bytes.toString()).toBe("12345678");
+    const refused = await ws
+      .download("over.bin")
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(WorkspaceFileError);
+    expect((refused as WorkspaceFileError).code).toBe("laf:file_too_large");
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: 9,
+      limit: 8,
+    });
+    // Its facts are still readable: the card says how big the file it will not hand over is.
+    expect(await ws.stat("over.bin")).toMatchObject({ bytes: 9 });
+  });
+
+  test("the bound a caller leaves out is five megabytes, and a megabyte file passes it", async () => {
+    // What a Bot can write in one go is a megabyte; nothing it makes is refused by this.
+    const megabyte = Buffer.alloc(1_000_000, 7);
+    await writeFile(join(root, "big.bin"), megabyte);
+    const file = await workspace().download("big.bin");
+    expect(file.bytes.byteLength).toBe(1_000_000);
+    expect(file.bytes.equals(megabyte)).toBe(true);
+
+    await writeFile(join(root, "huge.bin"), Buffer.alloc(5_000_001));
+    const refused = await workspace()
+      .download("huge.bin")
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: 5_000_001,
+      limit: 5_000_000,
+    });
+  });
+});
+
 describe("emptying the workspace when the account leaves", () => {
   test("removes every file and folder, keeps the folder, and never follows a link out", async () => {
     const ws = workspace();

@@ -43,12 +43,22 @@ export const SHELF_LABELS: Readonly<Record<MadeShelf | "all", string>> = {
   table: "Tables and charts",
   checklist: "Checklists",
   text: "Writing",
+  file: "Files",
 };
 
 export const SHELF_ORDER: readonly (MadeShelf | "all")[] = [
   "all",
   ...MADE_SHELVES,
 ];
+
+/**
+ * The filters the page draws, in order. 파일 only once there is a file to show under it (or while it
+ * is the filter being looked at): most people's Bot makes a table long before it hands over a file,
+ * and a filter that opens on "아직 여기엔 없어요" is a promise of something this Bot has not done.
+ */
+export function shelvesDrawn(hasFile: boolean): readonly (MadeShelf | "all")[] {
+  return SHELF_ORDER.filter((shelf) => shelf !== "file" || hasFile);
+}
 
 /**
  * What one made thing is, in a word, by its tool. The gallery's own names where a card has one
@@ -66,6 +76,7 @@ export const KIND_LABELS: Readonly<Record<string, string>> = {
   showActivityReport: "Activity report",
   showChecklist: "Checklist",
   showNotice: "Notice",
+  showFile: "File",
 };
 
 /**

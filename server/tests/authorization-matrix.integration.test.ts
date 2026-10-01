@@ -202,6 +202,9 @@ function computerThatAnswers(): ComputerClient {
     listFiles: { path: ".", entries: [] },
     readFile: { path: "notes.md", contents: "", truncated: false },
     writeFile: { path: "notes.md", bytes: 0 },
+    // A person's own doors into the folder: one file's facts, and the file — two bytes of it.
+    statFile: { path: "notes.md", kind: "file", bytes: 2 },
+    downloadFile: new TextEncoder().encode("hi"),
     stopComputer: { wasRunning: false },
     resetComputer: { botId: BOT_A, state: "stopped" },
   };
@@ -444,9 +447,15 @@ const DESTRUCTIVE = new Set([
  * The one door whose Bot travels in the query string, named there so the colleague column presses
  * on it. A skill nobody wrote, so the owner is refused it and the administrator's revoke removes
  * nothing.
+ *
+ * And the two doors that take a FILE in the query (2026-10-02): a file in A's Bot's folder, named,
+ * so the owner's press gets as far as being handed it — without a path both would be refused on
+ * shape, and a refusal on shape is not a measurement of who may have the file.
  */
 const QUERY: Record<string, string> = {
   "DELETE /api/plugins/grants": `?kind=skill&ref=nothing-${run}&agentId=${BOT_A}`,
+  "GET /api/computers/:botId/files/info": "?path=notes.md",
+  "GET /api/computers/:botId/files/download": "?path=notes.md",
 };
 
 /** What each placeholder in a path becomes. A Bot is always A's; everything else is nobody's. */
@@ -856,6 +865,10 @@ const A_ALLOWED = [
   "GET /api/components/for-agent/:agentId",
   "GET /api/computers/:botId/control",
   "GET /api/computers/:botId/demonstration",
+  // Their Bot's folder (phase 8): what is in it, one file's facts, and the file itself.
+  "GET /api/computers/:botId/files",
+  "GET /api/computers/:botId/files/download",
+  "GET /api/computers/:botId/files/info",
   "GET /api/computers/:botId/read",
   "GET /api/computers/:botId/screenshot",
   "GET /api/computers/:botId/status",
@@ -946,6 +959,10 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "DELETE /api/computers/:botId/demonstration",
   "GET /api/computers/:botId/control",
   "GET /api/computers/:botId/demonstration",
+  // Its folder: what the Bot wrote for A, listed and taken out. An administrator is not A.
+  "GET /api/computers/:botId/files",
+  "GET /api/computers/:botId/files/download",
+  "GET /api/computers/:botId/files/info",
   "GET /api/computers/:botId/read",
   "GET /api/computers/:botId/screenshot",
   "GET /api/computers/:botId/status",
@@ -1283,6 +1300,8 @@ describe("the matrix", () => {
       "POST /api/computers/:botId/scroll",
       "POST /api/computers/:botId/control/take",
       "POST /api/computers/:botId/computers/reset",
+      // The file a Bot wrote for its owner, taken out of its folder: not an administrator's.
+      "GET /api/computers/:botId/files/download",
       "GET /api/approvals/:botId",
       "POST /api/plugins/grants",
       "GET /api/plugins/for/:agentId",

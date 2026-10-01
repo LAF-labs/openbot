@@ -284,6 +284,37 @@ export async function writeControlEvent(
 }
 
 /**
+ * One row for a file a person took out of their Bot's folder.
+ *
+ * Its own writer for the reason a handover has one: nobody asked the policy, so `write` would have
+ * to invent the decision it records. The path and the size, and never the contents — the rule
+ * `write` keeps for a file a Bot wrote, kept for the same file being carried away.
+ */
+export async function writeFileDownloaded(
+  auditStore: AuditStore,
+  entry: {
+    botId: string;
+    actor: ActionActor;
+    computerId: string;
+    filePath: string;
+    bytes: number;
+  },
+) {
+  await recordAuditEvent(auditStore, {
+    eventType: "computer.file_downloaded",
+    targetType: "computer",
+    targetId: entry.computerId,
+    ...(entry.actor.userId ? { actorUserId: entry.actor.userId } : {}),
+    payload: {
+      bot: entry.botId,
+      actor: entry.actor.id,
+      file: entry.filePath,
+      bytes: entry.bytes,
+    },
+  });
+}
+
+/**
  * The row for a question the boundary stopped to ask.
  *
  * Its own writer rather than a variant of either of the others, because an approval sits between

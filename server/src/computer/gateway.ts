@@ -38,7 +38,9 @@
  *  - A navigation is the one call that loops (every redirect hop judged, the landing judged again,
  *    W1-d) and reports a site's sign-in (W1-c); it reads as one sequence on its own.
  *  - The acting calls decide nothing and are kept thin by being kept apart; handovers are a person's
- *    reach into the browser, recorded and never judged, and sit apart from what a Bot does.
+ *    reach into the browser, recorded and never judged, and sit apart from what a Bot does. So does
+ *    a person's reach into the Bot's folder (`person-files.ts`): the same decision about the same
+ *    person, and the one other place a file leaves the folder.
  *  - Addresses and a call's intent are pure spellings a boundary is evaded through (a trailing dot
  *    walked past a money rule), testable without a computer.
  *
@@ -53,6 +55,7 @@ import { createActs } from "./gateway/acts";
 import { createGovern } from "./gateway/govern";
 import { createHandovers } from "./gateway/handovers";
 import { createNavigation, type SiteSeen } from "./gateway/navigation";
+import { createPersonFiles } from "./gateway/person-files";
 import { createSecrets } from "./gateway/secrets";
 import { createPageReads, createSnapshotCache } from "./gateway/snapshots";
 import { createTypedLedger, type HighRiskCheck } from "./high-risk";
@@ -184,6 +187,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       withoutSecrets: secrets.withoutSecrets,
     }),
     ...createHandovers({ client, as, auditStore, secrets }),
+    ...createPersonFiles({ as, auditStore }),
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,
     ...createNavigation({ as, govern, siteSeen: options.siteSeen }),

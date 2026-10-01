@@ -24,11 +24,11 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import {
   cardsOn,
-  cardTitle,
   isMadeShelf,
   MADE_TABLE_PATTERN,
   MARKDOWN_TABLE,
   type MadeShelf,
+  madeCardTitle,
   markdownTableTitles,
   shelfOf,
 } from "../../../shared/made";
@@ -74,7 +74,13 @@ type Row = {
   at: Date;
   id: string | null;
   text: string | null;
-  calls: Array<{ id?: unknown; name?: unknown; title?: unknown }> | null;
+  calls: Array<{
+    id?: unknown;
+    name?: unknown;
+    title?: unknown;
+    /** A file card's file: what it is listed as, since it has no title (`madeCardTitle`). */
+    path?: unknown;
+  }> | null;
 };
 
 export function createMadeReader(options: { database: Database }): MadeReader {
@@ -113,7 +119,7 @@ export function createMadeReader(options: { database: Database }): MadeReader {
           names.length > 0
             ? sql<
                 Row["calls"]
-              >`(select jsonb_agg(jsonb_build_object('id', tc ->> 'id', 'name', tc -> 'function' ->> 'name', 'title', case when pg_input_is_valid(tc -> 'function' ->> 'arguments', 'jsonb') then (tc -> 'function' ->> 'arguments')::jsonb ->> 'title' end)) from ${calls} as tc where tc -> 'function' ->> 'name' = any(${namesArray}))`
+              >`(select jsonb_agg(jsonb_build_object('id', tc ->> 'id', 'name', tc -> 'function' ->> 'name', 'title', case when pg_input_is_valid(tc -> 'function' ->> 'arguments', 'jsonb') then (tc -> 'function' ->> 'arguments')::jsonb ->> 'title' end, 'path', case when pg_input_is_valid(tc -> 'function' ->> 'arguments', 'jsonb') then (tc -> 'function' ->> 'arguments')::jsonb ->> 'path' end)) from ${calls} as tc where tc -> 'function' ->> 'name' = any(${namesArray}))`
             : sql<Row["calls"]>`null`,
       })
       .from(lafThreadMessages)
@@ -170,7 +176,7 @@ export function createMadeReader(options: { database: Database }): MadeReader {
         items.push({
           tool,
           shelf: on,
-          title: cardTitle(call.title),
+          title: madeCardTitle(tool, call),
           at,
           channelId: conversation.channelId,
           messageId: call.id,

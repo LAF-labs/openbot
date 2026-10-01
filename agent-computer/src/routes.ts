@@ -30,7 +30,13 @@ import {
   takeControl,
 } from "./control-routes";
 import { describePoint } from "./describe-point";
-import { listFiles, readFile, writeFile } from "./file-routes";
+import {
+  downloadFile,
+  listFiles,
+  readFile,
+  statFile,
+  writeFile,
+} from "./file-routes";
 import { HUMAN_INPUT, humanInput } from "./human-input";
 import type { StreamData } from "./live-screen";
 import { navigate } from "./navigation";
@@ -58,6 +64,8 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /files/read", readFile],
   ["POST /files/list", listFiles],
   ["POST /files/write", writeFile],
+  ["POST /files/stat", statFile],
+  ["POST /files/download", downloadFile],
   ["GET /read", readPage],
   ["POST /describe-point", describePoint],
   ["POST /snapshot", snapshot],

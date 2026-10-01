@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { contentTypeOf } from "../../../shared/workspace-files";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { AppVariables } from "../auth/guards";
@@ -17,6 +18,7 @@ import {
   ComputerUnavailableError,
   ControlHeldError,
   ElementNotFoundError,
+  FILE_NOT_FOUND,
   FILE_PATH_REFUSED,
   HUMAN_HAS_CONTROL,
   NAVIGATION_FAILED,
@@ -40,6 +42,7 @@ import {
   THREAD_HEADER,
   TOOL_CALL_HEADER,
 } from "./gateway";
+import type { HandedFile } from "./gateway/person-files";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
 import { readFileInputOf } from "./schema";
 import type { ScreenViewAudit } from "./screen-view";
@@ -790,6 +793,89 @@ export function createComputerRoutes(
       }),
   );
 
+  /*
+   * THE BOT'S FOLDER, FOR THE PERSON IT WORKS FOR (phase 8, first slice, 2026-10-02).
+   *
+   * The three routes above are a Bot's tools, carried out for it: judged by the policy, and
+   * answered in the terms a tool is answered in. Until these three, that was every door the folder
+   * had — a Bot could write `9월 정산.csv` and the person it wrote it for could not open it. These
+   * are that person's own: what is in the folder, whether one file is there, and the file itself.
+   * So they are GETs a card and a link can ask, they pass no policy (`gateway/person-files.ts` says
+   * why), and whose Bot it is is asked in each declaration like everywhere else in this file.
+   *
+   * Nothing at a path is a 404 on these and a 400 on the tool routes above. See `fileFailed`.
+   */
+  routes.get(
+    "/:botId/files",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      try {
+        const folder = context.req.query("path")?.trim();
+        context.header("cache-control", "private, no-store");
+        return context.json(
+          await gateway.personFiles(botIdOf(context), folder || undefined),
+        );
+      } catch (error) {
+        return fileFailed(context, error);
+      }
+    },
+  );
+
+  /**
+   * One file's facts: there, a file, how big.
+   *
+   * Its own route rather than a look through the listing above, because the listing stops at five
+   * hundred entries and says `truncated`: a file it did not reach is not a file that is gone, and
+   * the card that asks this draws "gone" and no button on the answer.
+   */
+  routes.get(
+    "/:botId/files/info",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const path = context.req.query("path")?.trim();
+      if (!path) return context.json(ARGUMENTS_INVALID_BODY, 400);
+      try {
+        context.header("cache-control", "private, no-store");
+        return context.json(await gateway.fileFacts(botIdOf(context), path));
+      } catch (error) {
+        return fileFailed(context, error);
+      }
+    },
+  );
+
+  /**
+   * The file itself. `?inline=1` asks for it to be drawn rather than saved, and is granted only to
+   * the four pictures (`handoffHeaders`); for anything else it is the same download.
+   */
+  routes.get(
+    "/:botId/files/download",
+    requireUser,
+    requireBotAccess(),
+    async (context) => {
+      const path = context.req.query("path")?.trim();
+      if (!path) return context.json(ARGUMENTS_INVALID_BODY, 400);
+      const record = context.var.actor;
+      try {
+        const file = await gateway.downloadFile(
+          botIdOf(context),
+          botIdOf(context),
+          {
+            id: record.id,
+            // Only a real users row goes in the trail's foreign key column; see `act` below.
+            ...(record.email === DEV_ACTOR.email ? {} : { userId: record.id }),
+          },
+          path,
+          { preview: context.req.query("inline") === "1" },
+        );
+        return context.body(file.bytes, 200, handoffHeaders(file));
+      } catch (error) {
+        return fileFailed(context, error);
+      }
+    },
+  );
+
   /**
    * The policy, readable and writable by an administrator.
    *
@@ -1019,6 +1105,67 @@ function failed(context: ComputerContext, error: unknown) {
     });
   }
   return context.json({ error: code, code }, status);
+}
+
+/**
+ * A failure on one of a person's own file doors, as `failed` answers it — with one difference.
+ *
+ * NOTHING AT THAT PATH IS A 404 HERE. The Bot's tool routes say 400 for it, the container's own
+ * status, because to a tool it is an argument to correct. To a person it is the address of a thing
+ * that is not there: the file card draws "gone" on it, a link to it fails as a missing file does,
+ * and it is what the other door that hands a person a file answers (`attachments/routes.ts`). The
+ * code is the same one either way, and the card reads the code.
+ */
+function fileFailed(context: ComputerContext, error: unknown) {
+  if (codeFor(error) === FILE_NOT_FOUND) {
+    return context.json({ error: FILE_NOT_FOUND, code: FILE_NOT_FOUND }, 404);
+  }
+  return failed(context, error);
+}
+
+/**
+ * A name as RFC 5987 writes it in `filename*`: percent-encoded UTF-8, and the four characters
+ * `encodeURIComponent` leaves alone that the grammar does not allow there — `'` is what ends the
+ * charset, and `( ) *` are not attribute characters. `정산내역 (2).csv` is what the second download
+ * of a sheet is called (`saveDownload` on the computer), so the brackets are the ordinary case.
+ */
+function encodedName(name: string): string {
+  return encodeURIComponent(name.toWellFormed()).replace(
+    /['()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/**
+ * What a file leaves this origin wearing.
+ *
+ * THIS ORIGIN ALSO SERVES THE APP, AND A BOT CAN WRITE ANY BYTES IT LIKES — as can any page that
+ * handed its browser a download. A file answered as what it claims to be is a document running with
+ * the person's session: `report.html` holding a script is one `fetch("/api/…")` from everything
+ * they can do here. So nothing is ever opened by this origin:
+ *
+ *  - `attachment`, always: the browser saves it and renders nothing. The one exception is a picture
+ *    — PNG, JPEG, GIF, WebP, by its name AND by how it starts — which is drawn where the card asked
+ *    for a preview. Bytes a browser paints, with nothing in them that runs. Never an SVG, which is a
+ *    document with a script element; never a PDF or HTML.
+ *  - `nosniff`: the type is the one a fixed table gave the NAME, and the browser may not go looking
+ *    in the bytes for a better one.
+ *  - `sandbox; default-src 'none'`: if something still opens it as a document, it opens with no
+ *    origin, no script and nothing to load.
+ *  - `private, no-store`: it is somebody's file, and it can change under the same path.
+ *
+ * The name goes only in `filename*`. It is Korean more often than not, and a plain `filename` could
+ * carry it only as a guess at an encoding.
+ */
+function handoffHeaders(file: HandedFile): Record<string, string> {
+  return {
+    "content-type": file.drawnAs ?? contentTypeOf(file.name),
+    "content-length": String(file.bytes.byteLength),
+    "content-disposition": `${file.drawnAs ? "inline" : "attachment"}; filename*=UTF-8''${encodedName(file.name)}`,
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "sandbox; default-src 'none'",
+    "cache-control": "private, no-store",
+  };
 }
 
 export function isBadRequest(value: unknown): value is BadRequest {

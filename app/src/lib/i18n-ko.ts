@@ -3127,8 +3127,8 @@ export const ko: Record<string, string> = {
   "Write a message for this occasion in three tones: ":
     "이 상황에 맞는 메시지를 세 가지 말투로 써 줘: ",
   Made: "만든 것",
-  "The tables, checklists and notices your Bot made for you. Press one to see it in the conversation.":
-    "봇이 만들어 드린 표, 체크리스트, 안내문이에요. 누르면 대화에서 그 자리를 보여 드려요.",
+  "The tables, checklists, notices and files your Bot made for you. Press one to see it in the conversation.":
+    "봇이 만들어 드린 표, 체크리스트, 안내문, 파일이에요. 누르면 대화에서 그 자리를 보여 드려요.",
   Show: "보기",
   "What your Bot made could not be read.": "봇이 만든 것을 불러오지 못했어요.",
   "This deployment does not keep what the Bot made.":
@@ -3142,7 +3142,21 @@ export const ko: Record<string, string> = {
   "Tables and charts": "표·차트",
   Checklists: "체크리스트",
   Writing: "글",
+  Files: "파일",
   Table: "표",
+  // 봇이 건넨 파일 (phase 8): 대화 속 파일 카드, 만든 것의 파일, 감사 기록.
+  File: "파일",
+  "Finding the file…": "파일을 찾는 중…",
+  "Checking the file…": "파일을 확인하는 중…",
+  "This file is no longer in the Bot's folder.":
+    "이 파일은 이제 봇 폴더에 없어요.",
+  "This is a folder, not a file.": "파일이 아니라 폴더예요.",
+  "This path is outside the Bot's folder.": "봇 폴더 밖의 경로예요.",
+  "This file is too large to download from here.":
+    "파일이 너무 커서 여기서는 내려받을 수 없어요.",
+  "The file could not be checked just now.": "지금은 파일을 확인하지 못했어요.",
+  "A person downloaded a file": "사람이 파일을 내려받음",
+  "A file from the Bot's folder": "봇 폴더의 파일",
   Introduction: "소개 글",
   "Make this into a table: ": "표로 만들어 줘: ",
   "Make a checklist for this: ": "체크리스트로 만들어 줘: ",

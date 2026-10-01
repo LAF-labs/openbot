@@ -20,6 +20,7 @@
  * A factory taking its root as an argument rather than reading the environment, so the confinement
  * can be tested against a temporary directory instead of being taken on trust.
  */
+import { createReadStream } from "node:fs";
 import {
   mkdir,
   readdir,
@@ -30,6 +31,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { HANDOFF_MAX_BYTES } from "../../shared/workspace-files";
 
 /**
  * A path that is not the Bot's to name. The message is for this process's own tests and logs; what
@@ -79,6 +81,15 @@ export type WorkspaceLimits = {
   writeBytes: number;
   /** Most entries a listing describes, so a Bot cannot paste a whole disk into its own context. */
   listEntries: number;
+  /**
+   * Most bytes one download hands the person the Bot works for.
+   *
+   * Left out, it is the bound the server and the surface read too (`shared/workspace-files.ts`):
+   * a card that draws a button under a file this then refuses is a control that does nothing, so
+   * the three of them take one number. Optional because the three limits above bound what a BOT
+   * may do, and a caller that sets those is saying nothing about a person's download.
+   */
+  downloadBytes?: number;
 };
 
 /**
@@ -206,8 +217,90 @@ export function createWorkspace(
     return forWrite ? target : realAnchor;
   }
 
+  const downloadBytes = limits.downloadBytes ?? HANDOFF_MAX_BYTES;
+
+  /**
+   * A path that has to be a file: where it really is, and what the disk says about it.
+   *
+   * A FILE, NOT MERELY NOT A FOLDER. A download reads to the end of whatever is there, and the end
+   * of a pipe or a device is whenever its other side says so — so anything that is not an ordinary
+   * file is the wrong kind, the same answer a folder gets.
+   */
+  async function fileAt(requested: string) {
+    const full = await resolvePath(requested, false);
+    const info = await stat(full).catch(() => null);
+    if (!info) {
+      throw new WorkspaceFileError(`There is no file at ${requested}.`);
+    }
+    if (!info.isFile()) {
+      throw new WorkspaceFileError(
+        `${requested} is not a file.`,
+        "laf:file_wrong_kind",
+      );
+    }
+    return { full, info };
+  }
+
   return {
     resolvePath,
+
+    /**
+     * One file's facts — that it is there, and how big — and nothing it holds.
+     *
+     * Asked about a path a listing would also answer for, and not asked of a listing, because a
+     * listing is bounded by entries: `.results/` gains a file for every long tool result and nothing
+     * empties it, so in a folder that has been worked in for a month the walk spends its five
+     * hundred there and reports `truncated` before it reaches `요약.md`. "Not in the listing" is not
+     * "not there", and a card that says a file is gone has to be told the second.
+     */
+    async stat(
+      requested: string,
+    ): Promise<{ path: string; kind: "file"; bytes: number }> {
+      const { info } = await fileAt(requested);
+      return { path: requested, kind: "file", bytes: info.size };
+    },
+
+    /**
+     * A file's bytes exactly as they are on disk, for the person the Bot works for to keep.
+     *
+     * NOT `read`. That one is a Bot's: UTF-8 text, cut to what a model's context can take, a
+     * picture arriving as replacement characters on purpose. This hands over the file itself, so a
+     * sheet a page gave the browser and a note a Bot wrote both leave as what they are.
+     *
+     * BOUNDED WHILE IT IS READ, not only before. The size is asked first, so an oversized file is
+     * refused without touching it; but a page's download lands here whole before it is measured
+     * (`saveDownload`), and a file that was small when asked can be large by the time it is read.
+     * The read stops one byte past the bound and is refused there.
+     */
+    async download(
+      requested: string,
+    ): Promise<{ path: string; bytes: Buffer<ArrayBuffer> }> {
+      const { full, info } = await fileAt(requested);
+      const tooLarge = (bytes: number) =>
+        new WorkspaceFileError(
+          `That is ${bytes} bytes and a download is at most ${downloadBytes}.`,
+          "laf:file_too_large",
+          { bytes, limit: downloadBytes },
+        );
+      if (info.size > downloadBytes) throw tooLarge(info.size);
+
+      const chunks: Buffer[] = [];
+      let total = 0;
+      // `end` is the last byte read, inclusive: the bound and one more, which is how "over" is seen.
+      const stream: AsyncIterable<Buffer> = createReadStream(full, {
+        end: downloadBytes,
+      });
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+        total += chunk.byteLength;
+      }
+      if (total > downloadBytes) {
+        // What the disk says now, where it can; the file is at least this much either way.
+        const grown = await stat(full).catch(() => null);
+        throw tooLarge(Math.max(grown?.size ?? 0, total));
+      }
+      return { path: requested, bytes: Buffer.concat(chunks, total) };
+    },
 
     /**
      * What is in the workspace.

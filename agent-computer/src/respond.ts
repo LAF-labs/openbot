@@ -20,6 +20,24 @@ export function json(body: unknown): Response {
 }
 
 /**
+ * An answer that worked and IS a file: its bytes as they are on disk, and nothing said about them.
+ *
+ * NAMED AS NOTHING. What a file is called and what it may be opened as are decided by the server
+ * that hands it to a person, from one fixed table (`shared/workspace-files.ts`) — this process has
+ * the bytes a Bot or a website wrote, and a type claimed here would be that author's claim passed
+ * on. Not JSON, so the filter every answer passes on its way out (`rewritten`) leaves it alone.
+ */
+export function bytes(body: Uint8Array<ArrayBuffer>): Response {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-length": String(body.byteLength),
+    },
+  });
+}
+
+/**
  * The same answer, its JSON body passed through `change`: the same status, the same code. For a
  * filter every answer passes on its way out (`withoutTypedAddresses`), which must not become a second
  * place an answer is written.

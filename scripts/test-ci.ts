@@ -699,15 +699,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` (a resumed snapshot brings the stored answer over a streamed half) and two to `root` (a cut
  * conversation's retry starts further down the provider order).
  *
+ * RAISED 2026-10-02 with the file card (phase 8, first slice — the Bot hands a file to the person):
+ * thirty-one to `server` (a file's bytes read by the client, exactly and to a bound; the three doors
+ * a person has into the Bot's folder and what a file leaves this origin wearing; the card confirmed
+ * only for a file that is there), sixteen to `app` (the card: a link for a file that is there, a
+ * sentence and no button for one that is not, a path asked about once it has stopped being written;
+ * 파일 a filter only once there is a file), twenty-seven to `agent-computer` (a file's facts and its
+ * bytes through the workspace's confinement and the container's own door) and ten to `root` (the
+ * server's real client against the container's real routes over a socket, which neither half's own
+ * tests can see).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3116, roots: ["server"] },
-  { name: "app", floor: 1548, roots: ["app"] },
-  { name: "agent-computer", floor: 313, roots: ["agent-computer"] },
-  { name: "root", floor: 565, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 3147, roots: ["server"] },
+  { name: "app", floor: 1564, roots: ["app"] },
+  { name: "agent-computer", floor: 340, roots: ["agent-computer"] },
+  { name: "root", floor: 575, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

@@ -38,6 +38,7 @@ import {
 import {
   CONNECT_CARD,
   connectionAnswer,
+  FILE_CARD,
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
   galleryReads,
@@ -296,7 +297,12 @@ async function executableNames(
     listing.components = held
       ? held.map((component) => component.name)
       : (last?.components ?? []);
-    for (const name of listing.components) names.add(name);
+    for (const name of listing.components) {
+      // A file card hands over a file from the Bot's folder, and the folder is on its computer: a
+      // deployment with no computer has nothing the card could offer, so it is not offered.
+      if (name === FILE_CARD && !deps.gateway) continue;
+      names.add(name);
+    }
   }
   lastListed.set(botId, listing);
   return { names, pluginRefs, pluginTools };
@@ -1057,6 +1063,38 @@ export function createChatTools(deps: ChatToolsDeps) {
     };
 
     /**
+     * THE FILE BEHIND A FILE CARD, LOOKED FOR BEFORE THE BOT IS TOLD IT IS ON SCREEN.
+     *
+     * Every other card draws what the call handed it, so "it is on screen" is true the moment it is
+     * allowed. This one draws a file the call only NAMED — and a Bot that misremembers a path, or
+     * never wrote the file it says it did, would be told the person now has it while the card says
+     * it is gone. So the path is asked about first, and what comes back for a path that is not a
+     * file is the computer's own fact, in the envelope `computer_read_file` answers the same path
+     * with: nothing there, a folder, a path outside the folder.
+     *
+     * The runtime checking a fact, not the Bot reading its file — no policy is asked and no row is
+     * written, as for `spillover.ts` filing a result. Existence and kind only: how big a file may be
+     * to be downloaded is the card's and the route's (`shared/workspace-files.ts`), and nothing a
+     * Bot can write today is over it.
+     *
+     * Null when the file is there.
+     */
+    const fileCardRefused = async (
+      args: Record<string, unknown>,
+    ): Promise<LoopOutcome | null> => {
+      const gateway = deps.gateway;
+      if (!gateway) return refusal("laf:tool_unknown");
+      const path = typeof args.path === "string" ? args.path.trim() : "";
+      if (!path) return invalidArguments();
+      try {
+        await gateway.fileFacts(botId, path);
+        return null;
+      } catch (error) {
+        return computerFailure(error);
+      }
+    };
+
+    /**
      * A card the Bot put on screen: allowed for this Bot, reading only what it was granted.
      * `decideComponent` in the app asked exactly this, of the same store.
      */
@@ -1091,6 +1129,10 @@ export function createChatTools(deps: ChatToolsDeps) {
       for (const functionName of galleryReads(name, args)) {
         if (await store.mayCall(name, functionName)) continue;
         return refuse(FUNCTION_NOT_GRANTED, { function: functionName });
+      }
+      if (name === FILE_CARD) {
+        const refused = await fileCardRefused(args);
+        if (refused) return refused;
       }
       if (!GALLERY_DECISIONS.has(name)) {
         return GALLERY_CONFIRMATIONS[name] ?? ON_SCREEN;

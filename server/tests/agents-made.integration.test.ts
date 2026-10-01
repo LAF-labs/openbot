@@ -3,8 +3,9 @@
  * how the pages walk back.
  *
  * One person's conversation with their Bot holds a checklist card, a notice, a table written into an
- * answer, a card that was refused, a card that never got its answer, a question card, and plain
- * talk; somebody else's conversation holds a card of theirs. Then enough cards to need a second page.
+ * answer, a card that was refused, a card that never got its answer, a question card, plain talk,
+ * and two file cards — one for a file that was there and one the server would not confirm; somebody
+ * else's conversation holds a card of theirs. Then enough cards to need a second page.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -181,6 +182,37 @@ beforeAll(async () => {
       role: "assistant",
       content: "그 밖에 도와드릴 게 있을까요?",
     },
+    // A file handed over (phase 8): no title of its own, so it is listed as its file.
+    {
+      id: "a-file",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        call("c-file", "showFile", {
+          path: "보고서/9월 정산.csv",
+          note: "이번 달 정산 내역이에요",
+        }),
+      ],
+    },
+    answer(
+      "c-file",
+      "The file card is on screen for the person, with its name, its size and a button to download it. Do not paste the file's contents into your answer again.",
+    ),
+    // And one whose file was not there: the turn answered the computer's fact, as an envelope.
+    {
+      id: "a-nofile",
+      role: "assistant",
+      content: "",
+      toolCalls: [call("c-nofile", "showFile", { path: "없는 파일.csv" })],
+    },
+    answer(
+      "c-nofile",
+      JSON.stringify({
+        ok: false,
+        code: "laf:file_not_found",
+        reason: "그 경로에 파일이나 폴더가 없다.",
+      }),
+    ),
   ];
   await database.insert(lafThreadMessages).values(
     a.map((message, index) => ({
@@ -279,6 +311,8 @@ describe("what the Bot made, read out of its conversation", () => {
         item.messageId,
       ]),
     ).toEqual([
+      // The file's name, without the folder it sits in.
+      ["showFile", "file", "9월 정산.csv", "c-file"],
       ["markdownTable", "table", "메뉴 가격표", "a-table"],
       ["showNotice", "text", "추석 휴무 안내", "c-notice"],
       ["showChecklist", "checklist", "가게 오픈 준비", "c-check"],
@@ -287,7 +321,7 @@ describe("what the Bot made, read out of its conversation", () => {
     expect(page.next).toBeNull();
   });
 
-  test("a refused card, a card that threw, one never answered and a question are not listed", async () => {
+  test("a refused card, a card that threw, one never answered, a file that was not there and a question are not listed", async () => {
     const page = await read({
       userId: A.user,
       agentId: A.bot,
@@ -300,6 +334,9 @@ describe("what the Bot made, read out of its conversation", () => {
       "터진 카드",
       "그리다 만 차트",
       "c-question",
+      // A file card the server did not confirm never reached the person as a file.
+      "없는 파일.csv",
+      "c-nofile",
     ]) {
       expect(titles).not.toContain(absent);
     }
@@ -322,6 +359,24 @@ describe("what the Bot made, read out of its conversation", () => {
     expect(checklists.items.map((item) => item.title)).toEqual([
       "가게 오픈 준비",
     ]);
+    const files = await read({
+      userId: A.user,
+      agentId: A.bot,
+      shelf: "file",
+      cursor: null,
+    });
+    expect(files.items.map((item) => [item.tool, item.title])).toEqual([
+      ["showFile", "9월 정산.csv"],
+    ]);
+    // Somebody whose Bot has handed over nothing has nothing on that shelf: the page draws no
+    // 파일 filter on exactly this answer.
+    const none = await read({
+      userId: B.user,
+      agentId: B.bot,
+      shelf: "file",
+      cursor: null,
+    });
+    expect(none).toEqual({ items: [], next: null });
   });
 
   test("somebody else's conversation, and a Bot with none, give nothing", async () => {

@@ -21,7 +21,18 @@ export const GALLERY_CONFIRMATIONS: Readonly<Record<string, string>> = {
   showProgress: "The progress chart is now on screen for the person.",
   showActivityReport:
     "The report is on screen for the person, filled with figures read from this deployment. You were not given the figures.",
+  showFile:
+    "The file card is on screen for the person, with its name, its size and a button to download it. Do not paste the file's contents into your answer again.",
 };
+
+/**
+ * The card that hands the person a file from the Bot's folder (`components/gallery/file.tsx`).
+ *
+ * Named here because it is the one card whose confirmation is conditional: the sentence above is
+ * only true of a file that is there, so a turn checks before it says it
+ * (`server/src/turns/chat-tools.ts`), and a refused one is not filed under 만든 것.
+ */
+export const FILE_CARD = "showFile";
 
 /** What a card that is not in the table above — a component authored in the browser — answers. */
 export const ON_SCREEN = "It is now on screen for the person.";
