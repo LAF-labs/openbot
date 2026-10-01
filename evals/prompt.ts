@@ -21,16 +21,22 @@ import {
   type PromptMode,
   type PromptPerson,
   type PromptSkill,
+  placeText,
   promptSkeleton,
   reminderBlock,
   reminderLines,
   withReminder,
 } from "../shared/prompt";
 import type { RoutineNote } from "../shared/prompt/notepad.ko";
-import { BRIDGE_TOOLS } from "../shared/tools/bridge";
+import {
+  BRIDGE_TOOLS,
+  CORE_TOOL_NAMES,
+  DEFERRED_TOOL_PREFIX,
+} from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { NOW_TOOL } from "../shared/tools/now";
 import { SELF_TOOLS } from "../shared/tools/self";
+import { REALISTIC_TOOLSET } from "./deferral";
 
 /**
  * One clock for the whole run, read once.
@@ -236,17 +242,53 @@ const sha256 = (text: string) =>
  * prompt". The eval-pack rule that a prompt edit inside a verdict starts a NEW verdict is only
  * enforceable because these two numbers are in the report.
  */
+/**
+ * What the context layer says about a person's place, for the three people there are and both
+ * modes. Fixed inputs, so these are the WORDS and move only when the words do.
+ *
+ * In the hash since 2026-10-02, the night both hashes sat still through a batch that changed what
+ * a Bot reads: the place line stopped sending the weather to 네이버 and two connected tools went on
+ * the core list, and the report said `b56d2b13…` and `b3a29ea7…` before and after. The skeleton is
+ * the static layer; this line is in the context layer and was outside it. The rest of that layer is
+ * the clock, the shop and the notebook — data, in sentences that have not been what a verdict
+ * turned on. This one was.
+ */
+export const PLACE_LINES = (["chat", "routine"] as const).flatMap((mode) => [
+  placeText({ place: "어느 곳" }, mode),
+  placeText({ coordinates: { latitude: 0, longitude: 0 } }, mode),
+  placeText(undefined, mode),
+]);
+
 export const PROMPT_HASH = sha256(
-  (["chat", "routine"] as const)
-    .map((mode) => promptSkeleton(mode))
-    .join("\n\n---\n\n"),
+  [
+    ...(["chat", "routine"] as const).map((mode) => promptSkeleton(mode)),
+    ...PLACE_LINES,
+  ].join("\n\n---\n\n"),
 );
 
 /*
  * The bridge tools are in the hash because they are schema the model reads: a change to how
  * `tool_search` describes itself is a change to what is being measured, exactly like a change to
  * `remember`'s description.
+ *
+ * And so are a connected service's tools that are on the core list (`shared/tools/bridge.ts`: the
+ * web search, the weather) — in the schema of every request, described in words a verdict can turn
+ * on. The search's description lost a sentence the day it went in and three runs changed with it.
+ * Taken from the realistic toolset by the core list itself, so the next one is covered by being
+ * put on that list.
  */
+export const CORE_CONNECTED_TOOLS = REALISTIC_TOOLSET.filter(
+  (tool) =>
+    tool.name.startsWith(DEFERRED_TOOL_PREFIX) &&
+    CORE_TOOL_NAMES.has(tool.name),
+);
+
 export const CATALOGUE_HASH = sha256(
-  JSON.stringify([...COMPUTER_TOOLS, ...SELF_TOOLS, ...BRIDGE_TOOLS, NOW_TOOL]),
+  JSON.stringify([
+    ...COMPUTER_TOOLS,
+    ...SELF_TOOLS,
+    ...BRIDGE_TOOLS,
+    NOW_TOOL,
+    ...CORE_CONNECTED_TOOLS,
+  ]),
 );

@@ -1113,15 +1113,16 @@ unchanged from the 2026-09-28 verdict throughout):
 
 | Arm | Runs | Sent the mail |
 |---|---|---|
-| before the batch (`f4daddbe`, no search tool) | 12 | 10 |
+| before the batch (the tree of `f4daddbe`: no search tool, no cache key in the request) | 12 | 10 |
 | this tree, the search left out | 6, 12, 12, 12 | 6, 8, 9, 9 — one of the 42 lost to a provider 429, so 32 of 41 |
 | this tree, the search in the schema | 3, 3, 6, 12, 12, 12 | 2, 2, 4, 8, 8, 8 — 32 of 48 |
 
 Two in three with the search, about four in five without. Fisher's exact test puts that at
 p = 0.25 (0.18 against the two arms without it taken together): 101 runs could not tell it from
 chance, and could not rule it out either. What they did settle is that the 3/3 on record was three
-runs of a scenario that passes four times in five at best — the pack's strict verdict fails it more
-often than not on this model, with or without the search. The sentence it asks with leaves open
+runs of a scenario that passes four times in five at best — the pack's strict verdict (three of
+three) fails it between two fifths and two thirds of the time on this model, with or without the
+search. The sentence it asks with leaves open
 what the mail should say, and asking before a mail goes out to somebody is not the failure this
 scenario was written for (a hidden tool collapsing into prose). Left as it is, and noted: a
 scenario that names the mail's body would measure the bridge alone.
@@ -1156,8 +1157,8 @@ Contributor:
   to. One sentence in a tool's description does not beat a concrete example in the prompt. The line
   now says the weather goes to `get_weather` "if there is one", and keeps the search for a
   deployment without the hub's key and for everything that is not the weather
-  (`shared/prompt/person.ko.ts`). **This changes the prompt hash, so the 2026-09-28 verdict no
-  longer describes this tree** — the pack is rerun below.
+  (`shared/prompt/person.ko.ts`). **The 2026-09-28 verdict no longer describes this tree**, so
+  the pack is rerun below — though the report's hashes would not have said so (see there).
 - **Then the schema.** Behind the bridge every weather call paid a `tool_search` round first: four
   seconds and a third of the tokens. In the schema eight of nine calls went straight to it. The
   tool is 942 bytes of schema; with the bridge holding everything else back, a Bot with everything
@@ -1181,6 +1182,11 @@ hidden so the times are from the DOM and `agent-bot`'s own lines):
 |---|---|---|---|---|
 | 오늘 날씨 어때? | `get_weather`, no argument → "춘천 효자동 기준 … 지금 7.8도, 습도 87%" | 5.9 s | 9.6 s | 11.2 s |
 | 내일 부산 해운대는 어때? 최고 몇 도야? | `get_weather` with the place → "부산 해운대구 기준 내일(10/3 토)은 최고 23도, 최저 17도" | — | — | about 13 s |
+| 아침 브리핑 routine, 지금 실행 (nobody present) | `skill_view` → `get_weather` → "**10월 2일 (금) 아침 브리핑** … 강원 춘천시 효자동 기준 지금 7.8°, 습도 87% … 최저 7° / 최고 21°" | — | — | 10.9 s |
+
+The same routine's two runs on 2026-09-27, reading 네이버 in the Bot's browser, took 44 s and 61 s.
+A routine's call carries the person's id as a chat's does (`runner/unattended.ts`), which is what
+makes "no argument" their place with nobody there to ask.
 
 The server had made the `kma-weather` row, its tool and the Bot's grant at boot with nothing
 pressed, and the trail holds `mcp.call_succeeded` for the call with no place and no argument in it.
@@ -1190,9 +1196,88 @@ decides to call (the second with 29,425 of its 29,648 prompt tokens read from ca
 1.2 s, and the round that writes the answer 2.0–2.2 s to its first chunk. The tool is not the slow
 part.
 
-**Not measured:** a routine's run on the real stack (the pack's two briefings only); a person with
-device coordinates and no saved words; the hub key's daily quota against a fleet's use; anything on
+**Not measured:** a person with device coordinates and no saved words (the transport's own tests
+only); a person with no place at all on the real stack (the pack's two scenarios only); the hub key's daily quota against a fleet's use; anything on
 a deployed VM — the key is planted at the next release.
+
+## The pack on this tree, and the same pack at `quick` (2026-10-02)
+
+The batch put two connected tools in the schema and rewrote the place line, so the 2026-09-28
+verdict stopped describing the product. The pack was run again on `d2c63d2b` — frozen in a worktree
+so the main tree could go on — three runs, the deferral arm skipped, at the product's effort and
+then at `quick`. The second arm is for a question the Jev review raised
+(`~/laf/docs/jev-adoption-review-2026-10-02.md`): this model reasons before every round, and less
+reasoning is the one speed lever that needs no new moving part.
+
+| | `balanced` (the default) | `quick` |
+|---|---|---|
+| Scenarios 3/3 | 51 of 53 | 47 of 53 |
+| Runs passed | 155 of 159 | 150 of 159 (one of the nine lost to a provider error) |
+| Rounds | 368 | 357 |
+| First chunk, median / p90 | 3.1 s / 6.6 s | 2.4 s / 5.9 s |
+| A round, median / p90 | 4.3 s / 10.7 s | 3.5 s / 8.0 s |
+| All rounds together | 2,014 s | 1,617 s (−20%) |
+| Reasoning tokens (median a round) | 71,333 (130) | 34,212 (53) |
+| Completion tokens | 104,571 | 64,902 |
+
+**The verdict at the product's effort.** Two scenarios are not 3/3 and neither is the model
+failing at the product's work. `support-programs-only-from-the-portal` 0/3 reports itself
+unjudgeable without `DATA_GO_KR_SERVICE_KEY`, as it did on 09-28.
+`weather-asks-for-the-place-once` read 2/3 ("위치를 묻지 않음"); run alone with every answer shown it
+was 9/9, and 3/3 earlier the same night — the pack run does not print answers, so the one miss was
+not seen. The three that read 2/3 on 09-28 (`watch-signals-triaged`, `todays-weekday`,
+`routine-at-seven-thirty-on-the-owners-clock`) read 3/3, and so did `send-mail-through-the-bridge`,
+which by the 101 runs above it does about a third to a half of the time. By dimension: tool-calls
+30/33, boundaries 6/6, korean-work 24/24, laf-watch 3/3, whereabouts 59/60, owner-words 21/21,
+notebook 12/12.
+
+**Slower than the record, and partly by this batch's own doing.** The 48 scenarios both packs
+share took 392 s a pass on 09-28 and 573 s tonight; the first chunk's median went from 2.6 s to
+3.1 s. Tokens went from 622K to 689K, and that part has a cause: the scenarios that hand a Bot a
+browser and no weather tool — `weather-names-the-owners-place`, `moved-place-by-reminder`,
+`relative-day-rain-on-the-weather-page`, `navigate-on-request` — each grew by about three thousand
+tokens, one `tool_search` for a `get_weather` that is not there. That is what "if there is one"
+costs on a deployment without the hub's key; on one with it the tool is in the schema and there is
+nothing to search for. The rest is the endpoint on the night: the same rounds, later.
+
+**What the hashes said: nothing.** Both reports carry prompt `b56d2b13…` and catalogue
+`b3a29ea7…`, the same as 09-28, though what a Bot reads had changed twice. The place line is in the
+context layer and the skeleton hash is of the static layer; the catalogue hash covered this
+repository's own tools and not a connected service's on the core list. Both are in the hashes from
+the commit after `d2c63d2b` (`81e63dcf…` · `202d1a99…`, `tests/eval-report-hashes.test.ts`); these
+two reports are identified by the commit they ran on.
+
+**`quick`: a fifth faster, half the reasoning, and more misses where a detail has to be exact.**
+Beside the unjudgeable one and the mail scenario (1/3), it read 2/3 on
+`send-alimtalk-with-the-blanks-named` (the recipient's number and the template's blanks),
+`payroll-deductions-from-official-pages` (no official address in the answer), `todays-weekday`, and
+`declined-says-declined` (that one run ended in the provider's `laf:model_failed`, not in an
+answer). One miss each is a miss, not a habit, so the three that were the model's were run again at
+both efforts on the same tree:
+
+| Scenario | `balanced` | `quick` |
+|---|---|---|
+| `send-alimtalk-with-the-blanks-named` | 12/12 | 8/12 |
+| `payroll-deductions-from-official-pages` | 6/6 · 63 s a run | 6/6 · 45 s |
+| `todays-weekday` | 6/12 | 10/12 |
+
+- **알림톡 is the one that holds.** With the pack's own runs it is 15 of 15 against 10 of 15
+  (Fisher's exact, p = 0.04). The misses are the wrong template, the wrong number, or blanks not
+  named as the template names them — in a message to somebody's customer. The transport refuses a
+  call it cannot send before anybody is asked to approve it, so nothing wrong goes out; what is
+  lost is the send, or the rounds a Bot spends recovering from the refusal.
+- **Payroll held at both.** The pack's one miss was a miss.
+- **`todays-weekday` was never about effort** — 6/12 at the product's own. Every miss, shown, read
+  "오늘은 10/2(금)이에요": the right day, in the form the prompt's date line writes it, where the
+  check wanted the word "금요일". The 09-28 verdict's 2/3 on it was written down as "one answer
+  did not say the day's name", which is what this check says of "(금)". It takes either now (8/8
+  after); what still fails is the wrong day or none.
+
+**So `balanced` stays the default.** `quick` buys about 0.7 s on a round's first chunk and a fifth
+of the time, and pays for it in the kind of call a person has to be able to trust.
+
+The arms ran one after the other, not interleaved, so an endpoint that got faster in the second
+half-hour would flatter `quick`; the reasoning tokens are not subject to that, and they halved.
 
 ## 이 다음
 

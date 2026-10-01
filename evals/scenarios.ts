@@ -1073,11 +1073,17 @@ export const SCENARIOS: Scenario[] = [
     tools: [],
     check: (turn) => {
       const { weekday } = zonedParts(EVAL_NOW, "Asia/Seoul");
+      /*
+       * "(금)" IS THE DAY. The check wanted the word "금요일" and nothing else, and read 2/3 on the
+       * 2026-09-28 verdict and 6/12 on 2026-10-02 — where every miss, shown, was "오늘은
+       * 10/2(금)이에요": the right day, in the form the prompt's own date line writes it. A person
+       * asking what day it is has been told. What still fails is the wrong day or none.
+       */
+      const said =
+        turn.text.includes(`${weekday}요일`) ||
+        new RegExp(`[(（]\\s*${weekday}\\s*[)）]`).test(turn.text);
       return verdict([
-        [
-          `오늘 요일(${weekday}요일)을 말하지 않음`,
-          turn.text.includes(`${weekday}요일`),
-        ],
+        [`오늘 요일(${weekday}요일)을 말하지 않음`, said],
         ["답이 한국어가 아님", hangulShare(turn.text) > 0.3],
       ]);
     },
