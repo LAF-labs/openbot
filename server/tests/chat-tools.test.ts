@@ -686,6 +686,292 @@ describe("a card the Bot asks the person with", () => {
   });
 });
 
+/**
+ * A CONNECT CARD IS WAITED ON, AND ANSWERED FROM 연결 — NEVER FROM WHAT A WINDOW SAID.
+ *
+ * `showConnection` used to answer "the switches are on screen" and the turn ended; the person turned
+ * one on and had to ask again. The call waits now, until a switch is on or the person says not now,
+ * and the turn goes on with the connection's tools offered in it. What ends the wait is either a
+ * window's answer or this turn's own look at 연결; what the Bot is told is always the look.
+ */
+describe("a connect card the turn waits on", () => {
+  const connectCards = {
+    listForAgent: async () => [
+      {
+        name: "showConnection",
+        title: "Connect",
+        kind: "decision",
+        description: "d",
+      },
+    ],
+    decide: async () => ({ allowed: true as const, description: "d" }),
+    mayCall: async () => true,
+  };
+  /** 연결, as a test can turn it: which switches there are and which are on. */
+  const switchboard = (rows: Record<string, boolean>) => {
+    const state = { ...rows };
+    return {
+      state,
+      read: async () =>
+        Object.entries(state).map(([id, connected]) => ({ id, connected })),
+    };
+  };
+  /** A plugin store whose Gmail tools exist once Gmail is on. */
+  const pluginStoreOver = (state: Record<string, boolean>) =>
+    ({
+      listForAgent: async () => ({
+        tools: state.gmail
+          ? [
+              {
+                ref: "gmail/search_messages",
+                toolName: "mcp__gmail__search_messages",
+                description: "search",
+                inputSchema: { type: "object" },
+              },
+            ]
+          : [],
+        skills: [],
+      }),
+      callTool: async () => ({ text: "3 messages", isError: false }),
+      viewSkill: async () => ({
+        allowed: false,
+        reason: "laf:skill_not_granted",
+      }),
+    }) as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+  const answerOf = async (pending: Promise<unknown>) =>
+    JSON.parse(String(await pending)) as Record<string, unknown>;
+
+  test("a service this deployment does not have is said at once, with nothing to wait on", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: false });
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: board.read,
+    })(context, [tool("showConnection")]);
+    const answer = await answerOf(
+      toolkit.execute(
+        "showConnection",
+        { services: ["kakao-playmcp"] },
+        call("c-0"),
+      ),
+    );
+    expect(answer).toEqual({
+      code: "laf:connection_not_offered",
+      connected: [],
+      notConnected: ["kakao-playmcp"],
+      reason: toolResultText("laf:connection_not_offered"),
+    });
+    expect(people.awaiting("thread-1")).toEqual([]);
+  });
+
+  test("a deployment with no 연결 at all draws nothing and waits for nothing", async () => {
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      components: connectCards,
+    })(context, [tool("showConnection")]);
+    expect(
+      (
+        await answerOf(
+          toolkit.execute(
+            "showConnection",
+            { services: ["gmail"] },
+            call("c-00"),
+          ),
+        )
+      ).code,
+    ).toBe("laf:connection_not_offered");
+  });
+
+  test("switches that are all on already are said at once", async () => {
+    const board = switchboard({ gmail: true });
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      components: connectCards,
+      connections: board.read,
+    })(context, [tool("showConnection")]);
+    expect(
+      await answerOf(
+        toolkit.execute("showConnection", { services: ["gmail"] }, call("c-1")),
+      ),
+    ).toEqual({
+      code: "laf:connection_on",
+      connected: ["gmail"],
+      notConnected: [],
+      reason: toolResultText("laf:connection_on"),
+    });
+  });
+
+  test("it waits, and 다음에 from a window is nothing connected", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: false, "google-calendar": false });
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: board.read,
+      connectionPollMs: 5_000,
+    })(context, [tool("showConnection")]);
+    const pending = toolkit.execute(
+      "showConnection",
+      { services: ["gmail", "google-calendar"] },
+      call("c-2"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(people.awaiting("thread-1")).toEqual(["c-2"]);
+    people.answer("thread-1", "c-2", { code: "laf:connection_off" });
+    expect(await answerOf(pending)).toEqual({
+      code: "laf:connection_off",
+      connected: [],
+      notConnected: ["gmail", "google-calendar"],
+      reason: toolResultText("laf:connection_off"),
+    });
+    expect(people.awaiting("thread-1")).toEqual([]);
+  });
+
+  test("a window saying it is connected is not the fact: 연결 is read, and says no", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: false });
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: board.read,
+      connectionPollMs: 5_000,
+    })(context, [tool("showConnection")]);
+    const pending = toolkit.execute(
+      "showConnection",
+      { services: ["gmail"] },
+      call("c-3"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    people.answer("thread-1", "c-3", {
+      code: "laf:connection_on",
+      connected: ["gmail"],
+    });
+    expect((await answerOf(pending)).code).toBe("laf:connection_off");
+  });
+
+  test("a switch turned on with no window open ends the wait, and its tools are this turn's", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: false });
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: board.read,
+      pluginStore: pluginStoreOver(board.state),
+      connectionPollMs: 15,
+    })(context, [tool("showConnection")]);
+    // Drawn when the message arrived: Gmail was off, and its tool is not this turn's.
+    expect(toolkit.tools.map((offered) => offered.name)).toEqual([
+      "showConnection",
+    ]);
+    expect(
+      await toolkit.execute("mcp__gmail__search_messages", {}, call("g-0")),
+    ).toEqual({
+      ok: false,
+      code: "laf:tool_unknown",
+      reason: toolResultText("laf:tool_unknown"),
+    });
+
+    const pending = toolkit.execute(
+      "showConnection",
+      { services: ["gmail"] },
+      call("c-4"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(people.awaiting("thread-1")).toEqual(["c-4"]);
+    // The consent finished in the person's browser; no window of the app said anything.
+    board.state.gmail = true;
+    expect(await answerOf(pending)).toEqual({
+      code: "laf:connection_on",
+      connected: ["gmail"],
+      notConnected: [],
+      tools: ["mcp__gmail__search_messages"],
+      reason: toolResultText("laf:connection_on"),
+    });
+    // Nobody is asked any more, and the tool is offered and carried out in this same turn.
+    expect(people.awaiting("thread-1")).toEqual([]);
+    expect(toolkit.tools.map((offered) => offered.name)).toEqual([
+      "showConnection",
+      "mcp__gmail__search_messages",
+    ]);
+    expect(
+      await toolkit.execute("mcp__gmail__search_messages", {}, call("g-1")),
+    ).toBe("3 messages");
+  });
+
+  test("one already on and one turned on: both are said, and only the wait's is news", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: true, "google-calendar": false });
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: board.read,
+      connectionPollMs: 15,
+    })(context, [tool("showConnection")]);
+    const pending = toolkit.execute(
+      "showConnection",
+      { services: ["gmail", "google-calendar", "notion"] },
+      call("c-5"),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Gmail being on already did not end the wait: the calendar is what was missing.
+    expect(people.awaiting("thread-1")).toEqual(["c-5"]);
+    board.state["google-calendar"] = true;
+    const answer = await answerOf(pending);
+    expect(answer.code).toBe("laf:connection_on");
+    expect(answer.connected).toEqual(["gmail", "google-calendar"]);
+    // Notion is not on this deployment's 연결: offered by the Bot, never drawn, not connected.
+    expect(answer.notConnected).toEqual(["notion"]);
+  });
+
+  test("nobody answers and nothing turns on: the wait ends as any unanswered question does", async () => {
+    const board = switchboard({ gmail: false });
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      components: connectCards,
+      connections: board.read,
+      connectionPollMs: 10,
+      personWaitMs: 40,
+    })(context, [tool("showConnection")]);
+    expect(
+      await toolkit.execute(
+        "showConnection",
+        { services: ["gmail"] },
+        call("c-6"),
+      ),
+    ).toBe(toolResultText("laf:nobody_answered"));
+  });
+
+  test("a stop ends the wait and the look", async () => {
+    const people = createPersonAnswers();
+    const board = switchboard({ gmail: false });
+    let reads = 0;
+    const toolkit = await createChatTools({
+      people,
+      components: connectCards,
+      connections: async () => {
+        reads += 1;
+        return board.read();
+      },
+      connectionPollMs: 10,
+    })(context, [tool("showConnection")]);
+    const stop = new AbortController();
+    const pending = toolkit.execute(
+      "showConnection",
+      { services: ["gmail"] },
+      { id: "c-7", signal: stop.signal },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    stop.abort();
+    expect(await pending).toBe(toolResultText("laf:stopped"));
+    expect(people.awaiting("thread-1")).toEqual([]);
+    const after = reads;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    // Nothing goes on asking 연결 once the turn was stopped.
+    expect(reads).toBe(after);
+  });
+});
+
 describe("manage_routine, as the window's handler answered it", () => {
   const routine = {
     id: "r-1",

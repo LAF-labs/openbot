@@ -1880,6 +1880,9 @@ export const ko: Record<string, string> = {
   Make: "만들기",
   "Making…": "만드는 중…",
   "Not now": "다음에",
+  // The connect card a Bot's turn is waiting on (`components/gallery/connect.tsx`).
+  "I'll carry on as soon as one is connected.": "연결되면 바로 이어서 할게요.",
+  "That connection is not available here.": "여기서는 쓸 수 없는 연결이에요.",
   "{name}{josa} in the list below now.":
     "'{name}'{josa} 아래 목록에 들어갔어요.",
   "The suggestions could not be loaded.": "추천 루틴을 불러오지 못했어요.",

@@ -111,6 +111,10 @@ import { withApprovalNotifications } from "./notifications/notify";
 import { connectConfigFor } from "./plugins/connect-config";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
+import {
+  connectionSourcesFrom,
+  readConnectionSwitches,
+} from "./plugins/overview-routes";
 import { createPublicDataRuntime } from "./plugins/public-data-rest";
 import { lookupOver } from "./plugins/shared-clients";
 import {
@@ -849,6 +853,14 @@ const personAnswers = createPersonAnswers({
     }
   },
 });
+const connectionSwitchSources = connectionSourcesFrom({
+  store: pluginStore,
+  sharedClient: sharedOAuthClients,
+  partners: partnerRuntime,
+  // The same condition the app draws the sites under: no browser, no site switches.
+  sites: computerClient && computerGateway ? siteConnections : null,
+  agents: agentProfileStore,
+});
 const chatTools = createChatTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
@@ -863,6 +875,9 @@ const chatTools = createChatTools({
   persona: shopStore,
   goals: goalStore,
   auditStore: bootAuditStore,
+  // What a waiting connect card asks: 연결's own reading, from the sources the screen is drawn from.
+  connections: (userId) =>
+    readConnectionSwitches(connectionSwitchSources, userId),
 });
 const turnEngine = config.harness.serverTurns
   ? createTurnEngine({

@@ -22,11 +22,16 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { BUSINESS_SITES } from "../../../shared/sites/catalogue";
+import type { AgentProfileStore } from "../agents/profile-store";
 import type { AppVariables } from "../auth/guards";
 import type { SiteConnectionStore } from "../computer/site-connections";
 import { type CatalogueEntry, instanceNameOf } from "./catalogue";
 import { healthFrom } from "./connection-health";
 import type { PartnerRuntime } from "./partners";
+import {
+  connectableCatalogue,
+  type SharedClientLookup,
+} from "./shared-clients";
 import type { ConnectionHealth, PluginStore } from "./store";
 
 export type OverviewAccount =
@@ -86,6 +91,39 @@ export type ConnectionsOverviewSources = {
   /** This person's Bots, name and id and nothing else. */
   bots: (userId: string) => Promise<{ id: string; name: string }[]>;
 };
+
+/**
+ * The sources, from the pieces a process holds.
+ *
+ * One function because a third reader arrived: a turn waiting on a connect card
+ * (`turns/chat-tools.ts`) asks whether the switch is on, and it is assembled in `main.ts`, before
+ * the app. Two hand-built copies of this object would be two opinions about what 연결 shows.
+ */
+export function connectionSourcesFrom(input: {
+  store: Pick<PluginStore, "connectionsFor" | "listServers">;
+  sharedClient: SharedClientLookup;
+  partners: Pick<PartnerRuntime, "configured" | "alimtalk"> | null;
+  /**
+   * Null where no browser is behind the sites — the condition `/api/sites` is mounted under, and
+   * it has to be that, not just the store: the store is built from the database on every
+   * deployment, so reading it alone would draw fifteen site switches on a machine with no browser
+   * behind any of them. A section that cannot work is not drawn.
+   */
+  sites: Pick<SiteConnectionStore, "list"> | null;
+  agents: Pick<AgentProfileStore, "list"> | null;
+}): ConnectionsOverviewSources {
+  return {
+    catalogue: () => connectableCatalogue(input.sharedClient),
+    store: input.store,
+    partners: input.partners,
+    sites: input.sites,
+    bots: async (userId) => {
+      if (!input.agents) return [];
+      const roster = await input.agents.list({ id: userId, role: "user" });
+      return roster.map((bot) => ({ id: bot.id, name: bot.name }));
+    },
+  };
+}
 
 /**
  * A connection row as this reader takes it, with the health the store says it has.
@@ -193,6 +231,35 @@ export async function readConnectionsOverview(
     sites,
     bots: await sources.bots(userId),
   };
+}
+
+/** One thing 연결 can switch — an account consented to at a vendor, or a site — and whether it is on. */
+export type ConnectionSwitch = { id: string; connected: boolean };
+
+/**
+ * Every switch a connect card may draw for this person, with whether it is on.
+ *
+ * `connected` IS THE SCREEN'S WORD. An account that needs reconnecting and a site whose login
+ * lapsed are both rows on 연결, and neither is something a Bot can work through — so neither is
+ * "on" here. The partner card is left out: it is a registration with steps, not a switch.
+ */
+export async function readConnectionSwitches(
+  sources: ConnectionsOverviewSources,
+  userId: string,
+): Promise<ConnectionSwitch[]> {
+  const overview = await readConnectionsOverview(sources, userId);
+  return [
+    ...overview.accounts
+      .filter((account) => account.kind === "oauth")
+      .map((account) => ({
+        id: account.id,
+        connected: account.status === "connected",
+      })),
+    ...overview.sites.map((site) => ({
+      id: site.id,
+      connected: site.status === "connected",
+    })),
+  ];
 }
 
 export function createConnectionsOverviewRoutes(

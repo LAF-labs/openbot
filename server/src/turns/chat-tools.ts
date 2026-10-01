@@ -35,6 +35,8 @@ import {
   navigationOutcome,
 } from "../../../shared/tools/computer-reply";
 import {
+  CONNECT_CARD,
+  connectionAnswer,
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
   galleryReads,
@@ -77,6 +79,7 @@ import type { GoalStore } from "../goals/store";
 import { goalApprovals, goalTools } from "../goals/tools";
 import { log } from "../log";
 import { McpServerError } from "../plugins/mcp";
+import type { ConnectionSwitch } from "../plugins/overview-routes";
 import { TOOL_SERVER_FAILED } from "../plugins/routes";
 import {
   BotNotDrivableError,
@@ -122,6 +125,15 @@ export type ChatToolsDeps = {
     "active" | "find" | "create" | "update" | "log" | "linkRoutine"
   >;
   auditStore?: AuditStore;
+  /**
+   * What 연결 can switch for a person, and whether each is on (`plugins/overview-routes.ts`). A
+   * connect card's wait is answered from this — the screen's own reading — and never from what a
+   * window said: the one way that boundary lies is a Bot saying "연결됐어요" about a switch that is
+   * off. Absent without a plugin store, and a connect card then draws nothing and waits for nothing.
+   */
+  connections?: (userId: string) => Promise<ConnectionSwitch[]>;
+  /** How often a waiting connect card looks at 연결 for itself. */
+  connectionPollMs?: number;
   /** How long a person may take over a help request. The window's own ten minutes by default. */
   personWaitMs?: number;
   /** How often a help request looks at whether the wheel came back. */
@@ -150,6 +162,11 @@ export type ChatToolkit = { tools: Tool[]; execute: LoopExecutor };
 /** Human-assistance wait window. Long enough for a person to come back, finite so the run can end. */
 const WAIT_FOR_PERSON_MS = 10 * 60_000;
 const CONTROL_POLL_MS = 1_000;
+/**
+ * How often a waiting connect card reads 연결. A consent takes a person tens of seconds, and the
+ * read is four small queries, so three seconds is a few hundred of them at the very most.
+ */
+const CONNECTION_POLL_MS = 3_000;
 
 /** One outcome, carrying the fact and the sentence the model reads for it. */
 function refusal(code: string, extra: Record<string, unknown> = {}) {
@@ -910,6 +927,120 @@ export function createChatTools(deps: ChatToolsDeps) {
         : Promise.resolve(answer("laf:routine_list_unavailable"));
 
     /**
+     * The tools a connection that landed mid-turn brought, offered from now on in this turn.
+     *
+     * A turn's list is drawn once, when the person's message arrives. A connect card that waited
+     * until Gmail was switched on would otherwise hand the Bot back a turn in which Gmail's tools
+     * are neither offered nor carried out — "연결됐어요", and then `laf:tool_unknown`. ADDED, NEVER
+     * REMOVED, and only tools behind the bridge: the head of the prompt is the core list, which
+     * this does not touch (`toolsFingerprint`), so nothing behind it is re-billed.
+     */
+    const offerLandedTools = async (): Promise<string[]> => {
+      const again = await executableNames(deps, botId, lastListed);
+      const added: string[] = [];
+      for (const tool of again.pluginTools) {
+        if (names.has(tool.name)) continue;
+        const ref = again.pluginRefs.get(tool.name);
+        if (ref === undefined) continue;
+        names.add(tool.name);
+        pluginRefs.set(tool.name, ref);
+        tools.push(tool);
+        added.push(tool.name);
+      }
+      return added;
+    };
+
+    /**
+     * 연결's switches, put in the conversation — and waited on.
+     *
+     * THE CALL ENDS WHEN A SWITCH IS ON, OR THE PERSON SAYS NOT NOW. Two things end the wait: the
+     * card's own answer from whichever window the person is in (나중에, or its nudge that something
+     * turned on), and this turn looking at 연결 for itself every few seconds — so a consent finished
+     * in the person's browser with the app closed still lets the Bot go on, which is what a turn
+     * the server owns is for. Whichever came first, what the Bot is told is read from 연결 after it:
+     * a window's word is never the fact.
+     */
+    const connectCard = async (
+      args: Record<string, unknown>,
+      call: { id: string; signal: AbortSignal },
+    ): Promise<LoopOutcome> => {
+      const offered = [
+        ...new Set(
+          (Array.isArray(args.services) ? args.services : []).filter(
+            (id): id is string => typeof id === "string",
+          ),
+        ),
+      ];
+      const read = async () =>
+        deps.connections
+          ? await deps.connections(owner.id).catch(() => null)
+          : null;
+      const first = await read();
+      // What this deployment has of what was offered: the card draws these and leaves the rest out.
+      const here = first
+        ? offered.filter((id) => first.some((row) => row.id === id))
+        : [];
+      if (!first || here.length === 0) {
+        // Nothing to draw, so nothing to wait for: ten minutes on an empty card would be the turn.
+        return JSON.stringify(
+          connectionAnswer({ offered, connected: [], isOffered: false }),
+        );
+      }
+      const onIn = (rows: readonly ConnectionSwitch[]) =>
+        here.filter((id) => rows.some((row) => row.id === id && row.connected));
+      const before = onIn(first);
+      if (before.length === here.length) {
+        // Every switch it would draw is already on: the Bot is told so and goes on.
+        return JSON.stringify(connectionAnswer({ offered, connected: before }));
+      }
+
+      const settled = new AbortController();
+      const signal = AbortSignal.any([call.signal, settled.signal]);
+      const pollMs = deps.connectionPollMs ?? CONNECTION_POLL_MS;
+      const { value: answered } = await awaitPerson(async () => {
+        const person = deps.people.wait({
+          threadId,
+          toolCallId: call.id,
+          signal,
+          timeoutMs: personWaitMs,
+        });
+        const landed = (async () => {
+          while (!signal.aborted) {
+            await sleep(pollMs, signal);
+            if (signal.aborted) break;
+            const rows = await read();
+            if (rows && onIn(rows).some((id) => !before.includes(id))) {
+              return true;
+            }
+          }
+          return false;
+        })();
+        const outcome = await Promise.race([
+          person,
+          landed.then((found) =>
+            found ? { answered: true as const, value: undefined } : person,
+          ),
+        ]);
+        // Whichever is still waiting stops: the card's question is over either way.
+        settled.abort();
+        await Promise.allSettled([person, landed]);
+        return outcome;
+      });
+      if (call.signal.aborted) return toolResultText("laf:stopped");
+
+      const rows = await read();
+      const now = rows ? onIn(rows) : before;
+      const fresh = now.filter((id) => !before.includes(id));
+      if (!answered.answered && fresh.length === 0) {
+        return toolResultText("laf:nobody_answered");
+      }
+      const landedTools = fresh.length > 0 ? await offerLandedTools() : [];
+      return JSON.stringify(
+        connectionAnswer({ offered, connected: now, tools: landedTools }),
+      );
+    };
+
+    /**
      * A card the Bot put on screen: allowed for this Bot, reading only what it was granted.
      * `decideComponent` in the app asked exactly this, of the same store.
      */
@@ -948,6 +1079,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       if (!GALLERY_DECISIONS.has(name)) {
         return GALLERY_CONFIRMATIONS[name] ?? ON_SCREEN;
       }
+      if (name === CONNECT_CARD) return connectCard(args, call);
       /*
        * A QUESTION TO THE PERSON: the card is drawn from the call, and its answer is the result.
        * The window's card answered its own run through CopilotKit; the server waits for the same

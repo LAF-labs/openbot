@@ -15,7 +15,7 @@ import { Badge, GalleryFrame } from "./frame";
  */
 
 /** What the render props carry. Narrowed here so each component reads as its own small contract. */
-type Waiting<T> =
+export type Waiting<T> =
   | {
       status: "inProgress";
       args: Partial<T>;

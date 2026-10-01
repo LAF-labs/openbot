@@ -91,6 +91,7 @@ import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
 import { createConnectedPageRoute } from "./plugins/connected-page";
 import {
   type ConnectionsOverviewSources,
+  connectionSourcesFrom,
   createConnectionsOverviewRoutes,
   readConnectionsOverview,
 } from "./plugins/overview-routes";
@@ -98,7 +99,6 @@ import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
 import type { PublicDataRuntime } from "./plugins/public-data-rest";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
-import { connectableCatalogue } from "./plugins/shared-clients";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
 import type { RoutineService } from "./routines/service";
@@ -1152,31 +1152,17 @@ export function createApp(
    * neither reader is mounted.
    */
   const connectionSources: ConnectionsOverviewSources | null = pluginStore
-    ? {
-        catalogue: () =>
-          connectableCatalogue(pluginConnect?.sharedClient ?? (() => null)),
+    ? connectionSourcesFrom({
         store: pluginStore,
+        sharedClient: pluginConnect?.sharedClient ?? (() => null),
         partners: partners ?? null,
-        /*
-         * THE SAME CONDITION `/api/sites` IS MOUNTED UNDER, and it has to be, not just the store.
-         * The store is built from the database on every deployment, so reading it alone would
-         * draw fifteen site switches on a machine with no browser behind any of them — and the
-         * check on the way back from a handoff, which is a read of that browser, is not mounted
-         * there at all. A section that cannot work is not drawn.
-         */
+        // The condition `/api/sites` is mounted under. See `connectionSourcesFrom`.
         sites:
           computerClient && computerGateway && computerPolicy
             ? (siteConnections ?? null)
             : null,
-        bots: async (userId) => {
-          if (!agentProfileStore) return [];
-          const roster = await agentProfileStore.list({
-            id: userId,
-            role: "user",
-          });
-          return roster.map((bot) => ({ id: bot.id, name: bot.name }));
-        },
-      }
+        agents: agentProfileStore ?? null,
+      })
     : null;
 
   if (pluginStore) {

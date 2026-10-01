@@ -38,21 +38,42 @@ import { pluginKeys } from "@/lib/plugins/queries";
  * An id this deployment does not offer is left out, and with none left nothing is drawn: a card
  * promising a switch that is not there would be the boundary lying.
  */
+/** What the switches on screen are, said to whoever put them there. */
+export type SwitchesState = {
+  /** The ids actually drawn: what this deployment has of what was asked for. */
+  offered: string[];
+  /** Of those, the ones that are on. */
+  connected: string[];
+};
+
 export function ConnectionChoices({
   ids,
   limit,
+  isWatched = false,
+  onSwitches,
 }: {
   /** Catalogue keys and site ids, most wanted first. */
   ids: readonly string[];
   /** How many to show of those this deployment has. All of them when absent. */
   limit?: number;
+  /**
+   * Something is waiting on these switches — a Bot's turn, held on its connect card
+   * (`components/gallery/connect.tsx`). The overview is re-asked for as long as that is true, since
+   * the switch may be turned on from another window, and "what you can ask now" is not offered:
+   * the Bot is about to go on with what was asked.
+   */
+  isWatched?: boolean;
+  /** Told once the overview has been read, and again whenever what is on changes. */
+  onSwitches?: (state: SwitchesState) => void;
 }) {
   const queryClient = useQueryClient();
   const [waitingUntil, setWaitingUntil] = useState<Record<string, number>>({});
   const [now, setNow] = useState(() => Date.now());
   const deadlines = Object.values(waitingUntil);
   const isWaiting = isStillWaiting(deadlines, now);
-  const overview = useQuery(connectionsOverviewQueryOptions(isWaiting));
+  const overview = useQuery(
+    connectionsOverviewQueryOptions(isWaiting || isWatched),
+  );
 
   useEffect(() => {
     if (!isWaiting) return;
@@ -92,11 +113,19 @@ export function ConnectionChoices({
 
   /*
    * A switch that turned on while this was on screen: what the Bot is offered is read from caches
-   * the vendor's answer did not touch. Remembered per account so it is done once per landing.
+   * the vendor's answer did not touch. Remembered per account so it is done once per landing. A
+   * site signed into counts too — it puts no tools anywhere, but a turn waiting on it goes on.
    */
-  const connectedKey = accounts
-    .filter((account) => account.status === "connected")
-    .map((account) => account.id)
+  const connectedKey = shown
+    .filter(
+      (id) =>
+        accounts.some(
+          (account) => account.id === id && account.status === "connected",
+        ) ||
+        data?.sites.some(
+          (site) => site.id === id && site.status === "connected",
+        ),
+    )
     .join(",");
   const seen = useRef<string | null>(null);
   /*
@@ -124,9 +153,19 @@ export function ConnectionChoices({
     seen.current = connectedKey;
   }, [connectedKey, queryClient]);
   const draftScope = useContext(DraftScope) ?? COMPOSE_SCREEN_KEY;
-  const nowCan = landed
-    .map((id) => ACCOUNT_FIRST_TASKS[id]?.sentence)
-    .filter((sentence): sentence is string => Boolean(sentence));
+  const nowCan = isWatched
+    ? []
+    : landed
+        .map((id) => ACCOUNT_FIRST_TASKS[id]?.sentence)
+        .filter((sentence): sentence is string => Boolean(sentence));
+
+  // Null until the overview has been read: "nothing is offered" is a fact only after that.
+  const shownKey = data ? shown.join(",") : null;
+  useEffect(() => {
+    if (shownKey === null || !onSwitches) return;
+    const split = (key: string) => key.split(",").filter(Boolean);
+    onSwitches({ offered: split(shownKey), connected: split(connectedKey) });
+  }, [shownKey, connectedKey, onSwitches]);
 
   if (overview.isPending) {
     return (

@@ -6,6 +6,7 @@
  * server (`server/src/turns/chat-tools.ts`), and a Bot must read the same sentence whichever side
  * did — so the sentences live here, and the gallery specs name them from here.
  */
+import { toolResultText } from "../prompt/tool-results.ko";
 
 /** The sentence a card's call answers the model with, by the card's name. */
 export const GALLERY_CONFIRMATIONS: Readonly<Record<string, string>> = {
@@ -18,8 +19,6 @@ export const GALLERY_CONFIRMATIONS: Readonly<Record<string, string>> = {
   showLineChart: "The line chart is now on screen for the person.",
   showAreaChart: "The area chart is now on screen for the person.",
   showProgress: "The progress chart is now on screen for the person.",
-  showConnection:
-    "The switches this deployment offers are on screen; one it does not offer is left out, so name the services only as switches to turn on, not as shown. Nothing is connected until the person turns one on, so do not say it is connected.",
   showActivityReport:
     "The report is on screen for the person, filled with figures read from this deployment. You were not given the figures.",
 };
@@ -34,7 +33,113 @@ export const ON_SCREEN = "It is now on screen for the person.";
 export const GALLERY_DECISIONS: ReadonlySet<string> = new Set([
   "askApproval",
   "askChoice",
+  // 연결's switches: the call waits until one is on, or the person says not now.
+  "showConnection",
 ]);
+
+/** The connect card, by the name its call is made under. */
+export const CONNECT_CARD = "showConnection";
+
+/**
+ * How a connect card's wait came out. Facts, as codes; the sentence a Bot reads for each is in
+ * `shared/prompt/tool-results.ko.ts`, and the words a person reads are the card's own.
+ */
+export type ConnectionOutcome =
+  /** At least one of what was offered is connected now. */
+  | "laf:connection_on"
+  /** None is: the person said not now, or left the switches alone. */
+  | "laf:connection_off"
+  /** Nothing that was offered exists on this deployment, so no switch was drawn. */
+  | "laf:connection_not_offered";
+
+/**
+ * A CONNECT CARD'S ANSWER — what the call waited for.
+ *
+ * The card used to be drawn and the turn ended: "the switches are on screen", and the person, having
+ * turned one on, had to ask for the same thing again (the reference this was read against pauses
+ * its run on the card and resumes it when the connection lands — `~/laf/docs/open-dot-review-2026-10-01.md`
+ * B2). Now the call waits, and its answer says which of the offered services are on, so the Bot goes
+ * straight on with what was asked.
+ *
+ * `tools` names what a connection that landed during the wait put behind the bridge. The context
+ * layer that lists deferred tools is frozen for the epoch and its reminder rides on the person's
+ * NEXT message (`server/src/context/conversations.ts`), so inside the turn this answer is the only
+ * place the Bot can learn those names from.
+ */
+export type ConnectionAnswer = {
+  code: ConnectionOutcome;
+  /** Of the services the Bot offered, the ones connected now. */
+  connected: string[];
+  /** And the ones that are not. */
+  notConnected: string[];
+  tools?: string[];
+  /** What the Bot reads. */
+  reason: string;
+};
+
+export function connectionAnswer(input: {
+  /** What the Bot's call offered. */
+  offered: readonly string[];
+  /** Of those, what is connected now — by 연결's own reading, never by anybody's say-so. */
+  connected: readonly string[];
+  /** False when this deployment has none of the offered services at all. */
+  isOffered?: boolean;
+  tools?: readonly string[];
+}): ConnectionAnswer {
+  const connected = input.offered.filter((id) => input.connected.includes(id));
+  const code: ConnectionOutcome =
+    input.isOffered === false
+      ? "laf:connection_not_offered"
+      : connected.length > 0
+        ? "laf:connection_on"
+        : "laf:connection_off";
+  return {
+    code,
+    connected,
+    notConnected: input.offered.filter((id) => !connected.includes(id)),
+    ...(input.tools && input.tools.length > 0
+      ? { tools: [...input.tools] }
+      : {}),
+    reason: toolResultText(code),
+  };
+}
+
+const CONNECTION_OUTCOMES: readonly string[] = [
+  "laf:connection_on",
+  "laf:connection_off",
+  "laf:connection_not_offered",
+];
+
+/** A stored connect answer, read back for the card. Null for anything that is not one. */
+export function readConnectionAnswer(
+  result: unknown,
+): Pick<ConnectionAnswer, "code" | "connected" | "notConnected"> | null {
+  let value = result;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const answer = value as Record<string, unknown>;
+  if (
+    typeof answer.code !== "string" ||
+    !CONNECTION_OUTCOMES.includes(answer.code)
+  ) {
+    return null;
+  }
+  const ids = (list: unknown) =>
+    Array.isArray(list)
+      ? list.filter((id): id is string => typeof id === "string")
+      : [];
+  return {
+    code: answer.code as ConnectionOutcome,
+    connected: ids(answer.connected),
+    notConnected: ids(answer.notConnected),
+  };
+}
 
 /** Which server-side function each activity report reads. Not the model's choice. */
 export const ACTIVITY_REPORT_FUNCTIONS: Readonly<Record<string, string>> = {
