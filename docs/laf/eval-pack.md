@@ -1061,6 +1061,43 @@ with it: the same 21 tools, 9,804 bytes, sha `3d7e397e4c827e5f`, through the sam
 goals' four names arrive in the context layer (or, for a conversation frozen before, as an
 `<알림>`). `tests/tool-bridge.test.ts` holds the list equal.
 
+## Web search — in the schema, not behind the bridge (2026-10-02)
+
+A Bot asked something the web answers used to open its browser. `mcp__web-search__search`
+(`server/src/plugins/web-search-rest.ts`, Perplexity's Search API on the fleet's key, `fast`) answers
+the same question from one request. Two things were measured before it was put on the core list,
+which is the last rung of the footprint ladder and needs a written reason
+(`shared/tools/bridge.ts`, `WEB_SEARCH_TOOL_NAME`).
+
+**The vendor alone** (the fleet's key, `country: "KR"`, five results): "2027년 최저임금 시급" in
+0.34–0.54 s, 2.2 KB, the first result korea.kr with the gazetted figure; 1.9 KB with
+`max_tokens_per_page: 256` and the same passage. An array of queries comes back as ONE flat list —
+`max_results` counts the whole list and nothing says which query a result answered. HTTP 400 and
+401 are `{error: {message, type, code}}`.
+
+**On the real stack** (local, Muse Spark 1.3 Contributor, one Bot, one conversation, the browser
+pane hidden so the times are from the DOM):
+
+| Arm | Question | To the first search | To the end | Browser |
+|---|---|---|---|---|
+| behind the bridge | 성심당 본점 영업시간이랑 휴무일 | 7.3 s (`tool_search` at 4.8 s) | 25.9 s | opened the shop's own site to confirm |
+| behind the bridge | 요즘 넷플릭스 한국 요금제 가격 | 7.2 s (`tool_search` again at 3.0 s) | 16.9 s | no |
+| in the schema | 요즘 유튜브 프리미엄 한국 가격 | 2.4 s | 6.1 s | no |
+
+One question each, so the size of the gap is a sample; its cause is not. Behind the bridge every
+question paid a `tool_search` round first — the second one too, with the schema already in the
+conversation — and a round is a whole request to the Bot's model. Each answer cited addresses from
+the results, and "출처 5개" under it listed them (`app/src/components/channels/sources.ts`).
+
+**Where it does not apply.** 세금·4대보험·노무 is still answered from the official page in the
+browser: asked "내년 최저임금이 얼마로 정해졌어?" the Bot read the 세금노무 skill and opened
+minimumwage.go.kr (43 s, the right figure). That skill says news and blogs are not grounds, and a
+search result is exactly that until the page behind it is read.
+
+**Not measured:** a routine using it, 소식 written from search results (the `feed_post` judge already
+counts any address in the run's tool results as seen), the daily cap being met, and anything on a
+deployed VM — the key is not planted there until the next release.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

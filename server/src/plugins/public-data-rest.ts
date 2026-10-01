@@ -26,15 +26,17 @@
  * `nkoneps.com.response.ResponseError` shape `vendorHeaderOf` reads. `type=json` is 나라장터's word
  * for the format and `dataType=json` is 기업마당's — the other spelling answers XML.
  */
-import { describeFailure } from "../failure-text";
-import { log } from "../log";
-import type { PluginStore } from "./store";
-import { PluginRefusedError } from "./store";
 import type { DeploymentKeyFamily } from "./catalogue";
+import {
+  createDeploymentKeyRuntime,
+  type DeploymentKeyRuntime,
+  type DeploymentKeyService,
+  type DeploymentKeyStore,
+} from "./deployment-key-runtime";
 import { type McpCallResult, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
 import { asResult, countArg, stringArg } from "./rest-support";
-import { type DeploymentKeyLookup, keyLookupOver } from "./shared-clients";
+import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
 
@@ -515,35 +517,37 @@ export function createPublicDataTransport(input: {
 
 /* ── The runtime: what the process assembles, and what it does at boot ───────────────────────── */
 
-/** The slice of the store the reconciliation needs, so a test hands in exactly that and no more. */
-export type PublicDataStore = Pick<
-  PluginStore,
-  | "ensureCatalogueServer"
-  | "refreshTools"
-  | "approveToolDefinition"
-  | "grant"
-  | "revoke"
-  | "removeServer"
-  | "listServers"
-  | "listForAgent"
->;
-
-export type PublicDataRuntime = {
-  /** Whether this VM was given the key. False draws no entry and offers no tool. */
-  configured: boolean;
-  /** For the catalogue listing, which hides a deployment-key entry whose key is absent. */
-  keys: DeploymentKeyLookup;
-  /** For `createPluginStore`. Empty leaves the entry refusing rather than falling back to MCP. */
-  transports: Partial<Record<DeploymentKeyFamily, VendorTransport>>;
-  /**
-   * The row, the tools and a grant on each for every Bot on this machine — or, with no key, every
-   * one of those taken back. Run at boot; idempotent; never throws.
-   */
-  reconcile: (store: PublicDataStore, by: string) => Promise<void>;
-  /** A Bot that has just come into being gets the tools, if the key is here. Never throws. */
-  offerTo: (store: PublicDataStore, botId: string, by: string) => Promise<void>;
+/** This entry, as the deployment-key runtime takes it (`deployment-key-runtime.ts`). */
+export const PUBLIC_DATA_SERVICE: DeploymentKeyService = {
+  key: PUBLIC_DATA_KEY,
+  family: "data-go-kr",
+  tools: PUBLIC_DATA_TOOLS,
+  transport: ({ key, fetchImpl, now }) =>
+    createPublicDataTransport({
+      serviceKey: key,
+      ...(fetchImpl ? { fetchImpl } : {}),
+      ...(now ? { now } : {}),
+    }),
 };
 
+/** The slice of the store the reconciliation needs. */
+export type PublicDataStore = DeploymentKeyStore;
+
+export type PublicDataRuntime = Pick<
+  DeploymentKeyRuntime,
+  "keys" | "transports" | "reconcile" | "offerTo"
+> & {
+  /** Whether this VM was given the key. False draws no entry and offers no tool. */
+  configured: boolean;
+};
+
+/**
+ * This entry alone, reconciled.
+ *
+ * The process assembles every deployment-key entry at once (`main.ts`, `createDeploymentKeyRuntime`);
+ * this is the same runtime with only 나라장터·기업마당 in it, which is how the entry's own tests have
+ * always asked for it.
+ */
 export function createPublicDataRuntime(input: {
   keys: Partial<Record<DeploymentKeyFamily, string>>;
   /** Every live Bot on this deployment, whoever owns it: the set the tools are offered to. */
@@ -551,104 +555,19 @@ export function createPublicDataRuntime(input: {
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }): PublicDataRuntime {
-  const serviceKey = input.keys["data-go-kr"];
-  const configured = Boolean(serviceKey);
-  const transports: Partial<Record<DeploymentKeyFamily, VendorTransport>> =
-    serviceKey
-      ? {
-          "data-go-kr": createPublicDataTransport({
-            serviceKey,
-            ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
-            ...(input.now ? { now: input.now } : {}),
-          }),
-        }
-      : {};
-
-  const refs = PUBLIC_DATA_TOOLS.map(
-    (tool) => `${PUBLIC_DATA_KEY}/${tool.name}`,
-  );
-
-  /** Only the grants a Bot does not already hold: a boot must not rewrite ten rows of trail. */
-  async function grantMissing(
-    store: PublicDataStore,
-    botId: string,
-    by: string,
-  ) {
-    const held = new Set(
-      (await store.listForAgent(botId)).tools.map((tool) => tool.ref),
-    );
-    for (const ref of refs) {
-      if (!held.has(ref)) await store.grant("mcp", ref, botId, by);
-    }
-  }
-
-  async function revokeHeld(store: PublicDataStore, botId: string, by: string) {
-    const held = new Set(
-      (await store.listForAgent(botId)).tools.map((tool) => tool.ref),
-    );
-    for (const ref of refs) {
-      if (held.has(ref)) await store.revoke("mcp", ref, botId, by);
-    }
-  }
-
-  const failed = (what: string, error: unknown) =>
-    log.error("public_data_not_reconciled", {
-      what,
-      reason: describeFailure(error),
-    });
-
+  const runtime = createDeploymentKeyRuntime({
+    ...input,
+    // Only this entry's key: another vendor's is not this runtime's to hold.
+    keys: input.keys["data-go-kr"]
+      ? { "data-go-kr": input.keys["data-go-kr"] }
+      : {},
+    services: [PUBLIC_DATA_SERVICE],
+  });
   return {
-    configured,
-    keys: keyLookupOver(input.keys),
-    transports,
-
-    async reconcile(store, by) {
-      try {
-        const held = (await store.listServers()).some(
-          (server) => server.id === PUBLIC_DATA_KEY,
-        );
-        if (!configured) {
-          /*
-           * A key taken away after the row was made. The grants go first, then the row — the same
-           * order a partner disconnect keeps, so no Bot holds a grant on a tool that still exists.
-           */
-          if (!held) return;
-          for (const botId of await input.listBots()) {
-            await revokeHeld(store, botId, by);
-          }
-          await store.removeServer(PUBLIC_DATA_KEY, by);
-          return;
-        }
-
-        await store.ensureCatalogueServer({ key: PUBLIC_DATA_KEY, by });
-        const refreshed = await store.refreshTools(PUBLIC_DATA_KEY);
-        /*
-         * A definition that changed since the row was made is paused by the refresh for a person
-         * to review — right for somebody else's server, and a dead tool here, because the
-         * definition is this repository's own reviewed code and nobody is going to press Approve on
-         * every shop owner's machine after every upgrade. The trail still records the change and
-         * the acceptance, one row each.
-         */
-        if ((refreshed.paused ?? 0) > 0) {
-          for (const tool of PUBLIC_DATA_TOOLS) {
-            await store.approveToolDefinition(PUBLIC_DATA_KEY, tool.name, by);
-          }
-        }
-        for (const botId of await input.listBots()) {
-          await grantMissing(store, botId, by);
-        }
-      } catch (error) {
-        failed("reconcile", error);
-      }
-    },
-
-    async offerTo(store, botId, by) {
-      if (!configured) return;
-      try {
-        await grantMissing(store, botId, by);
-      } catch (error) {
-        failed(`offer to ${botId}`, error);
-      }
-    },
+    configured: runtime.has(PUBLIC_DATA_KEY),
+    keys: runtime.keys,
+    transports: runtime.transports,
+    reconcile: runtime.reconcile,
+    offerTo: runtime.offerTo,
   };
 }

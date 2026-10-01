@@ -527,6 +527,73 @@ describe("a Bot's grants that could not be read", () => {
   });
 });
 
+describe("a connected tool that is in the schema: the web search", () => {
+  const searchStore = {
+    listForAgent: async () => ({
+      tools: [
+        {
+          ref: "web-search/search",
+          toolName: "mcp__web-search__search",
+          description: "웹을 검색한다",
+          inputSchema: { type: "object", properties: { queries: {} } },
+        },
+        {
+          ref: "gmail/search_messages",
+          toolName: "mcp__gmail__search_messages",
+          description: "메일을 찾는다",
+          inputSchema: { type: "object" },
+        },
+      ],
+      skills: [],
+    }),
+    callTool: async () => ({ text: "{}", isError: false }),
+    viewSkill: async () => ({
+      allowed: false,
+      reason: "laf:skill_not_granted",
+    }),
+  } as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+
+  test("is offered as the server knows it, whether or not the window had read its list yet", async () => {
+    const tools = createChatTools({
+      pluginStore: searchStore,
+      people: createPersonAnswers(),
+    });
+    // A window that had not loaded its plugin list: it declared nothing of the kind.
+    const early = await tools(context, [tool("skill_view")]);
+    // The same window a message later, with a copy of its own — stale words and all.
+    const later = await tools(context, [
+      tool("skill_view"),
+      {
+        name: "mcp__web-search__search",
+        description: "an older description",
+        parameters: {},
+      },
+      tool("mcp__gmail__search_messages"),
+    ]);
+    const search = (toolkit: Awaited<ReturnType<typeof tools>>) =>
+      toolkit.tools.find(
+        (offered) => offered.name === "mcp__web-search__search",
+      );
+    // The head of the prompt is the same both times: the server's own definition.
+    expect(search(early)).toEqual({
+      name: "mcp__web-search__search",
+      description: "웹을 검색한다",
+      parameters: { type: "object", properties: { queries: {} } },
+    });
+    expect(search(later)).toEqual(search(early));
+    // A tool behind the bridge is still the window's to declare: absent early, present later.
+    expect(early.tools.map((offered) => offered.name)).toEqual([
+      "skill_view",
+      "mcp__web-search__search",
+    ]);
+    expect(later.tools.map((offered) => offered.name)).toEqual([
+      "skill_view",
+      "mcp__gmail__search_messages",
+      "mcp__web-search__search",
+    ]);
+  });
+});
+
 describe("a card the Bot asks the person with", () => {
   test("its answer is the call's result, from whichever window pressed it", async () => {
     // Every window is told when a card starts waiting and when it stops (`waiting` frames).

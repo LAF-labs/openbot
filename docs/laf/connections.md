@@ -165,6 +165,7 @@ LAF 계약(어노테이션 신뢰 + 정의 해시 동의 고정, docs/laf/mcp-co
 | 배민·쿠팡이츠·요기요 사장님 | 봇 브라우저 | 같음 |
 | 카카오 알림톡 | ✅ 화면에서 가입 (채널 인증) | LAF 솔라피 대행사 계정. 가게의 카카오톡 채널을 그 아래 등록한다. 서식은 카카오 심사를 거친다 |
 | 나라장터·기업마당 | ✅ 아무것도 안 함 (배포 키, 읽기 전용) | 공공데이터포털 서비스 키 하나(`DATA_GO_KR_SERVICE_KEY`), 개통이 심는다. 사람별 등록 없음 — 키가 있는 VM은 부팅 때 모든 봇에 `search_bids`(나라장터 용역 입찰공고 `getBidPblancListInfoServcPPSSrch`)·`search_support_programs`(기업마당 `/1421000/bizinfo/pblancBsnsService`)를 준다. 둘 다 2026-09-06 함대 키로 라이브 200 확인. 키 없는 VM에는 엔트리가 없다 |
+| 웹 검색 | ✅ 아무것도 안 함 (배포 키, 읽기 전용) | Perplexity Search API 키 하나(`PERPLEXITY_API_KEY`), 개통이 심는다. 키가 있는 VM의 봇은 `search` 하나를 **스키마에** 갖는다(다리 뒤가 아니다 — 2026-10-02 측정: 다리 뒤 16.9초, 스키마 6.1초, `shared/tools/bridge.ts`). `search_type: "fast"`·`country: "KR"` 고정, 하루 300회 상한, 나가는 것은 검색어뿐. 2026-10-02 함대 키로 라이브 200 확인(0.3–0.5초, 결과 5개 2.2 KB). 키 없는 VM에는 툴이 없고 봇은 전처럼 브라우저로 찾는다 |
 | 인스타그램·카카오톡 채널(관리자센터) | 봇 브라우저 | 메타 앱 심사는 별도 결정으로 남긴다. 알림톡 발송은 위의 커넥터가 한다 |
 | 홈택스·토스페이먼츠 | 봇 브라우저 | 같음 |
 | MS 오피스·GTM | 봇 브라우저 | 공식 원격 MCP 없음 |
@@ -191,6 +192,11 @@ LAF 계약(어노테이션 신뢰 + 정의 해시 동의 고정, docs/laf/mcp-co
   `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`로 끝나고 그건 봇에게 정부가 죽은 것처럼
   읽힌다. 키가 있으면 부팅 때 `public-data` 서버 행·툴·봇마다 grant가 맞춰지고,
   키를 빼면 다음 부팅에 전부 거둬진다. 사람이 누를 것은 없다.
+- **웹 검색 키도 한 줄이다.** `PERPLEXITY_API_KEY` — Perplexity가 준 그대로(헤더로
+  나가니 철자 규칙은 없고, 안에 공백이 있으면 서버가 뜨지 않는다). 같은
+  조정(`plugins/deployment-key-runtime.ts`)이 `web-search` 서버 행·툴·봇마다
+  grant를 맞추고, 키를 빼면 거둔다. 이 툴은 스키마에 실리므로, 키가 처음 심긴
+  배포는 다음 메시지에서 대화마다 새 에포크를 한 번 연다.
 - **함대 커넥터는 네 줄이다.** `CAFE24_CLIENT_ID`/`CAFE24_CLIENT_SECRET`,
   `LAF_OAUTH_RELAY_URL`, 그리고 필요할 때만 `LAF_PRODUCT_DOMAIN`. 구글 쌍은
   로그인용으로 이미 있는 그 값이다. 모든 VM에 같은 값을 심는 것이 provisioner의

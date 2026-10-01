@@ -248,6 +248,11 @@ services:
       # boot; unset, there is no entry. The encoded spelling, as issued — the server refuses to
       # start on the decoded one. See docs/laf/connections.md.
       DATA_GO_KR_SERVICE_KEY: ${DATA_GO_KR_SERVICE_KEY:-}
+      # The web search (Perplexity's Search API), LAF's one key for the fleet. The same arrangement:
+      # set, every Bot on this VM has `search` in its schema from boot and answers a "찾아봐 줘"
+      # without opening its browser; unset, there is no such tool. What leaves the VM is the query.
+      # See docs/laf/connections.md.
+      PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
       # The deployment's own name, and the one thing the fleet identifies a customer by. The web
       # service has always had it; the API server needs it too now that it signs notices with it.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}

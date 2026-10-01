@@ -80,10 +80,14 @@ export type PartnerFamily = "kakao-alimtalk";
  * every Bot on a VM that carries it is offered the tools at boot, and a VM without it has no entry.
  *
  * Closed, like the two unions above it: an entry naming a family with no environment variable behind
- * it (`shared-clients.ts`) and no transport assembled for it (`public-data-rest.ts`) should not
- * typecheck.
+ * it (`shared-clients.ts`) and no transport assembled for it (`deployment-key-runtime.ts`) should
+ * not typecheck.
+ *
+ * `perplexity` is the second (2026-10-02): the web, searched on the fleet's key. Not public data in
+ * the portal's sense, but the same arrangement exactly — nothing is the person's, nobody consents,
+ * the key counts calls — so it is the same family of entry rather than a new kind of thing.
  */
-export type DeploymentKeyFamily = "data-go-kr";
+export type DeploymentKeyFamily = "data-go-kr" | "perplexity";
 
 /**
  * How a server is authenticated, and whose credential does it.
@@ -844,6 +848,28 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     // Nothing here writes anything anywhere, and no guard: a routine asking every morning is the point.
     writeTools: Object.freeze([]),
     docsUrl: "https://www.data.go.kr/data/15129394/openapi.do",
+  },
+  /*
+   * WEB SEARCH, on the fleet's Perplexity key: the second deployment-key entry.
+   *
+   * A Bot asked a question the web answers used to open its browser and read pages one at a time
+   * — minutes, where a search is a third of a second (measured 2026-10-02, `web-search-rest.ts`).
+   * The owner's direction was the Search API specifically: ranked results with their addresses and
+   * dates, which the Bot reads and cites itself, rather than somebody else's written answer.
+   *
+   * It only reads, and what it sends out is the query — the same words a Bot would have typed
+   * into a search box on its own browser.
+   */
+  {
+    key: "web-search",
+    title: "웹 검색",
+    vendor: "Perplexity",
+    summary: "Searches the web for current facts without opening the browser.",
+    host: "https://api.perplexity.ai",
+    path: "/search",
+    auth: { kind: "deployment-key", key: "perplexity" },
+    writeTools: Object.freeze([]),
+    docsUrl: "https://docs.perplexity.ai/api-reference/search-post",
   },
 ]);
 

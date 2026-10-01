@@ -87,6 +87,12 @@ describe("the step labels", () => {
     for (const spec of PUBLIC_DATA_TOOLS) {
       shipped.push({ server: "public-data", tool: spec.name });
     }
+    const { WEB_SEARCH_TOOLS } = await import(
+      "../../server/src/plugins/web-search-rest"
+    );
+    for (const spec of WEB_SEARCH_TOOLS) {
+      shipped.push({ server: "web-search", tool: spec.name });
+    }
     for (const spec of ALIMTALK_TOOLS) {
       shipped.push({ server: "kakao-alimtalk", tool: spec.name });
     }

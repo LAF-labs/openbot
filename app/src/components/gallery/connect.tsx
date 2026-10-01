@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
-import { CATALOGUE_COPY } from "@/lib/plugins/catalogue-copy";
+import { CATALOGUE_COPY, NOT_A_SWITCH } from "@/lib/plugins/catalogue-copy";
 import { BUSINESS_SITES } from "@/lib/sites/catalogue";
 import type { Waiting } from "./decisions";
 import { Badge, GalleryFrame } from "./frame";
@@ -20,14 +20,12 @@ import { Badge, GalleryFrame } from "./frame";
 /**
  * What a Bot may offer to connect: every account row and every site row 연결 has.
  *
- * Not the partner (알림톡 is a registration, not a switch) and not the public-data key (nothing to
- * turn on). An enum rather than free text, so the model cannot ask for a row that does not exist and
- * have the card quietly draw nothing.
+ * Not the partner (알림톡 is a registration, not a switch) and not what runs on the fleet's own key
+ * (nothing to turn on). An enum rather than free text, so the model cannot ask for a row that does
+ * not exist and have the card quietly draw nothing.
  */
 const OFFERABLE = [
-  ...Object.keys(CATALOGUE_COPY).filter(
-    (key) => key !== "kakao-alimtalk" && key !== "public-data",
-  ),
+  ...Object.keys(CATALOGUE_COPY).filter((key) => !NOT_A_SWITCH.includes(key)),
   ...BUSINESS_SITES.map((site) => site.id),
 ] as [string, ...string[]];
 

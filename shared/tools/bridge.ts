@@ -10,7 +10,8 @@
  * — 구조화된 질문이 산문으로 무너졌다(18/18 → 7/18). 그래서 여기서 갈리는 규칙은 하나다:
  *
  * **스키마에 실리는 것은 고정된 핵심 목록뿐이다** — 이 저장소의 카탈로그(`shared/tools`)에 있는
- * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `feed_post`, `now`, 그리고 다리 둘. 그 밖의 모든 것은 다리
+ * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `feed_post`, `now`, 웹 검색(키가 있는 배포에서,
+ * `WEB_SEARCH_TOOL_NAME`), 그리고 다리 둘. 그 밖의 모든 것은 다리
  * 뒤에 선다: 연결된 서비스의 툴(`mcp__<서버>__<툴>`), 화면 카드(갤러리), 배포가 만든 컴포넌트.
  * 사람에게 손을 내미는 툴(`computer_request_help`, `computer_request_secret`)은 핵심 목록에 있으니
  * 절대 미뤄지지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
@@ -55,6 +56,30 @@ export type ToolExposure = "core" | "deferred";
 export const DEFERRED_TOOL_PREFIX = "mcp__";
 
 /**
+ * 웹 검색 툴의 이름 — 서버 카탈로그의 `web-search` 엔트리, `search`
+ * (`server/src/plugins/web-search-rest.ts`). 연결된 서비스의 이름 모양이지만 **핵심 목록에 있다.**
+ *
+ * 발자국 사다리(CLAUDE.md)의 마지막 칸을 고른 까닭, 재서 적는다(2026-10-02, muse-spark, 로컬 스택,
+ * 같은 봇·같은 대화에서 가격을 묻는 질문 하나씩):
+ *
+ *   - 다리 뒤(미뤄 둠, 이름 옆에 "브라우저보다 먼저"라는 한마디): 16.9초 — `tool_search` 한 바퀴가
+ *     먼저 돌았고, 스키마를 이미 받은 같은 대화의 두 번째 질문에서도 다시 돌았다. 첫 질문은
+ *     25.9초(검색 뒤 브라우저로 한 번 더 확인).
+ *   - 스키마에 실음: 6.1초 — 2.4초에 검색, 4.3초에 답이 시작됐다. 브라우저는 열리지 않았다.
+ *
+ * 검색 자체는 0.3–0.5초라 차이는 전부 모델에게 한 바퀴 더 물은 값이다(요청 하나, 3–4초, 대화
+ * 전체를 다시 읽는 토큰). "찾아봐 줘"는 이 제품에서 가장 흔한 부탁이고, 그때마다 그 값을 치르는
+ * 것보다 스키마 하나(1 KB 남짓)를 매 요청에 싣는 쪽이 싸다 — 캐시에서 읽히는 토큰이다. `now`가
+ * 같은 이유로 핵심 툴이다.
+ *
+ * 키가 없는 배포에는 이 툴이 없고, 그러면 이 이름은 아무 목록에도 실리지 않는다. 키는 재시작
+ * 때만 바뀌니 대화 도중에 나타나거나 사라지지 않는다. 서버가 실행하는 턴에서는 창이 무엇을
+ * 선언했든 서버가 아는 정의로 싣는다(`server/src/turns/chat-tools.ts`) — 창이 목록을 아직 못 읽은
+ * 첫 메시지에 빠졌다가 다음 메시지에 생기면 대화 전체가 두 번 다시 청구된다.
+ */
+export const WEB_SEARCH_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}web-search__search`;
+
+/**
  * 스키마에 늘 실리는 이름들 — 이 저장소의 카탈로그가 정한다.
  *
  * 표면이나 루틴이 무엇을 등록했든 이 목록에 없는 이름은 다리 뒤에 선다. 목록이 코드에 있으니 목록이
@@ -68,6 +93,7 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   // 소식 실행에만 있다(`feed-post.ts`). routine_note처럼, 있는 곳에서는 스키마에 실린다.
   FEED_POST.name,
   NOW_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
 ]);
 
 export function isDeferredToolName(name: string): boolean {
@@ -139,6 +165,7 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     "kakao-playmcp": "카카오",
     "kakao-alimtalk": "카카오 알림톡",
     "public-data": "나라장터·기업마당",
+    "web-search": "웹 검색",
     // 연결된 서비스가 아니라 이 배포의 서버가 실행하는 목표 툴(`shared/tools/goals.ts`).
     goals: "목표",
   },

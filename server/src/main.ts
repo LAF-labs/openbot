@@ -115,7 +115,10 @@ import {
   connectionSourcesFrom,
   readConnectionSwitches,
 } from "./plugins/overview-routes";
-import { createPublicDataRuntime } from "./plugins/public-data-rest";
+import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
+import { DEPLOYMENT_KEY_SERVICES } from "./plugins/deployment-key-services";
+import { PUBLIC_DATA_KEY } from "./plugins/public-data-rest";
+import { WEB_SEARCH_KEY } from "./plugins/web-search-rest";
 import { lookupOver } from "./plugins/shared-clients";
 import {
   createBuiltInSkills,
@@ -372,13 +375,16 @@ const partnerRuntime = createPartnerRuntime({
   alimtalk: config.partners.alimtalk,
 });
 /**
- * The public data the fleet holds one key for, assembled once, from the key `config` already read.
+ * What the fleet holds one key each for, assembled once, from the keys `config` already read: public
+ * data (나라장터, 기업마당) and the web, searched.
  *
- * Nothing per person: a VM with the key offers 나라장터 and 기업마당 to every Bot on it from boot
- * (the reconciliation runs with the background work, beside the retention sweep).
+ * Nothing per person: a VM with a key offers that entry's tools to every Bot on it from boot (the
+ * reconciliation runs with the background work, beside the retention sweep), and a VM without it
+ * has no such entry.
  */
-const publicDataRuntime = createPublicDataRuntime({
+const deploymentKeyRuntime = createDeploymentKeyRuntime({
   keys: config.connectors.keys,
+  services: DEPLOYMENT_KEY_SERVICES,
   listBots: () => allLiveBots(database),
 });
 /**
@@ -386,7 +392,7 @@ const publicDataRuntime = createPublicDataRuntime({
  * Read from the same directory the package above was, so a deployment's skills are its package's.
  */
 const deploymentTools = offeredTools({
-  publicData: publicDataRuntime.configured,
+  deploymentKeyTools: deploymentKeyRuntime.toolNames,
 });
 const builtInSkills = createBuiltInSkills({
   packageDir: config.tenantPackageDirectory,
@@ -396,7 +402,8 @@ const builtInSkills = createBuiltInSkills({
 });
 sayConnectors({
   alimtalk: config.partners.alimtalk !== null,
-  dataGoKr: publicDataRuntime.configured,
+  dataGoKr: deploymentKeyRuntime.has(PUBLIC_DATA_KEY),
+  deploymentKeys: { webSearch: deploymentKeyRuntime.has(WEB_SEARCH_KEY) },
 });
 /**
  * The sign-in list this process booted with, and who it lets act (auth/admission.ts).
@@ -667,8 +674,8 @@ const pluginStore = createPluginStore({
   // The two entries whose tools are this repository's own code, for the vendors this VM has keys
   // for. Empty leaves both entries unreachable rather than falling back to MCP — see `store.ts`.
   partnerTransports: partnerRuntime.transports,
-  // The same again for the public-data entry, on the fleet's data.go.kr key.
-  deploymentKeyTransports: publicDataRuntime.transports,
+  // The same again for the deployment-key entries, each on the fleet's key for it.
+  deploymentKeyTransports: deploymentKeyRuntime.transports,
 });
 
 recordStartingArrangement({
@@ -1049,9 +1056,9 @@ const app = createApp(
   partnerRuntime,
   // The 다음에 latch behind the routine suggestion cards. See routines/suggestions.ts.
   createSuggestionDismissalStore(database),
-  // The public-data entry: hidden from the catalogue without the key, and handed to a Bot the
-  // moment it is made with it. Built above, so the listing and the boot reconciliation agree.
-  publicDataRuntime,
+  // The deployment-key entries: each hidden from the catalogue without its key, and handed to a
+  // Bot the moment it is made with it. Built above, so the listing and the boot reconciliation agree.
+  deploymentKeyRuntime,
   // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
   createConsentStore(database),
   screenViews,
@@ -1173,7 +1180,7 @@ startBackgroundWork({
   auditRetentionDays: config.auditRetentionDays,
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
-  publicData: publicDataRuntime,
+  deploymentKeys: deploymentKeyRuntime,
   builtInSkills,
   pluginStore,
   conversations,

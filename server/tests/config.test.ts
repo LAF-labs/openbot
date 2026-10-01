@@ -597,6 +597,7 @@ describe("what loadConfig reads", () => {
     LAF_OAUTH_RELAY_URL: "https://auth.agent.laf-co.com/oauth/relay",
     LAF_PRODUCT_DOMAIN: "agent.laf-co.com",
     DATA_GO_KR_SERVICE_KEY: "abc%2Bdef%3D",
+    PERPLEXITY_API_KEY: "pplx-example",
     LAF_ALIMTALK_API_KEY: "key:secret",
     LAF_ALIMTALK_BASE_URL: "https://api.solapi.com",
     LAF_ALIMTALK_FROM: "0212345678",

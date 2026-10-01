@@ -87,7 +87,24 @@ export const CATALOGUE_COPY: Readonly<
     summary: "Public tenders on 나라장터 and support programmes on 기업마당.",
     can: "Finds tenders and support programmes for your line of work, and can report new ones every morning.",
   },
+  // The same kind of entry: the fleet's key is the whole of the setup, and there is no row to turn on.
+  "web-search": {
+    mark: GENERIC_MARK,
+    summary: "Searches the web for current facts without opening the browser.",
+    can: "Looks things up on the web in a moment — news, prices, rules and deadlines — and says where each came from.",
+  },
 };
+
+/**
+ * The entries with nothing for a person to turn on: the partner (알림톡 is a registration with
+ * steps, not a switch) and the ones that run on the fleet's own key. What a connect card may never
+ * offer, and one list so the next such entry is added in one place.
+ */
+export const NOT_A_SWITCH: readonly string[] = [
+  "kakao-alimtalk",
+  "public-data",
+  "web-search",
+];
 
 /**
  * Which mark the 연결 row draws for this entry.

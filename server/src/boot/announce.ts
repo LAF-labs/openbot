@@ -49,9 +49,15 @@ export function sayFleetIsUnconfigured(): void {
 export function sayConnectors(input: {
   alimtalk: boolean;
   dataGoKr: boolean;
+  /** The other entries the fleet's keys open, by catalogue key: the web searched, and what follows. */
+  deploymentKeys?: Readonly<Record<string, boolean>>;
 }): void {
   log.info("partner_connectors", { alimtalk: input.alimtalk });
   log.info("public_data", { dataGoKr: input.dataGoKr });
+  if (input.deploymentKeys) {
+    // Which, never the keys themselves: a boolean per entry.
+    log.info("deployment_key_tools", { ...input.deploymentKeys });
+  }
 }
 
 /**

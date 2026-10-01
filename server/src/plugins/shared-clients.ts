@@ -126,7 +126,10 @@ export function connectableCatalogue(
  * instead is a SPELLING rule — see {@link deploymentKeysFrom}.
  */
 export const DEPLOYMENT_KEY_ENV: Readonly<Record<DeploymentKeyFamily, string>> =
-  Object.freeze({ "data-go-kr": "DATA_GO_KR_SERVICE_KEY" });
+  Object.freeze({
+    "data-go-kr": "DATA_GO_KR_SERVICE_KEY",
+    perplexity: "PERPLEXITY_API_KEY",
+  });
 
 /** How a caller asks for a key. The same seam shape as {@link SharedClientLookup}. */
 export type DeploymentKeyLookup = (
@@ -140,7 +143,7 @@ export type DeploymentKeyLookup = (
 const QUERY_SAFE = /^[A-Za-z0-9%._~-]+$/;
 
 /**
- * Every deployment key this environment carries, refusing the spelling that cannot work.
+ * What is wrong with a key's spelling, per vendor, or null. A vendor absent here takes any key.
  *
  * data.go.kr issues each key twice: "encoding" (`%2B`, `%3D`, `%2F` in it) and "decoding" (`+`,
  * `=`, `/`). Its gateway compares the RAW query string, and the adapters concatenate the key into
@@ -149,7 +152,26 @@ const QUERY_SAFE = /^[A-Za-z0-9%._~-]+$/;
  * `+` on a query string is a space. Either mistake produces a deployment that boots, lists the
  * tools, and answers every call with `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`, which reads to a shop
  * owner as the government being down. So the wrong spelling is refused here, at boot, by name.
+ *
+ * THE RULE IS THAT PORTAL'S AND NOBODY ELSE'S. It was applied to every key while there was one; a
+ * second vendor's key rides in a header, where none of this is true, and a refusal naming
+ * data.go.kr in front of it would send an operator looking for a spelling that does not exist.
  */
+const KEY_SPELLING: Partial<
+  Record<DeploymentKeyFamily, (name: string, value: string) => string | null>
+> = {
+  "data-go-kr": (name, value) =>
+    QUERY_SAFE.test(value)
+      ? null
+      : `${name} must be the URL-encoded spelling data.go.kr issues (the one with %2B and %3D in it): it goes into the query string as-is, and the decoded spelling reads as an unregistered key at the vendor`,
+  // A bearer token: whitespace inside it is a paste that took a line break along.
+  perplexity: (name, value) =>
+    /\s/.test(value)
+      ? `${name} has whitespace inside it, which no key has: it was pasted with a line break or a space`
+      : null,
+};
+
+/** Every deployment key this environment carries, refusing a spelling that cannot work. */
 export function deploymentKeysFrom(
   environment: Environment,
 ): Partial<Record<DeploymentKeyFamily, string>> {
@@ -160,11 +182,8 @@ export function deploymentKeysFrom(
   ][]) {
     const value = environment[name]?.trim();
     if (!value) continue;
-    if (!QUERY_SAFE.test(value)) {
-      throw new Error(
-        `${name} must be the URL-encoded spelling data.go.kr issues (the one with %2B and %3D in it): it goes into the query string as-is, and the decoded spelling reads as an unregistered key at the vendor`,
-      );
-    }
+    const wrong = KEY_SPELLING[family]?.(name, value);
+    if (wrong) throw new Error(wrong);
     found[family] = value;
   }
   return found;

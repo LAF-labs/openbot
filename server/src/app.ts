@@ -97,7 +97,7 @@ import {
 } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
-import type { PublicDataRuntime } from "./plugins/public-data-rest";
+import type { DeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
@@ -347,7 +347,7 @@ export function createApp(
    * reconciliation lives in the process (`index.ts`), beside the retention sweep, because it is a
    * fact about the whole machine and not about a request.
    */
-  publicData?: PublicDataRuntime,
+  publicData?: Pick<DeploymentKeyRuntime, "offerTo" | "keys">,
   /**
    * What each person agreed to, and when. Absent means nobody is asked and `/api/me` says nothing
    * about it, the same shape as `onboarding`: a deployment that cannot record an agreement must not

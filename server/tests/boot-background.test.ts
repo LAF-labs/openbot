@@ -35,7 +35,7 @@ function started(fleet: boolean) {
           },
         }
       : undefined,
-    publicData: {
+    deploymentKeys: {
       reconcile: async (store, by) => {
         calls.push(`public-data:${store === pluginStore}:${by}`);
       },

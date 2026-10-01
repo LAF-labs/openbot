@@ -128,6 +128,7 @@ export const ko: Record<string, string> = {
   "Saving a file": "파일 저장하는 중",
   "Searching support programmes": "지원사업 공고 찾기",
   "Searching public tenders": "입찰공고 찾기",
+  "Searching the web": "웹 검색하기",
   "Searching mail": "메일 찾기",
   "Reading a mail": "메일 읽기",
   "Writing a draft": "메일 초안 쓰기",
@@ -150,6 +151,7 @@ export const ko: Record<string, string> = {
   "Used a connected service": "연결된 서비스 사용",
   "Used a tool": "도구 사용",
   "Public tenders and support programmes": "나라장터·기업마당",
+  "Web search": "웹 검색",
   "It wants to list what is in the workspace.":
     "봇 폴더에 무엇이 있는지 보려 해요.",
   "It wants to list what is in {path}.": "{path} 안에 무엇이 있는지 보려 해요.",
@@ -425,6 +427,12 @@ export const ko: Record<string, string> = {
     "나라장터 입찰공고와 기업마당 지원사업 공고.",
   "Finds tenders and support programmes for your line of work, and can report new ones every morning.":
     "우리 업종의 입찰공고와 지원사업을 찾고, 매일 아침 새 공고를 알려 줄 수 있어요.",
+  // 웹 검색 — 같은 종류의 엔트리. 서버 카탈로그의 이름과 한 줄 설명.
+  "웹 검색": "웹 검색",
+  "Searches the web for current facts without opening the browser.":
+    "브라우저를 열지 않고 웹에서 지금의 사실을 찾아요.",
+  "Looks things up on the web in a moment — news, prices, rules and deadlines — and says where each came from.":
+    "뉴스·가격·제도·기한 같은 것을 웹에서 바로 찾아보고, 어디서 봤는지 함께 알려 줘요.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공돼요. 연결할 것이 없어요.",
   "Connected to {name}.": "{name}에 연결했어요.",

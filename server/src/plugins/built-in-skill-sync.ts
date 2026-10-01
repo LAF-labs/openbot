@@ -34,7 +34,6 @@ import {
   type BuiltInSkill,
   readBuiltInSkills,
 } from "./built-in-skills";
-import { PUBLIC_DATA_TOOLS } from "./public-data-rest";
 import type { PluginStore } from "./store";
 
 /**
@@ -43,7 +42,10 @@ import type { PluginStore } from "./store";
  * held to; `built-in-skills.test.ts` holds every name the package writes there to this list, so a
  * misspelt one fails a test rather than hiding a skill on every deployment.
  */
-export function offeredTools(options: { publicData: boolean }): Set<string> {
+export function offeredTools(options: {
+  /** The bare names of the tools this VM's keys put in front of a Bot (`DeploymentKeyRuntime.toolNames`). */
+  deploymentKeyTools: readonly string[];
+}): Set<string> {
   return new Set([
     ...COMPUTER_TOOLS.map((tool) => tool.name),
     ...SELF_TOOLS.map((tool) => tool.name),
@@ -51,7 +53,7 @@ export function offeredTools(options: { publicData: boolean }): Set<string> {
     NOW_TOOL_NAME,
     ROUTINE_NOTE.name,
     FEED_POST.name,
-    ...(options.publicData ? PUBLIC_DATA_TOOLS.map((tool) => tool.name) : []),
+    ...options.deploymentKeyTools,
   ]);
 }
 

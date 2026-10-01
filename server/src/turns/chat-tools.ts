@@ -28,6 +28,7 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
+import { CORE_TOOL_NAMES } from "../../../shared/tools/bridge";
 import { COMPUTER_TOOLS, computerTool } from "../../../shared/tools/computer";
 import {
   type ComputerOutcome,
@@ -389,8 +390,23 @@ export function createChatTools(deps: ChatToolsDeps) {
         })
       : null;
     for (const tool of goals?.tools ?? []) names.add(tool.name);
+    /*
+     * A CONNECTED TOOL ON THE CORE LIST IS OFFERED AS THIS SERVER KNOWS IT, whatever the window
+     * declared — today that is the web search (`WEB_SEARCH_TOOL_NAME`). A core tool is in the head
+     * of the prompt, so one that a window had not read yet on a conversation's first message (its
+     * plugin list is a query that may still be loading) and declared on the second would start an
+     * epoch twice, re-billing everything behind it both times. The server's own listing does not
+     * depend on which window sent the message or how long it had been open.
+     */
+    const isCorePlugin = (name: string) =>
+      pluginRefs.has(name) && CORE_TOOL_NAMES.has(name);
     const listed = declared
-      ? declared.filter((tool) => names.has(tool.name))
+      ? [
+          ...declared.filter(
+            (tool) => names.has(tool.name) && !isCorePlugin(tool.name),
+          ),
+          ...pluginTools.filter((tool) => isCorePlugin(tool.name)),
+        ]
       : serverTools(deps, pluginTools, options.effort !== false);
     const tools = goals
       ? [

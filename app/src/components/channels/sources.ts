@@ -1,3 +1,4 @@
+import { DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
 import { outcomeOf } from "@/lib/computer/browsing";
 import type { TranscriptItem } from "./chat-messages";
 
@@ -16,8 +17,41 @@ const READING = new Set([
   "computer_snapshot",
 ]);
 
+/**
+ * The web search (`server/src/plugins/web-search-rest.ts`), by the name its call is made under.
+ *
+ * ITS RESULTS ARE WHAT THE BOT READ: a title, an address, a date and the passage that matched, with
+ * no page opened behind them. An answer written from a search and nothing else used to have no
+ * sources at all under it — the one kind of answer most in need of them.
+ */
+const WEB_SEARCH = `${DEFERRED_TOOL_PREFIX}web-search__search`;
+
 /** At most this many, newest reading last. An answer quoting twenty pages is not a thing to list. */
 const MOST = 8;
+
+/** The pages a search handed back, as the tool wrote them. Anything else — a refusal, an error — is none. */
+function searchResultsOf(result: string | undefined): Source[] {
+  if (!result) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    return [];
+  }
+  const rows = (parsed as { results?: unknown } | null)?.results;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    const { url, title } = (row ?? {}) as { url?: unknown; title?: unknown };
+    if (!isWebAddress(url)) return [];
+    return [
+      {
+        url: url as string,
+        title: typeof title === "string" ? title.trim() : "",
+        host: hostOf(url as string),
+      },
+    ];
+  });
+}
 
 /**
  * WHERE EACH ANSWER'S WORDS CAME FROM, TAKEN FROM WHAT THE BROWSER SAID, NEVER FROM THE MODEL.
@@ -61,6 +95,14 @@ export function sourcesByAnswer(
         });
       }
       // Whatever the Bot said before this reading is not the answer to it.
+      answerId = null;
+      continue;
+    }
+    if (item.kind === "tool" && item.toolCall.function.name === WEB_SEARCH) {
+      for (const source of searchResultsOf(item.result)) {
+        read = read.filter((seen) => seen.url !== source.url);
+        read.push(source);
+      }
       answerId = null;
       continue;
     }

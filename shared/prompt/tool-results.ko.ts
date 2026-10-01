@@ -730,6 +730,28 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "공공데이터포털의 답이 너무 커서 읽지 않았다. 조건을 좁혀서 다시 물어라.",
 
   /*
+   * ── 웹 검색 (`server/src/plugins/web-search-rest.ts`) ─────────────────────────────────────────
+   *
+   * 실패가 다 같은 실패가 아니다(CLAUDE.md "Model calls"). 몰렸을 때는 한 번 더, 키가 거절되면
+   * 다시 하지 않고, 인자가 틀렸으면 고쳐서 — 그리고 어느 쪽이든 브라우저라는 다른 길이 있다는
+   * 것을 말해 준다. 검색이 안 된다고 답을 지어내는 것이 이 표가 막으려는 한 가지다.
+   */
+  "laf:web_search_unknown_tool":
+    "웹 검색에는 그런 툴이 없다. search 하나뿐이다.",
+  "laf:web_search_bad_argument":
+    "검색 인자가 맞지 않는다. queries에 검색어를 하나에서 셋까지 넣고, recency는 day·week·month·year 중 하나, domains는 nts.go.kr 같은 도메인만 다섯 개까지 적어서 다시 불러라.",
+  "laf:web_search_busy":
+    "웹 검색이 잠시 몰렸다. 조금 뒤 한 번만 다시 해 보고, 그래도 안 되면 브라우저로 찾아라.",
+  "laf:web_search_refused":
+    "이 배포의 웹 검색이 지금 거절된다. 네가 고칠 수 있는 것이 아니니 다시 부르지 말고, 브라우저로 찾아라.",
+  "laf:web_search_unreachable":
+    "웹 검색이 제시간에 답하지 않았다. 브라우저로 찾고, 찾지 못한 내용을 지어내지 마라.",
+  "laf:web_search_unreadable":
+    "웹 검색이 읽을 수 없는 답을 보냈다. 브라우저로 찾고, 찾지 못한 내용을 지어내지 마라.",
+  "laf:web_search_daily_cap":
+    "오늘 쓸 수 있는 웹 검색을 다 썼다. 꼭 필요한 것은 브라우저로 찾고, 나머지는 내일 다시 할 수 있다고 말해라.",
+
+  /*
    * ── 툴 호출 문(`POST /api/plugins/call`)이 스스로 답하는 것들 ─────────────────────────────────
    *
    * 2026-09-14까지 이 문은 영어 문장을 보냈다 — 서버가 사라진 툴은 "notion is not a server this

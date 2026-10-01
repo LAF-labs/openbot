@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { skillIndexText } from "../../shared/prompt/skill-index";
 import { SKILL_SLUG_PATTERN } from "../../shared/tools/skills";
 import { offeredTools } from "../src/plugins/built-in-skill-sync";
+import { PUBLIC_DATA_TOOLS } from "../src/plugins/public-data-rest";
 import {
   parseSkillFile,
   readBuiltInSkills,
@@ -15,6 +16,8 @@ import {
  */
 
 const PACKAGE = join(import.meta.dir, "../../tenant/laf");
+/** What a VM holding the data.go.kr key adds to a Bot's tools, by name. */
+const PUBLIC_DATA_TOOL_NAMES = PUBLIC_DATA_TOOLS.map((tool) => tool.name);
 
 describe("the package's skills", () => {
   test("every file parses into a name, a title, one line and a body", async () => {
@@ -55,13 +58,17 @@ describe("the package's skills", () => {
     expect(support?.requires).toEqual(["search_support_programs"]);
     // Without the key the tool is not offered, and with it it is.
     expect(
-      offeredTools({ publicData: false }).has("search_support_programs"),
+      offeredTools({ deploymentKeyTools: [] }).has("search_support_programs"),
     ).toBe(false);
     expect(
-      offeredTools({ publicData: true }).has("search_support_programs"),
+      offeredTools({ deploymentKeyTools: PUBLIC_DATA_TOOL_NAMES }).has(
+        "search_support_programs",
+      ),
     ).toBe(true);
     // A misspelt name would withhold a skill on every deployment, with only a log line to say so.
-    const everything = offeredTools({ publicData: true });
+    const everything = offeredTools({
+      deploymentKeyTools: PUBLIC_DATA_TOOL_NAMES,
+    });
     for (const skill of skills) {
       for (const name of skill.requires ?? [])
         expect(everything.has(name)).toBe(true);

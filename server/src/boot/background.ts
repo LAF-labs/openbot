@@ -6,7 +6,7 @@ import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import type { BuiltInSkillsRuntime } from "../plugins/built-in-skill-sync";
-import type { PublicDataRuntime } from "../plugins/public-data-rest";
+import type { DeploymentKeyRuntime } from "../plugins/deployment-key-runtime";
 import type { PluginStore } from "../plugins/store";
 import type { RoutineService } from "../routines/service";
 
@@ -45,7 +45,8 @@ export function startBackgroundWork(input: {
   auditRetentionDays: number;
   /** Present only with a fleet webhook: on a laptop there is nothing to tell. */
   fleetOutbox: Pick<NotificationOutbox, "redeliver"> | undefined;
-  publicData: Pick<PublicDataRuntime, "reconcile">;
+  /** Every entry the fleet's keys open (`plugins/deployment-key-runtime.ts`). */
+  deploymentKeys: Pick<DeploymentKeyRuntime, "reconcile">;
   /** The package's skills. Optional so a boot without a package, a test's, starts without them. */
   builtInSkills?: Pick<BuiltInSkillsRuntime, "reconcile">;
   pluginStore: PluginStore;
@@ -98,12 +99,13 @@ export function startBackgroundWork(input: {
   }
 
   /*
-   * The public-data entry, reconciled to the key this boot was given: the row, its two tools and a
-   * grant on each for every Bot on the machine — or, with the key gone, every one of those taken
-   * back. Once, at boot, because the key is fleet configuration and only changes with a restart.
-   * Never fatal: a store that could not be written leaves the tools missing, which the log says.
+   * The deployment-key entries, each reconciled to the key this boot was given: the row, its tools
+   * and a grant on each for every Bot on the machine — or, with the key gone, every one of those
+   * taken back. Once, at boot, because a key is fleet configuration and only changes with a
+   * restart. Never fatal: a store that could not be written leaves the tools missing, which the
+   * log says.
    */
-  void input.publicData.reconcile(input.pluginStore, "deployment");
+  void input.deploymentKeys.reconcile(input.pluginStore, "deployment");
   // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).
   void input.builtInSkills?.reconcile(input.pluginStore, "deployment");
 
