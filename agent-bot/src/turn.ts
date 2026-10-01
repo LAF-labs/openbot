@@ -236,6 +236,24 @@ export async function runTurn(options: TurnOptions): Promise<Turn> {
         // The Bot, hashed, as the end user: a standard field of this API, which every
         // compatible endpoint accepts.
         ...(options.session ? { user: options.session.user } : {}),
+        /*
+         * WHICH CACHE THIS CONVERSATION'S PREFIX LIVES IN, SAID IN THE BODY AS WELL.
+         *
+         * The session header keeps a conversation on one PROVIDER; it says nothing to that
+         * provider about which of its own machines holds the cache. On Muse Spark (Meta's one
+         * endpoint) that turned out to be the whole of it — measured 2026-10-02 on a 16.8K-token
+         * prompt growing by a line a turn, requests 2.5–4 s apart: with the header and `user`
+         * alone, 0 of 11 follow-up requests read anything from the cache, and the product's own
+         * rows that day said the same (3 of 23, each of the 20 misses billed whole and flagged
+         * `cache_hit_low`); with this field, 11 of 11 read 16,753–16,881 of ~16,900 tokens. A
+         * cached token is $0.002 a million against $0.10, so the prompt — which is nearly all of
+         * what a Bot's request costs — is fifty times cheaper on a hit.
+         *
+         * The session's own hash, so the provider learns nothing it was not already told. A field
+         * of this API (OpenAI's name for exactly this), not one of OpenRouter's own, so an endpoint
+         * that has never heard of it is expected to ignore it rather than refuse.
+         */
+        ...(options.session ? { prompt_cache_key: options.session.id } : {}),
       },
       {
         signal: abort.signal,

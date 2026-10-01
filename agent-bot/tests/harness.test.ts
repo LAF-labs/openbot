@@ -168,6 +168,20 @@ describe("the provider is told which conversation this is — in hashes", () => 
     expect(first.fake.requests[0]?.body.user).toMatch(/^[0-9a-f]{32}$/);
     // Not in the body, where an endpoint that is not OpenRouter would refuse it.
     expect(first.fake.requests[0]?.body).not.toHaveProperty("session_id");
+    /*
+     * And the cache key IS in the body: the conversation's own hash again. Measured 2026-10-02 on
+     * Muse Spark — 0 of 11 follow-up requests read the cache without it, 11 of 11 with it
+     * (`src/turn.ts`). The same for every run of a conversation, different for another.
+     */
+    expect(first.fake.requests[0]?.body.prompt_cache_key).toBe(
+      session(first.fake),
+    );
+    expect(again.fake.requests[0]?.body.prompt_cache_key).toBe(
+      session(first.fake),
+    );
+    expect(other.fake.requests[0]?.body.prompt_cache_key).toBe(
+      session(other.fake),
+    );
   });
 });
 
