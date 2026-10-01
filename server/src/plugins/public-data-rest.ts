@@ -223,7 +223,7 @@ type VendorBody = { totalCount?: unknown; items?: unknown };
  * inside — so the header is looked for under `response` first and under whatever single key there is
  * otherwise. Null means the shape is not one this file knows.
  */
-function vendorHeaderOf(parsed: unknown): VendorHeader | null {
+export function vendorHeaderOf(parsed: unknown): VendorHeader | null {
   if (!parsed || typeof parsed !== "object") return null;
   const top = parsed as Record<string, unknown>;
   const candidates = [top.response, ...Object.values(top)];
@@ -241,7 +241,9 @@ function vendorHeaderOf(parsed: unknown): VendorHeader | null {
  * 나라장터 answers `items: [...]`; 기업마당 answers `items: {item: [...]}`; and data.go.kr's older
  * services answer a bare object for one row and `""` for none. All four are rows.
  */
-function rowsOf(body: VendorBody | undefined): Record<string, unknown>[] {
+export function rowsOf(
+  body: VendorBody | undefined,
+): Record<string, unknown>[] {
   const items = body?.items;
   const list = Array.isArray(items)
     ? items
