@@ -15,6 +15,9 @@
 import type { CDPSession, Page } from "playwright";
 import type { FrameHeader } from "../../shared/screen-frame";
 
+/** A mouse button a person can hold down. */
+export type HeldButton = "left" | "right" | "middle";
+
 /** What the surface sends us. */
 export type InputMessage =
   | {
@@ -22,7 +25,8 @@ export type InputMessage =
       event: "pressed" | "released" | "moved";
       x: number;
       y: number;
-      button?: "left" | "right" | "middle";
+      /** `none` is a move with nothing held, which is what a hover is. See {@link mouseEventOf}. */
+      button?: HeldButton | "none";
       clickCount?: number;
       modifiers?: number;
     }
@@ -110,11 +114,125 @@ function virtualKeyCode(key: string): number {
   return 0;
 }
 
+type MouseMessage = Extract<InputMessage, { type: "mouse" }>;
+type KeyMessage = Extract<InputMessage, { type: "key" }>;
+
+/**
+ * One mouse message as Chrome's `Input.dispatchMouseEvent` takes it.
+ *
+ * A MOVE WITH NOTHING HELD IS `none`, NOT `left`. Measured 2026-10-01 against Chromium 151 with a
+ * page that logs its mouse events: a move dispatched with `button: "left"` reaches the page as a
+ * `mousemove` with `buttons: 1` — a drag — and with `button: "none"` as `buttons: 0`. The surface
+ * sent `left` on every move (a DOM `mousemove` says `button: 0`, which is also the left button's
+ * number) and this defaulted to `left`, so every hover over a signature pad, a slider or a map that
+ * reads `event.buttons` drew, slid or panned with nothing pressed. A move now carries the button
+ * that is actually down, which the surface knows, and nothing when it does not say.
+ */
+export function mouseEventOf(message: MouseMessage) {
+  const moved = message.event === "moved";
+  return {
+    type:
+      message.event === "pressed"
+        ? ("mousePressed" as const)
+        : message.event === "released"
+          ? ("mouseReleased" as const)
+          : ("mouseMoved" as const),
+    x: message.x,
+    y: message.y,
+    button: message.button ?? (moved ? ("none" as const) : ("left" as const)),
+    // Chrome needs a non-zero clickCount on press/release or the page sees a move that happens
+    // to have a button set, and no click ever fires.
+    clickCount: moved ? 0 : (message.clickCount ?? 1),
+    modifiers: message.modifiers ?? 0,
+  };
+}
+
+/** One key message as `Input.dispatchKeyEvent` takes it. */
+function keyEventOf(message: KeyMessage) {
+  const code = virtualKeyCode(message.key);
+  return {
+    // `keyDown` only when there is text to insert; otherwise `rawKeyDown`, which is what Chrome
+    // expects for keys that do not produce a character. Sending keyDown with no text makes
+    // editing keys arrive as nothing.
+    type:
+      message.event === "up"
+        ? ("keyUp" as const)
+        : message.text
+          ? ("keyDown" as const)
+          : ("rawKeyDown" as const),
+    key: message.key,
+    code: message.code,
+    ...(message.text ? { text: message.text } : {}),
+    windowsVirtualKeyCode: code,
+    nativeVirtualKeyCode: code,
+    modifiers: message.modifiers ?? 0,
+  };
+}
+
+/**
+ * What a person is holding down on the page: buttons with where the pointer last was, keys by
+ * their physical code. Kept so that it can all be let go of when they cannot do it themselves.
+ */
+export type HeldInput = {
+  buttons: Map<HeldButton, { x: number; y: number }>;
+  keys: Map<string, { key: string; code: string }>;
+};
+
+/** What one message changes about what is held. Applied after Chrome has taken the message. */
+export function holdAfter(held: HeldInput, message: InputMessage): void {
+  if (message.type === "mouse") {
+    const at = { x: message.x, y: message.y };
+    // A release goes where the pointer last was, so every held button follows the pointer.
+    for (const button of held.buttons.keys()) held.buttons.set(button, at);
+    const button = message.button ?? "left";
+    if (button === "none") return;
+    if (message.event === "pressed") held.buttons.set(button, at);
+    if (message.event === "released") held.buttons.delete(button);
+    return;
+  }
+  if (message.type === "key") {
+    // By code, so a Shift that turned `a` into `A` between down and up is still the same key.
+    const id = message.code || message.key;
+    if (message.event === "down") {
+      held.keys.set(id, { key: message.key, code: message.code });
+    } else {
+      held.keys.delete(id);
+    }
+  }
+}
+
+/** The messages that let go of everything held: every button where it is, then every key. */
+export function releasesOf(held: HeldInput): InputMessage[] {
+  return [
+    ...[...held.buttons].map(
+      ([button, at]): InputMessage => ({
+        type: "mouse",
+        event: "released",
+        ...at,
+        button,
+      }),
+    ),
+    ...[...held.keys.values()].map(
+      (key): InputMessage => ({ type: "key", event: "up", ...key }),
+    ),
+  ];
+}
+
 export type Screencast = {
-  /** Stop the cast and detach. Safe to call twice. */
+  /** Stop the cast and detach. Safe to call twice. Lets go of whatever was held, without waiting. */
   stop: () => Promise<void>;
   /** Apply one thing the person did. */
   send: (message: InputMessage) => Promise<void>;
+  /**
+   * Release every button and key the person is still holding on the page.
+   *
+   * FOR THE MOMENTS THEY CANNOT. A press whose release never arrives leaves the page waiting on a
+   * `mouseup` (a drag handler, a custom slider) or holding Shift, and the next one to act on that
+   * page is the Bot. The surface lets go itself when focus or the pointer leaves it; this is for
+   * when the surface is gone or no longer allowed to speak — the socket closed, the tab died, or
+   * the wheel was handed back, after which this service refuses the surface's own releases.
+   */
+  letGo: () => Promise<void>;
 };
 
 /**
@@ -191,6 +309,40 @@ export async function startScreencast(
     everyNthFrame: 1,
   });
 
+  const held: HeldInput = { buttons: new Map(), keys: new Map() };
+
+  /** One message to Chrome, as it is; what is held is the caller's to keep. */
+  const dispatch = (message: InputMessage): Promise<unknown> => {
+    if (message.type === "mouse") {
+      return client.send("Input.dispatchMouseEvent", mouseEventOf(message));
+    }
+    if (message.type === "wheel") {
+      return client.send("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: message.x,
+        y: message.y,
+        deltaX: message.deltaX,
+        deltaY: message.deltaY,
+        modifiers: message.modifiers ?? 0,
+      });
+    }
+    if (message.type === "key") {
+      return client.send("Input.dispatchKeyEvent", keyEventOf(message));
+    }
+    // A block of text at once: a paste, or a one-time code the person did not type character by
+    // character. `Input.insertText` bypasses key events entirely, which is correct here, it is not
+    // pretending to be a keyboard.
+    return client.send("Input.insertText", { text: message.text });
+  };
+
+  /** Everything held, released; forgotten first, so a release that fails is not sent twice. */
+  const releases = (): Promise<unknown>[] => {
+    const messages = releasesOf(held);
+    held.buttons.clear();
+    held.keys.clear();
+    return messages.map((message) => dispatch(message).catch(() => undefined));
+  };
+
   return {
     /*
      * ASKED, NOT WAITED FOR. On a tab whose next document is on its way, neither `Page.stopScreencast`
@@ -198,73 +350,28 @@ export async function startScreencast(
      * this stop: in the image built from dbc1c67, `/computers/reset` with the live screen open, one
      * second into a `/navigate` to the fixture's `/hang`, answered at 29.3 s — when the navigation gave
      * the page up. Frames that arrive after this are dropped by `stopped` either way.
+     *
+     * The releases go out first and are not waited for either: a viewer whose socket closed with a
+     * button down is the case nobody else can let go of.
      */
     async stop() {
       if (stopped) return;
       stopped = true;
+      void releases();
       void client.send("Page.stopScreencast").catch(() => undefined);
       void client.detach().catch(() => undefined);
     },
 
     async send(message: InputMessage) {
       if (stopped) return;
-      if (message.type === "mouse") {
-        await client.send("Input.dispatchMouseEvent", {
-          type:
-            message.event === "pressed"
-              ? "mousePressed"
-              : message.event === "released"
-                ? "mouseReleased"
-                : "mouseMoved",
-          x: message.x,
-          y: message.y,
-          button: message.button ?? "left",
-          // Chrome needs a non-zero clickCount on press/release or the page sees a move that happens
-          // to have a button set, and no click ever fires.
-          clickCount: message.event === "moved" ? 0 : (message.clickCount ?? 1),
-          modifiers: message.modifiers ?? 0,
-        });
-        return;
-      }
+      await dispatch(message);
+      // After Chrome took it: a press that failed is not a button to release later.
+      holdAfter(held, message);
+    },
 
-      if (message.type === "wheel") {
-        await client.send("Input.dispatchMouseEvent", {
-          type: "mouseWheel",
-          x: message.x,
-          y: message.y,
-          deltaX: message.deltaX,
-          deltaY: message.deltaY,
-          modifiers: message.modifiers ?? 0,
-        });
-        return;
-      }
-
-      if (message.type === "key") {
-        const code = virtualKeyCode(message.key);
-        await client.send("Input.dispatchKeyEvent", {
-          // `keyDown` only when there is text to insert; otherwise `rawKeyDown`, which is what Chrome
-          // expects for keys that do not produce a character. Sending keyDown with no text makes
-          // editing keys arrive as nothing.
-          type:
-            message.event === "up"
-              ? "keyUp"
-              : message.text
-                ? "keyDown"
-                : "rawKeyDown",
-          key: message.key,
-          code: message.code,
-          ...(message.text ? { text: message.text } : {}),
-          windowsVirtualKeyCode: code,
-          nativeVirtualKeyCode: code,
-          modifiers: message.modifiers ?? 0,
-        });
-        return;
-      }
-
-      // A block of text at once: a paste, or a one-time code the person did not type character by
-      // character. `Input.insertText` bypasses key events entirely, which is correct here, it is not
-      // pretending to be a keyboard.
-      await client.send("Input.insertText", { text: message.text });
+    async letGo() {
+      if (stopped) return;
+      await Promise.all(releases());
     },
   };
 }

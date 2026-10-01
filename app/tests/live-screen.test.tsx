@@ -385,6 +385,263 @@ describe("a picture that does not come", () => {
 });
 
 /**
+ * WHAT IS HELD ON THE BOT'S PAGE IS WHAT A PERSON IS HOLDING — NO MORE, AND NEVER LEFT BEHIND.
+ *
+ * Found 2026-10-01 by reading another project's live view beside this one and measuring ours against
+ * Chromium 151: every hover went up as `button: "left"` (a `mousemove`'s `button` is 0, which is
+ * also the left button's number) and the page saw a drag; a button let go of outside the picture was
+ * never released on the page, because `onMouseUp` lived on the canvas with no capture; and a key
+ * held when focus left was never released at all. What the page makes of each message is measured
+ * against Chrome in `agent-computer/tests/held-input.test.ts`; what is held here is what this pane
+ * sends, and when.
+ */
+describe("a person's mouse and keys on the live screen", () => {
+  async function driven() {
+    const screen = await mountedScreen(true);
+    await screen.act(() => sockets[0]?.open());
+    await screen.act(() =>
+      sockets[0]?.onmessage?.({
+        data: JSON.stringify({
+          type: "frame",
+          data: "bm90LWEtanBlZw==",
+          width: 1280,
+          height: 800,
+        }),
+      }),
+    );
+    const canvas = screen.canvas();
+    // Half size on screen, so a point on the picture is twice as far into the page.
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 640, height: 400 }) as DOMRect;
+    const captured: number[] = [];
+    let clock = 0;
+    (
+      canvas as unknown as { setPointerCapture: (id: number) => void }
+    ).setPointerCapture = (id) => {
+      captured.push(id);
+    };
+    const keyboard = screen.host.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement;
+    /** One pointer event as a browser would send it; happy-dom drops most of the init. */
+    const pointer = async (
+      type: string,
+      at: {
+        x: number;
+        y: number;
+        button: number;
+        buttons: number;
+        /** Milliseconds on the page's clock; a second apart unless a test says otherwise. */
+        when?: number;
+      },
+    ) => {
+      clock += 1_000;
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        clientX: { value: at.x },
+        clientY: { value: at.y },
+        button: { value: at.button },
+        buttons: { value: at.buttons },
+        timeStamp: { value: at.when ?? clock },
+        pointerId: { value: 7 },
+        altKey: { value: false },
+        ctrlKey: { value: false },
+        metaKey: { value: false },
+        shiftKey: { value: false },
+      });
+      await screen.act(() => {
+        canvas.dispatchEvent(event);
+      });
+    };
+    const key = async (
+      type: "keydown" | "keyup",
+      init: { key: string; code: string; metaKey?: boolean },
+    ) => {
+      await screen.act(() => {
+        keyboard.dispatchEvent(
+          new KeyboardEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            ...init,
+          }),
+        );
+      });
+    };
+    const sent = () => sockets[0]?.sent ?? [];
+    /** The mouse messages only, as `event button @x`. */
+    const mouse = () =>
+      sent()
+        .filter((message) => message.type === "mouse")
+        .map((message) => `${message.event} ${message.button} @${message.x}`);
+    return { screen, canvas, keyboard, captured, pointer, key, sent, mouse };
+  }
+
+  test("a pointer passing over the picture is a move with no button held", async () => {
+    const { screen, pointer, sent } = await driven();
+    await pointer("pointermove", { x: 100, y: 50, button: -1, buttons: 0 });
+    expect(sent()).toEqual([
+      {
+        type: "mouse",
+        event: "moved",
+        x: 200,
+        y: 100,
+        button: "none",
+        clickCount: 0,
+        modifiers: 0,
+      },
+    ]);
+    await screen.unmount();
+  });
+
+  test("a press captures the pointer, and its release is sent from outside the picture", async () => {
+    const { screen, pointer, captured, mouse } = await driven();
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    expect(captured).toEqual([7]);
+    // Dragged past the picture's right edge and let go of there: a slider pulled past its end.
+    await pointer("pointermove", { x: 700, y: 50, button: -1, buttons: 1 });
+    await pointer("pointerup", { x: 700, y: 50, button: 0, buttons: 0 });
+    expect(mouse()).toEqual([
+      "pressed left @200",
+      "moved left @1400",
+      "released left @1400",
+    ]);
+    await screen.unmount();
+  });
+
+  test("a release this pane never saw is sent on the next move, before the move", async () => {
+    const { screen, pointer, mouse } = await driven();
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    // The window lost the pointer mid-press; it comes back with nothing down.
+    await pointer("pointermove", { x: 120, y: 50, button: -1, buttons: 0 });
+    expect(mouse()).toEqual([
+      "pressed left @200",
+      "released left @240",
+      "moved none @240",
+    ]);
+    await screen.unmount();
+  });
+
+  test("a press that began outside the picture is not this pane's to end", async () => {
+    const { screen, pointer, mouse } = await driven();
+    await pointer("pointermove", { x: 100, y: 50, button: -1, buttons: 1 });
+    await pointer("pointerup", { x: 100, y: 50, button: 0, buttons: 0 });
+    // Moved over with a button the page was never told about: a hover, and no stray `mouseup`.
+    expect(mouse()).toEqual(["moved none @200"]);
+    await screen.unmount();
+  });
+
+  test("a second button while one is held arrives as a move, and the page is told of each", async () => {
+    const { screen, pointer, mouse } = await driven();
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    await pointer("pointermove", { x: 100, y: 50, button: 2, buttons: 3 });
+    await pointer("pointermove", { x: 100, y: 50, button: 0, buttons: 2 });
+    await pointer("pointerup", { x: 100, y: 50, button: 2, buttons: 0 });
+    expect(mouse()).toEqual([
+      "pressed left @200",
+      "pressed right @200",
+      "released left @200",
+      "released right @200",
+    ]);
+    await screen.unmount();
+  });
+
+  test("a pointer taken away mid-press lets go of what it held", async () => {
+    const { screen, pointer, mouse } = await driven();
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    await pointer("pointercancel", { x: 100, y: 50, button: 0, buttons: 0 });
+    // And the capture going afterwards has nothing left to release.
+    await pointer("lostpointercapture", {
+      x: 100,
+      y: 50,
+      button: -1,
+      buttons: 0,
+    });
+    expect(mouse()).toEqual(["pressed left @200", "released left @200"]);
+    await screen.unmount();
+  });
+
+  test("two presses in one place within half a second are a double-click, and its release says so too", async () => {
+    const { screen, pointer, sent } = await driven();
+    const click = async (x: number, when: number) => {
+      await pointer("pointerdown", { x, y: 50, button: 0, buttons: 1, when });
+      await pointer("pointerup", { x, y: 50, button: 0, buttons: 0, when });
+    };
+    await click(100, 1_000);
+    await click(101, 1_300);
+    // A third, but somewhere else: the first click of something new.
+    await click(300, 1_500);
+    // And one in the same place, long after.
+    await click(300, 9_000);
+    expect(
+      sent().map((message) => `${message.event} x${message.clickCount}`),
+    ).toEqual([
+      "pressed x1",
+      "released x1",
+      "pressed x2",
+      "released x2",
+      "pressed x1",
+      "released x1",
+      "pressed x1",
+      "released x1",
+    ]);
+    await screen.unmount();
+  });
+
+  test("keys still down when focus leaves the keyboard field come up", async () => {
+    const { screen, keyboard, key, sent } = await driven();
+    await key("keydown", { key: "Shift", code: "ShiftLeft" });
+    await key("keydown", { key: "A", code: "KeyA" });
+    await key("keyup", { key: "A", code: "KeyA" });
+    await screen.act(() => {
+      keyboard.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(sent().map((message) => `${message.event} ${message.key}`)).toEqual([
+      "down Shift",
+      "down A",
+      "up A",
+      "up Shift",
+    ]);
+    // Let go of once: a second blur has nothing to send.
+    await screen.act(() => {
+      keyboard.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(sent().length).toBe(4);
+    await screen.unmount();
+  });
+
+  test("⌘ coming up brings up the key macOS never sent a keyup for", async () => {
+    const { screen, key, sent } = await driven();
+    await key("keydown", { key: "Meta", code: "MetaLeft", metaKey: true });
+    await key("keydown", { key: "a", code: "KeyA", metaKey: true });
+    await key("keyup", { key: "Meta", code: "MetaLeft" });
+    expect(sent().map((message) => `${message.event} ${message.key}`)).toEqual([
+      "down Meta",
+      "down a",
+      "up Meta",
+      "up a",
+    ]);
+    await screen.unmount();
+  });
+
+  test("watching, not driving, nothing a pointer does is sent", async () => {
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    const event = new Event("pointermove", { bubbles: true });
+    Object.defineProperties(event, {
+      clientX: { value: 10 },
+      clientY: { value: 10 },
+      button: { value: -1 },
+      buttons: { value: 0 },
+    });
+    await screen.act(() => {
+      screen.canvas().dispatchEvent(event);
+    });
+    expect(sockets[0]?.sent).toEqual([]);
+    await screen.unmount();
+  });
+});
+
+/**
  * THE WHEEL GOES TO THE BOT'S PAGE, AND ONLY THERE.
  *
  * It was React's `onWheel`, which React registers as passive: its `preventDefault` did nothing but

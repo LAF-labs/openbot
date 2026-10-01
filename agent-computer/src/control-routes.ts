@@ -131,8 +131,15 @@ export const takeControl: BotRoute = ({ session }) =>
  *
  * Every box the person typed into is read once more first, in turn behind their last keystroke: the
  * Bot acts next, and the Bot's Enter is what sends a form carrying the last thing they typed.
+ *
+ * And whatever they were still holding is let go of, in the same turn: once the wheel is back this
+ * service refuses their input, their own release included, and a button or a Shift left down on
+ * the page would be down under everything the Bot does next (`Screencast.letGo`).
  */
 export const releaseControl: BotRoute = async ({ session }) => {
-  await inTurn(session, () => settleTyping(session, { every: true }));
+  await inTurn(session, async () => {
+    await settleTyping(session, { every: true });
+    await session.viewer?.cast.letGo().catch(() => undefined);
+  });
   return json(session.control.release());
 };

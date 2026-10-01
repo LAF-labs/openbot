@@ -59,6 +59,43 @@ function modifierBits(event: {
   );
 }
 
+/** A mouse button a person can hold, as CDP names it. */
+type HeldButton = "left" | "middle" | "right";
+
+/** `event.button`: 0 left, 1 middle, 2 right. Anything else (back, forward, a plain move's -1) is none of them. */
+const BUTTON_NAMES: readonly HeldButton[] = ["left", "middle", "right"];
+const buttonOf = (button: number): HeldButton | null =>
+  BUTTON_NAMES[button] ?? null;
+
+/** `event.buttons` is a bitmask in a different order from `event.button`: left 1, right 2, middle 4. */
+const BUTTON_BITS: Record<HeldButton, number> = {
+  left: 1,
+  right: 2,
+  middle: 4,
+};
+
+/**
+ * The button a move is carried with: one the Bot's page was told is down, or `none`.
+ *
+ * `none` WHEN NOTHING IS — this used to be `event.button`, which is 0 on every `mousemove`, and 0
+ * is also the left button's number: every hover went to the Bot's page as a move with the left
+ * button held (`buttons: 1`, measured 2026-10-01), so a signature pad or a map drew or panned under
+ * a pointer that was only passing over it.
+ */
+function heldOf(pressed: ReadonlyMap<HeldButton, number>): HeldButton | "none" {
+  if (pressed.has("left")) return "left";
+  if (pressed.has("right")) return "right";
+  if (pressed.has("middle")) return "middle";
+  return "none";
+}
+
+/**
+ * How close two presses must be to be one double-click: the usual half second, and a few pixels of
+ * the Bot's page. The operating system's own setting cannot be read from a web page.
+ */
+const MULTI_CLICK_MS = 500;
+const MULTI_CLICK_DISTANCE = 5;
+
 type Props = {
   /**
    * Computer identity is part of the stream URL so input and frames stay scoped to the active Bot.
@@ -102,6 +139,35 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
   const socketRef = useRef<WebSocket | null>(null);
   /** The size of the frames Chrome is sending, which is what input coordinates are relative to. */
   const frameSize = useRef<{ width: number; height: number } | null>(null);
+  /**
+   * WHAT THE BOT'S PAGE HAS BEEN TOLD IS DOWN, so that it is always told when it comes up.
+   *
+   * The canvas had `onMouseDown`, `onMouseUp` and `onMouseMove` and nothing else. A button let go of
+   * outside the picture — a slider dragged past its end, a drag that left the pane — was never
+   * released on the page: `mousedown` and no `mouseup` until the next click (measured 2026-10-01),
+   * with a page script still waiting on it. And a key held when focus left was never released at
+   * all. Buttons are followed with pointer events and a capture, so the release comes here wherever
+   * the pointer is; keys are let go of when the keyboard field loses focus. What neither can cover —
+   * the socket closing, the wheel handed back mid-press — the computer lets go of itself
+   * (`agent-computer/src/screencast.ts`, `letGo`).
+   */
+  const pressedRef = useRef(new Map<HeldButton, number>());
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * The last press, for counting clicks. A pointer event carries no click count (`detail` is 0), and
+   * every press used to go up as the first: a double-click on the Bot's page was two single clicks,
+   * so a word could not be selected by double-clicking it (measured 2026-10-02: two `mousedown`s
+   * and no `dblclick`).
+   */
+  const lastPressRef = useRef<{
+    button: HeldButton;
+    at: number;
+    x: number;
+    y: number;
+    count: number;
+  } | null>(null);
+  /** The keys the Bot's page has been told are down: physical code → the key it was sent as. */
+  const heldKeysRef = useRef(new Map<string, string>());
   const [connected, setConnected] = useState(false);
   /**
    * The stream had been showing a picture and then dropped. Drawn under the picture until a picture
@@ -273,6 +339,9 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       socket.onclose = () => {
         if (closed) return;
         setConnected(false);
+        // What was held went with the socket: the computer let go of it as the socket closed.
+        pressedRef.current.clear();
+        heldKeysRef.current.clear();
         // Cut off only once there was a picture to cut; before one, the wait above speaks.
         if (hadFrame && !isShowingLoss) {
           isShowingLoss = true;
@@ -320,7 +389,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
    * Convert from displayed canvas coordinates to page coordinates with the shared, tested helper.
    * A screencast frame is the viewport, so its frame size stands in for natural image size.
    */
-  const at = useCallback((event: React.MouseEvent) => {
+  const at = useCallback((event: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current;
     const size = frameSize.current;
     if (!canvas || !size) return null;
@@ -331,27 +400,143 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     );
   }, []);
 
-  const onMouse = useCallback(
-    (kind: "pressed" | "released" | "moved") =>
-      (event: React.MouseEvent<HTMLCanvasElement>) => {
-        const point = at(event);
-        if (!point) return;
-        send({
-          type: "mouse",
-          event: kind,
-          ...point,
-          button:
-            event.button === 2
-              ? "right"
-              : event.button === 1
-                ? "middle"
-                : "left",
-          clickCount: kind === "moved" ? 0 : 1,
-          modifiers: modifierBits(event),
-        });
-      },
-    [at, send],
+  const sendMouse = useCallback(
+    (
+      kind: "pressed" | "released" | "moved",
+      point: { x: number; y: number },
+      button: HeldButton | "none",
+      modifiers: number,
+      clickCount = 0,
+    ) => {
+      send({
+        type: "mouse",
+        event: kind,
+        ...point,
+        button,
+        clickCount,
+        modifiers,
+      });
+    },
+    [send],
   );
+
+  const pressButton = (
+    button: HeldButton,
+    point: { x: number; y: number },
+    event: { timeStamp: number } & Parameters<typeof modifierBits>[0],
+  ) => {
+    if (pressedRef.current.has(button)) return;
+    const last = lastPressRef.current;
+    const isRepeat =
+      last !== null &&
+      last.button === button &&
+      event.timeStamp - last.at <= MULTI_CLICK_MS &&
+      Math.abs(point.x - last.x) <= MULTI_CLICK_DISTANCE &&
+      Math.abs(point.y - last.y) <= MULTI_CLICK_DISTANCE;
+    const clickCount = isRepeat ? last.count + 1 : 1;
+    lastPressRef.current = {
+      button,
+      at: event.timeStamp,
+      ...point,
+      count: clickCount,
+    };
+    pressedRef.current.set(button, clickCount);
+    sendMouse("pressed", point, button, modifierBits(event), clickCount);
+  };
+
+  /** Only a button the page was told is down: a press that began outside the picture is not ours to end. */
+  const releaseButton = (
+    button: HeldButton,
+    point: { x: number; y: number },
+    modifiers: number,
+  ) => {
+    const clickCount = pressedRef.current.get(button);
+    if (clickCount === undefined) return;
+    pressedRef.current.delete(button);
+    // The same count its press carried: Chrome pairs the two to decide what was clicked.
+    sendMouse("released", point, button, modifiers, clickCount);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const button = buttonOf(event.button);
+    const point = at(event);
+    if (!button || !point) return;
+    lastPointRef.current = point;
+    /*
+     * CAPTURED, so the moves and the release keep coming here once the pointer is off the picture.
+     * Without it a release outside the canvas went to whatever was under it, and the page kept its
+     * `mousedown`. A pointer that is already gone throws; the press still goes.
+     */
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Nothing to capture: the release will come the ordinary way, or from the next move.
+    }
+    pressButton(button, point, event);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = at(event);
+    if (!point) return;
+    lastPointRef.current = point;
+    const modifiers = modifierBits(event);
+    /*
+     * A SECOND BUTTON WHILE ONE IS HELD ARRIVES AS A MOVE. Pointer events fire `pointerdown` for the
+     * first button and `pointerup` for the last; one pressed or released in between is a
+     * `pointermove` whose `button` names it. The page is told of each.
+     */
+    const changed = buttonOf(event.button);
+    if (changed && event.buttons & BUTTON_BITS[changed]) {
+      pressButton(changed, point, event);
+    }
+    // And anything the browser says is no longer down is let go of now: a release this never saw.
+    for (const button of [...pressedRef.current.keys()]) {
+      if (!(event.buttons & BUTTON_BITS[button])) {
+        releaseButton(button, point, modifiers);
+      }
+    }
+    if (changed) return;
+    sendMouse("moved", point, heldOf(pressedRef.current), modifiers);
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const button = buttonOf(event.button);
+    const point = at(event) ?? lastPointRef.current;
+    if (!button || !point) return;
+    lastPointRef.current = point;
+    releaseButton(button, point, modifierBits(event));
+  };
+
+  /** The pointer was taken away mid-press (a cancelled touch, a capture lost): everything comes up. */
+  const handlePointerLost = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const point = at(event) ?? lastPointRef.current;
+    if (!point) return;
+    for (const button of [...pressedRef.current.keys()]) {
+      releaseButton(button, point, modifierBits(event));
+    }
+  };
+
+  /** Every key still down on the Bot's page comes up. */
+  const releaseKeys = () => {
+    for (const [code, key] of [...heldKeysRef.current]) {
+      heldKeysRef.current.delete(code);
+      send({ type: "key", event: "up", key, code, modifiers: 0 });
+    }
+  };
+
+  /*
+   * A wheel handed back mid-press is let go of by the computer, which by then refuses this pane's
+   * own releases. What is kept here is only forgotten, so the next takeover starts with nothing held.
+   */
+  useEffect(() => {
+    if (!driving) return;
+    const pressed = pressedRef.current;
+    const heldKeys = heldKeysRef.current;
+    return () => {
+      pressed.clear();
+      heldKeys.clear();
+    };
+  }, [driving]);
 
   /**
    * THE WHEEL, ON A LISTENER OF ITS OWN THAT MAY SAY NO.
@@ -425,6 +610,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       return;
     }
     event.preventDefault();
+    heldKeysRef.current.set(event.code || event.key, event.key);
     send({
       type: "key",
       event: "down",
@@ -443,6 +629,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       return;
     }
     event.preventDefault();
+    heldKeysRef.current.delete(event.code || event.key);
     send({
       type: "key",
       event: "up",
@@ -450,7 +637,19 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       code: event.code,
       modifiers: modifierBits(event),
     });
+    /*
+     * macOS never sends the `keyup` of a key let go of while ⌘ was down: ⌘A is `keydown` Meta,
+     * `keydown` a, `keyup` Meta, and the `a` stays down as far as any page can tell. So when ⌘ comes
+     * up, everything pressed under it comes up with it.
+     */
+    if (event.key === "Meta") releaseKeys();
   };
+  /**
+   * Focus left the keyboard field with keys still down — Tab pressed with Shift held, a click on the
+   * app, the window itself losing focus. Their `keyup` will go wherever focus went, so the Bot's
+   * page is told now.
+   */
+  const handleBlur = () => releaseKeys();
   /** Paste arrives as one block; CDP inserts it as text rather than key events. */
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = event.clipboardData?.getData("text");
@@ -483,7 +682,9 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
         ref={canvasRef}
         // max-h/max-w rather than h-auto w-full: the expanded screen used to overflow a short window
         // and scroll, with the bottom of the Bot's page below the fold.
-        className={`block max-h-full max-w-full outline-none ${driving ? "cursor-crosshair" : ""}`}
+        // `touch-none` while driving: a finger on the picture is the Bot's page's, not a scroll of ours,
+        // and a browser that takes a touch for panning cancels the pointer mid-press.
+        className={`block max-h-full max-w-full outline-none ${driving ? "cursor-crosshair touch-none" : ""}`}
         // Only forward input during takeover.
         {...(driving
           ? {
@@ -495,13 +696,18 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
                  * the page's `<main>`, and every key went there instead (measured 2026-09-24: the
                  * click reached the page, the keys never left the tab). Cancelling the default
                  * keeps focus where it is put; the press itself still goes to the page below.
+                 *
+                 * Still on `mousedown`, which is where the measurement was taken; what is sent to
+                 * the page moved to the pointer handlers beside it.
                  */
                 event.preventDefault();
                 keyboardRef.current?.focus();
-                onMouse("pressed")(event);
               },
-              onMouseUp: onMouse("released"),
-              onMouseMove: onMouse("moved"),
+              onPointerDown: handlePointerDown,
+              onPointerMove: handlePointerMove,
+              onPointerUp: handlePointerUp,
+              onPointerCancel: handlePointerLost,
+              onLostPointerCapture: handlePointerLost,
               onContextMenu: (event: React.MouseEvent) =>
                 event.preventDefault(),
               // The wheel is not here: see the listener registered in the effect above.
@@ -543,6 +749,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
           className="absolute h-px w-px overflow-hidden border-0 p-0 opacity-0 outline-none"
           onKeyDown={handleKeyDown}
           onKeyUp={handleKeyUp}
+          onBlur={handleBlur}
           onPaste={handlePaste}
           onCompositionEnd={handleCompositionEnd}
           aria-label={t(
