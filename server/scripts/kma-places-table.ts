@@ -14,18 +14,24 @@
  * machine is theirs to decide, so this takes a path. What is committed is the output: the three
  * names and the two grid numbers of each row, and none of the other columns.
  *
- * THE COLUMNS ARE FOUND BY THEIR HEADINGS, NOT BY POSITION. This was written before the file was
- * on this machine, from the layout the same table has on the public data portal — 구분, 행정구역코드,
- * 1단계, 2단계, 3단계, 격자 X, 격자 Y, then the coordinates — and 기상청 re-issues it (the name
- * carries its date). A generator that read "column F" would go on writing a table, of the wrong
- * numbers, the day a column moved. A heading that cannot be found stops the run and prints the
- * headings that were there, and the report says what was read so a person can look at it.
+ * THE COLUMNS ARE FOUND BY THEIR HEADINGS, NOT BY POSITION. The 2026-07-01 edition's are 구분,
+ * 행정구역코드, 1단계, 2단계, 3단계, 격자 X, 격자 Y, each coordinate as 시·분·초 and once more as a
+ * decimal, and 위치업데이트 — one worksheet, 3,838 rows, nearly every cell text, the numbers
+ * included. 기상청 re-issues the file (the name carries its date), and a generator that read
+ * "column F" would go on writing a table, of the wrong numbers, the day a column moved. A heading
+ * that cannot be found stops the run and prints the headings that were there.
+ *
+ * READ THE REPORT BEFORE COMMITTING WHAT IT WROTE. On that edition it says 3,793 of the 3,836 rows
+ * that carry a coordinate land in the cell the sheet gives, 36 more are within 500 m of the edge,
+ * and 7 are further off (the furthest, 관평동, by 2.4 km: its coordinate was updated in 2014 and
+ * its cell was not). A run that says anything very different has read the wrong column — which the
+ * first run of this on the real file did.
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import * as XLSX from "xlsx";
-import { isKmaCell, kmaCellOf } from "../src/plugins/kma-grid";
+import { isKmaCell, kmaGridPosition } from "../src/plugins/kma-grid";
 import { createKmaPlaces, parseKmaPlaces } from "../src/plugins/kma-places";
 
 export type SheetPlace = {
@@ -48,6 +54,10 @@ export type SheetReading = {
 const text = (cell: unknown) =>
   cell === null || cell === undefined ? "" : String(cell).trim();
 
+/** Where a coordinate in this table can be, with room to spare: the grid runs 123–133°E, 31–44°N. */
+const LONGITUDES = [120, 135] as const;
+const LATITUDES = [30, 45] as const;
+
 /** The first column whose heading matches, or -1. */
 const columnOf = (headings: readonly string[], pattern: RegExp) =>
   headings.findIndex((heading) => pattern.test(heading));
@@ -55,10 +65,18 @@ const columnOf = (headings: readonly string[], pattern: RegExp) =>
 /**
  * A degree column, told from the degree-minute-second ones beside it by what is IN it.
  *
- * The portal's edition splits each coordinate into 시·분·초 and then gives it once more as a
- * decimal, under the heading "경도(초/100)" — which does not say "degrees" and may not be the
- * heading next time. So the decimal column is the one under a 경도/위도 heading that holds a number
- * in range for Korea which is not whole.
+ * The sheet splits each coordinate into 시·분·초 and then gives it once more as plain decimal
+ * degrees, under the heading "경도(초/100)" — which says seconds over a hundred and is neither. So
+ * the heading is not trusted: the decimal column is the one under a 경도/위도 heading where
+ * (nearly) EVERY value is in range for Korea and they are not all whole.
+ *
+ * "EVERY", NOT "SOME" — AND THAT WAS THE BUG. The first version of this took the first 경도/위도
+ * column with some in-range value that was not whole, sampled over twenty rows. For longitude that
+ * is the right column: no minute or second is between 120 and 135. For latitude it is not — a
+ * SECONDS value is anything from 0 to 60, and the tenth row of the real sheet has 38.11 — so the
+ * 위도(초) column was read as latitude, and the first run on the real file reported that 5 of
+ * 3,837 rows landed in their own cell. The synthetic sheet this was tested on had 0 in every
+ * seconds cell, which is how it passed.
  */
 function degreeColumn(
   headings: readonly string[],
@@ -66,20 +84,24 @@ function degreeColumn(
   word: string,
   range: readonly [number, number],
 ): number {
-  const sample = rows.slice(0, 20);
-  return headings.findIndex(
-    (heading, column) =>
-      heading.includes(word) &&
-      sample.some((row) => {
-        const value = Number(row[column]);
-        return (
-          Number.isFinite(value) &&
-          !Number.isInteger(value) &&
-          value >= range[0] &&
-          value <= range[1]
-        );
-      }),
-  );
+  return headings.findIndex((heading, column) => {
+    if (!heading.includes(word)) return false;
+    // Blank and zero are the sheet's two ways of saying "no coordinate" (이어도's rows are zeros).
+    const values = rows
+      .map((row) => text(row[column]))
+      .filter((cell) => cell !== "")
+      .map(Number)
+      .filter((value) => value !== 0);
+    const inRange = values.filter(
+      (value) => value >= range[0] && value <= range[1],
+    );
+    return (
+      values.length > 0 &&
+      // A stray cell must not unseat the column; a column of seconds is in range a quarter of the time.
+      inRange.length >= values.length * 0.99 &&
+      inRange.some((value) => !Number.isInteger(value))
+    );
+  });
 }
 
 /** One worksheet, as rows of cells, to the places in it. Throws when it is not that worksheet. */
@@ -116,8 +138,8 @@ export function placesFromSheet(
       `The heading row has no column for ${missing.map(([name]) => name).join(", ")}. It reads: ${headings.join(" | ")}`,
     );
   }
-  const longitude = degreeColumn(headings, body, "경도", [120, 135]);
-  const latitude = degreeColumn(headings, body, "위도", [30, 45]);
+  const longitude = degreeColumn(headings, body, "경도", LONGITUDES);
+  const latitude = degreeColumn(headings, body, "위도", LATITUDES);
 
   const places: SheetPlace[] = [];
   const seen = new Set<string>();
@@ -137,16 +159,21 @@ export function placesFromSheet(
     const key = `${levels.join("|")}|${nx}|${ny}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const degrees = (column: number) => {
-      const value = column < 0 ? Number.NaN : Number(row[column]);
-      return Number.isFinite(value) ? value : null;
+    /*
+     * A cell that is blank, or holds a number that is not a coordinate in Korea, is no coordinate:
+     * 이어도's two rows carry 0 and 0, and the projection of the Gulf of Guinea is not a finding.
+     */
+    const degrees = (column: number, range: readonly [number, number]) => {
+      const cell = column < 0 ? "" : text(row[column]);
+      const value = cell === "" ? Number.NaN : Number(cell);
+      return value >= range[0] && value <= range[1] ? value : null;
     };
     places.push({
       levels,
       nx,
       ny,
-      latitude: degrees(latitude),
-      longitude: degrees(longitude),
+      latitude: degrees(latitude, LATITUDES),
+      longitude: degrees(longitude, LONGITUDES),
     });
   }
   return { places, headings, skipped };
@@ -209,42 +236,82 @@ ${lines.join("\n")}
 `;
 }
 
-/** How many of the sheet's own (coordinate, cell) pairs the projection in `kma-grid.ts` gives. */
-export function projectionAgreement(places: readonly SheetPlace[]): {
+/** A cell is five kilometres; a coordinate this far past its edge is a rounding, not a disagreement. */
+const EDGE_METRES = 500;
+
+export type ProjectionCheck = {
+  /** Rows that carry a coordinate. */
   checked: number;
+  /** Of those, the ones the projection puts in the cell the sheet gives. */
   agreed: number;
-  examples: string[];
-} {
-  let checked = 0;
-  let agreed = 0;
-  const examples: string[] = [];
+  /** The ones it puts in a neighbour, with the coordinate within {@link EDGE_METRES} of the edge. */
+  atEdge: string[];
+  /** The ones whose coordinate is somewhere else altogether. These are what the check is for. */
+  apart: string[];
+};
+
+/**
+ * How many of the sheet's own (coordinate, cell) pairs the projection in `kma-grid.ts` reproduces.
+ *
+ * Every row is a pair 기상청 worked out itself, so this is the constants held to a few thousand of
+ * 기상청's answers instead of to two city halls. A miss is not all one thing: a coordinate a
+ * stone's throw over a cell's edge is the two sides rounding differently (or a row whose
+ * coordinate was updated and whose cell was not), and a coordinate kilometres away is a wrong
+ * constant or a wrong column. They are counted apart, and each is named.
+ */
+export function projectionAgreement(
+  places: readonly SheetPlace[],
+): ProjectionCheck {
+  const check: ProjectionCheck = {
+    checked: 0,
+    agreed: 0,
+    atEdge: [],
+    apart: [],
+  };
   for (const place of places) {
     if (place.latitude === null || place.longitude === null) continue;
-    checked++;
-    const cell = kmaCellOf(place.latitude, place.longitude);
-    if (cell?.nx === place.nx && cell.ny === place.ny) {
-      agreed++;
-    } else if (examples.length < 10) {
-      examples.push(
-        `${place.levels.filter(Boolean).join(" ")}: sheet ${place.nx},${place.ny} — projection ${cell ? `${cell.nx},${cell.ny}` : "outside the grid"}`,
-      );
+    check.checked++;
+    const name = place.levels.filter(Boolean).join(" ");
+    const at = kmaGridPosition(place.latitude, place.longitude);
+    if (!at) {
+      check.apart.push(`${name}: sheet ${place.nx},${place.ny} — no position`);
+      continue;
     }
+    const nx = Math.floor(at.x + 0.5);
+    const ny = Math.floor(at.y + 0.5);
+    if (nx === place.nx && ny === place.ny) {
+      check.agreed++;
+      continue;
+    }
+    // How far the coordinate is outside the sheet's own cell: half a cell from the centre is the edge.
+    const metres = Math.round(
+      (Math.max(Math.abs(at.x - place.nx), Math.abs(at.y - place.ny)) - 0.5) *
+        5_000,
+    );
+    (metres <= EDGE_METRES ? check.atEdge : check.apart).push(
+      `${name}: sheet ${place.nx},${place.ny} — projection ${nx},${ny}, ${metres} m past the edge`,
+    );
   }
-  return { checked, agreed, examples };
+  return check;
 }
 
 if (import.meta.main) {
   const [path, ...flags] = process.argv.slice(2);
   if (!path) {
     console.error(
-      'Usage: bun server/scripts/kma-places-table.ts "<path to 동네예보지점좌표(위경도)_YYMMDD.xlsx>" [--dry-run]',
+      'Usage: bun server/scripts/kma-places-table.ts "<path to 동네예보지점좌표(위경도)_YYMMDD.xlsx>" [--dry-run] [--source-name "<the name 기상청 gave the file>"]',
     );
     process.exit(2);
   }
   const bytes = readFileSync(path);
   const reading = placesFromWorkbook(bytes);
+  /*
+   * The header records what 기상청 called the file, which is what somebody looking for it again
+   * will search the hub for — not what it happened to be saved as on the machine that ran this.
+   */
+  const renamed = flags.indexOf("--source-name");
   const source = {
-    name: basename(path),
+    name: (renamed >= 0 ? flags[renamed + 1] : undefined) ?? basename(path),
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
   const module = tableModule(reading.places, source);
@@ -272,10 +339,18 @@ if (import.meta.main) {
   console.log(
     agreement.checked === 0
       ? "projection  no decimal coordinate columns were found, so nothing was checked"
-      : `projection  ${agreement.agreed} of ${agreement.checked} rows land in the cell the sheet gives`,
+      : `projection  ${agreement.agreed} of the ${agreement.checked} rows that carry a coordinate land in the cell the sheet gives; ${agreement.atEdge.length} are within ${EDGE_METRES} m of its edge; ${agreement.apart.length} are further off (${reading.places.length - agreement.checked} of ${reading.places.length} rows carry no coordinate)`,
   );
-  for (const example of agreement.examples) {
-    console.log(`            ${example}`);
+  for (const [label, misses] of [
+    ["edge", agreement.atEdge],
+    ["APART", agreement.apart],
+  ] as const) {
+    for (const miss of misses.slice(0, 60)) {
+      console.log(`  ${label}  ${miss}`);
+    }
+    if (misses.length > 60) {
+      console.log(`  ${label}  … and ${misses.length - 60} more`);
+    }
   }
   // What a few names people actually say come to, through the lookup the tool uses.
   const lookup = createKmaPlaces(
@@ -292,6 +367,14 @@ if (import.meta.main) {
     "수원",
     "분당",
     "제주",
+    "제주 서귀포",
+    "세종",
+    "광주",
+    "광주 북구",
+    "전남 순천",
+    "전라남도",
+    "강원도",
+    "전라북도",
     "중구",
     "고성",
   ]) {

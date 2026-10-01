@@ -4,24 +4,63 @@ import {
   KMA_GRID,
   kmaCellCentre,
   kmaCellOf,
+  kmaGridPosition,
 } from "../src/plugins/kma-grid";
 
 /**
  * A coordinate to a cell of the 기상청 forecast grid, held to what 기상청 itself publishes.
  *
  * The projection's constants are eight numbers that circulate from one blog post to the next, and
- * a wrong one does not fail: it answers the weather of the next valley. So they are pinned to two
- * things that are 기상청's own. The two city halls are the pair every copy of the conversion is
- * checked against. The four corners are stronger: the API hub's page for its converter
+ * a wrong one does not fail: it answers the weather of the next valley. So they are pinned to
+ * three things that are 기상청's own. The two city halls are the pair every copy of the conversion
+ * is checked against. The four corners are stronger: the API hub's page for its converter
  * (apihub.kma.go.kr, 예특보 2.4, read 2026-10-02) gives the ranges it accepts — x 1–149, y 1–253,
  * longitude 123.310165–132.774963, latitude 31.651814–43.393490 — and those are the grid's own
  * corners, to six decimals. A grid shifted by one cell misses them in the second.
+ *
+ * And the strongest is 기상청's spreadsheet of 읍·면·동 (동네예보지점좌표(위경도)_260701.xlsx),
+ * where every row is a coordinate and the cell 기상청 put it in. The generator reports the whole
+ * sheet — 3,793 of the 3,836 rows that carry a coordinate land in their own cell, 36 more are
+ * within 500 m of its edge, 7 are further off — and a handful of those rows are pinned here.
  */
 
 describe("a coordinate to a forecast cell", () => {
   test("서울 and 부산 city halls land where everybody's table says", () => {
     expect(kmaCellOf(37.5665, 126.978)).toEqual({ nx: 60, ny: 127 });
     expect(kmaCellOf(35.1796, 129.0756)).toEqual({ nx: 98, ny: 76 });
+  });
+
+  test("rows of 기상청's own sheet land in the cell the sheet gives them", () => {
+    // (latitude, longitude) → (격자 X, 격자 Y), as the 2026-07-01 edition has them.
+    const rows: [string, number, number, number, number][] = [
+      ["서울특별시", 37.5635694444444, 126.980008333333, 60, 127],
+      ["서울 종로구 청운효자동", 37.5841367, 126.9706519, 60, 127],
+      ["세종특별자치시", 36.4800121, 127.2890691, 66, 103],
+      ["경기도 수원시장안구", 37.3010111111111, 127.012222222222, 60, 121],
+      ["인천광역시 제물포구", 37.4709333333333, 126.623566666666, 54, 125],
+      ["전남광주통합특별시", 34.8130444444444, 126.465, 51, 67],
+      ["전남광주통합특별시 순천시", 34.9476055555555, 127.489330555555, 70, 70],
+      ["전남광주통합특별시 광산구", 35.1364277777777, 126.795788888888, 57, 74],
+    ];
+    for (const [name, latitude, longitude, nx, ny] of rows) {
+      expect({ name, cell: kmaCellOf(latitude, longitude) }).toEqual({
+        name,
+        cell: { nx, ny },
+      });
+    }
+  });
+
+  test("a position is the cell before it is rounded", () => {
+    expect(kmaGridPosition(38, 126)).toEqual({ x: 43, y: 136 });
+    // 서울 시청 is a little west and south of its cell's centre.
+    const cityHall = kmaGridPosition(37.5665, 126.978);
+    expect(cityHall?.x).toBeCloseTo(59.808, 2);
+    expect(cityHall?.y).toBeCloseTo(126.708, 2);
+    // 수유1동, the sheet's closest call: two metres over the line into the next cell east.
+    const suyu = kmaGridPosition(37.6307333333333, 127.019297222222);
+    expect(suyu?.x).toBeGreaterThan(60.5);
+    expect(suyu?.x).toBeLessThan(60.501);
+    expect(kmaGridPosition(Number.NaN, 127)).toBeNull();
   });
 
   test("the projection's origin is cell (43, 136)", () => {

@@ -17,6 +17,13 @@
  * would differ in the second decimal. `tests/kma-grid.test.ts` holds the corners and the two city
  * halls everybody quotes (서울 60/127, 부산 98/76).
  *
+ * AND THEN AGAINST EVERY ROW OF 기상청'S OWN TABLE. The spreadsheet of 읍·면·동 the place table is
+ * generated from gives each row a coordinate and a cell. Of the 3,836 rows of the 2026-07-01
+ * edition that carry a coordinate, this projection puts 3,793 in the cell the sheet gives, 36 more
+ * in a neighbour with the coordinate within 500 m of the line, and 7 further off — the furthest
+ * 2.4 km, a row whose coordinate was updated in 2014 and whose cell was not. The generator prints
+ * that count each time it runs (`server/scripts/kma-places-table.ts`).
+ *
  * A CELL OUTSIDE THE GRID IS REFUSED HERE, BECAUSE THE VENDOR DOES NOT. Measured the same day: cell
  * (150, 254) answered `resultCode 00` with a temperature, a humidity and a rainfall of exactly 0 —
  * a place that does not exist, answered as a mild dry night. So `kmaCellOf` returns null for
@@ -81,12 +88,17 @@ export function isKmaCell(nx: number, ny: number): boolean {
 }
 
 /**
- * The cell a coordinate falls in, or null when it is not a coordinate or the grid does not reach it.
+ * Where a coordinate falls on the grid before it is rounded to a cell, or null when it is not a
+ * coordinate. Cell (60, 127) is the square from 59.5 to 60.5 and from 126.5 to 127.5.
  *
- * Rounded to the nearest cell centre (`floor(x + 0.5)`), which is what 기상청's sample does and what
- * its own table of 읍·면·동 was made with.
+ * Its own function because the table generator has to tell two things apart that a cell cannot:
+ * a row of 기상청's whose coordinate sits a few metres over a cell's edge, and one whose cell is
+ * simply not where its coordinate is.
  */
-export function kmaCellOf(latitude: number, longitude: number): KmaCell | null {
+export function kmaGridPosition(
+  latitude: number,
+  longitude: number,
+): { x: number; y: number } | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   // Past the pole the tangent turns over and the answer is a cell on the wrong side of the world.
   if (Math.abs(latitude) >= 90 || Math.abs(longitude) > 180) return null;
@@ -96,11 +108,23 @@ export function kmaCellOf(latitude: number, longitude: number): KmaCell | null {
   if (angle > Math.PI) angle -= 2 * Math.PI;
   if (angle < -Math.PI) angle += 2 * Math.PI;
   angle *= cone;
+  return {
+    x: distance * Math.sin(angle) + ORIGIN_X,
+    y: originDistance - distance * Math.cos(angle) + ORIGIN_Y,
+  };
+}
 
-  const nx = Math.floor(distance * Math.sin(angle) + ORIGIN_X + 0.5);
-  const ny = Math.floor(
-    originDistance - distance * Math.cos(angle) + ORIGIN_Y + 0.5,
-  );
+/**
+ * The cell a coordinate falls in, or null when it is not a coordinate or the grid does not reach it.
+ *
+ * Rounded to the nearest cell centre (`floor(x + 0.5)`), which is what 기상청's sample does and what
+ * its own table of 읍·면·동 was made with.
+ */
+export function kmaCellOf(latitude: number, longitude: number): KmaCell | null {
+  const at = kmaGridPosition(latitude, longitude);
+  if (!at) return null;
+  const nx = Math.floor(at.x + 0.5);
+  const ny = Math.floor(at.y + 0.5);
   return isKmaCell(nx, ny) ? { nx, ny } : null;
 }
 

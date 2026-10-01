@@ -194,10 +194,12 @@ const TOOL = "get_weather";
  * because that is the habit this tool replaces, and "한국 안만" because the grid ends at the sea.
  *
  * TWO WORDINGS, AND WHICH ONE IS OFFERED IS DECIDED BY THE TABLE. A place in words is looked up in
- * 기상청's own table of 시·군·구 and 읍·면·동 (`kma-places.ts`), which ships empty until its
- * generator has been run on the spreadsheet. With no rows there is no `place` argument and the
- * description does not mention names: an argument that can only ever answer "not found" is a
- * control that does nothing, and a Bot offered it would use it first every time.
+ * 기상청's own table of 시·군·구 and 읍·면·동 (`kma-places.ts`), which this repository ships
+ * generated from 기상청's spreadsheet. The other wording is for a table with no rows — the state
+ * this was first committed in, and the state a checkout is in if the generated module is ever
+ * emptied: then there is no `place` argument and the description does not mention names. An
+ * argument that can only ever answer "not found" is a control that does nothing, and a Bot offered
+ * it would use it first every time.
  */
 export function kmaWeatherTools(
   withPlaceNames: boolean,

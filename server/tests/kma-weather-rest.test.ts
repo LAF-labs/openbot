@@ -80,7 +80,16 @@ type Served = Record<string, string>;
 
 const noData = () => new Response(NO_DATA_BODY, { status: 200 });
 
-/** A transport over a fake hub, the clock it reads, and what the hub was asked. */
+/** No rows: what a transport has before the table is generated, and what most tests here want. */
+const NO_PLACES = createKmaPlaces([]);
+
+/**
+ * A transport over a fake hub, the clock it reads, and what the hub was asked.
+ *
+ * WITH NO TABLE OF NAMES unless a test hands one in. The table this repository ships has four
+ * thousand rows and names every cell it is asked about, and a test about the forecast should not
+ * change when 기상청 re-issues its spreadsheet. The tests about names say which table they mean.
+ */
 function hub(
   reply: Served | ((asked: Asked) => Response | Promise<Response>),
   options: Partial<Parameters<typeof createKmaWeatherTransport>[0]> & {
@@ -92,6 +101,7 @@ function hub(
   const { at: _at, ...rest } = options;
   const transport = createKmaWeatherTransport({
     authKey: KEY,
+    places: NO_PLACES,
     now: () => clock.at,
     fetchImpl: stubFetch(async (address, init) => {
       const url = new URL(String(address));
@@ -1464,8 +1474,10 @@ describe("where the question is about", () => {
   test("coordinates are answered with the name of what is there", async () => {
     const made = hub(MIDNIGHT, { places: FIXTURE_PLACES });
     const { facts } = await weatherOf(made, SEOUL);
-    // The cell's 동 belong to 종로구 in this table; the numbers given are kept beside the name.
-    expect(facts.place).toBe("서울특별시 종로구 (위도 37.57, 경도 126.98)");
+    // The cell holds 종로구 and 중구 in this table; the numbers given are kept beside the names.
+    expect(facts.place).toBe(
+      "서울특별시 종로구·중구 (위도 37.57, 경도 126.98)",
+    );
   });
 
   test("saved words are read through the table when there are no saved coordinates", async () => {
@@ -1489,6 +1501,93 @@ describe("where the question is about", () => {
     expect(refused.code).toBe("laf:weather_place_not_found");
     // The words somebody saved are not in the refusal.
     expect(refused.message).not.toContain("홍대");
+  });
+});
+
+/*
+ * The same, through the table this repository ships: 기상청's 3,837 rows of 2026-07-01. What a Bot
+ * is told here is what it will say to a person, so these are held to the real rows.
+ */
+describe("where, by the table that ships", () => {
+  const shipped = (served: Served = MIDNIGHT, more = {}) =>
+    hub(served, { places: KMA_PLACES, ...more });
+
+  test("the tool a deployment lists takes a place in words", async () => {
+    const [tool] = await shipped().transport.listTools(connection);
+    expect(argumentsOf(tool)).toEqual(["place", "latitude", "longitude"]);
+    expect(tool?.description).toContain("place에 지명을 적는다");
+    expect(tool).toEqual({
+      ...KMA_WEATHER_TOOLS[0],
+      annotations: { readOnlyHint: true },
+    });
+  });
+
+  test("a district by name is asked for at 기상청's cell for it, and the answer says which row", async () => {
+    const made = shipped();
+    const { facts } = await weatherOf(made, { place: "서울 종로" });
+    expect(made.asked[0]?.cell).toBe("60,127");
+    expect(facts.place).toBe("서울특별시 종로구");
+
+    await made.transport
+      .callTool(connection, "get_weather", { place: "부산 해운대구" })
+      .catch(() => null);
+    expect(made.asked.at(-1)?.cell).toBe("99,75");
+  });
+
+  test("광주 is the city, not the merged province's office a hundred kilometres away", async () => {
+    const made = shipped();
+    await made.transport
+      .callTool(connection, "get_weather", { place: "광주" })
+      .catch(() => null);
+    // 서구's cell, in the middle of the five districts. The province's own row is 51,67, in 무안.
+    expect(made.asked.at(-1)?.cell).toBe("59,74");
+    await made.transport
+      .callTool(connection, "get_weather", { place: "전남 순천" })
+      .catch(() => null);
+    expect(made.asked.at(-1)?.cell).toBe("70,70");
+  });
+
+  test("a province is answered at its one cell, and the answer says where that is", async () => {
+    const made = shipped({
+      "now 20261002/0000": SEOUL_MIDNIGHT.now,
+    });
+    const { facts } = await weatherOf(made, { place: "강원도" });
+    expect(made.asked[0]?.cell).toBe("73,134");
+    // Not "강원특별자치도" alone: 강릉 and 춘천 are two weathers, and this is 춘천's.
+    expect(facts.place).toBe("강원특별자치도(대표 지점: 춘천시)");
+  });
+
+  test("고성 is two places and is refused; 강원 고성 is one", async () => {
+    const made = shipped();
+    const refused = await refusalOf(() =>
+      made.transport.callTool(connection, "get_weather", { place: "고성" }),
+    );
+    expect(refused.code).toBe("laf:weather_place_ambiguous");
+    expect(refused.message).toBe("laf:weather_place_ambiguous: 2 candidates");
+    expect(made.asked).toEqual([]);
+
+    await made.transport
+      .callTool(connection, "get_weather", { place: "강원 고성" })
+      .catch(() => null);
+    expect(made.asked.at(-1)?.cell).toBe("85,145");
+  });
+
+  test("coordinates come back with the districts that cell is", async () => {
+    const { facts } = await weatherOf(shipped(), SEOUL);
+    expect(facts.place).toBe(
+      "서울특별시 종로구·중구 등 (위도 37.57, 경도 126.98)",
+    );
+  });
+
+  test("the words a person saved are read the same way", async () => {
+    const made = shipped(MIDNIGHT, {
+      coordinatesOf: async () => null,
+      placeOf: async () => "서울 강남구",
+    });
+    const { facts } = await weatherOf(made, {});
+    expect(made.asked[0]?.cell).toBe("61,126");
+    expect(facts.place).toBe("서울특별시 강남구");
+    expect(facts.basis).toBe("저장된 위치");
   });
 });
 
