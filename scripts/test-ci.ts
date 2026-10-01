@@ -709,14 +709,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * server's real client against the container's real routes over a socket, which neither half's own
  * tests can see).
  *
+ * RAISED AGAIN 2026-10-02, on the gate that ran the merged tree, each by exactly what was added:
+ * forty to `server` (the web search's transport — what goes out, each kind of no, the day's cap —
+ * and every deployment-key entry reconciled together; a connect card waited on and answered from
+ * 연결, never from a window; the core search tool offered as the server knows it), twenty-one to
+ * `app` (a pointer's buttons and a keyboard's keys on the live screen, always let go of, and a
+ * double-click counted; the connect card answering once a switch turns on; a search's results as an
+ * answer's sources) and eleven to `agent-computer` (a hover that is not a drag and what is held
+ * being released, against Chromium itself). `root` did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3147, roots: ["server"] },
-  { name: "app", floor: 1564, roots: ["app"] },
-  { name: "agent-computer", floor: 340, roots: ["agent-computer"] },
+  { name: "server", floor: 3187, roots: ["server"] },
+  { name: "app", floor: 1585, roots: ["app"] },
+  { name: "agent-computer", floor: 351, roots: ["agent-computer"] },
   { name: "root", floor: 575, roots: ["tests", "agent-bot"] },
 ] as const;
 
