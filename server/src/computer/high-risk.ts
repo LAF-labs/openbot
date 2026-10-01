@@ -30,6 +30,7 @@
  * the bar is zero missed high-risk submissions, and a question too many is the failure a person can
  * see. Nothing typed and no secret — a checkout path alone — and it leaves the policy's answer be.
  */
+import { redactText } from "../context/judge-redaction";
 import type { JevAsker } from "../context/vendor/fast-jev-compaction/index";
 import { MONEY_HOSTS } from "./default-policy";
 
@@ -399,7 +400,16 @@ export function judgeStateOf(
 ): Record<string, unknown> {
   const typed = [...facts.typed, ...(facts.typedNow ? [facts.typedNow] : [])];
   return {
-    owner_task: task.slice(0, TASK_CHARS),
+    /*
+     * THE OWNER'S WORDS, WITH WHAT IS SHAPED LIKE A SECRET TAKEN OUT (2026-10-02). This was the raw
+     * message, and it is the message most likely to hold one: "비밀번호: … 로 로그인해서 주문해 줘"
+     * is exactly the task whose submission this check is asked about. Every other judge's state has
+     * gone through `redactText` since the judges were given a third party to ask
+     * (`context/judge-redaction.ts`); this one's typed fields were kinds and labels from the start,
+     * and the sentence beside them was missed. What the judge needs from the task is its reason,
+     * which a placeholder leaves standing.
+     */
+    owner_task: redactText(task).slice(0, TASK_CHARS),
     action: {
       tool: facts.tool,
       intent: facts.intent,

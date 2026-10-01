@@ -399,6 +399,32 @@ describe("what the judge is shown", () => {
     expect(said).toContain("주문해 줘");
   });
 
+  test("the owner's own sentence loses what is shaped like a secret, and keeps its reason", () => {
+    /*
+     * The task was sent as written (found 2026-10-02 by a review of where the decisions model is
+     * asked). A person who writes their login into the request is the ordinary case for a
+     * submission this check weighs, and the judge is a third party's model.
+     */
+    const state = judgeStateOf(
+      facts({ element: { role: "button", name: "로그인" } }),
+      "쇼핑몰에 아이디 owner@example.com, 비밀번호: Sunny!2026 으로 로그인해서 010-9876-5432 번호로 온 주문 4111 1111 1111 1111 카드로 결제해 줘. 주민번호 900101-1234567도 필요하면 써.",
+    );
+    const said = JSON.stringify(state);
+    for (const secret of [
+      "Sunny!2026",
+      "owner@example.com",
+      "9876",
+      "4111",
+      "1234567",
+    ]) {
+      expect(said).not.toContain(secret);
+    }
+    // What the judge weighs the submission against is still there.
+    expect(said).toContain("로그인해서");
+    expect(said).toContain("결제해 줘");
+    expect((state.owner_task as string).length).toBeLessThanOrEqual(600);
+  });
+
   test("the deterministic reading names its signals", () => {
     const signals = highRiskSignals(
       facts({
