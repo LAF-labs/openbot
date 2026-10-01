@@ -129,6 +129,7 @@ export const DEPLOYMENT_KEY_ENV: Readonly<Record<DeploymentKeyFamily, string>> =
   Object.freeze({
     "data-go-kr": "DATA_GO_KR_SERVICE_KEY",
     perplexity: "PERPLEXITY_API_KEY",
+    "kma-apihub": "KMA_APIHUB_AUTH_KEY",
   });
 
 /** How a caller asks for a key. The same seam shape as {@link SharedClientLookup}. */
@@ -157,6 +158,11 @@ const QUERY_SAFE = /^[A-Za-z0-9%._~-]+$/;
  * second vendor's key rides in a header, where none of this is true, and a refusal naming
  * data.go.kr in front of it would send an operator looking for a spelling that does not exist.
  */
+const withoutWhitespace = (name: string, value: string) =>
+  /\s/.test(value)
+    ? `${name} has whitespace inside it, which no key has: it was pasted with a line break or a space`
+    : null;
+
 const KEY_SPELLING: Partial<
   Record<DeploymentKeyFamily, (name: string, value: string) => string | null>
 > = {
@@ -165,10 +171,10 @@ const KEY_SPELLING: Partial<
       ? null
       : `${name} must be the URL-encoded spelling data.go.kr issues (the one with %2B and %3D in it): it goes into the query string as-is, and the decoded spelling reads as an unregistered key at the vendor`,
   // A bearer token: whitespace inside it is a paste that took a line break along.
-  perplexity: (name, value) =>
-    /\s/.test(value)
-      ? `${name} has whitespace inside it, which no key has: it was pasted with a line break or a space`
-      : null,
+  perplexity: withoutWhitespace,
+  // The hub's key rides on the query string through `URLSearchParams`, which encodes it, so there
+  // is no encoded-or-decoded question as there is for the portal's. A paste can still break a line.
+  "kma-apihub": withoutWhitespace,
 };
 
 /** Every deployment key this environment carries, refusing a spelling that cannot work. */

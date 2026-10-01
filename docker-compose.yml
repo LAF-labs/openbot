@@ -253,6 +253,11 @@ services:
       # without opening its browser; unset, there is no such tool. What leaves the VM is the query.
       # See docs/laf/connections.md.
       PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:-}
+      # The weather (기상청's API hub), LAF's one key for the fleet. The same arrangement again: set,
+      # every Bot on this VM has `get_weather` and answers "오늘 날씨" from 기상청's own forecast
+      # for the person's saved place, without a browser or a search; unset, there is no such tool.
+      # What leaves the VM is a five-kilometre grid cell and the hour. See docs/laf/connections.md.
+      KMA_APIHUB_AUTH_KEY: ${KMA_APIHUB_AUTH_KEY:-}
       # The deployment's own name, and the one thing the fleet identifies a customer by. The web
       # service has always had it; the API server needs it too now that it signs notices with it.
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}

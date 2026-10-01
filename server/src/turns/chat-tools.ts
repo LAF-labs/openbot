@@ -398,7 +398,8 @@ export function createChatTools(deps: ChatToolsDeps) {
     for (const tool of goals?.tools ?? []) names.add(tool.name);
     /*
      * A CONNECTED TOOL ON THE CORE LIST IS OFFERED AS THIS SERVER KNOWS IT, whatever the window
-     * declared — today that is the web search (`WEB_SEARCH_TOOL_NAME`). A core tool is in the head
+     * declared — today that is the web search and the weather (`WEB_SEARCH_TOOL_NAME`,
+     * `WEATHER_TOOL_NAME`). A core tool is in the head
      * of the prompt, so one that a window had not read yet on a conversation's first message (its
      * plugin list is a query that may still be loading) and declared on the second would start an
      * epoch twice, re-billing everything behind it both times. The server's own listing does not

@@ -93,6 +93,13 @@ export const CATALOGUE_COPY: Readonly<
     summary: "Searches the web for current facts without opening the browser.",
     can: "Looks things up on the web in a moment — news, prices, rules and deadlines — and says where each came from.",
   },
+  // And the weather: 기상청's own forecast, on the fleet's key for its API hub.
+  "kma-weather": {
+    mark: GENERIC_MARK,
+    summary:
+      "Current weather and the forecast for the next few days, from 기상청.",
+    can: "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.",
+  },
 };
 
 /**
@@ -104,6 +111,7 @@ export const NOT_A_SWITCH: readonly string[] = [
   "kakao-alimtalk",
   "public-data",
   "web-search",
+  "kma-weather",
 ];
 
 /**

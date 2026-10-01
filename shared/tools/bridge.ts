@@ -10,8 +10,8 @@
  * — 구조화된 질문이 산문으로 무너졌다(18/18 → 7/18). 그래서 여기서 갈리는 규칙은 하나다:
  *
  * **스키마에 실리는 것은 고정된 핵심 목록뿐이다** — 이 저장소의 카탈로그(`shared/tools`)에 있는
- * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `feed_post`, `now`, 웹 검색(키가 있는 배포에서,
- * `WEB_SEARCH_TOOL_NAME`), 그리고 다리 둘. 그 밖의 모든 것은 다리
+ * 컴퓨터 툴, 자기 툴, `skill_view`, `routine_note`, `feed_post`, `now`, 웹 검색과 날씨(키가 있는
+ * 배포에서, `WEB_SEARCH_TOOL_NAME`·`WEATHER_TOOL_NAME`), 그리고 다리 둘. 그 밖의 모든 것은 다리
  * 뒤에 선다: 연결된 서비스의 툴(`mcp__<서버>__<툴>`), 화면 카드(갤러리), 배포가 만든 컴포넌트.
  * 사람에게 손을 내미는 툴(`computer_request_help`, `computer_request_secret`)은 핵심 목록에 있으니
  * 절대 미뤄지지 않는다. `tests/tool-bridge.test.ts`가 그것을 이름 하나하나 확인한다.
@@ -80,6 +80,31 @@ export const DEFERRED_TOOL_PREFIX = "mcp__";
 export const WEB_SEARCH_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}web-search__search`;
 
 /**
+ * 날씨 툴의 이름 — 서버 카탈로그의 `kma-weather` 엔트리, `get_weather`
+ * (`server/src/plugins/kma-weather-rest.ts`). 웹 검색처럼 연결된 서비스의 이름 모양이지만 **핵심
+ * 목록에 있다.**
+ *
+ * 사다리의 마지막 칸을 한 번 더 고른 까닭, 재서 적는다(2026-10-02, muse-spark, 평가 팩의 날씨
+ * 시나리오 넷을 세 번씩, 프롬프트의 위치 줄은 같은 것 — `evals/weather.ts`):
+ *
+ *   - 다리 뒤: 저장된 곳의 날씨 16.6초·19.7K 토큰, 다른 곳의 날씨 16.4초·20.3K. 열두 번 중 아홉 번이
+ *     날씨를 불렀고 아홉 번 다 `tool_search` 한 바퀴가 먼저 돌았다.
+ *   - 스키마에 실음: 12.5초·13.6K, 12.6초·14.0K. 아홉 번 중 여덟 번이 곧장 불렀다.
+ *
+ * 한 바퀴가 4초와 토큰 삼분의 일이다. 날씨는 사람이 가장 자주 묻는 것 가운데 하나이고 아침 브리핑
+ * 루틴이 매일 부른다. 그 값을 매번 치르는 것보다 스키마 942바이트를 매 요청에 싣는 쪽이 싸다 —
+ * 캐시에서 읽히는 토큰이다(`prompt_cache_key`, `agent-bot/src/turn.ts`).
+ *
+ * 그리고 다리 뒤에 두면 웹 검색에 진다. 위치 줄이 날씨를 네이버 검색의 예로 들던 동안, 날씨 툴을
+ * 다리 뒤에 쥔 봇은 세 번 중 세 번 스키마에 있는 웹 검색을 부르고 네이버를 열었다(19.9초, 다른 곳을
+ * 물으면 43.5초). 위치 줄을 고친 뒤에는 다리 뒤에서도 날씨 툴로 갔다 — 그 줄이 먼저다
+ * (`shared/prompt/person.ko.ts`).
+ *
+ * 키가 없는 배포에는 이 툴이 없고, 그러면 이 이름은 아무 목록에도 실리지 않는다 — 웹 검색과 같다.
+ */
+export const WEATHER_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}kma-weather__get_weather`;
+
+/**
  * 스키마에 늘 실리는 이름들 — 이 저장소의 카탈로그가 정한다.
  *
  * 표면이나 루틴이 무엇을 등록했든 이 목록에 없는 이름은 다리 뒤에 선다. 목록이 코드에 있으니 목록이
@@ -94,6 +119,7 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   FEED_POST.name,
   NOW_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
+  WEATHER_TOOL_NAME,
 ]);
 
 export function isDeferredToolName(name: string): boolean {
@@ -166,6 +192,7 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     "kakao-alimtalk": "카카오 알림톡",
     "public-data": "나라장터·기업마당",
     "web-search": "웹 검색",
+    "kma-weather": "날씨",
     // 연결된 서비스가 아니라 이 배포의 서버가 실행하는 목표 툴(`shared/tools/goals.ts`).
     goals: "목표",
   },

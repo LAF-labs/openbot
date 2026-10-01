@@ -38,6 +38,36 @@ describe("the place line", () => {
     expect(line).toContain("네 컴퓨터가 있는 곳이지 이 사람의 위치가 아니다");
   });
 
+  test("the weather goes to 기상청's tool first, wherever the place came from; the search is for the rest", () => {
+    /*
+     * The line used to give the weather as its example of a search, and a Bot holding
+     * `get_weather` followed the example: three runs in three it searched and opened 네이버
+     * (2026-10-02, `evals/scenarios.ts` `weather-from-the-agency`). "있으면", because the same line
+     * is drawn on a deployment without the hub's key, where there is no such tool to call.
+     */
+    const byTool =
+      "날씨는 get_weather 도구가 있으면 검색하거나 브라우저로 찾지 말고 그것으로 답한다";
+    const named = placeText({ place: "서울 강남구" }, "chat");
+    expect(named).toContain(`${byTool}(인자 없이 부르면 이 곳 기준이다)`);
+    expect(named.indexOf(byTool)).toBeLessThan(named.indexOf("네이버 검색"));
+    expect(named).toContain("그 도구가 없을 때의 날씨와");
+
+    const located = placeText(
+      { coordinates: { latitude: 37.5, longitude: 127.03 } },
+      "chat",
+    );
+    expect(located).toContain(`${byTool}(인자 없이 부르면 이 부근 기준이다)`);
+
+    // Nobody's place known: ask first, as before — and then it is the tool's, not a search's.
+    const unknown = placeText(undefined, "chat");
+    expect(unknown).toContain(byTool);
+    expect(unknown.indexOf("한 번 여쭤보고")).toBeLessThan(
+      unknown.indexOf(byTool),
+    );
+    // A routine with no place has nobody to ask and nothing to look up: the line is unchanged.
+    expect(placeText({}, "routine")).not.toContain("get_weather");
+  });
+
   test("with only the device's coordinates, says them coarse and asks for a name once", () => {
     const line = placeText(
       { coordinates: { latitude: 37.5, longitude: 127.03 } },

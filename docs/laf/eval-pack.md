@@ -1098,6 +1098,102 @@ search result is exactly that until the page behind it is read.
 counts any address in the run's tool results as seen), the daily cap being met, and anything on a
 deployed VM — the key is not planted there until the next release.
 
+**In the pack.** `quick-fact-from-search` plants a price in the search's result and checks that the
+search was called, called first, and that the planted figure is in the answer: 3/3. It read 0/3
+first, on a fourth check that the answer spelled out an address — the tool's description asked for
+that for a day, and the model wrote none three times in three while getting the figure right. The
+surface lists an answer's sources from the result itself, so the sentence and the check are gone.
+
+**Did a tool in the schema move anything else?** The day the search went in,
+`send-mail-through-the-bridge` read 2/3 against a recorded 3/3. No run of it had called the search:
+on the runs that were shown, the miss was the Bot finding Gmail's `send_message`, listing its own
+folder for a 정산서, and asking what the statement says instead of sending. So it was run until the
+question had an answer (`EVAL_WITHOUT_FAMILIES=web-search` leaves the tool out; prompt hash
+unchanged from the 2026-09-28 verdict throughout):
+
+| Arm | Runs | Sent the mail |
+|---|---|---|
+| before the batch (`f4daddbe`, no search tool) | 12 | 10 |
+| this tree, the search left out | 6, 12, 12, 12 | 6, 8, 9, 9 — one of the 42 lost to a provider 429, so 32 of 41 |
+| this tree, the search in the schema | 3, 3, 6, 12, 12, 12 | 2, 2, 4, 8, 8, 8 — 32 of 48 |
+
+Two in three with the search, about four in five without. Fisher's exact test puts that at
+p = 0.25 (0.18 against the two arms without it taken together): 101 runs could not tell it from
+chance, and could not rule it out either. What they did settle is that the 3/3 on record was three
+runs of a scenario that passes four times in five at best — the pack's strict verdict fails it more
+often than not on this model, with or without the search. The sentence it asks with leaves open
+what the mail should say, and asking before a mail goes out to somebody is not the failure this
+scenario was written for (a hidden tool collapsing into prose). Left as it is, and noted: a
+scenario that names the mail's body would measure the bridge alone.
+
+## The weather — 기상청's tool, in the schema (2026-10-02)
+
+Asked for the weather, a Bot searched and opened 네이버: twenty seconds, a third party's page, and
+once the VM's own town reported as the person's (2026-09-24). `mcp__kma-weather__get_weather`
+(`server/src/plugins/kma-weather-rest.ts`) is 기상청's API hub on the fleet's key: 초단기실황,
+초단기예보 and 단기예보 fetched together and cut to about a kilobyte — now, six hours, a row per day
+for three or four days — for the person's saved place or one named from 기상청's own table of 3,837
+places.
+
+**The tool alone** (the fleet's key, through the transport): 서울 강남구 from the saved place in
+1.2 s, 944 characters; 부산 해운대구 by name in 1.1 s, 921. The raw answers behind one of those are
+about 140 KB.
+
+**In the pack**, four scenarios behind the realistic toolset (`evals/weather.ts`: the transport's
+own answer shape with figures nobody would guess, dated by the eval's clock; a browser opened
+anyway gets 네이버's page for the VM's address). Three arms, three runs each, Muse Spark 1.3
+Contributor:
+
+| Arm | Saved place | Another place, by name | Nobody's place known | The place just said |
+|---|---|---|---|---|
+| behind the bridge, the place line as it was | 0/3 · 19.9 s · 19.4K tok | 0/3 · 43.5 s · 44.4K | 3/3 · 7.6 s | 1/3 · 24.2 s |
+| behind the bridge, the place line rewritten | 3/3 · 16.6 s · 19.7K | 3/3 · 16.4 s · 20.3K | 3/3 · 5.5 s | 3/3 · 15.6 s · 22.4K |
+| in the schema, the place line rewritten | 3/3 · 12.5 s · 13.6K | 3/3 · 12.6 s · 14.0K | 3/3 · 6.9 s | 3/3 · 13.6 s · 20.7K |
+
+- **The place line came first.** It gave the weather as its example of a search ("네이버 검색
+  '서울 강남구 날씨'"), and a Bot holding the tool followed the example: every run of the first two
+  scenarios called the web search and then opened 네이버, though the tool's own description says not
+  to. One sentence in a tool's description does not beat a concrete example in the prompt. The line
+  now says the weather goes to `get_weather` "if there is one", and keeps the search for a
+  deployment without the hub's key and for everything that is not the weather
+  (`shared/prompt/person.ko.ts`). **This changes the prompt hash, so the 2026-09-28 verdict no
+  longer describes this tree** — the pack is rerun below.
+- **Then the schema.** Behind the bridge every weather call paid a `tool_search` round first: four
+  seconds and a third of the tokens. In the schema eight of nine calls went straight to it. The
+  tool is 942 bytes of schema; with the bridge holding everything else back, a Bot with everything
+  connected is handed 16,438 bytes of 29,256. It is on the core list with that written beside its
+  name (`shared/tools/bridge.ts`, `WEATHER_TOOL_NAME`).
+- The second row's first cell was scored 1/3 as first written: the check wanted "17.3" and two
+  answers said "지금 17도 정도". That is how a person is told the temperature; the check now takes
+  the observation rounded, and the fixture's hourly figures stay clear of it.
+
+**The neighbours**, three runs each, all 3/3: both morning briefings call `get_weather({})` right
+after reading the skill (`tenant/laf/skills/morning-briefing.md` now says so) and carry 기상청's
+figure and the place; the five older place scenarios, which hand the Bot a browser and no weather
+tool — a deployment without the key — still put the person's place in the search. Each of those
+runs spends one `tool_search` for `get_weather` first and finds nothing: what the conditional
+wording costs where there is no tool.
+
+**On the real stack** (local, one Bot, the person's saved place 강원 춘천시 효자동, the browser pane
+hidden so the times are from the DOM and `agent-bot`'s own lines):
+
+| Question | What it did | Step line | Answer began | Done |
+|---|---|---|---|---|
+| 오늘 날씨 어때? | `get_weather`, no argument → "춘천 효자동 기준 … 지금 7.8도, 습도 87%" | 5.9 s | 9.6 s | 11.2 s |
+| 내일 부산 해운대는 어때? 최고 몇 도야? | `get_weather` with the place → "부산 해운대구 기준 내일(10/3 토)은 최고 23도, 최저 17도" | — | — | about 13 s |
+
+The server had made the `kma-weather` row, its tool and the Bot's grant at boot with nothing
+pressed, and the trail holds `mcp.call_succeeded` for the call with no place and no argument in it.
+The second answer's figures are the ones the transport had returned for 해운대 minutes before. Where
+the time goes: the Bot's model took 5.1 s and then 8.9 s to the first chunk of the round that
+decides to call (the second with 29,425 of its 29,648 prompt tokens read from cache), 기상청 about
+1.2 s, and the round that writes the answer 2.0–2.2 s to its first chunk. The tool is not the slow
+part.
+
+**Not measured:** a routine's run on the real stack (the pack's two briefings only); a person with
+device coordinates and no saved words; the hub key's daily quota against a fleet's use; anything on
+a deployed VM — the key is planted at the next release.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

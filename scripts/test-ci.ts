@@ -718,15 +718,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * answer's sources) and eleven to `agent-computer` (a hover that is not a drag and what is held
  * being released, against Chromium itself). `root` did not grow.
  *
+ * RAISED 2026-10-02 with the weather, to what the gate measured: 134 to `server` (기상청's three
+ * operations summarised from its own bodies, each kind of no, the key in nothing that comes back;
+ * the grid and the table of places, the names people say for them; the entry the fleet's key opens
+ * and the one reader that makes "오늘 날씨" the person's own place's; the owner's sentence redacted
+ * before the high-risk judge reads it) and one to `root` (the place line sending the weather to the
+ * tool first). `app` and `agent-computer` did not grow.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3187, roots: ["server"] },
+  { name: "server", floor: 3321, roots: ["server"] },
   { name: "app", floor: 1585, roots: ["app"] },
   { name: "agent-computer", floor: 351, roots: ["agent-computer"] },
-  { name: "root", floor: 575, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 576, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

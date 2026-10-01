@@ -26,6 +26,10 @@ import { listTools as businessTools } from "../server/src/plugins/google-busines
 import { listTools as calendarTools } from "../server/src/plugins/google-calendar-rest";
 import { listTools as driveTools } from "../server/src/plugins/google-drive-rest";
 import { listTools as sheetsTools } from "../server/src/plugins/google-sheets-rest";
+import {
+  KMA_WEATHER_KEY,
+  KMA_WEATHER_TOOLS,
+} from "../server/src/plugins/kma-weather-rest";
 import type { McpTool } from "../server/src/plugins/mcp";
 import {
   PUBLIC_DATA_KEY,
@@ -67,6 +71,8 @@ export async function connectedServiceFamilies(): Promise<ToolFamily[]> {
     // And the web search, on the fleet's key for it: the one connected tool that is in the schema
     // rather than behind the bridge (`shared/tools/bridge.ts`, `WEB_SEARCH_TOOL_NAME`).
     [WEB_SEARCH_KEY, WEB_SEARCH_TOOLS],
+    // And the weather, on the fleet's key for 기상청's API hub.
+    [KMA_WEATHER_KEY, KMA_WEATHER_TOOLS],
   ];
   /*
    * `EVAL_WITHOUT_FAMILIES=web-search` leaves a service out, for the one question a new tool in

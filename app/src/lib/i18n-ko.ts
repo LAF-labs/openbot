@@ -129,6 +129,7 @@ export const ko: Record<string, string> = {
   "Searching support programmes": "지원사업 공고 찾기",
   "Searching public tenders": "입찰공고 찾기",
   "Searching the web": "웹 검색하기",
+  "Checking the weather": "날씨 확인하기",
   "Searching mail": "메일 찾기",
   "Reading a mail": "메일 읽기",
   "Writing a draft": "메일 초안 쓰기",
@@ -433,6 +434,12 @@ export const ko: Record<string, string> = {
     "브라우저를 열지 않고 웹에서 지금의 사실을 찾아요.",
   "Looks things up on the web in a moment — news, prices, rules and deadlines — and says where each came from.":
     "뉴스·가격·제도·기한 같은 것을 웹에서 바로 찾아보고, 어디서 봤는지 함께 알려 줘요.",
+  // 날씨 — 같은 종류의 엔트리. 서버 카탈로그의 이름과 한 줄 설명.
+  날씨: "날씨",
+  "Current weather and the forecast for the next few days, from 기상청.":
+    "기상청의 지금 날씨와 며칠 뒤까지의 예보.",
+  "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.":
+    "지금 계신 곳이나 말씀하신 곳의 날씨를 알려 줘요 — 지금, 몇 시간 뒤, 며칠 뒤까지.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공돼요. 연결할 것이 없어요.",
   "Connected to {name}.": "{name}에 연결했어요.",

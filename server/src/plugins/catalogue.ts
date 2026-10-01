@@ -86,8 +86,12 @@ export type PartnerFamily = "kakao-alimtalk";
  * `perplexity` is the second (2026-10-02): the web, searched on the fleet's key. Not public data in
  * the portal's sense, but the same arrangement exactly — nothing is the person's, nobody consents,
  * the key counts calls — so it is the same family of entry rather than a new kind of thing.
+ *
+ * `kma-apihub` is the third, the same day: 기상청's API hub. Public data again, on a key of the
+ * hub's own (`authKey`) — the portal lists the same forecast service under data.go.kr's key, and
+ * the hub is the one this fleet applied to.
  */
-export type DeploymentKeyFamily = "data-go-kr" | "perplexity";
+export type DeploymentKeyFamily = "data-go-kr" | "perplexity" | "kma-apihub";
 
 /**
  * How a server is authenticated, and whose credential does it.
@@ -870,6 +874,29 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     auth: { kind: "deployment-key", key: "perplexity" },
     writeTools: Object.freeze([]),
     docsUrl: "https://docs.perplexity.ai/api-reference/search-post",
+  },
+  /*
+   * THE WEATHER, from 기상청's own API hub on the fleet's key: the third deployment-key entry.
+   *
+   * Asked for the weather, a Bot opened its browser and read 네이버 — twenty seconds, and a page
+   * drawn for the VM's address rather than the person's (2026-09-24: 제주시, reported as "사장님
+   * 위치"). The owner's word (2026-10-02): do not browse for it, take it the most direct way there
+   * is. That is the agency that makes the forecast, answering for a five-kilometre cell.
+   *
+   * It only reads. What it sends out is that cell and the hour — never who asked
+   * (`kma-weather-rest.ts`).
+   */
+  {
+    key: "kma-weather",
+    title: "날씨",
+    vendor: "기상청",
+    summary:
+      "Current weather and the forecast for the next few days, from 기상청.",
+    host: "https://apihub.kma.go.kr",
+    path: "/api/typ02/openApi/VilageFcstInfoService_2.0",
+    auth: { kind: "deployment-key", key: "kma-apihub" },
+    writeTools: Object.freeze([]),
+    docsUrl: "https://apihub.kma.go.kr/",
   },
 ]);
 

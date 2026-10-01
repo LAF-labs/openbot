@@ -53,6 +53,7 @@ export const SERVICE_STEP_LABELS: Readonly<Record<string, string>> = {
   "public-data/search_support_programs": "Searching support programmes",
   "public-data/search_bids": "Searching public tenders",
   "web-search/search": "Searching the web",
+  "kma-weather/get_weather": "Checking the weather",
   "gmail/search_messages": "Searching mail",
   "gmail/read_message": "Reading a mail",
   "gmail/create_draft": "Writing a draft",

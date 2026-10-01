@@ -50,6 +50,7 @@
  * and not who asked.
  */
 import { log } from "../log";
+import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { type KmaCell, kmaCellOf } from "./kma-grid";
 import { KMA_PLACES, type KmaPlaces } from "./kma-places";
 import { type McpCallResult, trimDetail, withoutCredential } from "./mcp";
@@ -1024,3 +1025,29 @@ export function createKmaWeatherTransport(input: {
     },
   };
 }
+
+/**
+ * This entry, as the deployment-key runtime takes it (`deployment-key-runtime.ts`).
+ *
+ * The person's place is read through the one reader the runtime hands over, once per call that
+ * names no place: their device's coordinates first, then the words they saved. Both come from one
+ * row, so a place cleared between the two reads is two honest answers and not a torn one.
+ */
+export const KMA_WEATHER_SERVICE: DeploymentKeyService = {
+  key: KMA_WEATHER_KEY,
+  family: "kma-apihub",
+  tools: KMA_WEATHER_TOOLS,
+  transport: ({ key, fetchImpl, now, whereaboutsOf }) =>
+    createKmaWeatherTransport({
+      authKey: key,
+      ...(fetchImpl ? { fetchImpl } : {}),
+      ...(now ? { now } : {}),
+      ...(whereaboutsOf
+        ? {
+            coordinatesOf: async (actorId) =>
+              (await whereaboutsOf(actorId)).coordinates,
+            placeOf: async (actorId) => (await whereaboutsOf(actorId)).place,
+          }
+        : {}),
+    }),
+};

@@ -17,6 +17,8 @@ import {
   isBridgeToolName,
   isDeferredToolName,
   searchTools,
+  WEATHER_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
 } from "../../shared/tools/bridge";
 import { NOW_TOOL } from "../../shared/tools/now";
 import { ALIMTALK_TOOLS } from "../src/plugins/alimtalk/tools";
@@ -49,8 +51,20 @@ describe("the name the server mints is the deferral flag", () => {
     const connected = await connectedServiceTools();
     // Sheets 4, Gmail 4, Calendar 2, Business Profile 3, Cafe24 5, Drive 4, alimtalk 2.
     expect(connected.length).toBeGreaterThanOrEqual(20);
+    /*
+     * Two of them are in the schema by name, each with its measured reason beside the name
+     * (`shared/tools/bridge.ts`): the web search and the weather, the two things a person asks for
+     * most that a tool answers in one call. Named here one by one, so a third does not join them
+     * by a prefix nobody decided on.
+     */
+    const inTheSchema = new Set([WEB_SEARCH_TOOL_NAME, WEATHER_TOOL_NAME]);
+    expect(
+      connected
+        .filter((tool) => exposureOf(tool.name) === "core")
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual([...inTheSchema].sort());
     for (const tool of connected) {
-      expect(exposureOf(tool.name)).toBe("deferred");
       expect(tool.description.length).toBeGreaterThan(10);
     }
   });

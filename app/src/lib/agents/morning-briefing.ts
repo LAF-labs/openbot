@@ -85,7 +85,8 @@ export const BRIEFING_MAX_PLACES = 3;
 /**
  * What the briefing will hold, in the order it is written.
  *
- * Weather always: it needs nothing but the Bot's own browser. Then today's calendar and the mail
+ * Weather always: it needs nothing connected — 기상청's tool where the deployment holds the hub's
+ * key, the Bot's own browser where it does not. Then today's calendar and the mail
  * nobody answered, where those accounts are connected. Then the connected sites whose login a
  * routine can use — `certificate` sites (홈택스) are signed into by a person with a certificate and do
  * not stay signed in until the morning — and the order and review accounts, in the catalogue's

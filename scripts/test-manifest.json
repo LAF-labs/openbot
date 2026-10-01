@@ -347,6 +347,7 @@
   "server/tests/jsonb-encoding.integration.test.ts",
   "server/tests/kma-grid.test.ts",
   "server/tests/kma-places.test.ts",
+  "server/tests/kma-weather-entry.test.ts",
   "server/tests/kma-weather-rest.test.ts",
   "server/tests/laf-contract.test.ts",
   "server/tests/laf-oidc.integration.test.ts",

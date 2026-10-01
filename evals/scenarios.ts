@@ -25,7 +25,6 @@
 
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
-import { WEB_SEARCH_TOOL_NAME } from "../shared/tools/bridge";
 import { toolNameFor } from "../server/src/plugins/store";
 import { carriedInstruction } from "../server/src/routines/run";
 import {
@@ -39,6 +38,10 @@ import type { PromptPerson } from "../shared/prompt/person.ko";
 import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
+import {
+  WEATHER_TOOL_NAME,
+  WEB_SEARCH_TOOL_NAME,
+} from "../shared/tools/bridge";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
 import { FEED_POST } from "../shared/tools/feed-post";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
@@ -94,6 +97,15 @@ import {
   SUPPORT_SEARCH,
   skillViewAnswer,
 } from "./support-programs";
+import {
+  GANGNAM,
+  HAEUNDAE,
+  MAPO,
+  saysDegrees,
+  saysNow,
+  weatherBackend,
+  weatherPlacesAsked,
+} from "./weather";
 import {
   CLICK,
   LIST_FILES,
@@ -758,6 +770,7 @@ export const SCENARIOS: Scenario[] = [
   },
   supportProgramsFromThePortal(),
   quickFactFromSearch(),
+  ...weatherFromTheAgency(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
   feedPostsOnlyFromTools(),
@@ -1551,6 +1564,169 @@ function supportProgramsFromThePortal(): Scenario {
 }
 
 /**
+ * THE WEATHER COMES FROM 기상청'S TOOL, NOT FROM A PAGE (2026-10-02).
+ *
+ * `get_weather` is in front of every Bot on a deployment that holds the hub's key
+ * (`server/src/plugins/kma-weather-rest.ts`): one call, about a second, the agency's own figures for
+ * the person's saved place. The owner's word was that a Bot asked for the weather should not browse
+ * at all. So a candidate is held to four things a Bot with a browser AND a search beside the tool
+ * can get wrong: reaching for either of those first; answering for a place the person did not mean;
+ * asking nothing when nobody's place is known; and losing the place the person then says.
+ *
+ * Behind the realistic toolset, like the search's scenario: whether the tool sits in the schema or
+ * behind the bridge is the product's decision (`shared/tools/bridge.ts`), and these pass either
+ * way — a `tool_search` on the way to it is not counted as reaching for something else.
+ *
+ * A browser that is opened anyway gets 네이버's page for the VM's own address (`weatherSite`), so
+ * the old failure — 제주 reported as the person's weather — is what browsing here would say.
+ */
+function weatherFromTheAgency(): Scenario[] {
+  const browsed = (turn: Turn) =>
+    called(turn, NAVIGATE.name) || called(turn, WEB_SEARCH_TOOL_NAME);
+  /** What the turn did, leaving out the clock and the bridge's own lookup. */
+  const acted = (turn: Turn) =>
+    turn.calls.filter(
+      (call) => call.name !== "now" && call.name !== "tool_search",
+    );
+  const backed = (saved?: typeof GANGNAM) => {
+    const weather = weatherBackend({
+      at: EVAL_NOW,
+      ...(saved ? { saved } : {}),
+    });
+    const site = weatherSite();
+    return (call: ObservedCall) => weather(call) ?? site(call);
+  };
+  const asksWhere = (text: string) =>
+    /(어디|어느|위치|지역|동네)/.test(text) &&
+    /[?？]|알려\s?주|말씀해\s?주/.test(text);
+
+  return [
+    {
+      id: "weather-from-the-agency",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR", place: "서울 강남구" },
+      messages: [user("오늘 날씨 알려줘")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(GANGNAM),
+      check: (turn) =>
+        verdict([
+          [
+            "날씨 도구(get_weather)를 부르지 않음",
+            called(turn, WEATHER_TOOL_NAME),
+          ],
+          [
+            "날씨 도구보다 다른 것(검색·브라우저)을 먼저 집음",
+            acted(turn)[0]?.name === WEATHER_TOOL_NAME,
+          ],
+          ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            `기상청이 준 지금 기온(${GANGNAM.now}도)이 답에 없음`,
+            saysNow(turn.text, GANGNAM),
+          ],
+          [
+            "답에 어느 곳 기준인지(강남) 말하지 않음",
+            turn.text.includes("강남"),
+          ],
+          ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+          ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+        ]),
+    },
+    {
+      id: "weather-somewhere-else-by-name",
+      dimension: "whereabouts",
+      // The saved place is 강남; the question is about somewhere else, and must not be answered for 강남.
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR", place: "서울 강남구" },
+      messages: [user("내일 부산 해운대 날씨 어때? 최고 몇 도까지 올라가?")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(GANGNAM),
+      check: (turn) =>
+        verdict([
+          [
+            "날씨 도구에 물은 곳(해운대)을 넣지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("해운대"),
+            ),
+          ],
+          ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            `해운대의 내일 최고(${HAEUNDAE.tomorrowMax}도)가 답에 없음`,
+            saysDegrees(turn.text, HAEUNDAE.tomorrowMax),
+          ],
+          [
+            `저장된 곳(강남)의 내일 최고(${GANGNAM.tomorrowMax}도)로 답함`,
+            !saysDegrees(turn.text, GANGNAM.tomorrowMax),
+          ],
+        ]),
+    },
+    {
+      id: "weather-with-no-place-asks-once",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: [user("오늘 날씨 알려줘")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          ["위치를 묻지 않음", asksWhere(turn.text)],
+          ["위치도 모르는 채 검색하거나 브라우저로 찾음", !browsed(turn)],
+          ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+          ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
+          [
+            "짐작한 곳을 날씨 도구에 넣음",
+            weatherPlacesAsked(turn.calls).every((place) => place === ""),
+          ],
+        ]),
+    },
+    {
+      id: "weather-for-the-place-just-said",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: [
+        user("오늘 날씨 알려줘"),
+        {
+          id: "a_where_weather",
+          role: "assistant",
+          content:
+            "날씨를 확인할 지역을 알려 주시겠어요? 주로 지내시는 시·구 정도면 돼요.",
+        },
+        user("서울 마포구야"),
+      ],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) => {
+        const saved = turn.calls
+          .filter((call) => call.name === "remember")
+          .map((call) => String(call.arguments?.place ?? ""));
+        return verdict([
+          [
+            "들은 위치를 remember의 place로 저장하지 않음",
+            saved.some((place) => place.includes("마포")),
+          ],
+          [
+            "날씨 도구(get_weather)를 부르지 않음",
+            called(turn, WEATHER_TOOL_NAME),
+          ],
+          ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            `기상청이 준 마포의 지금 기온(${MAPO.now}도)이 답에 없음`,
+            saysNow(turn.text, MAPO),
+          ],
+          [
+            "답에 어느 곳 기준인지(마포) 말하지 않음",
+            turn.text.includes("마포"),
+          ],
+          ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+        ]);
+      },
+    },
+  ];
+}
+
+/**
  * A QUICK FACT GOES TO THE SEARCH, NOT THE BROWSER (2026-10-02).
  *
  * The search tool is in the schema so that a "찾아봐 줘" is one request and an answer, not minutes
@@ -1883,10 +2059,24 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
   );
   const startedAt = new Date(scheduledFor.getTime() + 40_000);
   const backend = briefingBackend(monday, () => startedAt);
-  const weather = weatherSite();
+  /*
+   * The weather is 기상청's tool, as on every deployment that holds the hub's key — and a browser
+   * opened for it anyway gets 네이버's page (`weatherSite`), whose 20.8° is not the figure the
+   * judge is looking for.
+   */
+  const forecast = weatherBackend({ at: startedAt, saved: MAPO });
+  const site = weatherSite();
+  const weather = (call: ObservedCall) => {
+    const answer = forecast(call);
+    // As a routine's plugin call comes back (`runner/unattended.ts`): the server's text, wrapped.
+    return answer === undefined
+      ? site(call)
+      : JSON.stringify({ ok: true, text: answer });
+  };
   const plugins = REALISTIC_TOOLSET.filter(
     (tool) =>
       tool.name.startsWith(toolNameFor(`${PUBLIC_DATA_KEY}/`)) ||
+      tool.name === WEATHER_TOOL_NAME ||
       (day === "tuesday" && tool.name.startsWith(toolNameFor("gmail/"))),
   );
   const instruction =
@@ -1932,13 +2122,13 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
               returned: backend.returned,
               notepad: backend.notepad(),
               week: backend.week,
-              weather: "20.8",
+              weather: String(MAPO.now),
               place: "마포",
             })
           : judgeTuesdayBriefing({
               text,
               calls: turn.calls,
-              weather: "20.8",
+              weather: String(MAPO.now),
               place: "마포",
             }),
       );

@@ -93,6 +93,12 @@ describe("the step labels", () => {
     for (const spec of WEB_SEARCH_TOOLS) {
       shipped.push({ server: "web-search", tool: spec.name });
     }
+    const { KMA_WEATHER_TOOLS } = await import(
+      "../../server/src/plugins/kma-weather-rest"
+    );
+    for (const spec of KMA_WEATHER_TOOLS) {
+      shipped.push({ server: "kma-weather", tool: spec.name });
+    }
     for (const spec of ALIMTALK_TOOLS) {
       shipped.push({ server: "kakao-alimtalk", tool: spec.name });
     }

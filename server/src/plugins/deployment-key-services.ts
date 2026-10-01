@@ -7,8 +7,9 @@
  * environment name in `shared-clients.ts`, the entry in the catalogue, and a line here.
  */
 import type { DeploymentKeyService } from "./deployment-key-runtime";
+import { KMA_WEATHER_SERVICE } from "./kma-weather-rest";
 import { PUBLIC_DATA_SERVICE } from "./public-data-rest";
 import { WEB_SEARCH_SERVICE } from "./web-search-rest";
 
 export const DEPLOYMENT_KEY_SERVICES: readonly DeploymentKeyService[] =
-  Object.freeze([PUBLIC_DATA_SERVICE, WEB_SEARCH_SERVICE]);
+  Object.freeze([PUBLIC_DATA_SERVICE, WEB_SEARCH_SERVICE, KMA_WEATHER_SERVICE]);

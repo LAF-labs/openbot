@@ -61,6 +61,8 @@ export function serviceLabel(server: string): string | undefined {
       return t("Public tenders and support programmes");
     case "web-search":
       return t("Web search");
+    case "kma-weather":
+      return t("Korea Meteorological Administration");
     // Not a service at all: this deployment's own goal tools, behind the bridge by their name.
     case "goals":
       return t("Goals");

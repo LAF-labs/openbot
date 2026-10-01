@@ -117,6 +117,7 @@ import {
 } from "./plugins/overview-routes";
 import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import { DEPLOYMENT_KEY_SERVICES } from "./plugins/deployment-key-services";
+import { KMA_WEATHER_KEY } from "./plugins/kma-weather-rest";
 import { PUBLIC_DATA_KEY } from "./plugins/public-data-rest";
 import { WEB_SEARCH_KEY } from "./plugins/web-search-rest";
 import { lookupOver } from "./plugins/shared-clients";
@@ -386,6 +387,8 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
   keys: config.connectors.keys,
   services: DEPLOYMENT_KEY_SERVICES,
   listBots: () => allLiveBots(database),
+  // The weather asked about with no place named is the person's own place's (`kma-weather-rest.ts`).
+  whereaboutsOf: whereaboutsStore.read,
 });
 /**
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
@@ -403,7 +406,10 @@ const builtInSkills = createBuiltInSkills({
 sayConnectors({
   alimtalk: config.partners.alimtalk !== null,
   dataGoKr: deploymentKeyRuntime.has(PUBLIC_DATA_KEY),
-  deploymentKeys: { webSearch: deploymentKeyRuntime.has(WEB_SEARCH_KEY) },
+  deploymentKeys: {
+    webSearch: deploymentKeyRuntime.has(WEB_SEARCH_KEY),
+    weather: deploymentKeyRuntime.has(KMA_WEATHER_KEY),
+  },
 });
 /**
  * The sign-in list this process booted with, and who it lets act (auth/admission.ts).

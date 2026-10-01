@@ -10,6 +10,7 @@
  * vendor would be the copies drifting on the order of a revoke, which is the one thing here that
  * must not.
  */
+import type { Whereabouts } from "../../../shared/whereabouts";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import type { DeploymentKeyFamily } from "./catalogue";
@@ -17,6 +18,15 @@ import type { PartnerToolSpec } from "./partner-tools";
 import { type DeploymentKeyLookup, keyLookupOver } from "./shared-clients";
 import type { PluginStore } from "./store";
 import type { VendorTransport } from "./transport";
+
+/**
+ * Where the person a call is for has said they are — the one fact about a person any of these
+ * tools reads, and only the weather does: "오늘 날씨" names no place, and the answer is for theirs.
+ * A reader and not the store: a transport that could write a place would be a tool that could.
+ */
+export type WhereaboutsReader = (
+  userId: string,
+) => Promise<Pick<Whereabouts, "place" | "coordinates">>;
 
 /** One entry of this kind: what it is called, whose key it spends, what it offers and how. */
 export type DeploymentKeyService = {
@@ -29,6 +39,7 @@ export type DeploymentKeyService = {
     key: string;
     fetchImpl?: typeof fetch;
     now?: () => Date;
+    whereaboutsOf?: WhereaboutsReader;
   }) => VendorTransport;
 };
 
@@ -74,6 +85,8 @@ export function createDeploymentKeyRuntime(input: {
   listBots: () => Promise<string[]>;
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  /** Absent in a test that asks about no person; then a call naming no place is told nobody's is known. */
+  whereaboutsOf?: WhereaboutsReader;
 }): DeploymentKeyRuntime {
   const held = input.services.filter((service) => input.keys[service.family]);
   const transports: Partial<Record<DeploymentKeyFamily, VendorTransport>> = {};
@@ -82,6 +95,7 @@ export function createDeploymentKeyRuntime(input: {
       key: input.keys[service.family] as string,
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       ...(input.now ? { now: input.now } : {}),
+      ...(input.whereaboutsOf ? { whereaboutsOf: input.whereaboutsOf } : {}),
     });
   }
 

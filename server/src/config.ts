@@ -129,6 +129,7 @@ export const ENVIRONMENT = {
   LAF_PRODUCT_DOMAIN: "compose",
   DATA_GO_KR_SERVICE_KEY: "compose",
   PERPLEXITY_API_KEY: "compose",
+  KMA_APIHUB_AUTH_KEY: "compose",
   LAF_ALIMTALK_API_KEY: "compose",
   LAF_ALIMTALK_BASE_URL: "compose",
   LAF_ALIMTALK_FROM: "compose",

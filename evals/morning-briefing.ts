@@ -313,7 +313,7 @@ function shape(input: {
       count <= MAX_BRIEFING_LINES,
     ],
     [
-      `날씨를 페이지 그대로(${input.weather}) 옮기지 않음`,
+      `날씨를 기상청이 준 그대로(${input.weather}) 옮기지 않음`,
       input.text.includes(input.weather),
     ],
     [
