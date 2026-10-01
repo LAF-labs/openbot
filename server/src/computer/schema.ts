@@ -282,6 +282,13 @@ export type ListFilesResult = {
 };
 
 /**
+ * One file by its path: that it is there, a file, and how big — and nothing it holds. What a file
+ * card asks before it draws a button, and what the server asks before it tells a Bot its card is on
+ * screen. Not read off a listing, which is bounded and stops before it has seen everything.
+ */
+export type FileFacts = { path: string; kind: "file"; bytes: number };
+
+/**
  * A path, and optionally a part of the file in characters (`offset` from 0, `limit` of them) — the
  * only way past a result cut at 20,000 characters and filed whole (`shared/spillover.ts`).
  */

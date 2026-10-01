@@ -3,6 +3,7 @@ import {
   geolocationHeaderOf,
   TIME_ZONE_HEADER,
 } from "../../../shared/whereabouts";
+import { HANDOFF_MAX_BYTES } from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
 import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
@@ -11,6 +12,7 @@ import type {
   ComputerProfile,
   ComputerStatus,
   ControlState,
+  FileFacts,
   HumanInput,
   HumanInputResult,
   KeyInput,
@@ -130,6 +132,10 @@ export const NAVIGATION_FAILED = "laf:navigation_failed";
 export const FILE_PATH_REFUSED = "laf:file_path_refused";
 /** A request the computer could not use as it was sent. */
 export const REQUEST_INVALID = "laf:request_invalid";
+/** Nothing is at that path. The one file fact a person's own door answers differently (routes.ts). */
+export const FILE_NOT_FOUND = "laf:file_not_found";
+/** More than a download hands over: said here too, of an answer that ran past the bound. */
+const FILE_TOO_LARGE = "laf:file_too_large";
 
 /**
  * The fact a failure from this client carries, for a caller that has to answer with one.
@@ -332,6 +338,40 @@ function failureOf(body: Record<string, unknown> | null): Error {
   return new Failure(code);
 }
 
+/**
+ * The body of an answer that is a file, read no further than a download may be.
+ *
+ * The computer refuses a file over the bound itself, with the size it has. This is the same bound
+ * on what THIS process will hold when the answer did not — an older image, or something answering
+ * in the computer's place — so one request cannot make the server buffer whatever it is sent. Read
+ * in pieces and stopped one piece past the bound; `arrayBuffer()` would have held all of it first.
+ */
+async function bytesWithin(
+  response: Response,
+  most: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const reader = response.body?.getReader();
+  const pieces: Uint8Array[] = [];
+  let total = 0;
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > most) {
+      await reader.cancel().catch(() => undefined);
+      throw new WorkspaceRequestError(FILE_TOO_LARGE);
+    }
+    pieces.push(value);
+  }
+  const whole = new Uint8Array(total);
+  let at = 0;
+  for (const piece of pieces) {
+    whole.set(piece, at);
+    at += piece.byteLength;
+  }
+  return whole;
+}
+
 export function createComputerClient(options: ComputerClientOptions) {
   const doFetch = options.fetchImpl ?? fetch;
   /*
@@ -356,11 +396,30 @@ export function createComputerClient(options: ComputerClientOptions) {
    * site for a value that never changes within a request.
    */
   function build(botId?: string) {
-    async function call(
+    /**
+     * Nothing usable came back, as the fact this client says itself: the caller stopped, the
+     * deadline passed, or nobody was there. A caller that stopped mid-request is neither of the
+     * other two, and says so.
+     */
+    const notAnswered = (error: unknown, caller?: AbortSignal) =>
+      new ComputerUnavailableError(
+        caller?.aborted
+          ? STOPPED
+          : error instanceof Error && error.name === "TimeoutError"
+            ? COMPUTER_TIMED_OUT
+            : COMPUTER_UNREACHABLE,
+      );
+
+    /**
+     * One request to the computer: answered, or thrown as the failure it was. The body of an
+     * answer that worked is left unread — JSON for every call (`call`) but a file's own bytes
+     * (`downloadFile`) — so there is one place that names the Bot, carries the token and gives up.
+     */
+    async function send(
       path: string,
       init?: RequestInit,
       caller?: AbortSignal,
-    ): Promise<unknown> {
+    ): Promise<Response> {
       // Already stopped before this left: do not dispatch at all. Relying on fetch to reject an
       // aborted signal makes "did the click happen" depend on how quickly the runtime notices, and
       // the answer to "the person pressed Stop first" should never be a race.
@@ -440,41 +499,44 @@ export function createComputerClient(options: ComputerClientOptions) {
       } catch (error) {
         // Distinguished from a failed page load on purpose: this one means the computer itself is not
         // there, which is an operator problem, not something the person asking can fix by rephrasing.
-        // A caller that stopped mid-request is neither, and says so.
-        throw new ComputerUnavailableError(
-          caller?.aborted
-            ? STOPPED
-            : error instanceof Error && error.name === "TimeoutError"
-              ? COMPUTER_TIMED_OUT
-              : COMPUTER_UNREACHABLE,
-        );
+        throw notAnswered(error, caller);
       }
-
-      const body = (await response.json().catch(() => null)) as Record<
-        string,
-        unknown
-      > | null;
 
       // The code, and nothing else about the answer: not its status, not the door it came out of,
       // and never `error`, which is where Playwright's words used to ride. See COMPUTER_ANSWERS.
-      if (!response.ok) throw failureOf(body);
-      return body;
+      if (!response.ok) {
+        throw failureOf(
+          (await response.json().catch(() => null)) as Record<
+            string,
+            unknown
+          > | null,
+        );
+      }
+      return response;
     }
+
+    async function call(
+      path: string,
+      init?: RequestInit,
+      caller?: AbortSignal,
+    ): Promise<unknown> {
+      const response = await send(path, init, caller);
+      return (await response.json().catch(() => null)) as unknown;
+    }
+
+    /** A JSON body, as every call but a bare GET sends one. */
+    const posted = (payload: unknown): RequestInit => ({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
     async function post(
       path: string,
       payload: unknown,
       caller?: AbortSignal,
     ): Promise<unknown> {
-      return call(
-        path,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-        caller,
-      );
+      return call(path, posted(payload), caller);
     }
 
     // Named, so a method can reach a sibling without `this` — which a caller that detaches a
@@ -650,6 +712,29 @@ export function createComputerClient(options: ComputerClientOptions) {
 
       async listFiles(input: ListFilesInput): Promise<ListFilesResult> {
         return (await post("/files/list", input)) as ListFilesResult;
+      },
+
+      /** One file's facts: there, a file, how big. Nothing of it is read. */
+      async statFile(path: string): Promise<FileFacts> {
+        return (await post("/files/stat", { path })) as FileFacts;
+      },
+
+      /**
+       * One file's bytes, as they are on disk, for the person the Bot works for.
+       *
+       * The one call whose answer is not JSON. Unguarded here like its siblings: the computer
+       * confines the path, and who may take a file out is the routes' question (`requireBotAccess`).
+       * A failure is still the computer's own fact, read off the JSON a refusal is written in.
+       */
+      async downloadFile(path: string): Promise<Uint8Array<ArrayBuffer>> {
+        const response = await send("/files/download", posted({ path }));
+        try {
+          return await bytesWithin(response, HANDOFF_MAX_BYTES);
+        } catch (error) {
+          // Past the bound is a fact about the file; anything else is the answer breaking off.
+          if (error instanceof WorkspaceRequestError) throw error;
+          throw notAnswered(error);
+        }
       },
 
       /** Who has the wheel, and whether the Bot is waiting for a person. */

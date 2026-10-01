@@ -105,6 +105,8 @@ function fakeClient() {
     key: async () => ({ action: "key", url: SNAPSHOT.url, elapsedMs: 1 }),
     scroll: async () => ({ action: "scroll", url: SNAPSHOT.url, elapsedMs: 1 }),
     listFiles: async () => ({ path: ".", entries: [] }),
+    statFile: async (path: string) => ({ path, kind: "file", bytes: 2 }),
+    downloadFile: async () => new TextEncoder().encode("hi"),
     readFile: async () => ({
       path: "notes.md",
       contents: "",
@@ -964,6 +966,10 @@ describe("the whole surface", () => {
     ["POST", "/bot-1/files/list", { path: "." }],
     ["POST", "/bot-1/files/read", { path: "notes.md" }],
     ["POST", "/bot-1/files/write", { path: "notes.md", contents: "hi" }],
+    // The person's own doors into the same folder (`computer-file-handoff.test.ts`).
+    ["GET", "/bot-1/files"],
+    ["GET", "/bot-1/files/info?path=notes.md"],
+    ["GET", "/bot-1/files/download?path=notes.md"],
     ["GET", "/policy"],
     ["PUT", "/policy", { deny: [], ask: [], allow: ["true"] }],
   ];

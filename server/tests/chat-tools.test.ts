@@ -15,6 +15,11 @@ import {
 import type { AgentActor } from "../src/agents/profile-types";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import {
+  ComputerUnavailableError,
+  WorkspaceRefusedError,
+  WorkspaceRequestError,
+} from "../src/computer/client";
+import {
   ActionNeedsApprovalError,
   ActionRefusedError,
   type ComputerGateway,
@@ -683,6 +688,192 @@ describe("a card the Bot asks the person with", () => {
     expect(await toolkit.execute("showBarChart", {}, call())).toBe(
       "The bar chart is now on screen for the person.",
     );
+  });
+});
+
+/*
+ * A FILE CARD (phase 8, 2026-10-02). Every other card draws what its call handed it; this one draws
+ * a file its call only named, so "it is on screen" is something the server has to look before it
+ * says. A Bot told its file reached the person, about a file that was never written, is the product
+ * lying to both of them — the card says gone, and the Bot goes on as though it had delivered.
+ */
+describe("a file card", () => {
+  const fileCard = {
+    listForAgent: async () => [
+      { name: "showFile", title: "File", kind: "card", description: "d" },
+    ],
+    decide: async () => ({ allowed: true as const, description: "d" }),
+    mayCall: async () => true,
+  };
+  const CONFIRMED =
+    "The file card is on screen for the person, with its name, its size and a button to download it. Do not paste the file's contents into your answer again.";
+
+  /** A computer whose folder holds `요약.md` and a folder `보고서`, refusing as the container does. */
+  function folder() {
+    const asked: Array<[string, string]> = [];
+    const gateway = {
+      fileFacts: async (botId: string, path: string) => {
+        asked.push([botId, path]);
+        if (path.split("/").includes("..")) {
+          throw new WorkspaceRefusedError("laf:file_path_refused");
+        }
+        if (path === "보고서") {
+          throw new WorkspaceRequestError("laf:file_wrong_kind");
+        }
+        if (path !== "요약.md") {
+          throw new WorkspaceRequestError("laf:file_not_found");
+        }
+        return { path, kind: "file" as const, bytes: 12 };
+      },
+    } as unknown as ComputerGateway;
+    return { gateway, asked };
+  }
+
+  test("is confirmed for a file that is there, asked about as this Bot's", async () => {
+    const { gateway, asked } = folder();
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("showFile")]);
+
+    expect(
+      await toolkit.execute("showFile", { path: "  요약.md " }, call()),
+    ).toBe(CONFIRMED);
+    // The path as the card will ask for it: trimmed, and in the folder of the Bot whose turn it is.
+    expect(asked).toEqual([["bot-1", "요약.md"]]);
+  });
+
+  test("is not confirmed for a file that is not: the Bot reads the computer's own fact", async () => {
+    const { gateway } = folder();
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("showFile")]);
+
+    // An envelope, as `computer_read_file` answers the same path — and so not a sentence, which is
+    // what 만든 것 takes for a card that reached the screen (`agents/made.ts`).
+    expect(
+      await toolkit.execute("showFile", { path: "없는.md" }, call()),
+    ).toEqual({
+      ok: false,
+      code: "laf:file_not_found",
+      reason: toolResultText("laf:file_not_found"),
+    });
+    expect(
+      await toolkit.execute("showFile", { path: "보고서" }, call()),
+    ).toEqual({
+      ok: false,
+      code: "laf:file_wrong_kind",
+      reason: toolResultText("laf:file_wrong_kind"),
+    });
+    expect(
+      await toolkit.execute("showFile", { path: "../.env" }, call()),
+    ).toEqual({
+      ok: false,
+      code: "laf:file_path_refused",
+      reason: toolResultText("laf:file_path_refused"),
+      refused: true,
+      rule: null,
+    });
+    // Each has words: a code the table lacks would reach the Bot as the identifier.
+    for (const code of [
+      "laf:file_not_found",
+      "laf:file_wrong_kind",
+      "laf:file_path_refused",
+    ]) {
+      expect(toolResultText(code)).not.toBe(code);
+    }
+  });
+
+  test("with no path is the arguments' fault, and the computer is not asked", async () => {
+    const { gateway, asked } = folder();
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("showFile")]);
+
+    for (const args of [{}, { path: "   " }, { path: 7 }]) {
+      expect(await toolkit.execute("showFile", args, call())).toEqual({
+        ok: false,
+        code: "laf:tool_arguments_invalid",
+        reason: toolResultText("laf:tool_arguments_invalid"),
+      });
+    }
+    expect(asked).toEqual([]);
+  });
+
+  test("a computer that is away is said as that, never as the file being there or gone", async () => {
+    const gateway = {
+      fileFacts: async () => {
+        throw new ComputerUnavailableError("laf:computer_unreachable");
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("showFile")]);
+
+    expect(
+      await toolkit.execute("showFile", { path: "요약.md" }, call()),
+    ).toEqual({
+      ok: false,
+      code: "laf:computer_unreachable",
+      reason: toolResultText("laf:computer_unreachable"),
+    });
+  });
+
+  test("a card this Bot does not hold is refused before the file is looked for", async () => {
+    const { gateway, asked } = folder();
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: {
+        ...fileCard,
+        decide: async () => ({
+          allowed: false as const,
+          reason: "laf:component_withheld",
+        }),
+      },
+    })(context, [tool("showFile")]);
+
+    expect(await toolkit.execute("showFile", { path: "요약.md" }, call())).toBe(
+      toolResultText("laf:component_withheld"),
+    );
+    expect(asked).toEqual([]);
+  });
+
+  test("is not offered where there is no computer, and so no folder", async () => {
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      components: {
+        ...fileCard,
+        listForAgent: async () => [
+          { name: "showFile", title: "File", kind: "card", description: "d" },
+          {
+            name: "showNotice",
+            title: "Notice",
+            kind: "card",
+            description: "d",
+          },
+        ],
+      },
+    })(context, [tool("showFile"), tool("showNotice")]);
+
+    // The other cards are untouched: it is the file card that needs the folder.
+    expect(toolkit.tools.map((offered) => offered.name)).toEqual([
+      "showNotice",
+    ]);
+    expect(
+      await toolkit.execute("showFile", { path: "요약.md" }, call()),
+    ).toEqual({
+      ok: false,
+      code: "laf:tool_unknown",
+      reason: toolResultText("laf:tool_unknown"),
+    });
   });
 });
 

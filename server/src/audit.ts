@@ -136,6 +136,21 @@ export const auditEventTypes = [
   "computer.secret_requested",
   "computer.secret_supplied",
   /**
+   * A person took a file out of their Bot's folder (`computer/gateway/person-files.ts`).
+   *
+   * The folder holds what the Bot wrote, what pages gave its browser and what the person's own
+   * attachments became, and until 2026-10-02 nothing in it could leave except through a Bot's
+   * upload to a website — which the trail has always recorded. This is the other way out: a
+   * person's own download. Not judged by the policy, which constrains a Bot and not the person it
+   * works for, so there is no decision on the row; it says who, which Bot's folder, which path and
+   * how many bytes. Never what was in it — the rule a file a Bot writes is already held to.
+   *
+   * A picture drawn inside the card is not one of these: it is the card showing itself, asked for
+   * again on every draw, and a row for each would bury the downloads under the conversation being
+   * opened.
+   */
+  "computer.file_downloaded",
+  /**
    * The boundary stopping to ask a person, and what they said.
    *
    * Three rows rather than a flag on the action, because the three facts are separable and the gaps

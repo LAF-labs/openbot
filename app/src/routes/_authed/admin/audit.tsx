@@ -590,6 +590,9 @@ export const DECISIONS: Record<string, string> = {
   "computer.help_requested": "The Bot asked for help",
   "computer.secret_requested": "The Bot asked for a secret",
   "computer.secret_supplied": "A person supplied a secret",
+  // A person took a file out of their Bot's folder. Nothing judged it — it is their folder — so the
+  // row says what happened and not that it was allowed. The path is in the column beside it.
+  "computer.file_downloaded": "A person downloaded a file",
   "computer.reset": "The computer was reset",
   // A deleted Bot let go of the shared computer: its tabs closed, the account's logins stayed.
   "computer.released": "A deleted Bot let go of the computer",
@@ -948,6 +951,7 @@ export const EVENTS: Record<string, string> = {
   "computer.screen_viewed": "The screen",
   "computer.secret_requested": "A secret",
   "computer.secret_supplied": "A secret",
+  "computer.file_downloaded": "A file from the Bot's folder",
   "approval.requested": "A question",
   "approval.granted": "A question",
   "approval.denied": "A question",

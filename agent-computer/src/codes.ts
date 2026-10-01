@@ -102,12 +102,19 @@ export const COMPUTER_CODES = {
 
   /* ── The workspace ────────────────────────────────────────────────────────────────────── */
 
+  /*
+   * A BOT'S, AND SINCE 2026-10-02 ALSO THE ANSWERS TO A PERSON TAKING A FILE OUT (`/files/stat`,
+   * `/files/download`). Still `bot`: every reader a Bot's call needs is held to these by that word,
+   * and the one screen a person meets them on — the file card — has its own table, walked by
+   * `app/tests/file-card.test.tsx`. No second name for "nothing is there" because a person asked.
+   */
   // A path the workspace never lets a Bot name: absolute, `..`, or out through a link.
   "laf:file_path_refused": { status: 403, caller: "bot" },
   // A path it may name, and what is there does not fit the request.
   "laf:file_not_found": { status: 400, caller: "bot" },
   "laf:file_wrong_kind": { status: 400, caller: "bot" },
-  // More than the workspace takes in one write; `bytes` and `limit` ride beside it.
+  // More than the workspace takes in one write, or hands over in one download; `bytes` and `limit`
+  // ride beside it.
   "laf:file_too_large": { status: 400, caller: "bot" },
   // The disk did not do it.
   "laf:file_failed": { status: 500, caller: "bot" },

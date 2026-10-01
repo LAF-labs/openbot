@@ -1,6 +1,7 @@
 import { isMadeShelf, type MadeShelf } from "@shared/made";
 import {
   IconChecklist,
+  IconFileDownload,
   IconFileText,
   IconPlus,
   IconTable,
@@ -29,7 +30,7 @@ import {
   type MadeItem,
   madeQueryOptions,
   SHELF_LABELS,
-  SHELF_ORDER,
+  shelvesDrawn,
 } from "@/lib/made/queries";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
@@ -44,8 +45,12 @@ import { cn } from "@/lib/utils";
  * about and changed ("그 안내문 날짜 바꿔 줘" makes a new one, which lands here too).
  *
  * + STARTS ONE IN THE CONVERSATION and sends nothing: a sentence stem in the box, for the person to
- * say what the table is of. The Bot's files are phase 8, with their shelf; no 파일 filter is drawn
- * before there is a file to show under it.
+ * say what the table is of.
+ *
+ * FILES ARE HERE SINCE PHASE 8 (2026-10-02): a file the Bot handed over with a file card is listed
+ * by its name, and pressing it goes to the card — which is where its 내려받기 is. No 파일 filter is
+ * drawn before there is a file to show under it, so the page asks for that shelf's first page
+ * beside whatever it is showing; when 파일 is then pressed, that answer is already here.
  *
  * A GRID WHERE THERE IS ROOM, one column on a phone.
  */
@@ -62,6 +67,7 @@ const SHELF_ICONS: Record<MadeShelf, typeof IconTable> = {
   table: IconTable,
   checklist: IconChecklist,
   text: IconFileText,
+  file: IconFileDownload,
 };
 
 function MadePage() {
@@ -80,6 +86,14 @@ function MadePage() {
   const reading = useReading(made, {
     isEmpty: (data) => data.pages.every((page) => page.items.length === 0),
   });
+  // Whether the Bot has handed over a file at all. The same query the 파일 filter itself reads.
+  const files = useInfiniteQuery({
+    ...madeQueryOptions(bot?.id ?? "", "file"),
+    enabled: Boolean(bot),
+  });
+  const hasFile =
+    shelf === "file" ||
+    (files.data?.pages.some((page) => page.items.length > 0) ?? false);
   const settled = settledOf(reading);
   const items = settled ? settled.data.pages.flatMap((page) => page.items) : [];
 
@@ -89,7 +103,7 @@ function MadePage() {
         bot ? <StartMenu agentId={bot.id} channelId={conversation?.id} /> : null
       }
       description={t(
-        "The tables, checklists and notices your Bot made for you. Press one to see it in the conversation.",
+        "The tables, checklists, notices and files your Bot made for you. Press one to see it in the conversation.",
       )}
       title={t("Made")}
       width="wide"
@@ -98,7 +112,7 @@ function MadePage() {
         aria-label={t("Show")}
         className="-mx-1 mb-4 flex flex-wrap gap-1.5 px-1"
       >
-        {SHELF_ORDER.map((key) => {
+        {shelvesDrawn(hasFile).map((key) => {
           const isActive = (shelf ?? "all") === key;
           return (
             <Link

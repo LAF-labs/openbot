@@ -790,6 +790,8 @@ describe("the header that says which Bot", () => {
     await client.readFile({ path: "notes.md" });
     await client.writeFile({ path: "notes.md", contents: "hi" });
     await client.listFiles({});
+    await client.statFile("notes.md");
+    await client.downloadFile("notes.md");
     await client.control();
     await client.requestControl("stuck");
     await client.takeControl();
@@ -1026,5 +1028,161 @@ describe("a computer replaced under a running server", () => {
     await client.computers();
     await client.forBot("bot-1").snapshot();
     expect(seen.map((init) => init.keepalive)).toEqual([false, false]);
+  });
+});
+
+/*
+ * A FILE'S BYTES (phase 8, 2026-10-02). Every other answer from the computer is JSON, and this
+ * client read every answer as JSON — a file would have come back as `null`. `/files/download` is
+ * the one call whose answer is the thing itself, so it is read as bytes, to a bound, while a
+ * refusal on the same route is still the JSON a refusal is written in.
+ */
+describe("a file's bytes", () => {
+  /** Every byte value, a NUL and invalid UTF-8 among them: what a JSON reading would have lost. */
+  const BINARY = Uint8Array.from({ length: 512 }, (_, index) => index % 256);
+
+  const file = (bytes: Uint8Array<ArrayBuffer>) =>
+    new Response(bytes, {
+      status: 200,
+      headers: { "content-type": "application/octet-stream" },
+    });
+
+  test("are asked for by path, as the Bot whose folder it is, and come back exactly", async () => {
+    const sent: Array<{ url: string; method?: string; body: unknown }> = [];
+    let bot: string | null = null;
+    const client = clientWith((url, init) => {
+      bot = new Headers(init?.headers as HeadersInit).get("x-openbot-bot-id");
+      sent.push({
+        url,
+        ...(init?.method ? { method: init.method } : {}),
+        body: JSON.parse(String(init?.body)),
+      });
+      return file(BINARY);
+    });
+
+    const bytes = await client
+      .forBot("bot-7")
+      .downloadFile("보고서/9월 정산내역 (2).csv");
+
+    expect(bytes).toEqual(BINARY);
+    expect(bot as string | null).toBe("bot-7");
+    // In the body, where a Korean name is itself: a path in the address would have to be encoded,
+    // and a `..` in it would be resolved away by whatever normalised the URL first.
+    expect(sent).toEqual([
+      {
+        url: "http://agent-computer:4100/files/download",
+        method: "POST",
+        body: { path: "보고서/9월 정산내역 (2).csv" },
+      },
+    ]);
+  });
+
+  test("a refusal on that route is still the container's own fact", async () => {
+    const CASES: Array<[number, string, new (reason: string) => Error]> = [
+      [400, "laf:file_not_found", WorkspaceRequestError],
+      [400, "laf:file_wrong_kind", WorkspaceRequestError],
+      [400, "laf:file_too_large", WorkspaceRequestError],
+      [403, "laf:file_path_refused", WorkspaceRefusedError],
+      // An image from before this route existed: said as the version mismatch it is.
+      [404, "laf:computer_route_unknown", ComputerUnavailableError],
+    ];
+    for (const [status, code, kind] of CASES) {
+      const client = clientWith(
+        () =>
+          new Response(JSON.stringify({ error: code, code }), {
+            status,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      for (const ask of [
+        client.downloadFile("../secrets"),
+        client.statFile("../secrets"),
+      ]) {
+        const failure = await ask.then(
+          () => {
+            throw new Error("expected the call to fail");
+          },
+          (error: Error) => error,
+        );
+        expect({ code, kind: failure.name, message: failure.message }).toEqual({
+          code,
+          kind: kind.name,
+          message: code,
+        });
+      }
+    }
+  });
+
+  test("an answer larger than a download may be is refused here too, and not read to its end", async () => {
+    /*
+     * The computer refuses an oversized file itself. This is what holds when the answer did not —
+     * an older image, or something answering in the computer's place: the server stops reading one
+     * piece past the bound rather than holding whatever it is sent.
+     */
+    const PIECE = new Uint8Array(1_000_000);
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(PIECE);
+      },
+    });
+    const client = clientWith(() => new Response(endless, { status: 200 }));
+
+    const failure = await client.downloadFile("huge.bin").then(
+      () => {
+        throw new Error("expected the call to fail");
+      },
+      (error: Error) => error,
+    );
+
+    expect(failure).toBeInstanceOf(WorkspaceRequestError);
+    expect(failure.message).toBe("laf:file_too_large");
+    // Five megabytes is the bound: the sixth piece is the one that crossed it, and a stream that
+    // never ends was let go of there.
+    expect(pulled).toBeLessThanOrEqual(8);
+  });
+
+  test("a file exactly at the bound is handed over", async () => {
+    const whole = new Uint8Array(5_000_000).fill(7);
+    const client = clientWith(() => file(whole));
+    const bytes = await client.downloadFile("big.bin");
+    expect(bytes.byteLength).toBe(5_000_000);
+    expect(bytes[4_999_999]).toBe(7);
+  });
+
+  test("an answer that breaks off is the computer not answering, never half a file", async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      },
+      pull(controller) {
+        controller.error(new Error("socket closed"));
+      },
+    });
+    const client = clientWith(() => new Response(broken, { status: 200 }));
+
+    const failure = await client.downloadFile("notes.md").then(
+      () => {
+        throw new Error("expected the call to fail");
+      },
+      (error: Error) => error,
+    );
+
+    expect(failure).toBeInstanceOf(ComputerUnavailableError);
+    expect(failure.message).toBe("laf:computer_unreachable");
+  });
+
+  test("a file's facts are asked for by path and are not its contents", async () => {
+    const client = clientWith((url, init) => {
+      expect(new URL(url).pathname).toBe("/files/stat");
+      expect(JSON.parse(String(init?.body))).toEqual({ path: "notes.md" });
+      return ok({ path: "notes.md", kind: "file", bytes: 9 });
+    });
+    expect(await client.statFile("notes.md")).toEqual({
+      path: "notes.md",
+      kind: "file",
+      bytes: 9,
+    });
   });
 });

@@ -16,9 +16,17 @@
  * IN `shared/` because both sides read it: the server filters by shelf, the surface draws the
  * shelves and a card's kind from the same table.
  */
+import { FILE_CARD } from "./tools/gallery";
+import { fileNameOf } from "./workspace-files";
 
-/** The shelves the page filters by, in the order they are drawn. 파일 comes with phase 8. */
-export const MADE_SHELVES = ["table", "checklist", "text"] as const;
+/**
+ * The shelves the page filters by, in the order they are drawn.
+ *
+ * 파일 came with phase 8 (2026-10-02): a file the Bot handed over with a file card. Last, and the
+ * one shelf the page draws a filter for only once something is on it — most people's Bot has made a
+ * table long before it has made a file, and an empty 파일 would be a promise of something not there.
+ */
+export const MADE_SHELVES = ["table", "checklist", "text", "file"] as const;
 
 export type MadeShelf = (typeof MADE_SHELVES)[number];
 
@@ -40,6 +48,9 @@ export const MADE_CARD_SHELF: Readonly<Record<string, MadeShelf>> = {
   showActivityReport: "table",
   showChecklist: "checklist",
   showNotice: "text",
+  // A file from the Bot's folder, handed over. The card is how it reached the person, so the card
+  // is what is listed — not the folder, which also holds what nobody was ever shown.
+  [FILE_CARD]: "file",
 };
 
 /**
@@ -134,8 +145,24 @@ export function markdownTableTitles(text: string): string[] {
 }
 
 /** A card's title as the Bot passed it, clipped; null when it passed none. */
-export function cardTitle(value: unknown): string | null {
+function cardTitle(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? clip(trimmed) : null;
+}
+
+/**
+ * What a made card is called in the list, from the arguments its call carried.
+ *
+ * The title the Bot gave it — except a file card, which is given none: it IS its file, so it is
+ * called what the file is called, without the folders it sits in (`보고서/9월 정산.csv` → 9월 정산.csv).
+ */
+export function madeCardTitle(
+  tool: string,
+  args: { title?: unknown; path?: unknown },
+): string | null {
+  if (tool !== FILE_CARD) return cardTitle(args.title);
+  return typeof args.path === "string"
+    ? cardTitle(fileNameOf(args.path))
+    : null;
 }

@@ -6,6 +6,7 @@ import {
   MADE_CARD_SHELF,
   MADE_SHELVES,
   MARKDOWN_TABLE,
+  madeCardTitle,
   markdownTableTitles,
   NOT_MADE,
   shelfOf,
@@ -17,6 +18,7 @@ import {
   MADE_STARTERS,
   SHELF_LABELS,
   SHELF_ORDER,
+  shelvesDrawn,
 } from "../src/lib/made/queries";
 
 /**
@@ -59,6 +61,28 @@ describe("what counts as made", () => {
     expect(cardsOn("checklist")).toEqual(["showChecklist"]);
     expect(cardsOn("text")).toEqual(["showNotice"]);
     expect(cardsOn(null)).toHaveLength(Object.keys(MADE_CARD_SHELF).length);
+  });
+
+  /*
+   * 파일, since phase 8 (2026-10-02): what is listed is a file the Bot HANDED OVER with a file card,
+   * not everything in its folder — the folder also holds what nobody was ever shown.
+   */
+  test("a file the Bot handed over is on the 파일 shelf, called what the file is called", () => {
+    expect(shelfOf("showFile")).toBe("file");
+    expect(cardsOn("file")).toEqual(["showFile"]);
+    // The file's name, without the folders it sits in; a card has no title of its own.
+    expect(madeCardTitle("showFile", { path: "보고서/9월 정산.csv" })).toBe(
+      "9월 정산.csv",
+    );
+    expect(madeCardTitle("showFile", { path: "요약.md", title: "무시" })).toBe(
+      "요약.md",
+    );
+    expect(madeCardTitle("showFile", {})).toBeNull();
+    // Every other card is still called what the Bot called it, and never by a path it carried.
+    expect(madeCardTitle("showNotice", { title: " 추석 휴무 안내 " })).toBe(
+      "추석 휴무 안내",
+    );
+    expect(madeCardTitle("showNotice", { path: "x.csv" })).toBeNull();
   });
 });
 
@@ -118,11 +142,27 @@ describe("the page's words, in Korean", () => {
     }
   });
 
-  test("the + stems leave room to say what, and 파일 is not a shelf before phase 8", () => {
+  test("the + stems leave room to say what", () => {
     for (const starter of MADE_STARTERS) {
       expect(ko[starter.draft]?.endsWith(": ")).toBe(true);
     }
     expect(ko["Make this into a table: "]).toBe("표로 만들어 줘: ");
-    expect(Object.values(SHELF_LABELS)).not.toContain("Files");
+  });
+
+  /*
+   * The page's own rule, kept when the shelf arrived: no 파일 filter before there is a file to show
+   * under it. Until phase 8 this test said 파일 was not a shelf at all.
+   */
+  test("파일 is a filter only once the Bot has handed over a file, and then it is the last one", () => {
+    expect(ko[SHELF_LABELS.file]).toBe("파일");
+    expect(shelvesDrawn(false)).toEqual(["all", "table", "checklist", "text"]);
+    expect(shelvesDrawn(true)).toEqual([
+      "all",
+      "table",
+      "checklist",
+      "text",
+      "file",
+    ]);
+    expect(ko[KIND_LABELS.showFile as string]).toBe("파일");
   });
 });
