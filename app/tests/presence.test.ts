@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import {
   isTurnTold,
+  leaveWord,
   PRESENCE_LABELS,
   type PresenceFacts,
   presenceOf,
@@ -168,12 +169,14 @@ describe("a turn whose conversation is off this screen", () => {
   test("the last word is kept either way, and coming back forgets it", () => {
     startTelling("bot-c");
     expect(isTurnTold("bot-c")).toBe(true);
-    stopTelling("bot-c", 5_000, true);
+    stopTelling("bot-c");
+    leaveWord("bot-c", 5_000, true);
     expect(isTurnTold("bot-c")).toBe(false);
     expect(readLastWord("bot-c")).toEqual({ at: 5_000, going: true });
     startTelling("bot-c");
     expect(readLastWord("bot-c")).toBeNull();
-    stopTelling("bot-c", 6_000, false);
+    stopTelling("bot-c");
+    leaveWord("bot-c", 6_000, false);
     expect(readLastWord("bot-c")).toEqual({ at: 6_000, going: false });
     // The same object until the next leaving: a snapshot React can compare.
     expect(readLastWord("bot-c")).toBe(readLastWord("bot-c"));
@@ -181,15 +184,24 @@ describe("a turn whose conversation is off this screen", () => {
     expect(readLastWord(undefined)).toBeNull();
   });
 
-  test("two conversations of one Bot: it is told until the last one leaves", () => {
+  test("two conversations of one Bot: it is told until the last one leaves, and only that one's word is kept", () => {
     startTelling("bot-d");
     startTelling("bot-d");
-    stopTelling("bot-d", 7_000, true);
+    stopTelling("bot-d");
+    leaveWord("bot-d", 7_000, true);
     expect(isTurnTold("bot-d")).toBe(true);
     expect(readLastWord("bot-d")).toBeNull();
-    stopTelling("bot-d", 8_000, true);
+    stopTelling("bot-d");
+    leaveWord("bot-d", 8_000, true);
     expect(isTurnTold("bot-d")).toBe(false);
     expect(readLastWord("bot-d")).toEqual({ at: 8_000, going: true });
+  });
+
+  test("no longer telling is not leaving: it keeps no word by itself", () => {
+    startTelling("bot-e");
+    stopTelling("bot-e");
+    expect(isTurnTold("bot-e")).toBe(false);
+    expect(readLastWord("bot-e")).toBeNull();
   });
 });
 

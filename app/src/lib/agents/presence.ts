@@ -1,6 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { BotAvatarState } from "@/components/avatar/bot-avatar";
 import { workingKeys } from "./working";
 
@@ -193,15 +193,21 @@ export function startTelling(botId: string): void {
   tellersChanged();
 }
 
-/** It has left, at `at`, with its turn going or not: the last thing this screen knew first-hand. */
-export function stopTelling(botId: string, at: number, going: boolean): void {
+/** It is no longer telling: it has gone, or it has stopped knowing how its turn stands. */
+export function stopTelling(botId: string): void {
   const left = (tellers.get(botId) ?? 1) - 1;
-  if (left > 0) {
-    tellers.set(botId, left);
-  } else {
-    tellers.delete(botId);
-    lastWords.set(botId, { at, going });
-  }
+  if (left > 0) tellers.set(botId, left);
+  else tellers.delete(botId);
+  tellersChanged();
+}
+
+/**
+ * A conversation has left the screen, at `at`, with its turn going or not: the last thing this
+ * screen knew first-hand. Not kept while another conversation of the Bot's is still telling.
+ */
+export function leaveWord(botId: string, at: number, going: boolean): void {
+  if ((tellers.get(botId) ?? 0) > 0) return;
+  lastWords.set(botId, { at, going });
   tellersChanged();
 }
 
@@ -259,6 +265,12 @@ export function turnOffScreen(facts: {
  * as a word on the turn made the pill read 쉬는 중 for a quarter of a second on every return to a
  * conversation whose Bot was mid-turn (measured 2026-10-02: 일하는 중 → 쉬는 중 → 일하는 중). Until it
  * has heard, whatever spoke before it — the list, the last word — goes on speaking.
+ *
+ * THREE EFFECTS, AND THE LAST ONE IS THE LEAVING. Publishing a phase, being counted as telling, and
+ * going away are separate things with separate lifetimes. They were two, with the leaving folded
+ * into the telling — so a conversation that left before it had heard never took its phase back:
+ * a send still on its way had published "thinking", and the pill said 생각 중 from then on (review
+ * of this change, third round).
  */
 export function usePublishTurn(
   botId: string | undefined,
@@ -266,17 +278,35 @@ export function usePublishTurn(
   isHeard = true,
 ) {
   const queryClient = useQueryClient();
+  /** Read as the caller leaves, which is after the last render and so not a thing to close over. */
+  const heard = useRef(isHeard);
+  useEffect(() => {
+    heard.current = isHeard;
+  }, [isHeard]);
+
   useEffect(() => {
     if (!botId) return;
     publishTurn(botId, phase);
   }, [botId, phase]);
+
   useEffect(() => {
     if (!botId || !isHeard) return;
     startTelling(botId);
+    return () => stopTelling(botId);
+  }, [botId, isHeard]);
+
+  // Declared last, so it runs last as the caller goes: after the telling above has been released.
+  useEffect(() => {
+    if (!botId) return;
     return () => {
       const wasGoing = readTurn(botId) !== "idle";
-      stopTelling(botId, Date.now(), wasGoing);
       publishTurn(botId, "idle");
+      /*
+       * What this screen knew as it left. One that had heard knows either way. One that had not
+       * knows only what it did itself — a send on its way is a turn going — and its "idle" is not
+       * knowledge, so it leaves the word that was there before it alone.
+       */
+      if (heard.current || wasGoing) leaveWord(botId, Date.now(), wasGoing);
       if (wasGoing) {
         /*
          * The server's word on the turn left behind, now rather than at the poll's next tick — and
@@ -293,5 +323,5 @@ export function usePublishTurn(
           );
       }
     };
-  }, [botId, isHeard, queryClient]);
+  }, [botId, queryClient]);
 }
