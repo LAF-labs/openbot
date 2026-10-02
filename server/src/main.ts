@@ -1189,12 +1189,57 @@ sayBooted({
  * longer exits on its own, so the exit is explicit. The routine clock and the retention timer die
  * with the process; a run in flight is reconciled to `unknown` by the next boot (laf-runner.ts).
  */
+/**
+ * How long leaving waits for what is still being written. Docker's default is ten seconds between
+ * SIGTERM and SIGKILL, and compose gives this service no more: the wait has to end before it.
+ */
+const SHUTDOWN_DRAIN_MS = 8_000;
+let leaving = false;
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
-    log.info("shutdown", { reason: signal });
-    server.stop(true);
-    process.exit(0);
+    void leave(signal);
   });
+}
+
+/**
+ * Leave, with what was already made written first.
+ *
+ * SIGTERM USED TO BE `process.exit` ON THE SAME TICK. Every `laf upgrade` restarts this server, and
+ * a turn's step that was already on somebody's screen — its row still on the way to Postgres —
+ * went with the process, as did a conversation's context row, whose loss is "a history rewritten
+ * under the cache" in that module's own words (`context/conversations.ts`), and a result still
+ * being filed on the Bot's computer. Both stores have had a `settled()` "for a clean shutdown"
+ * since they were written, and nothing called either (refactoring review, 2026-10-02).
+ *
+ * A DRAIN, NOT A FINISH. No turn is completed or resumed here: a model's answer takes longer than
+ * a container is given, and a run in flight is reconciled as interrupted by the next boot, as it
+ * always was. What is waited for is the writing of what those turns had already made, and it is
+ * bounded: a database that does not answer must not hold the container past its kill.
+ *
+ * New connections are refused first. A message sent into a server on its way out is kept by the
+ * window as unsent and offered again once it is back, which is what a server that is down gets.
+ */
+async function leave(signal: string): Promise<void> {
+  // A second signal while the first is draining changes nothing: there is one way out.
+  if (leaving) return;
+  leaving = true;
+  log.info("shutdown", { reason: signal });
+  void server.stop();
+  const writes = Promise.allSettled([
+    turnEngine?.flush(),
+    conversations.settled(),
+    resultSpill?.settled(),
+  ]);
+  const drained = await Promise.race([
+    writes.then(() => true),
+    new Promise<false>((resolve) =>
+      setTimeout(() => resolve(false), SHUTDOWN_DRAIN_MS),
+    ),
+  ]);
+  log.info("shutdown_drained", { complete: drained });
+  server.stop(true);
+  process.exit(0);
 }
 
 startBackgroundWork({
