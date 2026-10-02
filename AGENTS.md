@@ -4,8 +4,11 @@ The project guide is [CLAUDE.md](CLAUDE.md): what this product is, how it is
 deployed, the gate, and each rule with the thing that went wrong behind it. Read
 it before changing anything. The decision records are in `docs/laf/`.
 
-This file holds only what a reviewer must hold a change to. It says nothing
-about formatting, lint, types or test counts: the gate and CI check those.
+This file restates, for a reviewer, the rules of CLAUDE.md and the checklist in
+`.github/pull_request_template.md` that a diff can be checked against. It
+narrows neither: a rule that is there and not here is still a rule. It says
+nothing about formatting, lint, types or test counts: the gate and CI check
+those.
 
 ## Code Review Rules
 
@@ -15,13 +18,24 @@ about formatting, lint, types or test counts: the gate and CI check those.
   deployment is one person on one VM with one API server process
   (`docs/laf/deployment-model.md`): the approval registry, the repeat counter
   and the gateway's snapshot cache are in memory on purpose.
-  Flag instead: state that must survive a restart and lives only in memory.
+  Flag instead: state that must survive a restart and lives only in memory —
+  the VM reboots, the image is upgraded, the process is killed by hand. That
+  state is in Postgres.
+- Flag a new listener, port or schedule that is not reached through the same
+  ingress as the API, or that says nothing of what it costs a 1 vCPU / 6 GB VM
+  already running Chromium.
 - Do not ask for multi-account or multi-Bot handling. One account per
   deployment and one Bot per person are enforced in code.
   Flag instead: a path that lets a second account or a second Bot in.
 
 ### Boundaries
 
+- Every acting call goes through the gateway: resolve, decide, audit, then
+  act. Flag a call that reaches the Bot's browser, its files or a connected
+  service by any other path, or in any other order.
+- Flag a new refusal or a new failure that writes no audit row.
+- Flag anything taken on the client's word that the server can resolve itself:
+  which account, which Bot, which conversation, what an answer covers.
 - Flag anything that lets a Bot's action past without a person seeing it —
   a standing allowance, an auto-review instruction — unless one switch governs
   it, it records who decided and why, and a `deny` still means deny.
@@ -47,6 +61,19 @@ about formatting, lint, types or test counts: the gate and CI check those.
 - Tools ride in front of every message a Bot answers. Flag a new core tool
   where a lower rung of CLAUDE.md's footprint ladder would do, and a tool that
   appears or disappears in the middle of a conversation.
+
+### Model calls, the shell, the compiler
+
+- Flag a model call bounded by a token ceiling on a reasoning model: the
+  budget goes on thinking and the answer comes back empty. The timeout is the
+  bound. Flag one that treats every failure alike: a provider refusing wants
+  waiting, an unusable reply wants pressing again. Flag a new hand-written
+  call where the server's existing one would do.
+- `desktop/` is a window onto the deployed origin. Flag product logic added to
+  the shell.
+- The React Compiler compiles every component and hook. Flag what leaves one
+  uncompiled: a `finally` in a component, a ref read or written while
+  rendering, the clock read while rendering.
 
 ### Words on the screen
 
