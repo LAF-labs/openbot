@@ -122,14 +122,13 @@ in `~/.claude/skills/`). Codex is set to review the pull requests the owner's
 GitHub account opens here, on every push (chatgpt.com → Codex → 설정 → 코드 검토);
 Dependabot's are not reviewed automatically.
 
-What the reviewer holds a change to is `AGENTS.md`, under `Code Review Rules` —
-the first thing Codex looks for in the repository, after the pull request's own
-title and body. It restates this file's rules and the pull request template's
-checklist as what a diff can be checked against, plus the two things that are
-right here and read as wrong (in-process state, one account and one Bot). It
-narrows neither: a rule that is here and not there is still a rule, and one a
-reviewer should enforce is added or changed there in the same change. Nothing
-dated and nothing about one pull request goes in it.
+`AGENTS.md` is where Codex looks first in the repository, after the pull
+request's own title and body. It holds no rules of its own: it sends the
+reviewer to this file and to the pull request template's checklist, whole. It
+restated them once, and four rounds of review found a dropped exception or a
+missing rule in the restatement each time — a copy is a second place for every
+rule to go stale, and a shorter copy reads as the whole contract. A rule is
+written here, once.
 
 ## Running it locally
 
