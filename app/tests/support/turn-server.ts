@@ -74,6 +74,14 @@ export function removeTurnStreams(): void {
   delete (globalThis as { EventSource?: typeof EventSource }).EventSource;
 }
 
+/** Run something that reaches React — a frame pushed to a window — inside `act`. */
+export async function acted(run: () => void | Promise<void>): Promise<void> {
+  const { act } = await import("react");
+  await act(async () => {
+    await run();
+  });
+}
+
 export type TurnSend = { botId: string; messages: Message[] };
 
 type Unnumbered =

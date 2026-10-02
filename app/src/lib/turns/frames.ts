@@ -64,9 +64,25 @@ export const EMPTY_THREAD: ThreadState = {
   notice: null,
 };
 
-/** Whether a turn in this state still has the Bot. */
+/** Whether a turn in this state is still going: accepted, and not ended. */
 export function isTurnGoing(turn: TurnState | null): boolean {
   return turn?.status === "queued" || turn?.status === "running";
+}
+
+/**
+ * Whether the turn is waiting for the Bot instead of driving it: the Bot is finishing something
+ * else first — a routine, most often — and the turn runs when it is free.
+ *
+ * A STATE OF ITS OWN, NOT A KIND OF RUNNING. `isTurnGoing` was the only thing that read the word,
+ * so a queued turn was drawn as a Bot that has the turn and has not spoken yet: "생각 중" for as
+ * long as the routine took (review, 2026-10-02).
+ *
+ * At any point in a turn, and more than once: the engine announces it on accepting the turn, and
+ * again whenever the turn takes the Bot back after waiting on a person. Most of those last a few
+ * milliseconds — the Bot was free — so whoever says it to a person waits first (`useLasting`).
+ */
+export function isTurnQueued(turn: TurnState | null): boolean {
+  return turn?.status === "queued";
 }
 
 /** The index of a message by id, looked for from the end, where a turn's messages are. */

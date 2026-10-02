@@ -70,10 +70,11 @@ import type { ReadLine } from "@/lib/read-line";
 import { routineKeys } from "@/lib/routines/queries";
 import { ServerAnswersProvider } from "@/lib/turns/answers";
 import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
-import { isTurnGoing, type TurnFrame } from "@/lib/turns/frames";
+import { isTurnGoing, isTurnQueued, type TurnFrame } from "@/lib/turns/frames";
 import { watchServerQuestions } from "@/lib/turns/questions";
 import { createThreadStore } from "@/lib/turns/thread-store";
 import { refreshTodayUsage } from "@/lib/usage/today";
+import { useLasting } from "@/lib/use-lasting";
 import { deviceClock } from "@/lib/whereabouts/queries";
 
 /**
@@ -87,6 +88,16 @@ const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** A window that was out of sight this long reopens its stream when it comes back. */
 const REOPEN_AFTER_HIDDEN_MS = 20_000;
+
+/**
+ * How long a turn stays `queued` before the transcript says it is waiting for the Bot.
+ *
+ * Every turn is queued for a moment: the engine announces it on accepting the turn and `running`
+ * once it has the Bot and its thread (`server/src/turns/engine.ts`), which with the Bot free is a
+ * few milliseconds. Two seconds is the line the thinking counter already keeps (`Thinking`): what
+ * is over sooner than that is not worth a word, and a routine in front of a turn takes far longer.
+ */
+const QUEUED_SAID_AFTER_MS = 2000;
 
 /**
  * One conversation with the one Bot, while the server owns its turns (`server/src/turns/`).
@@ -125,6 +136,15 @@ export function ServerChannelChat({
   const [store] = useState(() => createThreadStore(channel.threadId));
   const thread = useSyncExternalStore(store.subscribe, store.snapshot);
   const going = isTurnGoing(thread.turn);
+  /*
+   * THE TURN IS WAITING FOR THE BOT, AND HAS BEEN FOR A WHILE: a routine has it, and the turn runs
+   * when the routine is done. Keyed on the turn, so the next turn starts its own wait, and false
+   * the moment the turn is told it runs — however many times in a turn that happens.
+   */
+  const waitingForBot = useLasting(
+    isTurnQueued(thread.turn) ? (thread.turn?.id ?? null) : null,
+    QUEUED_SAID_AFTER_MS,
+  );
 
   /*
    * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED — once per mounted room,
@@ -675,6 +695,7 @@ export function ServerChannelChat({
               />
             }
             busy={busy}
+            waitingForBot={waitingForBot}
             channelId={channel.id}
             commands={skillCommands}
             disabled={!channel.active}

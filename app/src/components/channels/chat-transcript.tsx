@@ -90,6 +90,12 @@ import { ToolLine, toolKindOf } from "./tool-line";
 type ChatTranscriptProps = {
   busy?: boolean;
   /**
+   * The turn is waiting for the Bot, which is finishing something else first, and has been for long
+   * enough to say so (`isTurnQueued`, `useLasting`). Said in place of the thinking line, whatever
+   * the last row is: a turn can be made to wait at its start or partway.
+   */
+  waitingForBot?: boolean;
+  /**
    * The conversation this is, which is what lets a finished answer carry 좋아요·아쉬워요.
    *
    * Absent on the compose screen, where there is no conversation yet for a rating to belong to —
@@ -241,6 +247,32 @@ function Thinking() {
      */
     <p className="tool-line-running text-muted-foreground text-sm">
       {seconds >= 2 ? t("Thinking · {seconds}s", { seconds }) : t("Thinking")}
+    </p>
+  );
+}
+
+/**
+ * The turn was accepted and the Bot has not started on it: it is finishing something else first.
+ *
+ * A ROUTINE WAS RUNNING ON THE BOT, somebody sent a message, and this slot said "생각 중" for as long
+ * as the routine took — the status the server sent was `queued`, and nothing drew it (review,
+ * 2026-10-02). Thinking is what a Bot that has the turn is doing; this one has not been given it
+ * yet, and the line says which, and what happens next.
+ *
+ * No seconds, unlike `Thinking`: a count here would start again with every window that opens, and
+ * the wait it would be counting is the other job's, not this one's. It shimmers the same way,
+ * because the Bot is working — on the other job.
+ *
+ * Not a live region itself, for the reason `Thinking` is not: the transcript says it in the status
+ * line that is always mounted.
+ */
+function WaitingForBot() {
+  return (
+    <p
+      className="tool-line-running text-muted-foreground text-sm"
+      data-testid="transcript-waiting-for-bot"
+    >
+      {t("Finishing another job first · this one is next")}
     </p>
   );
 }
@@ -1271,6 +1303,7 @@ function continues(
 
 export function ChatTranscript({
   busy = false,
+  waitingForBot = false,
   channelId,
   commandNames = "",
   messageTimes = EMPTY_TIMES,
@@ -1370,6 +1403,13 @@ export function ChatTranscript({
       : null;
   const waitingOnFirstToken =
     busy && lastItem?.kind === "text" && lastItem.role === "user";
+  /*
+   * NOT TIED TO THE LAST ROW, unlike the line above. A turn that let go of the Bot to wait on a
+   * person can find it taken when it comes back, with the Bot's own words or a step as the last
+   * thing in the conversation — and a step that then sits still for as long as a routine takes is
+   * the same silence the thinking line was put there to end.
+   */
+  const queuedBehind = busy && waitingForBot;
   /** From here on the turn is still being written, and nothing in it can be rated yet. */
   const settledBefore = unsettledFrom(items, busy);
   /** The pages each answer was read from, by the answer's id (`sources.ts`). */
@@ -1824,6 +1864,9 @@ export function ChatTranscript({
                 code={stoppedCode}
                 onRetry={retryFor(lastAsked?.id)}
               />
+            ) : queuedBehind ? (
+              // Before thinking, never beside it: a Bot busy with another job is not thinking of this one.
+              <WaitingForBot />
             ) : waitingOnFirstToken ? (
               <Thinking />
             ) : noticeCode && !busy && turnNotice(noticeCode) ? (
@@ -1878,11 +1921,13 @@ export function ChatTranscript({
               ? t("Waiting for your answer")
               : stoppedCode
                 ? null
-                : waitingOnFirstToken
-                  ? t("Thinking")
-                  : noticeCode && !busy
-                    ? turnNotice(noticeCode)
-                    : null}
+                : queuedBehind
+                  ? t("Finishing another job first · this one is next")
+                  : waitingOnFirstToken
+                    ? t("Thinking")
+                    : noticeCode && !busy
+                      ? turnNotice(noticeCode)
+                      : null}
           </LiveRegion>
         </MessageScrollerViewport>
         <MessageScrollerButton />

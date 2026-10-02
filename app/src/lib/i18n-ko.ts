@@ -2744,6 +2744,8 @@ export const ko: Record<string, string> = {
     "{button}: 봇 프로필의 ‘허락해 둔 것’에서 되돌릴 때까지 다시 묻지 않아요.",
   "Take it back": "되돌리기",
   "Thinking · {seconds}s": "생각 중 · {seconds}초",
+  "Finishing another job first · this one is next":
+    "다른 일을 먼저 마치는 중 · 끝나면 바로 이어서 해요",
   "Sends when the current job is done": "보낼 예정 · 지금 일이 끝나면 전해요",
   "Stop the current job and send: {text}": "지금 일을 멈추고 보내기: {text}",
   "Stop and send this": "멈추고 이걸로",

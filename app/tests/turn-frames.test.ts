@@ -11,6 +11,7 @@ import {
   applyFrame,
   EMPTY_THREAD,
   isTurnGoing,
+  isTurnQueued,
   mergeMessages,
   type ThreadState,
   type TurnFrame,
@@ -194,5 +195,70 @@ describe("the turn around it", () => {
     );
     expect(merged.map((message) => message.id)).toEqual(["a", "b", "c"]);
     expect((merged[0] as { content: string }).content).toBe("1!");
+  });
+});
+
+/*
+ * `queued` IS A STATE OF ITS OWN: the turn was accepted and is waiting for the Bot, which is
+ * finishing something else first. It used to be told apart from `running` nowhere — both are
+ * "going" — and the transcript drew a Bot thinking for as long as a routine took (2026-10-02).
+ */
+describe("a turn that waits for the Bot", () => {
+  const turn = (status: "queued" | "running" | "done"): TurnFrame => ({
+    seq: ++seq,
+    kind: "turn",
+    turn: { id: "t1", status, asked: ["u1"] },
+  });
+
+  test("is queued until it is told it runs, and is going either way", () => {
+    let state = applyFrame(EMPTY_THREAD, turn("queued"));
+    expect(isTurnQueued(state.turn)).toBe(true);
+    expect(isTurnGoing(state.turn)).toBe(true);
+    state = applyFrame(state, turn("running"));
+    expect(isTurnQueued(state.turn)).toBe(false);
+    expect(isTurnGoing(state.turn)).toBe(true);
+    expect(isTurnQueued(null)).toBe(false);
+  });
+
+  test("can be queued again partway, more than once, and keeps what it has said and asked", () => {
+    let state = fold([
+      turn("queued"),
+      turn("running"),
+      {
+        seq: ++seq,
+        kind: "messages",
+        turn: "t1",
+        messages: [{ id: "a1", role: "assistant", content: "찾아볼게요." }],
+      },
+      event({ type: "CUSTOM", name: "laf.answer_truncated" }),
+      { seq: ++seq, kind: "waiting", turn: "t1", toolCallIds: ["c1"] },
+    ]);
+    // It let go of the Bot to wait on the person, and waits for the Bot to be free again.
+    for (const _again of [1, 2]) {
+      state = applyFrame(state, turn("queued"));
+      expect(isTurnQueued(state.turn)).toBe(true);
+      expect(isTurnGoing(state.turn)).toBe(true);
+      // The same turn: nothing it wrote, asked or was told is cleared by waiting.
+      expect(state.messages.map((message) => message.id)).toEqual(["a1"]);
+      expect(state.waiting).toEqual(["c1"]);
+      expect(state.notice).toBe("laf.answer_truncated");
+      state = applyFrame(state, turn("running"));
+      expect(isTurnQueued(state.turn)).toBe(false);
+    }
+    state = applyFrame(state, turn("done"));
+    expect(isTurnQueued(state.turn)).toBe(false);
+    expect(isTurnGoing(state.turn)).toBe(false);
+  });
+
+  test("is read off a snapshot too: a window that opens on a waiting turn", () => {
+    const state = applyFrame(EMPTY_THREAD, {
+      seq: ++seq,
+      kind: "snapshot",
+      epoch: "boot-1",
+      turn: { id: "t9", status: "queued", asked: ["u9"] },
+      messages: [{ id: "u9", role: "user", content: "경제 뉴스 알려줘" }],
+      waiting: [],
+    });
+    expect(isTurnQueued(state.turn)).toBe(true);
   });
 });
