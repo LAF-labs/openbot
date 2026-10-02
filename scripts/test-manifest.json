@@ -135,6 +135,7 @@
   "app/tests/help-card-reload.test.tsx",
   "app/tests/help-opened.test.tsx",
   "app/tests/help-page.test.ts",
+  "app/tests/history-reads.test.ts",
   "app/tests/history-unreadable.test.tsx",
   "app/tests/i18n-coverage.test.ts",
   "app/tests/ideas.test.ts",

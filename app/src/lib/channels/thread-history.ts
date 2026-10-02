@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { deadline } from "@/lib/deadline";
 
 /**
  * A thread's stored messages, in the shape the agent runs with.
@@ -48,15 +49,26 @@ export function normalizeStoredMessages(stored: unknown): Message[] {
   });
 }
 
-/** Null when the endpoint refuses or is unreachable; an empty thread is an empty array. */
+/**
+ * How long the whole conversation is waited on: twice a page of it (`HISTORY_WAIT_MS` in
+ * `turns/client.ts`), since this is all of it. With no limit, a request the server accepted and
+ * never answered held up everything that waits on the record: the screen's history, and words kept
+ * for a card, which are settled against it and read for again only once a read has failed (review,
+ * ninth round).
+ */
+const THREAD_WAIT_MS = 60_000;
+
+/** Null when the endpoint refuses, is unreachable or does not answer; an empty thread is `[]`. */
 export async function loadThreadHistory(
   threadId: string,
   agentId: string,
 ): Promise<Message[] | null> {
+  // A timer and a controller, not `AbortSignal.timeout`: see `deadline`.
+  const wait = deadline(THREAD_WAIT_MS);
   try {
     const response = await fetch(
       `/api/copilotkit/threads/${encodeURIComponent(threadId)}/messages?agentId=${encodeURIComponent(agentId)}`,
-      { credentials: "include" },
+      { credentials: "include", signal: wait.signal },
     );
     if (!response.ok) return null;
     const body = (await response.json().catch(() => null)) as {
@@ -65,6 +77,8 @@ export async function loadThreadHistory(
     return normalizeStoredMessages(body?.messages);
   } catch {
     return null;
+  } finally {
+    wait.clear();
   }
 }
 
