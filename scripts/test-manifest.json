@@ -105,6 +105,7 @@
   "app/tests/connections-screen.test.ts",
   "app/tests/consent-handoff.test.ts",
   "app/tests/control-poll.test.ts",
+  "app/tests/copied-reply.test.tsx",
   "app/tests/credential-form.test.ts",
   "app/tests/current-user-guard.test.ts",
   "app/tests/design-tokens.test.ts",

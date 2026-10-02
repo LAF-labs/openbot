@@ -23,3 +23,38 @@ export async function copyText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Put an answer on the clipboard as words and, where the clipboard takes it, as it was drawn.
+ *
+ * Two flavours in one item, so the thing pasted into picks: a chat box takes the words, a document
+ * takes the table. Where only words can be written — no `ClipboardItem`, or the engine refuses the
+ * write — the words go by themselves, which is what this did before it knew of anything else.
+ * False only when nothing reached the clipboard at all.
+ */
+export async function copyRich(parts: {
+  text: string;
+  html: string | null;
+}): Promise<boolean> {
+  const clipboard =
+    typeof navigator === "undefined" ? undefined : navigator.clipboard;
+  if (
+    parts.html &&
+    clipboard &&
+    typeof clipboard.write === "function" &&
+    typeof ClipboardItem !== "undefined"
+  ) {
+    try {
+      await clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([parts.text], { type: "text/plain" }),
+          "text/html": new Blob([parts.html], { type: "text/html" }),
+        }),
+      ]);
+      return true;
+    } catch {
+      // Refused as a rich item — some engines take only text. The words alone, below.
+    }
+  }
+  return copyText(parts.text);
+}
