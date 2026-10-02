@@ -782,12 +782,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `tool_call` — answering that it is in the list, where it used to answer that there was no such
  * tool and a Bot opened its browser instead (`tests/tool-bridge.test.ts`, the bot's deferral tests).
  *
+ * RAISED 2026-10-02 by five in `server`, from the refactoring review of the turn's path: a turn
+ * whose last write is refused for a moment written again, and one that cannot be written ended as
+ * a failure and not as `done`; what a turn has made flushed before the process leaves; a tool
+ * whose handler throws answered as a failed step with a code. (The lane test gained no test, only
+ * what it asserts: a turn waiting for the Bot again says `queued`.)
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3411, roots: ["server"] },
+  { name: "server", floor: 3416, roots: ["server"] },
   { name: "app", floor: 1601, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 602, roots: ["tests", "agent-bot"] },

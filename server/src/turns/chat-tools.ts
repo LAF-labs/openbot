@@ -1214,15 +1214,19 @@ export function createChatTools(deps: ChatToolsDeps) {
         return await component(name, args, call);
       } catch (error) {
         /*
-         * CopilotKit's rule for a handler that threw: the call is answered, and the answer says it
-         * failed. Never the error's own words beyond its message — a Drizzle failure's message
-         * carries its SQL and parameters (`failure-text.ts`).
+         * A handler that threw: the call is answered, and the answer says it failed — AS A FACT,
+         * NOT AS A SENTENCE. This returned the string `Error: …`, and a string is what a tool that
+         * WORKED returns (`answeredOk`, `runner/turn-loop.ts`): the step was recorded as one that
+         * went through, and the Bot was handed an English sentence with the error's own words in
+         * it (refactoring review, 2026-10-02). The reason is in the log, where a Drizzle failure's
+         * SQL and parameters are bounded (`failure-text.ts`); the Bot is told only that it failed
+         * here and that nobody knows how far it got.
          */
         log.error("chat_tool_threw", {
           tool: name,
           reason: describeFailure(error),
         });
-        return `Error: ${describeFailure(error)}`;
+        return refusal("laf:tool_failed");
       }
     };
 

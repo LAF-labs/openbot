@@ -29,6 +29,7 @@ import {
 import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
+import { LIST_GOALS } from "../../shared/tools/goals";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };
@@ -1372,5 +1373,37 @@ describe("manage_routine, as the window's handler answered it", () => {
       ),
     ).toBe(toolResultText("laf:routine_paused"));
     expect(toggled).toEqual([false]);
+  });
+});
+
+/*
+ * A HANDLER THAT THROWS IS A STEP THAT FAILED, SAID AS A FACT. It used to be answered with the
+ * string `Error: …` — and a string is what a tool that worked returns, so the step was recorded as
+ * one that went through and the Bot was handed an English sentence with the error's own words in it
+ * (refactoring review, 2026-10-02).
+ */
+describe("a tool whose own handler throws", () => {
+  test("is answered as a failure, with a code and none of the error's words", async () => {
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      goals: {
+        active: async () => {
+          throw new Error(
+            'Failed query: select * from "laf_goals" where "user_id" = $1 params: owner-1',
+          );
+        },
+      } as never,
+    })(context, [tool(LIST_GOALS)]);
+    const outcome = await toolkit.execute(LIST_GOALS, {}, call());
+    expect(outcome).toEqual({
+      ok: false,
+      code: "laf:tool_failed",
+      reason: toolResultText("laf:tool_failed"),
+    });
+    // Nothing of what was thrown: a database's failure names its SQL and its parameters.
+    expect(JSON.stringify(outcome)).not.toContain("laf_goals");
+    expect(JSON.stringify(outcome)).not.toContain("owner-1");
+    // And the sentence is one the table has, in the words a Bot reads.
+    expect(toolResultText("laf:tool_failed")).toContain("실패");
   });
 });
