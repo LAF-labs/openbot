@@ -986,14 +986,23 @@ export function openQuestionCalls(): {
 }
 
 /**
- * Whether anything at all is waiting on an answer.
+ * Whether one of these tool calls is waiting on an answer.
  *
  * The card itself is a transcript row, so scrolling up past it takes the only sign that a Bot is
  * blocked off the screen — and a Bot that has stopped to ask looks exactly like a Bot that has
  * stopped. The transcript's status slot uses this to keep saying so wherever the reader is.
+ *
+ * OF THESE CALLS, NOT OF ANY. It used to ask whether anything at all was open, which was the same
+ * question while only the conversation on screen put questions here. The shell's watch puts every
+ * conversation's here now (`lib/turns/questions.ts`), and a transcript that asked about all of them
+ * said "답을 기다리는 중" for a question raised in another conversation, over a turn of its own
+ * that was not waiting on anybody (review of that change, second round).
  */
-export function anyQuestionOpen(): boolean {
-  return open.size > 0;
+export function anyQuestionOn(toolCallIds: Iterable<string>): boolean {
+  for (const toolCallId of toolCallIds) {
+    if (open.has(toolCallId)) return true;
+  }
+  return false;
 }
 
 export function watchQuestions(listener: () => void): () => void {

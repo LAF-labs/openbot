@@ -9,7 +9,7 @@ import {
   throttleKey,
 } from "../src/lib/notifications/bot-notifications";
 import {
-  isCardOnScreen,
+  cardPlace,
   openChannelFrom,
 } from "../src/lib/notifications/use-bot-notifications";
 
@@ -109,8 +109,8 @@ describe("which screens draw a Bot's question", () => {
     { id: "channel_mine", agentIds: ["risk-analyst"], threadId: "thread-mine" },
     { id: "channel_other", agentIds: ["someone-else"], threadId: "thread-x" },
   ];
-  const on = (pathname: string, approvalId?: string, threadId?: string) =>
-    isCardOnScreen({
+  const place = (pathname: string, approvalId?: string, threadId?: string) =>
+    cardPlace({
       pathname,
       botId: "risk-analyst",
       approvalId,
@@ -119,14 +119,18 @@ describe("which screens draw a Bot's question", () => {
     });
 
   test("the conversation it was raised in does", () => {
-    expect(on("/channel/channel_mine", "appr_1", "thread-mine")).toBe(true);
+    expect(place("/channel/channel_mine", "appr_1", "thread-mine")).toBe(
+      "here",
+    );
     // The Bot's one conversation, before anybody has read which conversation the question is in.
-    expect(on("/channel/channel_mine")).toBe(true);
+    expect(place("/channel/channel_mine")).toBe("here");
   });
 
   test("another Bot's conversation does not", () => {
-    expect(on("/channel/channel_other")).toBe(false);
-    expect(on("/channel/channel_other", "appr_1", "thread-mine")).toBe(false);
+    expect(place("/channel/channel_other")).toBe("elsewhere");
+    expect(place("/channel/channel_other", "appr_1", "thread-mine")).toBe(
+      "elsewhere",
+    );
   });
 
   test("소식, 만든 것, 설정 — no screen that is not a conversation does", () => {
@@ -137,35 +141,37 @@ describe("which screens draw a Bot's question", () => {
       "/goals",
       "/settings",
     ]) {
-      expect(on(pathname)).toBe(false);
+      expect(place(pathname)).toBe("elsewhere");
     }
   });
 
   test("the page a notice opens for this question does, and for another it does not", () => {
-    expect(on("/approve/appr_1", "appr_1")).toBe(true);
-    expect(on("/approve/appr_2", "appr_1")).toBe(false);
-    expect(on("/approve/appr_1")).toBe(false);
+    expect(place("/approve/appr_1", "appr_1")).toBe("here");
+    expect(place("/approve/appr_2", "appr_1")).toBe("elsewhere");
+    expect(place("/approve/appr_1")).toBe("elsewhere");
   });
 
   test("before the list of conversations has been read, an open conversation is taken as the right one", () => {
     expect(
-      isCardOnScreen({
+      cardPlace({
         pathname: "/channel/channel_mine",
         botId: "risk-analyst",
         channels: undefined,
       }),
-    ).toBe(true);
+    ).toBe("here");
   });
 
   test("a list that has been read and does not hold the open one draws no card: the compose screen, a conversation that is gone", () => {
-    expect(on("/channel/new")).toBe(false);
-    expect(on("/channel/channel_deleted")).toBe(false);
+    expect(place("/channel/new")).toBe("elsewhere");
+    expect(place("/channel/channel_deleted")).toBe("elsewhere");
   });
 
   /*
    * Codex, on the pull request: an account that kept what it had before the limit can hold several
    * conversations with one Bot, and each draws only its own thread's cards. Deciding by "a
-   * conversation with this Bot is open" withheld the notice for a question raised in another one.
+   * conversation with this Bot is open" withheld the notice for a question raised in another one —
+   * and deciding "not here" before the record had been read raised one at somebody looking straight
+   * at the card.
    */
   describe("an account that kept two conversations with one Bot", () => {
     const kept = [
@@ -173,7 +179,7 @@ describe("which screens draw a Bot's question", () => {
       { id: "channel_b", agentIds: ["risk-analyst"], threadId: "thread-b" },
     ];
     const inB = (threadId?: string) =>
-      isCardOnScreen({
+      cardPlace({
         pathname: "/channel/channel_b",
         botId: "risk-analyst",
         approvalId: "appr_1",
@@ -182,15 +188,26 @@ describe("which screens draw a Bot's question", () => {
       });
 
     test("a question raised in the other one is not on this screen", () => {
-      expect(inB("thread-a")).toBe(false);
+      expect(inB("thread-a")).toBe("elsewhere");
     });
 
     test("one raised in this one is", () => {
-      expect(inB("thread-b")).toBe(true);
+      expect(inB("thread-b")).toBe("here");
     });
 
-    test("and one whose conversation nobody has read yet is not guessed to be here", () => {
-      expect(inB(undefined)).toBe(false);
+    test("and one whose conversation nobody has read yet is not known — which is not a no", () => {
+      expect(inB(undefined)).toBe("unknown");
+    });
+
+    test("on a screen that is no conversation at all there is nothing to know", () => {
+      expect(
+        cardPlace({
+          pathname: "/feed",
+          botId: "risk-analyst",
+          approvalId: "appr_1",
+          channels: kept,
+        }),
+      ).toBe("elsewhere");
     });
   });
 });

@@ -18,6 +18,7 @@ import {
 } from "@/lib/channels/use-channel-events";
 import {
   destinationOf,
+  isNotificationFrame,
   markNotificationSeen,
   NOTIFICATION_FRAME,
   type NotificationFrame,
@@ -42,7 +43,11 @@ import {
   throttleKey,
 } from "@/lib/notifications/bot-notifications";
 import { inShell } from "@/lib/notifications/shell";
+import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { questionThread } from "@/lib/turns/questions";
+
+/** How long the first read of what was already told waits before it is asked for again. */
+const SEED_RETRY_MS = 5_000;
 
 /**
  * The title of the notice that a Bot is stopped and waiting, with the particle that fits its name.
@@ -74,25 +79,26 @@ export function openChannelFrom(pathname: string): string | null {
 }
 
 /**
- * Whether the screen in front of the person is one that draws this question.
+ * Where a question's card is, as far as this screen can tell: on it, somewhere else, or not known.
  *
- * Two screens do: the conversation it was raised in, where the card sits on the line of the call
- * that raised it, and the page a notice opens for one question. Every other screen has the pill and
- * the sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading
+ * Two screens draw the card: the conversation it was raised in, on the line of the call that raised
+ * it, and the page a notice opens for one question. Every other screen has the pill and the
+ * sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading
  * is not them being asked.
  *
  * THE CONVERSATION IT WAS RAISED IN, NOT ANY CONVERSATION WITH THE BOT. An account that kept what it
  * had before the limit can hold several with one Bot, and each draws only its own thread's cards:
  * being in one of them is not looking at a question raised in another (review of this change, first
- * round). `threadId` is the question's conversation when the server's record has said; without it,
- * a Bot with one conversation can only mean that one, and a Bot with several is not guessed at.
+ * round). `threadId` is the question's conversation when the server's record has said. Without it,
+ * a Bot with one conversation can only mean that one — and a Bot with several is "unknown", which
+ * is an answer of its own: the caller that cannot tell must not decide (second round).
  *
  * While the list of conversations has not been read at all, an open conversation is taken as the
  * right one: staying quiet for that moment is the smaller mistake than interrupting somebody who is
  * looking at the card. A list that HAS been read and does not hold the open one is another matter —
  * the compose screen (`/channel/new`), a conversation that is gone — and no card is drawn there.
  */
-export function isCardOnScreen(input: {
+export function cardPlace(input: {
   pathname: string;
   botId: string;
   approvalId?: string | undefined;
@@ -101,23 +107,25 @@ export function isCardOnScreen(input: {
   channels:
     | readonly { id: string; agentIds: readonly string[]; threadId: string }[]
     | undefined;
-}): boolean {
+}): "here" | "elsewhere" | "unknown" {
   if (
     input.approvalId &&
     input.pathname === `/approve/${encodeURIComponent(input.approvalId)}`
   ) {
-    return true;
+    return "here";
   }
   const open = openChannelFrom(input.pathname);
-  if (!open) return false;
-  if (!input.channels) return true;
+  if (!open) return "elsewhere";
+  if (!input.channels) return "here";
   const channel = input.channels.find((entry) => entry.id === open);
-  if (!channel?.agentIds.includes(input.botId)) return false;
-  if (input.threadId) return channel.threadId === input.threadId;
-  return (
-    input.channels.filter((entry) => entry.agentIds.includes(input.botId))
-      .length === 1
+  if (!channel?.agentIds.includes(input.botId)) return "elsewhere";
+  if (input.threadId) {
+    return channel.threadId === input.threadId ? "here" : "elsewhere";
+  }
+  const withBot = input.channels.filter((entry) =>
+    entry.agentIds.includes(input.botId),
   );
+  return withBot.length === 1 ? "here" : "unknown";
 }
 
 /**
@@ -353,15 +361,20 @@ export function useBotNotifications(): void {
             notify: bot?.notify,
             hidden: bot?.hidden,
             visible: document.visibilityState === "visible",
-            cardOnScreen: isCardOnScreen({
-              pathname: pathRef.current,
-              botId: question.botId,
-              approvalId: question.approvalId,
-              threadId:
-                questionThread(question.botId, question.approvalId) ??
-                question.threadId,
-              channels: channelsRef.current,
-            }),
+            /*
+             * A question in the store with no conversation named is one this tab's own tool call
+             * raised: its card is in the conversation in front of them.
+             */
+            cardOnScreen:
+              cardPlace({
+                pathname: pathRef.current,
+                botId: question.botId,
+                approvalId: question.approvalId,
+                threadId:
+                  questionThread(question.botId, question.approvalId) ??
+                  question.threadId,
+                channels: channelsRef.current,
+              }) !== "elsewhere",
             now: Date.now(),
           },
           {
@@ -412,11 +425,12 @@ export function useBotNotifications(): void {
     let watermark: string | undefined;
     let stopped = false;
 
-    const catchUp = async (options: { raises: boolean }) => {
+    /** Whether the server answered. */
+    const catchUp = async (options: { raises: boolean }): Promise<boolean> => {
       const rows = await readNotifications(watermark);
       // Null is "the server could not be asked", which is not "nothing is waiting". Leaving the
       // watermark alone means the next read covers the same ground rather than skipping it.
-      if (!rows || stopped) return;
+      if (!rows || stopped) return false;
       // A pause the unread rule made changed rows the routines page is drawing. See the predicate.
       if (options.raises && routinesChangedBy(rows)) {
         void queryClientRef.current.invalidateQueries({
@@ -433,6 +447,7 @@ export function useBotNotifications(): void {
         }
         raiseFromOutbox(row);
       }
+      return true;
     };
 
     const raiseFromOutbox = (frame: NotificationFrame) => {
@@ -446,6 +461,28 @@ export function useBotNotifications(): void {
       // May be nothing: a Bot asking for a password is blocked on the person and has no page of its
       // own to send them to. See `showNotice`, which takes the destination as optional for this.
       const destination = destinationOf(frame);
+      /*
+       * WHERE THE CARD IS, BEFORE ANYTHING IS SAID. The frame names no conversation. The record
+       * does, and somebody reads it because of this same frame — the conversation on screen or the
+       * shell's watch — after which the questions effect above decides with the conversation in
+       * hand. So when this path cannot tell (a Bot with several conversations, one of them open,
+       * the record not read yet), it says nothing and leaves the question unannounced for that
+       * effect. Deciding here raised a notice at somebody looking straight at the card (review,
+       * second round).
+       */
+      const place =
+        kind === "needs-you"
+          ? cardPlace({
+              pathname: pathRef.current,
+              botId: frame.botId,
+              approvalId: frame.approvalId,
+              threadId: frame.approvalId
+                ? questionThread(frame.botId, frame.approvalId)
+                : undefined,
+              channels: channelsRef.current,
+            })
+          : null;
+      if (place === "unknown") return;
       announced.current.add(key);
 
       const bot = rosterRef.current?.find(
@@ -461,20 +498,7 @@ export function useBotNotifications(): void {
           visible: document.visibilityState === "visible",
           openChannelId: openChannelFrom(pathRef.current),
           ...(frame.channelId ? { channelId: frame.channelId } : {}),
-          ...(kind === "needs-you"
-            ? {
-                cardOnScreen: isCardOnScreen({
-                  pathname: pathRef.current,
-                  botId: frame.botId,
-                  approvalId: frame.approvalId,
-                  // The frame names no conversation; the record does, once somebody has read it.
-                  threadId: frame.approvalId
-                    ? questionThread(frame.botId, frame.approvalId)
-                    : undefined,
-                  channels: channelsRef.current,
-                }),
-              }
-            : {}),
+          ...(place ? { cardOnScreen: place === "here" } : {}),
           now: Date.now(),
         },
         {
@@ -514,21 +538,55 @@ export function useBotNotifications(): void {
       );
     };
 
-    // Whether or not the server answered: a list that could not be read marks nothing as said.
-    const afterSeed = () => {
+    /*
+     * THE FIRST READ, ASKED UNTIL IT IS ANSWERED. Nothing is announced from the store before it:
+     * a read that failed has marked nothing as already told, and letting the questions effect go
+     * then would shout every question that was open when the page was — on exactly the page load
+     * where the server is having a bad moment (review, second round). So the seed is tried again,
+     * waiting longer each time, and whatever it finally returns is the backlog.
+     */
+    let seeding = false;
+    let seedTries = 0;
+    let seedTimer: ReturnType<typeof setTimeout> | undefined;
+    const seed = async () => {
+      if (seeding || seeded.current || stopped) return;
+      seeding = true;
+      clearTimeout(seedTimer);
+      const answered = await catchUp({ raises: false });
+      seeding = false;
       if (stopped) return;
-      seeded.current = true;
-      announceOpen.current();
+      if (answered) {
+        seeded.current = true;
+        announceOpen.current();
+        return;
+      }
+      seedTries += 1;
+      seedTimer = setTimeout(
+        () => void seed(),
+        Math.min(OUTAGE_CAP_MS, SEED_RETRY_MS * 2 ** (seedTries - 1)),
+      );
     };
-    void catchUp({ raises: false }).then(afterSeed, afterSeed);
-    const onFrame = () => {
-      void catchUp({ raises: true });
+    void seed();
+    const onFrame = (event: Event) => {
+      if (seeded.current) {
+        void catchUp({ raises: true });
+        return;
+      }
+      /*
+       * Not seeded yet, so a read now would return the backlog and raise all of it. The frame
+       * itself is the one thing known to be new: it is said from what it carries, and the seed —
+       * asked for again now that the server is evidently there — marks the rest as told.
+       */
+      const frame = (event as CustomEvent<unknown>).detail;
+      if (isNotificationFrame(frame)) raiseFromOutbox(frame);
+      void seed();
     };
     notificationFrames.addEventListener(NOTIFICATION_FRAME, onFrame);
     // A reconnect is the one moment this page knows it may have missed frames. See `events.ts`.
     socketState.addEventListener(SOCKET_RECONNECTED, onFrame);
     return () => {
       stopped = true;
+      clearTimeout(seedTimer);
       notificationFrames.removeEventListener(NOTIFICATION_FRAME, onFrame);
       socketState.removeEventListener(SOCKET_RECONNECTED, onFrame);
     };

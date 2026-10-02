@@ -814,11 +814,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a turn the conversation saw end, a conversation that left before it had heard — and one from
  * pressing it, a conversation that has not heard yet).
  *
- * RAISED 2026-10-02 by thirty-five in `app`: a question the Bot stops on, known on every screen —
- * the shell's watch with the server's record handed to it, and one question on two lines (14), the
- * app mounted on a screen that is not the conversation, with what it draws and when it interrupts
- * (8), and the notice's decision with which screens draw the card (13). Eight of them are the
- * review's: a second conversation with the same Bot, and the approval's own page.
+ * RAISED 2026-10-02 by forty-two in `app`: a question the Bot stops on, known on every screen —
+ * the shell's watch with the server's record handed to it, one question on two lines and a
+ * transcript's own calls (15), the app mounted on a screen that is not the conversation, with what
+ * it draws and when it interrupts (13), and the notice's decision with where the card is (14).
+ * Fifteen of them are the review's: a second conversation with the same Bot, the approval's own
+ * page, a first read the server did not answer, and a frame read before the record.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -826,7 +827,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3418, roots: ["server"] },
-  { name: "app", floor: 1743, roots: ["app"] },
+  { name: "app", floor: 1750, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 608, roots: ["tests", "agent-bot"] },
 ] as const;
