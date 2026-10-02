@@ -20,10 +20,17 @@
  * code block, a reference link — seven in two rounds, every one true, and no end to them, because a
  * second reading of markdown is a second parser. What the renderer drew is the one reading there
  * is. The words are what it drew, read in order.
+ *
+ * AND WHAT IT CAN DRAW IS A LIST WITH AN END. The renderer cleans what an answer writes as HTML and
+ * lets through some fifty elements and a handful of attributes — a start and a value on a list, a
+ * span on a cell — and nothing else. Reading them one finding at a time took four rounds of review
+ * (a list from nought, a list of terms, an item's own number, …); `READ_ELEMENTS` is the whole
+ * list, each read on purpose, and `copied-reply.test.tsx` draws every element HTML has to see that
+ * none gets through that is not on it.
  */
 
 /** What the renderer and this app put in a bubble that is not the answer. */
-const NOT_THE_ANSWER = [
+export const NOT_THE_ANSWER = [
   "button",
   "svg",
   '[role="menu"]',
@@ -112,6 +119,51 @@ function saysAddress(label: string, address: string): boolean {
   return urlOf(`${target.protocol}//${label}`)?.href === target.href;
 }
 
+/**
+ * Every element the renderer lets an answer draw, and how its words are read. Found by drawing each
+ * element HTML has (the test does it again on every run): a renderer that lets a new one through
+ * fails there, instead of having it read as if it were a `span`.
+ */
+const READ_AS = {
+  /** Its own block or blocks, read like the answer's own. */
+  container: ["blockquote", "details", "div", "section"],
+  /** One block: the words that run along it. */
+  line: ["h1", "h2", "h3", "h4", "h5", "h6", "p", "summary"],
+  /** Read by the function named for it. */
+  special: [
+    ...["a", "br", "code", "hr", "img", "input", "pre", "q", "rt", "sup"],
+    ...["del", "s", "strike"],
+    ...["dd", "dl", "dt", "li", "ol", "ul"],
+    ...["table", "tbody", "td", "tfoot", "th", "thead", "tr"],
+  ],
+  /** Words, where they stand. `rp` is the bracket a reading without ruby support falls back on. */
+  inline: [
+    ...["b", "em", "i", "ins", "kbd", "picture", "rp", "ruby", "samp"],
+    ...["source", "span", "strong", "sub", "tt", "var"],
+  ],
+} as const;
+
+export const READ_ELEMENTS: ReadonlySet<string> = new Set(
+  Object.values(READ_AS).flat(),
+);
+
+const CONTAINERS: ReadonlySet<string> = new Set([...READ_AS.container, "dd"]);
+// A term or an item standing by itself, outside its list, is still a line of its own.
+const LINES: ReadonlySet<string> = new Set([...READ_AS.line, "dt", "li"]);
+/** What is never part of the line it is found in. */
+const STANDS_ALONE: ReadonlySet<string> = new Set([
+  ...CONTAINERS,
+  ...["dl", "ol", "table", "ul"],
+]);
+/** The renderer wraps a picture in a `div` and leaves it in its sentence. */
+const PICTURE = '[data-streamdown="image-wrapper"]';
+
+/** A whole number an attribute holds, or null where it holds none. Nought is a number. */
+function numberOn(element: Element, attribute: string): number | null {
+  const held = Number.parseInt(element.getAttribute(attribute) ?? "", 10);
+  return Number.isNaN(held) ? null : held;
+}
+
 /** What runs along a line: words, a link with its address, a picture's description, a line break. */
 function inlineOf(node: Node): string {
   if (node.nodeType === TEXT_NODE) {
@@ -121,9 +173,9 @@ function inlineOf(node: Node): string {
   const tag = tagOf(node);
   if (tag === "br") return "\n";
   if (tag === "img") return node.getAttribute("alt") ?? "";
+  // Whatever an answer wrote, the renderer draws a box that cannot be pressed: ☐ and ☑ are what a
+  // chat box can show of one.
   if (tag === "input") {
-    if (node.getAttribute("type") !== "checkbox") return "";
-    // A checklist's boxes are drawn, not typed: ☐ and ☑ are what a chat box can show.
     return (node as HTMLInputElement).checked || node.hasAttribute("checked")
       ? "☑"
       : "☐";
@@ -131,6 +183,11 @@ function inlineOf(node: Node): string {
   // Code keeps every character it has, spaces included.
   if (tag === "code") return node.textContent ?? "";
   if (tag === "pre") return `\n${codeOf(node)}\n`;
+  // A block where a line was expected — a list in a cell, a table in a quotation's sentence — is
+  // read as the block it is, on lines of its own.
+  if (STANDS_ALONE.has(tag) && !node.matches(PICTURE)) {
+    return `\n${linesOf(node.parentElement ?? node, node).join("\n")}\n`;
+  }
   const inner = [...node.childNodes].map(inlineOf).join("");
   if (tag === "p") return `${inner}\n`;
   // Raised text has no place in a chat box: a power is written with its caret. A footnote's number
@@ -138,30 +195,101 @@ function inlineOf(node: Node): string {
   if (tag === "sup") {
     return node.querySelector("[data-footnote-ref]") ? inner : `^${inner}`;
   }
+  // Struck out is the one thing a chat box has to be told in marks: without them `~~어제~~ 오늘` reads
+  // as both. Two tildes each side is how it is written where there is no line to draw.
+  if (tag === "del" || tag === "s" || tag === "strike") {
+    return inner.trim() ? `~~${inner}~~` : inner;
+  }
+  // The browser draws a quotation's marks; they are not in its text.
+  if (tag === "q") return `“${inner}”`;
+  // A reading drawn above what it reads stands beside it in brackets — the answer's own (`rp`)
+  // where it wrote them.
+  if (tag === "rt") {
+    return node.parentElement?.querySelector("rp") ? inner : `(${inner})`;
+  }
   if (tag === "a") {
     const label = inner.trim();
+    // A link with no words draws nothing; a space where it stood is all that is left of it.
+    if (!label) return inner ? " " : "";
     // "올랐어요.1" reads as a number that belongs to the sentence.
     if (node.hasAttribute("data-footnote-ref")) return `[${label}]`;
     const address = addressOf(node.getAttribute("href") ?? "");
     // A chat box cannot hold an address behind a word, so the address goes beside it — unless the
     // word is the address already, or it leads nowhere outside this answer.
-    return address && !address.startsWith("#") && !saysAddress(label, address)
-      ? `${label} (${address})`
-      : label;
+    const said =
+      address && !address.startsWith("#") && !saysAddress(label, address)
+        ? `${label} (${address})`
+        : label;
+    // The space an answer left inside the link is still the space between its words.
+    const [lead = ""] = /^\s*/.exec(inner) ?? [];
+    const [trail = ""] = /\s*$/.exec(inner.slice(lead.length)) ?? [];
+    return `${lead ? " " : ""}${said}${trail ? " " : ""}`;
   }
   return inner;
 }
 
-/** A table, row by row, with a tab between cells: the one separator every paste target keeps. */
+/** How many columns or rows a cell takes: one, unless it says more. Never nought, never a thousand. */
+function spanOf(cell: Element, attribute: "colspan" | "rowspan"): number {
+  return Math.min(Math.max(numberOn(cell, attribute) ?? 1, 1), 100);
+}
+
+/**
+ * A table, row by row, with a tab between cells: the one separator every paste target keeps.
+ *
+ * A cell that spans is laid out the way it is drawn — the columns and rows it covers stay empty —
+ * so what is under a column in the answer is under it in the spreadsheet.
+ */
 function tableOf(table: Element): string {
-  return [...table.querySelectorAll("tr")]
-    .map((row) =>
-      [...row.children]
-        .filter((cell) => ["th", "td"].includes(tagOf(cell)))
-        .map((cell) => tidy(inlineOf(cell)).replace(/\n/g, " "))
-        .join("\t"),
-    )
-    .join("\n");
+  const grid: (string | undefined)[][] = [];
+  const rows = [...table.querySelectorAll("tr")].filter(
+    (row) => row.closest("table") === table,
+  );
+  rows.forEach((row, at) => {
+    let column = 0;
+    for (const cell of row.children) {
+      if (!["th", "td"].includes(tagOf(cell))) continue;
+      const line = grid[at] ?? [];
+      grid[at] = line;
+      // Past whatever a cell from a row above reaches down into.
+      while (line[column] !== undefined) column += 1;
+      const words = linesOf(cell).join(" ");
+      const across = spanOf(cell, "colspan");
+      const down = spanOf(cell, "rowspan");
+      for (let below = 0; below < down; below += 1) {
+        const covered = grid[at + below] ?? [];
+        grid[at + below] = covered;
+        for (let beside = 0; beside < across; beside += 1) {
+          covered[column + beside] = below === 0 && beside === 0 ? words : "";
+        }
+      }
+      column += across;
+    }
+  });
+  return Array.from(grid, (line) =>
+    Array.from(line ?? [], (cell) => cell ?? "").join("\t"),
+  ).join("\n");
+}
+
+/** Whether an item is one of a checklist: the renderer drew a box at its head. Not what it says. */
+function hasBox(item: Element): boolean {
+  const first = item.firstElementChild;
+  if (!first) return false;
+  if (tagOf(first) === "input") return true;
+  // An item written with a blank line after it holds its words in a paragraph, box and all.
+  const inside = tagOf(first) === "p" ? first.firstElementChild : null;
+  return inside !== null && tagOf(inside) === "input";
+}
+
+/** `under` put in front of every line that has something on it. A line that is empty stays empty. */
+function hung(lines: readonly string[], under: string): string[] {
+  return lines.map((line) => (line ? `${under}${line}` : ""));
+}
+
+/** What an element holds — or the one child of it named — as lines: its blocks one under the other. */
+function linesOf(element: Element, only?: Element): string[] {
+  const blocks: string[] = [];
+  blocksOf(element, blocks, only);
+  return blocks.filter(Boolean).join("\n").split("\n");
 }
 
 /**
@@ -172,52 +300,65 @@ function tableOf(table: Element): string {
  * tidied the way words are. Drawn and copied, 2026-10-02: code under a numbered step lost its
  * indentation, which in Python is the program, and a table under one came out as its cells run
  * together (`가나12`). Numbered steps with a block of code each are the shape a how-to answer takes.
+ *
+ * Numbered the way it is drawn: from the list's start, nought included, and from an item's own
+ * number where it says one.
  */
 function listOf(list: Element): string {
-  // Nought is where a list may start, so the fallback is for no number at all, not for a falsy one.
-  const start = Number.parseInt(list.getAttribute("start") ?? "", 10);
-  const first = Number.isNaN(start) ? 1 : start;
   const isOrdered = tagOf(list) === "ol";
+  let number = numberOn(list, "start") ?? 1;
   const lines: string[] = [];
-  let count = 0;
   for (const item of list.children) {
     if (tagOf(item) !== "li") continue;
-    const blocks: string[] = [];
-    blocksOf(item, blocks);
-    const [head = "", ...rest] = blocks.filter(Boolean).join("\n").split("\n");
+    number = numberOn(item, "value") ?? number;
+    const [head = "", ...rest] = linesOf(item);
     // A checklist's box stands where the bullet would.
-    const isChecklist = /^[☐☑]/.test(head);
-    const marker = isChecklist ? "" : isOrdered ? `${first + count}. ` : "- ";
+    const marker = hasBox(item) ? "" : isOrdered ? `${number}. ` : "- ";
     lines.push(`${marker}${head}`.trimEnd());
-    // Under the item's words, not under its marker. A line that is empty stays empty.
-    const hang = " ".repeat(isChecklist ? 2 : marker.length);
-    for (const line of rest) lines.push(line ? `${hang}${line}` : "");
-    count += 1;
+    // Under the item's words, not under its marker.
+    lines.push(...hung(rest, " ".repeat(marker.length || 2)));
+    number += 1;
   }
   return lines.join("\n");
 }
 
-/** The blocks under `element`, in order, each as its words. */
-function blocksOf(element: Element, blocks: string[]): void {
+/** A list of terms: each term on its line, and what it means under it. */
+function termsOf(list: Element): string {
+  const lines: string[] = [];
+  for (const entry of list.children) {
+    const tag = tagOf(entry);
+    if (tag === "dt") lines.push(...linesOf(entry));
+    else if (tag === "dd") lines.push(...hung(linesOf(entry), "  "));
+    // An answer may group them in a `div`, as HTML allows.
+    else if (tag === "div") lines.push(termsOf(entry));
+  }
+  return lines.filter(Boolean).join("\n");
+}
+
+/** The blocks under `element` — or the one child of it named — in order, each as its words. */
+function blocksOf(element: Element, blocks: string[], only?: Element): void {
   let running = "";
   const flush = () => {
     const words = tidy(running);
     if (words) blocks.push(words);
     running = "";
   };
-  for (const child of element.childNodes) {
+  for (const child of only ? [only] : element.childNodes) {
     if (!isElement(child)) {
       running += inlineOf(child);
       continue;
     }
     if (child.matches(NOT_THE_ANSWER)) continue;
     const tag = tagOf(child);
-    if (/^(?:p|h[1-6]|summary)$/.test(tag)) {
+    if (LINES.has(tag)) {
       flush();
       blocks.push(tidy(inlineOf(child)));
     } else if (tag === "ul" || tag === "ol") {
       flush();
       blocks.push(listOf(child));
+    } else if (tag === "dl") {
+      flush();
+      blocks.push(termsOf(child));
     } else if (tag === "table") {
       flush();
       blocks.push(tableOf(child));
@@ -226,7 +367,7 @@ function blocksOf(element: Element, blocks: string[]): void {
       blocks.push(codeOf(child));
     } else if (tag === "hr") {
       flush();
-    } else if (["blockquote", "div", "section", "details"].includes(tag)) {
+    } else if (CONTAINERS.has(tag) && !child.matches(PICTURE)) {
       flush();
       blocksOf(child, blocks);
     } else {
@@ -250,6 +391,7 @@ const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   td: ["colspan", "rowspan"],
   th: ["colspan", "rowspan"],
   ol: ["start"],
+  li: ["value"],
   input: ["type", "checked", "disabled"],
 };
 
