@@ -18,6 +18,7 @@ import {
   noteResent,
   readSendable,
   readUnsent,
+  settleAnswers,
   type UnsentMessage,
   useUnsent,
 } from "@/components/channels/composer/outbox";
@@ -76,6 +77,7 @@ import { useToolsSettled } from "@/lib/copilot/tools-settled";
 
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
+import { answeredInWords } from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
 
 /**
@@ -1061,6 +1063,17 @@ export function ChannelChat({
   retryRef.current = retry;
   const resendRef = useRef(resend);
   resendRef.current = resend;
+  /**
+   * Words kept for a card, settled against the conversation as it is held NOW: through a ref like
+   * the two above, since the effect that calls it was set up while the agent was not ready and its
+   * own `agent` holds no messages at all.
+   */
+  const settleKeptAnswers = () =>
+    settleAnswers(channel.id, (toolCallId) =>
+      answeredInWords(agent.messages, toolCallId),
+    );
+  const settleRef = useRef(settleKeptAnswers);
+  settleRef.current = settleKeptAnswers;
 
   /*
    * THE CONNECTION CAME BACK: WHAT WAS KEPT GOES, ONCE, BY ITSELF.
@@ -1085,7 +1098,17 @@ export function ChannelChat({
   useEffect(() => {
     let current = true;
     void joinGatePromise.then(() => {
-      if (!current || isSocketLost() || navigator.onLine === false) return;
+      if (!current) return;
+      /*
+       * WORDS A TURN THE SERVER OWNED KEPT FOR A CARD (`answerTo`, `server-channel-chat.tsx`). A
+       * deployment can be switched to turns the window drives with such words still on the
+       * device, and no card of the server's waits on anything here. Settled once the conversation
+       * is in, and not before — read off a thread that has not arrived, "no such answer" is said
+       * of every one: forgotten where the conversation shows their card answered with them, and
+       * words like any other the device kept where it does not.
+       */
+      settleRef.current();
+      if (isSocketLost() || navigator.onLine === false) return;
       if (readUnsent(channel.id).some((message) => !message.autoTried)) {
         void resendRef.current(true);
       }

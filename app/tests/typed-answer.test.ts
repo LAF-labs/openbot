@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import {
   answeredInWords,
+  hasResult,
   isSavedByPress,
   openChoiceCall,
   typedAnswer,
@@ -137,6 +138,25 @@ describe("the words a card was answered with, read off the conversation", () => 
     expect(answeredInWords([question], "c-1")).toBeUndefined();
     const messages = [question, result("c-2", '{"answer":"냉면"}')];
     expect(answeredInWords(messages, "c-1")).toBeUndefined();
+  });
+
+  test("and whether its question is over at all is whether the call has a result", () => {
+    expect(hasResult([question], "c-1")).toBe(false);
+    expect(hasResult([question, result("c-2", "x")], "c-1")).toBe(false);
+    expect(hasResult([question, result("c-1", "laf:stopped")], "c-1")).toBe(
+      true,
+    );
+  });
+
+  // An id is decided by its newest call here too: an older call's result is not this one's.
+  test("are the newest call's under that id, never an older call's that carried the same one", () => {
+    const older = [question, result("c-1", '{"answer":"예전 답"}')];
+    const again = asking("m-2", call("c-1", "askChoice", CHOICE));
+    expect(answeredInWords([...older, again], "c-1")).toBeUndefined();
+    expect(hasResult([...older, again], "c-1")).toBe(false);
+    const answered = [...older, again, result("c-1", '{"answer":"이번 답"}')];
+    expect(answeredInWords(answered, "c-1")).toBe("이번 답");
+    expect(hasResult(answered, "c-1")).toBe(true);
   });
 
   test("are nothing for any other result: an option pressed, a wait that ran out, a sentence", () => {

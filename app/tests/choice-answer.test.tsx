@@ -89,6 +89,9 @@ beforeAll(async () => {
 afterEach(async () => {
   await unmountApps();
   localStorage.clear();
+  // What one test kept on the device is not the next test's to find.
+  const outbox = await import("../src/components/channels/composer/outbox");
+  outbox.forgetUnsentCache();
 });
 setDefaultTimeout(30_000);
 afterAll(async () => {
@@ -201,23 +204,89 @@ describe("words typed while the Bot waits on a choice", () => {
     expect(turns.sends).toHaveLength(0);
   });
 
-  test("are kept for after the turn when the question was no longer waiting", async () => {
-    const { api, turns } = server();
-    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
-    await ask(view, turns);
-    // The wait ran out on the server a moment ago; this window has not heard.
-    turns.stopWaiting();
-
-    await type(view, "둘 다 말고 냉면");
+  /** The words go out by the composer's own button, which says it sends. */
+  async function sendWords(view: View, words: string) {
+    await type(view, words);
     const send = view.host.querySelector('button[aria-label="Send message"]');
     if (!send) throw new Error("no send button");
     await view.click(send);
+  }
+  const TYPED = "둘 다 말고 냉면";
+  /** What the device keeps of this conversation, as it is stored. */
+  const kept = () =>
+    JSON.parse(localStorage.getItem(`laf:unsent:${CHANNEL}`) ?? "[]") as {
+      text: string;
+      answerTo?: string;
+      waiting?: boolean;
+    }[];
+  const answeredWith = (words: string) =>
+    ({
+      id: "r-choice",
+      role: "tool",
+      toolCallId: CALL,
+      content: JSON.stringify({ answer: words }),
+    }) as Message;
+
+  /*
+   * KEPT FIRST, THEN OFFERED. The door was asked before anything was kept: a page reloaded while
+   * it was slow had the words nowhere (adversarial read of this change).
+   */
+  test("are on the device before the door has answered", async () => {
+    const { api, turns } = server();
+    let letDoorAnswer = () => {};
+    const slowDoor = (request: ApiRequest) => {
+      if (request.method === "POST" && request.pathname.includes("/answers/")) {
+        return new Promise<void>((resolve) => {
+          letDoorAnswer = resolve;
+        }).then(() => api(request) as Response);
+      }
+      return api(request);
+    };
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api: slowDoor });
+    await ask(view, turns);
+
+    await sendWords(view, TYPED);
+    await view.settle(100);
+    expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+    // On their way to the card: not drawn as waiting for the turn to end.
+    expect(view.host.textContent).not.toContain(WAITS);
+
+    await acted(() => letDoorAnswer());
+    await view.waitFor(
+      () => turns.answers().length === 1,
+      "the answer to reach the card's door",
+      4000,
+    );
+  });
+
+  /*
+   * The wait ran out in the instant before this window heard of it: the door says nothing waits
+   * on that call. They are words typed mid-turn, and go when the turn is over.
+   */
+  test("that the question would no longer take wait for the turn, and go when it is over", async () => {
+    const { api, turns } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await ask(view, turns);
+    turns.stopWaitingUnheard();
+
+    await sendWords(view, TYPED);
     await view.waitFor(
       () => view.host.textContent?.includes(WAITS) === true,
       "the words kept as waiting for the Bot",
       4000,
     );
     expect(turns.answers()).toHaveLength(0);
+    expect(turns.sends).toHaveLength(0);
+
+    await acted(() => turns.announce("done"));
+    await view.waitFor(
+      () => turns.sends.length === 1,
+      "the words to go once the turn is over",
+      4000,
+    );
+    expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
+      TYPED,
+    ]);
   });
 
   /*
@@ -242,18 +311,14 @@ describe("words typed while the Bot waits on a choice", () => {
     });
     await ask(view, turns);
 
-    await type(view, "둘 다 말고 냉면");
-    const send = view.host.querySelector('button[aria-label="Send message"]');
-    if (!send) throw new Error("no send button");
-    await view.click(send);
-
+    await sendWords(view, TYPED);
     await view.waitFor(
       () => turns.sends.length === 1,
       "the words to go as a message",
       4000,
     );
     expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
-      "둘 다 말고 냉면",
+      TYPED,
     ]);
     expect(turns.answers()).toHaveLength(0);
     await view.settle(200);
@@ -261,128 +326,200 @@ describe("words typed while the Bot waits on a choice", () => {
   });
 
   /*
-   * Review, 2026-10-02. "Not taken" was both the server's no and nothing coming back at all. With
-   * nothing back the answer may have been taken: sent again as a message it is said twice, and kept
-   * behind the turn it sits under "보낼 예정" while the question waits for exactly those words.
+   * Review, first round. "Not taken" was both the server's no and nothing coming back at all, and
+   * with nothing back the answer may have been taken: sent again as a message it is said twice.
+   * What became of such words is decided in one place, from the conversation.
    */
-  test("with nothing back from the door are neither sent again nor kept as waiting: not sent, until the person presses", async () => {
+  describe("with nothing back from the door", () => {
+    test("wait, are not handed over, and are offered to the card again when the connection is back", async () => {
+      const { api, turns } = server();
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      turns.answersDown();
+
+      await sendWords(view, TYPED);
+      await view.waitFor(
+        () => view.host.textContent?.includes(WAITS) === true,
+        "the words kept as waiting",
+        4000,
+      );
+      await view.settle(300);
+      expect(isNotSent(view.host)).toBe(false);
+      expect(turns.sends).toHaveLength(0);
+      expect(turns.answers()).toHaveLength(0);
+      expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+
+      // The connection comes back while the question still waits: nobody has to press anything.
+      turns.answersUp();
+      await acted(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await view.waitFor(
+        () => turns.answers().length === 1,
+        "the answer to reach the card's door",
+        4000,
+      );
+      expect(turns.answers()).toEqual([
+        { toolCallId: CALL, value: { answer: TYPED } },
+      ]);
+      await view.settle(200);
+      expect(view.host.textContent).not.toContain(WAITS);
+      expect(turns.sends).toHaveLength(0);
+    });
+
+    test("a second answer typed for the same card takes the first one's place", async () => {
+      const { api, turns } = server();
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      turns.answersDown();
+
+      await sendWords(view, TYPED);
+      await view.waitFor(() => kept().length === 1, "the first kept", 4000);
+      turns.answersUp();
+      await sendWords(view, "아니, 그냥 비빔밥");
+      await view.waitFor(
+        () => turns.answers().length === 1,
+        "the second answer to reach the card's door",
+        4000,
+      );
+      expect(turns.answers()).toEqual([
+        { toolCallId: CALL, value: { answer: "아니, 그냥 비빔밥" } },
+      ]);
+      expect(kept().map((message) => message.text)).toEqual([
+        "아니, 그냥 비빔밥",
+      ]);
+    });
+
+    test("go when the turn is over, as a message, where the question ended some other way", async () => {
+      const { api, turns } = server();
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      turns.answersDown();
+
+      await sendWords(view, TYPED);
+      await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+
+      // Stopped: the call is answered with a code, and the turn is over.
+      await acted(() => {
+        turns.say([
+          {
+            id: "r-choice",
+            role: "tool",
+            toolCallId: CALL,
+            content: JSON.stringify({ ok: false, code: "laf:stopped" }),
+          } as Message,
+        ]);
+        turns.stopWaiting();
+        turns.announce("stopped");
+      });
+      await view.waitFor(
+        () => turns.sends.length === 1,
+        "the words to go as a message",
+        4000,
+      );
+      expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual(
+        [TYPED],
+      );
+      expect(turns.answers()).toHaveLength(0);
+    });
+
+    test("that the door had taken are the card's answer when the stream says so — and go nowhere twice", async () => {
+      const { api, turns } = server();
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      turns.loseAnswerReply();
+
+      await sendWords(view, TYPED);
+      await view.waitFor(
+        () => turns.answers().length === 1,
+        "the door to take the answer",
+        4000,
+      );
+      await view.waitFor(
+        () => view.host.textContent?.includes(WAITS) === true,
+        "the words kept as waiting, the reply having been lost",
+        4000,
+      );
+      turns.answersUp();
+      // Nothing waits on the card now, and nothing says yet what answered it: they stay as they are.
+      await acted(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await view.settle(300);
+      expect(turns.answers()).toHaveLength(1);
+      expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+
+      // What the door would have said arrives the other way: the call's result is these words.
+      await acted(() => turns.say([answeredWith(TYPED)]));
+      await view.waitFor(
+        () => kept().length === 0,
+        "them to be forgotten",
+        4000,
+      );
+      expect(view.host.textContent).not.toContain(WAITS);
+
+      await acted(() => turns.announce("done"));
+      await view.settle(300);
+      expect(turns.sends).toHaveLength(0);
+      expect(turns.answers()).toHaveLength(1);
+    });
+  });
+
+  /*
+   * "Taken" is not yet "filed": between the door's yes and the result on the conversation the
+   * turn can be stopped, and the answer goes with it. Kept until the conversation shows it, the
+   * words are still there to go as a message.
+   */
+  test("that the door took are still sent, as a message, if the turn is stopped before the answer is filed", async () => {
     const { api, turns } = server();
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
     await ask(view, turns);
-    turns.answersDown();
 
-    await type(view, "둘 다 말고 냉면");
-    const send = view.host.querySelector('button[aria-label="Send message"]');
-    if (!send) throw new Error("no send button");
-    await view.click(send);
-    await view.waitFor(
-      () => isNotSent(view.host),
-      "the line saying they were not sent",
-      4000,
-    );
-    // Not sent, with the press that sends it — and no promise that it goes by itself.
-    expect(view.host.querySelector(unsentLine)?.textContent).toBe(
-      "Not sentSend again",
-    );
-    expect(view.host.textContent).not.toContain(WAITS);
-    await view.settle(300);
-    expect(turns.sends).toHaveLength(0);
-    expect(turns.answers()).toHaveLength(0);
-
-    // The door is back and the question still waits: the person's press answers it.
-    turns.answersUp();
-    await view.click(view.buttonNamed("Send again") as Element);
+    await sendWords(view, TYPED);
     await view.waitFor(
       () => turns.answers().length === 1,
-      "the answer to reach the card's door",
+      "the door to take the answer",
       4000,
     );
-    expect(turns.answers()).toEqual([
-      { toolCallId: CALL, value: { answer: "둘 다 말고 냉면" } },
-    ]);
-    await view.waitFor(() => !isNotSent(view.host), "the line to go", 4000);
-    expect(turns.sends).toHaveLength(0);
-  });
+    expect(view.host.textContent).not.toContain(WAITS);
 
-  // Review, second round: the resend left them out, and the next message sent took them along.
-  test("with nothing back from the door do not ride along with the next message the person sends", async () => {
-    const { api, turns } = server();
-    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
-    await ask(view, turns);
-    turns.answersDown();
-
-    await type(view, "둘 다 말고 냉면");
-    const answer = view.host.querySelector('button[aria-label="Send message"]');
-    if (!answer) throw new Error("no send button");
-    await view.click(answer);
-    await view.waitFor(
-      () => isNotSent(view.host),
-      "the line saying they were not sent",
-      4000,
-    );
-
-    // The turn is over without a word of what became of the answer, and the person goes on.
     await acted(() => {
-      turns.stopWaiting();
-      turns.announce("stopped");
-    });
-    await type(view, "그럼 내일 점심은 뭐가 좋을까");
-    await view.waitFor(
-      () => composerButton(view.host) === "Send message",
-      "the composer to be free",
-      4000,
-    );
-    const next = view.host.querySelector('button[aria-label="Send message"]');
-    if (!next) throw new Error("no send button");
-    await view.click(next);
-    await view.waitFor(
-      () => turns.sends.length === 1,
-      "the new message to go",
-      4000,
-    );
-    expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
-      "그럼 내일 점심은 뭐가 좋을까",
-    ]);
-    // Still not known to have been sent, and still saying so.
-    expect(isNotSent(view.host)).toBe(true);
-  });
-
-  test("that the door took, its reply lost, are the card's answer when the stream says so — and go nowhere twice", async () => {
-    const { api, turns } = server();
-    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
-    await ask(view, turns);
-    turns.loseAnswerReply();
-
-    await type(view, "둘 다 말고 냉면");
-    const send = view.host.querySelector('button[aria-label="Send message"]');
-    if (!send) throw new Error("no send button");
-    await view.click(send);
-    await view.waitFor(
-      () => isNotSent(view.host),
-      "the line saying they were not sent",
-      4000,
-    );
-    expect(turns.answers()).toHaveLength(1);
-
-    // What the door would have said arrives the other way: the call's result is these words.
-    await acted(() =>
       turns.say([
         {
           id: "r-choice",
           role: "tool",
           toolCallId: CALL,
-          content: JSON.stringify({ answer: "둘 다 말고 냉면" }),
+          content: JSON.stringify({ ok: false, code: "laf:stopped" }),
         } as Message,
-      ]),
-    );
+      ]);
+      turns.announce("stopped");
+    });
     await view.waitFor(
-      () => !isNotSent(view.host),
-      "the line to go by itself",
+      () => turns.sends.length === 1,
+      "the words to go as a message",
       4000,
     );
+    expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
+      TYPED,
+    ]);
+  });
+
+  test("that the door took are forgotten once the conversation shows them as the card's answer", async () => {
+    const { api, turns } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await ask(view, turns);
+
+    await sendWords(view, TYPED);
+    await view.waitFor(
+      () => turns.answers().length === 1,
+      "the door to take the answer",
+      4000,
+    );
+    await acted(() => turns.say([answeredWith(TYPED)]));
+    await view.waitFor(() => kept().length === 0, "them to be forgotten", 4000);
+    await acted(() => turns.announce("done"));
     await view.settle(300);
     expect(turns.sends).toHaveLength(0);
-    expect(turns.answers()).toHaveLength(1);
   });
 });
 

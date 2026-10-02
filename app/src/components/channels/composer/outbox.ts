@@ -53,10 +53,11 @@ export type UnsentMessage = {
    */
   waiting?: true;
   /**
-   * The card these words were typed as the answer to (the call's id), when nothing came back from
-   * the door: they may have been taken. Never sent by themselves — kept with `autoTried` — and on
-   * the person's press they are offered to that card again before they go as a message
-   * (`server-channel-chat.tsx`).
+   * The card these words were typed as the answer to (the call's id), for as long as it is not
+   * known what became of them there. Kept as words waiting for the Bot, and never handed over as
+   * a message while they carry it (`readSendable`): the conversation says when they were the
+   * card's answer after all — forgotten — or when its question is over some other way — the mark
+   * comes off, and they go when the turn is over (`answerInWords` in `server-channel-chat.tsx`).
    */
   answerTo?: string;
 };
@@ -153,9 +154,9 @@ export function readUnsent(channelId: string): readonly UnsentMessage[] {
 }
 
 /**
- * What of it may go to the Bot as a message: everything but words that were an answer nothing came
- * back for (`answerTo`). Those may already be the card's answer, and go nowhere until that is
- * known — every path that hands messages over reads this, not `readUnsent`, which is what is drawn.
+ * What of it may go to the Bot as a message: everything but words still kept for a card
+ * (`answerTo`). Those may already be the card's answer, and go nowhere until that is known — every
+ * path that hands messages over reads this, not `readUnsent`, which is what is drawn.
  *
  * One function, because there are several such paths and the first fix named one: the resend left
  * them out, and the next message the person sent took them along (review, second round).
@@ -215,6 +216,32 @@ export function forgetUnsent(channelId: string, ids: Iterable<string>): void {
 }
 
 /**
+ * SETTLE WORDS KEPT FOR A CARD (`answerTo`) WHERE NO CARD CAN TAKE THEM ANY MORE: forgotten where
+ * the conversation shows their card answered with those very words, and from then on words like
+ * any other the device kept where it does not.
+ *
+ * For the screen that drives its own turns. A deployment can be switched to it (`SERVER_TURNS=off`)
+ * with such words still on the device: the card's wait died with the server that held it, and
+ * left out of every hand-over as they are, they could neither go nor be taken away there (review,
+ * third round). The screen that can still ask the card settles them itself, from its stream.
+ * `answeredWith` is what the conversation says a call was answered with, where that is words.
+ */
+export function settleAnswers(
+  channelId: string,
+  answeredWith: (toolCallId: string) => string | undefined,
+): void {
+  for (const message of readUnsent(channelId)) {
+    if (message.answerTo === undefined) continue;
+    if (answeredWith(message.answerTo) === message.text) {
+      forgetUnsent(channelId, [message.id]);
+      continue;
+    }
+    const { answerTo: _answerTo, ...plain } = message;
+    keepUnsent(channelId, plain);
+  }
+}
+
+/**
  * Take the one automatic send for these, if nobody has: marks them tried and hands back the ones
  * this call claimed. A second tab asking a moment later is handed nothing.
  *
@@ -235,7 +262,7 @@ export function claimAutoSend(channelId: string): UnsentMessage[] {
   const entries = unstored.has(channelId)
     ? readUnsent(channelId)
     : load(channelId);
-  // Never words that were an answer nothing came back for, whatever their mark (`readSendable`).
+  // Never words still kept for a card, whatever else they are marked (`readSendable`).
   const claimed = entries.filter(
     (entry) => !entry.autoTried && entry.answerTo === undefined,
   );

@@ -1951,15 +1951,8 @@ export function ChatTranscript({
                     <Unsent
                       autoTried={unsentUnder(item.id)?.autoTried === true}
                       isOnline={isOnline}
-                      /*
-                       * Whatever turn is running carries it: every send takes what was kept.
-                       * NOT WORDS THAT WERE AN ANSWER nothing came back for (`answerTo`): the
-                       * turn running is the one that waits for them, and they go nowhere until
-                       * the person presses.
-                       */
-                      isSending={
-                        busy && unsentUnder(item.id)?.answerTo === undefined
-                      }
+                      // Whatever turn is running carries it: every send takes what was kept.
+                      isSending={busy}
                       onSend={
                         onRetry
                           ? () => onRetry({ id: item.id, text: item.text })
