@@ -931,9 +931,44 @@ export function questionOn(toolCallId: string): OpenQuestion | undefined {
   return open.get(toolCallId);
 }
 
+/**
+ * The line the approval's own page draws its card on (`routes/_authed/_app/approve`).
+ *
+ * That page has an approval and no conversation, so it registers the question under a call of its
+ * own. Named here because the readers below must know which of two lines for one question is the
+ * conversation's.
+ */
+const APPROVE_PAGE_CALL = "approve-page:";
+export function approvePageCall(approvalId: string): string {
+  return `${APPROVE_PAGE_CALL}${approvalId}`;
+}
+
+/**
+ * Each question once, on its conversation's line where it has one.
+ *
+ * ONE QUESTION CAN BE ON TWO LINES: the call that raised it, and the approval page's own line while
+ * that page is open. Enumerated as two, the page's sidebar listed the same thing twice under 기다리는
+ * 일, and the second row led to a card that is on no conversation (review of this change, first
+ * round — the shell's watch is what put the first line there on that page).
+ */
+function onePerQuestion(): [string, OpenQuestion][] {
+  const byApproval = new Map<string, [string, OpenQuestion]>();
+  for (const entry of open.entries()) {
+    const [toolCallId, question] = entry;
+    const held = byApproval.get(question.approvalId);
+    if (!held || held[0].startsWith(APPROVE_PAGE_CALL)) {
+      // The first seen, or the conversation's line over the page's.
+      if (!held || !toolCallId.startsWith(APPROVE_PAGE_CALL)) {
+        byApproval.set(question.approvalId, entry);
+      }
+    }
+  }
+  return [...byApproval.values()];
+}
+
 /** Everything currently waiting, for a reader that wants the set rather than one entry. */
 export function openQuestions(): OpenQuestion[] {
-  return [...open.values()];
+  return onePerQuestion().map(([, question]) => question);
 }
 
 /**
@@ -944,7 +979,7 @@ export function openQuestionCalls(): {
   toolCallId: string;
   question: OpenQuestion;
 }[] {
-  return [...open.entries()].map(([toolCallId, question]) => ({
+  return onePerQuestion().map(([toolCallId, question]) => ({
     toolCallId,
     question,
   }));

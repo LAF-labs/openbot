@@ -278,6 +278,39 @@ describe("a question raised while another screen is open", () => {
   });
 });
 
+/*
+ * Codex, on the pull request. The approval's own page puts the question on a line of its own, and
+ * the shell's watch — mounted on that page as on every other — puts it on the conversation's. Two
+ * lines for one question were two rows under 기다리는 일.
+ */
+describe("the approval's own page", () => {
+  test("lists the question once in the sidebar, and the row leads to the conversation's card", async () => {
+    const { api, state } = server();
+    const asking = question();
+    state.approvals = [asking];
+    const view = await mountApp({ path: `/approve/${asking.id}`, api });
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill to say the Bot is waiting",
+      6000,
+    );
+    // Long enough for both lines to be registered: the page's own, and the shell's.
+    await view.waitFor(
+      () => state.reads >= 2,
+      "the page and the shell to have read the record",
+      4000,
+    );
+    await view.settle(80);
+    expect(waitingRows(view.host)).toHaveLength(1);
+    await view.click(waitingRows(view.host)[0] as HTMLButtonElement);
+    await view.waitFor(
+      () => view.router.state.location.pathname === `/channel/${CHANNEL}`,
+      "the conversation to open",
+      6000,
+    );
+  });
+});
+
 describe("whether the person is interrupted", () => {
   afterEach(() => removeNotices());
 

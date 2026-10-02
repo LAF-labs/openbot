@@ -13,8 +13,9 @@
  * that screen, and the question ran out its ten minutes unseen; and a question that was open when
  * the person left the conversation went on saying 확인 필요 after somebody had answered it
  * elsewhere, because nothing was left to hear that it had been. The shell keeps a watch of its own
- * now (`watchShellQuestions`, mounted once for every signed-in screen): it stands down while a
- * conversation of the Bot's is watching, and takes over the moment that conversation leaves.
+ * now (`watchShellQuestions`, mounted once for every signed-in screen): it leaves to a conversation
+ * on screen that conversation's own questions, and has every other one — and takes those over too
+ * the moment the conversation leaves.
  */
 import {
   closeQuestion,
@@ -43,8 +44,15 @@ type Shown = { toolCallId: string; threadId: string };
  */
 const shownByBot = new Map<string, Map<string, Shown>>();
 
-/** How many conversations on this screen are watching each Bot's questions themselves. */
-const conversations = new Map<string, number>();
+/**
+ * The conversations on this screen that are watching their own questions, per Bot, by thread.
+ *
+ * BY THREAD, NOT BY BOT. An account that kept what it had before the limit can hold more than one
+ * conversation with one Bot. Standing down for the whole Bot while any of them was on screen left a
+ * question raised in another of them drawn nowhere — the open conversation reads only its own
+ * thread — for its whole ten minutes (review of this change, first round).
+ */
+const conversations = new Map<string, Map<string, number>>();
 /** The shell's look, per Bot: what a conversation calls as it leaves. */
 const shellLooks = new Map<string, () => void>();
 
@@ -57,23 +65,35 @@ function shownFor(botId: string): Map<string, Shown> {
   return shown;
 }
 
+function watchedThreads(botId: string): ReadonlySet<string> {
+  return new Set(conversations.get(botId)?.keys() ?? []);
+}
+
+/** The conversation a drawn question belongs to, when the server's record has named one. */
+export function questionThread(
+  botId: string,
+  approvalId: string,
+): string | undefined {
+  return shownByBot.get(botId)?.get(approvalId)?.threadId;
+}
+
 /**
  * Put what the server's record says on the lines it names, and fold what it no longer holds.
  *
- * `threadId` narrows it to one conversation, which is what a conversation's own watch does; without
- * one it covers every conversation of the Bot.
+ * `covers` says which conversations this caller answers for: a conversation's own watch, its
+ * thread; the shell's, every thread no conversation on screen is watching.
  */
 function settle(
   botId: string,
   approvals: PendingApproval[],
-  threadId: string | undefined,
+  covers: (threadId: string) => boolean,
 ): void {
   const shown = shownFor(botId);
   const open = new Set<string>();
   for (const approval of approvals) {
     const step = approval.step;
     if (!step?.toolCallId) continue;
-    if (threadId !== undefined && step.threadId !== threadId) continue;
+    if (!covers(step.threadId)) continue;
     if (approval.granted === undefined) {
       open.add(approval.id);
       if (!questionOn(step.toolCallId)) {
@@ -101,7 +121,7 @@ function settle(
   // Gone from the record — spent on its call, withdrawn by a stop, or run out: no more buttons.
   for (const [approvalId, card] of shown) {
     if (open.has(approvalId)) continue;
-    if (threadId !== undefined && card.threadId !== threadId) continue;
+    if (!covers(card.threadId)) continue;
     shown.delete(approvalId);
     closeQuestion(card.toolCallId);
   }
@@ -119,7 +139,9 @@ export function watchServerQuestions(deps: {
   let disposed = false;
   let looking = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  conversations.set(deps.botId, (conversations.get(deps.botId) ?? 0) + 1);
+  const watching = conversations.get(deps.botId) ?? new Map<string, number>();
+  watching.set(deps.threadId, (watching.get(deps.threadId) ?? 0) + 1);
+  conversations.set(deps.botId, watching);
 
   const isShowing = () =>
     [...shownFor(deps.botId).values()].some(
@@ -141,7 +163,7 @@ export function watchServerQuestions(deps: {
     try {
       const approvals = await read(deps.botId);
       if (!approvals || disposed) return;
-      settle(deps.botId, approvals, deps.threadId);
+      settle(deps.botId, approvals, (threadId) => threadId === deps.threadId);
     } finally {
       looking = false;
       schedule();
@@ -155,16 +177,18 @@ export function watchServerQuestions(deps: {
       if (disposed) return;
       disposed = true;
       clearTimeout(timer);
-      const left = (conversations.get(deps.botId) ?? 1) - 1;
-      if (left > 0) conversations.set(deps.botId, left);
-      else conversations.delete(deps.botId);
+      const threads = conversations.get(deps.botId);
+      const left = (threads?.get(deps.threadId) ?? 1) - 1;
+      if (left > 0) threads?.set(deps.threadId, left);
+      else threads?.delete(deps.threadId);
+      if (threads?.size === 0) conversations.delete(deps.botId);
       /*
        * The conversation has left the screen with its cards still in the store: the shell's turn.
        * A turn later, and only if nobody has taken its place — an effect that merely ran again
        * disposes one watch and starts the next in the same breath, and that is not leaving.
        */
       queueMicrotask(() => {
-        if ((conversations.get(deps.botId) ?? 0) > 0) return;
+        if (watchedThreads(deps.botId).has(deps.threadId)) return;
         shellLooks.get(deps.botId)?.();
       });
     },
@@ -176,9 +200,10 @@ export function watchServerQuestions(deps: {
  *
  * IT DOES NOT POLL WHILE NOTHING IS OPEN. A look is asked for — on mounting, when the server's
  * outbox says something happened to this Bot, when the socket comes back, when the window is looked
- * at again, when a conversation leaves — and only a question on screen keeps it looking by itself,
- * at the conversation's own pace, because nothing announces that a question was answered in another
- * window or ran out. A watch that asked every fifteen seconds on every signed-in screen, all day,
+ * at again, when a conversation leaves — and only a question of its own on screen keeps it looking
+ * by itself, at the conversation's own pace, because nothing announces that a question was answered
+ * in another window or ran out. "Its own" is every question whose conversation is not on screen and
+ * watching for itself. A watch that asked every fifteen seconds on every signed-in screen, all day,
  * for a thing that happens a few times a week, is the kind of poll the 2026-09-10 audit counted
  * (`lib/polling.ts`: 53 requests a minute from one idle screen).
  *
@@ -203,12 +228,16 @@ export function watchShellQuestions(deps: {
   let failures = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const isConversationWatching = () => (conversations.get(deps.botId) ?? 0) > 0;
+  /** Whether a question is drawn that no conversation on screen is watching for itself. */
+  const isShowingOwn = () => {
+    const watched = watchedThreads(deps.botId);
+    return [...shownFor(deps.botId).values()].some(
+      (card) => !watched.has(card.threadId),
+    );
+  };
 
   const look = async () => {
     if (disposed) return;
-    // A conversation of this Bot's is on screen and watching: its word, not a second request.
-    if (isConversationWatching()) return;
     if (looking) {
       again = true;
       return;
@@ -221,10 +250,12 @@ export function watchShellQuestions(deps: {
       const approvals = await read(deps.botId);
       if (!approvals || disposed) return;
       answered = true;
-      if (!isConversationWatching()) settle(deps.botId, approvals, undefined);
+      // Read as it settles, not before the request: a conversation may have come or gone since.
+      const watched = watchedThreads(deps.botId);
+      settle(deps.botId, approvals, (threadId) => !watched.has(threadId));
     } finally {
       looking = false;
-      if (!disposed && !isConversationWatching()) {
+      if (!disposed) {
         if (!answered) {
           failures += 1;
           timer = setTimeout(
@@ -234,7 +265,7 @@ export function watchShellQuestions(deps: {
         } else {
           failures = 0;
           if (again) void look();
-          else if (shownFor(deps.botId).size > 0) {
+          else if (isShowingOwn()) {
             timer = setTimeout(() => void look(), whileOpenMs);
           }
         }

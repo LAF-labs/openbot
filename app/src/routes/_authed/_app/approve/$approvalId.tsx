@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import {
+  approvePageCall,
   closeQuestion,
   openQuestion,
   type PendingApproval,
@@ -45,9 +46,6 @@ export const Route = createFileRoute("/_authed/_app/approve/$approvalId")({
  * registers with, so this page's whole job is to put the question there under an id of its own and
  * take it away again.
  */
-
-/** The tool call this page stands in for. There is none; the card needs a key, and this is it. */
-const toolCallKey = (approvalId: string) => `approve-page:${approvalId}`;
 
 /**
  * The frame, centred, because this is a destination and not a settings screen.
@@ -134,7 +132,8 @@ function approvalQueryOptions(approvalId: string) {
 function ApprovePage() {
   const { approvalId } = Route.useParams();
   const navigate = useNavigate();
-  const key = toolCallKey(approvalId);
+  // The tool call this page stands in for. There is none; the card needs a line, and this is it.
+  const key = approvePageCall(approvalId);
   const approval = useQuery(approvalQueryOptions(approvalId));
   const channels = useQuery(channelListQueryOptions());
   const agents = useQuery(agentListQueryOptions());

@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  approvePageCall,
+  closeQuestion,
   decisionOn,
+  openQuestion,
+  openQuestionCalls,
   openQuestions,
   type PendingApproval,
   questionOn,
 } from "../src/lib/approvals";
 import {
   forgetWatchedQuestions,
+  questionThread,
   watchServerQuestions,
   watchShellQuestions,
 } from "../src/lib/turns/questions";
@@ -174,7 +179,7 @@ describe("the shell's watch, on a screen that is not the conversation", () => {
 });
 
 describe("the shell's watch and a conversation's", () => {
-  test("it stands down while the conversation watches, and takes over when the conversation leaves", async () => {
+  test("a conversation on screen keeps its own questions, and the shell takes them over when it leaves", async () => {
     const q = fresh();
     const server = record([approval(q.id)]);
     const conversation = kept(
@@ -186,23 +191,28 @@ describe("the shell's watch and a conversation's", () => {
       }),
     );
     await until(() => openFor(BOT) === 1, "the conversation to draw it");
-    const shell = record([approval(q.id)]);
+    // The record the shell reads says it was answered. While the conversation is on screen that is
+    // the conversation's to hear, and the shell — which does look — leaves the card alone.
+    const shell = record([approval(q.id, { granted: false })]);
     const watch = kept(
       watchShellQuestions({ botId: BOT, read: shell.read, pace: PACE }),
     );
-    watch.look();
+    await until(() => shell.state.reads >= 1, "the shell's own look");
     await wait(40);
-    expect(shell.state.reads).toBe(0);
+    expect(openFor(BOT)).toBe(1);
+    // Nothing of its own is open, so it does not go on looking either.
+    const settled = shell.state.reads;
+    await wait(60);
+    expect(shell.state.reads).toBe(settled);
 
-    // Answered elsewhere after the conversation left: nobody used to be there to hear it.
-    shell.state.approvals = [approval(q.id, { granted: false })];
+    // The conversation leaves: nobody used to be there to hear the answer.
     conversation.dispose();
-    await until(() => shell.state.reads >= 1, "the shell to take over");
     await until(
       () => openFor(BOT) === 0,
       "the card the conversation drew to fold",
     );
     expect(decisionOn(q.call)?.outcome).toBe("declined");
+    watch.dispose();
   });
 
   test("a card the conversation drew that has since run out is closed by the shell", async () => {
@@ -223,15 +233,49 @@ describe("the shell's watch and a conversation's", () => {
     await until(() => openFor(BOT) === 0, "the stale card to close");
   });
 
+  /*
+   * Codex, on the pull request. An account that kept what it had before the limit can hold two
+   * conversations with one Bot. The shell stood down for the whole Bot while either was on screen,
+   * and the one on screen reads only its own thread: a question raised in the other was drawn
+   * nowhere for its ten minutes.
+   */
+  test("a question raised in another conversation of the same Bot is the shell's, even with one on screen", async () => {
+    const q = fresh();
+    const elsewhere = approval(q.id, {
+      step: { threadId: "thread-other", toolCallId: q.call },
+    });
+    const server = record([elsewhere]);
+    kept(
+      watchServerQuestions({
+        botId: BOT,
+        threadId: THREAD,
+        going: () => false,
+        read: server.read,
+      }),
+    );
+    await until(() => server.state.reads >= 1, "the conversation's look");
+    await wait(20);
+    // The conversation on screen does not draw it: it is not its thread's.
+    expect(questionOn(q.call)).toBeUndefined();
+
+    kept(watchShellQuestions({ botId: BOT, read: server.read, pace: PACE }));
+    await until(() => questionOn(q.call) !== undefined, "the shell to draw it");
+    expect(questionThread(BOT, q.id)).toBe("thread-other");
+    // And it goes on looking, because this one is its own.
+    const reads = server.state.reads;
+    await until(() => server.state.reads > reads + 1, "it to keep looking");
+  });
+
   test("a conversation's watch folds only its own conversation's cards", async () => {
-    const elsewhere = approval("b1", {
-      step: { threadId: "thread-other", toolCallId: "call-b1" },
+    const q = fresh();
+    const elsewhere = approval(q.id, {
+      step: { threadId: "thread-other", toolCallId: q.call },
     });
     const shell = record([elsewhere]);
     const watch = kept(
       watchShellQuestions({ botId: BOT, read: shell.read, pace: PACE }),
     );
-    await until(() => questionOn("call-b1") !== undefined, "the other card");
+    await until(() => questionOn(q.call) !== undefined, "the other card");
     watch.dispose();
     // This conversation's record never names the other thread's question.
     const server = record([]);
@@ -245,6 +289,60 @@ describe("the shell's watch and a conversation's", () => {
     );
     await until(() => server.state.reads >= 1, "the conversation's look");
     await wait(20);
-    expect(questionOn("call-b1")).toBeDefined();
+    expect(questionOn(q.call)).toBeDefined();
+  });
+});
+
+/*
+ * Codex, on the pull request. The approval's own page registers the question on a line of its own;
+ * with the shell's watch on that page too, the same question was on two lines, and the sidebar's
+ * 기다리는 일 listed it twice — the second row leading to a card that is on no conversation.
+ */
+describe("one question on two lines", () => {
+  const asking = (approvalId: string) => ({
+    approvalId,
+    botId: BOT,
+    subject: undefined,
+    rule: null,
+    expiresAt: "",
+  });
+
+  test("is listed once, on the conversation's line", () => {
+    const q = fresh();
+    openQuestion(approvePageCall(q.id), asking(q.id));
+    openQuestion(q.call, asking(q.id));
+    expect(openFor(BOT)).toBe(1);
+    const calls = openQuestionCalls().filter(
+      ({ question }) => question.approvalId === q.id,
+    );
+    expect(calls.map((entry) => entry.toolCallId)).toEqual([q.call]);
+    closeQuestion(q.call);
+    closeQuestion(approvePageCall(q.id));
+  });
+
+  test("whichever line was registered first", () => {
+    const q = fresh();
+    openQuestion(q.call, asking(q.id));
+    openQuestion(approvePageCall(q.id), asking(q.id));
+    expect(
+      openQuestionCalls()
+        .filter(({ question }) => question.approvalId === q.id)
+        .map((entry) => entry.toolCallId),
+    ).toEqual([q.call]);
+    closeQuestion(q.call);
+    closeQuestion(approvePageCall(q.id));
+  });
+
+  test("with only the page's line, that is the one — the page alone is a place to answer it", () => {
+    const q = fresh();
+    openQuestion(approvePageCall(q.id), asking(q.id));
+    expect(
+      openQuestionCalls()
+        .filter(({ question }) => question.approvalId === q.id)
+        .map((entry) => entry.toolCallId),
+    ).toEqual([approvePageCall(q.id)]);
+    // Both lines are still there for the card that draws each.
+    expect(questionOn(approvePageCall(q.id))).toBeDefined();
+    closeQuestion(approvePageCall(q.id));
   });
 });
