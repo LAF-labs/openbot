@@ -437,8 +437,10 @@ export function Composer({
    * React has re-rendered with the new state, which would send the message twice.
    */
   const submitDraft = useCallback(
-    async (segments: Segment[]) => {
-      const typed = toDraft(segments);
+    async (segments: Segment[], isOffered = false) => {
+      const typed: ComposerDraft = isOffered
+        ? { ...toDraft(segments), isOffered: true }
+        : toDraft(segments);
       const sentAttachments = attachments;
       const sentQuote = quote;
       const files = sentAttachments.flatMap((attachment) =>
@@ -592,13 +594,17 @@ export function Composer({
    * A SENTENCE ANOTHER SCREEN SENDS ON THE PERSON'S PRESS (`prefill.ts`, `offerSend`): 목표's
    * [대화에서 시작]. Through the one submit path, so it lands exactly as if typed and sent — queued
    * behind a turn in flight, never over words the person is typing.
+   *
+   * SAID TO BE OFFERED (`ComposerDraft.isOffered`). A turn stopped on a question takes what is
+   * typed under it as the answer; this was pressed on another screen, about something else, and
+   * landing while a card waited it was filed as that card's answer.
    */
   const offeredSend = useOfferedSend(draftKey);
   useEffect(() => {
     if (offeredSend === null || disabled || !draft.isEmpty) return;
     const sentence = takeOfferedSend(draftKey);
     if (sentence === null) return;
-    void submitDraft([textSegment(sentence)]);
+    void submitDraft([textSegment(sentence)], true);
   }, [offeredSend, draftKey, disabled, draft.isEmpty, submitDraft]);
 
   /** A post pressed 이야기하기 on 소식: taken as the chip, and the caret given to the box under it. */

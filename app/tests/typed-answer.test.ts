@@ -4,13 +4,28 @@
  * The mounted half is `choice-answer.test.tsx`; this is the rule by itself, with the cards a turn
  * can be stopped on side by side.
  */
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
+import {
+  claimAutoSend,
+  forgetUnsentCache,
+  handToPerson,
+  isKeptForCard,
+  isWaitingForBot,
+  keepUnsent,
+  readSendable,
+  readUnsent,
+  settleAnswers,
+  type UnsentMessage,
+} from "@/components/channels/composer/outbox";
 import {
   answeredInWords,
   hasResult,
   isSavedByPress,
+  isShownOnCard,
   openChoiceCall,
+  restAfter,
+  setFirstRest,
   typedAnswer,
   typedAnswerIn,
 } from "@/lib/turns/typed-answer";
@@ -169,5 +184,135 @@ describe("the words a card was answered with, read off the conversation", () => 
       const messages = [question, result("c-1", content)];
       expect(answeredInWords(messages, "c-1")).toBeUndefined();
     }
+  });
+});
+
+describe("words kept for a card are shown on the card itself", () => {
+  test("on their way to its door for the first time, and once the door has taken them", () => {
+    expect(isShownOnCard({ at: "out", tries: 0 })).toBe(true);
+    expect(isShownOnCard({ at: "taken", tries: 0 })).toBe(true);
+    // Taken at last, after offers the door did not take.
+    expect(isShownOnCard({ at: "taken", tries: 3 })).toBe(true);
+  });
+
+  /*
+   * A page reloaded between the door taking an answer and the Bot being free to file it — minutes,
+   * behind a routine — has made no offer of its own, and read "보낼 예정" under words the Bot had.
+   */
+  test("and where this screen has made no offer of them: kept from before a reload", () => {
+    expect(isShownOnCard(undefined)).toBe(true);
+  });
+
+  test("not once the door has failed to take them, through every offer made again", () => {
+    expect(isShownOnCard({ at: "resting", tries: 1 })).toBe(false);
+    expect(isShownOnCard({ at: "due", tries: 1 })).toBe(false);
+    expect(isShownOnCard({ at: "out", tries: 1 })).toBe(false);
+  });
+});
+
+describe("how long words rest before they are offered to their card again", () => {
+  afterEach(() => setFirstRest());
+
+  test("is the stream's own waits: half a second, doubling to eight", () => {
+    expect([1, 2, 3, 4, 5, 6, 9].map(restAfter)).toEqual([
+      500, 1000, 2000, 4000, 8000, 8000, 8000,
+    ]);
+  });
+
+  test("and a test can hold the first of them", () => {
+    setFirstRest(40);
+    expect([1, 2].map(restAfter)).toEqual([40, 80]);
+    setFirstRest();
+    expect(restAfter(1)).toBe(500);
+  });
+});
+
+/*
+ * THE OUTBOX'S HALF: what words kept for a card are to everything that reads what the device kept
+ * (`composer/outbox.ts`). No storage under `bun test`, which the outbox takes as a device that
+ * refuses it: kept for this tab only.
+ */
+describe("words kept for a card, among what the device kept", () => {
+  const CHANNEL = "channel_outbox";
+  afterEach(() => forgetUnsentCache());
+
+  const typed = (id: string, more: Partial<UnsentMessage> = {}) => ({
+    id,
+    text: id,
+    instructions: [],
+    at: `2026-10-03T00:00:0${id.length}.000Z`,
+    ...more,
+  });
+  const forCard = (id: string) => typed(id, { waiting: true, answerTo: "c-1" });
+  const held = (id: string) =>
+    readUnsent(CHANNEL).find((message) => message.id === id);
+
+  test("are waiting for the Bot, and are handed over to it by nothing", () => {
+    keepUnsent(CHANNEL, forCard("a"));
+    keepUnsent(CHANNEL, typed("bb", { waiting: true }));
+    expect(isKeptForCard(held("a") as UnsentMessage)).toBe(true);
+    expect(isWaitingForBot(held("a") as UnsentMessage)).toBe(true);
+    expect(readSendable(CHANNEL).map((message) => message.id)).toEqual(["bb"]);
+  });
+
+  /*
+   * Every entry used to be marked as tried by a claim, whoever it claimed. Beside a correction
+   * that was claimed, words still kept for a card were drawn as not sent while their card waited,
+   * and never went by themselves once its question was over.
+   */
+  test("are left as they are when what waits beside them is taken to be sent", () => {
+    keepUnsent(CHANNEL, forCard("a"));
+    keepUnsent(CHANNEL, typed("bb", { waiting: true }));
+    expect(claimAutoSend(CHANNEL).map((message) => message.id)).toEqual(["bb"]);
+    expect(held("bb")?.autoTried).toBe(true);
+    expect(held("a")?.autoTried).toBe(false);
+    expect(isWaitingForBot(held("a") as UnsentMessage)).toBe(true);
+    // And nothing more is claimed for them alone.
+    expect(claimAutoSend(CHANNEL)).toEqual([]);
+    expect(held("a")?.autoTried).toBe(false);
+  });
+
+  test("handed to the person: no longer waiting, never by themselves, theirs to send — and still marked", () => {
+    keepUnsent(CHANNEL, forCard("a"));
+    handToPerson(CHANNEL, held("a") as UnsentMessage);
+    expect(held("a")).toMatchObject({ answerTo: "c-1", autoTried: true });
+    expect(held("a")?.waiting).toBeUndefined();
+    expect(isKeptForCard(held("a") as UnsentMessage)).toBe(false);
+    expect(claimAutoSend(CHANNEL)).toEqual([]);
+    expect(readSendable(CHANNEL).map((message) => message.id)).toEqual(["a"]);
+    // Handed over once: a second time changes nothing.
+    const before = readUnsent(CHANNEL);
+    handToPerson(CHANNEL, held("a") as UnsentMessage);
+    expect(readUnsent(CHANNEL)).toBe(before);
+  });
+
+  describe("settled where no card can take them any more", () => {
+    const conversation = (results: Record<string, string | null>) => ({
+      answeredWith: (toolCallId: string) => results[toolCallId] ?? undefined,
+      isOver: (toolCallId: string) => toolCallId in results,
+    });
+
+    test("are forgotten where the conversation shows their card answered with them", () => {
+      keepUnsent(CHANNEL, forCard("a"));
+      settleAnswers(CHANNEL, conversation({ "c-1": "a" }));
+      expect(readUnsent(CHANNEL)).toEqual([]);
+    });
+
+    test("are words like any other where it shows the question over some other way", () => {
+      keepUnsent(CHANNEL, forCard("a"));
+      settleAnswers(CHANNEL, conversation({ "c-1": null }));
+      expect(held("a")?.answerTo).toBeUndefined();
+      expect(claimAutoSend(CHANNEL).map((message) => message.id)).toEqual([
+        "a",
+      ]);
+    });
+
+    test("are the person's to send where it shows nothing of what became of it", () => {
+      keepUnsent(CHANNEL, forCard("a"));
+      settleAnswers(CHANNEL, conversation({}));
+      expect(held("a")).toMatchObject({ answerTo: "c-1", autoTried: true });
+      expect(claimAutoSend(CHANNEL)).toEqual([]);
+      expect(readSendable(CHANNEL).map((message) => message.id)).toEqual(["a"]);
+    });
   });
 });

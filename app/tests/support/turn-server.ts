@@ -1,4 +1,5 @@
 import type { Message } from "@ag-ui/core";
+import { UNANSWERED_RESULT } from "@shared/task-ending";
 import type { HistoryPage } from "../../src/lib/turns/client";
 import type { TurnFrame, TurnState } from "../../src/lib/turns/frames";
 import {
@@ -119,6 +120,8 @@ export function turnServer(options: {
   };
   /** Every answer a window sent to a waiting card, in order. */
   const answers: { toolCallId: string; value: unknown }[] = [];
+  /** Every time the card's door was asked, whatever it said. */
+  let asks = 0;
   let historyDown = false;
   let historyReads = 0;
   let doorDown = false;
@@ -193,6 +196,69 @@ export function turnServer(options: {
     }
   };
 
+  /** A call's result filed by the server itself, and every window told (`hub.event`). */
+  const fileResult = (toolCallId: string, content: string) => {
+    const turn = hub.turn;
+    if (!turn) return;
+    const result = {
+      id: `result-${toolCallId}`,
+      role: "tool",
+      toolCallId,
+      content,
+    } as Message;
+    stored.push(result);
+    hub.messages = [...hub.messages, result];
+    publish({
+      kind: "event",
+      turn: turn.id,
+      event: {
+        type: "TOOL_CALL_RESULT",
+        messageId: result.id,
+        toolCallId,
+        content,
+        role: "tool",
+      } as { type: string } & object,
+    });
+  };
+
+  /**
+   * How a turn ends (`engine.ts`). A STOP OR A FAILURE LEAVES NO CALL UNANSWERED: each call of the
+   * turn that has no result is filed one, and every window is told, before the turn is said to be
+   * over. This used to say the turn was over and nothing else, so a test of "stopped while a card
+   * waited" watched a window decide from a conversation no real server leaves behind.
+   */
+  const end = (status: TurnState["status"], code?: string) => {
+    const turn = hub.turn;
+    if (!turn) throw new Error("no turn to announce");
+    if (status === "stopped" || status === "error") {
+      const answered = new Set(
+        hub.messages
+          .filter((message) => message.role === "tool")
+          .map((message) => (message as { toolCallId: string }).toolCallId),
+      );
+      for (const message of hub.messages) {
+        if (message.role !== "assistant") continue;
+        for (const call of message.toolCalls ?? []) {
+          if (answered.has(call.id)) continue;
+          fileResult(
+            call.id,
+            status === "stopped"
+              ? JSON.stringify({
+                  ok: false,
+                  code: "laf:stopped",
+                  stopped: true,
+                })
+              : UNANSWERED_RESULT,
+          );
+        }
+      }
+    }
+    publish({
+      kind: "turn",
+      turn: { ...turn, status, ...(code ? { code } : {}) },
+    });
+  };
+
   const page = (): HistoryPage => ({
     messages: stored,
     times: {},
@@ -263,6 +329,7 @@ export function turnServer(options: {
       const toolCallId = decodeURIComponent(
         pathname.slice(`${door}/answers/`.length),
       );
+      asks += 1;
       if (answersDoor === "down") return new Response("", { status: 503 });
       if (!hub.waiting.includes(toolCallId)) {
         return json(
@@ -295,7 +362,7 @@ export function turnServer(options: {
       stops += 1;
       const turn = hub.turn;
       if (!turn || !going()) return json({ stopped: false });
-      publish({ kind: "turn", turn: { ...turn, status: "stopped" } });
+      end("stopped");
       return json({ stopped: true });
     }
     if (pathname === door && method === "POST") {
@@ -358,14 +425,21 @@ export function turnServer(options: {
       held = false;
       for (const stream of streams) answer(stream);
     },
-    /** A turn frame to every window: `running`, `queued` again, or how it ended. */
-    announce: (status: TurnState["status"], code?: string) => {
+    /** A turn frame to every window: `running`, `queued` again, or how it ended (`end`). */
+    announce: end,
+    /**
+     * The turn is over and this window never heard how: the frame that says so, and nothing of
+     * what the server filed before it. A window that slept through the end of the turn and came
+     * back past the frames the server keeps is told this much and no more.
+     */
+    announceUnheard: (status: TurnState["status"]) => {
       const turn = hub.turn;
       if (!turn) throw new Error("no turn to announce");
-      publish({
-        kind: "turn",
-        turn: { ...turn, status, ...(code ? { code } : {}) },
-      });
+      publish({ kind: "turn", turn: { ...turn, status } });
+    },
+    /** Written to the store and told to no window: what a read of the record finds later. */
+    file: (messages: Message[]) => {
+      stored.push(...messages);
     },
     /**
      * A turn frame no window hears: its socket was half-open — a laptop asleep — while another
@@ -417,8 +491,28 @@ export function turnServer(options: {
     stopWaitingUnheard: () => {
       hub.waiting = [];
     },
+    /**
+     * A card's wait ran out, as the server ends it (`people.ts`, `chat-tools.ts`): every window is
+     * told it waits no more, and the call is answered with the code that says nobody did.
+     */
+    waitRanOut: (toolCallId: string) => {
+      hub.waiting = hub.waiting.filter((id) => id !== toolCallId);
+      if (hub.turn) {
+        publish({
+          kind: "waiting",
+          turn: hub.turn.id,
+          toolCallIds: [...hub.waiting],
+        });
+      }
+      fileResult(
+        toolCallId,
+        JSON.stringify({ ok: false, code: "laf:nobody_answered" }),
+      );
+    },
     /** Every answer a window sent to a waiting card. */
     answers: () => answers,
+    /** How many times the card's door was asked, whatever it said. */
+    asks: () => asks,
     /** The card's door answers 503 and takes nothing, until `answersUp`. */
     answersDown: () => {
       answersDoor = "down";

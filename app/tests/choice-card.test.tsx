@@ -151,6 +151,116 @@ describe("a choice card", () => {
   });
 });
 
+/*
+ * THE CARD OF A TURN THE SERVER OWNS, drawn as the transcript draws it: through `DecisionCard`,
+ * which hands it the server's door while the turn waits on it — and the person's own words while
+ * those are on their way there. Typed under a card they leave the composer and are not a message
+ * waiting for the turn; until the conversation showed them as the card's answer they were drawn
+ * nowhere, which behind a routine that took the Bot meanwhile is minutes (adversarial read,
+ * 2026-10-03).
+ */
+describe("the card of a turn the server owns", () => {
+  async function served(
+    answers: {
+      waiting: string[];
+      inWords?: [string, string][];
+      pressed?: unknown[];
+    },
+    props: Record<string, unknown> = {},
+  ) {
+    const { DecisionCard, ServerAnswersProvider } = await import(
+      "../src/lib/turns/answers"
+    );
+    const { QueryClient, QueryClientProvider } = await import(
+      "@tanstack/react-query"
+    );
+    const { ChoiceCard } = await import("../src/components/gallery/decisions");
+    const view = await mount(
+      <QueryClientProvider client={new QueryClient()}>
+        <ServerAnswersProvider
+          value={{
+            waiting: new Set(answers.waiting),
+            answer: async (_toolCallId: string, value: unknown) => {
+              answers.pressed?.push(value);
+            },
+            inWords: new Map(answers.inWords ?? []),
+          }}
+        >
+          <DecisionCard
+            Component={
+              ChoiceCard as unknown as (
+                props: Record<string, unknown>,
+              ) => React.ReactElement
+            }
+            props={{
+              toolCallId: "c-1",
+              status: "executing",
+              args: CHOICE,
+              ...props,
+            }}
+          />
+        </ServerAnswersProvider>
+      </QueryClientProvider>,
+    );
+    const options = () =>
+      [...view.host.querySelectorAll("button")].filter((button) =>
+        ["한식", "중식"].includes(button.textContent?.trim() ?? ""),
+      );
+    return { view, options, text: () => view.host.textContent ?? "" };
+  }
+
+  test("takes a press while the turn waits on it", async () => {
+    const pressed: unknown[] = [];
+    const { options, text, view } = await served({ waiting: ["c-1"], pressed });
+    expect(text()).toContain("Waiting on you");
+    await view.press(options()[0] as Element);
+    expect(pressed).toEqual([{ choice: "korean", label: "한식" }]);
+  });
+
+  test("shows the person's words while they are on their way to it, and takes no press meanwhile", async () => {
+    const pressed: unknown[] = [];
+    const { options, text } = await served({
+      waiting: ["c-1"],
+      inWords: [["c-1", "둘 다 말고 냉면"]],
+      pressed,
+    });
+    expect(text()).toContain("Your answer: 둘 다 말고 냉면");
+    expect(options().every((button) => button.disabled)).toBe(true);
+    // Not said to be waiting on them, and not asked to type what they just typed.
+    expect(text()).not.toContain("Waiting on you");
+    expect(text()).not.toContain("None of these? Type your answer below.");
+    // Nor said to be answered: that is the conversation's to say, once the Bot has it.
+    expect(text()).not.toContain("Answered");
+  });
+
+  test("goes on showing them once the server has taken them and the turn waits on it no more", async () => {
+    const { options, text } = await served({
+      waiting: [],
+      inWords: [["c-1", "둘 다 말고 냉면"]],
+    });
+    expect(text()).toContain("Your answer: 둘 다 말고 냉면");
+    expect(options().every((button) => button.disabled)).toBe(true);
+  });
+
+  test("shows another card's words on no card but that one", async () => {
+    const { text } = await served({
+      waiting: ["c-1"],
+      inWords: [["c-other", "둘 다 말고 냉면"]],
+    });
+    expect(text()).not.toContain("Your answer");
+    expect(text()).toContain("Waiting on you");
+  });
+
+  test("and reads its answer off the result once there is one", async () => {
+    const { text } = await served(
+      { waiting: [], inWords: [["c-1", "둘 다 말고 냉면"]] },
+      { status: "complete", result: JSON.stringify({ answer: "비빔밥" }) },
+    );
+    expect(text()).toContain("Your answer: 비빔밥");
+    expect(text()).toContain("Answered");
+  });
+});
+
 describe("the line that says words are taken", () => {
   test("is on a choice a turn the server owns is waiting on, where they are", async () => {
     const { ServerAnswersProvider } = await import("../src/lib/turns/answers");

@@ -33,6 +33,11 @@ export type ComposerDraft = {
   isEmpty: boolean;
   /** Files the server already kept, as the parts the message carries (`@shared/attachments`). */
   attachments?: AttachmentPart[];
+  /**
+   * Sent for the person by a press on another screen (`prefill.ts`, `offerSend`), not typed here.
+   * Whoever reads what is typed as an answer to something on this screen must not read this so.
+   */
+  isOffered?: true;
 };
 
 export function toDraft(segments: Segment[]): ComposerDraft {

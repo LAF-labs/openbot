@@ -77,7 +77,7 @@ import { useToolsSettled } from "@/lib/copilot/tools-settled";
 
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
-import { answeredInWords } from "@/lib/turns/typed-answer";
+import { answeredInWords, hasResult } from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
 
 /**
@@ -1069,9 +1069,10 @@ export function ChannelChat({
    * own `agent` holds no messages at all.
    */
   const settleKeptAnswers = () =>
-    settleAnswers(channel.id, (toolCallId) =>
-      answeredInWords(agent.messages, toolCallId),
-    );
+    settleAnswers(channel.id, {
+      answeredWith: (toolCallId) => answeredInWords(agent.messages, toolCallId),
+      isOver: (toolCallId) => hasResult(agent.messages, toolCallId),
+    });
   const settleRef = useRef(settleKeptAnswers);
   settleRef.current = settleKeptAnswers;
 

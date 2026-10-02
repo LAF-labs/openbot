@@ -21,6 +21,8 @@ import {
 import {
   claimAutoSend,
   forgetUnsent,
+  handToPerson,
+  isKeptForCard,
   isWaitingForBot,
   keepUnsent,
   noteResent,
@@ -81,7 +83,10 @@ import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
 import {
   answeredInWords,
   hasResult,
+  isShownOnCard,
+  type Offer,
   openChoiceCall,
+  restAfter,
   typedAnswer,
 } from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
@@ -109,6 +114,14 @@ const REOPEN_AFTER_HIDDEN_MS = 20_000;
  * is over sooner than that is not worth a word, and a routine in front of a turn takes far longer.
  */
 const QUEUED_SAID_AFTER_MS = 2000;
+
+/** Words the card itself is showing, and so not drawn as waiting for the turn (`isShownOnCard`). */
+function isOnCard(
+  message: UnsentMessage,
+  offers: ReadonlyMap<string, Offer>,
+): boolean {
+  return isKeptForCard(message) && isShownOnCard(offers.get(message.id));
+}
 
 /**
  * One conversation with the one Bot, while the server owns its turns (`server/src/turns/`).
@@ -441,7 +454,8 @@ export function ServerChannelChat({
    * TYPED WHILE THE BOT WAITS ON A CHOICE: the answer to it, not something to keep until the turn
    * is over — the turn is over when the question is answered (`lib/turns/typed-answer.ts`).
    *
-   * Words alone. A file or a skill is a message of its own, for after the turn, as before.
+   * Words alone, and typed here. A file or a skill is a message of its own, for after the turn, as
+   * before; so is a sentence another screen sends for the person (`isOffered`).
    *
    * KEPT FIRST, THEN OFFERED TO THE CARD. The words are put in the outbox as anything typed
    * mid-turn is — waiting for the Bot — with the card they are for (`answerTo`), before the door is
@@ -450,10 +464,12 @@ export function ServerChannelChat({
    * nowhere else:
    *
    *  - the card shows them as its answer: they were delivered, and are forgotten;
-   *  - the question is over any other way — another answer, its wait ran out, the turn stopped —
-   *    they are words typed mid-turn like any other, and go when the turn is over;
-   *  - neither yet: they wait, and are offered to the card again when this window has reason to
-   *    think the door can be reached (it came back from a reload, or the connection returned).
+   *  - it shows the question over some other way — another answer, its wait ran out, the turn
+   *    stopped: they are words typed mid-turn like any other, and go when the turn is over;
+   *  - the turn is over and nothing held says what became of the question: they are the person's
+   *    to send, and nothing sends them by itself (`handToPerson`);
+   *  - none of those yet: they wait, and are offered to the card again for as long as it waits —
+   *    after a wait when the door did not take them, and at once when the connection returns.
    *
    * It was a row of its own kind with a press on it (보내지 못함 · 다시 보내기), taught to one reader of
    * the outbox at a time: the resend, the next message, the screen that drives its own turns — and
@@ -461,32 +477,72 @@ export function ServerChannelChat({
    * read found a reader each time.
    */
   const openChoice = openChoiceCall(thread.messages, thread.waiting);
-  /** Offers on their way to the card's door, and offers it took: neither is drawn as waiting. */
-  const [offering, setOffering] = useState<ReadonlySet<string>>(new Set());
-  const [taken, setTaken] = useState<ReadonlySet<string>>(new Set());
   /**
-   * What has been offered since this window last had reason to think the door could be reached:
-   * each is offered once, and again only after a reload or once the connection has come back —
-   * which empties this, and so runs the settling below again.
+   * WHERE EACH OFFER TO A CARD STANDS, by the id of the words kept for it (`Offer`). Nothing here
+   * for words not offered since this screen opened.
+   *
+   * ONE MAP, AND ONE WAIT A ROW. It was three sets and a count kept beside them: what was out, what
+   * was taken, what was not due yet, and how often each had been tried. Read together they left
+   * windows a second read walked through (2026-10-03): a row left the list of waiting words on
+   * every offer and came back when it failed, so each retry blinked it and pulled the transcript
+   * to the end; a refusal was never offered again though its card still waited; a connection that
+   * came back started a second chain of retries beside the wait already running; and an offer
+   * that answered after the screen had gone started a wait nothing would ever call off.
    */
-  const [offered, setOffered] = useState<ReadonlySet<string>>(new Set());
-  const offer = async (message: UnsentMessage) => {
+  const [offers, setOffers] = useState<ReadonlyMap<string, Offer>>(new Map());
+  const putOffer = (id: string, offer: Offer) =>
+    setOffers((held) => new Map(held).set(id, offer));
+  /** The waits of resting offers, by row — and whether the screen is gone, so none starts after it. */
+  const rests = useRef({
+    timers: new Map<string, ReturnType<typeof setTimeout>>(),
+    isGone: false,
+  });
+  useEffect(() => {
+    const held = rests.current;
+    held.isGone = false;
+    return () => {
+      held.isGone = true;
+      for (const timer of held.timers.values()) clearTimeout(timer);
+      held.timers.clear();
+    };
+  }, []);
+  const offer = async (message: UnsentMessage, tries: number) => {
     const call = message.answerTo;
     if (!call) return;
-    setOffering((ids) => new Set(ids).add(message.id));
     const delivery = await answerCard(
       channel.threadId,
       call,
       typedAnswer(message.text),
     );
+    const { timers, isGone } = rests.current;
+    if (isGone) return;
     // Taken: the conversation is about to show them as the card's answer, which is what forgets
     // them — and if the turn is stopped before that is filed, they are still here to go.
-    if (delivery === "taken") setTaken((ids) => new Set(ids).add(message.id));
-    setOffering((ids) => {
-      const next = new Set(ids);
-      next.delete(message.id);
-      return next;
-    });
+    if (delivery === "taken") {
+      putOffer(message.id, { at: "taken", tries });
+      return;
+    }
+    /*
+     * Not taken, or nothing back: offered again after a wait, for as long as the card goes on
+     * waiting. A REFUSAL TOO. The stream names the card as waiting and the door says otherwise:
+     * either the stream is about to say so, and the settling below then stops asking, or the door
+     * refused for a reason of its own that may not last — and words left unoffered there sat
+     * under the card until its question ran out.
+     */
+    const tried = tries + 1;
+    putOffer(message.id, { at: "resting", tries: tried });
+    clearTimeout(timers.get(message.id));
+    timers.set(
+      message.id,
+      setTimeout(() => {
+        timers.delete(message.id);
+        setOffers((held) =>
+          held.get(message.id)?.at === "resting"
+            ? new Map(held).set(message.id, { at: "due", tries: tried })
+            : held,
+        );
+      }, restAfter(tried)),
+    );
   };
   const answerInWords = (draft: ComposerDraft) => {
     const words = draft.text.trim();
@@ -494,7 +550,7 @@ export function ServerChannelChat({
       words !== "" &&
       draft.commandIds.length === 0 &&
       !draft.attachments?.length;
-    if (!openChoice || !isWordsAlone) {
+    if (!openChoice || !isWordsAlone || draft.isOffered) {
       park(draft);
       return;
     }
@@ -514,11 +570,14 @@ export function ServerChannelChat({
       waiting: true,
       answerTo: openChoice,
     };
+    // Its offer first: nothing that reads the outbox finds these words without one.
+    putOffer(message.id, { at: "out", tries: 0 });
     keepUnsent(channel.id, message);
-    setOffered((ids) => new Set(ids).add(message.id));
-    void offer(message);
+    void offer(message, 0);
   };
-  const offerNow = useEffectEvent((message: UnsentMessage) => offer(message));
+  const offerNow = useEffectEvent((message: UnsentMessage, tries: number) =>
+    offer(message, tries),
+  );
 
   /**
    * Whether what this device kept may go by itself: the page is in, the stream has said how the
@@ -598,34 +657,61 @@ export function ServerChannelChat({
   useEffect(() => {
     if (!thread.loaded || thread.epoch === null) return;
     let isFreed = false;
+    const marked = new Set<string>();
     for (const message of unsent) {
       const call = message.answerTo;
-      if (!call || offering.has(message.id)) continue;
+      if (!call) continue;
+      marked.add(message.id);
+      const offer = offers.get(message.id);
+      // The door is being asked: what it says comes first.
+      if (offer?.at === "out") continue;
       const answered = answeredInWords(thread.messages, call);
       // Their own words — or, where the door said it took them, whatever words the card shows.
       if (
         answered !== undefined &&
-        (answered === message.text || taken.has(message.id))
+        (answered === message.text || offer?.at === "taken")
       ) {
         forgetUnsent(channel.id, [message.id]);
         continue;
       }
-      if (hasResult(thread.messages, call) || !going) {
+      // Over, and not with these words: words like any other the device kept.
+      if (hasResult(thread.messages, call)) {
         const { answerTo: _answerTo, ...plain } = message;
         keepUnsent(channel.id, plain);
         isFreed = true;
         continue;
       }
-      // Still being asked, and these words are not known to have reached it: once per time this
-      // window has reason to think the door is there — it has just been opened, or come back.
-      if (
-        thread.waiting.includes(call) &&
-        !taken.has(message.id) &&
-        !offered.has(message.id)
-      ) {
-        setOffered((ids) => new Set(ids).add(message.id));
-        void offerNow(message);
+      if (!going) {
+        /*
+         * THE TURN IS OVER AND NOTHING HELD SAYS WHAT BECAME OF THE QUESTION. Every turn that
+         * ends files a result for each of its calls and says so on the stream, so this is a window
+         * that did not hear it: asleep while the turn finished, or opened long after — or a server
+         * that died holding the question. The first of those is a window about to read the record
+         * and find these words there as the card's answer; this used to take the mark off and send
+         * them, and the Bot was told the same thing twice (adversarial read, 2026-10-03). So
+         * nothing is sent by itself here. They are the person's, drawn as not sent with the press
+         * that sends them, and forgotten above the moment the conversation shows them answered.
+         */
+        handToPerson(channel.id, message);
+        continue;
       }
+      // Still being asked, and these words are not known to have reached it: offered, unless an
+      // offer is out, the door took them, or one it did not take is resting (`Offer`).
+      if (
+        isKeptForCard(message) &&
+        thread.waiting.includes(call) &&
+        (offer === undefined || offer.at === "due")
+      ) {
+        const tries = offer?.tries ?? 0;
+        setOffers((held) =>
+          new Map(held).set(message.id, { at: "out", tries }),
+        );
+        void offerNow(message, tries);
+      }
+    }
+    // Where words are no longer marked for a card, how their offer stood is nothing's to read.
+    if ([...offers.keys()].some((id) => !marked.has(id))) {
+      setOffers((held) => new Map([...held].filter(([id]) => marked.has(id))));
     }
     // Words freed after their turn was already over have nothing left to send them but this.
     if (isFreed && !going) void resendNow(true);
@@ -636,9 +722,7 @@ export function ServerChannelChat({
     thread.loaded,
     thread.epoch,
     going,
-    offering,
-    taken,
-    offered,
+    offers,
     channel.id,
   ]);
 
@@ -788,8 +872,19 @@ export function ServerChannelChat({
     const onBack = () => {
       store.nudge();
       if (readUnsent(channel.id).length > 0) void resendNow(true);
-      // And words kept for a card that still waits may be offered to it once more.
-      setOffered(new Set());
+      // And words resting after an offer the door did not take are due: it may be there again.
+      setOffers((held) =>
+        [...held.values()].some((offer) => offer.at === "resting")
+          ? new Map(
+              [...held].map(([id, offer]) => [
+                id,
+                offer.at === "resting"
+                  ? { at: "due" as const, tries: offer.tries }
+                  : offer,
+              ]),
+            )
+          : held,
+      );
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
@@ -918,8 +1013,8 @@ export function ServerChannelChat({
    */
   const waitingForTurn = notInThread
     .filter(isWaitingForBot)
-    // Words on their way to a card's door, or taken by it, are not "waiting for the turn".
-    .filter((message) => !offering.has(message.id) && !taken.has(message.id));
+    // Words the card itself is showing are not "waiting for the turn" (`isOnCard`).
+    .filter((message) => !isOnCard(message, offers));
   const drawn = [
     ...transcriptMessages(thread.messages, seed),
     ...notInThread
@@ -991,8 +1086,14 @@ export function ServerChannelChat({
       answer: async (toolCallId: string, value: unknown) => {
         await answerCard(channel.threadId, toolCallId, value);
       },
+      // The words each card shows as its answer before the conversation does (`isOnCard`).
+      inWords: new Map(
+        unsent
+          .filter((message) => isOnCard(message, offers))
+          .map((message) => [message.answerTo ?? "", message.text]),
+      ),
     }),
-    [thread.waiting, channel.threadId],
+    [thread.waiting, channel.threadId, unsent, offers],
   );
 
   /*
