@@ -183,6 +183,23 @@ export function createThreadStore(
   };
 
   /**
+   * A going turn's messages AS THEY ARE HELD NOW, for laying over a page that has just been read.
+   *
+   * The snapshot that started the read brought them as they were then, and the turn went on while
+   * the read was out: the stream added to the answer, and the copies from the snapshot — laid over
+   * the page as they came — rolled it back. What was added since was gone from the screen, and the
+   * next pieces were appended to the older copy, until the message's last frame put it right
+   * (review, third round). It needs the read to take longer than the next piece of the answer,
+   * which is every network but the one this was first pressed on.
+   */
+  const asHeldNow = (going: readonly Message[]): readonly Message[] => {
+    const held = new Map(
+      state.messages.map((message) => [message.id, message]),
+    );
+    return going.map((message) => held.get(message.id) ?? message);
+  };
+
+  /**
    * The newest page read again and put in place of what is held: after the server restarted, what
    * this window pieced together from a turn that process never finished is not the record.
    */
@@ -195,7 +212,7 @@ export function createThreadStore(
     set({
       ...state,
       // The page, and over it the messages of a turn the new process has going, which it cannot hold.
-      messages: mergeMessages(page.messages, going),
+      messages: mergeMessages(page.messages, asHeldNow(going)),
       times: { ...state.times, ...page.times },
       hasOlder: page.hasOlder,
       // On a store whose first page never arrived, this page is it.
@@ -280,7 +297,10 @@ export function createThreadStore(
     remember(page);
     set({
       ...state,
-      messages: mergeMessages(withPage(state.messages, page, "page"), going),
+      messages: mergeMessages(
+        withPage(state.messages, page, "page"),
+        asHeldNow(going),
+      ),
       times: { ...state.times, ...page.times },
     });
   };

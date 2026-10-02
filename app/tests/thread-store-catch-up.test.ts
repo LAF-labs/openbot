@@ -87,3 +87,108 @@ describe("a resumed snapshot brings the stored answer over the half that was str
     expect(reads()).toBe(1);
   });
 });
+
+/*
+ * Review, third round. The snapshot that starts the read brings the going turn's messages as they
+ * are then, and the turn goes on while the read is out. Laid over the page as they came, they
+ * rolled the answer back to where the snapshot had it: what the stream had added since was gone,
+ * and the next pieces were appended to the older copy until the message's last frame put it right.
+ */
+describe("a turn that goes on while the page is being read", () => {
+  /** A store whose reads after the first stay out until the test lets them back. */
+  function slowReads(first: HistoryPage, later: HistoryPage) {
+    let onFrame: ((frame: TurnFrame) => void) | null = null;
+    let reads = 0;
+    let answer = () => {};
+    const store = createThreadStore("thread-1", {
+      readHistory: async () => {
+        reads += 1;
+        if (reads === 1) return first;
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return later;
+      },
+      watchTurn: (_thread, handlers) => {
+        onFrame = handlers.onFrame;
+        return { close: () => {}, nudge: () => {} };
+      },
+    });
+    return {
+      store,
+      frame: (value: TurnFrame) => onFrame?.(value),
+      answerRead: async () => {
+        answer();
+        await settle();
+      },
+    };
+  }
+  const answerOf = (store: ReturnType<typeof createThreadStore>) =>
+    store.snapshot().messages.find((message) => message.id === "a1")?.content;
+  const going = { id: "t1", status: "running" as const, asked: ["u1"] };
+  const added = (seq: number, delta: string): TurnFrame => ({
+    seq,
+    kind: "event",
+    turn: "t1",
+    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta },
+  });
+
+  test("keeps what the stream added after the snapshot, when somebody came back mid-answer", async () => {
+    const { store, frame, answerRead } = slowReads(
+      page([asked]),
+      page([asked]),
+    );
+    await store.open();
+    frame({
+      seq: 3,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: going,
+      messages: [],
+      waiting: [],
+    });
+
+    store.resume();
+    frame({
+      seq: 5,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: going,
+      messages: [{ id: "a1", role: "assistant", content: "내일은" }],
+      waiting: [],
+    });
+    // The page is still being read, and the answer goes on arriving.
+    frame(added(6, " 맑고"));
+    frame(added(7, " 최고 26°예요."));
+    expect(answerOf(store)).toBe("내일은 맑고 최고 26°예요.");
+
+    await answerRead();
+    expect(answerOf(store)).toBe("내일은 맑고 최고 26°예요.");
+    // And the next piece lands on the whole of it.
+    frame(added(8, " 우산은 필요 없어요."));
+    expect(answerOf(store)).toBe(
+      "내일은 맑고 최고 26°예요. 우산은 필요 없어요.",
+    );
+  });
+
+  test("and the same for a window that resumed past the frames the server kept", async () => {
+    const { store, frame, answerRead } = slowReads(
+      page([asked]),
+      page([asked]),
+    );
+    await store.open();
+    frame({ seq: 1, kind: "turn", turn: going });
+    // Past what the server still held: a snapshot, with the answer as far as it had got.
+    frame({
+      seq: 40,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: going,
+      messages: [{ id: "a1", role: "assistant", content: "내일은" }],
+      waiting: [],
+    });
+    frame(added(41, " 맑아요."));
+    await answerRead();
+    expect(answerOf(store)).toBe("내일은 맑아요.");
+  });
+});
