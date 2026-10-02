@@ -42,6 +42,7 @@ import {
   throttleKey,
 } from "@/lib/notifications/bot-notifications";
 import { inShell } from "@/lib/notifications/shell";
+import { questionThread } from "@/lib/turns/questions";
 
 /**
  * The title of the notice that a Bot is stopped and waiting, with the particle that fits its name.
@@ -73,15 +74,21 @@ export function openChannelFrom(pathname: string): string | null {
 }
 
 /**
- * Whether the screen in front of the person is one that draws this Bot's question.
+ * Whether the screen in front of the person is one that draws this question.
  *
- * Two screens do: the Bot's conversation, where the card sits on the line of the call that raised
- * it, and the page a notice opens for one question. Every other screen has the pill and the
- * sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading is
- * not them being asked.
+ * Two screens do: the conversation it was raised in, where the card sits on the line of the call
+ * that raised it, and the page a notice opens for one question. Every other screen has the pill and
+ * the sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading
+ * is not them being asked.
+ *
+ * THE CONVERSATION IT WAS RAISED IN, NOT ANY CONVERSATION WITH THE BOT. An account that kept what it
+ * had before the limit can hold several with one Bot, and each draws only its own thread's cards:
+ * being in one of them is not looking at a question raised in another (review of this change, first
+ * round). `threadId` is the question's conversation when the server's record has said; without it,
+ * a Bot with one conversation can only mean that one, and a Bot with several is not guessed at.
  *
  * While the list of conversations has not been read at all, an open conversation is taken as the
- * Bot's: staying quiet for that moment is the smaller mistake than interrupting somebody who is
+ * right one: staying quiet for that moment is the smaller mistake than interrupting somebody who is
  * looking at the card. A list that HAS been read and does not hold the open one is another matter —
  * the compose screen (`/channel/new`), a conversation that is gone — and no card is drawn there.
  */
@@ -89,7 +96,11 @@ export function isCardOnScreen(input: {
   pathname: string;
   botId: string;
   approvalId?: string | undefined;
-  channels: readonly { id: string; agentIds: readonly string[] }[] | undefined;
+  /** The conversation the question was raised in, when known. */
+  threadId?: string | undefined;
+  channels:
+    | readonly { id: string; agentIds: readonly string[]; threadId: string }[]
+    | undefined;
 }): boolean {
   if (
     input.approvalId &&
@@ -101,7 +112,12 @@ export function isCardOnScreen(input: {
   if (!open) return false;
   if (!input.channels) return true;
   const channel = input.channels.find((entry) => entry.id === open);
-  return channel?.agentIds.includes(input.botId) ?? false;
+  if (!channel?.agentIds.includes(input.botId)) return false;
+  if (input.threadId) return channel.threadId === input.threadId;
+  return (
+    input.channels.filter((entry) => entry.agentIds.includes(input.botId))
+      .length === 1
+  );
 }
 
 /**
@@ -341,6 +357,9 @@ export function useBotNotifications(): void {
               pathname: pathRef.current,
               botId: question.botId,
               approvalId: question.approvalId,
+              threadId:
+                questionThread(question.botId, question.approvalId) ??
+                question.threadId,
               channels: channelsRef.current,
             }),
             now: Date.now(),
@@ -448,6 +467,10 @@ export function useBotNotifications(): void {
                   pathname: pathRef.current,
                   botId: frame.botId,
                   approvalId: frame.approvalId,
+                  // The frame names no conversation; the record does, once somebody has read it.
+                  threadId: frame.approvalId
+                    ? questionThread(frame.botId, frame.approvalId)
+                    : undefined,
                   channels: channelsRef.current,
                 }),
               }

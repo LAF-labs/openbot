@@ -106,23 +106,27 @@ describe("whether a Bot asking is worth interrupting for", () => {
 
 describe("which screens draw a Bot's question", () => {
   const channels = [
-    { id: "channel_mine", agentIds: ["risk-analyst"] },
-    { id: "channel_other", agentIds: ["someone-else"] },
+    { id: "channel_mine", agentIds: ["risk-analyst"], threadId: "thread-mine" },
+    { id: "channel_other", agentIds: ["someone-else"], threadId: "thread-x" },
   ];
-  const on = (pathname: string, approvalId?: string) =>
+  const on = (pathname: string, approvalId?: string, threadId?: string) =>
     isCardOnScreen({
       pathname,
       botId: "risk-analyst",
       approvalId,
+      threadId,
       channels,
     });
 
-  test("the Bot's own conversation does", () => {
+  test("the conversation it was raised in does", () => {
+    expect(on("/channel/channel_mine", "appr_1", "thread-mine")).toBe(true);
+    // The Bot's one conversation, before anybody has read which conversation the question is in.
     expect(on("/channel/channel_mine")).toBe(true);
   });
 
   test("another Bot's conversation does not", () => {
     expect(on("/channel/channel_other")).toBe(false);
+    expect(on("/channel/channel_other", "appr_1", "thread-mine")).toBe(false);
   });
 
   test("소식, 만든 것, 설정 — no screen that is not a conversation does", () => {
@@ -143,7 +147,7 @@ describe("which screens draw a Bot's question", () => {
     expect(on("/approve/appr_1")).toBe(false);
   });
 
-  test("before the list of conversations has been read, an open conversation is taken as the Bot's", () => {
+  test("before the list of conversations has been read, an open conversation is taken as the right one", () => {
     expect(
       isCardOnScreen({
         pathname: "/channel/channel_mine",
@@ -156,6 +160,38 @@ describe("which screens draw a Bot's question", () => {
   test("a list that has been read and does not hold the open one draws no card: the compose screen, a conversation that is gone", () => {
     expect(on("/channel/new")).toBe(false);
     expect(on("/channel/channel_deleted")).toBe(false);
+  });
+
+  /*
+   * Codex, on the pull request: an account that kept what it had before the limit can hold several
+   * conversations with one Bot, and each draws only its own thread's cards. Deciding by "a
+   * conversation with this Bot is open" withheld the notice for a question raised in another one.
+   */
+  describe("an account that kept two conversations with one Bot", () => {
+    const kept = [
+      { id: "channel_a", agentIds: ["risk-analyst"], threadId: "thread-a" },
+      { id: "channel_b", agentIds: ["risk-analyst"], threadId: "thread-b" },
+    ];
+    const inB = (threadId?: string) =>
+      isCardOnScreen({
+        pathname: "/channel/channel_b",
+        botId: "risk-analyst",
+        approvalId: "appr_1",
+        threadId,
+        channels: kept,
+      });
+
+    test("a question raised in the other one is not on this screen", () => {
+      expect(inB("thread-a")).toBe(false);
+    });
+
+    test("one raised in this one is", () => {
+      expect(inB("thread-b")).toBe(true);
+    });
+
+    test("and one whose conversation nobody has read yet is not guessed to be here", () => {
+      expect(inB(undefined)).toBe(false);
+    });
   });
 });
 
