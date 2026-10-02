@@ -304,6 +304,7 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 - [docs/laf/deploying.md](docs/laf/deploying.md) — how one is actually stood up, and what goes wrong at each step
 - [docs/architecture.md](docs/architecture.md), [docs/configuration.md](docs/configuration.md), [docs/development.md](docs/development.md) — inherited from upstream and kept true to what this fork runs
 - [CLAUDE.md](CLAUDE.md) — how to work in this repository
+- [AGENTS.md](AGENTS.md) — what a review holds a change to; the rules Codex reads on every pull request
 
 ## Credits
 
