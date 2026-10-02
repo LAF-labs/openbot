@@ -88,6 +88,7 @@ import { watchServerQuestions } from "@/lib/turns/questions";
 import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
 import {
   answeredInWords,
+  askerOf,
   hasResult,
   holdsCall,
   isShownOnCard,
@@ -128,6 +129,25 @@ function isOnCard(
   offers: ReadonlyMap<string, Offer>,
 ): boolean {
   return isKeptForCard(message) && isShownOnCard(offers.get(message.id));
+}
+
+/**
+ * WORDS KEPT FOR AN EARLIER QUESTION UNDER THE SAME ID: the conversation's newest call under the
+ * id they were kept for is another message's than the one that asked them (`askedBy`).
+ *
+ * A provider's ids are its own to mint. Kept by the id alone, words typed for a question whose
+ * turn died — the server stopped holding it — were, on the next question to carry that id,
+ * offered to it as its answer, drawn on its card, and taken away by whatever was typed for it
+ * (review, eighth round). Such words are no card's: their own question is over, however that
+ * id stands now.
+ */
+function isForEarlier(
+  message: UnsentMessage,
+  messages: readonly Message[],
+): boolean {
+  if (!message.answerTo || !message.askedBy) return false;
+  const newest = askerOf(messages, message.answerTo);
+  return newest !== undefined && newest !== message.askedBy;
 }
 
 /**
@@ -172,7 +192,7 @@ async function readPage(
  */
 async function readRecord(
   threadId: string,
-  toolCallId: string,
+  asked: { call: string; in?: string },
   isGone: () => boolean,
 ): Promise<Message[] | null> {
   let record: Message[] = [];
@@ -181,7 +201,7 @@ async function readRecord(
     const page = await readPage(threadId, before, isGone);
     if (!page) return null;
     record = [...page.messages, ...record];
-    if (holdsCall(page.messages, toolCallId)) return record;
+    if (holdsCall(page.messages, asked.call, asked.in)) return record;
     const above = page.oldestSeq;
     if (!page.hasOlder || above === null) return record;
     if (before !== null && above >= before) return record;
@@ -620,11 +640,18 @@ export function ServerChannelChat({
       park(draft);
       return;
     }
-    // One answer in words per card: a second one takes the first one's place.
+    // Which question: the message that asked, since an id can be another question's later.
+    const askedBy = askerOf(thread.messages, openChoice);
+    // One answer in words per card: a second one takes the first one's place — this card's
+    // first, not words kept for an earlier question that carried the same id.
     forgetUnsent(
       channel.id,
       readUnsent(channel.id)
-        .filter((kept) => kept.answerTo === openChoice)
+        .filter(
+          (kept) =>
+            kept.answerTo === openChoice &&
+            (kept.askedBy === undefined || kept.askedBy === askedBy),
+        )
         .map((kept) => kept.id),
     );
     const message: UnsentMessage = {
@@ -635,6 +662,7 @@ export function ServerChannelChat({
       autoTried: false,
       waiting: true,
       answerTo: openChoice,
+      ...(askedBy ? { askedBy } : {}),
     };
     // Its offer first: nothing that reads the outbox finds these words without one.
     putOffer(message.id, { at: "out", tries: 0 });
@@ -666,12 +694,13 @@ export function ServerChannelChat({
   >(new Map());
   /** The ones a read is out or waiting for, so the settling asks for one and not one a render. */
   const confirming = useRef(new Set<string>());
-  const readRecordFor = useEffectEvent(async (id: string, call: string) => {
-    if (confirming.current.has(id)) return;
+  const readRecordFor = useEffectEvent(async (message: UnsentMessage) => {
+    const { id, answerTo: call } = message;
+    if (!call || confirming.current.has(id)) return;
     confirming.current.add(id);
     const record = await readRecord(
       channel.threadId,
-      call,
+      { call, in: message.askedBy },
       () => rests.current.isGone,
     );
     if (!record) return;
@@ -768,8 +797,11 @@ export function ServerChannelChat({
       // The conversation as it is held — and the record as it was read for this question, where
       // it has been (`records`): either may be the one that shows what became of it.
       const record = records.get(message.id) ?? [];
+      // For the call the asking message made, where the words were kept with it (`askedBy`).
+      const asker = message.askedBy;
       const answered =
-        answeredInWords(thread.messages, call) ?? answeredInWords(record, call);
+        answeredInWords(thread.messages, call, asker) ??
+        answeredInWords(record, call, asker);
       // Their own words — or, where the door said it took them, whatever words the card shows.
       if (
         answered !== undefined &&
@@ -779,13 +811,18 @@ export function ServerChannelChat({
         continue;
       }
       // Over, and not with these words: words like any other the device kept.
-      if (hasResult(thread.messages, call) || hasResult(record, call)) {
-        const { answerTo: _answerTo, ...plain } = message;
+      if (
+        hasResult(thread.messages, call, asker) ||
+        hasResult(record, call, asker)
+      ) {
+        const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
         keepUnsent(channel.id, plain);
         isFreed = true;
         continue;
       }
-      if (!going) {
+      // Its own question is over too where a later one carries its id (`isForEarlier`), whatever
+      // the turn is doing: it is never that one's answer.
+      if (!going || isForEarlier(message, thread.messages)) {
         /*
          * THE TURN IS OVER AND NOTHING HELD SAYS WHAT BECAME OF THE QUESTION. Every turn that
          * ends files a result for each of its calls and says so on the stream, so this is a window
@@ -799,7 +836,7 @@ export function ServerChannelChat({
         // Once the record has been read for it, and says nothing either (`records`): what is
         // held may be behind it, and the record may hold these words as the answer.
         if (records.has(message.id)) handToPerson(channel.id, message);
-        else if (isKeptForCard(message)) void readRecordFor(message.id, call);
+        else if (isKeptForCard(message)) void readRecordFor(message);
         continue;
       }
       // Still being asked, and these words are not known to have reached it: offered, unless an
@@ -1192,20 +1229,30 @@ export function ServerChannelChat({
       }),
   });
 
+  /** Which of the kept words were for an earlier question, as one value that seldom changes. */
+  const earlier = unsent
+    .filter((message) => isForEarlier(message, thread.messages))
+    .map((message) => message.id)
+    .join(" ");
   const answers = useMemo(
     () => ({
       waiting: new Set(thread.waiting),
       answer: async (toolCallId: string, value: unknown) => {
         await answerCard(channel.threadId, toolCallId, value);
       },
-      // The words each card shows as its answer before the conversation does (`isOnCard`).
+      // The words each card shows as its answer before the conversation does (`isOnCard`) —
+      // its own, not words kept for an earlier question under the same id (`earlier`).
       inWords: new Map(
         unsent
-          .filter((message) => isOnCard(message, offers))
+          .filter(
+            (message) =>
+              isOnCard(message, offers) &&
+              !earlier.split(" ").includes(message.id),
+          )
           .map((message) => [message.answerTo ?? "", message.text]),
       ),
     }),
-    [thread.waiting, channel.threadId, unsent, offers],
+    [thread.waiting, channel.threadId, unsent, offers, earlier],
   );
 
   /*

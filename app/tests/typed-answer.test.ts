@@ -20,7 +20,9 @@ import {
 } from "@/components/channels/composer/outbox";
 import {
   answeredInWords,
+  askerOf,
   hasResult,
+  holdsCall,
   isSavedByPress,
   isShownOnCard,
   openChoiceCall,
@@ -174,6 +176,46 @@ describe("the words a card was answered with, read off the conversation", () => 
     expect(hasResult(answered, "c-1")).toBe(true);
   });
 
+  /*
+   * Words are kept with the message that asked (`askedBy`), because an id may be another
+   * question's later. Read by the id alone, a later namesake's result was theirs: its answer, or
+   * its end (review, eighth round).
+   */
+  test("are the result of the call the asking message made, where the words were kept with it", () => {
+    const again = asking("m-2", call("c-1", "askChoice", CHOICE));
+    // The earlier question was never answered — its turn died — and the later one was.
+    const messages = [question, again, result("c-1", '{"answer":"이번 답"}')];
+    expect(answeredInWords(messages, "c-1", "m-1")).toBeUndefined();
+    expect(hasResult(messages, "c-1", "m-1")).toBe(false);
+    expect(answeredInWords(messages, "c-1", "m-2")).toBe("이번 답");
+    // An earlier question's own result is its own, whatever the id went on to.
+    const both = [question, result("c-1", '{"answer":"예전 답"}'), again];
+    expect(answeredInWords(both, "c-1", "m-1")).toBe("예전 답");
+    expect(hasResult(both, "c-1", "m-2")).toBe(false);
+  });
+
+  test("and of a call these messages do not hold, what stands before any call they do", () => {
+    const again = asking("m-2", call("c-1", "askChoice", CHOICE));
+    // The asking message is above this page, and its result is the first thing on it.
+    const page = [
+      result("c-1", '{"answer":"예전 답"}'),
+      again,
+      result("c-1", '{"answer":"이번 답"}'),
+    ];
+    expect(answeredInWords(page, "c-1", "m-1")).toBe("예전 답");
+    // Nothing of it before the next call under the id: that call's result is not its.
+    expect(hasResult([again, result("c-1", "x")], "c-1", "m-1")).toBe(false);
+  });
+
+  test("the message that asked is the newest that carries the call, and a page holds a question by it", () => {
+    const again = asking("m-2", call("c-1", "askChoice", CHOICE));
+    expect(askerOf([question, again], "c-1")).toBe("m-2");
+    expect(askerOf([question], "c-2")).toBeUndefined();
+    expect(holdsCall([again], "c-1")).toBe(true);
+    expect(holdsCall([again], "c-1", "m-1")).toBe(false);
+    expect(holdsCall([question, again], "c-1", "m-1")).toBe(true);
+  });
+
   test("are nothing for any other result: an option pressed, a wait that ran out, a sentence", () => {
     for (const content of [
       '{"choice":"korean","label":"한식"}',
@@ -313,6 +355,45 @@ describe("words kept for a card, among what the device kept", () => {
       expect(held("a")).toMatchObject({ answerTo: "c-1", autoTried: true });
       expect(claimAutoSend(CHANNEL)).toEqual([]);
       expect(readSendable(CHANNEL).map((message) => message.id)).toEqual(["a"]);
+    });
+
+    /*
+     * The record holds two questions under one id: the earlier never answered, the later answered
+     * with the very words kept for the earlier one. By the id alone they were forgotten as sent.
+     */
+    test("by the question their own message asked, not a later one that carried its id", () => {
+      const earlier = asking("m-1", call("c-1", "askChoice", CHOICE));
+      const later = asking("m-2", call("c-1", "askChoice", CHOICE));
+      const record = [
+        earlier,
+        later,
+        {
+          id: "r-1",
+          role: "tool",
+          toolCallId: "c-1",
+          content: '{"answer":"a"}',
+        } as Message,
+      ];
+      const read = {
+        answeredWith: (toolCallId: string, askedBy?: string) =>
+          answeredInWords(record, toolCallId, askedBy),
+        isOver: (toolCallId: string, askedBy?: string) =>
+          hasResult(record, toolCallId, askedBy),
+      };
+      keepUnsent(CHANNEL, { ...forCard("a"), askedBy: "m-1" });
+      settleAnswers(CHANNEL, read);
+      // Not forgotten, and not taken for words whose question ended: the person's.
+      expect(held("a")).toMatchObject({
+        answerTo: "c-1",
+        askedBy: "m-1",
+        autoTried: true,
+      });
+      expect(held("a")?.waiting).toBeUndefined();
+
+      // Kept for the later one, the same words are its answer.
+      keepUnsent(CHANNEL, { ...forCard("bb"), text: "a", askedBy: "m-2" });
+      settleAnswers(CHANNEL, read);
+      expect(held("bb")).toBeUndefined();
     });
   });
 });

@@ -131,47 +131,77 @@ function isCall(message: Message, toolCallId: string): boolean {
 }
 
 /**
- * Whether these messages hold the call itself. A result is filed after its call, always: where
- * they run from the call to the newest thing said, they hold everything the conversation says of
- * what became of it — which is how far back a record is read for a question (`readRecord` in
- * `server-channel-chat.tsx`).
+ * The message that asked under this id, as far as these messages say: the newest of them that
+ * carries the call. It is what words kept for a card are kept with (`askedBy` in the outbox),
+ * because the id alone does not say which question they were for.
+ */
+export function askerOf(
+  messages: readonly Message[],
+  toolCallId: string,
+): string | undefined {
+  return messages.findLast((message) => isCall(message, toolCallId))?.id;
+}
+
+/**
+ * Whether these messages hold the call itself — the one `askedBy` made, where that is known. A
+ * result is filed after its call, always: where they run from the call to the newest thing said,
+ * they hold everything the conversation says of what became of it — which is how far back a
+ * record is read for a question (`readRecord` in `server-channel-chat.tsx`).
  */
 export function holdsCall(
   messages: readonly Message[],
   toolCallId: string,
+  askedBy?: string,
 ): boolean {
-  return messages.some((message) => isCall(message, toolCallId));
+  return messages.some(
+    (message) =>
+      isCall(message, toolCallId) &&
+      (askedBy === undefined || message.id === askedBy),
+  );
 }
 
 /**
- * The result of a call, as the conversation holds it: the tool message that answers THE NEWEST CALL
- * under that id. Undefined while that call has none.
+ * The result of a call, as the conversation holds it: the tool message that answers it. Undefined
+ * while the call has none.
  *
- * The newest, as `openChoiceCall` decides an id: a provider's ids are its own to mint, and an
+ * WHICH CALL, WHERE MORE THAN ONE CARRIES THE ID. A provider's ids are its own to mint, and an
  * older call that carried the same one has a result of its own — read for this call, it said the
- * question was over while it was still being asked.
+ * question was over while it was still being asked. So it is the call the asking message made
+ * (`askedBy`), where the words were kept with it, and the newest call under the id where they
+ * were not; and a result is that call's only as far as the next call under the same id. Words
+ * kept by the id alone were read off whichever question carried it last: kept for a question
+ * whose turn died, they were its later namesake's answer, or its end (review, eighth round).
+ *
+ * A call these messages do not hold is above them, so what answers it is whatever stands before
+ * any call they do hold.
  */
 function resultOf(
   messages: readonly Message[],
   toolCallId: string,
+  askedBy?: string,
 ): Message | undefined {
-  const asked = messages.findLastIndex((message) =>
-    isCall(message, toolCallId),
-  );
-  // A call this window no longer holds: whatever result there is, is that call's.
-  return messages
-    .slice(asked + 1)
-    .find(
-      (message) => message.role === "tool" && message.toolCallId === toolCallId,
-    );
+  const asked =
+    askedBy === undefined
+      ? messages.findLastIndex((message) => isCall(message, toolCallId))
+      : messages.findIndex(
+          (message) => message.id === askedBy && isCall(message, toolCallId),
+        );
+  for (const message of messages.slice(asked + 1)) {
+    if (isCall(message, toolCallId)) return undefined;
+    if (message.role === "tool" && message.toolCallId === toolCallId) {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 /** Whether the conversation holds a result for a call: its question is over, however it ended. */
 export function hasResult(
   messages: readonly Message[],
   toolCallId: string,
+  askedBy?: string,
 ): boolean {
-  return resultOf(messages, toolCallId) !== undefined;
+  return resultOf(messages, toolCallId, askedBy) !== undefined;
 }
 
 /**
@@ -182,8 +212,9 @@ export function hasResult(
 export function answeredInWords(
   messages: readonly Message[],
   toolCallId: string,
+  askedBy?: string,
 ): string | undefined {
-  const content = resultOf(messages, toolCallId)?.content;
+  const content = resultOf(messages, toolCallId, askedBy)?.content;
   if (typeof content !== "string") return undefined;
   try {
     const result: unknown = JSON.parse(content);

@@ -320,8 +320,9 @@ export function ChannelChat({
   const settleKeptAnswers = useCallback(
     (record: readonly Message[]) =>
       settleAnswers(channel.id, {
-        answeredWith: (toolCallId) => answeredInWords(record, toolCallId),
-        isOver: (toolCallId) => hasResult(record, toolCallId),
+        answeredWith: (toolCallId, askedBy) =>
+          answeredInWords(record, toolCallId, askedBy),
+        isOver: (toolCallId, askedBy) => hasResult(record, toolCallId, askedBy),
       }),
     [channel.id],
   );

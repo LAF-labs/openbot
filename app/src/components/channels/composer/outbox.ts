@@ -65,6 +65,13 @@ export type UnsentMessage = {
    * conversation shows them as the card's answer (`isKeptForCard`).
    */
   answerTo?: string;
+  /**
+   * The message that asked: the Bot's message whose call `answerTo` names. An id says which card
+   * only among the calls of one turn — a provider's ids are its own to mint — so words kept by
+   * the id alone were any later question's that carried it: offered to it as its answer, and
+   * settled by its result (review, eighth round). Absent on words kept before this was.
+   */
+  askedBy?: string;
 };
 
 /**
@@ -118,13 +125,16 @@ function load(channelId: string): readonly UnsentMessage[] {
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed.filter(isUnsent).map(({ waiting, answerTo, ...entry }) => ({
-          ...entry,
-          autoTried: entry.autoTried === true,
-          // Read as strictly as it is written: anything but `true` is no mark at all.
-          ...(waiting === true ? { waiting } : {}),
-          ...(typeof answerTo === "string" && answerTo ? { answerTo } : {}),
-        }))
+      ? parsed
+          .filter(isUnsent)
+          .map(({ waiting, answerTo, askedBy, ...entry }) => ({
+            ...entry,
+            autoTried: entry.autoTried === true,
+            // Read as strictly as it is written: anything but `true` is no mark at all.
+            ...(waiting === true ? { waiting } : {}),
+            ...(typeof answerTo === "string" && answerTo ? { answerTo } : {}),
+            ...(typeof askedBy === "string" && askedBy ? { askedBy } : {}),
+          }))
       : EMPTY;
   } catch {
     return EMPTY;
@@ -249,23 +259,25 @@ export function handToPerson(channelId: string, message: UnsentMessage): void {
  * left out of every hand-over as they are, they could neither go nor be taken away there (review,
  * third round). The screen that can still ask the card settles them itself, from its stream.
  * `answeredWith` is what the conversation says a call was answered with, where that is words;
- * `isOver`, whether it holds a result for the call at all.
+ * `isOver`, whether it holds a result for the call at all — each for the call the asking message
+ * made (`askedBy`), where the words were kept with it.
  */
 export function settleAnswers(
   channelId: string,
   conversation: {
-    answeredWith: (toolCallId: string) => string | undefined;
-    isOver: (toolCallId: string) => boolean;
+    answeredWith: (toolCallId: string, askedBy?: string) => string | undefined;
+    isOver: (toolCallId: string, askedBy?: string) => boolean;
   },
 ): void {
   for (const message of readUnsent(channelId)) {
-    if (message.answerTo === undefined) continue;
-    if (conversation.answeredWith(message.answerTo) === message.text) {
+    const { answerTo, askedBy } = message;
+    if (answerTo === undefined) continue;
+    if (conversation.answeredWith(answerTo, askedBy) === message.text) {
       forgetUnsent(channelId, [message.id]);
       continue;
     }
-    if (conversation.isOver(message.answerTo)) {
-      const { answerTo: _answerTo, ...plain } = message;
+    if (conversation.isOver(answerTo, askedBy)) {
+      const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
       keepUnsent(channelId, plain);
       continue;
     }
