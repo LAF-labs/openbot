@@ -300,6 +300,53 @@ describe("the key a customer's agent sits behind", () => {
     expect(parsed.ok).toBe(false);
   });
 
+  /*
+   * A KEY THE RUNTIME WILL NOT PUT ON THE WIRE IS REFUSED WHEN IT IS TYPED (upstream OpenBot #470).
+   *
+   * Measured on Bun 1.3.11: `new Headers()` — and so `fetch` — throws a TypeError for a NUL, a line
+   * break inside the value and any character above U+00FF. A hyphen a document turned into an en
+   * dash is one of those and looks like nothing in a password box. Stored, it throws on every turn
+   * that Bot takes, before its agent is dialled, and the error's own message quotes the key.
+   */
+  const withKey = (value: string) =>
+    parseAgentInput({
+      name: "Sales Bot",
+      roleDescription: "Answers questions about pricing.",
+      auth: { header: "Authorization", value },
+    });
+
+  test.each([
+    ["an en dash where a hyphen was", "Bearer abc–def"],
+    ["a line break inside it", "Bearer abc\ndef"],
+    ["a carriage return inside it", "Bearer abc\rdef"],
+    ["a NUL", `Bearer abc${String.fromCharCode(0)}def`],
+    ["한글", "Bearer 열쇠"],
+    ["a zero-width space", "Bearer abc​def"],
+  ])(
+    "the form refuses a key with %s, by code and without the key",
+    (_what, value) => {
+      const parsed = withKey(value);
+      expect(parsed).toEqual({
+        ok: false,
+        code: "laf:agent_auth_value_unsendable",
+      });
+    },
+  );
+
+  // The guard against over-correcting: every one of these is a value the runtime sends.
+  test.each([
+    ["a tab", "Bearer\tabc"],
+    ["an inner space", "Bearer abc def"],
+    ["a Latin-1 accent", "Bearer café"],
+    ["punctuation", "Bearer abc-_.~+/=:;,@!$%^&*()[]{}"],
+  ])("and keeps a key with %s", (_what, value) => {
+    const parsed = withKey(value);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.auth).toEqual({ header: "Authorization", value });
+    }
+  });
+
   test("an empty key is not a key, so saving an edit does not wipe one", () => {
     const parsed = parseAgentInput({
       name: "Sales Bot",

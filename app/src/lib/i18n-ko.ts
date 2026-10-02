@@ -703,6 +703,8 @@ export const ko: Record<string, string> = {
   "That instruction can be up to 1,000 characters.":
     "그 지침은 1,000자까지 쓸 수 있어요.",
   "That header name cannot be used.": "그 헤더 이름은 쓸 수 없어요.",
+  "That key has a character that cannot be sent in a header. Look for a dash or a quote that a document changed, and paste the key again.":
+    "그 키에는 헤더로 보낼 수 없는 글자가 들어 있어요. 문서에서 모양이 바뀐 대시(–)나 따옴표가 없는지 보고 다시 붙여 넣어 주세요.",
   "That did not work.": "잘 되지 않았어요.",
   "The connection could not be tested.": "연결을 시험해 보지 못했어요.",
   "Could not start the conversation.": "대화를 시작하지 못했어요.",

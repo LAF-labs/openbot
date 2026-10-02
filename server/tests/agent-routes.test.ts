@@ -1068,3 +1068,78 @@ describe("what the owner may write on 수첩", () => {
     expect(confirm.status).toBe(404);
   });
 });
+
+/*
+ * THE CONNECTION TEST CARRIES THE KEY FROM THE SAME BOX (upstream OpenBot #470).
+ *
+ * A key that cannot be a header value throws inside the probe's `fetch`, in the catch written for
+ * a dead host: the form said "This server could not reach that address" about an agent that was
+ * listening and had not been dialled, and sent somebody to their tunnel and their firewall over a
+ * dash. A real server on a real port, so "reachable" is a fact here rather than a stub's word.
+ */
+describe("the connection test's key", () => {
+  function listeningAgent() {
+    const state = { dialled: 0 };
+    const server = Bun.serve({
+      port: 0,
+      fetch() {
+        state.dialled += 1;
+        return new Response('data: {"type":"RUN_STARTED"}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    return {
+      state,
+      url: `http://127.0.0.1:${server.port}/ag-ui`,
+      stop: () => server.stop(true),
+    };
+  }
+
+  const tested = (endpoint: string, key: string) => {
+    const app = new Hono<{ Variables: AppVariables }>();
+    // Private hosts allowed, as on a laptop: the agent under test is on this machine.
+    app.route("/", createAgentRoutes(fakeStore(), requireUser, true));
+    return app.request("/test-connection", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ endpoint, headers: { Authorization: key } }),
+    });
+  };
+
+  test("one that cannot be sent is refused as the key's fault, before anything is dialled", async () => {
+    const agent = listeningAgent();
+    try {
+      const response = await tested(agent.url, "Bearer abc–def");
+
+      expect(response.status).toBe(400);
+      const text = await response.text();
+      expect(JSON.parse(text)).toEqual({
+        error: "laf:agent_auth_value_unsendable",
+        code: "laf:agent_auth_value_unsendable",
+      });
+      // The runtime's own complaint quotes the value it refused. None of it comes back.
+      expect(text).not.toContain("abc");
+      expect(agent.state.dialled).toBe(0);
+    } finally {
+      agent.stop();
+    }
+  });
+
+  test("one that can be sent reaches the agent, and the verdict is the agent's", async () => {
+    const agent = listeningAgent();
+    try {
+      const response = await tested(agent.url, "Bearer abc-def");
+
+      expect(response.status).toBe(200);
+      expect(await json(response)).toEqual({
+        ok: true,
+        events: ["RUN_STARTED"],
+        status: 200,
+      });
+      expect(agent.state.dialled).toBe(1);
+    } finally {
+      agent.stop();
+    }
+  });
+});

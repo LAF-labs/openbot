@@ -50,7 +50,38 @@ export type AgentInputRefusal =
   | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
-  | "laf:agent_auth_header_invalid";
+  | "laf:agent_auth_header_invalid"
+  | "laf:agent_auth_value_unsendable";
+
+/**
+ * Whether the runtime will send this value as a header — the question behind
+ * `laf:agent_auth_value_unsendable`, asked at both doors that take a key: the Bot form, which
+ * stores it, and the connection test, which sends it once.
+ *
+ * `new Headers()` — and so `fetch` — throws a TypeError for a NUL, a line break inside the value
+ * and any character above U+00FF (measured on Bun 1.3.11; upstream measured 1.3.14, OpenBot #470).
+ * A line break cannot be typed into the one-line box, but a hyphen a document turned into an en
+ * dash can, and so can 한글 or a zero-width space riding a paste; none of them shows in a password
+ * field. Neither door looked, so the throw arrived somewhere that reads as something else:
+ *
+ *   - STORED, it throws on every turn the Bot takes, before its agent is dialled. Measured through
+ *     `HttpAgent`, the seam `copilot.ts` builds: the TypeError's message quotes the key whole, and
+ *     `@ag-ui/client` writes that error to stderr itself. The form had said it was saved.
+ *   - ON THE CONNECTION TEST it lands in the catch written for a dead host, and the person is told
+ *     "This server could not reach that address" about an agent that was listening.
+ *
+ * ASKED OF THE RUNTIME, not of a table copied from it. What may be sent is whatever this process's
+ * `Headers` accepts, so the question is put to `Headers` and cannot drift from the answer. The
+ * error is dropped unread: it is the one that quotes the value, which is a credential.
+ */
+function isSendableHeaderValue(value: string): boolean {
+  try {
+    new Headers({ authorization: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 type AgentInputParseResult =
   | { ok: true; value: CreateAgentInput }
@@ -178,6 +209,10 @@ export function parseAgentInput(
           : "Authorization";
       if (!/^[A-Za-z0-9-]+$/.test(header)) {
         return { ok: false, code: "laf:agent_auth_header_invalid" };
+      }
+      // Refused here rather than discovered on the first run: see `isSendableHeaderValue`.
+      if (!isSendableHeaderValue(value)) {
+        return { ok: false, code: "laf:agent_auth_value_unsendable" };
       }
       auth = { header, value };
     }
@@ -472,6 +507,25 @@ export function createAgentRoutes(
       body?.headers && typeof body.headers === "object"
         ? (body.headers as Record<string, string>)
         : undefined;
+    /*
+     * A key that cannot be sent is the request's fault, not a verdict on the agent, so it is the
+     * one answer here that is a refusal: nothing is dialled, and the surface is told which box to
+     * look at instead of being told the address is unreachable (`isSendableHeaderValue`).
+     */
+    if (
+      headers &&
+      Object.values(headers).some(
+        (value) => typeof value === "string" && !isSendableHeaderValue(value),
+      )
+    ) {
+      return context.json(
+        {
+          error: "laf:agent_auth_value_unsendable",
+          code: "laf:agent_auth_value_unsendable",
+        },
+        400,
+      );
+    }
     const result = await testAgentConnection(body?.endpoint, {
       headers,
       allowPrivateHosts,

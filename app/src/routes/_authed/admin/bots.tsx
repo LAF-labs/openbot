@@ -12,7 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { updateAgentMutationOptions } from "@/lib/agents/mutations";
+import {
+  AGENT_REFUSALS,
+  updateAgentMutationOptions,
+} from "@/lib/agents/mutations";
 import { type AgentProfile, agentListQueryOptions } from "@/lib/agents/queries";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
@@ -71,9 +74,11 @@ async function testEndpoint(
       ? body
       : {
           ok: false,
-          // A refusal, not a verdict: its code, never `error` — which is the code itself.
+          // A refusal, not a verdict: its code, never `error` — which is the code itself. Read from
+          // the agents' own table, which holds the one refusal this route makes of its own: a key
+          // the server cannot send, where the general sentence would not say which box to look at.
           reason: refusalText(
-            {},
+            AGENT_REFUSALS,
             (body as { code?: string } | null)?.code,
             t("The connection could not be tested."),
           ),

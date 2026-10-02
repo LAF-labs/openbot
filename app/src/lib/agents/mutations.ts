@@ -61,6 +61,14 @@ export const AGENT_REFUSALS: Record<string, string> = {
     "That instruction can be up to 1,000 characters.",
   "laf:agent_auth_header_invalid": "That header name cannot be used.",
   /*
+   * A key the server's runtime will not put on the wire: a line break, or anything above U+00FF —
+   * in practice the en dash or curly quote a document made of a plain one, which a password box
+   * does not show. Saving and 연결 확인 both answer it, so the endpoint screen reads this table for
+   * both. It names what to look for, because "cannot be used" leaves somebody staring at dots.
+   */
+  "laf:agent_auth_value_unsendable":
+    "That key has a character that cannot be sent in a header. Look for a dash or a quote that a document changed, and paste the key again.",
+  /*
    * The refusals the store and the memory and coworker routes throw, which used to reach the roster
    * and the ask box as the server's own English — "Agent not found.", "You do not have permission
    * to manage this agent." The words are the surface's now (audit A1-3).
