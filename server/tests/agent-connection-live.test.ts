@@ -72,3 +72,149 @@ describe("registering an agent that really answers", () => {
     }
   });
 });
+
+/**
+ * An agent whose run is not over when the check has seen enough.
+ *
+ * The check wants the opening of the stream and has a cap that says so, but the cap was applied to
+ * a string `response.text()` had already read to the end — so it waited for the agent to stop, and
+ * an agent that had not stopped by the deadline was reported as a connection that broke. A real
+ * server and a real `fetch`, because a stubbed one hands the body no signal: there the old read
+ * would wait forever instead of failing at the deadline, which is not what a person sees.
+ *
+ * From upstream OpenBot (#471, MIT) — its talkative agent, and one upstream's fix still gets wrong:
+ * the agent that says it has started and then thinks.
+ */
+describe("registering an agent that is still answering", () => {
+  const encoder = new TextEncoder();
+
+  /** An agent on a port of its own, saying when the far end let go of it. */
+  function agentThat(
+    run: (controller: ReadableStreamDefaultController<Uint8Array>) => void,
+  ) {
+    const state = { hungUp: Promise.withResolvers<void>() };
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        request.signal.addEventListener("abort", () => state.hungUp.resolve());
+        return new Response(new ReadableStream<Uint8Array>({ start: run }), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    return {
+      url: `http://127.0.0.1:${server.port}/ag-ui`,
+      hungUp: state.hungUp.promise,
+      stop: () => server.stop(true),
+    };
+  }
+
+  test("one that has started and is thinking is an agent, not a broken connection", async () => {
+    // RUN_STARTED, and then nothing: a reasoning model that takes longer than the form waits.
+    const agent = agentThat((controller) => {
+      controller.enqueue(encoder.encode('data: {"type":"RUN_STARTED"}\n\n'));
+    });
+
+    try {
+      const result = await testAgentConnection(agent.url, {
+        allowPrivateHosts: true,
+        timeoutMs: 200,
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        events: ["RUN_STARTED"],
+        status: 200,
+      });
+    } finally {
+      agent.stop();
+    }
+  });
+
+  test("one that streams a long answer is reported without waiting for it to finish", async () => {
+    // Two events, then a kilobyte every 20 ms for longer than any deadline: a Bot working through
+    // a long document. Nothing here closes, which is the point.
+    let writing: ReturnType<typeof setInterval> | undefined;
+    const agent = agentThat((controller) => {
+      controller.enqueue(
+        encoder.encode(
+          'event: RUN_STARTED\ndata: {"type":"RUN_STARTED"}\n\n' +
+            'event: TEXT_MESSAGE_START\ndata: {"type":"TEXT_MESSAGE_START"}\n\n',
+        ),
+      );
+      writing = setInterval(() => {
+        controller.enqueue(
+          encoder.encode(
+            `event: TEXT_MESSAGE_CONTENT\ndata: {"type":"TEXT_MESSAGE_CONTENT","delta":"${"x".repeat(960)}"}\n\n`,
+          ),
+        );
+      }, 20);
+    });
+
+    try {
+      const started = Date.now();
+      const result = await testAgentConnection(agent.url, {
+        allowPrivateHosts: true,
+        timeoutMs: 4_000,
+      });
+      const took = Date.now() - started;
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.events).toContain("RUN_STARTED");
+      // The cap is 8,000 bytes, which this agent has sent within a fifth of a second.
+      expect(took).toBeLessThan(2_000);
+      /*
+       * And the agent is let go of, well before the deadline would have done it. Somebody's agent
+       * is mid-run on a test message, and a socket left open keeps it writing — and spending —
+       * for as long as that run cares to go on.
+       */
+      const letGo = await Promise.race([
+        agent.hungUp.then(() => true),
+        Bun.sleep(1_000).then(() => false),
+      ]);
+      expect(letGo).toBe(true);
+    } finally {
+      clearInterval(writing);
+      agent.stop();
+    }
+    // Longer than bun's five seconds: the old read came back only at the deadline above.
+  }, 15_000);
+
+  test("one that sends no event before the deadline is still not called an agent", async () => {
+    // An SSE comment, so the 200 and its headers are on the wire, and then silence.
+    const agent = agentThat((controller) => {
+      controller.enqueue(encoder.encode(": waiting\n\n"));
+    });
+
+    try {
+      const result = await testAgentConnection(agent.url, {
+        allowPrivateHosts: true,
+        timeoutMs: 200,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain("connection broke");
+    } finally {
+      agent.stop();
+    }
+  });
+
+  test("one that never answers at all is still told apart from an address that cannot be reached", async () => {
+    // The deadline now shares its signal with the check's own hang-up, and it is the deadline's
+    // name — not a bare abort — that chooses this sentence.
+    const agent = agentThat(() => {});
+
+    try {
+      const result = await testAgentConnection(agent.url, {
+        allowPrivateHosts: true,
+        timeoutMs: 200,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain("did not answer in time");
+    } finally {
+      agent.stop();
+    }
+  });
+});
