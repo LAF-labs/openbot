@@ -71,7 +71,12 @@ export function t(
   let text = activeLocale === "ko" ? (ko[source] ?? source) : source;
   if (params) {
     for (const [name, value] of Object.entries(params)) {
-      text = text.replaceAll(`{${name}}`, String(value));
+      /*
+       * Through a function, so the value is put in as it is. Given as a string it is a replacement
+       * PATTERN: `$$` is one dollar, `$&` the slot's own name. A value is a Bot's name, a file's, and
+       * since 2026-10-02 what a person typed to answer a card — "$$ 정도" was drawn "$ 정도".
+       */
+      text = text.replaceAll(`{${name}}`, () => String(value));
     }
   }
   return text;

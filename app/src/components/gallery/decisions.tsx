@@ -8,7 +8,7 @@ import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
 import { PERSONA_LABELS } from "@/lib/persona/labels";
 import { useServerOwnsTurn } from "@/lib/turns/answers";
-import { typedAnswerIn } from "@/lib/turns/typed-answer";
+import { isSavedByPress, typedAnswerIn } from "@/lib/turns/typed-answer";
 import { Badge, GalleryFrame } from "./frame";
 
 /**
@@ -313,7 +313,7 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
        * among them. Said only where words are taken: the choice that saves who somebody is takes a
        * press, and nothing else.
        */}
-      {isAsking && isServerTurn && args.saves === undefined ? (
+      {isAsking && isServerTurn && !isSavedByPress(args.saves) ? (
         <p className="mt-3 text-muted-foreground text-xs">
           {t("None of these? Type your answer below.")}
         </p>
@@ -371,7 +371,7 @@ export const GALLERY: GalleryComponent[] = [
     title: "Choice",
     kind: "decision",
     description:
-      "Ask the person to pick one of several options, and WAIT for their answer. Use when you cannot sensibly guess which one they meant. You are given the id of the option they chose.",
+      "Ask the person to pick one of several options, and WAIT for their answer. Use when you cannot sensibly guess which one they meant. You are given the id of the option they chose, or, when none of them fitted and they typed an answer of their own, their words as `answer`.",
     parameters: ChoiceCardProps,
     Component: ChoiceCard as GalleryComponent["Component"],
   },

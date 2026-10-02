@@ -2066,7 +2066,7 @@ function screenCards(): WireTool[] {
     {
       name: "askChoice",
       description:
-        "Ask the person to pick one of several options, and WAIT for their answer. Use when you cannot sensibly guess which one they meant. You are given the id of the option they chose.",
+        "Ask the person to pick one of several options, and WAIT for their answer. Use when you cannot sensibly guess which one they meant. You are given the id of the option they chose, or, when none of them fitted and they typed an answer of their own, their words as `answer`.",
       parameters: anyObject,
     },
     {
