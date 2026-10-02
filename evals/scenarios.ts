@@ -44,7 +44,9 @@ import {
   WEB_SEARCH_TOOL_NAME,
 } from "../shared/tools/bridge";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
+import type { WireTool } from "../shared/tools/bridge";
 import { FEED_POST } from "../shared/tools/feed-post";
+import { FILE_CARD, GALLERY_CONFIRMATIONS } from "../shared/tools/gallery";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
 import { SKILL_VIEW } from "../shared/tools/skills";
 import { REALISTIC_TOOLSET } from "./deferral";
@@ -774,6 +776,9 @@ export const SCENARIOS: Scenario[] = [
   quickFactFromSearch(),
   answerCutThroughAnEmoji(),
   searchOnceBehindTheBridge(),
+  fileAskedForIsHandedOver(),
+  fileMadeIsHandedOver(),
+  fileHandedOverAfterSayingItCouldNot(),
   ...weatherFromTheAgency(),
   ...firstMoveThreads(),
   morningBriefing("monday"),
@@ -2033,6 +2038,335 @@ function searchOnceBehindTheBridge(): Scenario {
         [
           `검색 결과의 금액(${PLANTED}원)이 답에 없음`,
           turn.text.replace(/\s/g, "").includes(PLANTED),
+        ],
+      ]);
+    },
+  };
+}
+
+/**
+ * The cards a window offers the Bot (`app/src/components/gallery/`), as they travel on a hand-over.
+ *
+ * Read off a running window's `POST /api/turns/:thread` on 2026-10-02: fifteen of them, 12.5 KB of
+ * schema, every one behind the bridge — so what the Bot is told is their NAMES, in one line of the
+ * context layer ("화면에 띄우는 카드: askApproval, askChoice, …, showFile, …"). The names and the
+ * descriptions are as declared. Only `showFile`'s parameters are its real ones; no scenario here
+ * calls the others, and a card's schema reaches the model only when it looks the card up.
+ */
+function screenCards(): WireTool[] {
+  // Declared in a function: the scenario list above is built before any `const` down here is.
+  const anyObject = { type: "object", properties: {} } as const;
+  return [
+    {
+      name: "askApproval",
+      description:
+        "Ask the person to approve or decline something, and WAIT for their answer. Use before doing anything you cannot undo, spending money, sending a message, changing a record. You are given their decision and any reason they typed.",
+      parameters: anyObject,
+    },
+    {
+      name: "askChoice",
+      description:
+        "Ask the person to pick one of several options, and WAIT for their answer. Use when you cannot sensibly guess which one they meant. You are given the id of the option they chose.",
+      parameters: anyObject,
+    },
+    {
+      name: "showActivityReport",
+      description:
+        "Show what this deployment has actually been doing, read from its own records rather than from anything you know.",
+      parameters: anyObject,
+    },
+    {
+      name: "showAreaChart",
+      description:
+        "The same as showLineChart with the area under each line filled. Use for volume or accumulation rather than for a rate.",
+      parameters: anyObject,
+    },
+    {
+      name: "showBarChart",
+      description:
+        "Show values as a bar chart. Use when comparing a handful of named things, teams, months, categories. Not for a trend over time, which is showLineChart.",
+      parameters: anyObject,
+    },
+    {
+      name: "showChecklist",
+      description:
+        "Show a list of things and which are done. Reporting only, the person cannot tick these, so do not use it to ask for anything.",
+      parameters: anyObject,
+    },
+    {
+      name: "showConnection",
+      description:
+        "Put connection switches on screen, for the person to turn on themselves. Use when they ask to connect an account or site, or when what they asked needs one that is not connected. You cannot connect anything yourself.",
+      parameters: anyObject,
+    },
+    {
+      name: FILE_CARD,
+      description:
+        "Hand the person a file from your workspace: a card with its name, its size and a download button, and the picture itself if it is one. Use it for a file you wrote or downloaded that they asked for, instead of pasting what is in it. The file must already be in your workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description:
+              "The file's path in your workspace, exactly as you wrote or listed it, e.g. reports/sales.csv",
+          },
+          note: {
+            type: "string",
+            description:
+              "One short line in the person's language: what this file is",
+          },
+        },
+        required: ["path"],
+      },
+    },
+    {
+      name: "showLineChart",
+      description:
+        "Show one or more series over an ordered axis, usually time. Every series must have one value per label.",
+      parameters: anyObject,
+    },
+    {
+      name: "showMetrics",
+      description:
+        "Show up to six headline figures, each with an optional movement. Use for a summary somebody reads at a glance.",
+      parameters: anyObject,
+    },
+    {
+      name: "showNotice",
+      description:
+        "Show a headline, a short explanation and optional supporting points. Use instead of writing several paragraphs of prose.",
+      parameters: anyObject,
+    },
+    {
+      name: "showPieChart",
+      description:
+        "Show how a whole is divided, as a donut with a legend. Use only when the parts sum to something meaningful, and prefer a bar chart above about six slices.",
+      parameters: anyObject,
+    },
+    {
+      name: "showProgress",
+      description:
+        "Show values against their targets as progress bars. Use for 'are we there yet' questions, budget spent against budget, done against planned.",
+      parameters: anyObject,
+    },
+    {
+      name: "showQuote",
+      description:
+        "Show a quotation with its attribution. Use when the exact words matter, something a person said, or a line from a document you were given.",
+      parameters: anyObject,
+    },
+    {
+      name: "showRecord",
+      description:
+        "Show one thing and its fields, an order, a person, a ticket. Use instead of describing a record in prose.",
+      parameters: anyObject,
+    },
+  ];
+}
+
+/** What a chat window hands the Bot: the product's schema and the cards it can draw. */
+function windowToolset(): WireTool[] {
+  return [...REALISTIC_TOOLSET, ...screenCards()];
+}
+
+/** The workspace and the card, answering as the real ones do when all goes well. */
+function filesAndTheCard(call: ObservedCall): string | undefined {
+  if (call.name === "computer_write_file") {
+    // As a chat turn answers a write where the card is on offer (`server/src/turns/chat-tools.ts`).
+    return JSON.stringify({
+      ok: true,
+      path: String(call.arguments?.path ?? ""),
+      bytes: String(call.arguments?.contents ?? call.arguments?.content ?? "")
+        .length,
+      appended: false,
+      note: toolResultText("laf:file_saved_not_handed_over"),
+    });
+  }
+  if (call.name === FILE_CARD) return GALLERY_CONFIRMATIONS[FILE_CARD];
+  return undefined;
+}
+
+/** The Bot told the person it cannot do the thing: no card, no hand-over, no such feature. */
+function saysItCannot(text: string): boolean {
+  return /(기능|카드|건네|띄우)[^.。\n]{0,24}(없|못|어려|안 돼|안돼|불가)/.test(
+    text,
+  );
+}
+
+/*
+ * Born on the running app, 2026-10-02. A note had been saved a minute before; the person asked for
+ * it — "방금 부산 날씨 메모 파일을 화면에 카드로 띄워서 건네줘" — and the Bot thought for fifteen
+ * seconds (1,054 reasoning tokens), read the file, and answered "파일 카드로 띄우는 기능이 지금은
+ * 없어서 바로 건네드리긴 어려워요." The card was in its list the whole time, as one name among
+ * fifteen in a line of the context layer. That morning the same Bot, asked the same kind of thing,
+ * had looked the card up and handed the file over. A capability that is there on Tuesday and
+ * denied on Wednesday is worse than one that is missing.
+ */
+function fileAskedForIsHandedOver(): Scenario {
+  const writeId = "call_write_memo";
+  const PATH = "memo_2026-10-02-busan.md";
+  return {
+    id: "file-asked-for-is-handed-over",
+    dimension: "tool-calls",
+    messages: [
+      user("부산 날씨 확인한 거 메모로 저장해 둬"),
+      {
+        id: "a_write",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: writeId,
+            type: "function",
+            function: {
+              name: "computer_write_file",
+              arguments: JSON.stringify({
+                path: PATH,
+                contents:
+                  "확인 시각: 2026-10-02 (금) 16:36 KST\n\n부산 날씨: 지금 22.3도, 맑음, 비 없음. 오늘 최저 13도 / 최고 24도.",
+              }),
+            },
+          },
+        ],
+      },
+      {
+        id: "t_write",
+        role: "tool",
+        toolCallId: writeId,
+        content: JSON.stringify({ ok: true, path: PATH, bytes: 96 }),
+      },
+      {
+        id: "a_saved",
+        role: "assistant",
+        content: `${PATH}로 메모해 뒀어요.`,
+      },
+      user("방금 그 메모 파일을 화면에 카드로 띄워서 건네줘"),
+    ],
+    tools: windowToolset(),
+    maxTurns: 6,
+    stub: filesAndTheCard,
+    check: (turn) =>
+      verdict([
+        ["파일 카드(showFile)를 띄우지 않음", called(turn, FILE_CARD)],
+        [
+          "카드가 그 메모 파일을 가리키지 않음",
+          String(argsOf(turn, FILE_CARD)?.path ?? "").includes(PATH),
+        ],
+        [
+          "건넬 수 없다고 말함 — 목록에 있는 카드를 없는 기능이라고 했다",
+          !saysItCannot(turn.text),
+        ],
+      ]),
+  };
+}
+
+/*
+ * The other half: a file the person asks to be MADE is one they asked for, and it reaches them as
+ * the card — a name, a size and 내려받기 — not as a sentence saying where it was saved in a folder
+ * they have never seen.
+ */
+function fileMadeIsHandedOver(): Scenario {
+  return {
+    id: "file-made-is-handed-over",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        "이번 주 매출을 CSV 파일로 만들어 줘. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만이야.",
+      ),
+    ],
+    tools: windowToolset(),
+    maxTurns: 6,
+    stub: filesAndTheCard,
+    check: (turn) => {
+      const written = String(argsOf(turn, "computer_write_file")?.path ?? "");
+      return verdict([
+        ["파일을 쓰지 않음", called(turn, "computer_write_file")],
+        ["CSV가 아닌 이름으로 씀", /\.csv$/i.test(written)],
+        [
+          "쓴 파일을 카드(showFile)로 건네지 않음 — 사람은 내려받을 길이 없다",
+          called(turn, FILE_CARD),
+        ],
+        [
+          "카드가 쓴 파일을 가리키지 않음",
+          written.length > 0 &&
+            String(argsOf(turn, FILE_CARD)?.path ?? "") === written,
+        ],
+      ]);
+    },
+  };
+}
+
+/*
+ * The conversation the first of these was born in, one message later (2026-10-02, the running
+ * app, after the card went into the schema): the Bot had already told this person "파일 카드로
+ * 띄우는 기능이 지금은 없어서", and asked next to make a file it wrote one and said where it was —
+ * no card. A Bot follows what it said a minute ago. The conversations that exist on the day this
+ * ships all have that minute in them.
+ */
+function fileHandedOverAfterSayingItCouldNot(): Scenario {
+  const readId = "call_read_memo";
+  const PATH = "memo_2026-10-02-busan.md";
+  return {
+    id: "file-handed-over-after-saying-it-could-not",
+    dimension: "tool-calls",
+    messages: [
+      user("방금 부산 날씨 메모 파일을 화면에 카드로 띄워서 건네줘"),
+      {
+        id: "a_read",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: readId,
+            type: "function",
+            function: {
+              name: "computer_read_file",
+              arguments: JSON.stringify({ path: PATH }),
+            },
+          },
+        ],
+      },
+      {
+        id: "t_read",
+        role: "tool",
+        toolCallId: readId,
+        content: JSON.stringify({
+          ok: true,
+          path: PATH,
+          text: "확인 시각: 2026-10-02 (금) 16:36 KST\n\n부산 날씨: 지금 22.3도, 맑음, 비 없음.",
+        }),
+      },
+      {
+        id: "a_could_not",
+        role: "assistant",
+        content: `파일 카드로 띄우는 기능이 지금은 없어서 바로 건네드리긴 어려워요.\n\n${PATH} 파일은 그대로 저장되어 있어요.`,
+      },
+      user("알겠어, 고마워"),
+      {
+        id: "a_welcome",
+        role: "assistant",
+        content: "네, 필요하실 때 말씀해 주세요.",
+      },
+      user(
+        "이번 주 매출을 CSV 파일로 만들어 줘. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만이야.",
+      ),
+    ],
+    tools: windowToolset(),
+    maxTurns: 6,
+    stub: filesAndTheCard,
+    check: (turn) => {
+      const written = String(argsOf(turn, "computer_write_file")?.path ?? "");
+      return verdict([
+        ["파일을 쓰지 않음", called(turn, "computer_write_file")],
+        [
+          "쓴 파일을 카드(showFile)로 건네지 않음 — 조금 전에 못 한다고 한 말을 따랐다",
+          called(turn, FILE_CARD),
+        ],
+        [
+          "카드가 쓴 파일을 가리키지 않음",
+          written.length > 0 &&
+            String(argsOf(turn, FILE_CARD)?.path ?? "") === written,
         ],
       ]);
     },

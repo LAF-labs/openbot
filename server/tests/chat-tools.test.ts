@@ -1160,6 +1160,89 @@ describe("a file card", () => {
     return { gateway, asked };
   }
 
+  /*
+   * WRITTEN IS NOT HANDED OVER. Measured 2026-10-02 with the fleet's model, in a conversation with
+   * a day behind it and the card in the schema: asked to make a CSV, the Bot wrote it and told the
+   * person its name — "…csv에 담아뒀어요" — three times in three, a place they cannot reach. With
+   * this sentence on the write's own answer: handed over four times in four, and a memo the Bot was
+   * asked to keep for itself was left where it was.
+   */
+  test("a file that was written says the person has not been handed it, where a card could hand it", async () => {
+    const written: unknown[] = [];
+    const gateway = {
+      writeFile: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        file: unknown,
+      ) => {
+        written.push(file);
+        return { ok: true, path: "매출.csv", bytes: 60, appended: false };
+      },
+    } as unknown as ComputerGateway;
+    const handOver = toolResultText("laf:file_saved_not_handed_over");
+    // Asserted rather than assumed: an unknown code is answered with itself.
+    expect(handOver).toContain("showFile");
+    expect(handOver).not.toBe("laf:file_saved_not_handed_over");
+
+    const withCard = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("computer_write_file"), tool("showFile")]);
+    expect(
+      await withCard.execute(
+        "computer_write_file",
+        { path: "매출.csv", contents: "날짜,매출\n" },
+        call(),
+      ),
+    ).toEqual({
+      ok: true,
+      path: "매출.csv",
+      bytes: 60,
+      appended: false,
+      note: handOver,
+    });
+
+    // A turn whose window offered no such card is told nothing about a card it cannot draw.
+    const withoutCard = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("computer_write_file")]);
+    expect(
+      await withoutCard.execute(
+        "computer_write_file",
+        { path: "매출.csv", contents: "날짜,매출\n" },
+        call(),
+      ),
+    ).toEqual({ ok: true, path: "매출.csv", bytes: 60, appended: false });
+    expect(written).toHaveLength(2);
+  });
+
+  test("a write that was refused says only that it was refused", async () => {
+    const gateway = {
+      writeFile: async () => {
+        throw new ActionRefusedError(
+          "file.path == '매출.csv'",
+          "laf:policy_denied",
+        );
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      components: fileCard,
+    })(context, [tool("computer_write_file"), tool("showFile")]);
+    const refused = (await toolkit.execute(
+      "computer_write_file",
+      { path: "매출.csv", contents: "x" },
+      call(),
+    )) as Record<string, unknown>;
+    expect(refused.ok).toBe(false);
+    expect("note" in refused).toBe(false);
+  });
+
   test("is confirmed for a file that is there, asked about as this Bot's", async () => {
     const { gateway, asked } = folder();
     const toolkit = await createChatTools({

@@ -431,6 +431,8 @@ export function createChatTools(deps: ChatToolsDeps) {
         log.info("chat_tools_not_offered", { bot: botId, tools: dropped });
       }
     }
+    /** The card that hands a file over is among what THIS turn offers (a window declared it). */
+    const handsFilesOver = tools.some((tool) => tool.name === FILE_CARD);
     const holder = `turn:${runId}`;
     const personWaitMs = deps.personWaitMs ?? PERSON_WAIT_MS;
     const awaitPerson =
@@ -732,7 +734,19 @@ export function createChatTools(deps: ChatToolsDeps) {
             signal,
             (approvalId) =>
               gateway.writeFile(c, botId, actor, file, approvalId),
-            undefined,
+            /*
+             * WRITTEN IS NOT HANDED OVER, AND THE ANSWER SAYS SO where the card that hands a file
+             * over is on offer (`toolResultText`, `laf:file_saved_not_handed_over`). In a
+             * conversation with a day behind it the Bot wrote the file and told the person its
+             * name, three times in three — a place they cannot reach.
+             */
+            (outcome) =>
+              outcome.ok && handsFilesOver
+                ? {
+                    ...outcome,
+                    note: toolResultText("laf:file_saved_not_handed_over"),
+                  }
+                : outcome,
             false,
           );
         }

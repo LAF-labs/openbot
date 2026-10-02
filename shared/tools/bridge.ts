@@ -38,6 +38,7 @@
  */
 import { COMPUTER_TOOLS } from "./computer";
 import { FEED_POST } from "./feed-post";
+import { FILE_CARD } from "./gallery";
 import { NOW_TOOL_NAME } from "./now";
 import { ROUTINE_NOTE } from "./routine-note";
 import { SELF_TOOLS } from "./self";
@@ -120,6 +121,21 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   NOW_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
   WEATHER_TOOL_NAME,
+  /*
+   * 파일을 건네는 카드. 화면 카드 가운데 이것 하나만 스키마에 싣는다 — 창이 등록한 대화에서만
+   * 있다(루틴에는 창이 없다).
+   *
+   * 다리 뒤에 있는 동안 잰 것(2026-10-02, 플릿의 모델, 연결된 서비스 전부와 카드 열다섯):
+   *   - "방금 그 메모 파일을 화면에 카드로 띄워서 건네줘" → 여섯 번 중 두 번만 건넸다. 넷은
+   *     "화면에 카드로 띄우는 기능은 지금 없어서"라고 답했다. 한국어로 찾았고("화면에 카드 띄우기,
+   *     파일 보여주기"), 영어로 적힌 카드는 그 말에 닿지 않거나 드라이브의 파일 도구 넷에 밀렸다.
+   *   - "이번 주 매출을 CSV 파일로 만들어 줘" → 여섯 번 중 한 번도 건네지 않았다. 파일을 쓰고
+   *     "제 컴퓨터에 weekly_sales.csv로 저장해 뒀고"라고 했다 — 사람이 닿을 수 없는 곳이다.
+   * 실제 대화에서도 같은 날 아침에는 건넸고 오후에는 "기능이 없다"고 했다. 있다가 없다가 하는
+   * 기능은 없는 것보다 나쁘고, 만든 파일을 받는 것은 이 제품에서 `computer_write_file`만큼
+   * 기본이다. 값은 스키마 611바이트다.
+   */
+  FILE_CARD,
 ]);
 
 export function isDeferredToolName(name: string): boolean {
@@ -408,6 +424,26 @@ const ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   표: ["record", "metrics"],
   선택지: ["choice"],
   승인: ["approval"],
+  /*
+   * 화면 카드를 한국어로 찾는 말. 카드의 이름과 설명은 영어라(`showChecklist`, "Show a list of
+   * things…"), 이 표에 없는 한국어는 하나도 닿지 않았다 — 봇은 "화면에 카드 띄우기", "카드
+   * 보여주기"로 찾았고 다리는 맞는 도구가 없다고 답했다(2026-10-02, 여섯 번 중 네 번).
+   * "카드"는 이름이 show로 시작하는 것 전부다. "보여"는 넣지 않는다: 무엇이든 보여 달라는 말에
+   * 카드 다섯이 딸려 나온다.
+   */
+  카드: ["show"],
+  건네: ["hand", "file"],
+  내려받: ["download"],
+  다운로드: ["download"],
+  체크리스트: ["checklist"],
+  진행: ["progress"],
+  진척: ["progress"],
+  인용: ["quote"],
+  공지: ["notice"],
+  지표: ["metrics"],
+  연결: ["connection"],
+  선택: ["choice"],
+  허락: ["approval"],
 });
 
 /** 한국어 조사. 검색어 토큰 끝에 붙은 것 하나를 뗀다 — "시트에" → "시트". 긴 것부터. */
@@ -663,7 +699,7 @@ export function resolveOffered(
  * 물으면 가졌다고, 찾지 말고 바로 부르라고 답한다.
  *
  * 이름으로 고른 것(`select:`)은 어떤 핵심 툴이든 받는다 — 이름은 모호하지 않다. 말로 찾은 것은
- * 연결된 서비스의 이름 모양인 핵심 툴(웹 검색, 날씨)에서만 찾는다: 브라우저나 수첩 툴이 느슨한
+ * 연결된 서비스의 이름 모양인 핵심 툴(웹 검색, 날씨)과 파일 카드에서만 찾는다: 브라우저나 수첩 툴이 느슨한
  * 말에 걸려 "이미 있다"고 나오면 그것은 소음이다. 다리 뒤에서 무언가 찾았어도 함께 말한다 —
  * 지메일이 연결된 봇이 "웹 검색"을 찾으면 다리 뒤에서는 지메일의 메일 검색이 걸리고, 그것만
  * 돌려주면 봇은 웹을 지메일에서 찾는다.
@@ -682,11 +718,17 @@ function alreadyOffered(
       .filter((tool): tool is WireTool => tool !== null);
     return [...new Set(listed)];
   }
-  const serviceShaped = offered.filter((tool) =>
-    tool.name.startsWith(DEFERRED_TOOL_PREFIX),
+  /*
+   * 파일을 건네는 카드도 여기 든다. 화면 카드는 다리 뒤에 있는 것이 보통이라 봇은 카드를 다리로
+   * 찾는다 — 그 하나가 스키마에 있다고 "맞는 도구가 없다"거나 엉뚱한 카드 넷만 돌려주면, 있는
+   * 것을 없다고 한 그 답이다.
+   */
+  const sought = offered.filter(
+    (tool) =>
+      tool.name.startsWith(DEFERRED_TOOL_PREFIX) || tool.name === FILE_CARD,
   );
-  return searchTools(serviceShaped, query)
-    .map((hit) => serviceShaped.find((tool) => tool.name === hit.name))
+  return searchTools(sought, query)
+    .map((hit) => sought.find((tool) => tool.name === hit.name))
     .filter((tool): tool is WireTool => tool !== undefined);
 }
 

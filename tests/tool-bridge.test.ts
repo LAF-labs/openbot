@@ -18,6 +18,7 @@ import {
   type WireTool,
 } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import { FILE_CARD } from "../shared/tools/gallery";
 import { SELF_TOOLS } from "../shared/tools/self";
 
 /**
@@ -130,6 +131,77 @@ describe("what is never deferred", () => {
     ]);
     expect(core).toHaveLength(COMPUTER_TOOLS.length + SELF_TOOLS.length);
     expect(deferred).toHaveLength(CONNECTED.length);
+  });
+});
+
+/*
+ * THE CARDS A WINDOW OFFERS, AND THE ONE THAT IS NOT BEHIND THE BRIDGE.
+ *
+ * Measured 2026-10-02 with the fleet's model, every card behind the bridge: asked to hand over a
+ * note it had just saved, the Bot looked for "화면에 카드 띄우기, 파일 보여주기" and "카드 보여주기",
+ * was told there was no such tool — the cards are named and described in English — and answered
+ * "화면에 카드로 띄우는 기능은 지금 없어서" four times in six. Asked to MAKE a file, it never once
+ * handed it over: "제 컴퓨터에 weekly_sales.csv로 저장해 뒀고".
+ */
+describe("the screen's cards", () => {
+  const CARDS: WireTool[] = [
+    wire(
+      "askChoice",
+      "Ask the person to pick one of several options, and WAIT for their answer.",
+    ),
+    wire(
+      "showBarChart",
+      "Show values as a bar chart. Use when comparing a handful of named things.",
+    ),
+    wire(
+      "showChecklist",
+      "Show a list of things and which are done. Reporting only.",
+    ),
+    wire("showProgress", "Show values against their targets as progress bars."),
+    wire(
+      "showQuote",
+      "Show a quotation with its attribution. Use when the exact words matter.",
+    ),
+  ];
+  const HANDS_A_FILE = wire(
+    FILE_CARD,
+    "Hand the person a file from your workspace: a card with its name, its size and a download button.",
+  );
+
+  test("the one that hands a file over is in the schema, and the others are not", () => {
+    expect(exposureOf(FILE_CARD)).toBe("core");
+    for (const card of CARDS) expect(exposureOf(card.name)).toBe("deferred");
+    const { core, deferred } = splitExposure([...CARDS, HANDS_A_FILE]);
+    expect(core.map((tool) => tool.name)).toEqual([FILE_CARD]);
+    expect(deferred).toHaveLength(CARDS.length);
+    // So the line of names the Bot is given no longer has to be read for it.
+    expect(
+      deferredToolsText([...CARDS, HANDS_A_FILE].map((t) => t.name)),
+    ).not.toContain(FILE_CARD);
+  });
+
+  test("are found from the Korean a request is made of", () => {
+    // The very words the Bot looked with.
+    const asked = searchTools(CARDS, "화면에 카드 띄우기");
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((hit) => hit.name.startsWith("show"))).toBe(true);
+    expect(searchTools(CARDS, "체크리스트로 정리")[0]?.name).toBe(
+      "showChecklist",
+    );
+    expect(searchTools(CARDS, "진행 상황 카드")[0]?.name).toBe("showProgress");
+    expect(searchTools(CARDS, "인용")[0]?.name).toBe("showQuote");
+    expect(searchTools(CARDS, "선택 받기")[0]?.name).toBe("askChoice");
+    // "보여 줘" alone is not a request for a card: it is how anything is asked for.
+    expect(searchTools(CARDS, "매출 보여줘")).toEqual([]);
+  });
+
+  test("a file looked for through the bridge is answered with the card already in the list", () => {
+    for (const query of ["파일을 카드로 건네주기", "파일 내려받기 카드"]) {
+      const text = searchResultText(CARDS, query, [HANDS_A_FILE]);
+      expect(text).toContain("이미 목록에 있는 도구다");
+      expect(text).toContain(FILE_CARD);
+      expect(text).not.toContain("맞는 도구가 없다");
+    }
   });
 });
 
