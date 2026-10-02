@@ -17,6 +17,7 @@ import {
 } from "./support/app-router";
 import {
   answering,
+  BOT_ID,
   channelServer,
   type WireMessage,
 } from "./support/channel-server";
@@ -312,6 +313,67 @@ describe("a message the server never got", () => {
         userMessages(server.runs[0]?.messages).map((message) => message.id),
       ).toContain("q-typed");
       expect(localStorage.getItem(`laf:unsent:${channelId}`)).toBeNull();
+      await view.unmount();
+    });
+
+    /*
+     * Review, fifth round. The gate before the first message opens whether or not the history
+     * came, and these words were settled when it did: against a conversation that had not arrived
+     * they were handed to the person as theirs to send, for good, though the record held them as
+     * the card's answer — and their press, or the next thing they said, sent them a second time.
+     */
+    test("are left as they are while the conversation cannot be read, and settled when it is", async () => {
+      const channelId = "channel_unsent-unread";
+      keptForACard(channelId, "call-1");
+      const server = channelServer({
+        channelId,
+        history: [
+          EARLIER,
+          asking("call-1"),
+          {
+            id: "r-choice",
+            role: "tool",
+            toolCallId: "call-1",
+            content: JSON.stringify({ answer: TYPED }),
+          },
+          EARLIER_ANSWER,
+        ] as unknown as WireMessage[],
+        runs: [answering(ANSWER)],
+      });
+      let isHistoryDown = true;
+      const view = await mountApp({
+        path: `/channel/${channelId}`,
+        api: (request) =>
+          isHistoryDown && request.pathname.includes("/copilotkit/threads/")
+            ? new Response("", { status: 503 })
+            : server.api(request),
+      });
+      await view.settle(1500);
+      // Not theirs to send, not sent, not forgotten: nothing is known of their card yet.
+      expect(keptNow(channelId)).toMatchObject([
+        { answerTo: "call-1", waiting: true, autoTried: false },
+      ]);
+      expect(server.runs).toHaveLength(0);
+      // Nor drawn as not sent, over a press that would send nothing.
+      expect(view.host.querySelector(unsentLine) === null).toBe(true);
+      expect(bubblesSaying(view.host, TYPED)).toBe(0);
+
+      // The record can be read again, and something says to read it: a Bot spoke.
+      isHistoryDown = false;
+      const { channelActivity, CHANNEL_ACTIVITY } = await import(
+        "../src/lib/channels/use-channel-events"
+      );
+      channelActivity.dispatchEvent(
+        new CustomEvent(CHANNEL_ACTIVITY, {
+          detail: { channelId, lastMessageAgentId: BOT_ID },
+        }),
+      );
+      await view.waitFor(
+        () => localStorage.getItem(`laf:unsent:${channelId}`) === null,
+        "the words to be forgotten once the conversation is in",
+        8000,
+      );
+      expect(server.runs).toHaveLength(0);
       await view.unmount();
     });
 
