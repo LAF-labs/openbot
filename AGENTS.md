@@ -56,8 +56,11 @@ those.
   per-run settings travel as AG-UI `forwardedProps` through the one middleware
   every run passes, chat and routines alike.
 - The Bot's computer takes the Bot from a request header and refuses without
-  it. Flag a fallback Bot id anywhere on that path: a default answers as the
-  blank page that belongs to nobody.
+  it. Flag a default Bot id anywhere on that path: it answers as the blank
+  page that belongs to nobody. One exception, and not a default: the
+  live-screen socket also takes the Bot from its query, because a websocket
+  upgrade carries no custom header. The header still wins, and neither is
+  still a refusal.
 - Tools ride in front of every message a Bot answers. Flag a new core tool
   where a lower rung of CLAUDE.md's footprint ladder would do, and a tool that
   appears or disappears in the middle of a conversation.
