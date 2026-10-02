@@ -412,6 +412,49 @@ export type ConnectionHealth = {
 export type OAuthClient = { clientId: string; clientSecret: string };
 
 /**
+ * A client as it comes back out of the vault, or null when what was decrypted is not one.
+ *
+ * ONE PLACE, because all three readers of a stored client asked this their own way and none asked
+ * all of it. Two of them guarded the parse and one did not; all three cast the result to
+ * {@link OAuthClient} and stopped. Syntax and shape are one concern — either way the deployment
+ * holds a client it cannot present — and each half had its own way of going wrong (measured
+ * 2026-10-02; upstream OpenBot #480, MIT):
+ *
+ *   NOT JSON. `JSON.parse` reports failure by quoting what it choked on, and what it choked on
+ *   here is the DECRYPTED client — a bare token comes back whole under Bun's parser. Thrown out of
+ *   the call path, that message went into the append-only `mcp.call_failed` row and into
+ *   `mcp_servers.last_error`, which the Plugins page draws. So the parser's error is dropped here,
+ *   unread.
+ *
+ *   JSON, AND NOT A CLIENT. `{"client_id": …}` parses and has no `clientId`. The exchange went out
+ *   with no client id, the vendor answered `invalid_client`, and the eviction recovery
+ *   (`oauth-client.ts`) read that as the vendor having forgotten this deployment: a corrupt LOCAL
+ *   row replaced the deployment-wide client every existing consent was granted against, and the
+ *   person was told the vendor had done it.
+ *
+ * The id has to be there; the secret only has to be a string. A public client proves itself with
+ * PKCE and is stored with an empty secret on purpose — both writers default it to `""` — so
+ * asking for a non-empty one would refuse every self-registering entry in the catalogue.
+ *
+ * Needs a row that is already broken: the product's own flows store only what this accepts.
+ */
+export function clientFromVault(decrypted: string): OAuthClient | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decrypted);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const { clientId, clientSecret } = parsed as Partial<OAuthClient>;
+  return typeof clientId === "string" &&
+    clientId !== "" &&
+    typeof clientSecret === "string"
+    ? { clientId, clientSecret }
+    : null;
+}
+
+/**
  * The client and when the vault row holding it was written.
  *
  * The date is not about the client: it is how long ago this deployment last introduced itself, which

@@ -11,6 +11,7 @@ import type { Servers } from "./servers";
 import {
   type AccessToken,
   CustomServerRefusedError,
+  clientFromVault,
   INVALID_CLIENT,
   type OAuthClient,
   type PluginContext,
@@ -258,9 +259,11 @@ export function createOAuthClients(
     if (!held || held.revokedAt) return null;
 
     try {
-      return JSON.parse(
+      // Null for a value that is not a client as well (`clientFromVault`): what this caller does
+      // with none is go and register one, which is the answer to holding one it cannot present.
+      return clientFromVault(
         await decryptSecret(encryptionKey, held.encryptedValue),
-      ) as OAuthClient;
+      );
     } catch {
       // Unreadable is the same as none: there is nothing to send anybody to consent with.
       return null;
@@ -391,13 +394,15 @@ export function createOAuthClients(
     if (!row?.credentialId) return null;
 
     try {
-      return JSON.parse(
+      // A value that parses and is not a client is the same none (`clientFromVault`). Handed back
+      // as it was, the connect route builds its consent URL from a client with no `clientId`.
+      return clientFromVault(
         await decryptCredentialForUse(
           encryptionKey,
           credentials,
           row.credentialId,
         ),
-      ) as OAuthClient;
+      );
     } catch {
       // A revoked, missing or unreadable client is the same as none for every caller: there is
       // nothing to send anybody to consent with, and the answer is to obtain one again.

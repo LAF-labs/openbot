@@ -1008,6 +1008,236 @@ describe("introducing this deployment to a vendor that issues its own clients", 
   });
 });
 
+/* ── a stored client that is not one ─────────────────────────────────────────────────────────── */
+
+/**
+ * The vault row the server points at decrypts, and what comes out is not an OAuth client.
+ *
+ * Not hypothetical: a half-written value, a row encrypted under a key this deployment no longer
+ * holds, a hand-repair. The product's own flows only ever store JSON, so this needs a row that is
+ * already broken — and that is exactly when the next thing said about it matters.
+ *
+ * TWO WAYS TO BE BROKEN, and the second ended worse than the first (upstream OpenBot #480, MIT):
+ *
+ *   NOT JSON. `JSON.parse` reports failure by quoting what it choked on, and what it choked on here
+ *   is the DECRYPTED client — under Bun's parser a bare token comes back whole. The call path
+ *   writes the thrower's message into the append-only `mcp.call_failed` row, and a refresh writes it
+ *   into `mcp_servers.last_error`, which the Plugins page draws.
+ *
+ *   JSON, AND NOT A CLIENT. `{"client_id": …}` parses, the `as OAuthClient` cast answers for
+ *   nothing, and the exchange goes out with no client id. The vendor answers `invalid_client`, and
+ *   the eviction recovery reads that as the vendor having forgotten us — so a corrupt LOCAL row
+ *   replaced the deployment-wide client every existing consent was granted against, and told the
+ *   person the vendor had done it.
+ *
+ * Every test here leaves the server pointing at a client of this suite's own, and the describes
+ * after it each register a fresh one first.
+ */
+describe("a stored OAuth client that does not read back as one", () => {
+  /** A bare secret where a client object belongs. Distinctive, so it can be looked for by name. */
+  const NOT_JSON = `secret_notJsonClient${suite}`;
+  /** Snake case where the type is camel case, which is what a hand-repair leaves. */
+  const MISSHAPEN_SECRET = `shh_notAClient_${suite}`;
+  const MISSHAPEN = JSON.stringify({
+    client_id: "dyn-snake",
+    client_secret: MISSHAPEN_SECRET,
+  });
+  /** What the person and the trail are told instead: which thing is broken, and none of it. */
+  const UNUSABLE =
+    "Notion has no usable OAuth client for this deployment. Connect Notion again in Settings: the deployment registers itself with the vendor on the next connect.";
+
+  /**
+   * The deployment's client, with these bytes where its JSON was.
+   *
+   * Registered through the store first, so the row is one the cleanup already knows how to name,
+   * and aged past the re-registration backoff: a row younger than that would be left alone by the
+   * recovery for a reason that has nothing to do with what is in it.
+   */
+  async function clientStoredAs(plaintext: string) {
+    const id = await registerDeploymentClient();
+    await ageClient(id, 10);
+    await database
+      .update(credentials)
+      .set({ encryptedValue: await encryptSecret(ENCRYPTION_KEY, plaintext) })
+      .where(eq(credentials.id, id));
+    return id;
+  }
+
+  /**
+   * This tool's failure rows, with their ids so one call's can be told from the suite's.
+   *
+   * Every test in this file calls the same tool, and the eviction tests above deliberately write
+   * the sentence one of these must not contain — so an assertion over every row would be about
+   * its siblings. The ids separate them; rows written in one millisecond have no finer order.
+   */
+  async function failureRows() {
+    return database
+      .select({ id: auditEvents.id, payload: auditEvents.payload })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "mcp.call_failed"),
+          eq(auditEvents.targetType, "mcp_tool"),
+          eq(auditEvents.targetId, ref),
+        ),
+      );
+  }
+
+  /** One call, and what it added to the trail. The throw is held: the ROW is what is under test. */
+  async function callAndItsFailureRows() {
+    const before = new Set((await failureRows()).map((row) => row.id));
+    const thrown = await store
+      .callTool({ ref, args: {}, botId, actorId: asker })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    const written = JSON.stringify(
+      (await failureRows()).filter((row) => !before.has(row.id)),
+    );
+    return { thrown, written };
+  }
+
+  const connectAsker = () =>
+    store.recordConnection({
+      serverId,
+      userId: asker,
+      refreshToken: "rt-asker-unreadable",
+      scope: "read",
+    });
+
+  afterAll(() => {
+    exchange = async ({ refreshToken }) => ({
+      accessToken: accessFrom(refreshToken),
+    });
+    register = async () => null;
+  });
+
+  test("not JSON: the refused call's trail row carries neither the plaintext nor the parser", async () => {
+    await clientStoredAs(NOT_JSON);
+    await connectAsker();
+    exchanged.length = 0;
+
+    const { thrown, written } = await callAndItsFailureRows();
+
+    expect(written).not.toContain(NOT_JSON);
+    /*
+     * The parser's vocabulary as well as the plaintext. A parser quotes a window of its input —
+     * how wide is the runtime's business — so a message could carry a fragment the line above
+     * would miss, and any of these words in the trail means a parse wrote it.
+     */
+    expect(written).not.toContain("JSON Parse error");
+    expect(written).not.toContain("SyntaxError");
+    expect(written).not.toContain("Unexpected");
+    // And the operator is still told which thing is broken, in the trail and to the caller.
+    expect(written).toContain(UNUSABLE);
+    expect(thrown).toBeInstanceOf(PluginRefusedError);
+    expect((thrown as PluginRefusedError).code).toBe(
+      "laf:oauth_client_unusable",
+    );
+    expect(exchanged).toEqual([]);
+  });
+
+  test("not JSON: a refresh leaves the same absence in the server's last error", async () => {
+    const [before] = await database
+      .select({ lastError: mcpServers.lastError })
+      .from(mcpServers)
+      .where(eq(mcpServers.id, serverId));
+    await clientStoredAs(NOT_JSON);
+    await connectAsker();
+
+    try {
+      // Refused before the vendor is asked, so nothing here needs a reachable Notion.
+      expect(await store.refreshTools(serverId, asker)).toEqual({ tools: 0 });
+
+      const [after] = await database
+        .select({ lastError: mcpServers.lastError })
+        .from(mcpServers)
+        .where(eq(mcpServers.id, serverId));
+      const written = after?.lastError ?? "";
+      expect(written).not.toContain(NOT_JSON);
+      expect(written).not.toContain("JSON Parse error");
+      expect(written).not.toContain("Unexpected");
+      expect(written).toBe(UNUSABLE);
+    } finally {
+      await database
+        .update(mcpServers)
+        .set({ lastError: before?.lastError ?? null })
+        .where(eq(mcpServers.id, serverId));
+    }
+  });
+
+  test("JSON and not a client: the call is refused, and the deployment's client is not replaced", async () => {
+    const planted = await clientStoredAs(MISSHAPEN);
+    await connectAsker();
+    // A vendor that refuses a client id it was not sent, and would honour a fresh registration —
+    // so registering again is available here and would look like a recovery.
+    exchange = async ({ client, refreshToken }) => {
+      if (!client.clientId) {
+        throw new TokenRefusedError(
+          "The vendor would not renew this access (401). (invalid_client)",
+          INVALID_CLIENT,
+        );
+      }
+      return { accessToken: accessFrom(refreshToken) };
+    };
+    register = async () => ({
+      clientId: "dyn-after-corruption",
+      clientSecret: "",
+    });
+    exchanged.length = 0;
+    registrations.length = 0;
+
+    const { thrown, written } = await callAndItsFailureRows();
+
+    // Refused before the exchange: the vendor is never offered a client with no id, so it never
+    // answers `invalid_client` about one, so there is nothing to read as an eviction.
+    expect(exchanged).toEqual([]);
+    expect(registrations).toEqual([]);
+    expect(await serverClientId()).toBe(planted);
+    expect(thrown).toBeInstanceOf(PluginRefusedError);
+    expect((thrown as Error).message).toBe(UNUSABLE);
+    // Half of what was stored IS a secret, and the eviction sentence would claim a registration
+    // that did not happen and point the operator at the vendor instead of at the row.
+    expect(written).not.toContain(MISSHAPEN_SECRET);
+    expect(written).not.toContain("no longer recognises");
+    expect(written).toContain(UNUSABLE);
+  });
+
+  /**
+   * The two readers that start a consent flow answer none, which is their contract for a value
+   * they cannot read. `ensureOAuthClient` consults the stored client and then again under its
+   * lock, so both are on this path, and each was measured unguarded: either one hands the
+   * misshapen object back as the client to send somebody to the vendor with.
+   */
+  test("JSON and not a client: the consent flow reads it as none and obtains one that works", async () => {
+    await clientStoredAs(MISSHAPEN);
+    const fresh = { clientId: "dyn-after-misshapen", clientSecret: "" };
+    register = async () => fresh;
+    registrations.length = 0;
+
+    expect(await store.oauthClientFor(serverId)).toBeNull();
+    expect(
+      await store.ensureOAuthClient(serverId, `person-${suite}@laf.test`),
+    ).toEqual(fresh);
+    expect(registrations).toHaveLength(1);
+    expect(await store.oauthClientFor(serverId)).toEqual(fresh);
+  });
+
+  test("a public client with an empty secret is still a client", async () => {
+    // What dynamic registration stores on purpose: the client proves itself with PKCE. A shape
+    // check that asked for a secret would refuse every self-registering entry in the catalogue.
+    await clientStoredAs(
+      JSON.stringify({ clientId: "dyn-public", clientSecret: "" }),
+    );
+
+    expect(await store.oauthClientFor(serverId)).toEqual({
+      clientId: "dyn-public",
+      clientSecret: "",
+    });
+  });
+});
+
 /* ── disconnecting ───────────────────────────────────────────────────────────────────────────── */
 
 describe("one person disconnecting their own account", () => {

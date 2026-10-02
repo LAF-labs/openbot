@@ -25,8 +25,8 @@ import {
 import type { OAuthClients } from "./oauth-client";
 import {
   type ConnectionHealth,
+  clientFromVault,
   iso,
-  type OAuthClient,
   type PluginContext,
   PluginRefusedError,
   type StoredClient,
@@ -406,16 +406,28 @@ export function createConnections(
       if (!server?.credentialId) {
         throw new PluginRefusedError(noClient, null, "laf:no_oauth_client");
       }
-      return {
-        client: JSON.parse(
-          await secretFor(
-            server.credentialId,
-            unusableClient,
-            "laf:oauth_client_unusable",
-          ),
-        ) as OAuthClient,
-        registeredAt: server.registeredAt,
-      };
+      /*
+       * A row that decrypts to something that is not a client is the same refusal `secretFor`
+       * gives for a revoked or missing one, and for the same reader: the deployment holds a
+       * client it cannot use, which is not `noClient`'s holding none. Raised rather than answered
+       * null, because this caller is mid-call and would turn a null into this on the next line.
+       * What was in the row goes nowhere — see `clientFromVault`.
+       */
+      const client = clientFromVault(
+        await secretFor(
+          server.credentialId,
+          unusableClient,
+          "laf:oauth_client_unusable",
+        ),
+      );
+      if (!client) {
+        throw new PluginRefusedError(
+          unusableClient,
+          null,
+          "laf:oauth_client_unusable",
+        );
+      }
+      return { client, registeredAt: server.registeredAt };
     }
 
     /*
