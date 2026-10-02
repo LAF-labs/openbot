@@ -701,7 +701,13 @@ describe("a card the Bot asks the person with", () => {
     ]);
     const pending = toolkit.execute(
       "askChoice",
-      { question: "어느 쪽?" },
+      {
+        title: "어느 쪽?",
+        options: [
+          { id: "a", label: "이쪽" },
+          { id: "b", label: "저쪽" },
+        ],
+      },
       call("choice-1"),
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -712,6 +718,135 @@ describe("a card the Bot asks the person with", () => {
     expect(await pending).toBe('{"choice":"a"}');
     expect(told).toEqual(["thread-1", "thread-1"]);
     expect(people.awaiting("thread-1")).toEqual([]);
+  });
+
+  /*
+   * A QUESTION WITH NOTHING IN IT IS NOT ASKED. Pressed on the running app, 2026-10-03: the
+   * fleet's model called `askChoice` with `{}`, and the turn waited on it — a card with no title
+   * and no options saying 답을 기다려요, for the ten minutes a question may wait.
+   */
+  describe("a question with nothing in it", () => {
+    const cards = {
+      listForAgent: async () => [
+        {
+          name: "askChoice",
+          title: "Choice",
+          kind: "decision",
+          description: "d",
+        },
+        {
+          name: "askApproval",
+          title: "Approval",
+          kind: "decision",
+          description: "d",
+        },
+      ],
+      decide: async () => ({ allowed: true as const, description: "d" }),
+      mayCall: async () => true,
+    };
+    const refused = {
+      ok: false,
+      code: "laf:tool_arguments_invalid",
+    };
+    const option = { id: "a", label: "이쪽" };
+
+    for (const [name, args] of [
+      ["askChoice", {}],
+      ["askChoice", { title: "어느 쪽?" }],
+      ["askChoice", { title: "어느 쪽?", options: [] }],
+      ["askChoice", { title: "", options: [option] }],
+      ["askChoice", { title: "어느 쪽?", options: [{ id: "a", label: "" }] }],
+      ["askChoice", { title: "어느 쪽?", options: [{ label: "이쪽" }] }],
+      ["askChoice", { title: "어느 쪽?", options: "이쪽, 저쪽" }],
+      ["askChoice", { saves: "persona" }],
+      ["askApproval", {}],
+      ["askApproval", { title: "메일 보내기" }],
+      ["askApproval", { title: "  ", summary: "이 메일을 보낼까요?" }],
+    ] as const) {
+      test(`is answered at once, and nobody is waited on: ${name} ${JSON.stringify(args)}`, async () => {
+        const told: string[] = [];
+        const people = createPersonAnswers({
+          onChange: (threadId) => told.push(threadId),
+        });
+        const toolkit = await createChatTools({
+          people,
+          components: cards,
+          // Long enough that a call which did wait would fail this test by its own time limit.
+          personWaitMs: 60_000,
+        })(context, [tool("askChoice"), tool("askApproval")]);
+        const outcome = await toolkit.execute(name, args, call("empty-1"));
+        expect(outcome).toMatchObject(refused);
+        // No window was ever told a card was waiting.
+        expect(told).toEqual([]);
+        expect(people.awaiting("thread-1")).toEqual([]);
+      });
+    }
+
+    test("leaves a row in the trail: which card, whose Bot, the fact — and nothing of the call", async () => {
+      const rows: Record<string, unknown>[] = [];
+      const toolkit = await createChatTools({
+        people: createPersonAnswers(),
+        components: cards,
+        auditStore: {
+          insert: async (event) => {
+            rows.push(event as unknown as Record<string, unknown>);
+          },
+        },
+      })(context, [tool("askChoice")]);
+      await toolkit.execute(
+        "askChoice",
+        { summary: "비밀번호는 hunter2", options: [] },
+        call("empty-2"),
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        eventType: "component.refused",
+        targetType: "component",
+        targetId: "askChoice",
+        payload: {
+          actor: "owner-1",
+          bot: "bot-1",
+          reason: "laf:tool_arguments_invalid",
+        },
+      });
+      expect(JSON.stringify(rows)).not.toContain("hunter2");
+    });
+
+    test("the same cards with a question in them are asked", async () => {
+      const people = createPersonAnswers();
+      const toolkit = await createChatTools({
+        people,
+        components: cards,
+      })(context, [tool("askChoice"), tool("askApproval")]);
+      const asked = [
+        toolkit.execute(
+          "askChoice",
+          { title: "어느 쪽?", options: [option] },
+          call("full-1"),
+        ),
+        // The persona question draws its own four: it needs no options of the Bot's.
+        toolkit.execute(
+          "askChoice",
+          { title: "어떤 분이세요?", saves: "persona" },
+          call("full-2"),
+        ),
+        toolkit.execute(
+          "askApproval",
+          { title: "메일 보내기", summary: "이 메일을 보낼까요?" },
+          call("full-3"),
+        ),
+      ];
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(people.awaiting("thread-1").sort()).toEqual([
+        "full-1",
+        "full-2",
+        "full-3",
+      ]);
+      for (const id of ["full-1", "full-2", "full-3"]) {
+        people.answer("thread-1", id, { choice: "a" });
+      }
+      await Promise.all(asked);
+    });
   });
 
   /*

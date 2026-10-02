@@ -169,6 +169,7 @@
   "app/tests/press.test.ts",
   "app/tests/profile-words.test.ts",
   "app/tests/query-client.test.ts",
+  "app/tests/question-not-asked.test.ts",
   "app/tests/queued-correction.test.tsx",
   "app/tests/queued-message-kept.test.tsx",
   "app/tests/quote-reply.test.ts",

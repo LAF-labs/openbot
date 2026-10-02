@@ -374,7 +374,8 @@ export const auditEventTypes = [
    * `component.refused` records a Bot reaching for something it does not hold. Everything else is a decision somebody made
    * on purpose; this is a Bot reaching for something it does not hold. It is written by the same
    * decision point the app asks before every render, so a grant revoked mid-conversation leaves a row
-   * rather than a component that quietly stops appearing.
+   * rather than a component that quietly stops appearing. And a question card called with nothing
+   * in it (`reason: laf:tool_arguments_invalid`, `turns/chat-tools.ts`): held, and not drawn.
    */
   "component.granted",
   "component.revoked",
