@@ -415,6 +415,30 @@ describe("Google Drive", () => {
   });
 
   /*
+   * THE TRASH IS LEFT OUT OF BOTH LISTINGS (upstream OpenBot #588).
+   *
+   * `files.list` returns trashed files unless the query says otherwise, so a document somebody had
+   * thrown away came back as a match, or as a recent file, with nothing in its line to say so.
+   */
+  test("a search leaves the trash out, for both halves of its `or`", async () => {
+    reply = () => json({ files: [] });
+    await drive.callTool(connection, "search_files", { query: "don't ship" });
+
+    // Bracketed, so the trash is left out of a match by name as well as of one by content.
+    expect(asked[0]?.url.searchParams.get("q")).toBe(
+      "(name contains 'don\\'t ship' or fullText contains 'don\\'t ship') and trashed = false",
+    );
+  });
+
+  test("recent files are ordered by Drive, and filtered only by the trash", async () => {
+    reply = () => json({ files: [] });
+    await drive.callTool(connection, "list_recent_files", {});
+
+    expect(asked[0]?.url.searchParams.get("orderBy")).toBe("modifiedTime desc");
+    expect(asked[0]?.url.searchParams.get("q")).toBe("trashed = false");
+  });
+
+  /*
    * A FILE IN A SHARED DRIVE IS REACHED LIKE ONE IN MY DRIVE (upstream OpenBot #589).
    *
    * Drive leaves shared drive items out of any `files.get` or `files.list` that does not say it
