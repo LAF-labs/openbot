@@ -33,6 +33,7 @@ export function ConversationView({
   messageTimes,
   readWindow,
   busy = false,
+  isResumed = false,
   waitingForBot = false,
   notice,
   commands,
@@ -70,6 +71,8 @@ export function ConversationView({
   /** Where this person's reading stopped and resumed (ISO-8601), for the "unread" line. */
   readWindow?: { from: string; until: string };
   busy?: boolean;
+  /** The conversation was already held when this screen mounted. See `ChatTranscriptProps`. */
+  isResumed?: boolean;
   /** The turn is waiting for the Bot to finish something else. See `ChatTranscriptProps`. */
   waitingForBot?: boolean;
   /** Shown above the composer. An error, or why this conversation is read-only. */
@@ -306,6 +309,7 @@ export function ConversationView({
         <SectionBoundary className="flex-1" section="transcript">
           <ChatTranscript
             busy={busy}
+            isResumed={isResumed}
             waitingForBot={waitingForBot}
             {...(channelId ? { channelId } : {})}
             commandNames={(commands ?? [])

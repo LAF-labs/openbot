@@ -76,7 +76,7 @@ import { ServerAnswersProvider } from "@/lib/turns/answers";
 import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
 import { isTurnGoing, isTurnQueued, type TurnFrame } from "@/lib/turns/frames";
 import { watchServerQuestions } from "@/lib/turns/questions";
-import { createThreadStore } from "@/lib/turns/thread-store";
+import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
 import { refreshTodayUsage } from "@/lib/usage/today";
 import { useLasting } from "@/lib/use-lasting";
 import { deviceClock } from "@/lib/whereabouts/queries";
@@ -137,8 +137,14 @@ export function ServerChannelChat({
   const deployment =
     typeof signedIn === "object" && signedIn ? signedIn.deployment : undefined;
 
-  const [store] = useState(() => createThreadStore(channel.threadId));
+  /*
+   * The conversation's store, which outlives this screen for a while (`kept-threads.ts`): somebody
+   * coming back from another place is handed the one they left, with what it holds.
+   */
+  const [store] = useState(() => threadFor(channel.threadId));
   const thread = useSyncExternalStore(store.subscribe, store.snapshot);
+  /** The conversation was already here when this screen mounted: they came back to it. */
+  const [isResumed] = useState(() => store.snapshot().loaded);
   const going = isTurnGoing(thread.turn);
   /*
    * THE TURN IS WAITING FOR THE BOT, AND HAS BEEN FOR A WHILE: a routine has it, and the turn runs
@@ -176,11 +182,12 @@ export function ServerChannelChat({
     });
   }, [channel.id]);
 
-  // The newest page and the live stream, together; closed with the room.
+  // The newest page and the live stream, together — opened on the first look, kept for a while
+  // after this screen leaves, and woken on coming back.
   useEffect(() => {
-    void store.open();
-    return () => store.close();
-  }, [store]);
+    holdThread(channel.threadId, undefined, store);
+    return () => releaseThread(channel.threadId, undefined, store);
+  }, [channel.threadId, store]);
 
   /*
    * THE FIRST MESSAGE FROM THE COMPOSE SCREEN, drawn until the thread has messages of its own. Taken
@@ -843,11 +850,16 @@ export function ServerChannelChat({
                 />
                 {/*
                  * The Bot's greeting, at the top of the whole conversation (`greeting.tsx`) — and so
-                 * not above one that could not be read, where it says the conversation starts here.
+                 * not above one that could not be read, where it says the conversation starts here,
+                 * and NOT BEFORE THE CONVERSATION HAS BEEN READ. Until the first page is in nothing
+                 * is known to be above, and the greeting was drawn on every open of a conversation
+                 * years long: hello again, for as long as the read took, then the history in its
+                 * place (pressed 2026-10-02). A first message carried over from the compose screen
+                 * is a conversation that starts here, and has its greeting at once.
                  */}
-                {thread.unreadable ? null : (
+                {thread.loaded || seed ? (
                   <Greeting agentId={runtimeAgentId} mode="head" />
-                )}
+                ) : null}
               </>
             }
             banner={
@@ -858,6 +870,7 @@ export function ServerChannelChat({
               />
             }
             busy={busy}
+            isResumed={isResumed}
             waitingForBot={waitingForBot}
             channelId={channel.id}
             commands={skillCommands}

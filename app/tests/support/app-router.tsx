@@ -305,6 +305,12 @@ export async function mountApp(options: {
     });
     host.remove();
     queryClient.clear();
+    // A conversation is kept for a while after its screen leaves; the next test is not who it is
+    // kept for, and its fetch is not the one that store was reading from.
+    const { forgetKeptThreads } = await import(
+      "../../src/lib/turns/kept-threads"
+    );
+    forgetKeptThreads();
     globalThis.fetch = realFetch;
     // The socket's release is deferred by a turn; wait past it so nothing lands in the next test.
     await settle(10);

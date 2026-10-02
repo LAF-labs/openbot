@@ -102,6 +102,12 @@ import { ToolLine, toolKindOf } from "./tool-line";
 type ChatTranscriptProps = {
   busy?: boolean;
   /**
+   * The conversation was already held when this screen mounted: the person came back to it from
+   * another place (`lib/turns/kept-threads.ts`). Its rows are drawn at once — the cascade is for a
+   * conversation that is arriving, and one that was here all along has nothing to arrive.
+   */
+  isResumed?: boolean;
+  /**
    * The turn is waiting for the Bot, which is finishing something else first, and has been for long
    * enough to say so (`isTurnQueued`, `useLasting`). Said in place of the thinking line, whatever
    * the last row is: a turn can be made to wait at its start or partway.
@@ -807,9 +813,10 @@ export function windowStart(
  * is restored asynchronously, so a channel's transcript is empty for a beat. Anything appearing
  * after that is a live turn and is given no delay at all.
  */
-function createFirstPaintDelays() {
+export function createFirstPaintDelays(isResumed: boolean) {
   const decided = new Map<string, number>();
-  let settled = false;
+  // A conversation somebody came back to is settled already: its first rows are not arriving.
+  let settled = isResumed;
 
   return {
     settle() {
@@ -1378,6 +1385,7 @@ function continues(
 
 export function ChatTranscript({
   busy = false,
+  isResumed = false,
   waitingForBot = false,
   channelId,
   commandNames = "",
@@ -1639,7 +1647,7 @@ export function ChatTranscript({
    * State made once rather than a ref filled in on first render: the same one object for the life
    * of the transcript, without reading a ref while rendering, which the React Compiler refuses.
    */
-  const [delays] = useState(createFirstPaintDelays);
+  const [delays] = useState(() => createFirstPaintDelays(isResumed));
   const [anchors] = useState(createAnchorDecider);
 
   /*
