@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import {
+  isSavedByPress,
   openChoiceCall,
   typedAnswer,
   typedAnswerIn,
@@ -62,6 +63,32 @@ describe("the question words can answer", () => {
       ),
     ];
     expect(openChoiceCall(messages, ["c-1"])).toBeNull();
+  });
+
+  /*
+   * The server keeps what waits by the call's id alone, and a provider's ids are its own to mint.
+   * Scanning on past a waiting yes-or-no card to an older choice that carries the same id would
+   * hand the approval the person's words: "응", filed as its result, reads as a yes.
+   */
+  test("is decided by the newest call under a waiting id, never by an older one with the same id", () => {
+    const messages = [
+      asking("m-1", call("c-1", "askChoice", CHOICE)),
+      asking("m-2", call("c-1", "askApproval", { title: "메일 보내기" })),
+    ];
+    expect(openChoiceCall(messages, ["c-1"])).toBeNull();
+    // And the other way round: the newer choice is the one that waits.
+    expect(openChoiceCall([...messages].reverse(), ["c-1"])).toBe("c-1");
+  });
+
+  test("is a choice whose `saves` says nothing: words are taken where the card says they are", () => {
+    for (const saves of [undefined, null]) {
+      const messages = [
+        asking("m-1", call("c-1", "askChoice", { ...CHOICE, saves })),
+      ];
+      expect(openChoiceCall(messages, ["c-1"])).toBe("c-1");
+      expect(isSavedByPress(saves)).toBe(false);
+    }
+    expect(isSavedByPress("persona")).toBe(true);
   });
 
   test("is not a choice whose arguments cannot be read", () => {

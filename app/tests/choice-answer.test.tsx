@@ -22,6 +22,7 @@ import {
 import { BOT_ID, THREAD_ID } from "./support/channel-server";
 import {
   acted,
+  askedIn,
   installTurnStreams,
   removeTurnStreams,
   turnServer,
@@ -212,6 +213,46 @@ describe("words typed while the Bot waits on a choice", () => {
       4000,
     );
     expect(turns.answers()).toHaveLength(0);
+  });
+
+  /*
+   * The turn can end while the answer is on its way — stopped in another window, a failure — and
+   * the word that it ended reaches the page before the door's refusal does. What sends the words
+   * kept behind a turn is that turn ending, and it had: they were parked after it, under "보낼
+   * 예정 · 지금 일이 끝나면 전해요" with no job to end (adversarial read of this change).
+   */
+  test("go as the message they are when the turn ended while the answer was on its way", async () => {
+    const { api, turns } = server();
+    const stoppedElsewhere = (request: ApiRequest) => {
+      if (request.method === "POST" && request.pathname.includes("/answers/")) {
+        // Every window hears that the turn was stopped, and then the door refuses the answer.
+        turns.stopWaiting();
+        turns.announce("stopped");
+      }
+      return api(request);
+    };
+    const view = await mountApp({
+      path: `/channel/${CHANNEL}`,
+      api: stoppedElsewhere,
+    });
+    await ask(view, turns);
+
+    await type(view, "둘 다 말고 냉면");
+    const send = view.host.querySelector('button[aria-label="Send message"]');
+    if (!send) throw new Error("no send button");
+    await view.click(send);
+
+    await view.waitFor(
+      () => turns.sends.length === 1,
+      "the words to go as a message",
+      4000,
+    );
+    expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
+      "둘 다 말고 냉면",
+    ]);
+    expect(turns.answers()).toHaveLength(0);
+    await view.settle(200);
+    expect(view.host.textContent).not.toContain(WAITS);
   });
 });
 

@@ -435,7 +435,15 @@ export function ServerChannelChat({
    *
    * Words alone. A file or a skill is a message of its own, for after the turn, as before. And
    * words the question would no longer take — answered in another window a moment ago, or its wait
-   * ran out — are kept the way anything typed mid-turn is, never dropped.
+   * ran out — are never dropped: kept the way anything typed mid-turn is while the turn goes on,
+   * and sent as the message they are when it does not.
+   *
+   * WHICH OF THE TWO IS READ AFTER THE DOOR HAS ANSWERED, FROM THE STORE. The turn can end while
+   * the answer is on its way — stopped in another window, 모두 멈추기, a failure — and the word that
+   * it ended usually arrives before the door's refusal. What frees the conversation is the turn
+   * ending (below), and by then it had: the words were parked after it, under "보낼 예정 · 지금 일이
+   * 끝나면 전해요" with no job to end, until the next send or a reload (adversarial read of this
+   * change, 2026-10-02). `going` in this closure is from before the wait and says the turn is on.
    */
   const openChoice = openChoiceCall(thread.messages, thread.waiting);
   const answerInWords = async (draft: ComposerDraft) => {
@@ -453,7 +461,12 @@ export function ServerChannelChat({
       openChoice,
       typedAnswer(words),
     );
-    if (!isTaken) park(draft);
+    if (isTaken) return;
+    if (isTurnGoing(store.snapshot().turn)) {
+      park(draft);
+      return;
+    }
+    await say(words);
   };
 
   /**

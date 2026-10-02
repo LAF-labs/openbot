@@ -16,11 +16,22 @@ import type { Message } from "@ag-ui/core";
 /** The Bot's question with options. Its tool is in `components/gallery/decisions.tsx`. */
 const CHOICE = "askChoice";
 
-/** Whether a choice call is the one that saves who the person is: answered by a press, and only by one. */
+/**
+ * Whether a choice saves something on the person's press — who they are (`saves: "persona"`) — and
+ * so is answered by a press, and only by one.
+ *
+ * ONE READING, for the card and for the composer. The card said "type your answer below" by one
+ * test of `saves` and the composer took words by another, and for a value neither expected
+ * (`null`) they disagreed: words taken, and nothing on the card saying so.
+ */
+export function isSavedByPress(saves: unknown): boolean {
+  return typeof saves === "string";
+}
+
 function savesByPress(argumentsJson: string): boolean {
   try {
     const args = JSON.parse(argumentsJson) as { saves?: unknown } | null;
-    return typeof args?.saves === "string";
+    return isSavedByPress(args?.saves);
   } catch {
     // Arguments that cannot be read are not known to be an ordinary question either.
     return true;
@@ -34,18 +45,24 @@ function savesByPress(argumentsJson: string): boolean {
  * words for a yes; not a connect card; and not the choice that saves who the person is, where what
  * is saved is one of four presses (`saves: "persona"`). Typed under those, words wait for the turn
  * to end, as they always did.
+ *
+ * AN ID IS DECIDED BY ITS NEWEST CALL, AND ONCE. The server keeps what waits by the call's id
+ * alone, so what waits under an id is the newest call that carries it. A provider's ids are its
+ * own to mint and nothing here makes them unique in a conversation: scanning on past a waiting
+ * yes-or-no card to an older choice with the same id would hand that card the person's words —
+ * and "응", filed as the result of an approval, reads as a yes.
  */
 export function openChoiceCall(
   messages: readonly Message[],
   waiting: readonly string[],
 ): string | null {
   if (waiting.length === 0) return null;
-  const isWaiting = new Set(waiting);
+  const undecided = new Set(waiting);
   for (const message of [...messages].reverse()) {
     if (message.role !== "assistant") continue;
     for (const call of [...(message.toolCalls ?? [])].reverse()) {
+      if (!undecided.delete(call.id)) continue;
       if (
-        isWaiting.has(call.id) &&
         call.function.name === CHOICE &&
         !savesByPress(call.function.arguments)
       ) {

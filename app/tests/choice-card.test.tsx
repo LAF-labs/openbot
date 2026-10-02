@@ -124,6 +124,25 @@ describe("a choice card", () => {
     expect(options().every((button) => button.disabled)).toBe(true);
   });
 
+  /*
+   * The words go into the sentence through `t()`, and a value handed to a replace as a string is a
+   * replacement pattern: "$$ 정도" was drawn "$ 정도", and `$&` as the slot's own name.
+   */
+  test("answered in words that hold a dollar sign shows them as they were typed", async () => {
+    for (const words of [
+      "$$ 정도면 좋겠어",
+      "$& 말고 $' 다른 거",
+      "$100 이하",
+    ]) {
+      const { text, view } = await choiceCard({
+        status: "complete",
+        result: JSON.stringify({ answer: words }),
+      });
+      expect(text()).toContain(`Your answer: ${words}`);
+      await view.unmount();
+    }
+  });
+
   test("that nothing here can answer offers nothing to press", async () => {
     // Drawn while its turn is not waiting on it in this conversation, and no result is in yet.
     const { options, text } = await choiceCard({ status: "executing" });
