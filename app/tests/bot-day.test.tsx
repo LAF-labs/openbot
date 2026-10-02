@@ -90,6 +90,8 @@ function server(options: {
   routines?: ReturnType<typeof routine>[];
   /** The tool refs the Bot holds (`GET /api/plugins/for/:id`). */
   granted?: string[];
+  /** What the person answered on the first run: 학생 / 직장인 / 사장님 / 기타. Absent is unanswered. */
+  persona?: "student" | "worker" | "owner" | "other";
 }) {
   const asked: string[] = [];
   globalThis.fetch = stubFetch(async (input, init) => {
@@ -130,7 +132,13 @@ function server(options: {
     }
     if (url === "/api/me") {
       return json({
-        user: { id: "u1", email: "kim@example.com", name: "김", role: "user" },
+        user: {
+          id: "u1",
+          email: "kim@example.com",
+          name: "김",
+          role: "user",
+          ...(options.persona ? { persona: options.persona } : {}),
+        },
       });
     }
     throw new Error(`unexpected request: ${url}`);
@@ -421,6 +429,46 @@ describe("오늘", () => {
     );
     expect(offered).toHaveLength(3);
     expect(offered).toContain(
+      "Find the government support programmes our shop could apply for.",
+    );
+    await unmountAll();
+
+    /*
+     * The same Bot, for somebody who said they are a 학생. This row passed no persona, so it dealt
+     * them the shop's chips — "our shop"'s 지원사업 among them — while the first screen, a click
+     * away, dealt a 학생's (the 2026-09-27 sweep). The persona orders the row; nothing assumes a 가게.
+     */
+    const student = await day({
+      items: [],
+      channels: [],
+      granted: ["public-data/search_support_programs"],
+      persona: "student",
+    });
+    await student.settle(60);
+    const dealt = [...student.host.querySelectorAll("section div button")].map(
+      (chip) => chip.textContent ?? "",
+    );
+    expect(dealt.length).toBeGreaterThan(0);
+    expect(dealt.length).toBeLessThanOrEqual(3);
+    expect(dealt).not.toContain(
+      "Find the government support programmes our shop could apply for.",
+    );
+    for (const sentence of dealt) expect(sentence).not.toMatch(/\bshop\b/i);
+    await unmountAll();
+
+    // And for somebody who said they run one, it is still offered.
+    const owner = await day({
+      items: [],
+      channels: [],
+      granted: ["public-data/search_support_programs"],
+      persona: "owner",
+    });
+    await owner.settle(60);
+    expect(
+      [...owner.host.querySelectorAll("section div button")].map(
+        (chip) => chip.textContent,
+      ),
+    ).toContain(
       "Find the government support programmes our shop could apply for.",
     );
     await unmountAll();
