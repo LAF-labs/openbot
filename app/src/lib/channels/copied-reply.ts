@@ -174,7 +174,9 @@ function tableOf(table: Element): string {
  * together (`가나12`). Numbered steps with a block of code each are the shape a how-to answer takes.
  */
 function listOf(list: Element): string {
-  const first = Number.parseInt(list.getAttribute("start") ?? "1", 10) || 1;
+  // Nought is where a list may start, so the fallback is for no number at all, not for a falsy one.
+  const start = Number.parseInt(list.getAttribute("start") ?? "", 10);
+  const first = Number.isNaN(start) ? 1 : start;
   const isOrdered = tagOf(list) === "ol";
   const lines: string[] = [];
   let count = 0;
