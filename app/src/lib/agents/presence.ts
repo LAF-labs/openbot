@@ -227,6 +227,9 @@ export function useLeftGoingAt(botId: string | undefined): number | null {
  *
  * Never while a conversation is telling it. Otherwise the server's list decides — and a list read
  * before the conversation left cannot say the turn it left behind has ended.
+ *
+ * `listedAt` is when the list ARRIVED. That it was also asked for after the leaving is
+ * `usePublishTurn`'s doing: it drops whatever was in flight as the conversation goes.
  */
 export function turnOffScreen(facts: {
   isTold: boolean;
@@ -255,9 +258,20 @@ export function usePublishTurn(botId: string | undefined, phase: TurnPhase) {
       const wasGoing = readTurn(botId) !== "idle";
       stopTelling(botId, wasGoing ? Date.now() : null);
       publishTurn(botId, "idle");
-      // The server's word on the turn left behind, now rather than at the poll's next tick.
       if (wasGoing) {
-        void queryClient.invalidateQueries({ queryKey: workingKeys.all });
+        /*
+         * The server's word on the turn left behind, now rather than at the poll's next tick — and
+         * ASKED AFTER THE LEAVING. A list already on its way may have been written before the turn
+         * began; it would arrive after the leaving and be read as news of it, and the pill would say
+         * "쉬는 중" until the next poll. Invalidating does not replace such a request while the list
+         * has never been answered — the library keeps a first fetch going rather than start a
+         * second (query-core, `Query.fetch`) — so what is in flight is dropped first.
+         */
+        void queryClient
+          .cancelQueries({ queryKey: workingKeys.all })
+          .then(() =>
+            queryClient.invalidateQueries({ queryKey: workingKeys.all }),
+          );
       }
     };
   }, [botId, queryClient]);
