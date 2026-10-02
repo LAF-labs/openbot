@@ -766,14 +766,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * refused without being quoted; the connection test reading an opening and not a run; a key that
  * cannot be sent as a header refused when it is typed.
  *
+ * RAISED AGAIN 2026-10-02 with the sweep's other half, each reproduced first: thirty-two to
+ * `agent-computer` (a reset that has the profile to itself, against a real Chromium; an ask nobody
+ * answered let go of after the Bot's own wait and never inside it; a proxy's password out of its
+ * label; a frame that is not a person's input stopped at the live screen's door), six to `app`
+ * (the skill panel saying a failed read failed; a refused card not drawn) and three to `server`
+ * (the wait and the ask's time read from one number; a cut result under the bound with its note).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3407, roots: ["server"] },
-  { name: "app", floor: 1595, roots: ["app"] },
-  { name: "agent-computer", floor: 378, roots: ["agent-computer"] },
+  { name: "server", floor: 3410, roots: ["server"] },
+  { name: "app", floor: 1601, roots: ["app"] },
+  { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
 ] as const;
 
