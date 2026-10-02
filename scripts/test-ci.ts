@@ -795,13 +795,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `desktop-shell.test.ts`, the window built by the shell from its config with a download handler,
  * drops left to the page, and a development launch that is not the installed app.
  *
+ * RAISED AGAIN 2026-10-02 by fifty-one in `app`, the first tests to mount the conversation people
+ * actually use (`ServerChannelChat`; the harness is `tests/support/turn-server.ts`): a history
+ * that could not be read said so and read again (13); a turn waiting for the Bot saying so, after
+ * two seconds and never for a moment (14); what was queued mid-turn kept on the device, still
+ * waiting after a reload and gone in the order typed when the turn ends (19); and words that did
+ * not leave handed over once, and by themselves only when the connection is back (5).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3416, roots: ["server"] },
-  { name: "app", floor: 1625, roots: ["app"] },
+  { name: "app", floor: 1676, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 605, roots: ["tests", "agent-bot"] },
 ] as const;
