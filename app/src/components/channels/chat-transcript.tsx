@@ -51,13 +51,14 @@ import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
 import { quotedReply } from "@/lib/channels/quote";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
+import { copiedHtml, copiedText } from "@/lib/channels/copied-reply";
 import { spokenText } from "@/lib/channels/spoken-text";
 import {
   type FailureGroup,
   repeatedFailureLine,
   turnFailureSentence,
 } from "@/lib/channels/turn-failure";
-import { copyText } from "@/lib/clipboard";
+import { copyRich } from "@/lib/clipboard";
 import { stepLineOf } from "@/lib/copilot/step-labels";
 import { turnNotice } from "@/lib/copilot/stopped-turn";
 import { t } from "@/lib/i18n";
@@ -1144,7 +1145,10 @@ function QuoteReply({ channelId, text }: { channelId: string; text: string }) {
   );
 }
 
-/** Copy the reply. Silent when the clipboard is unavailable, which is not an error. */
+/**
+ * Copy the reply: its words, and the answer as it is drawn (`copied-reply.ts`). Silent when the
+ * clipboard is unavailable, which is not an error.
+ */
 function CopyReply({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1156,8 +1160,16 @@ function CopyReply({ text }: { text: string }) {
     [],
   );
 
-  const handleCopy = async () => {
-    if (!(await copyText(text))) return;
+  const handleCopy = async (event: React.MouseEvent<HTMLElement>) => {
+    // The bubble this button sits under: the actions row is its sibling inside the message.
+    const drawn = event.currentTarget
+      .closest('[data-slot="reply-actions"]')
+      ?.parentElement?.querySelector('[data-slot="bubble-content"]');
+    const copied = await copyRich({
+      text: copiedText(text),
+      html: copiedHtml(drawn),
+    });
+    if (!copied) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 1500);
