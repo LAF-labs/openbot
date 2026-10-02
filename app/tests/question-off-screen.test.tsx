@@ -539,6 +539,31 @@ describe("whether the person is interrupted", () => {
 });
 
 /*
+ * Fourth round. A frame that arrives before the first read is answered is said from what it
+ * carries — and it has to do everything else a new row does too. A pause the unread rule made is
+ * the only word an open routines list gets that its rows changed.
+ */
+describe("a frame that arrives before the first read is answered", () => {
+  test("refreshes the routines it says were paused", async () => {
+    const { api, toldReads } = server({ toldFailures: 1 });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(() => toldReads() >= 1, "the first, failed read", 6000);
+    await view.settle(80);
+    const routinesReads = () =>
+      view.requests.filter((request) => request.pathname === "/api/routines")
+        .length;
+    const before = routinesReads();
+    expect(before).toBeGreaterThan(0);
+    await outboxFrame({ id: "n-paused-1", event: "routine.paused" });
+    await view.waitFor(
+      () => routinesReads() > before,
+      "the routines to be read again",
+      4000,
+    );
+  });
+});
+
+/*
  * Codex, on the pull request, over two rounds. An account that kept what it had before the limit
  * can hold two conversations with one Bot; each draws only its own thread's cards.
  */

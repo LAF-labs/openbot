@@ -426,18 +426,27 @@ export function useBotNotifications(): void {
     let watermark: string | undefined;
     let stopped = false;
 
+    /**
+     * What rows that are news change on screen, beside being said. One function, because news is
+     * heard in two places — a read after the first, and a frame that arrives before the first read
+     * has been answered — and the second left this out (review, fourth round).
+     */
+    const heardOf = (rows: NotificationFrame[]) => {
+      // A pause the unread rule made changed rows the routines page is drawing. See the predicate.
+      if (routinesChangedBy(rows)) {
+        void queryClientRef.current.invalidateQueries({
+          queryKey: routineKeys.all,
+        });
+      }
+    };
+
     /** Whether the server answered. */
     const catchUp = async (options: { raises: boolean }): Promise<boolean> => {
       const rows = await readNotifications(watermark);
       // Null is "the server could not be asked", which is not "nothing is waiting". Leaving the
       // watermark alone means the next read covers the same ground rather than skipping it.
       if (!rows || stopped) return false;
-      // A pause the unread rule made changed rows the routines page is drawing. See the predicate.
-      if (options.raises && routinesChangedBy(rows)) {
-        void queryClientRef.current.invalidateQueries({
-          queryKey: routineKeys.all,
-        });
-      }
+      if (options.raises) heardOf(rows);
       // Oldest first, so that when several arrive at once the notice left on screen is the newest.
       for (const row of [...rows].reverse()) {
         if (!watermark || row.at > watermark) watermark = row.at;
@@ -626,7 +635,10 @@ export function useBotNotifications(): void {
        * asked for again now that the server is evidently there — marks the rest as told.
        */
       const frame = (event as CustomEvent<unknown>).detail;
-      if (isNotificationFrame(frame)) raiseFromOutbox(frame);
+      if (isNotificationFrame(frame)) {
+        heardOf([frame]);
+        raiseFromOutbox(frame);
+      }
       void seed();
     };
     notificationFrames.addEventListener(NOTIFICATION_FRAME, onFrame);
