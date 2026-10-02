@@ -567,6 +567,120 @@ describe("words typed while the Bot waits on a choice", () => {
         expect(view.host.textContent).toContain(WAITS);
       });
 
+      /*
+       * Waiting on the first alone, a third answer went out beside the first while the second
+       * waited, and the second — replaced by then — was still offered when the first came back
+       * (review, eleventh round).
+       */
+      test("a third waits behind the second, and the second, replaced, is offered nowhere", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        await sendWords(view, "아니다, 냉면 맞아");
+        await view.settle(200);
+        expect(asked()).toBe(1);
+
+        await acted(() => release("lost"));
+        await view.waitFor(
+          () => turns.answers().length === 1,
+          "the latest words to reach the card's door",
+          4000,
+        );
+        await view.settle(300);
+        expect(asked()).toBe(2);
+        expect(turns.answers()).toEqual([
+          { toolCallId: CALL, value: { answer: "아니다, 냉면 맞아" } },
+        ]);
+        expect(kept().map((message) => message.text)).toEqual([
+          "아니다, 냉면 맞아",
+        ]);
+      });
+
+      test("and where the first was taken, only the latest is kept, as what is said next", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        await sendWords(view, "아니다, 냉면 맞아");
+        await acted(() => release("taken"));
+        await view.waitFor(
+          () => kept().length === 1 && kept()[0]?.answerTo === undefined,
+          "the latest kept as words for after the turn",
+          4000,
+        );
+        await view.settle(300);
+        expect(asked()).toBe(1);
+        expect(kept().map((message) => message.text)).toEqual([
+          "아니다, 냉면 맞아",
+        ]);
+      });
+
+      /*
+       * The first was taken, and its 200 came back only after the stream had ended the turn: the
+       * correction was let go of its card with nothing left to send it (review, eleventh round).
+       */
+      test("let go of its card after the turn is over, it is sent then", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        // The first request reaches the server when the test says, and its reply the window later.
+        let toServer = () => {};
+        let toWindow = () => {};
+        let asked = 0;
+        const door = (
+          request: ApiRequest,
+        ): ReturnType<typeof api> | Promise<Response> => {
+          if (
+            request.method !== "POST" ||
+            !request.pathname.includes("/answers/")
+          ) {
+            return api(request);
+          }
+          asked += 1;
+          if (asked > 1) return api(request);
+          return new Promise<void>((resolve) => {
+            toServer = resolve;
+          }).then(() => {
+            const reply = api(request) as Response;
+            return new Promise<Response>((resolve) => {
+              toWindow = () => resolve(reply);
+            });
+          });
+        };
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        // The server takes the first, files it and ends the turn — before its reply arrives.
+        await acted(() => toServer());
+        await acted(() => turns.say([answeredWith(TYPED)]));
+        await acted(() => turns.announce("done"));
+        await view.settle(300);
+        expect(turns.sends).toHaveLength(0);
+
+        await acted(() => toWindow());
+        await view.waitFor(
+          () => turns.sends.length === 1,
+          "the correction to go as a message",
+          4000,
+        );
+        expect(
+          askedIn(turns.sends[0]).map((message) => message.content),
+        ).toEqual(["아니, 그냥 비빔밥"]);
+      });
+
       test("and goes to the card in its place where the door did not take the first", async () => {
         await restFor(NEVER_IN_THIS_TEST);
         const { api, turns } = server();
