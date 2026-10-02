@@ -566,6 +566,126 @@ describe("a store somebody came back to", () => {
     ]);
   });
 
+  /*
+   * Review, fourth round. The page under the snapshot was read once. A snapshot holds neither what
+   * a routine delivered nor a turn that ended while nobody was looking, so a store somebody came
+   * back to on the one request that failed went without them for the rest of the visit — where
+   * the store it replaced, made again on every visit, read its first page until it was in.
+   */
+  test("reads that page again on the stream's waits when it cannot be read, until it is in", async () => {
+    const delivered: Message = {
+      id: "r1",
+      role: "assistant",
+      content: "아침 브리핑이에요.",
+    };
+    const { store, frame, waited, pending, elapse, reads, settle } = harness([
+      page([asked, answered]),
+      null,
+      null,
+      page([asked, answered, delivered]),
+    ]);
+    await store.open();
+    frame(idle);
+
+    store.resume();
+    frame({ ...idle, seq: 5 });
+    await settle();
+    expect(reads()).toBe(2);
+    expect(waited()).toEqual([500]);
+    // What is held is still on the screen meanwhile, and the stream has spoken.
+    expect(store.snapshot()).toMatchObject({ loaded: true, epoch: "e1" });
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+    ]);
+
+    await elapse();
+    expect(waited()).toEqual([500, 1000]);
+    await elapse();
+    expect(reads()).toBe(4);
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "r1",
+    ]);
+    expect(pending()).toEqual([]);
+  });
+
+  test("a store that is closed while that read waits reads nothing more", async () => {
+    const { store, frame, pending, reads, settle } = harness([
+      page([asked, answered]),
+      null,
+    ]);
+    await store.open();
+    frame(idle);
+    store.resume();
+    frame({ ...idle, seq: 5 });
+    await settle();
+    expect(pending()).toHaveLength(1);
+
+    store.close();
+    expect(pending()).toEqual([]);
+    expect(reads()).toBe(2);
+  });
+
+  test("a restart's page is read again the same way", async () => {
+    const half: Message = { id: "h1", role: "assistant", content: "내일은" };
+    const { store, frame, elapse, settle } = harness([
+      page([asked]),
+      null,
+      page([asked, answered]),
+    ]);
+    await store.open();
+    frame({
+      ...idle,
+      turn: { id: "t1", status: "running", asked: ["u1"] },
+      messages: [half],
+    });
+
+    store.resume();
+    // The server restarted while nobody looked: what was pieced together is not the record.
+    frame({ ...idle, epoch: "e2", seq: 2 });
+    await settle();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "h1",
+    ]);
+    await elapse();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+    ]);
+  });
+
+  test("and is still a restart's page when a later snapshot's read is the one that brings it", async () => {
+    const half: Message = { id: "h1", role: "assistant", content: "내일은" };
+    const { store, frame, pending, settle } = harness([
+      page([asked]),
+      null,
+      page([asked, answered]),
+    ]);
+    await store.open();
+    frame({
+      ...idle,
+      turn: { id: "t1", status: "running", asked: ["u1"] },
+      messages: [half],
+    });
+    store.resume();
+    frame({ ...idle, epoch: "e2", seq: 2 });
+    await settle();
+    expect(pending()).toHaveLength(1);
+
+    // The same process speaks again before that wait is over, and its read is answered.
+    frame({ ...idle, epoch: "e2", seq: 4 });
+    await settle();
+    // Replaced, not laid over: the half the dead process never finished is gone.
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+    ]);
+    expect(pending()).toEqual([]);
+  });
+
   test("is still told when the server restarted meanwhile: the record replaces what was pieced together", async () => {
     const half: Message = { id: "h1", role: "assistant", content: "내일은" };
     const { store, frame, settle } = harness([

@@ -203,9 +203,7 @@ export function createThreadStore(
    * The newest page read again and put in place of what is held: after the server restarted, what
    * this window pieced together from a turn that process never finished is not the record.
    */
-  const resync = async (going: readonly Message[]) => {
-    const page = await deps.readHistory(threadId, null);
-    if (!page) return;
+  const resync = (page: HistoryPage, going: readonly Message[]) => {
     seqs.clear();
     oldestSeq = null;
     remember(page);
@@ -291,9 +289,7 @@ export function createThreadStore(
    * were swept kept the half it had streamed — under a turn the snapshot said was done. The stored
    * message replaces the half by id; nothing held is dropped.
    */
-  const catchUp = async (going: readonly Message[]) => {
-    const page = await deps.readHistory(threadId, null);
-    if (!page) return;
+  const catchUp = (page: HistoryPage, going: readonly Message[]) => {
     remember(page);
     set({
       ...state,
@@ -303,6 +299,55 @@ export function createThreadStore(
       ),
       times: { ...state.times, ...page.times },
     });
+  };
+
+  /**
+   * THE NEWEST PAGE UNDER A SNAPSHOT, READ UNTIL IT IS IN — to replace what is held after a restart
+   * (`resync`), or to be laid over it (`catchUp`).
+   *
+   * It was read once. A snapshot does not hold what a routine delivered, nor a turn that ended
+   * while nobody was looking: a store somebody came back to on the one request that failed went
+   * without them for the rest of the visit, where the store it replaced — made again on every
+   * visit — read its first page until it was in (review, fourth round). So this one is read again
+   * on the same waits as that page, and the newest snapshot's read is the only one that waits.
+   *
+   * A restart that is still owed its page is not forgotten for a later snapshot of the same
+   * process: what was pieced together before it is not the record, whichever read brings the page.
+   */
+  let snapshotReads = 0;
+  let snapshotRetryMs = RETRY_FIRST_MS;
+  let callOffSnapshotRead: (() => void) | null = null;
+  let isResyncOwed = false;
+  const readUnder = async (
+    kind: "resync" | "catchUp",
+    going: readonly Message[],
+  ): Promise<void> => {
+    if (kind === "resync") isResyncOwed = true;
+    snapshotReads += 1;
+    const mine = snapshotReads;
+    callOffSnapshotRead?.();
+    callOffSnapshotRead = null;
+    const page = await deps.readHistory(threadId, null);
+    if (closed) return;
+    if (page) {
+      // An older read answering late is as good as the newest: the page is the newest either way.
+      if (mine === snapshotReads) snapshotRetryMs = RETRY_FIRST_MS;
+      if (isResyncOwed) {
+        isResyncOwed = false;
+        resync(page, going);
+      } else {
+        catchUp(page, going);
+      }
+      return;
+    }
+    // A newer read is out; what happens next is its answer's to say.
+    if (mine !== snapshotReads) return;
+    const wait = snapshotRetryMs;
+    snapshotRetryMs = Math.min(snapshotRetryMs * 2, RETRY_MOST_MS);
+    callOffSnapshotRead = later(() => {
+      callOffSnapshotRead = null;
+      void readUnder(kind, going);
+    }, wait);
   };
 
   const onFrame = (frame: TurnFrame) => {
@@ -325,8 +370,11 @@ export function createThreadStore(
       epochBefore = null;
     }
     set({ ...state, ...applyFrame(state, frame) });
-    if (restarted && frame.kind === "snapshot") void resync(frame.messages);
-    else if (resumed && frame.kind === "snapshot") void catchUp(frame.messages);
+    if (restarted && frame.kind === "snapshot") {
+      void readUnder("resync", frame.messages);
+    } else if (resumed && frame.kind === "snapshot") {
+      void readUnder("catchUp", frame.messages);
+    }
     for (const listener of frameListeners) listener(frame);
   };
 
@@ -529,6 +577,8 @@ export function createThreadStore(
       closed = true;
       callOff?.();
       callOff = null;
+      callOffSnapshotRead?.();
+      callOffSnapshotRead = null;
       watch?.close();
       watch = null;
       listeners.clear();
