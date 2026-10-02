@@ -79,6 +79,14 @@ export type HistoryPage = {
   hasOlder: boolean;
 };
 
+/**
+ * How long a read of the history is waited on. Everything that reads it reads it again when it
+ * fails (`thread-store.ts`), and a read that never answers does not fail: with no limit, one hung
+ * request held up every read behind it — the page under a snapshot was "on its way" for as long
+ * as the socket hung, and whatever waits for that page with it.
+ */
+const HISTORY_WAIT_MS = 30_000;
+
 /** A page of the conversation, newest first; `before` a durable cursor for the one above. Null when unreadable. */
 export async function readHistory(
   threadId: string,
@@ -91,7 +99,7 @@ export async function readHistory(
   try {
     const response = await fetch(
       `/api/turns/${encodeURIComponent(threadId)}/history${query.size ? `?${query}` : ""}`,
-      { credentials: "include" },
+      { credentials: "include", signal: AbortSignal.timeout(HISTORY_WAIT_MS) },
     );
     if (!response.ok) return null;
     const body = (await response
