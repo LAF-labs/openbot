@@ -1,5 +1,12 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 import { createElement } from "react";
 import type {
   CommandOption,
@@ -36,6 +43,15 @@ beforeAll(() => {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
+});
+
+/*
+ * What a test typed and did not send is kept on the device for the box's next visit
+ * (`composer/kept-draft.ts`), and every test here mounts a box of its own: without this, a test
+ * began with the syllable the one before it had left — "오오" where "오" was assembled.
+ */
+afterEach(() => {
+  localStorage.clear();
 });
 
 afterAll(async () => {

@@ -92,6 +92,18 @@ const DEVICE_SCOPED = [
    */
   "components/channels/composer/outbox.ts",
   /*
+   * What was typed into a conversation's box and not sent (`composer/kept-draft.ts`, 2026-10-02).
+   *
+   * A DECISION, and the argument is the outbox's one step earlier: these words have not even been
+   * handed to the server, so this device is the only place they exist. Measured before it was
+   * kept: half a message typed, 소식 opened, the conversation opened again — an empty box. It is
+   * not a second conversation and nothing is sent from it: it is handed back to the box it was
+   * typed in, on this device, and forgotten when the person sends it or deletes it. On another
+   * device the box is empty — which is how every box looked before this — so it can be missing and
+   * never wrong, and nothing a Bot does reads it.
+   */
+  "components/channels/composer/kept-draft.ts",
+  /*
    * The Bot's colour from the last load, so `index.html` can paint the accent before React runs
    * (`lib/avatar/accent.ts`, 2026-09-24).
    *
