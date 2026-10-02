@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  distrustKeptThreads,
   forgetKeptThreads,
   holdThread,
   KEPT_FOR_MS,
@@ -94,6 +95,55 @@ describe("a conversation on screen", () => {
     holdThread("thread-1", deps);
     expect(made[0]).toMatchObject({ opens: 1, closes: 0 });
     expect(waits.every((wait) => wait.cancelled)).toBe(true);
+    // The second hold is a coming back like any other: woken, and its newest page read once more.
+    expect(made[0]).toMatchObject({ nudges: 1, refreshes: 1 });
+  });
+});
+
+/*
+ * 다시 불러오기, and leaving and coming back, both read a conversation again while its store was made
+ * by the screen. Kept, the same rows that had just failed to draw were handed back for ten minutes.
+ */
+describe("after a part of the screen failed to draw", () => {
+  test("a conversation no screen is showing is closed at once, and the next look reads it again", () => {
+    const { deps, made, waits } = harness();
+    threadFor("thread-1", deps);
+    holdThread("thread-1", deps);
+    releaseThread("thread-1", deps);
+
+    distrustKeptThreads();
+    expect(made[0]?.closes).toBe(1);
+    expect(waits.every((wait) => wait.cancelled)).toBe(true);
+
+    const again = threadFor("thread-1", deps);
+    expect(made).toHaveLength(2);
+    expect(holdThread("thread-1", deps, again)).toBe(false);
+    expect(made[1]).toMatchObject({ opens: 1, closes: 0 });
+  });
+
+  test("one a screen is showing stays open under it, and is not kept when that screen leaves", () => {
+    const { deps, made, waits } = harness();
+    threadFor("thread-1", deps);
+    holdThread("thread-1", deps);
+
+    distrustKeptThreads();
+    expect(made[0]).toMatchObject({ opens: 1, closes: 0 });
+
+    releaseThread("thread-1", deps);
+    expect(made[0]?.closes).toBe(1);
+    expect(waits).toHaveLength(0);
+    threadFor("thread-1", deps);
+    expect(made).toHaveLength(2);
+  });
+
+  test("a conversation looked at afterwards is kept as usual", () => {
+    const { deps, made, waits } = harness();
+    distrustKeptThreads();
+    threadFor("thread-1", deps);
+    holdThread("thread-1", deps);
+    releaseThread("thread-1", deps);
+    expect(made[0]?.closes).toBe(0);
+    expect(waits.map((wait) => wait.ms)).toEqual([KEPT_FOR_MS]);
   });
 });
 

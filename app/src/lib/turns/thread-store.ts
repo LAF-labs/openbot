@@ -297,10 +297,41 @@ export function createThreadStore(
       remember(page);
       const held = new Set(state.messages.map((message) => message.id));
       const missing = page.messages.filter((message) => !held.has(message.id));
-      if (missing.length === 0) return;
+      /*
+       * THE TIMES OF WHAT IS ALREADY HELD COME WITH THE PAGE TOO. A frame carries no time, so a row
+       * the stream brought has none until something reads the record — the screen does, when a turn
+       * ends in front of it. A store kept while no screen was looking heard the answer and nobody
+       * read its time: the person came back to a reply with no time, and so with no line saying
+       * where they had stopped reading (adversarial read of the kept conversation, 2026-10-02).
+       * This returned before the times whenever no message was missing.
+       */
+      const isUntimed = Object.keys(page.times).some(
+        (id) => held.has(id) && !(id in state.times),
+      );
+      if (missing.length === 0 && !isUntimed) return;
+      /*
+       * WHAT THE PAGE BRINGS WAS WRITTEN BEFORE WHAT ONLY THIS WINDOW HOLDS — words being sent, of
+       * which the record has neither a copy nor a place. Coming back to a kept conversation can
+       * start this read and send what the device kept in the same breath; added at the end, a
+       * routine's delivery was drawn under the words typed after it.
+       */
+      const known = new Set(page.messages.map((message) => message.id));
+      let tail = state.messages.length;
+      while (tail > 0) {
+        const id = state.messages[tail - 1]?.id ?? "";
+        if (known.has(id) || seqs.has(id)) break;
+        tail -= 1;
+      }
       set({
         ...state,
-        messages: [...state.messages, ...missing],
+        messages:
+          missing.length === 0
+            ? state.messages
+            : [
+                ...state.messages.slice(0, tail),
+                ...missing,
+                ...state.messages.slice(tail),
+              ],
         times: { ...page.times, ...state.times },
       });
     },

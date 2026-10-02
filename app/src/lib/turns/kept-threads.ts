@@ -17,8 +17,13 @@
  * HELD BY THE SCREEN'S EFFECT, NOT BY ASKING. `threadFor` only finds or makes the store, because a
  * render can ask and never be committed (a development double render, a transition thrown away);
  * `holdThread` and `releaseThread` are the effect and its cleanup. Nothing is opened for a render
- * that was thrown away, and a screen that mounts twice in a breath — development again — neither
- * closes nor reads anything a second time.
+ * that was thrown away. A screen that mounts twice in a breath — development again — holds the same
+ * store twice over: the second hold is a coming back like any other, so the stream is reopened from
+ * where it was and the newest page read once more, and nothing is closed in between.
+ *
+ * NOT KEPT ONCE SOMETHING ON SCREEN HAS FAILED TO DRAW (`distrustKeptThreads`). 다시 불러오기, and
+ * leaving and coming back, both used to read the conversation again because the store was made
+ * again; a kept store would hand back the rows that had just failed to draw.
  */
 import { isTurnGoing, type TurnState } from "./frames";
 import { createThreadStore } from "./thread-store";
@@ -56,6 +61,8 @@ type Kept = {
   isOpen: boolean;
   /** Calls off the wait that would let go of it. */
   callOff: (() => void) | null;
+  /** Something failed to draw while it was held: let go of the moment no screen shows it. */
+  isSuspect?: boolean;
 };
 
 const kept = new Map<string, Kept>();
@@ -148,12 +155,36 @@ export function releaseThread(
   entry.holders = Math.max(0, entry.holders - 1);
   if (entry.holders > 0) return;
   entry.callOff?.();
+  if (entry.isSuspect) {
+    kept.delete(threadId);
+    entry.store.close();
+    return;
+  }
   entry.callOff = deps.later(() => {
     // Asked for again and held meanwhile, or already forgotten: not this wait's to close.
     if (kept.get(threadId) !== entry || entry.holders > 0) return;
     kept.delete(threadId);
     entry.store.close();
   }, KEPT_FOR_MS);
+}
+
+/**
+ * A part of the screen failed to draw. What is kept is not handed back to be drawn from again: a
+ * conversation no screen is showing is closed now, and one a screen is showing goes when that screen
+ * lets go — so the next look reads it from the record, as every look did before conversations were
+ * kept. Whatever failed: the part that failed is not known here, and a conversation read again is
+ * the cost of one request.
+ */
+export function distrustKeptThreads(): void {
+  for (const [threadId, entry] of kept) {
+    if (entry.holders > 0) {
+      entry.isSuspect = true;
+      continue;
+    }
+    entry.callOff?.();
+    entry.store.close();
+    kept.delete(threadId);
+  }
 }
 
 /** Every kept conversation closed and forgotten: on signing out, and between tests. */
