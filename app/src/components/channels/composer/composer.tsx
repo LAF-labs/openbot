@@ -37,6 +37,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
 import { AttachmentChips, type PendingAttachment } from "./attachment-chips";
+import { keepDraft, keptDraft } from "./kept-draft";
 import {
   applyCommandChips,
   type CommandOption,
@@ -607,8 +608,23 @@ export function Composer({
    * typing. The compose screen too: before the first message there is no conversation to key it by.
    */
   useEffect(() => holdDraft(draftKey, draft.text), [draftKey, draft.text]);
+  /*
+   * AND IT SURVIVES LEAVING THE SCREEN (`kept-draft.ts`): kept on the device as it is typed, and
+   * offered back the same way when this conversation's box is drawn again.
+   *
+   * AN EMPTY BOX THAT WAS NEVER TYPED IN FORGETS NOTHING. Every mount starts empty, before the
+   * offer below has been taken — and the offer is not taken at all by a box that cannot be typed
+   * in. Forgetting on "empty" alone would throw the kept words away on the way in. So nothing is
+   * forgotten until this box has held something: sent, or deleted by the person, it then is.
+   */
+  const hasHeldText = useRef(false);
   useEffect(() => {
-    const kept = takeKeptDraft(draftKey);
+    if (draft.text.trim()) hasHeldText.current = true;
+    if (!hasHeldText.current) return;
+    keepDraft(draftKey, draft.text);
+  }, [draftKey, draft.text]);
+  useEffect(() => {
+    const kept = takeKeptDraft(draftKey) ?? keptDraft(draftKey);
     if (kept !== null) offerDraft(draftKey, kept);
   }, [draftKey]);
 
