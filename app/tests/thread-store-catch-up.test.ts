@@ -1206,6 +1206,38 @@ describe("the record's copy of a row, and the stream's", () => {
   });
 
   /*
+   * A screen subscribed to a kept store that was closed under it and opened again — the kept
+   * conversation let go of while the screen was coming back to it — went unheard: the store
+   * dropped its subscribers when it closed, and went on changing under a screen that no longer
+   * heard it (review, eighth round).
+   */
+  test("closed and opened again, it goes on telling whoever is subscribed to it", async () => {
+    const { store, frame, answer } = manual();
+    void store.open();
+    frame(snapshot({ seq: 2 }));
+    await answer(0, page([asked]));
+    let told = 0;
+    const unsubscribe = store.subscribe(() => {
+      told += 1;
+    });
+    const heard: string[] = [];
+    store.onFrame((frame) => heard.push(frame.kind));
+
+    store.close();
+    void store.open();
+    frame(snapshot({ seq: 7, turn: going, messages: [asked] }));
+    await settle();
+    expect(told).toBeGreaterThan(0);
+    expect(heard).toEqual(["snapshot"]);
+
+    // And one that let go is told nothing more.
+    unsubscribe();
+    const before = told;
+    frame({ seq: 8, kind: "turn", turn: { ...going, status: "done" } });
+    expect(told).toBe(before);
+  });
+
+  /*
    * Closed and opened again — a screen handed back the store it had — it picked up where it left
    * off: its old epoch, its old cursor, a turn it believed idle.
    */
