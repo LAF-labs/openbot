@@ -118,6 +118,20 @@ function removeNotices() {
   }
 }
 
+/**
+ * The server's outbox list, as the tests add to it. A frame is only the nudge: the page reads the
+ * list and says what the list holds, so a row has to be in it for the frame to mean anything.
+ */
+type OutboxRow = {
+  id: string;
+  kind: string;
+  botId: string;
+  approvalId?: string;
+  createdAt: string;
+};
+let outboxRows: OutboxRow[] = [];
+let outboxClock = Date.parse("2026-10-02T09:00:01.000Z");
+
 /** A second conversation with the same Bot: what an account that kept two has. */
 const OTHER_CHANNEL = "channel_q-other";
 const OTHER_THREAD = "thread-q-other";
@@ -135,6 +149,7 @@ function server(
     holdApprovals?: boolean;
   } = {},
 ) {
+  outboxRows = [];
   const turns = turnServer({
     channelId: CHANNEL,
     history: [ASKED],
@@ -162,8 +177,9 @@ function server(
       if (toldReads <= (options.toldFailures ?? 0)) {
         return new Response("", { status: 503 });
       }
-      const told = json({
-        notifications: options.alreadyTold
+      const since = request.url.searchParams.get("since");
+      const rows: OutboxRow[] = [
+        ...(options.alreadyTold
           ? [
               {
                 id: `n-${options.alreadyTold.id}`,
@@ -173,8 +189,11 @@ function server(
                 createdAt: "2026-10-02T09:00:00.500Z",
               },
             ]
-          : [],
-      });
+          : []),
+        ...outboxRows,
+      ].filter((row) => !since || row.createdAt > since);
+      // Newest first, as the server answers.
+      const told = json({ notifications: rows.reverse() });
       return options.holdTold ? toldHeld.then(() => told) : told;
     }
     if (request.pathname === "/api/channels") {
@@ -224,23 +243,49 @@ function server(
 
 /** The server's outbox, saying down the socket that the Bot stopped to ask. */
 async function outboxSays(approvalId: string) {
+  await outboxFrame({
+    id: `n-${approvalId}`,
+    event: "approval.requested",
+    approvalId,
+  });
+}
+
+/** A row written to the outbox: in its list from now on, and a frame down the socket. */
+async function outboxFrame(row: {
+  id: string;
+  event: string;
+  approvalId?: string;
+}) {
   const { NOTIFICATION_FRAME, notificationFrames } = await import(
     "../src/lib/notifications/outbox"
   );
+  outboxClock += 1_000;
+  const at = new Date(outboxClock).toISOString();
+  outboxRows.push({
+    id: row.id,
+    kind: row.event,
+    botId: BOT_ID,
+    ...(row.approvalId ? { approvalId: row.approvalId } : {}),
+    createdAt: at,
+  });
   await acted(() => {
     notificationFrames.dispatchEvent(
       new CustomEvent(NOTIFICATION_FRAME, {
-        detail: {
-          kind: "notification",
-          id: `n-${approvalId}`,
-          event: "approval.requested",
-          botId: BOT_ID,
-          approvalId,
-          at: "2026-10-02T09:00:01.000Z",
-        },
+        detail: { kind: "notification", botId: BOT_ID, at, ...row },
       }),
     );
   });
+}
+
+/** A window nobody is looking at, until the returned function is called. */
+function windowHidden(): () => void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+  return () => {
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  };
 }
 
 const pill = (host: HTMLElement) => {
@@ -600,5 +645,70 @@ describe("an account that kept two conversations with one Bot", () => {
     await view.settle(150);
     expect(ShownNotice.shown).toHaveLength(0);
     expect(view.main()?.textContent ?? "").toContain("Waiting for your answer");
+  });
+
+  /*
+   * Third round. "Not known" had been left for the questions effect to announce — which never
+   * happens for what never reaches the store: a request for help or a password (no approval), and
+   * a routine's question (no step). Even a window nobody was looking at lost its only notice.
+   */
+  test("a request for a password is said to a window nobody is looking at", async () => {
+    installNotices();
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    await view.settle(60);
+    const show = windowHidden();
+    try {
+      await outboxFrame({ id: "n-needs-1", event: "run.needs_you" });
+      await view.waitFor(
+        () => ShownNotice.shown.length === 1,
+        "the notice that the Bot needs the person",
+        4000,
+      );
+    } finally {
+      show();
+    }
+  });
+
+  test("and to a visible one it is not, in a conversation of the Bot's: that is where the request is drawn", async () => {
+    installNotices();
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    await view.settle(60);
+    await outboxFrame({ id: "n-needs-2", event: "run.needs_you" });
+    await view.settle(250);
+    expect(ShownNotice.shown).toHaveLength(0);
+  });
+
+  test("a routine's question has no card on any conversation, so it is said even here", async () => {
+    installNotices();
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    const { step: _step, ...stepless } = question();
+    state.approvals = [stepless];
+    await outboxSays(stepless.id);
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice for a question no conversation draws",
+      4000,
+    );
+    // It never reaches the store, so nothing on this screen was going to say it.
+    expect(pill(view.host)).not.toBe("Needs your OK");
+  });
+
+  test("a question answered before its record could be read is not announced at all", async () => {
+    installNotices();
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    const asking = question();
+    // The record no longer holds it: answered in another window, or run out.
+    state.approvals = [];
+    await outboxSays(asking.id);
+    await view.settle(250);
+    expect(ShownNotice.shown).toHaveLength(0);
   });
 });
