@@ -500,6 +500,101 @@ describe("words typed while the Bot waits on a choice", () => {
       ]);
     });
 
+    /*
+     * Two answers out at once, and the server takes whichever reaches it first: the first could
+     * win, and the one meant to take its place was refused and then sent after the turn as a
+     * message of its own (review, tenth round). The second waits for the first's answer.
+     */
+    describe("a second answer typed while the first is still on its way", () => {
+      /** A door that holds the first request until the test lets it answer, as `answer` says. */
+      function holdingDoor(api: ReturnType<typeof server>["api"]) {
+        let release = (_answer: "taken" | "lost") => {};
+        let asked = 0;
+        const door = (
+          request: ApiRequest,
+        ): ReturnType<typeof api> | Promise<Response> => {
+          if (
+            request.method !== "POST" ||
+            !request.pathname.includes("/answers/")
+          ) {
+            return api(request);
+          }
+          asked += 1;
+          if (asked > 1) return api(request);
+          return new Promise<"taken" | "lost">((resolve) => {
+            release = resolve;
+          }).then((answer) =>
+            answer === "taken"
+              ? (api(request) as Response)
+              : new Response("", { status: 503 }),
+          );
+        };
+        return {
+          door,
+          release: (answer: "taken" | "lost") => release(answer),
+          asked: () => asked,
+        };
+      }
+
+      test("waits for it: where the door took the first, the second is what the person says next", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        await view.settle(200);
+        // Not sent beside the first.
+        expect(asked()).toBe(1);
+
+        await acted(() => release("taken"));
+        await view.waitFor(
+          () => kept()[0]?.answerTo === undefined,
+          "the second kept as words for after the turn",
+          4000,
+        );
+        await view.settle(200);
+        expect(asked()).toBe(1);
+        expect(turns.answers()).toEqual([
+          { toolCallId: CALL, value: { answer: TYPED } },
+        ]);
+        expect(kept().map((message) => message.text)).toEqual([
+          "아니, 그냥 비빔밥",
+        ]);
+        expect(view.host.textContent).toContain(WAITS);
+      });
+
+      test("and goes to the card in its place where the door did not take the first", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        await view.settle(200);
+        expect(asked()).toBe(1);
+
+        await acted(() => release("lost"));
+        await view.waitFor(
+          () => turns.answers().length === 1,
+          "the second to reach the card's door",
+          4000,
+        );
+        expect(turns.answers()).toEqual([
+          { toolCallId: CALL, value: { answer: "아니, 그냥 비빔밥" } },
+        ]);
+        expect(kept()).toMatchObject([
+          { text: "아니, 그냥 비빔밥", answerTo: CALL },
+        ]);
+      });
+    });
+
     test("go when the turn is over, as a message, where the question ended some other way", async () => {
       const { api, turns } = server();
       const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
