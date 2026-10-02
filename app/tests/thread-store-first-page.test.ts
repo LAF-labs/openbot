@@ -346,6 +346,87 @@ describe("a refresh of a conversation that is already in", () => {
     expect(store.snapshot()).toBe(before);
   });
 
+  test("puts what the page adds after the row it follows in the record", async () => {
+    const delivered: Message = {
+      id: "r1",
+      role: "assistant",
+      content: "아침 브리핑이에요.",
+    };
+    const later: Message = { id: "u2", role: "user", content: "고마워요" };
+    const { store, frame } = harness([
+      page([asked, answered]),
+      page([asked, answered, delivered, later]),
+    ]);
+    await store.open();
+    // The stream brought the newest row; the one before it was written by something else.
+    frame({
+      seq: 3,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: { id: "t2", status: "running", asked: ["u2"] },
+      messages: [later],
+      waiting: [],
+    });
+    await store.refresh();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "r1",
+      "u2",
+    ]);
+  });
+
+  test("leaves what an older page brought, and what the stream brought since, where they stand", async () => {
+    const older: Message = {
+      id: "o1",
+      role: "user",
+      content: "지난주에 물어본 것",
+    };
+    const streamed: Message = {
+      id: "s1",
+      role: "assistant",
+      content: "방금 온 답",
+    };
+    const { store, frame } = harness([
+      { ...page([older, asked, answered]) },
+      // The newest page no longer reaches back to the oldest row held.
+      page([asked, answered]),
+    ]);
+    await store.open();
+    frame({
+      seq: 3,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: { id: "t2", status: "running", asked: [] },
+      messages: [streamed],
+      waiting: [],
+    });
+    const before = store.snapshot().messages.map((message) => message.id);
+    await store.refresh();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual(
+      before,
+    );
+  });
+
+  test("puts a page that shares nothing with what is held after it, and before the words being sent", async () => {
+    const far: Message[] = [
+      { id: "x1", role: "user", content: "한참 뒤의 질문" },
+      { id: "x2", role: "assistant", content: "한참 뒤의 답" },
+    ];
+    const typed: Message = { id: "p1", role: "user", content: "고마워요" };
+    const { store } = harness([page([asked, answered]), page(far)]);
+    await store.open();
+    store.addLocal([typed], "2026-10-02T14:05:00.000Z");
+    await store.refresh();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "x1",
+      "x2",
+      "p1",
+    ]);
+  });
+
   // Coming back can start this read and send what the device kept in the same breath.
   test("puts what the record holds before the words only this window holds", async () => {
     const delivered: Message = {
@@ -445,6 +526,44 @@ describe("a store somebody came back to", () => {
       "p1",
     ]);
     expect(store.snapshot().times).toMatchObject(at);
+  });
+
+  /*
+   * Review, second round. The snapshot's own rows are applied before the page is read, so "what the
+   * page adds goes before the words only this window holds" still put it after them: held A, a
+   * snapshot bringing the going turn's C, a page A·B·C — and the turn missed while nobody looked
+   * was drawn under the one being answered.
+   */
+  test("puts a turn missed while nobody looked where it was said, not under the one the stream brings", async () => {
+    const missedAsk: Message = { id: "u2", role: "user", content: "모레는요?" };
+    const missedAnswer: Message = {
+      id: "a2",
+      role: "assistant",
+      content: "모레는 비가 와요.",
+    };
+    const goingAsk: Message = { id: "u3", role: "user", content: "주말은요?" };
+    const { store, frame, settle } = harness([
+      page([asked, answered]),
+      page([asked, answered, missedAsk, missedAnswer, goingAsk]),
+    ]);
+    await store.open();
+    frame(idle);
+
+    store.resume();
+    frame({
+      ...idle,
+      seq: 9,
+      turn: { id: "t3", status: "running", asked: ["u3"] },
+      messages: [goingAsk],
+    });
+    await settle();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "u2",
+      "a2",
+      "u3",
+    ]);
   });
 
   test("is still told when the server restarted meanwhile: the record replaces what was pieced together", async () => {

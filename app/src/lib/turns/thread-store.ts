@@ -100,6 +100,12 @@ export function createThreadStore(
   /** How many reads of the first page have gone out: only the newest one's failure sets a wait. */
   let firstReads = 0;
   /**
+   * The words this window is sending, by id: drawn at once (`addLocal`), and not the record's until
+   * a page or the stream brings its own copy. Where a page shares nothing with what is held they
+   * are what stays under it.
+   */
+  const sending = new Set<string>();
+  /**
    * A screen came back to this store and the stream has not yet said how the turn stands
    * (`resume`): the epoch it had before, which is how a server that restarted meanwhile is told.
    */
@@ -114,6 +120,8 @@ export function createThreadStore(
 
   const remember = (page: HistoryPage) => {
     for (const [id, seq] of Object.entries(page.seqs ?? {})) seqs.set(id, seq);
+    // What the record holds is not this window's alone any more.
+    for (const message of page.messages) sending.delete(message.id);
     if (page.oldestSeq !== null) {
       oldestSeq =
         oldestSeq === null
@@ -196,38 +204,65 @@ export function createThreadStore(
   };
 
   /**
-   * WHERE WHAT A PAGE BRINGS GOES AMONG WHAT IS HELD: before the rows only this window holds —
-   * words being sent, of which the record has neither a copy nor a place — and after everything
-   * else. Coming back to a kept conversation can start a read and send what the device kept in the
-   * same breath; added at the end, a routine's delivery was drawn under the words typed after it.
+   * A PAGE LAID OVER WHAT IS HELD, IN THE RECORD'S ORDER.
+   *
+   * The page is a stretch of the record in the order it was written, so that is the order its rows
+   * are in afterwards — the held ones, in the places the held ones had, and each row the page adds
+   * right after the row it follows in the record. A row only this window has stays where it
+   * stands: above, a row an older page brought; below, words being sent.
+   *
+   * Two orders this did not keep, each met on coming back to a kept conversation:
+   *  - what the page added was put at the end, under the words only this window holds: a routine's
+   *    delivery drawn below what was typed after it (adversarial read, 2026-10-02);
+   *  - and "before those words" was still after everything the stream had brought: held A, a
+   *    snapshot bringing the going turn's C, and a page A·B·C made A·C·B — the turn missed while
+   *    nobody looked, under the one being answered (review, second round).
+   *
+   * `keep` says whose copy stands for a row both have: the page's when the record is to replace
+   * what was pieced together, the held one when the page is only read for what is missing.
    */
-  const placeOf = (held: readonly Message[], page: HistoryPage): number => {
-    const known = new Set(page.messages.map((message) => message.id));
-    let place = held.length;
-    while (place > 0) {
-      const id = held[place - 1]?.id ?? "";
-      if (known.has(id) || seqs.has(id)) break;
-      place -= 1;
-    }
-    return place;
-  };
-
-  /** A page laid over what is held: the same id replaced where it stands, the rest put in place. */
   const withPage = (
     held: readonly Message[],
     page: HistoryPage,
+    keep: "page" | "held",
   ): readonly Message[] => {
-    const at = new Map(held.map((message, index) => [message.id, index]));
-    const next = [...held];
-    const missing: Message[] = [];
-    for (const message of page.messages) {
-      const index = at.get(message.id);
-      if (index === undefined) missing.push(message);
-      else next[index] = message;
+    const inPage = new Set(page.messages.map((message) => message.id));
+    const heldById = new Map(held.map((message) => [message.id, message]));
+    // The page's rows that are held, in the page's order, and the rows it adds after each.
+    const shared = page.messages.filter((message) => heldById.has(message.id));
+    if (shared.length === 0) {
+      // Nothing in common: the page goes after everything but the words this window is sending.
+      let place = held.length;
+      while (place > 0 && sending.has(held[place - 1]?.id ?? "")) place -= 1;
+      return [...held.slice(0, place), ...page.messages, ...held.slice(place)];
     }
-    if (missing.length === 0) return next;
-    const place = placeOf(next, page);
-    return [...next.slice(0, place), ...missing, ...next.slice(place)];
+    const leading: Message[] = [];
+    const following = new Map<string, Message[]>();
+    let after: string | null = null;
+    for (const message of page.messages) {
+      if (heldById.has(message.id)) {
+        after = message.id;
+      } else if (after === null) {
+        leading.push(message);
+      } else {
+        following.set(after, [...(following.get(after) ?? []), message]);
+      }
+    }
+    const next: Message[] = [];
+    let slot = 0;
+    for (const message of held) {
+      if (!inPage.has(message.id)) {
+        next.push(message);
+        continue;
+      }
+      // The places the held ones had, filled in the page's order.
+      const row = shared[slot] ?? message;
+      slot += 1;
+      if (slot === 1) next.push(...leading);
+      next.push(keep === "held" ? (heldById.get(row.id) ?? row) : row);
+      next.push(...(following.get(row.id) ?? []));
+    }
+    return next;
   };
 
   /**
@@ -245,7 +280,7 @@ export function createThreadStore(
     remember(page);
     set({
       ...state,
-      messages: mergeMessages(withPage(state.messages, page), going),
+      messages: mergeMessages(withPage(state.messages, page, "page"), going),
       times: { ...state.times, ...page.times },
     });
   };
@@ -359,18 +394,13 @@ export function createThreadStore(
         (id) => held.has(id) && !(id in state.times),
       );
       if (missing.length === 0 && !isUntimed) return;
-      // What is missing goes before what only this window holds (`placeOf`).
-      const place = placeOf(state.messages, page);
       set({
         ...state,
+        // What is missing goes where the record has it (`withPage`); what is held stays as held.
         messages:
           missing.length === 0
             ? state.messages
-            : [
-                ...state.messages.slice(0, place),
-                ...missing,
-                ...state.messages.slice(place),
-              ],
+            : withPage(state.messages, page, "held"),
         times: { ...page.times, ...state.times },
       });
     },
@@ -402,6 +432,7 @@ export function createThreadStore(
      * Messages this window is sending, drawn at once. The stream's own copies replace them by id.
      */
     addLocal(messages: readonly Message[], at: string): void {
+      for (const message of messages) sending.add(message.id);
       set({
         ...state,
         messages: mergeMessages(state.messages, messages),
@@ -415,6 +446,7 @@ export function createThreadStore(
     /** Messages that never reached the server, taken back off the screen. */
     removeLocal(ids: readonly string[]): void {
       const gone = new Set(ids);
+      for (const id of gone) sending.delete(id);
       set({
         ...state,
         messages: state.messages.filter((message) => !gone.has(message.id)),
