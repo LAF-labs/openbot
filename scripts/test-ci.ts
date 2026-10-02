@@ -744,6 +744,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * clipboard; text that arrives with no key sent on and not kept; the Enter that accepts a Korean
  * syllable not saving a line of 수첩).
  *
+ * RAISED 2026-10-02 by one in `agent-computer`: the test that fails where a run says the browser is
+ * required and Playwright has none. A FLOOR CANNOT SEE A SKIP — it counts what bun counts, and bun
+ * counts a skipped test — which is how CI ran green for four weeks with every browser suite skipped
+ * (`.github/workflows/checks.yml`). The floor is still the right check for a file that vanished;
+ * for a suite that stopped running where it stood, it is that test.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -751,7 +757,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3357, roots: ["server"] },
   { name: "app", floor: 1595, roots: ["app"] },
-  { name: "agent-computer", floor: 374, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 375, roots: ["agent-computer"] },
   { name: "root", floor: 578, roots: ["tests", "agent-bot"] },
 ] as const;
 

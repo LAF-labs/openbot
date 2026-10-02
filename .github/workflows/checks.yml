@@ -82,9 +82,22 @@ jobs:
         working-directory: server
       # A passing job must include the expected test floor. Import-time failures can otherwise skip
       # files before their tests are registered.
-      # The browser suite (agent-computer/tests/korean-*.test.ts) skips itself when Playwright
-      # has no Chromium; without this step CI would report those tests as passing by absence.
+      # The browser suites (agent-computer/tests) skip themselves when Playwright has no Chromium;
+      # without this step CI would report those tests as passing by absence.
+      #
+      # AND WITH IT, RUN FROM THE ROOT, IT DID — for at least four weeks. `bunx playwright` at the
+      # root is not this repository's Playwright: nothing at the root depends on it, so bunx fetched
+      # the newest one published (1.63.0, whose Chromium is build 1243) while the suites run on the
+      # one `agent-computer` pins (1.62.1, build 1234) and look for THAT build. Measured 2026-10-02
+      # on the run for dd0d1173: "Chrome for Testing 153… (playwright chromium v1243) downloaded",
+      # then 92 of agent-computer's 386 tests skipped, among them every one that drives a browser;
+      # the same in a run of 2026-09-05, with 14. Green, and a skip counts toward the floor.
+      #
+      # From the workspace, bunx finds the pinned one. And the run now says the browser is required
+      # (LAF_BROWSER_REQUIRED, read by agent-computer/tests/browser-present.test.ts), so the next
+      # way this step finds to install the wrong thing is a red job.
       - run: bunx playwright install --with-deps chromium
+        working-directory: agent-computer
       # The Bot's browser runs with its sandbox ON (agent-computer/src/profiles.ts), and the sandbox is
       # unprivileged user namespaces, which Ubuntu 24.04 refuses to an unconfined process. The runner
       # starts the computer on the host, unconfined; a deployment starts it in a container under
@@ -93,6 +106,8 @@ jobs:
       # starts. Lifted on this throwaway runner only, so the suite drives the browser a VM runs.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun run test:ci
+        env:
+          LAF_BROWSER_REQUIRED: "1"
 
   build:
     name: build
