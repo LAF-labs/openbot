@@ -414,6 +414,81 @@ describe("Google Drive", () => {
     expect(result.text).toContain("본문");
   });
 
+  /*
+   * A FILE IN A SHARED DRIVE IS REACHED LIKE ONE IN MY DRIVE (upstream OpenBot #589).
+   *
+   * Drive leaves shared drive items out of any `files.get` or `files.list` that does not say it
+   * supports them: a document the person could open was "File not found" by its id and in no
+   * search. Shared drives are where a company keeps its documents, so that is most of them.
+   */
+  test("both listings ask Drive for the items in shared drives", async () => {
+    reply = () => json({ files: [] });
+    await drive.callTool(connection, "search_files", { query: "roadmap" });
+    await drive.callTool(connection, "list_recent_files", {});
+
+    expect(asked).toHaveLength(2);
+    for (const request of asked) {
+      expect(request.url.searchParams.get("supportsAllDrives")).toBe("true");
+      expect(request.url.searchParams.get("includeItemsFromAllDrives")).toBe(
+        "true",
+      );
+    }
+  });
+
+  test("a look by id says shared drives are supported: the file, a shortcut's target, the download", async () => {
+    reply = () => json({ id: "s1", name: "Plan" });
+    await drive.callTool(connection, "get_file_metadata", { fileId: "s1" });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.url.searchParams.get("supportsAllDrives")).toBe("true");
+
+    asked = [];
+    reply = (request) => {
+      if (request.url.searchParams.get("alt") === "media") {
+        return new Response("notes", {
+          headers: { "content-type": "text/plain" },
+        });
+      }
+      return request.url.pathname === "/drive/v3/files/shortcut2"
+        ? json({
+            id: "shortcut2",
+            name: "notes 바로가기",
+            mimeType: "application/vnd.google-apps.shortcut",
+            shortcutDetails: { targetId: "s2", targetMimeType: "text/plain" },
+          })
+        : json({ id: "s2", name: "notes.txt", mimeType: "text/plain" });
+    };
+    const read = await drive.callTool(connection, "read_file_content", {
+      fileId: "shortcut2",
+    });
+
+    expect(read.text).toBe("notes.txt\n\nnotes");
+    expect(asked.map((one) => one.url.pathname)).toEqual([
+      "/drive/v3/files/shortcut2",
+      "/drive/v3/files/s2",
+      "/drive/v3/files/s2",
+    ]);
+    for (const request of asked) {
+      expect(request.url.searchParams.get("supportsAllDrives")).toBe("true");
+    }
+  });
+
+  test("an export is asked for as before: `files.export` takes a type and nothing else", async () => {
+    reply = (request) =>
+      request.url.pathname.endsWith("/export")
+        ? new Response("본문", { headers: { "content-type": "text/plain" } })
+        : json({
+            id: "f1",
+            name: "기획서",
+            mimeType: "application/vnd.google-apps.document",
+          });
+
+    await drive.callTool(connection, "read_file_content", { fileId: "f1" });
+
+    expect([...(asked[1]?.url.searchParams.keys() ?? [])]).toEqual([
+      "mimeType",
+    ]);
+  });
+
   test("a shortcut is followed to the file it points at, once", async () => {
     // Search and the recent list return shortcuts as ordinary hits; reading one by its own id was
     // declined as a binary `application/vnd.google-apps.shortcut` (upstream OpenBot #618).

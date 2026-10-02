@@ -59,6 +59,25 @@ const FILE_FIELDS =
   "id,name,mimeType,modifiedTime,webViewLink,size,owners(emailAddress)";
 
 /**
+ * Shared drives as well as My Drive.
+ *
+ * Drive leaves shared drive items out of every `files.get` and `files.list` that does not say it
+ * supports them, and no request here said so: a document the person could open in a shared drive
+ * was a 404 "File not found" by its id and never came back from a search or the recent list. A
+ * company's documents mostly live in shared drives. A listing has to ask for those items as well
+ * as support them, and it keeps Drive's default `user` corpus, which Google recommends over
+ * `allDrives`. `files.export` takes neither parameter and needs neither.
+ *
+ * From upstream OpenBot (#589, MIT). Read against Drive's reference, not run against Drive: no
+ * account with a shared drive was connected here.
+ */
+const SHARED_DRIVES = { supportsAllDrives: "true" } as const;
+const SHARED_DRIVE_ITEMS = {
+  ...SHARED_DRIVES,
+  includeItemsFromAllDrives: "true",
+} as const;
+
+/**
  * Google's editor formats, and the plain-text export each one has.
  *
  * A Doc has no bytes to download — `alt=media` refuses it — so it has to be exported. Anything not
@@ -268,6 +287,7 @@ export async function callTool(
     const result = await vendorRequest("Google Drive", connection, {
       url: `${base}/files`,
       query: {
+        ...SHARED_DRIVE_ITEMS,
         pageSize: String(PAGE_SIZE),
         fields: `files(${FILE_FIELDS})`,
         // Drive's own ordering for "recent". Search leaves it to relevance.
@@ -289,7 +309,7 @@ export async function callTool(
 
     const result = await vendorRequest("Google Drive", connection, {
       url: fileUrl(fileId),
-      query: { fields: FILE_FIELDS },
+      query: { ...SHARED_DRIVES, fields: FILE_FIELDS },
     });
     if (!result.ok) return failure(result.message, result.status);
 
@@ -319,6 +339,7 @@ export async function callTool(
     const metadata = await vendorRequest("Google Drive", connection, {
       url: fileUrl(fileId),
       query: {
+        ...SHARED_DRIVES,
         fields: "id,name,mimeType,shortcutDetails(targetId,targetMimeType)",
       },
     });
@@ -346,7 +367,7 @@ export async function callTool(
       }
       const target = await vendorRequest("Google Drive", connection, {
         url: fileUrl(targetId),
-        query: { fields: "id,name,mimeType" },
+        query: { ...SHARED_DRIVES, fields: "id,name,mimeType" },
       });
       if (!target.ok) return failure(target.message, target.status);
       const pointedAt = await readJson<DriveFile>(target.response);
@@ -381,7 +402,9 @@ export async function callTool(
     const download = new AbortController();
     const content = await vendorRequest("Google Drive", connection, {
       url: exportAs ? fileUrl(readId, "/export") : fileUrl(readId),
-      query: exportAs ? { mimeType: exportAs } : { alt: "media" },
+      query: exportAs
+        ? { mimeType: exportAs }
+        : { ...SHARED_DRIVES, alt: "media" },
       signal: download.signal,
     });
     if (!content.ok) return failure(content.message, content.status);
