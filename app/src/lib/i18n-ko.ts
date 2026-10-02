@@ -1747,6 +1747,8 @@ export const ko: Record<string, string> = {
   /** The failed read on Skills, which used to say 아직 스킬이 없습니다 instead. */
   "Your skills could not be loaded.":
     "스킬 목록을 불러오지 못했어요. 다시 시도해 주세요.",
+  /** And in the panel that edits one, which said 그 스킬은 더 이상 없거나… over the same failed read. */
+  "This skill could not be loaded.": "이 스킬을 불러오지 못했어요.",
   "No answer came back.": "답을 받지 못했어요.",
   "The Bot's address refused the request. Its connection needs a look.":
     "봇 주소가 요청을 거절했어요. 연결 설정을 확인해 주세요.",

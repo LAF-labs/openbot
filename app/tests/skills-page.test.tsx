@@ -140,6 +140,95 @@ describe("a read that failed", () => {
   });
 });
 
+describe("the panel that edits one, when the read failed", () => {
+  /*
+   * The panel reads the same list the page does, and it too asked `isPending` alone — which goes
+   * false on a failed read exactly as on an answer. So a 500 told somebody whose skill is still on
+   * the server that it no longer exists, or was never theirs to edit (upstream OpenBot #665).
+   */
+  const GONE = "That skill no longer exists, or it is not yours to edit.";
+  const NOT_LOADED = "This skill could not be loaded.";
+  const mine = skill({
+    slug: "danggeun-reply",
+    title: "당근 답장",
+    instructions: "당근마켓 문의에 정중하게 답한다.",
+  });
+  const holding = () => json({ catalogue: [], servers: [], skills: [mine] });
+  const said = (main: Element) =>
+    [...main.querySelectorAll('[role="alert"]')]
+      .map((alert) => alert.textContent?.trim() ?? "")
+      .filter(Boolean);
+
+  test("says the skill could not be loaded, and never that it is gone", async () => {
+    const view = await skillsPage(
+      () => json({ error: "boom" }, 500),
+      "/skills?edit=danggeun-reply",
+    );
+    expect(view.main.textContent).not.toContain(GONE);
+    // Beside the page's own sentence about the list: two places, each saying what it is missing.
+    expect(said(view.main)).toEqual([FAILED, NOT_LOADED]);
+    expect(ko[NOT_LOADED]).toBeTruthy();
+    await view.unmount();
+  });
+
+  test("its own press asks again, and the form arrives", async () => {
+    let failing = true;
+    const view = await skillsPage(
+      () => (failing ? json({ error: "boom" }, 500) : holding()),
+      "/skills?edit=danggeun-reply",
+    );
+    const line = [...view.main.querySelectorAll('[role="alert"]')].find(
+      (alert) => alert.textContent?.trim() === NOT_LOADED,
+    );
+    const again = line?.parentElement?.querySelector("button");
+    if (!again) throw new Error("the panel offers no press to try again");
+    expect(again.textContent?.trim()).toBe("Try again");
+
+    failing = false;
+    await view.click(again);
+    await view.waitFor(
+      () => view.buttonNamed("Save changes") !== undefined,
+      "the form to arrive",
+    );
+    expect(said(view.main)).toEqual([]);
+    await view.unmount();
+  });
+
+  test("a skill the list was read without is still said to be gone", async () => {
+    // The sentence is right once the server has answered, and only then.
+    const view = await skillsPage(
+      () => json({ catalogue: [], servers: [], skills: [] }),
+      "/skills?edit=danggeun-reply",
+    );
+    expect(view.main.textContent).toContain(GONE);
+    expect(view.main.textContent).not.toContain(NOT_LOADED);
+    await view.unmount();
+  });
+
+  test("a refresh that failed keeps the form it was showing", async () => {
+    let failing = false;
+    const view = await skillsPage(
+      () => (failing ? json({ error: "boom" }, 500) : holding()),
+      "/skills?edit=danggeun-reply",
+    );
+    expect(view.buttonNamed("Save changes")).toBeDefined();
+
+    failing = true;
+    const { act } = await import("react");
+    await act(async () => {
+      await view.queryClient.invalidateQueries();
+    });
+    await view.waitFor(() => view.listReads() === 2, "the second read");
+    await view.settle();
+
+    // Somebody halfway through a sentence does not lose the form to a dropped connection.
+    expect(view.buttonNamed("Save changes")).toBeDefined();
+    expect(view.main.textContent).not.toContain(GONE);
+    expect(view.main.textContent).not.toContain(NOT_LOADED);
+    await view.unmount();
+  });
+});
+
 describe("a read still in flight", () => {
   test("holds the rows' place with a placeholder, and claims nothing", async () => {
     // Routines and the roster both hold their space; this page drew a section title over a void.
