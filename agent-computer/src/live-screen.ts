@@ -40,6 +40,78 @@ function screenError(code: ScreenCode): string {
   return JSON.stringify({ type: "error", code, error: code });
 }
 
+const finite = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+const written = (value: unknown): value is string => typeof value === "string";
+/** A field the surface may leave out, and must get right when it does not. */
+const maybe = (value: unknown, fits: (value: unknown) => boolean): boolean =>
+  value === undefined || fits(value);
+
+const MOUSE_EVENTS = new Set<unknown>(["pressed", "released", "moved"]);
+const MOUSE_BUTTONS = new Set<unknown>(["left", "right", "middle", "none"]);
+const KEY_EVENTS = new Set<unknown>(["down", "up"]);
+
+/**
+ * One frame off the socket, as the input it is — or null for anything that is not one.
+ *
+ * THE DOOR, BECAUSE A CAST IS NOT A CHECK. This was `JSON.parse(raw) as InputMessage`, and the
+ * server relays a person's frames byte for byte, so whatever parsed went on to Chrome. Measured
+ * 2026-10-02 (`tests/live-screen-input.test.ts`), after reading upstream OpenBot's #488:
+ *
+ *  - `null` threw in `applyInput`, and again in the `catch` that logs a failed input by its
+ *    `type`, so the socket's handler rejected. Bun ends the process on a rejection nobody handles —
+ *    1.3.11 exited 1 from a websocket `message` handler, past the crash listener in `log.ts` — and
+ *    this process is every Bot's browser.
+ *  - Chromium took what no person did: a mouse message with no `event` as a move with a button
+ *    held, a key message with no key as a `keydown` of nothing, and a key message whose `event`
+ *    was neither `down` nor `up` as a typed letter — without the box it landed in being followed,
+ *    which is what keeps that letter from the Bot (`person-typing.ts`).
+ *  - The rest Chromium refused as invalid parameters, a protocol round trip later.
+ *
+ * So only the four shapes `InputMessage` names go on, with every number finite (`1e999` parses to
+ * Infinity) and every optional field either absent or right. The frame is handed back as it came:
+ * what it means is `screencast.ts`'s to say.
+ */
+export function inputMessageOf(frame: unknown): InputMessage | null {
+  if (typeof frame !== "object" || frame === null) return null;
+  const said = frame as Record<string, unknown>;
+  const fits = (() => {
+    switch (said.type) {
+      case "mouse":
+        return (
+          MOUSE_EVENTS.has(said.event) &&
+          finite(said.x) &&
+          finite(said.y) &&
+          maybe(said.button, (button) => MOUSE_BUTTONS.has(button)) &&
+          maybe(said.clickCount, finite) &&
+          maybe(said.modifiers, finite)
+        );
+      case "wheel":
+        return (
+          finite(said.x) &&
+          finite(said.y) &&
+          finite(said.deltaX) &&
+          finite(said.deltaY) &&
+          maybe(said.modifiers, finite)
+        );
+      case "key":
+        return (
+          KEY_EVENTS.has(said.event) &&
+          written(said.key) &&
+          written(said.code) &&
+          maybe(said.text, written) &&
+          maybe(said.windowsVirtualKeyCode, finite) &&
+          maybe(said.modifiers, finite)
+        );
+      case "text":
+        return written(said.text);
+      default:
+        return false;
+    }
+  })();
+  return fits ? (frame as InputMessage) : null;
+}
+
 /** How often the cast checks that it is still showing the page the Bot is on. */
 const FOLLOW_INTERVAL_MS = 1_000;
 
@@ -282,9 +354,9 @@ export function liveScreen({
       // Only the socket being cast to drives. One that another viewer displaced is looking at a
       // picture that stopped; its clicks would land on a page it no longer sees.
       if (session.viewer?.socket !== ws) return;
-      let message: InputMessage;
+      let frame: unknown;
       try {
-        message = JSON.parse(String(raw)) as InputMessage;
+        frame = JSON.parse(String(raw));
       } catch {
         return;
       }
@@ -295,6 +367,13 @@ export function liveScreen({
       // Refuse with an error so the surface can explain why input is ignored.
       if (!session.control.humanMayDrive()) {
         ws.send(screenError(TAKE_CONTROL_FIRST));
+        return;
+      }
+      // Not an input this build knows (`inputMessageOf`). Said, as a dispatch Chrome refused is: a
+      // press that did nothing must not be left looking as though it landed.
+      const message = inputMessageOf(frame);
+      if (!message) {
+        ws.send(screenError("laf:input_not_applied"));
         return;
       }
       await inTurn(session, () => applyInput(ws, session, message));
