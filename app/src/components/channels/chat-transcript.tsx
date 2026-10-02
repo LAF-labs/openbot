@@ -51,7 +51,7 @@ import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
 import { quotedReply } from "@/lib/channels/quote";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
-import { copiedHtml, copiedText } from "@/lib/channels/copied-reply";
+import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { spokenText } from "@/lib/channels/spoken-text";
 import {
   type FailureGroup,
@@ -1165,8 +1165,9 @@ function CopyReply({ text }: { text: string }) {
     const drawn = event.currentTarget
       .closest('[data-slot="reply-actions"]')
       ?.parentElement?.querySelector('[data-slot="bubble-content"]');
+    // With no bubble to read — which a button under one should never find — the text as it came.
     const copied = await copyRich({
-      text: copiedText(text),
+      text: drawn ? copiedWords(drawn) : text,
       html: copiedHtml(drawn),
     });
     if (!copied) return;
