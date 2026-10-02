@@ -78,7 +78,11 @@ import { useToolsSettled } from "@/lib/copilot/tools-settled";
 
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
-import { answeredInWords, hasResult } from "@/lib/turns/typed-answer";
+import {
+  answeredInWords,
+  hasResult,
+  restAfter,
+} from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
 
 /**
@@ -100,6 +104,27 @@ const SEND_WITHOUT_GRANTS_AFTER_MS = 5000;
 
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
+
+/**
+ * The conversation's record, read again until it is in — after each of the waits an offer to a
+ * card rests for (`restAfter`), since the read before it has just failed — or until nothing waits
+ * on it any more (`isOwed`), which is the only way it comes back with nothing.
+ *
+ * Out here because it loops, as `readRecord` is in `server-channel-chat.tsx`.
+ */
+async function readRecordAgain(
+  threadId: string,
+  agentId: string,
+  isOwed: () => boolean,
+): Promise<Message[] | null> {
+  for (let tries = 1; ; tries += 1) {
+    await new Promise((resolve) => setTimeout(resolve, restAfter(tries)));
+    if (!isOwed()) return null;
+    const stored = await loadThreadHistory(threadId, agentId);
+    if (!isOwed()) return null;
+    if (stored) return stored;
+  }
+}
 
 /**
  * One channel's conversation with one coworker.
@@ -313,11 +338,9 @@ export function ChannelChat({
         // Reported by the run-failure subscriber below; history is still worth restoring.
       }
 
+      let stored: Message[] | null = null;
       try {
-        const stored = await loadThreadHistory(
-          channel.threadId,
-          runtimeAgentId,
-        );
+        stored = await loadThreadHistory(channel.threadId, runtimeAgentId);
         /*
          * MERGED, NOT APPLIED ONLY TO AN EMPTY AGENT. Joining replays the runtime's last run from
          * memory, and a question whose run failed after it is in the store and not in that replay —
@@ -336,6 +359,31 @@ export function ChannelChat({
         // Release even on join/restore failure; the gate orders messages, not withholds them.
         openJoinGate.current();
       }
+      if (stored) return;
+      /*
+       * THAT READ FAILED, AND WORDS KEPT FOR A CARD WAIT ON IT: it is read again until it is in.
+       *
+       * Until the record has been read they are drawn nowhere and go with nothing (`thread` below,
+       * `readSendable`), and nothing read it again for them. A later read came only with news of
+       * something else — a Bot speaking in the conversation, a step ending in another window —
+       * and the connection coming back sends what was kept, which leaves these out on purpose. So
+       * in a conversation where nothing else happened, one read that failed as the page opened
+       * kept what the person had typed out of sight and out of their hands for as long as the
+       * page stayed open, however soon the server was answering again (review, seventh round).
+       *
+       * After the gate, which does not wait for it. Only where such words are kept, and only to
+       * settle them: what is drawn of the conversation is as that first read left it, as it is
+       * for a conversation with no such words, until the room is opened again.
+       */
+      const isOwed = () =>
+        current && readUnsent(channel.id).some(isKeptForCard);
+      if (!isOwed()) return;
+      const read = await readRecordAgain(
+        channel.threadId,
+        runtimeAgentId,
+        isOwed,
+      );
+      if (read) settleKeptAnswers(read);
     })();
 
     return () => {
@@ -345,6 +393,7 @@ export function ChannelChat({
     copilotkit,
     agent,
     isReady,
+    channel.id,
     channel.threadId,
     runtimeAgentId,
     settleKeptAnswers,

@@ -10,7 +10,9 @@ import {
 import { ko } from "../src/lib/i18n-ko";
 import {
   APP_DOM_TIMEOUT_MS,
+  type ApiRequest,
   installAppDom,
+  json,
   mountApp,
   removeAppDom,
   unmountApps,
@@ -19,8 +21,10 @@ import {
   answering,
   BOT_ID,
   channelServer,
+  THREAD_ID,
   type WireMessage,
 } from "./support/channel-server";
+import { stubFetch } from "./support/fetch";
 
 /**
  * WHAT SOMEBODY TYPED WHILE THE SERVER WAS GONE IS NOT LOST ON A RELOAD, AND GOES WHEN IT IS BACK.
@@ -52,6 +56,8 @@ afterEach(async () => {
     "../src/components/channels/composer/outbox"
   );
   forgetUnsentCache();
+  // The wait before a record is read again, where a test shortened it.
+  (await import("../src/lib/turns/typed-answer")).setFirstRest();
 });
 setDefaultTimeout(20_000);
 afterAll(async () => {
@@ -375,6 +381,172 @@ describe("a message the server never got", () => {
       );
       expect(server.runs).toHaveLength(0);
       await view.unmount();
+    });
+
+    /*
+     * Review, seventh round. What settled them where the first read had failed was the next read,
+     * and the next read came only with news of something else: a Bot speaking, a step ending in
+     * another window. In a conversation where nothing else happened they stayed as they were —
+     * drawn nowhere, going with nothing — for as long as the page was open, though the record
+     * could be read again a moment later.
+     */
+    describe("where the read that opens the conversation failed, and nothing else happens in it", () => {
+      const RECORD = `/api/copilotkit/threads/${THREAD_ID}/messages`;
+      /**
+       * A server whose record cannot be read the first `failures` times it is asked for, and that
+       * says of the thread what an idle one does. Only the record's route fails: a step route that
+       * failed with it would have the step watcher read the record again when it came back, which
+       * is not a read made for these words.
+       */
+      const unreadableAtFirst = (
+        server: ReturnType<typeof channelServer>,
+        failures: number,
+      ) => {
+        let reads = 0;
+        const api = (request: ApiRequest) => {
+          if (request.pathname === RECORD) {
+            reads += 1;
+            if (reads <= failures) return new Response("", { status: 503 });
+          }
+          if (
+            request.pathname === `/api/copilotkit/threads/${THREAD_ID}/step`
+          ) {
+            return json({ running: false, waiting: false, waitingMs: 0 });
+          }
+          return server.api(request);
+        };
+        return { api, reads: () => reads };
+      };
+      const readAgainSoon = async () =>
+        (await import("../src/lib/turns/typed-answer")).setFirstRest(40);
+
+      test("are forgotten by a read made again, where the record shows the card answered with them", async () => {
+        await readAgainSoon();
+        const channelId = "channel_unsent-reread";
+        keptForACard(channelId, "call-1");
+        const server = channelServer({
+          channelId,
+          history: [
+            EARLIER,
+            asking("call-1"),
+            {
+              id: "r-choice",
+              role: "tool",
+              toolCallId: "call-1",
+              content: JSON.stringify({ answer: TYPED }),
+            },
+            EARLIER_ANSWER,
+          ] as unknown as WireMessage[],
+          runs: [answering(ANSWER)],
+        });
+        const record = unreadableAtFirst(server, 1);
+        const view = await mountApp({
+          path: `/channel/${channelId}`,
+          api: record.api,
+        });
+        await view.waitFor(
+          () => localStorage.getItem(`laf:unsent:${channelId}`) === null,
+          "the words to be forgotten once the record is in",
+          8000,
+        );
+        await view.settle(300);
+        // Read once more, and not again once it was in.
+        expect(record.reads()).toBe(2);
+        expect(server.runs).toHaveLength(0);
+        expect(view.host.querySelector(unsentLine)).toBeNull();
+        await view.unmount();
+      });
+
+      test("are the person's to send by a read made again, where the record shows nothing of their card", async () => {
+        await readAgainSoon();
+        const channelId = "channel_unsent-reread-gone";
+        keptForACard(channelId, "call-gone");
+        const server = channelServer({
+          channelId,
+          history: [EARLIER, EARLIER_ANSWER],
+          runs: [answering(ANSWER)],
+        });
+        // Twice, so the read is made again after one that failed too.
+        const record = unreadableAtFirst(server, 2);
+        const view = await mountApp({
+          path: `/channel/${channelId}`,
+          api: record.api,
+        });
+        await view.waitFor(
+          () => keptNow(channelId)[0]?.autoTried === true,
+          "them to be handed to the person once the record is in",
+          8000,
+        );
+        await view.settle(300);
+        expect(record.reads()).toBe(3);
+        expect(keptNow(channelId)[0]?.waiting).toBeUndefined();
+        expect(server.runs).toHaveLength(0);
+        expect(view.host.querySelector(unsentLine)).not.toBeNull();
+        expect(bubblesSaying(view.host, TYPED)).toBe(1);
+        await view.unmount();
+      });
+
+      test("and it is not read again for words that were never kept for a card", async () => {
+        await readAgainSoon();
+        const channelId = "channel_unsent-reread-plain";
+        keptOnThisDevice(channelId, true);
+        const server = channelServer({
+          channelId,
+          history: [EARLIER, EARLIER_ANSWER],
+          runs: [answering(ANSWER)],
+        });
+        const record = unreadableAtFirst(server, 1);
+        const view = await mountApp({
+          path: `/channel/${channelId}`,
+          api: record.api,
+        });
+        await view.waitFor(
+          () => view.host.querySelector(unsentLine) !== null,
+          "the kept message and its line",
+          8000,
+        );
+        // Long past the waits a read made again would have rested for.
+        await view.settle(500);
+        expect(record.reads()).toBe(1);
+        expect(server.runs).toHaveLength(0);
+        await view.unmount();
+      });
+
+      test("and it stops being read when the conversation is closed", async () => {
+        await readAgainSoon();
+        const channelId = "channel_unsent-reread-closed";
+        keptForACard(channelId, "call-1");
+        const server = channelServer({ channelId, history: [EARLIER] });
+        const record = unreadableAtFirst(server, Number.POSITIVE_INFINITY);
+        const view = await mountApp({
+          path: `/channel/${channelId}`,
+          api: record.api,
+        });
+        await view.waitFor(
+          () => record.reads() >= 3,
+          "the record to be read again, and again",
+          8000,
+        );
+        await view.unmount();
+        // The page's own answers went with it: anything asked from here on is asked of this.
+        const closedFetch = globalThis.fetch;
+        const asked: string[] = [];
+        globalThis.fetch = stubFetch(async (input) => {
+          asked.push(String(input instanceof Request ? input.url : input));
+          return new Response("", { status: 503 });
+        });
+        try {
+          // Past the next two waits of a read that went on being made: 160 ms, then 320.
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        } finally {
+          globalThis.fetch = closedFetch;
+        }
+        expect(asked.filter((url) => url.includes(RECORD))).toEqual([]);
+        // Still kept, as they were: closing the conversation settles nothing.
+        expect(keptNow(channelId)).toMatchObject([
+          { answerTo: "call-1", waiting: true, autoTried: false },
+        ]);
+      });
     });
 
     test("are forgotten, and never sent, where the conversation shows the card answered with them", async () => {

@@ -99,6 +99,11 @@ export function turnServer(options: {
   history?: Message[];
   /** The store holds more above the newest page. */
   hasOlder?: boolean;
+  /**
+   * How many messages a page of the history holds. The server's is eighty; a test of what lies
+   * above the newest page says a few. Absent, a page is everything the store holds.
+   */
+  historyPage?: number;
   /** How the turn stands when the window opens, and what it has said so far. */
   turn?: TurnState | null;
   turnMessages?: Message[];
@@ -127,6 +132,8 @@ export function turnServer(options: {
   let historyHold: Promise<void> | null = null;
   let releaseHistory = () => {};
   let historyReads = 0;
+  /** Where each read of the history asked from, in order: null for the newest page. */
+  const historyCursors: (number | null)[] = [];
   let doorDown = false;
   /** While set, the door is there and says no: the code it refuses a hand-over with. */
   let doorRefusal: string | null = null;
@@ -262,16 +269,34 @@ export function turnServer(options: {
     });
   };
 
-  const page = (): HistoryPage => ({
-    messages: stored,
-    times: {},
-    seqs: Object.fromEntries(
-      stored.map((message, index) => [message.id, index + 1]),
-    ),
-    oldestSeq: stored.length ? 1 : null,
-    newestSeq: stored.length || null,
-    hasOlder: options.hasOlder === true,
-  });
+  /**
+   * A page as the server cuts one (`historyPage` in `server/src/turns/history.ts`): the newest
+   * `historyPage` messages below the cursor, a message's place in the store being its `seq` — and
+   * never one that starts on a result, which reaches back to the message that asked for it.
+   *
+   * It answered every read with the whole store, whatever cursor it was asked from: nothing here
+   * could put a question above the newest page, which is where a conversation that went on
+   * without this window leaves one.
+   */
+  const page = (before: number | null): HistoryPage => {
+    const upTo =
+      before === null
+        ? stored.length
+        : Math.max(0, Math.min(stored.length, before - 1));
+    let from = Math.max(0, upTo - (options.historyPage ?? upTo));
+    while (from > 0 && stored[from]?.role === "tool") from -= 1;
+    const messages = stored.slice(from, upTo);
+    return {
+      messages,
+      times: {},
+      seqs: Object.fromEntries(
+        messages.map((message, index) => [message.id, from + index + 1]),
+      ),
+      oldestSeq: messages.length ? from + 1 : null,
+      newestSeq: messages.length ? upTo : null,
+      hasOlder: from > 0 || options.hasOlder === true,
+    };
+  };
 
   /** What `engine.send` answers a hand-over: 409 while a turn is going, else 202 and a queued turn. */
   const takeTurn = (body: TurnSend): Response => {
@@ -323,10 +348,18 @@ export function turnServer(options: {
     }
     if (pathname === `${door}/history`) {
       historyReads += 1;
+      // Any whole number is a cursor, as the route reads it; anything else is the newest page.
+      const asked = request.url.searchParams.get("before");
+      const cursor =
+        asked === null || asked === "" ? Number.NaN : Number(asked);
+      const before = Number.isInteger(cursor) ? cursor : null;
+      historyCursors.push(before);
       // The front door's answer while the server behind it is restarting.
       if (historyDown) return new Response("", { status: 503 });
       // Answered late, with the record as it stands when it is.
-      return historyHold ? historyHold.then(() => json(page())) : json(page());
+      return historyHold
+        ? historyHold.then(() => json(page(before)))
+        : json(page(before));
     }
     // A person's answer to a card: taken while the turn waits on it, 409 once it does not.
     if (pathname.startsWith(`${door}/answers/`) && method === "POST") {
@@ -392,6 +425,8 @@ export function turnServer(options: {
     sends,
     stops: () => stops,
     historyReads: () => historyReads,
+    /** Where each read of the history asked from, in order: null for the newest page. */
+    historyCursors: () => historyCursors,
     turn: () => hub.turn,
     /** `/history` answers 503 until `historyUp`. */
     historyDown: () => {
