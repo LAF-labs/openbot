@@ -99,6 +99,12 @@ export function createThreadStore(
   let callOff: (() => void) | null = null;
   /** How many reads of the first page have gone out: only the newest one's failure sets a wait. */
   let firstReads = 0;
+  /**
+   * A screen came back to this store and the stream has not yet said how the turn stands
+   * (`resume`): the epoch it had before, which is how a server that restarted meanwhile is told.
+   */
+  let isResuming = false;
+  let epochBefore: string | null = null;
 
   const set = (next: ServerThread) => {
     if (next === state) return;
@@ -190,6 +196,41 @@ export function createThreadStore(
   };
 
   /**
+   * WHERE WHAT A PAGE BRINGS GOES AMONG WHAT IS HELD: before the rows only this window holds —
+   * words being sent, of which the record has neither a copy nor a place — and after everything
+   * else. Coming back to a kept conversation can start a read and send what the device kept in the
+   * same breath; added at the end, a routine's delivery was drawn under the words typed after it.
+   */
+  const placeOf = (held: readonly Message[], page: HistoryPage): number => {
+    const known = new Set(page.messages.map((message) => message.id));
+    let place = held.length;
+    while (place > 0) {
+      const id = held[place - 1]?.id ?? "";
+      if (known.has(id) || seqs.has(id)) break;
+      place -= 1;
+    }
+    return place;
+  };
+
+  /** A page laid over what is held: the same id replaced where it stands, the rest put in place. */
+  const withPage = (
+    held: readonly Message[],
+    page: HistoryPage,
+  ): readonly Message[] => {
+    const at = new Map(held.map((message, index) => [message.id, index]));
+    const next = [...held];
+    const missing: Message[] = [];
+    for (const message of page.messages) {
+      const index = at.get(message.id);
+      if (index === undefined) missing.push(message);
+      else next[index] = message;
+    }
+    if (missing.length === 0) return next;
+    const place = placeOf(next, page);
+    return [...next.slice(0, place), ...missing, ...next.slice(place)];
+  };
+
+  /**
    * The newest page laid over what is held, by id, and the live turn over that: a window that
    * resumed past the frames the server still keeps is sent a snapshot, not what it missed.
    *
@@ -204,21 +245,30 @@ export function createThreadStore(
     remember(page);
     set({
       ...state,
-      messages: mergeMessages(
-        mergeMessages(state.messages, page.messages),
-        going,
-      ),
+      messages: mergeMessages(withPage(state.messages, page), going),
       times: { ...state.times, ...page.times },
     });
   };
 
   const onFrame = (frame: TurnFrame) => {
+    // The epoch a resuming store had is the one a restart is told against.
+    const known = state.epoch ?? epochBefore;
     const restarted =
-      frame.kind === "snapshot" &&
-      state.epoch !== null &&
-      frame.epoch !== state.epoch;
+      frame.kind === "snapshot" && known !== null && frame.epoch !== known;
+    /*
+     * A store somebody came back to reads the page under the snapshot whatever its cursor was: a
+     * conversation no turn has touched since the server started has no frames at all, and a
+     * routine's delivery is not one.
+     */
     const resumed =
-      frame.kind === "snapshot" && !restarted && state.loaded && state.seq > 0;
+      frame.kind === "snapshot" &&
+      !restarted &&
+      state.loaded &&
+      (state.seq > 0 || isResuming);
+    if (frame.kind === "snapshot") {
+      isResuming = false;
+      epochBefore = null;
+    }
     set({ ...state, ...applyFrame(state, frame) });
     if (restarted && frame.kind === "snapshot") void resync(frame.messages);
     else if (resumed && frame.kind === "snapshot") void catchUp(frame.messages);
@@ -309,28 +359,17 @@ export function createThreadStore(
         (id) => held.has(id) && !(id in state.times),
       );
       if (missing.length === 0 && !isUntimed) return;
-      /*
-       * WHAT THE PAGE BRINGS WAS WRITTEN BEFORE WHAT ONLY THIS WINDOW HOLDS — words being sent, of
-       * which the record has neither a copy nor a place. Coming back to a kept conversation can
-       * start this read and send what the device kept in the same breath; added at the end, a
-       * routine's delivery was drawn under the words typed after it.
-       */
-      const known = new Set(page.messages.map((message) => message.id));
-      let tail = state.messages.length;
-      while (tail > 0) {
-        const id = state.messages[tail - 1]?.id ?? "";
-        if (known.has(id) || seqs.has(id)) break;
-        tail -= 1;
-      }
+      // What is missing goes before what only this window holds (`placeOf`).
+      const place = placeOf(state.messages, page);
       set({
         ...state,
         messages:
           missing.length === 0
             ? state.messages
             : [
-                ...state.messages.slice(0, tail),
+                ...state.messages.slice(0, place),
                 ...missing,
-                ...state.messages.slice(tail),
+                ...state.messages.slice(place),
               ],
         times: { ...page.times, ...state.times },
       });
@@ -399,6 +438,32 @@ export function createThreadStore(
       ) {
         letGo(KEEP_MESSAGES);
       }
+    },
+
+    /**
+     * A SCREEN CAME BACK TO A STORE KEPT WITH NOBODY LOOKING (`kept-threads.ts`): what it holds of
+     * the turn is not known to be current until the stream says so.
+     *
+     * Nothing woke the stream while no screen was there — a laptop asleep leaves a socket that
+     * looks alive and hears nothing — and another window may have started a turn since. The store
+     * went on saying its old idle turn, under an epoch that reads "the stream has spoken", and
+     * what the device kept was sent by itself into that turn and refused (review, 2026-10-02): the
+     * one send it gets, spent, and the words left under 보내지 못함.
+     *
+     * So the stream is opened again WITHOUT A CURSOR, which the server answers with a snapshot —
+     * how the turn stands now — and until it has, the epoch is unknown again: whatever waits for
+     * the stream to have spoken waits. Under the snapshot the newest page is read (`catchUp`):
+     * what something other than a turn wrote meanwhile, and the times of what the stream brought.
+     */
+    resume(): void {
+      if (closed || !watch) return;
+      isResuming = true;
+      if (state.epoch !== null) {
+        epochBefore = state.epoch;
+        set({ ...state, epoch: null });
+      }
+      watch.nudge();
+      if (!state.loaded && state.unreadable) void readFirstPage();
     },
 
     /** Open a fresh stream now: the window came back into view, or back online. */

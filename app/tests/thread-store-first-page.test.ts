@@ -38,6 +38,8 @@ function harness(answers: Array<HistoryPage | null>) {
   let onFrame: ((frame: TurnFrame) => void) | null = null;
   let reads = 0;
   let nudges = 0;
+  /** The cursor each fresh stream was opened from: null asks the server how the turn stands. */
+  const cursors: (string | null)[] = [];
   const waits: Wait[] = [];
   const store = createThreadStore("thread-1", {
     readHistory: async () =>
@@ -48,6 +50,7 @@ function harness(answers: Array<HistoryPage | null>) {
         close: () => {},
         nudge: () => {
           nudges += 1;
+          cursors.push(handlers.cursor());
         },
       };
     },
@@ -65,6 +68,7 @@ function harness(answers: Array<HistoryPage | null>) {
     frame: (value: TurnFrame) => onFrame?.(value),
     reads: () => reads,
     nudges: () => nudges,
+    cursors: () => cursors,
     /** The waits asked for so far, in milliseconds. */
     waited: () => waits.map((wait) => wait.ms),
     /** The waits still to come: neither let go nor called off. */
@@ -363,6 +367,110 @@ describe("a refresh of a conversation that is already in", () => {
       "a1",
       "r1",
       "p1",
+    ]);
+  });
+});
+
+/*
+ * Review, 2026-10-02. A store kept while no screen was looking went on saying its old idle turn
+ * under an epoch that reads "the stream has spoken". Its stream may have been dead — a laptop
+ * asleep — while another window started a turn, and what the device kept was sent by itself into
+ * that turn and refused: its one send, spent.
+ */
+describe("a store somebody came back to", () => {
+  const idle = {
+    seq: 3,
+    kind: "snapshot" as const,
+    epoch: "e1",
+    turn: null,
+    messages: [],
+    waiting: [],
+  };
+
+  test("asks the stream afresh how the turn stands, and has not been told until it answers", async () => {
+    const { store, frame, cursors, nudges } = harness([
+      page([asked, answered]),
+    ]);
+    await store.open();
+    frame(idle);
+    expect(store.snapshot().epoch).toBe("e1");
+
+    store.resume();
+    // Without a cursor: the server answers that with a snapshot, not with silence.
+    expect(nudges()).toBe(1);
+    expect(cursors()).toEqual([null]);
+    expect(store.snapshot().epoch).toBeNull();
+
+    frame({
+      ...idle,
+      seq: 5,
+      turn: { id: "t9", status: "running", asked: ["u9"] },
+    });
+    expect(store.snapshot()).toMatchObject({
+      epoch: "e1",
+      turn: { id: "t9", status: "running" },
+    });
+  });
+
+  test("reads the newest page under that answer, even where no turn has ever run", async () => {
+    const delivered: Message = {
+      id: "r1",
+      role: "assistant",
+      content: "아침 브리핑이에요.",
+    };
+    const at = {
+      u1: "2026-10-02T14:00:00.000Z",
+      a1: "2026-10-02T14:00:09.000Z",
+      r1: "2026-10-02T22:30:00.000Z",
+    };
+    const { store, frame, reads, settle } = harness([
+      page([asked, answered]),
+      { ...page([asked, answered, delivered]), times: at },
+    ]);
+    await store.open();
+    // A conversation no turn has touched since the server started: its stream has no frames.
+    frame({ ...idle, seq: 0 });
+    const typed: Message = { id: "p1", role: "user", content: "고마워요" };
+    store.addLocal([typed], "2026-10-02T22:31:00.000Z");
+
+    store.resume();
+    frame({ ...idle, seq: 0 });
+    await settle();
+    expect(reads()).toBe(2);
+    // The routine's delivery, before the words only this window holds; and every row's time.
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "r1",
+      "p1",
+    ]);
+    expect(store.snapshot().times).toMatchObject(at);
+  });
+
+  test("is still told when the server restarted meanwhile: the record replaces what was pieced together", async () => {
+    const half: Message = { id: "h1", role: "assistant", content: "내일은" };
+    const { store, frame, settle } = harness([
+      page([asked]),
+      page([asked, answered]),
+    ]);
+    await store.open();
+    frame({
+      ...idle,
+      turn: { id: "t1", status: "running", asked: ["u1"] },
+      messages: [half],
+    });
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "h1",
+    ]);
+
+    store.resume();
+    frame({ ...idle, epoch: "e2", seq: 0 });
+    await settle();
+    expect(store.snapshot().epoch).toBe("e2");
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
     ]);
   });
 });
