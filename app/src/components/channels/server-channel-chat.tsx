@@ -132,6 +132,11 @@ function isOnCard(
   return isKeptForCard(message) && isShownOnCard(offers.get(message.id));
 }
 
+/** The question words were kept for: the call's id, and the message that asked it. */
+function questionOf(message: UnsentMessage): string {
+  return `${message.answerTo ?? ""} ${message.askedBy ?? ""}`;
+}
+
 /**
  * WORDS KEPT FOR AN EARLIER QUESTION UNDER THE SAME ID: the conversation's newest call under the
  * id they were kept for is another message's than the one that asked them (`askedBy`).
@@ -582,8 +587,11 @@ export function ServerChannelChat({
   /** The waits of resting offers, by row — and whether the screen is gone, so none starts after it. */
   const rests = useRef({
     timers: new Map<string, ReturnType<typeof setTimeout>>(),
-    /** Requests to the card's door still out, by row: a replacement waits for its first's. */
-    flights: new Map<string, Promise<AnswerDelivery>>(),
+    /**
+     * THE LATEST OFFER TO EACH QUESTION, as whether it gave the card its answer (`questionOf`).
+     * Each offer waits for the one before it: one request at the door at a time for a question.
+     */
+    flights: new Map<string, Promise<boolean>>(),
     isGone: false,
   });
   useEffect(() => {
@@ -595,19 +603,54 @@ export function ServerChannelChat({
       held.timers.clear();
     };
   }, []);
+  /** These words are still kept for their card: not forgotten, nor replaced, nor let go of it. */
+  const isStillForCard = (message: UnsentMessage) =>
+    readUnsent(channel.id).some(
+      (kept) => kept.id === message.id && kept.answerTo !== undefined,
+    );
+  /*
+   * ONE REQUEST AT THE DOOR AT A TIME FOR A QUESTION, AND THE LATEST WORDS LAST. Two answers out
+   * together race, and the server takes whichever reaches it first: a correction typed while the
+   * first was out could lose to it, and then went after the turn as a message of its own (review,
+   * tenth round). Waiting only on the first, a third went out beside the first while the second
+   * waited — and the second, replaced meanwhile, was still offered when the first came back
+   * (eleventh round). So every offer to a question waits for the one before it (`flights`), and
+   * is made only if its words are still the ones kept for the card. Where an earlier one gave the
+   * card its answer, nothing can take that back: these are what the person says next (`answered`),
+   * and the settling lets go of the mark — sending them at once where the turn is already over,
+   * which the turn's own end, heard before this, did not (eleventh round).
+   */
   const offer = async (message: UnsentMessage, tries: number) => {
     const call = message.answerTo;
     if (!call) return;
-    const flight = answerCard(
-      channel.threadId,
-      call,
-      typedAnswer(message.text),
+    const { flights } = rests.current;
+    const question = questionOf(message);
+    const before = flights.get(question);
+    const flight = (async (): Promise<{
+      delivery: AnswerDelivery | "replaced" | "answered";
+      isAnswered: boolean;
+    }> => {
+      const isAnswered = before ? await before : false;
+      if (!isStillForCard(message)) return { delivery: "replaced", isAnswered };
+      if (isAnswered) return { delivery: "answered", isAnswered };
+      const delivery = await answerCard(
+        channel.threadId,
+        call,
+        typedAnswer(message.text),
+      );
+      return { delivery, isAnswered: delivery === "taken" };
+    })();
+    flights.set(
+      question,
+      flight.then((offered) => offered.isAnswered),
     );
-    rests.current.flights.set(message.id, flight);
-    const delivery = await flight;
-    rests.current.flights.delete(message.id);
+    const { delivery } = await flight;
     const { timers, isGone } = rests.current;
-    if (isGone) return;
+    if (isGone || delivery === "replaced") return;
+    if (delivery === "answered") {
+      putOffer(message.id, { at: "answered", tries });
+      return;
+    }
     // Taken: the conversation is about to show them as the card's answer, which is what forgets
     // them — and if the turn is stopped before that is filed, they are still here to go.
     if (delivery === "taken") {
@@ -655,17 +698,6 @@ export function ServerChannelChat({
         kept.answerTo === openChoice &&
         (kept.askedBy === undefined || kept.askedBy === askedBy),
     );
-    /*
-     * BUT NOT WHILE THE FIRST IS STILL ON ITS WAY TO THE DOOR. The two went out together, and the
-     * server takes whichever reaches it first: the first could win, and the one meant to take its
-     * place was refused, then sent after the turn as a message of its own — both said, in two
-     * turns, the second unasked (review, tenth round). It waits for the first's answer: not taken,
-     * and it goes to the card in its place; taken, and nothing can take that back — it is what the
-     * person says next, kept for after the turn as words like any other.
-     */
-    const first = replaced
-      .map((kept) => rests.current.flights.get(kept.id))
-      .find((flight) => flight !== undefined);
     forgetUnsent(
       channel.id,
       replaced.map((kept) => kept.id),
@@ -680,28 +712,11 @@ export function ServerChannelChat({
       answerTo: openChoice,
       ...(askedBy ? { askedBy } : {}),
     };
-    // Its offer first: nothing that reads the outbox finds these words without one.
+    // Its offer first: nothing that reads the outbox finds these words without one. It waits
+    // behind any offer to the same question still out (`offer`).
     putOffer(message.id, { at: "out", tries: 0 });
     keepUnsent(channel.id, message);
-    if (!first) {
-      void offer(message, 0);
-      return;
-    }
-    void first.then((delivery) => {
-      if (rests.current.isGone) return;
-      if (delivery !== "taken") {
-        void offer(message, 0);
-        return;
-      }
-      const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
-      keepUnsent(channel.id, plain);
-      setOffers((held) => {
-        if (!held.has(message.id)) return held;
-        const next = new Map(held);
-        next.delete(message.id);
-        return next;
-      });
-    });
+    void offer(message, 0);
   };
   const offerNow = useEffectEvent((message: UnsentMessage, tries: number) =>
     offer(message, tries),
@@ -737,8 +752,8 @@ export function ServerChannelChat({
       { call, in: message.askedBy },
       () => rests.current.isGone,
     );
-    if (!record) return;
     confirming.current.delete(id);
+    if (!record) return;
     setRecords((held) => new Map(held).set(id, record));
   });
 
@@ -828,6 +843,13 @@ export function ServerChannelChat({
       const offer = offers.get(message.id);
       // The door is being asked: what it says comes first.
       if (offer?.at === "out") continue;
+      // Another answer reached the card first: words like any other, said next (`offer`).
+      if (offer?.at === "answered") {
+        const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
+        keepUnsent(channel.id, plain);
+        isFreed = true;
+        continue;
+      }
       // The conversation as it is held — and the record as it was read for this question, where
       // it has been (`records`): either may be the one that shows what became of it.
       const record = records.get(message.id) ?? [];

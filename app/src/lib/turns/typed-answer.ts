@@ -79,10 +79,15 @@ export function openChoiceCall(
  *  - `out`: the door is being asked now;
  *  - `taken`: the door took them, and the conversation is about to show them as the card's answer;
  *  - `resting`: the door did not take them, or nothing came back — offered again after a wait;
- *  - `due`: that wait is over, or the connection came back.
+ *  - `due`: that wait is over, or the connection came back;
+ *  - `answered`: another answer to the same question reached the card first — these are what the
+ *    person says next, no longer the card's (the settling lets go of the mark).
  * `tries` is how many offers the door has not taken, which the wait is counted from.
  */
-export type Offer = { at: "out" | "taken" | "resting" | "due"; tries: number };
+export type Offer = {
+  at: "out" | "taken" | "resting" | "due" | "answered";
+  tries: number;
+};
 
 /**
  * Whether the card itself shows words kept for it (`useAnswerOnItsWay`), rather than the list of
@@ -100,6 +105,7 @@ export type Offer = { at: "out" | "taken" | "resting" | "due"; tries: number };
  * to the end each time they came back.
  */
 export function isShownOnCard(offer: Offer | undefined): boolean {
+  if (offer?.at === "answered") return false;
   return offer === undefined || offer.at === "taken" || offer.tries === 0;
 }
 
