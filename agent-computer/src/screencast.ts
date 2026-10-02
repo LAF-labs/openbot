@@ -44,6 +44,8 @@ export type InputMessage =
       key: string;
       code: string;
       text?: string;
+      /** What the person's own browser called the key (`event.keyCode`). See {@link keyEventOf}. */
+      windowsVirtualKeyCode?: number;
       modifiers?: number;
     }
   | { type: "text"; text: string };
@@ -79,12 +81,11 @@ export function siteOf(address: string): string | null {
 }
 
 /**
- * Chrome's virtual key codes, for the keys that need one.
+ * Chrome's virtual key codes, for the keys that are named rather than written.
  *
- * `Input.dispatchKeyEvent` is not satisfied by `key` alone. A form field will ignore a bare Backspace
- * or Enter unless `windowsVirtualKeyCode` is set, which is the common reason a hand-written
- * screencast works for letters but not editing keys. Lifted from the mapping DevTools uses for the
- * same purpose.
+ * `Input.dispatchKeyEvent` is not satisfied by `key` alone: a form field ignores a bare Backspace
+ * unless `windowsVirtualKeyCode` is set, which is the common reason a hand-written screencast works
+ * for letters but not editing keys. Lifted from the mapping DevTools uses for the same purpose.
  */
 const VIRTUAL_KEY_CODES: Record<string, number> = {
   Backspace: 8,
@@ -106,13 +107,84 @@ const VIRTUAL_KEY_CODES: Record<string, number> = {
   Delete: 46,
 };
 
-function virtualKeyCode(key: string): number {
-  if (VIRTUAL_KEY_CODES[key] !== undefined) return VIRTUAL_KEY_CODES[key];
-  // A single printable character carries its own code point, upper-cased, which is what Chrome expects
-  // for a key event as opposed to the text it produces.
-  if (key.length === 1) return key.toUpperCase().charCodeAt(0);
-  return 0;
+/**
+ * The key each written symbol sits on, on the keyboard Chrome's codes describe — its own symbol and
+ * the one Shift makes of it.
+ *
+ * A SYMBOL'S CODE POINT IS SOMEBODY ELSE'S KEY. Until 2026-10-02 every one-character key was sent as
+ * its upper-cased code point, which is right for a letter and a digit and for nothing else: `.` is
+ * 46, which is Delete; `'` is 39, the right arrow; and `# $ % & (` are 35 to 40 — End, Home and the
+ * arrows — arriving with Shift held, which is how a person selects. Measured against Chromium 151,
+ * typing into a text box: `kim.lee@naver.com` arrived as `kimlee@navercom`,
+ * `https://www.hometax.go.kr/` as `https://wwwhometaxgokr/`, and `Pa$$w0rd!` as `w0rd!` — each `$`
+ * selected everything before it and the next letter replaced it, in a box that shows dots. Found by
+ * reading upstream OpenBot's fix for the unshifted half (#422); the shifted half is this table's.
+ */
+const SYMBOL_KEY_CODES: Record<string, number> = {
+  ")": 48,
+  "!": 49,
+  "@": 50,
+  "#": 51,
+  $: 52,
+  "%": 53,
+  "^": 54,
+  "&": 55,
+  "*": 56,
+  "(": 57,
+  ";": 186,
+  ":": 186,
+  "=": 187,
+  "+": 187,
+  ",": 188,
+  "<": 188,
+  "-": 189,
+  _: 189,
+  ".": 190,
+  ">": 190,
+  "/": 191,
+  "?": 191,
+  "`": 192,
+  "~": 192,
+  "[": 219,
+  "{": 219,
+  "\\": 220,
+  "|": 220,
+  "]": 221,
+  "}": 221,
+  "'": 222,
+  '"': 222,
+};
+
+/**
+ * A table's own entry. What names a key came over a socket, and `constructor` and `toString` are
+ * entries of every object and keys of no keyboard.
+ */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
 }
+
+/** The code for a key the surface only named. Nothing for a character that is on no such key. */
+function virtualKeyCode(key: string): number {
+  const named = own(VIRTUAL_KEY_CODES, key) ?? own(SYMBOL_KEY_CODES, key);
+  if (named !== undefined) return named;
+  // A letter or a digit is its own code, upper-cased. Anything else written — `é`, `м` — has no
+  // code of its own, and one made up from its code point is another key's or none at all.
+  return /^[a-z0-9]$/i.test(key) ? key.toUpperCase().charCodeAt(0) : 0;
+}
+
+/**
+ * What a named key must carry for a page to act on it, which the surface does not send because it
+ * is not a character anybody wrote.
+ *
+ * ENTER, UNTIL 2026-10-02, WAS HEARD AND NOT ACTED ON. A key with no text goes to Chrome as a
+ * `rawKeyDown`, and a raw key down never becomes the `keypress` a form is sent on or a line is
+ * broken by. Measured against Chromium 151: Enter in a form's text box sent the form 0 times, and
+ * in a `<textarea>` left `first` as `first` — a person driving could type a search and not run it.
+ * With a carriage return, which is what a keyboard's Enter carries, the form is sent once and the
+ * line breaks, and a page that decides Enter for itself on `keydown` still does. Upstream OpenBot's
+ * #477.
+ */
+const TEXT_FOR_KEY: Record<string, string> = { Enter: "\r" };
 
 type MouseMessage = Extract<InputMessage, { type: "mouse" }>;
 type KeyMessage = Extract<InputMessage, { type: "key" }>;
@@ -147,9 +219,64 @@ export function mouseEventOf(message: MouseMessage) {
   };
 }
 
-/** One key message as `Input.dispatchKeyEvent` takes it. */
-function keyEventOf(message: KeyMessage) {
-  const code = virtualKeyCode(message.key);
+/** CDP's modifier bits, as the surface sends them: Alt 1, Control 2, Meta 4, Shift 8. */
+const ALT = 1;
+const CONTROL = 2;
+const META = 4;
+
+/**
+ * ⌘ IS CONTROL TO THE BOT'S BROWSER.
+ *
+ * The Bot's browser is Chromium on Linux, where the key that selects all, takes back and copies is
+ * Control. A person at a Mac presses ⌘, which arrives here as Meta — a key Linux has no shortcuts
+ * under, so the letter pressed with it was simply typed. Measured 2026-10-02 in this image's
+ * Chromium 151, on a box holding `abcd`: ⌘A left `abcda`, ⌘Z `abcdz`, ⌘X `abcdax`. Sent as Control,
+ * the same keys select everything, take the last change back, put it back and cut it (measured, same
+ * browser).
+ *
+ * Not where this service runs on a Mac — a developer running it from source — whose Chrome keeps ⌘
+ * for itself and takes no shortcut by key event at all.
+ *
+ * Keys only. A click made with ⌘ held stays a plain click: Control would open the link in a tab
+ * behind the picture, which is a tab the person cannot see.
+ */
+const META_IS_CONTROL = process.platform !== "darwin";
+
+/**
+ * One key message as `Input.dispatchKeyEvent` takes it.
+ *
+ * THE CODE THE PERSON'S OWN BROWSER GAVE THE KEY COMES FIRST. It is the one a page on their own
+ * computer would have been told, on whatever keyboard they have. The tables above are for a surface
+ * that did not say — one loaded before it learned to — and for a number that is no key's: Chrome's
+ * codes end at 255, and 229 is an input method's, never a key.
+ *
+ * A SHORTCUT WRITES NOTHING. A browser makes no `keypress` for a letter pressed under ⌘ or Control,
+ * and the surface sends the letter as text all the same; passed on, it is what typed the `a` above.
+ * Control with Alt is not a shortcut: on a Windows keyboard that is AltGr, which writes.
+ */
+export function keyEventOf(
+  message: KeyMessage,
+  metaIsControl = META_IS_CONTROL,
+) {
+  const held = message.modifiers ?? 0;
+  const isShortcut =
+    (held & META) !== 0 || ((held & CONTROL) !== 0 && (held & ALT) === 0);
+  const isCommandKey = metaIsControl && message.key === "Meta";
+  const offered = isCommandKey ? 17 : message.windowsVirtualKeyCode;
+  const code =
+    typeof offered === "number" &&
+    Number.isInteger(offered) &&
+    offered > 0 &&
+    offered <= 255 &&
+    offered !== 229
+      ? offered
+      : virtualKeyCode(message.key);
+  // Only on the way down, which is where a page acts. A key going up carries what it was given.
+  const text =
+    message.event === "up"
+      ? message.text
+      : ((isShortcut ? undefined : message.text) ??
+        own(TEXT_FOR_KEY, message.key));
   return {
     // `keyDown` only when there is text to insert; otherwise `rawKeyDown`, which is what Chrome
     // expects for keys that do not produce a character. Sending keyDown with no text makes
@@ -157,15 +284,17 @@ function keyEventOf(message: KeyMessage) {
     type:
       message.event === "up"
         ? ("keyUp" as const)
-        : message.text
+        : text
           ? ("keyDown" as const)
           : ("rawKeyDown" as const),
-    key: message.key,
-    code: message.code,
-    ...(message.text ? { text: message.text } : {}),
+    key: isCommandKey ? "Control" : message.key,
+    code: isCommandKey
+      ? message.code.replace(/^Meta/, "Control")
+      : message.code,
+    ...(text ? { text } : {}),
     windowsVirtualKeyCode: code,
     nativeVirtualKeyCode: code,
-    modifiers: message.modifiers ?? 0,
+    modifiers: metaIsControl && held & META ? (held & ~META) | CONTROL : held,
   };
 }
 
@@ -175,7 +304,10 @@ function keyEventOf(message: KeyMessage) {
  */
 export type HeldInput = {
   buttons: Map<HeldButton, { x: number; y: number }>;
-  keys: Map<string, { key: string; code: string }>;
+  keys: Map<
+    string,
+    { key: string; code: string; windowsVirtualKeyCode?: number }
+  >;
 };
 
 /** What one message changes about what is held. Applied after Chrome has taken the message. */
@@ -194,7 +326,14 @@ export function holdAfter(held: HeldInput, message: InputMessage): void {
     // By code, so a Shift that turned `a` into `A` between down and up is still the same key.
     const id = message.code || message.key;
     if (message.event === "down") {
-      held.keys.set(id, { key: message.key, code: message.code });
+      held.keys.set(id, {
+        key: message.key,
+        code: message.code,
+        // Kept, so that the key which comes up is the one that went down.
+        ...(message.windowsVirtualKeyCode === undefined
+          ? {}
+          : { windowsVirtualKeyCode: message.windowsVirtualKeyCode }),
+      });
     } else {
       held.keys.delete(id);
     }

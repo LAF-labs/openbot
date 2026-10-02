@@ -36,6 +36,7 @@
   "agent-computer/tests/shared-profile.test.ts",
   "agent-computer/tests/takeover-secret.test.ts",
   "agent-computer/tests/thumbnail-cast.test.ts",
+  "agent-computer/tests/typed-keys.test.ts",
   "agent-computer/tests/typed-values.test.ts",
   "agent-computer/tests/whereabouts.test.ts",
   "agent-computer/tests/workspace.test.ts",

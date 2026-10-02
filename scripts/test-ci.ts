@@ -736,14 +736,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * read rather than called nothing (`mcp-result.test.ts`, the first tests `resultText` has had), and
  * a Drive shortcut is followed to its file, once.
  *
+ * RAISED 2026-10-02 with the take-over keyboard, each by exactly what was added: twenty-three to
+ * `agent-computer` (every written character arriving as its own key and no other — a full stop was
+ * Delete and `$` Shift+Home; Enter sending a form and breaking a line; ⌘ as Control and a shortcut
+ * writing nothing; against Chromium itself, two of them only where it is the Bot's own) and ten to
+ * `app` (the number this browser gives a key, sent with it; ⌘V left to the browser that has the
+ * clipboard; text that arrives with no key sent on and not kept; the Enter that accepts a Korean
+ * syllable not saving a line of 수첩).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3357, roots: ["server"] },
-  { name: "app", floor: 1585, roots: ["app"] },
-  { name: "agent-computer", floor: 351, roots: ["agent-computer"] },
+  { name: "app", floor: 1595, roots: ["app"] },
+  { name: "agent-computer", floor: 374, roots: ["agent-computer"] },
   { name: "root", floor: 578, roots: ["tests", "agent-bot"] },
 ] as const;
 

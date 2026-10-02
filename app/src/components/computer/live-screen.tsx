@@ -59,6 +59,38 @@ function modifierBits(event: {
   );
 }
 
+/**
+ * The letter a keystroke names, the way a shortcut is spelled.
+ *
+ * `key` first, because it follows the layout: on Dvorak the V of ⌘V is the key that writes a v,
+ * wherever it sits. A layout that writes another script has no such key — Control and the V key say
+ * `ㅍ` on a Korean keyboard and `м` on a Russian one, and `Process` while a syllable is being
+ * written — and there the physical key in `code` is the only V there is. (Upstream OpenBot's
+ * `keyOf`, #596, and the input method's case, which is ours.)
+ */
+function letterOf(event: { key: string; code: string }): string {
+  const written = event.key.toLowerCase();
+  if (written.length === 1 && written.charCodeAt(0) < 0x80) return written;
+  return /^Key([A-Z])$/.exec(event.code)?.[1]?.toLowerCase() ?? written;
+}
+
+/**
+ * Whether a keystroke is the paste shortcut: ⌘V on a Mac, Control+V elsewhere, with or without
+ * Shift (paste as plain text). Not with Alt — Control and Alt together are AltGr on a Windows
+ * keyboard, which writes a character.
+ */
+function isPasteShortcut(event: {
+  key: string;
+  code: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): boolean {
+  return (
+    (event.ctrlKey || event.metaKey) && !event.altKey && letterOf(event) === "v"
+  );
+}
+
 /** A mouse button a person can hold, as CDP names it. */
 type HeldButton = "left" | "middle" | "right";
 
@@ -167,7 +199,11 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     count: number;
   } | null>(null);
   /** The keys the Bot's page has been told are down: physical code → the key it was sent as. */
-  const heldKeysRef = useRef(new Map<string, string>());
+  const heldKeysRef = useRef(
+    new Map<string, { key: string; keyCode: number }>(),
+  );
+  /** Keys whose keydown was left to this browser — the paste shortcut's V — by physical code. */
+  const localKeysRef = useRef(new Set<string>());
   const [connected, setConnected] = useState(false);
   /**
    * The stream had been showing a picture and then dropped. Drawn under the picture until a picture
@@ -518,9 +554,18 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
 
   /** Every key still down on the Bot's page comes up. */
   const releaseKeys = () => {
-    for (const [code, key] of [...heldKeysRef.current]) {
+    // `held` taken apart inside the loop: the React Compiler leaves the whole screen uncompiled for
+    // a pattern nested in the loop's own header.
+    for (const [code, held] of [...heldKeysRef.current]) {
       heldKeysRef.current.delete(code);
-      send({ type: "key", event: "up", key, code, modifiers: 0 });
+      send({
+        type: "key",
+        event: "up",
+        key: held.key,
+        code,
+        windowsVirtualKeyCode: held.keyCode,
+        modifiers: 0,
+      });
     }
   };
 
@@ -532,9 +577,11 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     if (!driving) return;
     const pressed = pressedRef.current;
     const heldKeys = heldKeysRef.current;
+    const localKeys = localKeysRef.current;
     return () => {
       pressed.clear();
       heldKeys.clear();
+      localKeys.clear();
     };
   }, [driving]);
 
@@ -597,6 +644,23 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     // Escape leaves, and Tab is how somebody gets back out to Hand back.
     if (event.key === "Escape" || event.key === "Tab") return;
     /*
+     * PASTE IS THIS COMPUTER'S, AND THE BROWSER MUST BE LEFT TO DO IT.
+     *
+     * What a person pastes is on their own clipboard, which only their own browser can read — it
+     * hands the text over in a `paste` event, and `handlePaste` sends that on. Until 2026-10-02
+     * the shortcut never got that far: this handler cancelled every keydown, ⌘V among them, so no
+     * `paste` event fired (measured in Chromium 151 and WebKit 26.5: none), and the V went to the
+     * Bot's page with ⌘ held, where it was typed. A code copied out of a message and pasted
+     * arrived as a `v` (measured in the image's Chromium). So the shortcut is left alone — before
+     * the input method's check, since a syllable being written when ⌘V is pressed makes the
+     * keystroke the input method's too — and its keyup is kept here with it. (Upstream OpenBot's
+     * #422.)
+     */
+    if (isPasteShortcut(event)) {
+      localKeysRef.current.add(event.code);
+      return;
+    }
+    /*
      * KOREAN IS NOT TYPED ONE KEY PER LETTER.
      *
      * While the IME is composing, every keystroke arrives here with `key === "Process"` (or
@@ -610,12 +674,22 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       return;
     }
     event.preventDefault();
-    heldKeysRef.current.set(event.code || event.key, event.key);
+    heldKeysRef.current.set(event.code || event.key, {
+      key: event.key,
+      keyCode: event.keyCode,
+    });
     send({
       type: "key",
       event: "down",
       key: event.key,
       code: event.code,
+      /*
+       * WHICH KEY IT WAS, AS THIS BROWSER NUMBERS IT. Chrome is told a key by number, and the
+       * computer used to work the number out from the character — which made `.` Delete and `$`
+       * Shift+Home (`agent-computer/src/screencast.ts`). This browser already knows the number,
+       * on whatever keyboard the person has.
+       */
+      windowsVirtualKeyCode: event.keyCode,
       // Only a printable character carries text. Sending text for Backspace makes Chrome insert a
       // character instead of deleting one.
       ...(event.key.length === 1 ? { text: event.key } : {}),
@@ -624,6 +698,10 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
   };
   const handleKeyUp = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape" || event.key === "Tab") return;
+    // The other half of a key that was kept here: the Bot's page never saw it go down.
+    if (localKeysRef.current.delete(event.code) || isPasteShortcut(event)) {
+      return;
+    }
     if (isImeKey(event)) {
       event.preventDefault();
       return;
@@ -635,21 +713,29 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       event: "up",
       key: event.key,
       code: event.code,
+      windowsVirtualKeyCode: event.keyCode,
       modifiers: modifierBits(event),
     });
     /*
      * macOS never sends the `keyup` of a key let go of while ⌘ was down: ⌘A is `keydown` Meta,
      * `keydown` a, `keyup` Meta, and the `a` stays down as far as any page can tell. So when ⌘ comes
-     * up, everything pressed under it comes up with it.
+     * up, everything pressed under it comes up with it — and a V that was kept here for a paste is
+     * forgotten, or the next v typed would have its keyup taken for that one's.
      */
-    if (event.key === "Meta") releaseKeys();
+    if (event.key === "Meta") {
+      releaseKeys();
+      localKeysRef.current.clear();
+    }
   };
   /**
    * Focus left the keyboard field with keys still down — Tab pressed with Shift held, a click on the
    * app, the window itself losing focus. Their `keyup` will go wherever focus went, so the Bot's
    * page is told now.
    */
-  const handleBlur = () => releaseKeys();
+  const handleBlur = () => {
+    releaseKeys();
+    localKeysRef.current.clear();
+  };
   /** Paste arrives as one block; CDP inserts it as text rather than key events. */
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = event.clipboardData?.getData("text");
@@ -674,6 +760,28 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     event.currentTarget.value = "";
     if (!text) return;
     send({ type: "text", text });
+  };
+  /**
+   * TEXT THAT ARRIVED WITHOUT A KEY.
+   *
+   * An emoji from the system's picker, a dictated sentence, a word a keyboard on glass puts in
+   * whole: the browser writes these into the field with an `input` event — no keydown this pane
+   * could forward, and no composition. Until 2026-10-02 nothing listened for it. Measured on the
+   * real stack: nine characters put in that way never reached the Bot's page, and were still in
+   * this field afterwards, the one place a typed thing must not stay. They go the way a paste
+   * goes, and the field is emptied.
+   *
+   * Not while a syllable is being written, and not for the event that says one was finished:
+   * Safari and Firefox send that after `compositionend`, which has already sent the word.
+   */
+  const handleInput = (event: React.FormEvent<HTMLTextAreaElement>) => {
+    const native = event.nativeEvent as InputEvent;
+    const kind = native.inputType ?? "";
+    if (native.isComposing || /composition/i.test(kind)) return;
+    // What was put in is the event's own text; a drop carries none, and the field then holds it.
+    const text = native.data ?? event.currentTarget.value;
+    event.currentTarget.value = "";
+    if (text && kind.startsWith("insert")) send({ type: "text", text });
   };
 
   return (
@@ -752,6 +860,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
           onBlur={handleBlur}
           onPaste={handlePaste}
           onCompositionEnd={handleCompositionEnd}
+          onInput={handleInput}
           aria-label={t(
             "The Bot's screen. You are doing it yourself: click and type here. Tab leaves, and Escape is the same as I'm done.",
           )}

@@ -127,6 +127,28 @@ describe("what is held, and what lets go of it", () => {
     ]);
   });
 
+  test("a key comes up as the key the person's browser said went down", () => {
+    const held = after([
+      {
+        type: "key",
+        event: "down",
+        key: ".",
+        code: "Period",
+        text: ".",
+        windowsVirtualKeyCode: 190,
+      },
+    ]);
+    expect(releasesOf(held)).toEqual([
+      {
+        type: "key",
+        event: "up",
+        key: ".",
+        code: "Period",
+        windowsVirtualKeyCode: 190,
+      },
+    ]);
+  });
+
   test("a hover, a wheel and a paste hold nothing", () => {
     const held = after([
       { type: "mouse", event: "moved", x: 1, y: 1, button: "none" },

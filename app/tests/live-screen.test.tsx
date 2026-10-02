@@ -396,6 +396,24 @@ describe("a picture that does not come", () => {
  * sends, and when.
  */
 describe("a person's mouse and keys on the live screen", () => {
+  /**
+   * An `input` or a composition event as a browser sends it. happy-dom's own carry neither the
+   * text nor what kind of input it was, so they are put on a plain event, as the pointer's are.
+   */
+  function heard(
+    type: "input" | "compositionend",
+    said: { inputType?: string; isComposing?: boolean; data: string | null },
+  ): Event {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(
+      event,
+      Object.fromEntries(
+        Object.entries(said).map(([name, value]) => [name, { value }]),
+      ),
+    );
+    return event;
+  }
+
   async function driven() {
     const screen = await mountedScreen(true);
     await screen.act(() => sockets[0]?.open());
@@ -455,25 +473,64 @@ describe("a person's mouse and keys on the live screen", () => {
     };
     const key = async (
       type: "keydown" | "keyup",
-      init: { key: string; code: string; metaKey?: boolean },
+      init: {
+        key: string;
+        code: string;
+        /** The number a browser gives the key. happy-dom keeps it; a browser always has one. */
+        keyCode?: number;
+        metaKey?: boolean;
+        ctrlKey?: boolean;
+        shiftKey?: boolean;
+        altKey?: boolean;
+      },
     ) => {
+      const event = new KeyboardEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      } as KeyboardEventInit);
       await screen.act(() => {
-        keyboard.dispatchEvent(
-          new KeyboardEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            ...init,
-          }),
-        );
+        keyboard.dispatchEvent(event);
+      });
+      return event;
+    };
+    /** What the browser hands over when the person pastes: their clipboard's text, in an event. */
+    const paste = async (text: string) => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: { getData: () => text },
+      });
+      await screen.act(() => {
+        keyboard.dispatchEvent(event);
       });
     };
     const sent = () => sockets[0]?.sent ?? [];
+    /** Keys and pasted text only, as `down v` and `text …`. */
+    const typed = () =>
+      sent()
+        .filter((message) => message.type === "key" || message.type === "text")
+        .map((message) =>
+          message.type === "text"
+            ? `text ${message.text}`
+            : `${message.event} ${message.key}`,
+        );
     /** The mouse messages only, as `event button @x`. */
     const mouse = () =>
       sent()
         .filter((message) => message.type === "mouse")
         .map((message) => `${message.event} ${message.button} @${message.x}`);
-    return { screen, canvas, keyboard, captured, pointer, key, sent, mouse };
+    return {
+      screen,
+      canvas,
+      keyboard,
+      captured,
+      pointer,
+      key,
+      paste,
+      sent,
+      typed,
+      mouse,
+    };
   }
 
   test("a pointer passing over the picture is a move with no button held", async () => {
@@ -620,6 +677,230 @@ describe("a person's mouse and keys on the live screen", () => {
       "up Meta",
       "up a",
     ]);
+    await screen.unmount();
+  });
+
+  /*
+   * WHICH KEY IT WAS, AND WHOSE PASTE IT IS — found 2026-10-02 by reading upstream OpenBot's #422
+   * and measuring ours. The computer worked a key's number out from its character, so `.` was
+   * Delete and `$` Shift+Home on the Bot's page (`agent-computer/tests/typed-keys.test.ts` has that
+   * half, against Chrome); and this pane cancelled every keydown, ⌘V among them, so the browser
+   * never made the `paste` event the text is read from.
+   */
+  test("a key is sent with the number this browser gave it, down and up", async () => {
+    const { screen, key, sent } = await driven();
+    await key("keydown", { key: ".", code: "Period", keyCode: 190 });
+    await key("keyup", { key: ".", code: "Period", keyCode: 190 });
+    // Shift+4: what is written is `$`, the key is the 4's.
+    await key("keydown", {
+      key: "$",
+      code: "Digit4",
+      keyCode: 52,
+      shiftKey: true,
+    });
+    expect(sent()).toEqual([
+      {
+        type: "key",
+        event: "down",
+        key: ".",
+        code: "Period",
+        windowsVirtualKeyCode: 190,
+        text: ".",
+        modifiers: 0,
+      },
+      {
+        type: "key",
+        event: "up",
+        key: ".",
+        code: "Period",
+        windowsVirtualKeyCode: 190,
+        modifiers: 0,
+      },
+      {
+        type: "key",
+        event: "down",
+        key: "$",
+        code: "Digit4",
+        windowsVirtualKeyCode: 52,
+        text: "$",
+        modifiers: 8,
+      },
+    ]);
+    await screen.unmount();
+  });
+
+  test("a key let go of for the person comes up as the same key", async () => {
+    const { screen, keyboard, key, sent } = await driven();
+    await key("keydown", { key: "/", code: "Slash", keyCode: 191 });
+    await screen.act(() => {
+      keyboard.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(sent().at(-1)).toEqual({
+      type: "key",
+      event: "up",
+      key: "/",
+      code: "Slash",
+      windowsVirtualKeyCode: 191,
+      modifiers: 0,
+    });
+    await screen.unmount();
+  });
+
+  test("⌘V is left to this browser, and what it pastes is sent as text", async () => {
+    const { screen, key, paste, typed } = await driven();
+    await key("keydown", {
+      key: "Meta",
+      code: "MetaLeft",
+      keyCode: 91,
+      metaKey: true,
+    });
+    const shortcut = await key("keydown", {
+      key: "v",
+      code: "KeyV",
+      keyCode: 86,
+      metaKey: true,
+    });
+    // Not cancelled: cancelling it is what stopped the browser from pasting at all.
+    expect(shortcut.defaultPrevented).toBe(false);
+    await paste("인증번호 482913");
+    await key("keyup", { key: "Meta", code: "MetaLeft", keyCode: 91 });
+    // macOS sends no keyup for a key let go of under ⌘. The next v typed is a whole key.
+    await key("keydown", { key: "v", code: "KeyV", keyCode: 86 });
+    await key("keyup", { key: "v", code: "KeyV", keyCode: 86 });
+    expect(typed()).toEqual([
+      "down Meta",
+      "text 인증번호 482913",
+      "up Meta",
+      "down v",
+      "up v",
+    ]);
+    await screen.unmount();
+  });
+
+  test("Control+V elsewhere: neither half of the V reaches the Bot's page", async () => {
+    const { screen, key, paste, typed } = await driven();
+    await key("keydown", {
+      key: "Control",
+      code: "ControlLeft",
+      keyCode: 17,
+      ctrlKey: true,
+    });
+    const shortcut = await key("keydown", {
+      key: "v",
+      code: "KeyV",
+      keyCode: 86,
+      ctrlKey: true,
+    });
+    expect(shortcut.defaultPrevented).toBe(false);
+    await paste("hello");
+    await key("keyup", { key: "v", code: "KeyV", keyCode: 86, ctrlKey: true });
+    await key("keyup", { key: "Control", code: "ControlLeft", keyCode: 17 });
+    expect(typed()).toEqual(["down Control", "text hello", "up Control"]);
+    await screen.unmount();
+  });
+
+  test("the V of the shortcut is the key that writes one, or the V key where none does", async () => {
+    const { screen, key, typed } = await driven();
+    const left = async (init: Parameters<typeof key>[1]) =>
+      !(await key("keydown", init)).defaultPrevented;
+    // Dvorak: the v is where a QWERTY keyboard has its full stop.
+    expect(await left({ key: "v", code: "Period", metaKey: true })).toBe(true);
+    // A Korean keyboard writing Korean: the V key says ㅍ.
+    expect(await left({ key: "ㅍ", code: "KeyV", ctrlKey: true })).toBe(true);
+    // A syllable being written when the shortcut is pressed: the keystroke is the input method's.
+    expect(
+      await left({ key: "Process", code: "KeyV", keyCode: 229, metaKey: true }),
+    ).toBe(true);
+    // Paste as plain text.
+    expect(
+      await left({ key: "V", code: "KeyV", metaKey: true, shiftKey: true }),
+    ).toBe(true);
+    expect(typed()).toEqual([]);
+
+    // Dvorak again: the key in the V's place writes a k, and ⌘K is not a paste.
+    expect(await left({ key: "k", code: "KeyV", metaKey: true })).toBe(false);
+    // Control and Alt together are AltGr, which writes a character.
+    expect(
+      await left({ key: "v", code: "KeyV", ctrlKey: true, altKey: true }),
+    ).toBe(false);
+    // And a v with nothing held is a v.
+    expect(await left({ key: "v", code: "KeyV" })).toBe(false);
+    expect(typed()).toEqual(["down k", "down v", "down v"]);
+    await screen.unmount();
+  });
+
+  /*
+   * TEXT THAT ARRIVED WITHOUT A KEY — an emoji from the system's picker, a dictated sentence. The
+   * browser writes it into the field with an `input` event, and nothing listened: measured on the
+   * real stack 2026-10-02, nine characters put in that way never reached the Bot's page and were
+   * still in the hidden field afterwards. The composition cases below are Chromium 151's own
+   * sequence, recorded the same day: every `input` of a syllable being written says so, and the
+   * word is sent once, at `compositionend`.
+   */
+  test("text put in with no key is sent as text, and does not stay in the field", async () => {
+    const { screen, keyboard, typed } = await driven();
+    const input = async (
+      said: { inputType: string; data: string | null },
+      holds: string,
+    ) => {
+      keyboard.value = holds;
+      await screen.act(() => {
+        keyboard.dispatchEvent(heard("input", { isComposing: false, ...said }));
+      });
+    };
+    await input({ inputType: "insertText", data: "😀" }, "😀");
+    expect(typed()).toEqual(["text 😀"]);
+    expect(keyboard.value).toBe("");
+    // Dropped text is in the field, not in the event.
+    await input({ inputType: "insertFromDrop", data: null }, "끌어다 놓은 말");
+    expect(typed()).toEqual(["text 😀", "text 끌어다 놓은 말"]);
+    expect(keyboard.value).toBe("");
+    // Something taken out of the field is nothing to send; the field is emptied all the same.
+    await input({ inputType: "deleteContentBackward", data: null }, "left");
+    expect(typed().length).toBe(2);
+    expect(keyboard.value).toBe("");
+    await screen.unmount();
+  });
+
+  test("a syllable being written is not sent letter by letter, nor twice when it is finished", async () => {
+    const { screen, keyboard, typed } = await driven();
+    const fire = async (event: Event, holds?: string) => {
+      if (holds !== undefined) keyboard.value = holds;
+      await screen.act(() => {
+        keyboard.dispatchEvent(event);
+      });
+    };
+    const composing = (data: string) =>
+      heard("input", {
+        inputType: "insertCompositionText",
+        isComposing: true,
+        data,
+      });
+    await fire(composing("ㅎ"), "ㅎ");
+    await fire(composing("하"), "하");
+    await fire(composing("한"), "한");
+    expect(typed()).toEqual([]);
+    // Left alone while it is being written: emptying it here would break the syllable.
+    expect(keyboard.value).toBe("한");
+    await fire(heard("compositionend", { data: "한" }));
+    expect(typed()).toEqual(["text 한"]);
+    expect(keyboard.value).toBe("");
+    // Safari and Firefox report the finished word once more, after `compositionend`.
+    await fire(
+      heard("input", {
+        inputType: "insertFromComposition",
+        isComposing: false,
+        data: "한",
+      }),
+    );
+    await fire(
+      heard("input", {
+        inputType: "insertCompositionText",
+        isComposing: false,
+        data: "한",
+      }),
+    );
+    expect(typed()).toEqual(["text 한"]);
     await screen.unmount();
   });
 
