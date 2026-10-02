@@ -106,7 +106,15 @@ describe("one decision", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.url).toBe("https://openrouter.ai/api/v1/systemone");
     expect(sent[0]?.body.model).toBe(MODEL);
-    const said = log.lines.join("\n");
+    /*
+     * WHAT THE LOG SAID, WITHOUT WHEN IT SAID IT. A line stamped "…T08:22:00.933Z" holds "0.93" as
+     * surely as one that printed the answer, and this failed on exactly that stamp in a gate run
+     * (2026-10-02) with nothing about the answer in the line — about one run in a thousand, on any
+     * tree. The stamp is taken off, and the rest is still searched whole.
+     */
+    const said = log.lines
+      .map((line) => line.replace(/"at":"[^"]*",?/, ""))
+      .join("\n");
     expect(said).toContain("jev_consulted");
     expect(said).not.toContain("secret_state_marker");
     expect(said).not.toContain("비밀 질문");
