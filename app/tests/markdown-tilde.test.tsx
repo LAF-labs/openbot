@@ -93,6 +93,7 @@ const TWO_PAIRS_OF_TONE = [
   "기다릴게요~~. 천천히 하세요~~.",
   "네~~! 알겠습니다~~! 바로 할게요~~!",
   "**네**~~! 알겠습니다~~!",
+  "네~~!\n알겠습니다~~!",
 ];
 
 function drawnAsWritten(sentences: readonly string[]) {
@@ -147,6 +148,32 @@ describe("what was already read right stays so", () => {
   test("what is struck may begin with a full stop, where it does not hang on a word", async () => {
     const reply = await drawn("이제 ~~.env~~ 대신 설정 화면을 써요.");
     expect(reply.struck).toEqual([".env"]);
+  });
+
+  /*
+   * Review, first round. What is struck may begin with punctuation and hang on a Korean word:
+   * `버전~~.old~~`, a comma taken out, `값은~~.5~~`. Putting the tone back for every struck run that
+   * began with punctuation after a word un-struck all of them. A tilde of tone ends a sentence: what
+   * follows its punctuation is a space, and what follows the punctuation of a struck name is the name.
+   */
+  for (const [sentence, struck] of [
+    ["버전~~.old~~ 는 없어요.", ".old"],
+    ["쉼표~~,~~ 를 지워요.", ","],
+    ["값은~~.5~~ 0.7이에요.", ".5"],
+    ["좋아요~~!~~ 그래요.", "!"],
+  ] as const) {
+    test(`what is struck may begin with punctuation right after a word: ${sentence}`, async () => {
+      const reply = await drawn(sentence);
+      expect(reply.struck).toEqual([struck]);
+    });
+  }
+
+  // GFM itself does not open a pair after a letter and before punctuation; only the Korean-friendly
+  // rule does, next to a Korean letter. Drawn here so that nobody takes it for something this broke.
+  test("after a Latin word such a pair was never strikethrough, and is not now", async () => {
+    const reply = await drawn("version~~.old~~ is gone");
+    expect(reply.struck).toEqual([]);
+    expect(reply.words).toBe("version~~.old~~ is gone");
   });
 
   test("tone and a struck price in one sentence are each read as what they are", async () => {
