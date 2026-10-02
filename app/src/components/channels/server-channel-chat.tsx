@@ -77,6 +77,7 @@ import type { ReadLine } from "@/lib/read-line";
 import { routineKeys } from "@/lib/routines/queries";
 import { ServerAnswersProvider } from "@/lib/turns/answers";
 import {
+  type AnswerDelivery,
   answerCard,
   type HistoryPage,
   readHistory,
@@ -581,6 +582,8 @@ export function ServerChannelChat({
   /** The waits of resting offers, by row — and whether the screen is gone, so none starts after it. */
   const rests = useRef({
     timers: new Map<string, ReturnType<typeof setTimeout>>(),
+    /** Requests to the card's door still out, by row: a replacement waits for its first's. */
+    flights: new Map<string, Promise<AnswerDelivery>>(),
     isGone: false,
   });
   useEffect(() => {
@@ -595,11 +598,14 @@ export function ServerChannelChat({
   const offer = async (message: UnsentMessage, tries: number) => {
     const call = message.answerTo;
     if (!call) return;
-    const delivery = await answerCard(
+    const flight = answerCard(
       channel.threadId,
       call,
       typedAnswer(message.text),
     );
+    rests.current.flights.set(message.id, flight);
+    const delivery = await flight;
+    rests.current.flights.delete(message.id);
     const { timers, isGone } = rests.current;
     if (isGone) return;
     // Taken: the conversation is about to show them as the card's answer, which is what forgets
@@ -644,15 +650,25 @@ export function ServerChannelChat({
     const askedBy = askerOf(thread.messages, openChoice);
     // One answer in words per card: a second one takes the first one's place — this card's
     // first, not words kept for an earlier question that carried the same id.
+    const replaced = readUnsent(channel.id).filter(
+      (kept) =>
+        kept.answerTo === openChoice &&
+        (kept.askedBy === undefined || kept.askedBy === askedBy),
+    );
+    /*
+     * BUT NOT WHILE THE FIRST IS STILL ON ITS WAY TO THE DOOR. The two went out together, and the
+     * server takes whichever reaches it first: the first could win, and the one meant to take its
+     * place was refused, then sent after the turn as a message of its own — both said, in two
+     * turns, the second unasked (review, tenth round). It waits for the first's answer: not taken,
+     * and it goes to the card in its place; taken, and nothing can take that back — it is what the
+     * person says next, kept for after the turn as words like any other.
+     */
+    const first = replaced
+      .map((kept) => rests.current.flights.get(kept.id))
+      .find((flight) => flight !== undefined);
     forgetUnsent(
       channel.id,
-      readUnsent(channel.id)
-        .filter(
-          (kept) =>
-            kept.answerTo === openChoice &&
-            (kept.askedBy === undefined || kept.askedBy === askedBy),
-        )
-        .map((kept) => kept.id),
+      replaced.map((kept) => kept.id),
     );
     const message: UnsentMessage = {
       id: crypto.randomUUID(),
@@ -667,7 +683,25 @@ export function ServerChannelChat({
     // Its offer first: nothing that reads the outbox finds these words without one.
     putOffer(message.id, { at: "out", tries: 0 });
     keepUnsent(channel.id, message);
-    void offer(message, 0);
+    if (!first) {
+      void offer(message, 0);
+      return;
+    }
+    void first.then((delivery) => {
+      if (rests.current.isGone) return;
+      if (delivery !== "taken") {
+        void offer(message, 0);
+        return;
+      }
+      const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
+      keepUnsent(channel.id, plain);
+      setOffers((held) => {
+        if (!held.has(message.id)) return held;
+        const next = new Map(held);
+        next.delete(message.id);
+        return next;
+      });
+    });
   };
   const offerNow = useEffectEvent((message: UnsentMessage, tries: number) =>
     offer(message, tries),
