@@ -382,12 +382,13 @@ describe("a question raised while another screen is open", () => {
     expect(waitingRows(view.host)).toHaveLength(0);
   });
 
-  test("with nothing open the shell does not go on asking the server", async () => {
+  test("with nothing open the page does not go on asking the server", async () => {
     const { api, state } = server();
     const view = await mountApp({ path: "/made", api });
-    await view.waitFor(() => state.reads >= 1, "the look on mounting", 6000);
+    // Two reads as the page opens: the shell's look, and the notices' read of what was waiting.
+    await view.waitFor(() => state.reads >= 2, "the reads on opening", 6000);
     await view.settle(300);
-    expect(state.reads).toBe(1);
+    expect(state.reads).toBe(2);
   });
 });
 
@@ -486,23 +487,49 @@ describe("whether the person is interrupted", () => {
     expect(ShownNotice.shown).toHaveLength(0);
   });
 
-  test("and one the outbox's list does not name is said once that list has been read", async () => {
+  /*
+   * Review, seventh round. The outbox's list leaves out a row that has been seen — and pressing a
+   * notice is what marks it seen. So somebody who pressed the notice, did not answer, and came back
+   * to the app was told about the same question a second time: it was open, and nothing named it.
+   */
+  test("one whose notice was already pressed is not news either: the record says it was open", async () => {
     installNotices();
-    const { api, state, releaseTold } = server({ holdTold: true });
-    const asking = question();
-    state.approvals = [asking];
+    const { api, state } = server();
+    // Open on the server's record, and in nobody's list: its row was seen.
+    state.approvals = [question()];
     const view = await mountApp({ path: "/made", api });
     await view.waitFor(
       () => pill(view.host) === "Needs your OK",
       "the pill to say the Bot is waiting",
       6000,
     );
+    await view.settle(250);
+    expect(ShownNotice.shown).toHaveLength(0);
+  });
+
+  test("and one raised after the page opened, which no list names, is said once the first read is in", async () => {
+    installNotices();
+    const { api, state, releaseTold } = server({ holdTold: true });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(() => state.reads >= 1, "the look on mounting", 6000);
+    await view.settle(150);
+    // Raised now, and learnt from the page's own look: no frame reached this page.
+    state.approvals = [question()];
+    await acted(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill to say the Bot is waiting",
+      6000,
+    );
     await view.settle(100);
+    // Not before the first read: until then nothing is known to be news.
     expect(ShownNotice.shown).toHaveLength(0);
     await acted(() => releaseTold());
     await view.waitFor(
       () => ShownNotice.shown.length === 1,
-      "the notice, once the page knows it was not already told",
+      "the notice, once the page knows it was not already waiting",
       4000,
     );
   });
@@ -605,6 +632,46 @@ describe("a question raised while the first read is on its way", () => {
     );
     await view.settle(300);
     // Once: the frame said it, and the question arriving in the store does not say it again.
+    expect(ShownNotice.shown).toHaveLength(1);
+  });
+
+  test("and when the frame arrives while the other half of the first read is still on its way", async () => {
+    installNotices();
+    // The record of open questions is slow: the list has landed, the first read is not finished.
+    const { api, state, releaseTold, releaseApprovals, toldReads } = server({
+      holdTold: true,
+      holdApprovals: true,
+    });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(
+      () => toldReads() >= 1,
+      "the first read to be asked",
+      6000,
+    );
+    await view.settle(120);
+    const asking = question();
+    state.approvals = [asking];
+    const frame = writeRow({
+      id: `n-${asking.id}`,
+      event: "approval.requested",
+      approvalId: asking.id,
+    });
+    await acted(() => releaseTold());
+    await view.settle(200);
+    expect(ShownNotice.shown).toHaveLength(0);
+    await sendFrame(frame);
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice, though the first read is not finished",
+      4000,
+    );
+    await acted(() => releaseApprovals());
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill",
+      6000,
+    );
+    await view.settle(300);
     expect(ShownNotice.shown).toHaveLength(1);
   });
 

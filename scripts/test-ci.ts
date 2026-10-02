@@ -814,14 +814,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a turn the conversation saw end, a conversation that left before it had heard — and one from
  * pressing it, a conversation that has not heard yet).
  *
- * RAISED 2026-10-02 by fifty-one in `app`: a question the Bot stops on, known on every screen —
+ * RAISED 2026-10-02 by fifty-three in `app`: a question the Bot stops on, known on every screen —
  * the shell's watch with the server's record handed to it, one question on two lines and a
  * transcript's own calls (15), the app mounted on a screen that is not the conversation, with what
- * it draws and when it interrupts (22), and the notice's decision with where the card is (14).
- * Twenty-four of them are the review's: a second conversation with the same Bot, the approval's own
+ * it draws and when it interrupts (24), and the notice's decision with where the card is (14).
+ * Twenty-six of them are the review's: a second conversation with the same Bot, the approval's own
  * page, a first read the server did not answer, a frame read before the record, the notices that
  * never reach the store, a frame that arrives before the first read, a request that arrives before
- * the list of conversations, and a row the first read returned whose frame arrives after it.
+ * the list of conversations, a row the first read returned whose frame arrives after it, and a
+ * question whose notice was pressed and not answered.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -829,7 +830,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3418, roots: ["server"] },
-  { name: "app", floor: 1759, roots: ["app"] },
+  { name: "app", floor: 1761, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 608, roots: ["tests", "agent-bot"] },
 ] as const;

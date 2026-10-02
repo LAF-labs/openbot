@@ -112,6 +112,11 @@ globalThis.fetch = stubFetch(async (input) => {
             })),
     });
   }
+  // The other half of what the mount reads: no question was open when the page opened. Without an
+  // answer here the page is never told what was already waiting, and says only the frame.
+  if (url.pathname.startsWith("/api/approvals/")) {
+    return json({ approvals: [] });
+  }
   return json({ error: "laf:not_stubbed" }, 404);
 });
 
