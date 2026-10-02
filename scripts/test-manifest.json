@@ -143,6 +143,7 @@
   "app/tests/live-view.test.tsx",
   "app/tests/made.test.ts",
   "app/tests/markdown-cjk.test.tsx",
+  "app/tests/markdown-tilde.test.tsx",
   "app/tests/markdown-words.test.ts",
   "app/tests/morning-briefing.test.ts",
   "app/tests/my-bots.test.ts",
