@@ -127,6 +127,11 @@ export function turnServer(options: {
   /** While set, a hand-over is kept waiting for its answer: the send is on its way. */
   let doorHold: Promise<void> | null = null;
   let releaseDoor = () => {};
+  /**
+   * How the card's door stands: `down` answers 503 and takes nothing; `lost` takes the answer and
+   * then answers 503 — the reply that never reached the window.
+   */
+  let answersDoor: "up" | "down" | "lost" = "up";
   let stops = 0;
   let held = options.holdStreams === true;
   let turns = 0;
@@ -254,6 +259,7 @@ export function turnServer(options: {
       const toolCallId = decodeURIComponent(
         pathname.slice(`${door}/answers/`.length),
       );
+      if (answersDoor === "down") return new Response("", { status: 503 });
       if (!hub.waiting.includes(toolCallId)) {
         return json(
           { error: "laf:no_longer_waiting", code: "laf:no_longer_waiting" },
@@ -265,6 +271,7 @@ export function turnServer(options: {
         value: (request.body as { value?: unknown } | null)?.value ?? null,
       });
       hub.waiting = hub.waiting.filter((id) => id !== toolCallId);
+      if (answersDoor === "lost") return new Response("", { status: 503 });
       return json({ answered: true });
     }
     if (pathname === `${door}/stop` && method === "POST") {
@@ -385,6 +392,17 @@ export function turnServer(options: {
     },
     /** Every answer a window sent to a waiting card. */
     answers: () => answers,
+    /** The card's door answers 503 and takes nothing, until `answersUp`. */
+    answersDown: () => {
+      answersDoor = "down";
+    },
+    /** The card's door takes the answer and its reply never arrives, until `answersUp`. */
+    loseAnswerReply: () => {
+      answersDoor = "lost";
+    },
+    answersUp: () => {
+      answersDoor = "up";
+    },
     close: () => {
       if (server === onStream) server = null;
     },
