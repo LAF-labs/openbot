@@ -97,6 +97,78 @@ describe("the words", () => {
     expect(copiedText("| 식 |\n| --- |\n| a \\| b |")).toBe("식\na | b");
   });
 
+  /*
+   * Codex, on the pull request, three places where the words did not follow what the renderer
+   * draws.
+   */
+  test("a table whose rule has one hyphen a cell is a table, and a rule of the wrong width is not", () => {
+    expect(copiedText("| A | B |\n| - | - |\n| x | y |")).toBe("A\tB\nx\ty");
+    expect(copiedText("| A | B |\n|:-|-:|\n| x | y |")).toBe("A\tB\nx\ty");
+    // One cell of rule under two of header: the renderer draws text, and so the words are text.
+    expect(copiedText("A | B\n-\nx | y")).toBe("A | B\n-\nx | y");
+  });
+
+  test("a code block closes on a fence like the one that opened it, and on no other", () => {
+    const four = [
+      "````",
+      "a",
+      "```",
+      "c **d**",
+      "```",
+      "````",
+      "끝 **굵게**",
+    ].join("\n");
+    // The inner fences are code: they stay, and nothing between them loses a mark.
+    expect(copiedText(four)).toBe("a\n```\nc **d**\n```\n끝 굵게");
+    const tildes = ["~~~", "x `y`", "```", "~~~", "z"].join("\n");
+    expect(copiedText(tildes)).toBe("x `y`\n```\nz");
+    // A fence still open at the end keeps what was written under it.
+    expect(copiedText("```js\nconst a = `b`;")).toBe("const a = `b`;");
+  });
+
+  test("punctuation the answer escaped is shown, not taken for a mark", () => {
+    expect(copiedText("Use \\*\\* literally")).toBe("Use ** literally");
+    expect(copiedText("가격은 \\_정가\\_ 그대로, \\# 은 번호")).toBe(
+      "가격은 _정가_ 그대로, # 은 번호",
+    );
+    expect(copiedText("\\[대괄호\\] 와 \\`백틱\\`")).toBe("[대괄호] 와 `백틱`");
+    expect(copiedText("**굵게 \\* 별**")).toBe("굵게 * 별");
+    // A backslash before a letter is a backslash.
+    expect(copiedText("C:\\Users\\kim")).toBe("C:\\Users\\kim");
+  });
+
+  /*
+   * Looked for after that review, by reading the pass against what the renderer draws rather than
+   * waiting to be told: the same kind of gap, in the places a model's answer actually reaches.
+   */
+  test("what is inside a code span is code: its stars and underscores are not marks", () => {
+    expect(
+      copiedText("거듭제곱은 `2 ** 3` 이고 이름은 `user_name_id` 예요."),
+    ).toBe("거듭제곱은 2 ** 3 이고 이름은 user_name_id 예요.");
+    expect(copiedText("``a ` b``")).toBe("a ` b");
+    expect(copiedText("| 식 | 뜻 |\n| - | - |\n| `a \\| b` | 또는 |")).toBe(
+      "식\t뜻\na | b\t또는",
+    );
+  });
+
+  test("a heading underlined instead of marked, and one that closes its own marks", () => {
+    expect(copiedText("이번 주 요약\n===\n\n내용이에요.")).toBe(
+      "이번 주 요약\n\n내용이에요.",
+    );
+    expect(copiedText("## 가격 비교 ##\n내용")).toBe("가격 비교\n내용");
+    // A line of equals signs under nothing is a line of equals signs.
+    expect(copiedText("===")).toBe("===");
+  });
+
+  test("an entity is the character it stands for, and a backslash at a line's end is a line break", () => {
+    expect(
+      copiedText(
+        "A &amp; B &lt;3 &gt; C&nbsp;D &quot;따옴표&quot; &#39;작은&#39;",
+      ),
+    ).toBe("A & B <3 > C D \"따옴표\" '작은'");
+    expect(copiedText("첫 줄\\\n둘째 줄")).toBe("첫 줄\n둘째 줄");
+  });
+
   test("a link keeps its address, since a chat box cannot hold one behind a word", () => {
     expect(words).toContain("공지 (https://example.com/notice)를 보세요.");
     expect(copiedText("[https://a.example](https://a.example)")).toBe(
