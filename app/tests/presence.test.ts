@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import {
+  isTurnTold,
   PRESENCE_LABELS,
   type PresenceFacts,
   presenceOf,
   publishTurn,
+  readLeftGoingAt,
   readTurn,
+  startTelling,
+  stopTelling,
+  turnOffScreen,
   turnPhaseOf,
 } from "../src/lib/agents/presence";
 import { ko } from "../src/lib/i18n-ko";
@@ -22,6 +27,7 @@ const QUIET: PresenceFacts = {
   approvals: 0,
   isHelpWanted: false,
   isRoutineRunning: false,
+  isTurnOffScreen: false,
 };
 
 const kind = (facts: Partial<PresenceFacts>) =>
@@ -85,6 +91,86 @@ describe("then the work, most visible first", () => {
       tone: "quiet",
       face: "idle",
     });
+  });
+
+  test("a turn going with no conversation on screen is working — not ready", () => {
+    expect(presenceOf({ ...QUIET, isTurnOffScreen: true })).toMatchObject({
+      kind: "working",
+      label: "Busy working",
+      tone: "active",
+      face: "working",
+    });
+  });
+
+  test("and it is still the last thing asked: a question, help and a routine are said first", () => {
+    expect(kind({ isTurnOffScreen: true, approvals: 1 })).toBe("approval");
+    expect(kind({ isTurnOffScreen: true, isHelpWanted: true })).toBe("help");
+    expect(kind({ isTurnOffScreen: true, isRoutineRunning: true })).toBe(
+      "routine",
+    );
+  });
+});
+
+/**
+ * Measured 2026-10-02 on the running app: a turn was started, 소식 was opened, and for the rest of
+ * the turn the pill and the tray read "쉬는 중" beside a conversation row reading "처리 중…". The
+ * phase was only ever told by a mounted conversation; the turn is the server's and goes on.
+ */
+describe("a turn whose conversation is off this screen", () => {
+  const off = (facts: Partial<Parameters<typeof turnOffScreen>[0]>) =>
+    turnOffScreen({
+      isTold: false,
+      isListed: false,
+      listedAt: 1_000,
+      leftGoingAt: null,
+      ...facts,
+    });
+
+  test("the server's list says it is going", () => {
+    expect(off({ isListed: true })).toBe(true);
+    expect(off({ isListed: false })).toBe(false);
+  });
+
+  test("a conversation on screen is the only word on its own turn", () => {
+    // The list is a poll: it still names the run for a moment after the conversation saw it end.
+    expect(off({ isTold: true, isListed: true })).toBe(false);
+    expect(off({ isTold: true, leftGoingAt: 2_000 })).toBe(false);
+  });
+
+  test("a list read before the conversation left cannot say its turn has ended", () => {
+    // Left at 2,000 with the turn going; the list in hand was read at 1,000 and does not name it.
+    expect(off({ leftGoingAt: 2_000, listedAt: 1_000 })).toBe(true);
+    // Read again after leaving, and it still does not: the turn is over.
+    expect(off({ leftGoingAt: 2_000, listedAt: 2_500 })).toBe(false);
+    // A list never read at all is older than any leaving.
+    expect(off({ leftGoingAt: 2_000, listedAt: 0 })).toBe(true);
+  });
+
+  test("leaving with the turn going is kept, and coming back forgets it", () => {
+    startTelling("bot-c");
+    expect(isTurnTold("bot-c")).toBe(true);
+    stopTelling("bot-c", 5_000);
+    expect(isTurnTold("bot-c")).toBe(false);
+    expect(readLeftGoingAt("bot-c")).toBe(5_000);
+    startTelling("bot-c");
+    expect(readLeftGoingAt("bot-c")).toBeNull();
+    // Leaving with nothing going leaves nothing behind.
+    stopTelling("bot-c", null);
+    expect(readLeftGoingAt("bot-c")).toBeNull();
+    expect(isTurnTold(undefined)).toBe(false);
+  });
+
+  test("two conversations of one Bot: it is told until the last one leaves", () => {
+    startTelling("bot-d");
+    startTelling("bot-d");
+    stopTelling("bot-d", 7_000);
+    expect(isTurnTold("bot-d")).toBe(true);
+    expect(readLeftGoingAt("bot-d")).toBeNull();
+    stopTelling("bot-d", 8_000);
+    expect(isTurnTold("bot-d")).toBe(false);
+    expect(readLeftGoingAt("bot-d")).toBe(8_000);
+    startTelling("bot-d");
+    stopTelling("bot-d", null);
   });
 });
 
