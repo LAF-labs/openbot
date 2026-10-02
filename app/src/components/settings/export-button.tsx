@@ -17,6 +17,14 @@ import { t } from "@/lib/i18n";
  *
  * `aria-disabled` and a class rather than `disabled`: this renders as an `<a>`, and `disabled` on
  * an anchor is an attribute the browser ignores — the link would still navigate.
+ *
+ * `download`, AND IT IS NOT DECORATION. A browser reads the server's `Content-Disposition:
+ * attachment` and saves the file. The installed app's webview does not: without the attribute it
+ * asks only whether it can DRAW the response, and it can draw JSON. Measured in the shell on macOS
+ * 26.6, 2026-10-02: the press replaced the whole app with the export as raw text — in a window
+ * with no back button — and saved nothing. The attribute is what tells a webview, before any
+ * request is made, that this press is a save. The name is still the server's: an empty
+ * `download` leaves it to the header.
  */
 
 /** How long the button stays held after a press. Long enough for the browser to start the save. */
@@ -52,7 +60,7 @@ export const ExportButton = ({
       // native button semantics. It is a link on purpose — see above — so it says so.
       nativeButton={false}
       render={(props) => (
-        <a href="/api/me/export" {...props} onClick={handleExport} />
+        <a download href="/api/me/export" {...props} onClick={handleExport} />
       )}
       variant="outline"
     >

@@ -237,6 +237,11 @@ describe("the Take a copy button", () => {
     await render(createElement(ExportButton, { holdMs: 30 }));
     const link = host.querySelector("a");
     expect(link?.getAttribute("href")).toBe("/api/me/export");
+    // A save, said before the request is made. The installed app's webview does not read the
+    // server's `Content-Disposition`: without this it drew the export over the whole app.
+    expect(link?.hasAttribute("download")).toBe(true);
+    // And no name of its own, so the file is still called what the server calls it.
+    expect(link?.getAttribute("download")).toBe("");
     expect(link?.getAttribute("aria-disabled")).toBe("false");
     const before = host.textContent;
 
