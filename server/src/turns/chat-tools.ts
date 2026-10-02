@@ -43,6 +43,7 @@ import {
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
   galleryReads,
+  isAskable,
   ON_SCREEN,
 } from "../../../shared/tools/gallery";
 import {
@@ -1127,18 +1128,24 @@ export function createChatTools(deps: ChatToolsDeps) {
     ): Promise<LoopOutcome> => {
       const store = deps.components;
       if (!store) return refusal("laf:tool_unknown");
+      /** The trail's row for a card that was not drawn: which card, for whom, and the fact why. */
+      const noteRefusal = async (
+        reason: string,
+        extra: Record<string, unknown>,
+      ) => {
+        if (!deps.auditStore) return;
+        await recordAuditEvent(deps.auditStore, {
+          eventType: extra.function
+            ? "component.function_refused"
+            : "component.refused",
+          targetType: "component",
+          targetId: name,
+          ...(owner.id === DEV_ACTOR.id ? {} : { actorUserId: owner.id }),
+          payload: { actor: owner.id, bot: botId, reason, ...extra },
+        }).catch(() => {});
+      };
       const refuse = async (reason: string, extra: Record<string, unknown>) => {
-        if (deps.auditStore) {
-          await recordAuditEvent(deps.auditStore, {
-            eventType: extra.function
-              ? "component.function_refused"
-              : "component.refused",
-            targetType: "component",
-            targetId: name,
-            ...(owner.id === DEV_ACTOR.id ? {} : { actorUserId: owner.id }),
-            payload: { actor: owner.id, bot: botId, reason, ...extra },
-          }).catch(() => {});
-        }
+        await noteRefusal(reason, extra);
         return reason.startsWith("laf:") ? toolResultText(reason) : reason;
       };
       const decision = await store.decide(name, botId).catch(() => null);
@@ -1160,6 +1167,18 @@ export function createChatTools(deps: ChatToolsDeps) {
         return GALLERY_CONFIRMATIONS[name] ?? ON_SCREEN;
       }
       if (name === CONNECT_CARD) return connectCard(args, call);
+      /*
+       * A QUESTION WITH NOTHING IN IT IS NOT ASKED (`isAskable`). It was drawn and waited on: a
+       * card with no title and no options, for ten minutes. Answered at once instead, as a call
+       * whose arguments do not fit — nothing happened, and the Bot is told to read the card's
+       * definition and call again. An envelope, not `refuse`'s sentence: a sentence is what a call
+       * that worked answers with, and the screen leaves this one out by its code.
+       */
+      if (!isAskable(name, args)) {
+        // The fact alone: what the call held, if anything, is not the trail's to keep.
+        await noteRefusal("laf:tool_arguments_invalid", {});
+        return invalidArguments();
+      }
       /*
        * A QUESTION TO THE PERSON: the card is drawn from the call, and its answer is the result.
        * The window's card answered its own run through CopilotKit; the server waits for the same

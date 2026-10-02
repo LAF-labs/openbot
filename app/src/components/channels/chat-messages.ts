@@ -220,6 +220,25 @@ function isToolResult(
   return message.role === "tool" && "toolCallId" in message;
 }
 
+/** The fact a call is answered with when its arguments do not fit, before anything happens. */
+const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
+
+/** Whether a call's result is the server's refusal of its arguments. */
+function wasRefusedForArguments(result: string | undefined): boolean {
+  if (!result) return false;
+  try {
+    const envelope: unknown = JSON.parse(result);
+    return (
+      envelope !== null &&
+      typeof envelope === "object" &&
+      (envelope as { ok?: unknown }).ok === false &&
+      (envelope as { code?: unknown }).code === ARGUMENTS_INVALID
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function toVisibleChatItems(
   messages: ReadonlyArray<Readonly<Message>>,
   /**
@@ -266,6 +285,18 @@ export function toVisibleChatItems(
         if (
           toolCall.function.name === TOOL_SEARCH &&
           results.has(toolCall.id)
+        ) {
+          continue;
+        }
+        /*
+         * A QUESTION THAT WAS NEVER ASKED IS NOT DRAWN. A question card called with nothing in it
+         * is refused by the server before the turn waits (`isAskable`, `@shared/tools/gallery`),
+         * and the Bot calls again: that one is the card. The refused call drawn too is an empty
+         * frame above it reading 답을 기다려요 — a question nobody can read, that nobody was asked.
+         */
+        if (
+          GALLERY_DECISIONS.has(toolCall.function.name) &&
+          wasRefusedForArguments(results.get(toolCall.id))
         ) {
           continue;
         }

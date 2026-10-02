@@ -51,6 +51,51 @@ export const GALLERY_DECISIONS: ReadonlySet<string> = new Set([
 /** The connect card, by the name its call is made under. */
 export const CONNECT_CARD = "showConnection";
 
+const isSaid = (value: unknown): boolean =>
+  typeof value === "string" && value.trim() !== "";
+
+/**
+ * WHETHER A QUESTION CARD HAS A QUESTION IN IT: something to read and, for a choice, something to
+ * press.
+ *
+ * Pressed on the running app, 2026-10-03. Asked for a choice card, the fleet's model called
+ * `askChoice` with `{}`. The cards stand behind the bridge (`bridge.ts`): a Bot is told their names
+ * and reads a schema when it looks one up, and a call made from what it remembers of an earlier
+ * look can arrive with nothing in it. The turn waited on it all the same — a card with no title
+ * and no options saying 답을 기다려요, for the ten minutes a question may wait, with nothing on it
+ * to say what was being asked.
+ *
+ * THESE CARDS' OWN RULES, NOT THE DECLARED SCHEMA'S. The window declares `options` as required and
+ * the persona question is asked without any — the card draws its four itself — while an empty
+ * list satisfies a schema and can be answered by nobody. An option needs both what comes back
+ * (`id`) and what is read (`label`). An approval needs what is being agreed to (`summary`) as well
+ * as its name: a yes to a title alone is a yes to nothing in particular.
+ *
+ * The connect card is not asked here: what it offers is checked against what this deployment has
+ * (`server/src/turns/chat-tools.ts`, `connectCard`).
+ */
+export function isAskable(
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+): boolean {
+  if (name === "askApproval") return isSaid(args.title) && isSaid(args.summary);
+  if (name !== "askChoice") return true;
+  if (!isSaid(args.title)) return false;
+  if (args.saves === "persona") return true;
+  const options = args.options;
+  return (
+    Array.isArray(options) &&
+    options.length > 0 &&
+    options.every(
+      (option) =>
+        option !== null &&
+        typeof option === "object" &&
+        isSaid((option as { id?: unknown }).id) &&
+        isSaid((option as { label?: unknown }).label),
+    )
+  );
+}
+
 /**
  * How a connect card's wait came out. Facts, as codes; the sentence a Bot reads for each is in
  * `shared/prompt/tool-results.ko.ts`, and the words a person reads are the card's own.
