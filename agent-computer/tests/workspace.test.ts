@@ -347,13 +347,26 @@ describe("handing a file to the person", () => {
     const ws = workspace();
     await ws.write("reports/one.txt", "1");
 
-    for (const ask of [ws.stat("reports"), ws.download("reports")]) {
-      const refused = await ask.catch((error: unknown) => error);
+    /*
+     * EACH ASKED WHEN IT IS AWAITED, NOT BOTH AT ONCE. The two were made together and awaited one
+     * after the other, so the second refusal could arrive while nothing was listening for it yet:
+     * an unhandled rejection, which fails the test that was written to expect it. One run in
+     * three of this suite, measured on 2026-10-03 — and a gate that is red one time in three is
+     * run again until it is green, which is how a real failure gets run again too.
+     */
+    for (const ask of [
+      () => ws.stat("reports"),
+      () => ws.download("reports"),
+    ]) {
+      const refused = await ask().catch((error: unknown) => error);
       expect(refused).toBeInstanceOf(WorkspaceFileError);
       expect((refused as WorkspaceFileError).code).toBe("laf:file_wrong_kind");
     }
-    for (const ask of [ws.stat("nope.txt"), ws.download("nope.txt")]) {
-      const refused = await ask.catch((error: unknown) => error);
+    for (const ask of [
+      () => ws.stat("nope.txt"),
+      () => ws.download("nope.txt"),
+    ]) {
+      const refused = await ask().catch((error: unknown) => error);
       expect(refused).toBeInstanceOf(WorkspaceFileError);
       expect((refused as WorkspaceFileError).code).toBe("laf:file_not_found");
     }

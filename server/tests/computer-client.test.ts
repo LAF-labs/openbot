@@ -1094,11 +1094,13 @@ describe("a file's bytes", () => {
             headers: { "content-type": "application/json" },
           }),
       );
+      // Each asked when it is awaited: two refusals made at once leave the second unheard for
+      // a moment, and an unheard refusal fails a test (`agent-computer/tests/workspace.test.ts`).
       for (const ask of [
-        client.downloadFile("../secrets"),
-        client.statFile("../secrets"),
+        () => client.downloadFile("../secrets"),
+        () => client.statFile("../secrets"),
       ]) {
-        const failure = await ask.then(
+        const failure = await ask().then(
           () => {
             throw new Error("expected the call to fail");
           },
