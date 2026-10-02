@@ -58,6 +58,44 @@ describe("resolving the deployment's proxy", () => {
       server: "proxy.internal:8080",
     });
   });
+
+  test("a bare host:port carrying credentials is split like any other", () => {
+    // The shape above, written the way a proxy is actually handed out. `new URL` reads it as the
+    // scheme `bot:` and a path, so the name and the password came back empty and the password rode
+    // along in `server` (upstream OpenBot #482).
+    const proxy = deploymentEgress({
+      EGRESS_PROXY_DEFAULT: "bot:s3cret@proxy.internal:8080",
+    });
+    expect(proxy).toEqual({
+      server: "proxy.internal:8080",
+      username: "bot",
+      password: "s3cret",
+    });
+  });
+
+  test("a bare host:port with an encoded password decodes it too", () => {
+    const proxy = deploymentEgress({
+      EGRESS_PROXY_DEFAULT: "bot:p%40ss%3Aword@proxy.internal:8080",
+    });
+    expect(proxy?.password).toBe("p@ss:word");
+    expect(proxy?.server).toBe("proxy.internal:8080");
+  });
+
+  test("a name with no password, and a password with no name, are split too", () => {
+    // The second is not a URL to the parser at all — it throws — and used to be handed on whole.
+    expect(
+      deploymentEgress({ EGRESS_PROXY_DEFAULT: "bot@proxy.internal:8080" }),
+    ).toEqual({ server: "proxy.internal:8080", username: "bot" });
+    expect(
+      deploymentEgress({ EGRESS_PROXY_DEFAULT: ":s3cret@proxy.internal:8080" }),
+    ).toEqual({ server: "proxy.internal:8080", password: "s3cret" });
+  });
+
+  test("something that is not addressable at all is still passed through", () => {
+    expect(deploymentEgress({ EGRESS_PROXY_DEFAULT: "::::" })).toEqual({
+      server: "::::",
+    });
+  });
 });
 
 describe("a per-Bot proxy the shared browser cannot honour", () => {
@@ -106,5 +144,35 @@ describe("what gets shown to people", () => {
     expect(
       deploymentEgressLabel({ EGRESS_PROXY_DEFAULT: "proxy.internal:8080" }),
     ).toBe("proxy.internal:8080");
+  });
+
+  test("a bare host:port with credentials labels as the host only", () => {
+    const label = deploymentEgressLabel({
+      EGRESS_PROXY_DEFAULT: "bot:s3cret@proxy.internal:8080",
+    });
+    expect(label).toBe("proxy.internal:8080");
+  });
+
+  test("however the proxy was written, the password is nowhere in what is shown", () => {
+    // Serialised, because that is how it leaves: `/computers` answers with this label on every row
+    // and the admin screen draws it. The last two are what no parser takes — a space, a stray
+    // bracket — and what cannot be split is still not shown from before its `@`.
+    const written = [
+      "http://bot:s3cret@proxy.internal:8080",
+      "socks5://bot:s3cret@proxy.internal:1080",
+      "bot:s3cret@proxy.internal:8080",
+      "bot:s3cret@proxy.internal",
+      ":s3cret@proxy.internal:8080",
+      "bot:s3cret@proxy internal:8080",
+      "bot:s3cret@[proxy.internal:8080",
+    ];
+    const shown = written.map((value) =>
+      JSON.stringify({
+        label: deploymentEgressLabel({ EGRESS_PROXY_DEFAULT: value }),
+      }),
+    );
+    expect(shown.filter((answer) => answer.includes("s3cret"))).toEqual([]);
+    // And each still names somewhere: a label emptied to be safe would say "leaves directly".
+    expect(shown.filter((answer) => !answer.includes("proxy"))).toEqual([]);
   });
 });

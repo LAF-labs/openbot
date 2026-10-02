@@ -50,6 +50,19 @@ export function ignoredEgressVariables(
     .sort();
 }
 
+/** What a proxy written as a bare `host:port` is, to Playwright and to Chromium: an HTTP proxy. */
+const BARE_SCHEME = "http://";
+
+/** The value as a URL, when it is one that names a host. */
+function addressed(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    return url.host ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The proxy the deployment's browser leaves through, or null for direct.
  *
@@ -59,31 +72,39 @@ export function ignoredEgressVariables(
 export function deploymentEgress(
   env: Record<string, string | undefined>,
 ): Egress | null {
-  const raw = env[DEFAULT_VARIABLE];
-  if (!raw?.trim()) return null;
+  const written = env[DEFAULT_VARIABLE]?.trim();
+  if (!written) return null;
 
-  // Credentials commonly arrive inside the URL, which is how proxies are handed out. They are split
-  // out so that the server string this returns can be shown to a person without leaking a password.
-  try {
-    const url = new URL(raw.trim());
-    const username = url.username
-      ? decodeURIComponent(url.username)
-      : undefined;
-    const password = url.password
-      ? decodeURIComponent(url.password)
-      : undefined;
-    url.username = "";
-    url.password = "";
-    return {
-      server: url.toString().replace(/\/$/, ""),
-      ...(username ? { username } : {}),
-      ...(password ? { password } : {}),
-    };
-  } catch {
-    // Not a URL. Passed through as a bare `host:port`, which Playwright also accepts, so an operator
-    // who writes the obvious thing is not told they are wrong.
-    return { server: raw.trim() };
-  }
+  /*
+   * Credentials commonly arrive inside the URL, which is how proxies are handed out. They are split
+   * out so that the server string this returns can be shown to a person without leaking a password.
+   *
+   * A PROXY WRITTEN WITHOUT A SCHEME IS NOT A URL, AND THE PARSER DOES NOT SAY SO.
+   * `bot:s3cret@proxy.internal:8080` is the shape a proxy is handed out in, and `new URL` reads it
+   * as the scheme `bot:` and a path — no host, no name, no password, and a `toString()` that hands
+   * all of it back. Until 2026-10-02 the password stayed in `server`, which is the address the
+   * browser is started on and what the label the admin list draws is made from;
+   * `:s3cret@proxy.internal:8080` does throw, and the catch that stood here passed it on whole.
+   * Latent: compose hands this container no `EGRESS_PROXY_DEFAULT`. So a value that names no host
+   * is read again behind the scheme a bare `host:port` means, and the scheme is taken back off
+   * what is returned. Upstream OpenBot #482.
+   */
+  const asWritten = addressed(written);
+  const url = asWritten ?? addressed(`${BARE_SCHEME}${written}`);
+  // Not addressable either way. Passed through, so an operator who writes the obvious thing is not
+  // told they are wrong; the label below still shows none of it from before an `@`.
+  if (!url) return { server: written };
+
+  const username = url.username ? decodeURIComponent(url.username) : undefined;
+  const password = url.password ? decodeURIComponent(url.password) : undefined;
+  url.username = "";
+  url.password = "";
+  const server = url.toString().replace(/\/$/, "");
+  return {
+    server: asWritten ? server : server.slice(BARE_SCHEME.length),
+    ...(username ? { username } : {}),
+    ...(password ? { password } : {}),
+  };
 }
 
 /**
@@ -98,10 +119,15 @@ export function deploymentEgressLabel(
   const proxy = deploymentEgress(env);
   if (!proxy) return null;
   try {
-    // `||` handles bare `proxy.internal:8080`, which URL parses as a scheme plus path and an empty
-    // host rather than throwing.
-    return new URL(proxy.server).host || proxy.server;
+    const host = new URL(proxy.server).host;
+    if (host) return host;
   } catch {
-    return proxy.server;
+    // Not a URL: shown as it was written, below.
   }
+  /*
+   * A bare `proxy.internal:8080`, which URL parses as a scheme plus a path and an empty host rather
+   * than throwing — and a value nothing could split, a space in the host or a stray bracket. That
+   * one may still have a password in front of its `@`, so nothing before the last `@` is shown.
+   */
+  return proxy.server.slice(proxy.server.lastIndexOf("@") + 1);
 }
