@@ -39,6 +39,7 @@ import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
 import {
+  searchResultText,
   WEATHER_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
 } from "../shared/tools/bridge";
@@ -772,6 +773,7 @@ export const SCENARIOS: Scenario[] = [
   supportProgramsFromThePortal(),
   quickFactFromSearch(),
   answerCutThroughAnEmoji(),
+  searchOnceBehindTheBridge(),
   ...weatherFromTheAgency(),
   ...firstMoveThreads(),
   morningBriefing("monday"),
@@ -1899,6 +1901,141 @@ function answerCutThroughAnEmoji(): Scenario {
           turn.text.replace(/\s/g, "").includes(PLANTED),
         ],
       ]),
+  };
+}
+
+/**
+ * A TOOL THE CONVERSATION ONCE REACHED THROUGH THE BRIDGE IS STILL REACHED NOW THAT IT IS IN THE
+ * SCHEMA (2026-10-02).
+ *
+ * The history a conversation carries is a pattern the model follows. This one, from earlier in its
+ * life, looked the web search up through `tool_search` — it stood behind the bridge then — and the
+ * list has it in the schema now. Measured on the local stack that day: asked a second thing to
+ * search for, the Bot looked the tool up again the way the history shows, the bridge (which knew
+ * only what stands behind it) said no such tool exists, and the Bot opened Naver in its browser
+ * instead — forty seconds for what the search answers in six.
+ *
+ * The bridge now says the tool is already in the list (`alreadyOffered`, `shared/tools/bridge.ts`).
+ * What is held here is the end of it: the search is called, the browser is not opened first, and
+ * the answer is the planted figure.
+ */
+function searchOnceBehindTheBridge(): Scenario {
+  const PLANTED = "13,870";
+  const lookupId = "call_lookup_search";
+  const searchId = "call_search_youtube";
+  const search = REALISTIC_TOOLSET.find(
+    (tool) => tool.name === WEB_SEARCH_TOOL_NAME,
+  );
+  return {
+    id: "search-once-behind-the-bridge",
+    dimension: "tool-calls",
+    messages: [
+      user("요즘 유튜브 프리미엄 한국 가격이 얼마야?"),
+      {
+        id: "a_lookup",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: lookupId,
+            type: "function",
+            function: {
+              name: "tool_search",
+              arguments: JSON.stringify({
+                query: `select:${WEB_SEARCH_TOOL_NAME}`,
+              }),
+            },
+          },
+        ],
+      },
+      {
+        id: "t_lookup",
+        role: "tool",
+        toolCallId: lookupId,
+        // The answer as the bridge gave it while the search stood behind it.
+        content: searchResultText(
+          search ? [search] : [],
+          `select:${WEB_SEARCH_TOOL_NAME}`,
+        ),
+      },
+      {
+        id: "a_search",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: searchId,
+            type: "function",
+            function: {
+              name: WEB_SEARCH_TOOL_NAME,
+              arguments: JSON.stringify({
+                queries: ["유튜브 프리미엄 한국 가격"],
+              }),
+            },
+          },
+        ],
+      },
+      {
+        id: "t_search",
+        role: "tool",
+        toolCallId: searchId,
+        content: JSON.stringify({
+          source: "웹 검색",
+          queries: ["유튜브 프리미엄 한국 가격"],
+          shown: 1,
+          results: [
+            {
+              title: "YouTube Premium 요금제 - YouTube",
+              url: "https://www.youtube.com/intl/ko/premium/pricing",
+              date: "2026-09-20",
+              snippet: "YouTube Premium 개인 요금제는 월 15,730원입니다.",
+            },
+          ],
+        }),
+      },
+      {
+        id: "a_answer",
+        role: "assistant",
+        content: "유튜브 프리미엄 개인 요금제는 월 15,730원이에요.",
+      },
+      user(
+        "그럼 넷플릭스 스탠다드 요금제는 한 달에 얼마야? 그것도 검색해서 알려줘",
+      ),
+    ],
+    tools: [...REALISTIC_TOOLSET],
+    maxTurns: 6,
+    stub: (call) =>
+      call.name === WEB_SEARCH_TOOL_NAME
+        ? JSON.stringify({
+            source: "웹 검색",
+            queries: ["넷플릭스 스탠다드 요금"],
+            shown: 1,
+            results: [
+              {
+                title: "멤버십 및 요금 | 넷플릭스 고객 센터",
+                url: "https://help.netflix.com/ko/node/24926",
+                date: "2026-09-18",
+                snippet: `스탠다드 멤버십은 월 ${PLANTED}원입니다. 광고형 스탠다드와 프리미엄은 요금이 다릅니다.`,
+              },
+            ],
+          })
+        : undefined,
+    check: (turn) => {
+      const acted = turn.calls.filter(
+        (call) => call.name !== "now" && call.name !== "tool_search",
+      );
+      return verdict([
+        ["웹 검색을 부르지 않음", called(turn, WEB_SEARCH_TOOL_NAME)],
+        [
+          "검색보다 브라우저를 먼저 엶 — 다리가 검색 도구가 없다고 답했을 때의 모습",
+          acted[0]?.name === WEB_SEARCH_TOOL_NAME,
+        ],
+        [
+          `검색 결과의 금액(${PLANTED}원)이 답에 없음`,
+          turn.text.replace(/\s/g, "").includes(PLANTED),
+        ],
+      ]);
+    },
   };
 }
 

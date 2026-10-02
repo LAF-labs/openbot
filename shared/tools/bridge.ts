@@ -633,6 +633,75 @@ function schemaLine(tool: WireTool): string {
 }
 
 /**
+ * 다리로 찾았는데 이미 스키마에 실려 있는 툴을 이름으로 푼다 — 정확한 이름, 또는 연결된 서비스의
+ * 이름 모양(`mcp__…`)인 것 가운데 접두사 없는 이름이 딱 하나일 때.
+ */
+export function resolveOffered(
+  offered: readonly WireTool[],
+  name: string,
+): WireTool | null {
+  const wanted = name.trim();
+  if (!wanted) return null;
+  const exact = offered.find((tool) => tool.name === wanted);
+  if (exact) return exact;
+  const bare = offered.filter(
+    (tool) =>
+      tool.name.startsWith(DEFERRED_TOOL_PREFIX) &&
+      bareNameOf(tool.name) === wanted,
+  );
+  return bare.length === 1 ? (bare[0] ?? null) : null;
+}
+
+/**
+ * 찾은 것 가운데 다리 뒤가 아니라 이미 스키마에 있는 툴.
+ *
+ * 다리는 미뤄 둔 툴만 알았고, 그래서 스키마에 실린 툴을 찾으면 "맞는 도구가 없다"고 답했다 — 있는
+ * 것을 없다고 한 것이다. 실측(2026-10-02, muse-spark, 로컬 스택): "KTX 요금 검색해서 알려줘"에 봇이
+ * `tool_search("select:mcp__web-search__search")`를 불렀고(그 툴이 다리 뒤에 있던 때의 대화가
+ * 기록에 남아 있었다), 없다는 답을 받고는 검색을 포기하고 브라우저로 네이버를 열었다. 검색이면
+ * 6초인 답이 40초 걸렸다. 다리는 아무것도 숨기지 않는다는 것이 이 파일의 약속이니, 이미 가진 것을
+ * 물으면 가졌다고, 찾지 말고 바로 부르라고 답한다.
+ *
+ * 이름으로 고른 것(`select:`)은 어떤 핵심 툴이든 받는다 — 이름은 모호하지 않다. 말로 찾은 것은
+ * 연결된 서비스의 이름 모양인 핵심 툴(웹 검색, 날씨)에서만 찾는다: 브라우저나 수첩 툴이 느슨한
+ * 말에 걸려 "이미 있다"고 나오면 그것은 소음이다. 다리 뒤에서 무언가 찾았어도 함께 말한다 —
+ * 지메일이 연결된 봇이 "웹 검색"을 찾으면 다리 뒤에서는 지메일의 메일 검색이 걸리고, 그것만
+ * 돌려주면 봇은 웹을 지메일에서 찾는다.
+ */
+function alreadyOffered(
+  deferred: readonly WireTool[],
+  offered: readonly WireTool[],
+  query: string,
+  selected: string[] | null,
+): WireTool[] {
+  if (offered.length === 0) return [];
+  if (selected) {
+    const listed = selected
+      .filter((name) => resolveDeferred(deferred, name) === null)
+      .map((name) => resolveOffered(offered, name))
+      .filter((tool): tool is WireTool => tool !== null);
+    return [...new Set(listed)];
+  }
+  const serviceShaped = offered.filter((tool) =>
+    tool.name.startsWith(DEFERRED_TOOL_PREFIX),
+  );
+  return searchTools(serviceShaped, query)
+    .map((hit) => serviceShaped.find((tool) => tool.name === hit.name))
+    .filter((tool): tool is WireTool => tool !== undefined);
+}
+
+/** 이미 스키마에 있는 툴을 찾았을 때 모델이 읽는 줄들. 없으면 빈 배열. */
+function offeredLines(listed: readonly WireTool[]): string[] {
+  if (listed.length === 0) return [];
+  return [
+    "이미 목록에 있는 도구다. 찾지 않고, tool_call도 거치지 않고, 그 이름으로 바로 부른다:",
+    ...listed.map((tool) =>
+      hitLine({ name: tool.name, description: oneLine(tool.description) }),
+    ),
+  ];
+}
+
+/**
  * `tool_search`의 답: 맞는 툴의 스키마 전부 — Claude Code의 ToolSearch가 `<functions>`를 돌려주듯.
  * 이 답은 툴 결과로 대화에 남으니, 같은 대화에서 다시 찾을 필요가 없다. 못 찾았을 때는 무엇이
  * 연결돼 있는지를 말한다 — 지어내지 말라고.
@@ -640,6 +709,7 @@ function schemaLine(tool: WireTool): string {
 export function searchResultText(
   deferred: readonly WireTool[],
   query: string,
+  offered: readonly WireTool[] = [],
 ): string {
   const selected = selectedNames(query);
   const found = selected
@@ -649,12 +719,15 @@ export function searchResultText(
     : searchTools(deferred, query)
         .map((hit) => deferred.find((tool) => tool.name === hit.name))
         .filter((tool): tool is WireTool => tool !== undefined);
+  const listed = alreadyOffered(deferred, offered, query, selected);
   if (found.length > 0) {
     return [
       `'${query}'에 맞는 도구 ${found.length}개, 스키마 전부. 이 스키마대로 tool_call로 부른다.`,
       ...found.map(schemaLine),
+      ...offeredLines(listed),
     ].join("\n");
   }
+  if (listed.length > 0) return offeredLines(listed).join("\n");
   /*
    * 다시 찾으라는 말은 연결된 서비스가 있을 때만 한다. 서비스가 없으면 다리 뒤에는 맥락에 이름이
    * 다 적힌 화면 카드뿐이라, 다른 말로 찾아도 같은 빈손이고 한 라운드만 더 든다.
@@ -769,7 +842,13 @@ function unknownToolText(deferred: readonly WireTool[], name: string): string {
 }
 
 export type UnwrappedCall =
-  | { ok: true; name: string; args: Record<string, unknown> }
+  | {
+      ok: true;
+      name: string;
+      args: Record<string, unknown>;
+      /** 다리 뒤가 아니라 이미 스키마에 있는 툴이었다 — 스키마를 받았는지 물을 것이 없다. */
+      offered?: WireTool;
+    }
   | { ok: false; text: string };
 
 /**
@@ -781,6 +860,7 @@ export type UnwrappedCall =
 export function unwrapToolCall(
   deferred: readonly WireTool[],
   args: unknown,
+  offered: readonly WireTool[] = [],
 ): UnwrappedCall {
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return {
@@ -795,7 +875,14 @@ export function unwrapToolCall(
       text: "tool_call에는 name(도구 이름)이 필요하다. tool_search로 먼저 찾는다.",
     };
   }
-  const tool = resolveDeferred(deferred, name);
+  /*
+   * 다리 뒤에 없으면 스키마에 이미 실린 툴인지 본다. 그것을 tool_call로 부른 것은 돌아서 온 것일
+   * 뿐 틀린 호출이 아니다 — 스키마는 요청의 머리에 있고, 실제 이름으로 바꿔 넘기면 직접 부른 것과
+   * 같은 길을 간다. "그런 도구는 없다"고 답하면 있는 것을 없다고 하는 것이다(`alreadyOffered`).
+   */
+  const behind = resolveDeferred(deferred, name);
+  const inSchema = behind ? null : resolveOffered(offered, name);
+  const tool = behind ?? inSchema;
   if (!tool) return { ok: false, text: unknownToolText(deferred, name) };
   /*
    * 객체가 아닌 args는 거절한다. 조용히 `{}`로 바꿔 넘기던 것을 고쳤다(감사 2026-09-10): 모델이
@@ -812,5 +899,10 @@ export function unwrapToolCall(
     }
   }
   const forwarded = (inner ?? {}) as Record<string, unknown>;
-  return { ok: true, name: tool.name, args: forwarded };
+  return {
+    ok: true,
+    name: tool.name,
+    args: forwarded,
+    ...(inSchema ? { offered: inSchema } : {}),
+  };
 }

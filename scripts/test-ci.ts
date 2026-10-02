@@ -777,6 +777,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * it had said the Bot acted on one "not in the current snapshot", and 14 of the fleet's 18 failure
  * signals that week were navigations that had worked.
  *
+ * RAISED 2026-10-02 by eight in `root`: the bridge asked for a tool the Bot already holds — by its
+ * exact name, by a bare one, in words, beside one that is behind the bridge, and called through
+ * `tool_call` — answering that it is in the list, where it used to answer that there was no such
+ * tool and a Bot opened its browser instead (`tests/tool-bridge.test.ts`, the bot's deferral tests).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -785,7 +790,7 @@ const GROUPS = [
   { name: "server", floor: 3411, roots: ["server"] },
   { name: "app", floor: 1601, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
-  { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 602, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

@@ -53,6 +53,11 @@ export type ExposedTools = {
   provider: WireTool[];
   /** The tools behind the bridge, for answering lookups. */
   deferred: WireTool[];
+  /**
+   * The caller's tools that are IN the schema — the core ones — for a lookup that asks for one of
+   * them. `now` and the bridge are this service's own and are not among them.
+   */
+  offered: WireTool[];
   /** Whether the bridge is on this run's list. Off only in the measurement arm. */
   bridged: boolean;
 };
@@ -111,6 +116,7 @@ export function exposeTools(
     return {
       provider: sortedTools([...all, NOW_TOOL]),
       deferred: [],
+      offered: [],
       bridged: false,
     };
   }
@@ -118,6 +124,7 @@ export function exposeTools(
   return {
     provider: sortedTools([...core, NOW_TOOL, ...BRIDGE_TOOLS]),
     deferred,
+    offered: core,
     bridged: true,
   };
 }
@@ -204,6 +211,12 @@ export function answerBridgeCall(
   rawArguments: string,
   deferred: readonly WireTool[],
   described: ReadonlySet<string>,
+  /**
+   * The tools this run was offered in its schema, bridge aside. The bridge knew only what stood
+   * behind it, so asked for one of these it answered that there was no such tool — see
+   * `alreadyOffered` in `shared/tools/bridge.ts` for the turn that cost.
+   */
+  offered: readonly WireTool[] = [],
 ): BridgeAnswer {
   const args = parseArguments(rawArguments);
   const field = (key: string): string => {
@@ -213,13 +226,31 @@ export function answerBridgeCall(
   };
 
   if (name === TOOL_SEARCH) {
-    return { kind: "answer", text: searchResultText(deferred, field("query")) };
+    return {
+      kind: "answer",
+      text: searchResultText(deferred, field("query"), offered),
+    };
   }
   if (name === TOOL_CALL) {
-    const unwrapped = unwrapToolCall(deferred, args);
-    return unwrapped.ok
-      ? settleDeferredCall(unwrapped.name, unwrapped.args, deferred, described)
-      : { kind: "answer", text: unwrapped.text };
+    const unwrapped = unwrapToolCall(deferred, args, offered);
+    if (!unwrapped.ok) return { kind: "answer", text: unwrapped.text };
+    // A tool already in the schema, called the long way round: the real call, as any direct one.
+    if (unwrapped.offered) {
+      return {
+        kind: "forward",
+        name: unwrapped.name,
+        args: coerceStringifiedArguments(
+          unwrapped.offered.parameters,
+          unwrapped.args,
+        ),
+      };
+    }
+    return settleDeferredCall(
+      unwrapped.name,
+      unwrapped.args,
+      deferred,
+      described,
+    );
   }
   return { kind: "answer", text: `${name satisfies never}` };
 }

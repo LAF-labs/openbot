@@ -618,6 +618,71 @@ describe("tool_call", () => {
   });
 });
 
+/*
+ * Measured 2026-10-02 on the local stack: the Bot asked the bridge for the web search — a tool in
+ * its schema — was told there was no such tool, and opened its browser instead: forty seconds for
+ * a six-second question (`alreadyOffered`, `shared/tools/bridge.ts`).
+ */
+describe("a tool in the schema, reached through the bridge", () => {
+  const SEARCH = tool(
+    "mcp__web-search__search",
+    "웹을 검색해 지금의 사실을 찾는다.",
+    { queries: { type: "array" } },
+  );
+
+  test("a lookup for it says it is already there, and the model then calls it by its name", async () => {
+    const { requests, events } = await runFor(
+      [...CORE, SEARCH, ...CONNECTED],
+      [
+        calls([
+          {
+            id: "c1",
+            name: "tool_search",
+            args: { query: "select:mcp__web-search__search" },
+          },
+        ]),
+        calls([
+          {
+            id: "c2",
+            name: "mcp__web-search__search",
+            args: { queries: ["서울 부산 KTX 요금"] },
+          },
+        ]),
+      ],
+    );
+    // The schema carried it all along: it is a core tool, bridge or no bridge.
+    expect(namesOf(requests[0])).toContain("mcp__web-search__search");
+    const answer = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(String(answer?.content)).toContain("이미 목록에 있는 도구다");
+    expect(String(answer?.content)).not.toContain("맞는 도구가 없다");
+    // And the next thing on the wire is the search itself, in its own name.
+    const starts = events.filter((event) => event.type === "TOOL_CALL_START");
+    expect(starts.map((event) => event.toolCallName)).toEqual([
+      "tool_search",
+      "mcp__web-search__search",
+    ]);
+  });
+
+  test("tool_call for it reaches the wire as the real call, with no schema asked for first", () => {
+    const answered = answerBridgeCall(
+      "tool_call",
+      JSON.stringify({
+        name: "mcp__web-search__search",
+        args: { queries: '["서울 부산 KTX 요금"]' },
+      }),
+      CONNECTED,
+      new Set(),
+      [...CORE, SEARCH],
+    );
+    // Forwarded — and the array that arrived as a string is the array the schema says it is.
+    expect(answered).toEqual({
+      kind: "forward",
+      name: "mcp__web-search__search",
+      args: { queries: ["서울 부산 KTX 요금"] },
+    });
+  });
+});
+
 describe("what the bridge leaves alone", () => {
   test("a connected service's tool called by its real name goes through once its schema was seen", async () => {
     const args = { to: "kim@shop.kr", subject: "안녕", body: "…" };

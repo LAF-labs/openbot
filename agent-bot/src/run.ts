@@ -694,6 +694,7 @@ async function runRounds(context: RunContext): Promise<void> {
                 call.arguments,
                 exposed.deferred,
                 described,
+                exposed.offered,
               )
             : answerDeferredCall(
                 call.name,

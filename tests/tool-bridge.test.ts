@@ -9,6 +9,7 @@ import {
   isDeferredToolName,
   oneLine,
   resolveDeferred,
+  resolveOffered,
   SEARCH_LIMIT,
   searchResultText,
   searchTools,
@@ -405,5 +406,133 @@ describe("목표's tools cost the head nothing", () => {
     expect(deferredToolsText(GOAL_TOOLS.map((tool) => tool.name))).toContain(
       "- 목표: mcp__goals__list_goals, mcp__goals__log_progress, mcp__goals__save_goal, mcp__goals__update_goal",
     );
+  });
+});
+
+/*
+ * THE BRIDGE DOES NOT SAY A TOOL IS MISSING WHEN THE BOT IS HOLDING IT.
+ *
+ * Measured 2026-10-02 on the local stack, muse-spark: asked "KTX 요금이랑 걸리는 시간 검색해서
+ * 알려줘", the Bot called `tool_search("select:mcp__web-search__search")` — the search tool had been
+ * behind the bridge earlier in that conversation, and the history said so. It is in the schema now,
+ * and the bridge, which knew only what stands behind it, answered that no such tool exists. The Bot
+ * believed it, gave up on searching and opened Naver in its browser: forty seconds for a question
+ * the search answers in six.
+ */
+describe("a tool already in the schema, asked for through the bridge", () => {
+  const SEARCH = wire(
+    "mcp__web-search__search",
+    "웹을 검색해 지금의 사실을 찾는다 — 뉴스, 가격, 영업시간, 제도와 기한.",
+    { queries: { type: "array" } },
+  );
+  const WEATHER = wire(
+    "mcp__kma-weather__get_weather",
+    "날씨를 기상청 예보로 알려 준다.",
+  );
+  const NAVIGATE = wire("computer_navigate", "네 컴퓨터에서 웹 페이지를 연다.");
+  const OFFERED = [NAVIGATE, WEATHER, SEARCH];
+
+  test("named exactly, it is said to be in the list and to be called by its name", () => {
+    const text = searchResultText(
+      CONNECTED,
+      "select:mcp__web-search__search",
+      OFFERED,
+    );
+    expect(text).toContain("이미 목록에 있는 도구다");
+    expect(text).toContain("바로 부른다");
+    expect(text).toContain("- mcp__web-search__search: 웹을 검색해");
+    // Not the sentence that sent the Bot to its browser.
+    expect(text).not.toContain("맞는 도구가 없다");
+    // And no schema line: the schema is at the head of the request already.
+    expect(text).not.toContain('{"name":');
+  });
+
+  test("beside one that is behind the bridge, each is answered as what it is", () => {
+    const text = searchResultText(
+      CONNECTED,
+      "select:mcp__gmail__send_message,mcp__web-search__search",
+      OFFERED,
+    );
+    expect(text).toContain("맞는 도구 1개, 스키마 전부");
+    expect(text).toContain('{"name":"mcp__gmail__send_message"');
+    expect(text).toContain("이미 목록에 있는 도구다");
+    expect(text).toContain("- mcp__web-search__search:");
+  });
+
+  test("asked for in words, a service-shaped tool is found; a browser tool is not noise", () => {
+    // Behind the bridge "검색" finds Gmail's search of mail. Handed back alone, that sends a Bot
+    // to look for the web in a mailbox: the search it holds is said beside it.
+    const text = searchResultText(CONNECTED, "웹 검색", OFFERED);
+    expect(text).toContain("mcp__gmail__search_messages");
+    expect(text).toContain("이미 목록에 있는 도구다");
+    expect(text).toContain("- mcp__web-search__search:");
+    // With nothing behind the bridge that matches, it is the whole answer.
+    const alone = searchResultText(
+      [wire("showBarChart", "막대 그래프를 띄운다.")],
+      "웹 검색",
+      OFFERED,
+    );
+    expect(alone.startsWith("이미 목록에 있는 도구다")).toBe(true);
+    expect(alone).not.toContain("맞는 도구가 없다");
+    // A phrase about the browser must not come back as "you already have the browser": only the
+    // tools shaped like a connected service are looked through, since those are the ones a Bot
+    // would think to look for behind the bridge.
+    expect(
+      searchResultText(CONNECTED, "웹 페이지 열기", OFFERED),
+    ).not.toContain("computer_navigate");
+    // And a phrase nothing matches, anywhere, is the miss it always was.
+    const miss = searchResultText(CONNECTED, "비행기표 예약", OFFERED);
+    expect(miss).toContain("맞는 도구가 없다");
+    expect(miss).not.toContain("이미 목록에 있는");
+    // What IS behind the bridge still wins, and nothing is added to its answer.
+    const mail = searchResultText(CONNECTED, "메일 보내줘", OFFERED);
+    expect(mail).toContain("mcp__gmail__send_message");
+    expect(mail).not.toContain("이미 목록에 있는");
+  });
+
+  test("a caller that says nothing of what is offered gets the answer it always got", () => {
+    expect(
+      searchResultText(CONNECTED, "select:mcp__web-search__search"),
+    ).toContain("맞는 도구가 없다");
+  });
+
+  test("a bare name is a service-shaped tool's only when one has it", () => {
+    expect(resolveOffered(OFFERED, "search")?.name).toBe(
+      "mcp__web-search__search",
+    );
+    expect(resolveOffered(OFFERED, "computer_navigate")?.name).toBe(
+      "computer_navigate",
+    );
+    expect(resolveOffered(OFFERED, "navigate")).toBeNull();
+    expect(resolveOffered(OFFERED, "  ")).toBeNull();
+    const twice = [
+      ...OFFERED,
+      wire("mcp__naver__search", "네이버에서 찾는다."),
+    ];
+    expect(resolveOffered(twice, "search")).toBeNull();
+  });
+
+  test("called through tool_call, it is the real call and not a tool that does not exist", () => {
+    const call = unwrapToolCall(
+      CONNECTED,
+      { name: "mcp__web-search__search", args: { queries: ["KTX 요금"] } },
+      OFFERED,
+    );
+    expect(call).toEqual({
+      ok: true,
+      name: "mcp__web-search__search",
+      args: { queries: ["KTX 요금"] },
+      offered: SEARCH,
+    });
+    // One behind the bridge is not marked as offered, and an unknown name is still unknown.
+    const behind = unwrapToolCall(
+      CONNECTED,
+      { name: "mcp__gmail__send_message", args: {} },
+      OFFERED,
+    );
+    expect(behind.ok && "offered" in behind).toBe(false);
+    expect(
+      unwrapToolCall(CONNECTED, { name: "mcp__slack__post" }, OFFERED).ok,
+    ).toBe(false);
   });
 });
