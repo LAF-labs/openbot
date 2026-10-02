@@ -1206,6 +1206,29 @@ describe("the record's copy of a row, and the stream's", () => {
   });
 
   /*
+   * Closed while its first page was being read, and opened again before that read answered — the
+   * kept conversation let go of, or forgotten, under a screen still showing it. The read from
+   * before the close passed the check for being closed: its page became the page, and the read the
+   * new opening made was thrown away for coming second.
+   */
+  test("a read made before a close answers to nothing once the store is opened again", async () => {
+    const { store, frame, answer, reads, ids } = manual();
+    void store.open();
+    expect(reads()).toBe(1);
+    store.close();
+    void store.open();
+    expect(reads()).toBe(2);
+    frame(snapshot({ seq: 4 }));
+    // The read from before the close lands first, with the conversation as it stood then.
+    await answer(0, page([asked]));
+    expect(store.snapshot().loaded).toBe(false);
+    // The new opening's own read is the page.
+    await answer(1, page([asked, whole]));
+    expect(store.snapshot().loaded).toBe(true);
+    expect(ids()).toEqual(["u1", "a1"]);
+  });
+
+  /*
    * A screen subscribed to a kept store that was closed under it and opened again — the kept
    * conversation let go of while the screen was coming back to it — went unheard: the store
    * dropped its subscribers when it closed, and went on changing under a screen that no longer

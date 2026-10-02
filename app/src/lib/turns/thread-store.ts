@@ -97,6 +97,16 @@ export function createThreadStore(
   const later = deps.later ?? afterTimeout;
   /** Closed with the room: a read that answers after it must start nothing. */
   let closed = false;
+  /**
+   * WHICH OPENING OF THE STORE THIS IS. A store is closed and opened again under a screen that is
+   * still showing it (`holdThread`), and a read that went out before the close can answer after
+   * the open. It passed the check for `closed`: the first page it brought, read before the close,
+   * became the page, and the read the new opening made was thrown away for coming second (review,
+   * ninth round). A read answers to the opening it went out under (`isGone`), and to no other.
+   */
+  let openings = 0;
+  /** The store was closed, or closed and opened again, since a read made under `opening` went out. */
+  const isGone = (opening: number) => closed || opening !== openings;
   /** The wait before the first page is read again, and the way to call that wait off. */
   let retryMs = RETRY_FIRST_MS;
   let callOff: (() => void) | null = null;
@@ -484,9 +494,10 @@ export function createThreadStore(
     const takenBefore = new Set(taken);
     pageReads += 1;
     const read = pageReads;
+    const opening = openings;
     const page = await deps.readHistory(threadId, null);
     // Closed meanwhile, or another read — a refresh, a restart's — already brought the page.
-    if (closed || state.loaded) return;
+    if (isGone(opening) || state.loaded) return;
     if (page) {
       /*
        * The page, and over it what the stream has brought since it last said how things stand —
@@ -565,9 +576,14 @@ export function createThreadStore(
     snapshotReadsOut += 1;
     pageReads += 1;
     const read = pageReads;
+    const opening = openings;
     const page = await deps.readHistory(threadId, null);
     snapshotReadsOut -= 1;
-    if (closed) return;
+    if (isGone(opening)) {
+      // Whoever waits on this read hears that it is over, and asks again what is due.
+      tellLanded();
+      return;
+    }
     if (page) {
       if (mine === snapshotReads) snapshotRetryMs = RETRY_FIRST_MS;
       /*
@@ -679,14 +695,15 @@ export function createThreadStore(
   /** Ends the wait before the page is read again: its time has come, or the conversation closed. */
   let endRefreshWait: (() => void) | null = null;
   const readAndLay = async (): Promise<void> => {
+    const opening = openings;
     for (;;) {
       await untilLanded();
-      if (closed) return;
+      if (isGone(opening)) return;
       isRefreshReadOut = true;
       pageReads += 1;
       const read = pageReads;
       const page = await deps.readHistory(threadId, null);
-      if (closed) return;
+      if (isGone(opening)) return;
       if (page) {
         refreshRetryMs = RETRY_FIRST_MS;
         // A snapshot arrived while this was out: its read went out after this one, and brings more.
@@ -855,6 +872,7 @@ export function createThreadStore(
     /** The newest page and the stream, together. */
     async open(): Promise<void> {
       closed = false;
+      openings += 1;
       retryMs = RETRY_FIRST_MS;
       /*
        * OPENED AGAIN AFTER A CLOSE, what it holds is from an earlier look: a screen handed back the
@@ -930,13 +948,14 @@ export function createThreadStore(
       if (!state.hasOlder || state.loadingOlder || oldestSeq === null) return;
       set({ ...state, loadingOlder: true });
       const above = oldestSeq;
+      const opening = openings;
       const page = await deps.readHistory(threadId, above);
       /*
        * Unreadable — or the page above rows that are no longer here. What is held was put in place
        * again while this was out (`resync`), or let go from the top (`letGo`): laid over it, this
        * page sat above a stretch nobody holds, and the next one was asked for from above that.
        */
-      if (!page || oldestSeq !== above) {
+      if (!page || isGone(opening) || oldestSeq !== above) {
         set({ ...state, loadingOlder: false });
         return;
       }
