@@ -94,10 +94,15 @@ export function openChannelFrom(pathname: string): string | null {
  * a Bot with one conversation can only mean that one — and a Bot with several is "unknown", which
  * is an answer of its own: the caller that cannot tell must not decide (second round).
  *
- * While the list of conversations has not been read at all, an open conversation is taken as the
- * right one: staying quiet for that moment is the smaller mistake than interrupting somebody who is
- * looking at the card. A list that HAS been read and does not hold the open one is another matter —
- * the compose screen (`/channel/new`), a conversation that is gone — and no card is drawn there.
+ * While the list of conversations has not been read, which Bot the open conversation is with is
+ * not known either, and that too is "unknown" — it used to be taken as "here", which on an account
+ * that kept several Bots silenced one Bot's request for good because another's conversation was on
+ * screen when the page was a moment old (fifth round). A list that HAS been read and does not hold
+ * the open one is another matter — the compose screen (`/channel/new`), a conversation that is gone
+ * — and no card is drawn there.
+ *
+ * "unknown" is never an answer to act on. `useBotNotifications` reads what it takes to know —
+ * `whereIs` — before it decides anything.
  */
 export function cardPlace(input: {
   pathname: string;
@@ -117,7 +122,7 @@ export function cardPlace(input: {
   }
   const open = openChannelFrom(input.pathname);
   if (!open) return "elsewhere";
-  if (!input.channels) return "here";
+  if (!input.channels) return "unknown";
   const channel = input.channels.find((entry) => entry.id === open);
   if (!channel?.agentIds.includes(input.botId)) return "elsewhere";
   if (input.threadId) {
@@ -262,6 +267,70 @@ export function useBotNotifications(): void {
   const seeded = useRef(false);
   const announceOpen = useRef<() => void>(() => {});
 
+  /**
+   * WHETHER THE QUESTION'S CARD IS ON THE SCREEN IN FRONT OF THEM — AFTER READING WHAT IT TAKES TO
+   * KNOW. Null is "there is nothing left to say": the question was answered or ran out meanwhile.
+   *
+   * ONE PLACE, AND IT WAITS. The answer needs the list of conversations (which Bot the open one is
+   * with, and which thread it is) and, for a question, the conversation it was raised in. Each of
+   * those can be missing at the moment a notice is due — the page a moment old, the frame ahead of
+   * the record — and each time one was missing something decided anyway: "not here" raised a
+   * notice at somebody looking at the card, "here" silenced a request for good, "later" lost the
+   * ones that have no card (five rounds of review, one case a round). So nothing decides until the
+   * facts are in, and both paths below ask here.
+   *
+   * What cannot be read is told: an interruption too many, rather than a question missed.
+   */
+  const whereIs = useRef(
+    async (asked: {
+      botId: string;
+      approvalId?: string | undefined;
+      threadId?: string | undefined;
+      /** This tab's own tool call raised it: its card is on the conversation in front of them. */
+      raisedHere?: boolean;
+    }): Promise<boolean | null> => {
+      // A window nobody is looking at is told whatever the place. Nothing to read.
+      if (document.visibilityState !== "visible") return false;
+      let channels = channelsRef.current;
+      if (!channels) {
+        try {
+          channels = await queryClientRef.current.ensureQueryData(
+            channelListQueryOptions(),
+          );
+        } catch {
+          return false;
+        }
+      }
+      const place = (threadId: string | undefined) =>
+        cardPlace({
+          pathname: pathRef.current,
+          botId: asked.botId,
+          approvalId: asked.approvalId,
+          threadId,
+          channels,
+        });
+      const approvalId = asked.approvalId;
+      const first = place(
+        asked.threadId ??
+          (approvalId ? questionThread(asked.botId, approvalId) : undefined),
+      );
+      if (first !== "unknown") return first === "here";
+      /*
+       * One of the Bot's several conversations is open and the question names none. A request for
+       * help or a password has no approval and no card of its own: it is drawn from the Bot's
+       * control state, in whichever of its conversations is open.
+       */
+      if (!approvalId || asked.raisedHere) return true;
+      const approvals = await readApprovals(asked.botId);
+      if (!approvals) return false;
+      const approval = approvals.find((one) => one.id === approvalId);
+      if (!approval || approval.granted !== undefined) return null;
+      const threadId = approval.step?.threadId;
+      // No step is no card on any conversation's line: nothing on screen is asking.
+      return threadId !== undefined && place(threadId) === "here";
+    },
+  );
+
   /** The one place a notice can be raised, so nothing can be raised around the rules. */
   const raise = useRef(
     (
@@ -347,64 +416,70 @@ export function useBotNotifications(): void {
    * it — and the throttle would not catch that, because those questions are seconds apart.
    */
   useEffect(() => {
+    let gone = false;
     const announce = () => {
       if (!seeded.current) return;
       for (const question of openQuestions()) {
         if (announced.current.has(question.approvalId)) continue;
-        const bot = rosterRef.current?.find(
-          (profile) => profile.id === question.botId,
-        );
         announced.current.add(question.approvalId);
-        raise.current(
-          {
-            kind: "needs-you",
-            agentId: question.botId,
-            notify: bot?.notify,
-            hidden: bot?.hidden,
-            visible: document.visibilityState === "visible",
-            /*
-             * A question in the store with no conversation named is one this tab's own tool call
-             * raised: its card is in the conversation in front of them.
-             */
-            cardOnScreen:
-              cardPlace({
-                pathname: pathRef.current,
-                botId: question.botId,
-                approvalId: question.approvalId,
-                threadId:
-                  questionThread(question.botId, question.approvalId) ??
-                  question.threadId,
-                channels: channelsRef.current,
-              }) !== "elsewhere",
-            now: Date.now(),
-          },
-          {
-            title: needsYouTitle(bot?.name ?? question.botId),
-            // Written here, from the facts, like the card the person will land on — a lock screen is
-            // no place to discover that one surface says it differently.
-            body: question.subject
-              ? describeSubject(question.subject)
-              : t("It is waiting on your answer."),
-            tag: `laf-approval:${question.approvalId}`,
-            destination: { kind: "approve", id: question.approvalId },
-          },
-          /*
-           * The full-page view of this one question, which exists so that a notice has somewhere to
-           * land. It used to be an empty function: a notification about the one thing in this
-           * product that is blocked on a person did nothing whatsoever when they clicked it, and
-           * the card it was about was a row somewhere in a transcript they then had to find.
-           */
-          () => {
-            void navigateRef.current({
-              params: { approvalId: question.approvalId },
-              to: "/approve/$approvalId",
-            });
-          },
-        );
+        void whereIs
+          .current({
+            botId: question.botId,
+            approvalId: question.approvalId,
+            threadId:
+              questionThread(question.botId, question.approvalId) ??
+              question.threadId,
+            // In the store with no conversation named: this tab's own call raised it.
+            raisedHere: true,
+          })
+          .then((cardOnScreen) => {
+            if (gone || cardOnScreen === null) return;
+            const bot = rosterRef.current?.find(
+              (profile) => profile.id === question.botId,
+            );
+            raise.current(
+              {
+                kind: "needs-you",
+                agentId: question.botId,
+                notify: bot?.notify,
+                hidden: bot?.hidden,
+                visible: document.visibilityState === "visible",
+                cardOnScreen,
+                now: Date.now(),
+              },
+              {
+                title: needsYouTitle(bot?.name ?? question.botId),
+                // Written here, from the facts, like the card the person will land on — a lock
+                // screen is no place to discover that one surface says it differently.
+                body: question.subject
+                  ? describeSubject(question.subject)
+                  : t("It is waiting on your answer."),
+                tag: `laf-approval:${question.approvalId}`,
+                destination: { kind: "approve", id: question.approvalId },
+              },
+              /*
+               * The full-page view of this one question, which exists so that a notice has
+               * somewhere to land. It used to be an empty function: a notification about the one
+               * thing in this product that is blocked on a person did nothing whatsoever when they
+               * clicked it, and the card it was about was a row somewhere in a transcript they
+               * then had to find.
+               */
+              () => {
+                void navigateRef.current({
+                  params: { approvalId: question.approvalId },
+                  to: "/approve/$approvalId",
+                });
+              },
+            );
+          });
       }
     };
     announceOpen.current = announce;
-    return watchQuestions(announce);
+    const unwatch = watchQuestions(announce);
+    return () => {
+      gone = true;
+      unwatch();
+    };
   }, []);
 
   /*
@@ -536,63 +611,13 @@ export function useBotNotifications(): void {
         say(frame, kind, undefined);
         return;
       }
-      /*
-       * WHERE THE CARD IS, BEFORE ANYTHING IS SAID — AND NOTHING IS LEFT UNSAID FOR WANT OF KNOWING.
-       *
-       * The frame names no conversation; the server's record of the question does. Mostly that does
-       * not matter: a window nobody is looking at is told whatever the place, a screen that is no
-       * conversation draws no card, and a Bot with one conversation can only mean that one. It
-       * matters for a Bot with several conversations, one of them on screen: deciding "not here"
-       * raised a notice at somebody looking straight at the card, and leaving it for the questions
-       * effect lost the ones that never reach the store — a routine's question, which has no step
-       * (review, second and third rounds). So the record is read, here, for that case alone.
-       *
-       * A request for help or a password has no approval and no card of its own: it is drawn from
-       * the Bot's control state, in whichever of its conversations is open.
-       */
-      const place = cardPlace({
-        pathname: pathRef.current,
-        botId: frame.botId,
-        approvalId: frame.approvalId,
-        threadId: frame.approvalId
-          ? questionThread(frame.botId, frame.approvalId)
-          : undefined,
-        channels: channelsRef.current,
-      });
-      const approvalId = frame.approvalId;
-      if (
-        place !== "unknown" ||
-        !approvalId ||
-        document.visibilityState !== "visible"
-      ) {
-        say(frame, kind, place !== "elsewhere");
-        return;
-      }
-      void readApprovals(frame.botId).then((approvals) => {
-        if (stopped) return;
-        // The server could not be asked: an interruption too many, rather than a question missed.
-        if (!approvals) {
-          say(frame, kind, false);
-          return;
-        }
-        const approval = approvals.find((one) => one.id === approvalId);
-        // Answered or run out in the meantime: there is nothing left to say.
-        if (!approval || approval.granted !== undefined) return;
-        const threadId = approval.step?.threadId;
-        say(
-          frame,
-          kind,
-          // No step is no card on any conversation's line: nothing on screen is asking.
-          threadId !== undefined &&
-            cardPlace({
-              pathname: pathRef.current,
-              botId: frame.botId,
-              approvalId,
-              threadId,
-              channels: channelsRef.current,
-            }) === "here",
-        );
-      });
+      // Where its card is, read before anything is said (`whereIs`).
+      void whereIs
+        .current({ botId: frame.botId, approvalId: frame.approvalId })
+        .then((cardOnScreen) => {
+          if (stopped || cardOnScreen === null) return;
+          say(frame, kind, cardOnScreen);
+        });
     };
 
     /*

@@ -147,6 +147,8 @@ function server(
     toldFailures?: number;
     /** The record of open questions is kept on its way until `releaseApprovals`. */
     holdApprovals?: boolean;
+    /** The list of conversations is kept on its way until `releaseChannels`: a page a moment old. */
+    holdChannels?: boolean;
   } = {},
 ) {
   outboxRows = [];
@@ -168,6 +170,10 @@ function server(
   let releaseApprovals = () => {};
   const approvalsHeld = new Promise<void>((resolve) => {
     releaseApprovals = resolve;
+  });
+  let releaseChannels = () => {};
+  const channelsHeld = new Promise<void>((resolve) => {
+    releaseChannels = resolve;
   });
   let toldReads = 0;
   const api = (request: ApiRequest) => {
@@ -197,7 +203,7 @@ function server(
       return options.holdTold ? toldHeld.then(() => told) : told;
     }
     if (request.pathname === "/api/channels") {
-      return json({
+      const list = json({
         channels: [
           {
             id: CHANNEL,
@@ -223,6 +229,7 @@ function server(
             : []),
         ],
       });
+      return options.holdChannels ? channelsHeld.then(() => list) : list;
     }
     if (request.pathname === `/api/approvals/${BOT_ID}`) {
       state.reads += 1;
@@ -238,6 +245,7 @@ function server(
     toldReads: () => toldReads,
     releaseTold: () => releaseTold(),
     releaseApprovals: () => releaseApprovals(),
+    releaseChannels: () => releaseChannels(),
   };
 }
 
@@ -255,23 +263,26 @@ async function outboxFrame(row: {
   id: string;
   event: string;
   approvalId?: string;
+  /** Another of the account's Bots, where it is not the one whose conversation is mounted. */
+  botId?: string;
 }) {
   const { NOTIFICATION_FRAME, notificationFrames } = await import(
     "../src/lib/notifications/outbox"
   );
   outboxClock += 1_000;
   const at = new Date(outboxClock).toISOString();
+  const botId = row.botId ?? BOT_ID;
   outboxRows.push({
     id: row.id,
     kind: row.event,
-    botId: BOT_ID,
+    botId,
     ...(row.approvalId ? { approvalId: row.approvalId } : {}),
     createdAt: at,
   });
   await acted(() => {
     notificationFrames.dispatchEvent(
       new CustomEvent(NOTIFICATION_FRAME, {
-        detail: { kind: "notification", botId: BOT_ID, at, ...row },
+        detail: { kind: "notification", at, ...row, botId },
       }),
     );
   });
@@ -733,6 +744,58 @@ describe("an account that kept two conversations with one Bot", () => {
     // The record no longer holds it: answered in another window, or run out.
     state.approvals = [];
     await outboxSays(asking.id);
+    await view.settle(250);
+    expect(ShownNotice.shown).toHaveLength(0);
+  });
+});
+
+/*
+ * Fifth round. On a page a moment old the list of conversations has not been read, so which Bot the
+ * open conversation is with is not known. That was taken as "the card is here": on an account that
+ * kept several Bots, another Bot's request was marked as said and never said.
+ */
+describe("a request that arrives before the list of conversations has", () => {
+  afterEach(() => removeNotices());
+
+  test("waits for the list, and is said when the open conversation turns out to be another Bot's", async () => {
+    installNotices();
+    const { api, toldReads, releaseChannels } = server({ holdChannels: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => toldReads() >= 1,
+      "the first read of the outbox",
+      6000,
+    );
+    await view.settle(80);
+    await outboxFrame({
+      id: "n-other-bot",
+      event: "run.needs_you",
+      botId: "agent_another-bot",
+    });
+    await view.settle(200);
+    // Nothing decided yet: it is not known whose conversation this is.
+    expect(ShownNotice.shown).toHaveLength(0);
+    await acted(() => releaseChannels());
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice, once the list says this conversation is another Bot's",
+      4000,
+    );
+  });
+
+  test("and is not said when it turns out to be this Bot's own", async () => {
+    installNotices();
+    const { api, toldReads, releaseChannels } = server({ holdChannels: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => toldReads() >= 1,
+      "the first read of the outbox",
+      6000,
+    );
+    await view.settle(80);
+    await outboxFrame({ id: "n-this-bot", event: "run.needs_you" });
+    await view.settle(150);
+    await acted(() => releaseChannels());
     await view.settle(250);
     expect(ShownNotice.shown).toHaveLength(0);
   });

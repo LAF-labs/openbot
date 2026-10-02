@@ -151,11 +151,32 @@ describe("which screens draw a Bot's question", () => {
     expect(place("/approve/appr_1")).toBe("elsewhere");
   });
 
-  test("before the list of conversations has been read, an open conversation is taken as the right one", () => {
+  /*
+   * Fifth round. It used to be taken as "here" — and on an account that kept several Bots, one
+   * Bot's request was silenced for good because another's conversation was open when the page was
+   * a moment old. Which Bot an open conversation is with is not known before the list is.
+   */
+  test("before the list of conversations has been read, where the card is is not known", () => {
     expect(
       cardPlace({
         pathname: "/channel/channel_mine",
         botId: "risk-analyst",
+        channels: undefined,
+      }),
+    ).toBe("unknown");
+    // Except where the list has nothing to say: no conversation is open, or it is the question's own page.
+    expect(
+      cardPlace({
+        pathname: "/feed",
+        botId: "risk-analyst",
+        channels: undefined,
+      }),
+    ).toBe("elsewhere");
+    expect(
+      cardPlace({
+        pathname: "/approve/appr_1",
+        botId: "risk-analyst",
+        approvalId: "appr_1",
         channels: undefined,
       }),
     ).toBe("here");
