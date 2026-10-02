@@ -1,4 +1,14 @@
-import { and, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Database } from "./db/client";
 import { auditEvents } from "./db/schema";
 import { log } from "./log";
@@ -723,11 +733,14 @@ export function createAuditReader(database: Database): AuditReader {
       const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
 
       if (cursor) {
+        // Bound as text and cast by PostgreSQL, never as a `Date`: that would drop the
+        // microseconds the cursor below was built to carry.
+        const createdAt = sql`${cursor.createdAt}::timestamptz`;
         conditions.push(
           or(
-            lt(auditEvents.createdAt, new Date(cursor.createdAt)),
+            lt(auditEvents.createdAt, createdAt),
             and(
-              eq(auditEvents.createdAt, new Date(cursor.createdAt)),
+              eq(auditEvents.createdAt, createdAt),
               lt(auditEvents.id, cursor.id),
             ),
           ),
@@ -735,7 +748,23 @@ export function createAuditReader(database: Database): AuditReader {
       }
 
       const rows = await database
-        .select()
+        .select({
+          ...getTableColumns(auditEvents),
+          /*
+           * The row's own time to the microsecond, as text, for the cursor and nothing else.
+           *
+           * `created_at` is `now()`, which keeps microseconds; the driver hands it back as a
+           * `Date`, which keeps milliseconds. A cursor made from that `Date` named a moment just
+           * BEFORE the row it came from, so the rows the next page should have begun with —
+           * written earlier in the same millisecond, or at the same instant, which is every row
+           * of one transaction — compared as newer than the cursor and were on no page at all.
+           * Measured 2026-10-02: three rows from one transaction, pages of two, and the second
+           * page came back empty. From upstream OpenBot (#586, MIT).
+           *
+           * A cursor handed out before this still reads: a millisecond is a moment too.
+           */
+          cursorCreatedAt: sql<string>`to_char(${auditEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        })
         .from(auditEvents)
         .where(and(...conditions))
         .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
@@ -745,17 +774,14 @@ export function createAuditReader(database: Database): AuditReader {
       const last = page.at(-1);
 
       return {
-        events: page.map((event) => ({
+        events: page.map(({ cursorCreatedAt: _cursorOnly, ...event }) => ({
           ...event,
           createdAt: event.createdAt.toISOString(),
           payload: event.payload as Record<string, unknown>,
         })),
         nextCursor:
           hasNextPage && last
-            ? encodeCursor({
-                id: last.id,
-                createdAt: last.createdAt.toISOString(),
-              })
+            ? encodeCursor({ id: last.id, createdAt: last.cursorCreatedAt })
             : undefined,
       };
     },
