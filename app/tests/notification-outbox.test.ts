@@ -255,7 +255,11 @@ describe("a pause that lands while the routines page is open", () => {
       ),
       "utf8",
     );
-    expect(source).toContain("if (options.raises && routinesChangedBy(rows))");
+    // News is heard in one function now, from a read that raises and from a frame that arrives
+    // before the first read is answered; `question-off-screen.test.tsx` presses the second.
+    expect(source).toContain("if (options.raises) heardOf(rows);");
+    expect(source).toContain("heardOf([frame]);");
+    expect(source).toContain("if (routinesChangedBy(rows)) {");
     expect(source).toContain("queryClientRef.current.invalidateQueries({");
     expect(source).toContain("queryKey: routineKeys.all,");
   });
