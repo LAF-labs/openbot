@@ -14,6 +14,7 @@ import { LEADING_SKILL } from "@/components/channels/composer/draft";
 import {
   claimAutoSend,
   forgetUnsent,
+  isKeptForCard,
   keepUnsent,
   noteResent,
   readSendable,
@@ -275,6 +276,31 @@ export function ChannelChat({
     if (toolsSettled) openToolsGate.current();
   }, [toolsSettled]);
 
+  /**
+   * WORDS A TURN THE SERVER OWNED KEPT FOR A CARD (`answerTo`, `server-channel-chat.tsx`), SETTLED
+   * AGAINST THE CONVERSATION AS THE RECORD HAS IT. A deployment can be switched to turns the window
+   * drives with such words still on the device, and no card of the server's waits on anything
+   * here: forgotten where the record shows their card answered with them, words like any other
+   * where it shows the question over some other way, and the person's to send where it shows
+   * nothing of it (`settleAnswers`).
+   *
+   * ONLY ONCE THE RECORD HAS BEEN READ — by the read that opens the conversation, or a later one
+   * where that failed — and against what was read, not what the window holds of it. It was done
+   * when the gate before the first message opened, and that gate opens whether or not the history
+   * came: settled against a conversation that had not arrived, "no such answer" was said of every
+   * one, and the words were handed to the person as theirs to send — once, for good — though the
+   * record held them as the card's answer (review, fifth round). And what the window holds is not
+   * the record while a run is in flight, which the history is not laid over.
+   */
+  const settleKeptAnswers = useCallback(
+    (record: readonly Message[]) =>
+      settleAnswers(channel.id, {
+        answeredWith: (toolCallId) => answeredInWords(record, toolCallId),
+        isOver: (toolCallId) => hasResult(record, toolCallId),
+      }),
+    [channel.id],
+  );
+
   // Join the gateway socket, restore durable history, then release the first-message gate.
   useEffect(() => {
     if (!isReady) return;
@@ -305,6 +331,7 @@ export function ChannelChat({
             agent.setMessages(merged as typeof agent.messages);
           }
         }
+        if (current && stored) settleKeptAnswers(stored);
       } finally {
         // Release even on join/restore failure; the gate orders messages, not withholds them.
         openJoinGate.current();
@@ -314,7 +341,14 @@ export function ChannelChat({
     return () => {
       current = false;
     };
-  }, [copilotkit, agent, isReady, channel.threadId, runtimeAgentId]);
+  }, [
+    copilotkit,
+    agent,
+    isReady,
+    channel.threadId,
+    runtimeAgentId,
+    settleKeptAnswers,
+  ]);
 
   /*
    * A message that arrived in this room from elsewhere — a routine delivering its answer at seven
@@ -336,14 +370,16 @@ export function ChannelChat({
     if (!stored) return;
     const seen = new Set(agent.messages.map((message) => message.id));
     const missing = stored.filter((message) => !seen.has(message.id));
+    if (missing.length > 0) agent.setMessages([...agent.messages, ...missing]);
+    // Read at last, where the first read of it failed: what waited on it is settled now.
+    settleKeptAnswers(stored);
     if (missing.length === 0) return;
-    agent.setMessages([...agent.messages, ...missing]);
     void refreshTimesRef.current();
     // Read, because it is on the screen in front of them.
     void markRead
       .current({ channelId: channel.id, read: true })
       .catch(() => {});
-  }, [agent, channel.id, channel.threadId, runtimeAgentId]);
+  }, [agent, channel.id, channel.threadId, runtimeAgentId, settleKeptAnswers]);
   const catchUpRef = useRef(catchUp);
   catchUpRef.current = catchUp;
 
@@ -1063,19 +1099,6 @@ export function ChannelChat({
   retryRef.current = retry;
   const resendRef = useRef(resend);
   resendRef.current = resend;
-  /**
-   * Words kept for a card, settled against the conversation as it is held NOW: through a ref like
-   * the two above, since the effect that calls it was set up while the agent was not ready and its
-   * own `agent` holds no messages at all.
-   */
-  const settleKeptAnswers = () =>
-    settleAnswers(channel.id, {
-      answeredWith: (toolCallId) => answeredInWords(agent.messages, toolCallId),
-      isOver: (toolCallId) => hasResult(agent.messages, toolCallId),
-    });
-  const settleRef = useRef(settleKeptAnswers);
-  settleRef.current = settleKeptAnswers;
-
   /*
    * THE CONNECTION CAME BACK: WHAT WAS KEPT GOES, ONCE, BY ITSELF.
    *
@@ -1101,14 +1124,10 @@ export function ChannelChat({
     void joinGatePromise.then(() => {
       if (!current) return;
       /*
-       * WORDS A TURN THE SERVER OWNED KEPT FOR A CARD (`answerTo`, `server-channel-chat.tsx`). A
-       * deployment can be switched to turns the window drives with such words still on the
-       * device, and no card of the server's waits on anything here. Settled once the conversation
-       * is in, and not before — read off a thread that has not arrived, "no such answer" is said
-       * of every one: forgotten where the conversation shows their card answered with them, and
-       * words like any other the device kept where it does not.
+       * Words a turn the server owned kept for a card (`answerTo`) have been settled by now where
+       * the conversation could be read (`settleKeptAnswers`), and are left as they are where it could
+       * not: nothing claims them (`claimAutoSend`).
        */
-      settleRef.current();
       if (isSocketLost() || navigator.onLine === false) return;
       if (readUnsent(channel.id).some((message) => !message.autoTried)) {
         void resendRef.current(true);
@@ -1217,9 +1236,14 @@ export function ChannelChat({
      * What this device kept and the thread does not hold — after a reload, since the server never
      * had it to replay. Drawn where it was typed, at the end, as not sent (`ChatTranscript`), until
      * a send puts it into the thread for real.
+     *
+     * NOT WORDS STILL KEPT FOR A CARD. Until the conversation has been read they are not known to
+     * be unsent — they may be the card's answer — and "보내지 못함 · 다시 보내기" over them is a line
+     * that may be false and a press that sends nothing (`readSendable`). They are drawn once they
+     * are settled (`settleKeptAnswers`): the person's, or words like any other.
      */
     ...unsent
-      .filter((message) => !inThread.has(message.id))
+      .filter((message) => !inThread.has(message.id) && !isKeptForCard(message))
       .map(
         (message): Message => ({
           content: message.text,
