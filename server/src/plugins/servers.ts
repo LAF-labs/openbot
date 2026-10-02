@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
 import {
   credentials as credentialRows,
@@ -1185,12 +1185,59 @@ export function createServers(
         });
       }
 
-      await database.delete(mcpServers).where(eq(mcpServers.id, serverId));
+      /*
+       * THE GRANTS GO WITH THE ROW THEY NAME, in the transaction that removes it.
+       *
+       * A grant is `<server id>/<tool>` and cascades only with the Bot, so it outlived the server:
+       * naming nothing, shown on no screen — the Plugins page reads a server's stranded grants off
+       * the server's own row — and waiting. A custom server's id is the administrator's to choose,
+       * and the next one added under an old id found its same-named tools already granted on
+       * every Bot that held the old ones, with no row saying anybody granted them (measured
+       * 2026-10-02; upstream OpenBot #572, MIT). The two callers that take a connector away
+       * themselves — a partner disconnect, a fleet key withdrawn — revoke first, but only the
+       * tools this build ships and only the Bots they know of; this takes whatever is left.
+       *
+       * Matched the way `mcpGrantsForServers` matches: `split_part`, never a `LIKE` prefix, which
+       * would take `<id>-two/…` along with it.
+       *
+       * One transaction, so a failure cannot leave a server standing with its grants gone.
+       */
+      const released = await database.transaction(async (transaction) => {
+        const removed = await transaction
+          .delete(pluginGrants)
+          .where(
+            and(
+              eq(pluginGrants.kind, "mcp"),
+              eq(sql`split_part(${pluginGrants.ref}, '/', 1)`, serverId),
+            ),
+          )
+          .returning({ ref: pluginGrants.ref, agentId: pluginGrants.agentId });
+        await transaction.delete(mcpServers).where(eq(mcpServers.id, serverId));
+        return removed;
+      });
+
+      // After the commit, like every trail row beside a transaction (`oauth-client.ts`).
       await recordAuditEvent(auditStore, {
         eventType: "configuration.changed",
         targetType: "mcp_server",
         targetId: serverId,
-        payload: { actor: by, change: "mcp_server_removed", server: serverId },
+        payload: {
+          actor: by,
+          change: "mcp_server_removed",
+          server: serverId,
+          // Each of these was granted by a row of its own; without this the trail would go on
+          // saying a Bot holds them.
+          ...(released.length > 0
+            ? {
+                releasedGrants: [
+                  ...new Set(released.map((grant) => grant.ref)),
+                ].sort(),
+                bots: [
+                  ...new Set(released.map((grant) => grant.agentId)),
+                ].sort(),
+              }
+            : {}),
+        },
       });
     },
   };

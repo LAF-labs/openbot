@@ -278,13 +278,38 @@ export function createSkillsAndGrants(context: PluginContext) {
       });
     },
 
+    /**
+     * Remove a skill, and every Bot's grant of it with it.
+     *
+     * A grant is keyed by the slug and cascades only with the Bot, so it outlived the skill — and
+     * a skill written LATER under the same name, by whoever took the name next, was on those Bots
+     * at once: their instructions, offered to a Bot whose owner had granted somebody else's
+     * (measured 2026-10-02; upstream OpenBot #563, MIT). The grants go in the same transaction as
+     * the row, and the trail says which Bots lost one, because each was granted by a row of its
+     * own.
+     */
     async uninstallSkill(slug: string, by: string): Promise<void> {
-      await database.delete(skills).where(eq(skills.slug, slug));
+      const released = await database.transaction(async (transaction) => {
+        const removed = await transaction
+          .delete(pluginGrants)
+          .where(
+            and(eq(pluginGrants.kind, "skill"), eq(pluginGrants.ref, slug)),
+          )
+          .returning({ agentId: pluginGrants.agentId });
+        await transaction.delete(skills).where(eq(skills.slug, slug));
+        return removed.map((grant) => grant.agentId).sort();
+      });
+
       await recordAuditEvent(auditStore, {
         eventType: "configuration.changed",
         targetType: "skill",
         targetId: slug,
-        payload: { actor: by, change: "skill_uninstalled", skill: slug },
+        payload: {
+          actor: by,
+          change: "skill_uninstalled",
+          skill: slug,
+          ...(released.length > 0 ? { bots: released } : {}),
+        },
       });
     },
 

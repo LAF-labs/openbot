@@ -135,7 +135,7 @@ export function createBuiltInSkills(input: {
           by,
         });
       }
-      // A skill a newer package no longer ships goes with it; its grants name nothing after that.
+      // A skill a newer package no longer ships goes with it, and its grants go too (`uninstallSkill`).
       const shippedSlugs = new Set(skills.map((skill) => skill.slug));
       for (const row of rows.values()) {
         if (row.origin === BUILT_IN_ORIGIN && !shippedSlugs.has(row.slug)) {
