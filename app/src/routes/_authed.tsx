@@ -13,6 +13,7 @@ import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { inShell } from "../lib/notifications/shell";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
+import { forgetKeptThreads } from "../lib/turns/kept-threads";
 import { reportDevice } from "../lib/whereabouts/queries";
 
 export const Route = createFileRoute("/_authed")({
@@ -89,6 +90,12 @@ function AuthedShell() {
   useEffect(() => {
     void reportDevice(queryClient);
   }, [queryClient]);
+  /*
+   * A conversation is kept for a while after its screen leaves (`lib/turns/kept-threads.ts`) — for
+   * as long as somebody is signed in, and no longer. However the session ends — signing out, or a
+   * session that ran out and sent them to the sign-in screen — nothing is kept past these screens.
+   */
+  useEffect(() => forgetKeptThreads, []);
 
   return (
     <>

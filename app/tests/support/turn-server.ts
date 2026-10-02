@@ -334,6 +334,13 @@ export function turnServer(options: {
       );
       publish({ kind: "messages", turn: turn.id, messages });
     },
+    /**
+     * Written to the store by something that is not a turn — a routine delivering its answer. No
+     * frame goes to anybody: the roster's news of it is the only news, as on the server.
+     */
+    deliver: (messages: Message[]) => {
+      stored.push(...messages);
+    },
     close: () => {
       if (server === onStream) server = null;
     },

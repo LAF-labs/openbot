@@ -100,6 +100,11 @@ export async function unmountAll(): Promise<void> {
     });
     host.remove();
   }
+  // A conversation is kept for a while after its screen leaves; not for the next test.
+  const { forgetKeptThreads } = await import(
+    "../../src/lib/turns/kept-threads"
+  );
+  forgetKeptThreads();
 }
 
 /**

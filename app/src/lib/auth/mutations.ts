@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { forgetKeptThreads } from "@/lib/turns/kept-threads";
 import { authKeys } from "./queries";
 
 async function signOut() {
@@ -14,6 +15,10 @@ async function signOut() {
 export function signOutMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     mutationFn: signOut,
-    onSuccess: () => queryClient.removeQueries({ queryKey: authKeys.all }),
+    onSuccess: () => {
+      // A conversation kept for somebody coming back is not kept for whoever signs in next.
+      forgetKeptThreads();
+      queryClient.removeQueries({ queryKey: authKeys.all });
+    },
   });
 }
