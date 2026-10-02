@@ -280,6 +280,233 @@ describe("the turn's messages, sent whole", () => {
 });
 
 /*
+ * A page can bring a message before the stream says it: the record holds part of an answer while
+ * its turn runs, and the whole of it once the turn is over, and a window whose stream is behind
+ * reads either. The stream then says the message from its first piece. Added to what the page had
+ * brought, every piece read twice; begun again from nothing, an answer that was whole on the
+ * screen shrank to its first piece and grew back (model check of the kept conversation,
+ * 2026-10-03).
+ */
+describe("a message held before the stream said it", () => {
+  const whole = "내일은 맑고 최고 26°예요.";
+  const holding = (content: string): ThreadState => ({
+    ...EMPTY_THREAD,
+    messages: [{ id: "a1", role: "assistant", content }],
+  });
+  const said = (state: ThreadState) =>
+    (state.messages.at(-1) as { content: string }).content;
+  const start = () =>
+    event({ type: "TEXT_MESSAGE_START", messageId: "a1", role: "assistant" });
+  const piece = (delta: string) =>
+    event({ type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta });
+  /** What the message says after each frame. */
+  const saidAfterEach = (from: ThreadState, frames: TurnFrame[]) => {
+    let state = from;
+    return frames.map((frame) => {
+      state = applyFrame(state, frame);
+      return said(state);
+    });
+  };
+
+  test("stands while the stream says what is held already: never shorter, never said twice", () => {
+    const frames = [
+      start(),
+      piece("내일은"),
+      piece(" 맑고"),
+      piece(" 최고 26°예요."),
+      event({ type: "TEXT_MESSAGE_END", messageId: "a1" }),
+    ];
+    expect(saidAfterEach(holding(whole), frames)).toEqual([
+      whole,
+      whole,
+      whole,
+      whole,
+      whole,
+    ]);
+    // And once it has said all of it, the stream is behind on nothing.
+    expect(fold(frames.slice(0, 4), holding(whole)).behind).toEqual({});
+  });
+
+  test("and is the stream's from the piece that says more than is held", () => {
+    // Part of it: the record was written while the answer was arriving.
+    expect(
+      saidAfterEach(holding("내일은"), [
+        start(),
+        piece("내일"),
+        piece("은 맑고"),
+        piece(" 최고 26°예요."),
+      ]),
+    ).toEqual(["내일은", "내일은", "내일은 맑고", whole]);
+  });
+
+  test("or that says otherwise", () => {
+    expect(
+      saidAfterEach(holding("내일은 맑아요"), [start(), piece("모레는")]),
+    ).toEqual(["내일은 맑아요", "모레는"]);
+  });
+
+  test("a message that begins with nothing held of it grows as it always did", () => {
+    expect(
+      saidAfterEach(holding(""), [start(), piece("내일"), piece("은")]),
+    ).toEqual(["", "내일", "내일은"]);
+  });
+
+  test("one let go of meanwhile comes back with all the stream has said of it", () => {
+    const behind = fold([start(), piece("내일")], holding(whole));
+    expect(said(behind)).toBe(whole);
+    // Let go from the top, with the rest of an old page; the stream goes on.
+    const state = applyFrame({ ...behind, messages: [] }, piece("은 맑고"));
+    expect(state.messages).toEqual([
+      { id: "a1", role: "assistant", content: "내일은 맑고" },
+    ]);
+    expect(state.behind).toEqual({});
+  });
+
+  const snapshot = (content: string): TurnFrame => ({
+    seq: ++seq,
+    kind: "snapshot",
+    epoch: "e1",
+    turn: { id: "t1", status: "running", asked: [] },
+    messages: [{ id: "a1", role: "assistant", content }],
+    waiting: [],
+  });
+
+  test("a snapshot that says more of it is the message, and what follows is added to that", () => {
+    const behind = fold([start(), piece("내")], holding("내일은"));
+    const state = fold([snapshot("내일은 맑고"), piece(" 최고")], behind);
+    expect(said(state)).toBe("내일은 맑고 최고");
+    expect(state.behind).toEqual({});
+  });
+
+  /*
+   * A snapshot is the turn as it stood when the stream was opened; a page read since may be on
+   * the screen before it arrives. It took the answer back to where the turn had stood.
+   */
+  test("a snapshot that says less of it does not take it back: the stream is behind from there", () => {
+    expect(
+      saidAfterEach(holding(whole), [
+        snapshot("내일은"),
+        piece(" 맑고"),
+        piece(" 최고 26°예요."),
+        piece(" 우산은"),
+      ]),
+    ).toEqual([whole, whole, whole, `${whole} 우산은`]);
+  });
+
+  test("the same for a call's arguments", () => {
+    const calling = (args: string): ThreadState => ({
+      ...EMPTY_THREAD,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "c1",
+              type: "function",
+              function: { name: "computer_navigate", arguments: args },
+            },
+          ],
+        },
+      ],
+    });
+    const args = (state: ThreadState) =>
+      (
+        state.messages[0] as {
+          toolCalls: { function: { arguments: string } }[];
+        }
+      ).toolCalls.map((call) => call.function.arguments);
+    const frames = [
+      event({
+        type: "TOOL_CALL_START",
+        toolCallId: "c1",
+        toolCallName: "computer_navigate",
+        parentMessageId: "a1",
+      }),
+      event({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '{"url":' }),
+      event({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '"a.kr"}' }),
+      event({ type: "TOOL_CALL_END", toolCallId: "c1" }),
+    ];
+    const after = (from: ThreadState) => {
+      let state = from;
+      return frames.map((frame) => {
+        state = applyFrame(state, frame);
+        return args(state);
+      });
+    };
+    // Held whole: it stands, once.
+    expect(after(calling('{"url":"a.kr"}'))).toEqual([
+      ['{"url":"a.kr"}'],
+      ['{"url":"a.kr"}'],
+      ['{"url":"a.kr"}'],
+      ['{"url":"a.kr"}'],
+    ]);
+    // Held in part: the stream's from the piece that says more.
+    expect(after(calling('{"url"'))).toEqual([
+      ['{"url"'],
+      ['{"url":'],
+      ['{"url":"a.kr"}'],
+      ['{"url":"a.kr"}'],
+    ]);
+
+    // And a snapshot that has less of a call, or has not come to one yet, takes neither back.
+    const call = (id: string, given: string) => ({
+      id,
+      type: "function" as const,
+      function: { name: "computer_navigate", arguments: given },
+    });
+    const held: ThreadState = {
+      ...EMPTY_THREAD,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            call("c1", '{"url":"a.kr"}'),
+            call("c2", '{"url":"b.kr"}'),
+          ],
+        },
+      ],
+    };
+    let state = held;
+    const seen = (
+      [
+        {
+          seq: ++seq,
+          kind: "snapshot",
+          epoch: "e1",
+          turn: { id: "t1", status: "running", asked: [] },
+          messages: [
+            {
+              id: "a1",
+              role: "assistant",
+              content: "",
+              toolCalls: [call("c1", '{"url":')],
+            },
+          ],
+          waiting: [],
+        },
+        event({ type: "TOOL_CALL_ARGS", toolCallId: "c1", delta: '"a.kr"}' }),
+        event({
+          type: "TOOL_CALL_START",
+          toolCallId: "c2",
+          toolCallName: "computer_navigate",
+          parentMessageId: "a1",
+        }),
+        event({ type: "TOOL_CALL_ARGS", toolCallId: "c2", delta: '{"url":"b' }),
+      ] satisfies TurnFrame[]
+    ).map((frame) => {
+      state = applyFrame(state, frame);
+      return args(state);
+    });
+    const both = ['{"url":"a.kr"}', '{"url":"b.kr"}'];
+    expect(seen).toEqual([both, both, both, both]);
+  });
+});
+
+/*
  * `queued` IS A STATE OF ITS OWN: the turn was accepted and is waiting for the Bot, which is
  * finishing something else first. It used to be told apart from `running` nowhere — both are
  * "going" — and the transcript drew a Bot thinking for as long as a routine took (2026-10-02).

@@ -26,6 +26,15 @@ import { createThreadStore } from "../../src/lib/turns/thread-store";
  *
  * Six rounds of review found one interleaving each. This is where the seventh is looked for
  * (adversarial read of the kept conversation, 2026-10-03: the model found eleven).
+ *
+ * WHAT IT DOES NOT DO, BECAUSE NOTHING DOES. The store lays what the stream brought beside a page
+ * by the rows the two share, and a page read under a snapshot shares one with the turn that
+ * snapshot brought unless a page of rows was written after the turn's newest in the meantime:
+ * between the snapshot being taken and the window hearing it, while the page was being read, and
+ * by something other than the turn while it ran. None of the three is long — a frame on its way,
+ * one request that is given up on after `HISTORY_WAIT_MS`, a routine that needs the Bot the turn
+ * is holding — so each is kept under a third of a page here (`share`), which with pages of six
+ * rows is one row, and with the pages a window reads is more than a run of this writes.
  */
 
 type Row = { id: string; role: "user" | "assistant"; content: string };
@@ -93,6 +102,11 @@ export const MODEL_CONFIGS: Record<string, ModelOptions> = {
     heal: "nudge",
   },
   "pages of six rows": { ...LOADED, limit: 6 },
+  "pages of six rows, with reads that fail": {
+    ...LOADED,
+    limit: 6,
+    failReads: true,
+  },
   "as the screen refreshes": REAL,
   "as the screen refreshes, with reads that fail": { ...REAL, failReads: true },
   "as the screen refreshes, pages of six rows": { ...REAL, limit: 6 },
@@ -128,6 +142,8 @@ type Read = {
   before: number | null;
   /** The page as the record stood when the read went out. */
   asRequested: HistoryPage;
+  /** How many rows the record had been given by then. */
+  writtenBefore: number;
 };
 
 type Stream = {
@@ -137,6 +153,8 @@ type Stream = {
   isDead: boolean;
   unsubscribe: (() => void) | null;
   lastId: string | null;
+  /** How many rows the record had been given when it was opened. */
+  writtenBefore: number;
 };
 
 export async function runModel(
@@ -171,10 +189,14 @@ export async function runModel(
     }
   };
   const seqOf = () => new Map(record.map((entry) => [entry.row.id, entry.seq]));
+  /** A third of a page: how much is written in any of the short whiles the header names. */
+  const share = Math.floor((options.limit - 1) / 3);
   type Turn = { id: string; asked: string[]; live: Row[]; writing: Row | null };
   // Asserted, not annotated: what is set from inside a closure is not narrowed away at its uses.
   let turn = null as Turn | null;
   let turnsStarted = 0;
+  /** What a routine has delivered while the turn in flight has been running. */
+  let deliveredInTurn = 0;
   const pageOf = (before: number | null): HistoryPage => {
     const rows = record.filter(
       (entry) => before === null || entry.seq < before,
@@ -197,6 +219,7 @@ export async function runModel(
   const startTurn = (asked: Row[]) => {
     for (const row of asked) persist(row);
     turnsStarted += 1;
+    deliveredInTurn = 0;
     const mine: Turn = {
       id: newId("t"),
       asked: asked.map((row) => row.id),
@@ -277,6 +300,7 @@ export async function runModel(
       isDead: false,
       unsubscribe: null,
       lastId: cursor,
+      writtenBefore: nextSeq,
     };
     const to = hub;
     opened.unsubscribe = to.subscribe(THREAD, cursorOf(cursor), (frame) => {
@@ -318,7 +342,12 @@ export async function runModel(
   const store = createThreadStore(THREAD, {
     readHistory: (_thread, before) =>
       new Promise((resolve) => {
-        reads.push({ resolve, before, asRequested: pageOf(before) });
+        reads.push({
+          resolve,
+          before,
+          asRequested: pageOf(before),
+          writtenBefore: nextSeq,
+        });
       }),
     watchTurn: (_thread, given) => {
       handlers = given;
@@ -385,18 +414,13 @@ export async function runModel(
   };
   /**
    * What a read is answered with when the server gets to it late: the record as it is now — but
-   * never a whole page past what it was when the read went out. A request that waits that long is
-   * one the page has given up on (`HISTORY_WAIT_MS`), and no server writes a page of rows to a
-   * conversation in the time one read of it takes.
+   * not past what little is written in the time one read takes (`share`). A request that waits
+   * longer is one the page has given up on (`HISTORY_WAIT_MS`).
    */
-  const lateAnswer = (read: Read): HistoryPage => {
-    const then = read.asRequested.messages;
-    const now = pageOf(read.before);
-    const overlaps =
-      then.length === 0 ||
-      now.messages.some((row) => then.some((old) => old.id === row.id));
-    return overlaps ? now : read.asRequested;
-  };
+  const lateAnswer = (read: Read): HistoryPage =>
+    nextSeq - read.writtenBefore <= share
+      ? pageOf(read.before)
+      : read.asRequested;
   const answerRead = (isRead: boolean, isLate: boolean) => {
     if (reads.length === 0) return;
     const at = pick(reads.length);
@@ -455,6 +479,16 @@ export async function runModel(
         record.find((entry) => entry.row.id === id)?.row.content;
       const was = lastSaid.get(id);
       const is = String(row.content);
+      // The same words as the server's, as far as each goes: no piece twice, none of another's.
+      if (
+        truth !== undefined &&
+        !truth.startsWith(is) &&
+        !is.startsWith(truth)
+      ) {
+        problems.push(
+          `row ${id} says ${JSON.stringify(is)}, and the server ${JSON.stringify(truth)}`,
+        );
+      }
       if (
         truth !== undefined &&
         was !== undefined &&
@@ -503,6 +537,21 @@ export async function runModel(
 
   // ---------------- anything, in any order
   for (let step = 0; step < steps && problems.length === 0; step += 1) {
+    // A snapshot reaches the window within moments of being taken: before much is written.
+    if (
+      stream &&
+      !stream.isDead &&
+      stream.queue[0]?.frame.kind === "snapshot" &&
+      nextSeq - stream.writtenBefore > share
+    ) {
+      deliver(1);
+      say(`the snapshot arrives -> [${drawn()}]`);
+      await flush();
+      onTurnEnd();
+      await flush();
+      checkLiveTurn();
+      if (problems.length > 0) break;
+    }
     const roll = pick(100);
     if (roll < 22) {
       const delivered = deliver(1 + pick(4));
@@ -512,10 +561,20 @@ export async function runModel(
         writeMore();
         say("the answer goes on");
       }
-    } else if (roll < 38) {
+    } else if (roll < 37) {
       if (turn?.writing) {
         endStep();
         say("a step ends, and is written to the record");
+      }
+    } else if (roll < 38) {
+      /*
+       * The engine writes the turn's messages when a tool answers, on a queue — and by the time
+       * that write runs the next message may have begun: the record holds part of a row, under
+       * the cursor it keeps, until the step's own write makes it whole (`engine.ts`, `persistNow`).
+       */
+      if (turn?.writing) {
+        for (const row of turn.live) persist(row);
+        say("the record is written mid-answer: part of a row");
       }
     } else if (roll < 44) {
       if (turn) {
@@ -551,16 +610,25 @@ export async function runModel(
         }
       }
     } else if (roll < 66) {
-      const row: Row = {
-        id: newId("r"),
-        role: "assistant",
-        content: "routine",
-      };
-      persist(row);
-      say(`a routine delivers ${row.id}`);
-      if (options.realRefresh && !isGoingInStore()) {
-        say("  (activity) refresh()");
-        void store.refresh();
+      /*
+       * Few of them while one turn is in flight (`share`). A routine needs the Bot, and a turn
+       * holds it but for the minutes it may wait on a person (`PERSON_WAIT_MS`): nothing writes a
+       * page of rows under a turn's question while the turn runs. Where something did, a page
+       * that holds nothing of the turn could not tell the store its question is above it.
+       */
+      if (!turn || deliveredInTurn < share) {
+        const row: Row = {
+          id: newId("r"),
+          role: "assistant",
+          content: "routine",
+        };
+        persist(row);
+        if (turn) deliveredInTurn += 1;
+        say(`a routine delivers ${row.id}`);
+        if (options.realRefresh && !isGoingInStore()) {
+          say("  (activity) refresh()");
+          void store.refresh();
+        }
       }
     } else if (roll < 78) {
       if (!hasFirstReadAnswered && options.firstPageFails && random() < 0.7) {
