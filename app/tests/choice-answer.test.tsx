@@ -574,8 +574,14 @@ describe("words typed while the Bot waits on a choice", () => {
         );
         // The answer was filed and the turn went on to its end, and this window heard only the end.
         turns.file([answeredWith(TYPED)]);
+        turns.holdHistory();
         await acted(() => turns.announceUnheard("done"));
+        // Not theirs to send while the record is still being read for what became of the question.
+        await view.settle(500);
+        expect(isNotSent(view.host)).toBe(false);
+        expect(kept()).toMatchObject([{ text: TYPED, waiting: true }]);
         // The read of the record that follows a turn's end brings what the stream did not.
+        await acted(() => turns.answerHistory());
         await view.waitFor(
           () => kept().length === 0,
           "them to be forgotten",
@@ -584,6 +590,105 @@ describe("words typed while the Bot waits on a choice", () => {
         await view.settle(300);
         expect(turns.sends).toHaveLength(0);
         expect(isNotSent(view.host)).toBe(false);
+      });
+
+      /*
+       * Review, sixth round. A window that slept is told the turn is over by a snapshot, before
+       * anything has read what it missed: read off that moment, words the server had taken were
+       * handed to the person as not sent — with the press that sends them again — until the page
+       * arrived and forgot them.
+       */
+      test("but not before the record has been read, where the stream has just started over", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+        await ask(view, turns);
+        turns.loseAnswerReply();
+
+        await sendWords(view, TYPED);
+        await view.waitFor(
+          () => turns.answers().length === 1,
+          "the door to take the answer",
+          4000,
+        );
+        // The window sleeps through the answer being filed and the turn ending.
+        turns.file([answeredWith(TYPED)]);
+        turns.endUnheard("done");
+        turns.holdHistory();
+        // It wakes: the stream starts over and says the turn is over. The record is still unread.
+        await acted(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        await view.settle(500);
+        expect(isNotSent(view.host)).toBe(false);
+        expect(kept()).toMatchObject([
+          { text: TYPED, answerTo: CALL, waiting: true },
+        ]);
+        expect(turns.sends).toHaveLength(0);
+
+        // The record is read: they were the card's answer.
+        await acted(() => turns.answerHistory());
+        await view.waitFor(
+          () => kept().length === 0,
+          "them to be forgotten",
+          4000,
+        );
+        await view.settle(200);
+        expect(isNotSent(view.host)).toBe(false);
+        expect(turns.sends).toHaveLength(0);
+      });
+
+      test("and are theirs once the record has been read and still says nothing of the question", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        const { api, turns } = server();
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+        await ask(view, turns);
+        turns.answersDown();
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+        // The server died holding the question: the turn is over, and the record has no answer.
+        turns.endUnheard("error");
+        turns.holdHistory();
+        await acted(() => {
+          window.dispatchEvent(new Event("online"));
+        });
+        await view.settle(500);
+        expect(isNotSent(view.host)).toBe(false);
+
+        await acted(() => turns.answerHistory());
+        await view.waitFor(
+          () => isNotSent(view.host),
+          "the words drawn as not sent",
+          4000,
+        );
+        expect(turns.sends).toHaveLength(0);
+        expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+      });
+
+      test("nor while the record cannot be read: it is read again until it can be", async () => {
+        await restFor(40);
+        const { api, turns } = server();
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+        await ask(view, turns);
+        turns.answersDown();
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+        turns.historyDown();
+        await acted(() => turns.announceUnheard("done"));
+        // A read that fails says nothing of the question either.
+        await view.settle(600);
+        expect(isNotSent(view.host)).toBe(false);
+        expect(kept()).toMatchObject([{ text: TYPED, waiting: true }]);
+
+        turns.historyUp();
+        await view.waitFor(
+          () => isNotSent(view.host),
+          "the words drawn as not sent",
+          4000,
+        );
+        expect(turns.sends).toHaveLength(0);
       });
 
       test("and go ahead of the next thing the person says", async () => {
