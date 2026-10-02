@@ -184,23 +184,26 @@ function server(
         return new Response("", { status: 503 });
       }
       const since = request.url.searchParams.get("since");
-      const rows: OutboxRow[] = [
-        ...(options.alreadyTold
-          ? [
-              {
-                id: `n-${options.alreadyTold.id}`,
-                kind: "approval.requested",
-                botId: BOT_ID,
-                approvalId: options.alreadyTold.id,
-                createdAt: "2026-10-02T09:00:00.500Z",
-              },
-            ]
-          : []),
-        ...outboxRows,
-      ].filter((row) => !since || row.createdAt > since);
-      // Newest first, as the server answers.
-      const told = json({ notifications: rows.reverse() });
-      return options.holdTold ? toldHeld.then(() => told) : told;
+      // Built when it is answered, not when it was asked: a held read holds what is true by then.
+      const told = () => {
+        const rows: OutboxRow[] = [
+          ...(options.alreadyTold
+            ? [
+                {
+                  id: `n-${options.alreadyTold.id}`,
+                  kind: "approval.requested",
+                  botId: BOT_ID,
+                  approvalId: options.alreadyTold.id,
+                  createdAt: "2026-10-02T09:00:00.500Z",
+                },
+              ]
+            : []),
+          ...outboxRows,
+        ].filter((row) => !since || row.createdAt > since);
+        // Newest first, as the server answers.
+        return json({ notifications: rows.reverse() });
+      };
+      return options.holdTold ? toldHeld.then(told) : told();
     }
     if (request.pathname === "/api/channels") {
       const list = json({
@@ -258,17 +261,20 @@ async function outboxSays(approvalId: string) {
   });
 }
 
-/** A row written to the outbox: in its list from now on, and a frame down the socket. */
-async function outboxFrame(row: {
+type OutboxEvent = {
   id: string;
   event: string;
   approvalId?: string;
   /** Another of the account's Bots, where it is not the one whose conversation is mounted. */
   botId?: string;
-}) {
-  const { NOTIFICATION_FRAME, notificationFrames } = await import(
-    "../src/lib/notifications/outbox"
-  );
+};
+
+/**
+ * The server writes the row: it is in the outbox's list from now on. What comes back is the frame
+ * the server sends next — the two are separate steps there too, and a test may need the moment
+ * between them (`sendFrame`).
+ */
+function writeRow(row: OutboxEvent) {
   outboxClock += 1_000;
   const at = new Date(outboxClock).toISOString();
   const botId = row.botId ?? BOT_ID;
@@ -279,13 +285,24 @@ async function outboxFrame(row: {
     ...(row.approvalId ? { approvalId: row.approvalId } : {}),
     createdAt: at,
   });
+  return { kind: "notification", at, ...row, botId };
+}
+
+/** The frame of a row already written, down the socket. */
+async function sendFrame(frame: ReturnType<typeof writeRow>) {
+  const { NOTIFICATION_FRAME, notificationFrames } = await import(
+    "../src/lib/notifications/outbox"
+  );
   await acted(() => {
     notificationFrames.dispatchEvent(
-      new CustomEvent(NOTIFICATION_FRAME, {
-        detail: { kind: "notification", at, ...row, botId },
-      }),
+      new CustomEvent(NOTIFICATION_FRAME, { detail: frame }),
     );
   });
+}
+
+/** A row written to the outbox: in its list from now on, and a frame down the socket. */
+async function outboxFrame(row: OutboxEvent) {
+  await sendFrame(writeRow(row));
 }
 
 /** A window nobody is looking at, until the returned function is called. */
@@ -546,6 +563,89 @@ describe("whether the person is interrupted", () => {
     await view.settle(200);
     // The one that was waiting before the page opened is still not news.
     expect(ShownNotice.shown).toHaveLength(1);
+  });
+});
+
+/*
+ * Sixth round. The server writes a row and then sends its frame. A row written in the moment before
+ * the first read was answered is in that read, where it looked like what had been waiting all along
+ * — and the frame that followed was passed over, so the question was never announced.
+ */
+describe("a question raised while the first read is on its way", () => {
+  afterEach(() => removeNotices());
+
+  test("is in that read, and is said when its frame arrives", async () => {
+    installNotices();
+    const { api, state, releaseTold } = server({ holdTold: true });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(() => pill(view.host) !== "", "the Bot's row", 6000);
+    await view.settle(120);
+    // The server stops on a question now: the page is open, its first read not yet answered.
+    const asking = question();
+    state.approvals = [asking];
+    const frame = writeRow({
+      id: `n-${asking.id}`,
+      event: "approval.requested",
+      approvalId: asking.id,
+    });
+    await acted(() => releaseTold());
+    await view.settle(200);
+    // The read has landed with the row in it, and nothing has said the row is new.
+    expect(ShownNotice.shown).toHaveLength(0);
+    await sendFrame(frame);
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice, once the frame says the row is news",
+      4000,
+    );
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill",
+      6000,
+    );
+    await view.settle(300);
+    // Once: the frame said it, and the question arriving in the store does not say it again.
+    expect(ShownNotice.shown).toHaveLength(1);
+  });
+
+  test("a later word about a question that was already waiting does not make it news", async () => {
+    installNotices();
+    const waiting = question();
+    const { api, state } = server({ alreadyTold: waiting });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the question that was waiting",
+      6000,
+    );
+    await view.settle(150);
+    expect(ShownNotice.shown).toHaveLength(0);
+    // The server says it ran out, a moment before its record lets go of it.
+    await outboxFrame({
+      id: `x-${waiting.id}`,
+      event: "approval.expired",
+      approvalId: waiting.id,
+    });
+    await view.settle(150);
+    /*
+     * And the Bot asks something else, which the page learns from its own look — the window is
+     * looked at again — so the store changes with the old question still in it, and the one notice
+     * a Bot gets in five seconds goes to whichever question is said first.
+     */
+    const next = question();
+    state.approvals = [waiting, next];
+    await acted(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await view.waitFor(
+      () => ShownNotice.shown.length >= 1,
+      "the new question's notice",
+      4000,
+    );
+    await view.settle(300);
+    expect(ShownNotice.shown.map((notice) => notice.tag)).toEqual([
+      `laf-approval:${next.id}`,
+    ]);
   });
 });
 

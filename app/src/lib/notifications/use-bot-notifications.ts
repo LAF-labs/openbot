@@ -198,6 +198,14 @@ export function bodyFor(event: string, described: string | null): string {
   return t("It is waiting on your answer.");
 }
 
+/** Whether `key` is still on the list of what the first read returned. See `backlog` in the hook. */
+function inBacklog(backlog: ReadonlyMap<string, string>, key: string): boolean {
+  for (const held of backlog.values()) {
+    if (held === key) return true;
+  }
+  return false;
+}
+
 /**
  * Interrupt somebody when a Bot needs them, or has finished while they were elsewhere.
  *
@@ -266,6 +274,25 @@ export function useBotNotifications(): void {
    */
   const seeded = useRef(false);
   const announceOpen = useRef<() => void>(() => {});
+  /**
+   * What that first read returned, by row: each row's id, and the key it would have been said under.
+   * Told before this page was there to tell it — UNLESS ITS OWN FRAME ARRIVES.
+   *
+   * The server writes a row and then sends its frame (`deliver` in the server's outbox), once, to a
+   * page that is connected. So a row written in the moment before the first read was answered is in
+   * that read, where it looked like everything else in it; it was marked as said, the frame that
+   * followed and the question in the store were both passed over, and the notice was never raised
+   * (review, sixth round). The frame is the server saying the row is new NOW, which nothing in a
+   * list can say. A row its own frame names comes off this list and is said.
+   *
+   * BY ROW, NOT BY KEY. A question's key is its approval, and the word that the same question ran
+   * out is a later row under the same key: that frame must not turn a question which was already
+   * waiting when the page opened into news.
+   *
+   * A row whose frame never arrives — the socket was not up in that instant — stays here, the same
+   * as a question that was waiting when the page opened: shown by the pill and the list, not said.
+   */
+  const backlog = useRef(new Map<string, string>());
 
   /**
    * WHETHER THE QUESTION'S CARD IS ON THE SCREEN IN FRONT OF THEM — AFTER READING WHAT IT TAKES TO
@@ -420,7 +447,12 @@ export function useBotNotifications(): void {
     const announce = () => {
       if (!seeded.current) return;
       for (const question of openQuestions()) {
-        if (announced.current.has(question.approvalId)) continue;
+        if (
+          announced.current.has(question.approvalId) ||
+          inBacklog(backlog.current, question.approvalId)
+        ) {
+          continue;
+        }
         announced.current.add(question.approvalId);
         void whereIs
           .current({
@@ -527,7 +559,7 @@ export function useBotNotifications(): void {
         if (!watermark || row.at > watermark) watermark = row.at;
         const key = row.approvalId ?? row.id;
         if (!options.raises) {
-          announced.current.add(key);
+          backlog.current.set(row.id, key);
           continue;
         }
         raiseFromOutbox(row);
@@ -600,7 +632,7 @@ export function useBotNotifications(): void {
 
     const raiseFromOutbox = (frame: NotificationFrame) => {
       const key = frame.approvalId ?? frame.id;
-      if (announced.current.has(key)) return;
+      if (announced.current.has(key) || inBacklog(backlog.current, key)) return;
       const kind = noticeKindOf(frame.event);
       // An expired question is deliberately silent. Nobody can answer a question that has run out,
       // and the two things worth interrupting somebody for are being blocked and having finished.
@@ -650,21 +682,35 @@ export function useBotNotifications(): void {
     };
     void seed();
     const onFrame = (event: Event) => {
-      if (seeded.current) {
-        void catchUp({ raises: true });
+      const detail = (event as CustomEvent<unknown>).detail;
+      const frame = isNotificationFrame(detail) ? detail : null;
+      if (!seeded.current) {
+        /*
+         * Not seeded yet, so a read now would return the backlog and raise all of it. The frame
+         * itself is the one thing known to be new: it is said from what it carries, and the seed —
+         * asked for again now that the server is evidently there — marks the rest as told.
+         */
+        if (frame) {
+          heardOf([frame]);
+          raiseFromOutbox(frame);
+        }
+        void seed();
         return;
       }
       /*
-       * Not seeded yet, so a read now would return the backlog and raise all of it. The frame
-       * itself is the one thing known to be new: it is said from what it carries, and the seed —
-       * asked for again now that the server is evidently there — marks the rest as told.
+       * The frame of a row the first read returned: news after all (see `backlog`), and said from
+       * what the frame carries, because the read below asks only for what came after the first one.
+       * Only a frame that says something — the word that a question ran out leaves the list alone.
        */
-      const frame = (event as CustomEvent<unknown>).detail;
-      if (isNotificationFrame(frame)) {
+      if (
+        frame &&
+        noticeKindOf(frame.event) !== null &&
+        backlog.current.delete(frame.id)
+      ) {
         heardOf([frame]);
         raiseFromOutbox(frame);
       }
-      void seed();
+      void catchUp({ raises: true });
     };
     notificationFrames.addEventListener(NOTIFICATION_FRAME, onFrame);
     // A reconnect is the one moment this page knows it may have missed frames. See `events.ts`.
