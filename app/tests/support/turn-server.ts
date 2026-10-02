@@ -123,6 +123,9 @@ export function turnServer(options: {
   /** Every time the card's door was asked, whatever it said. */
   let asks = 0;
   let historyDown = false;
+  /** While set, a read of the history is kept waiting for its answer: it is slow, not failing. */
+  let historyHold: Promise<void> | null = null;
+  let releaseHistory = () => {};
   let historyReads = 0;
   let doorDown = false;
   /** While set, the door is there and says no: the code it refuses a hand-over with. */
@@ -322,7 +325,8 @@ export function turnServer(options: {
       historyReads += 1;
       // The front door's answer while the server behind it is restarting.
       if (historyDown) return new Response("", { status: 503 });
-      return json(page());
+      // Answered late, with the record as it stands when it is.
+      return historyHold ? historyHold.then(() => json(page())) : json(page());
     }
     // A person's answer to a card: taken while the turn waits on it, 409 once it does not.
     if (pathname.startsWith(`${door}/answers/`) && method === "POST") {
@@ -396,6 +400,16 @@ export function turnServer(options: {
     historyUp: () => {
       historyDown = false;
     },
+    /** Reads of the history from now on are left on their way until `answerHistory`. */
+    holdHistory: () => {
+      historyHold = new Promise((resolve) => {
+        releaseHistory = resolve;
+      });
+    },
+    answerHistory: () => {
+      historyHold = null;
+      releaseHistory();
+    },
     /** The hand-over door answers 503 until `doorUp`: the words never arrive. */
     doorDown: () => {
       doorDown = true;
@@ -449,6 +463,18 @@ export function turnServer(options: {
     unheard: (turn: TurnState) => {
       hub.seq += 1;
       hub.turn = turn;
+    },
+    /**
+     * The turn ends and no window hears of it — a laptop asleep. The hub moves on; a window that
+     * comes back with the cursor it had is past what it can be replayed, and is sent a snapshot.
+     */
+    endUnheard: (status: TurnState["status"]) => {
+      const turn = hub.turn;
+      if (!turn) throw new Error("no turn to end");
+      hub.seq += 1;
+      hub.turn = { ...turn, status };
+      hub.messages = [];
+      hub.waiting = [];
     },
     /** The server's own copies of what the turn has written; filed in the store as it does. */
     say: (messages: Message[]) => {

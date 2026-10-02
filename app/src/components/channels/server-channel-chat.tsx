@@ -76,7 +76,13 @@ import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import type { ReadLine } from "@/lib/read-line";
 import { routineKeys } from "@/lib/routines/queries";
 import { ServerAnswersProvider } from "@/lib/turns/answers";
-import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
+import {
+  answerCard,
+  type HistoryPage,
+  readHistory,
+  sendTurn,
+  stopTurn,
+} from "@/lib/turns/client";
 import { isTurnGoing, isTurnQueued, type TurnFrame } from "@/lib/turns/frames";
 import { watchServerQuestions } from "@/lib/turns/questions";
 import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
@@ -121,6 +127,25 @@ function isOnCard(
   offers: ReadonlyMap<string, Offer>,
 ): boolean {
   return isKeptForCard(message) && isShownOnCard(offers.get(message.id));
+}
+
+/**
+ * The newest page of the record, read until it is in — on the waits an offer rests for — or until
+ * nobody is there to hear it (`isGone`), which is the only way it comes back with nothing.
+ *
+ * Out here because it loops: the compiler leaves a component with such a loop in it uncompiled.
+ */
+async function readRecord(
+  threadId: string,
+  isGone: () => boolean,
+): Promise<HistoryPage | null> {
+  for (let tries = 1; ; tries += 1) {
+    const page = await readHistory(threadId, null);
+    if (isGone()) return null;
+    if (page) return page;
+    await new Promise((resolve) => setTimeout(resolve, restAfter(tries)));
+    if (isGone()) return null;
+  }
 }
 
 /**
@@ -578,6 +603,35 @@ export function ServerChannelChat({
   const offerNow = useEffectEvent((message: UnsentMessage, tries: number) =>
     offer(message, tries),
   );
+  /**
+   * THE RECORD AS IT WAS READ FOR A QUESTION, by the id of the words kept for it — read once the
+   * turn was over with nothing held saying what became of that question (the settling below).
+   *
+   * WHAT IS HELD CAN BE BEHIND THE RECORD. A window that slept, or whose server restarted, is told
+   * how the turn stands before anything has read what it missed; and one that reconnects late is
+   * replayed that the turn is over and none of what was said in it. For a moment "the turn is
+   * over and nothing says what became of the question" is true of a question whose answer the
+   * record holds: read off that, words the server had taken were handed to the person as not
+   * sent, with the press that sends them a second time, until the page came and forgot them
+   * (review, sixth round).
+   *
+   * So that is decided against the record as it was read for the question, and not before it has
+   * been: the newest page, read here and until it is in — a read that fails says nothing either.
+   * Not through the store, whose own reading of the page is its own business and on its own time.
+   */
+  const [records, setRecords] = useState<
+    ReadonlyMap<string, readonly Message[]>
+  >(new Map());
+  /** The ones a read is out or waiting for, so the settling asks for one and not one a render. */
+  const confirming = useRef(new Set<string>());
+  const readRecordFor = useEffectEvent(async (id: string) => {
+    if (confirming.current.has(id)) return;
+    confirming.current.add(id);
+    const page = await readRecord(channel.threadId, () => rests.current.isGone);
+    if (!page) return;
+    confirming.current.delete(id);
+    setRecords((held) => new Map(held).set(id, page.messages));
+  });
 
   /**
    * Whether what this device kept may go by itself: the page is in, the stream has said how the
@@ -665,7 +719,11 @@ export function ServerChannelChat({
       const offer = offers.get(message.id);
       // The door is being asked: what it says comes first.
       if (offer?.at === "out") continue;
-      const answered = answeredInWords(thread.messages, call);
+      // The conversation as it is held — and the record as it was read for this question, where
+      // it has been (`records`): either may be the one that shows what became of it.
+      const record = records.get(message.id) ?? [];
+      const answered =
+        answeredInWords(thread.messages, call) ?? answeredInWords(record, call);
       // Their own words — or, where the door said it took them, whatever words the card shows.
       if (
         answered !== undefined &&
@@ -675,7 +733,7 @@ export function ServerChannelChat({
         continue;
       }
       // Over, and not with these words: words like any other the device kept.
-      if (hasResult(thread.messages, call)) {
+      if (hasResult(thread.messages, call) || hasResult(record, call)) {
         const { answerTo: _answerTo, ...plain } = message;
         keepUnsent(channel.id, plain);
         isFreed = true;
@@ -692,7 +750,10 @@ export function ServerChannelChat({
          * nothing is sent by itself here. They are the person's, drawn as not sent with the press
          * that sends them, and forgotten above the moment the conversation shows them answered.
          */
-        handToPerson(channel.id, message);
+        // Once the record has been read for it, and says nothing either (`records`): what is
+        // held may be behind it, and the record may hold these words as the answer.
+        if (records.has(message.id)) handToPerson(channel.id, message);
+        else if (isKeptForCard(message)) void readRecordFor(message.id);
         continue;
       }
       // Still being asked, and these words are not known to have reached it: offered, unless an
@@ -709,9 +770,13 @@ export function ServerChannelChat({
         void offerNow(message, tries);
       }
     }
-    // Where words are no longer marked for a card, how their offer stood is nothing's to read.
+    // Where words are no longer marked for a card, how their offer stood is nothing's to read —
+    // nor that the record was read for them.
     if ([...offers.keys()].some((id) => !marked.has(id))) {
       setOffers((held) => new Map([...held].filter(([id]) => marked.has(id))));
+    }
+    if ([...records.keys()].some((id) => !marked.has(id))) {
+      setRecords((held) => new Map([...held].filter(([id]) => marked.has(id))));
     }
     // Words freed after their turn was already over have nothing left to send them but this.
     if (isFreed && !going) void resendNow(true);
@@ -723,6 +788,7 @@ export function ServerChannelChat({
     thread.epoch,
     going,
     offers,
+    records,
     channel.id,
   ]);
 
