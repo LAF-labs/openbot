@@ -136,6 +136,7 @@
   "app/tests/my-bots.test.ts",
   "app/tests/notebook-boundary.test.ts",
   "app/tests/notebook-forget.test.tsx",
+  "app/tests/notebook-korean-ime.test.tsx",
   "app/tests/notification-outbox.test.ts",
   "app/tests/owner-vocabulary.test.ts",
   "app/tests/page-header.test.tsx",

@@ -31,6 +31,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { requestJump } from "@/lib/channels/jump";
 import { ensure } from "@/lib/ensure";
 import { activeLocale, t } from "@/lib/i18n";
+import { isImeKey } from "@/lib/ime";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { BUSINESS_KINDS, dailyPlaceById } from "@/lib/shop/catalogue";
@@ -381,7 +382,7 @@ function Gauge({ cap, used }: { cap: number; used: number }) {
 }
 
 /** A line being written or rewritten: its box, its count, and its two buttons. */
-function LineEditor({
+export function LineEditor({
   initial,
   isBusy,
   label,
@@ -419,6 +420,14 @@ function LineEditor({
         disabled={isBusy}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
+          /*
+           * The Enter that accepts a Korean syllable is not the Enter that saves the line, and the
+           * Escape that abandons one is not the Escape that closes the editor (`lib/ime.ts`). This
+           * was the one keydown handler in the app without the check: a line written in Korean
+           * was saved on the keystroke that finished its last syllable, as whatever had been
+           * assembled by then.
+           */
+          if (isImeKey(event)) return;
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             void handleSave();
