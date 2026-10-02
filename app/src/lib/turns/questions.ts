@@ -96,13 +96,18 @@ function settle(
     if (!covers(step.threadId)) continue;
     if (approval.granted === undefined) {
       open.add(approval.id);
-      if (!questionOn(step.toolCallId)) {
-        openQuestion(step.toolCallId, questionFromRecord(approval));
-      }
+      /*
+       * Its conversation first, then the card. Opening the question tells everybody listening at
+       * once — the notices among them, which ask `questionThread` where the card is before they
+       * decide to interrupt — so the answer has to be in place before the question is.
+       */
       shown.set(approval.id, {
         toolCallId: step.toolCallId,
         threadId: step.threadId,
       });
+      if (!questionOn(step.toolCallId)) {
+        openQuestion(step.toolCallId, questionFromRecord(approval));
+      }
       continue;
     }
     // Answered somewhere — here, in another window, or on the approval's own page.

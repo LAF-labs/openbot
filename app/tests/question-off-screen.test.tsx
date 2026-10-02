@@ -118,11 +118,21 @@ function removeNotices() {
   }
 }
 
+/** A second conversation with the same Bot: what an account that kept two has. */
+const OTHER_CHANNEL = "channel_q-other";
+const OTHER_THREAD = "thread-q-other";
+
 function server(
   options: {
     alreadyTold?: PendingApproval;
     /** The outbox's list is kept on its way until `releaseTold`. */
     holdTold?: boolean;
+    /** The account kept a second conversation with this Bot. */
+    twoConversations?: boolean;
+    /** How many times the outbox's list answers 503 before it answers. */
+    toldFailures?: number;
+    /** The record of open questions is kept on its way until `releaseApprovals`. */
+    holdApprovals?: boolean;
   } = {},
 ) {
   const turns = turnServer({
@@ -140,9 +150,18 @@ function server(
   const toldHeld = new Promise<void>((resolve) => {
     releaseTold = resolve;
   });
+  let releaseApprovals = () => {};
+  const approvalsHeld = new Promise<void>((resolve) => {
+    releaseApprovals = resolve;
+  });
+  let toldReads = 0;
   const api = (request: ApiRequest) => {
     // The outbox's list: what was already waiting for this person when the page opened.
     if (request.pathname === "/api/me/notifications") {
+      toldReads += 1;
+      if (toldReads <= (options.toldFailures ?? 0)) {
+        return new Response("", { status: 503 });
+      }
       const told = json({
         notifications: options.alreadyTold
           ? [
@@ -170,16 +189,37 @@ function server(
             unread: false,
             lastMessageAt: "2026-10-02T09:00:00.000Z",
           },
+          ...(options.twoConversations
+            ? [
+                {
+                  id: OTHER_CHANNEL,
+                  name: "닻",
+                  agentIds: [BOT_ID],
+                  threadId: OTHER_THREAD,
+                  active: true,
+                  unread: false,
+                  lastMessageAt: "2026-10-01T09:00:00.000Z",
+                },
+              ]
+            : []),
         ],
       });
     }
     if (request.pathname === `/api/approvals/${BOT_ID}`) {
       state.reads += 1;
-      return json({ approvals: state.approvals });
+      const record = () => json({ approvals: state.approvals });
+      return options.holdApprovals ? approvalsHeld.then(record) : record();
     }
     return turns.api(request);
   };
-  return { api, state, releaseTold: () => releaseTold() };
+  return {
+    api,
+    state,
+    turns,
+    toldReads: () => toldReads,
+    releaseTold: () => releaseTold(),
+    releaseApprovals: () => releaseApprovals(),
+  };
 }
 
 /** The server's outbox, saying down the socket that the Bot stopped to ask. */
@@ -392,5 +432,173 @@ describe("whether the person is interrupted", () => {
       "the notice, once the page knows it was not already told",
       4000,
     );
+  });
+
+  /*
+   * Codex, second round. A list that could not be read marks nothing as told; letting the questions
+   * effect go then announced every question that was open when the page was — on the page load
+   * where the server was having a bad moment.
+   */
+  test("a first read the server did not answer does not turn what was already waiting into news", async () => {
+    installNotices();
+    const told = question();
+    const { api, toldReads } = server({ alreadyTold: told, toldFailures: 1 });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill to say the Bot is waiting",
+      6000,
+    );
+    await view.settle(150);
+    expect(toldReads()).toBe(1);
+    expect(ShownNotice.shown).toHaveLength(0);
+
+    // The socket is back: the list is asked for again, answers, and names the question as told.
+    const { SOCKET_RECONNECTED, socketState } = await import(
+      "../src/lib/channels/use-channel-events"
+    );
+    await acted(() => {
+      socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
+    });
+    await view.waitFor(
+      () => toldReads() >= 2,
+      "the list to be asked for again",
+    );
+    await view.settle(150);
+    expect(ShownNotice.shown).toHaveLength(0);
+  });
+
+  test("a frame that arrives before that first read is answered is said, and only it", async () => {
+    installNotices();
+    const told = question();
+    const { api, state, toldReads } = server({
+      alreadyTold: told,
+      toldFailures: 1,
+    });
+    const view = await mountApp({ path: "/made", api });
+    await view.waitFor(() => toldReads() >= 1, "the first, failed read", 6000);
+    await view.settle(60);
+
+    const fresh = question();
+    state.approvals = [...state.approvals, fresh];
+    await outboxSays(fresh.id);
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice for the question the frame was about",
+      4000,
+    );
+    await view.settle(200);
+    // The one that was waiting before the page opened is still not news.
+    expect(ShownNotice.shown).toHaveLength(1);
+  });
+});
+
+/*
+ * Codex, on the pull request, over two rounds. An account that kept what it had before the limit
+ * can hold two conversations with one Bot; each draws only its own thread's cards.
+ */
+describe("an account that kept two conversations with one Bot", () => {
+  afterEach(() => removeNotices());
+
+  const elsewhere = (): PendingApproval => {
+    const asking = question();
+    return {
+      ...asking,
+      step: {
+        threadId: OTHER_THREAD,
+        toolCallId: asking.step?.toolCallId ?? "",
+      },
+    };
+  };
+
+  test("a question raised in the other one is listed and announced while this one is on screen", async () => {
+    installNotices();
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    const asking = elsewhere();
+    state.approvals = [asking];
+    await outboxSays(asking.id);
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the pill to say the Bot is waiting",
+      6000,
+    );
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice: its card is not on this screen",
+      4000,
+    );
+  });
+
+  test("and this conversation's transcript does not say it is waiting for an answer", async () => {
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    const asking = elsewhere();
+    state.approvals = [asking];
+    await outboxSays(asking.id);
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the question to be known",
+      6000,
+    );
+    await view.settle(100);
+    // The turn here is going and is not waiting on anybody: the card is in the other conversation.
+    expect(view.main()?.textContent ?? "").not.toContain(
+      "Waiting for your answer",
+    );
+  });
+
+  test("a question raised in THIS one is not announced, even when the frame is read before the record", async () => {
+    installNotices();
+    const { api, state, turns, releaseApprovals } = server({
+      twoConversations: true,
+      holdApprovals: true,
+    });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => state.reads >= 1,
+      "the first look to be asked",
+      6000,
+    );
+    const asking = question();
+    /*
+     * The turn's own step: the call the question is about is a line in this transcript. A connected
+     * service's tool rather than the browser's: a browser call marks the Bot's browser as in use for
+     * 2.5 s after the conversation leaves, on a timer the DOM takes with it when this file ends —
+     * and the next file's pill then read 일하는 중 for good.
+     */
+    await acted(() =>
+      turns.say([
+        {
+          id: "a-asking",
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: asking.step?.toolCallId ?? "",
+              type: "function",
+              function: { name: "mail__send_message", arguments: "{}" },
+            },
+          ],
+        },
+      ]),
+    );
+    state.approvals = [asking];
+    // The frame's own read of the outbox wins: the record of the question is still on its way.
+    await outboxSays(asking.id);
+    await view.settle(200);
+    expect(ShownNotice.shown).toHaveLength(0);
+    // The record lands and names this conversation: the card is here, and nothing is said.
+    await acted(() => releaseApprovals());
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the question to be drawn",
+      6000,
+    );
+    await view.settle(150);
+    expect(ShownNotice.shown).toHaveLength(0);
+    expect(view.main()?.textContent ?? "").toContain("Waiting for your answer");
   });
 });

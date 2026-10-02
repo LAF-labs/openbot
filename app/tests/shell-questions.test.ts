@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  anyQuestionOn,
   approvePageCall,
   closeQuestion,
   decisionOn,
@@ -344,5 +345,37 @@ describe("one question on two lines", () => {
     // Both lines are still there for the card that draws each.
     expect(questionOn(approvePageCall(q.id))).toBeDefined();
     closeQuestion(approvePageCall(q.id));
+  });
+});
+
+/*
+ * Codex, second round. The transcript's "답을 기다리는 중" asked whether ANY question was open, which
+ * was the same question while only the conversation on screen put questions in the store. With
+ * every conversation's there, it has to ask about its own calls.
+ */
+describe("whether a transcript is waiting on an answer", () => {
+  test("only for a question on one of its own calls", () => {
+    const mine = fresh();
+    const theirs = fresh();
+    openQuestion(theirs.call, {
+      approvalId: theirs.id,
+      botId: BOT,
+      subject: undefined,
+      rule: null,
+      expiresAt: "",
+    });
+    expect(anyQuestionOn([mine.call, "call-of-a-finished-step"])).toBe(false);
+    expect(anyQuestionOn([])).toBe(false);
+    openQuestion(mine.call, {
+      approvalId: mine.id,
+      botId: BOT,
+      subject: undefined,
+      rule: null,
+      expiresAt: "",
+    });
+    expect(anyQuestionOn([mine.call])).toBe(true);
+    closeQuestion(mine.call);
+    expect(anyQuestionOn([mine.call])).toBe(false);
+    closeQuestion(theirs.call);
   });
 });

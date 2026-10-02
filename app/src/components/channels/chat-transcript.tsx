@@ -48,7 +48,7 @@ import {
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
-import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
+import { anyQuestionOn, watchQuestions } from "@/lib/approvals";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
@@ -1429,8 +1429,19 @@ export function ChatTranscript({
    * So: the turn is in flight AND the last thing in the conversation is still the person's own
    * message. A tool call that is running shimmers on its own line and needs nothing from here.
    */
-  /** Any tool call in this tab waiting on a person. Subscribed, so it clears the moment it does. */
-  const awaitingAnswer = useSyncExternalStore(watchQuestions, anyQuestionOpen);
+  /**
+   * A tool call of THIS conversation waiting on a person. Subscribed, so it clears the moment it
+   * does. Its own calls only: the store holds every conversation's questions (`anyQuestionOn`).
+   */
+  const awaitingAnswer = useSyncExternalStore(watchQuestions, () =>
+    anyQuestionOn(
+      messages.flatMap((message) =>
+        message.role === "assistant"
+          ? (message.toolCalls ?? []).map((call) => call.id)
+          : [],
+      ),
+    ),
+  );
   /** What this device kept because the server never got it, and what went again by itself. */
   const unsentById = new Map(
     useUnsent(channelId).map((message) => [message.id, message]),
