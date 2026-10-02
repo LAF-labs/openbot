@@ -65,7 +65,7 @@ afterAll(async () => {
 });
 
 /** The server of one conversation, and its own list of who is working. */
-function server(options: { going: boolean }) {
+function server(options: { going: boolean; holdFirstList?: boolean }) {
   const turns = turnServer({
     channelId: CHANNEL,
     history: [ASKED],
@@ -74,6 +74,11 @@ function server(options: { going: boolean }) {
       : null,
   });
   const state = { listed: options.going, workingReads: 0 };
+  /** The first list, kept on its way: written before the turn began, so it names nobody. */
+  let releaseFirstList = () => {};
+  const firstListHeld = new Promise<void>((resolve) => {
+    releaseFirstList = resolve;
+  });
   const api = (request: ApiRequest) => {
     if (request.pathname === "/api/channels") {
       return json({
@@ -91,6 +96,9 @@ function server(options: { going: boolean }) {
     }
     if (request.pathname === "/api/agents/working") {
       state.workingReads += 1;
+      if (options.holdFirstList && state.workingReads === 1) {
+        return firstListHeld.then(() => json({ working: [] }));
+      }
       return json({
         working: state.listed
           ? [
@@ -106,7 +114,7 @@ function server(options: { going: boolean }) {
     }
     return turns.api(request);
   };
-  return { api, turns, state };
+  return { api, turns, state, releaseFirstList: () => releaseFirstList() };
 }
 
 /** What the pill beside the Bot's name says: the sidebar's own row, outside the conversation. */
@@ -170,6 +178,39 @@ describe("the pill, once the conversation has left the screen", () => {
       "the list to be read again on leaving",
       2000,
     );
+  });
+
+  /*
+   * Codex, on the pull request: the list is timed by when it arrived, and a list asked for before
+   * the turn began can arrive after the conversation has left. While the list has never been
+   * answered, invalidating it does not start a second request — the first is kept going — so the
+   * stale answer landed "after the leaving", named nobody, and the pill said Ready until the poll.
+   */
+  test("a list already on its way when the conversation left does not speak for the turn it left behind", async () => {
+    const { api, state, releaseFirstList } = server({
+      going: true,
+      holdFirstList: true,
+    });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => pill(view.host) === "Thinking",
+      "the conversation to tell its turn",
+      6000,
+    );
+    expect(state.workingReads).toBe(1);
+
+    await view.navigate("/made");
+    expect(pill(view.host)).toBe("Busy working");
+    // Asked again, after the leaving — not the request that was already out.
+    await view.waitFor(
+      () => state.workingReads >= 2,
+      "a list asked for after leaving",
+      2000,
+    );
+    // The old one lands now, naming nobody. It was written before the turn began.
+    await acted(() => releaseFirstList());
+    await view.settle(60);
+    expect(pill(view.host)).toBe("Busy working");
   });
 
   test("a list that still names a turn the conversation saw end does not hold the pill on working", async () => {
