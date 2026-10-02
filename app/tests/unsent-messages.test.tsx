@@ -194,6 +194,121 @@ describe("a message the server never got", () => {
     await view.unmount();
   });
 
+  /*
+   * Review of the typed-answer change, third round. Words a turn the server owned kept for a card
+   * (`answerTo`) are left out of every hand-over until it is known what became of them. A
+   * deployment can then be switched to turns the window drives: this screen drew them 보내지 못함,
+   * and its 다시 보내기 could neither send them nor take them away. They are settled here once the
+   * conversation is in — and not on a press, which decided from a thread that had not arrived.
+   */
+  describe("words a turn the server owned kept for a card, on this screen", () => {
+    const keptForACard = (channelId: string, answerTo: string) =>
+      localStorage.setItem(
+        `laf:unsent:${channelId}`,
+        JSON.stringify([
+          {
+            id: "q-typed",
+            text: TYPED,
+            instructions: [],
+            at: "2026-09-24T10:23:00.000Z",
+            autoTried: true,
+            answerTo,
+          },
+        ]),
+      );
+    const keptNow = (channelId: string) =>
+      JSON.parse(localStorage.getItem(`laf:unsent:${channelId}`) ?? "[]") as {
+        answerTo?: string;
+      }[];
+
+    test("are words like any other the device kept, where no card was answered with them", async () => {
+      const channelId = "channel_unsent-answer";
+      keptForACard(channelId, "call-gone");
+      const server = channelServer({
+        channelId,
+        history: [EARLIER, EARLIER_ANSWER],
+        runs: [answering(ANSWER)],
+      });
+      const view = await mountApp({
+        path: `/channel/${channelId}`,
+        api: server.api,
+      });
+      await view.waitFor(
+        () => keptNow(channelId)[0]?.answerTo === undefined,
+        "the mark to come off once the conversation is in",
+        8000,
+      );
+      await view.settle(200);
+      // Tried once already, so never by themselves: the line, and the person's press.
+      expect(server.runs).toHaveLength(0);
+      expect(view.host.querySelector(unsentLine)).not.toBeNull();
+
+      await view.click(view.buttonNamed("Send again") as Element);
+      await view.waitFor(
+        () => bubblesSaying(view.host, ANSWER) === 1,
+        "the answer to the words sent as a message",
+        8000,
+      );
+      expect(
+        userMessages(server.runs[0]?.messages).map((message) => message.id),
+      ).toEqual(["q-earlier", "q-typed"]);
+      expect(view.host.querySelector(unsentLine)).toBeNull();
+      await view.unmount();
+    });
+
+    test("are forgotten, and never sent, where the conversation shows the card answered with them", async () => {
+      const channelId = "channel_unsent-answered";
+      keptForACard(channelId, "call-1");
+      const asked = {
+        id: "a-choice",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: {
+              name: "askChoice",
+              arguments: JSON.stringify({
+                title: "무엇을 쓸까요?",
+                options: [{ id: "a", label: "체크리스트" }],
+              }),
+            },
+          },
+        ],
+      };
+      const answered = {
+        id: "r-choice",
+        role: "tool",
+        toolCallId: "call-1",
+        content: JSON.stringify({ answer: TYPED }),
+      };
+      const server = channelServer({
+        channelId,
+        history: [
+          EARLIER,
+          asked,
+          answered,
+          EARLIER_ANSWER,
+        ] as unknown as WireMessage[],
+        runs: [answering(ANSWER)],
+      });
+      const view = await mountApp({
+        path: `/channel/${channelId}`,
+        api: server.api,
+      });
+      await view.waitFor(
+        () => localStorage.getItem(`laf:unsent:${channelId}`) === null,
+        "the words to be forgotten once the conversation is in",
+        8000,
+      );
+      await view.settle(200);
+      expect(view.host.querySelector(unsentLine)).toBeNull();
+      expect(server.runs).toHaveLength(0);
+      await view.unmount();
+    });
+  });
+
   test("offline, says to check the internet, and goes when the connection is back", async () => {
     const channelId = "channel_unsent-offline";
     keptOnThisDevice(channelId);

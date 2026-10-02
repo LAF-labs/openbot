@@ -172,7 +172,11 @@ export function turnServer(options: {
     hub.seq += 1;
     if (frame.kind === "turn") {
       hub.turn = frame.turn;
-      if (!going()) hub.messages = [];
+      // A turn that is over waits on nothing: the real hub lets go of both (`hub.ts`, `turn`).
+      if (!going()) {
+        hub.messages = [];
+        hub.waiting = [];
+      }
     }
     if (frame.kind === "messages") {
       const ids = new Set(frame.messages.map((message) => message.id));
@@ -270,7 +274,20 @@ export function turnServer(options: {
         toolCallId,
         value: (request.body as { value?: unknown } | null)?.value ?? null,
       });
+      /*
+       * EVERY WINDOW IS TOLD THE CARD STOPPED WAITING, BEFORE THE DOOR REPLIES — the order the
+       * real server keeps (`people.ts`: the wait ends, `onChange` publishes, then the route
+       * answers). This used to change what waited and tell nobody, so a test of "the door took
+       * it and its reply was lost" pressed its way through a 409 a real window is never sent.
+       */
       hub.waiting = hub.waiting.filter((id) => id !== toolCallId);
+      if (hub.turn) {
+        publish({
+          kind: "waiting",
+          turn: hub.turn.id,
+          toolCallIds: [...hub.waiting],
+        });
+      }
       if (answersDoor === "lost") return new Response("", { status: 503 });
       return json({ answered: true });
     }
@@ -386,8 +403,18 @@ export function turnServer(options: {
       hub.waiting = toolCallIds;
       publish({ kind: "waiting", turn: turn.id, toolCallIds });
     },
-    /** The cards stop being waited on without an answer: the wait ran out, or the turn went on. */
+    /** The cards stop being waited on without an answer — the wait ran out — and every window is told. */
     stopWaiting: () => {
+      hub.waiting = [];
+      if (hub.turn) {
+        publish({ kind: "waiting", turn: hub.turn.id, toolCallIds: [] });
+      }
+    },
+    /**
+     * The same, in the instant before this window hears of it: an answer sent now crosses the
+     * frame on its way, and is refused by a door the window still took to be open.
+     */
+    stopWaitingUnheard: () => {
       hub.waiting = [];
     },
     /** Every answer a window sent to a waiting card. */

@@ -79,6 +79,39 @@ export function typedAnswer(words: string): { answer: string } {
 }
 
 /**
+ * The result of a call, as the conversation holds it: the tool message that answers THE NEWEST CALL
+ * under that id. Undefined while that call has none.
+ *
+ * The newest, as `openChoiceCall` decides an id: a provider's ids are its own to mint, and an
+ * older call that carried the same one has a result of its own — read for this call, it said the
+ * question was over while it was still being asked.
+ */
+function resultOf(
+  messages: readonly Message[],
+  toolCallId: string,
+): Message | undefined {
+  const asked = messages.findLastIndex(
+    (message) =>
+      message.role === "assistant" &&
+      (message.toolCalls ?? []).some((call) => call.id === toolCallId),
+  );
+  // A call this window no longer holds: whatever result there is, is that call's.
+  return messages
+    .slice(asked + 1)
+    .find(
+      (message) => message.role === "tool" && message.toolCallId === toolCallId,
+    );
+}
+
+/** Whether the conversation holds a result for a call: its question is over, however it ended. */
+export function hasResult(
+  messages: readonly Message[],
+  toolCallId: string,
+): boolean {
+  return resultOf(messages, toolCallId) !== undefined;
+}
+
+/**
  * The words a card was answered with, read off the conversation: the result of that call, where it
  * is a typed answer. Undefined while the call has no result, and for any other result — an option
  * pressed, a wait that ran out, a stop.
@@ -87,19 +120,16 @@ export function answeredInWords(
   messages: readonly Message[],
   toolCallId: string,
 ): string | undefined {
-  for (const message of [...messages].reverse()) {
-    if (message.role !== "tool" || message.toolCallId !== toolCallId) continue;
-    if (typeof message.content !== "string") return undefined;
-    try {
-      const result: unknown = JSON.parse(message.content);
-      return result && typeof result === "object"
-        ? typedAnswerIn(result as Record<string, unknown>)
-        : undefined;
-    } catch {
-      return undefined;
-    }
+  const content = resultOf(messages, toolCallId)?.content;
+  if (typeof content !== "string") return undefined;
+  try {
+    const result: unknown = JSON.parse(content);
+    return result && typeof result === "object"
+      ? typedAnswerIn(result as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
   }
-  return undefined;
 }
 
 /** The words of a typed answer, read back out of the call's result. Undefined for anything else. */
