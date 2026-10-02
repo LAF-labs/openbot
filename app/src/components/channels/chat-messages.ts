@@ -1,6 +1,10 @@
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
 import { TOOL_SEARCH } from "@shared/tools/bridge";
+import {
+  GALLERY_CONFIRMATIONS,
+  GALLERY_DECISIONS,
+} from "@shared/tools/gallery";
 import type { Message, ToolCall } from "@ag-ui/core";
 import {
   BROWSING_TOOLS,
@@ -328,14 +332,43 @@ export function unsettledFrom(
   return 0;
 }
 
+/** The Bot asking the person for a hand, or for a value it must not see: a card of its own. */
+const ASKS_THE_PERSON: ReadonlySet<string> = new Set([
+  "computer_request_help",
+  "computer_request_secret",
+]);
+
 /**
- * How many of the Bot's messages arrived after `seenId`, the furthest row the reader has had on
- * screen (`furthestSeen`).
+ * Whether a call is something the Bot put in front of the person — a card to read, or to answer —
+ * and not a line saying what it is doing.
  *
- * Each bubble is one: a turn that answers in two is two things to read. The person's own words are
- * not counted — sent from another window of theirs, they are not news to them — and neither is a
- * step line. A row that is not known (nothing seen yet, or it has left the list) counts nothing:
- * saying "3 new" by guessing is worse than the arrow alone.
+ * By the call's name, from the lists the server answers these calls by (`@shared/tools/gallery`):
+ * what the transcript draws for a name is a renderer registered with the runtime, which a function
+ * over the list cannot ask. A component an administrator authored in the browser is in neither
+ * list and is not counted.
+ */
+function isPutBeforeThePerson(name: string): boolean {
+  return (
+    GALLERY_DECISIONS.has(name) ||
+    Object.hasOwn(GALLERY_CONFIRMATIONS, name) ||
+    ASKS_THE_PERSON.has(name)
+  );
+}
+
+/**
+ * How many things the Bot put there for the person arrived after `seenId`, the furthest row the
+ * reader has had on screen (`furthestSeen`).
+ *
+ * Each bubble is one: a turn that answers in two is two things to read. AND EACH CARD IS ONE. A
+ * question is often the whole of what arrives — the Bot's message is empty and its call is the
+ * card — and counting bubbles alone left the arrow as it was over a Bot stopped on a question
+ * below, which is the arrival that most needs saying (review, first round). So is a chart, a file,
+ * a request for a hand or for a password.
+ *
+ * The person's own words are not counted — sent from another window of theirs, they are not news
+ * to them — and neither is a step line, nor the card of a browsing task, which says what is being
+ * done. A row that is not known (nothing seen yet, or it has left the list) counts nothing: saying
+ * "3 new" by guessing is worse than the arrow alone.
  */
 export function arrivedBelow(
   items: readonly TranscriptItem[],
@@ -347,6 +380,12 @@ export function arrivedBelow(
   let arrived = 0;
   for (const item of items.slice(seen + 1)) {
     if (item.kind === "text" && item.role === "assistant") arrived += 1;
+    else if (
+      item.kind === "tool" &&
+      isPutBeforeThePerson(item.toolCall.function.name)
+    ) {
+      arrived += 1;
+    }
   }
   return arrived;
 }
