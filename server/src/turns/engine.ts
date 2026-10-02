@@ -60,6 +60,12 @@ export const CHAT_MAX_STEPS = 100;
  */
 export const CHAT_TURN_TIMEOUT_MS = 90 * 60_000;
 
+/**
+ * The waits before each further try at writing a turn's end: three more, a little over two seconds
+ * in all — long enough for a connection that dropped to be replaced, short against a turn.
+ */
+const PERSIST_RETRY_MS: readonly number[] = [150, 500, 1_500];
+
 /** The result a call gets when the person stopped the turn while it was out: `laf:stopped`. */
 const STOPPED_RESULT = { ok: false, code: "laf:stopped", stopped: true };
 
@@ -126,6 +132,8 @@ export type TurnEngineOptions = {
   }) => Promise<FirstMove | null>;
   maxSteps?: number;
   timeoutMs?: number;
+  /** How long to wait before each further try at a turn's last write. A test's are shorter. */
+  persistRetryMs?: readonly number[];
 };
 
 /** The Bot as a turn drives it: the loop's slice, and the conversation it answers in. */
@@ -146,6 +154,11 @@ type LiveTurn = {
   free: () => void;
   /** Settles once the turn has written its end. */
   ended: Promise<void>;
+  /**
+   * Write what the turn has made so far, after whatever it is already writing. Set once the turn
+   * has a Bot to speak for; see `flush` on the engine.
+   */
+  flush?: () => Promise<void>;
 };
 
 /** A message as the Bot is handed it: AG-UI's fields, none of the store's own. */
@@ -262,6 +275,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
   const live = new Map<string, LiveTurn>();
   const maxSteps = options.maxSteps ?? CHAT_MAX_STEPS;
   const timeoutMs = options.timeoutMs ?? CHAT_TURN_TIMEOUT_MS;
+  const persistRetryMs = options.persistRetryMs ?? PERSIST_RETRY_MS;
   const lane = options.lane;
 
   const announceTurn = (turn: LiveTurn, status: TurnStatus, code?: string) => {
@@ -275,21 +289,51 @@ export function createTurnEngine(options: TurnEngineOptions) {
     options.hub.turn(turn.threadId, state);
   };
 
-  /** Write the turn's messages as they stand. Never throws: persistence must not break a turn. */
+  /**
+   * Write the turn's messages as they stand, and say whether they were written. Never throws: a
+   * write that fails partway through a turn must not break the turn — the next one carries the
+   * same messages again — but the LAST one is the turn's record, and its failure is the turn's
+   * (`persistEnd`).
+   */
   const persist = async (
     threadId: string,
     runId: string,
     messages: readonly Message[],
-  ): Promise<void> => {
-    if (messages.length === 0) return;
+  ): Promise<boolean> => {
+    if (messages.length === 0) return true;
     try {
       await appendMessages(options.database, threadId, messages, { runId });
+      return true;
     } catch (error) {
       log.error("turn_messages_not_persisted", {
         thread: threadId,
         reason: describeFailure(error),
       });
+      return false;
     }
+  };
+
+  /**
+   * The turn's last write, tried again before it is given up on.
+   *
+   * A TURN WHOSE END WAS NEVER WRITTEN USED TO END `done`. `persist` swallowed every failure, the
+   * status ignored it, and the ledger was settled as a turn that finished: a person watched the
+   * whole answer arrive, reloaded, and found their question alone — no answer and no word of a
+   * failure — and the Bot's next turn knew nothing of the step (refactoring review, 2026-10-02).
+   * A database that hiccups for a moment is the ordinary cause, so the write is tried again over a
+   * couple of seconds; one that still fails is a turn that failed, and is said so.
+   */
+  const persistEnd = async (
+    threadId: string,
+    runId: string,
+    messages: () => readonly Message[],
+  ): Promise<boolean> => {
+    if (await persist(threadId, runId, messages())) return true;
+    for (const wait of persistRetryMs) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      if (await persist(threadId, runId, messages())) return true;
+    }
+    return false;
   };
 
   const run = async (turn: LiveTurn, input: SendInput): Promise<void> => {
@@ -356,7 +400,15 @@ export function createTurnEngine(options: TurnEngineOptions) {
       try {
         value = await wait();
       } finally {
+        /*
+         * WAITING FOR THE BOT AGAIN IS SAID. The person has answered, and whatever moved in while
+         * they were away — a routine — may hold the Bot for minutes yet; a turn that just went
+         * quiet there read as a Bot thinking with nothing true to look at. `queued` is the word the
+         * turn began under, so no window needs a new one.
+         */
+        if (!over && !signal.aborted) announceTurn(turn, "queued");
         await take();
+        if (!over && !signal.aborted) announceTurn(turn, "running");
       }
       // Our own grant back is one; anything more is somebody else who held the Bot meanwhile.
       return { value, moved: lane.grants(botId) - before > 1 };
@@ -423,11 +475,12 @@ export function createTurnEngine(options: TurnEngineOptions) {
       );
       let persisting: Promise<void> = Promise.resolve();
       const persistNow = () => {
-        persisting = persisting.then(() =>
-          persist(threadId, turn.id, turnMessages()),
-        );
+        persisting = persisting.then(async () => {
+          await persist(threadId, turn.id, turnMessages());
+        });
         return persisting;
       };
+      turn.flush = persistNow;
 
       /*
        * THE FIRST MOVE (`first-move.ts`): a call the server makes for the Bot before its model is
@@ -615,9 +668,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
         }
       }
     }
+    delete turn.flush;
     if (target) {
       options.hub.messages(threadId, turn.id, target.messages.slice(from));
-      await persist(threadId, turn.id, turnMessages());
+      const written = await persistEnd(threadId, turn.id, turnMessages);
+      // Not a stop's to report, and not over the top of a failure that already has its name.
+      if (!written && !stopped && failure === null) {
+        failure = TURN_FAILURE_CODES.unknown;
+      }
     }
 
     const status: "done" | "error" | "stopped" = stopped
@@ -809,6 +867,23 @@ export function createTurnEngine(options: TurnEngineOptions) {
     },
 
     /** Stop the conversation's turn, from any window. False when there is none. */
+    /**
+     * Write what every live turn has made so far, and wait for it.
+     *
+     * FOR THE MOMENT BEFORE THE PROCESS LEAVES. Every upgrade restarts this server, and SIGTERM
+     * used to be `process.exit` on the same tick: a step already on somebody's screen, its write
+     * still in flight, went with the process, and so did the part of an answer that had streamed
+     * (refactoring review, 2026-10-02). The turns themselves are not finished or resumed — the next
+     * boot reconciles them as interrupted, as it always did, and the next send repairs a call left
+     * unanswered (`repairUnanswered`, half a call included) — but what they had made is in the
+     * thread when it does.
+     */
+    async flush(): Promise<void> {
+      await Promise.allSettled(
+        [...live.values()].map((turn) => turn.flush?.() ?? Promise.resolve()),
+      );
+    },
+
     stop(threadId: string): boolean {
       const turn = live.get(threadId);
       if (!turn) return false;

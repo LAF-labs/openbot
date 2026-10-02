@@ -202,12 +202,16 @@ function engineWith(
     resolveAgents?: () => Promise<Record<string, LoopAgent | undefined>>;
     timeoutMs?: number;
     firstMove?: () => Promise<FirstMove | null>;
+    /** The thread's store as the engine reaches it — a test's may refuse a write. */
+    store?: typeof database;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
   const announced: string[] = [];
   const engine = createTurnEngine({
-    database,
+    database: options.store ?? database,
+    // A test waits milliseconds for a write to be tried again, not seconds.
+    persistRetryMs: [5, 5, 5],
     ledger: createRunLedger(database),
     hub,
     ...(options.lane ? { lane: options.lane } : {}),
@@ -493,6 +497,201 @@ describe("a turn the server owns", () => {
   });
 });
 
+/**
+ * A store whose writes can be made to fail: the thread's own, with `transaction` — the one door
+ * `appendMessages` writes through — refusing while `refusing` says how many more to refuse.
+ */
+function flakyStore() {
+  const state = { refusing: 0, refused: 0 };
+  const store = new Proxy(database, {
+    get(target, property, receiver) {
+      if (property === "transaction") {
+        return (...args: unknown[]) => {
+          if (state.refusing > 0) {
+            state.refusing -= 1;
+            state.refused += 1;
+            return Promise.reject(new Error("connection terminated"));
+          }
+          return (target.transaction as (...a: unknown[]) => unknown)(...args);
+        };
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  }) as typeof database;
+  return { store, state };
+}
+
+/*
+ * A TURN WHOSE END IS NOT WRITTEN IS NOT A TURN THAT FINISHED (refactoring review, 2026-10-02).
+ * Every write of a turn's rows went through a function that swallowed its failure, and the turn was
+ * settled `done` regardless: the person watched the whole answer arrive, reloaded, and found their
+ * question alone, with no word that anything had gone wrong.
+ */
+describe("the end of a turn, and the store it is written to", () => {
+  test("a store that refuses for a moment is written to again, and the turn is done", async () => {
+    const { threadId, channelId } = await aConversation();
+    const { store, state } = flakyStore();
+    const bot = scriptedBot("다 됐어요.");
+    /*
+     * Refused from the moment the Bot has said its answer: the step's own write, and the first try
+     * at the turn's last one. Earlier in a turn a refused write is carried by the next step's, so
+     * only here does the retry decide whether the answer is kept.
+     */
+    const answer = bot.runAgent;
+    bot.runAgent = async (input, subscriber) => {
+      // A model takes its time: the tool's answer is written before the reply exists. (The
+      // scripted Bot answers within the same tick, and that write would carry the reply with it.)
+      if (bot.runs === 1)
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      const result = await answer(input, subscriber);
+      if (bot.runs === 2) state.refusing = 2;
+      return result;
+    };
+    const { engine } = engineWith(bot, async () => ({ ok: true }), { store });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("잠깐 끊겨도 남겨줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(state.refused).toBe(2);
+    const stored = await messagesFor(database, threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(stored.at(-1)?.content).toBe("다 됐어요.");
+  });
+
+  test("a store that goes on refusing is a turn that failed, and every window is told", async () => {
+    const { threadId, channelId } = await aConversation();
+    const { store, state } = flakyStore();
+    const bot = scriptedBot("다 됐어요.");
+    const { engine, hub } = engineWith(
+      bot,
+      async () => {
+        state.refusing = Number.POSITIVE_INFINITY;
+        return { ok: true };
+      },
+      { store },
+    );
+    const frames: TurnFrame[] = [];
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (frame.kind !== "snapshot") frames.push(frame);
+    });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("끝내 못 남기면 말해줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "error");
+    state.refusing = 0;
+    // The first try and three more, on top of the two steps' own.
+    expect(state.refused).toBeGreaterThanOrEqual(4);
+    // Not `done`: what the person watched is not in the thread, and the turn says so.
+    const ended = frames.find(
+      (frame) => frame.kind === "turn" && frame.turn.status === "error",
+    );
+    expect(ended && ended.kind === "turn" ? ended.turn.code : null).toBe(
+      "laf:turn_failed",
+    );
+    expect(
+      frames.some(
+        (frame) => frame.kind === "event" && frame.event.type === "RUN_ERROR",
+      ),
+    ).toBe(true);
+    const stored = await messagesFor(database, threadId);
+    expect(stored.at(-1)?.content).not.toBe("다 됐어요.");
+  });
+});
+
+/*
+ * WHAT A TURN HAS MADE IS WRITTEN BEFORE THE PROCESS LEAVES. Every upgrade restarts the server, and
+ * SIGTERM was `process.exit` on the same tick: the part of an answer that had streamed, and a step
+ * whose write was still in flight, went with it (refactoring review, 2026-10-02).
+ */
+describe("a turn in flight when the server is asked to leave", () => {
+  test("is written as far as it has got, without being finished", async () => {
+    const { threadId, channelId } = await aConversation();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const half: Message = {
+      id: `a-${randomUUID()}`,
+      role: "assistant",
+      content: "지금까지 찾은 건",
+    } as Message;
+    // A Bot part-way through its answer: the words so far are in its messages, and no end has come.
+    const bot = {
+      messages: [] as Message[],
+      setMessages(messages: Message[]) {
+        bot.messages = [...messages];
+      },
+      addMessage(message: Message) {
+        bot.messages.push(message);
+      },
+      async runAgent(_input: unknown, subscriber?: Subscriber) {
+        subscriber?.onEvent?.({ event: event("RUN_STARTED") });
+        subscriber?.onEvent?.({
+          event: event("TEXT_MESSAGE_START", {
+            messageId: half.id,
+            role: "assistant",
+          }),
+        });
+        bot.messages.push(half);
+        await held;
+        subscriber?.onEvent?.({ event: event("RUN_FINISHED") });
+        subscriber?.onRunFinishedEvent?.();
+        return { result: undefined, newMessages: [] };
+      },
+    };
+    const { engine } = engineWith(
+      bot as unknown as ReturnType<typeof scriptedBot>,
+      async () => ({ ok: true }),
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("길게 답해줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => bot.messages.includes(half));
+    // Nothing has written it yet: a turn writes at its steps, and this one is inside its first.
+    expect(
+      (await messagesFor(database, threadId)).map((message) => message.id),
+    ).not.toContain(half.id);
+
+    await engine.flush();
+    const stored = await messagesFor(database, threadId);
+    expect(stored.at(-1)?.id).toBe(half.id);
+    expect(stored.at(-1)?.content).toBe("지금까지 찾은 건");
+    // And the turn is still the turn it was: flushed, not ended.
+    expect(await statusOf(sent.turnId)).toBe("running");
+
+    release();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+  });
+
+  test("with no turn in flight there is nothing to wait for", async () => {
+    const { engine } = engineWith(scriptedBot(), async () => ({ ok: true }));
+    await engine.flush();
+  });
+});
+
 describe("a turn and the Bot's lane", () => {
   test("a turn waiting on a person lets a routine have the Bot, and takes it back before it acts", async () => {
     /*
@@ -509,7 +708,7 @@ describe("a turn and the Bot's lane", () => {
     });
     const order: string[] = [];
     const seen: { moved: boolean | null } = { moved: null };
-    const { engine } = engineWith(
+    const { engine, hub } = engineWith(
       bot,
       (context: ChatTurnContext) => async () => {
         order.push("turn: asked the person");
@@ -520,6 +719,10 @@ describe("a turn and the Bot's lane", () => {
       },
       { lane },
     );
+    const statuses: string[] = [];
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (frame.kind === "turn") statuses.push(frame.turn.status);
+    });
     const sent = await engine.send({
       threadId,
       channelId,
@@ -535,8 +738,25 @@ describe("a turn and the Bot's lane", () => {
       order.push("routine ran");
     });
     expect(order).toEqual(["turn: asked the person", "routine ran"]);
+    // A routine that is still on the Bot when the person answers: the turn has to wait for it.
+    const routine = await lane.acquire(BOT);
     answer();
+    await until(async () => statuses.at(-1) === "queued");
+    /*
+     * Waiting for the Bot again is SAID. It used to go quiet here — the window showed a Bot
+     * thinking for as long as the routine took (refactoring review, 2026-10-02).
+     */
+    expect(statuses).toEqual(["queued", "running", "queued"]);
+    expect(order).not.toContain("turn: acts again");
+    routine.release();
     await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(statuses).toEqual([
+      "queued",
+      "running",
+      "queued",
+      "running",
+      "done",
+    ]);
     expect(order).toEqual([
       "turn: asked the person",
       "routine ran",
