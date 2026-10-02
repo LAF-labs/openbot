@@ -8,7 +8,12 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { copiedHtml, copiedWords } from "../src/lib/channels/copied-reply";
+import {
+  copiedHtml,
+  copiedWords,
+  NOT_THE_ANSWER,
+  READ_ELEMENTS,
+} from "../src/lib/channels/copied-reply";
 import { copyRich } from "../src/lib/clipboard";
 import { mount, unmountAll } from "./support/mount";
 
@@ -38,6 +43,12 @@ afterEach(async () => {
   await unmountAll();
   delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
 });
+
+/** Every element HTML has, to find out which of them the renderer lets an answer draw. */
+const EVERY_HTML_ELEMENT =
+  "a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption center cite code col colgroup data datalist dd del details dfn dialog dir div dl dt em embed fieldset figcaption figure font footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend li link main map mark marquee menu meta meter nav noscript object ol optgroup option output p param picture pre progress q rp rt ruby s samp script search section select slot small source span strike strong style sub summary sup table tbody td template textarea tfoot th thead time title tr track tt u ul var video wbr".split(
+    " ",
+  );
 
 /** The answer, drawn in a transcript by the renderer the app uses, and the bubble it is in. */
 async function drawn(markdown: string) {
@@ -88,7 +99,8 @@ describe("the words, read off what was drawn", () => {
         "",
         "세 곳을 비교했어요. 자세한 내용은 공지 (https://example.com/notice)를 보세요.",
         "",
-        "가격은 어제 오늘 기준이에요.",
+        // The one mark that stays: without it the sentence says the price is yesterday's too.
+        "가격은 ~~어제~~ 오늘 기준이에요.",
         "",
         "끝이에요.",
       ].join("\n"),
@@ -320,6 +332,116 @@ describe("the words, read off what was drawn", () => {
       "문의 (help@example.com)는 메일로, 가게 전화 (010-1234-5678)는 전화로, 다른 곳 (https://example.org/x)은 주소로.",
     );
   });
+
+  /*
+   * Review, sixth round — four more, and the end of waiting for them one at a time. What an answer
+   * can draw is a list with an end: the renderer lets through the elements below and no others
+   * (the last test of this group draws every HTML element to find out). Each is read on purpose.
+   */
+  test("the space inside a link's words is still between the words", async () => {
+    expect(await words("앞[ 가운데 ](https://e.test/x)뒤")).toBe(
+      "앞 가운데 (https://e.test/x) 뒤",
+    );
+  });
+
+  test("a box somebody typed is a letter, and its item keeps its bullet", async () => {
+    expect(
+      await words("- ☑ 글자로 쓴 상자\n- [x] 진짜 상자\n- [ ] 빈 상자"),
+    ).toBe("- ☑ 글자로 쓴 상자\n☑ 진짜 상자\n☐ 빈 상자");
+  });
+
+  test("a list of terms keeps each term on its line and its meaning under it", async () => {
+    expect(
+      await words(
+        "<dl><dt>용어</dt><dd>뜻</dd><dt>둘째</dt><dd>둘째 뜻</dd></dl>",
+      ),
+    ).toBe("용어\n  뜻\n둘째\n  둘째 뜻");
+  });
+
+  test("an item that says its own number is that number, and the next one follows it", async () => {
+    expect(
+      await words('<ol start="3"><li value="8">여덟</li><li>아홉</li></ol>'),
+    ).toBe("8. 여덟\n9. 아홉");
+  });
+
+  test("a quotation has its marks, and a reading stands beside what it reads", async () => {
+    expect(
+      await words(
+        "그는 <q>좋아요</q>라고 했고, <ruby>漢字<rt>한자</rt></ruby>로 썼어요.",
+      ),
+    ).toBe("그는 “좋아요”라고 했고, 漢字(한자)로 썼어요.");
+  });
+
+  test("a cell that spans leaves its columns and its rows in place", async () => {
+    expect(
+      await words(
+        [
+          "<table>",
+          '<tr><th colspan="2">가격</th><th>비고</th></tr>',
+          '<tr><td rowspan="2">가</td><td>1</td><td>x</td></tr>',
+          "<tr><td>2</td><td>y</td></tr>",
+          "</table>",
+        ].join(""),
+      ),
+    ).toBe("가격\t\t비고\n가\t1\tx\n\t2\ty");
+  });
+
+  test("what is struck out keeps its tildes: without them it reads as what the answer says", async () => {
+    expect(await words("~~10,000원~~ 8,000원이에요.")).toBe(
+      "~~10,000원~~ 8,000원이에요.",
+    );
+  });
+
+  test("a cell that holds a list, and a term or an item standing by itself, keep their lines", async () => {
+    expect(
+      await words(
+        "<table><tr><td><ul><li>가</li><li>나</li></ul></td><td>둘</td></tr></table>",
+      ),
+    ).toBe("- 가 - 나\t둘");
+    expect(await words("<dt>용어</dt><dd>뜻</dd>\n\n<li>혼자</li>")).toBe(
+      "용어\n\n뜻\n\n혼자",
+    );
+  });
+
+  test("a link with no words is not on the screen, and not in the copy", async () => {
+    expect(await words("앞 [](https://e.test/x) 뒤")).toBe("앞 뒤");
+  });
+
+  test("every element the renderer lets an answer draw is one that is read on purpose", async () => {
+    const { Streamdown } = await import("streamdown");
+    const { markdownPlugins } = await import("../src/lib/markdown-plugins");
+    const { markdownComponents } = await import("../src/lib/markdown");
+    const drawnElements = new Set<string>();
+    // Each in the place it can stand: on its own, in a paragraph, in a list, in a table.
+    const places = (tag: string) => [
+      `<${tag}>x</${tag}>`,
+      `<p>앞 <${tag}>x</${tag}> 뒤</p>`,
+      `<ul><${tag}>x</${tag}></ul>`,
+      `<table><${tag}><tr><${tag}>x</${tag}></tr></${tag}></table>`,
+      `<table><tr><${tag}>x</${tag}></tr></table>`,
+      `<a href="https://e.test/">x</a><img src="https://e.test/i.png" alt="x">`,
+    ];
+    for (const tag of EVERY_HTML_ELEMENT) {
+      const view = await mount(
+        <div data-drawn="">
+          <Streamdown components={markdownComponents} plugins={markdownPlugins}>
+            {places(tag).join("\n\n")}
+          </Streamdown>
+        </div>,
+      );
+      await view.settle(5);
+      for (const element of view.host.querySelectorAll("[data-drawn] *")) {
+        // The renderer's own controls are taken off before anything is read.
+        if (element.closest(NOT_THE_ANSWER)) continue;
+        drawnElements.add(element.tagName.toLowerCase());
+      }
+      await unmountAll();
+    }
+    const unread = [...drawnElements].filter((tag) => !READ_ELEMENTS.has(tag));
+    expect(unread.sort()).toEqual([]);
+    // And the walk did draw things: an empty set would pass the line above for the wrong reason.
+    expect(drawnElements.size).toBeGreaterThan(30);
+  }, 120_000);
 
   test("the renderer's own controls are not the answer", async () => {
     const copied = await words("| A |\n| - |\n| x |\n\n```\ncode\n```");
