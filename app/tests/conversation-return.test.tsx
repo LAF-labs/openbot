@@ -63,6 +63,9 @@ beforeAll(async () => {
 afterEach(async () => {
   await unmountApps();
   localStorage.clear();
+  // What a test kept on the device is not the next test's to find.
+  const outbox = await import("../src/components/channels/composer/outbox");
+  outbox.forgetUnsentCache();
 });
 setDefaultTimeout(30_000);
 afterAll(async () => {
@@ -174,6 +177,46 @@ describe("coming back from another place", () => {
       6000,
     );
     expect(says(view.host, "최고 26도")).toBe(true);
+  });
+});
+
+/*
+ * Review, 2026-10-02. The kept conversation went on saying its old idle turn while its stream was
+ * dead, and coming back sent what the device had kept into a turn another window had started: the
+ * one send those words get by themselves, refused, and the words left under 보내지 못함.
+ */
+describe("words this device kept, on coming back", () => {
+  test("wait for the stream to say how the turn stands, and go when the turn they were behind is over", async () => {
+    const { api, turns } = server([ASKED, ANSWERED]);
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => says(view.host, "최고 26도"), "the answer", 6000);
+
+    await view.navigate("/made");
+    // While nobody looks: another window starts a turn this one's stream never tells of, and words
+    // typed here earlier are still on the device.
+    turns.unheard({ id: "turn-elsewhere", status: "running", asked: [] });
+    const outbox = await import("../src/components/channels/composer/outbox");
+    outbox.keepUnsent(CHANNEL, {
+      id: "kept-1",
+      text: "그리고 모레는요?",
+      instructions: [],
+      at: "2026-10-02T15:00:00.000Z",
+    });
+
+    await view.navigate(`/channel/${CHANNEL}`);
+    await view.settle(300);
+    // Not sent into the turn it had not heard of.
+    expect(turns.sends).toHaveLength(0);
+
+    await acted(() => turns.announce("done"));
+    await view.waitFor(
+      () => turns.sends.length === 1,
+      "the kept words to go once that turn is over",
+      6000,
+    );
+    expect(turns.sends[0]?.messages.map((message) => message.content)).toEqual([
+      "그리고 모레는요?",
+    ]);
   });
 });
 

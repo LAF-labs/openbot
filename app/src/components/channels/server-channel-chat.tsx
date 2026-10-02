@@ -448,7 +448,18 @@ export function ServerChannelChat({
    */
   const resend = async (automatic: boolean) => {
     if (busy) return;
-    if (automatic && !mayGoByItself) return;
+    if (automatic) {
+      /*
+       * BY ITSELF ONLY ON WHAT THE STORE SAYS NOW, not on what this render saw. A screen that has
+       * just come back to a kept conversation resumes its store in an effect of the same commit
+       * (`kept-threads.ts`): the render saw the old "the stream has spoken, and no turn is going",
+       * and what the device kept went into a turn another window had started while this one's
+       * stream was dead — its one send by itself, refused (review, 2026-10-02).
+       */
+      const now = store.snapshot();
+      const hasSpoken = now.loaded && now.epoch !== null;
+      if (!hasSpoken || !channel.active || isTurnGoing(now.turn)) return;
+    }
     const messages = automatic
       ? claimAutoSend(channel.id)
       : [...readUnsent(channel.id)];
@@ -656,6 +667,22 @@ export function ServerChannelChat({
       void resendNow(true);
     }
   }, [mayGoByItself, channel.id]);
+  /*
+   * AND WHEN THE STREAM SAYS HOW THE TURN STANDS AGAIN — the answer a store that was resumed waits
+   * for. The effect above runs when `mayGoByItself` changes, and for a screen that came back it may
+   * never be seen to: the store forgets what it knew and is told again between two renders.
+   */
+  useEffect(
+    () =>
+      store.onFrame((frame) => {
+        if (frame.kind !== "snapshot") return;
+        if (isSocketLost() || navigator.onLine === false) return;
+        if (readUnsent(channel.id).some((message) => !message.autoTried)) {
+          void resendNow(true);
+        }
+      }),
+    [store, channel.id],
+  );
 
   /*
    * A TURN THAT ENDS FREES THE CONVERSATION for what was kept waiting behind it: the corrections

@@ -18,14 +18,13 @@
  * render can ask and never be committed (a development double render, a transition thrown away);
  * `holdThread` and `releaseThread` are the effect and its cleanup. Nothing is opened for a render
  * that was thrown away. A screen that mounts twice in a breath — development again — holds the same
- * store twice over: the second hold is a coming back like any other, so the stream is reopened from
- * where it was and the newest page read once more, and nothing is closed in between.
+ * store twice over: the second hold is a coming back like any other, so the stream is asked again
+ * how the turn stands and the newest page read once more, and nothing is closed in between.
  *
  * NOT KEPT ONCE SOMETHING ON SCREEN HAS FAILED TO DRAW (`distrustKeptThreads`). 다시 불러오기, and
  * leaving and coming back, both used to read the conversation again because the store was made
  * again; a kept store would hand back the rows that had just failed to draw.
  */
-import { isTurnGoing, type TurnState } from "./frames";
 import { createThreadStore } from "./thread-store";
 
 /** How long a conversation nobody is looking at is kept, with its stream open. */
@@ -35,9 +34,7 @@ export const KEPT_FOR_MS = 10 * 60_000;
 type Keepable = {
   open(): Promise<void>;
   close(): void;
-  nudge(): void;
-  refresh(): Promise<void>;
-  snapshot(): { turn: TurnState | null };
+  resume(): void;
 };
 
 type Deps<Store extends Keepable> = {
@@ -103,10 +100,12 @@ export function threadFor(
  * A screen is showing the conversation. Whether it was being kept open — true for somebody coming
  * back, false for the first look.
  *
- * Coming back, the stream is opened afresh from where it was: nothing woke it while no screen was
- * there to hear the window come back into view or the connection return. And what something other
- * than a turn wrote meanwhile — a routine's delivery — is read in, unless a turn is going, whose
- * end reads it in under itself (`server-channel-chat.tsx`).
+ * Coming back, the store is told to resume (`thread-store.ts`): nothing woke its stream while no
+ * screen was there to hear the window come back into view or the connection return, so the stream
+ * is opened afresh and asked how the turn stands, and nothing that waits for the stream to have
+ * spoken — words this device kept, going by themselves — goes on what the store knew before. Under
+ * that answer the newest page is read: what something other than a turn wrote meanwhile (a
+ * routine's delivery), and the times of what the stream brought while nobody looked.
  *
  * `store` IS THE ONE THE SCREEN HAS IN ITS HAND, and it is the one that is kept. Everything kept can
  * be forgotten under a screen that is still mounted — signing out; a development remount, which
@@ -136,10 +135,7 @@ export function holdThread(
     void entry.store.open();
     return false;
   }
-  if (entry.holders === 1) {
-    entry.store.nudge();
-    if (!isTurnGoing(entry.store.snapshot().turn)) void entry.store.refresh();
-  }
+  if (entry.holders === 1) entry.store.resume();
   return true;
 }
 

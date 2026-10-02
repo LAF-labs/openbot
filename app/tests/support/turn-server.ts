@@ -321,6 +321,15 @@ export function turnServer(options: {
         turn: { ...turn, status, ...(code ? { code } : {}) },
       });
     },
+    /**
+     * A turn frame no window hears: its socket was half-open — a laptop asleep — while another
+     * window started a turn. The server's state moves on; only a fresh stream is told, in its
+     * snapshot.
+     */
+    unheard: (turn: TurnState) => {
+      hub.seq += 1;
+      hub.turn = turn;
+    },
     /** The server's own copies of what the turn has written; filed in the store as it does. */
     say: (messages: Message[]) => {
       const turn = hub.turn;

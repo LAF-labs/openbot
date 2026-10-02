@@ -24,20 +24,12 @@ function harness() {
     id: string;
     opens: number;
     closes: number;
-    nudges: number;
-    refreshes: number;
+    resumes: number;
   }[] = [];
   const waits: Wait[] = [];
-  const going = new Set<string>();
   const deps = {
     create: (threadId: string) => {
-      const record = {
-        id: threadId,
-        opens: 0,
-        closes: 0,
-        nudges: 0,
-        refreshes: 0,
-      };
+      const record = { id: threadId, opens: 0, closes: 0, resumes: 0 };
       made.push(record);
       return {
         open: async () => {
@@ -46,17 +38,9 @@ function harness() {
         close: () => {
           record.closes += 1;
         },
-        nudge: () => {
-          record.nudges += 1;
+        resume: () => {
+          record.resumes += 1;
         },
-        refresh: async () => {
-          record.refreshes += 1;
-        },
-        snapshot: () => ({
-          turn: going.has(threadId)
-            ? { id: "t", status: "running" as const, asked: [] }
-            : null,
-        }),
       };
     },
     later: (run: () => void, ms: number) => {
@@ -70,7 +54,7 @@ function harness() {
   const elapse = () => {
     for (const wait of waits.splice(0)) if (!wait.cancelled) wait.run();
   };
-  return { deps, made, waits, going, elapse };
+  return { deps, made, waits, elapse };
 }
 
 afterEach(() => forgetKeptThreads());
@@ -95,8 +79,8 @@ describe("a conversation on screen", () => {
     holdThread("thread-1", deps);
     expect(made[0]).toMatchObject({ opens: 1, closes: 0 });
     expect(waits.every((wait) => wait.cancelled)).toBe(true);
-    // The second hold is a coming back like any other: woken, and its newest page read once more.
-    expect(made[0]).toMatchObject({ nudges: 1, refreshes: 1 });
+    // The second hold is a coming back like any other: the store is told to resume.
+    expect(made[0]?.resumes).toBe(1);
   });
 });
 
@@ -157,23 +141,24 @@ describe("a conversation the person has left for another place", () => {
     expect(threadFor("thread-1", deps)).toBe(store);
   });
 
-  test("coming back wakes its stream and reads in what was written beside a turn", () => {
+  // What resuming does — the stream asked how the turn stands, the page read under its answer — is
+  // the store's, and is in `thread-store-first-page.test.ts`.
+  test("coming back tells it to resume, once, and opens nothing again", () => {
     const { deps, made } = harness();
     threadFor("thread-1", deps);
     holdThread("thread-1", deps);
+    expect(made[0]?.resumes).toBe(0);
     releaseThread("thread-1", deps);
     expect(holdThread("thread-1", deps)).toBe(true);
-    expect(made[0]).toMatchObject({ opens: 1, nudges: 1, refreshes: 1 });
+    expect(made[0]).toMatchObject({ opens: 1, resumes: 1 });
   });
 
-  test("with a turn going nothing is read in under it: the turn's end does that", () => {
-    const { deps, made, going } = harness();
+  test("a second screen showing it at the same time does not resume it again", () => {
+    const { deps, made } = harness();
     threadFor("thread-1", deps);
     holdThread("thread-1", deps);
-    releaseThread("thread-1", deps);
-    going.add("thread-1");
     holdThread("thread-1", deps);
-    expect(made[0]).toMatchObject({ nudges: 1, refreshes: 0 });
+    expect(made[0]).toMatchObject({ opens: 1, resumes: 0 });
   });
 
   test("is let go of after a while, and the next visit starts a new one", () => {
