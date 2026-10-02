@@ -202,6 +202,7 @@ describe("a message the server never got", () => {
    * conversation is in — and not on a press, which decided from a thread that had not arrived.
    */
   describe("words a turn the server owned kept for a card, on this screen", () => {
+    // As the screen that asks the card writes them: waiting for the Bot, with the card's call.
     const keptForACard = (channelId: string, answerTo: string) =>
       localStorage.setItem(
         `laf:unsent:${channelId}`,
@@ -211,7 +212,8 @@ describe("a message the server never got", () => {
             text: TYPED,
             instructions: [],
             at: "2026-09-24T10:23:00.000Z",
-            autoTried: true,
+            autoTried: false,
+            waiting: true,
             answerTo,
           },
         ]),
@@ -219,9 +221,29 @@ describe("a message the server never got", () => {
     const keptNow = (channelId: string) =>
       JSON.parse(localStorage.getItem(`laf:unsent:${channelId}`) ?? "[]") as {
         answerTo?: string;
+        waiting?: boolean;
+        autoTried?: boolean;
       }[];
+    const asking = (callId: string) => ({
+      id: "a-choice",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: callId,
+          type: "function",
+          function: {
+            name: "askChoice",
+            arguments: JSON.stringify({
+              title: "무엇을 쓸까요?",
+              options: [{ id: "a", label: "체크리스트" }],
+            }),
+          },
+        },
+      ],
+    });
 
-    test("are words like any other the device kept, where no card was answered with them", async () => {
+    test("are the person's to send, where the conversation shows nothing of what became of their card", async () => {
       const channelId = "channel_unsent-answer";
       keptForACard(channelId, "call-gone");
       const server = channelServer({
@@ -234,12 +256,13 @@ describe("a message the server never got", () => {
         api: server.api,
       });
       await view.waitFor(
-        () => keptNow(channelId)[0]?.answerTo === undefined,
-        "the mark to come off once the conversation is in",
+        () => keptNow(channelId)[0]?.autoTried === true,
+        "them to be handed to the person once the conversation is in",
         8000,
       );
       await view.settle(200);
-      // Tried once already, so never by themselves: the line, and the person's press.
+      // They may have been the card's answer: never by themselves. The line, and the person's press.
+      expect(keptNow(channelId)[0]?.waiting).toBeUndefined();
       expect(server.runs).toHaveLength(0);
       expect(view.host.querySelector(unsentLine)).not.toBeNull();
 
@@ -256,27 +279,46 @@ describe("a message the server never got", () => {
       await view.unmount();
     });
 
+    test("go once by themselves, where the conversation shows the question over some other way", async () => {
+      const channelId = "channel_unsent-passed";
+      keptForACard(channelId, "call-1");
+      const server = channelServer({
+        channelId,
+        history: [
+          EARLIER,
+          asking("call-1"),
+          {
+            id: "r-choice",
+            role: "tool",
+            toolCallId: "call-1",
+            content: JSON.stringify({ ok: false, code: "laf:stopped" }),
+          },
+          EARLIER_ANSWER,
+        ] as unknown as WireMessage[],
+        runs: [answering(ANSWER)],
+      });
+      const view = await mountApp({
+        path: `/channel/${channelId}`,
+        api: server.api,
+      });
+      // Not the card's answer, whatever it was: words typed mid-turn, and the turn is long over.
+      await view.waitFor(
+        () => bubblesSaying(view.host, ANSWER) === 1,
+        "the answer to the words, sent by themselves",
+        8000,
+      );
+      expect(server.runs).toHaveLength(1);
+      expect(
+        userMessages(server.runs[0]?.messages).map((message) => message.id),
+      ).toContain("q-typed");
+      expect(localStorage.getItem(`laf:unsent:${channelId}`)).toBeNull();
+      await view.unmount();
+    });
+
     test("are forgotten, and never sent, where the conversation shows the card answered with them", async () => {
       const channelId = "channel_unsent-answered";
       keptForACard(channelId, "call-1");
-      const asked = {
-        id: "a-choice",
-        role: "assistant",
-        content: "",
-        toolCalls: [
-          {
-            id: "call-1",
-            type: "function",
-            function: {
-              name: "askChoice",
-              arguments: JSON.stringify({
-                title: "무엇을 쓸까요?",
-                options: [{ id: "a", label: "체크리스트" }],
-              }),
-            },
-          },
-        ],
-      };
+      const asked = asking("call-1");
       const answered = {
         id: "r-choice",
         role: "tool",

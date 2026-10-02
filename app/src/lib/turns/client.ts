@@ -136,6 +136,14 @@ export async function readHistory(
  */
 export type AnswerDelivery = "taken" | "refused" | "unknown";
 
+/**
+ * How long the card's door is waited on. It answers at once — it only lets go of a wait the
+ * server already holds — so a request still out after this is one that nothing will come back
+ * for. With no limit it stayed "on its way" for as long as the socket hung: the words drawn
+ * nowhere, and whatever would have decided what became of them waiting behind it.
+ */
+const ANSWER_WAIT_MS = 10_000;
+
 /** A person's answer to a card the Bot is waiting on: a choice pressed, or their own words. */
 export async function answerCard(
   threadId: string,
@@ -150,6 +158,7 @@ export async function answerCard(
         credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ value }),
+        signal: AbortSignal.timeout(ANSWER_WAIT_MS),
       },
     );
     if (response.ok) return "taken";

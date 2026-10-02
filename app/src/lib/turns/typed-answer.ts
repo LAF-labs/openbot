@@ -12,6 +12,7 @@
  * already be given. This finds the card they are an answer to.
  */
 import type { Message } from "@ag-ui/core";
+import { RETRY_FIRST_MS, RETRY_MOST_MS } from "./client";
 
 /** The Bot's question with options. Its tool is in `components/gallery/decisions.tsx`. */
 const CHOICE = "askChoice";
@@ -71,6 +72,49 @@ export function openChoiceCall(
     }
   }
   return null;
+}
+
+/**
+ * Where an offer of typed words to their card stands, on the screen that made it:
+ *  - `out`: the door is being asked now;
+ *  - `taken`: the door took them, and the conversation is about to show them as the card's answer;
+ *  - `resting`: the door did not take them, or nothing came back — offered again after a wait;
+ *  - `due`: that wait is over, or the connection came back.
+ * `tries` is how many offers the door has not taken, which the wait is counted from.
+ */
+export type Offer = { at: "out" | "taken" | "resting" | "due"; tries: number };
+
+/**
+ * Whether the card itself shows words kept for it (`useAnswerOnItsWay`), rather than the list of
+ * what waits for the turn: yes, unless the door has failed to take them since this screen opened.
+ * `offer` is how this screen's offer of them stands, where it has made one.
+ *
+ * So: on their way to the door for the first time, taken by it — and kept from before a reload,
+ * until this screen's own offer of them says otherwise. An answer is taken at once and filed only
+ * when the Bot is free again (`awaitPerson` in the server's engine), which behind a routine is
+ * minutes: a page reloaded in that time read "보낼 예정 · 지금 일이 끝나면 전해요" under words the
+ * Bot already had.
+ *
+ * ONCE THE DOOR HAS NOT TAKEN THEM THEY STAY UNDER THE CARD AS WAITING, through every offer made
+ * again: taken off that list for each one, they blinked on every retry and pulled the transcript
+ * to the end each time they came back.
+ */
+export function isShownOnCard(offer: Offer | undefined): boolean {
+  return offer === undefined || offer.at === "taken" || offer.tries === 0;
+}
+
+/**
+ * How long words rest before they are offered to their card again, after `tries` offers the door
+ * did not take: the stream's own waits, half a second doubling to eight.
+ */
+let firstRestMs = RETRY_FIRST_MS;
+export function restAfter(tries: number): number {
+  return Math.min(RETRY_MOST_MS, firstRestMs * 2 ** Math.max(0, tries - 1));
+}
+
+/** Test seam: the first of those waits, and back to the real one with no argument. */
+export function setFirstRest(ms: number = RETRY_FIRST_MS): void {
+  firstRestMs = ms;
 }
 
 /** What the Bot is answered with when the person typed instead of pressing an option. */

@@ -223,7 +223,12 @@ export function choiceOptions(
   return args.options ?? [];
 }
 
-export function ChoiceCard(props: Waiting<ChoiceArgs>) {
+export function ChoiceCard(
+  props: Waiting<ChoiceArgs> & {
+    /** Words typed under the card and on their way to it as its answer (`lib/turns/answers.tsx`). */
+    answering?: string;
+  },
+) {
   const { args, status, respond } = props;
   const queryClient = useQueryClient();
   const [sending, setSending] = useState<string | null>(null);
@@ -244,9 +249,14 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
   }
 
   const chosen = status === "complete" ? readChoice(props.result) : undefined;
-  /** Their own words, typed under the card instead of a press (`lib/turns/typed-answer.ts`). */
+  /**
+   * Their own words, typed under the card instead of a press (`lib/turns/typed-answer.ts`): read
+   * off the result once there is one, and until then the words on their way to it.
+   */
   const typed =
-    status === "complete" ? typedAnswerIn(readResult(props.result)) : undefined;
+    status === "complete"
+      ? typedAnswerIn(readResult(props.result))
+      : props.answering;
   const standing = standingOf(
     props,
     chosen !== undefined || typed !== undefined,
