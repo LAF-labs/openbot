@@ -110,13 +110,23 @@ afterAll(async () => {
   await removeAppDom();
 });
 
-/** A conversation whose Bot may ask with a choice card, in the middle of a turn. */
-function server() {
+/**
+ * A conversation whose Bot may ask with a choice card, in the middle of a turn. `record` is what
+ * a test says differently of the store: what it holds, and how many messages it answers a page.
+ */
+function server(
+  record: {
+    history?: Message[];
+    turnMessages?: Message[];
+    historyPage?: number;
+  } = {},
+) {
   const turns = turnServer({
     channelId: CHANNEL,
     history: [ASKED],
     turn: { id: "turn-1", status: "running", asked: [ASKED.id] },
     turnMessages: [ASKED],
+    ...record,
   });
   const api = (request: ApiRequest) => {
     if (request.pathname === "/api/agents") {
@@ -689,6 +699,169 @@ describe("words typed while the Bot waits on a choice", () => {
           4000,
         );
         expect(turns.sends).toHaveLength(0);
+      });
+
+      /*
+       * Review, seventh round. The record was read as its newest page, and a conversation goes on
+       * without this window: a routine delivering every morning, turns from another device. Past
+       * a page of that, the question and what answered it are above the newest page — which then
+       * says nothing of either, and words the server had taken were handed to the person as not
+       * sent, with the press that sends them a second time.
+       */
+      describe("with the question above the newest page of the record", () => {
+        /** Two pages of a conversation that say nothing of the question: a routine's deliveries. */
+        const TWO_PAGES = [1, 2, 3, 4].map(
+          (day): Message => ({
+            id: `routine-${day}`,
+            role: "assistant",
+            content: `아침 브리핑 ${day}`,
+          }),
+        );
+        /** Watches for the not-sent line; what it hands back says whether it was ever drawn. */
+        const watchNotSent = (host: HTMLElement) => {
+          let wasDrawn = isNotSent(host);
+          const watch = new MutationObserver(() => {
+            if (isNotSent(host)) wasDrawn = true;
+          });
+          watch.observe(host, { childList: true, subtree: true });
+          return () => {
+            watch.disconnect();
+            return wasDrawn;
+          };
+        };
+
+        test("are forgotten, never drawn as not sent, where the page that holds it shows them as its answer", async () => {
+          await restFor(NEVER_IN_THIS_TEST);
+          const { api, turns } = server({ historyPage: 2 });
+          const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+          await ask(view, turns);
+          turns.loseAnswerReply();
+
+          await sendWords(view, TYPED);
+          await view.waitFor(
+            () => turns.answers().length === 1,
+            "the door to take the answer",
+            4000,
+          );
+          // The window sleeps: the answer is filed, the turn ends, and the conversation goes on.
+          turns.file([answeredWith(TYPED), ...TWO_PAGES]);
+          turns.endUnheard("done");
+          const wasEverNotSent = watchNotSent(view.host);
+          await acted(() => {
+            window.dispatchEvent(new Event("online"));
+          });
+          await view.waitFor(
+            () => kept().length === 0,
+            "them to be forgotten",
+            4000,
+          );
+          await view.settle(300);
+          expect(wasEverNotSent()).toBe(false);
+          expect(turns.sends).toHaveLength(0);
+          // Read back a page at a time, each from where the one before began, as far as the question.
+          expect(
+            turns.historyCursors().filter((cursor) => cursor !== null),
+          ).toEqual([6, 4]);
+        });
+
+        test("go as the message they are, where the page that holds it shows the question over some other way", async () => {
+          await restFor(NEVER_IN_THIS_TEST);
+          const { api, turns } = server({ historyPage: 2 });
+          const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+          await ask(view, turns);
+          turns.answersDown();
+
+          await sendWords(view, TYPED);
+          await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+          // Nobody answered while the window slept: the wait ran out, and the conversation went on.
+          turns.file([
+            {
+              id: "r-choice",
+              role: "tool",
+              toolCallId: CALL,
+              content: JSON.stringify({
+                ok: false,
+                code: "laf:nobody_answered",
+              }),
+            } as Message,
+            ...TWO_PAGES,
+          ]);
+          turns.endUnheard("done");
+          const wasEverNotSent = watchNotSent(view.host);
+          await acted(() => {
+            window.dispatchEvent(new Event("online"));
+          });
+          await view.waitFor(
+            () => turns.sends.length === 1,
+            "the words to go as a message",
+            4000,
+          );
+          expect(
+            askedIn(turns.sends[0]).map((message) => message.content),
+          ).toEqual([TYPED]);
+          await view.settle(300);
+          expect(wasEverNotSent()).toBe(false);
+          expect(turns.answers()).toHaveLength(0);
+        });
+
+        test("and are theirs only once the record has been read to its start, where no page holds the question", async () => {
+          await restFor(NEVER_IN_THIS_TEST);
+          // The question reached this window and never the record: the server died before filing it.
+          const { api, turns } = server({
+            historyPage: 2,
+            history: [...TWO_PAGES, ASKED],
+            turnMessages: [ASKED, QUESTION],
+          });
+          let letPagesAboveIn = () => {};
+          const pagesAbove = new Promise<void>((resolve) => {
+            letPagesAboveIn = resolve;
+          });
+          const slowAbove = (request: ApiRequest) =>
+            request.pathname.endsWith("/history") &&
+            request.url.searchParams.has("before")
+              ? pagesAbove.then(() => api(request) as Response)
+              : api(request);
+          const view = await mountApp({
+            path: `/channel/${CHANNEL}`,
+            api: slowAbove,
+          });
+          await acted(() => turns.waitOn([CALL]));
+          await view.waitFor(
+            () =>
+              view.host.querySelector('[role="log"]')?.children.length !== 0,
+            "the call's line",
+            6000,
+          );
+          await view.settle(60);
+          turns.answersDown();
+
+          await sendWords(view, TYPED);
+          await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+          turns.endUnheard("error");
+          await acted(() => {
+            window.dispatchEvent(new Event("online"));
+          });
+          // The newest page is in and says nothing of the question. Nor has the record, yet.
+          await view.settle(500);
+          expect(isNotSent(view.host)).toBe(false);
+          expect(kept()).toMatchObject([
+            { text: TYPED, answerTo: CALL, waiting: true },
+          ]);
+
+          await acted(() => letPagesAboveIn());
+          await view.waitFor(
+            () => isNotSent(view.host),
+            "the words drawn as not sent",
+            4000,
+          );
+          expect(turns.sends).toHaveLength(0);
+          expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+          expect(kept()[0]?.waiting).toBeUndefined();
+          // Every page above the newest was asked for, down to the first thing ever said.
+          expect(
+            turns.historyCursors().filter((cursor) => cursor !== null),
+          ).toEqual([4, 2]);
+        });
       });
 
       test("and go ahead of the next thing the person says", async () => {

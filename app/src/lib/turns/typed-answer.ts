@@ -122,6 +122,27 @@ export function typedAnswer(words: string): { answer: string } {
   return { answer: words };
 }
 
+/** Whether a message is the Bot's call under this id: the question itself, not what answered it. */
+function isCall(message: Message, toolCallId: string): boolean {
+  return (
+    message.role === "assistant" &&
+    (message.toolCalls ?? []).some((call) => call.id === toolCallId)
+  );
+}
+
+/**
+ * Whether these messages hold the call itself. A result is filed after its call, always: where
+ * they run from the call to the newest thing said, they hold everything the conversation says of
+ * what became of it — which is how far back a record is read for a question (`readRecord` in
+ * `server-channel-chat.tsx`).
+ */
+export function holdsCall(
+  messages: readonly Message[],
+  toolCallId: string,
+): boolean {
+  return messages.some((message) => isCall(message, toolCallId));
+}
+
 /**
  * The result of a call, as the conversation holds it: the tool message that answers THE NEWEST CALL
  * under that id. Undefined while that call has none.
@@ -134,10 +155,8 @@ function resultOf(
   messages: readonly Message[],
   toolCallId: string,
 ): Message | undefined {
-  const asked = messages.findLastIndex(
-    (message) =>
-      message.role === "assistant" &&
-      (message.toolCalls ?? []).some((call) => call.id === toolCallId),
+  const asked = messages.findLastIndex((message) =>
+    isCall(message, toolCallId),
   );
   // A call this window no longer holds: whatever result there is, is that call's.
   return messages

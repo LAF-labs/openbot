@@ -89,6 +89,7 @@ import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
 import {
   answeredInWords,
   hasResult,
+  holdsCall,
   isShownOnCard,
   type Offer,
   openChoiceCall,
@@ -130,21 +131,61 @@ function isOnCard(
 }
 
 /**
- * The newest page of the record, read until it is in — on the waits an offer rests for — or until
- * nobody is there to hear it (`isGone`), which is the only way it comes back with nothing.
+ * A page of the record, read until it is in — on the waits an offer rests for — or until nobody is
+ * there to hear it (`isGone`), which is the only way it comes back with nothing.
  *
  * Out here because it loops: the compiler leaves a component with such a loop in it uncompiled.
  */
-async function readRecord(
+async function readPage(
   threadId: string,
+  before: number | null,
   isGone: () => boolean,
 ): Promise<HistoryPage | null> {
   for (let tries = 1; ; tries += 1) {
-    const page = await readHistory(threadId, null);
+    const page = await readHistory(threadId, before);
     if (isGone()) return null;
     if (page) return page;
     await new Promise((resolve) => setTimeout(resolve, restAfter(tries)));
     if (isGone()) return null;
+  }
+}
+
+/**
+ * THE RECORD AS FAR BACK AS A QUESTION, oldest first: the newest page, and then the page above it,
+ * one at a time, until one holds the question itself — the Bot's call — or nothing is above.
+ *
+ * THE NEWEST PAGE IS NOT THE RECORD. It is eighty messages (`server/src/turns/history.ts`), and a
+ * conversation goes on without this window: turns from another device, a routine delivering every
+ * morning. A window that slept through more than a page of that read the newest one, found
+ * nothing of its question there, and took that for a record that says nothing — words the server
+ * had taken were handed to the person as not sent, with the press that sends them a second time
+ * (review, seventh round).
+ *
+ * AS FAR AS THE QUESTION, AND NO FURTHER: a result is filed after its call, always, so once the
+ * call has been read, so has everything the record says of what became of it (`holdsCall`). That
+ * is not far, as a rule — the question was on this screen when the words were typed. A record that
+ * never got the call at all is read to its start, once, and only then says nothing.
+ *
+ * Each page is what lies below the cursor of the one before, so none overlaps another; and a
+ * cursor that does not move back is nothing older, whatever the page says of itself — it is not
+ * asked from twice.
+ */
+async function readRecord(
+  threadId: string,
+  toolCallId: string,
+  isGone: () => boolean,
+): Promise<Message[] | null> {
+  let record: Message[] = [];
+  let before: number | null = null;
+  for (;;) {
+    const page = await readPage(threadId, before, isGone);
+    if (!page) return null;
+    record = [...page.messages, ...record];
+    if (holdsCall(page.messages, toolCallId)) return record;
+    const above = page.oldestSeq;
+    if (!page.hasOlder || above === null) return record;
+    if (before !== null && above >= before) return record;
+    before = above;
   }
 }
 
@@ -616,21 +657,26 @@ export function ServerChannelChat({
    * (review, sixth round).
    *
    * So that is decided against the record as it was read for the question, and not before it has
-   * been: the newest page, read here and until it is in — a read that fails says nothing either.
-   * Not through the store, whose own reading of the page is its own business and on its own time.
+   * been: as far back as the question itself (`readRecord`), read here and until it is in — a
+   * read that fails says nothing either, and nor does the newest page alone. Not through the
+   * store, whose own reading of the pages is its own business and on its own time.
    */
   const [records, setRecords] = useState<
     ReadonlyMap<string, readonly Message[]>
   >(new Map());
   /** The ones a read is out or waiting for, so the settling asks for one and not one a render. */
   const confirming = useRef(new Set<string>());
-  const readRecordFor = useEffectEvent(async (id: string) => {
+  const readRecordFor = useEffectEvent(async (id: string, call: string) => {
     if (confirming.current.has(id)) return;
     confirming.current.add(id);
-    const page = await readRecord(channel.threadId, () => rests.current.isGone);
-    if (!page) return;
+    const record = await readRecord(
+      channel.threadId,
+      call,
+      () => rests.current.isGone,
+    );
+    if (!record) return;
     confirming.current.delete(id);
-    setRecords((held) => new Map(held).set(id, page.messages));
+    setRecords((held) => new Map(held).set(id, record));
   });
 
   /**
@@ -753,7 +799,7 @@ export function ServerChannelChat({
         // Once the record has been read for it, and says nothing either (`records`): what is
         // held may be behind it, and the record may hold these words as the answer.
         if (records.has(message.id)) handToPerson(channel.id, message);
-        else if (isKeptForCard(message)) void readRecordFor(message.id);
+        else if (isKeptForCard(message)) void readRecordFor(message.id, call);
         continue;
       }
       // Still being asked, and these words are not known to have reached it: offered, unless an
