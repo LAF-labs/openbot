@@ -24,6 +24,7 @@ import {
   isWaitingForBot,
   keepUnsent,
   noteResent,
+  readSendable,
   readUnsent,
   type UnsentMessage,
   useUnsent,
@@ -393,7 +394,8 @@ export function ServerChannelChat({
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
     const present = new Set(thread.messages.map((message) => message.id));
-    const kept = readUnsent(channel.id)
+    // What the device kept goes ahead of it — except an answer not known to have been taken.
+    const kept = readSendable(channel.id)
       .filter((message) => !present.has(message.id))
       .map(({ autoTried: _autoTried, ...message }) => message);
     const message = {
@@ -566,11 +568,10 @@ export function ServerChannelChat({
       const hasSpoken = now.loaded && now.epoch !== null;
       if (!hasSpoken || !channel.active || isTurnGoing(now.turn)) return;
     }
-    const messages = (
-      automatic ? claimAutoSend(channel.id) : [...readUnsent(channel.id)]
-    )
-      // Still not known to have been taken or not: never as a message.
-      .filter((message) => !message.answerTo);
+    // Never an answer still not known to have been taken: `readSendable`, and `claimAutoSend`.
+    const messages = automatic
+      ? claimAutoSend(channel.id)
+      : [...readSendable(channel.id)];
     if (messages.length === 0) return;
     // "다시 연결돼서 보냈어요" is said of what had failed to leave, not of words going for the first time.
     if (automatic) {
