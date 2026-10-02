@@ -42,6 +42,11 @@ import {
  * sends to the card's door is what the Bot is answered with.
  */
 
+/** The line under words that did not go: 보내지 못함, with 다시 보내기. Its words, never the element. */
+const unsentLine = '[data-testid="transcript-unsent"]';
+const isNotSent = (host: HTMLElement) =>
+  host.querySelector(unsentLine) !== null;
+
 /** Under words that are kept until the turn is over: 보낼 예정 · 지금 일이 끝나면 전해요. */
 const WAITS = "Sends when the current job is done";
 const CHANNEL = "channel_choice";
@@ -253,6 +258,88 @@ describe("words typed while the Bot waits on a choice", () => {
     expect(turns.answers()).toHaveLength(0);
     await view.settle(200);
     expect(view.host.textContent).not.toContain(WAITS);
+  });
+
+  /*
+   * Review, 2026-10-02. "Not taken" was both the server's no and nothing coming back at all. With
+   * nothing back the answer may have been taken: sent again as a message it is said twice, and kept
+   * behind the turn it sits under "보낼 예정" while the question waits for exactly those words.
+   */
+  test("with nothing back from the door are neither sent again nor kept as waiting: not sent, until the person presses", async () => {
+    const { api, turns } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await ask(view, turns);
+    turns.answersDown();
+
+    await type(view, "둘 다 말고 냉면");
+    const send = view.host.querySelector('button[aria-label="Send message"]');
+    if (!send) throw new Error("no send button");
+    await view.click(send);
+    await view.waitFor(
+      () => isNotSent(view.host),
+      "the line saying they were not sent",
+      4000,
+    );
+    // Not sent, with the press that sends it — and no promise that it goes by itself.
+    expect(view.host.querySelector(unsentLine)?.textContent).toBe(
+      "Not sentSend again",
+    );
+    expect(view.host.textContent).not.toContain(WAITS);
+    await view.settle(300);
+    expect(turns.sends).toHaveLength(0);
+    expect(turns.answers()).toHaveLength(0);
+
+    // The door is back and the question still waits: the person's press answers it.
+    turns.answersUp();
+    await view.click(view.buttonNamed("Send again") as Element);
+    await view.waitFor(
+      () => turns.answers().length === 1,
+      "the answer to reach the card's door",
+      4000,
+    );
+    expect(turns.answers()).toEqual([
+      { toolCallId: CALL, value: { answer: "둘 다 말고 냉면" } },
+    ]);
+    await view.waitFor(() => !isNotSent(view.host), "the line to go", 4000);
+    expect(turns.sends).toHaveLength(0);
+  });
+
+  test("that the door took, its reply lost, are the card's answer when the stream says so — and go nowhere twice", async () => {
+    const { api, turns } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await ask(view, turns);
+    turns.loseAnswerReply();
+
+    await type(view, "둘 다 말고 냉면");
+    const send = view.host.querySelector('button[aria-label="Send message"]');
+    if (!send) throw new Error("no send button");
+    await view.click(send);
+    await view.waitFor(
+      () => isNotSent(view.host),
+      "the line saying they were not sent",
+      4000,
+    );
+    expect(turns.answers()).toHaveLength(1);
+
+    // What the door would have said arrives the other way: the call's result is these words.
+    await acted(() =>
+      turns.say([
+        {
+          id: "r-choice",
+          role: "tool",
+          toolCallId: CALL,
+          content: JSON.stringify({ answer: "둘 다 말고 냉면" }),
+        } as Message,
+      ]),
+    );
+    await view.waitFor(
+      () => !isNotSent(view.host),
+      "the line to go by itself",
+      4000,
+    );
+    await view.settle(300);
+    expect(turns.sends).toHaveLength(0);
+    expect(turns.answers()).toHaveLength(1);
   });
 });
 

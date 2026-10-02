@@ -123,12 +123,25 @@ export async function readHistory(
   }
 }
 
-/** A person's choice on a card the Bot is waiting on. False when nothing is waiting on it any more. */
+/**
+ * What became of an answer sent to a card.
+ *
+ * `taken`: the server has it. `refused`: the server answered, and did not take it — nothing waits
+ * on that call any more, or it is not this person's to answer. `unknown`: nothing came back, or the
+ * server broke on the way, and THE ANSWER MAY HAVE BEEN TAKEN.
+ *
+ * It was a yes or a no, and "no" was both of the last two. Whoever sent words as an answer then
+ * treated a lost reply as a refusal and sent the same words again as a message, or kept them
+ * behind a question that was still waiting for exactly those words (review, 2026-10-02).
+ */
+export type AnswerDelivery = "taken" | "refused" | "unknown";
+
+/** A person's answer to a card the Bot is waiting on: a choice pressed, or their own words. */
 export async function answerCard(
   threadId: string,
   toolCallId: string,
   value: unknown,
-): Promise<boolean> {
+): Promise<AnswerDelivery> {
   try {
     const response = await fetch(
       `/api/turns/${encodeURIComponent(threadId)}/answers/${encodeURIComponent(toolCallId)}`,
@@ -139,9 +152,11 @@ export async function answerCard(
         body: JSON.stringify({ value }),
       },
     );
-    return response.ok;
+    if (response.ok) return "taken";
+    // A front door or a server that broke says nothing about the answer; a 4xx is the server's no.
+    return response.status >= 500 ? "unknown" : "refused";
   } catch {
-    return false;
+    return "unknown";
   }
 }
 

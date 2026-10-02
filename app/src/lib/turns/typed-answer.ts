@@ -78,6 +78,30 @@ export function typedAnswer(words: string): { answer: string } {
   return { answer: words };
 }
 
+/**
+ * The words a card was answered with, read off the conversation: the result of that call, where it
+ * is a typed answer. Undefined while the call has no result, and for any other result — an option
+ * pressed, a wait that ran out, a stop.
+ */
+export function answeredInWords(
+  messages: readonly Message[],
+  toolCallId: string,
+): string | undefined {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "tool" || message.toolCallId !== toolCallId) continue;
+    if (typeof message.content !== "string") return undefined;
+    try {
+      const result: unknown = JSON.parse(message.content);
+      return result && typeof result === "object"
+        ? typedAnswerIn(result as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /** The words of a typed answer, read back out of the call's result. Undefined for anything else. */
 export function typedAnswerIn(
   result: Record<string, unknown> | undefined,

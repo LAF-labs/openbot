@@ -77,7 +77,11 @@ import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
 import { isTurnGoing, isTurnQueued, type TurnFrame } from "@/lib/turns/frames";
 import { watchServerQuestions } from "@/lib/turns/questions";
 import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
-import { openChoiceCall, typedAnswer } from "@/lib/turns/typed-answer";
+import {
+  answeredInWords,
+  openChoiceCall,
+  typedAnswer,
+} from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
 import { useLasting } from "@/lib/use-lasting";
 import { deviceClock } from "@/lib/whereabouts/queries";
@@ -456,17 +460,67 @@ export function ServerChannelChat({
       park(draft);
       return;
     }
-    const isTaken = await answerCard(
+    const delivery = await answerCard(
       channel.threadId,
       openChoice,
       typedAnswer(words),
     );
-    if (isTaken) return;
+    if (delivery === "taken") return;
+    if (delivery === "unknown") {
+      /*
+       * NOTHING CAME BACK, AND THE ANSWER MAY HAVE BEEN TAKEN. Sent again as a message it could be
+       * said to the Bot twice; kept behind the turn it would sit under "보낼 예정" while the question
+       * went on waiting for exactly these words (review, 2026-10-02). So it is what it is: not
+       * known to have been sent. Drawn as 보내지 못함 with 다시 보내기, never sent by itself, and
+       * offered to the same card again on the person's press (`answerAgain`).
+       */
+      keepUnsent(channel.id, {
+        id: crypto.randomUUID(),
+        text: words,
+        instructions: [],
+        at: new Date().toISOString(),
+        autoTried: true,
+        answerTo: openChoice,
+      });
+      return;
+    }
+    // The server's own no: nothing waits on that call any more.
     if (isTurnGoing(store.snapshot().turn)) {
       park(draft);
       return;
     }
     await say(words);
+  };
+
+  /**
+   * 다시 보내기 on words that were an answer nothing came back for. Whether they are still to go as a
+   * message afterwards.
+   *
+   * The conversation is read first: the card may show these very words as its answer — the door
+   * took them and only its reply was lost. Otherwise the card is answered again while it still
+   * waits. And once its question is over with some other answer, the words are a message like any
+   * other the device kept.
+   */
+  const answerAgain = async (message: UnsentMessage): Promise<boolean> => {
+    const call = message.answerTo;
+    if (!call) return true;
+    const now = store.snapshot();
+    if (answeredInWords(now.messages, call) === message.text) {
+      forgetUnsent(channel.id, [message.id]);
+      return false;
+    }
+    if (now.waiting.includes(call)) {
+      const delivery = await answerCard(
+        channel.threadId,
+        call,
+        typedAnswer(message.text),
+      );
+      if (delivery === "taken") forgetUnsent(channel.id, [message.id]);
+      if (delivery !== "refused") return false;
+    }
+    const { answerTo: _answerTo, ...plain } = message;
+    keepUnsent(channel.id, plain);
+    return true;
   };
 
   /**
@@ -490,6 +544,15 @@ export function ServerChannelChat({
    * server never got, again. By itself once (`claimAutoSend`), or all of it on the person's press.
    */
   const resend = async (automatic: boolean) => {
+    /*
+     * An answer nothing came back for goes to its card first, on the person's press and whatever
+     * the turn is doing: a question that waits is answered while its turn is going.
+     */
+    if (!automatic) {
+      for (const message of readUnsent(channel.id)) {
+        if (message.answerTo) await answerAgain(message);
+      }
+    }
     if (busy) return;
     if (automatic) {
       /*
@@ -503,9 +566,11 @@ export function ServerChannelChat({
       const hasSpoken = now.loaded && now.epoch !== null;
       if (!hasSpoken || !channel.active || isTurnGoing(now.turn)) return;
     }
-    const messages = automatic
-      ? claimAutoSend(channel.id)
-      : [...readUnsent(channel.id)];
+    const messages = (
+      automatic ? claimAutoSend(channel.id) : [...readUnsent(channel.id)]
+    )
+      // Still not known to have been taken or not: never as a message.
+      .filter((message) => !message.answerTo);
     if (messages.length === 0) return;
     // "다시 연결돼서 보냈어요" is said of what had failed to leave, not of words going for the first time.
     if (automatic) {
@@ -535,6 +600,21 @@ export function ServerChannelChat({
     );
   };
   const resendNow = useEffectEvent((automatic: boolean) => resend(automatic));
+
+  /*
+   * THE DOOR'S REPLY WAS LOST, AND THE CONVERSATION SAYS WHAT IT WOULD HAVE BEEN: the card shows
+   * these words as its answer. They are not "not sent", and nobody has to press anything.
+   */
+  useEffect(() => {
+    for (const message of unsent) {
+      if (
+        message.answerTo &&
+        answeredInWords(thread.messages, message.answerTo) === message.text
+      ) {
+        forgetUnsent(channel.id, [message.id]);
+      }
+    }
+  }, [unsent, thread.messages, channel.id]);
 
   /**
    * 다시 시도 under a failed question: run the thread again with the question where it is, under the

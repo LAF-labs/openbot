@@ -7,6 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import {
+  answeredInWords,
   isSavedByPress,
   openChoiceCall,
   typedAnswer,
@@ -119,5 +120,34 @@ describe("what the Bot is answered with", () => {
     expect(typedAnswerIn({ choice: "korean", label: "한식" })).toBeUndefined();
     expect(typedAnswerIn({ answer: "   " })).toBeUndefined();
     expect(typedAnswerIn(undefined)).toBeUndefined();
+  });
+});
+
+describe("the words a card was answered with, read off the conversation", () => {
+  const result = (toolCallId: string, content: string) =>
+    ({ id: `r-${toolCallId}`, role: "tool", toolCallId, content }) as Message;
+  const question = asking("m-1", call("c-1", "askChoice", CHOICE));
+
+  test("are the call's result, where it is a typed answer", () => {
+    const messages = [question, result("c-1", '{"answer":"둘 다 말고 냉면"}')];
+    expect(answeredInWords(messages, "c-1")).toBe("둘 다 말고 냉면");
+  });
+
+  test("are nothing while the call has no result, or for another call's", () => {
+    expect(answeredInWords([question], "c-1")).toBeUndefined();
+    const messages = [question, result("c-2", '{"answer":"냉면"}')];
+    expect(answeredInWords(messages, "c-1")).toBeUndefined();
+  });
+
+  test("are nothing for any other result: an option pressed, a wait that ran out, a sentence", () => {
+    for (const content of [
+      '{"choice":"korean","label":"한식"}',
+      '{"code":"laf:nobody_answered"}',
+      "답이 없었어요",
+      '"냉면"',
+    ]) {
+      const messages = [question, result("c-1", content)];
+      expect(answeredInWords(messages, "c-1")).toBeUndefined();
+    }
   });
 });

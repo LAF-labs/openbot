@@ -52,6 +52,13 @@ export type UnsentMessage = {
    * that fails takes it off, and from then it is an unsent message like any other.
    */
   waiting?: true;
+  /**
+   * The card these words were typed as the answer to (the call's id), when nothing came back from
+   * the door: they may have been taken. Never sent by themselves — kept with `autoTried` — and on
+   * the person's press they are offered to that card again before they go as a message
+   * (`server-channel-chat.tsx`).
+   */
+  answerTo?: string;
 };
 
 /**
@@ -97,11 +104,12 @@ function load(channelId: string): readonly UnsentMessage[] {
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed.filter(isUnsent).map(({ waiting, ...entry }) => ({
+      ? parsed.filter(isUnsent).map(({ waiting, answerTo, ...entry }) => ({
           ...entry,
           autoTried: entry.autoTried === true,
           // Read as strictly as it is written: anything but `true` is no mark at all.
           ...(waiting === true ? { waiting } : {}),
+          ...(typeof answerTo === "string" && answerTo ? { answerTo } : {}),
         }))
       : EMPTY;
   } catch {
