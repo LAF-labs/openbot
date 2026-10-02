@@ -329,6 +329,47 @@ export function unsettledFrom(
 }
 
 /**
+ * How many of the Bot's messages arrived after `seenId`, the furthest row the reader has had on
+ * screen (`furthestSeen`).
+ *
+ * Each bubble is one: a turn that answers in two is two things to read. The person's own words are
+ * not counted — sent from another window of theirs, they are not news to them — and neither is a
+ * step line. A row that is not known (nothing seen yet, or it has left the list) counts nothing:
+ * saying "3 new" by guessing is worse than the arrow alone.
+ */
+export function arrivedBelow(
+  items: readonly TranscriptItem[],
+  seenId: string | null,
+): number {
+  if (seenId === null) return 0;
+  const seen = items.findIndex((item) => item.id === seenId);
+  if (seen < 0) return 0;
+  let arrived = 0;
+  for (const item of items.slice(seen + 1)) {
+    if (item.kind === "text" && item.role === "assistant") arrived += 1;
+  }
+  return arrived;
+}
+
+/**
+ * The furthest row the reader has had on screen: `seenId`, or the lowest of the rows on screen now
+ * when that is further down.
+ *
+ * It only moves on. Scrolling back up to read does not make what was seen news again, and a row on
+ * screen that the list no longer holds changes nothing.
+ */
+export function furthestSeen(
+  items: readonly TranscriptItem[],
+  seenId: string | null,
+  onScreen: readonly (string | null)[],
+): string | null {
+  const place = (id: string | null) =>
+    id === null ? -1 : items.findIndex((item) => item.id === id);
+  const furthest = Math.max(place(seenId), ...onScreen.map(place));
+  return items[furthest]?.id ?? seenId;
+}
+
+/**
  * WHERE A STORED FAILURE IS DRAWN: AFTER THE LAST THING ITS TURN DREW. Item id to the failure keys
  * drawn after it.
  *

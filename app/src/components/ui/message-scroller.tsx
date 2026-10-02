@@ -2,6 +2,8 @@ import * as React from "react"
 import {
   MessageScroller as MessageScrollerPrimitive,
   useMessageScroller,
+  useMessageScrollerScrollable,
+  useMessageScrollerVisibility,
 } from "@shadcn/react/message-scroller"
 
 import { cn } from "@/lib/utils"
@@ -136,4 +138,6 @@ export {
   MessageScrollerItem,
   MessageScrollerButton,
   useMessageScroller,
+  useMessageScrollerScrollable,
+  useMessageScrollerVisibility,
 }

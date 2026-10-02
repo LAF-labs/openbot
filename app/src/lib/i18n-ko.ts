@@ -1021,6 +1021,8 @@ export const ko: Record<string, string> = {
   "Save draft": "초안 저장",
   "Saved file": "파일 저장",
   "Saved here": "여기 저장됨",
+  "New message": "새 메시지",
+  "{count} new messages": "새 메시지 {count}개",
   "Scroll to end": "끝으로 스크롤",
   "Scroll to start": "처음으로 스크롤",
   Scrolled: "스크롤함",
