@@ -1,4 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { COMPUTER_TOOLS } from "@shared/tools/computer";
+import {
+  GALLERY_CONFIRMATIONS,
+  GALLERY_DECISIONS,
+} from "@shared/tools/gallery";
 import {
   arrivedBelow,
   furthestSeen,
@@ -27,6 +32,12 @@ const said = (id: string, role: "user" | "assistant"): TranscriptItem => ({
   text: id,
 });
 
+const called = (id: string, name: string): TranscriptItem => ({
+  kind: "tool",
+  id,
+  toolCall: { id, type: "function", function: { name, arguments: "{}" } },
+});
+
 const ITEMS: TranscriptItem[] = [
   said("u-1", "user"),
   said("a-1", "assistant"),
@@ -53,6 +64,58 @@ describe("what arrived below the row the reader last saw at the end", () => {
   test("nothing where the row is not known: before anything was seen, or after it left the list", () => {
     expect(arrivedBelow(ITEMS, null)).toBe(0);
     expect(arrivedBelow(ITEMS, "gone")).toBe(0);
+  });
+});
+
+/*
+ * Review, first round. A question is often the whole of what arrives: the Bot's message is empty
+ * and its call is the card. Counting bubbles alone left the arrow as it was over a Bot stopped on a
+ * question below — the arrival that most needs saying.
+ */
+describe("a card the Bot put there for the person is an arrival too", () => {
+  test("a question that waits for an answer, with no bubble beside it", () => {
+    for (const name of GALLERY_DECISIONS) {
+      expect(arrivedBelow([...ITEMS, called("c-1", name)], "a-3")).toBe(1);
+    }
+  });
+
+  test("a request for a hand, or for a value the Bot must not see", () => {
+    const names = ["computer_request_help", "computer_request_secret"];
+    // The names are the catalogue's: a renamed tool fails here and not on somebody's screen.
+    for (const name of names) {
+      expect(COMPUTER_TOOLS.some((tool) => tool.name === name)).toBe(true);
+      expect(arrivedBelow([...ITEMS, called("c-1", name)], "a-3")).toBe(1);
+    }
+  });
+
+  test("a chart, a checklist, a file: every card the gallery puts on screen", () => {
+    for (const name of Object.keys(GALLERY_CONFIRMATIONS)) {
+      expect(arrivedBelow([...ITEMS, called("c-1", name)], "a-3")).toBe(1);
+    }
+  });
+
+  test("beside the bubbles of the same turn, each is one", () => {
+    const items = [
+      ...ITEMS,
+      said("a-4", "assistant"),
+      called("c-1", "showBarChart"),
+      called("c-2", "askChoice"),
+    ];
+    expect(arrivedBelow(items, "a-3")).toBe(3);
+  });
+
+  test("not a line that says what the Bot is doing, nor the card of a browsing task", () => {
+    const items: TranscriptItem[] = [
+      ...ITEMS,
+      called("s-1", "now"),
+      called("s-2", "remember"),
+      called("s-3", "tool_call"),
+      called("s-4", "web-search__search"),
+      // Not a card anybody registered, and not a name from an object's own furniture either.
+      called("s-5", "toString"),
+      { kind: "browse", id: "b-1", steps: [], notes: [] },
+    ];
+    expect(arrivedBelow(items, "a-3")).toBe(0);
   });
 });
 
