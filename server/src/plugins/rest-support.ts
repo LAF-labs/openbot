@@ -6,6 +6,7 @@ import {
   withoutCredential,
 } from "./mcp";
 import { TIMEOUT_MS } from "./timeouts";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * What every REST adapter in this directory does the same way: one request, one result, one refusal.
@@ -49,18 +50,18 @@ const MORE_THAN_SHOWN =
  * characters" — would state a length that was never measured. And the note has to fit INSIDE the
  * cap: a result over it is filed on the Bot's computer and shown by its first 20,000 characters
  * (`shared/spillover.ts`), which is exactly where a note appended after the cap is not. So the
- * text is cut short enough to carry it, and at a whole character: never between the halves of a
- * surrogate pair, which would end the result on half an emoji.
+ * text is cut short enough to carry it, and between characters (`shared/sound-text.ts`).
  */
 export function asResult(text: string, more = false): McpCallResult {
   const joined = text.trim();
   if (!more) return { ...shapeResult(joined), isError: false };
 
-  let end = Math.min(joined.length, MAX_RESULT_CHARS - MORE_THAN_SHOWN.length);
-  const last = joined.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  const opening = cutAtCodeUnits(
+    joined,
+    MAX_RESULT_CHARS - MORE_THAN_SHOWN.length,
+  );
   return {
-    text: `${joined.slice(0, end)}${MORE_THAN_SHOWN}`,
+    text: `${opening}${MORE_THAN_SHOWN}`,
     isError: false,
     truncated: true,
   };

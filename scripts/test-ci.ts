@@ -759,12 +759,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * result's head; nothing in a request the Bots' model refuses). And one more to `agent-computer`
  * the same day: a half-ticked box read as not ticked.
  *
+ * RAISED 2026-10-02 with the rest of what the sweep of upstream found in `server`, thirty-nine, each
+ * reproduced before it was ported: a Drive file read by its opening and the download ended, shared
+ * drives reached and the trash left out; the trail paged from a row's own microsecond; a
+ * connector's and a skill's grants removed with them; a stored OAuth client that is not one
+ * refused without being quoted; the connection test reading an opening and not a run; a key that
+ * cannot be sent as a header refused when it is typed.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3368, roots: ["server"] },
+  { name: "server", floor: 3407, roots: ["server"] },
   { name: "app", floor: 1595, roots: ["app"] },
   { name: "agent-computer", floor: 378, roots: ["agent-computer"] },
   { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
