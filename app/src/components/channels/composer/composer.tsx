@@ -34,6 +34,7 @@ import { holdDraft, takeKeptDraft } from "@/lib/build-reload";
 import { ensure } from "@/lib/ensure";
 import { takeFeedQuote, useOfferedFeedQuote } from "@/lib/feed/quote-offer";
 import { t } from "@/lib/i18n";
+import { useIsTouchFirst } from "@/lib/use-touch-first";
 import { cn } from "@/lib/utils";
 import { Button } from "../../ui/button";
 import { AttachmentChips, type PendingAttachment } from "./attachment-chips";
@@ -206,6 +207,13 @@ export function Composer({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submitInFlight = useRef(false);
   const promptAreaRef = useRef<PromptAreaHandle>(null);
+  /*
+   * ON A PHONE, RETURN IS A NEW LINE. A screen keyboard has no Shift+Return, so while Return sent,
+   * a second line could not be typed at all: pressed in phone emulation (2026-10-02), "첫 줄" and
+   * Return went straight to the server. The send button is the way to send there, as it is in every
+   * messenger on that keyboard; with a real keyboard Return sends, as before.
+   */
+  const returnSends = !useIsTouchFirst();
   /** A send has completed and the caret is owed back, as soon as the editor will take it. */
   const wantsFocus = useRef(false);
 
@@ -778,6 +786,7 @@ export function Composer({
             onSubmit={submitDraft}
             placeholder={placeholder ?? t("Ask anything")}
             ref={promptAreaRef}
+            submitOnEnter={returnSends}
             triggers={triggers}
             value={value}
           />
@@ -835,6 +844,7 @@ export function Composer({
             onSubmit={submitDraft}
             placeholder={placeholder ?? t("Ask anything")}
             ref={promptAreaRef}
+            submitOnEnter={returnSends}
             triggers={triggers}
             value={value}
           />
