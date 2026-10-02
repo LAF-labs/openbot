@@ -137,9 +137,87 @@ describe("the words, read off what was drawn", () => {
     );
   });
 
+  /*
+   * Drawn and copied, 2026-10-02. An item was read as one run of words, tidied the way words are:
+   * the code under a numbered step lost its indentation and the table under one came out as `가나12`.
+   */
+  test("what a numbered step holds hangs under it as it is: code with its indentation, a table with its cells", async () => {
+    expect(
+      await words(
+        [
+          "1. 설정 파일을 만들어요:",
+          "",
+          "   ```python",
+          "   def f(x):",
+          "       if x:",
+          "           return 1",
+          "",
+          "       return 0",
+          "   ```",
+          "",
+          "   그리고 저장해요.",
+          "",
+          "2. 표도 있어요:",
+          "",
+          "   | 가 | 나 |",
+          "   | --- | --- |",
+          "   | 1 | 2 |",
+          "",
+          "3. 인용:",
+          "",
+          "   > 인용문",
+          "",
+          "   - 안쪽 하나",
+          "     - 더 안쪽",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "1. 설정 파일을 만들어요:",
+        "   def f(x):",
+        "       if x:",
+        "           return 1",
+        "",
+        "       return 0",
+        "   그리고 저장해요.",
+        "2. 표도 있어요:",
+        "   가\t나",
+        "   1\t2",
+        "3. 인용:",
+        "   인용문",
+        "   - 안쪽 하나",
+        "     - 더 안쪽",
+      ].join("\n"),
+    );
+  });
+
+  test("a footnote is its number in brackets and its line, without the renderer's heading or its arrow back", async () => {
+    expect(
+      await words(
+        "가격은 올랐어요.[^1] 그리고 내렸어요.[^둘]\n\n[^1]: 통계청 자료.\n[^둘]: 한국은행 자료.",
+      ),
+    ).toBe(
+      "가격은 올랐어요.[1] 그리고 내렸어요.[2]\n\n1. 통계청 자료.\n2. 한국은행 자료.",
+    );
+  });
+
+  test("what the answer wrote as HTML reads as it is drawn: a power, a folded part", async () => {
+    expect(
+      await words(
+        "물은 H<sub>2</sub>O 이고 넓이는 x<sup>2</sup>.\n\n<details><summary>더 보기</summary>숨은 내용</details>",
+      ),
+    ).toBe("물은 H2O 이고 넓이는 x^2.\n\n더 보기\n\n숨은 내용");
+  });
+
   test("code is copied as it was written, line by line, without its fence or its label", async () => {
     expect(await words("```python\ndef f():\n    return 1\n```")).toBe(
       "def f():\n    return 1",
+    );
+  });
+
+  test("an empty line of code is one empty line, and space at either end of a line stays", async () => {
+    expect(await words("```text\n  앞 공백\n\n\n\t탭\n끝 공백  \n```")).toBe(
+      "  앞 공백\n\n\n\t탭\n끝 공백  ",
     );
   });
 
@@ -199,6 +277,44 @@ describe("the words, read off what was drawn", () => {
     );
   });
 
+  /*
+   * Review, fourth round. The renderer links an address that is written out, and tidies it as it
+   * does — a slash on the end, `http://` in front of `www.`, `mailto:` in front of a mail address —
+   * so words and address compared as written were never the same, and each was copied twice.
+   */
+  test("an address that is written out is copied once", async () => {
+    expect(
+      await words(
+        [
+          "꺾쇠 안: <https://example.com>",
+          "",
+          "그대로 쓴 주소: https://example.com/a?b=1 그리고 www.example.org 입니다.",
+          "",
+          "메일은 <user@example.com> 또는 help@example.com 으로.",
+          "",
+          "[example.com](https://example.com) 과 [https://example.com/y](https://example.com/y)",
+        ].join("\n"),
+      ),
+    ).toBe(
+      [
+        "꺾쇠 안: https://example.com",
+        "그대로 쓴 주소: https://example.com/a?b=1 그리고 www.example.org 입니다.",
+        "메일은 user@example.com 또는 help@example.com 으로.",
+        "example.com 과 https://example.com/y",
+      ].join("\n\n"),
+    );
+  });
+
+  test("a mail address or a number behind a word is written the way somebody would type it", async () => {
+    expect(
+      await words(
+        "[문의](mailto:help@example.com?subject=hello)는 메일로, [가게 전화](tel:010-1234-5678)는 전화로, [다른 곳](https://example.org/x)은 주소로.",
+      ),
+    ).toBe(
+      "문의 (help@example.com)는 메일로, 가게 전화 (010-1234-5678)는 전화로, 다른 곳 (https://example.org/x)은 주소로.",
+    );
+  });
+
   test("the renderer's own controls are not the answer", async () => {
     const copied = await words("| A |\n| - |\n| x |\n\n```\ncode\n```");
     expect(copied).toBe("A\nx\n\ncode");
@@ -222,12 +338,22 @@ describe("the answer as drawn", () => {
     expect(html).not.toMatch(/class=|style=|data-|target=|rel=|title=|node=/);
   });
 
+  test("a footnote keeps its number, and loses the link to a place that is not coming with it", async () => {
+    const { body } = await drawn("가격은 올랐어요.[^1]\n\n[^1]: 통계청 자료.");
+    const html = copiedHtml(body) ?? "";
+    expect(html).toContain("<sup><a>1</a></sup>");
+    expect(html).toContain("통계청 자료.");
+    expect(html).not.toContain("↩");
+    expect(html).not.toContain("Footnotes");
+    expect(html).not.toContain('href="#');
+  });
+
   test("code keeps its lines", async () => {
-    const { body } = await drawn("```\na\n  b\n```");
+    const { body } = await drawn("```\na\n\n  b\n```");
     const html = copiedHtml(body) ?? "";
     const holder = document.createElement("div");
     holder.innerHTML = html;
-    expect(holder.querySelector("pre")?.textContent).toBe("a\n  b");
+    expect(holder.querySelector("pre")?.textContent).toBe("a\n\n  b");
   });
 
   test("the bubble itself is left as it was", async () => {
