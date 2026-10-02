@@ -1043,8 +1043,13 @@ export function createThreadStore(
       callOffSnapshotRead = null;
       watch?.close();
       watch = null;
-      listeners.clear();
-      frameListeners.clear();
+      /*
+       * WHOEVER IS SUBSCRIBED STAYS SUBSCRIBED: each lets go by its own unsubscribe. A closed store
+       * can be opened again under a screen that is still showing it (`holdThread` puts the
+       * screen's store back), and it used to drop its subscribers here — opened again, it went on
+       * changing under a screen that no longer heard it, the replies frozen on the screen (review,
+       * eighth round). Nothing is told anything after a close but what a screen does to it.
+       */
       // Nobody waits on a page that will not be read.
       tellLanded();
       endRefreshWait?.();
