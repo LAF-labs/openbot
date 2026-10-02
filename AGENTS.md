@@ -6,9 +6,9 @@ it before changing anything. The decision records are in `docs/laf/`.
 
 This file restates, for a reviewer, the rules of CLAUDE.md and the checklist in
 `.github/pull_request_template.md` that a diff can be checked against. It
-narrows neither: a rule that is there and not here is still a rule. It says
-nothing about formatting, lint, types or test counts: the gate and CI check
-those.
+narrows neither: a rule that is there and not here is still a rule, and an
+exception that is there and not here is still an exception. It says nothing
+about formatting, lint, types or test counts: the gate and CI check those.
 
 ## Code Review Rules
 
@@ -24,15 +24,24 @@ those.
 - Flag a new listener, port or schedule that is not reached through the same
   ingress as the API, or that says nothing of what it costs a 1 vCPU / 6 GB VM
   already running Chromium.
-- Do not ask for multi-account or multi-Bot handling. One account per
-  deployment and one Bot per person are enforced in code.
-  Flag instead: a path that lets a second account or a second Bot in.
+- Do not ask for a way to add a second account or a second Bot. One account
+  per deployment and one Bot per person are enforced in code, and a second of
+  either is refused.
+  Flag instead: a path that lets a second one in, and an account the sign-in
+  list no longer admits still acting, unattended paths included.
+- An account that had several Bots before that limit keeps every one of them,
+  each with its own conversation. Flag a change that strands, hides or drops a
+  kept Bot or its conversation, or that only works for an account with one.
+- Do not ask for what was removed on purpose to come back: rooms, Bots asking
+  each other, a container per Bot, a local-agent client. Flag a change that
+  brings one back, and a merge of upstream — upstream is taken by cherry-pick,
+  security and protocol fixes only.
 
 ### Boundaries
 
 - Every acting call goes through the gateway: resolve, decide, audit, then
-  act. Flag a call that reaches the Bot's browser, its files or a connected
-  service by any other path, or in any other order.
+  act. Flag a call by which the Bot reaches its browser, its files or a
+  connected service by any other path, or in any other order.
 - Flag a new refusal or a new failure that writes no audit row.
 - Flag anything taken on the client's word that the server can resolve itself:
   which account, which Bot, which conversation, what an answer covers.
@@ -44,9 +53,12 @@ those.
   auto-review instruction.
 - Flag a control that saves and reaches nothing. Safe path: when the
   deployment's model cannot do the thing, the control is not drawn.
-- Flag code that stores, logs or sends a value somebody typed into the Bot's
-  browser, passwords included. Safe path: record that typing happened and
-  where, never what was typed.
+- Typing in the Bot's browser passes through the demonstration recorder,
+  passwords included. Flag a record, an audit row or a log that holds a typed
+  value. Safe path: it says that typing happened and where, never what; a
+  test serialises the whole record and finds the value nowhere in it.
+- This repository is public. Flag a secret, key or token in code, fixtures,
+  logs or docs, and business plans or working notes added to it.
 
 ### Reaching the Bot people actually use
 
@@ -63,7 +75,9 @@ those.
   still a refusal.
 - Tools ride in front of every message a Bot answers. Flag a new core tool
   where a lower rung of CLAUDE.md's footprint ladder would do, and a tool that
-  appears or disappears in the middle of a conversation.
+  appears or disappears in the middle of a conversation. A tool offered for a
+  whole run of one kind and no other — a routine's own run — is the ladder
+  working, not that.
 
 ### Model calls, the shell, the compiler
 
@@ -73,7 +87,9 @@ those.
   waiting, an unusable reply wants pressing again. Flag a new hand-written
   call where the server's existing one would do.
 - `desktop/` is a window onto the deployed origin. Flag product logic added to
-  the shell.
+  the shell. What the shell holds is what only a native window can do — the
+  tray, notices, saving a download, the update, a shortcut key — and it tells
+  the page with events.
 - The React Compiler compiles every component and hook. Flag what leaves one
   uncompiled: a `finally` in a component, a ref read or written while
   rendering, the clock read while rendering.
@@ -84,8 +100,8 @@ those.
   entry added in the same change. The coverage test sees only literal
   `t("…")`: a table of strings read through a variable needs its own test
   walking the table.
-- Flag prose written by the server reaching the screen. The server sends facts
-  and codes; the surface owns the words.
+- Flag prose written by the server reaching the app's screens. The server
+  sends facts and codes; the surface owns the words.
 - The first-run answer (학생 / 직장인 / 사장님 / 기타) is a hint that orders and
   words things. Flag code where it hides or shows a tab, screen, setting or
   feature, and copy that assumes everyone runs a shop (가게).
