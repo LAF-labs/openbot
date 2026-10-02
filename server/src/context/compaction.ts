@@ -50,6 +50,7 @@ import {
   type Message as UpstreamMessage,
   type ToolCall,
 } from "./vendor/fast-jev-compaction/index";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -83,7 +84,7 @@ export const DROPPED_RESULT_HEAD = 300;
 
 /** An emptied result, as every request after the compaction carries it. */
 export function droppedResultText(content: string): string {
-  const head = content.slice(0, DROPPED_RESULT_HEAD);
+  const head = cutAtCodeUnits(content, DROPPED_RESULT_HEAD);
   return `${head}${content.length > DROPPED_RESULT_HEAD ? "…" : ""}\n${toolResultText("laf:tool_result_compacted")}`;
 }
 

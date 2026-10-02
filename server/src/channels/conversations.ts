@@ -17,6 +17,7 @@ import type { Executor } from "../runner/thread-store";
 import { soloConversationOf } from "./solo-channel";
 import type { ThreadIdentity } from "./thread-identity";
 import type { AgentChannel } from "./types";
+import { cutOnGraphemes } from "../../../shared/sound-text";
 
 const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
 const MAX_CHANNEL_NAME_CODE_POINTS = 120;
@@ -24,13 +25,13 @@ const MAX_CHANNEL_NAME_CODE_POINTS = 120;
 /**
  * A conversation is named after who is in it — its Bot — and cut to fit a roster row.
  *
- * Cut by code points rather than UTF-16 units, so a name ending in an emoji is never split in half.
+ * Counted in code points and cut between characters as they are seen, so a name ending in an emoji
+ * — a flag, a face with a skin tone — is never left with half of one.
  */
 export function channelName(names: string[]) {
   const joined = names.join(", ");
-  const codePoints = Array.from(joined);
-  if (codePoints.length <= MAX_CHANNEL_NAME_CODE_POINTS) return joined;
-  return `${codePoints.slice(0, MAX_CHANNEL_NAME_CODE_POINTS - 1).join("")}…`;
+  if (Array.from(joined).length <= MAX_CHANNEL_NAME_CODE_POINTS) return joined;
+  return `${cutOnGraphemes(joined, MAX_CHANNEL_NAME_CODE_POINTS - 1)}…`;
 }
 
 export type ConversationDeps = {

@@ -43,6 +43,7 @@ import {
   type SettlementOptions,
   settleRun,
 } from "./settlement";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * One run of a routine: the Bot asked, the answer settled, the trail told.
@@ -575,7 +576,7 @@ async function instructionFor(
     ? carriedInstruction(
         row.instruction,
         previous.length > CARRIED_ANSWER_MAX_CHARS
-          ? `${previous.slice(0, CARRIED_ANSWER_MAX_CHARS)}\n\n[truncated]`
+          ? `${cutAtCodeUnits(previous, CARRIED_ANSWER_MAX_CHARS)}\n\n[truncated]`
           : previous,
       )
     : row.instruction;

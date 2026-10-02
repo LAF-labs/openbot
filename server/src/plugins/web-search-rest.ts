@@ -39,6 +39,7 @@ import { asResult } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** The catalogue entry this tool lives under. Prefixes its ref: `web-search/search`. */
 export const WEB_SEARCH_KEY = "web-search";
@@ -155,7 +156,9 @@ function queriesOf(args: Record<string, unknown>): string[] {
         : [];
   const cleaned = given
     .filter((query): query is string => typeof query === "string")
-    .map((query) => query.replace(/\s+/g, " ").trim().slice(0, MAX_QUERY_CHARS))
+    .map((query) =>
+      cutAtCodeUnits(query.replace(/\s+/g, " ").trim(), MAX_QUERY_CHARS),
+    )
     .filter(Boolean);
   return [...new Set(cleaned)];
 }
@@ -325,7 +328,7 @@ export function createWebSearchTransport(input: {
           url: result.url,
           ...(date ? { date } : {}),
           ...(updated && updated !== date ? { updated } : {}),
-          snippet: text(result.snippet).slice(0, SNIPPET_CHARS),
+          snippet: cutAtCodeUnits(text(result.snippet), SNIPPET_CHARS),
         };
       });
 

@@ -11,6 +11,7 @@
  */
 import { extractText, getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** The most characters of a file that ride in the conversation. The whole is on the computer. */
 export const SUMMARY_CHARS = 8_000;
@@ -134,7 +135,7 @@ export async function readPdf(bytes: Uint8Array): Promise<Extracted> {
     .join("\n\n");
   const cut = whole.length > SUMMARY_CHARS || totalPages > PDF_PAGES;
   return {
-    body: whole.length > SUMMARY_CHARS ? whole.slice(0, SUMMARY_CHARS) : whole,
+    body: cutAtCodeUnits(whole, SUMMARY_CHARS),
     ...(cut ? { shown: `${totalPages}쪽 중 앞부분` } : {}),
     whole: cutToBytes(whole, WHOLE_BYTES),
   };

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { channelName } from "../src/channels/conversations";
 import { plainTextOf, previewOf } from "../src/channels/preview";
 
 describe("the roster preview of a markdown answer", () => {
@@ -36,10 +37,31 @@ describe("the roster preview of a markdown answer", () => {
     expect(plainTextOf("~~취소~~된 건")).toBe("취소된 건");
   });
 
+  test("a cut never ends the line on half a flag, a family or a skin tone", () => {
+    // Each of these is one character to a person and several code points. Cut by code points, the
+    // line ended on `🇰` — a letter in a box — where the flag had been. (Upstream OpenBot #455.)
+    for (const mark of ["🇰🇷", "👨‍👩‍👧", "👍🏽"]) {
+      const preview = previewOf(`${"가".repeat(198)}${mark} 끝`);
+      expect(preview).toBe(`${"가".repeat(198)}…`);
+      expect(Array.from(preview).length).toBeLessThanOrEqual(200);
+    }
+    // One that fits is kept whole.
+    expect(previewOf(`${"가".repeat(190)}🇰🇷`)).toBe(`${"가".repeat(190)}🇰🇷`);
+  });
+
   test("caps at two hundred code points with an ellipsis", () => {
     const long = "가".repeat(300);
     const preview = previewOf(long);
     expect(Array.from(preview)).toHaveLength(200);
     expect(preview.endsWith("…")).toBe(true);
+  });
+});
+
+describe("a conversation's name on a roster row", () => {
+  test("is cut between characters as they are seen, and left alone when it fits", () => {
+    expect(channelName(["새벽"])).toBe("새벽");
+    const name = channelName([`${"가".repeat(118)}🇰🇷`, "뒤"]);
+    expect(name).toBe(`${"가".repeat(118)}…`);
+    expect(Array.from(name).length).toBeLessThanOrEqual(120);
   });
 });

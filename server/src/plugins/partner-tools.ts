@@ -24,6 +24,7 @@ import type { CallPreview } from "../computer/approvals";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import { PluginRefusedError } from "./store";
 import type { VendorTransport } from "./transport";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** One tool a partner connector offers, declaration included. */
 export type PartnerToolSpec = McpTool & {
@@ -142,7 +143,7 @@ export function partnerTransport(input: {
       return text.length <= MAX_RESULT_CHARS
         ? { text, isError: false, truncated: false }
         : {
-            text: `${text.slice(0, MAX_RESULT_CHARS)}\n\n[truncated: ${text.length} characters]`,
+            text: `${cutAtCodeUnits(text, MAX_RESULT_CHARS)}\n\n[truncated: ${text.length} characters]`,
             isError: false,
             truncated: true,
           };

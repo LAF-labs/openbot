@@ -3,6 +3,7 @@ import type { RunAgentInput } from "@ag-ui/core";
 import type OpenAI from "openai";
 import { jsonObjectOf } from "../../shared/json-object";
 import { textOf } from "../../shared/message-content";
+import { soundText } from "../../shared/sound-text";
 import { isStreamCutResult } from "../../shared/stream-cut";
 import { reasoningDetailsOf } from "./reasoning";
 import type { ProviderSession } from "./turn";
@@ -103,7 +104,45 @@ export function toProviderMessages(
     }
   }
 
-  return messages;
+  return messages.map(sound);
+}
+
+/**
+ * A message with nothing in it the provider refuses to read.
+ *
+ * HALF AN EMOJI ANYWHERE IN A CONVERSATION WAS A 400 ON EVERY REQUEST AFTER IT. Measured 2026-10-02
+ * against the fleet's model (meta/muse-spark-1.3-contributor through OpenRouter): a request whose
+ * text ends in the first half of an emoji is answered "Invalid request: unexpected end of hex
+ * escape", in 0.2 s, and the text is history by then, so the conversation never answers again. It
+ * gets there by a cut made by length — a mail's body at 4,000 characters, a connected service's
+ * answer at 20,000 — or straight from a vendor's own JSON. The server mends what a tool answers as
+ * it is filed and what it stores (`shared/sound-text.ts`); this is the last door, for whatever came
+ * another way: what a person pasted, a reply the stream cut between an emoji's halves, a
+ * conversation stored before today.
+ *
+ * Text only, and the same string when it was sound — which is every message but that one, so the
+ * bytes the provider has cached are the bytes it is sent.
+ */
+function sound(
+  message: OpenAI.Chat.ChatCompletionMessageParam,
+): OpenAI.Chat.ChatCompletionMessageParam {
+  const { content } = message;
+  if (typeof content === "string") {
+    const mended = soundText(content);
+    return mended === content
+      ? message
+      : ({ ...message, content: mended } as typeof message);
+  }
+  if (!Array.isArray(content)) return message;
+  let changed = false;
+  const parts = content.map((part) => {
+    if (part.type !== "text") return part;
+    const mended = soundText(part.text);
+    if (mended === part.text) return part;
+    changed = true;
+    return { ...part, text: mended };
+  });
+  return changed ? ({ ...message, content: parts } as typeof message) : message;
 }
 
 /** The calls answered with the cut's fact: left out of every request, with their answers. */

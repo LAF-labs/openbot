@@ -1,4 +1,5 @@
 import { toolResultText } from "./prompt/tool-results.ko";
+import { cutAtCodeUnits } from "./sound-text";
 
 /**
  * A tool result too long to carry whole, cut ONCE — where it is produced — and kept whole on the
@@ -53,5 +54,7 @@ export function spillLine(path: string, total: number): string {
 
 /** A cut result as the model sees it — on every request, from the first: the head, and where the whole is. */
 export function previewOf(text: string, path: string): string {
-  return `${text.slice(0, TOOL_RESULT_CUT)}\n${spillLine(path, text.length)}`;
+  // Between characters. The file is read on from the bound itself, and a part read from inside
+  // a character steps back to take it whole (`sliceOnCharacters`), so nothing is lost between.
+  return `${cutAtCodeUnits(text, TOOL_RESULT_CUT)}\n${spillLine(path, text.length)}`;
 }

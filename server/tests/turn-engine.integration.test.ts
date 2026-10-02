@@ -309,6 +309,44 @@ describe("a turn the server owns", () => {
     expect(above.messages.map((message) => message.id)).toEqual([question.id]);
   });
 
+  test("a tool's answer cut through an emoji is filed sound, and the turn is kept", async () => {
+    /*
+     * A connected service's answer is a string, cut at a length — and a cut between an emoji's two
+     * halves used to be filed as it was. Postgres then refused the turn's rows, so the turn was
+     * gone on reload, and the Bots' model refused the request that carried it (measured 2026-10-02:
+     * HTTP 400, "unexpected end of hex escape"). `shared/sound-text.ts`.
+     */
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot("메일은 이래요.");
+    const half = "😀".charAt(0);
+    const { engine } = engineWith(bot, async () => `${"가".repeat(30)}${half}`);
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("메일 읽어줘")],
+      tools: null,
+    });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    // What the Bot's second run was handed: nothing the model would refuse.
+    const handed = bot.inputs[1]?.at(-1);
+    expect(handed?.role).toBe("tool");
+    expect(handed?.content).toBe(`${"가".repeat(30)}\ufffd`);
+    // And every step of the turn is in the store, the answer included.
+    const stored = await messagesFor(database, threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(stored[2]?.content).toBe(`${"가".repeat(30)}\ufffd`);
+    expect(stored.at(-1)?.content).toBe("메일은 이래요.");
+  });
+
   test("every window sees one run, however many times the model is asked", async () => {
     const { threadId, channelId } = await aConversation();
     const bot = scriptedBot();

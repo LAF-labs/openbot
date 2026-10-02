@@ -39,6 +39,7 @@ import { asResult, countArg, stringArg } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** The catalogue entry these tools live under. Prefixes every tool ref: `public-data/search_bids`. */
 export const PUBLIC_DATA_KEY = "public-data";
@@ -494,7 +495,10 @@ export function createPublicDataTransport(input: {
         period: text(row, "reqstBeginEndDe"),
         target: text(row, "trgetNm"),
         postedAt: text(row, "creatPnttm"),
-        summary: plainText(text(row, "bsnsSumryCn")).slice(0, SUMMARY_CHARS),
+        summary: cutAtCodeUnits(
+          plainText(text(row, "bsnsSumryCn")),
+          SUMMARY_CHARS,
+        ),
         url: text(row, "pblancUrl"),
       })),
     });

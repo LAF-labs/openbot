@@ -750,15 +750,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (`.github/workflows/checks.yml`). The floor is still the right check for a file that vanished;
  * for a suite that stopped running where it stood, it is that test.
  *
+ * RAISED 2026-10-02 with sound text (`shared/sound-text.ts`), each by exactly what was added: eleven
+ * to `server` (a turn whose tool answered with half an emoji or a NUL kept whole, against a running
+ * database, and a trail row with such a name written; a tool's answer filed sound; a result, a
+ * vendor's sentence and a link's name cut between characters; a preview and a name that do not end
+ * on half a flag), two to `agent-computer` (a name cut between characters; an emoji across a
+ * range's edge read once) and sixteen to `root` (the cuts and the mending themselves; a spilled
+ * result's head; nothing in a request the Bots' model refuses).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3357, roots: ["server"] },
+  { name: "server", floor: 3368, roots: ["server"] },
   { name: "app", floor: 1595, roots: ["app"] },
-  { name: "agent-computer", floor: 375, roots: ["agent-computer"] },
-  { name: "root", floor: 578, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 377, roots: ["agent-computer"] },
+  { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

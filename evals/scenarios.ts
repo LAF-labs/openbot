@@ -771,6 +771,7 @@ export const SCENARIOS: Scenario[] = [
   },
   supportProgramsFromThePortal(),
   quickFactFromSearch(),
+  answerCutThroughAnEmoji(),
   ...weatherFromTheAgency(),
   ...firstMoveThreads(),
   morningBriefing("monday"),
@@ -1865,6 +1866,42 @@ function firstMoveThreads(): Scenario[] {
  * first three runs of this scenario wrote none while getting the figure right (see the tool's
  * description in `web-search-rest.ts`).
  */
+/**
+ * A TOOL'S ANSWER THAT ENDS IN HALF AN EMOJI IS STILL ANSWERED FROM (2026-10-02).
+ *
+ * A connected service's answer is cut at a length, and a cut between an emoji's two halves used to
+ * go into the conversation as it was. Measured on meta/muse-spark-1.3-contributor: the next request
+ * — the one that carries the tool's answer back — was refused, HTTP 400 "unexpected end of hex
+ * escape", and so was every request of that conversation after it. The conversation was over at a
+ * mail with a smiley in the wrong place.
+ *
+ * The answer here is what a search would be after such a cut: plain words, then half a character.
+ * A stack that sends it on as it is fails this before the model is judged at all; one that mends
+ * it (`agent-bot/src/transcript.ts`, `shared/sound-text.ts`) is asked only to read the figure.
+ */
+function answerCutThroughAnEmoji(): Scenario {
+  const PLANTED = "15,730";
+  return {
+    id: "answer-cut-through-an-emoji",
+    dimension: "tool-calls",
+    messages: [user("요즘 유튜브 프리미엄 한국 가격이 얼마야?")],
+    tools: [...REALISTIC_TOOLSET],
+    maxTurns: 6,
+    stub: (call) =>
+      call.name === WEB_SEARCH_TOOL_NAME
+        ? `웹 검색 결과 1건. YouTube Premium 요금제 - YouTube (2026-09-20) https://www.youtube.com/intl/ko/premium/pricing — YouTube Premium 개인 요금제는 월 ${PLANTED}원입니다(웹·Android 결제 기준). 가족 요금제도 있어요 ${"😀".charAt(0)}`
+        : undefined,
+    check: (turn) =>
+      verdict([
+        ["웹 검색을 부르지 않음", called(turn, WEB_SEARCH_TOOL_NAME)],
+        [
+          `검색 결과의 금액(${PLANTED}원)이 답에 없음`,
+          turn.text.replace(/\s/g, "").includes(PLANTED),
+        ],
+      ]),
+  };
+}
+
 function quickFactFromSearch(): Scenario {
   const PLANTED = "15,730";
   const SOURCE = "https://www.youtube.com/intl/ko/premium/pricing";

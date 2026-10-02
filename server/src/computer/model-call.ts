@@ -19,6 +19,7 @@
 import { jsonObjectOf } from "../../../shared/json-object";
 import { providerStatusFact } from "../failure-text";
 import { log } from "../log";
+import { soundText } from "../../../shared/sound-text";
 
 export type ModelCall = {
   /** Where chat completions are answered. The same endpoint everything else in this deployment uses. */
@@ -128,9 +129,12 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
           ...(ask.reasoningEffort === undefined
             ? {}
             : { reasoning_effort: ask.reasoningEffort }),
+          // Sound, because what is asked about is mostly somebody else's text, cut to a length:
+          // half an emoji in a request is a 400 from some models (`shared/sound-text.ts`), and a
+          // judge that cannot be asked is a question nobody answered.
           messages: [
-            { role: "system", content: ask.system },
-            { role: "user", content: ask.user },
+            { role: "system", content: soundText(ask.system) },
+            { role: "user", content: soundText(ask.user) },
           ],
         }),
         signal: AbortSignal.timeout(ask.timeoutMs),

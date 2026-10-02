@@ -32,6 +32,20 @@ describe("a cut tool result", () => {
     );
   });
 
+  test("the head ends between characters when the bound falls inside an emoji", () => {
+    // The 20,000th unit is the emoji's first half. Shown with it, the result was a string the Bots'
+    // model refuses and the store will not hold (`shared/sound-text.ts`).
+    const text = `${"가".repeat(TOOL_RESULT_CUT - 1)}😀${"나".repeat(50)}`;
+    const shown = previewOf(text, ".results/call_1.txt");
+    expect(shown.isWellFormed()).toBe(true);
+    expect(shown.startsWith(`${"가".repeat(TOOL_RESULT_CUT - 1)}\n`)).toBe(
+      true,
+    );
+    // The line still names the bound: the file is read on from there, and the part that begins
+    // inside the emoji takes it whole (`sliceOnCharacters`).
+    expect(shown).toContain(spillLine(".results/call_1.txt", text.length));
+  });
+
   test("is the same bytes however many times it is cut", () => {
     const text = `${"본문 ".repeat(9_000)}끝`;
     expect(previewOf(text, ".results/c.txt")).toBe(

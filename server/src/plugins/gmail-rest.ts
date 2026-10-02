@@ -18,6 +18,7 @@ import {
 } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * Gmail over its ordinary REST API: search, read, draft, send.
@@ -430,7 +431,8 @@ export async function callTool(
         `보낸사람: ${headerOf(message, "From")}`,
         `날짜: ${headerOf(message, "Date")}`,
         "",
-        text.slice(0, MAX_BODY_CHARS),
+        // A mail's body is where emoji are: cut between them (`shared/sound-text.ts`).
+        cutAtCodeUnits(text, MAX_BODY_CHARS),
       ].join("\n"),
     );
   }

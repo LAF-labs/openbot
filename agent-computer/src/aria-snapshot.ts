@@ -16,6 +16,7 @@
  */
 
 import { parse as parseYaml } from "yaml";
+import { cutAtCodeUnits } from "../../shared/sound-text";
 
 /** How many elements a snapshot will describe. Bounded for the same reason the text extract is. */
 const SNAPSHOT_ELEMENT_LIMIT = 200;
@@ -357,13 +358,15 @@ function toElement(
   const element: SnapshotElement = {
     ref,
     role: descriptor.role,
-    name: descriptor.name.slice(0, 200),
+    // Between characters: the name goes into the trail's row before the action it names
+    // (`shared/sound-text.ts`).
+    name: cutAtCodeUnits(descriptor.name, 200),
   };
 
   // Values arrive as text, with quoting and escapes already resolved.
   if (typeof value === "string") {
     const text = value.trim();
-    if (text) element.value = text.slice(0, 200);
+    if (text) element.value = cutAtCodeUnits(text, 200);
   }
 
   if (descriptor.flags.has("disabled")) element.disabled = true;

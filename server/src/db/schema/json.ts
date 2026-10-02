@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { customType } from "drizzle-orm/pg-core";
+import { soundValue } from "../../../../shared/sound-text";
 
 /**
  * A `jsonb` column that actually stores JSON — objects AND arrays.
@@ -36,6 +37,28 @@ export const jsonb = customType<{
 }>({
   dataType: () => "jsonb",
   // Straight through for an object. The double `JSON.stringify` is the whole bug.
-  toDriver: (value) =>
-    Array.isArray(value) ? sql`${JSON.stringify(value)}::text::jsonb` : value,
+  toDriver: (value) => {
+    const kept = storable(value);
+    return Array.isArray(kept)
+      ? sql`${JSON.stringify(kept)}::text::jsonb`
+      : kept;
+  },
 });
+
+/**
+ * A value as `jsonb` will take it: every string in it sound (`shared/sound-text.ts`).
+ *
+ * ONE STRING POSTGRES REFUSES TAKES THE WHOLE WRITE WITH IT. Half an emoji or a NUL anywhere in a
+ * value and the statement fails — 22P02, 22P05 — and what is written here is mostly what somebody
+ * else wrote: a connected service's answer, a page's text, an element's name. Measured 2026-10-02
+ * on the conversation store: a tool result ending in half an emoji (a 20,000-character cut through
+ * one) and `appendMessages` threw, and since a turn's rows go in together and the turn must not
+ * break over its bookkeeping (`turns/engine.ts`), none of that turn was kept. An audit row with
+ * such a name in it was refused the same way, before the action it describes.
+ *
+ * Here because this is the one door every `jsonb` column is written through, so a column added
+ * tomorrow cannot be the one that forgot.
+ */
+export function storable(value: unknown): unknown {
+  return soundValue(value);
+}

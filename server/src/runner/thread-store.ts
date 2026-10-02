@@ -25,6 +25,7 @@ import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadMessages } from "../db/schema";
+import { storable } from "../db/schema/json";
 import { redactSecretTyping } from "./secret-redaction";
 
 /**
@@ -327,9 +328,14 @@ export async function appendMessages(
      * below, rather than stamped, attributed, redacted and then skipped one by one. That per-message
      * work over the whole history is what made the append cost as much as the conversation was long.
      */
-    const relevant = incoming.filter(
-      (message) => stored.has(message.id) || unstored.has(message.id),
-    );
+    /*
+     * And made storable (`db/schema/json.ts`) here, ahead of the column's own door, so that what is
+     * compared, what is written and what this function hands back are one message: left to the door
+     * alone, a message mended on its way in would differ from itself on every later append.
+     */
+    const relevant = incoming
+      .filter((message) => stored.has(message.id) || unstored.has(message.id))
+      .map((message) => storable(message) as Message);
 
     const heldMessages = [...stored.values()].map((row) => row.message);
     const known = stampsOf(heldMessages);

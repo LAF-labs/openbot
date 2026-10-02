@@ -38,6 +38,7 @@ import {
 } from "@typesafe-ai/sdk";
 import { log } from "../log";
 import type { NoAnswer } from "./model-call";
+import { soundValue } from "../../../shared/sound-text";
 
 export type DecisionCall = {
   /**
@@ -230,7 +231,9 @@ export async function askDecision(
     const result = (await client.systemOne({
       model: call.model,
       // The SDK asks for JSON; `state` is an object this module's callers build from JSON.
-      state: ask.state as EntryType,
+      // Made sound (`shared/sound-text.ts`): a state built from a sentence cut through an emoji
+      // must not be the reason a decision could not be asked for.
+      state: soundValue(ask.state) as EntryType,
       questions: ask.questions,
     })) as unknown as {
       model?: unknown;

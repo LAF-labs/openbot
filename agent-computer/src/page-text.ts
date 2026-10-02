@@ -11,6 +11,7 @@ import type { NoteCode } from "./codes";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
 import { compactText, type FrameRead, readerScript } from "./reader";
 import { within } from "./within";
+import { cutAtCodeUnits } from "../../shared/sound-text";
 
 /**
  * How much page text a navigation hands back.
@@ -285,7 +286,7 @@ async function readablePageText(
   const at = from ? all.indexOf(from) : -1;
   const collapsed = at > 0 ? all.slice(at) : all;
   return {
-    text: collapsed.slice(0, TEXT_EXTRACT_LIMIT),
+    text: cutAtCodeUnits(collapsed, TEXT_EXTRACT_LIMIT),
     truncated: collapsed.length > TEXT_EXTRACT_LIMIT,
     ...(from && at < 0 ? { fromMissing: true as const } : {}),
     ...(reader ? { reader: true as const } : {}),

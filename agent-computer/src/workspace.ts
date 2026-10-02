@@ -32,6 +32,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { HANDOFF_MAX_BYTES } from "../../shared/workspace-files";
+import { sliceOnCharacters } from "../../shared/sound-text";
 
 /**
  * A path that is not the Bot's to name. The message is for this process's own tests and logs; what
@@ -400,12 +401,15 @@ export function createWorkspace(
         const end =
           offset +
           Math.min(range.limit ?? RANGE_CHARS, RANGE_CHARS, limits.readBytes);
-        // A UTF-16 unit is at most three bytes of UTF-8, so this prefix holds every unit up to `end`.
-        const prefix = buffer.subarray(0, end * 3);
+        // A UTF-16 unit is at most three bytes of UTF-8, so this prefix holds every unit up to AND
+        // INCLUDING the one at `end`: an emoji lying across the edge has to be whole to be seen as
+        // one, or its first bytes decode to a mark that is then handed back as text.
+        const prefix = buffer.subarray(0, (end + 1) * 3);
         const decoded = prefix.toString("utf8");
         return {
           path: requested,
-          text: decoded.slice(offset, end),
+          // On characters at both edges, so parts read one after another hold each one once.
+          text: sliceOnCharacters(decoded, offset, end),
           truncated:
             decoded.length > end || prefix.byteLength < buffer.byteLength,
           bytes: buffer.byteLength,

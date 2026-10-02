@@ -1,3 +1,4 @@
+import { cutOnGraphemes } from "../../../shared/sound-text";
 /**
  * The one line a roster row shows for the last thing said in a room.
  *
@@ -56,7 +57,8 @@ export function previewOf(text: string): string {
   const window = Array.from(text).slice(0, STRIP_WINDOW).join("");
   const flattened = plainTextOf(window).replace(CONTROL_CHARACTERS, " ").trim();
   const collapsed = flattened.replace(/\s+/g, " ");
-  const codePoints = Array.from(collapsed);
-  if (codePoints.length <= MAX_ACTIVITY_CODE_POINTS) return collapsed;
-  return `${codePoints.slice(0, MAX_ACTIVITY_CODE_POINTS - 1).join("")}…`;
+  if (Array.from(collapsed).length <= MAX_ACTIVITY_CODE_POINTS)
+    return collapsed;
+  // Between characters as they are seen, so the line does not end on half a flag.
+  return `${cutOnGraphemes(collapsed, MAX_ACTIVITY_CODE_POINTS - 1)}…`;
 }

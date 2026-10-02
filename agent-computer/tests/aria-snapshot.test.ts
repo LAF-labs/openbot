@@ -90,6 +90,20 @@ describe("parseAriaSnapshot, against captured output", () => {
     });
   });
 
+  test("a name or a value cut at its length is cut between characters", () => {
+    // 199 letters and then an emoji: a cut at 200 units would keep the emoji's first half, and the
+    // name goes into the trail's row before the action it names (`shared/sound-text.ts`).
+    const long = `${"가".repeat(199)}😀나`;
+    const { elements } = parseAriaSnapshot(
+      `- link "${long}" [ref=e1]\n- textbox "메모" [ref=e2]: ${long}`,
+    );
+    expect(elements[0]?.name).toBe("가".repeat(199));
+    expect(elements[1]?.value).toBe("가".repeat(199));
+    for (const text of [elements[0]?.name, elements[1]?.value]) {
+      expect(text?.isWellFormed()).toBe(true);
+    }
+  });
+
   test("reads a control's value, and omits it when empty", () => {
     const { elements } = parseAriaSnapshot(CAPTURED);
     expect(elements[0]?.value).toBe("Katherine Johnson");

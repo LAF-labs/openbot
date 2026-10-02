@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { MAX_RESULT_CHARS, resultText } from "../src/plugins/mcp";
+import {
+  MAX_RESULT_CHARS,
+  resultText,
+  shapeResult,
+  trimDetail,
+  VENDOR_DETAIL_CHARS,
+} from "../src/plugins/mcp";
 
 /**
  * What a vendor's answer looks like by the time a model reads it.
@@ -39,6 +45,52 @@ describe("a result with nothing in it", () => {
     for (const empty of [null, undefined, {}, [], "text", 0]) {
       expect(resultText([], undefined, empty).text).toBe(NOTHING);
     }
+  });
+});
+
+describe("an answer cut at its length", () => {
+  /*
+   * Cut with `slice`, a result whose 20,000th unit was the first half of an emoji ended on that
+   * half. The Bots' model answers a request holding one with a 400 and Postgres will not store it
+   * (`shared/sound-text.ts`, measured 2026-10-02). Upstream OpenBot #525, where the concern was a
+   * broken character; here it was the turn.
+   */
+  test("is cut between characters, not through an emoji", () => {
+    const { text, truncated } = shapeResult(
+      `${"a".repeat(MAX_RESULT_CHARS - 1)}😀${"b".repeat(10)}`,
+    );
+    expect(truncated).toBe(true);
+    expect(text.isWellFormed()).toBe(true);
+    expect(
+      text.startsWith(`${"a".repeat(MAX_RESULT_CHARS - 1)}\n\n[truncated`),
+    ).toBe(true);
+  });
+
+  test("keeps an emoji that fits before the cut, and says how long the whole was", () => {
+    const whole = `${"a".repeat(MAX_RESULT_CHARS - 2)}😀${"b".repeat(10)}`;
+    const { text } = shapeResult(whole);
+    expect(text.startsWith(`${"a".repeat(MAX_RESULT_CHARS - 2)}😀\n\n`)).toBe(
+      true,
+    );
+    expect(text).toContain(`the tool returned ${whole.length} characters`);
+  });
+
+  test("a vendor's sentence quoted into the trail is cut the same way", () => {
+    const detail = trimDetail(`${"가".repeat(VENDOR_DETAIL_CHARS - 1)}😀 뒤`);
+    expect(detail).toBe(`${"가".repeat(VENDOR_DETAIL_CHARS - 1)}…`);
+    expect(detail.isWellFormed()).toBe(true);
+  });
+
+  test("and a link's long name", () => {
+    const { text } = resultText([
+      {
+        type: "resource_link",
+        uri: "file:///a.md",
+        name: `${"n".repeat(399)}😀 tail`,
+      },
+    ]);
+    expect(text).toBe(`uri: file:///a.md\nname: ${"n".repeat(399)}…`);
+    expect(text.isWellFormed()).toBe(true);
   });
 });
 

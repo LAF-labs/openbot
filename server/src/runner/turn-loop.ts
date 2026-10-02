@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent, BaseEvent, Message, Tool } from "@ag-ui/client";
 import { jsonObjectOf } from "../../../shared/json-object";
+import { soundText } from "../../../shared/sound-text";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 
 /** What a tool hands back to the model. The same envelope the browser's handlers return. */
@@ -322,7 +323,14 @@ export async function runTurnLoop(
       id: randomUUID(),
       role: "tool" as const,
       toolCallId: call.id,
-      content: outcomeContent(outcome),
+      /*
+       * Made sound where it enters the conversation, because what a tool answers is somebody
+       * else's text and this is its one way in. Half an emoji in it — a long answer cut through
+       * one — and the Bots' model refuses the very next request with a 400, and every request of
+       * this conversation after it (`shared/sound-text.ts`, measured). Mended here, the model, the
+       * store and a reload all read the same thing.
+       */
+      content: soundText(outcomeContent(outcome)),
     };
     target.addMessage(message);
     options.onToolResult?.(message, outcome);

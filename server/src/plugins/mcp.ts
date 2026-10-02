@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { TIMEOUT_MS } from "./timeouts";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * The only place in this deployment that speaks MCP to somebody else's server.
@@ -52,7 +53,7 @@ export const VENDOR_DETAIL_CHARS = 400;
 /** A vendor's sentence, cut to {@link VENDOR_DETAIL_CHARS} with the cut made visible. */
 export const trimDetail = (value: string): string =>
   value.length > VENDOR_DETAIL_CHARS
-    ? `${value.slice(0, VENDOR_DETAIL_CHARS)}…`
+    ? `${cutAtCodeUnits(value, VENDOR_DETAIL_CHARS)}…`
     : value;
 
 /** What stands where a vendor wrote back the credential it was sent. */
@@ -127,7 +128,9 @@ export function shapeResult(joined: string): {
     return { text: joined, truncated: false };
   }
   return {
-    text: `${joined.slice(0, MAX_RESULT_CHARS)}\n\n[truncated: the tool returned ${joined.length} characters]`,
+    // Between characters: a cut through an emoji is a string nothing downstream will take
+    // (`shared/sound-text.ts`).
+    text: `${cutAtCodeUnits(joined, MAX_RESULT_CHARS)}\n\n[truncated: the tool returned ${joined.length} characters]`,
     truncated: true,
   };
 }
@@ -162,7 +165,7 @@ function resourceLinkText(item: {
     typeof value === "string" && value.trim() !== "" ? value : null;
   const bounded = (value: string) =>
     value.length > LINK_FIELD_CHARS
-      ? `${value.slice(0, LINK_FIELD_CHARS)}…`
+      ? `${cutAtCodeUnits(value, LINK_FIELD_CHARS)}…`
       : value;
   const lines: string[] = [];
   const uri = field(item.uri);

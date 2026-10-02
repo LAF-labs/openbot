@@ -120,6 +120,32 @@ describe("reading and writing inside the workspace", () => {
     expect(some.bytes).toBe(Buffer.byteLength(filed));
   });
 
+  test("an emoji lying across a range's edge is read once, whole, in the part that follows", async () => {
+    const ws = workspace();
+    // Units 9 and 10 are the emoji's two halves: a range ending at 10 ends inside it.
+    const filed = `${"가".repeat(9)}😀${"나".repeat(9)}`;
+    await ws.write("emoji.txt", filed);
+
+    const first = await ws.read("emoji.txt", { offset: 0, limit: 10 });
+    expect(first.text).toBe("가".repeat(9));
+    expect(first.truncated).toBe(true);
+    // The Bot continues from where it asked the first part to end.
+    const second = await ws.read("emoji.txt", { offset: 10, limit: 10 });
+    expect(second.text).toBe(`😀${"나".repeat(9)}`);
+
+    // And whatever size the parts, read one after another they are the file.
+    for (const size of [1, 2, 3, 7]) {
+      let whole = "";
+      for (let offset = 0; offset < filed.length; offset += size) {
+        const part = await ws.read("emoji.txt", { offset, limit: size });
+        expect(part.text.isWellFormed()).toBe(true);
+        expect(part.text).not.toContain("\ufffd");
+        whole += part.text;
+      }
+      expect(whole).toBe(filed);
+    }
+  });
+
   test("a range never hands back more than one step's worth", async () => {
     const ws = workspace();
     await ws.write("big.txt", "a".repeat(RANGE_CHARS * 3));
