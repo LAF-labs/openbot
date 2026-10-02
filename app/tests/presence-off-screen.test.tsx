@@ -294,6 +294,51 @@ describe("the pill, once the conversation has left the screen", () => {
     );
   });
 
+  /*
+   * Codex, third round: with the telling held back until the stream has spoken, the leaving had been
+   * held back with it. A send still on its way publishes "thinking" before any stream answers; a
+   * person who left then left that word behind for good — the pill said Thinking from then on.
+   */
+  test("a conversation that leaves before it has heard still takes its phase back", async () => {
+    const { api, turns } = server({ going: false, holdStreams: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => view.host.querySelector('[aria-label="Message"]') !== null,
+      "the composer",
+      6000,
+    );
+    // The hand-over is kept on its way: this window's own send is all it knows of a turn.
+    turns.holdDoor();
+    const { offerDraft } = await import(
+      "../src/components/channels/composer/prefill"
+    );
+    await acted(() => offerDraft(CHANNEL, "표로 정리해 줘"));
+    await view.waitFor(
+      () =>
+        view.host
+          .querySelector('[aria-label="Message"]')
+          ?.textContent?.trim() === "표로 정리해 줘",
+      "the words in the composer",
+      4000,
+    );
+    const send = view.host.querySelector('button[aria-label="Send message"]');
+    if (!send) throw new Error("no send button");
+    await view.click(send);
+    await view.waitFor(
+      () => pill(view.host) === "Thinking",
+      "the send on its way to read as thinking",
+      4000,
+    );
+
+    await view.navigate("/made");
+    await view.waitFor(
+      () => pill(view.host) === "Ready",
+      "the pill to stop saying Thinking once the server's list says nobody is working",
+      4000,
+    );
+    await acted(() => turns.answerDoor());
+  });
+
   test("a conversation with nothing going leaves nothing behind", async () => {
     const { api } = server({ going: false });
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });

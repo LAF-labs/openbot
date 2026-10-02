@@ -808,10 +808,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * card could hand it) and three in `root` (the screen's cards found from Korean, and the one that
  * hands a file over in the schema).
  *
- * RAISED 2026-10-02 by fifteen in `app`: what the Bot is doing, said on the screens that are not its
- * conversation — the pill's order and the decision behind it (8), and the app mounted with a turn
- * going and the conversation left (7: two of them the review's — a list already on its way, and a
- * turn the conversation saw end — and one from pressing it, a conversation that has not heard yet).
+ * RAISED 2026-10-02 by seventeen in `app`: what the Bot is doing, said on the screens that are not
+ * its conversation — the pill's order and the decision behind it (9), and the app mounted with a
+ * turn going and the conversation left (8: three of them the review's — a list already on its way,
+ * a turn the conversation saw end, a conversation that left before it had heard — and one from
+ * pressing it, a conversation that has not heard yet).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -819,7 +820,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3418, roots: ["server"] },
-  { name: "app", floor: 1706, roots: ["app"] },
+  { name: "app", floor: 1708, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 608, roots: ["tests", "agent-bot"] },
 ] as const;
