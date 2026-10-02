@@ -127,10 +127,20 @@ export function shapeResult(joined: string): {
   if (joined.length <= MAX_RESULT_CHARS) {
     return { text: joined, truncated: false };
   }
+  /*
+   * THE NOTE FITS INSIDE THE BOUND. A result over it is filed on the Bot's computer and shown by
+   * its first 20,000 characters (`shared/spillover.ts`), and a cut result used to be 20,000
+   * characters and THEN the note — so it was always over, by the note (measured 2026-10-02:
+   * 20,049 characters). What the Bot was shown was exactly the cut text and a line saying the
+   * whole was on file; reading on from there gets this note and nothing else, which is a step
+   * spent to learn there is no more.
+   *
+   * Cut between characters: a cut through an emoji is a string nothing downstream will take
+   * (`shared/sound-text.ts`).
+   */
+  const note = `\n\n[truncated: the tool returned ${joined.length} characters]`;
   return {
-    // Between characters: a cut through an emoji is a string nothing downstream will take
-    // (`shared/sound-text.ts`).
-    text: `${cutAtCodeUnits(joined, MAX_RESULT_CHARS)}\n\n[truncated: the tool returned ${joined.length} characters]`,
+    text: `${cutAtCodeUnits(joined, MAX_RESULT_CHARS - note.length)}${note}`,
     truncated: true,
   };
 }

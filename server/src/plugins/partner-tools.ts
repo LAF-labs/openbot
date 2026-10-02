@@ -140,13 +140,16 @@ export function partnerTransport(input: {
         actorId,
         botId: connection.botId ?? "",
       });
-      return text.length <= MAX_RESULT_CHARS
-        ? { text, isError: false, truncated: false }
-        : {
-            text: `${cutAtCodeUnits(text, MAX_RESULT_CHARS)}\n\n[truncated: ${text.length} characters]`,
-            isError: false,
-            truncated: true,
-          };
+      if (text.length <= MAX_RESULT_CHARS) {
+        return { text, isError: false, truncated: false };
+      }
+      // The note inside the bound, where the Bot reads it (`shapeResult` in `mcp.ts`).
+      const note = `\n\n[truncated: ${text.length} characters]`;
+      return {
+        text: `${cutAtCodeUnits(text, MAX_RESULT_CHARS - note.length)}${note}`,
+        isError: false,
+        truncated: true,
+      };
     },
   };
 }

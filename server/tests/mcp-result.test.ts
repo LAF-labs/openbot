@@ -6,6 +6,7 @@ import {
   trimDetail,
   VENDOR_DETAIL_CHARS,
 } from "../src/plugins/mcp";
+import { TOOL_RESULT_CUT } from "../../shared/spillover";
 
 /**
  * What a vendor's answer looks like by the time a model reads it.
@@ -56,23 +57,43 @@ describe("an answer cut at its length", () => {
    * broken character; here it was the turn.
    */
   test("is cut between characters, not through an emoji", () => {
+    // The emoji sits exactly where the text is cut to leave room for the note.
+    const note = (total: number) =>
+      `\n\n[truncated: the tool returned ${total} characters]`;
+    const total = MAX_RESULT_CHARS * 2;
+    const room = MAX_RESULT_CHARS - note(total).length;
     const { text, truncated } = shapeResult(
-      `${"a".repeat(MAX_RESULT_CHARS - 1)}😀${"b".repeat(10)}`,
+      `${"a".repeat(room - 1)}😀${"b".repeat(total - room - 1)}`,
     );
     expect(truncated).toBe(true);
     expect(text.isWellFormed()).toBe(true);
-    expect(
-      text.startsWith(`${"a".repeat(MAX_RESULT_CHARS - 1)}\n\n[truncated`),
-    ).toBe(true);
+    expect(text).toBe(`${"a".repeat(room - 1)}${note(total)}`);
   });
 
   test("keeps an emoji that fits before the cut, and says how long the whole was", () => {
-    const whole = `${"a".repeat(MAX_RESULT_CHARS - 2)}😀${"b".repeat(10)}`;
+    const note = (total: number) =>
+      `\n\n[truncated: the tool returned ${total} characters]`;
+    const total = MAX_RESULT_CHARS * 2;
+    const room = MAX_RESULT_CHARS - note(total).length;
+    const whole = `${"a".repeat(room - 2)}😀${"b".repeat(total - room)}`;
     const { text } = shapeResult(whole);
-    expect(text.startsWith(`${"a".repeat(MAX_RESULT_CHARS - 2)}😀\n\n`)).toBe(
-      true,
+    expect(text).toBe(`${"a".repeat(room - 2)}😀${note(whole.length)}`);
+  });
+
+  test("fits under the bound WITH its note, so the note is what the Bot reads", () => {
+    /*
+     * A result over 20,000 characters is filed on the Bot's computer and shown by its first 20,000
+     * (`shared/spillover.ts`). A cut result used to be 20,000 characters and then the note, so it
+     * was over: what the Bot is shown is then exactly the cut text and a line saying the whole is
+     * on file, and reading on from there gets the note and nothing else. Seen 2026-10-02 while
+     * porting upstream's Drive fix.
+     */
+    const { text } = shapeResult("가".repeat(MAX_RESULT_CHARS * 3));
+    expect(text.length).toBeLessThanOrEqual(TOOL_RESULT_CUT);
+    expect(text.endsWith(`characters]`)).toBe(true);
+    expect(text).toContain(
+      `[truncated: the tool returned ${MAX_RESULT_CHARS * 3} characters]`,
     );
-    expect(text).toContain(`the tool returned ${whole.length} characters`);
   });
 
   test("a vendor's sentence quoted into the trail is cut the same way", () => {
@@ -142,7 +163,7 @@ describe("an answer that arrived as structuredContent", () => {
     });
     expect(truncated).toBe(true);
     expect(text).toContain("[truncated: the tool returned");
-    expect(text.length).toBeLessThan(MAX_RESULT_CHARS + 200);
+    expect(text.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
   });
 });
 
