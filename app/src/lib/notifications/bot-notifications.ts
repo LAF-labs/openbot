@@ -151,6 +151,12 @@ export type NoticeRequest = {
   /** The room on screen, and the room this is about. Only `finished` has a room. */
   openChannelId?: string | null;
   channelId?: string;
+  /**
+   * For `needs-you`: whether the screen in front of the person is one that draws the question —
+   * the Bot's conversation, or the page a notice opens for it (`isCardOnScreen`). False is a
+   * visible window showing something else.
+   */
+  cardOnScreen?: boolean;
   /** Milliseconds, for the throttle. */
   now: number;
 };
@@ -162,10 +168,17 @@ export type NoticeRequest = {
  * stronger statement — it is already off the roster — and an unmuted-but-hidden Bot would
  * otherwise interrupt somebody who had put it away.
  *
- * "Looking at it" differs by kind, and that asymmetry is the point. A question is raised by a tool
- * call in the tab the person is driving, so a visible tab already draws the card on that call's own
- * line and a visible tab is enough to stay quiet. A message can arrive in any room, so it takes a
- * visible tab AND that room being the one on screen.
+ * "Looking at it" is the same question for both kinds: a visible window AND the thing on screen in
+ * it. For a message that is the room it arrived in. For a question it is a screen that draws the
+ * card.
+ *
+ * IT USED TO DIFFER BY KIND, and a visible window alone silenced a question: "a question is raised
+ * by a tool call in the tab the person is driving, so a visible tab already draws the card". That
+ * was true while the window drove the turn and the conversation was the app. The turn is the
+ * server's now and goes on while the person reads 소식, 아이디어, 목표, 만든 것 or 설정 — five
+ * screens with no card on them — so the one interruption that expires in ten minutes was withheld
+ * exactly when nothing on screen was saying it. A caller that cannot tell says nothing, and the old
+ * answer stands.
  */
 export function decideNotice(
   request: NoticeRequest,
@@ -174,8 +187,11 @@ export function decideNotice(
   if (request.hidden) return "hidden";
   if (request.notify === false) return "muted";
   if (request.visible) {
-    if (request.kind === "needs-you") return "focused";
-    if (request.openChannelId === request.channelId) return "focused";
+    if (request.kind === "needs-you") {
+      if (request.cardOnScreen !== false) return "focused";
+    } else if (request.openChannelId === request.channelId) {
+      return "focused";
+    }
   }
   if (
     lastNotifiedAt !== undefined &&

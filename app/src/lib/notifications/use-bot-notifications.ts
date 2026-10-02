@@ -73,6 +73,38 @@ export function openChannelFrom(pathname: string): string | null {
 }
 
 /**
+ * Whether the screen in front of the person is one that draws this Bot's question.
+ *
+ * Two screens do: the Bot's conversation, where the card sits on the line of the call that raised
+ * it, and the page a notice opens for one question. Every other screen has the pill and the
+ * sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading is
+ * not them being asked.
+ *
+ * While the list of conversations has not been read at all, an open conversation is taken as the
+ * Bot's: staying quiet for that moment is the smaller mistake than interrupting somebody who is
+ * looking at the card. A list that HAS been read and does not hold the open one is another matter —
+ * the compose screen (`/channel/new`), a conversation that is gone — and no card is drawn there.
+ */
+export function isCardOnScreen(input: {
+  pathname: string;
+  botId: string;
+  approvalId?: string | undefined;
+  channels: readonly { id: string; agentIds: readonly string[] }[] | undefined;
+}): boolean {
+  if (
+    input.approvalId &&
+    input.pathname === `/approve/${encodeURIComponent(input.approvalId)}`
+  ) {
+    return true;
+  }
+  const open = openChannelFrom(input.pathname);
+  if (!open) return false;
+  if (!input.channels) return true;
+  const channel = input.channels.find((entry) => entry.id === open);
+  return channel?.agentIds.includes(input.botId) ?? false;
+}
+
+/**
  * Which of the two interruptions an outbox row is, or neither.
  *
  * The mapping is the field rule, one line per clause: blocked on you leads, finished follows, and
@@ -165,6 +197,7 @@ export function useBotNotifications(): void {
    * notifiable and none would know the Bot's name.
    */
   const rosterRef = useRef(agents.data);
+  const channelsRef = useRef(channels.data);
   const pathRef = useRef(location.pathname);
   const navigateRef = useRef(navigate);
   const queryClientRef = useRef(queryClient);
@@ -175,10 +208,11 @@ export function useBotNotifications(): void {
    */
   useLayoutEffect(() => {
     rosterRef.current = agents.data;
+    channelsRef.current = channels.data;
     pathRef.current = location.pathname;
     navigateRef.current = navigate;
     queryClientRef.current = queryClient;
-  }, [agents.data, location.pathname, navigate, queryClient]);
+  }, [agents.data, channels.data, location.pathname, navigate, queryClient]);
   /** Last delivery per `${agentId}:${kind}`. Lives as long as the app does, like the socket. */
   const lastNotified = useRef(new Map<string, number>());
   /**
@@ -192,6 +226,16 @@ export function useBotNotifications(): void {
    * different things worth saying.
    */
   const announced = useRef(new Set<string>());
+  /**
+   * Whether the list of what was already waiting when this page opened has been read.
+   *
+   * A question that was open before the page was is not news to raise the moment the page learns of
+   * it: the person has just arrived, and the pill and the sidebar say it. The outbox's first read
+   * marks those as said (below); until it has answered, the questions effect holds its tongue, and
+   * says whatever is still unsaid once it has.
+   */
+  const seeded = useRef(false);
+  const announceOpen = useRef<() => void>(() => {});
 
   /** The one place a notice can be raised, so nothing can be raised around the rules. */
   const raise = useRef(
@@ -269,16 +313,17 @@ export function useBotNotifications(): void {
   /*
    * AND THE LEADING CASE: a Bot that has stopped and is waiting on a person.
    *
-   * It does not ride the socket and should not — the question is raised by a tool call in this very
-   * tab, which already holds the Bot, the id and the sentence. A server round trip to be told what
-   * this browser said one line earlier would be a slower way to learn nothing new.
+   * It reads the store of open questions, which is filled by whoever is watching the server's
+   * record — the conversation on screen, or the shell's own watch on every other screen
+   * (`lib/turns/questions.ts`). So it holds the Bot, the id and the sentence the card will show.
    *
    * Each question is announced at most once. `watchQuestions` fires on every open AND every close,
    * so without the seen-set an answered question would re-announce every one still waiting behind
    * it — and the throttle would not catch that, because those questions are seconds apart.
    */
   useEffect(() => {
-    return watchQuestions(() => {
+    const announce = () => {
+      if (!seeded.current) return;
       for (const question of openQuestions()) {
         if (announced.current.has(question.approvalId)) continue;
         const bot = rosterRef.current?.find(
@@ -292,6 +337,12 @@ export function useBotNotifications(): void {
             notify: bot?.notify,
             hidden: bot?.hidden,
             visible: document.visibilityState === "visible",
+            cardOnScreen: isCardOnScreen({
+              pathname: pathRef.current,
+              botId: question.botId,
+              approvalId: question.approvalId,
+              channels: channelsRef.current,
+            }),
             now: Date.now(),
           },
           {
@@ -318,7 +369,9 @@ export function useBotNotifications(): void {
           },
         );
       }
-    });
+    };
+    announceOpen.current = announce;
+    return watchQuestions(announce);
   }, []);
 
   /*
@@ -389,6 +442,16 @@ export function useBotNotifications(): void {
           visible: document.visibilityState === "visible",
           openChannelId: openChannelFrom(pathRef.current),
           ...(frame.channelId ? { channelId: frame.channelId } : {}),
+          ...(kind === "needs-you"
+            ? {
+                cardOnScreen: isCardOnScreen({
+                  pathname: pathRef.current,
+                  botId: frame.botId,
+                  approvalId: frame.approvalId,
+                  channels: channelsRef.current,
+                }),
+              }
+            : {}),
           now: Date.now(),
         },
         {
@@ -428,7 +491,13 @@ export function useBotNotifications(): void {
       );
     };
 
-    void catchUp({ raises: false });
+    // Whether or not the server answered: a list that could not be read marks nothing as said.
+    const afterSeed = () => {
+      if (stopped) return;
+      seeded.current = true;
+      announceOpen.current();
+    };
+    void catchUp({ raises: false }).then(afterSeed, afterSeed);
     const onFrame = () => {
       void catchUp({ raises: true });
     };

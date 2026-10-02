@@ -14,6 +14,7 @@ import { inShell } from "../lib/notifications/shell";
 import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
 import { forgetKeptThreads } from "../lib/turns/kept-threads";
+import { useShellQuestions } from "../lib/turns/use-shell-questions";
 import { reportDevice } from "../lib/whereabouts/queries";
 
 export const Route = createFileRoute("/_authed")({
@@ -76,6 +77,8 @@ export const Route = createFileRoute("/_authed")({
 function AuthedShell() {
   useChannelEvents();
   useBotNotifications();
+  // What the Bot is waiting on the person for, known on every screen and not only in its conversation.
+  useShellQuestions();
   useSessionGate();
   // The Bot's colour is the accent on every signed-in screen, Settings and Admin included.
   useBotAccent();
