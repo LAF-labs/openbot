@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import guide from "@/help/guide.md?raw";
 import { t } from "@/lib/i18n";
 import { markdownPlugins } from "@/lib/markdown-plugins";
+import { markdownWords } from "@/lib/markdown-words";
 import {
   helpSectionFrom,
   helpSectionOfHeading,
@@ -107,6 +108,7 @@ export function HelpPage() {
       <article className="text-base leading-7">
         <Streamdown
           components={guideComponents}
+          translations={markdownWords}
           controls={false}
           linkSafety={{ enabled: false }}
           mode="static"
