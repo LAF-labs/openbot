@@ -328,6 +328,7 @@
   "server/tests/feed.integration.test.ts",
   "server/tests/feedback-routes.test.ts",
   "server/tests/feedback-store.integration.test.ts",
+  "server/tests/first-move.test.ts",
   "server/tests/first-task-route.test.ts",
   "server/tests/fleet-notices.integration.test.ts",
   "server/tests/fleet-webhook.test.ts",

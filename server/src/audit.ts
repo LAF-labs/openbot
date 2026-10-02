@@ -460,6 +460,18 @@ export const auditEventTypes = [
    * wants), and which Bots. Counts and ids; nothing anybody said or typed.
    */
   "work.stopped_all",
+
+  /*
+   * The server made a turn's first call itself, before the Bot's model was asked
+   * (`turns/first-move.ts`).
+   *
+   * The call has its own row like any call (`mcp.call_succeeded`), and that row cannot say the one
+   * thing that is different about it: the Bot's model did not ask for it. A decisions model was
+   * shown the person's message and was sure what the first step was. So this row says who decided —
+   * which move, which tool, and how sure the decisions model was of each question — beside the call
+   * it led to. Probabilities and names; never the message.
+   */
+  "turn.first_move",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

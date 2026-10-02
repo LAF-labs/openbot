@@ -48,6 +48,7 @@ import {
 import type { WorkingRun } from "../runner/working";
 import { createRunMeter } from "../telemetry/run-meter";
 import type { ChatToolkit, ChatTurnContext } from "./chat-tools";
+import type { FirstMove } from "./first-move";
 import type { TurnHub, TurnState, TurnStatus } from "./hub";
 
 /** How many times one turn may come back asking for tools: CopilotKit's own follow-up bound. */
@@ -112,6 +113,17 @@ export type TurnEngineOptions = {
     agentId: string | null;
     text: string;
   }) => Promise<void>;
+  /**
+   * The turn's first step, when the server can take it before the Bot's model is asked
+   * (`first-move.ts`). Absent, or answering null, the turn is the loop and nothing else. Told what
+   * came of a move it made, for the trail.
+   */
+  firstMove?: (input: {
+    owner: AgentActor;
+    botId: string;
+    asked: readonly Message[];
+    tools: readonly Tool[];
+  }) => Promise<FirstMove | null>;
   maxSteps?: number;
   timeoutMs?: number;
 };
@@ -416,6 +428,73 @@ export function createTurnEngine(options: TurnEngineOptions) {
         );
         return persisting;
       };
+
+      /*
+       * THE FIRST MOVE (`first-move.ts`): a call the server makes for the Bot before its model is
+       * asked, when it is sure what the turn's first step is. Filed in the thread exactly as a call
+       * the Bot made — an assistant message that asks, a result that answers — through the turn's
+       * own executor, so the grant, the boundary and the audit row are the ones any call gets. The
+       * loop below then starts with the result in hand: `runTurnLoop` carries out only the calls
+       * made during itself, and these two messages are before it.
+       *
+       * Anything going wrong here makes no move. A decision that threw, a stop that landed while it
+       * was out — the turn goes on as the turn it would have been.
+       */
+      const move =
+        (await options
+          .firstMove?.({
+            owner,
+            botId,
+            asked: input.messages,
+            tools: toolkit.tools,
+          })
+          .catch((error: unknown) => {
+            log.warn("first_move_failed", { reason: describeFailure(error) });
+            return null;
+          })) ?? null;
+      if (move && !signal.aborted) {
+        const callId = `call_${randomUUID().replaceAll("-", "")}`;
+        const asking: Message = {
+          id: randomUUID(),
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: callId,
+              type: "function",
+              function: {
+                name: move.tool,
+                arguments: JSON.stringify(move.args),
+              },
+            },
+          ],
+        };
+        agent.addMessage(asking);
+        startedAt.set(asking.id, new Date().toISOString());
+        // The server's own copy to every window: there are no deltas of a message nobody streamed.
+        options.hub.messages(threadId, turn.id, [asking]);
+        const outcome = await toolkit.execute(move.tool, move.args, {
+          id: callId,
+          signal,
+        });
+        const answer = {
+          id: randomUUID(),
+          role: "tool" as const,
+          toolCallId: callId,
+          content: outcomeContent(outcome),
+        };
+        agent.addMessage(answer);
+        filedAt.set(answer.id, new Date().toISOString());
+        options.hub.event(threadId, turn.id, {
+          type: "TOOL_CALL_RESULT",
+          messageId: answer.id,
+          toolCallId: callId,
+          content: answer.content,
+          role: "tool",
+        } as BaseEvent);
+        await persistNow();
+      }
+
       await runTurnLoop(agent, {
         tools: toolkit.tools,
         execute: toolkit.execute,

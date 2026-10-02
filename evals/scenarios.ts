@@ -103,6 +103,7 @@ import {
   MAPO,
   saysDegrees,
   saysNow,
+  weatherAnswer,
   weatherBackend,
   weatherPlacesAsked,
 } from "./weather";
@@ -771,6 +772,7 @@ export const SCENARIOS: Scenario[] = [
   supportProgramsFromThePortal(),
   quickFactFromSearch(),
   ...weatherFromTheAgency(),
+  ...firstMoveThreads(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
   feedPostsOnlyFromTools(),
@@ -1728,6 +1730,121 @@ function weatherFromTheAgency(): Scenario[] {
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
         ]);
       },
+    },
+  ];
+}
+
+/**
+ * A THREAD THAT OPENS WITH A CALL THE MODEL DID NOT MAKE (2026-10-02, `server/src/turns/first-move.ts`).
+ *
+ * With `FIRST_MOVE` on, a short weather question for the person's own place is answered in one
+ * round of the Bot's model instead of two: the server makes the call and files it in the thread as
+ * the Bot's, and the model starts with the result in hand. So what a candidate is handed there is a
+ * conversation whose last two messages are a tool call it never asked for and its answer — and
+ * these two hold it to what that needs:
+ *
+ *   it answers from what it was handed, without asking for the same thing again (a second call is
+ *   the round the move was made to save); and
+ *
+ *   when the move was WRONG — the person asked about another town, and the result in hand is for
+ *   where they live — it does not answer with it. This is the failure the weather tool was built
+ *   to end, arriving by a new road: a wrong town's figures, said confidently. The decisions model
+ *   is held to not making that move (`evals/first-move.ts`); this is what stands behind it.
+ *
+ * The thread is built exactly as the engine builds it: an empty assistant message carrying the
+ * call with no argument, then the transport's own answer for the saved place.
+ */
+function firstMoveThreads(): Scenario[] {
+  const moved = (question: string): unknown[] => {
+    const callId = "call_first_move_weather";
+    return [
+      user(question),
+      {
+        id: "a_first_move",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: callId,
+            type: "function",
+            function: { name: WEATHER_TOOL_NAME, arguments: "{}" },
+          },
+        ],
+      },
+      {
+        id: "t_first_move",
+        role: "tool",
+        toolCallId: callId,
+        content: weatherAnswer(GANGNAM, EVAL_NOW, true),
+      },
+    ];
+  };
+  const weather = () => {
+    const forecast = weatherBackend({ at: EVAL_NOW, saved: GANGNAM });
+    const site = weatherSite();
+    return (call: ObservedCall) => forecast(call) ?? site(call);
+  };
+  const person = {
+    timeZone: "Asia/Seoul",
+    locale: "ko-KR",
+    place: "서울 강남구",
+  };
+  return [
+    {
+      id: "first-move-is-answered-from",
+      dimension: "whereabouts",
+      person,
+      messages: moved("오늘 날씨 어때?"),
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: weather(),
+      check: (turn) =>
+        verdict([
+          [
+            "이미 받은 날씨를 다시 부름 — 첫 수가 아낀 한 바퀴를 도로 씀",
+            !called(turn, WEATHER_TOOL_NAME),
+          ],
+          [
+            "날씨를 검색하거나 브라우저로 찾음",
+            !called(turn, NAVIGATE.name) && !called(turn, WEB_SEARCH_TOOL_NAME),
+          ],
+          [
+            `받은 결과의 지금 기온(${GANGNAM.now}도)이 답에 없음`,
+            saysNow(turn.text, GANGNAM),
+          ],
+          [
+            "답에 어느 곳 기준인지(강남) 말하지 않음",
+            turn.text.includes("강남"),
+          ],
+          ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+        ]),
+    },
+    {
+      id: "first-move-for-the-wrong-place-is-put-right",
+      dimension: "whereabouts",
+      person,
+      // The move was wrong: the question is about 해운대 and the result in hand is 강남's.
+      messages: moved("내일 부산 해운대 날씨 어때? 최고 몇 도까지 올라가?"),
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: weather(),
+      check: (turn) =>
+        verdict([
+          [
+            "물은 곳(해운대)의 날씨를 다시 부르지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("해운대"),
+            ),
+          ],
+          [
+            `해운대의 내일 최고(${HAEUNDAE.tomorrowMax}도)가 답에 없음`,
+            saysDegrees(turn.text, HAEUNDAE.tomorrowMax),
+          ],
+          [
+            `손에 쥔 강남의 내일 최고(${GANGNAM.tomorrowMax}도)로 답함`,
+            !saysDegrees(turn.text, GANGNAM.tomorrowMax),
+          ],
+        ]),
     },
   ];
 }

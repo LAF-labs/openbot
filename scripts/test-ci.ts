@@ -726,12 +726,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the tool first; what an eval report's two hashes are taken over). `app` and `agent-computer` did
  * not grow.
  *
+ * RAISED 2026-10-02 with the first move (`turns/first-move.ts`): eighteen to `server` — what is
+ * never sent and to whom, the two bars, a move with no argument, the trail's row; the engine
+ * filing the server's call as the Bot's before its model is asked; the switch's three words and
+ * what it says at boot when it can do nothing.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3321, roots: ["server"] },
+  { name: "server", floor: 3339, roots: ["server"] },
   { name: "app", floor: 1585, roots: ["app"] },
   { name: "agent-computer", floor: 351, roots: ["agent-computer"] },
   { name: "root", floor: 578, roots: ["tests", "agent-bot"] },

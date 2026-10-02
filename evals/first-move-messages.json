@@ -1,0 +1,1526 @@
+[
+  {
+    "text": "밭에 물 줘야 하나, 오늘 비 소식 있어?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "asks if rain is forecast today"
+  },
+  {
+    "text": "오늘 자외선 지수 높아?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: UV index only, not in the forecast"
+  },
+  {
+    "text": "가게 앞 불법주차 신고하는 방법 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "how-to, own shop front"
+  },
+  {
+    "text": "오후에 비 올 확률 얼마나 돼?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "chance of rain this afternoon"
+  },
+  {
+    "text": "눈사람을 영어로 뭐라고 해?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "vocabulary question"
+  },
+  {
+    "text": "내 날씨 지역을 집 주소로 바꿔줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "settings change"
+  },
+  {
+    "text": "뉴욕 모레 눈 온다던데 진짜야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, snow in two days"
+  },
+  {
+    "text": "내일 해 몇 시에 떠?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "sunrise time only"
+  },
+  {
+    "text": "포항 내일 해돋이 볼 수 있을 만큼 맑아?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, sky tomorrow morning, not sunrise time"
+  },
+  {
+    "text": "대구는 왜 그렇게 더워?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate question"
+  },
+  {
+    "text": "내일 weather 좀 체크해줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "mixed Korean and English, tomorrow's weather"
+  },
+  {
+    "text": "이 문장 일본어로 번역해줘: 예약 확인 부탁드립니다",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "translation"
+  },
+  {
+    "text": "비 오니까 출근하기 싫다...",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "statement, already knows it is raining"
+  },
+  {
+    "text": "내일 비 오면 배달 주문 몰릴 텐데, 비 와?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "shop owner asks whether it rains tomorrow"
+  },
+  {
+    "text": "모레날씨어때요",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "no spacing, day after tomorrow"
+  },
+  {
+    "text": "내일 이사하는데 비 오면 큰일인데 어때",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "moving day, asks about rain tomorrow"
+  },
+  {
+    "text": "날씨는 화씨 말고 섭씨로 보여줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "display preference"
+  },
+  {
+    "text": "한 달 뒤 결혼식 날 비 올지 알 수 있어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "a month away, outside the range"
+  },
+  {
+    "text": "비 오면 나한테 바로 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: standing watch request, not a question now"
+  },
+  {
+    "text": "날씨 예보 형식으로 발표 대본 써줘, 국어 수행평가야",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: forecast-style script; real data arguably optional"
+  },
+  {
+    "text": "아기 데리고 산책 나가도 될 만큼 따뜻해?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "parent asks if it is warm now"
+  },
+  {
+    "text": "후쿠오카 내일 반팔 입어도 되는 날씨야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, clothing by tomorrow's weather"
+  },
+  {
+    "text": "전주 한옥마을 내일 걸어다니기에 너무 덥진 않을까",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named landmark, heat tomorrow"
+  },
+  {
+    "text": "집 근처 소아과 토요일에 여는 데 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "search near home"
+  },
+  {
+    "text": "별점 2점 리뷰에 달 답글 정중하게 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "review reply"
+  },
+  {
+    "text": "다음 주 직원 근무표 만들어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "staff rota"
+  },
+  {
+    "text": "소주 몇 도야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "alcohol strength"
+  },
+  {
+    "text": "다음 주 날씨 어때?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: next week only partly inside 3-day range"
+  },
+  {
+    "text": "오늘 몇도임",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "slang, today's temperature"
+  },
+  {
+    "text": "내일 고추 널어 말려도 되겠나",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "drying peppers outside needs tomorrow's forecast"
+  },
+  {
+    "text": "울릉도 내일 배 뜰 만한 날씨야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "borderline: ferry depends on sea state; forecast still first"
+  },
+  {
+    "text": "비 오는 날엔 왜 파전이 당길까?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "trivia about rainy days"
+  },
+  {
+    "text": "바람막이 세탁기에 돌려도 돼?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "garment care"
+  },
+  {
+    "text": "가평 펜션 잡았는데 토요일 밤에 비 온대?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named county, rain Saturday night"
+  },
+  {
+    "text": "요즘 취업 시장 한파라던데 진짜야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "cold snap as a metaphor"
+  },
+  {
+    "text": "어제 주문한 장우산 배송 어디쯤이야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "order tracking for an umbrella"
+  },
+  {
+    "text": "매일 아침 7시에 날씨 알려주는 알림 만들어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: sets up a routine; no forecast needed now"
+  },
+  {
+    "text": "런던 오늘 날씨 어때? 화상회의 때 얘기 꺼내려고",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, today's weather"
+  },
+  {
+    "text": "날씨 정보는 어디서 가져오는 거야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "meta question about the data source"
+  },
+  {
+    "text": "일기 숙제 날씨 칸에 오늘 뭐라고 써야 돼?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "student diary entry needs today's weather"
+  },
+  {
+    "text": "날씨 알려주는 챗봇 파이썬으로 짜줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "build request about weather"
+  },
+  {
+    "text": "오늘 불쾌지수 높아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: index derives from today's temperature and humidity"
+  },
+  {
+    "text": "거래처에 보낼 견적서 메일 초안 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "email draft"
+  },
+  {
+    "text": "내년 봄 유럽 여행 가는데 날씨 어떨까?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "months away, climate"
+  },
+  {
+    "text": "아까 알려준 날씨 틀렸잖아",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "complaint about an earlier answer, no new ask"
+  },
+  {
+    "text": "토요일에 애들이랑 공원 피크닉 괜찮을까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "picnic plan depends on Saturday's weather"
+  },
+  {
+    "text": "엄마 생신 선물 뭐가 좋을까, 10만 원대로",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "shopping advice"
+  },
+  {
+    "text": "월세 계약 갱신할 때 주의할 점 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "housing advice"
+  },
+  {
+    "text": "내일 일정 알려주고 날씨도 같이 봐줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "compound: schedule plus tomorrow's weather"
+  },
+  {
+    "text": "화씨 90도는 섭씨로 몇 도야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "unit conversion"
+  },
+  {
+    "text": "날씨?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "bare one-word weather ask"
+  },
+  {
+    "text": "강아지 산책 지금 나가도 돼? 너무 덥진 않아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "dog walk, heat right now"
+  },
+  {
+    "text": "인천 앞바다 오늘 물때 알려줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "tide times, named sea"
+  },
+  {
+    "text": "이차방정식 근의 공식 설명해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "homework, maths"
+  },
+  {
+    "text": "오늘 하늘 맑아? 흐려?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "sky state today"
+  },
+  {
+    "text": "날씨 때문에 우울한데 기분 전환할 방법 없을까",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "mood advice"
+  },
+  {
+    "text": "내일 애 유치원 보낼 때 패딩 입혀야 해?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "parent, clothing depends on tomorrow's cold"
+  },
+  {
+    "text": "will it rain tomorrow?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "English, rain tomorrow"
+  },
+  {
+    "text": "맑은 국물 내는 비법 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "맑다 describes broth"
+  },
+  {
+    "text": "장마가 뭔지 초등학생용으로 설명글 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "explainer about the rainy season"
+  },
+  {
+    "text": "내일 동네 뒷산 가려는데 괜찮겠어?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "hike plan, weather is the first check"
+  },
+  {
+    "text": "오늘 미세먼지 어때?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "fine dust only"
+  },
+  {
+    "text": "바람 빠진 자전거 타이어 어떻게 넣어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "바람 means tyre air"
+  },
+  {
+    "text": "인천공항 가는 리무진 버스 시간표 찾아줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "bus timetable, named airport"
+  },
+  {
+    "text": "회의록 한 페이지로 요약해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "summarising"
+  },
+  {
+    "text": "내일 캠핑 준비물 리스트 짜줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: packing list helped by forecast, not required"
+  },
+  {
+    "text": "아기 체온 몇 도부터 병원 가야 돼?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "body temperature"
+  },
+  {
+    "text": "홍대 쪽 지금 우산 써야 할 정도야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named neighbourhood, rain now"
+  },
+  {
+    "text": "지금 밖에 추워?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "asks if it is cold right now"
+  },
+  {
+    "text": "가게 앞에 눈 쌓일 정도로 온대?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "shop front, snowfall amount"
+  },
+  {
+    "text": "겨울에 눈 많이 오는 나라가 어디야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "climate; no specific place named"
+  },
+  {
+    "text": "내일 가게 앞에 입간판 내놔도 되나? 바람 세면 안 되는데",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "shop owner, wind tomorrow at own shop"
+  },
+  {
+    "text": "등교할 때 비 와?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain at school commute time"
+  },
+  {
+    "text": "주말 날씨",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "very short, weekend weather"
+  },
+  {
+    "text": "제주도 이번 주말 날씨 어때요?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named island, weekend weather"
+  },
+  {
+    "text": "세종시 내일이랑 모레 날씨 비교해줘",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, compare next two days"
+  },
+  {
+    "text": "에어프라이어 몇 도에 몇 분 돌려?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "cooking temperature"
+  },
+  {
+    "text": "광주 내일 야구 보러 가는데 우천취소 될까?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, rain-out needs forecast first"
+  },
+  {
+    "text": "추울 때 차 시동 안 걸리면 어떻게 해?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "general car advice"
+  },
+  {
+    "text": "양양 서핑 가는데 일요일 비 예보 있어?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named beach town, rain Sunday"
+  },
+  {
+    "text": "부산 가는 기차 내일 아침 표 있나 봐줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "train tickets, named city"
+  },
+  {
+    "text": "핸드폰 날씨 위젯이 안 뜨는데 어떻게 고쳐?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "tech support"
+  },
+  {
+    "text": "'It's raining cats and dogs' 무슨 뜻이야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "English idiom meaning"
+  },
+  {
+    "text": "달력에 있는 '눈썰매장' 일정 토요일로 옮겨줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "calendar edit; snow only in the event name"
+  },
+  {
+    "text": "와 오늘 진짜 덥다",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: remark on current heat, no question asked"
+  },
+  {
+    "text": "제주도 2박 3일 여행 일정 짜줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "itinerary, named island"
+  },
+  {
+    "text": "오늘 빨래 돌릴까 말까",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: laundry decision implies drying weather, unstated"
+  },
+  {
+    "text": "집 근처 오늘 밤에 많이 추워져?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "near home, cold tonight"
+  },
+  {
+    "text": "지하철에 우산 두고 내렸는데 어디에 신고해?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "lost umbrella"
+  },
+  {
+    "text": "오늘 저녁 메뉴 추천해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "dinner idea, no weather asked"
+  },
+  {
+    "text": "비 때문에 배송 늦어진다는 안내 문자 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "notice text; rain is already known"
+  },
+  {
+    "text": "눈 올 때 강아지 산책시켜도 괜찮아?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "general pet advice, no forecast asked"
+  },
+  {
+    "text": "내일 오후 3시 치과 예약 일정에 넣어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "calendar entry"
+  },
+  {
+    "text": "내일 청주로 납품 가는데 눈 많이 온대?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "shop owner, named city, snow tomorrow"
+  },
+  {
+    "text": "황사 언제까지 온대?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "yellow dust only"
+  },
+  {
+    "text": "방콕 오늘 저녁에 스콜 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, rain this evening"
+  },
+  {
+    "text": "회사 근처 지금 바람 세게 불어?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "near the office, wind now"
+  },
+  {
+    "text": "잠실 야구장 오늘 저녁 7시쯤 날씨 어때",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named venue, weather at 7 pm"
+  },
+  {
+    "text": "내일 해 뜰 때쯤 얼마나 추워?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "cold at dawn, not the sunrise time"
+  },
+  {
+    "text": "한라산 내일 올라가도 될 날씨야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named mountain, hiking weather tomorrow"
+  },
+  {
+    "text": "삿포로 내일 출장인데 패딩 가져가야 할까요",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, cold tomorrow"
+  },
+  {
+    "text": "퇴근길에 비 맞을 것 같아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain at commute time this evening"
+  },
+  {
+    "text": "올겨울 눈 많이 올까?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "seasonal outlook"
+  },
+  {
+    "text": "타이베이 내일 날씨 봐줘, 비 오면 일정 바꾸려고",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, tomorrow's weather"
+  },
+  {
+    "text": "어제 눈 때문에 지각한 사유서 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "past snow, writing a late note"
+  },
+  {
+    "text": "어제 광주에 비 얼마나 왔어?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "past rainfall, named city"
+  },
+  {
+    "text": "날씨앱 머가 젤 정확함?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "app recommendation, casual spelling"
+  },
+  {
+    "text": "내일 현장 타설 가능한 날씨일까요",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "concrete pour depends on tomorrow's weather"
+  },
+  {
+    "text": "기온별 옷차림 표 만들어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "generic reference table by temperature"
+  },
+  {
+    "text": "낼 아침 마니 추울까요??",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "casual misspelling, cold tomorrow morning"
+  },
+  {
+    "text": "회사 근처에 우산 파는 데 있어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "shop search near the office"
+  },
+  {
+    "text": "내일 일교차 커?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "tomorrow's min and max gap"
+  },
+  {
+    "text": "오늘 최고기온 몇 도까지 올라가?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "today's high temperature"
+  },
+  {
+    "text": "부가세 신고 기간이 언제인가요?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "tax question"
+  },
+  {
+    "text": "지난주에 산 우산 살이 부러졌는데 교환 문의 글 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "umbrella as a product, exchange request"
+  },
+  {
+    "text": "여기 내일 오후에 소나기 온대?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "here, shower tomorrow afternoon"
+  },
+  {
+    "text": "그저께 소나기 때문에 쫄딱 젖었어 ㅠㅠ",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "past shower, small talk"
+  },
+  {
+    "text": "광주 지점 지난달 매출 보고서 요약해줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "report summary, named branch city"
+  },
+  {
+    "text": "오늘 날씨 좀 알려줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "plain ask for today's weather"
+  },
+  {
+    "text": "체감온도는 어떻게 계산해?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "how a figure is computed"
+  },
+  {
+    "text": "오늘 증시 분위기 맑음이야 흐림이야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "weather words as a market metaphor"
+  },
+  {
+    "text": "지난달 비 온 날이랑 안 온 날 매출 비교해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "analysis of past sales by rain"
+  },
+  {
+    "text": "태풍 온다던데 내일 여기 비바람 심해?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "typhoon mentioned, asks tomorrow's rain and wind here"
+  },
+  {
+    "text": "지진 났어? 방금 흔들렸는데",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "earthquake, not weather"
+  },
+  {
+    "text": "점심 먹으러 나갈 때 우산 필요할까요",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "office worker, rain around lunchtime"
+  },
+  {
+    "text": "어제 들어온 주문 몇 건이야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "orders"
+  },
+  {
+    "text": "우리 동네 지금 비 와?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "own neighbourhood, rain now"
+  },
+  {
+    "text": "어제보다 오늘이 더 추운 거 맞지?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: compares with yesterday, needs today's reading"
+  },
+  {
+    "text": "제주도는 원래 바람이 그렇게 많이 불어?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate trait of a place"
+  },
+  {
+    "text": "낼 비옴?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "slang: will it rain tomorrow"
+  },
+  {
+    "text": "지난 3년 월별 기온 그래프로 만들어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "chart of past temperature data"
+  },
+  {
+    "text": "여수 밤바다 보러 가는데 오늘 밤 쌀쌀해?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, chill tonight"
+  },
+  {
+    "text": "비 오는 날을 주제로 시 한 편 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "poem about rain"
+  },
+  {
+    "text": "다낭 이번 주말에 비 많이 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, weekend rain"
+  },
+  {
+    "text": "아까 낮에 비 쏟아지는 거 봤어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "rain that already happened"
+  },
+  {
+    "text": "다음 달 제주도 날씨 어때?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "next month, outside the range"
+  },
+  {
+    "text": "강남역 근처 회식 장소 추천해줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "restaurant search, named station"
+  },
+  {
+    "text": "런던은 왜 맨날 흐리다고들 해?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate question abroad"
+  },
+  {
+    "text": "정오각형 한 각은 몇 도야?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "geometry angle"
+  },
+  {
+    "text": "오늘 체육대회 하는데 비 안 오겠지?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "student, rain during today's sports day"
+  },
+  {
+    "text": "보일러 온도 몇 도로 맞춰놓는 게 좋아?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "thermostat setting, general advice"
+  },
+  {
+    "text": "내일 뭐 입지?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: outfit choice usually starts from the forecast"
+  },
+  {
+    "text": "'소나기' 독후감 500자로 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "short story title, book report"
+  },
+  {
+    "text": "저녁에 마당에서 고기 구울 건데 날씨 괜찮아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "evening weather for a barbecue at home"
+  },
+  {
+    "text": "오늘 우산 들고 나가야 되나",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "umbrella decision needs today's forecast"
+  },
+  {
+    "text": "오늘 날씨 요약해서 직원 단체방에 올릴 공지 써줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "notice must be written from today's forecast"
+  },
+  {
+    "text": "오늘 보일러 틀고 자야 할까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: heating decision rests on tonight's temperature"
+  },
+  {
+    "text": "도쿄 맛집 리스트 만들어줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "restaurant list abroad"
+  },
+  {
+    "text": "영어 숙제 문법 좀 봐줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "homework"
+  },
+  {
+    "text": "자기소개서 첫 문단 다듬어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "writing help"
+  },
+  {
+    "text": "미국 비자 신청 절차 알려줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "visa process, names a country"
+  },
+  {
+    "text": "오사카 여행 중인데 내일 우산 사야 될까?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, umbrella decision tomorrow"
+  },
+  {
+    "text": "서울이랑 부산 중에 겨울에 어디가 더 추워?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate comparison"
+  },
+  {
+    "text": "서울 지금 몇 도야?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, temperature now"
+  },
+  {
+    "text": "글피 날씨는 어때?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "three days ahead, still inside the range"
+  },
+  {
+    "text": "이불 빨았는데 밖에 널어도 되겠지?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "drying outside depends on rain"
+  },
+  {
+    "text": "성수동 팝업 줄 서야 되는데 오늘 오후 더워?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named neighbourhood, heat this afternoon"
+  },
+  {
+    "text": "판교로 출근하는데 거기 오늘 우산 필요해?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named work area, umbrella today"
+  },
+  {
+    "text": "대구 오늘 낮에 얼마나 더워?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, heat today"
+  },
+  {
+    "text": "북한산 내일 새벽 산행 괜찮을 날씨인가요",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named mountain, dawn weather tomorrow"
+  },
+  {
+    "text": "오늘 자전거 타고 출근해도 되겠어?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "bike commute depends on today's weather"
+  },
+  {
+    "text": "남해 독일마을 주말에 맑으면 가려고, 어때?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named village, weekend sky"
+  },
+  {
+    "text": "12월에 삿포로 가면 얼마나 추워?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate question abroad"
+  },
+  {
+    "text": "대전 출장 가는데 내일 겉옷 필요할까?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, clothing by tomorrow's weather"
+  },
+  {
+    "text": "제목에 '비' 들어가는 노래로 플레이리스트 짜줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "playlist by song titles"
+  },
+  {
+    "text": "지금 나가면 비 맞아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain right now"
+  },
+  {
+    "text": "강원도 눈꽃축제 일정 찾아줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "festival schedule, names a region"
+  },
+  {
+    "text": "오늘 야외 테라스 자리 열어도 될까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "borderline: terrace decision implies weather, never says so"
+  },
+  {
+    "text": "10년 전 오늘 날씨 어땠는지 찾아줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "historical weather, not a forecast"
+  },
+  {
+    "text": "야자 끝나고 집 갈 때 추울까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "student, cold late tonight"
+  },
+  {
+    "text": "내일 날씨는 어떻습니까",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "formal ask for tomorrow's weather"
+  },
+  {
+    "text": "경복궁 야간개장 예매 언제 열려?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "ticketing, named landmark"
+  },
+  {
+    "text": "여의도 지금 비 오고 있어?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named district, rain now"
+  },
+  {
+    "text": "내일 여행 가는 곳 날씨 좀 봐줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "ownPlace edge: unnamed destination, literal rule says true"
+  },
+  {
+    "text": "오늘 미세먼지랑 날씨 같이 알려줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "compound: dust plus weather, weather part counts"
+  },
+  {
+    "text": "'오늘 날씨 어때'를 일본어로 뭐라고 해?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "translating a weather question, not asking it"
+  },
+  {
+    "text": "속초 내일 일출 시간 알려줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "sunrise time only, named city"
+  },
+  {
+    "text": "평창 내일 영하로 내려가?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named county, below zero tomorrow"
+  },
+  {
+    "text": "한 시간 뒤에 비 그칠까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "precipitation over the next hours"
+  },
+  {
+    "text": "우리 동네 눈 안 치워주는데 민원 어디에 넣어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "civil complaint about snow clearing"
+  },
+  {
+    "text": "영화 '날씨의 아이' 줄거리 요약해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "film title containing the word weather"
+  },
+  {
+    "text": "오늘 비 얼마나 와? 장화 신어야 할 정도야?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain amount today"
+  },
+  {
+    "text": "소나기랑 장마는 뭐가 달라?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "definition question"
+  },
+  {
+    "text": "도쿄 쪽 태풍 지나갔어?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "typhoon track abroad"
+  },
+  {
+    "text": "이번 주 일정 정리해서 보여줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "schedule"
+  },
+  {
+    "text": "눈이 침침한데 안과 가봐야 하나",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "눈 means eye"
+  },
+  {
+    "text": "어제 날씨 좋아서 매출 잘 나왔네",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "remark about yesterday's weather"
+  },
+  {
+    "text": "신메뉴 이름 다섯 개만 지어줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "naming task"
+  },
+  {
+    "text": "안 읽은 메일 요약해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "mail"
+  },
+  {
+    "text": "머리 식히게 바람 쐬러 갈 만한 데 추천해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "idiom, outing recommendation"
+  },
+  {
+    "text": "대전에서 제일 유명한 빵집이 어디야?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "search, named city"
+  },
+  {
+    "text": "부산에서 비 오는 날 갈 만한 실내 코스 추천해줘",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "indoor ideas, named city, no forecast asked"
+  },
+  {
+    "text": "오늘 습도 높아?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "humidity now is in the observation"
+  },
+  {
+    "text": "밖에 눈 온다!! 첫눈이야",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "announcing snow, not asking"
+  },
+  {
+    "text": "오늘 패딩각임?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "slang: is it padded-jacket weather today"
+  },
+  {
+    "text": "에어컨 몇 도로 해놔야 전기세 덜 나와?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "appliance setting"
+  },
+  {
+    "text": "작년 여름 진짜 더웠지 않냐",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "last year's heat, small talk"
+  },
+  {
+    "text": "눈꽃빙수 신메뉴 홍보 문구 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "snow only inside a dessert name"
+  },
+  {
+    "text": "모레 경주로 수학여행 가는데 비 온대요?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "student, named city, rain in two days"
+  },
+  {
+    "text": "수원 화성 야간개장 가려는데 오늘 저녁 비 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named landmark, rain this evening"
+  },
+  {
+    "text": "창원 내일 비 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, rain tomorrow"
+  },
+  {
+    "text": "통영 케이블카 타러 가는데 모레 흐려?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, sky in two days"
+  },
+  {
+    "text": "회사 근처 헬스장 가격 비교해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "search near the office"
+  },
+  {
+    "text": "바람 피우는 꿈은 해몽이 어떻게 돼?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "바람 means an affair"
+  },
+  {
+    "text": "태풍 때문에 내일 휴교래?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "school closure news, not the forecast itself"
+  },
+  {
+    "text": "우리 동네 맛있는 국밥집 찾아줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "search in own neighbourhood"
+  },
+  {
+    "text": "do I need an umbrella today",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "English, indirect umbrella ask"
+  },
+  {
+    "text": "지금 날시 어떤지 알려줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "typo, plain ask for the weather now"
+  },
+  {
+    "text": "흐린 날에도 선크림 발라야 돼?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "general skincare knowledge"
+  },
+  {
+    "text": "엄마가 목포 사시는데 거기 내일 많이 춥대?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "relative's named city, cold tomorrow"
+  },
+  {
+    "text": "속초 토욜에 눈온대?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, slang spelling, snow Saturday"
+  },
+  {
+    "text": "비 오는 날 할인 이벤트 기획안 초안 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "event plan for rainy days in general"
+  },
+  {
+    "text": "내일 눈 오면 몇 센티나 쌓여?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "snow amount tomorrow"
+  },
+  {
+    "text": "비 올 확률 60%가 정확히 무슨 뜻인가요?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "meaning of a forecast term"
+  },
+  {
+    "text": "가게 앞 천막에서 비가 새는데 수리 업체 찾아줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "repair search, leak already happening"
+  },
+  {
+    "text": "오늘 겉옷 챙겨야 할까?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "jacket decision needs today's temperature"
+  },
+  {
+    "text": "비 오는 소리 들려줘, 잠이 안 와",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "asks for rain sounds"
+  },
+  {
+    "text": "습도 높으면 왜 더 덥게 느껴져?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "science question"
+  },
+  {
+    "text": "오늘 날씨에 어울리는 메뉴 추천 문구 만들어줘",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "copy depends on today's weather, forecast first"
+  },
+  {
+    "text": "설악산 주말에 단풍 보러 가는데 추울까?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named mountain, weekend cold"
+  },
+  {
+    "text": "이번 크리스마스에 눈 올까?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: date-dependent; months away as of October"
+  },
+  {
+    "text": "강릉 모레 바람 많이 불어?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named city, wind in two days"
+  },
+  {
+    "text": "비 올 때 세차하면 왜 안 좋아?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "general knowledge"
+  },
+  {
+    "text": "인천공항 내일 아침 눈 많이 온대? 비행기 뜨려나",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named airport, snow tomorrow morning"
+  },
+  {
+    "text": "더위 먹었을 때 뭐 먹으면 좋아?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "health advice"
+  },
+  {
+    "text": "지구 온난화로 한국 평균 기온 얼마나 올랐어?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "climate question, names a country"
+  },
+  {
+    "text": "거래처랑 날씨 얘기로 스몰토크 시작하는 법 알려줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "conversation advice, no forecast needed"
+  },
+  {
+    "text": "해운대 오늘 물놀이 할 만해? 흐리진 않아?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "named beach, sky today"
+  },
+  {
+    "text": "지난달 평균 기온이 몇 도였는지 찾아주세요",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "past month's data, not a forecast"
+  },
+  {
+    "text": "기상청 날씨 예보는 왜 자꾸 틀려?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "complaint about forecasting in general"
+  },
+  {
+    "text": "비 온다고 예약 취소한 손님한테 보낼 답장 써줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "reply to a customer; rain is given"
+  },
+  {
+    "text": "너 날씨도 알려줄 수 있어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: capability question, not a forecast request"
+  },
+  {
+    "text": "주말에 김장하려는데 날이 괜찮으려나",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "elderly voice, weekend weather for outdoor work"
+  },
+  {
+    "text": "손주 운동회가 모레인데 날이 좋겠습니까",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "elderly, weather the day after tomorrow"
+  },
+  {
+    "text": "작년 이맘때 강릉에 눈 왔었어?",
+    "forecast": false,
+    "ownPlace": false,
+    "note": "last year's weather, named city"
+  },
+  {
+    "text": "다음 주 금요일 날씨 미리 알 수 있을까?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "borderline: forecast ask but beyond the 3-day horizon"
+  },
+  {
+    "text": "분위기 흐리는 직원한테 뭐라고 말해야 할까",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "흐리다 used figuratively"
+  },
+  {
+    "text": "내년 장마는 언제쯤 시작할까?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "seasonal outlook, months away"
+  },
+  {
+    "text": "what's the weather like right now",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "English, current weather"
+  },
+  {
+    "text": "창문 열고 자도 될까? 밤에 비 오나",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain overnight"
+  },
+  {
+    "text": "이번 주말 이틀 다 비야?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain on both weekend days"
+  },
+  {
+    "text": "모레까지 계속 비 와?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain through the day after tomorrow"
+  },
+  {
+    "text": "오늘 몇 시부터 비 온대?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain start time today"
+  },
+  {
+    "text": "부산에서 손님 오는데 내일 여기 비 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "ownPlace edge: names 부산 though asks about here"
+  },
+  {
+    "text": "파리 오늘 낮 기온 어때? 딸이 유학 가 있어서",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "abroad, temperature today"
+  },
+  {
+    "text": "주말에 볼 만한 영화 추천해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "weekend film suggestion"
+  },
+  {
+    "text": "태풍 지금 어디쯤 왔어?",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "typhoon track only"
+  },
+  {
+    "text": "택배 어디쯤 왔는지 조회해줘",
+    "forecast": false,
+    "ownPlace": true,
+    "note": "parcel tracking"
+  },
+  {
+    "text": "내일 눈 온다 카던데 맞나?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "dialect, confirming tomorrow's snow"
+  },
+  {
+    "text": "장마라는데 오늘도 하루 종일 비야?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "rain today, rainy season only mentioned"
+  },
+  {
+    "text": "울산 부모님 댁 쪽 지금도 눈 와?",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "parents' named city, snow now"
+  },
+  {
+    "text": "지금 밖에 덥나요 손선풍기 들고 나갈까 해서요",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "asks if it is hot outside now"
+  },
+  {
+    "text": "천안 사는 딸한테 내일 우산 챙기라고 해야 하나",
+    "forecast": true,
+    "ownPlace": false,
+    "note": "elderly, named city, needs tomorrow's forecast"
+  },
+  {
+    "text": "내일 세차 맡겨도 괜찮을까요?",
+    "forecast": true,
+    "ownPlace": true,
+    "note": "car wash decision depends on rain"
+  }
+]

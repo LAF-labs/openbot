@@ -7,7 +7,11 @@ import {
   type ReviewSubject,
 } from "./computer/auto-review";
 import { jevAsker, modelAsker, withFallback } from "./computer/decision-askers";
-import { type DecisionCall, decisionBaseUrlOf } from "./computer/decision-call";
+import {
+  askDecision,
+  type DecisionCall,
+  decisionBaseUrlOf,
+} from "./computer/decision-call";
 import {
   createJevAutoReviewer,
   createJevAutoReviewProbe,
@@ -347,6 +351,22 @@ export function createServerModelCalls(input: {
 
     /** The nightly dream's writer. See `agents/dream.ts`. */
     dreamCall,
+
+    /**
+     * The first move's question (`turns/first-move.ts`), or null where Jev may not be asked.
+     *
+     * JEV OR NOBODY. Every other judge here has the server model standing in when Jev cannot answer.
+     * This one is asked in front of a person waiting for the first word of an answer, to save a
+     * round of the Bot's model: a stand-in that takes a second is the saving spent, and no answer
+     * simply means the turn takes the two rounds it takes today. Unretried and bounded by the
+     * caller, like every decision call.
+     */
+    firstMoveAsk: decisionCall
+      ? (ask: Omit<Parameters<typeof askDecision>[1], "purpose">) =>
+          askDecision(decisionCall, { ...ask, purpose: "first-move" })
+      : null,
+    /** Whether a free trial's day is spent — the same question every judge here asks first. */
+    budgetSpent: async () => (await dailyBudget?.reachedToday()) === true,
 
     /** The mail's second look at what its rules could not settle. See `plugins/mail-secrets.ts`. */
     mailSecretJudge,

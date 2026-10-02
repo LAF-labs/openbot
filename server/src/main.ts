@@ -40,6 +40,7 @@ import {
   recordStartingArrangement,
   sayBooted,
   sayConnectors,
+  sayFirstMove,
   sayFleetIsUnconfigured,
 } from "./boot/announce";
 import { startBackgroundWork } from "./boot/background";
@@ -143,6 +144,7 @@ import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createChatTools } from "./turns/chat-tools";
 import { createTurnEngine } from "./turns/engine";
+import { createFirstMove, firstMoveForTurns } from "./turns/first-move";
 import { createTurnHub } from "./turns/hub";
 import { createPersonAnswers } from "./turns/people";
 import { createTurnRoutes } from "./turns/routes";
@@ -892,6 +894,11 @@ const chatTools = createChatTools({
   connections: (userId) =>
     readConnectionSwitches(connectionSwitchSources, userId),
 });
+sayFirstMove({
+  moves: config.harness.serverTurns ? config.harness.firstMoves : [],
+  canDecide: modelCalls.firstMoveAsk !== null,
+  weather: deploymentKeyRuntime.has(KMA_WEATHER_KEY),
+});
 const turnEngine = config.harness.serverTurns
   ? createTurnEngine({
       database,
@@ -906,6 +913,16 @@ const turnEngine = config.harness.serverTurns
         }),
       // An account the list no longer admits acts on nothing, a turn nobody watches included.
       admits: (userId) => admission.admitsPerson(userId),
+      // Off unless `FIRST_MOVE` names a move and Jev may be asked; then it is the weather's alone.
+      firstMove: firstMoveForTurns({
+        decide: createFirstMove({
+          moves: config.harness.firstMoves,
+          ask: modelCalls.firstMoveAsk,
+          budgetSpent: modelCalls.budgetSpent,
+        }),
+        whereaboutsOf: whereaboutsStore.read,
+        auditStore: bootAuditStore,
+      }),
       // The Bot's answer on the roster, every open tab, and a notice for a person with no tab.
       announce: ({ owner, channelId, agentId, text }) =>
         recordActivity(database, announceFinished, owner, channelId, {

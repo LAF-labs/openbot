@@ -846,4 +846,27 @@ describe("the agent harness's switches", () => {
       loadConfig({ ...production, LAF_CLOCK_OFFSET_MS: "86400000" }),
     ).toThrow("LAF_CLOCK_OFFSET_MS");
   });
+
+  test("the first move is off unless it names a move, and a typo does not boot as either", () => {
+    /*
+     * Off by default for a reason that is not technical: on, short weather questions go to the
+     * decisions model as they are sent (`turns/first-move.ts`). So unset is off, `off` is off, and
+     * a word that is neither is refused — a privacy switch must not boot whichever way a parser
+     * leaned.
+     */
+    expect(loadConfig(baseEnvironment).harness.firstMoves).toEqual([]);
+    expect(
+      loadConfig({ ...baseEnvironment, FIRST_MOVE: "off" }).harness.firstMoves,
+    ).toEqual([]);
+    expect(
+      loadConfig({ ...baseEnvironment, FIRST_MOVE: "weather" }).harness
+        .firstMoves,
+    ).toEqual(["weather"]);
+    expect(() => loadConfig({ ...baseEnvironment, FIRST_MOVE: "on" })).toThrow(
+      "FIRST_MOVE",
+    );
+    expect(() =>
+      loadConfig({ ...baseEnvironment, FIRST_MOVE: "search" }),
+    ).toThrow("FIRST_MOVE");
+  });
 });

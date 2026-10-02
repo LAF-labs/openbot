@@ -20,6 +20,7 @@ import { messagesFor } from "../src/runner/thread-store";
 import type { LoopAgent } from "../src/runner/turn-loop";
 import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
 import { createTurnEngine } from "../src/turns/engine";
+import type { FirstMove } from "../src/turns/first-move";
 import { historyPage } from "../src/turns/history";
 import {
   createTurnHub,
@@ -200,6 +201,7 @@ function engineWith(
     lane?: ReturnType<typeof createBotLane>;
     resolveAgents?: () => Promise<Record<string, LoopAgent | undefined>>;
     timeoutMs?: number;
+    firstMove?: () => Promise<FirstMove | null>;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -223,6 +225,7 @@ function engineWith(
           : (execute as ChatToolkit["execute"]),
     }),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.firstMove ? { firstMove: options.firstMove } : {}),
     announce: async ({ text }) => {
       announced.push(text);
     },
@@ -794,5 +797,220 @@ describe("how a turn ends", () => {
     // Written its end before `stopFor` came back: nothing of it runs after the deletion starts.
     expect(await statusOf(sent.turnId)).toBe("stopped");
     expect(engine.busy(threadId)).toBe(false);
+  });
+});
+
+/**
+ * A Bot that only answers: what the first move leaves its model to do. `inputs` is what each run
+ * was handed, which is the whole point — the result has to be there before the model is asked.
+ */
+function answeringBot(answer: string) {
+  const agent = {
+    messages: [] as Message[],
+    runs: 0,
+    inputs: [] as Message[][],
+    setMessages(messages: Message[]) {
+      agent.messages = [...messages];
+    },
+    addMessage(message: Message) {
+      agent.messages.push(message);
+    },
+    async runAgent(_input: unknown, subscriber?: Subscriber) {
+      agent.inputs.push([...agent.messages]);
+      agent.runs += 1;
+      const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
+      const id = `a-${randomUUID()}`;
+      emit(event("RUN_STARTED"));
+      emit(event("TEXT_MESSAGE_START", { messageId: id, role: "assistant" }));
+      emit(event("TEXT_MESSAGE_CONTENT", { messageId: id, delta: answer }));
+      agent.messages.push({
+        id,
+        role: "assistant",
+        content: answer,
+      } as Message);
+      emit(event("RUN_FINISHED"));
+      subscriber?.onRunFinishedEvent?.();
+      return { result: undefined, newMessages: [] };
+    },
+  };
+  return agent as unknown as ReturnType<typeof scriptedBot>;
+}
+
+const WEATHER = "mcp__kma-weather__get_weather";
+const aMove: FirstMove = {
+  kind: "weather",
+  tool: WEATHER,
+  args: {},
+  decided: { forecast: 0.93, ownPlace: 0.88 },
+};
+
+describe("the turn's first move", () => {
+  test("the call is made before the Bot's model is asked, and filed as a call the Bot made", async () => {
+    const { threadId, channelId } = await aConversation();
+    const bot = answeringBot("춘천 기준 지금 7.8도예요.");
+    const executed: Array<{ name: string; args: unknown; id: string }> = [];
+    const { engine, hub } = engineWith(
+      bot,
+      async (name, args, call) => {
+        executed.push({ name, args, id: call.id });
+        return '{"source":"기상청","now":{"temp":7.8}}';
+      },
+      { firstMove: async () => aMove },
+    );
+    const frames: TurnFrame[] = [];
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (frame.kind !== "snapshot") frames.push(frame);
+    });
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("오늘 날씨 어때?")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+
+    // One call, with no argument, and the model asked once — with the result already in hand.
+    expect(executed.map(({ name, args }) => ({ name, args }))).toEqual([
+      { name: WEATHER, args: {} },
+    ]);
+    expect(bot.runs).toBe(1);
+    expect(bot.inputs[0]?.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+    ]);
+
+    // The thread reads as any turn that called a tool: asked, called, answered, said.
+    const stored = await messagesFor(database, threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    const [, asking, result] = stored;
+    const call = asking?.role === "assistant" ? asking.toolCalls?.[0] : null;
+    expect(call?.function).toEqual({ name: WEATHER, arguments: "{}" });
+    expect(call?.id).toBe(executed[0]?.id);
+    expect((result as { toolCallId?: string }).toolCallId).toBe(call?.id);
+    expect(result?.content).toBe('{"source":"기상청","now":{"temp":7.8}}');
+    expect(asking?.lafAgentId).toBe(BOT);
+
+    // And every window is told in that order: the call, its result, then the first word.
+    const told = frames.flatMap((frame) => {
+      if (frame.kind === "messages") {
+        return frame.messages.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.toolCalls?.[0]?.id === call?.id,
+        )
+          ? ["call"]
+          : [];
+      }
+      if (frame.kind !== "event") return [];
+      const type = String(frame.event.type);
+      return type === "TOOL_CALL_RESULT" || type === "TEXT_MESSAGE_START"
+        ? [type]
+        : [];
+    });
+    expect(told.slice(0, 3)).toEqual([
+      "call",
+      "TOOL_CALL_RESULT",
+      "TEXT_MESSAGE_START",
+    ]);
+  });
+
+  test("no move is the turn it always was", async () => {
+    const { threadId, channelId } = await aConversation();
+    const bot = answeringBot("안녕하세요.");
+    const executed: string[] = [];
+    const { engine } = engineWith(
+      bot,
+      async (name, _args) => {
+        executed.push(name);
+        return { ok: true };
+      },
+      { firstMove: async () => null },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("안녕")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(executed).toEqual([]);
+    expect(
+      (await messagesFor(database, threadId)).map((message) => message.role),
+    ).toEqual(["user", "assistant"]);
+  });
+
+  test("a decision that throws makes no move, and the turn answers all the same", async () => {
+    const { threadId, channelId } = await aConversation();
+    const bot = answeringBot("확인해 볼게요.");
+    const executed: string[] = [];
+    const { engine } = engineWith(
+      bot,
+      async (name, _args) => {
+        executed.push(name);
+        return { ok: true };
+      },
+      {
+        firstMove: async () => {
+          throw new Error("the decisions model is down");
+        },
+      },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("오늘 날씨 어때?")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(executed).toEqual([]);
+    expect(bot.runs).toBe(1);
+    expect(
+      (await messagesFor(database, threadId)).map((message) => message.role),
+    ).toEqual(["user", "assistant"]);
+  });
+
+  test("a refusal from the tool is filed as its answer, for the Bot to read", async () => {
+    // Nobody's place known by the time the call runs: the Bot is told, and asks — as it does today.
+    const { threadId, channelId } = await aConversation();
+    const bot = answeringBot("어느 지역 날씨를 볼까요?");
+    const { engine } = engineWith(
+      bot,
+      async () => ({ ok: false, code: "laf:weather_place_unknown" }),
+      { firstMove: async () => aMove },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("오늘 날씨 어때?")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    const stored = await messagesFor(database, threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(String(stored[2]?.content)).toContain("laf:weather_place_unknown");
+    expect(bot.inputs[0]?.at(-1)?.role).toBe("tool");
   });
 });

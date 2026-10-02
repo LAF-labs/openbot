@@ -699,6 +699,9 @@ export const DECISIONS: Record<string, string> = {
   // Not a refusal and not a failure: a person asked for everything going on to stop. The payload
   // says how many of each kind, and how many could not be.
   "work.stopped_all": "A person stopped everything that was running",
+  // Not a permission: the server made a read-only call for the Bot before its model was asked,
+  // because a decisions model was sure what the turn's first step was. The call has its own row.
+  "turn.first_move": "The first step was taken before the Bot was asked",
 };
 
 /**
@@ -996,4 +999,5 @@ export const EVENTS: Record<string, string> = {
   "onboarding.first_task_pressed": "A first task",
   "support.help_opened": "The help page",
   "work.stopped_all": "Everything that was running",
+  "turn.first_move": "A turn's first step",
 };

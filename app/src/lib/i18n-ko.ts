@@ -2324,6 +2324,9 @@ export const ko: Record<string, string> = {
   "A person stopped everything that was running":
     "사람이 진행 중이던 일을 모두 멈춤",
   "Everything that was running": "진행 중이던 모든 일",
+  "The first step was taken before the Bot was asked":
+    "봇에게 묻기 전에 첫 단계를 먼저 실행함",
+  "A turn's first step": "답변의 첫 단계",
   // A routine failing the same way over and over: one line, the count on it, and 확인 to quiet it.
   "Failed {count} times for the same reason · last {time}":
     "같은 이유로 {count}번 실패 · 마지막 {time}",

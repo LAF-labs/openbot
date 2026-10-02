@@ -61,6 +61,35 @@ export function sayConnectors(input: {
 }
 
 /**
+ * Whether a turn's first step may be taken before the Bot's model is asked (`turns/first-move.ts`).
+ *
+ * Said only when the switch names a move, and said as a warning when it names one this process
+ * cannot make: `FIRST_MOVE=weather` on a deployment where Jev may not be asked, or that holds no
+ * weather key, is a switch that is on and does nothing — and an operator who set it would go on
+ * believing turns are being answered in one round.
+ */
+export function sayFirstMove(input: {
+  moves: readonly string[];
+  /** Whether the decisions model may be asked at all (`JEV_ENABLED`, an OpenRouter endpoint). */
+  canDecide: boolean;
+  /** Whether this deployment holds the weather key, so there is a tool to call. */
+  weather: boolean;
+}): void {
+  if (input.moves.length === 0) return;
+  const ready = input.canDecide && input.weather;
+  if (ready) {
+    log.info("first_move_on", { moves: [...input.moves] });
+    return;
+  }
+  log.warn("first_move_does_nothing", {
+    moves: [...input.moves],
+    canDecide: input.canDecide,
+    weather: input.weather,
+    note: "FIRST_MOVE names a move this deployment cannot make: it needs JEV_ENABLED on an OpenRouter endpoint, and the weather key. Turns run as they do with it off.",
+  });
+}
+
+/**
  * Two rows for a later reader of the trail: which boundary this process started with, and that every
  * Bot shares the account's one computer.
  *

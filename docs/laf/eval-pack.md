@@ -1279,6 +1279,88 @@ of the time, and pays for it in the kind of call a person has to be able to trus
 The arms ran one after the other, not interleaved, so an endpoint that got faster in the second
 half-hour would flatter `quick`; the reasoning tokens are not subject to that, and they halved.
 
+## The first move — a turn's first step, decided before the Bot's model is asked (2026-10-02)
+
+Asked "오늘 날씨 어때?", a Bot's model is asked twice: to decide to call the weather tool, then to
+write the answer. The first of those was 5.1 s and 8.9 s to its first chunk the night the tool went
+in, and 6.2 s and 15.5 s the next morning — with the prompt read from cache, so it is the model
+reasoning and the endpoint's queue. `server/src/turns/first-move.ts` takes that round away where it
+can be sure: with `FIRST_MOVE=weather`, a short message with a weather word in it is shown, redacted,
+to the decisions model (Jev), which answers two yes-or-no questions — does this want the forecast,
+and is it for the person's own place — and on a clear yes to both the server calls
+`get_weather` with no argument itself, files the call and its result in the thread as the Bot's, and
+the Bot's model starts with the result in hand.
+
+**Off unless set, and for a reason that is not technical.** On, those messages go to TypeSafe at the
+moment they are sent — a different thing from the excerpts every other judge is shown — and who is
+sent what is in the privacy policy. The owner approved building it on 2026-10-02; turning it on for
+a customer is a separate yes. It needs `JEV_ENABLED` on an OpenRouter endpoint and the weather key,
+and says at boot when it is set and can do nothing.
+
+**The decision, on messages somebody else labelled** (`bun run eval:first-move`,
+`evals/first-move-messages.json`: 254 messages written and labelled by a separate agent that never
+saw the questions — 76 that want the forecast for the person's own place, 44 that want it for a
+named place, 134 that do not want it, 83 of those with a weather word in them; 17 marked borderline
+by their labeller). Jev `typesafe/jev-1.13-20260917`, bars 0.7 and 0.7, three runs:
+
+| | |
+|---|---|
+| Sent to the decisions model at all | 196 of 254 — the rest have no weather word and never leave |
+| Moved | 186 of the 588 answers |
+| Right | 180 (precision 96.8%) |
+| Wrong, for a place that was named | **0** — `ownPlace` said yes 429 times and was right 429 times |
+| Wrong, on a message that clearly did not want the forecast | **0** |
+| Wrong, on a message its labeller marked borderline | 6 — the same two, three runs each: "너 날씨도 알려줄 수 있어?", "다음 주 금요일 날씨 미리 알 수 있을까?" |
+| Should have moved | 228; missed 48 (recall 78.9%) |
+| How long the decision takes | p50 228 ms, p90 300 ms, max 524 ms; none of 588 over the product's 1,200 ms bound |
+
+- The two it gets "wrong" are messages where looking at the forecast is what a Bot does anyway. The
+  eval's verdict rule was written after the first run showed them, and says so in the file: a move
+  for a named place fails it always; a move for a message that did not want the forecast fails it
+  unless the labeller had marked that message borderline before anything was run. The questions were
+  not changed after seeing the set.
+- The misses are the indirect ones ("이불 빨았는데 밖에 널어도 되겠지?", "내일 세차 맡겨도
+  괜찮을까요?"), English, and messages that want the forecast as the first step of something else. A
+  miss is today's turn. Four of the 76 never reach the decision at all: a plan with no weather word in
+  it ("토요일에 공원 피크닉 괜찮을까?").
+- **The word filter's own number is not clean.** Written from the head it let 51 of the 76 through;
+  it was then widened by what it had missed on this same set and lets 72 through. 72 is how it does
+  on the messages it was fitted to.
+- Other bars, both questions together: 0.6 moves 199 with 11 wrong; 0.8 moves 171 with 6 wrong; 0.9
+  moves 137 with 3 wrong.
+
+**What the Bot's model does with a thread that opens that way** (two scenarios in the pack, six
+runs each): handed the call and its result, it answered from them with no second call 6 times in 6.
+Run beside the two-round scenario in the same minutes, six runs each: 6.3 s and 7.2K tokens a turn
+against 11.9 s and 13.7K. Handed a WRONG move — the saved place's
+weather under a question about 해운대 — it called again with the right place and answered for it in
+all 5 runs that ran (the sixth ended in the provider's `laf:model_failed`). So a wrong move for a
+named place, which the decision made none of, would cost a call rather than a wrong town.
+
+**On the real stack** (local, the person's saved place 강원 춘천시 효자동; times from the ledger and
+the thread store, the same hour):
+
+| Switch | Message | What happened | First call filed | Answer began | Turn ended |
+|---|---|---|---|---|---|
+| off | 오늘 날씨 어때? | the model called the tool | 6.2 s | 14.1 s | 14.6 s |
+| off | 지금 날씨 어때? | the model called the tool | 15.5 s | 18.8 s | 19.3 s |
+| on | 오늘 날씨 어때? | moved (Jev 421 ms: 0.98 / 0.96) | 0.5 s | 3.7 s | 4.2 s |
+| on | 오늘 날씨 알려줘 | moved (Jev 225 ms) | 0.3 s | 2.7 s | 2.9 s |
+| on | 지금 우산 필요해? | below the bar (230 ms); the model called it | 5.0 s | 6.6 s | 7.1 s |
+| on | 내일 부산 날씨 어때? | below the bar (227 ms): a named place; the model called it with 부산 | 3.9 s | 7.5 s | 7.7 s |
+| on | 내일 부산 해운대는 어때? | no weather word: not sent; the model called it with 부산 해운대 | 3.3 s | 7.1 s | 7.2 s |
+
+The window drew the step line ("날씨 확인하기 · 기상청") for the server's call as for any other, the
+trail holds `turn.first_move` beside the call's own row with the two probabilities and no word of
+the message, and the log says `first_move` with a verdict and a time for every message that got as
+far as a decision.
+
+**Not measured:** anything on a deployed VM (the switch is off there); the first decision after a
+boot, which the review saw take 1.2–4.4 s in a fresh process — past the bound, so no move and
+nothing lost; how often real conversations open with a message this applies to. The fleet has two
+trials and a handful of turns, and the control plane does not read what people say, so the count
+will come from the switch's own trail (`turn.first_move` rows against turns) once it is on somewhere.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

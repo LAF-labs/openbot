@@ -32,6 +32,7 @@ import {
   type SharedOAuthClient,
   sharedClientsFrom,
 } from "./plugins/shared-clients";
+import type { FirstMoveKind } from "./turns/first-move";
 
 /**
  * Where a deployment's value for a variable comes from — which is what the documents are held to.
@@ -103,6 +104,8 @@ export const ENVIRONMENT = {
   DAY_EPOCHS: "compose",
   // Whether a chat turn runs on the server, with windows only watching (`turns/engine.ts`).
   SERVER_TURNS: "compose",
+  // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). Off unless set.
+  FIRST_MOVE: "compose",
   // A laptop's way to turn the owner's day without waiting for midnight; refused in production.
   LAF_CLOCK_OFFSET_MS: "development",
   BOT_TIME_ZONE: "compose",
@@ -253,6 +256,15 @@ export type DeploymentConfig = {
      * new one has been proven on real deployments.
      */
     serverTurns: boolean;
+    /**
+     * `FIRST_MOVE` (OFF unless it names a move; `weather` is the only one): the server makes a
+     * turn's first read-only call itself when a decisions model is sure what it is, so the Bot's
+     * model is asked once instead of twice (`turns/first-move.ts`). Off by default because turning
+     * it on sends short weather questions, redacted, to the decisions model at the moment they are
+     * sent — a different thing from the excerpts every other judge is shown — and who is sent what
+     * is in the privacy policy. It does nothing where Jev may not be asked (`jevEnabled`).
+     */
+    firstMoves: readonly FirstMoveKind[];
     /**
      * `LAF_CLOCK_OFFSET_MS`: moves the clock the conversation store dates runs by, so a day can be
      * turned on a laptop without waiting for midnight. Refused in production; zero everywhere else
@@ -1133,6 +1145,10 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
   if (turns !== undefined && turns !== "on" && turns !== "off") {
     throw new Error("SERVER_TURNS must be on or off (unset is on)");
   }
+  const moves = (optional(environment, "FIRST_MOVE") ?? "off").toLowerCase();
+  if (moves !== "off" && moves !== "weather") {
+    throw new Error("FIRST_MOVE must be weather or off (unset is off)");
+  }
   const offsetRaw = optional(environment, "LAF_CLOCK_OFFSET_MS");
   const clockOffsetMs = offsetRaw ? Number(offsetRaw) : 0;
   if (!Number.isInteger(clockOffsetMs)) {
@@ -1152,6 +1168,7 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
     compactionThresholdTokens: threshold,
     dayEpochs: days !== "off",
     serverTurns: turns !== "off",
+    firstMoves: moves === "weather" ? ["weather"] : [],
     clockOffsetMs,
   };
 }

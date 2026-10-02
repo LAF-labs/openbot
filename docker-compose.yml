@@ -219,6 +219,11 @@ services:
       DAY_EPOCHS: ${DAY_EPOCHS:-}
       # A chat turn runs on the server and windows only watch; on unless it says `off`.
       SERVER_TURNS: ${SERVER_TURNS:-}
+      # A turn's first read-only call made by the server before the Bot's model is asked, when the
+      # decisions model is sure what it is. OFF unless it names a move (`weather`), and it needs
+      # JEV_ENABLED: on, short weather questions go to the decisions model, redacted, as they are
+      # sent. See server/src/turns/first-move.ts.
+      FIRST_MOVE: ${FIRST_MOVE:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
       # Whether the model sees photos the owner attaches (tenant/laf/model.yaml `supports_images`).
       BOT_MODEL_IMAGES: ${BOT_MODEL_IMAGES:-}
