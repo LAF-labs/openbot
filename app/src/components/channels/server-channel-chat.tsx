@@ -77,6 +77,7 @@ import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
 import { isTurnGoing, isTurnQueued, type TurnFrame } from "@/lib/turns/frames";
 import { watchServerQuestions } from "@/lib/turns/questions";
 import { holdThread, releaseThread, threadFor } from "@/lib/turns/kept-threads";
+import { openChoiceCall, typedAnswer } from "@/lib/turns/typed-answer";
 import { refreshTodayUsage } from "@/lib/usage/today";
 import { useLasting } from "@/lib/use-lasting";
 import { deviceClock } from "@/lib/whereabouts/queries";
@@ -426,6 +427,33 @@ export function ServerChannelChat({
       waiting: true,
       ...(draft.attachments?.length ? { attachments: draft.attachments } : {}),
     });
+  };
+
+  /**
+   * TYPED WHILE THE BOT WAITS ON A CHOICE: the answer to it, not something to keep until the turn
+   * is over — the turn is over when the question is answered (`lib/turns/typed-answer.ts`).
+   *
+   * Words alone. A file or a skill is a message of its own, for after the turn, as before. And
+   * words the question would no longer take — answered in another window a moment ago, or its wait
+   * ran out — are kept the way anything typed mid-turn is, never dropped.
+   */
+  const openChoice = openChoiceCall(thread.messages, thread.waiting);
+  const answerInWords = async (draft: ComposerDraft) => {
+    const words = draft.text.trim();
+    const isWordsAlone =
+      words !== "" &&
+      draft.commandIds.length === 0 &&
+      !draft.attachments?.length;
+    if (!openChoice || !isWordsAlone) {
+      park(draft);
+      return;
+    }
+    const isTaken = await answerCard(
+      channel.threadId,
+      openChoice,
+      typedAnswer(words),
+    );
+    if (!isTaken) park(draft);
   };
 
   /**
@@ -947,8 +975,11 @@ export function ServerChannelChat({
             // Typed while the Bot works: kept on this device, not in the mount (`park`).
             parked={{
               messages: waitingForTurn,
-              onPark: park,
+              onPark: (draft) => {
+                void answerInWords(draft);
+              },
               onRemove: (id) => forgetUnsent(channel.id, [id]),
+              isAnswering: openChoice !== null,
             }}
             stoppable={going}
             stoppedCode={runError ?? undefined}

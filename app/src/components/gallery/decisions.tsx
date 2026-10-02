@@ -7,11 +7,21 @@ import { authKeys } from "@/lib/auth/queries";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
 import { PERSONA_LABELS } from "@/lib/persona/labels";
+import { useServerOwnsTurn } from "@/lib/turns/answers";
+import { typedAnswerIn } from "@/lib/turns/typed-answer";
 import { Badge, GalleryFrame } from "./frame";
 
 /**
  * Human-in-the-loop gallery components. `respond` resolves the suspended Bot run, and completed
  * cards render the recorded answer rather than active controls.
+ *
+ * A CARD SAYS HOW ITS QUESTION STANDS, AND OFFERS A PRESS ONLY WHILE A PRESS DOES SOMETHING. Pressed
+ * on the running app, 2026-10-02: the Bot asked with a choice card and the turn was stopped before
+ * anybody answered. The card went on reading "답을 기다려요", its options looking as live as before;
+ * pressing one did nothing at all — no request, no change. A call that ended without the person's
+ * answer is `complete` like any other, with a code where the answer would be, and the cards read
+ * "no answer in the result" as "still waiting". There are four ways a question can stand, and
+ * `standingOf` is where they are told apart.
  */
 
 /** What the render props carry. Narrowed here so each component reads as its own small contract. */
@@ -25,10 +35,38 @@ export type Waiting<T> =
   | {
       status: "executing";
       args: T;
-      respond: (result: unknown) => Promise<void>;
+      /**
+       * Absent while nothing here can take an answer: a turn the server owns is not waiting on this
+       * card in this conversation (`lib/turns/answers.tsx`), and no result is in yet.
+       */
+      respond: ((result: unknown) => Promise<void>) | undefined;
       result: undefined;
     }
   | { status: "complete"; args: T; respond: undefined; result: string };
+
+/**
+ * How a question stands: being asked, answered, passed without an answer, or — for the moment
+ * between a call and its wait — not yet anybody's to answer.
+ */
+type Standing = "asking" | "answered" | "passed" | "idle";
+
+function standingOf(
+  props: { status: string; respond?: unknown },
+  isAnswered: boolean,
+): Standing {
+  if (props.status === "complete") return isAnswered ? "answered" : "passed";
+  return props.respond ? "asking" : "idle";
+}
+
+/** The badge for a question nobody is being asked any more, or yet. Null while it has its own. */
+function standingBadge(standing: Standing) {
+  if (standing === "asking") {
+    return <Badge tone="caution">{t("Waiting on you")}</Badge>;
+  }
+  // Stopped, or nobody answered in time: said, so it is not mistaken for a question still open.
+  if (standing === "passed") return <Badge>{t("Not answered")}</Badge>;
+  return null;
+}
 
 export const ApprovalCardProps = z.object({
   title: z.string().describe("What is being approved, in a few words"),
@@ -71,6 +109,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
 
   const decided =
     status === "complete" ? readDecision(props.result) : undefined;
+  const standing = standingOf(props, decided !== undefined);
 
   return (
     <GalleryFrame
@@ -80,7 +119,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
             {decided === "approved" ? t("Approved") : t("Declined")}
           </Badge>
         ) : (
-          <Badge tone="caution">{t("Waiting on you")}</Badge>
+          standingBadge(standing)
         )
       }
       title={args.title}
@@ -98,7 +137,7 @@ export function ApprovalCard(props: Waiting<ApprovalArgs> & { name?: string }) {
         </dl>
       ) : null}
 
-      {decided ? null : (
+      {standing !== "asking" ? null : (
         <div className="mt-4 space-y-2">
           <input
             aria-label={t("A reason, if you want to give one")}
@@ -188,6 +227,11 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
   const { args, status, respond } = props;
   const queryClient = useQueryClient();
   const [sending, setSending] = useState<string | null>(null);
+  /*
+   * Words are taken as the answer only by a turn the server owns (`lib/turns/typed-answer.ts`). In
+   * a conversation the window drives, what is typed waits for the turn to end, as it always has.
+   */
+  const isServerTurn = useServerOwnsTurn();
 
   if (status === "inProgress") {
     return (
@@ -200,14 +244,22 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
   }
 
   const chosen = status === "complete" ? readChoice(props.result) : undefined;
+  /** Their own words, typed under the card instead of a press (`lib/turns/typed-answer.ts`). */
+  const typed =
+    status === "complete" ? typedAnswerIn(readResult(props.result)) : undefined;
+  const standing = standingOf(
+    props,
+    chosen !== undefined || typed !== undefined,
+  );
+  const isAsking = standing === "asking";
 
   return (
     <GalleryFrame
       action={
-        chosen ? (
+        standing === "answered" ? (
           <Badge tone="positive">{t("Answered")}</Badge>
         ) : (
-          <Badge tone="caution">{t("Waiting on you")}</Badge>
+          standingBadge(standing)
         )
       }
       caption={args.summary}
@@ -222,11 +274,11 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
                 className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                   picked
                     ? "border-success/40 bg-success/10"
-                    : chosen
-                      ? "border-border opacity-50"
-                      : "border-border hover:bg-foreground/5"
+                    : isAsking
+                      ? "border-border hover:bg-foreground/5"
+                      : "border-border opacity-50"
                 }`}
-                disabled={Boolean(chosen) || Boolean(sending)}
+                disabled={!isAsking || Boolean(sending)}
                 onClick={async () => {
                   if (!respond) return;
                   setSending(option.id);
@@ -251,6 +303,21 @@ export function ChoiceCard(props: Waiting<ChoiceArgs>) {
           );
         })}
       </ul>
+      {typed ? (
+        <p className="mt-3 text-sm">
+          {t("Your answer: {answer}", { answer: typed })}
+        </p>
+      ) : null}
+      {/*
+       * The options are the Bot's guess at what the answer might be, and the answer is often not
+       * among them. Said only where words are taken: the choice that saves who somebody is takes a
+       * press, and nothing else.
+       */}
+      {isAsking && isServerTurn && args.saves === undefined ? (
+        <p className="mt-3 text-muted-foreground text-xs">
+          {t("None of these? Type your answer below.")}
+        </p>
+      ) : null}
     </GalleryFrame>
   );
 }
