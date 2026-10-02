@@ -87,6 +87,7 @@
   "app/tests/composer-drop.test.tsx",
   "app/tests/composer-first-keystrokes.test.tsx",
   "app/tests/composer-korean-ime.test.tsx",
+  "app/tests/composer-return.test.tsx",
   "app/tests/computer-codes.test.ts",
   "app/tests/computer-frame-bitmap.test.ts",
   "app/tests/computer-refusals.test.ts",
