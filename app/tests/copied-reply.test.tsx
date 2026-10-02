@@ -8,7 +8,7 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { copiedHtml, copiedText } from "../src/lib/channels/copied-reply";
+import { copiedHtml, copiedWords } from "../src/lib/channels/copied-reply";
 import { copyRich } from "../src/lib/clipboard";
 import { mount, unmountAll } from "./support/mount";
 
@@ -18,6 +18,11 @@ import { mount, unmountAll } from "./support/mount";
  * Pressed on the running app, 2026-10-02: 복사 under an answer with a table wrote the Bot's raw
  * markdown — pipes, the `| --- |` rule, `**` around bold words — which is what then landed in
  * 카카오톡 or a document. The clipboard is never read here: what the page writes is caught on its way.
+ *
+ * EVERY CASE IS DRAWN BY THE REAL RENDERER FIRST. The words are read off the bubble, so what a test
+ * holds this to is "what was drawn", for the constructs a second reading of markdown got wrong:
+ * the first two versions took the marks off with a pass of their own, and two rounds of review
+ * found seven places where it disagreed with the renderer.
  */
 
 beforeAll(() => {
@@ -29,212 +34,215 @@ beforeAll(() => {
 afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
+afterEach(async () => {
+  await unmountAll();
+  delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+});
 
-const ANSWER = [
-  "## 이번 주 **가격 비교**",
-  "",
-  "세 곳을 비교했어요. 자세한 내용은 [공지](https://example.com/notice)를 보세요.",
-  "",
-  "| 가게 | 가격 |",
-  "| --- | ---: |",
-  "| **가** | 1,200원 |",
-  "| 나 | 1,350원 |",
-  "",
-  "- 가장 싼 곳: *가*",
-  "* 배송비는 `별도`",
-  "- [x] 가격 확인",
-  "- [ ] 주문하기",
-  "",
-  "> 가격은 오늘 기준이에요.",
-  "",
-  "---",
-  "",
-  "```",
-  "합계 = **그대로** | 둡니다",
-  "```",
-].join("\n");
+/** The answer, drawn in a transcript by the renderer the app uses, and the bubble it is in. */
+async function drawn(markdown: string) {
+  const { QueryClient, QueryClientProvider } = await import(
+    "@tanstack/react-query"
+  );
+  const { ChatTranscript } = await import(
+    "../src/components/channels/chat-transcript"
+  );
+  const messages: Message[] = [
+    { id: "u-1", role: "user", content: "물어본 것" },
+    { id: "a-1", role: "assistant", content: markdown },
+  ];
+  const view = await mount(
+    <QueryClientProvider client={new QueryClient()}>
+      <ChatTranscript busy={false} messages={messages} />
+    </QueryClientProvider>,
+  );
+  await view.settle(120);
+  const body = [
+    ...view.host.querySelectorAll('[data-slot="bubble-content"]'),
+  ].at(-1);
+  if (!body) throw new Error("no reply drawn");
+  return { view, body };
+}
 
-describe("the words", () => {
-  const words = copiedText(ANSWER);
+const words = async (markdown: string) =>
+  copiedWords((await drawn(markdown)).body);
 
-  test("carry no mark that drew the answer", () => {
-    // Outside the code block, which is copied as written.
-    const outsideCode = words.split("합계")[0] ?? "";
-    expect(outsideCode).not.toMatch(/\*\*|__|`|^#{1,6} |^>/m);
-    expect(outsideCode).not.toContain("|");
-    expect(outsideCode).not.toContain("---");
+describe("the words, read off what was drawn", () => {
+  test("carry no mark, and keep the shape: a heading, paragraphs, a link with its address", async () => {
+    const copied = await words(
+      [
+        "## 이번 주 **가격 비교**",
+        "",
+        "세 곳을 *비교*했어요. 자세한 내용은 [공지](https://example.com/notice)를 보세요.",
+        "",
+        "> 가격은 ~~어제~~ 오늘 기준이에요.",
+        "",
+        "---",
+        "",
+        "끝이에요.",
+      ].join("\n"),
+    );
+    expect(copied).toBe(
+      [
+        "이번 주 가격 비교",
+        "",
+        "세 곳을 비교했어요. 자세한 내용은 공지 (https://example.com/notice)를 보세요.",
+        "",
+        "가격은 어제 오늘 기준이에요.",
+        "",
+        "끝이에요.",
+      ].join("\n"),
+    );
   });
 
-  test("keep the shape: a heading's line, paragraphs, list markers, a checklist's boxes", () => {
-    expect(words.split("\n")[0]).toBe("이번 주 가격 비교");
-    expect(words).toContain("\n\n세 곳을 비교했어요.");
-    expect(words).toContain("- 가장 싼 곳: 가");
-    expect(words).toContain("- 배송비는 별도");
-    expect(words).toContain("☑ 가격 확인");
-    expect(words).toContain("☐ 주문하기");
-    expect(words).toContain("가격은 오늘 기준이에요.");
-  });
-
-  test("a table is its cells with a tab between, which a spreadsheet takes into cells", () => {
-    expect(words).toContain("가게\t가격\n가\t1,200원\n나\t1,350원");
-  });
-
-  /*
-   * Pressed on the running app with the first version: the last row of a real answer had no closing
-   * pipe — the renderer drew it as a row all the same — and the copied words kept its pipes.
-   */
-  test("a table is found as the renderer finds it: a row without its closing pipe, or with no outer pipes at all", () => {
+  test("a table is its cells with a tab between, which a spreadsheet takes into cells", async () => {
     expect(
-      copiedText(
-        "| 요일 | 운동 |\n| --- | --- |\n| 월 | 달리기 5km |\n| 수 | 수영 30분",
+      await words(
+        "| 가게 | 가격 |\n| --- | ---: |\n| **가** | 1,200원 |\n| 나 | 1,350원 |",
       ),
-    ).toBe("요일\t운동\n월\t달리기 5km\n수\t수영 30분");
-    expect(copiedText("요일 | 운동\n--- | ---\n월 | 달리기\n\n끝이에요.")).toBe(
-      "요일\t운동\n월\t달리기\n\n끝이에요.",
-    );
-    // A pipe in ordinary prose is not a table, and one escaped inside a cell is a pipe.
-    expect(copiedText("A | B 중에 고르세요")).toBe("A | B 중에 고르세요");
-    expect(copiedText("| 식 |\n| --- |\n| a \\| b |")).toBe("식\na | b");
+    ).toBe("가게\t가격\n가\t1,200원\n나\t1,350원");
   });
 
-  /*
-   * Codex, on the pull request, three places where the words did not follow what the renderer
-   * draws.
-   */
-  test("a table whose rule has one hyphen a cell is a table, and a rule of the wrong width is not", () => {
-    expect(copiedText("| A | B |\n| - | - |\n| x | y |")).toBe("A\tB\nx\ty");
-    expect(copiedText("| A | B |\n|:-|-:|\n| x | y |")).toBe("A\tB\nx\ty");
-    // One cell of rule under two of header: the renderer draws text, and so the words are text.
-    expect(copiedText("A | B\n-\nx | y")).toBe("A | B\n-\nx | y");
-  });
-
-  test("a code block closes on a fence like the one that opened it, and on no other", () => {
-    const four = [
-      "````",
-      "a",
-      "```",
-      "c **d**",
-      "```",
-      "````",
-      "끝 **굵게**",
-    ].join("\n");
-    // The inner fences are code: they stay, and nothing between them loses a mark.
-    expect(copiedText(four)).toBe("a\n```\nc **d**\n```\n끝 굵게");
-    const tildes = ["~~~", "x `y`", "```", "~~~", "z"].join("\n");
-    expect(copiedText(tildes)).toBe("x `y`\n```\nz");
-    // A fence still open at the end keeps what was written under it.
-    expect(copiedText("```js\nconst a = `b`;")).toBe("const a = `b`;");
-  });
-
-  test("punctuation the answer escaped is shown, not taken for a mark", () => {
-    expect(copiedText("Use \\*\\* literally")).toBe("Use ** literally");
-    expect(copiedText("가격은 \\_정가\\_ 그대로, \\# 은 번호")).toBe(
-      "가격은 _정가_ 그대로, # 은 번호",
-    );
-    expect(copiedText("\\[대괄호\\] 와 \\`백틱\\`")).toBe("[대괄호] 와 `백틱`");
-    expect(copiedText("**굵게 \\* 별**")).toBe("굵게 * 별");
-    // A backslash before a letter is a backslash.
-    expect(copiedText("C:\\Users\\kim")).toBe("C:\\Users\\kim");
-  });
-
-  /*
-   * Looked for after that review, by reading the pass against what the renderer draws rather than
-   * waiting to be told: the same kind of gap, in the places a model's answer actually reaches.
-   */
-  test("what is inside a code span is code: its stars and underscores are not marks", () => {
+  test("lists keep their markers and their indent, and a checklist its boxes", async () => {
     expect(
-      copiedText("거듭제곱은 `2 ** 3` 이고 이름은 `user_name_id` 예요."),
-    ).toBe("거듭제곱은 2 ** 3 이고 이름은 user_name_id 예요.");
-    expect(copiedText("``a ` b``")).toBe("a ` b");
-    expect(copiedText("| 식 | 뜻 |\n| - | - |\n| `a \\| b` | 또는 |")).toBe(
-      "식\t뜻\na | b\t또는",
-    );
-  });
-
-  test("a heading underlined instead of marked, and one that closes its own marks", () => {
-    expect(copiedText("이번 주 요약\n===\n\n내용이에요.")).toBe(
-      "이번 주 요약\n\n내용이에요.",
-    );
-    expect(copiedText("## 가격 비교 ##\n내용")).toBe("가격 비교\n내용");
-    // A line of equals signs under nothing is a line of equals signs.
-    expect(copiedText("===")).toBe("===");
-  });
-
-  test("an entity is the character it stands for, and a backslash at a line's end is a line break", () => {
-    expect(
-      copiedText(
-        "A &amp; B &lt;3 &gt; C&nbsp;D &quot;따옴표&quot; &#39;작은&#39;",
+      await words(
+        [
+          "- 하나",
+          "  - 둘",
+          "",
+          "3. 셋째",
+          "4. 넷째",
+          "",
+          "- [x] 가격 확인",
+          "- [ ] 주문하기",
+        ].join("\n"),
       ),
-    ).toBe("A & B <3 > C D \"따옴표\" '작은'");
-    expect(copiedText("첫 줄\\\n둘째 줄")).toBe("첫 줄\n둘째 줄");
+    ).toBe(
+      [
+        "- 하나",
+        "  - 둘",
+        "",
+        "3. 셋째",
+        "4. 넷째",
+        "",
+        "☑ 가격 확인",
+        "☐ 주문하기",
+      ].join("\n"),
+    );
   });
 
-  test("a link keeps its address, since a chat box cannot hold one behind a word", () => {
-    expect(words).toContain("공지 (https://example.com/notice)를 보세요.");
-    expect(copiedText("[https://a.example](https://a.example)")).toBe(
-      "https://a.example",
+  test("an item with more than a line keeps it under its first", async () => {
+    expect(await words("1. 하나\n\n   이어지는 문단\n\n2. 둘")).toBe(
+      "1. 하나\n   이어지는 문단\n2. 둘",
     );
-    expect(copiedText("<https://a.example/x>")).toBe("https://a.example/x");
-    expect(copiedText("![가게 사진](https://a.example/p.png)")).toBe(
+  });
+
+  test("code is copied as it was written, line by line, without its fence or its label", async () => {
+    expect(await words("```python\ndef f():\n    return 1\n```")).toBe(
+      "def f():\n    return 1",
+    );
+  });
+
+  test("an image is its description, and a line break is a line break", async () => {
+    expect(await words("![가게 사진](https://a.example/p.png)")).toBe(
       "가게 사진",
     );
+    expect(await words("첫 줄  \n둘째 줄")).toBe("첫 줄\n둘째 줄");
   });
 
-  test("code is copied as it was written, without its fence", () => {
-    expect(words.endsWith("합계 = **그대로** | 둡니다")).toBe(true);
-    expect(words).not.toContain("```");
+  /*
+   * The seven a pass over the markdown got wrong, found by review over two rounds. Each is drawn by
+   * the renderer here, so the words follow whatever it decides a mark is.
+   */
+  test("a table whose rule has one hyphen a cell, and a row without its closing pipe", async () => {
+    expect(await words("| A | B |\n| - | - |\n| x | y |")).toBe("A\tB\nx\ty");
+    expect(
+      await words(
+        "| 요일 | 운동 |\n| --- | --- |\n| 월 | 달리기 |\n| 수 | 수영 30분",
+      ),
+    ).toBe("요일\t운동\n월\t달리기\n수\t수영 30분");
   });
 
-  test("no run of blank lines, and none at either end", () => {
-    expect(words).not.toMatch(/\n{3,}/);
-    expect(words).toBe(words.trim());
-    expect(copiedText("")).toBe("");
-  });
-
-  test("an underscore inside a word, and a star that is multiplication, are left alone", () => {
-    expect(copiedText("file_name_v2.csv 와 3 * 4 = 12")).toBe(
-      "file_name_v2.csv 와 3 * 4 = 12",
+  test("a fence inside a longer fence is code, and so is what follows it", async () => {
+    expect(await words("````\na\n```\nc **d**\n````\n\n끝 **굵게**")).toBe(
+      "a\n```\nc **d**\n\n끝 굵게",
     );
   });
 
-  test("a nested list keeps its indent", () => {
-    expect(copiedText("- 하나\n  - 둘\n    1. 셋")).toBe(
-      "- 하나\n  - 둘\n    1. 셋",
+  test("punctuation the answer escaped is shown, and a star with space round it is a star", async () => {
+    expect(await words("Use \\*\\* literally")).toBe("Use ** literally");
+    // Two of them, so the renderer's own completing of an unfinished answer leaves them be: it
+    // closes an odd `**` by adding one, on screen too, which is its to fix and not copied away.
+    expect(await words("거듭제곱은 2 ** 3 이고 4 ** 5 예요")).toBe(
+      "거듭제곱은 2 ** 3 이고 4 ** 5 예요",
     );
+    expect(await words("파일은 file_name_v2.csv 예요")).toBe(
+      "파일은 file_name_v2.csv 예요",
+    );
+  });
+
+  test("what is inside a code span is code: its stars and underscores stay", async () => {
+    expect(await words("식은 `2 ** 3` 이고 이름은 `user_name_id` 예요.")).toBe(
+      "식은 2 ** 3 이고 이름은 user_name_id 예요.",
+    );
+  });
+
+  test("an indented block of code keeps its lines and their indent to each other", async () => {
+    expect(
+      await words("이렇게요:\n\n    if (ready) {\n      run();\n    }"),
+    ).toBe("이렇게요:\n\nif (ready) {\n  run();\n}");
+  });
+
+  test("a heading underlined instead of marked, and an entity, read as they are drawn", async () => {
+    expect(await words("이번 주 요약\n===\n\nA &amp; B &lt;3")).toBe(
+      "이번 주 요약\n\nA & B <3",
+    );
+  });
+
+  test("the renderer's own controls are not the answer", async () => {
+    const copied = await words("| A |\n| - |\n| x |\n\n```\ncode\n```");
+    expect(copied).toBe("A\nx\n\ncode");
+    expect(copied).not.toMatch(/Copy|Download|fullscreen/);
   });
 });
 
 describe("the answer as drawn", () => {
-  test("keeps the table and the emphasis, and drops our controls and our styling", () => {
-    const body = document.createElement("div");
-    body.innerHTML = `
-      <div class="wrapper" data-streamdown="table-wrapper">
-        <div class="controls"><button title="표 복사"><svg></svg></button></div>
-        <table class="w-full" style="color: red"><thead><tr><th class="x">가게</th><th>가격</th></tr></thead>
-        <tbody><tr><td colspan="1"><strong class="font-semibold">가</strong></td><td>1,200원</td></tr></tbody></table>
-      </div>
-      <p class="mt-2">자세한 내용은 <a class="underline" href="https://example.com/notice" target="_blank" rel="noreferrer">공지</a>.</p>`;
+  test("keeps the table and the emphasis, and drops our controls and our styling", async () => {
+    const { body } = await drawn(
+      "| 가게 | 가격 |\n| --- | --- |\n| **가** | 1,200원 |\n\n자세한 내용은 [공지](https://example.com/notice).",
+    );
     const html = copiedHtml(body) ?? "";
     expect(html).toContain("<table>");
     expect(html).toContain("<th>가게</th>");
-    expect(html).toContain('<td colspan="1"><strong>가</strong></td>');
+    // The renderer draws bold as a styled span; it leaves here as bold.
+    expect(html).toContain("<td><strong>가</strong></td>");
     expect(html).toContain('<a href="https://example.com/notice">공지</a>');
     expect(html).not.toContain("<button");
     expect(html).not.toContain("<svg");
-    expect(html).not.toMatch(/class=|style=|data-|target=|rel=|title=/);
+    expect(html).not.toMatch(/class=|style=|data-|target=|rel=|title=|node=/);
   });
 
-  test("the bubble itself is left as it was", () => {
-    const body = document.createElement("div");
-    body.innerHTML = '<p class="keep"><button>x</button>글</p>';
+  test("code keeps its lines", async () => {
+    const { body } = await drawn("```\na\n  b\n```");
+    const html = copiedHtml(body) ?? "";
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    expect(holder.querySelector("pre")?.textContent).toBe("a\n  b");
+  });
+
+  test("the bubble itself is left as it was", async () => {
+    const { body } = await drawn("**굵게** 와 표\n\n| A |\n| - |\n| x |");
+    const before = body.innerHTML;
     copiedHtml(body);
-    expect(body.innerHTML).toBe('<p class="keep"><button>x</button>글</p>');
+    copiedWords(body);
+    expect(body.innerHTML).toBe(before);
   });
 
   test("nothing drawn is nothing to hand over", () => {
     expect(copiedHtml(null)).toBeNull();
     expect(copiedHtml(undefined)).toBeNull();
     expect(copiedHtml(document.createElement("div"))).toBeNull();
+    expect(copiedWords(document.createElement("div"))).toBe("");
   });
 });
 
@@ -281,10 +289,6 @@ function clipboard(options: { rich: boolean; refuseRich?: boolean }) {
 }
 
 describe("how it reaches the clipboard", () => {
-  afterEach(() => {
-    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
-  });
-
   test("as one item with both, where the clipboard takes one", async () => {
     const written = clipboard({ rich: true });
     expect(await copyRich({ text: "가\t1", html: "<table></table>" })).toBe(
@@ -316,35 +320,11 @@ describe("how it reaches the clipboard", () => {
 });
 
 describe("the button under a reply", () => {
-  afterEach(async () => {
-    await unmountAll();
-    delete (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
-  });
-
   test("writes the words without their marks and the table as a table", async () => {
     const written = clipboard({ rich: true });
-    const { QueryClient, QueryClientProvider } = await import(
-      "@tanstack/react-query"
+    const { view, body } = await drawn(
+      "세 곳을 **비교**했어요.\n\n| 가게 | 가격 |\n| --- | --- |\n| 가 | 1,200원 |",
     );
-    const { ChatTranscript } = await import(
-      "../src/components/channels/chat-transcript"
-    );
-    const messages: Message[] = [
-      { id: "u-1", role: "user", content: "가격 비교해 줘" },
-      { id: "a-1", role: "assistant", content: ANSWER },
-    ];
-    const view = await mount(
-      <QueryClientProvider client={new QueryClient()}>
-        <ChatTranscript busy={false} messages={messages} />
-      </QueryClientProvider>,
-    );
-    // The renderer is a lazy chunk: wait for the table it draws.
-    const deadline = Date.now() + 8_000;
-    while (!view.host.querySelector("table") && Date.now() < deadline) {
-      await view.settle(50);
-    }
-    expect(view.host.querySelector("table")).not.toBeNull();
-
     const button = view.host.querySelector<HTMLButtonElement>(
       'button[aria-label="Copy this reply"]',
     );
@@ -355,11 +335,13 @@ describe("the button under a reply", () => {
     expect(written).toHaveLength(1);
     const item = written[0];
     if (item?.kind !== "item") throw new Error("not written as one item");
-    expect(item.types["text/plain"]).toBe(copiedText(ANSWER));
-    expect(item.types["text/plain"]).toContain("가게\t가격");
+    expect(item.types["text/plain"]).toBe(
+      "세 곳을 비교했어요.\n\n가게\t가격\n가\t1,200원",
+    );
+    expect(item.types["text/plain"]).toBe(copiedWords(body));
     const html = item.types["text/html"] ?? "";
     expect(html).toContain("<table>");
-    expect(html).toContain("가게");
+    expect(html).toContain("<strong>비교</strong>");
     expect(html).not.toContain("<button");
     expect(html).not.toMatch(/class=/);
   });

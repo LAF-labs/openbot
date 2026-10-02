@@ -8,263 +8,183 @@
  *
  * So two things are written, and whatever is pasted into takes the one it understands:
  *
- *  - WORDS (`text/plain`), with the marks gone and the shape kept: paragraphs, list markers, a
- *    table's cells separated by tabs — which a spreadsheet takes into its cells and a chat box shows
- *    as columns — and code as it was written.
- *  - THE ANSWER AS DRAWN (`text/html`), from the bubble on screen with our own controls and styling
- *    taken off, so a table lands in a document as a table and bold as bold.
+ *  - WORDS (`text/plain`): paragraphs, list markers, a table's cells separated by tabs — which a
+ *    spreadsheet takes into its cells and a chat box shows as columns — and code as it was written.
+ *  - THE ANSWER AS DRAWN (`text/html`), with our own controls and styling taken off, so a table
+ *    lands in a document as a table and bold as bold.
  *
- * A line-by-line pass, like `spoken-text.ts` and for its reason: the renderer that draws the bubble
- * is a lazy chunk, and this must work the moment the button is there.
- *
- * WHAT IS A TABLE, A CODE BLOCK AND A MARK IS DECIDED AS THE RENDERER DECIDES IT. Three places where
- * a looser reading copied something other than what was drawn (review of this change):
- *
- *  - a table's rule may have ONE hyphen a cell (`| - | - |`), and is a rule only when it has as many
- *    cells as the header above it;
- *  - a code block closes on a fence of the same mark and at least the same length as the one that
- *    opened it — three backticks inside a four-backtick block are code;
- *  - punctuation behind a backslash is punctuation to show, not a mark.
- *
- * And, found by reading this pass against the renderer after that: what is inside a code span is
- * code, and keeps its stars; a heading may be underlined with `===`, or close its own `##`; an
- * entity is the character it names; a backslash at the end of a line is a line break.
+ * BOTH ARE READ OFF THE BUBBLE ON SCREEN, NOT OUT OF THE MARKDOWN. The first two versions of this
+ * took the marks off the markdown with a pass of their own, and each review found another place
+ * where that pass and the renderer disagreed about what a mark is: a table whose rule has one
+ * hyphen, a fence inside a longer fence, an escaped star, a star with spaces round it, an indented
+ * code block, a reference link — seven in two rounds, every one true, and no end to them, because a
+ * second reading of markdown is a second parser. What the renderer drew is the one reading there
+ * is. The words are what it drew, read in order.
  */
 
-/** A table's delimiter row: `|-|:-:|`. It draws a line and holds no words. */
-const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
-/** A horizontal rule: three or more of one mark, alone on the line. */
-const RULE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
-/** The fence that opens a code block, and what follows it on its line. */
-const FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
-const FENCE_CLOSE = /^\s{0,3}(`{3,}|~{3,})\s*$/;
-/** `===` under a line of words: that line is a heading. */
-const HEADING_UNDERLINE = /^\s{0,3}=+\s*$/;
+/** What the renderer and this app put in a bubble that is not the answer. */
+const NOT_THE_ANSWER = [
+  "button",
+  "svg",
+  '[role="menu"]',
+  '[aria-hidden="true"]',
+  // A code block's language label and its copy/download buttons; an image's "not available".
+  '[data-streamdown="code-block-header"]',
+  '[data-streamdown="code-block-actions"]',
+  '[data-streamdown="image-fallback"]',
+].join(", ");
 
-/** ASCII punctuation: behind a backslash one of these is shown, and in a code span all of them are. */
-const PUNCTUATION = /[!-/:-@[-`{-~]/g;
-const isPunctuation = (char: string | undefined) =>
-  char !== undefined && /^[!-/:-@[-`{-~]$/.test(char);
+const TEXT_NODE = 3;
+const ELEMENT_NODE = 1;
 
-/**
- * Where punctuation that is NOT a mark waits while the marks are taken off: the private-use block,
- * one place per ASCII character. Nothing a person types lives there. The pattern is built from the
- * numbers, so that no invisible character sits in this file.
- */
-const SHELTER = 0xe000;
-const SHELTERED = new RegExp(
-  `[${String.fromCharCode(SHELTER)}-${String.fromCharCode(SHELTER + 0x7f)}]`,
-  "g",
-);
+const tagOf = (element: Element) => element.tagName.toLowerCase();
+const isElement = (node: Node): node is Element =>
+  node.nodeType === ELEMENT_NODE;
 
-const shelter = (mark: string) =>
-  String.fromCharCode(SHELTER + mark.charCodeAt(0));
-
-/** Where the run of `length` backticks that closes a code span begins, from `from` on; -1 if none. */
-function closingRun(text: string, from: number, length: number): number {
-  let at = text.indexOf("`", from);
-  while (at !== -1) {
-    let end = at;
-    while (text[end] === "`") end += 1;
-    if (end - at === length) return at;
-    at = text.indexOf("`", end);
-  }
-  return -1;
-}
-
-/**
- * The line with everything that only LOOKS like a mark put out of the marks' reach.
- *
- * Read left to right, as the renderer reads it, because the two rules lean on each other: a
- * backslash before punctuation shows that punctuation — an escaped backtick opens no code span —
- * and inside a code span a backslash is a backslash and every star is a star. The span's own
- * backticks go: they drew the code, they are not in it.
- */
-function sheltered(text: string): string {
-  let out = "";
-  let at = 0;
-  while (at < text.length) {
-    const char = text.charAt(at);
-    if (char === "\\" && isPunctuation(text[at + 1])) {
-      out += shelter(text.charAt(at + 1));
-      at += 2;
-      continue;
-    }
-    if (char !== "`") {
-      out += char;
-      at += 1;
-      continue;
-    }
-    let end = at;
-    while (text[end] === "`") end += 1;
-    const length = end - at;
-    const close = closingRun(text, end, length);
-    if (close === -1) {
-      // Backticks that open nothing are backticks.
-      out += text.slice(at, end).replace(PUNCTUATION, shelter);
-      at = end;
-      continue;
-    }
-    const code = text.slice(end, close);
-    // One space of padding either side is the span's, not the code's.
-    const held =
-      code.length > 2 && code.startsWith(" ") && code.endsWith(" ")
-        ? code.slice(1, -1)
-        : code;
-    out += held.replace(PUNCTUATION, shelter);
-    at = close + length;
-  }
-  return out;
-}
-
-function unsheltered(text: string): string {
-  return text.replace(SHELTERED, (held) =>
-    String.fromCharCode(held.charCodeAt(0) - SHELTER),
-  );
-}
-
-/** The entities a model writes, as the characters they stand for. */
-const ENTITIES: Readonly<Record<string, string>> = {
-  "&lt;": "<",
-  "&gt;": ">",
-  "&quot;": '"',
-  "&#39;": "'",
-  "&apos;": "'",
-  "&nbsp;": " ",
-  "&amp;": "&",
-};
-
-/** A line's inline marks taken off, with what they held kept. A link keeps its address. */
-function withoutMarks(text: string): string {
-  return (
-    text
-      .replace(/<br\s*\/?>/gi, " ")
-      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_, label, href) =>
-        label === href || String(href).startsWith("#")
-          ? label
-          : `${label} (${href})`,
-      )
-      .replace(/<((?:https?:\/\/|mailto:)[^>\s]+)>/g, "$1")
-      .replace(/\*\*|__|~~/g, "")
-      .replace(
-        /(^|[^\p{L}\p{N}])[*_](?=\S)(.+?)(?<=\S)[*_](?![\p{L}\p{N}])/gu,
-        "$1$2",
-      )
-      // In one pass, so `&amp;lt;` is `&lt;` and is not decoded a second time.
-      .replace(
-        /&(?:lt|gt|quot|#39|apos|nbsp|amp);/g,
-        (entity) => ENTITIES[entity] ?? entity,
-      )
-  );
-}
-
-/** What a line of prose, or a cell, reads as: sheltered, stripped, and given back. */
-const read = (text: string) => unsheltered(withoutMarks(sheltered(text)));
-
-/** A row's cells: split on its pipes, the outer ones dropped. An escaped pipe is a pipe in a cell. */
-function cells(line: string): string[] {
-  return line
-    .replace(/\\\|/g, shelter("|"))
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|");
-}
-
-/** A table's row, cell by cell, with a tab between: the one separator every paste target keeps. */
-function tableRow(line: string): string {
-  return cells(line)
-    .map((cell) => read(cell).trim())
-    .join("\t");
-}
-
-/** Whether `rule` is the line under a table's header: a rule, as wide as the header. */
-function isTableHead(header: string, rule: string | undefined): boolean {
-  return (
-    rule !== undefined &&
-    header.includes("|") &&
-    TABLE_RULE.test(rule) &&
-    cells(header).length === cells(rule).length
-  );
-}
-
-function plainLine(line: string): string {
-  if (RULE.test(line)) return "";
-  const indent = /^\s*/.exec(line)?.[0] ?? "";
-  // A backslash at the very end is a line break, which the line's own end already is.
-  const body = sheltered(line.slice(indent.length).replace(/\\$/, ""));
-  const rest = (
-    /^#{1,6}\s/.test(body)
-      ? // A heading, and the marks it may close itself with (`## 제목 ##`).
-        body.replace(/^#{1,6}\s+/, "").replace(/\s+#+\s*$/, "")
-      : body
-  )
-    .replace(/^(?:>\s?)+/, "")
-    // A checklist's boxes are drawn, not typed: ☐ and ☑ are what a chat box can show.
-    .replace(/^[-*+]\s+\[ \]\s+/, "☐ ")
-    .replace(/^[-*+]\s+\[[xX]\]\s+/, "☑ ")
-    .replace(/^[*+]\s+/, "- ");
-  return `${indent}${unsheltered(withoutMarks(rest))}`.trimEnd();
-}
-
-/**
- * The answer's words: marks gone, shape kept.
- *
- * A TABLE IS FOUND THE WAY THE RENDERER FINDS IT: a line with a pipe in it, then the rule under it,
- * then every line until a blank one. Looking for `| … |` on each line alone missed the row a real
- * answer ended on — its closing pipe never arrived, the renderer drew the row all the same, and the
- * copied words kept that one line's pipes (pressed on the running app, on the first try of this).
- */
-export function copiedText(markdown: string): string {
-  const source = markdown.replace(/\r\n?/g, "\n").split("\n");
-  const lines: string[] = [];
-  /** The fence the code block in progress was opened with. */
-  let fence: { mark: string; length: number } | null = null;
-  let isTable = false;
-  for (const [index, line] of source.entries()) {
-    if (fence) {
-      const close = FENCE_CLOSE.exec(line)?.[1] ?? "";
-      if (close.startsWith(fence.mark) && close.length >= fence.length) {
-        fence = null;
-      } else {
-        // Code is copied as it was written, a shorter fence inside it included.
-        lines.push(line);
-      }
-      continue;
-    }
-    const open = FENCE_OPEN.exec(line);
-    // A backtick fence cannot carry a backtick after it: that is inline code, on a line of prose.
-    if (open?.[1] && !(open[1].startsWith("`") && open[2]?.includes("`"))) {
-      fence = { mark: open[1].charAt(0), length: open[1].length };
-      isTable = false;
-      continue;
-    }
-    if (isTable) {
-      // Every line is a row until a blank one; the rule under the header is the only line dropped.
-      if (line.trim() !== "") {
-        if (!isTableHead(source[index - 1] ?? "", line)) {
-          lines.push(tableRow(line));
-        }
-        continue;
-      }
-      isTable = false;
-    }
-    if (isTableHead(line, source[index + 1])) {
-      lines.push(tableRow(line));
-      isTable = true;
-      continue;
-    }
-    // Under a line of words it makes that line a heading, and is not words itself.
-    if (HEADING_UNDERLINE.test(line) && (source[index - 1] ?? "").trim()) {
-      continue;
-    }
-    lines.push(plainLine(line));
-  }
-  return lines
+/** Lines trimmed and runs of spaces closed up: what the page's own layout does to its text. */
+function tidy(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/[ \t\xa0]+/g, " ").trim())
     .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Code, line by line. The renderer draws each line as an element of its own, with no newline between. */
+function codeOf(pre: Element): string {
+  const code = pre.querySelector("code") ?? pre;
+  const lines = [...code.childNodes];
+  if (lines.length > 0 && lines.every(isElement)) {
+    return lines.map((line) => line.textContent ?? "").join("\n");
+  }
+  return (code.textContent ?? "").replace(/\n$/, "");
+}
+
+/** What runs along a line: words, a link with its address, a picture's description, a line break. */
+function inlineOf(node: Node): string {
+  if (node.nodeType === TEXT_NODE) {
+    return (node.textContent ?? "").replace(/\s+/g, " ");
+  }
+  if (!isElement(node) || node.matches(NOT_THE_ANSWER)) return "";
+  const tag = tagOf(node);
+  if (tag === "br") return "\n";
+  if (tag === "img") return node.getAttribute("alt") ?? "";
+  if (tag === "input") {
+    if (node.getAttribute("type") !== "checkbox") return "";
+    // A checklist's boxes are drawn, not typed: ☐ and ☑ are what a chat box can show.
+    return (node as HTMLInputElement).checked || node.hasAttribute("checked")
+      ? "☑"
+      : "☐";
+  }
+  // Code keeps every character it has, spaces included.
+  if (tag === "code") return node.textContent ?? "";
+  if (tag === "pre") return `\n${codeOf(node)}\n`;
+  const inner = [...node.childNodes].map(inlineOf).join("");
+  if (tag === "p") return `${inner}\n`;
+  if (tag === "a") {
+    const label = inner.trim();
+    const href = node.getAttribute("href") ?? "";
+    // A chat box cannot hold an address behind a word, so the address goes beside it.
+    return href && href !== label && !href.startsWith("#")
+      ? `${label} (${href})`
+      : label;
+  }
+  return inner;
+}
+
+/** A table, row by row, with a tab between cells: the one separator every paste target keeps. */
+function tableOf(table: Element): string {
+  return [...table.querySelectorAll("tr")]
+    .map((row) =>
+      [...row.children]
+        .filter((cell) => ["th", "td"].includes(tagOf(cell)))
+        .map((cell) => tidy(inlineOf(cell)).replace(/\n/g, " "))
+        .join("\t"),
+    )
+    .join("\n");
+}
+
+/** A list, one item a line, a nested one indented under its item. */
+function listOf(list: Element, depth: number): string {
+  const first = Number.parseInt(list.getAttribute("start") ?? "1", 10) || 1;
+  const isOrdered = tagOf(list) === "ol";
+  const lines: string[] = [];
+  let count = 0;
+  for (const item of list.children) {
+    if (tagOf(item) !== "li") continue;
+    const nested: Element[] = [];
+    let own = "";
+    for (const child of item.childNodes) {
+      if (isElement(child) && ["ul", "ol"].includes(tagOf(child))) {
+        nested.push(child);
+      } else {
+        own += inlineOf(child);
+      }
+    }
+    const words = tidy(own);
+    // A checklist's box stands where the bullet would.
+    const marker = /^[☐☑]/.test(words)
+      ? ""
+      : isOrdered
+        ? `${first + count}. `
+        : "- ";
+    const indent = "  ".repeat(depth);
+    const [head = "", ...rest] = words.split("\n");
+    lines.push(`${indent}${marker}${head}`);
+    // What follows in the same item hangs under its first line.
+    for (const line of rest) {
+      lines.push(`${indent}${" ".repeat(marker.length)}${line}`);
+    }
+    for (const inner of nested) lines.push(listOf(inner, depth + 1));
+    count += 1;
+  }
+  return lines.join("\n");
+}
+
+/** The blocks under `element`, in order, each as its words. */
+function blocksOf(element: Element, blocks: string[]): void {
+  let running = "";
+  const flush = () => {
+    const words = tidy(running);
+    if (words) blocks.push(words);
+    running = "";
+  };
+  for (const child of element.childNodes) {
+    if (!isElement(child)) {
+      running += inlineOf(child);
+      continue;
+    }
+    if (child.matches(NOT_THE_ANSWER)) continue;
+    const tag = tagOf(child);
+    if (/^(?:p|h[1-6])$/.test(tag)) {
+      flush();
+      blocks.push(tidy(inlineOf(child)));
+    } else if (tag === "ul" || tag === "ol") {
+      flush();
+      blocks.push(listOf(child, 0));
+    } else if (tag === "table") {
+      flush();
+      blocks.push(tableOf(child));
+    } else if (tag === "pre") {
+      flush();
+      blocks.push(codeOf(child));
+    } else if (tag === "hr") {
+      flush();
+    } else if (tag === "blockquote" || tag === "div" || tag === "section") {
+      flush();
+      blocksOf(child, blocks);
+    } else {
+      running += inlineOf(child);
+    }
+  }
+  flush();
+}
+
+/** The answer's words, read off what was drawn: a blank line between blocks. */
+export function copiedWords(body: Element): string {
+  const blocks: string[] = [];
+  blocksOf(body, blocks);
+  return blocks.filter(Boolean).join("\n\n");
 }
 
 /** What survives on an element copied out of the bubble. Everything else is ours, not the answer's. */
@@ -274,6 +194,7 @@ const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   td: ["colspan", "rowspan"],
   th: ["colspan", "rowspan"],
   ol: ["start"],
+  input: ["type", "checked", "disabled"],
 };
 
 /**
@@ -281,18 +202,27 @@ const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
  *
  * Taken off the copy: our controls (the renderer puts copy and download buttons on every table and
  * code block), their icons, and every class, style and data attribute — a document should get a
- * table, not this app's colours.
+ * table, not this app's colours. One thing is put back: the renderer draws bold as a styled span,
+ * which without its class is no longer bold, so it leaves here as `<strong>`.
  */
 export function copiedHtml(body: Element | null | undefined): string | null {
   if (!body) return null;
   const copy = body.cloneNode(true) as Element;
-  for (const extra of copy.querySelectorAll(
-    'button, svg, [role="menu"], [aria-hidden="true"]',
-  )) {
-    extra.remove();
+  for (const extra of copy.querySelectorAll(NOT_THE_ANSWER)) extra.remove();
+  for (const bold of copy.querySelectorAll('[data-streamdown="strong"]')) {
+    const strong = bold.ownerDocument.createElement("strong");
+    strong.append(...bold.childNodes);
+    bold.replaceWith(strong);
+  }
+  // The renderer draws a line of code as an element with nothing between two of them.
+  for (const code of copy.querySelectorAll("pre code")) {
+    const lines = [...code.childNodes];
+    if (lines.length > 1 && lines.every(isElement)) {
+      for (const line of lines.slice(0, -1)) line.after("\n");
+    }
   }
   for (const element of copy.querySelectorAll("*")) {
-    const kept = KEPT_ATTRIBUTES[element.tagName.toLowerCase()] ?? [];
+    const kept = KEPT_ATTRIBUTES[tagOf(element)] ?? [];
     for (const name of element.getAttributeNames()) {
       if (!kept.includes(name)) element.removeAttribute(name);
     }
