@@ -304,6 +304,49 @@ describe("words typed while the Bot waits on a choice", () => {
     expect(turns.sends).toHaveLength(0);
   });
 
+  // Review, second round: the resend left them out, and the next message sent took them along.
+  test("with nothing back from the door do not ride along with the next message the person sends", async () => {
+    const { api, turns } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await ask(view, turns);
+    turns.answersDown();
+
+    await type(view, "둘 다 말고 냉면");
+    const answer = view.host.querySelector('button[aria-label="Send message"]');
+    if (!answer) throw new Error("no send button");
+    await view.click(answer);
+    await view.waitFor(
+      () => isNotSent(view.host),
+      "the line saying they were not sent",
+      4000,
+    );
+
+    // The turn is over without a word of what became of the answer, and the person goes on.
+    await acted(() => {
+      turns.stopWaiting();
+      turns.announce("stopped");
+    });
+    await type(view, "그럼 내일 점심은 뭐가 좋을까");
+    await view.waitFor(
+      () => composerButton(view.host) === "Send message",
+      "the composer to be free",
+      4000,
+    );
+    const next = view.host.querySelector('button[aria-label="Send message"]');
+    if (!next) throw new Error("no send button");
+    await view.click(next);
+    await view.waitFor(
+      () => turns.sends.length === 1,
+      "the new message to go",
+      4000,
+    );
+    expect(askedIn(turns.sends[0]).map((message) => message.content)).toEqual([
+      "그럼 내일 점심은 뭐가 좋을까",
+    ]);
+    // Still not known to have been sent, and still saying so.
+    expect(isNotSent(view.host)).toBe(true);
+  });
+
   test("that the door took, its reply lost, are the card's answer when the stream says so — and go nowhere twice", async () => {
     const { api, turns } = server();
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });

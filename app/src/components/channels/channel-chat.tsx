@@ -16,6 +16,7 @@ import {
   forgetUnsent,
   keepUnsent,
   noteResent,
+  readSendable,
   readUnsent,
   type UnsentMessage,
   useUnsent,
@@ -519,7 +520,8 @@ export function ChannelChat({
      * after it and never sent. It goes in front, where it was typed, and leaves with this turn.
      */
     const present = new Set(agent.messages.map((message) => message.id));
-    const kept = readUnsent(channel.id).filter(
+    // Not an answer of unknown delivery, kept by a turn the server owned (`readSendable`).
+    const kept = readSendable(channel.id).filter(
       (message) => !present.has(message.id),
     );
     for (const message of kept) {
@@ -707,7 +709,7 @@ export function ChannelChat({
     if (turnsNow.current > 0) return;
     const messages = automatic
       ? claimAutoSend(channel.id)
-      : [...readUnsent(channel.id)];
+      : [...readSendable(channel.id)];
     if (messages.length === 0) return;
     stopBeforeRun.current = false;
     turnsNow.current += 1;

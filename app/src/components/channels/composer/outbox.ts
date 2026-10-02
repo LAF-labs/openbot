@@ -153,6 +153,20 @@ export function readUnsent(channelId: string): readonly UnsentMessage[] {
 }
 
 /**
+ * What of it may go to the Bot as a message: everything but words that were an answer nothing came
+ * back for (`answerTo`). Those may already be the card's answer, and go nowhere until that is
+ * known — every path that hands messages over reads this, not `readUnsent`, which is what is drawn.
+ *
+ * One function, because there are several such paths and the first fix named one: the resend left
+ * them out, and the next message the person sent took them along (review, second round).
+ */
+export function readSendable(channelId: string): readonly UnsentMessage[] {
+  return readUnsent(channelId).filter(
+    (message) => message.answerTo === undefined,
+  );
+}
+
+/**
  * Keep a message that did not reach the server, or one waiting for the Bot. The same id again
  * replaces it in place.
  *
@@ -221,7 +235,10 @@ export function claimAutoSend(channelId: string): UnsentMessage[] {
   const entries = unstored.has(channelId)
     ? readUnsent(channelId)
     : load(channelId);
-  const claimed = entries.filter((entry) => !entry.autoTried);
+  // Never words that were an answer nothing came back for, whatever their mark (`readSendable`).
+  const claimed = entries.filter(
+    (entry) => !entry.autoTried && entry.answerTo === undefined,
+  );
   if (claimed.length === 0) {
     cache.set(channelId, entries);
     return [];
