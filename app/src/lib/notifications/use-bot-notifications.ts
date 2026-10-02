@@ -6,6 +6,7 @@ import {
   askSubjectOf,
   describeSubject,
   openQuestions,
+  readApprovals,
   watchQuestions,
 } from "@/lib/approvals";
 import { channelListQueryOptions } from "@/lib/channels/queries";
@@ -450,41 +451,16 @@ export function useBotNotifications(): void {
       return true;
     };
 
-    const raiseFromOutbox = (frame: NotificationFrame) => {
+    /** Say an outbox row. `cardOnScreen` is for a Bot that is waiting, and already settled. */
+    const say = (
+      frame: NotificationFrame,
+      kind: NoticeKind,
+      cardOnScreen: boolean | undefined,
+    ) => {
       const key = frame.approvalId ?? frame.id;
-      if (announced.current.has(key)) return;
-      const kind = noticeKindOf(frame.event);
-      // An expired question is deliberately silent. Nobody can answer a question that has run out,
-      // and the two things worth interrupting somebody for are being blocked and having finished.
-      // It is still a row, and the list still shows it.
-      if (!kind) return;
       // May be nothing: a Bot asking for a password is blocked on the person and has no page of its
       // own to send them to. See `showNotice`, which takes the destination as optional for this.
       const destination = destinationOf(frame);
-      /*
-       * WHERE THE CARD IS, BEFORE ANYTHING IS SAID. The frame names no conversation. The record
-       * does, and somebody reads it because of this same frame — the conversation on screen or the
-       * shell's watch — after which the questions effect above decides with the conversation in
-       * hand. So when this path cannot tell (a Bot with several conversations, one of them open,
-       * the record not read yet), it says nothing and leaves the question unannounced for that
-       * effect. Deciding here raised a notice at somebody looking straight at the card (review,
-       * second round).
-       */
-      const place =
-        kind === "needs-you"
-          ? cardPlace({
-              pathname: pathRef.current,
-              botId: frame.botId,
-              approvalId: frame.approvalId,
-              threadId: frame.approvalId
-                ? questionThread(frame.botId, frame.approvalId)
-                : undefined,
-              channels: channelsRef.current,
-            })
-          : null;
-      if (place === "unknown") return;
-      announced.current.add(key);
-
       const bot = rosterRef.current?.find(
         (profile) => profile.id === frame.botId,
       );
@@ -498,7 +474,7 @@ export function useBotNotifications(): void {
           visible: document.visibilityState === "visible",
           openChannelId: openChannelFrom(pathRef.current),
           ...(frame.channelId ? { channelId: frame.channelId } : {}),
-          ...(place ? { cardOnScreen: place === "here" } : {}),
+          ...(cardOnScreen === undefined ? {} : { cardOnScreen }),
           now: Date.now(),
         },
         {
@@ -536,6 +512,78 @@ export function useBotNotifications(): void {
           });
         },
       );
+    };
+
+    const raiseFromOutbox = (frame: NotificationFrame) => {
+      const key = frame.approvalId ?? frame.id;
+      if (announced.current.has(key)) return;
+      const kind = noticeKindOf(frame.event);
+      // An expired question is deliberately silent. Nobody can answer a question that has run out,
+      // and the two things worth interrupting somebody for are being blocked and having finished.
+      // It is still a row, and the list still shows it.
+      if (!kind) return;
+      announced.current.add(key);
+      if (kind !== "needs-you") {
+        say(frame, kind, undefined);
+        return;
+      }
+      /*
+       * WHERE THE CARD IS, BEFORE ANYTHING IS SAID — AND NOTHING IS LEFT UNSAID FOR WANT OF KNOWING.
+       *
+       * The frame names no conversation; the server's record of the question does. Mostly that does
+       * not matter: a window nobody is looking at is told whatever the place, a screen that is no
+       * conversation draws no card, and a Bot with one conversation can only mean that one. It
+       * matters for a Bot with several conversations, one of them on screen: deciding "not here"
+       * raised a notice at somebody looking straight at the card, and leaving it for the questions
+       * effect lost the ones that never reach the store — a routine's question, which has no step
+       * (review, second and third rounds). So the record is read, here, for that case alone.
+       *
+       * A request for help or a password has no approval and no card of its own: it is drawn from
+       * the Bot's control state, in whichever of its conversations is open.
+       */
+      const place = cardPlace({
+        pathname: pathRef.current,
+        botId: frame.botId,
+        approvalId: frame.approvalId,
+        threadId: frame.approvalId
+          ? questionThread(frame.botId, frame.approvalId)
+          : undefined,
+        channels: channelsRef.current,
+      });
+      const approvalId = frame.approvalId;
+      if (
+        place !== "unknown" ||
+        !approvalId ||
+        document.visibilityState !== "visible"
+      ) {
+        say(frame, kind, place !== "elsewhere");
+        return;
+      }
+      void readApprovals(frame.botId).then((approvals) => {
+        if (stopped) return;
+        // The server could not be asked: an interruption too many, rather than a question missed.
+        if (!approvals) {
+          say(frame, kind, false);
+          return;
+        }
+        const approval = approvals.find((one) => one.id === approvalId);
+        // Answered or run out in the meantime: there is nothing left to say.
+        if (!approval || approval.granted !== undefined) return;
+        const threadId = approval.step?.threadId;
+        say(
+          frame,
+          kind,
+          // No step is no card on any conversation's line: nothing on screen is asking.
+          threadId !== undefined &&
+            cardPlace({
+              pathname: pathRef.current,
+              botId: frame.botId,
+              approvalId,
+              threadId,
+              channels: channelsRef.current,
+            }) === "here",
+        );
+      });
     };
 
     /*
