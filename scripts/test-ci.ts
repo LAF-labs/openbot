@@ -788,15 +788,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * whose handler throws answered as a failed step with a code. (The lane test gained no test, only
  * what it asserts: a turn waiting for the Bot again says `queued`.)
  *
+ * RAISED 2026-10-02 by twenty-four in `app` and three in `root`, from pressing things in the
+ * installed app: a download that ended said on screen, saved or not (`download-notice.test.tsx`,
+ * the bridge's half in `shell-awake.test.ts`); a file let go anywhere on the window attached once,
+ * and one nothing took refused at the window (`composer-drop.test.tsx`); and in
+ * `desktop-shell.test.ts`, the window built by the shell from its config with a download handler,
+ * drops left to the page, and a development launch that is not the installed app.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3416, roots: ["server"] },
-  { name: "app", floor: 1601, roots: ["app"] },
+  { name: "app", floor: 1625, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
-  { name: "root", floor: 602, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 605, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
