@@ -251,4 +251,27 @@ describe("a conversation opened for the first time", () => {
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
     await view.waitFor(() => greets(view.host), "the Bot's greeting", 6000);
   });
+
+  /*
+   * The installed app's window is a webview whose engine is the system's, and some of them have
+   * no `AbortSignal.timeout`. The limit on a read of the history was built with it: the call
+   * threw before the request was made, that read as "could not be read", and the conversation
+   * was read again and again and never drawn (review, seventh round).
+   */
+  test("is read on a webview that has no AbortSignal.timeout", async () => {
+    const signals = AbortSignal as unknown as { timeout?: unknown };
+    const timeout = signals.timeout;
+    signals.timeout = undefined;
+    try {
+      const { api } = server([ASKED, ANSWERED]);
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await view.waitFor(
+        () => says(view.host, "최고 26도"),
+        "the answer",
+        6000,
+      );
+    } finally {
+      signals.timeout = timeout;
+    }
+  });
 });

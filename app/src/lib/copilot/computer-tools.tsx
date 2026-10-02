@@ -420,7 +420,9 @@ export function ComputerTools() {
       const query = new URLSearchParams();
       if (input.whole) query.set("whole", "1");
       if (input.from?.trim()) query.set("from", input.from.trim());
-      return callComputer(bot.current, query.size ? `/read?${query}` : "/read");
+      // As a string: `query.size` is not there on an older system webview (`webview-apis.test.ts`).
+      const search = query.toString();
+      return callComputer(bot.current, search ? `/read?${search}` : "/read");
     },
   });
 

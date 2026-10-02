@@ -7,6 +7,7 @@
  * exactly what it missed, or the turn as it stands when that is no longer held.
  */
 import type { Message, Tool } from "@ag-ui/core";
+import { deadline } from "@/lib/deadline";
 import type { TurnFrame } from "./frames";
 
 export type SendResult =
@@ -96,10 +97,18 @@ export async function readHistory(
   const query = new URLSearchParams();
   if (before !== null) query.set("before", String(before));
   if (limit !== undefined) query.set("limit", String(limit));
+  /*
+   * As a string, not by `query.size`: a system webview older than that property reads it as
+   * nothing, and the cursor was left off every request — 이전 대화 보기 asked for the page above
+   * and was answered the newest one again, for as long as it was pressed.
+   */
+  const search = query.toString();
+  // A timer and a controller, not `AbortSignal.timeout`: see `deadline`.
+  const wait = deadline(HISTORY_WAIT_MS);
   try {
     const response = await fetch(
-      `/api/turns/${encodeURIComponent(threadId)}/history${query.size ? `?${query}` : ""}`,
-      { credentials: "include", signal: AbortSignal.timeout(HISTORY_WAIT_MS) },
+      `/api/turns/${encodeURIComponent(threadId)}/history${search ? `?${search}` : ""}`,
+      { credentials: "include", signal: wait.signal },
     );
     if (!response.ok) return null;
     const body = (await response
@@ -109,6 +118,8 @@ export async function readHistory(
     return body;
   } catch {
     return null;
+  } finally {
+    wait.clear();
   }
 }
 
