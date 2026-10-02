@@ -34,6 +34,7 @@ import {
   transcriptMessages,
 } from "@/components/channels/transcript-messages";
 import { BrowsingBanner } from "@/components/computer/browsing-banner";
+import { ReadNotice } from "@/components/layout/read-states";
 import { turnPhaseOf, usePublishTurn } from "@/lib/agents/presence";
 import { agentKeys, agentQueryOptions } from "@/lib/agents/queries";
 import { contentOf } from "@/lib/attachments/message";
@@ -65,6 +66,7 @@ import { taskStopOf } from "@/lib/copilot/stranded-steps";
 import { useToolsSettled } from "@/lib/copilot/tools-settled";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
+import type { ReadLine } from "@/lib/read-line";
 import { routineKeys } from "@/lib/routines/queries";
 import { ServerAnswersProvider } from "@/lib/turns/answers";
 import { answerCard, sendTurn, stopTurn } from "@/lib/turns/client";
@@ -622,6 +624,21 @@ export function ServerChannelChat({
     [thread.waiting, channel.threadId],
   );
 
+  /*
+   * THE CONVERSATION SO FAR COULD NOT BE READ, SAID WHERE IT WOULD HAVE BEEN. Nothing here used to
+   * read `unreadable`: reopened right after the server restarted, the conversation was drawn empty
+   * under the Bot's greeting, as though nothing had ever been said (review, 2026-10-02). The store
+   * goes on reading it by itself (`thread-store.ts`); this says so meanwhile, with the press that
+   * reads it now.
+   */
+  const historyLine: ReadLine = thread.unreadable
+    ? {
+        kind: "failed",
+        message: t("Could not load this channel."),
+        isRetrying: thread.rereading,
+      }
+    : null;
+
   return (
     <ConversationProvider
       ask={(text: string) => {
@@ -632,8 +649,24 @@ export function ServerChannelChat({
         {/* The composer below takes a sentence offered to this conversation (`?draft=`), and no other. */}
         <DraftScope.Provider value={channel.id}>
           <ConversationView
-            // The Bot's greeting, at the top of the whole conversation (`greeting.tsx`).
-            head={<Greeting agentId={runtimeAgentId} mode="head" />}
+            head={
+              <>
+                {/* Mounted before it has anything to say, so the line is announced (`ReadNotice`). */}
+                <ReadNotice
+                  line={historyLine}
+                  onRetry={() => {
+                    void store.retry();
+                  }}
+                />
+                {/*
+                 * The Bot's greeting, at the top of the whole conversation (`greeting.tsx`) — and so
+                 * not above one that could not be read, where it says the conversation starts here.
+                 */}
+                {thread.unreadable ? null : (
+                  <Greeting agentId={runtimeAgentId} mode="head" />
+                )}
+              </>
+            }
             banner={
               <BrowsingBanner
                 botId={runtimeAgentId}

@@ -149,8 +149,13 @@ export async function skipOnServer(
  * looks alive to the browser and hears nothing.
  */
 const SILENT_AFTER_MS = 40_000;
-const RETRY_FIRST_MS = 500;
-const RETRY_MOST_MS = 8_000;
+/**
+ * How long a stream that was refused waits before it is opened again: doubled each time, up to the
+ * most. The first page of the history is read again on the same two (`thread-store.ts`) — it is
+ * the same server that was not there.
+ */
+export const RETRY_FIRST_MS = 500;
+export const RETRY_MOST_MS = 8_000;
 
 export type TurnWatch = {
   close: () => void;
