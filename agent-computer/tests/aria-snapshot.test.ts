@@ -90,6 +90,40 @@ describe("parseAriaSnapshot, against captured output", () => {
     });
   });
 
+  /**
+   * A half-ticked "select all", captured rather than written: `ariaSnapshot({ mode: "ai" })` against
+   * a fieldset of three boxes in Chromium 151, the first with `indeterminate` set — what the box
+   * above a partly-ticked list carries. Playwright writes it `[checked=mixed]`: a value, where an
+   * ordinary tick is the bare `[checked]`. (Upstream OpenBot's fixture, #475.)
+   */
+  const MIXED = `- group "Toppings" [ref=e2]:
+  - generic [ref=e4]:
+    - checkbox "Select all" [checked=mixed] [ref=e5]
+    - text: Select all
+  - generic [ref=e6]:
+    - checkbox "Bacon" [checked] [ref=e7]
+    - text: Bacon
+  - generic [ref=e8]:
+    - checkbox "Extra Cheese" [ref=e9]
+    - text: Extra Cheese`;
+
+  test("a half-ticked box is not reported as ticked, and can still be acted on", () => {
+    expect(() => Bun.YAML.parse(MIXED)).not.toThrow();
+    const elements = parseAriaSnapshot(MIXED).elements;
+    const byName = new Map(elements.map((e) => [e.name, e]));
+    // Not checked, so a Bot asked to tick it clicks it. Told it was already checked, it left the
+    // rows underneath unselected and said they were done.
+    expect(byName.get("Select all")?.checked).toBe(false);
+    // The two beside it are unchanged, so this is not a swap.
+    expect(byName.get("Bacon")?.checked).toBe(true);
+    expect(byName.get("Extra Cheese")?.checked).toBe(false);
+    // The ref a click needs sits after the flag Playwright gave a value to.
+    expect(byName.get("Select all")).toMatchObject({
+      ref: "e5",
+      role: "checkbox",
+    });
+  });
+
   test("a name or a value cut at its length is cut between characters", () => {
     // 199 letters and then an emoji: a cut at 200 units would keep the emoji's first half, and the
     // name goes into the trail's row before the action it names (`shared/sound-text.ts`).

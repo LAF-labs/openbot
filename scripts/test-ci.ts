@@ -756,7 +756,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * vendor's sentence and a link's name cut between characters; a preview and a name that do not end
  * on half a flag), two to `agent-computer` (a name cut between characters; an emoji across a
  * range's edge read once) and sixteen to `root` (the cuts and the mending themselves; a spilled
- * result's head; nothing in a request the Bots' model refuses).
+ * result's head; nothing in a request the Bots' model refuses). And one more to `agent-computer`
+ * the same day: a half-ticked box read as not ticked.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -765,7 +766,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3368, roots: ["server"] },
   { name: "app", floor: 1595, roots: ["app"] },
-  { name: "agent-computer", floor: 377, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 378, roots: ["agent-computer"] },
   { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
 ] as const;
 
