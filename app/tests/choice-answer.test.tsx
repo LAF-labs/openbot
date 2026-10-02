@@ -225,6 +225,34 @@ describe("words typed while the Bot waits on a choice", () => {
     expect(turns.sends).toHaveLength(0);
   });
 
+  /*
+   * The installed app's window is a webview whose engine is the system's, and some of them have
+   * no `AbortSignal.timeout`. The door's wait was built with it: the call threw before the
+   * request was made, that read as "nothing came back", and the words were offered again and
+   * again and never sent (review, eighth round).
+   */
+  test("reach the card's door on a webview that has no AbortSignal.timeout", async () => {
+    const signals = AbortSignal as unknown as { timeout?: unknown };
+    const timeout = signals.timeout;
+    signals.timeout = undefined;
+    try {
+      const { api, turns } = server();
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      await type(view, "둘 다 말고 냉면");
+      const send = view.host.querySelector('button[aria-label="Send message"]');
+      if (!send) throw new Error("no send button");
+      await view.click(send);
+      await view.waitFor(
+        () => turns.answers().length === 1,
+        "the answer to reach the card's door",
+        4000,
+      );
+    } finally {
+      signals.timeout = timeout;
+    }
+  });
+
   /** The words go out by the composer's own button, which says it sends. */
   async function sendWords(view: View, words: string) {
     await type(view, words);
@@ -238,6 +266,7 @@ describe("words typed while the Bot waits on a choice", () => {
     JSON.parse(localStorage.getItem(`laf:unsent:${CHANNEL}`) ?? "[]") as {
       text: string;
       answerTo?: string;
+      askedBy?: string;
       waiting?: boolean;
     }[];
   const answeredWith = (words: string) =>
@@ -1058,6 +1087,86 @@ describe("words typed while the Bot waits on a choice", () => {
     await acted(() => turns.announce("done"));
     await view.settle(300);
     expect(turns.sends).toHaveLength(0);
+  });
+
+  /*
+   * A PROVIDER'S IDS ARE ITS OWN TO MINT. Words kept by the call's id alone were the answer to
+   * whatever question carried that id next: kept for a question whose turn died with the server
+   * that held it, they were offered to its later namesake as its answer (review, eighth round).
+   */
+  describe("kept for an earlier question that carried the same id", () => {
+    const EARLIER = { ...QUESTION, id: "a-choice-earlier" } as Message;
+    const EARLIER_ASK: Message = {
+      id: "q-0",
+      role: "user",
+      content: "점심 메뉴 고르는 걸 도와줘",
+    };
+    const keepForEarlier = () =>
+      localStorage.setItem(
+        `laf:unsent:${CHANNEL}`,
+        JSON.stringify([
+          {
+            id: "typed-for-earlier",
+            text: TYPED,
+            instructions: [],
+            at: "2026-10-03T00:00:00.000Z",
+            autoTried: false,
+            waiting: true,
+            answerTo: CALL,
+            askedBy: EARLIER.id,
+          },
+        ]),
+      );
+
+    test("are not offered to the one asked now, and are the person's once the record has been read", async () => {
+      keepForEarlier();
+      // The record holds the earlier question with no result: its server died holding it.
+      const { api, turns } = server({
+        history: [EARLIER_ASK, EARLIER, ASKED],
+      });
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+
+      await view.waitFor(
+        () => isNotSent(view.host),
+        "the words drawn as not sent",
+        4000,
+      );
+      await view.settle(300);
+      expect(turns.asks()).toBe(0);
+      expect(turns.sends).toHaveLength(0);
+      expect(kept()).toMatchObject([
+        { text: TYPED, answerTo: CALL, askedBy: EARLIER.id },
+      ]);
+      expect(kept()[0]?.waiting).toBeUndefined();
+    });
+
+    test("and are not taken away by what is typed for the one asked now", async () => {
+      await restFor(NEVER_IN_THIS_TEST);
+      keepForEarlier();
+      const { api, turns } = server({
+        history: [EARLIER_ASK, EARLIER, ASKED],
+      });
+      const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+      await ask(view, turns);
+      turns.loseAnswerReply();
+
+      await sendWords(view, "이번에는 비빔밥");
+      await view.waitFor(
+        () => turns.answers().length === 1,
+        "the new words to reach the card's door",
+        4000,
+      );
+      expect(turns.answers()).toEqual([
+        { toolCallId: CALL, value: { answer: "이번에는 비빔밥" } },
+      ]);
+      await view.settle(200);
+      // Both are kept: each with the message that asked it.
+      const both = kept().map((message) => [message.text, message.askedBy]);
+      expect(both).toHaveLength(2);
+      expect(both).toContainEqual([TYPED, EARLIER.id]);
+      expect(both).toContainEqual(["이번에는 비빔밥", QUESTION.id]);
+    });
   });
 
   /*

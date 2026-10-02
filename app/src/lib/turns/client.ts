@@ -150,6 +150,7 @@ export async function answerCard(
   toolCallId: string,
   value: unknown,
 ): Promise<AnswerDelivery> {
+  const wait = deadline(ANSWER_WAIT_MS);
   try {
     const response = await fetch(
       `/api/turns/${encodeURIComponent(threadId)}/answers/${encodeURIComponent(toolCallId)}`,
@@ -158,7 +159,7 @@ export async function answerCard(
         credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ value }),
-        signal: AbortSignal.timeout(ANSWER_WAIT_MS),
+        signal: wait.signal,
       },
     );
     if (response.ok) return "taken";
@@ -166,6 +167,8 @@ export async function answerCard(
     return response.status >= 500 ? "unknown" : "refused";
   } catch {
     return "unknown";
+  } finally {
+    wait.clear();
   }
 }
 
