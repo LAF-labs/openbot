@@ -1,4 +1,4 @@
-import type { Persona } from "@shared/persona";
+import { effectivePersona, type Persona } from "@shared/persona";
 import {
   shopPatternOrder,
   WORK_PATTERNS,
@@ -145,6 +145,50 @@ export function holdsSupportPrograms(
   return (
     granted?.tools.some((tool) => tool.ref === SUPPORT_PROGRAMS_TOOL) ?? false
   );
+}
+
+/**
+ * Whether 지원사업 is offered by default: the Bot holds the tool, and the person runs a shop or has
+ * not said. 기업마당's notices are for businesses, and the chip's sentence says "our shop".
+ *
+ * A default, never a gate — a student can still ask for it, and add it to a briefing on Routines.
+ */
+export function offersSupportPrograms(
+  holds: boolean,
+  persona: Persona | null,
+): boolean {
+  return holds && (persona === null || persona === "owner");
+}
+
+/**
+ * Who first tasks are dealt to: what `pickFirstTasks` and the briefing are handed, from what the
+ * person said about themselves and what their Bot holds.
+ *
+ * ONE FUNCTION, BECAUSE IT WAS THREE EXPRESSIONS AND TWO OF THEM LEFT THE PERSON OUT. The first
+ * screen's chips passed the persona and kept 지원사업 for a shop. The 7:30 briefing beside them
+ * did not: a 학생 was offered "넣을 것: 날씨, 월요일마다 새 지원사업". And the sidebar's row — the
+ * same chips, on any day nothing had been done yet — passed no persona at all, so it dealt a 학생
+ * 가게 소개 문구 and "our shop"'s 지원사업 (found by the 2026-09-27 sweep, and left on a branch).
+ * A place that deals first tasks reads this and nothing else.
+ */
+export function firstTaskDeal(
+  who: { persona?: Persona | null; shop?: ShopProfile } | null | undefined,
+  granted: { tools: readonly { ref: string }[] } | undefined,
+): {
+  shop: ShopProfile | undefined;
+  persona: Persona | null;
+  supportPrograms: boolean;
+} {
+  // Who they said they are, or an owner by their shop answers — the order, never a filter.
+  const persona = effectivePersona(who?.persona, who?.shop);
+  return {
+    shop: who?.shop,
+    persona,
+    supportPrograms: offersSupportPrograms(
+      holdsSupportPrograms(granted),
+      persona,
+    ),
+  };
 }
 
 /**

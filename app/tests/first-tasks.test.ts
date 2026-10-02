@@ -7,6 +7,7 @@ import {
   FIRST_TASK_PRESSED,
   type FirstTask,
   type FirstTaskPressed,
+  firstTaskDeal,
   firstTaskPressBody,
   holdsSupportPrograms,
   isFirstConversation,
@@ -14,6 +15,7 @@ import {
   makeMorningReport,
   morningReportPayload,
   NO_CONNECTION_TASKS,
+  offersSupportPrograms,
   pickFirstTasks,
   reportFirstTaskPressed,
   SUPPORT_PROGRAMS_FIRST_TASK,
@@ -751,5 +753,90 @@ describe("the support-programme chip", () => {
       COMPUTER_FIRST_TASK.sentence,
     );
     expect(hasSupport(tasks)).toBe(false);
+  });
+});
+
+/**
+ * WHO THE FIRST TASKS ARE DEALT TO, DECIDED IN ONE PLACE.
+ *
+ * Three places deal them — the first screen's chips, the 7:30 briefing beside them, and the
+ * sidebar's row on a day nothing has been done yet. They were three expressions. The briefing left
+ * the person out of 지원사업, so a 학생 was offered "월요일마다 새 지원사업"; the sidebar's row left the
+ * person out altogether, so it dealt a 학생 가게 소개 문구 and "our shop"'s 지원사업 (the 2026-09-27
+ * sweep, never merged). The persona is a hint — it orders and words — and 가게 is not assumed.
+ */
+describe("who the first tasks are dealt to", () => {
+  const holds = { tools: [{ ref: SUPPORT_PROGRAMS_TOOL }] };
+  const shopSentences = [
+    SUPPORT_PROGRAMS_FIRST_TASK.sentence,
+    introductions,
+    opening,
+    refund,
+  ];
+
+  test("지원사업 is a default for somebody who runs a shop, or has not said — and only with the tool", () => {
+    expect(offersSupportPrograms(true, "owner")).toBe(true);
+    expect(offersSupportPrograms(true, null)).toBe(true);
+    for (const persona of ["student", "worker", "other"] as const) {
+      expect(offersSupportPrograms(true, persona)).toBe(false);
+    }
+    expect(offersSupportPrograms(false, "owner")).toBe(false);
+    expect(offersSupportPrograms(false, null)).toBe(false);
+  });
+
+  test("a 학생 whose Bot holds the tool is dealt as a 학생: no 지원사업, in the chips or the briefing", () => {
+    const deal = firstTaskDeal({ persona: "student" }, holds);
+    expect(deal).toEqual({
+      shop: undefined,
+      persona: "student",
+      supportPrograms: false,
+    });
+    const sentences = sentencesOf(pickFirstTasks(overview(), deal));
+    for (const sentence of shopSentences) {
+      expect(sentences).not.toContain(sentence);
+    }
+  });
+
+  test("the same Bot, and a person who has not said who they are, is dealt the row everybody was", () => {
+    const deal = firstTaskDeal({}, holds);
+    expect(deal.persona).toBeNull();
+    expect(deal.supportPrograms).toBe(true);
+    expect(sentencesOf(pickFirstTasks(overview(), deal))).toContain(
+      SUPPORT_PROGRAMS_FIRST_TASK.sentence,
+    );
+  });
+
+  test("somebody who answered the shop questions before the persona question existed reads as 사장님", () => {
+    const deal = firstTaskDeal(
+      { persona: null, shop: { kind: "food", places: [] } },
+      holds,
+    );
+    expect(deal.persona).toBe("owner");
+    expect(deal.supportPrograms).toBe(true);
+    expect(deal.shop).toEqual({ kind: "food", places: [] });
+  });
+
+  test("an account not read yet, and a grant not read yet, deal nothing they do not know", () => {
+    expect(firstTaskDeal(undefined, undefined)).toEqual({
+      shop: undefined,
+      persona: null,
+      supportPrograms: false,
+    });
+    expect(firstTaskDeal(null, holds).supportPrograms).toBe(true);
+  });
+
+  test("the three places that deal them read this function, and none builds its own", async () => {
+    const read = (path: string) =>
+      Bun.file(`${import.meta.dir}/../${path}`).text();
+    for (const path of [
+      "src/components/app-sidebar/bot-day.tsx",
+      "src/routes/_authed/_app/channel/new.tsx",
+    ]) {
+      const source = await read(path);
+      expect(source).toContain("firstTaskDeal(");
+      // The pieces it is made of are not put together anywhere else.
+      expect(source).not.toContain("holdsSupportPrograms(");
+      expect(source).not.toContain("effectivePersona(");
+    }
   });
 });

@@ -1,5 +1,4 @@
 import type { Message } from "@ag-ui/core";
-import { effectivePersona } from "@shared/persona";
 import { IconSettings } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
@@ -17,7 +16,7 @@ import { seedMessage } from "@/components/channels/transcript-messages";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  holdsSupportPrograms,
+  firstTaskDeal,
   isFirstConversation,
   pickFirstTasks,
 } from "@/lib/agents/first-tasks";
@@ -161,9 +160,8 @@ function FirstConversation({
    * the routine, and a second 아침 브리핑 is a thing the Routines page shows and can delete.
    */
   const routines = useQuery(routineListQueryOptions());
-  const supportPrograms = holdsSupportPrograms(granted.data);
-  // Who they said they are, or an owner by their shop answers — the order, never a filter.
-  const persona = effectivePersona(user?.persona, user?.shop);
+  // Who they are, for the chips and the briefing's Monday line alike (`firstTaskDeal`).
+  const deal = firstTaskDeal(user, granted.data);
   const firstTasks =
     bot &&
     overview &&
@@ -171,13 +169,7 @@ function FirstConversation({
     !granted.isPending &&
     !routines.isPending &&
     isFirstConversation(channels, bot.id)
-      ? pickFirstTasks(overview, {
-          shop: user?.shop,
-          // 지원사업 is about "our shop": offered where the person runs one, or has not said.
-          supportPrograms:
-            supportPrograms && (persona === null || persona === "owner"),
-          persona,
-        })
+      ? pickFirstTasks(overview, deal)
       : null;
   const briefingMade = (routines.data ?? []).some(
     (routine) =>
@@ -185,7 +177,7 @@ function FirstConversation({
   );
   // The 7:30 chip's briefing, from the same two answers the chips waited for.
   const briefing = overview
-    ? briefingSections(overview, { supportPrograms })
+    ? briefingSections(overview, { supportPrograms: deal.supportPrograms })
     : [];
   const whereabouts = user?.whereabouts;
   const placeKnown = Boolean(
@@ -264,7 +256,7 @@ function FirstConversation({
                     briefing={briefing}
                     briefingMade={briefingMade}
                     disabled={pending || sent !== null}
-                    feedTopics={feedTopics(persona, user?.shop?.kind)}
+                    feedTopics={feedTopics(deal.persona, user?.shop?.kind)}
                     key={`first-tasks:${bot.id}`}
                     onAsk={(sentence) => {
                       // The failure is already on screen as the notice; nothing else to do with it.

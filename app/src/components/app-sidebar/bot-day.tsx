@@ -19,7 +19,7 @@ import {
   useBotDay,
 } from "@/lib/agents/day";
 import {
-  holdsSupportPrograms,
+  firstTaskDeal,
   isFirstConversation,
   pickFirstTasks,
   reportFirstTaskPressed,
@@ -530,12 +530,13 @@ function FirstThings({
   // What this Bot holds decides the 지원사업 chip; drawn once it has answered, never swapped in later.
   const granted = useQuery(agentPluginsQueryOptions(botId));
   const { start, pending } = useStartChannel();
+  // Dealt as the first screen deals them: who the person is orders the row (`firstTaskDeal`).
   const tasks =
     overview.data && !granted.isPending
-      ? pickFirstTasks(overview.data, {
-          shop: user.data?.shop,
-          supportPrograms: holdsSupportPrograms(granted.data),
-        }).flatMap((task) => (task.kind === "ask" ? [task] : []))
+      ? pickFirstTasks(
+          overview.data,
+          firstTaskDeal(user.data, granted.data),
+        ).flatMap((task) => (task.kind === "ask" ? [task] : []))
       : [];
 
   return (
