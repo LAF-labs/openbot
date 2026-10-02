@@ -6,7 +6,7 @@ import {
   type PresenceFacts,
   presenceOf,
   publishTurn,
-  readLeftGoingAt,
+  readLastWord,
   readTurn,
   startTelling,
   stopTelling,
@@ -122,11 +122,11 @@ describe("a turn whose conversation is off this screen", () => {
       isTold: false,
       isListed: false,
       listedAt: 1_000,
-      leftGoingAt: null,
+      lastWord: null,
       ...facts,
     });
 
-  test("the server's list says it is going", () => {
+  test("with no conversation ever on this screen, the server's list says it is going", () => {
     expect(off({ isListed: true })).toBe(true);
     expect(off({ isListed: false })).toBe(false);
   });
@@ -134,43 +134,62 @@ describe("a turn whose conversation is off this screen", () => {
   test("a conversation on screen is the only word on its own turn", () => {
     // The list is a poll: it still names the run for a moment after the conversation saw it end.
     expect(off({ isTold: true, isListed: true })).toBe(false);
-    expect(off({ isTold: true, leftGoingAt: 2_000 })).toBe(false);
+    expect(off({ isTold: true, lastWord: { at: 2_000, going: true } })).toBe(
+      false,
+    );
   });
 
   test("a list read before the conversation left cannot say its turn has ended", () => {
-    // Left at 2,000 with the turn going; the list in hand was read at 1,000 and does not name it.
-    expect(off({ leftGoingAt: 2_000, listedAt: 1_000 })).toBe(true);
+    const leftGoing = { at: 2_000, going: true };
+    // The list in hand was read at 1,000 and does not name the turn.
+    expect(off({ lastWord: leftGoing, listedAt: 1_000 })).toBe(true);
     // Read again after leaving, and it still does not: the turn is over.
-    expect(off({ leftGoingAt: 2_000, listedAt: 2_500 })).toBe(false);
+    expect(off({ lastWord: leftGoing, listedAt: 2_500 })).toBe(false);
     // A list never read at all is older than any leaving.
-    expect(off({ leftGoingAt: 2_000, listedAt: 0 })).toBe(true);
+    expect(off({ lastWord: leftGoing, listedAt: 0 })).toBe(true);
   });
 
-  test("leaving with the turn going is kept, and coming back forgets it", () => {
+  /*
+   * Codex, second round: the conversation saw the turn end; the list in hand, read while it ran,
+   * still names it. On screen that list was ignored. Leaving kept no word of an ended turn, so the
+   * next screen read the old list and said the Bot was working — until the poll, thirty seconds on.
+   */
+  test("nor can it bring back a turn the conversation saw end", () => {
+    const leftIdle = { at: 2_000, going: false };
+    expect(off({ lastWord: leftIdle, isListed: true, listedAt: 1_000 })).toBe(
+      false,
+    );
+    // A list read after the leaving does name a turn: something started since. It is believed.
+    expect(off({ lastWord: leftIdle, isListed: true, listedAt: 2_500 })).toBe(
+      true,
+    );
+  });
+
+  test("the last word is kept either way, and coming back forgets it", () => {
     startTelling("bot-c");
     expect(isTurnTold("bot-c")).toBe(true);
-    stopTelling("bot-c", 5_000);
+    stopTelling("bot-c", 5_000, true);
     expect(isTurnTold("bot-c")).toBe(false);
-    expect(readLeftGoingAt("bot-c")).toBe(5_000);
+    expect(readLastWord("bot-c")).toEqual({ at: 5_000, going: true });
     startTelling("bot-c");
-    expect(readLeftGoingAt("bot-c")).toBeNull();
-    // Leaving with nothing going leaves nothing behind.
-    stopTelling("bot-c", null);
-    expect(readLeftGoingAt("bot-c")).toBeNull();
+    expect(readLastWord("bot-c")).toBeNull();
+    stopTelling("bot-c", 6_000, false);
+    expect(readLastWord("bot-c")).toEqual({ at: 6_000, going: false });
+    // The same object until the next leaving: a snapshot React can compare.
+    expect(readLastWord("bot-c")).toBe(readLastWord("bot-c"));
     expect(isTurnTold(undefined)).toBe(false);
+    expect(readLastWord(undefined)).toBeNull();
   });
 
   test("two conversations of one Bot: it is told until the last one leaves", () => {
     startTelling("bot-d");
     startTelling("bot-d");
-    stopTelling("bot-d", 7_000);
+    stopTelling("bot-d", 7_000, true);
     expect(isTurnTold("bot-d")).toBe(true);
-    expect(readLeftGoingAt("bot-d")).toBeNull();
-    stopTelling("bot-d", 8_000);
+    expect(readLastWord("bot-d")).toBeNull();
+    stopTelling("bot-d", 8_000, true);
     expect(isTurnTold("bot-d")).toBe(false);
-    expect(readLeftGoingAt("bot-d")).toBe(8_000);
-    startTelling("bot-d");
-    stopTelling("bot-d", null);
+    expect(readLastWord("bot-d")).toEqual({ at: 8_000, going: true });
   });
 });
 

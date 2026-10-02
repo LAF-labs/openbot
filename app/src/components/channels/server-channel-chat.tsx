@@ -751,7 +751,12 @@ export function ServerChannelChat({
     messages: drawn,
     busy,
   });
-  usePublishTurn(runtimeAgentId, turnPhaseOf(drawn, busy));
+  // Told only once the stream has said how the turn stands: before that, "idle" is "not heard yet".
+  usePublishTurn(
+    runtimeAgentId,
+    turnPhaseOf(drawn, busy),
+    thread.epoch !== null,
+  );
 
   /*
    * What ended the turn, in a word the transcript owns: the Bot's stream said why, and it is read
