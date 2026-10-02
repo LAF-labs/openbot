@@ -715,9 +715,10 @@ describe("a page that does not reach what is held", () => {
     // The later read lands first: rows 106–185, in place of what was held.
     await answer(1);
     expect(ids()).toEqual(stretch(106, 185));
-    // The earlier one begins above that, and ends before it: nothing is missing, nothing goes.
+    // The earlier one was read before the stream spoke again, and is not laid: nothing goes, and
+    // what it holds above is read by scrolling up.
     await answer(0);
-    expect(ids()).toEqual(stretch(101, 185));
+    expect(ids()).toEqual(stretch(106, 185));
     expect(store.snapshot().hasOlder).toBe(true);
   });
 
@@ -741,6 +742,78 @@ describe("a page that does not reach what is held", () => {
     await answer(0);
     expect(ids()).toEqual(stretch(201, 280));
     expect(store.snapshot().hasOlder).toBe(true);
+  });
+
+  /*
+   * What stays over a page put in place is the turn as the stream brought it under its snapshot.
+   * A read made again long after that snapshot — it failed, it waited — is answered with a record
+   * the stream has not kept up with: a laptop that woke offline in the middle of a long task.
+   */
+  test("a read made again that cannot place what the stream brought asks the stream first", async () => {
+    const kept = record(80);
+    const waits: Array<() => void> = [];
+    let onFrame: ((frame: TurnFrame) => void) | null = null;
+    let nudges = 0;
+    let isDown = false;
+    const store = createThreadStore("thread-1", {
+      readHistory: async (_thread, before) =>
+        isDown ? null : kept.read(before),
+      watchTurn: (_thread, handlers) => {
+        onFrame = handlers.onFrame;
+        return {
+          close: () => {},
+          nudge: () => {
+            nudges += 1;
+          },
+        };
+      },
+      later: (run) => {
+        waits.push(run);
+        return () => {};
+      },
+    });
+    const frame = (value: TurnFrame) => onFrame?.(value);
+    const ids = () => store.snapshot().messages.map((message) => message.id);
+    const idle: TurnFrame = {
+      seq: 0,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: null,
+      messages: [],
+      waiting: [],
+    };
+    const going = { id: "t1", status: "running" as const, asked: ["r81"] };
+    await store.open();
+    frame(idle);
+    await settle();
+
+    // A long task: its question and its first step, heard.
+    kept.write(2);
+    frame({ seq: 1, kind: "turn", turn: going });
+    frame({ seq: 2, kind: "messages", turn: "t1", messages: rows(81, 82) });
+    // Asleep, and awake offline: the stream says the task is still going, and the read fails.
+    isDown = true;
+    store.resume();
+    frame({ ...idle, seq: 5, turn: going, messages: rows(81, 82) });
+    await settle();
+    expect(waits).toHaveLength(1);
+
+    // A hundred rows of the task later the wait runs out, and the record can be read.
+    kept.write(100);
+    isDown = false;
+    const asks = nudges;
+    waits.shift()?.();
+    await settle();
+    // Rows 103–182 hold nothing the stream brought: not put in place with the question under them.
+    expect(ids()).toEqual(stretch(1, 82));
+    expect(nudges).toBe(asks + 1);
+
+    // The stream says how the task stands now, and the page read under that is put in place.
+    frame({ ...idle, seq: 9, turn: going, messages: rows(81, 182) });
+    await settle();
+    expect(ids()).toEqual(stretch(103, 182));
+    expect(store.snapshot().hasOlder).toBe(true);
+    store.close();
   });
 
   test("and a page above rows that are no longer held is not laid over the ones that are", async () => {
@@ -958,7 +1031,7 @@ describe("the record's copy of a row, and the stream's", () => {
     });
     // The server restarts, having written what it had; the stream says so, and a read goes out.
     frame(snapshot({ epoch: "e2" }));
-    // The read from before the restart lands: laid, and the answer it never saw stays.
+    // The read from before the restart lands: not laid, and the answer it never saw stays.
     await answer(1, page([asked]));
     expect(ids()).toEqual(["u1", "a1"]);
     // The restart's own read puts the record in place.
@@ -975,21 +1048,141 @@ describe("the record's copy of a row, and the stream's", () => {
     };
     const { store, frame, answer, reads, ids } = manual();
     void store.open();
+    // The server restarts while the first page is still being read.
     frame(snapshot({ seq: 2 }));
-    await answer(0, page([asked]));
-    store.resume();
-    frame(snapshot({ seq: 5 }));
     frame(snapshot({ epoch: "e2" }));
-    // The read from before the restart is answered late, with the record as it stands now.
-    await answer(1, page([asked, whole, delivered]));
+    expect(reads()).toBe(2);
+    // The first page is answered late, with the record as it stands now.
+    await answer(0, page([asked, whole, delivered]));
     expect(ids()).toEqual(["u1", "a1", "r1"]);
     // The restart's own read was answered before the delivery was written, and lands after.
-    await answer(2, page([asked, whole]));
+    await answer(1, page([asked, whole]));
     expect(ids()).toEqual(["u1", "a1", "r1"]);
     // Still owed, and nothing on its way to settle it: asked for again.
-    expect(reads()).toBe(4);
-    await answer(3, page([asked, whole, delivered]));
+    expect(reads()).toBe(3);
+    await answer(2, page([asked, whole, delivered]));
     expect(ids()).toEqual(["u1", "a1", "r1"]);
+  });
+
+  /*
+   * THE RECORD REWRITES A ROW IN PLACE WHILE ITS TURN RUNS: part of an answer, then the whole of
+   * it, under the cursor it keeps. So two pages can hold the same rows under the same cursors and
+   * say different things, and the one read earlier says less (review, sixth round).
+   */
+  test("a page read before the newest snapshot is not laid over the page read under it", async () => {
+    const { store, frame, answer, reads, said } = manual();
+    void store.open();
+    frame(snapshot({ seq: 2 }));
+    await answer(0, page([asked]));
+    // Somebody comes back twice to a turn this window never heard: a read goes out under each.
+    store.resume();
+    frame(snapshot({ seq: 5 }));
+    store.resume();
+    frame(snapshot({ seq: 9 }));
+    expect(reads()).toBe(3);
+    // The later read lands first, with the whole answer.
+    await answer(2, page([asked, whole]));
+    expect(said("a1")).toBe(whole.content);
+    // The earlier one was answered while the turn was still writing.
+    await answer(1, page([asked, half]));
+    expect(said("a1")).toBe(whole.content);
+  });
+
+  test("nor a page read for a refresh over the one a snapshot after it has brought", async () => {
+    const { store, frame, answer, reads, said } = manual();
+    void store.open();
+    frame(snapshot({ seq: 2 }));
+    await answer(0, page([asked]));
+    // A routine delivered, and the page is read for it — still out when somebody comes back.
+    const refreshed = store.refresh();
+    await settle();
+    expect(reads()).toBe(2);
+    frame(snapshot({ seq: 9 }));
+    expect(reads()).toBe(3);
+    await answer(2, page([asked, whole]));
+    expect(said("a1")).toBe(whole.content);
+    await answer(1, page([asked, half]));
+    await refreshed;
+    expect(said("a1")).toBe(whole.content);
+  });
+
+  /*
+   * And a page read while the turn was still writing, landing once the stream has said the turn
+   * is over: the row is nobody's to protect any more, and the page holds part of it.
+   */
+  test("nor is an answer the stream finished replaced by a page read before its turn was over", async () => {
+    const { store, frame, answer, said } = manual();
+    void store.open();
+    frame(snapshot({ seq: 2, turn: going, messages: [asked] }));
+    await answer(0, page([asked]));
+    const refreshed = store.refresh();
+    await settle();
+    frame({
+      seq: 3,
+      kind: "event",
+      turn: "t1",
+      event: { type: "TEXT_MESSAGE_START", messageId: "a1", role: "assistant" },
+    });
+    frame({
+      seq: 4,
+      kind: "event",
+      turn: "t1",
+      event: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "a1",
+        delta: whole.content,
+      },
+    });
+    frame({ seq: 5, kind: "turn", turn: { ...going, status: "done" } });
+    // Answered as the record stood when it was read.
+    await answer(1, page([asked, half]));
+    await refreshed;
+    expect(said("a1")).toBe(whole.content);
+
+    // A page read after the turn was over is the record's word on it.
+    const longer = `${whole.content} 우산은 두고 가세요.`;
+    const again = store.refresh();
+    await settle();
+    await answer(2, page([asked, { ...whole, content: longer }]));
+    await again;
+    expect(said("a1")).toBe(longer);
+  });
+
+  /*
+   * The page brings a row before the stream has said it: a window whose stream is behind reads the
+   * record, and the frames it missed arrive after. Each piece was added to what the page had
+   * brought (`behind` in `frames.ts`).
+   */
+  test("a row a page brought before the stream said it is neither said twice nor begun again", async () => {
+    const { store, frame, answer, said } = manual();
+    void store.open();
+    frame(snapshot({ seq: 2, turn: going, messages: [asked] }));
+    // Read late: the record holds the whole answer by now, and the stream has yet to say any.
+    await answer(0, page([asked, whole]));
+    const seen: unknown[] = [];
+    const say = (seq: number, event: Record<string, unknown>) => {
+      frame({
+        seq,
+        kind: "event",
+        turn: "t1",
+        event: event as { type: string },
+      });
+      seen.push(said("a1"));
+    };
+    say(3, { type: "TEXT_MESSAGE_START", messageId: "a1", role: "assistant" });
+    say(4, { type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta: "내일은" });
+    say(5, {
+      type: "TEXT_MESSAGE_CONTENT",
+      messageId: "a1",
+      delta: " 맑고 최고 26°예요.",
+    });
+    say(6, { type: "TEXT_MESSAGE_CONTENT", messageId: "a1", delta: " 우산은" });
+    expect(seen).toEqual([
+      whole.content,
+      whole.content,
+      whole.content,
+      `${whole.content} 우산은`,
+    ]);
   });
 
   test("what the stream adds goes before the words this window is still sending", async () => {

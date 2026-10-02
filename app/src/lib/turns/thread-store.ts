@@ -144,11 +144,33 @@ export function createThreadStore(
    */
   const live = new Set<string>();
   /**
+   * WHEN EACH OF THEM STOPPED BEING IN FLIGHT: how many reads of the newest page had gone out
+   * (`pageReads`) when the stream said its turn was over — which it says once the turn's last
+   * write is in — or started over without it.
+   *
+   * A page read after that is the record's word on the row. A page read before it is not: the
+   * turn was still writing, the record held part of the answer, and the page landing once the
+   * turn was over put that part over the whole of it on the screen (model check, 2026-10-03).
+   */
+  const settled = new Map<string, number>();
+  /**
    * How many snapshots the stream has sent. A page whose read went out before the newest of them
    * was read across a break in the stream: what the stream brought between that read and the
    * snapshot is no longer `brought`, and may not be on the page either.
    */
   let snapshots = 0;
+  /**
+   * EVERY READ OF THE NEWEST PAGE IS NUMBERED AS IT GOES OUT, AND NONE IS LAID OVER A PAGE READ
+   * AFTER IT (`newestLaid`).
+   *
+   * The record rewrites a row in place while its turn runs — part of an answer, then the whole of
+   * it, under the cursor it keeps — so a page read earlier can say less of a row than one read
+   * later, and nothing on the two tells them apart: the same rows, the same cursors. Two reads
+   * out at once land in either order, and the earlier one landing second put the part back over
+   * the whole (review, sixth round).
+   */
+  let pageReads = 0;
+  let newestLaid = 0;
   /**
    * A screen came back to this store and the stream has not yet said how the turn stands
    * (`resume`): the epoch it had before, which is how a server that restarted meanwhile is told.
@@ -238,10 +260,16 @@ export function createThreadStore(
     return { loaded: true, unreadable: false, rereading: false } as const;
   };
 
-  /** The held copies the record's do not replace: a turn in flight's, and words being sent. */
-  const standing = (): readonly Message[] =>
+  /**
+   * The held copies a page does not replace: a turn in flight's, words being sent — and what a
+   * turn wrote that was still in flight when the page was read (`settled`).
+   */
+  const standing = (read: number): readonly Message[] =>
     state.messages.filter(
-      (message) => live.has(message.id) || sending.has(message.id),
+      (message) =>
+        live.has(message.id) ||
+        sending.has(message.id) ||
+        read <= (settled.get(message.id) ?? 0),
     );
 
   /** Those copies put back over rows that were laid, each in its own place and nowhere else. */
@@ -340,6 +368,20 @@ export function createThreadStore(
       ? held
       : { ...held, ...page.times };
 
+  /** What the stream has brought since its newest snapshot, but for the words being sent. */
+  const keptOver = (): readonly Message[] =>
+    state.messages.filter(
+      (message) => brought.has(message.id) && !sending.has(message.id),
+    );
+
+  /** Whether a page says where that goes: there is none of it, or the page holds a row of it. */
+  const isPlaceable = (page: HistoryPage): boolean => {
+    const kept = keptOver();
+    if (kept.length === 0) return true;
+    const inPage = new Set(page.messages.map((message) => message.id));
+    return kept.some((message) => inPage.has(message.id));
+  };
+
   /**
    * THE NEWEST PAGE, PUT IN PLACE OF WHAT IS HELD. After the server restarted, what this window
    * pieced together from a turn that process never finished is not the record. Where the page does
@@ -352,13 +394,22 @@ export function createThreadStore(
    * than the page's own is above the page, with everything else that was: read again by scrolling
    * up, from the page's own first row. Put after the page, the first rows of a turn longer than a
    * page were drawn under its last.
+   *
+   * WHERE THE PAGE HOLDS NONE OF THEM they are taken for rows the record does not have yet. A
+   * turn's question is in the record before the turn begins, so that is to take it that less than
+   * a page has been written under the turn's newest row since the stream last said how things
+   * stand: so of a page read at once under a snapshot, and what a read made again asks the stream
+   * before it trusts (`isPlaceable`).
    */
-  const putInPlace = (page: HistoryPage, takenBefore: ReadonlySet<string>) => {
+  const putInPlace = (
+    page: HistoryPage,
+    takenBefore: ReadonlySet<string>,
+    read: number,
+  ) => {
+    newestLaid = Math.max(newestLaid, read);
     const inPage = new Set(page.messages.map((message) => message.id));
-    const stand = standing();
-    const kept = state.messages.filter(
-      (message) => brought.has(message.id) && !sending.has(message.id),
-    );
+    const stand = standing(read);
+    const kept = keptOver();
     // Not the ones the server had answered for before this page was asked for (`takenBefore`):
     // the record held those when it was read, and where the page does not, they are above it.
     const sent = state.messages.filter(
@@ -393,11 +444,14 @@ export function createThreadStore(
    *
    * One laying for every read of it — the one under a snapshot, the one when a turn ends in front
    * of somebody, the one when a routine delivers. They were two, and differed in whose copy stood.
+   *
+   * And not at all where a page read after this one is already in (`newestLaid`).
    */
-  const lay = (page: HistoryPage): "laid" | "apart" => {
-    if (isLeftBehind(page)) return "laid";
+  const lay = (page: HistoryPage, read: number): "laid" | "apart" => {
+    if (read < newestLaid || isLeftBehind(page)) return "laid";
     if (isApart(page)) return "apart";
-    const stand = standing();
+    newestLaid = read;
+    const stand = standing(read);
     remember(page);
     const messages = inPlace(withPage(state.messages, page), stand);
     const times = withTimes(state.times, page);
@@ -428,6 +482,8 @@ export function createThreadStore(
     }
     const seen = snapshots;
     const takenBefore = new Set(taken);
+    pageReads += 1;
+    const read = pageReads;
     const page = await deps.readHistory(threadId, null);
     // Closed meanwhile, or another read — a refresh, a restart's — already brought the page.
     if (closed || state.loaded) return;
@@ -451,7 +507,7 @@ export function createThreadStore(
         if (mine === firstReads) void readFirstPage();
         return;
       }
-      putInPlace(page, takenBefore);
+      putInPlace(page, takenBefore, read);
       return;
     }
     // A newer read is out; what happens next is its answer's to say.
@@ -495,7 +551,10 @@ export function createThreadStore(
     landings.clear();
     for (const tell of waiting) tell();
   };
-  const readUnder = async (kind: "resync" | "catchUp"): Promise<void> => {
+  const readUnder = async (
+    kind: "resync" | "catchUp",
+    isAgain = false,
+  ): Promise<void> => {
     if (kind === "resync") isResyncOwed = true;
     snapshotReads += 1;
     const mine = snapshotReads;
@@ -504,34 +563,57 @@ export function createThreadStore(
     const seen = snapshots;
     const takenBefore = new Set(taken);
     snapshotReadsOut += 1;
+    pageReads += 1;
+    const read = pageReads;
     const page = await deps.readHistory(threadId, null);
     snapshotReadsOut -= 1;
     if (closed) return;
     if (page) {
-      // An older read answering late is as good as the newest: the page is the newest either way.
       if (mine === snapshotReads) snapshotRetryMs = RETRY_FIRST_MS;
       /*
-       * BUT NOT ALWAYS TO BE PUT IN PLACE OF WHAT IS HELD. A page read before the newest snapshot
-       * was read across a break: put in place, it takes with it what the stream brought before
-       * that snapshot and the record wrote after the read — a restart's page, where the read began
-       * before the restart. And a page that ends before one already in (`isOutrun`) takes that
-       * one's newest rows with it. Such a page is only laid. A restart stays owed until a page read
-       * under the newest snapshot, and no older than what is held, settles it — and where nothing
-       * is on its way to do that, the page is read again.
+       * A PAGE READ BEFORE THE NEWEST SNAPSHOT IS NOT LAID AT ALL, NOR ONE READ BEFORE A PAGE
+       * ALREADY IN. It was read across a break in the stream, and the snapshot after it started a
+       * read of its own, which is out or will be made again until it is in. An older read
+       * answering late used to count as good as the newest — "the page is the newest either way".
+       * It is not the same page (`newestLaid`): laid after the later one it put part of an answer
+       * back over the whole of it, and put in place it took with it what the stream had brought
+       * before that snapshot.
+       *
+       * And a page that ends before one already in (`isOutrun`) is never put in place: it would
+       * take that one's newest rows with it. A restart stays owed until a page read under the
+       * newest snapshot, and no older than what is held, settles it — and where nothing is on its
+       * way to do that, the page is read again.
+       *
+       * A READ MADE AGAIN DOES NOT PUT ITS PAGE IN PLACE OF WHAT IT CANNOT PLACE. What stays over
+       * a page put in place is what the stream has brought since its snapshot (`brought`) — the
+       * turn as it stood then, laid by the rows the page also holds, and after the page where it
+       * holds none: rows the record does not have yet. That is so of a page read at once. It is
+       * not of one read again after a failure and a wait — a laptop that woke offline in the
+       * middle of a long task: by the time that read is answered the task has written a page of
+       * rows the stream never brought, and its question and first steps, held by no row of the
+       * page, were drawn under its newest. Such a read asks the stream how things stand first
+       * (`askAgain`), and the read under that answer puts the page in place.
        */
-      const mayReplace = seen === snapshots && !isOutrun(page);
-      if (isResyncOwed && mayReplace) {
-        isResyncOwed = false;
-        putInPlace(page, takenBefore);
-      } else if (lay(page) === "apart" && mayReplace) {
-        putInPlace(page, takenBefore);
+      if (seen === snapshots && read > newestLaid) {
+        const mayReplace = !isOutrun(page);
+        const place = () => {
+          if (isAgain && !isPlaceable(page)) {
+            askAgain();
+            return;
+          }
+          isResyncOwed = false;
+          putInPlace(page, takenBefore, read);
+        };
+        if (isResyncOwed && mayReplace) place();
+        else if (lay(page, read) === "apart" && mayReplace) place();
       }
       if (
         isResyncOwed &&
+        !isResuming &&
         snapshotReadsOut === 0 &&
         callOffSnapshotRead === null
       ) {
-        void readUnder("resync");
+        void readUnder("resync", true);
       }
       tellLanded();
       return;
@@ -546,7 +628,7 @@ export function createThreadStore(
     snapshotRetryMs = Math.min(snapshotRetryMs * 2, RETRY_MOST_MS);
     callOffSnapshotRead = later(() => {
       callOffSnapshotRead = null;
-      void readUnder(kind);
+      void readUnder(kind, true);
     }, wait);
   };
   /** The stream has been asked how the turn stands, or the page under its answer is still to come. */
@@ -601,6 +683,8 @@ export function createThreadStore(
       await untilLanded();
       if (closed) return;
       isRefreshReadOut = true;
+      pageReads += 1;
+      const read = pageReads;
       const page = await deps.readHistory(threadId, null);
       if (closed) return;
       if (page) {
@@ -610,12 +694,14 @@ export function createThreadStore(
           await untilLanded();
           return;
         }
+        // (Where that read has landed already, a page read after this one is in: `lay` leaves
+        // this one out, and what the call was for is on the screen.)
         /*
          * A page that does not reach what is held is not laid by this (`isApart`), nor put in place
          * of it: what may stay over a page put in place is told from a snapshot (`brought`), so the
          * stream is asked for one, as when somebody comes back, and the read under it does that.
          */
-        if (lay(page) === "apart") {
+        if (lay(page, read) === "apart") {
           askAgain();
           await untilLanded();
         }
@@ -637,6 +723,14 @@ export function createThreadStore(
         };
       });
     }
+  };
+
+  /** Nothing more is written to what was in flight: the record's word on it is a later page's. */
+  const settle = () => {
+    // No page read before the newest one laid will be laid: what was settled before it is moot.
+    for (const [id, at] of settled) if (at < newestLaid) settled.delete(id);
+    for (const id of live) settled.set(id, pageReads);
+    live.clear();
   };
 
   /**
@@ -681,7 +775,7 @@ export function createThreadStore(
       epochBefore = null;
       snapshots += 1;
       brought.clear();
-      live.clear();
+      settle();
       // The stream has started over, past whatever turn took these: it will not place them now,
       // and they stay where they stand — above what it brings from here on.
       for (const id of [...taken]) placed(id);
@@ -690,7 +784,7 @@ export function createThreadStore(
     const applied = applyFrame(state, frame);
     const isGoing = isTurnGoing(applied.turn);
     // A turn that is over, or another one beginning: nothing more is written to what was live.
-    if (!isGoing || applied.turn?.id !== turnBefore) live.clear();
+    if (!isGoing || applied.turn?.id !== turnBefore) settle();
     // What this frame brought is the stream's: the server has it, and it is nothing a page put in
     // place of what is held may take along.
     const was =
