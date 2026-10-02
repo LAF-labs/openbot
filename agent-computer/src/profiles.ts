@@ -65,6 +65,7 @@ import { deploymentEgress, deploymentEgressLabel } from "./egress";
 import { log } from "./log";
 import { titleOf } from "./page-text";
 import { samePlace, type Whereabouts } from "./whereabouts";
+import { within } from "./within";
 
 /** The viewport, which is what a person's click coordinates are relative to. */
 export const VIEWPORT = { width: 1280, height: 800 };
@@ -257,6 +258,16 @@ const KILL_SETTLE_MS = 1_000;
 
 /** How long a page-level recovery step (close the tab, open another) is given before the browser goes. */
 const RECYCLE_STEP_MS = 2_000;
+
+/**
+ * How long a reset waits for a browser that was already starting when it arrived.
+ *
+ * Playwright's own bound on a browser starting — its default, which the launch below does not
+ * change — so the longest a launch that is going to land can take. A reset always answers
+ * (`computer-routes.ts`): past this it goes on without the launch, as it did for every launch
+ * before it waited for any.
+ */
+const LAUNCH_WAIT_MS = 30_000;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -607,6 +618,22 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    * one.
    */
   let closing: Promise<void> | null = null;
+  /**
+   * The reset in flight, so a launch cannot start on a profile that is being deleted.
+   *
+   * `closing` did not cover it: a reset's close is over, and `closing` cleared, BEFORE its delete
+   * begins. A page asked for meanwhile — the live screen asks every second, a Bot mid-task on its
+   * next step — waited for the close and then started Chromium beside the delete. Measured
+   * 2026-10-02 with a real Chromium on a profile of 6,000 cache files: the page was handed out
+   * 438 ms into a reset that took 671, its browser was signed in, and it was still signed in after
+   * the reset had answered — the one thing the button is pressed to end. (On 600 files the delete
+   * won, and nothing showed.) Upstream OpenBot #554, which keeps one such promise per Bot; there is
+   * one browser here, so there is one.
+   *
+   * Never rejects, and cleared when the reset ends however it ends: a reset that failed must not
+   * be the reason no browser ever starts again.
+   */
+  let resetting: Promise<void> | null = null;
 
   /**
    * Which Bot each open tab belongs to.
@@ -729,11 +756,18 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
 
     const launch = (async () => {
       /*
+       * The reset under way as this launch begins, read before the first wait and waited for
+       * below. One that arrives later is not this launch's to wait for: it waits for this launch
+       * instead (`reset`), and each waiting for the other would be both waiting for ever.
+       */
+      const reset = resetting;
+      /*
        * A browser that is still letting go of this profile gets to finish first. The sweep of
        * singleton locks below assumes no browser of ours is running on this directory, and that is
        * only true once the close has actually completed.
        */
       await closing?.catch(() => undefined);
+      await reset;
       adoption ??= await resolveProfile(root);
       const dir = profileDirectory();
       await sweepLocks(dir);
@@ -1012,33 +1046,66 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
      * directories this change left in place, cookies and all (see `resolveProfile`). A reset that
      * emptied one of them and left four sitting on the volume would be the most dangerous kind of
      * half-true: somebody presses it precisely because they want the logins gone.
+     *
+     * AND NOTHING ELSE IS ON THE PROFILE WHILE IT GOES — which "closed before deleted" promised and
+     * did not deliver, three ways (`tests/reset-race.test.ts`; each failed before this, 8 runs of 8
+     * with the launcher stubbed):
+     *
+     *  - a launch that begins during the reset: it waits for `resetting`, set here before anything
+     *    is awaited;
+     *  - a launch already under way when the reset arrives. `closeBrowser` knows only a browser
+     *    that has finished starting, so the reset found nothing to close and had deleted the
+     *    profile before that browser was up — which then ran on, on a profile that was gone. It is
+     *    waited for, for as long as a launch can take and no longer, and closed like any other;
+     *  - a close already under way, from the idle sweep or a stop: `closeBrowser` answers at once
+     *    when nothing is running, and the delete was over before that browser had gone — and going
+     *    is when Chromium writes its cookies out (`closeAndWait`). It is waited for too.
+     *
+     * One reset at a time, each after the one before it.
      */
     async reset(botId: string): Promise<void> {
-      await closeBrowser();
-      const entries = await readdir(root, { withFileTypes: true }).catch(
-        () => [],
-      );
-      await Promise.all(
-        entries
-          .filter((entry) => entry.isDirectory() && entry.name !== STATE_DIR)
-          .map((entry) =>
-            rm(join(root, entry.name), { recursive: true, force: true }).catch(
-              () => undefined,
+      const earlier = resetting;
+      const launching = starting;
+      const { promise: over, resolve: finish } = Promise.withResolvers<void>();
+      resetting = over;
+      try {
+        await earlier;
+        if (launching) await within(LAUNCH_WAIT_MS, launching);
+        await closeBrowser();
+        await closing?.catch(() => undefined);
+        const entries = await readdir(root, { withFileTypes: true }).catch(
+          () => [],
+        );
+        await Promise.all(
+          entries
+            .filter((entry) => entry.isDirectory() && entry.name !== STATE_DIR)
+            .map((entry) =>
+              rm(join(root, entry.name), {
+                recursive: true,
+                force: true,
+              }).catch(() => undefined),
             ),
-          ),
-      );
-      // Its own state too, which used to go because it lived inside the directory above. Only this
-      // Bot's: another Bot's control file says a PERSON is driving, and losing it hands their
-      // browser back to a Bot (`control.ts`, `restoredControl`) — the one direction that is never
-      // safe to be careless in.
-      await rm(stateDirectoryFor(botId), {
-        recursive: true,
-        force: true,
-      }).catch(() => undefined);
-      // A clean machine points at the default again: there is nothing left to have adopted.
-      adoption = { directory: DEFAULT_PROFILE_DIR, adoptedFrom: null, kept: 0 };
-      adoptionTold = true;
-      await writePointer(root, adoption);
+        );
+        // Its own state too, which used to go because it lived inside the directory above. Only
+        // this Bot's: another Bot's control file says a PERSON is driving, and losing it hands
+        // their browser back to a Bot (`control.ts`, `restoredControl`) — the one direction that
+        // is never safe to be careless in.
+        await rm(stateDirectoryFor(botId), {
+          recursive: true,
+          force: true,
+        }).catch(() => undefined);
+        // A clean machine points at the default again: there is nothing left to have adopted.
+        adoption = {
+          directory: DEFAULT_PROFILE_DIR,
+          adoptedFrom: null,
+          kept: 0,
+        };
+        adoptionTold = true;
+        await writePointer(root, adoption);
+      } finally {
+        if (resetting === over) resetting = null;
+        finish();
+      }
     },
 
     /**
