@@ -26,8 +26,8 @@ import {
  *     and it closed `~~` — so a single 네~~! struck everything after it, in a finished answer too.
  *     `markdownRemend` stops that one completion.
  *  3. TWO PAIRS OF TONE IN A PARAGRAPH. 네~~! 알겠습니다~~! is, to the letter, `~~! 알겠습니다~~`.
- *     `toneTildes` reads what was struck: text that begins with the punctuation a sentence ends on,
- *     right after a word, was not struck by anybody.
+ *     `toneTildes` reads what was struck: text that begins with the punctuation a sentence ends on
+ *     and the space after it, right after a word, was not struck by anybody.
  *
  * All of it arrived with the Korean-friendly strikethrough plugin (2026-09-25) and was in every
  * answer with a friendly ending since.
@@ -42,14 +42,27 @@ export const markdownRemend: NonNullable<StreamdownProps["remend"]> = {
 /** As much of the syntax tree as `toneTildes` reads. */
 type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[] };
 
-/** The punctuation a sentence ends or pauses on — what follows a tilde of tone, never what opens struck text. */
-const SENTENCE_PUNCTUATION = /^[!?.,…:;)\]}！？。，、：；）]/;
+/** The punctuation a sentence ends or pauses on, and the space that follows it. */
+const ENDS_A_SENTENCE = /^[!?.,…:;)\]}！？。，、：；）]+\s/;
+const ONLY_PUNCTUATION = /^[!?.,…:;)\]}！？。，、：；）]+$/;
 
-/** The first words inside a node, or nothing when it does not begin with words. */
-function firstWords(node: MarkdownNode): string {
-  const first = node.children?.[0];
-  if (!first) return "";
-  return first.type === "text" ? (first.value ?? "") : "";
+/**
+ * Whether what was struck begins the way the rest of a sentence does after a tilde of tone: with
+ * the punctuation the sentence ended on, and then a space or a new line.
+ *
+ * THE SPACE IS THE SIGNAL. What is struck on purpose may begin with punctuation too, and hang on a
+ * Korean word just the same — `버전~~.old~~`, a comma taken out, `값은~~.5~~` — and the first version
+ * of this put the tildes back for every one of them (review, first round). What follows the
+ * punctuation of a struck name is the name; what follows the punctuation a sentence ended on is the
+ * next sentence, after a space.
+ */
+function beginsAfterSentence(struck: MarkdownNode): boolean {
+  const [first, second] = struck.children ?? [];
+  if (first?.type !== "text") return false;
+  const words = first.value ?? "";
+  if (ENDS_A_SENTENCE.test(words)) return true;
+  // The same, where the answer broke the line by hand.
+  return ONLY_PUNCTUATION.test(words) && second?.type === "break";
 }
 
 /** Whether what stands before a node touches it: a word, a mark, anything but space or nothing. */
@@ -67,7 +80,7 @@ function putToneBack(parent: MarkdownNode): void {
     if (
       node.type === "delete" &&
       isAttached(children[index - 1]) &&
-      SENTENCE_PUNCTUATION.test(firstWords(node))
+      beginsAfterSentence(node)
     ) {
       const tilde = (): MarkdownNode => ({ type: "text", value: "~~" });
       children.splice(index, 1, tilde(), ...(node.children ?? []), tilde());
@@ -82,8 +95,9 @@ function putToneBack(parent: MarkdownNode): void {
  * See 3 above. A transform over the tree the parsers made, not a second reading of the text: it
  * undoes one decision of theirs where the result says it was wrong.
  *
- * Both conditions, because each alone is something people write: `~~.env~~ 대신` strikes a name that
- * begins with a full stop, after a space; `가격은~~만원~~팔천 원` strikes right after a word.
+ * Both conditions, because each alone is something people write: `~~. 그리고~~ 대신` strikes the end
+ * of one sentence and the start of the next, after a space; `가격은~~만원~~팔천 원` and
+ * `버전~~.old~~` strike right after a word.
  */
 function toneTildes() {
   return (tree: unknown) => putToneBack(tree as MarkdownNode);
