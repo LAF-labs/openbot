@@ -22,6 +22,7 @@
         "hiddenTitle": true,
         "visible": false,
         "zoomHotkeysEnabled": false,
+        "dragDropEnabled": false,
         "backgroundThrottling": "disabled"
       }
     ],

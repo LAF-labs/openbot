@@ -2754,6 +2754,7 @@ export const ko: Record<string, string> = {
   "Try it now": "지금 해 보기",
   // attach
   "Attach a file": "파일 붙이기",
+  "Let go to attach it.": "여기에 놓으면 파일이 붙어요.",
   "Attached files": "붙인 파일",
   "Attaching…": "붙이는 중…",
   "Remove {name}": "{name} 빼기",

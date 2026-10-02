@@ -174,6 +174,26 @@ capability were added: the page only listens, which `core:default` already
 allows. Unmeasured on Windows, where WebView2 hands the handler the finished
 path itself.
 
+### A file dropped on the window is the page's
+
+`dragDropEnabled` is `false` in both configs. Tauri's own file-drop handler is
+on unless a config turns it off, and where it is on the page never hears a
+drop: tauri-runtime-wry 2.11.4 installs a wry handler that answers `true` to
+every drag event, and wry 0.55.1's `performDragOperation:` then returns YES
+without handing the drop to WebKit (`wkwebview/drag_drop.rs`), so no `drop`
+reaches the DOM. What Tauri offers instead is the file's PATH, through an event
+of its own — which this page, a remote origin with no file-system grant, could
+do nothing with. The composer takes files the way a web page does, and since
+2026-10-02 takes them wherever in the window they are let go
+(`composer.tsx`, on the document), with the app refusing any file nothing took
+so that no screen is replaced by one (`lib/stray-drop.ts`).
+
+**Read from the two libraries' source, not measured.** A drop needs a hand on
+the pointer, and nothing in this repository's tooling can make one in a native
+window. The page's half is measured — in Chromium, a file let go over the
+transcript is attached, and the cue is drawn while it is held. Whoever next
+has the app open: drag a spreadsheet onto the conversation and see the chip.
+
 ## Awake when the window is not
 
 Closing the window used to end the process, which meant "a Bot is waiting for

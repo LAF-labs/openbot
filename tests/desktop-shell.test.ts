@@ -16,6 +16,7 @@ function read(path: string): string {
 type WindowConfig = {
   label: string;
   create?: boolean;
+  dragDropEnabled?: boolean;
   url?: string;
   minWidth?: number;
   titleBarStyle?: string;
@@ -247,6 +248,31 @@ test("the shell builds the one window its config describes, and hears its downlo
   // The first download makes macOS ask about the Downloads folder; this is the reason it shows.
   expect(read("desktop/src-tauri/Info.plist")).toMatch(
     /<key>NSDownloadsFolderUsageDescription<\/key>\s*<string>[^<]+<\/string>/,
+  );
+});
+
+/**
+ * A FILE DROPPED ON THE WINDOW IS THE PAGE'S.
+ *
+ * Tauri's own file-drop handler is on unless a config turns it off, and where it is on the page
+ * never hears a drop: tauri-runtime-wry 2.11.4 installs a wry handler that answers `true` to every
+ * drag event, and wry 0.55.1's `performDragOperation:` then returns YES without handing the drop
+ * to WebKit (`wkwebview/drag_drop.rs`), so no `drop` reaches the DOM. Tauri offers the file's PATH
+ * through an event of its own instead, which this page — a remote origin with no file-system
+ * grant — could do nothing with. The composer takes files the way a web page does, so the window
+ * leaves drops to the webview.
+ *
+ * Read from the two libraries' source, not measured: a drop needs a hand on the pointer.
+ */
+test("a file dropped on the window is left to the page", () => {
+  for (const path of [RELEASE_CONFIG, DEV_CONFIG]) {
+    const window = json<TauriConfig>(path).app?.windows?.[0];
+    expect(window?.dragDropEnabled).toBe(false);
+  }
+  // And the page is listening for it, on the document, wherever in the window the file lands.
+  const composer = read("app/src/components/channels/composer/composer.tsx");
+  expect(composer).toContain(
+    'document.addEventListener("drop", handleDropped)',
   );
 });
 

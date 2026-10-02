@@ -12,11 +12,11 @@ import { PromptArea, type PromptAreaHandle } from "prompt-area";
 import { type Segment, text as textSegment } from "prompt-area/helpers";
 import {
   type ClipboardEvent,
-  type DragEvent,
   type FormEvent,
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -70,6 +70,11 @@ const MAX_HEIGHT_PX = 220;
  */
 const COMPACT_MIN_HEIGHT_PX = 26;
 const COMPACT_MAX_HEIGHT_PX = 104;
+/**
+ * How long after the last `dragover` a file is taken to have left the window. A browser sends one
+ * every few hundred milliseconds while a file is held over the page, whether or not it moves.
+ */
+const DRAG_QUIET_MS = 600;
 
 type Sources = {
   commands: readonly CommandOption[];
@@ -316,27 +321,53 @@ export function Composer({
     fileInput.current?.click();
   };
 
-  const handleDragOver = (event: DragEvent<HTMLFormElement>) => {
-    if (!attach || !event.dataTransfer.types.includes("Files")) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (event: DragEvent<HTMLFormElement>) => {
-    // Leaving for a child of the form is not leaving the form.
-    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      return;
-    }
-    setIsDragging(false);
-  };
-
-  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
-    if (!attach || event.dataTransfer.files.length === 0) return;
-    event.preventDefault();
-    setIsDragging(false);
-    handleFiles([...event.dataTransfer.files]);
-  };
+  /*
+   * A FILE DROPPED ANYWHERE ON THE WINDOW IS FOR THIS BOX.
+   *
+   * The drop used to be taken by the form alone: a strip 49px tall at the bottom of a window
+   * 760px tall (measured at 1200 wide), under a conversation that is where anybody aims a file.
+   * A file let go over the transcript was not attached — and in a Chromium tab the browser then
+   * did what it does with a file nothing took, and opened it in place of the app.
+   *
+   * So the document is listened to, for as long as there is somewhere to keep a file (`attach`).
+   * On the document rather than the window, so that this has answered by the time the app's own
+   * guard against stray drops (`lib/stray-drop.ts`, on the window) sees the event.
+   *
+   * NO `dragleave`. WebKit reports every `dragleave` with no `relatedTarget`, so "left the window"
+   * and "crossed from one bubble to the next" look the same there and the cue flickers. `dragover`
+   * keeps arriving for as long as a file is held over the page, moving or not, so the cue is put
+   * away when it stops arriving.
+   */
+  const takeDropped = useEffectEvent((files: File[]) => handleFiles(files));
+  const canAttach = Boolean(attach);
+  useEffect(() => {
+    if (!canAttach) return;
+    let quiet: ReturnType<typeof setTimeout> | null = null;
+    const carriesFiles = (event: globalThis.DragEvent) =>
+      event.dataTransfer?.types.includes("Files") ?? false;
+    const handleOver = (event: globalThis.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setIsDragging(true);
+      if (quiet) clearTimeout(quiet);
+      quiet = setTimeout(() => setIsDragging(false), DRAG_QUIET_MS);
+    };
+    const handleDropped = (event: globalThis.DragEvent) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      if (quiet) clearTimeout(quiet);
+      setIsDragging(false);
+      takeDropped([...(event.dataTransfer?.files ?? [])]);
+    };
+    document.addEventListener("dragover", handleOver);
+    document.addEventListener("drop", handleDropped);
+    return () => {
+      if (quiet) clearTimeout(quiet);
+      document.removeEventListener("dragover", handleOver);
+      document.removeEventListener("drop", handleDropped);
+    };
+  }, [canAttach]);
 
   /**
    * A pasted picture becomes an attachment. Only when the clipboard holds no TEXT: a range copied
@@ -633,6 +664,16 @@ export function Composer({
             {attachNotice}
           </p>
         ) : null}
+        {/* Said in words too: a dashed hairline on a box at the bottom is easy to miss from the
+            middle of the conversation, which is where the file is being held. */}
+        {isDragging ? (
+          <p
+            className="mb-2 text-muted-foreground text-sm"
+            data-testid="composer-drop-cue"
+          >
+            {t("Let go to attach it.")}
+          </p>
+        ) : null}
         <form
           aria-busy={isBusy}
           className={cn(
@@ -662,9 +703,6 @@ export function Composer({
             isDragging && "border-ring border-dashed",
           )}
           data-testid="composer"
-          onDragLeave={handleDragLeave}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
           onPaste={handlePaste}
           onSubmit={handleFormSubmit}
         >

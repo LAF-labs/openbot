@@ -8,6 +8,7 @@ import { authKeys } from "./lib/auth/queries";
 import { watchSession } from "./lib/auth/session-watch";
 import { listenForStaleChunks } from "./lib/build-reload";
 import { inShell } from "./lib/notifications/shell";
+import { ignoreStrayDrops } from "./lib/stray-drop";
 import {
   configureScreenErrorReports,
   listenForScreenErrors,
@@ -47,6 +48,8 @@ listenForScreenErrors();
  * the first route's own chunk can be the one that fails.
  */
 listenForStaleChunks();
+// A file let go where nothing takes it must not become the page (`lib/stray-drop.ts`).
+ignoreStrayDrops();
 
 const rootElement = document.getElementById("root");
 
