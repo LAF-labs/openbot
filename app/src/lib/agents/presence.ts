@@ -169,16 +169,18 @@ export function useTurnPhase(botId: string | undefined): TurnPhase {
  * written when leaving the conversation ended the turn. It no longer does.
  *
  * So two more facts are kept: whether a conversation of the Bot's is on this screen at all, and
- * when the last one left with its turn still going. With one on screen, its word is the only one —
- * the list is a poll and is the staler of the two. With none, the server's list says whether a turn
- * is going; and in the moment between leaving and that list being read again, the turn that was
- * going when the conversation left is still going.
+ * what the last one to leave knew — its turn going or not — and when. With one on screen, its word
+ * is the only one: the list is a poll and is the staler of the two. With none, the server's list
+ * says whether a turn is going, once it is newer than that last word; until then the last word
+ * stands, whichever way it went.
  */
 
 /** How many mounted conversations are telling each Bot's turn. */
 const tellers = new Map<string, number>();
-/** When the last of them left with the turn still going. */
-const leftGoing = new Map<string, number>();
+
+/** What the last conversation to leave knew of the turn, and when it left. */
+export type LastWord = { at: number; going: boolean };
+const lastWords = new Map<string, LastWord>();
 
 function tellersChanged(): void {
   for (const watcher of watchers) watcher();
@@ -187,19 +189,18 @@ function tellersChanged(): void {
 /** A conversation of this Bot's has come on screen: its word on the turn is the one that counts. */
 export function startTelling(botId: string): void {
   tellers.set(botId, (tellers.get(botId) ?? 0) + 1);
-  leftGoing.delete(botId);
+  lastWords.delete(botId);
   tellersChanged();
 }
 
-/** It has left. `goingAt` is the moment, when its turn was still going; null when it was not. */
-export function stopTelling(botId: string, goingAt: number | null): void {
+/** It has left, at `at`, with its turn going or not: the last thing this screen knew first-hand. */
+export function stopTelling(botId: string, at: number, going: boolean): void {
   const left = (tellers.get(botId) ?? 1) - 1;
   if (left > 0) {
     tellers.set(botId, left);
   } else {
     tellers.delete(botId);
-    if (goingAt === null) leftGoing.delete(botId);
-    else leftGoing.set(botId, goingAt);
+    lastWords.set(botId, { at, going });
   }
   tellersChanged();
 }
@@ -208,8 +209,8 @@ export function isTurnTold(botId: string | undefined): boolean {
   return botId ? (tellers.get(botId) ?? 0) > 0 : false;
 }
 
-export function readLeftGoingAt(botId: string | undefined): number | null {
-  return botId ? (leftGoing.get(botId) ?? null) : null;
+export function readLastWord(botId: string | undefined): LastWord | null {
+  return botId ? (lastWords.get(botId) ?? null) : null;
 }
 
 export function useIsTurnTold(botId: string | undefined): boolean {
@@ -217,16 +218,20 @@ export function useIsTurnTold(botId: string | undefined): boolean {
   return useSyncExternalStore(watchTurns, read, read);
 }
 
-export function useLeftGoingAt(botId: string | undefined): number | null {
-  const read = () => readLeftGoingAt(botId);
+/** The same object until the next leaving, so it is a snapshot React can compare. */
+export function useLastWord(botId: string | undefined): LastWord | null {
+  const read = () => readLastWord(botId);
   return useSyncExternalStore(watchTurns, read, read);
 }
 
 /**
  * Whether the Bot's turn is going where this screen cannot see it.
  *
- * Never while a conversation is telling it. Otherwise the server's list decides — and a list read
- * before the conversation left cannot say the turn it left behind has ended.
+ * Never while a conversation is telling it. Once it has left, whichever is newer decides: the
+ * conversation's last word, or the server's list. A list that arrived before the conversation left
+ * is the older of the two both ways round — it cannot say the turn left behind has ended, and it
+ * cannot bring back a turn the conversation saw end. With no conversation ever on this screen, the
+ * list is all there is.
  *
  * `listedAt` is when the list ARRIVED. That it was also asked for after the leaving is
  * `usePublishTurn`'s doing: it drops whatever was in flight as the conversation goes.
@@ -237,26 +242,40 @@ export function turnOffScreen(facts: {
   isListed: boolean;
   /** When that list was read. Zero when it never has been. */
   listedAt: number;
-  leftGoingAt: number | null;
+  lastWord: LastWord | null;
 }): boolean {
   if (facts.isTold) return false;
-  if (facts.isListed) return true;
-  return facts.leftGoingAt !== null && facts.listedAt < facts.leftGoingAt;
+  if (facts.lastWord && facts.listedAt < facts.lastWord.at) {
+    return facts.lastWord.going;
+  }
+  return facts.isListed;
 }
 
-/** Publishes a phase for as long as the caller is mounted; idle again when it is not. */
-export function usePublishTurn(botId: string | undefined, phase: TurnPhase) {
+/**
+ * Publishes a phase for as long as the caller is mounted; idle again when it is not.
+ *
+ * `isHeard` is whether the caller knows how its turn stands. A conversation that has just come on
+ * screen does not, until its stream has answered: its "idle" then is "not told yet", and counting it
+ * as a word on the turn made the pill read 쉬는 중 for a quarter of a second on every return to a
+ * conversation whose Bot was mid-turn (measured 2026-10-02: 일하는 중 → 쉬는 중 → 일하는 중). Until it
+ * has heard, whatever spoke before it — the list, the last word — goes on speaking.
+ */
+export function usePublishTurn(
+  botId: string | undefined,
+  phase: TurnPhase,
+  isHeard = true,
+) {
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!botId) return;
     publishTurn(botId, phase);
   }, [botId, phase]);
   useEffect(() => {
-    if (!botId) return;
+    if (!botId || !isHeard) return;
     startTelling(botId);
     return () => {
       const wasGoing = readTurn(botId) !== "idle";
-      stopTelling(botId, wasGoing ? Date.now() : null);
+      stopTelling(botId, Date.now(), wasGoing);
       publishTurn(botId, "idle");
       if (wasGoing) {
         /*
@@ -274,5 +293,5 @@ export function usePublishTurn(botId: string | undefined, phase: TurnPhase) {
           );
       }
     };
-  }, [botId, queryClient]);
+  }, [botId, isHeard, queryClient]);
 }

@@ -65,13 +65,19 @@ afterAll(async () => {
 });
 
 /** The server of one conversation, and its own list of who is working. */
-function server(options: { going: boolean; holdFirstList?: boolean }) {
+function server(options: {
+  going: boolean;
+  holdFirstList?: boolean;
+  /** The conversation's stream is left unanswered until `turns.answerStreams()`. */
+  holdStreams?: boolean;
+}) {
   const turns = turnServer({
     channelId: CHANNEL,
     history: [ASKED],
     turn: options.going
       ? { id: "turn-1", status: "running", asked: [ASKED.id] }
       : null,
+    ...(options.holdStreams ? { holdStreams: true } : {}),
   });
   const state = { listed: options.going, workingReads: 0 };
   /** The first list, kept on its way: written before the turn began, so it names nobody. */
@@ -226,6 +232,64 @@ describe("the pill, once the conversation has left the screen", () => {
     await view.waitFor(
       () => pill(view.host) === "Ready",
       "the pill to follow the conversation",
+      4000,
+    );
+  });
+
+  /*
+   * Codex, second round on the pull request. The list was read while the turn ran and names it; the
+   * conversation then sees the turn end — stopped, with nothing said, so no frame refreshes the
+   * list — and the person leaves. The old list must not bring the turn back on the next screen.
+   */
+  test("a turn the conversation saw end stays ended on the next screen, whatever the old list says", async () => {
+    const { api, turns, state } = server({ going: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => pill(view.host) === "Thinking",
+      "the conversation to tell its turn",
+      6000,
+    );
+    await view.waitFor(
+      () => state.workingReads >= 1,
+      "the list, read while the turn ran",
+    );
+    await view.settle(50);
+    await acted(() => turns.announce("stopped"));
+    await view.waitFor(
+      () => pill(view.host) === "Ready",
+      "the pill to follow the conversation",
+      4000,
+    );
+    const readsBefore = state.workingReads;
+
+    await view.navigate("/made");
+    await view.settle(80);
+    expect(pill(view.host)).toBe("Ready");
+    // Nothing asked the server again: it is the conversation's last word that holds the pill.
+    expect(state.workingReads).toBe(readsBefore);
+  });
+
+  /*
+   * Measured on the running app, 2026-10-02, with the first version of this fix: back in the
+   * conversation mid-turn, the pill read 일하는 중 (소식) → 쉬는 중 for a quarter of a second → 일하는
+   * 중. A conversation that has just come on screen has not heard how its turn stands; its "idle"
+   * was being taken as its word.
+   */
+  test("a conversation that has not heard its turn yet does not speak for it", async () => {
+    const { api, turns } = server({ going: true, holdStreams: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    // On screen, its stream not yet answered: the server's list is still the one that knows.
+    await view.waitFor(
+      () => pill(view.host) === "Busy working",
+      "the list to speak while the conversation has not heard",
+      6000,
+    );
+    await view.settle(60);
+    expect(pill(view.host)).toBe("Busy working");
+    await acted(() => turns.answerStreams());
+    await view.waitFor(
+      () => pill(view.host) === "Thinking",
+      "the conversation to tell its turn once it has heard",
       4000,
     );
   });

@@ -6,7 +6,7 @@ import {
   presenceOf,
   turnOffScreen,
   useIsTurnTold,
-  useLeftGoingAt,
+  useLastWord,
   useTurnPhase,
 } from "@/lib/agents/presence";
 import { workingQueryOptions } from "@/lib/agents/working";
@@ -37,7 +37,7 @@ export function usePresence(botId: string | undefined): Presence {
   const runs = (working.data ?? []).filter((run) => run.agentId === botId);
   const isRoutineRunning = runs.some((run) => run.origin === "routine");
   const isTold = useIsTurnTold(botId);
-  const leftGoingAt = useLeftGoingAt(botId);
+  const lastWord = useLastWord(botId);
   return presenceOf({
     turn,
     isBrowsing,
@@ -51,7 +51,7 @@ export function usePresence(botId: string | undefined): Presence {
       // Whatever is not a routine is the conversation's own turn (`lib/agents/working.ts`).
       isListed: runs.some((run) => run.origin !== "routine"),
       listedAt: working.dataUpdatedAt,
-      leftGoingAt,
+      lastWord,
     }),
   });
 }
