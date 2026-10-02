@@ -14,10 +14,14 @@ import {
 } from "react";
 import { CarryOnNotice } from "@/components/channels/carry-on-notice";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
-import { LEADING_SKILL } from "@/components/channels/composer/draft";
+import {
+  type ComposerDraft,
+  LEADING_SKILL,
+} from "@/components/channels/composer/draft";
 import {
   claimAutoSend,
   forgetUnsent,
+  isWaitingForBot,
   keepUnsent,
   noteResent,
   readUnsent,
@@ -196,7 +200,10 @@ export function ServerChannelChat({
   const skillCommands = useSkillCommands(runtimeAgentId);
   const toolsSettled = useToolsSettled(runtimeAgentId);
 
-  /** What this device kept because the server never got it, drawn in the thread until it does. */
+  /**
+   * What this device kept: words the server never got, drawn in the thread until it does, and
+   * words typed while the Bot worked, drawn under it as waiting until the turn is over.
+   */
   const unsent = useUnsent(channel.id);
   /** Message id to the moment this tab sent it, for separators the server has not stamped yet. */
   const [sentAt, setSentAt] = useState<Record<string, string>>({});
@@ -245,10 +252,22 @@ export function ServerChannelChat({
     outgoing: Omit<UnsentMessage, "autoTried">[],
     retrying: Message | null,
   ): Promise<void> => {
+    /*
+     * The same skill asked for twice in one hand-over is one instruction: said again, it puts the
+     * same paragraph in front of the Bot twice and tells it nothing new. The queue did this when it
+     * joined what was parked into one message (`joinQueued`); parked messages go as themselves
+     * now, so it is done here.
+     */
+    const given = new Set<string>();
+    const firstTime = (instruction: string) => {
+      if (given.has(instruction)) return false;
+      given.add(instruction);
+      return true;
+    };
     const messages: Message[] = retrying
       ? [retrying]
       : outgoing.flatMap((message) => [
-          ...message.instructions.map(
+          ...message.instructions.filter(firstTime).map(
             (instruction): Message => ({
               content: instruction,
               id: crypto.randomUUID(),
@@ -300,13 +319,35 @@ export function ServerChannelChat({
      * THE ONE FAILURE THAT CAN LOSE WHAT SOMEBODY TYPED: the server never took it — unreachable, or
      * another window's turn got there first. Kept on this device and drawn as not sent, which says
      * so instead of a red line, and sent again by itself when the connection or the turn frees up.
+     *
+     * What was waiting for the Bot and went along with a new send (`say`) goes on waiting only when
+     * the server said a turn is going — it is still behind that turn. Refused any other way, it was
+     * tried and did not leave: an unsent message like any other. Left marked, it would be drawn as
+     * "보낼 예정" under no job at all.
+     *
+     * What the send-by-itself claimed arrives here with its mark already off (`resend`), so refused
+     * for any reason it is "보내지 못함" and the next send is the person's. That includes another
+     * window's turn getting in first at the instant this one's ended — where the queue in the mount
+     * went once more by itself after that turn. Not done here: going again by itself needs to know
+     * the other turn has been heard of, or it sends into the same refusal for as long as the stream
+     * says nothing.
      */
-    for (const message of outgoing) keepUnsent(channel.id, message);
+    const isBehindATurn = sent.reached && sent.code === "laf:turn_in_progress";
+    for (const tried of outgoing) {
+      const { waiting, ...message } = tried;
+      keepUnsent(channel.id, waiting && isBehindATurn ? tried : message);
+    }
     store.removeLocal(drawn.map((message) => message.id));
     if (sent.reached && sent.code !== "laf:turn_in_progress") {
       setSendFailure("laf:turn_failed");
     }
   };
+
+  /** What the `/` skills a message was typed with tell the Bot, which goes in front of it. */
+  const instructionsOf = (commandIds: readonly string[]) =>
+    commandIds
+      .map((id) => skillCommands.find((command) => command.id === id)?.prompt)
+      .filter((instruction): instruction is string => Boolean(instruction));
 
   /** Send a person's turn: what the composer sends, the compose screen's seed, a card's button. */
   const say = async (
@@ -337,16 +378,77 @@ export function ServerChannelChat({
       say(text, instructions, attachments),
   );
 
-  /** Send again what this device kept because the server never got it. */
+  /**
+   * Typed while the Bot has the turn: kept on this device as waiting for the Bot (`outbox.ts`), and
+   * drawn under the conversation as that. The send below takes it when the turn is over.
+   *
+   * It used to be parked in `ConversationView`'s state, which a reload emptied without a word —
+   * and reloading, or closing the laptop, is what a turn the server owns is for (review,
+   * 2026-10-02). Kept as it will be sent: its own id, and the instructions of its `/` skills
+   * already read out, as a message that failed to leave is kept.
+   */
+  const park = (draft: ComposerDraft) => {
+    keepUnsent(channel.id, {
+      id: crypto.randomUUID(),
+      text: draft.text.trim(),
+      instructions: instructionsOf(draft.commandIds),
+      at: new Date().toISOString(),
+      waiting: true,
+      ...(draft.attachments?.length ? { attachments: draft.attachments } : {}),
+    });
+  };
+
+  /**
+   * Whether what this device kept may go by itself: the page is in, the stream has said how the
+   * turn stands, and the conversation can still be answered.
+   *
+   * THE STREAM HAS TO HAVE SPOKEN. The page and the stream are opened together and either can
+   * arrive first; with the page in and no snapshot yet, `going` is false only because nobody has
+   * said otherwise. A correction left waiting by the last page load was sent then, into the turn it
+   * was waiting behind, and refused (measured in `queued-message-kept.test.tsx`).
+   *
+   * AND NOT INTO A CONVERSATION WHOSE BOT IS GONE. The queue refused to drain while the composer
+   * was disabled, for the same reason: the screen has already said the conversation can no longer
+   * reply. What waits stays on screen, under that notice.
+   */
+  const mayGoByItself =
+    thread.loaded && thread.epoch !== null && channel.active;
+
+  /**
+   * Send what this device kept: what was waiting for the Bot, for the first time, and what the
+   * server never got, again. By itself once (`claimAutoSend`), or all of it on the person's press.
+   */
   const resend = async (automatic: boolean) => {
     if (busy) return;
+    if (automatic && !mayGoByItself) return;
     const messages = automatic
       ? claimAutoSend(channel.id)
       : [...readUnsent(channel.id)];
     if (messages.length === 0) return;
-    if (automatic) noteResent(messages.map((message) => message.id));
+    // "다시 연결돼서 보냈어요" is said of what had failed to leave, not of words going for the first time.
+    if (automatic) {
+      noteResent(
+        messages
+          .filter((message) => !message.waiting)
+          .map((message) => message.id),
+      );
+    }
+    // The person's line on the roster, when their words go: what a queue draining through `say` did.
+    report(
+      messages
+        .filter(isWaitingForBot)
+        .map(
+          (message) =>
+            message.text ||
+            (message.attachments ?? []).map((part) => part.filename).join(", "),
+        )
+        .join("\n"),
+    );
     await handOver(
-      messages.map(({ autoTried: _autoTried, ...message }) => message),
+      // Its mark comes off with the send: one that fails is not sent, not waiting (`handOver`).
+      messages.map(
+        ({ autoTried: _autoTried, waiting: _waiting, ...message }) => message,
+      ),
       null,
     );
   };
@@ -520,21 +622,34 @@ export function ServerChannelChat({
   }, [store, channel.id]);
 
   // Kept words from before a reload go once the page is in, if the connection is there to take them.
-  const loaded = thread.loaded;
   useEffect(() => {
-    if (!loaded || isSocketLost() || navigator.onLine === false) return;
+    if (!mayGoByItself || isSocketLost() || navigator.onLine === false) return;
     if (readUnsent(channel.id).some((message) => !message.autoTried)) {
       void resendNow(true);
     }
-  }, [loaded, channel.id]);
+  }, [mayGoByItself, channel.id]);
 
-  // A turn that ends frees the conversation for what another window's turn kept waiting.
+  /*
+   * A TURN THAT ENDS FREES THE CONVERSATION for what was kept waiting behind it: the corrections
+   * somebody typed while the Bot worked, and what another window's turn got in front of.
+   *
+   * ON THE TURN BEING OVER, HOWEVER IT ENDED — finished, failed or stopped all arrive as `going`
+   * falling, so a correction parked and then Stop pressed is what runs next, with no stop path to
+   * forget (`composer/queue.ts`).
+   *
+   * NOT ON WHAT IS KEPT CHANGING, though that would look safer. Another tab of this conversation
+   * parks a correction while its own send is still on its way; this tab, which has heard of no
+   * turn yet, would take the correction the moment it appeared and send it ahead of the message
+   * it corrects. The composer parks only while it sees a turn in flight, and it sees that from the
+   * same `going` and `sending` this reads, so the edge that frees the composer is the one that
+   * sends what was parked.
+   */
   useEffect(() => {
-    if (going || sending > 0 || !loaded) return;
+    if (going || sending > 0 || !mayGoByItself) return;
     if (readUnsent(channel.id).some((message) => !message.autoTried)) {
       void resendNow(true);
     }
-  }, [going, sending, loaded, channel.id]);
+  }, [going, sending, mayGoByItself, channel.id]);
 
   // The compose screen's first message, sent once.
   const seedSent = useRef(false);
@@ -574,10 +689,17 @@ export function ServerChannelChat({
   );
 
   const inThread = new Set(thread.messages.map((message) => message.id));
+  const notInThread = unsent.filter((message) => !inThread.has(message.id));
+  /*
+   * WAITING FOR THE BOT IS NOT SAID YET. What was parked is drawn under the conversation as waiting
+   * (`Queued`), never in it: a row in the conversation is the newest thing said, and the transcript
+   * reads "생각 중", the half answer and 다시 시도 off whatever row is last.
+   */
+  const waitingForTurn = notInThread.filter(isWaitingForBot);
   const drawn = [
     ...transcriptMessages(thread.messages, seed),
-    ...unsent
-      .filter((message) => !inThread.has(message.id))
+    ...notInThread
+      .filter((message) => !isWaitingForBot(message))
       .map(
         (message): Message => ({
           content: message.text,
@@ -728,22 +850,23 @@ export function ServerChannelChat({
                 : undefined
             }
             onSubmit={async (draft) => {
-              const skillInstructions = draft.commandIds
-                .map(
-                  (id) =>
-                    skillCommands.find((command) => command.id === id)?.prompt,
-                )
-                .filter((instruction): instruction is string =>
-                  Boolean(instruction),
-                );
-              await say(draft.text, skillInstructions, draft.attachments ?? []);
+              await say(
+                draft.text,
+                instructionsOf(draft.commandIds),
+                draft.attachments ?? [],
+              );
             }}
             onStop={handleStop}
             placeholder={
               botName ? t("Ask {name}", { name: botName }) : undefined
             }
             pending={busy}
-            queueWhileBusy
+            // Typed while the Bot works: kept on this device, not in the mount (`park`).
+            parked={{
+              messages: waitingForTurn,
+              onPark: park,
+              onRemove: (id) => forgetUnsent(channel.id, [id]),
+            }}
             stoppable={going}
             stoppedCode={runError ?? undefined}
             noticeCode={thread.notice ?? undefined}

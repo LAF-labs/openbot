@@ -31,8 +31,12 @@ import { BOT_ID, channelServer, THREAD_ID } from "./channel-server";
 type StreamHandler = ((event: { data: string }) => void) | null;
 
 const streams = new Set<FakeStream>();
-/** Told of every stream a window opens, so the conversation's server can answer it. */
-const servers = new Set<(stream: FakeStream) => void>();
+/**
+ * Told of every stream a window opens: the newest conversation's server, and only that one. A test
+ * that failed before closing its server used to leave it answering the next test's windows with a
+ * turn that was not theirs — one red test, and every one after it red for no reason of its own.
+ */
+let server: ((stream: FakeStream) => void) | null = null;
 
 class FakeStream {
   static readonly CONNECTING = 0;
@@ -48,9 +52,7 @@ class FakeStream {
     this.url = String(url);
     streams.add(this);
     // After the caller has set its handlers, which `watchTurn` does right after constructing.
-    queueMicrotask(() => {
-      for (const answer of servers) answer(this);
-    });
+    queueMicrotask(() => server?.(this));
   }
 
   /** The keepalive's `ping`: no test here waits the forty seconds its silence takes. */
@@ -70,7 +72,7 @@ export function installTurnStreams(): void {
 
 export function removeTurnStreams(): void {
   streams.clear();
-  servers.clear();
+  server = null;
   delete (globalThis as { EventSource?: typeof EventSource }).EventSource;
 }
 
@@ -116,6 +118,9 @@ export function turnServer(options: {
   let historyDown = false;
   let historyReads = 0;
   let doorDown = false;
+  /** While set, a hand-over is kept waiting for its answer: the send is on its way. */
+  let doorHold: Promise<void> | null = null;
+  let releaseDoor = () => {};
   let stops = 0;
   let held = options.holdStreams === true;
   let turns = 0;
@@ -149,7 +154,7 @@ export function turnServer(options: {
   const onStream = (stream: FakeStream) => {
     if (!held) answer(stream);
   };
-  servers.add(onStream);
+  server = onStream;
 
   /** Numbered and handed to every window watching, as `hub.publish` does. */
   const publish = (frame: Unnumbered) => {
@@ -184,7 +189,32 @@ export function turnServer(options: {
     hasOlder: options.hasOlder === true,
   });
 
-  const api = (request: ApiRequest): Response | undefined => {
+  /** What `engine.send` answers a hand-over: 409 while a turn is going, else 202 and a queued turn. */
+  const takeTurn = (body: TurnSend): Response => {
+    if (going()) {
+      return json(
+        { error: "laf:turn_in_progress", code: "laf:turn_in_progress" },
+        409,
+      );
+    }
+    // The person's side is filed, the turn is announced `queued`, and its question goes to every
+    // window before any of the answer.
+    const asked = body.messages.filter((message) => message.role === "user");
+    stored.push(...asked);
+    turns += 1;
+    const turn: TurnState = {
+      id: `turn-${turns}`,
+      status: "queued",
+      asked: body.messages.map((message) => message.id),
+    };
+    publish({ kind: "turn", turn });
+    publish({ kind: "messages", turn: turn.id, messages: asked });
+    return json({ turnId: turn.id, epoch: hub.epoch }, 202);
+  };
+
+  const api = (
+    request: ApiRequest,
+  ): Response | Promise<Response> | undefined => {
     const { pathname, method } = request;
     const door = `/api/turns/${THREAD_ID}`;
     if (pathname === "/api/me") {
@@ -223,26 +253,11 @@ export function turnServer(options: {
     if (pathname === door && method === "POST") {
       const body = request.body as TurnSend;
       sends.push({ botId: body.botId, messages: body.messages });
-      if (doorDown) return new Response("", { status: 503 });
-      if (going()) {
-        return json(
-          { error: "laf:turn_in_progress", code: "laf:turn_in_progress" },
-          409,
-        );
-      }
-      // The person's side is filed, the turn is announced `queued`, and its question goes to every
-      // window before any of the answer (`engine.send`).
-      const asked = body.messages.filter((message) => message.role === "user");
-      stored.push(...asked);
-      turns += 1;
-      const turn: TurnState = {
-        id: `turn-${turns}`,
-        status: "queued",
-        asked: body.messages.map((message) => message.id),
-      };
-      publish({ kind: "turn", turn });
-      publish({ kind: "messages", turn: turn.id, messages: asked });
-      return json({ turnId: turn.id, epoch: hub.epoch }, 202);
+      // Decided as it arrives; a hand-over that is held is answered late, not differently.
+      const isLost = doorDown;
+      const answerIt = () =>
+        isLost ? new Response("", { status: 503 }) : takeTurn(body);
+      return doorHold ? doorHold.then(answerIt) : answerIt();
     }
     return channel.api(request);
   };
@@ -267,6 +282,16 @@ export function turnServer(options: {
     },
     doorUp: () => {
       doorDown = false;
+    },
+    /** Hand-overs from now on are left on their way until `answerDoor`. */
+    holdDoor: () => {
+      doorHold = new Promise((resolve) => {
+        releaseDoor = resolve;
+      });
+    },
+    answerDoor: () => {
+      doorHold = null;
+      releaseDoor();
     },
     /** Answer the streams that were held: the stream says how the turn stands. */
     answerStreams: () => {
@@ -296,7 +321,7 @@ export function turnServer(options: {
       publish({ kind: "messages", turn: turn.id, messages });
     },
     close: () => {
-      servers.delete(onStream);
+      if (server === onStream) server = null;
     },
   };
 }

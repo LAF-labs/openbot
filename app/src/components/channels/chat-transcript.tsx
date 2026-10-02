@@ -79,7 +79,7 @@ import {
   unsettledFrom,
   withBrowsingTasks,
 } from "./chat-messages";
-import { LEADING_SKILL, type QueuedMessage } from "./composer";
+import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { type Source, sourcesByAnswer } from "./sources";
@@ -117,7 +117,7 @@ type ChatTranscriptProps = {
    * Typed while the Bot had the turn, and waiting for it to finish. Empty on a screen that does not
    * offer queueing at all.
    */
-  queued?: readonly QueuedMessage[];
+  queued?: readonly ParkedMessage[];
   /** Take one back before it runs. Without it a queued line is shown but cannot be undone. */
   onRemoveQueued?: (id: string) => void;
   /**
@@ -190,7 +190,7 @@ export type OlderPages = {
 export type RetriedMessage = { id: string; text: string };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
-const EMPTY_QUEUE: readonly QueuedMessage[] = [];
+const EMPTY_QUEUE: readonly ParkedMessage[] = [];
 
 /** Same reason as `EMPTY_QUEUE`: a conversation with no failed turns hands down one stable object. */
 const EMPTY_FAILURES: Readonly<Record<string, StandingFailure>> = {};
@@ -1352,6 +1352,18 @@ export function ChatTranscript({
   const unsentById = new Map(
     useUnsent(channelId).map((message) => [message.id, message]),
   );
+  /**
+   * The kept message the not-sent line goes under, if this row is one.
+   *
+   * NOT WORDS ON THEIR WAY FOR THE FIRST TIME. What was parked while the Bot worked stays in the
+   * outbox until the server has it, so a reload in the middle of its send cannot lose it — and
+   * while that send is out the line would read "다시 보내는 중" under a correction that never
+   * failed. Once nothing is being sent it is an unsent message like any other, and says so.
+   */
+  const unsentUnder = (id: string) => {
+    const kept = unsentById.get(id);
+    return kept && !(kept.waiting === true && busy) ? kept : undefined;
+  };
   const resent = useResent();
   const isOnline = useIsOnline();
 
@@ -1817,9 +1829,9 @@ export function ChatTranscript({
                       text={item.text}
                     />
                   </MessageScrollerItem>
-                  {item.role === "user" && unsentById.has(item.id) ? (
+                  {item.role === "user" && unsentUnder(item.id) ? (
                     <Unsent
-                      autoTried={unsentById.get(item.id)?.autoTried === true}
+                      autoTried={unsentUnder(item.id)?.autoTried === true}
                       isOnline={isOnline}
                       // Whatever turn is running carries it: every send takes what was kept.
                       isSending={busy}

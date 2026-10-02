@@ -15,9 +15,14 @@ import { useSyncExternalStore } from "react";
  * the connection comes back it is sent once by itself (`ChannelChat`), under the same id, which the
  * server's store treats as that one message however many times it arrives.
  *
- * NOT THE QUEUE (`queue.ts`). That holds words typed while the Bot is working, for one follow-up in
- * this mount; this holds words that failed to leave, for as long as it takes. A queued message is
- * never here and an unsent one is never there.
+ * AND WHAT WAS TYPED WHILE THE BOT WORKED, WHERE THE SERVER OWNS THE TURN (`waiting`, below). It used
+ * to be a rule that a queued message is never here: the queue (`queue.ts`) was React state in one
+ * mount, on the reasoning that words waiting for a turn mean nothing once the window that drove the
+ * turn is gone. With the turn on the server that reasoning is gone too — reloading, or closing the
+ * laptop, is what a server-owned turn is for — and the correction somebody had watched land was
+ * lost by it, with nothing saying so (review, 2026-10-02). So there it is kept here, marked as
+ * waiting for the Bot, and the send that already takes what this device kept takes it when the turn
+ * is over. One outbox; the window-driven conversation (`ChannelChat`) still queues in its mount.
  *
  * Only the words and the skill instructions that went in front of them — what the person typed and
  * the instructions they asked for, nothing the Bot or the server said.
@@ -37,7 +42,25 @@ export type UnsentMessage = {
    * sent up when they were picked — so what is kept here is only what to send again.
    */
   attachments?: AttachmentPart[];
+  /**
+   * Typed while the Bot had the turn: it has not failed to leave, it has not been sent yet, and it
+   * goes when the turn is over. Never written as `false` — a message that only failed to leave is
+   * stored exactly as it was before this existed.
+   *
+   * It stays on the message while its first send is out (claimed, so `autoTried`), which is how the
+   * transcript tells words on their way for the first time from words being sent AGAIN; a send
+   * that fails takes it off, and from then it is an unsent message like any other.
+   */
+  waiting?: true;
 };
+
+/**
+ * Whether a kept message is waiting for the Bot: parked, and not yet taken by the one send it gets
+ * by itself. Drawn as waiting, never as "not sent" — nothing has gone wrong with it.
+ */
+export function isWaitingForBot(message: UnsentMessage): boolean {
+  return message.waiting === true && !message.autoTried;
+}
 
 const KEY_PREFIX = "laf:unsent:";
 const EMPTY: readonly UnsentMessage[] = Object.freeze([]);
@@ -74,26 +97,39 @@ function load(channelId: string): readonly UnsentMessage[] {
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed
-          .filter(isUnsent)
-          .map((entry) => ({ ...entry, autoTried: entry.autoTried === true }))
+      ? parsed.filter(isUnsent).map(({ waiting, ...entry }) => ({
+          ...entry,
+          autoTried: entry.autoTried === true,
+          // Read as strictly as it is written: anything but `true` is no mark at all.
+          ...(waiting === true ? { waiting } : {}),
+        }))
       : EMPTY;
   } catch {
     return EMPTY;
   }
 }
 
+/**
+ * The conversations whose last write storage did not take: what this tab holds of them is all
+ * there is, and storage — empty, or behind — is not to be believed over it.
+ */
+const unstored = new Set<string>();
+
 function save(channelId: string, entries: readonly UnsentMessage[]): void {
   cache.set(channelId, entries.length ? entries : EMPTY);
   try {
+    const storage = globalThis.localStorage;
+    if (!storage) throw new Error("no storage");
     const key = `${KEY_PREFIX}${channelId}`;
     if (entries.length) {
-      globalThis.localStorage?.setItem(key, JSON.stringify(entries));
+      storage.setItem(key, JSON.stringify(entries));
     } else {
-      globalThis.localStorage?.removeItem(key);
+      storage.removeItem(key);
     }
+    unstored.delete(channelId);
   } catch {
     // Kept for this tab only, then. Still on screen, still sent again when the connection returns.
+    unstored.add(channelId);
   }
   for (const watcher of watchers) watcher();
 }
@@ -108,7 +144,15 @@ export function readUnsent(channelId: string): readonly UnsentMessage[] {
   return entries;
 }
 
-/** Keep a message that did not reach the server. The same id again replaces it in place. */
+/**
+ * Keep a message that did not reach the server, or one waiting for the Bot. The same id again
+ * replaces it in place.
+ *
+ * A NEW ONE GOES WHERE IT WAS TYPED, NOT LAST. A message is kept only once its send has failed, and
+ * a correction typed while that send was still out is kept at once — so the correction was in the
+ * list first, and everything kept went with the correction ahead of the sentence it corrects
+ * (measured in `queued-message-kept.test.tsx`). `at` is when each was typed.
+ */
 export function keepUnsent(
   channelId: string,
   message: Omit<UnsentMessage, "autoTried"> & { autoTried?: boolean },
@@ -119,15 +163,24 @@ export function keepUnsent(
     autoTried: message.autoTried ?? false,
   };
   const at = entries.findIndex((entry) => entry.id === message.id);
+  if (at !== -1) {
+    save(
+      channelId,
+      entries.map((entry, index) =>
+        index === at
+          ? { ...kept, autoTried: entry.autoTried || kept.autoTried }
+          : entry,
+      ),
+    );
+    return;
+  }
+  // ISO-8601 from one clock sorts as text. Behind everything typed at or before it.
+  const later = entries.findIndex((entry) => entry.at > kept.at);
   save(
     channelId,
-    at === -1
+    later === -1
       ? [...entries, kept]
-      : entries.map((entry, index) =>
-          index === at
-            ? { ...kept, autoTried: entry.autoTried || kept.autoTried }
-            : entry,
-        ),
+      : [...entries.slice(0, later), kept, ...entries.slice(later)],
   );
 }
 
@@ -144,9 +197,22 @@ export function forgetUnsent(channelId: string, ids: Iterable<string>): void {
  * this call claimed. A second tab asking a moment later is handed nothing.
  *
  * Read from storage rather than the cache, because the tab that got there first wrote it there.
+ *
+ * What was waiting for the Bot is claimed the same way, in the order it was typed: two tabs of one
+ * conversation both hear the turn end, and the correction goes once. For those this is their first
+ * send, not a second, and they keep their mark until it is answered (`UnsentMessage.waiting`).
+ *
+ * FROM THIS TAB WHERE STORAGE TOOK NOTHING. Storage that refuses the write reads back empty, and
+ * the claim believed it: nothing to send, and the tab's own copy thrown away with it. That cost
+ * a message its one send by itself; once what somebody queues goes through here, it would cost a
+ * correction its only one — on a device with site data blocked the queue would have stopped
+ * working at all (measured in `queued-message-kept.test.tsx`). No other tab can hold what storage
+ * never had, so there is nobody to race.
  */
 export function claimAutoSend(channelId: string): UnsentMessage[] {
-  const entries = load(channelId);
+  const entries = unstored.has(channelId)
+    ? readUnsent(channelId)
+    : load(channelId);
   const claimed = entries.filter((entry) => !entry.autoTried);
   if (claimed.length === 0) {
     cache.set(channelId, entries);
@@ -208,5 +274,6 @@ export function useResent(): ReadonlySet<string> {
 /** Test seam: back to a tab that has kept nothing. Storage is the test's to clear. */
 export function forgetUnsentCache(): void {
   cache.clear();
+  unstored.clear();
   resent = new Set();
 }

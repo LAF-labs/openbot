@@ -19,17 +19,23 @@ import type { ComposerDraft } from "./draft";
  * correction, press Stop, and the correction is what runs next. Nothing here special-cases the stop
  * button, and that is the point — a path with its own branch is a path that can be forgotten.
  *
- * THE QUEUE IS MEMORY IN ONE MOUNT AND NOTHING HERE PRETENDS OTHERWISE. The turn is driven from the
- * browser, so the browser is the only place that knows one is in flight, and this state lives and
- * dies with the component holding it. A reload loses the intent to run these words later, and so
- * does walking to another channel: the channel view is keyed on the channel, so switching unmounts
- * the conversation and takes anything parked in it with it, after the person has watched their
- * words land on screen. Neither is worth a persistence layer for words that only mean anything
- * inside a turn that is already over by the time you come back, but both are worth saying out loud.
- * The words are the person's own and sit on screen for as long as they wait, so nothing is being
- * kept from anybody; but a queue is not an outbox and must not be read as one. It is drawn only
- * while a turn is in flight, so a reload finds no queue and shows none, which is better than a list
- * of messages quietly promising to run and never running.
+ * THE QUEUE IN THIS FILE IS MEMORY IN ONE MOUNT AND NOTHING HERE PRETENDS OTHERWISE — WHERE THE
+ * WINDOW DRIVES THE TURN (`ChannelChat`, `SERVER_TURNS=off`). There the browser is the only place
+ * that knows a turn is in flight, and this state lives and dies with the component holding it. A
+ * reload loses the intent to run these words later, and so does walking to another channel: the
+ * channel view is keyed on the channel, so switching unmounts the conversation and takes anything
+ * parked in it with it, after the person has watched their words land on screen. Neither is worth a
+ * persistence layer for words that only mean anything inside a turn that is already over by the
+ * time you come back — the window that drove the turn is gone, and the turn went with it.
+ *
+ * WHERE THE SERVER OWNS THE TURN, THAT ARGUMENT DOES NOT HOLD, AND THIS QUEUE IS NOT USED. The turn
+ * goes on with the laptop closed, which is the point of it, so a correction parked in a mount was
+ * lost by the very thing the design invites (review, 2026-10-02). `ServerChannelChat` keeps what is
+ * parked in the outbox instead (`outbox.ts`, `waiting`) and hands `ConversationView` the list to
+ * draw. What this file says about WHEN parked words go and in what order still holds there, with
+ * one difference in shape: they go as the separate messages they were typed as, in one turn, under
+ * the ids they were kept with — not joined into one — because a send that may be repeated has to be
+ * the same message each time.
  */
 
 /** One message waiting for the Bot to finish, in the words the person typed. */
@@ -48,6 +54,12 @@ export type QueuedMessage = {
   /** Files parked with the words, sent with them. */
   attachments?: AttachmentPart[];
 };
+
+/**
+ * What a waiting message is drawn from, wherever it is kept: this mount's queue, or the outbox of a
+ * conversation whose turns the server owns (which has resolved the `/` chips already).
+ */
+export type ParkedMessage = Pick<QueuedMessage, "id" | "text" | "attachments">;
 
 export type QueueAction =
   /**

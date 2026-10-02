@@ -16,6 +16,7 @@ import {
   type CommandOption,
   Composer,
   type ComposerDraft,
+  type ParkedMessage,
   type QueueAction,
   type QueuedMessage,
   reduceQueue,
@@ -43,6 +44,7 @@ export function ConversationView({
   onRetry,
   stoppable,
   queueWhileBusy = false,
+  parked,
   emptyState,
   onSubmit,
   onStop,
@@ -123,6 +125,21 @@ export function ConversationView({
    */
   queueWhileBusy?: boolean;
   /**
+   * The caller keeps what is parked, and sends it itself when the turn is over.
+   *
+   * For a conversation whose turns the server owns (`ServerChannelChat`). The queue below is React
+   * state in this mount, which was the whole of the truth while the window drove the turn; with the
+   * turn on the server a reload does not end it, and a correction parked here was lost by one,
+   * with nothing saying so (review, 2026-10-02). Given this, nothing is parked in the mount: the
+   * composer hands what is typed mid-turn to `onPark`, the transcript draws `messages`, and the
+   * drain below has nothing to send. It offers queueing by itself, whatever `queueWhileBusy` says.
+   */
+  parked?: {
+    messages: readonly ParkedMessage[];
+    onPark: (draft: ComposerDraft) => void;
+    onRemove: (id: string) => void;
+  };
+  /**
    * What fills the middle before anything has been said.
    *
    * The compose screen introduces the coworker here — face, name, standing role — because a blank
@@ -145,10 +162,13 @@ export function ConversationView({
    * them both, and putting the list in either one would mean handing it straight back out again.
    *
    * See `composer/queue.ts` for what this state is worth: it is memory in one tab, it does not
-   * survive a reload, and it is not an outbox.
+   * survive a reload, and it is not an outbox. A caller whose turns outlive the tab keeps what is
+   * parked itself (`parked`), and this stays empty.
    */
   const [queued, setQueued] = useState<readonly QueuedMessage[]>([]);
   const queuedRef = useRef<readonly QueuedMessage[]>(queued);
+  /** What is drawn as waiting: the caller's list where it keeps one, this mount's otherwise. */
+  const waiting: readonly ParkedMessage[] = parked ? parked.messages : queued;
 
   /**
    * A turn this screen started and has not seen finish.
@@ -259,7 +279,7 @@ export function ConversationView({
     <div className="flex flex-col flex-1 min-h-0">
       {banner}
       <div className="relative flex flex-1 min-h-0">
-        {emptyState && messages.length === 0 && queued.length === 0 ? (
+        {emptyState && messages.length === 0 && waiting.length === 0 ? (
           /*
            * `z-10`, because the transcript is a later sibling and was painting over this. The
            * overlay itself stays click-through so it never sits between somebody and the composer;
@@ -295,11 +315,12 @@ export function ConversationView({
             {...(messageTimes ? { messageTimes } : {})}
             {...(readWindow ? { readWindow } : {})}
             onRemoveQueued={(id) => {
-              apply({ id, type: "remove" });
+              if (parked) parked.onRemove(id);
+              else apply({ id, type: "remove" });
             }}
             // The same gate the composer's Stop is drawn from, for the same reason (below).
             onStopForQueued={(stoppable ?? pending) ? onStop : undefined}
-            queued={queued}
+            queued={waiting}
             {...(stoppedCode ? { stoppedCode } : {})}
             {...(noticeCode ? { noticeCode } : {})}
             {...(failures ? { failures } : {})}
@@ -327,11 +348,13 @@ export function ConversationView({
           compact
           disabled={disabled}
           onQueue={
-            queueWhileBusy
-              ? (draft) => {
-                  submit(draft, true);
-                }
-              : undefined
+            parked
+              ? parked.onPark
+              : queueWhileBusy
+                ? (draft) => {
+                    submit(draft, true);
+                  }
+                : undefined
           }
           onStop={onStop}
           attach={attach}

@@ -40,7 +40,7 @@ async function transcript(onStopForQueued?: () => void) {
         messages={messages}
         onRemoveQueued={() => {}}
         onStopForQueued={onStopForQueued}
-        queued={[{ id: "q-1", text: "아 그거 말고 IT 뉴스로", commandIds: [] }]}
+        queued={[{ id: "q-1", text: "아 그거 말고 IT 뉴스로" }]}
       />
     </QueryClientProvider>,
   );
