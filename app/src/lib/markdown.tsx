@@ -35,7 +35,10 @@ export const markdownComponents = {
  * reading, and a blank where an answer just landed reads as the answer having failed.
  */
 const Renderer = lazy(async () => {
-  const [{ Streamdown }, { markdownPlugins }] = await Promise.all([
+  const [
+    { Streamdown },
+    { markdownPlugins, markdownRemarkPlugins, markdownRemend },
+  ] = await Promise.all([
     import("streamdown"),
     import("@/lib/markdown-plugins"),
   ]);
@@ -44,6 +47,8 @@ const Renderer = lazy(async () => {
       <Streamdown
         components={markdownComponents}
         plugins={markdownPlugins}
+        remarkPlugins={markdownRemarkPlugins}
+        remend={markdownRemend}
         translations={markdownWords}
       >
         {children}

@@ -63,7 +63,11 @@ import { stepLineOf } from "@/lib/copilot/step-labels";
 import { turnNotice } from "@/lib/copilot/stopped-turn";
 import { t } from "@/lib/i18n";
 import { markdownComponents } from "@/lib/markdown";
-import { markdownPlugins } from "@/lib/markdown-plugins";
+import {
+  markdownPlugins,
+  markdownRemarkPlugins,
+  markdownRemend,
+} from "@/lib/markdown-plugins";
 import { markdownWords } from "@/lib/markdown-words";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
@@ -1039,6 +1043,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
                   <Streamdown
                     components={markdownComponents}
                     plugins={markdownPlugins}
+                    remarkPlugins={markdownRemarkPlugins}
+                    remend={markdownRemend}
                     translations={markdownWords}
                   >
                     {text}

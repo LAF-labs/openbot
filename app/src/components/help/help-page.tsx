@@ -16,7 +16,11 @@ import { VersionLine } from "@/components/settings/version-line";
 import { Button } from "@/components/ui/button";
 import guide from "@/help/guide.md?raw";
 import { t } from "@/lib/i18n";
-import { markdownPlugins } from "@/lib/markdown-plugins";
+import {
+  markdownPlugins,
+  markdownRemarkPlugins,
+  markdownRemend,
+} from "@/lib/markdown-plugins";
 import { markdownWords } from "@/lib/markdown-words";
 import {
   helpSectionFrom,
@@ -114,6 +118,8 @@ export function HelpPage() {
           mode="static"
           parseIncompleteMarkdown={false}
           plugins={markdownPlugins}
+          remarkPlugins={markdownRemarkPlugins}
+          remend={markdownRemend}
         >
           {guide}
         </Streamdown>

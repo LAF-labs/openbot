@@ -2,7 +2,11 @@ import { Link } from "@tanstack/react-router";
 import type { ComponentProps } from "react";
 import { Streamdown } from "streamdown";
 import { t } from "@/lib/i18n";
-import { markdownPlugins } from "@/lib/markdown-plugins";
+import {
+  markdownPlugins,
+  markdownRemarkPlugins,
+  markdownRemend,
+} from "@/lib/markdown-plugins";
 import { markdownWords } from "@/lib/markdown-words";
 
 /**
@@ -99,6 +103,8 @@ export function LegalPage({
             mode="static"
             parseIncompleteMarkdown={false}
             plugins={markdownPlugins}
+            remarkPlugins={markdownRemarkPlugins}
+            remend={markdownRemend}
           >
             {markdown}
           </Streamdown>
