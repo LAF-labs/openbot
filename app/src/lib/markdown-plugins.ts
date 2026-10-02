@@ -26,8 +26,9 @@ import {
  *     and it closed `~~` — so a single 네~~! struck everything after it, in a finished answer too.
  *     `markdownRemend` stops that one completion.
  *  3. TWO PAIRS OF TONE IN A PARAGRAPH. 네~~! 알겠습니다~~! is, to the letter, `~~! 알겠습니다~~`.
- *     `toneTildes` reads what was struck: text that begins with the punctuation a sentence ends on
- *     and the space after it, right after a word, was not struck by anybody.
+ *     `toneTildes` reads what was struck: text that begins with what follows a tilde of tone — the
+ *     punctuation a sentence ends on, a face, a heart, a laugh — and the space after it, right
+ *     after a word, was not struck by anybody.
  *
  * All of it arrived with the Korean-friendly strikethrough plugin (2026-09-25) and was in every
  * answer with a friendly ending since.
@@ -42,27 +43,38 @@ export const markdownRemend: NonNullable<StreamdownProps["remend"]> = {
 /** As much of the syntax tree as `toneTildes` reads. */
 type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[] };
 
-/** The punctuation a sentence ends or pauses on, and the space that follows it. */
-const ENDS_A_SENTENCE = /^[!?.,…:;)\]}！？。，、：；）]+\s/;
-const ONLY_PUNCTUATION = /^[!?.,…:;)\]}！？。，、：；）]+$/;
+/**
+ * What follows a tilde of tone before the next word: the punctuation the sentence ends or pauses on
+ * (네~~!), a face or a heart (^^, ♡, 😊), a laugh or a sob spelt in bare consonants and vowels (ㅎㅎ,
+ * ㅠㅠ). Anything that is neither a letter nor a digit, and the letters that are not a word.
+ *
+ * IT WAS THE PUNCTUATION ALONE, and "감사합니다~~^^ 좋은 하루 되세요~~^^" was drawn with its tildes
+ * gone and "^^ 좋은 하루 되세요" struck out — as were 😊, ♡, ㅎㅎ and ㅠㅠ in its place (drawn
+ * 2026-10-02, before anybody met it). A friendly ending is as often a face as a full stop.
+ */
+const AFTER_TONE = String.raw`(?:[^\p{L}\p{N}\s]|[ㄱ-ㅎㅏ-ㅣ])+`;
+/** That, and then the space or the new line the next word comes after. */
+const GOES_ON_AFTER_TONE = new RegExp(`^${AFTER_TONE}\\s`, "u");
+const ONLY_AFTER_TONE = new RegExp(`^${AFTER_TONE}$`, "u");
 
 /**
  * Whether what was struck begins the way the rest of a sentence does after a tilde of tone: with
- * the punctuation the sentence ended on, and then a space or a new line.
+ * what follows such a tilde, and then a space or a new line.
  *
  * THE SPACE IS THE SIGNAL. What is struck on purpose may begin with punctuation too, and hang on a
  * Korean word just the same — `버전~~.old~~`, a comma taken out, `값은~~.5~~` — and the first version
  * of this put the tildes back for every one of them (review, first round). What follows the
  * punctuation of a struck name is the name; what follows the punctuation a sentence ended on is the
- * next sentence, after a space.
+ * next sentence, after a space. A face is read the same way: `기분~~😊좋음~~` is struck, and
+ * `좋아요~~😊 또 봐요~~😊` is not.
  */
-function beginsAfterSentence(struck: MarkdownNode): boolean {
+function goesOnAfterTone(struck: MarkdownNode): boolean {
   const [first, second] = struck.children ?? [];
   if (first?.type !== "text") return false;
   const words = first.value ?? "";
-  if (ENDS_A_SENTENCE.test(words)) return true;
+  if (GOES_ON_AFTER_TONE.test(words)) return true;
   // The same, where the answer broke the line by hand.
-  return ONLY_PUNCTUATION.test(words) && second?.type === "break";
+  return ONLY_AFTER_TONE.test(words) && second?.type === "break";
 }
 
 /** Whether what stands before a node touches it: a word, a mark, anything but space or nothing. */
@@ -80,7 +92,7 @@ function putToneBack(parent: MarkdownNode): void {
     if (
       node.type === "delete" &&
       isAttached(children[index - 1]) &&
-      beginsAfterSentence(node)
+      goesOnAfterTone(node)
     ) {
       const tilde = (): MarkdownNode => ({ type: "text", value: "~~" });
       children.splice(index, 1, tilde(), ...(node.children ?? []), tilde());

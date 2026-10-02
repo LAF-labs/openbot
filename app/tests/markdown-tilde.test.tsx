@@ -96,6 +96,22 @@ const TWO_PAIRS_OF_TONE = [
   "네~~!\n알겠습니다~~!",
 ];
 
+/**
+ * A friendly ending is as often a face as a full stop. Drawn 2026-10-02, before anybody met it:
+ * "감사합니다~~^^ 좋은 하루 되세요~~^^" lost its tildes and had "^^ 좋은 하루 되세요" struck out, since
+ * only the punctuation a sentence ends on was taken for what follows a tilde of tone.
+ */
+const TWO_PAIRS_OF_TONE_AND_A_FACE = [
+  "감사합니다~~^^ 좋은 하루 되세요~~^^",
+  "안녕하세요~~😊 오늘도 좋은 하루 보내세요~~💕",
+  "네~~ㅎㅎ 알겠어요~~ㅎㅎ",
+  "좋아요~~♡ 또 만나요~~♡",
+  "고마워요~~ㅠㅠ 정말 감동이에요~~ㅠㅠ",
+  "안녕~~^^\n반가워~~^^",
+  "와~~👍 최고예요~~👍 감사합니다.",
+  "네~~!ㅎㅎ 알겠습니다~~!ㅎㅎ",
+];
+
 function drawnAsWritten(sentences: readonly string[]) {
   for (const sentence of sentences) {
     test(sentence, async () => {
@@ -130,6 +146,10 @@ describe("two pairs of tone strike out nothing", () => {
   drawnAsWritten(TWO_PAIRS_OF_TONE);
 });
 
+describe("nor when what follows the tone is a face, a heart or a laugh", () => {
+  drawnAsWritten(TWO_PAIRS_OF_TONE_AND_A_FACE);
+});
+
 describe("what was already read right stays so", () => {
   test("two tildes each side strike the words between them", async () => {
     const reply = await drawn("~~10,000원~~ 8,000원이에요.");
@@ -161,12 +181,20 @@ describe("what was already read right stays so", () => {
     ["쉼표~~,~~ 를 지워요.", ","],
     ["값은~~.5~~ 0.7이에요.", ".5"],
     ["좋아요~~!~~ 그래요.", "!"],
+    // And with a face: no space after it, so it is what was struck.
+    ["기분은~~😊좋음~~ 나쁨이에요.", "😊좋음"],
+    ["점수는~~★★~~ 별 셋이에요.", "★★"],
   ] as const) {
     test(`what is struck may begin with punctuation right after a word: ${sentence}`, async () => {
       const reply = await drawn(sentence);
       expect(reply.struck).toEqual([struck]);
     });
   }
+
+  test("what is struck may begin with a mark and a space, where it does not hang on a word", async () => {
+    const reply = await drawn("상태: ~~✅ 완료~~ ❌ 미완료");
+    expect(reply.struck).toEqual(["✅ 완료"]);
+  });
 
   // GFM itself does not open a pair after a letter and before punctuation; only the Korean-friendly
   // rule does, next to a Korean letter. Drawn here so that nobody takes it for something this broke.
