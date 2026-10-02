@@ -1,4 +1,5 @@
 import { type ComponentProps, lazy, Suspense } from "react";
+import { markdownWords } from "@/lib/markdown-words";
 
 /**
  * Shared markdown rendering for Bot prose and tool results.
@@ -40,7 +41,11 @@ const Renderer = lazy(async () => {
   ]);
   function Rendered({ children }: { children: string }) {
     return (
-      <Streamdown components={markdownComponents} plugins={markdownPlugins}>
+      <Streamdown
+        components={markdownComponents}
+        plugins={markdownPlugins}
+        translations={markdownWords}
+      >
         {children}
       </Streamdown>
     );

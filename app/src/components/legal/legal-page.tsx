@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { Streamdown } from "streamdown";
 import { t } from "@/lib/i18n";
 import { markdownPlugins } from "@/lib/markdown-plugins";
+import { markdownWords } from "@/lib/markdown-words";
 
 /**
  * One of the two legal documents, drawn from its markdown file.
@@ -92,6 +93,7 @@ export function LegalPage({
         <article className="text-base leading-7">
           <Streamdown
             components={documentLinkComponents}
+            translations={markdownWords}
             controls={false}
             linkSafety={{ enabled: false }}
             mode="static"
