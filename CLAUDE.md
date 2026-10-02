@@ -102,6 +102,26 @@ one floor per workspace, so a suite that quietly lost an area fails instead of
 going green. Raise a floor when that workspace grows; lower it only with a
 reason.
 
+## How a change lands
+
+**Nothing is pushed to `main`** (owner, 2026-10-02). A change is a branch
+(`laf/<slug>`), a pull request against `main`, and Codex's review of it. Codex's
+findings are claims, checked one by one: fixed where they are real, answered on
+the thread with the evidence where they are not, never left unanswered. Every
+push is reviewed again. It is done when Codex reacts 👍 or says nothing needs
+changing, with the checks green — then it is merged by rebase, so each commit
+keeps its message, and its branch is deleted. **Only `main` remains.**
+
+The gate runs before the pull request is opened, not instead of it, and a
+reviewer reads a diff: its 👍 is not "verified by using it", and it is not a
+release. Two rounds on the same point is a disagreement, and disagreements are
+the owner's.
+
+The loop, step by step, is the `codex-pr-review` skill (installed for the owner
+in `~/.claude/skills/`). Codex is set to review the pull requests the owner's
+GitHub account opens here, on every push (chatgpt.com → Codex → 설정 → 코드 검토);
+Dependabot's are not reviewed automatically.
+
 ## Running it locally
 
 ```bash
