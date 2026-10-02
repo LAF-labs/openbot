@@ -8,7 +8,10 @@ import {
   THROTTLE_MS,
   throttleKey,
 } from "../src/lib/notifications/bot-notifications";
-import { openChannelFrom } from "../src/lib/notifications/use-bot-notifications";
+import {
+  isCardOnScreen,
+  openChannelFrom,
+} from "../src/lib/notifications/use-bot-notifications";
 
 const finished: NoticeRequest = {
   kind: "finished",
@@ -58,10 +61,101 @@ describe("whether a Bot asking is worth interrupting for", () => {
     expect(decideNotice(needsYou, undefined)).toBe("deliver");
   });
 
-  test("a visible tab is not, whatever room is open — the card is right there", () => {
+  test("a visible window with the card on screen is not — the card is right there", () => {
+    expect(
+      decideNotice(
+        { ...needsYou, visible: true, cardOnScreen: true },
+        undefined,
+      ),
+    ).toBe("focused");
+  });
+
+  /*
+   * The turn is the server's and goes on while the person reads another screen of the app. A
+   * visible window used to be enough to stay quiet, so the one interruption that runs out in ten
+   * minutes was withheld exactly where no card was drawn.
+   */
+  test("a visible window showing another screen is: nothing on it is asking", () => {
+    expect(
+      decideNotice(
+        { ...needsYou, visible: true, cardOnScreen: false },
+        undefined,
+      ),
+    ).toBe("deliver");
+  });
+
+  test("a caller that cannot tell where the card is keeps the old answer", () => {
     expect(decideNotice({ ...needsYou, visible: true }, undefined)).toBe(
       "focused",
     );
+  });
+
+  test("the card being on screen does not silence a window nobody is looking at", () => {
+    expect(decideNotice({ ...needsYou, cardOnScreen: true }, undefined)).toBe(
+      "deliver",
+    );
+  });
+
+  test("the mute, the put-away Bot and the throttle still come first", () => {
+    const asking = { ...needsYou, visible: true, cardOnScreen: false };
+    expect(decideNotice({ ...asking, notify: false }, undefined)).toBe("muted");
+    expect(decideNotice({ ...asking, hidden: true }, undefined)).toBe("hidden");
+    expect(decideNotice(asking, asking.now - 1_000)).toBe("throttled");
+  });
+});
+
+describe("which screens draw a Bot's question", () => {
+  const channels = [
+    { id: "channel_mine", agentIds: ["risk-analyst"] },
+    { id: "channel_other", agentIds: ["someone-else"] },
+  ];
+  const on = (pathname: string, approvalId?: string) =>
+    isCardOnScreen({
+      pathname,
+      botId: "risk-analyst",
+      approvalId,
+      channels,
+    });
+
+  test("the Bot's own conversation does", () => {
+    expect(on("/channel/channel_mine")).toBe(true);
+  });
+
+  test("another Bot's conversation does not", () => {
+    expect(on("/channel/channel_other")).toBe(false);
+  });
+
+  test("소식, 만든 것, 설정 — no screen that is not a conversation does", () => {
+    for (const pathname of [
+      "/feed",
+      "/made",
+      "/ideas",
+      "/goals",
+      "/settings",
+    ]) {
+      expect(on(pathname)).toBe(false);
+    }
+  });
+
+  test("the page a notice opens for this question does, and for another it does not", () => {
+    expect(on("/approve/appr_1", "appr_1")).toBe(true);
+    expect(on("/approve/appr_2", "appr_1")).toBe(false);
+    expect(on("/approve/appr_1")).toBe(false);
+  });
+
+  test("before the list of conversations has been read, an open conversation is taken as the Bot's", () => {
+    expect(
+      isCardOnScreen({
+        pathname: "/channel/channel_mine",
+        botId: "risk-analyst",
+        channels: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  test("a list that has been read and does not hold the open one draws no card: the compose screen, a conversation that is gone", () => {
+    expect(on("/channel/new")).toBe(false);
+    expect(on("/channel/channel_deleted")).toBe(false);
   });
 });
 
