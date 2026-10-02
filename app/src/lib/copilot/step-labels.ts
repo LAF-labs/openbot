@@ -46,6 +46,19 @@ export const STEP_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * What a line says once the step is over, where "…는 중" would no longer be true.
+ *
+ * The lines above are drawn by the transcript for a call nothing else draws, and they are all "…는
+ * 중": right while the call is out, and wrong for as long as the conversation is kept afterwards.
+ * Nearly every tool here has a line of its own that already says both (`now-tool-line.tsx`,
+ * `computer-tools.tsx`), and a finished `tool_search` is not drawn at all (`chat-messages.ts`), so
+ * this holds only what can still be seen finished under its in-progress words.
+ */
+export const STEP_DONE_LABELS: Readonly<Record<string, string>> = {
+  tool_call: "Used a tool",
+};
+
+/**
  * A connected service's tools, by `<service>/<tool>`. The six a person is asked about are named in
  * `plugins/tool-labels.ts` already, for the approval card, and are read from there.
  */
@@ -87,8 +100,13 @@ export const SERVICE_STEP_LABELS: Readonly<Record<string, string>> = {
  * server somebody added by address, which has no title here, to "연결된 서비스 사용"; anything else
  * to "도구 사용".
  */
-export function stepLineOf(name: string): { label: string; detail?: string } {
-  const own = STEP_LABELS[name];
+export function stepLineOf(
+  name: string,
+  /** The step has its result: say what was done, not what is being done. */
+  isDone = false,
+): { label: string; detail?: string } {
+  const own =
+    (isDone ? STEP_DONE_LABELS[name] : undefined) ?? STEP_LABELS[name];
   if (own) return { label: t(own) };
   const server = serverKeyOf(name);
   if (!server) return { label: t("Used a tool") };

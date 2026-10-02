@@ -67,6 +67,7 @@ import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { acknowledgeFailureGroup } from "@/lib/notifications/outbox";
 import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
+import { useLasting } from "@/lib/use-lasting";
 import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
@@ -188,6 +189,13 @@ export type OlderPages = {
 
 /** What a press of 다시 시도 hands back: the failed message as it is in the thread. */
 export type RetriedMessage = { id: string; text: string };
+
+/**
+ * How long the end of the transcript sits still, mid-turn, before the thinking line is drawn under
+ * it. Longer than the gap between two bursts of an answer or two steps that follow each other;
+ * shorter than a wait anybody would begin to doubt.
+ */
+const BETWEEN_STEPS_MS = 1200;
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
 const EMPTY_QUEUE: readonly ParkedMessage[] = [];
@@ -1235,7 +1243,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
          */}
         {drawn ?? (
           <ToolLine
-            {...stepLineOf(name)}
+            {...stepLineOf(name, result !== undefined)}
             kind={toolKindOf(name)}
             running={result === undefined}
           />
@@ -1428,6 +1436,41 @@ export function ChatTranscript({
   const sources = sourcesByAnswer(items);
   /** The task still being done, and the newest task — the one the live screen would show. */
   const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
+  /*
+   * BETWEEN STEPS, THE BOT IS THINKING TOO, AND NOTHING SAID SO.
+   *
+   * The thinking line was drawn only until the first thing arrived. Measured on the running app,
+   * 2026-10-02, on one turn of 14.5 s (the clock, the weather, a note, then the answer): from
+   * 6.4 s to 10.5 s, and again from 12.5 s to 13.7 s, the Bot had the turn and the transcript was
+   * a list of finished steps with nothing moving — the model deciding what to do next. To the
+   * person watching, a Bot that has stalled looks exactly like that. Only the stop button, in
+   * another part of the screen, said otherwise.
+   *
+   * So the last thing drawn is watched: a step that has its result, or the Bot's own words that
+   * have stopped growing. Once it has sat still for `BETWEEN_STEPS_MS` with the turn still going,
+   * the thinking line is drawn under it, and it goes the moment anything moves. Not at once —
+   * words arrive in bursts and steps follow each other within the second, and a line that
+   * flickered between them would be worse than none.
+   *
+   * Not under an open browsing task, which shows it is working on its own card; not while the
+   * turn waits on the person, which is said in its own words below; and not while any step of the
+   * turn is still out — two steps asked for together finish apart, and the Bot is waiting for the
+   * second one then, not thinking (measured: "날씨 확인하기" still shimmering above "생각 중").
+   */
+  const isStepOut = items
+    .slice(settledBefore)
+    .some((item) => item.kind === "tool" && item.result === undefined);
+  const stillTail =
+    busy && !awaitingAnswer && openTaskId === null && !isStepOut && lastItem
+      ? lastItem.kind === "tool"
+        ? lastItem.result === undefined
+          ? null
+          : `${lastItem.id}:done`
+        : lastItem.kind === "text" && lastItem.role === "assistant"
+          ? `${lastItem.id}:${lastItem.text.length}`
+          : null
+      : null;
+  const thinkingBetweenSteps = useLasting(stillTail, BETWEEN_STEPS_MS);
   const newestTaskId =
     items.findLast((item) => item.kind === "browse")?.id ?? null;
   /** Each stored failure, drawn after the last row its turn drew (`failurePlaces`). */
@@ -1879,7 +1922,7 @@ export function ChatTranscript({
             ) : queuedBehind ? (
               // Before thinking, never beside it: a Bot busy with another job is not thinking of this one.
               <WaitingForBot />
-            ) : waitingOnFirstToken ? (
+            ) : waitingOnFirstToken || thinkingBetweenSteps ? (
               <Thinking />
             ) : noticeCode && !busy && turnNotice(noticeCode) ? (
               <p
@@ -1935,7 +1978,7 @@ export function ChatTranscript({
                 ? null
                 : queuedBehind
                   ? t("Finishing another job first · this one is next")
-                  : waitingOnFirstToken
+                  : waitingOnFirstToken || thinkingBetweenSteps
                     ? t("Thinking")
                     : noticeCode && !busy
                       ? turnNotice(noticeCode)

@@ -233,6 +233,45 @@ describe("which calls make one task", () => {
     expect(items.map((item) => item.kind)).toEqual(["tool"]);
   });
 
+  test("a look through the Bot's own tool list is a line while it is out, and none once it has answered", () => {
+    // Measured 2026-10-02: "도구 찾는 중" stayed in a conversation for good, between a saved file
+    // and the card for it, about a search that had ended hours before.
+    const out = itemsOf([
+      said("user", "방금 그 기사를 파일로 건네줘"),
+      ...calls({ name: "tool_search", args: { query: "파일" } }),
+    ]);
+    expect(out.map((item) => item.kind)).toEqual(["text", "tool"]);
+
+    const answered = itemsOf([
+      said("user", "방금 그 기사를 파일로 건네줘"),
+      ...calls({
+        name: "computer_write_file",
+        args: { path: "a.csv" },
+        result: { ok: true },
+      }),
+      ...calls({
+        name: "tool_search",
+        args: { query: "파일" },
+        result: { tools: ["show_file"] },
+      }),
+      ...calls({ name: "show_file", args: { path: "a.csv" }, result: "shown" }),
+    ]);
+    expect(
+      answered.map((item) =>
+        item.kind === "tool" ? item.toolCall.function.name : item.kind,
+      ),
+    ).toEqual(["text", "computer_write_file", "show_file"]);
+    // Only the look-up: a call made THROUGH the bridge did something, and keeps its line.
+    const through = itemsOf(
+      calls({
+        name: "tool_call",
+        args: { name: "show_file", arguments: {} },
+        result: "shown",
+      }),
+    );
+    expect(through.map((item) => item.kind)).toEqual(["tool"]);
+  });
+
   test("a task keeps its first call's id while it grows, so its card keeps its place", () => {
     const first = calls({
       name: "computer_navigate",

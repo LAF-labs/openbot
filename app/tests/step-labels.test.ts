@@ -7,6 +7,7 @@ import { SKILL_VIEW } from "@shared/tools/skills";
 import { BRIDGE_TOOL_NAMES, DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
 import {
   SERVICE_STEP_LABELS,
+  STEP_DONE_LABELS,
   STEP_LABELS,
   stepLineOf,
 } from "../src/lib/copilot/step-labels";
@@ -35,12 +36,29 @@ describe("the step labels", () => {
   test("every label in the tables has Korean", () => {
     const missing = [
       ...Object.values(STEP_LABELS),
+      ...Object.values(STEP_DONE_LABELS),
       ...Object.values(SERVICE_STEP_LABELS),
       "Used {service}",
       "Used a connected service",
       "Used a tool",
     ].filter((label) => !(label in ko));
     expect(missing).toEqual([]);
+  });
+
+  test("a step that is over does not go on saying it is being done", () => {
+    // Measured 2026-10-02: a conversation from that morning still read "도구 찾는 중".
+    expect(ko[STEP_LABELS.tool_call as string]).toMatch(/는 중$/);
+    expect(stepLineOf("tool_call").label).toBe("Calling a tool");
+    expect(stepLineOf("tool_call", true).label).toBe("Used a tool");
+    expect(ko["Used a tool"]).not.toMatch(/는 중$/);
+    // Every done form is for a step that has an in-progress one, or it could never be reached.
+    expect(
+      Object.keys(STEP_DONE_LABELS).filter((name) => !(name in STEP_LABELS)),
+    ).toEqual([]);
+    // A connected service's line is a "…하기": true either way, and left as it is.
+    expect(stepLineOf("mcp__web-search__search", true)).toEqual(
+      stepLineOf("mcp__web-search__search"),
+    );
   });
 
   test("every core tool and the bridge's two have a line of their own", () => {

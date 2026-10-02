@@ -1,5 +1,6 @@
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
+import { TOOL_SEARCH } from "@shared/tools/bridge";
 import type { Message, ToolCall } from "@ag-ui/core";
 import {
   BROWSING_TOOLS,
@@ -249,6 +250,21 @@ export function toVisibleChatItems(
         // the stream completes it; an entry a dead run left permanently half-built never does,
         // which is the right way to remember a sentence nobody finished.
         if (!toolCall.function?.name) continue;
+        /*
+         * A FINISHED LOOK THROUGH THE BOT'S OWN TOOL LIST LEAVES NO LINE. `tool_search` is how a
+         * Bot finds a tool that is not in front of it (`shared/tools/bridge.ts`): the mechanism,
+         * and nothing done in the world. While it is out its line shimmers — "도구 찾는 중" — so
+         * the conversation is not standing still. Once it has answered, the same words stayed for
+         * good: measured 2026-10-02, a conversation from that morning still read "도구 찾는 중"
+         * between a saved file and the card for it, about a search that had ended hours before.
+         * What it found is the next line, drawn by the tool itself.
+         */
+        if (
+          toolCall.function.name === TOOL_SEARCH &&
+          results.has(toolCall.id)
+        ) {
+          continue;
+        }
         items.push({
           kind: "tool",
           // One assistant message can carry multiple tool calls.
