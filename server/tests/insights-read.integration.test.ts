@@ -410,8 +410,24 @@ async function seed() {
     "computer.action_allowed",
     {
       action: "computer_click",
+      ref: "e7",
       element: "laf:element_not_in_snapshot",
       page: "https://self.ceo.baemin.com/settle",
+    },
+    at(7),
+  );
+  /*
+   * A row as every navigation was written until 2026-10-02: no ref, and the same word in
+   * `element`. It was counted as a failure — 14 of the fleet's 18 in the week this was found — and
+   * the trail cannot be rewritten, so the count has to pass it by.
+   */
+  await audit(
+    "computer.action_allowed",
+    {
+      action: "computer_navigate",
+      ref: null,
+      element: "laf:element_not_in_snapshot",
+      page: "https://self.ceo.baemin.com/",
     },
     at(7),
   );

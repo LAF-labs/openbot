@@ -431,6 +431,22 @@ describe("the computer gateway", () => {
     expect(calls).toEqual(["navigate"]);
   });
 
+  test("an action that names no element says nothing about one", async () => {
+    /*
+     * Going to an address touches no element, and until 2026-10-02 its row said the Bot had acted
+     * on one "not in the current snapshot" — the fact meant for a click on a ref the server could
+     * not find. Read off the fleet that week: 14 of its 18 "failure signals" were this, every one a
+     * navigation that had worked.
+     */
+    const { gateway, rows } = await gatewayWith(PERMISSIVE);
+    await gateway.navigate("default", "bot-1", ACTOR, "https://example.com/");
+    expect(rows[0]?.payload.action).toBe("computer_navigate");
+    expect(rows[0]?.payload.ref).toBeNull();
+    expect(rows[0]?.payload.element).toBeUndefined();
+    // And nothing of it in the row as it is stored.
+    expect(JSON.stringify(rows[0]?.payload)).not.toContain("element");
+  });
+
   test("an action on an unresolvable ref is still decided and still recorded", async () => {
     const { gateway, rows } = await gatewayWith(PERMISSIVE);
     await gateway.click("default", "bot-1", ACTOR, {

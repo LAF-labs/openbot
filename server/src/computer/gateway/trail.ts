@@ -112,13 +112,23 @@ export async function write(
             name: entry.element.name,
             ...(entry.element.type ? { type: entry.element.type } : {}),
           }
-        : entry.filePath
-          ? // A file action has no element and never will. File rows leave the element field absent
-            // rather than describing a browser snapshot.
+        : !entry.ref
+          ? /*
+             * An action that names no element has none, and its row leaves the field absent: a
+             * file's, and equally a navigation's, a look's or a scroll's.
+             *
+             * ONLY A FILE ACTION USED TO BE LEFT OUT, and every other row without an element was
+             * written as the fact below — so going to an address was recorded as acting on
+             * something "not in the current snapshot". Read off the fleet on 2026-10-02: 14 of the
+             * week's 18 failure signals were this, every one a navigation that had worked. The
+             * trail said a thing that had not happened, and the figure an operator reads was four
+             * times what had gone wrong.
+             */
             undefined
           : /*
-             * An action on an element the server cannot identify is worth recording plainly, rather
-             * than as an absent field that reads like a logging gap.
+             * An action on an element the server cannot identify — it named a ref, and the ref is
+             * in no snapshot the server holds — is worth recording plainly, rather than as an
+             * absent field that reads like a logging gap.
              *
              * A CODE AND NOT A SENTENCE. This was the English string "not in the current snapshot",
              * and the audit table printed it verbatim — one English line in the middle of a Korean

@@ -280,7 +280,15 @@ export function insightStatements(options: {
         FROM audit_events
        WHERE created_at >= ${since} AND created_at < ${to}
          AND (event_type IN ('computer.action_failed', 'computer.action_repeated')
-              OR (event_type = 'computer.action_allowed' AND payload->>'element' = 'laf:element_not_in_snapshot'))
+              /*
+               * A ref that was named and not found — not the rows written before 2026-10-02, when
+               * every action WITHOUT a ref (a navigation, a look) carried the same word and was
+               * counted here as a failure. The trail cannot be rewritten, so the count asks for
+               * the ref.
+               */
+              OR (event_type = 'computer.action_allowed'
+                  AND payload->>'element' = 'laf:element_not_in_snapshot'
+                  AND payload->>'ref' IS NOT NULL))
       UNION ALL
       SELECT 'connector',
              CASE WHEN payload->>'failure' ~ ${WHOLE_CODE} THEN payload->>'failure' ELSE 'vendor_error' END,

@@ -773,12 +773,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (the skill panel saying a failed read failed; a refused card not drawn) and three to `server`
  * (the wait and the ask's time read from one number; a cut result under the bound with its note).
  *
+ * RAISED 2026-10-02 by one in `server`: a navigation's trail row saying nothing about an element —
+ * it had said the Bot acted on one "not in the current snapshot", and 14 of the fleet's 18 failure
+ * signals that week were navigations that had worked.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3410, roots: ["server"] },
+  { name: "server", floor: 3411, roots: ["server"] },
   { name: "app", floor: 1601, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
   { name: "root", floor: 594, roots: ["tests", "agent-bot"] },
