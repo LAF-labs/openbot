@@ -413,6 +413,93 @@ describe("Google Drive", () => {
     expect(result.text).toContain("본문");
   });
 
+  test("a shortcut is followed to the file it points at, once", async () => {
+    // Search and the recent list return shortcuts as ordinary hits; reading one by its own id was
+    // declined as a binary `application/vnd.google-apps.shortcut` (upstream OpenBot #618).
+    reply = (request) => {
+      const path = request.url.pathname;
+      if (path === "/drive/v3/files/shortcut1") {
+        return json({
+          id: "shortcut1",
+          name: "기획서 바로가기",
+          mimeType: "application/vnd.google-apps.shortcut",
+          shortcutDetails: {
+            targetId: "doc9",
+            targetMimeType: "application/vnd.google-apps.document",
+          },
+        });
+      }
+      if (path === "/drive/v3/files/doc9") {
+        return json({
+          id: "doc9",
+          name: "기획서",
+          mimeType: "application/vnd.google-apps.document",
+        });
+      }
+      if (path === "/drive/v3/files/doc9/export") {
+        return new Response("본문", {
+          headers: { "content-type": "text/plain" },
+        });
+      }
+      return json({}, 404);
+    };
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "shortcut1",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(asked.map((one) => one.url.pathname)).toEqual([
+      "/drive/v3/files/shortcut1",
+      "/drive/v3/files/doc9",
+      "/drive/v3/files/doc9/export",
+    ]);
+    // The pointer's own details are asked for with the type, so no second look is needed to follow it.
+    expect(asked[0]?.url.searchParams.get("fields")).toContain(
+      "shortcutDetails",
+    );
+    // Named as the file that was read, not as the shortcut.
+    expect(result.text).toBe("기획서\n\n본문");
+  });
+
+  test("a shortcut to a shortcut, or to nothing, is declined rather than walked", async () => {
+    reply = (request) =>
+      request.url.pathname === "/drive/v3/files/a"
+        ? json({
+            id: "a",
+            name: "돌고 도는 바로가기",
+            mimeType: "application/vnd.google-apps.shortcut",
+            shortcutDetails: { targetId: "b" },
+          })
+        : json({
+            id: "b",
+            name: "또 바로가기",
+            mimeType: "application/vnd.google-apps.shortcut",
+            shortcutDetails: { targetId: "a" },
+          });
+    const looped = await drive.callTool(connection, "read_file_content", {
+      fileId: "a",
+    });
+    expect(looped.isError).toBe(true);
+    expect(looped.text).toContain("application/vnd.google-apps.shortcut");
+    // Two looks and no more: a loop is not a document.
+    expect(asked).toHaveLength(2);
+
+    asked = [];
+    reply = () =>
+      json({
+        id: "c",
+        name: "빈 바로가기",
+        mimeType: "application/vnd.google-apps.shortcut",
+      });
+    const empty = await drive.callTool(connection, "read_file_content", {
+      fileId: "c",
+    });
+    expect(empty.isError).toBe(true);
+    expect(empty.text).toContain("does not name a file");
+    expect(asked).toHaveLength(1);
+  });
+
   test("a binary file is declined by name, not decoded and hoped for", async () => {
     reply = () => json({ id: "f2", name: "사진.png", mimeType: "image/png" });
 

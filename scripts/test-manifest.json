@@ -358,6 +358,7 @@
   "server/tests/log-hygiene.integration.test.ts",
   "server/tests/mail-secrets.test.ts",
   "server/tests/mcp-check-mirror.test.ts",
+  "server/tests/mcp-result.test.ts",
   "server/tests/memory-evidence.integration.test.ts",
   "server/tests/memory-forgetting.test.ts",
   "server/tests/memory-instructions.test.ts",

@@ -133,33 +133,121 @@ export function shapeResult(joined: string): {
 }
 
 /**
+ * How much of a resource link's title, name or description a model is shown.
+ *
+ * Long enough for a heading and a sentence, short enough that a link's own metadata cannot spend
+ * the result cap its pointer has to fit in.
+ */
+const LINK_FIELD_CHARS = 400;
+
+/**
+ * A `resource_link` as the lines a model reads: the pointer first, then bounded metadata.
+ *
+ * The URI is the link's identity and the rest is what it is called, so the URI leads, whole, and
+ * the title or name and the description are cut — a server's long name must not push its own
+ * pointer past the cap and leave the model holding a link with nowhere to go. Each line is
+ * labelled, so the fields are told apart by name rather than by position. The spec's `title` is
+ * the name meant for people and `name` the one for programs; the title is shown when there is one.
+ * Null when the link names nothing, so the caller names its type instead.
+ *
+ * From upstream OpenBot (#638, MIT), which met it first.
+ */
+function resourceLinkText(item: {
+  uri?: unknown;
+  name?: unknown;
+  title?: unknown;
+  description?: unknown;
+}): string | null {
+  const field = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" ? value : null;
+  const bounded = (value: string) =>
+    value.length > LINK_FIELD_CHARS
+      ? `${value.slice(0, LINK_FIELD_CHARS)}…`
+      : value;
+  const lines: string[] = [];
+  const uri = field(item.uri);
+  if (uri !== null) lines.push(`uri: ${uri}`);
+  const title = field(item.title);
+  const name = field(item.name);
+  if (title !== null) lines.push(`title: ${bounded(title)}`);
+  else if (name !== null) lines.push(`name: ${bounded(name)}`);
+  const description = field(item.description);
+  if (description !== null) lines.push(`description: ${bounded(description)}`);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
+/** Whether a `structuredContent` holds anything: an object with a key, or a list with an item. */
+function hasStructure(value: unknown): value is object {
+  if (value === null || typeof value !== "object") return false;
+  return Array.isArray(value)
+    ? value.length > 0
+    : Object.keys(value as object).length > 0;
+}
+
+/**
  * What a vendor said, as the string a model will read.
  *
  * Its own function, and exported, because this is a decision rather than plumbing: it settles what a
  * model is told when a vendor answers with a part we cannot render. Keeping it out of
  * {@link callTool} means it can be asserted without a server to talk to; the empty and enormous
  * cases are {@link shapeResult}'s, shared with every other transport.
+ *
+ * THREE SHAPES THAT USED TO BE READ AS NOTHING, OR AS A LABEL (2026-10-02, found by reading what
+ * upstream OpenBot had fixed since this fork left it — #619, #638, MIT):
+ *
+ *   `structuredContent`. A tool that declares an output schema may put its whole answer there and
+ *   leave `content` empty. That was told to the model as "the tool returned no content. Nothing
+ *   was found" — the vendor had answered and the Bot said there was nothing, which is the one
+ *   failure the sentence exists to prevent. Read only when `content` says nothing: a text part is
+ *   the representation the server chose to show.
+ *
+ *   An embedded `resource` with text. It is the text of a file the server handed over, and was
+ *   shown as "[resource]".
+ *
+ *   A `resource_link`. A pointer — a search that answers with pages answers with these — and was
+ *   shown as "[resource_link]": a link arrived and the model was never told where it went.
  */
 export function resultText(
   content: unknown,
   /** What this call was sent with, cut out of the text before it is shaped. See `withoutCredential`. */
   credential?: string,
+  /** The same answer's `structuredContent`, read only when `content` has nothing to read. */
+  structuredContent?: unknown,
 ): {
   text: string;
   truncated: boolean;
 } {
   const parts = Array.isArray(content) ? content : [];
-  const joined = parts
+  let joined = parts
     .map((part) => {
-      const item = part as { type?: string; text?: string };
+      if (!part || typeof part !== "object") return "[unknown]";
+      const item = part as {
+        type?: string;
+        text?: string;
+        uri?: unknown;
+        name?: unknown;
+        title?: unknown;
+        description?: unknown;
+        resource?: { text?: unknown } | null;
+      };
       if (item.type === "text" && typeof item.text === "string") {
         return item.text;
+      }
+      if (item.type === "resource" && typeof item.resource?.text === "string") {
+        return item.resource.text;
+      }
+      if (item.type === "resource_link") {
+        const shown = resourceLinkText(item);
+        if (shown !== null) return shown;
       }
       // A non-text part is named rather than dropped. A model told "[image]" can say the tool
       // returned an image; a model handed nothing concludes the tool returned nothing.
       return `[${item.type ?? "unknown"}]`;
     })
     .join("\n");
+  if (joined.trim() === "" && hasStructure(structuredContent)) {
+    joined = JSON.stringify(structuredContent);
+  }
   return shapeResult(withoutCredential(joined, credential));
 }
 
@@ -632,7 +720,11 @@ export async function callTool(
       { timeout: bounds.timeoutMs },
     );
 
-    const { text, truncated } = resultText(result.content, connection.token);
+    const { text, truncated } = resultText(
+      result.content,
+      connection.token,
+      "structuredContent" in result ? result.structuredContent : undefined,
+    );
     return { text, isError: result.isError === true, truncated };
   });
 }

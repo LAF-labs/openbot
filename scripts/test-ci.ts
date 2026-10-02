@@ -731,12 +731,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * filing the server's call as the Bot's before its model is asked; the switch's three words and
  * what it says at boot when it can do nothing.
  *
+ * RAISED 2026-10-02 with three protocol fixes read off upstream: eighteen to `server` — an MCP
+ * answer that arrives as `structuredContent`, as an embedded resource or as a resource link is
+ * read rather than called nothing (`mcp-result.test.ts`, the first tests `resultText` has had), and
+ * a Drive shortcut is followed to its file, once.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3339, roots: ["server"] },
+  { name: "server", floor: 3357, roots: ["server"] },
   { name: "app", floor: 1585, roots: ["app"] },
   { name: "agent-computer", floor: 351, roots: ["agent-computer"] },
   { name: "root", floor: 578, roots: ["tests", "agent-bot"] },

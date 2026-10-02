@@ -186,7 +186,12 @@ type DriveFile = {
   webViewLink?: string;
   size?: string;
   owners?: { emailAddress?: string }[];
+  /** Present on a shortcut: the file it points at. */
+  shortcutDetails?: { targetId?: string; targetMimeType?: string };
 };
+
+/** Drive's type for a pointer to another file. Search and the recent list return them as ordinary hits. */
+const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 
 /**
  * One file as a line a model can quote.
@@ -312,11 +317,42 @@ export async function callTool(
      */
     const metadata = await vendorRequest("Google Drive", connection, {
       url: fileUrl(fileId),
-      query: { fields: "id,name,mimeType" },
+      query: {
+        fields: "id,name,mimeType,shortcutDetails(targetId,targetMimeType)",
+      },
     });
     if (!metadata.ok) return failure(metadata.message, metadata.status);
-    const file = await readJson<DriveFile>(metadata.response);
+    let file = await readJson<DriveFile>(metadata.response);
     if (!file) return failure(UNREADABLE);
+    let readId = fileId;
+
+    /*
+     * A SHORTCUT IS A POINTER, NOT A DOCUMENT. Drive's search and recent lists return shortcuts as
+     * ordinary hits, and reading one by that id was declined below as a binary
+     * `application/vnd.google-apps.shortcut` — so a file the person can open, that the search had
+     * just named, could not be read. Followed once. A shortcut that names another shortcut is
+     * declined as that type rather than walked: a loop is not a document.
+     *
+     * From upstream OpenBot (#618, MIT), found 2026-10-02 by reading what it had fixed since this
+     * fork left it.
+     */
+    if (file.mimeType === SHORTCUT_MIME) {
+      const targetId = file.shortcutDetails?.targetId?.trim();
+      if (!targetId) {
+        return failure(
+          `${file.name ?? fileId} is a shortcut that does not name a file.`,
+        );
+      }
+      const target = await vendorRequest("Google Drive", connection, {
+        url: fileUrl(targetId),
+        query: { fields: "id,name,mimeType" },
+      });
+      if (!target.ok) return failure(target.message, target.status);
+      const pointedAt = await readJson<DriveFile>(target.response);
+      if (!pointedAt) return failure(UNREADABLE);
+      file = pointedAt;
+      readId = targetId;
+    }
 
     const exportAs = file.mimeType ? EXPORTABLE[file.mimeType] : undefined;
 
@@ -335,19 +371,19 @@ export async function callTool(
      */
     if (!exportAs && !isTextual(file.mimeType)) {
       return failure(
-        `${file.name ?? fileId} is a ${file.mimeType ?? "binary"} file, which this connector cannot read as text. Its metadata and link are available, and somebody can open it themselves.`,
+        `${file.name ?? readId} is a ${file.mimeType ?? "binary"} file, which this connector cannot read as text. Its metadata and link are available, and somebody can open it themselves.`,
       );
     }
 
     const content = await vendorRequest("Google Drive", connection, {
-      url: exportAs ? fileUrl(fileId, "/export") : fileUrl(fileId),
+      url: exportAs ? fileUrl(readId, "/export") : fileUrl(readId),
       query: exportAs ? { mimeType: exportAs } : { alt: "media" },
     });
     if (!content.ok) return failure(content.message, content.status);
 
     const text = await content.response.text().catch(() => "");
     // Named, because a model handed only the body cannot cite what it read.
-    return asResult(`${file.name ?? fileId}\n\n${text}`);
+    return asResult(`${file.name ?? readId}\n\n${text}`);
   }
 
   return unknownTool(toolName);
