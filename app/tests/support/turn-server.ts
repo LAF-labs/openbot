@@ -118,6 +118,8 @@ export function turnServer(options: {
   let historyDown = false;
   let historyReads = 0;
   let doorDown = false;
+  /** While set, the door is there and says no: the code it refuses a hand-over with. */
+  let doorRefusal: string | null = null;
   /** While set, a hand-over is kept waiting for its answer: the send is on its way. */
   let doorHold: Promise<void> | null = null;
   let releaseDoor = () => {};
@@ -255,8 +257,13 @@ export function turnServer(options: {
       sends.push({ botId: body.botId, messages: body.messages });
       // Decided as it arrives; a hand-over that is held is answered late, not differently.
       const isLost = doorDown;
+      const refusal = doorRefusal;
       const answerIt = () =>
-        isLost ? new Response("", { status: 503 }) : takeTurn(body);
+        isLost
+          ? new Response("", { status: 503 })
+          : refusal
+            ? json({ error: refusal, code: refusal }, 400)
+            : takeTurn(body);
       return doorHold ? doorHold.then(answerIt) : answerIt();
     }
     return channel.api(request);
@@ -282,6 +289,13 @@ export function turnServer(options: {
     },
     doorUp: () => {
       doorDown = false;
+    },
+    /** The door answers, and refuses every hand-over with this code, until `doorAccepts`. */
+    doorRefuses: (code: string) => {
+      doorRefusal = code;
+    },
+    doorAccepts: () => {
+      doorRefusal = null;
     },
     /** Hand-overs from now on are left on their way until `answerDoor`. */
     holdDoor: () => {

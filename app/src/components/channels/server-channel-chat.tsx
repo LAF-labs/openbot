@@ -333,14 +333,35 @@ export function ServerChannelChat({
      * says nothing.
      */
     const isBehindATurn = sent.reached && sent.code === "laf:turn_in_progress";
+    /*
+     * THE SERVER WAS THERE AND SAID NO, and not because it is busy: nothing is coming back that
+     * would make a send by itself worth anything, so the one it would get is marked spent and the
+     * line under the message is "보내지 못함" with 다시 보내기 — no promise. It used to be kept as
+     * though the connection had dropped AND reported as a turn that failed, which drew two lines
+     * for one failure: that one, and "답을 받지 못했어요 [다시 시도]" where the answer would be,
+     * about a message the Bot was never given, with a second button doing the same thing.
+     */
+    const isRefused = sent.reached && !isBehindATurn;
     for (const tried of outgoing) {
       const { waiting, ...message } = tried;
-      keepUnsent(channel.id, waiting && isBehindATurn ? tried : message);
+      keepUnsent(channel.id, {
+        ...(waiting && isBehindATurn ? tried : message),
+        ...(isRefused ? { autoTried: true } : {}),
+      });
+    }
+    /*
+     * AND WHAT WAS TYPED WHILE THIS SEND WAS ON ITS WAY is waiting behind a job that never started.
+     * Left marked, it would say "보낼 예정 · 지금 일이 끝나면 전해요" under no job at all. It is an
+     * unsent message like the one it follows, and goes with it, in the order they were typed.
+     */
+    if (!isBehindATurn) {
+      for (const kept of readUnsent(channel.id)) {
+        if (!kept.waiting) continue;
+        const { waiting: _waiting, ...message } = kept;
+        keepUnsent(channel.id, message);
+      }
     }
     store.removeLocal(drawn.map((message) => message.id));
-    if (sent.reached && sent.code !== "laf:turn_in_progress") {
-      setSendFailure("laf:turn_failed");
-    }
   };
 
   /** What the `/` skills a message was typed with tell the Bot, which goes in front of it. */
@@ -644,8 +665,23 @@ export function ServerChannelChat({
    * same `going` and `sending` this reads, so the edge that frees the composer is the one that
    * sends what was parked.
    */
+  /*
+   * ON THE TURN ENDING, AND NOT ON A SEND ENDING. This used to run whenever nothing was going and
+   * nothing was being sent, which is also the instant after a send FAILS. Measured on the running
+   * app, 2026-10-02, with the server out of reach: one press of send made two hand-overs 47 ms
+   * apart — the same server asked again in the same instant — and that second one was the kept
+   * message's one send by itself. When the connection came back nothing went: the message sat
+   * under "보내지 못함" until somebody pressed, and the line that says it will go by itself was
+   * never drawn. So what frees the conversation is a turn that was going and is not: remembered
+   * here until a send can go, since the turn can end while this window is still handing one over.
+   */
+  const turnWasGoing = useRef(going);
+  const freedByTurn = useRef(false);
   useEffect(() => {
-    if (going || sending > 0 || !mayGoByItself) return;
+    if (turnWasGoing.current && !going) freedByTurn.current = true;
+    turnWasGoing.current = going;
+    if (!freedByTurn.current || going || sending > 0 || !mayGoByItself) return;
+    freedByTurn.current = false;
     if (readUnsent(channel.id).some((message) => !message.autoTried)) {
       void resendNow(true);
     }

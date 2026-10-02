@@ -543,8 +543,15 @@ describe("a correction queued while the Bot works", () => {
     // The Bot has the turn as far as the person can see: the correction is parked behind it.
     await queue(view, channelId, CORRECTION);
 
-    server.doorUp();
     await acted(() => server.answerDoor());
+    await view.settle(300);
+    // Not into the server that just failed to answer: what was kept waits for the connection
+    // (`unsent-goes-when-back.test.tsx`).
+    expect(server.sends).toHaveLength(1);
+    server.doorUp();
+    await acted(() => {
+      window.dispatchEvent(new Event("online"));
+    });
     await view.waitFor(
       () => server.sends.length === 2,
       "what this device kept, sent again",
