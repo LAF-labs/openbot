@@ -30,6 +30,7 @@ import {
   socketState,
 } from "@/lib/channels/use-channel-events";
 import { t } from "@/lib/i18n";
+import { distrustKeptThreads } from "@/lib/turns/kept-threads";
 import {
   classifyError,
   type ErrorClass,
@@ -57,7 +58,9 @@ import { cn } from "@/lib/utils";
  * reading, and only then draws. What the part alone was reading has nobody watching it once the
  * part is gone, so every query with no observer is refetched — no list of each part's queries to
  * keep, which would be a list that drifts. What it shared with a part still on screen is still
- * watched, and the seam names it in `queryKeys`.
+ * watched, and the seam names it in `queryKeys`. A conversation kept in memory after its screen
+ * left (`lib/turns/kept-threads.ts`) is data of the same kind and is not a query: a failure here
+ * stops it being kept, so the next draw reads it again.
  *
  * AND IT RESETS ITSELF WHEN THE ROUTE CHANGES, so a failed part is never what somebody finds on a
  * screen they have just gone to.
@@ -292,6 +295,8 @@ class Boundary extends Component<BoundaryProps, BoundaryState> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     void handleScreenError(this.props.section, error, info.componentStack);
+    // 다시 불러오기 draws from data read again; a conversation kept in memory is data too.
+    distrustKeptThreads();
   }
 
   componentDidMount() {

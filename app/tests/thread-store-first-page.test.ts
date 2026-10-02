@@ -292,3 +292,77 @@ describe("a page read by another road on a store that never loaded", () => {
     expect(pending()).toEqual([]);
   });
 });
+
+/*
+ * A frame carries no time, so a row the stream brought has none until something reads the record.
+ * A screen does when a turn ends in front of it; a store kept while no screen was looking heard the
+ * answer and nobody read its time — the person came back to a reply with no time, and so with no
+ * line saying where they had stopped reading.
+ */
+describe("a refresh of a conversation that is already in", () => {
+  const AT = {
+    u1: "2026-10-02T14:00:00.000Z",
+    a1: "2026-10-02T14:00:09.000Z",
+  };
+
+  test("brings the time of a row the stream brought, though no message is missing", async () => {
+    const { store, frame, reads } = harness([
+      { ...page([asked]), times: { u1: AT.u1 } },
+      { ...page([asked, answered]), times: AT },
+    ]);
+    await store.open();
+    frame({
+      seq: 3,
+      kind: "snapshot",
+      epoch: "e1",
+      turn: { id: "t1", status: "running", asked: ["u1"] },
+      messages: [answered],
+      waiting: [],
+    });
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+    ]);
+    expect(store.snapshot().times.a1).toBeUndefined();
+
+    await store.refresh();
+    expect(reads()).toBe(2);
+    expect(store.snapshot().times).toEqual(AT);
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+    ]);
+  });
+
+  test("changes nothing when the page says nothing new", async () => {
+    const { store } = harness([{ ...page([asked, answered]), times: AT }]);
+    await store.open();
+    const before = store.snapshot();
+    await store.refresh();
+    expect(store.snapshot()).toBe(before);
+  });
+
+  // Coming back can start this read and send what the device kept in the same breath.
+  test("puts what the record holds before the words only this window holds", async () => {
+    const delivered: Message = {
+      id: "r1",
+      role: "assistant",
+      content: "아침 브리핑이에요.",
+    };
+    const typed: Message = { id: "p1", role: "user", content: "고마워요" };
+    const { store } = harness([
+      page([asked, answered]),
+      page([asked, answered, delivered]),
+    ]);
+    await store.open();
+    store.addLocal([typed], "2026-10-02T14:05:00.000Z");
+
+    await store.refresh();
+    expect(store.snapshot().messages.map((message) => message.id)).toEqual([
+      "u1",
+      "a1",
+      "r1",
+      "p1",
+    ]);
+  });
+});
