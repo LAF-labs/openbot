@@ -1,4 +1,6 @@
 {
+  "productName": "LAF Agent Dev",
+  "identifier": "com.lafco.lafagent.dev",
   "app": {
     "windows": [
       {

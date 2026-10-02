@@ -333,6 +333,18 @@ configs — a partial window would build fine and open at the wrong size. The
 two files are the one place in this shell where a value is duplicated on
 purpose; change the window's shape in both or neither.
 
+It also gives a development launch an identity of its own —
+`com.lafco.lafagent.dev`, "LAF Agent Dev" — so its settings, its log and its
+single-instance lock are not the installed app's. Until 2026-10-02 it had none,
+and on a machine with both a development launch wrote its `localhost:3010` into
+the installed app's `shell.json` (measured). To drive a development build with
+something that addresses apps by bundle, make one:
+`./node_modules/.bin/tauri build --debug --bundles app --config
+src-tauri/tauri.dev.conf.json --config
+'{"bundle":{"createUpdaterArtifacts":false}}'` — a debug bundle keeps
+`debug_assertions`, so it still opens the development server. (Not `bunx
+tauri`: outside this workspace that name resolves to an unrelated npm package.)
+
 The updater's endpoint is the fleet's front door,
 `https://agent.laf-co.com/desktop/latest.json` — not a GitHub release. It was
 this repository's `releases/latest/download/latest.json` until the repository

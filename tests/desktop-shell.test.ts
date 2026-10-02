@@ -188,6 +188,31 @@ test("every domain the shell may reopen is granted the shell's capabilities", ()
 });
 
 /**
+ * A DEVELOPMENT LAUNCH IS NOT THE INSTALLED APP.
+ *
+ * The development config named no identifier, so `bun run dev` ran as `com.lafco.lafagent` — the
+ * app people install. Measured 2026-10-02 on a machine that has both: a development launch wrote
+ * `{"origin": "http://localhost:3010"}` to `~/Library/Application Support/com.lafco.lafagent/
+ * shell.json`, the installed app's own settings. A release build refuses that origin and falls
+ * back to the front door, so nothing broke — but it runs the other way too, by the code: a
+ * developer whose installed app remembers their deployment gets a development window that opens
+ * that deployment instead of localhost (`launch_origin`), and, the single-instance lock being
+ * taken by identifier, a development launch beside a running installed app is "a second launch"
+ * and exits. An identity of its own ends all three, and a name of its own says which of the two
+ * a tray's first line belongs to.
+ */
+test("a development launch has an identity of its own", () => {
+  type Identity = { identifier?: string; productName?: string };
+  const installed = json<Identity>(RELEASE_CONFIG);
+  const development = json<Identity>(DEV_CONFIG);
+  // Asserted rather than assumed: two absent identifiers would differ from nothing.
+  expect(installed.identifier).toBeTruthy();
+  expect(installed.productName).toBeTruthy();
+  expect(development.identifier).toBe(`${installed.identifier}.dev`);
+  expect(development.productName).toBe(`${installed.productName} Dev`);
+});
+
+/**
  * The development override repeats the whole window because Tauri replaces arrays when it merges
  * configs. A partial window would merge cleanly and open at the wrong size, which is the kind of
  * wrong nobody files a bug about.
