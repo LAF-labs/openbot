@@ -131,6 +131,12 @@ describe("the words, read off what was drawn", () => {
     );
   });
 
+  // Review, fifth round: a list may start at nought, and nought is a number.
+  test("a list is numbered from where it is drawn from, nought included", async () => {
+    expect(await words("0. 영\n1. 일")).toBe("0. 영\n1. 일");
+    expect(await words("7. 일곱\n8. 여덟")).toBe("7. 일곱\n8. 여덟");
+  });
+
   test("an item with more than a line keeps it under its first", async () => {
     expect(await words("1. 하나\n\n   이어지는 문단\n\n2. 둘")).toBe(
       "1. 하나\n   이어지는 문단\n2. 둘",
