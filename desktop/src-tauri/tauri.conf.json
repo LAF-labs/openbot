@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "LAF Agent",
         "url": "https://agent.laf-co.com",
         "width": 1400,

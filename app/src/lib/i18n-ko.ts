@@ -2869,6 +2869,10 @@ export const ko: Record<string, string> = {
   Later: "나중에",
   "Restart now": "지금 다시 시작",
   "Restarting…": "다시 시작하는 중…",
+  "Saved to your Downloads folder": "다운로드 폴더에 저장했어요",
+  "Could not save the file": "파일을 저장하지 못했어요",
+  "Check that this app may use your Downloads folder, then press it again.":
+    "이 앱이 다운로드 폴더를 쓸 수 있는지 확인하고 다시 눌러 주세요.",
   "Open with a shortcut": "단축키로 열기",
   "Press it in any app to bring {product} to the front.":
     "어느 앱에서든 누르면 {product} 창이 앞으로 나와요.",

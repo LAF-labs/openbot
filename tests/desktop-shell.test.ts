@@ -15,6 +15,7 @@ function read(path: string): string {
 
 type WindowConfig = {
   label: string;
+  create?: boolean;
   url?: string;
   minWidth?: number;
   titleBarStyle?: string;
@@ -205,6 +206,48 @@ test("the development window differs from the deployed one only in its origin", 
     return rest;
   };
   expect(withoutUrl(development)).toEqual(withoutUrl(deployed));
+});
+
+/**
+ * THE SHELL BUILDS ITS WINDOW, FROM THE CONFIG, BECAUSE A CONFIG CANNOT HOLD A HANDLER.
+ *
+ * A webview saves a file and draws nothing, so the shell listens for a download ending and tells
+ * the page (`note_download`). A download handler is a closure and can only be given to a window
+ * still being built — so both configs mark the window `create: false` and `build_window` builds it
+ * with the same call Tauri would have made. Three ways that comes apart without an error anywhere:
+ *
+ *  - `create` left out of one config: Tauri builds the window itself, the shell's own build is
+ *    refused for the label, and the window that appears has no handler — downloads still save
+ *    (wry lets every one through by default) and the app goes back to saying nothing about them;
+ *  - a second window in the config: `build_window` builds the first and no other;
+ *  - the build moved after the place `setup` looks the window up: "no main window at setup".
+ */
+test("the shell builds the one window its config describes, and hears its downloads", () => {
+  for (const path of [RELEASE_CONFIG, DEV_CONFIG]) {
+    const windows = json<TauriConfig>(path).app?.windows ?? [];
+    expect(windows).toHaveLength(1);
+    expect(windows[0]?.label).toBe("main");
+    expect(windows[0]?.create).toBe(false);
+  }
+
+  const shell = read("desktop/src-tauri/src/lib.rs");
+  const build = shell.slice(
+    shell.indexOf("fn build_window("),
+    shell.indexOf("/// The number of rooms waiting"),
+  );
+  expect(build).toMatch(
+    /WebviewWindowBuilder::from_config\(app, &config\)\?\s*\.on_download\(\|webview, event\| note_download\(webview\.app_handle\(\), event\)\)\s*\.build\(\)\?/,
+  );
+
+  const setup = shell.slice(shell.indexOf(".setup(|app|"));
+  const built = setup.indexOf("build_window(app.handle())");
+  expect(built).toBeGreaterThan(-1);
+  expect(built).toBeLessThan(setup.indexOf('get_webview_window("main")'));
+
+  // The first download makes macOS ask about the Downloads folder; this is the reason it shows.
+  expect(read("desktop/src-tauri/Info.plist")).toMatch(
+    /<key>NSDownloadsFolderUsageDescription<\/key>\s*<string>[^<]+<\/string>/,
+  );
 });
 
 /**

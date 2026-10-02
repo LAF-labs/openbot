@@ -36,12 +36,14 @@
 //! whole of what this process knows about what the product's paths mean.
 
 use std::net::{TcpStream, ToSocketAddrs};
+use std::path::PathBuf;
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::webview::DownloadEvent;
 use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -96,6 +98,11 @@ const SUMMON_OFF: &str = "off";
 /// `update_ready`, because the page can emit events too and an event is not a fact.
 const UPDATE_READY_EVENT: &str = "update-ready";
 
+/// What the page is told when a download ends, saved or not. The page draws the words.
+const DOWNLOAD_ENDED_EVENT: &str = "download-ended";
+/// How many downloads in progress are remembered at once; the oldest is let go of past it.
+const DOWNLOADS_REMEMBERED: usize = 32;
+
 /// The product's domain. The front door is this name; every customer is ONE name under it.
 ///
 /// The same shape `capabilities/default.json` grants — `https://agent.laf-co.com` and
@@ -143,6 +150,8 @@ struct ShellState {
     status: Mutex<Option<BotStatus>>,
     /// A newer version, verified and in hand, once the updater has fetched one.
     update: Mutex<Option<ReadyUpdate>>,
+    /// Where each download still in progress is being saved, by the address it came from.
+    downloads: Mutex<Vec<(String, PathBuf)>>,
 }
 
 /// What the Bot is doing, as the tray says it.
@@ -616,6 +625,110 @@ fn post_notice(
         .body(body)
         .show()
         .map_err(|error| error.to_string())
+}
+
+/// What the page is told about a download that ended.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+struct DownloadEnded {
+    /// The name the file was saved under: the server's, or the server's with ` (1)` after it when
+    /// a file of that name was already there. Empty when the webview never said where it went.
+    name: String,
+    saved: bool,
+}
+
+/// Where a download that has just ended was going, and whether it got there.
+///
+/// WKWebView DOES NOT SAY WHERE A DOWNLOAD WENT WHEN IT FINISHES (wry 0.55.1 hands the finished
+/// event no path on macOS; WebView2 hands it the real one). So the destination is kept from the
+/// moment the download was let through, by the address it came from, and taken back here. Two
+/// downloads of one address each take their own, in the order they started.
+fn download_ended(
+    held: &mut Vec<(String, PathBuf)>,
+    url: &str,
+    path: Option<PathBuf>,
+    saved: bool,
+) -> DownloadEnded {
+    let remembered = held
+        .iter()
+        .position(|(started, _)| started == url)
+        .map(|index| held.remove(index).1);
+    let name = path
+        .or(remembered)
+        .and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+    DownloadEnded { name, saved }
+}
+
+/// Let a download through, and tell the page when it has ended.
+///
+/// A WEBVIEW SAVES A FILE AND SAYS NOTHING. A browser draws a download: a bar, a shelf, a button
+/// that opens the folder. WKWebView and WebView2-with-a-handler draw none of it. Measured in this
+/// shell on macOS 26.6, 2026-10-02: three presses of 내려받기 on a file card saved `news.csv`,
+/// `news (1).csv` and `news (2).csv`, each within the second — and nothing on screen changed
+/// after any of them, which is exactly what makes a person press again to find out. The page
+/// cannot know either: a link with `download` hands nothing back to the script that drew it. So
+/// the shell, which is told, tells the page.
+///
+/// EVERYTHING IS LET THROUGH, as it was. wry's own default lets every download through
+/// (`download_started_handler: Some(|_, _| true)` in 0.55.1), which is why downloads worked here
+/// before this function existed, and it chooses the destination — the Downloads folder, with a
+/// number after the name rather than writing over a file. This changes neither. The address is not
+/// logged: a download's address names a file in somebody's folder.
+///
+/// THE FIRST DOWNLOAD ASKS, on macOS: the system's own question about the Downloads folder, with
+/// the reason in `Info.plist`. While it is on screen this process waits for the answer, and the
+/// file is written the moment the person allows it (measured: three minutes between a press and
+/// its file, which was three minutes of an unanswered question — and a navigation the page asked
+/// for meanwhile waited with it). Refused, the download fails, and that is one of the ways
+/// `saved` is false.
+fn note_download(app: &tauri::AppHandle, event: DownloadEvent<'_>) -> bool {
+    let state = app.state::<ShellState>();
+    match event {
+        DownloadEvent::Requested { url, destination } => {
+            log::info!("a download started");
+            if let Ok(mut held) = state.downloads.lock() {
+                // One that never reports its end must not be kept for the life of the process.
+                if held.len() >= DOWNLOADS_REMEMBERED {
+                    held.remove(0);
+                }
+                held.push((url.to_string(), destination.clone()));
+            }
+        }
+        DownloadEvent::Finished { url, path, success } => {
+            let ended = match state.downloads.lock() {
+                Ok(mut held) => download_ended(&mut held, url.as_str(), path, success),
+                Err(_) => download_ended(&mut Vec::new(), url.as_str(), path, success),
+            };
+            log::info!("a download ended: saved={}", ended.saved);
+            if let Err(error) = app.emit(DOWNLOAD_ENDED_EVENT, ended) {
+                log::warn!("the page could not be told a download ended: {error}");
+            }
+        }
+        // A kind of download event this build does not know is not a reason to refuse one.
+        _ => {}
+    }
+    true
+}
+
+/// Build the window the config describes, with the one thing a config cannot say.
+///
+/// A download handler is a closure, and it can only be given to a window that is still being
+/// built. So both config files mark the window `create: false`, and it is built here by the same
+/// call Tauri would have made for it (`WebviewWindowBuilder::from_config(..).build()`, app.rs in
+/// tauri 2.11.5) with the handler added. The window's shape still lives in the two config files
+/// and is still checked by `tests/desktop-shell.test.ts`.
+fn build_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let Some(config) = app.config().app.windows.first().cloned() else {
+        log::error!("the config declares no window");
+        return Ok(());
+    };
+    tauri::WebviewWindowBuilder::from_config(app, &config)?
+        .on_download(|webview, event| note_download(webview.app_handle(), event))
+        .build()?;
+    Ok(())
 }
 
 /// The number of rooms waiting, on the dock icon.
@@ -1191,11 +1304,16 @@ pub fn run() {
             let home = configured_origin(app.handle());
             let target = launch_origin(app.handle());
             log::info!("window origin: {target} (front door: {home})");
+            // Before anything asks for the window: it is declared in the config and built here.
+            if let Err(error) = build_window(app.handle()) {
+                log::error!("the window could not be built: {error}");
+            }
             if let Some(window) = app.get_webview_window("main") {
                 // The window is declared with the front door as its URL and is already loading it.
                 // A remembered deployment is one navigation away from that, done here rather than
-                // by rebuilding the window in Rust — the window's shape lives in the two config
-                // files and is checked by `tests/desktop-shell.test.ts`, and only its address moves.
+                // by building the window with another address — the window's shape lives in the
+                // two config files and is checked by `tests/desktop-shell.test.ts`, and only its
+                // address moves.
                 if target != home {
                     match tauri::Url::parse(&target) {
                         Ok(url) => {
@@ -1333,13 +1451,100 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        connection_page_url, deep_link_url, fleet_origin, is_summon_choice, link_target,
-        summon_shortcut_for, take_ready_update, web_url, with_dot, BotStatus, ReadyUpdate,
-        SUMMON_CHOICES, SUMMON_DEFAULT, SUMMON_OFF,
+        connection_page_url, deep_link_url, download_ended, fleet_origin, is_summon_choice,
+        link_target, summon_shortcut_for, take_ready_update, web_url, with_dot, BotStatus,
+        DownloadEnded, ReadyUpdate, SUMMON_CHOICES, SUMMON_DEFAULT, SUMMON_OFF,
     };
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     const ORIGIN: &str = "https://agent.laf-co.com";
+
+    /// The page is told the name the file was SAVED under, which only the start of a download
+    /// knows on macOS: the finish arrives with no path there.
+    #[test]
+    fn a_download_that_ends_is_named_by_where_it_was_going() {
+        let address = "https://mystore.agent.laf-co.com/api/computers/b/files/download?path=a.csv";
+        let saved = |name: &str| DownloadEnded {
+            name: name.to_string(),
+            saved: true,
+        };
+        let mut held = vec![(
+            address.to_string(),
+            PathBuf::from("/Users/kim/Downloads/a.csv"),
+        )];
+        assert_eq!(
+            download_ended(&mut held, address, None, true),
+            saved("a.csv")
+        );
+        // Taken, not read: the list does not grow with every file somebody ever saved.
+        assert!(held.is_empty());
+
+        // The same file pressed twice: each ends under its own name, in the order they started.
+        let mut held = vec![
+            (
+                address.to_string(),
+                PathBuf::from("/Users/kim/Downloads/a.csv"),
+            ),
+            (
+                address.to_string(),
+                PathBuf::from("/Users/kim/Downloads/a (1).csv"),
+            ),
+        ];
+        assert_eq!(
+            download_ended(&mut held, address, None, true),
+            saved("a.csv")
+        );
+        assert_eq!(
+            download_ended(&mut held, address, None, true),
+            saved("a (1).csv")
+        );
+
+        // Where the webview does say (WebView2), its word is the one believed — and what was
+        // remembered for that address is still let go of.
+        let mut held = vec![(
+            address.to_string(),
+            PathBuf::from("C:/Users/kim/Downloads/a.csv"),
+        )];
+        assert_eq!(
+            download_ended(
+                &mut held,
+                address,
+                Some(PathBuf::from("C:/Users/kim/Downloads/a (2).csv")),
+                true
+            ),
+            saved("a (2).csv")
+        );
+        assert!(held.is_empty());
+
+        // One that failed is still named, so the page can say WHICH file was not saved; and one
+        // nobody saw start is told with no name rather than not told at all.
+        let mut held = vec![(
+            address.to_string(),
+            PathBuf::from("/Users/kim/Downloads/a.csv"),
+        )];
+        assert_eq!(
+            download_ended(&mut held, address, None, false),
+            DownloadEnded {
+                name: "a.csv".to_string(),
+                saved: false
+            }
+        );
+        assert_eq!(
+            download_ended(&mut held, "blob:https://x/1", None, true),
+            saved("")
+        );
+        // Another address's destination is never handed to this one.
+        let mut held = vec![(
+            address.to_string(),
+            PathBuf::from("/Users/kim/Downloads/a.csv"),
+        )];
+        assert_eq!(
+            download_ended(&mut held, "https://other/b", None, true),
+            saved("")
+        );
+        assert_eq!(held.len(), 1);
+    }
 
     /// The tray says one of three things, and a page cannot make it say a fourth.
     #[test]

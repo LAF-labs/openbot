@@ -14,7 +14,7 @@ import {
  * `install_updates`). Until 2026-09-26 the page could not see that at all: an update arrived in
  * silence and a person never learned anything had improved (teardown G11). Now the shell says so
  * and this card appears, once per version, in the corner — no sound, no dialog, nothing that
- * takes the screen.
+ * takes the screen. The corner is `ShellSync`'s: it stacks this card with the shell's other one.
  *
  * NEVER A RESTART IN THE MIDDLE OF SOMETHING. The window drives the Bot's turn, so restarting it
  * ends whatever the Bot was doing. 지금 다시 시작 is withheld while the Bot is working or waiting
@@ -59,7 +59,7 @@ export function UpdateNotice({ isBotBusy }: { isBotBusy: boolean }) {
 
   return (
     <div
-      className="fixed top-16 right-4 z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-2xl border border-border bg-background p-4 text-sm shadow-md"
+      className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-border bg-background p-4 text-sm shadow-md"
       role="status"
     >
       <p className="font-medium">{t("A new version is ready")}</p>

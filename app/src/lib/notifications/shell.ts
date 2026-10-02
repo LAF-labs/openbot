@@ -25,7 +25,8 @@
  *
  * And, since 2026-09-26, what keeps the installed app awake and reachable with its window put away:
  * the tray's status, the summon shortcut's setting and the update waiting for a restart — at the
- * end of this file.
+ * end of this file. Since 2026-10-02 the shell also says when a download has ended, which a
+ * webview draws nothing about (`onShellDownload`).
  */
 
 import type { PresenceKind } from "@/lib/agents/presence";
@@ -279,15 +280,17 @@ export async function shellUpdateReady(): Promise<string | null> {
 }
 
 /**
- * Called when the shell says an update has arrived. Only a nudge — a page can emit events too — so
- * the caller reads the version back with `shellUpdateReady`.
+ * Listen for one of the shell's events until the returned function is called. Nothing is listened
+ * for in a browser tab, and stopping before the shell has answered is still stopping.
  */
-export function onShellUpdateReady(handler: () => void): () => void {
+function hear(event: string, handler: (payload: unknown) => void): () => void {
   const listen = shell()?.event?.listen;
   if (!listen) return () => {};
   let unlisten: (() => void) | null = null;
   let isStopped = false;
-  listen("update-ready", () => handler())
+  // `?.`: the shell always hands over an event, and a handler that throws on one that is not
+  // there is a handler the shell stops calling.
+  listen(event, (heard) => handler(heard?.payload))
     .then((stop) => {
       if (isStopped) stop();
       else unlisten = stop;
@@ -297,6 +300,45 @@ export function onShellUpdateReady(handler: () => void): () => void {
     isStopped = true;
     unlisten?.();
   };
+}
+
+/**
+ * Called when the shell says an update has arrived. Only a nudge — a page can emit events too — so
+ * the caller reads the version back with `shellUpdateReady`.
+ */
+export function onShellUpdateReady(handler: () => void): () => void {
+  return hear("update-ready", () => handler());
+}
+
+/** A download the shell saw end: the name the file was saved under, and whether it was saved. */
+export type ShellDownload = { name: string; isSaved: boolean };
+
+/** What the shell said about a download, or nothing when it is not that shape. */
+export function shellDownloadOf(payload: unknown): ShellDownload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const { name, saved } = payload as Record<string, unknown>;
+  if (typeof saved !== "boolean") return null;
+  return { name: typeof name === "string" ? name : "", isSaved: saved };
+}
+
+/**
+ * Called each time a download ends in the shell — saved, or not.
+ *
+ * A WEBVIEW SAVES A FILE AND DRAWS NOTHING. A browser shows a download; the installed app's
+ * webview writes the file to the Downloads folder and the screen does not change, and a link with
+ * `download` hands nothing back to the page that drew it. The shell is told when the download
+ * ends (`note_download` in desktop/src-tauri/src/lib.rs), so it says so here.
+ *
+ * Unlike the update, the payload is believed as it is. It decides nothing — a line of text about
+ * a file — and a page that could forge the event could have drawn that line anyway.
+ */
+export function onShellDownload(
+  handler: (download: ShellDownload) => void,
+): () => void {
+  return hear("download-ended", (payload) => {
+    const download = shellDownloadOf(payload);
+    if (download) handler(download);
+  });
 }
 
 /**

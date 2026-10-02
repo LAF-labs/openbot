@@ -134,6 +134,46 @@ on the next launch whether or not the person presses anything. A development
 build never checks; `LAF_SHELL_PRETEND_UPDATE=<version>` makes it hold a pretend
 update so the card and the restart can be seen outside a release.
 
+### Downloads, and what the page is told about them
+
+A webview saves a file and draws nothing. Measured in a debug bundle on macOS
+26.6, 2026-10-02 — the presses made by a script in the page, since nothing
+outside the window can press it, and read back from the folder, the system log
+and the page:
+
+- **A link with `download` saves.** wry lets every download through by default
+  (`download_started_handler: Some(|_, _| true)`, 0.55.1) and chooses the place:
+  the Downloads folder, `name (1).ext` rather than writing over a file. Three
+  presses of a file card's 내려받기 made `news.csv`, `news (1).csv` and
+  `news (2).csv`, each within the second and each quarantined by WebKit — and
+  the screen did not change after any of them, which is what makes a person
+  press again to find out.
+- **A link without `download` is DRAWN, whatever the server says.** The webview
+  does not read `Content-Disposition: attachment`; it asks only whether it can
+  show the type. 설정 → 내 데이터 → 내려받기 answered JSON, so the press replaced
+  the whole app with the export as text — in a window with no back button — and
+  saved nothing (system log: `policyAction=Use`, then `didCommitLoadForFrame`
+  on the main frame). That link carries `download` now, and any new link that
+  is a save needs it too.
+- **The first download asks.** macOS shows its own question about the Downloads
+  folder (`kTCCServiceSystemPolicyDownloadsFolder`), once per app, with the
+  reason from `NSDownloadsFolderUsageDescription` in `src-tauri/Info.plist`.
+  This process waits on the answer: three minutes passed between one press and
+  its file, which was three minutes of an unanswered question, and a navigation
+  asked for meanwhile waited with it.
+
+So the shell hears each download end and tells the page (`note_download` →
+the `download-ended` event → `DownloadNotice`): 다운로드 폴더에 저장했어요 with
+the name the file was saved under, or that it was not saved and what to check.
+Measured the same way: the press, `a download ended: saved=true` in the shell's
+log within the second, the file in the folder, and the line on screen — read at
+one and two seconds, gone by eleven; it holds for six. A handler is a closure and can only be given to a window still being
+built, so both configs mark the window `create: false` and `build_window` builds
+it from the config with the call Tauri would have made. No command and no
+capability were added: the page only listens, which `core:default` already
+allows. Unmeasured on Windows, where WebView2 hands the handler the finished
+path itself.
+
 ## Awake when the window is not
 
 Closing the window used to end the process, which meant "a Bot is waiting for

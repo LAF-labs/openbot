@@ -3,10 +3,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PRESENCE_LABELS, type PresenceKind } from "../src/lib/agents/presence";
 import {
+  onShellDownload,
   onShellUpdateReady,
   restartToUpdate,
   setShellStatus,
   setShellSummonShortcut,
+  type ShellDownload,
+  shellDownloadOf,
   shellStatusOf,
   shellSummonShortcut,
   shellUpdateReady,
@@ -125,6 +128,97 @@ describe("the update waiting for a restart", () => {
     early();
     await new Promise((settled) => setTimeout(settled, 0));
     expect(isUnlistened).toBe(true);
+  });
+});
+
+/**
+ * A webview saves a file and draws nothing (measured in the shell, 2026-10-02: three presses of
+ * 내려받기, three files, no change on screen). The shell is told when a download ends and passes
+ * it on; this is the page's end of that.
+ */
+describe("a download that ended", () => {
+  test("is read as a name and whether it was saved, and anything else is not a download", () => {
+    expect(shellDownloadOf({ name: "보고서 (1).csv", saved: true })).toEqual({
+      name: "보고서 (1).csv",
+      isSaved: true,
+    });
+    // Not saved is still said, with the name of what was not.
+    expect(shellDownloadOf({ name: "a.csv", saved: false })).toEqual({
+      name: "a.csv",
+      isSaved: false,
+    });
+    // The shell could not say where it went: still worth telling, without a name.
+    expect(shellDownloadOf({ saved: true })).toEqual({
+      name: "",
+      isSaved: true,
+    });
+    expect(shellDownloadOf({ name: 7, saved: true })).toEqual({
+      name: "",
+      isSaved: true,
+    });
+    for (const unshaped of [
+      null,
+      undefined,
+      "saved",
+      7,
+      {},
+      { name: "a.csv" },
+      { name: "a.csv", saved: "yes" },
+    ]) {
+      expect(shellDownloadOf(unshaped)).toBeNull();
+    }
+  });
+
+  test("is heard from the shell's own event, and listening stops when asked", async () => {
+    let emit: ((event?: { payload: unknown }) => void) | null = null;
+    let isUnlistened = false;
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      event: {
+        listen: async (
+          name: string,
+          callback: (event?: { payload: unknown }) => void,
+        ) => {
+          // The name `note_download` emits (desktop/src-tauri/src/lib.rs, DOWNLOAD_ENDED_EVENT).
+          expect(name).toBe("download-ended");
+          emit = callback;
+          return () => {
+            isUnlistened = true;
+          };
+        },
+      },
+    };
+    const heard: ShellDownload[] = [];
+    const stop = onShellDownload((download) => heard.push(download));
+    await new Promise((settled) => setTimeout(settled, 0));
+    const say = emit as ((event?: { payload: unknown }) => void) | null;
+    say?.({ payload: { name: "a.csv", saved: true } });
+    // Something that is not a download is not passed on as one — and does not throw.
+    say?.({ payload: { name: "a.csv" } });
+    say?.();
+    say?.({ payload: { name: "a (1).csv", saved: false } });
+    expect(heard).toEqual([
+      { name: "a.csv", isSaved: true },
+      { name: "a (1).csv", isSaved: false },
+    ]);
+    stop();
+    expect(isUnlistened).toBe(true);
+  });
+
+  test("is never heard in a browser tab, which draws its own downloads", () => {
+    const stop = onShellDownload(() => {
+      throw new Error("a tab has no shell to hear from");
+    });
+    expect(() => stop()).not.toThrow();
+  });
+
+  test("the event's name is the one the shell emits", async () => {
+    const shell = await Bun.file(
+      new URL("../../desktop/src-tauri/src/lib.rs", import.meta.url),
+    ).text();
+    expect(shell).toMatch(
+      /const DOWNLOAD_ENDED_EVENT: &str = "download-ended";/,
+    );
+    expect(shell).toContain("app.emit(DOWNLOAD_ENDED_EVENT, ended)");
   });
 });
 

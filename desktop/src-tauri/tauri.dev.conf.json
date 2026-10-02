@@ -3,6 +3,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "LAF Agent",
         "url": "http://localhost:3010",
         "width": 1400,
