@@ -4,6 +4,7 @@ import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import {
   IconAlertTriangle,
+  IconArrowDown,
   IconBox,
   IconCheck,
   IconCopy,
@@ -44,6 +45,8 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
   useMessageScroller,
+  useMessageScrollerScrollable,
+  useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
 import { anyQuestionOpen, watchQuestions } from "@/lib/approvals";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
@@ -77,7 +80,9 @@ import { useLasting } from "@/lib/use-lasting";
 import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
+  arrivedBelow,
   cutOffOf,
+  furthestSeen,
   failurePlaces,
   openBrowsingTask,
   type TranscriptItem,
@@ -582,6 +587,47 @@ function ScrollNewestQueuedIntoView({ newest }: { newest: string | null }) {
   }, [newest, scrollToEnd]);
 
   return null;
+}
+
+/**
+ * THE WAY BACK TO THE END — AND, WHEN SOMETHING ARRIVED DOWN THERE, THE WORD THAT IT DID.
+ *
+ * Pressed on the running app, 2026-10-02: reading nine hundred pixels above the end when a routine's
+ * briefing was delivered. The page kept its place, which is right. The only sign that anything had
+ * arrived was the arrow that was already there to say "the end is further down": a delivered answer
+ * and the end of the conversation looked the same.
+ *
+ * So the arrow says what it leads to. What the reader has seen is the furthest row they have had on
+ * screen — everything, once they are at the end — and whatever the Bot has said past it is counted
+ * (`arrivedBelow`). Both facts are the scroller's own words: the one that shows and hides its
+ * button, and the rows it sees on screen.
+ *
+ * ON SCREEN, NOT "AT THE END". A question sent from this window is held at the top of the page while
+ * its answer is written under it, and a long answer leaves the end a screen further down: the
+ * reader is above the end and looking straight at the newest message. Counting from "the last time
+ * they were at the end" called that answer news.
+ */
+function ScrollToNewest({ items }: { items: readonly TranscriptItem[] }) {
+  const isAbove = useMessageScrollerScrollable().end;
+  const onScreen = useMessageScrollerVisibility().visibleMessageIds;
+  const newestId = items.at(-1)?.id ?? null;
+  const [seenId, setSeenId] = useState<string | null>(null);
+  useEffect(() => {
+    setSeenId((seen) =>
+      furthestSeen(items, seen, isAbove ? onScreen : [newestId]),
+    );
+  }, [isAbove, items, newestId, onScreen]);
+
+  const arrived = isAbove ? arrivedBelow(items, seenId) : 0;
+  if (arrived === 0) return <MessageScrollerButton />;
+  return (
+    <MessageScrollerButton className="gap-1 px-3" size="sm">
+      <IconArrowDown />
+      {arrived === 1
+        ? t("New message")
+        : t("{count} new messages", { count: arrived })}
+    </MessageScrollerButton>
+  );
 }
 
 /**
@@ -2006,7 +2052,7 @@ export function ChatTranscript({
                       : null}
           </LiveRegion>
         </MessageScrollerViewport>
-        <MessageScrollerButton />
+        <ScrollToNewest items={items} />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
         <JumpToRow channelId={channelId} rows={items.length} />
       </MessageScroller>

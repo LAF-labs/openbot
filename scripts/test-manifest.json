@@ -62,6 +62,7 @@
   "app/tests/approval-preview.test.ts",
   "app/tests/approval-subject.test.ts",
   "app/tests/approve-centring.test.tsx",
+  "app/tests/arrived-below.test.ts",
   "app/tests/attachments.test.ts",
   "app/tests/audit-labels.test.ts",
   "app/tests/audit-paging.test.ts",
