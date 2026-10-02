@@ -13,6 +13,7 @@ import {
   isTurnGoing,
   isTurnQueued,
   mergeMessages,
+  mergeTurn,
   type ThreadState,
   type TurnFrame,
 } from "../src/lib/turns/frames";
@@ -195,6 +196,86 @@ describe("the turn around it", () => {
     );
     expect(merged.map((message) => message.id)).toEqual(["a", "b", "c"]);
     expect((merged[0] as { content: string }).content).toBe("1!");
+  });
+});
+
+/*
+ * A snapshot, and the server's own copies at the end of a step, are the turn from its first row,
+ * in order, every time. A window holds the newest page and what came after it, and a turn longer
+ * than a page begins above that: added as new, the turn's first rows went last on every one of
+ * those frames — the question, and the first steps of a long task, under its newest (model check
+ * of the kept conversation, 2026-10-03).
+ */
+describe("the turn's messages, sent whole", () => {
+  const row = (id: string, content = id): Message => ({
+    id,
+    role: "assistant",
+    content,
+  });
+  const ids = (messages: readonly Message[]) =>
+    messages.map((message) => message.id);
+
+  test("replace what is held where it stands, and what is new after the last of them goes last", () => {
+    const merged = mergeTurn(
+      [row("h"), row("a", "half"), row("x")],
+      [row("a", "whole"), row("b")],
+    );
+    expect(ids(merged)).toEqual(["h", "a", "x", "b"]);
+    expect((merged[1] as { content: string }).content).toBe("whole");
+  });
+
+  test("a row between two that are held goes before the later of them", () => {
+    expect(
+      ids(
+        mergeTurn(
+          [row("a"), row("c"), row("x")],
+          [row("a"), row("b"), row("c")],
+        ),
+      ),
+    ).toEqual(["a", "b", "c", "x"]);
+  });
+
+  test("rows before the first one held are above what is held, and are left there", () => {
+    const held = [row("c"), row("d")];
+    const merged = mergeTurn(held, [
+      row("a"),
+      row("b"),
+      row("c"),
+      row("d"),
+      row("e"),
+    ]);
+    expect(ids(merged)).toEqual(["c", "d", "e"]);
+  });
+
+  test("with nothing in common, all of it is new", () => {
+    expect(ids(mergeTurn([row("h")], [row("a"), row("b")]))).toEqual([
+      "h",
+      "a",
+      "b",
+    ]);
+    expect(ids(mergeTurn([], [row("a")]))).toEqual(["a"]);
+  });
+
+  test("and a snapshot of a turn longer than what is held does not draw its first rows last", () => {
+    const state = applyFrame(
+      { ...EMPTY_THREAD, messages: [row("s3"), row("s4")] },
+      {
+        seq: 9,
+        kind: "snapshot",
+        epoch: "e1",
+        turn: { id: "t1", status: "running", asked: ["q"] },
+        messages: [
+          row("q"),
+          row("s1"),
+          row("s2"),
+          row("s3"),
+          row("s4"),
+          row("s5"),
+        ],
+        waiting: [],
+      },
+    );
+    expect(ids(state.messages)).toEqual(["s3", "s4", "s5"]);
   });
 });
 

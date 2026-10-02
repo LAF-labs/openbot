@@ -310,6 +310,8 @@ export function ServerChannelChat({
     });
     setSending((count) => count - 1);
     if (sent.ok) {
+      // The server has them: the store is told, since a stream that has gone quiet says nothing.
+      store.sent(drawn.map((message) => message.id));
       forgetUnsent(
         channel.id,
         outgoing.map((message) => message.id),

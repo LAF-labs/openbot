@@ -94,8 +94,12 @@ function AuthedShell() {
    * A conversation is kept for a while after its screen leaves (`lib/turns/kept-threads.ts`) — for
    * as long as somebody is signed in, and no longer. However the session ends — signing out, or a
    * session that ran out and sent them to the sign-in screen — nothing is kept past these screens.
+   * So the work is done as they LEAVE, which is this effect's cleanup and nothing on the way in:
+   * there is nothing kept to forget when the first signed-in screen opens.
    */
-  useEffect(() => forgetKeptThreads, []);
+  useEffect(() => {
+    return () => forgetKeptThreads();
+  }, []);
 
   return (
     <>

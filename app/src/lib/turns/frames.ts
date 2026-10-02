@@ -108,6 +108,54 @@ export function mergeMessages(
   return next;
 }
 
+/**
+ * THE TURN'S MESSAGES AS THE STREAM SENDS THEM WHOLE — a snapshot, or the server's own copies at
+ * the end of a step — over what is held.
+ *
+ * They are the turn from its first row, in order, every time. So what they hold says where each
+ * row belongs: one that is held is replaced where it stands; one that is not, and comes after the
+ * last row both hold, is new and goes last; one between two rows both hold goes before the later
+ * of them.
+ *
+ * AND ONE THAT COMES BEFORE THE FIRST ROW BOTH HOLD IS ABOVE WHAT IS HELD, AND IS LEFT THERE. A
+ * window holds the newest page and what came after it; a turn longer than a page begins above
+ * that. Every one of these frames brought the turn's first rows again, and added as new they went
+ * last: the question, and the first steps of a long task, drawn under its newest (model check,
+ * 2026-10-03). They are read where they belong, by scrolling up to them.
+ */
+export function mergeTurn(
+  held: readonly Message[],
+  incoming: readonly Message[],
+): readonly Message[] {
+  if (incoming.length === 0) return held;
+  const at = new Map(held.map((message, index) => [message.id, index]));
+  const first = incoming.findIndex((message) => at.has(message.id));
+  // Nothing in common: all of it is new.
+  if (first === -1) return [...held, ...incoming];
+  const next = [...held];
+  /** What goes in before a held row, by that row's place: rows met since the last one both hold. */
+  const before = new Map<number, Message[]>();
+  let pending: Message[] = [];
+  for (const message of incoming.slice(first)) {
+    const place = at.get(message.id);
+    if (place === undefined) {
+      pending.push(message);
+      continue;
+    }
+    next[place] = message;
+    if (pending.length > 0) before.set(place, pending);
+    pending = [];
+  }
+  if (before.size === 0) return [...next, ...pending];
+  return [
+    ...next.flatMap((message, index) => [
+      ...(before.get(index) ?? []),
+      message,
+    ]),
+    ...pending,
+  ];
+}
+
 type ToolCall = {
   id: string;
   type: "function";
@@ -248,7 +296,7 @@ export function applyFrame(state: ThreadState, frame: TurnFrame): ThreadState {
       seq: frame.seq,
       turn: frame.turn,
       waiting: frame.waiting,
-      messages: mergeMessages(state.messages, frame.messages),
+      messages: mergeTurn(state.messages, frame.messages),
       ...(frame.turn?.id !== state.turn?.id
         ? { failure: null, notice: null }
         : {}),
@@ -271,7 +319,7 @@ export function applyFrame(state: ThreadState, frame: TurnFrame): ThreadState {
     case "messages":
       return {
         ...next,
-        messages: mergeMessages(state.messages, frame.messages),
+        messages: mergeTurn(state.messages, frame.messages),
       };
     case "event": {
       const { event } = frame;
