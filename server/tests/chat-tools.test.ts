@@ -8,6 +8,8 @@
  */
 import { describe, expect, test } from "bun:test";
 import type { Tool } from "@ag-ui/client";
+import { createControl } from "../../agent-computer/src/control";
+import { PERSON_WAIT_MS } from "../../shared/person-wait";
 import {
   routineListResult,
   toolResultText,
@@ -285,6 +287,81 @@ describe("a computer call, answered as the window answered it", () => {
     );
     people.skip("help-2");
     expect(await skipped).toMatchObject({ code: "laf:help_skipped" });
+  });
+
+  describe("against the computer's own state, which lets an unanswered ask go", () => {
+    /*
+     * THE WAIT READS AN ASK THAT IS GONE AS AN ASK THAT WAS ANSWERED, and since 2026-10-02 the
+     * computer lets go of one nobody answered (`REQUEST_TTL_MS`, upstream OpenBot #145 and #457).
+     * Measured with that time set a minute short of this wait: these two answered
+     * `laf:control_returned` and `laf:secret_entered`, about a person who never came.
+     *
+     * The real state machine behind the gateway, on a clock that runs the wait's ten minutes in
+     * the second this test gives it, so every look the wait takes is a look at the ask as the
+     * computer would hold it then. (A second, not less: the margin between the two numbers is a
+     * fifth of it here, and a stall that long under a loaded run is not this code's failure.) The
+     * edge itself — at exactly the wait's own time, where a look lands only now and then — is
+     * pinned on the machine, in `agent-computer/tests/control.test.ts`.
+     */
+    const WAIT_MS = 1_000;
+    const waitedOut = async (
+      name: "computer_request_help" | "computer_request_secret",
+      args: Record<string, unknown>,
+    ) => {
+      const started = Date.now();
+      const control = createControl(() =>
+        new Date(
+          Date.parse("2026-10-02T03:00:00.000Z") +
+            (Date.now() - started) * (PERSON_WAIT_MS / WAIT_MS),
+        ).toISOString(),
+      );
+      const gateway = {
+        requestHelp: async (
+          _computer: string,
+          _bot: string,
+          _actor: unknown,
+          reason: string,
+        ) => control.requestHelp(reason),
+        requestSecret: async (
+          _computer: string,
+          _bot: string,
+          _actor: unknown,
+          input: { label: string; ref: string; snapshotId: number },
+        ) => control.requestSecret(input),
+        control: async () => control.get(),
+      } as unknown as ComputerGateway;
+      const toolkit = await createChatTools({
+        gateway,
+        people: createPersonAnswers(),
+        personWaitMs: WAIT_MS,
+        controlPollMs: 20,
+      })(context, [tool(name)]);
+      return toolkit.execute(name, args, call(`${name}-unanswered`));
+    };
+
+    test("nobody taking the wheel is nobody taking the wheel", async () => {
+      expect(
+        await waitedOut("computer_request_help", { reason: "로그인" }),
+      ).toEqual({
+        ok: true,
+        code: "laf:nobody_took_control",
+        result: toolResultText("laf:nobody_took_control"),
+      });
+    });
+
+    test("a value nobody typed is a value nobody typed", async () => {
+      expect(
+        await waitedOut("computer_request_secret", {
+          label: "인증번호",
+          ref: "e12",
+          snapshotId: 4,
+        }),
+      ).toEqual({
+        ok: true,
+        code: "laf:secret_not_entered",
+        result: toolResultText("laf:secret_not_entered"),
+      });
+    });
   });
 });
 

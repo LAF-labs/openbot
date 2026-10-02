@@ -1,4 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { PERSON_WAIT_MS } from "@shared/person-wait";
 import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { computerTool } from "@shared/tools/computer";
 import {
@@ -100,20 +101,21 @@ type ToolCallContext = {
  */
 const TOOL_CALL_HEADER = "x-openbot-tool-call-id";
 
-/**
- * Human-assistance wait window. Long enough for a user to return, finite so the run can unblock.
- */
-const WAIT_FOR_PERSON_MS = 10 * 60_000;
-
 /** How often the waiting handler asks whether the person has answered yet. */
 const WAIT_POLL_MS = 1_000;
 
-/** Hold the tool call open until the human control/secret prompt is answered, cancelled, or expires. */
+/**
+ * Hold the tool call open until the human control/secret prompt is answered, cancelled, or expires.
+ *
+ * For `PERSON_WAIT_MS` and no longer: `done` reads an ask that is gone as an ask that was answered,
+ * and the computer lets go of one nobody answered a little after that time
+ * (`agent-computer/src/control.ts`). A longer wait here would answer "done" about nobody coming.
+ */
 async function waitForPerson(
   botId: string,
   done: (state: ControlState) => boolean,
   call: ToolCallContext,
-  giveUpAfterMs = WAIT_FOR_PERSON_MS,
+  giveUpAfterMs = PERSON_WAIT_MS,
 ): Promise<"answered" | "gave up" | "cancelled" | "skipped"> {
   const deadline = Date.now() + giveUpAfterMs;
   while (Date.now() < deadline) {

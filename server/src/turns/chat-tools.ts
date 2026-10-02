@@ -21,6 +21,7 @@
  */
 import type { Tool } from "@ag-ui/client";
 import { isPersona } from "../../../shared/persona";
+import { PERSON_WAIT_MS } from "../../../shared/person-wait";
 import {
   routineListResult,
   routineSavedText,
@@ -161,8 +162,6 @@ export type ChatTurnContext = {
 
 export type ChatToolkit = { tools: Tool[]; execute: LoopExecutor };
 
-/** Human-assistance wait window. Long enough for a person to come back, finite so the run can end. */
-const WAIT_FOR_PERSON_MS = 10 * 60_000;
 const CONTROL_POLL_MS = 1_000;
 /**
  * How often a waiting connect card reads 연결. A consent takes a person tens of seconds, and the
@@ -433,7 +432,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
     }
     const holder = `turn:${runId}`;
-    const personWaitMs = deps.personWaitMs ?? WAIT_FOR_PERSON_MS;
+    const personWaitMs = deps.personWaitMs ?? PERSON_WAIT_MS;
     const awaitPerson =
       context.awaitPerson ??
       (async <T>(wait: () => Promise<T>) => ({
@@ -530,7 +529,15 @@ export function createChatTools(deps: ChatToolsDeps) {
         : refusal("laf:nobody_answered");
     };
 
-    /** Hold a call open until the wheel or the secret box is back with the Bot, or it runs out. */
+    /**
+     * Hold a call open until the wheel or the secret box is back with the Bot, or it runs out.
+     *
+     * `done` READS AN ASK THAT IS GONE AS AN ASK THAT WAS ANSWERED, so the ask has to outlast this
+     * wait. The computer lets go of one nobody answered (`REQUEST_TTL_MS`,
+     * `agent-computer/src/control.ts`) only after this wait's own time and a margin over it, and
+     * both read the one number in `shared/person-wait.ts`: let go of any sooner, the last look
+     * here would answer `laf:control_returned` about a person who never came.
+     */
     const waitForPerson = async (
       toolCallId: string,
       signal: AbortSignal,

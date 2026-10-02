@@ -13,6 +13,7 @@
  * This module has no Playwright import, so state-machine tests do not need a browser. Browser work
  * stays in `index.ts`.
  */
+import { PERSON_WAIT_MS } from "../../shared/person-wait";
 
 export type ControlState = {
   holder: "bot" | "human";
@@ -73,6 +74,33 @@ export const NO_SECRET_PENDING = "laf:secret_not_pending";
 export const HUMAN_HAS_CONTROL = "laf:human_has_control";
 /** A person's own input, before they took the wheel. The live-screen pane has words for it. */
 export const TAKE_CONTROL_FIRST = "laf:take_control_first";
+
+/**
+ * How long an ask nobody answered stands — for the wheel, or for a value — before it is let go of.
+ *
+ * AN ASK USED TO STAND FOR EVER. The wheel belongs to the computer and not to a conversation, so
+ * when the Bot's wait gave up or its turn was stopped, nothing took the ask back: measured, both
+ * kinds still stood with the clock moved on eleven minutes. The surface draws 도움 필요, and the
+ * reason, from this state alone, in whichever conversation is open; and the masked box's door
+ * takes a value for as long as one is wanted. Upstream OpenBot #145 and #457.
+ *
+ * LONGER THAN THE BOT'S OWN WAIT, WHERE UPSTREAM'S IS THE SAME TEN MINUTES. Here the call that
+ * asked is still waiting, and it reads "nothing asked, and the Bot holds the wheel" as the person
+ * having handed the wheel back (`server/src/turns/chat-tools.ts`, and a window's own wait in the
+ * app). That wait begins only once the answer to the ask has travelled back, and its last look
+ * can still be on its way when its time is up — so an ask let go of at ten minutes is read by
+ * that look as "they came, and it is done" when nobody came. Measured with this a minute short of
+ * the wait: the Bot was told `laf:control_returned`, and `laf:secret_entered`. Two minutes over,
+ * because the server gives each of those two calls 45 seconds at most
+ * (`server/src/computer/client.ts`); and made from the wait's own number, so one cannot move
+ * without the other.
+ *
+ * WHY THE COMPUTER LETS GO, RATHER THAN THE WAIT TAKING ITS ASK BACK. A wait that ends could say
+ * so, but one can end without a word — the API process restarted, the window carrying it closed —
+ * and then only whoever holds the ask can end it. The price is that the ask still shows for the
+ * two minutes after a wait gives up, and for up to this long after a turn is stopped.
+ */
+export const REQUEST_TTL_MS = PERSON_WAIT_MS + 2 * 60_000;
 
 /**
  * Who was driving when the process died, as far as the next process may believe it.
@@ -152,9 +180,62 @@ export function createControl(
     return copy;
   };
 
+  /**
+   * When each ask was made, so one nobody answered can be let go of ({@link REQUEST_TTL_MS}).
+   *
+   * Here and not on the state: nothing outside needs them, and the state is what a screen asking
+   * somebody for a password is drawn from. An ask in the state this starts from is timed from now
+   * (`restoredControl` hands back none, so only a caller that builds one meets this).
+   */
+  let helpAskedAt = state.requested ? Date.parse(now()) : undefined;
+  let secretAskedAt = state.secretWanted ? Date.parse(now()) : undefined;
+
+  /**
+   * Let go of an ask that has stood its time.
+   *
+   * ON A LOOK, NOT ON A TIMER: there is nothing to wake. The wait that asked is over, and the only
+   * ones who care are whoever looks next — the surface's poll, a value arriving for the masked box,
+   * a person taking the wheel.
+   *
+   * ONLY EVER AN ASK. A person holding the wheel is never timed out from under their hands: they
+   * may be half-way through typing a code, and taking the browser back mid-sign-in is worse than
+   * any stale line. (Taking the wheel answers the ask, so there is none to let go of by then.)
+   *
+   * The reason goes with the ask for the wheel — it is what 도움 필요 was drawn with — and the field
+   * with the label, since half an ask is nothing anybody downstream can read. And the keeper is
+   * told, so the file does not go on saying what `get` has stopped saying: a restart would report
+   * a value request "lost" (`restoredControl`) that had only run out.
+   */
+  const lapse = (): void => {
+    if (helpAskedAt === undefined && secretAskedAt === undefined) return;
+    const at = Date.parse(now());
+    let lapsed = false;
+    if (helpAskedAt !== undefined && at - helpAskedAt > REQUEST_TTL_MS) {
+      helpAskedAt = undefined;
+      if (state.holder === "bot" && state.requested) {
+        state = { ...state, requested: false, reason: undefined };
+        lapsed = true;
+      }
+    }
+    if (secretAskedAt !== undefined && at - secretAskedAt > REQUEST_TTL_MS) {
+      secretAskedAt = undefined;
+      if (state.secretWanted) {
+        state = {
+          ...state,
+          secretWanted: undefined,
+          secretRef: undefined,
+          secretSnapshotId: undefined,
+        };
+        lapsed = true;
+      }
+    }
+    if (lapsed) changed();
+  };
+
   return {
     /** The current state, as the surface polls it. A copy, so a caller cannot mutate the machine. */
     get(): ControlState {
+      lapse();
       return { ...state };
     },
 
@@ -165,6 +246,9 @@ export function createControl(
      * hand itself to a human could also hand a human a page they never asked to see.
      */
     requestHelp(reason: unknown): ControlState {
+      // Stamped on every ask, not only the first: a Bot that asks again is waiting again, and an
+      // ask running out under that second wait is the hand-back that never happened.
+      helpAskedAt = Date.parse(now());
       state = {
         ...state,
         requested: true,
@@ -187,6 +271,7 @@ export function createControl(
           "Say which field the value goes in, using a ref from your snapshot.",
         );
       }
+      secretAskedAt = Date.parse(now());
       state = {
         ...state,
         secretWanted:
@@ -205,8 +290,13 @@ export function createControl(
      *
      * Read before typing so the caller can refuse when nothing asked for one: this is what keeps the
      * masked box from being a general-purpose way to type into the page.
+     *
+     * Which is why an ask that has run out is let go of here as well as in `get`: a box that has
+     * stopped being shown must stop being answerable at the same moment, or a value typed into one
+     * left open in an old window still goes to a page whose turn ended.
      */
     pendingSecret(): { ref: string; snapshotId?: number } | null {
+      lapse();
       if (!state.secretWanted || !state.secretRef) return null;
       return { ref: state.secretRef, snapshotId: state.secretSnapshotId };
     },
@@ -218,6 +308,7 @@ export function createControl(
      * can try again.
      */
     secretSupplied(): void {
+      secretAskedAt = undefined;
       state = {
         ...state,
         secretWanted: undefined,
@@ -233,8 +324,14 @@ export function createControl(
      * `reason` survives, because it is the thing they were just asked to do. Any pending secret is
      * cleared: a person with full browser control can type the password into the page, and a masked
      * box left open behind them no longer corresponds to an active request.
+     *
+     * An ask that had already run out is let go of first, so its reason is not what this person is
+     * told they were handed. Taking the wheel answers whatever ask is left: neither is timed again.
      */
     take(): ControlState {
+      lapse();
+      helpAskedAt = undefined;
+      secretAskedAt = undefined;
       state = {
         holder: "human",
         since: now(),
@@ -253,6 +350,8 @@ export function createControl(
      * secret box left open afterwards is asking for a password nothing is waiting for.
      */
     release(): ControlState {
+      helpAskedAt = undefined;
+      secretAskedAt = undefined;
       state = {
         holder: "bot",
         since: now(),

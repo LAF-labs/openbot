@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { PERSON_WAIT_MS } from "../../shared/person-wait";
 import {
   ControlError,
   ControlRequestError,
+  type ControlState,
   createControl,
+  REQUEST_TTL_MS,
+  restoredControl,
 } from "../src/control";
 
 /**
@@ -240,5 +244,221 @@ describe("the crappy paths: secrets", () => {
         .filter((k) => /secret/i.test(k))
         .sort(),
     ).toEqual(["secretRef", "secretSnapshotId", "secretWanted"]);
+  });
+});
+
+/**
+ * AN ASK NOBODY ANSWERED DOES NOT OUTLIVE THE TURN THAT MADE IT BY MUCH — AND NEVER ENDS INSIDE IT.
+ *
+ * The wheel belongs to the computer, not to a conversation, and an ask used to stand on it for ever:
+ * measured before this, `requestHelp` and `requestSecret` were both still there with the clock moved
+ * on eleven minutes — `requested: true`, the label, and `pendingSecret()` still naming the field. The
+ * Bot went on showing 도움 필요 through every later conversation, and the masked box went on taking a
+ * password for a turn that was over (upstream OpenBot #145 and #457).
+ *
+ * The edge these pin is the one upstream's ten minutes would get wrong HERE. The Bot's own wait is
+ * ten minutes, and it reads an ask that is gone as the person having handed the wheel back. So the
+ * ask has to stand through the whole of that wait and a little past it, and only then go.
+ */
+describe("an ask nobody answered", () => {
+  const ASKED = Date.parse("2026-10-02T03:00:00.000Z");
+  const SECOND = 1_000;
+
+  function asking(onChange?: (state: ControlState) => void) {
+    let elapsed = 0;
+    const control = createControl(
+      () => new Date(ASKED + elapsed).toISOString(),
+      onChange ? { onChange } : {},
+    );
+    return {
+      control,
+      /** Move the clock to this long after the ask. */
+      after: (ms: number) => {
+        elapsed = ms;
+      },
+    };
+  }
+
+  test("stands for longer than the Bot waits, and only a little", () => {
+    expect(REQUEST_TTL_MS).toBeGreaterThan(PERSON_WAIT_MS);
+    // The server gives the ask's own answer, and the wait's last look, 45 s each at most.
+    expect(REQUEST_TTL_MS - PERSON_WAIT_MS).toBeGreaterThanOrEqual(90 * SECOND);
+    expect(REQUEST_TTL_MS).toBeLessThanOrEqual(PERSON_WAIT_MS * 1.5);
+  });
+
+  test("answered a second before the wait runs out, the wheel still changes hands and comes back", () => {
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    after(PERSON_WAIT_MS - SECOND);
+    expect(control.get()).toMatchObject({
+      holder: "bot",
+      requested: true,
+      reason: "네이버 로그인",
+    });
+    expect(control.take()).toMatchObject({
+      holder: "human",
+      reason: "네이버 로그인",
+    });
+    // What the Bot's wait reads as done: the wheel back, and nothing asked.
+    expect(control.release()).toMatchObject({
+      holder: "bot",
+      requested: false,
+    });
+  });
+
+  test("a value typed a second before the wait runs out still has its field", () => {
+    const { control, after } = asking();
+    control.requestSecret({ ref: "e12", label: "인증번호", snapshotId: 4 });
+    after(PERSON_WAIT_MS - SECOND);
+    expect(control.get().secretWanted).toBe("인증번호");
+    expect(control.pendingSecret()).toEqual({ ref: "e12", snapshotId: 4 });
+  });
+
+  test("still stands when the Bot's wait gives up, so giving up is never read as a hand-back", () => {
+    /*
+     * THE TRAP. `nothing asked, the Bot holds the wheel` is what the waiting call reads as
+     * `laf:control_returned`, and `no value wanted` as `laf:secret_entered`. Its last look is made
+     * just before its own ten minutes are up, counted from after the ask was answered — so on this
+     * clock it lands at ten minutes and some. An ask gone by then turns "nobody came" into "done".
+     */
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    control.requestSecret({ ref: "e12", label: "인증번호" });
+    for (const late of [0, 1, 45, 90]) {
+      after(PERSON_WAIT_MS + late * SECOND);
+      expect(control.get()).toMatchObject({
+        requested: true,
+        secretWanted: "인증번호",
+      });
+      expect(control.pendingSecret()).not.toBeNull();
+    }
+  });
+
+  test("is gone once its time is up, and its reason with it", () => {
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    after(REQUEST_TTL_MS);
+    expect(control.get().requested).toBe(true);
+
+    after(REQUEST_TTL_MS + 1);
+    const state = control.get();
+    expect(state.requested).toBe(false);
+    // The reason is what 도움 필요 was drawn with in the next conversation, so it goes too.
+    expect(state.reason).toBeUndefined();
+    expect(state.holder).toBe("bot");
+  });
+
+  test("a value stops being wanted, and takes the field it named with it", () => {
+    const { control, after } = asking();
+    control.requestSecret({ ref: "e12", label: "인증번호", snapshotId: 4 });
+    after(REQUEST_TTL_MS + 1);
+    const state = control.get();
+    expect(state.secretWanted).toBeUndefined();
+    expect(state.secretRef).toBeUndefined();
+    expect(state.secretSnapshotId).toBeUndefined();
+  });
+
+  test("a value stops being answerable at the moment it stops being shown", () => {
+    /*
+     * Asked through `pendingSecret` alone, with no `get` before it. That is the call the masked
+     * box's own door makes before it types (`control-routes.ts`): letting go only on the path the
+     * surface polls would leave a box nobody is shown still able to take a password.
+     */
+    const { control, after } = asking();
+    control.requestSecret({ ref: "e12", label: "인증번호" });
+    after(REQUEST_TTL_MS + 1);
+    expect(control.pendingSecret()).toBeNull();
+  });
+
+  test("never takes the wheel back from a person who holds it", () => {
+    // The one thing that must not run out: somebody may be half-way through typing a code.
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    after(60 * SECOND);
+    control.take();
+    after(6 * 60 * 60 * SECOND);
+    expect(control.get()).toMatchObject({
+      holder: "human",
+      reason: "네이버 로그인",
+    });
+    expect(control.humanMayDrive()).toBe(true);
+  });
+
+  test("asking again starts the time again, for each ask by itself", () => {
+    // A Bot that asks twice waits twice, and the first ask's time must not run out under the second.
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    control.requestSecret({ ref: "e12", label: "인증번호" });
+    after(PERSON_WAIT_MS);
+    control.requestHelp("다시 로그인");
+
+    after(REQUEST_TTL_MS + 1);
+    const state = control.get();
+    // The second ask is two minutes old; the value was asked for once, at the start.
+    expect(state).toMatchObject({ requested: true, reason: "다시 로그인" });
+    expect(state.secretWanted).toBeUndefined();
+
+    after(PERSON_WAIT_MS + REQUEST_TTL_MS + 1);
+    expect(control.get().requested).toBe(false);
+  });
+
+  test("a fresh ask after one that ran out is shown, not swallowed by it", () => {
+    // What ran out must take its own bookkeeping with it, or the next ask is stale on arrival.
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    control.requestSecret({ ref: "e12", label: "인증번호" });
+    after(REQUEST_TTL_MS + 1);
+    expect(control.get().requested).toBe(false);
+    expect(control.pendingSecret()).toBeNull();
+
+    control.requestHelp("다시 로그인");
+    control.requestSecret({ ref: "e40", label: "인증번호 다시" });
+    expect(control.get()).toMatchObject({
+      requested: true,
+      reason: "다시 로그인",
+      secretWanted: "인증번호 다시",
+    });
+    expect(control.pendingSecret()).toEqual({
+      ref: "e40",
+      snapshotId: undefined,
+    });
+  });
+
+  test("a person who takes the wheel after it ran out is not handed its reason", () => {
+    // With no look in between: taking the wheel is itself the next look.
+    const { control, after } = asking();
+    control.requestHelp("네이버 로그인");
+    after(REQUEST_TTL_MS + 1);
+    const state = control.take();
+    expect(state.holder).toBe("human");
+    expect(state.reason).toBeUndefined();
+  });
+
+  test("whoever keeps the state is told once, when it runs out, and not by a look before that", () => {
+    /*
+     * What is written to `control.json`. A file that went on saying a value was wanted would have
+     * the next life of this process tell the Bot its request was lost (`restoredControl`) — about an
+     * ask that had only run out, in some conversation long after.
+     */
+    const kept: ControlState[] = [];
+    const { control, after } = asking((state) => kept.push(state));
+    control.requestHelp("네이버 로그인");
+    control.requestSecret({ ref: "e12", label: "인증번호" });
+    expect(kept).toHaveLength(2);
+
+    after(PERSON_WAIT_MS);
+    control.get();
+    control.pendingSecret();
+    expect(kept).toHaveLength(2);
+
+    after(REQUEST_TTL_MS + 1);
+    control.get();
+    control.get();
+    control.pendingSecret();
+    expect(kept).toHaveLength(3);
+    expect(restoredControl(JSON.parse(JSON.stringify(kept[2])))).toEqual({
+      secretLost: false,
+    });
+    expect(kept[2]).toMatchObject({ holder: "bot", requested: false });
   });
 });
