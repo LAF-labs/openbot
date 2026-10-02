@@ -1,4 +1,5 @@
 import {
+  MAX_RESULT_CHARS,
   type McpCallResult,
   shapeResult,
   trimDetail,
@@ -29,13 +30,40 @@ import { TIMEOUT_MS } from "./timeouts";
 export type RestConnection = { url: string; token?: string };
 
 /**
+ * What a result ends with when only the opening of its body is in it. See {@link asResult}.
+ *
+ * It states no length, and nothing about what was read: whether the rest was a megabyte nobody
+ * downloaded or forty characters that arrived in the last piece, this is all that is true of both.
+ */
+const MORE_THAN_SHOWN =
+  "\n\n[truncated: only the opening is shown, and there is more after it]";
+
+/**
  * Text as a tool result, through the one function that decides what a model is told.
  *
  * The empty case and the size cap are {@link shapeResult}'s, shared with the MCP transport, so
  * which door a result came through cannot change what the model reads.
+ *
+ * `more` is for a body {@link readOpening} stopped reading, and it is its own branch for two
+ * reasons. Nobody knows how long that body is, so `shapeResult`'s note — "the tool returned N
+ * characters" — would state a length that was never measured. And the note has to fit INSIDE the
+ * cap: a result over it is filed on the Bot's computer and shown by its first 20,000 characters
+ * (`shared/spillover.ts`), which is exactly where a note appended after the cap is not. So the
+ * text is cut short enough to carry it, and at a whole character: never between the halves of a
+ * surrogate pair, which would end the result on half an emoji.
  */
-export function asResult(text: string): McpCallResult {
-  return { ...shapeResult(text.trim()), isError: false };
+export function asResult(text: string, more = false): McpCallResult {
+  const joined = text.trim();
+  if (!more) return { ...shapeResult(joined), isError: false };
+
+  let end = Math.min(joined.length, MAX_RESULT_CHARS - MORE_THAN_SHOWN.length);
+  const last = joined.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return {
+    text: `${joined.slice(0, end)}${MORE_THAN_SHOWN}`,
+    isError: false,
+    truncated: true,
+  };
 }
 
 /**
@@ -211,4 +239,56 @@ export async function vendorRequest(
  */
 export async function readJson<T>(response: Response): Promise<T | null> {
   return (await response.json().catch(() => null)) as T | null;
+}
+
+/**
+ * The opening of a body as text — enough to fill one result — and whether there was more.
+ *
+ * `response.text()` holds the whole download as one string before all but its opening is dropped.
+ * Measured 2026-10-02 against a file that never ended, 64 KB every 25 ms: the call came back when
+ * the 30-second signal fired, with 70 MB taken in, and — the old `.catch(() => "")` — as a file
+ * with nothing in it. This process is the one API server a deployment has, and upstream measured
+ * 600 MB for one 200 MB log (OpenBot #595, MIT). So reading stops once there is more than a result
+ * can carry, and the request is ended rather than left to finish.
+ *
+ * `abandon` IS WHAT ENDS IT, and it is not optional. Upstream cancels the body's reader and calls
+ * the download cancelled; measured here on Bun 1.3.11, a cancelled reader only throws the bytes
+ * away — the server went on sending, 14 MB in six seconds, until the request's own signal fired —
+ * while aborting the request stopped it within 80 ms. So the caller hands {@link vendorRequest} a
+ * signal of its own and hands this the function that aborts it.
+ *
+ * DECODED AS A STREAM, the way `response.text()` decodes: UTF-8, a byte order mark dropped,
+ * anything malformed replaced. A piece off the wire ends wherever it likes and 한글 is three bytes
+ * a character, so the decoder holds a character's first bytes until the rest arrive; where reading
+ * stops early that held tail is never flushed, which drops it instead of turning it into U+FFFD.
+ *
+ * What comes back may be longer than `maxChars`: the piece that crossed the line is kept whole.
+ * {@link asResult} makes the cut, because it is the one that knows what else has to fit.
+ *
+ * A body that breaks before it is read reads as empty, as it did under `text().catch(() => "")`.
+ */
+export async function readOpening(
+  response: Response,
+  maxChars: number,
+  abandon: () => void,
+): Promise<{ text: string; more: boolean }> {
+  if (!response.body) return { text: "", more: false };
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (text.length <= maxChars) {
+      const { done, value } = await reader.read();
+      if (done) return { text: text + decoder.decode(), more: false };
+      text += decoder.decode(value, { stream: true });
+    }
+    return { text, more: true };
+  } catch {
+    return { text: "", more: false };
+  } finally {
+    // Both, on every way out: a request already answered in full has nothing left to abort, and
+    // the cancel is what drops any bytes that arrive before the abort lands.
+    abandon();
+    await reader.cancel().catch(() => {});
+  }
 }

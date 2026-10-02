@@ -1,8 +1,9 @@
-import type { McpCallResult, McpTool } from "./mcp";
+import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import {
   asResult,
   failure,
   readJson,
+  readOpening,
   type RestConnection,
   stringArg,
   unknownTool,
@@ -375,15 +376,23 @@ export async function callTool(
       );
     }
 
+    // This request's own signal, because ending the request is the only thing that stops a
+    // download once the opening has been read (`readOpening`).
+    const download = new AbortController();
     const content = await vendorRequest("Google Drive", connection, {
       url: exportAs ? fileUrl(readId, "/export") : fileUrl(readId),
       query: exportAs ? { mimeType: exportAs } : { alt: "media" },
+      signal: download.signal,
     });
     if (!content.ok) return failure(content.message, content.status);
 
-    const text = await content.response.text().catch(() => "");
+    const { text, more } = await readOpening(
+      content.response,
+      MAX_RESULT_CHARS,
+      () => download.abort(),
+    );
     // Named, because a model handed only the body cannot cite what it read.
-    return asResult(`${file.name ?? readId}\n\n${text}`);
+    return asResult(`${file.name ?? readId}\n\n${text}`, more);
   }
 
   return unknownTool(toolName);

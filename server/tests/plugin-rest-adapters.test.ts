@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { TOOL_RESULT_CUT } from "../../shared/spillover";
 import * as cafe24 from "../src/plugins/cafe24-rest";
 import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
 import * as gmail from "../src/plugins/gmail-rest";
@@ -510,6 +511,146 @@ describe("Google Drive", () => {
     expect(result.isError).toBe(true);
     expect(result.text).toContain("image/png");
     expect(asked).toHaveLength(1);
+  });
+
+  /*
+   * ONLY THE OPENING OF A LONG FILE IS SHOWN, SO ONLY THE OPENING IS READ (upstream OpenBot #595).
+   *
+   * The whole download used to be held as one string before all but its first 20,000 characters
+   * were dropped. The body here counts what is pulled from it, so reading it to the end fails; and
+   * the answer is held to the two things a cut at a byte count gets wrong — half a Korean character
+   * and half an emoji — because 한글 is three bytes a character and a chunk ends where it likes.
+   */
+  /** A file's bytes handed over a piece at a time, counting what was asked for. */
+  function served(bytes: Uint8Array, pieceBytes: number) {
+    const counted = { pulled: 0 };
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (counted.pulled >= bytes.length) {
+          controller.close();
+          return;
+        }
+        const piece = bytes.subarray(
+          counted.pulled,
+          counted.pulled + pieceBytes,
+        );
+        counted.pulled += piece.length;
+        controller.enqueue(piece);
+      },
+    });
+    return { counted, body };
+  }
+
+  /** The note a cut answer ends with. It claims no length: nobody read far enough to know one. */
+  const MORE =
+    "\n\n[truncated: only the opening is shown, and there is more after it]";
+
+  test("a file far longer than one result is not downloaded whole", async () => {
+    const megabyte = 1024 * 1024;
+    const bytes = new TextEncoder().encode(
+      `${"x".repeat(1023)}\n`.repeat(16 * 1024),
+    );
+    const { counted, body } = served(bytes, megabyte);
+    // `as … | null`, or TypeScript narrows a value assigned only inside the stub to `null`.
+    let download = null as AbortSignal | null;
+    globalThis.fetch = stubFetch(async (url, init) => {
+      if (new URL(String(url)).searchParams.get("alt") !== "media") {
+        return json({ id: "log1", name: "big.log", mimeType: "text/plain" });
+      }
+      download = init?.signal ?? null;
+      return new Response(body, { headers: { "content-type": "text/plain" } });
+    });
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "log1",
+    });
+
+    expect(bytes.length).toBe(16 * megabyte);
+    // A piece or two, never the sixteen.
+    expect(counted.pulled).toBeLessThanOrEqual(4 * megabyte);
+    /*
+     * And the REQUEST is ended, which a stub cannot feel and a vendor can. Measured on Bun 1.3.11
+     * against a real server: with only the body's reader cancelled the far end sent 14 MB in the
+     * next six seconds, thrown away on arrival; with the request aborted it stopped within 80 ms.
+     */
+    expect(download?.aborted).toBe(true);
+    expect(result.isError).toBe(false);
+    expect(result.truncated).toBe(true);
+    expect(result.text.startsWith(`big.log\n\n${"x".repeat(1023)}\n`)).toBe(
+      true,
+    );
+    expect(result.text.endsWith(MORE)).toBe(true);
+    // The note is inside what the Bot is shown. A result over this is filed and shown by its head
+    // (`shared/spillover.ts`), which would put the one sentence that says "there is more" out of sight.
+    expect(result.text.length).toBeLessThanOrEqual(TOOL_RESULT_CUT);
+  });
+
+  test("the opening of a Korean file ends on a whole character", async () => {
+    // 1,000 bytes a piece and three bytes a character: every piece but one ends inside a 가.
+    const { body } = served(
+      new TextEncoder().encode("가".repeat(30_000)),
+      1000,
+    );
+    reply = (request) =>
+      request.url.searchParams.get("alt") === "media"
+        ? new Response(body, { headers: { "content-type": "text/plain" } })
+        : json({ id: "f3", name: "메모.txt", mimeType: "text/plain" });
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "f3",
+    });
+
+    const heading = "메모.txt\n\n";
+    expect(result.truncated).toBe(true);
+    expect(result.text.endsWith(MORE)).toBe(true);
+    const shown = result.text.slice(heading.length, -MORE.length);
+    // Nothing replaced, nothing halved: only 가, and as many as fit beside the heading and the note.
+    expect(shown).toBe("가".repeat(shown.length));
+    expect(shown.length).toBe(TOOL_RESULT_CUT - heading.length - MORE.length);
+  });
+
+  test("and never on half of an emoji, wherever the cut falls", async () => {
+    // Two code units each, so the cut lands inside one for a name of one parity and between two for
+    // the other. Both are read, because which is which depends on the note's own length.
+    for (const name of ["a.txt", "ab.txt"]) {
+      const { body } = served(
+        new TextEncoder().encode("😀".repeat(15_000)),
+        1000,
+      );
+      reply = (request) =>
+        request.url.searchParams.get("alt") === "media"
+          ? new Response(body, { headers: { "content-type": "text/plain" } })
+          : json({ id: "f4", name, mimeType: "text/plain" });
+
+      const result = await drive.callTool(connection, "read_file_content", {
+        fileId: "f4",
+      });
+
+      expect(result.truncated).toBe(true);
+      // Half of a surrogate pair is not a character. Before this change the first name ended on one.
+      expect(result.text.isWellFormed()).toBe(true);
+      const shown = result.text.slice(`${name}\n\n`.length, -MORE.length);
+      expect(shown).toBe("😀".repeat(shown.length / 2));
+      expect(result.text.length).toBeLessThanOrEqual(TOOL_RESULT_CUT);
+      expect(result.text.length).toBeGreaterThanOrEqual(TOOL_RESULT_CUT - 1);
+    }
+  });
+
+  test("a download with no body at all reads as an empty file", async () => {
+    reply = (request) =>
+      request.url.searchParams.get("alt") === "media"
+        ? new Response(null)
+        : json({ id: "f5", name: "empty.txt", mimeType: "text/plain" });
+
+    const result = await drive.callTool(connection, "read_file_content", {
+      fileId: "f5",
+    });
+
+    expect(result).toEqual({
+      text: "empty.txt",
+      isError: false,
+      truncated: false,
+    });
   });
 
   test("a redirect is refused rather than followed, with somebody's token on the request", async () => {
