@@ -167,6 +167,13 @@ export type ComposerProps = {
    */
   stoppable?: boolean;
   /**
+   * What is typed mid-turn goes somewhere now, not into a queue: the turn is stopped on a question
+   * and words are an answer to it (`lib/turns/typed-answer.ts`). `onQueue` is still what takes
+   * them; this is only what the button calls itself, for the same reason "Queue message" exists —
+   * a button says what it is about to do.
+   */
+  isAnswering?: boolean;
+  /**
    * Take files as well as words: a picker, a drop and a paste, each file sent up the moment it is
    * picked (`lib/attachments/upload.ts`) and carried by the message as a reference.
    *
@@ -187,6 +194,7 @@ export function Composer({
   disabled = false,
   pending = false,
   stoppable,
+  isAnswering = false,
   placeholder,
   attach,
 }: ComposerProps) {
@@ -671,7 +679,14 @@ export function Composer({
    * the two it is about to do. "Send" on a button that will not send for another minute is a small
    * lie told to exactly the people who cannot see the queue it lands in.
    */
-  const sendLabel = parking ? t("Queue message") : t("Send message");
+  /** Words alone answer a question; a file, a post or a skill with them is a message, and waits. */
+  const answers =
+    isAnswering &&
+    attachments.length === 0 &&
+    quote === null &&
+    draft.commandIds.length === 0;
+  const sendLabel =
+    parking && !answers ? t("Queue message") : t("Send message");
 
   if (compact) {
     return (

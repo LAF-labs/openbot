@@ -141,6 +141,8 @@ export function ConversationView({
     messages: readonly ParkedMessage[];
     onPark: (draft: ComposerDraft) => void;
     onRemove: (id: string) => void;
+    /** What is typed now answers the question the turn is stopped on. See `ComposerProps`. */
+    isAnswering?: boolean;
   };
   /**
    * What fills the middle before anything has been said.
@@ -362,6 +364,7 @@ export function ConversationView({
           }
           onStop={onStop}
           attach={attach}
+          isAnswering={parked?.isAnswering === true}
           onSubmit={(draft) => submit(draft, false)}
           placeholder={placeholder}
           /*

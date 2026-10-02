@@ -301,6 +301,10 @@ export const ko: Record<string, string> = {
   "Also stops the Bot pressing Enter for anything else, because a form submits from Enter in any of its fields.":
     "다른 용도의 Enter도 함께 막혀요. 폼은 어느 입력칸에서든 Enter로 제출되기 때문이에요.",
   Answered: "응답함",
+  "Not answered": "답하지 않음",
+  "Your answer: {answer}": "내 답: {answer}",
+  "None of these? Type your answer below.":
+    "여기에 없으면 아래에 직접 써 주세요.",
   Appearance: "화면 모드",
   "Arguments (JSON Schema)": "인자 (JSON Schema)",
   "Ask about the busiest": "가장 바쁜 항목 물어보기",

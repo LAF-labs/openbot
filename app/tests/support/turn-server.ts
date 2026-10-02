@@ -114,7 +114,11 @@ export function turnServer(options: {
     seq: 0,
     turn: options.turn ?? null,
     messages: [...(options.turnMessages ?? [])],
+    /** The cards the turn is waiting on a person to answer (`people.ts`). */
+    waiting: [] as string[],
   };
+  /** Every answer a window sent to a waiting card, in order. */
+  const answers: { toolCallId: string; value: unknown }[] = [];
   let historyDown = false;
   let historyReads = 0;
   let doorDown = false;
@@ -149,7 +153,7 @@ export function turnServer(options: {
         seq: hub.seq,
         turn: hub.turn,
         messages: hub.messages,
-        waiting: [],
+        waiting: hub.waiting,
       } satisfies TurnFrame),
     });
   };
@@ -244,6 +248,24 @@ export function turnServer(options: {
       // The front door's answer while the server behind it is restarting.
       if (historyDown) return new Response("", { status: 503 });
       return json(page());
+    }
+    // A person's answer to a card: taken while the turn waits on it, 409 once it does not.
+    if (pathname.startsWith(`${door}/answers/`) && method === "POST") {
+      const toolCallId = decodeURIComponent(
+        pathname.slice(`${door}/answers/`.length),
+      );
+      if (!hub.waiting.includes(toolCallId)) {
+        return json(
+          { error: "laf:no_longer_waiting", code: "laf:no_longer_waiting" },
+          409,
+        );
+      }
+      answers.push({
+        toolCallId,
+        value: (request.body as { value?: unknown } | null)?.value ?? null,
+      });
+      hub.waiting = hub.waiting.filter((id) => id !== toolCallId);
+      return json({ answered: true });
     }
     if (pathname === `${door}/stop` && method === "POST") {
       stops += 1;
@@ -350,6 +372,19 @@ export function turnServer(options: {
     deliver: (messages: Message[]) => {
       stored.push(...messages);
     },
+    /** The turn stops on cards and waits for a person: every window is told which. */
+    waitOn: (toolCallIds: string[]) => {
+      const turn = hub.turn;
+      if (!turn) throw new Error("no turn to wait in");
+      hub.waiting = toolCallIds;
+      publish({ kind: "waiting", turn: turn.id, toolCallIds });
+    },
+    /** The cards stop being waited on without an answer: the wait ran out, or the turn went on. */
+    stopWaiting: () => {
+      hub.waiting = [];
+    },
+    /** Every answer a window sent to a waiting card. */
+    answers: () => answers,
     close: () => {
       if (server === onStream) server = null;
     },
