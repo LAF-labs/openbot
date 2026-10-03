@@ -1,5 +1,6 @@
 import { feedQuotePart } from "@shared/feed";
 import { effectivePersona } from "@shared/persona";
+import { IconPencil } from "@tabler/icons-react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -57,6 +58,13 @@ import { useNow } from "@/lib/use-now";
  *
  * SEEN IS WHAT THIS PAGE SHOWED. Posts drawn here are marked seen once they load, which is what the
  * sidebar's count and the unread pause read; the ones that were new keep their dot for this visit.
+ *
+ * THE TITLE STANDS ALONE (2026-10-04, the owner: too many words, and words where an icon would do).
+ * The page opened on a sentence saying what it is, then two boxes saying it again: on a first day,
+ * 417 of the page's 577 characters were the page explaining itself and its neighbours (the sentence
+ * 25, the boxes and their line 123, the tour 269; Korean, whitespace removed). The sentence is gone,
+ * the empty list says in one line what will come, and a post's presses are icons that say their
+ * names when asked.
  */
 export const Route = createFileRoute("/_authed/_app/feed")({
   component: FeedPageScreen,
@@ -70,12 +78,7 @@ function FeedPageScreen() {
   const bot = mine.bots ? primaryBot(mine.bots, channels.data) : undefined;
 
   return (
-    <PageShell
-      description={t(
-        "What your Bot did today, what is waiting on you, and what it found for you.",
-      )}
-      title={t("Updates")}
-    >
+    <PageShell title={t("Updates")}>
       {mine.bots === undefined && !mine.isError ? (
         <Skeleton className="h-32 rounded-xl" />
       ) : null}
@@ -251,11 +254,10 @@ function FeedPosts({
           </button>
         </p>
       ) : null}
+      {/* One line: when the next ones come, and the press that makes them now, are on the card above. */}
       {settled && routine && posts.length === 0 ? (
         <p className="text-muted-foreground text-sm" data-feed-empty>
-          {t(
-            "Nothing posted yet. The first updates come at the next run, or press Make now.",
-          )}
+          {t("Nothing posted yet.")}
         </p>
       ) : null}
       {settled && posts.length === 0 ? <FeedTour /> : null}
@@ -267,9 +269,6 @@ function FeedPosts({
           onHide={() => void handleHide(post)}
           onLike={() => void handleLike(post)}
           post={post}
-          routineName={
-            routines.find((one) => one.id === post.routineId)?.name ?? null
-          }
         />
       ))}
       {feed.hasNextPage ? (
@@ -332,16 +331,22 @@ function RoutineCard({
           size="sm"
         >
           {/* The run is answered when it has finished — a minute or two — and the posts come with it. */}
-          {runNow.isPending
-            ? t("Making them — they appear here in a few minutes")
-            : t("Make now")}
+          {runNow.isPending ? t("Making them — a few minutes") : t("Make now")}
         </Button>
+        {/*
+         * A PENCIL, NAMED. 대화에서 바꾸기 is the card's second press, and the pencil is what this
+         * app already draws for changing a thing (the Bot's name, its profile); the words are in
+         * the label and the tooltip.
+         */}
         {channelId ? (
           <a
-            className={buttonVariants({ size: "sm", variant: "outline" })}
+            aria-label={t("Change in the conversation")}
+            className={buttonVariants({ size: "icon-sm", variant: "outline" })}
+            data-feed-change
             href={editInChatHref(channelId, routine.name)}
+            title={t("Change in the conversation")}
           >
-            {t("Change in the conversation")}
+            <IconPencil aria-hidden="true" />
           </a>
         ) : null}
         {!routine.enabled ? (
@@ -360,7 +365,14 @@ function RoutineCard({
   );
 }
 
-/** Before 소식 exists: what would come here, and the one press that makes it (plan D3). */
+/**
+ * Before 소식 exists: one line saying what will come here, and the one press that makes it (plan D3).
+ *
+ * IT WAS TWO BOXES, A SENTENCE AND A BUTTON — 123 characters in Korean around one press (measured
+ * 2026-10-04). One box said the posts come here and how many; the other sent the person to 아이디어,
+ * which the sidebar and the tour below already do; the sentence named the topics. What the press
+ * makes is a routine that looks for these topics every morning, so that is the line.
+ */
 function MakeFeed({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
   const { data: user } = useQuery(currentUserQueryOptions());
@@ -375,47 +387,22 @@ function MakeFeed({ agentId }: { agentId: string }) {
       }),
   });
   return (
-    <div className="flex flex-col gap-3" data-feed-make>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-border border-dashed p-4 text-sm">
-          <p className="font-medium">{t("What I find comes here")}</p>
-          <p className="mt-1 text-muted-foreground">
-            {t(
-              "Every morning I look up what changed and post up to three, each with where it came from. Tell me in the conversation what to look for.",
-            )}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border border-dashed p-4 text-sm">
-          <p className="font-medium">{t("Not sure what to ask?")}</p>
-          <p className="mt-1 text-muted-foreground">
-            {t("Ideas has things I can do for you.")}{" "}
-            <Link
-              className="text-link underline-offset-4 hover:underline"
-              to="/ideas"
-            >
-              {t("See ideas")}
-            </Link>
-          </p>
-        </div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="text-muted-foreground text-sm">
-          {t("It starts by looking for: {topics}", {
-            topics: topics.join(", "),
-          })}
-        </p>
-        <Button
-          className="self-start"
-          data-feed-start
-          disabled={make.isPending}
-          onClick={() => make.mutate()}
-        >
-          {t("Get updates every morning")}
-        </Button>
-        <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
-          {make.isError ? failureSentence(make.error) : null}
-        </LiveRegion>
-      </div>
+    <div className="flex flex-col items-start gap-2" data-feed-make>
+      <p className="text-muted-foreground text-sm">
+        {t("Every morning, posted here: {topics}", {
+          topics: topics.join(", "),
+        })}
+      </p>
+      <Button
+        data-feed-start
+        disabled={make.isPending}
+        onClick={() => make.mutate()}
+      >
+        {t("Get updates every morning")}
+      </Button>
+      <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
+        {make.isError ? failureSentence(make.error) : null}
+      </LiveRegion>
     </div>
   );
 }

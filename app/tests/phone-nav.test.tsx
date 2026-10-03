@@ -342,11 +342,8 @@ describe("소식", () => {
         "Nothing yet today. What you hand over in the conversation shows up here."
       ],
     ).toBeString();
-    expect(
-      ko[
-        "What your Bot did today, what is waiting on you, and what it found for you."
-      ],
-    ).toBeString();
+    // The title stands alone since 2026-10-04: no sentence under it (`everyday-screens.test.tsx`).
+    expect(view.host.querySelectorAll("header p")).toHaveLength(0);
     // Before there is a 소식 routine: what would come here, and the one press (plan D3).
     expect(view.host.querySelector("[data-feed-make]")).not.toBeNull();
     expect(view.host.querySelector("[data-feed-start]")?.textContent).toBe(
