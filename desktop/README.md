@@ -249,7 +249,7 @@ needs telling. So:
 
   It reaches macOS 14 and later only: wry sets `inactiveSchedulingPolicy` when
   `os_major_version >= 14` and does nothing below, and the bundle's minimum is
-  12.0, so on macOS 12 and 13 the gap remains and was not measured here. WebView2
+  12.3, so on macOS 12 and 13 the gap remains and was not measured here. WebView2
   has no such setting (tauri-utils names it unsupported on Windows); the page
   holds a Web Lock (`holdShellAwake`), the workaround tauri-utils points to.
   Unmeasured — there is no Windows machine here. The lasting fix for both is a
@@ -311,6 +311,30 @@ connect) before showing the window; if nothing answers, the window is sent
 to this page, which keeps probing and replaces itself with the origin the
 moment the server is back. Without it WKWebView shows a blank window and
 WebView2 its own error page.
+
+## The oldest system it opens on
+
+`bundle.macOS.minimumSystemVersion` is **12.3**, and that is not where the app
+runs from. The window's engine is the system's WebKit, and the page needs one
+that builds a pattern with a look-behind — Safari 16.4, which macOS has from
+13.3. On an older engine the page draws a sentence that says what to update in
+place of the app (`app/src/lib/engine-floor.ts`), instead of a conversation
+that falls over the moment it holds a Bot's reply, which is what the app did
+there before it asked.
+
+12.3 is the oldest system on which that sentence is known to be drawn, as far
+as it could be measured without one: a production build, in an engine with the
+look-behind and the 74 APIs newer than Safari 15.4 taken away before the page's
+scripts ran, read the entry and drew it, and asked the server for nothing. The
+same build with only what is newer than 16.4 taken away (50 APIs, and the `v`
+flag) ran a whole turn — a reply with an e-mail address made a link, a table,
+and the line a screen reader is given. Not measured: a real Safari of either
+age, and whether updating Safari alone on macOS 12 moves the engine a webview
+gets.
+
+The floor was 12.0 until then. Raising it to 13.3 was the other choice, and
+the owner's decision was this one: a Mac that stays on 12 is told by the app
+what to update.
 
 ## Running
 

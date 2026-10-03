@@ -3,9 +3,10 @@
  * wait off once it is over.
  *
  * NOT `AbortSignal.timeout`. The installed app comes first, and its window is a webview whose
- * engine is whatever the person's system ships (`desktop/`: macOS 12 and up). That call is newer
- * than some of them, and where it is missing it throws before the request is made. Read as "the
- * request failed", that is every read of the conversation's history failing for good, and an
+ * engine is whatever the person's system ships. That call is newer than some engines the page
+ * starts on — it asks for one thing before it starts (`lib/engine-floor.ts`), and an engine can
+ * have that without this — and where it is missing it throws before the request is made. Read as
+ * "the request failed", that is every read of the conversation's history failing for good, and an
  * answer typed to a card offered for ever and never sent (review, 2026-10-03). The connection
  * check keeps the same rule for the same reason (`lib/support/connection-check.ts`).
  */

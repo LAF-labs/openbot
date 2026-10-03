@@ -675,6 +675,17 @@ export const ko: Record<string, string> = {
   "Save the shop's location": "위치 저장",
   Remembering: "기억하는 중",
   "Something went wrong.": "문제가 생겼어요.",
+  // Where the engine under the page is too old to run the app (`components/layout/old-engine-screen.tsx`).
+  "An update is needed.": "업데이트가 필요해요.",
+  "This device's system is too old to show the app.":
+    "이 기기의 시스템이 오래돼서 앱 화면을 보여 드릴 수 없어요.",
+  "On a Mac, update macOS and Safari in Software Update.":
+    "Mac은 소프트웨어 업데이트에서 macOS와 Safari를 최신으로 올려 주세요.",
+  "On an iPhone or iPad, update iOS in Settings.":
+    "아이폰과 아이패드는 설정에서 iOS를 최신으로 올려 주세요.",
+  "Then open the app again.": "그런 다음 앱을 다시 열어 주세요.",
+  "It needs Safari 16.4 or later (macOS 13.3, iOS 16.4).":
+    "Safari 16.4 이상이 필요해요 (macOS 13.3, iOS 16.4부터).",
   "Stay off social media": "소셜미디어 접근 안 하기",
   "Stop a Bot repeating itself": "같은 일을 반복하면 멈추기",
   "Close its tabs": "이 봇의 탭 닫기",

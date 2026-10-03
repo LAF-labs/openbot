@@ -115,6 +115,7 @@
   "app/tests/download-notice.test.tsx",
   "app/tests/draft-to-composer.test.tsx",
   "app/tests/element-label.test.ts",
+  "app/tests/engine-floor.test.tsx",
   "app/tests/ensure.test.ts",
   "app/tests/failure-group-line.test.tsx",
   "app/tests/failure-place.test.ts",

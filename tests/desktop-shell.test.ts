@@ -511,6 +511,24 @@ test("the window is not suspended when it is put away", () => {
 });
 
 /**
+ * THE BUNDLE OPENS FROM macOS 12.3, AND THE PAGE SAYS WHAT TO UPDATE WHERE THAT IS NOT ENOUGH.
+ *
+ * The window's engine is the system's, and the page needs a newer one than this floor has: a
+ * pattern that looks behind, which WebKit builds from Safari 16.4 — macOS 13.3. On an older one the
+ * page draws a sentence that says what to update, in place of the app (`app/src/lib/engine-floor.ts`).
+ * The floor is where that sentence can be drawn: 12.3 ships Safari 15.4, and a production build in
+ * an engine with everything newer than 15.4 taken away drew it (measured 2026-10-03, desktop/README.md
+ * "The oldest system it opens on"). Decided by the owner that day, over raising the floor to 13.3:
+ * a Mac that stays on 12 is told by the app what to update.
+ */
+test("the bundle opens from macOS 12.3", () => {
+  const bundle = json<{
+    bundle?: { macOS?: { minimumSystemVersion?: string } };
+  }>(RELEASE_CONFIG).bundle;
+  expect(bundle?.macOS?.minimumSystemVersion).toBe("12.3");
+});
+
+/**
  * THE SHELL'S OWN POLICY HOLDS THE DEPLOYMENT'S FLOOR.
  *
  * The window shows the deployment, whose pages carry the front door's headers (app/Caddyfile); the
