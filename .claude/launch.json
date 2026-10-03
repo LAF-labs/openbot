@@ -32,6 +32,20 @@
         "dev"
       ],
       "port": 3010
+    },
+    {
+      "name": "app-floor",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--cwd=/private/tmp/claude-501/-Users-gimgibeom-openbot/e6ba8830-f611-4598-ac8d-5663d15aba3c/scratchpad/wt-macos/app",
+        "vite",
+        "preview",
+        "--port",
+        "3012",
+        "--strictPort"
+      ],
+      "port": 3012
     }
   ]
 }
