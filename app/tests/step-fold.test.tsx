@@ -1125,6 +1125,59 @@ describe("a turn that is still going, watched", () => {
     await view.unmount();
   });
 
+  /*
+   * AN OPENED RECORD STANDS BY THE ANSWER IT WAS DONE FOR. The answer began a run of its own
+   * whatever was above it, so with its record open it stood 28px under the step and the step 16px
+   * under the person's message, ink to ink: the record nearer the question than the answer (looked
+   * at in the running app, 2026-10-04). The first step under the person's message begins the
+   * Bot's side, the steps of the record are a list under it, and the answer under them continues.
+   */
+  test("an answer stands by the steps drawn above it, and begins its run when none is", async () => {
+    const channelId = "channel_steps-stand-by";
+    const server = turnServer({
+      channelId,
+      history: [
+        ASKED,
+        ...done("1"),
+        ...done("2"),
+        said("a-answer", "한 통 왔어요."),
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () => drawn(view.host) === "q-asked a-answer",
+      "the answer",
+      8000,
+    );
+    const spacing = (id: string) =>
+      log(view.host)
+        ?.querySelector<HTMLElement>(`[data-message-id="${id}"]`)
+        ?.className.split(" ")
+        .filter((name) => /^p[tby]-/.test(name))
+        .join(" ");
+    // Closed: nothing of the Bot's is above it, and it begins its run.
+    expect(spacing("a-answer")).toBe("py-2 pt-5");
+
+    const { requestJump } = await import("../src/lib/channels/jump");
+    await acted(() => requestJump({ channelId, messageId: "call-1" }));
+    await view.waitFor(
+      () => drawn(view.host) === "q-asked call-1 call-2 a-answer",
+      "the record opened",
+      4000,
+    );
+    expect(["call-1", "call-2", "a-answer"].map(spacing)).toEqual([
+      "py-0.5 pt-5",
+      "py-0.5",
+      "py-2",
+    ]);
+
+    server.close();
+    await view.unmount();
+  });
+
   test("a run opened part-way stays open as it grows: it is open by a row it holds", async () => {
     const channelId = "channel_steps-growing";
     const { server, view, writes } = await running(channelId);
