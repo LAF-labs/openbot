@@ -671,6 +671,42 @@ describe("the newest line of a run that could not be drawn", () => {
     await view.unmount();
   });
 
+  /*
+   * WHAT A TOOL DRAWS IS ONE THING BESIDE THE FOLD (review, round 7). A connected service's
+   * renderer hands back a question's card, its line and the rows for what a mail held as siblings,
+   * and in the fold's own row each was a peer of the fold — a card beside its line.
+   */
+  test("a line drawn as several things is stacked in a block of its own, the fold its one neighbour", async () => {
+    const { createElement, Fragment } = await import("react");
+    const { StepLine } = await import("../src/components/channels/step-line");
+    const { mount } = await import("./support/mount");
+    const view = await mount(
+      createElement(StepLine, {
+        name: "read_message",
+        fold: { count: 1, isOpen: false, onToggle: () => {} },
+        children: createElement(
+          Fragment,
+          null,
+          createElement("section", { "data-part": "question" }, "허용할까요?"),
+          createElement("div", { "data-part": "line" }, "메일 읽기"),
+          createElement("div", { "data-part": "held" }, "인증번호가 있어요"),
+        ),
+      }),
+    );
+    const row = view.host.firstElementChild as HTMLElement;
+    expect([...row.children].map((child) => child.tagName)).toEqual([
+      "DIV",
+      "BUTTON",
+    ]);
+    const block = row.children[0] as HTMLElement;
+    // A block, not a row: its three parts keep the order and the stacking they always had.
+    expect(block.className).not.toContain("flex");
+    expect(
+      [...block.children].map((part) => part.getAttribute("data-part")),
+    ).toEqual(["question", "line", "held"]);
+    await view.unmount();
+  });
+
   test("and a line with no run before it is its seam and nothing else", async () => {
     const { createElement } = await import("react");
     const { StepLine } = await import("../src/components/channels/step-line");
