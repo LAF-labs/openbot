@@ -180,8 +180,16 @@ function staysInTheOpen(
   );
 }
 
-/** Where an item sits in a run of step lines: the run's first id, its length, and whether last. */
-export type StepRunPlace = { runId: string; size: number; isNewest: boolean };
+/**
+ * Where an item sits in a run of step lines: the run's first id and index, its length, and whether
+ * this is its last.
+ */
+export type StepRunPlace = {
+  runId: string;
+  first: number;
+  size: number;
+  isNewest: boolean;
+};
 
 /**
  * The runs of step lines: two or more drawn one after another with nothing between them.
@@ -210,7 +218,12 @@ export function stepRunsOf(
     if (from >= 0 && size >= 2) {
       const runId = items[from]?.id ?? "";
       for (let at = from; at < until; at += 1) {
-        places.set(at, { runId, size, isNewest: at === until - 1 });
+        places.set(at, {
+          runId,
+          first: from,
+          size,
+          isNewest: at === until - 1,
+        });
       }
     }
     from = -1;
@@ -225,6 +238,44 @@ export function stepRunsOf(
   });
   close(items.length);
   return places;
+}
+
+/** The rows of one run, in order, by the ids the transcript keys them with. */
+export function rowsOfStepRun(
+  items: readonly TranscriptItem[],
+  runs: ReadonlyMap<number, StepRunPlace>,
+  runId: string,
+): string[] {
+  for (const place of runs.values()) {
+    if (place.runId !== runId) continue;
+    return items
+      .slice(place.first, place.first + place.size)
+      .map((item) => item.id);
+  }
+  return [];
+}
+
+/**
+ * The runs somebody has open: every run that holds a row they opened one by.
+ *
+ * BY A ROW IN IT, NOT BY THE RUN'S NAME. A run is named by its first line, and that name holds while
+ * the run grows at its end — a task still going. It does not hold when a run grows at its HEAD: the
+ * page above arrives carrying the earlier steps of the same run, the run has a new first line, and
+ * one remembered by its old name would fold itself shut in front of the person reading it. The row
+ * they opened it by is still in it.
+ */
+export function openStepRuns(
+  items: readonly TranscriptItem[],
+  runs: ReadonlyMap<number, StepRunPlace>,
+  openedRows: ReadonlySet<string>,
+): Set<string> {
+  const open = new Set<string>();
+  if (openedRows.size === 0) return open;
+  for (const [index, place] of runs) {
+    const id = items[index]?.id;
+    if (id !== undefined && openedRows.has(id)) open.add(place.runId);
+  }
+  return open;
 }
 
 /**

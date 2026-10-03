@@ -11,6 +11,8 @@ import type { Message } from "@ag-ui/core";
 import { withheldMark } from "@shared/tools/withheld";
 import {
   isFoldableStep,
+  openStepRuns,
+  rowsOfStepRun,
   stepRunsOf,
   toVisibleChatItems,
   withBrowsingTasks,
@@ -192,6 +194,37 @@ describe("which lines are a run", () => {
     ]);
   });
 
+  /*
+   * A RUN IS OPEN WHILE IT HOLDS A ROW IT WAS OPENED BY. Named by its first line, a run keeps its
+   * name while it grows at its end. It gets a new one when the page above arrives with the earlier
+   * steps of the same run, and one remembered by name would fold shut in front of its reader.
+   */
+  test("an open run stays open as it grows, at its end and at its head", () => {
+    const openOf = (messages: Message[], opened: string[]) => {
+      const items = withBrowsingTasks(toVisibleChatItems(messages));
+      const runs = stepRunsOf(items);
+      const open = [...openStepRuns(items, runs, new Set(opened))];
+      return open.map((runId) => [runId, rowsOfStepRun(items, runs, runId)]);
+    };
+    const newestPage = [...done("3"), ...done("4")];
+    expect(openOf([ASKED, ...newestPage], [])).toEqual([]);
+    expect(openOf([ASKED, ...newestPage], ["call-3"])).toEqual([
+      ["call-3", ["call-3", "call-4"]],
+    ]);
+    // A step more at its end: the same run, by the same name.
+    expect(openOf([ASKED, ...newestPage, called("5")], ["call-3"])).toEqual([
+      ["call-3", ["call-3", "call-4", "call-5"]],
+    ]);
+    // The page above arrives: the same run under a new name, open by the row it was opened by.
+    expect(
+      openOf([ASKED, ...done("1"), ...done("2"), ...newestPage], ["call-3"]),
+    ).toEqual([["call-1", ["call-1", "call-2", "call-3", "call-4"]]]);
+    // A row of some other run opens nothing here, and a run nobody named has no rows.
+    expect(openOf([ASKED, ...newestPage], ["call-9"])).toEqual([]);
+    const items = withBrowsingTasks(toVisibleChatItems([ASKED, ...newestPage]));
+    expect(rowsOfStepRun(items, stepRunsOf(items), "call-9")).toEqual([]);
+  });
+
   test("the Bot's own sentence, a card and the person's next message each end a run", () => {
     expect(
       placesOf([
@@ -282,6 +315,113 @@ describe("a finished conversation with a run of steps", () => {
     ]);
     await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
     expect(fold(view.host)).toBeNull();
+    server.close();
+    await view.unmount();
+  });
+});
+
+/** Rows of talk after a run, enough to put the run at the top of the drawn window. */
+const talk = (pairs: number): Message[] =>
+  Array.from({ length: pairs }, (_, at) => [
+    { id: `q-later-${at}`, role: "user", content: `질문 ${at}` } as Message,
+    said(`a-later-${at}`, `답 ${at}`),
+  ]).flat();
+const rowsDrawn = (host: HTMLElement) =>
+  [
+    ...(log(host)?.querySelectorAll<HTMLElement>("[data-message-id]") ?? []),
+  ].map((row) => row.dataset.messageId);
+
+describe("a run at the edge of what is drawn", () => {
+  /*
+   * THE WINDOW IS FORTY ROWS, COUNTED OVER EVERY ROW — the folded ones too. Cut inside a run, the
+   * fold read 이전 5단계 and opening it drew the two the window held, under a button that said the
+   * record was open (review, round 1).
+   */
+  test("is whole: a window that would begin inside a run begins at its first line", async () => {
+    const history = [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      ...done("3"),
+      ...done("4"),
+      ...done("5"),
+      ...done("6"),
+      said("a-answer", "여섯 번 찾아봤어요."),
+      // Forty-four rows in all: the newest forty begin at the fourth step.
+      ...talk(18),
+    ];
+    const channelId = "channel_fold-window";
+    const server = turnServer({ channelId, history });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    // The question the run answers is above the window; the newest row is what says it arrived.
+    await view.waitFor(
+      () => log(view.host)?.textContent?.includes("답 17") === true,
+      "the conversation",
+      8000,
+    );
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(fold(view.host)?.textContent).toBe("5 earlier steps");
+    expect(rowsDrawn(view.host)[0]).toBe("call-6");
+
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 6, "every line", 4000);
+    expect(rowsDrawn(view.host).slice(0, 7)).toEqual([
+      "call-1",
+      "call-2",
+      "call-3",
+      "call-4",
+      "call-5",
+      "call-6",
+      "a-answer",
+    ]);
+    server.close();
+    await view.unmount();
+  });
+
+  test("stays open when the page above arrives with the steps before it", async () => {
+    const channelId = "channel_fold-page";
+    const history = [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      ...done("3"),
+      ...done("4"),
+      said("a-answer", "네 번 찾아봤어요."),
+    ];
+    // A page of five messages: the newest holds the last two steps and the answer.
+    const server = turnServer({ channelId, history, historyPage: 5 });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 8000);
+    expect(fold(view.host)?.textContent).toBe("1 earlier steps");
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
+
+    const earlier = [...view.host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Show earlier messages",
+    );
+    await view.click(earlier as HTMLButtonElement);
+    // The window was pinned to the row it began at, the third step: now inside the run, so it
+    // begins at the run's first line, and the run is open by the row it was opened by.
+    await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 8000);
+    expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
+    expect(fold(view.host)?.textContent).toBe("Hide earlier steps");
+    expect(rowsDrawn(view.host)).toEqual([
+      "call-1",
+      "call-2",
+      "call-3",
+      "call-4",
+      "a-answer",
+    ]);
+    // Closed by any row of it: one line again, and the count is the whole run's.
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 1, "one line", 4000);
+    expect(fold(view.host)?.textContent).toBe("3 earlier steps");
     server.close();
     await view.unmount();
   });
