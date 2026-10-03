@@ -157,6 +157,44 @@ describe("a finished conversation with a browsing task", () => {
     await view.unmount();
   });
 
+  /*
+   * WHATEVER THE BOT'S SIDE BEGINS WITH, IT BEGINS AT ONE DISTANCE under the person's message: the
+   * 20px an answer begins a run with. A task, a card or a step stood 12px under it — measured on
+   * the stored conversation, 14px edge to edge where an answer was 22px — so the Bot's side began
+   * nearer the question when it began with anything but words. Under something of the Bot's own a
+   * task keeps its 12px.
+   */
+  test("begins the Bot's side where an answer would, and keeps its own space under the Bot's words", async () => {
+    const spacing = (host: HTMLElement) =>
+      taskRow(host)
+        ?.className.split(" ")
+        .filter((name) => /^p[tby]-/.test(name))
+        .join(" ");
+    const first = await conversation("channel_row-first", {
+      history: [ASKED, ...SEARCHED, ANSWER],
+    });
+    await first.view.waitFor(
+      () => fold(first.view.host) !== null,
+      "the row",
+      4000,
+    );
+    expect(spacing(first.view.host)).toBe("py-0.5 pt-5");
+    first.server.close();
+    await first.view.unmount();
+
+    const second = await conversation("channel_row-second", {
+      history: [ASKED, said("a-first", "찾아볼게요."), ...SEARCHED, ANSWER],
+    });
+    await second.view.waitFor(
+      () => fold(second.view.host) !== null,
+      "the row",
+      4000,
+    );
+    expect(spacing(second.view.host)).toBe("py-0.5 pt-3");
+    second.server.close();
+    await second.view.unmount();
+  });
+
   test("a row another screen sends the person to is opened, and stays open", async () => {
     const channelId = "channel_row-jump";
     const { server, view } = await conversation(channelId, {
