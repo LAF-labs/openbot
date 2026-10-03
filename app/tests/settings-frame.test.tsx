@@ -26,9 +26,9 @@ import { mount, routerAt, unmountAll } from "./support/mount";
  * admin rail had made that argument for `/admin` and this one never had.
  *
  * The rail was 340px and its comment said that was "the same 340px the app shell uses". The app
- * shell is `--sand-sidebar-width`, which was 280 — and is 216 since 2026-10-04, when the Bot's column
- * lost most of its words and the two rails here narrowed with it: a rail that changes width at the
- * door of Settings reads as the whole frame moving (`settings/route.tsx`).
+ * shell is `--sand-sidebar-width`, which was 280 — and is 216 since 2026-10-04, when the Bot's
+ * column lost most of its words and the two rails here narrowed with it: a rail that changes width
+ * at the door of Settings reads as the whole frame moving (`settings/route.tsx`).
  *
  * And below `lg` there was no way out of a fixed 280px column: the Sheet that `--sidebar-width-mobile`
  * fed left with the phone decision, and so did `useIsMobile` and Cmd+B, but `md:block` stayed.

@@ -148,9 +148,9 @@ html {
   /* ---- geometry, identical on web and desktop ---- */
   --sand-hairline: 0.5px;
   /*
-   * 216px since 2026-10-04, where it was 280: the column lost its preview line, its status words and
-   * the account's address that day (`bot-sidebar.tsx`), and what is left is a face, a name and five
-   * short labels. Settings and Admin hand the same number to their rails.
+   * 216px since 2026-10-04, where it was 280: the column lost its preview line, its status words
+   * and the account's address that day (`bot-sidebar.tsx`), and what is left is a face, a name and
+   * five short labels. Settings and Admin hand the same number to their rails.
    */
   --sand-sidebar-width: 216px;
   --sand-info-pane-width: 320px;

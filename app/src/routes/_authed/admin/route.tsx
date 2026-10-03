@@ -25,9 +25,9 @@ function RouteComponent() {
   return (
     <SidebarProvider
       /*
-       * The width the app and Settings use — `--sand-sidebar-width`, 216px since 2026-10-04. It said
-       * 340px and claimed to match them, and `--sidebar-width-mobile` beside it reached nothing after
-       * the Sheet left.
+       * The width the app and Settings use — `--sand-sidebar-width`, 216px since 2026-10-04. It
+       * said 340px and claimed to match them, and `--sidebar-width-mobile` beside it reached
+       * nothing after the Sheet left.
        */
       style={{ "--sidebar-width": "216px" } as React.CSSProperties}
     >
