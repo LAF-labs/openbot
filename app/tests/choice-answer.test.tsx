@@ -1099,6 +1099,48 @@ describe("words typed while the Bot waits on a choice", () => {
         expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
       });
 
+      /*
+       * The record read for words kept for a card was read again until it was in, or the screen
+       * gone — and not stopped when the words were settled some other way meanwhile: with the
+       * history down it went on asking every eight seconds for as long as the conversation was
+       * open (review, fifteenth round).
+       */
+      test("and is read for them no longer once they are settled some other way", async () => {
+        await restFor(40);
+        const { api, turns } = server();
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+        await ask(view, turns);
+        // The turn is over, read in front of the screen; then the history goes down.
+        await acted(() => turns.announce("done"));
+        await view.settle(300);
+        turns.historyDown();
+        const outbox = await import(
+          "../src/components/channels/composer/outbox"
+        );
+        const words = {
+          id: "kept-for-the-card",
+          text: TYPED,
+          instructions: [],
+          at: "2026-10-03T00:00:00.000Z",
+          autoTried: false,
+          waiting: true as const,
+          answerTo: CALL,
+        };
+        await acted(() => outbox.keepUnsent(CHANNEL, words));
+        const first = turns.historyReads();
+        await view.waitFor(
+          () => turns.historyReads() >= first + 3,
+          "the record read again while it cannot be",
+          4000,
+        );
+        // Settled elsewhere — another window, say — and nothing left here for the read to be for.
+        await acted(() => outbox.forgetUnsent(CHANNEL, ["kept-for-the-card"]));
+        await view.settle(400);
+        const after = turns.historyReads();
+        await view.settle(1500);
+        expect(turns.historyReads()).toBe(after);
+      });
+
       test("nor while the record cannot be read: it is read again until it can be", async () => {
         await restFor(40);
         const { api, turns } = server();
