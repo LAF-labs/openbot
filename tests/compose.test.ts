@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { OWN_ADDRESS_VARIABLES } from "../shared/net/own-addresses";
 
 /*
  * Plain postgres, and NOT pgvector, which this asserted for as long as one dead table carried a
@@ -410,4 +411,21 @@ test("reads uploaded files as nobody, with no network and nothing to escalate wi
   expect(
     (server.environment as Record<string, string>).LAF_CONVERTER_SOCKET,
   ).toBe("/run/laf-converter/converter.sock");
+});
+
+/**
+ * The browser is told the deployment's own addresses in the server's own words.
+ *
+ * The Bot's browser never opens the app or its sign-in (`shared/net/own-addresses.ts`): the server
+ * refuses the address a Bot asks for, and the browser's container refuses every hop after it. Both
+ * read the same four variables, and a container handed a different expression than the server's —
+ * or none — would refuse a different list, or nothing at all, with no error anywhere.
+ */
+test("hands the browser the same own addresses the server is told, in the same expressions", () => {
+  const server = parsedCompose.services.server?.environment ?? {};
+  const browser = parsedCompose.services["agent-computer"]?.environment ?? {};
+  for (const name of OWN_ADDRESS_VARIABLES) {
+    expect([name, typeof server[name]]).toEqual([name, "string"]);
+    expect([name, browser[name]]).toEqual([name, server[name]]);
+  }
 });

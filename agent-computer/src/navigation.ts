@@ -17,6 +17,7 @@ import { deploymentEgress } from "./egress";
 import { log } from "./log";
 import {
   CONNECTED_PRIVATELY,
+  type HopRefusal,
   hopVerdict,
   hostnameOf,
   mainFrameIdOf,
@@ -37,7 +38,20 @@ type RefusedHop = {
   redirectedFrom: string | null;
   /** The policy's own words, for the server to relay. Facts about a URL, never page content. */
   reason: string;
+  /** Which refusal, where the floor named one of its own: the deployment's own address. */
+  fact?: HopRefusal["fact"];
 };
+
+/**
+ * The code a refused hop is answered and noted under: the app's own address, or the floor's.
+ *
+ * Both spelled here, where they are sent, rather than read off the verdict: the list of what this
+ * process answers (`codes.ts`) is checked against the literals in this directory.
+ */
+const refusalCodeOf = (refusal: { fact?: HopRefusal["fact"] }) =>
+  refusal.fact === "laf:own_address_refused"
+    ? "laf:own_address_refused"
+    : "laf:navigation_refused";
 
 /**
  * One `/navigate`, while it runs. See `BotSession.navigating`.
@@ -85,7 +99,7 @@ export function navigationRefused(
   session: BotSession,
   botId: string,
   hop: NavigationHop,
-  reason: string,
+  refusal: HopRefusal,
 ): void {
   const navigating = session.navigating;
   const ours = navigating !== undefined && hop.frameId === navigating.frameId;
@@ -93,11 +107,12 @@ export function navigationRefused(
     navigating.refused = {
       url: hop.url,
       redirectedFrom: hop.redirectedFrom,
-      reason,
+      reason: refusal.reason,
+      ...(refusal.fact ? { fact: refusal.fact } : {}),
     };
   } else if (!ours) {
     note(session, {
-      code: "laf:navigation_refused",
+      code: refusalCodeOf(refusal),
       origin: originOf(hop.url),
       ...(hop.redirectedFrom
         ? { redirectedFrom: originOf(hop.redirectedFrom) }
@@ -109,6 +124,7 @@ export function navigationRefused(
     origin: originOf(hop.url),
     redirected: hop.redirectedFrom !== null,
     frame: ours ? "navigating" : "other",
+    code: refusalCodeOf(refusal),
   });
 }
 
@@ -143,7 +159,7 @@ function refusedNavigation(
   startedAt: number,
 ): Response {
   return fact(
-    "laf:navigation_refused",
+    refusalCodeOf(hop),
     withNotes(session, {
       refused: {
         origin: originOf(hop.url),
@@ -266,11 +282,17 @@ export const navigate: BotRoute = async (
    */
   const asked = await resolvedNavigationTarget(body.url, {
     allowPrivateHosts: config.allowPrivateHosts,
+    ownAddresses: config.ownAddresses,
   });
   if (!asked.allowed) {
     return refusedNavigation(
       session,
-      { url: body.url, redirectedFrom: null, reason: asked.reason },
+      {
+        url: body.url,
+        redirectedFrom: null,
+        reason: asked.reason,
+        ...(asked.fact ? { fact: asked.fact } : {}),
+      },
       startedAt,
     );
   }
@@ -332,7 +354,11 @@ export const navigate: BotRoute = async (
       .filter((address): address is string => Boolean(address))
       .map((address) => ({
         address,
-        verdict: hopVerdict(address, config.allowPrivateHosts),
+        verdict: hopVerdict(
+          address,
+          config.allowPrivateHosts,
+          config.ownAddresses,
+        ),
       }))
       .find(({ verdict }) => !verdict.allowed);
     if (landed && !landed.verdict.allowed) {
@@ -340,6 +366,7 @@ export const navigate: BotRoute = async (
         url: landed.address,
         redirectedFrom: asked.url,
         reason: landed.verdict.reason,
+        ...(landed.verdict.fact ? { fact: landed.verdict.fact } : {}),
       };
     }
     /*

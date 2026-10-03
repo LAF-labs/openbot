@@ -8,6 +8,7 @@ import {
   normalizeHostname,
   resolvedHostVerdict,
 } from "./host-verdict";
+import { addressKeyOf } from "./own-addresses";
 
 /**
  * What a Bot's browser is allowed to navigate to.
@@ -33,9 +34,30 @@ import {
 
 const ALLOWED_PROTOCOLS = new Set(["http:", "https:"]);
 
+/**
+ * The address is this deployment's own app, or where people sign in to it (`own-addresses.ts`).
+ *
+ * A fact of its own rather than one more reason for `laf:navigation_refused`: that one tells the
+ * Bot a page tried to go inside the deployment's network and to say the site could not be opened,
+ * which here would be the wrong thing to tell a person who asked for their own app.
+ */
+export const OWN_ADDRESS_REFUSED = "laf:own_address_refused";
+
 export type TargetVerdict =
   | { allowed: true; url: string }
-  | { allowed: false; reason: string };
+  | {
+      allowed: false;
+      reason: string;
+      /** Which refusal, where a caller says something of its own about it. */
+      fact?: typeof OWN_ADDRESS_REFUSED;
+    };
+
+/** What the floor is told about the deployment it is the floor of. */
+export type FloorOptions = {
+  allowPrivateHosts?: boolean;
+  /** This deployment's own addresses, as `ownAddressesFrom` reads them. Never opened. */
+  ownAddresses?: readonly string[];
+};
 
 /**
  * Decide whether a Bot may navigate here.
@@ -45,7 +67,7 @@ export type TargetVerdict =
  */
 export function checkNavigationTarget(
   raw: string,
-  options: { allowPrivateHosts?: boolean } = {},
+  options: FloorOptions = {},
 ): TargetVerdict {
   let url: URL;
   try {
@@ -76,6 +98,20 @@ export function checkNavigationTarget(
       allowed: false,
       reason:
         "That address holds this deployment's own cloud credentials, so the assistant is never allowed to open it.",
+    };
+  }
+
+  /*
+   * THE APP ITSELF, AND WHERE PEOPLE SIGN IN TO IT. Before the opt-in too: a laptop opted in to
+   * browse its own services is not opted in to answer its own questions, and the app there is one
+   * address among the local ones (`own-addresses.ts` says why this is here at all).
+   */
+  if (options.ownAddresses?.includes(addressKeyOf(url))) {
+    return {
+      allowed: false,
+      fact: OWN_ADDRESS_REFUSED,
+      reason:
+        "That address is this deployment's own app or its sign-in, where a person answers for the assistant, so the assistant is never allowed to open it.",
     };
   }
 
@@ -140,7 +176,7 @@ export function checkNavigationTarget(
  */
 export async function resolvedNavigationTarget(
   raw: string,
-  options: { allowPrivateHosts?: boolean; resolve?: HostResolver } = {},
+  options: FloorOptions & { resolve?: HostResolver } = {},
 ): Promise<TargetVerdict> {
   const verdict = checkNavigationTarget(raw, options);
   if (!verdict.allowed || options.allowPrivateHosts) return verdict;

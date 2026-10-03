@@ -145,18 +145,19 @@ const profiles = createProfiles(config.profilesDir, {
   onContext: async (context) => {
     await guardNavigations(context, {
       allowPrivateHosts: config.allowPrivateHosts,
+      ownAddresses: config.ownAddresses,
       behindProxy: deploymentEgress(process.env) !== null,
-      onRefused: (hop, reason) => {
+      onRefused: (hop, refusal) => {
         const botId = botForHop(hop);
         if (!botId) {
           log.warn("navigation_refused_unattributed", {
             origin: originOf(hop.url),
             redirected: hop.redirectedFrom !== null,
-            reason,
+            reason: refusal.reason,
           });
           return;
         }
-        navigationRefused(sessions.sessionFor(botId), botId, hop, reason);
+        navigationRefused(sessions.sessionFor(botId), botId, hop, refusal);
       },
       holds: (hop) => {
         const botId = botForHop(hop);
@@ -198,6 +199,9 @@ log.info("boot", {
   actionTimeoutMs: config.actionTimeoutMs,
   // A boundary a deployment can move, so the boot line is where an operator checks it.
   allowPrivateHosts: config.allowPrivateHosts,
+  // How many of the deployment's own addresses this browser was told never to open. Zero on a
+  // container started by a compose file from before 2026-10-03, which hands it none.
+  ownAddresses: config.ownAddresses.length,
   // Which user the browser runs as. `0` here is the finding this image was rebuilt to close.
   uid: typeof process.getuid === "function" ? process.getuid() : null,
 });
