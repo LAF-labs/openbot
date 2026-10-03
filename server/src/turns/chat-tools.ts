@@ -20,8 +20,8 @@
  * carry out, so the model is never offered a call nothing here would run.
  */
 import type { Tool } from "@ag-ui/client";
-import { isPersona } from "../../../shared/persona";
 import { PERSON_WAIT_MS } from "../../../shared/person-wait";
+import { isPersona } from "../../../shared/persona";
 import {
   routineListResult,
   routineSavedText,
@@ -46,14 +46,18 @@ import {
   isAskable,
   ON_SCREEN,
 } from "../../../shared/tools/gallery";
+import { isGoalToolName } from "../../../shared/tools/goals";
 import {
   MANAGE_ROUTINE,
   REMEMBER,
   UPDATE_PROFILE,
   UPDATE_PROFILE_WITHOUT_EFFORT,
 } from "../../../shared/tools/self";
-import { isGoalToolName } from "../../../shared/tools/goals";
 import { normalizeSkillName, SKILL_VIEW } from "../../../shared/tools/skills";
+import {
+  TOOL_NOT_ALLOWED,
+  toolErrorText,
+} from "../../../shared/tools/step-result";
 import type { ShopStore } from "../account/shop";
 import { placeAnswerOf, type WhereaboutsStore } from "../account/whereabouts";
 import type { AgentMemoryStore } from "../agents/memory-store";
@@ -850,9 +854,7 @@ export function createChatTools(deps: ChatToolsDeps) {
           watched: true,
         });
       const said = (result: { text: string; isError: boolean }) =>
-        result.isError
-          ? `The tool reported an error: ${result.text}`
-          : result.text;
+        result.isError ? toolErrorText(result.text) : result.text;
       try {
         return said(await send());
       } catch (error) {
@@ -1281,9 +1283,7 @@ function pluginFailure(error: unknown, ref: string): string {
     error instanceof CatalogueEntryUnknownError
   ) {
     const code = (error as { code?: string }).code ?? "";
-    return code.startsWith("laf:")
-      ? toolResultText(code)
-      : "That tool is not allowed here.";
+    return code.startsWith("laf:") ? toolResultText(code) : TOOL_NOT_ALLOWED;
   }
   log.warn("plugin_call_failed", {
     ref,
