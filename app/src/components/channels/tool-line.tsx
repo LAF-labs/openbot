@@ -137,7 +137,7 @@ export function ToolLine({
         {/*
          * An icon, not the glyph `▸`: a character is drawn by whichever fallback font the platform
          * has for it — a different size and weight on a Mac, on Windows and on a phone — and this
-         * is the same chevron the cards and the step fold draw.
+         * is the same chevron the cards draw.
          */}
         <IconChevronRight
           aria-hidden="true"

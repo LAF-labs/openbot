@@ -144,13 +144,15 @@ export function withBrowsingTasks(
 }
 
 /**
- * Whether a call is drawn as a plain step line that a newer one may stand in front of.
+ * Whether a call is a step of work: a plain line saying what the Bot is doing, which is not drawn
+ * in the conversation once it is over (`stepRunsOf`).
  *
  * ONLY THE LINES KNOWN TO BE LINES. A connected service's tool ("메일 찾기 · 지메일"), and the two
  * ways a Bot reaches a tool that is not in front of it. Everything else that is drawn by name — a
- * card from the gallery, a file handed over, the clock, a note — is left where it is: a card folded
- * behind the line after it would be a thing the Bot made, hidden by the next thing it did. A name
- * left off this list is a line that stays in the open, which is how every line was until now.
+ * card from the gallery, a file handed over, the clock, a note — is left where it is: a card put
+ * away with the steps around it would be a thing the Bot made, hidden as though it were a thing it
+ * did on the way. A name left off this list is a line that stays in the conversation, which is how
+ * every line was until 2026-10-03.
  */
 export function isFoldableStep(name: string): boolean {
   return (
@@ -159,25 +161,25 @@ export function isFoldableStep(name: string): boolean {
 }
 
 /**
- * Whether a step line has something on it for the person — a line that is never put behind a fold,
- * whatever comes after it.
+ * Whether a step has something on it for the person — a line that is drawn whether or not anybody
+ * opened the record it belongs to.
  *
- * - STILL OUT: no result yet. A boundary's question is drawn on the line of the call that raised it
- *   (`ApprovalRequest`), and a model may ask for two calls in one breath, so the call waiting on the
- *   person need not be the newest. Behind a fold its card would be drawn nowhere: a question nobody
- *   can see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
+ * - STILL OUT: no result yet. It is the one line of a turn at work, shimmering at the end of the
+ *   conversation, and a boundary's question is drawn on the line of the call that raised it
+ *   (`ApprovalRequest`). A model may ask for two calls in one breath, so the call waiting on the
+ *   person need not be the last. Not drawn, its card would be drawn nowhere: a question nobody can
+ *   see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
  * - A WITHHELD MARK IN ITS RESULT. The 보기 for a mail's one-time code belongs on that call's own
  *   line (`WithheldSecrets`), and the person who asked for the code is waiting on it — not on the
  *   search the Bot made after reading the mail.
  *
- * A STEP THAT DID NOT WORK IS NOT ONE OF THEM ANY MORE (the owner, 2026-10-04). It was: a refused or
- * failed step ended its run and stayed drawn, so that it could not read as one more thing the Bot
- * did. What that left on the screen was the owner's own example of too many words — a weather
- * look-up that failed and the one after it that worked, a line each, above an answer that already
- * says which did not work. The rule now is the one asked for: the newest line, and an icon that
- * opens the rest. That a step behind the fold did not work is said BY THE FOLD — its colour and its
- * name (`StepRunPlace.failed`) — so nothing that failed is behind a control that looks like nothing
- * happened.
+ * A STEP THAT DID NOT WORK IS NOT ONE OF THEM (the owner, 2026-10-04). It was, at first: a refused
+ * or failed step stayed drawn, so that it could not read as one more thing the Bot did. What that
+ * left on the screen was the owner's own example of too many words — a weather look-up that failed
+ * and the one after it that worked, a line each, above an answer that already says which did not
+ * work. It is put away like any other, and that one of them did not work is said BY THE CONTROL
+ * THAT OPENS THEM — its colour and its name (`AnswerSteps.failed`) — so nothing that failed is
+ * behind a control that looks like nothing happened.
  */
 function staysInTheOpen(
   step: Extract<VisibleChatItem, { kind: "tool" }>,
@@ -199,96 +201,64 @@ function didNotWork(item: TranscriptItem): boolean {
   );
 }
 
-/**
- * Where an item sits in a run of step lines: the run's first id and index, its length, and whether
- * this is its last.
- */
+/** Where a step sits among the steps around it: the run it is in, and whether it is drawn anyway. */
 export type StepRunPlace = {
+  /** The run, named by its first row. */
   runId: string;
-  first: number;
-  size: number;
-  isNewest: boolean;
-  /** How many of the lines before the newest did not work: what the fold has to say for them. */
-  failed: number;
+  /** Still out, or holding something for the person: drawn whether or not its run is open. */
+  staysDrawn: boolean;
 };
 
 /**
- * The runs of step lines: two or more drawn one after another with nothing between them.
+ * The runs of steps: the step rows that follow one another with nothing between them — and a step
+ * alone is a run of one.
  *
- * MEASURED ON A TRIAL DEPLOYMENT, 2026-10-03 (the owner's screenshot): "내 지메일에 비즈니스메일
- * 온 거 있나 보고 알려줘" left five grey lines stacked above the answer — 도구 찾는 중, 메일 찾기 ·
- * 지메일 twice, 메일 읽기 · 지메일 twice — each a row of its own, and the answer a screen further
- * down for it. The owner's rule: one line that shows the newest, and the whole record when it is
- * opened.
+ * STEPS OF WORK ARE NOT DRAWN IN THE CONVERSATION (the owner, 2026-10-04, choosing "proposal A" of
+ * the mock-up shown that day). A turn at work shows the one step that is still out, and a finished
+ * turn leaves what the Bot said and the cards that need the person. The record is not thrown away:
+ * the answer carries the control that opens what was done for it (`stepsByAnswer`).
  *
- * By index into `items`, and only for the members of a run: a line alone is drawn as it always
- * was. Anything between two lines ends the run — the Bot's own sentence, a card, a browsing task,
- * the person's next message — so what is folded is only ever lines, and a run never crosses a turn.
+ * HOW IT CAME TO THIS. Measured on a trial deployment, 2026-10-03 (the owner's screenshot): "내
+ * 지메일에 비즈니스메일 온 거 있나 보고 알려줘" left five grey lines stacked above the answer — 도구
+ * 찾는 중, 메일 찾기 · 지메일 twice, 메일 읽기 · 지메일 twice — each a row of its own, and the answer
+ * a screen further down for it. A run was first folded to its newest line, with the rest behind a
+ * fold beside it: "이전 3단계", and then an icon, because the words were one more phrase on the
+ * screen. That still left a line and a control above every answer that took two steps to write,
+ * and a step alone was drawn as it always had been — and the owner's word on the app as a whole
+ * was that it shows far too many words.
  *
- * And a line that must stay in the open (`staysInTheOpen`) ends its run WITH itself: it is that
- * run's newest, so it is the one drawn, and the steps after it begin a run of their own. What is
- * behind a fold is therefore only ever a finished step with nothing on it for the person to
- * press — one that did not work among them, counted for the fold to say (`failed`).
+ * By index into `items`. Anything between two steps ends the run — the Bot's own sentence, a card,
+ * a browsing task, the person's next message — so what is put away is only ever steps, and a run
+ * never crosses a turn. A run is what is opened together: with the others an answer was written
+ * from, or by itself when another screen sends the person to a row inside it.
+ *
+ * A step that has something on it for the person (`staysInTheOpen`) is a member like any other,
+ * marked: drawn while its run is closed, and still one of the steps the answer counts.
  */
 export function stepRunsOf(
   items: readonly TranscriptItem[],
 ): Map<number, StepRunPlace> {
   const places = new Map<number, StepRunPlace>();
-  let from = -1;
-  const close = (until: number) => {
-    const size = until - from;
-    if (from >= 0 && size >= 2) {
-      const runId = items[from]?.id ?? "";
-      // Of the lines the fold stands for — every one but the newest, which is drawn and says so
-      // itself.
-      const failed = items.slice(from, until - 1).filter(didNotWork).length;
-      for (let at = from; at < until; at += 1) {
-        places.set(at, {
-          runId,
-          first: from,
-          size,
-          isNewest: at === until - 1,
-          failed,
-        });
-      }
-    }
-    from = -1;
-  };
+  let runId: string | null = null;
   items.forEach((item, index) => {
     if (item.kind !== "tool" || !isFoldableStep(item.toolCall.function.name)) {
-      close(index);
+      runId = null;
       return;
     }
-    if (from < 0) from = index;
-    if (staysInTheOpen(item)) close(index + 1);
+    runId ??= item.id;
+    places.set(index, { runId, staysDrawn: staysInTheOpen(item) });
   });
-  close(items.length);
   return places;
 }
 
-/** The rows of one run, in order, by the ids the transcript keys them with. */
-export function rowsOfStepRun(
-  items: readonly TranscriptItem[],
-  runs: ReadonlyMap<number, StepRunPlace>,
-  runId: string,
-): string[] {
-  for (const place of runs.values()) {
-    if (place.runId !== runId) continue;
-    return items
-      .slice(place.first, place.first + place.size)
-      .map((item) => item.id);
-  }
-  return [];
-}
-
 /**
- * The runs somebody has open: every run that holds a row they opened one by.
+ * The runs somebody has open: every run that holds a row it was opened by.
  *
- * BY A ROW IN IT, NOT BY THE RUN'S NAME. A run is named by its first line, and that name holds while
+ * BY A ROW IN IT, NOT BY THE RUN'S NAME. A run is named by its first row, and that name holds while
  * the run grows at its end — a task still going. It does not hold when a run grows at its HEAD: the
- * page above arrives carrying the earlier steps of the same run, the run has a new first line, and
- * one remembered by its old name would fold itself shut in front of the person reading it. The row
- * they opened it by is still in it.
+ * page above arrives carrying the earlier steps of the same run, the run has a new first row, and
+ * one remembered by its old name would close itself in front of the person reading it. The row it
+ * was opened by is still in it.
  */
 export function openStepRuns(
   items: readonly TranscriptItem[],
@@ -302,6 +272,94 @@ export function openStepRuns(
     if (id !== undefined && openedRows.has(id)) open.add(place.runId);
   }
   return open;
+}
+
+/** What an answer opens: the steps taken on the way to it. */
+export type AnswerSteps = {
+  /** The runs they are in, by name: what opening adds (`openStepRuns`). */
+  runIds: string[];
+  /** Every row of those runs, in order: how many steps there were, and what closing takes back. */
+  rows: string[];
+  /** How many of them did not work: the control has to say so, since such a step is not drawn. */
+  failed: number;
+};
+
+/**
+ * WHAT WAS DONE FOR EACH ANSWER, by the answer's id: the steps a turn took before the Bot next
+ * spoke.
+ *
+ * The steps are not drawn (`stepRunsOf`), so something has to carry the way back to them, and it is
+ * the thing they were for. The FIRST thing the Bot says after them takes them all — every run
+ * since it last spoke, whatever else was drawn between them: a card, a browsing task, the clock —
+ * and what it says after that takes none. So a sentence said between two stretches of work ("두 통
+ * 더 볼게요") opens the stretch before it, and the answer opens the one after.
+ *
+ * The person's next message drops whatever nothing took, and so does the end of the list: a turn
+ * that never came to an answer — stopped, failed, ended on a card, or still at work — has nothing
+ * to hang its steps on. A row of them is still opened by another screen sending the person to it.
+ *
+ * AND AN ANSWER WHOSE EVERY STEP IS DRAWN ANYWAY OPENS NOTHING, so it is not here: one mail read,
+ * with a code in it, is on the screen already (`staysInTheOpen`), and a control over it would be
+ * pressed and change nothing but its own name.
+ *
+ * Keyed the way the pages an answer was read from are (`sources.ts`).
+ */
+export function stepsByAnswer(
+  items: readonly TranscriptItem[],
+  runs: ReadonlyMap<number, StepRunPlace>,
+): Map<string, AnswerSteps> {
+  const found = new Map<string, AnswerSteps>();
+  let taken: AnswerSteps | null = null;
+  /** Whether one of them is not drawn: what there is to open. */
+  let isAnyPutAway = false;
+  items.forEach((item, index) => {
+    if (item.kind === "text") {
+      if (item.role === "assistant" && taken && isAnyPutAway) {
+        found.set(item.id, taken);
+      }
+      taken = null;
+      isAnyPutAway = false;
+      return;
+    }
+    const place = runs.get(index);
+    if (!place) return;
+    taken ??= { runIds: [], rows: [], failed: 0 };
+    // A run's rows follow one another, so its name is new only where the run is.
+    if (taken.runIds.at(-1) !== place.runId) taken.runIds.push(place.runId);
+    taken.rows.push(item.id);
+    if (didNotWork(item)) taken.failed += 1;
+    if (!place.staysDrawn) isAnyPutAway = true;
+  });
+  return found;
+}
+
+/**
+ * Where a drawn window begins, given the row it would begin at: never among steps that a row it
+ * holds would open.
+ *
+ * THE NUMBER A CONTROL NAMES IS WHAT PRESSING IT DRAWS. The window is counted over every row, the
+ * ones not drawn too, and only the rows it holds can be drawn. Cut inside a run, the fold of the
+ * time read 이전 5단계 and drew the two the window held, under a button that then said the record
+ * was open (review of pull request 44, round 1). An answer is no different: one named for six
+ * steps, in a window that began at the answer itself, would open to nothing. So a window that would
+ * begin among the steps taken since the Bot last spoke — or at the sentence that takes them —
+ * reaches back to the first of them. Not drawn, those rows cost nothing to hold.
+ *
+ * The person's own message begins a turn: nothing above it is opened from below it.
+ */
+export function wholeFrom(
+  items: readonly TranscriptItem[],
+  runs: ReadonlyMap<number, StepRunPlace>,
+  cut: number,
+): number {
+  const row = items[cut];
+  if (row?.kind === "text" && row.role === "user") return cut;
+  let start = cut;
+  for (let back = cut - 1; back >= 0; back -= 1) {
+    if (items[back]?.kind === "text") break;
+    if (runs.has(back)) start = back;
+  }
+  return start;
 }
 
 /**

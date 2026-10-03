@@ -113,11 +113,11 @@ export const ko: Record<string, string> = {
    * "하는 중" 꼴, 연결된 서비스의 도구는 위 카드 이름처럼 "하기" 꼴.
    */
   "Finding a tool": "도구 찾는 중",
-  // The fold beside the newest of a run of step lines (`chat-transcript.tsx`, `StepRunFold`).
-  "{count} earlier steps": "이전 {count}단계",
-  "{count} earlier steps, {failed} did not work":
-    "이전 {count}단계 · {failed}개는 안 됨",
-  "Hide earlier steps": "이전 단계 접기",
+  // The name of the icon under an answer that opens what was done for it (`chat-transcript.tsx`, `StepsOfAnswer`).
+  "What it did for this answer: {count} steps": "이 답을 위해 한 일 {count}개",
+  "What it did for this answer: {count} steps, {failed} did not work":
+    "이 답을 위해 한 일 {count}개 · {failed}개는 안 됨",
+  "Hide what it did": "한 일 접기",
   "Calling a tool": "도구 부르는 중",
   "Checking the clock": "시각 보는 중",
   "Writing it down": "기억해 두는 중",
