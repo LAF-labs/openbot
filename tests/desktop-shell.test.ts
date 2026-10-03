@@ -13,6 +13,29 @@ function read(path: string): string {
   return readFileSync(join(repositoryRoot, path), "utf8");
 }
 
+/**
+ * Rust source with its comment lines left out.
+ *
+ * The shell's comments say what the code used to do and what it must never do — the old word, the
+ * other platform's call — so a test that reads `lib.rs` for what it DOES has to read the code
+ * alone. Whole lines only, which is how the shell's comments are written.
+ */
+function withoutComments(source: string): string {
+  return source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+    .join("\n");
+}
+
+/** What `source` holds from `start` up to `end`, asserted to be there rather than assumed. */
+function between(source: string, start: string, end: string): string {
+  const from = source.indexOf(start);
+  const to = source.indexOf(end, from);
+  expect(from).toBeGreaterThan(-1);
+  expect(to).toBeGreaterThan(from);
+  return source.slice(from, to);
+}
+
 type WindowConfig = {
   label: string;
   create?: boolean;
@@ -461,15 +484,99 @@ test("the tray says what the app says: at work, the person's turn, at rest — a
   expect(words("Waiting")).toBe("내 차례");
   // Among what the shell holds to show a person, nobody is given a title. A comment may still
   // name the old word, so comments are left out.
-  const code = shell
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
-    .join("\n");
+  const code = withoutComments(shell);
   const shown = [...code.matchAll(/"([^"\n]*[가-힣][^"\n]*)"/g)].map(
     (match) => match[1] ?? "",
   );
   expect(shown.length).toBeGreaterThan(5);
   expect(shown.filter((text) => text.includes("사장님"))).toEqual([]);
+});
+
+/**
+ * ON macOS THE TRAY FOLLOWS THE MENU BAR, AND SAYS THE PERSON'S TURN IN WORDS.
+ *
+ * The window's icon is a full-bleed white square, so on a dark menu bar the tray was a white
+ * tile. macOS now gets a template image — one colour, the bar's own — and since a template cannot
+ * hold the coloured dot, the one state that needs the person is the tray's title: 내 차례 beside
+ * the icon while the Bot waits, nothing otherwise. Windows keeps the icon and the dot.
+ *
+ * Each thing held here can be undone with every other test still green, and each was read in
+ * tray-icon 0.24.2 (`platform_impl/macos/mod.rs`) rather than assumed:
+ *
+ *   - the picture has to be FLAGGED a template, or it is a black shape on a dark bar;
+ *   - a status must never set the icon again there — `set_icon` clears that flag;
+ *   - "no title" has to be sent as an empty one — `set_title(None)` does nothing on macOS, which
+ *     would leave 내 차례 in the menu bar after the person had answered.
+ *
+ * What the pixels are is the shell's own test (`the_menu_bar_icon_is_black_on_nothing`).
+ *
+ * This holds the wiring. The sight of it was looked at once, in a real menu bar (2026-10-03, the
+ * development build, a dark bar): the mark in the bar's white, 내 차례 beside it while a question
+ * was open, gone when it was answered.
+ */
+test("on macOS the tray is a template image, and the person's turn is words beside it", () => {
+  const shell = read("desktop/src-tauri/src/lib.rs");
+
+  // The source travels with the picture, and the picture is the one the shell embeds: 2x of the
+  // 18pt the menu bar draws an icon at — not of the drawing's 22pt box, which came out with a 12pt
+  // mark beside neighbours of 16 (measured, 2026-10-03) — eight bits a channel, colour WITH alpha
+  // (PNG colour type 6).
+  expect(read("desktop/src-tauri/icons/tray-template.svg")).toContain("<svg");
+  const picture = readFileSync(
+    join(repositoryRoot, "desktop/src-tauri/icons/tray-template.png"),
+  );
+  expect(picture.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  expect([
+    picture.readUInt32BE(16),
+    picture.readUInt32BE(20),
+    picture[24],
+    picture[25],
+  ]).toEqual([36, 36, 8, 6]);
+  expect(shell).toContain(
+    'const TRAY_TEMPLATE_PNG: &[u8] = include_bytes!("../icons/tray-template.png");',
+  );
+
+  // Building the tray: the template is read on macOS alone and flagged as one, in the one place
+  // an icon is ever flagged. Everything else keeps the window's icon, unflagged.
+  const build = withoutComments(
+    between(shell, "fn build_tray(", "pub fn run("),
+  );
+  expect(build).toMatch(
+    /let template = if cfg!\(target_os = "macos"\) \{\s*match tauri::image::Image::from_bytes\(TRAY_TEMPLATE_PNG\) \{/,
+  );
+  expect(build).toMatch(
+    /Some\(icon\) => tray\.icon\(icon\)\.icon_as_template\(true\),/,
+  );
+  expect(withoutComments(shell).match(/icon_as_template/g)).toHaveLength(1);
+
+  // Saying a status: macOS sets the title and leaves the icon alone; everywhere else paints the
+  // dot and has no title to set.
+  const show = withoutComments(
+    between(shell, "fn show_status(", "fn with_dot("),
+  );
+  const macAt = show.indexOf('if cfg!(target_os = "macos") {');
+  const elseAt = show.indexOf("} else ", macAt);
+  // Asserted rather than assumed: a slice from -1 would be the whole function, twice.
+  expect(macAt).toBeGreaterThan(-1);
+  expect(elseAt).toBeGreaterThan(macAt);
+  const onMac = show.slice(macAt, elseAt);
+  const elsewhere = show.slice(elseAt);
+  expect(onMac).toContain('tray.set_title(Some(status.title().unwrap_or("")))');
+  expect(onMac).not.toMatch(/set_icon|with_dot/);
+  expect(elsewhere).toContain("with_dot(");
+  expect(elsewhere).toContain("tray.set_icon(");
+  expect(elsewhere).not.toContain("set_title");
+  expect(withoutComments(shell).match(/set_title\(/g)).toHaveLength(1);
+
+  // And the words are the tray's own: the title reads `words()`, and 내 차례 is written once in
+  // the shell proper — a second literal would be a second place for it to go stale.
+  const testsAt = shell.indexOf("#[cfg(test)]\nmod tests {");
+  expect(testsAt).toBeGreaterThan(-1);
+  const proper = withoutComments(shell.slice(0, testsAt));
+  expect(proper).toMatch(
+    /fn title\(self\) -> Option<&'static str> \{\s*match self \{\s*Self::Waiting => Some\(self\.words\(\)\),\s*Self::Working \| Self::Idle => None,/,
+  );
+  expect(proper.match(/"내 차례"/g)).toHaveLength(1);
 });
 
 /**
