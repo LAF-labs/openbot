@@ -129,6 +129,26 @@ const DEV_ORIGIN: &str = "http://localhost:3010";
 /// about is over, and sending somebody to it would be sending them to an empty page.
 const NOTICE_DESTINATION_TTL: Duration = Duration::from_secs(600);
 
+/// The menu-bar icon on macOS: the mark alone, black on nothing, drawn as a TEMPLATE image.
+///
+/// THE WINDOW'S ICON IS A WHITE TILE ON A DARK MENU BAR. It is a full-bleed white square with the
+/// mark inside — the dock's picture, and until 2026-10-03 the tray's on every platform. A template
+/// image is the menu bar's own kind of picture: macOS keeps only its alpha and paints the shape in
+/// the bar's colour, light or dark. The price is that it is ONE colour, so the status dot cannot
+/// be painted on it; `BotStatus::title` is what says the person's turn there instead.
+///
+/// Exported from `icons/tray-template.svg` beside it — the mark 16 pt tall — at 2x, transparent,
+/// black only. A test below holds the bytes to that, since a plate left in the picture would be
+/// drawn as a solid square.
+///
+/// 36 PIXELS, NOT THE DRAWING'S 44, AND THE REASON IS IN THE MENU BAR. tray-icon 0.24.2 draws
+/// every icon 18 pt tall whatever its pixels (`icon_height` in `platform_impl/macos/mod.rs`), so
+/// the drawing's whole 22 pt box was squeezed to 18 and the mark came out 12 pt tall — measured in
+/// a real menu bar, 2026-10-03, beside neighbours of 16 pt. With 4 px of empty margin left off
+/// each edge the picture is the 18 pt the crate draws it at, one pixel to one, and the mark is the
+/// 16 pt it was drawn to be.
+const TRAY_TEMPLATE_PNG: &[u8] = include_bytes!("../icons/tray-template.png");
+
 /// What the shell remembers between the window being put away and picked up again.
 #[derive(Default)]
 struct ShellState {
@@ -195,12 +215,26 @@ impl BotStatus {
 
     /// The dot drawn on the tray icon: amber when the person is being waited on — the pill's own
     /// colour for it — green while the Bot works, and none at rest, so the ordinary state is the
-    /// ordinary icon.
+    /// ordinary icon. Everywhere but macOS, whose icon holds no colour: see `title`.
     fn dot(self) -> Option<[u8; 3]> {
         match self {
             Self::Waiting => Some([0xF5, 0x9E, 0x0B]),
             Self::Working => Some([0x22, 0xC5, 0x5E]),
             Self::Idle => None,
+        }
+    }
+
+    /// What the menu bar says beside the icon on macOS: the person's turn, and nothing otherwise.
+    ///
+    /// ONE STATE NEEDS THE PERSON, AND THAT ONE IS SAID. The icon there is a template image
+    /// (`TRAY_TEMPLATE_PNG`) and cannot carry `dot`'s colours, so what the amber dot said is said
+    /// in words. Working and resting are not: nobody has to do anything about either, the menu's
+    /// line and the tooltip still say them, and a menu bar is too narrow to narrate in. The words
+    /// are `words`' own — a second literal here would be a second place for them to go stale.
+    fn title(self) -> Option<&'static str> {
+        match self {
+            Self::Waiting => Some(self.words()),
+            Self::Working | Self::Idle => None,
         }
     }
 }
@@ -790,7 +824,8 @@ fn set_status(app: tauri::AppHandle, status: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Put a status on the tray: its line in the menu, its tooltip and the dot on its icon.
+/// Put a status on the tray: its line in the menu, its tooltip, and what the icon itself can say
+/// — words beside it on macOS, a dot on it everywhere else.
 ///
 /// Skipped when nothing changed, because the page says it on every render that could have changed
 /// it and a tray icon rebuilt that often is a menu bar that flickers.
@@ -814,7 +849,26 @@ fn show_status(app: &tauri::AppHandle, status: BotStatus) {
     };
     let name = app.config().product_name.clone().unwrap_or_default();
     let _ = tray.set_tooltip(Some(format!("{name} · {}", status.words())));
-    if let Some(icon) = app.default_window_icon() {
+    /*
+     * `cfg!`, NOT `#[cfg]`: both halves are compiled on both platforms. A pull request's tests run
+     * on macOS alone (release.yml), so a Windows half behind an attribute would be compiled for the
+     * first time on main.
+     */
+    if cfg!(target_os = "macos") {
+        /*
+         * WORDS, NOT PAINT. The icon is a template image and is never set again after
+         * `build_tray`: tray-icon 0.24.2's `set_icon` drops the template flag on macOS, and a
+         * black mark that is no longer a template is invisible on a dark menu bar.
+         *
+         * AND "NO TITLE" IS AN EMPTY ONE. `set_title(None)` looks like the way to take the words
+         * away, and on macOS it does nothing at all — `set_title_inner` in the same crate acts
+         * only on `Some` — so the menu bar would go on saying it is the person's turn after they
+         * had answered.
+         */
+        if let Err(error) = tray.set_title(Some(status.title().unwrap_or(""))) {
+            log::warn!("the menu bar could not say {status:?}: {error}");
+        }
+    } else if let Some(icon) = app.default_window_icon() {
         let icon = match status.dot() {
             Some(colour) => tauri::image::Image::new_owned(
                 with_dot(icon.rgba(), icon.width(), icon.height(), colour),
@@ -829,8 +883,8 @@ fn show_status(app: &tauri::AppHandle, status: BotStatus) {
     }
 }
 
-/// The icon with a round dot in its lower right corner, ringed in white so it reads on a dark menu
-/// bar and a light one alike. Pixels in, pixels out, so it can be tested without a tray.
+/// The icon with a round dot in its lower right corner, ringed in white so it reads on a dark
+/// taskbar and a light one alike. Pixels in, pixels out, so it can be tested without a tray.
 fn with_dot(rgba: &[u8], width: u32, height: u32, colour: [u8; 3]) -> Vec<u8> {
     let mut out = rgba.to_vec();
     if out.len() != (width as usize) * (height as usize) * 4 {
@@ -1173,7 +1227,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    let mut tray = TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .tooltip(&app.config().product_name.clone().unwrap_or_default())
         .menu(&menu)
         /*
@@ -1214,9 +1268,31 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             other => log::warn!("unknown tray item: {other}"),
         });
-    if let Some(icon) = app.default_window_icon().cloned() {
-        tray = tray.icon(icon);
-    }
+    /*
+     * THE PICTURE DIFFERS BY PLATFORM TOO. macOS gets the template (`TRAY_TEMPLATE_PNG` says why);
+     * everything else keeps the window's icon, which `show_status` paints the dot on. Should the
+     * template ever fail to decode, the window's icon stands in and is NOT marked a template — a
+     * full-bleed square read by its alpha alone is a solid block — because a white tile with 열기
+     * and 종료 under it is still worth more than no tray.
+     */
+    let template = if cfg!(target_os = "macos") {
+        match tauri::image::Image::from_bytes(TRAY_TEMPLATE_PNG) {
+            Ok(icon) => Some(icon),
+            Err(error) => {
+                log::warn!("the menu bar icon could not be read, so the window's is used: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let tray = match template {
+        Some(icon) => tray.icon(icon).icon_as_template(true),
+        None => match app.default_window_icon().cloned() {
+            Some(icon) => tray.icon(icon),
+            None => tray,
+        },
+    };
     tray.on_tray_icon_event(|tray, event| {
         if let TrayIconEvent::Click {
             button: MouseButton::Left,
@@ -1459,7 +1535,7 @@ mod tests {
     use super::{
         connection_page_url, deep_link_url, download_ended, fleet_origin, is_summon_choice,
         link_target, summon_shortcut_for, take_ready_update, web_url, with_dot, BotStatus,
-        DownloadEnded, ReadyUpdate, SUMMON_CHOICES, SUMMON_DEFAULT, SUMMON_OFF,
+        DownloadEnded, ReadyUpdate, SUMMON_CHOICES, SUMMON_DEFAULT, SUMMON_OFF, TRAY_TEMPLATE_PNG,
     };
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -1569,6 +1645,46 @@ mod tests {
         assert_eq!(BotStatus::Waiting.words(), "내 차례");
         assert_eq!(BotStatus::Idle.dot(), None);
         assert_ne!(BotStatus::Waiting.dot(), BotStatus::Working.dot());
+    }
+
+    /// Beside the menu-bar icon, the one state that needs the person is said, in the tray's own
+    /// words for it, and the other two are left to the menu and the tooltip.
+    #[test]
+    fn the_menu_bar_says_the_persons_turn_in_words_and_nothing_else() {
+        assert_eq!(BotStatus::Waiting.title(), Some("내 차례"));
+        assert_eq!(BotStatus::Waiting.title(), Some(BotStatus::Waiting.words()));
+        assert_eq!(BotStatus::Working.title(), None);
+        assert_eq!(BotStatus::Idle.title(), None);
+    }
+
+    /// A template image is read by its alpha alone, so the picture has to be the mark and nothing
+    /// around it: a plate — which is what the window's icon is — would be drawn as a solid square.
+    /// Decoded the way `build_tray` decodes it, so a file that passes here is one the tray can use.
+    #[test]
+    fn the_menu_bar_icon_is_black_on_nothing() {
+        let icon = tauri::image::Image::from_bytes(TRAY_TEMPLATE_PNG)
+            .expect("the template should decode the way the tray decodes it");
+        // 2x of the 18 pt the tray draws an icon at (`TRAY_TEMPLATE_PNG` says why not the
+        // drawing's 22), and four bytes a pixel: the tray's own conversion checks exactly that,
+        // and the builder drops a picture that fails it without a word.
+        assert_eq!((icon.width(), icon.height()), (36, 36));
+        assert_eq!(icon.rgba().len(), 36 * 36 * 4);
+        let pixels: Vec<&[u8]> = icon.rgba().chunks_exact(4).collect();
+        let drawn: Vec<&[u8]> = pixels
+            .iter()
+            .copied()
+            .filter(|pixel| pixel[3] > 0)
+            .collect();
+        // Something solid is there, a good part of the box is empty — a plate fills all of it, the
+        // mark a little over half now that the margin is gone — and every pixel that is drawn at
+        // all, the soft ones on the edge included, is black, which is what "template" asks for.
+        assert!(drawn.iter().any(|pixel| pixel[3] == 255));
+        assert!(drawn.len() * 4 < pixels.len() * 3, "{} drawn", drawn.len());
+        assert!(drawn.iter().all(|pixel| pixel[..3] == [0, 0, 0]));
+        // No plate: the corners are where one would show first.
+        for corner in [0, 35, 35 * 36, 36 * 36 - 1] {
+            assert_eq!(pixels[corner][3], 0, "pixel {corner} is not empty");
+        }
     }
 
     /// The page names a summon shortcut by id; only the list decides which keys that is.

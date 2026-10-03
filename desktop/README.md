@@ -204,15 +204,35 @@ needs telling. So:
   strings are Korean and live in `lib.rs`, because a tray menu is drawn by the
   operating system out of strings this process holds: there is no page to ask.
 - **The Bot's status in the tray**: 일하는 중 / 내 차례 / 쉬는 중, as a line
-  under the version, in the tooltip, and as a dot on the icon (amber for the
-  person's turn, green while working, none at rest). The page derives it — the
-  same answer as the pill under the Bot's face (`app/src/lib/agents/presence.ts`)
-  — and sends one of three codes; the words stay here for the reason above, and a
-  page cannot put text of its own into a native menu. Every page load starts it
-  at 쉬는 중, so a page that went away cannot leave it saying the Bot is busy.
-  The three are the app's own words (`Busy working`, `Your turn`, `Ready` in its
-  dictionary) and a test holds them to it: the person's turn read 사장님 차례
-  here until 2026-10-03, to everybody, whoever they had said they were.
+  under the version, in the tooltip, and on the icon itself in the way each
+  platform has. The page derives it — the same answer as the pill under the
+  Bot's face (`app/src/lib/agents/presence.ts`) — and sends one of three codes;
+  the words stay here for the reason above, and a page cannot put text of its
+  own into a native menu. Every page load starts it at 쉬는 중, so a page that
+  went away cannot leave it saying the Bot is busy. The three are the app's own
+  words (`Busy working`, `Your turn`, `Ready` in its dictionary) and a test
+  holds them to it: the person's turn read 사장님 차례 here until 2026-10-03, to
+  everybody, whoever they had said they were.
+- **On the icon, Windows paints and macOS writes.** On Windows the status is a
+  dot on the window's icon (amber for the person's turn, green while working,
+  none at rest). On macOS that icon — a full-bleed white square — was a white
+  tile on a dark menu bar, so since 2026-10-03 the tray there is a template
+  image (`icons/tray-template.png`, exported from the `.svg` beside it): one
+  colour, the menu bar's own, light or dark. A template cannot hold a coloured
+  dot, so the one state that needs the person is said in words — the tray's
+  title reads 내 차례 beside the icon while the Bot waits on the person, and
+  nothing otherwise; working and resting stay in the menu and the tooltip.
+  **Looked at in a real menu bar on 2026-10-03** (the development build, a dark
+  bar, a Retina display): the mark is drawn in the bar's white, 내 차례 appears
+  beside it when a question is raised and goes when it is answered. Three
+  things about tray-icon 0.24.2 shaped the code, each read in its source and
+  the first also measured: it draws every icon 18 pt tall whatever its pixels —
+  the drawing's 22 pt box came out with a 12 pt mark beside neighbours of 16,
+  so the picture is 36 px, the margin left off, and the mark is 15–16 pt; its
+  `set_icon` drops the template flag, so the status never sets the icon again
+  on macOS; and its `set_title(None)` does nothing there, so "no title" is sent
+  as an empty one. Not looked at: a light menu bar, a display that is not
+  Retina.
 - **A summon shortcut**, ⌃⌥L (Ctrl+Alt+L) unless the person picks another or
   turns it off on Settings. Registered from Rust through the official
   global-shortcut plugin, from a fixed list (`SUMMON_CHOICES`, with why each
