@@ -280,17 +280,26 @@ function PluginTool({
                 {withheldForDisplay(forDisplay(result.text))}
               </LazyMarkdown>
             ) : failure?.kind === "error" ? (
-              // The service's own error, in its own words: what went wrong is the detail.
-              <LazyMarkdown>{forDisplay(failure.text)}</LazyMarkdown>
+              // The service's own error, in its own words: what went wrong is the detail. With
+              // the same stand-in for what was withheld from it as an answer gets — see below.
+              <LazyMarkdown>
+                {withheldForDisplay(forDisplay(failure.text))}
+              </LazyMarkdown>
             ) : null}
           </ToolLine>
           {/* What a mail held that the Bot was not given — outside the folded detail, because the
               owner who asked for a code is waiting on it, not on the mail around it. Read from the
               kept result for a call this window did not run; the answer itself stays folded away
-              there, as it was after every reload. */}
+              there, as it was after every reload.
+
+              AN ERROR CAN HOLD ONE TOO. A mail tool that fails part-way has still read what it
+              read, and the server takes a code out and keeps it before it looks at whether the
+              call failed (`server/src/plugins/call.ts`). The row was left out for every failure,
+              and the error's words were drawn as they came: the person saw the mark that stands
+              for the code and nothing to press (Codex on pull request 52). */}
           {result ? (
             <WithheldSecrets botId={botId} text={result.text} />
-          ) : kept !== undefined && failure === null ? (
+          ) : kept !== undefined ? (
             <WithheldSecrets botId={botId} text={kept} />
           ) : null}
         </>
