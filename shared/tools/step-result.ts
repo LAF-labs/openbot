@@ -118,3 +118,61 @@ export function toolFailureText(failure: {
     reason: failure.reason,
   });
 }
+
+/** Each sentence of the table, back to the fact it is the words for. The first, where two agree. */
+const FACT_OF_SENTENCE: ReadonlyMap<string, string> = new Map(
+  Object.entries(TOOL_RESULT_KO)
+    .reverse()
+    .map(([code, sentence]) => [sentence, code]),
+);
+
+/**
+ * How a step that did not work ended, as far as its stored result says.
+ *
+ * - `error`: the service answered, with an error of its own; `text` is the service's words.
+ * - `refused`: somebody, or a rule, said no — the boundary, or the person asked. Final: nothing the
+ *   Bot does differently will help.
+ * - `failed`: everything else that did not come back as an answer — the service's server broke, the
+ *   place asked about is one it has nothing for, the turn was stopped, nobody answered in time.
+ *
+ * `code` is the fact where the result says one, for the surface to put in a person's words. NEVER
+ * the sentence itself: that is an instruction written for the model ("…다시 시도하지 말고 그대로
+ * 알려라"), and under a person's transcript it reads as the app talking to somebody else.
+ */
+export type StepFailure =
+  | { kind: "error"; text: string }
+  | { kind: "refused" | "failed"; code: string | null };
+
+/**
+ * The facts that are somebody saying no. NAMED, AND EVERYTHING ELSE IS A FAILURE — the first cut
+ * had it the other way round, and pressed on the local stack a weather call for a place the
+ * forecast does not reach read "날씨 확인하기 — 차단됨" in red: nobody had blocked anything
+ * (2026-10-03). A fact nobody listed here says only that the step did not work, which is always
+ * true of it.
+ */
+const REFUSED_FACTS: ReadonlySet<string> = new Set([
+  "laf:policy_denied",
+  "laf:no_rule_allows",
+  "laf:declined_recently",
+  "laf:person_declined",
+]);
+
+/** How a finished step failed, or null for one that ended with the service's own answer. */
+export function stepFailureOf(result: string): StepFailure | null {
+  if (!stepDidNotWork(result)) return null;
+  if (result.startsWith(TOOL_ERROR_PREFIX)) {
+    return { kind: "error", text: result.slice(TOOL_ERROR_PREFIX.length) };
+  }
+  if (result === TOOL_NOT_ALLOWED) return { kind: "refused", code: null };
+  if (result === UNANSWERED_RESULT) return { kind: "failed", code: null };
+  const kindOf = (code: string | null) =>
+    code !== null && REFUSED_FACTS.has(code) ? "refused" : "failed";
+  const said = FACT_OF_SENTENCE.get(result);
+  if (said !== undefined) return { kind: kindOf(said), code: said };
+  if (BARE_FACT.test(result)) return { kind: kindOf(result), code: result };
+  // An object of ours, or a handler that threw. Too long to parse, it says no more than that.
+  const facts =
+    result.length > REFUSAL_OBJECT_MAX ? null : resultFactsOf(result);
+  const code = facts?.code ?? null;
+  return { kind: facts?.refused === true ? "refused" : kindOf(code), code };
+}
