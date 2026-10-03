@@ -26,6 +26,9 @@ export function toolErrorText(text: string): string {
   return `${TOOL_ERROR_PREFIX}${text}`;
 }
 
+/** A fact with no sentence in the table is handed over as itself (`toolResultText`). */
+const BARE_FACT = /^laf:[a-z0-9_]+$/;
+
 /**
  * Every sentence this server answers a call with in the service's place. A connected service
  * never says one of these: where a step's whole result is one, the server answered instead —
@@ -64,9 +67,34 @@ export function stepDidNotWork(result: string): boolean {
     return true;
   }
   if (result.length > REFUSAL_OBJECT_MAX) return false;
+  if (BARE_FACT.test(result)) return true;
   const facts = resultFactsOf(result);
   return (
     facts !== null &&
     (facts.ok === false || facts.refused === true || facts.stopped === true)
   );
+}
+
+/**
+ * What a call that was not carried out is answered with, in a form {@link stepDidNotWork} reads.
+ *
+ * The window's own handler answered the model with the reason as it came, and a reason is not
+ * always one of the forms above: a 403 that carries no fact arrives as whatever sentence the route
+ * wrote, or as this app's own fallback in the reader's language. Kept as the step's result, that
+ * sentence read back as the service's answer — and a refusal went behind the fold of the step after
+ * it (Codex on pull request 44, round 3). So a reason that does not already say so is wrapped in
+ * the object this server's own refusals are: `{ ok: false, refused, reason }`. The model reads the
+ * same reason; the transcript can tell what it was.
+ */
+export function toolFailureText(failure: {
+  refused: boolean;
+  reason: string;
+}): string {
+  return stepDidNotWork(failure.reason)
+    ? failure.reason
+    : JSON.stringify({
+        ok: false,
+        refused: failure.refused,
+        reason: failure.reason,
+      });
 }

@@ -1,5 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { toolErrorText } from "@shared/tools/step-result";
+import { toolErrorText, toolFailureText } from "@shared/tools/step-result";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import * as z from "zod";
@@ -209,7 +209,8 @@ function PluginTool({
         outcome: { refused: result.refused, reason: result.reason },
       });
       touch();
-      return result.reason;
+      // In a form the transcript can read back as "this did not happen" (`toolFailureText`).
+      return toolFailureText(result);
     },
     render: ({ status, toolCallId }) => {
       const entry = calls.current.get(toolCallId ?? "") ?? {};

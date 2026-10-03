@@ -14,6 +14,7 @@ import {
   stepDidNotWork,
   TOOL_NOT_ALLOWED,
   toolErrorText,
+  toolFailureText,
 } from "@shared/tools/step-result";
 import { withheldMark } from "@shared/tools/withheld";
 import {
@@ -259,6 +260,49 @@ describe("which lines are a run", () => {
         false,
       ]);
     }
+  });
+
+  /*
+   * AND EVERY WAY A CALL IS NOT CARRIED OUT IS WRITTEN IN ONE OF THOSE FORMS (review, round 3). The
+   * window's own handler answered with the reason as it came: a 403 that carries no fact is
+   * whatever sentence the route wrote, or this app's own fallback in the reader's language — a
+   * refusal that read back as the service's answer.
+   */
+  test("a reason that does not say so itself is wrapped in a form that does, and one that does is left alone", () => {
+    const sentence = TOOL_RESULT_KO["laf:policy_denied"] as string;
+    expect(toolFailureText({ refused: true, reason: sentence })).toBe(sentence);
+    expect(toolFailureText({ refused: true, reason: TOOL_NOT_ALLOWED })).toBe(
+      TOOL_NOT_ALLOWED,
+    );
+    for (const failure of [
+      {
+        refused: true,
+        reason: "You have not connected your Google Sheets account",
+      },
+      { refused: true, reason: "이 도구는 여기서 쓸 수 없어요." },
+      { refused: false, reason: "The server did not answer." },
+      { refused: false, reason: "" },
+    ]) {
+      const written = toolFailureText(failure);
+      expect([failure.reason, stepDidNotWork(written)]).toEqual([
+        failure.reason,
+        true,
+      ]);
+      // The model is told the same reason, and whether it was a refusal.
+      expect(JSON.parse(written)).toEqual({ ok: false, ...failure });
+      expect(
+        placesOf([
+          ASKED,
+          called("1"),
+          answered("1", written),
+          ...done("2"),
+          ...done("3"),
+        ]).map(([id]) => id),
+      ).toEqual(["call-2", "call-3"]);
+    }
+    // A fact the table has no sentence for is handed over as itself, and is one too.
+    expect(stepDidNotWork("laf:some_new_fact")).toBe(true);
+    expect(stepDidNotWork("laf: 로 시작하는 메일 제목")).toBe(false);
   });
 
   /*
