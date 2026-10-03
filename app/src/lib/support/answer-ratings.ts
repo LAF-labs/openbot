@@ -194,7 +194,7 @@ export const answerRatingKeys = {
  * One read per conversation, shared by every answer in it — each control selects its own row.
  *
  * Never stale on its own: the only thing that changes a rating is a press in this tab, and the
- * press writes the server's answer into this cache (`AnswerRatingControls`). No retry: a refusal
+ * press writes the server's answer into this cache (`useAnswerRating`). No retry: a refusal
  * here is a fact about the deployment, not a flake, and it is what hides the controls.
  */
 export function answerRatingsQueryOptions(channelId: string) {

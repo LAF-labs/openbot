@@ -8,6 +8,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { join } from "node:path";
 import type { Message } from "@ag-ui/core";
 import { TOOL_RESULT_KO } from "@shared/prompt/tool-results.ko";
 import { UNANSWERED_RESULT } from "@shared/task-ending";
@@ -17,7 +18,6 @@ import {
   toolErrorText,
   toolFailureText,
 } from "@shared/tools/step-result";
-import { withheldMark } from "@shared/tools/withheld";
 import {
   isFoldableStep,
   openStepRuns,
@@ -37,6 +37,17 @@ import {
   unmountApps,
 } from "./support/app-router";
 import {
+  ASKED,
+  answered,
+  asked,
+  called,
+  done,
+  MAIL_WITH_A_CODE,
+  SERVICE_TOOL,
+  said,
+} from "./support/step-fixtures";
+import type { Entry, Seen, StepsShown } from "./support/steps-render";
+import {
   acted,
   installTurnStreams,
   removeTurnStreams,
@@ -51,7 +62,9 @@ import {
  * 지메일 twice, 메일 읽기 · 지메일 twice — a row each. They were folded to the newest, with a fold
  * beside it for the rest. The owner's word the next day was that the app still shows far too many
  * words, and the choice was "proposal A": a step is drawn while it is out, a finished turn is what
- * the Bot said, and the answer carries an icon that opens what was done for it.
+ * the Bot said, and the answer opens what was done for it — from an icon of its own at first, and
+ * since the same day from the last row of the answer's "more" menu (`answer-more.tsx`), the second
+ * of the two controls an answer has.
  *
  * The projection first (which rows are steps, which stay drawn, what each answer opens, where a
  * drawn window may begin), then the conversation people use, mounted, with the server's own
@@ -70,51 +83,6 @@ afterAll(async () => {
   removeTurnStreams();
   await removeAppDom();
 });
-
-const ASKED: Message = {
-  id: "q-asked",
-  role: "user",
-  content: "내 메일에 온 것 있나 보고 알려줘",
-};
-/** A connected service's tool this app has no words for: its line reads "Used a connected service". */
-const SERVICE_TOOL = "mcp__orders__look_up";
-const called = (id: string, name = SERVICE_TOOL): Message =>
-  ({
-    id: `a-${id}`,
-    role: "assistant",
-    content: "",
-    toolCalls: [
-      {
-        id: `call-${id}`,
-        type: "function",
-        function: { name, arguments: "{}" },
-      },
-    ],
-  }) as Message;
-const answered = (id: string, content = "ok"): Message =>
-  ({
-    id: `t-${id}`,
-    role: "tool",
-    toolCallId: `call-${id}`,
-    content,
-  }) as Message;
-/** A mail's text as the Bot was given it: the one-time code taken out, a mark where it was. */
-const MAIL_WITH_A_CODE = `제목: 인증번호 안내\n인증번호: ${withheldMark("code", "Ab12Cd34Ef56")}`;
-const said = (id: string, text: string): Message => ({
-  id,
-  role: "assistant",
-  content: text,
-});
-const asked = (id: string, text: string): Message => ({
-  id,
-  role: "user",
-  content: text,
-});
-/** A step and its result, as the record holds a finished one. */
-const done = (id: string, name?: string): Message[] => [
-  called(id, name),
-  answered(id),
-];
 
 const itemsOf = (messages: Message[]) =>
   withBrowsingTasks(toVisibleChatItems(messages));
@@ -625,271 +593,461 @@ describe("where a drawn window may begin", () => {
   });
 });
 
+/*
+ * THE CONVERSATION, MOUNTED. THE ANSWER'S MENU IS PRESSED IN A PROCESS OF ITS OWN.
+ *
+ * The record is opened from the last row of the answer's "more" menu, and in this process that
+ * menu does not open: Base UI decides once whether there is a document, and a file before this one
+ * had it decide there was none (`support/steps-render.tsx` has the measurement). So every
+ * conversation whose record is pressed is mounted and pressed there — once, for all of them — and
+ * each test here holds one of them to what the screen showed. What needs no press of the menu is
+ * mounted here, further down.
+ */
+const names = (entries: readonly Entry[] | undefined) =>
+  (entries ?? []).map((entry) => entry.name);
+/** A row of the menu as it reads when nothing about it is out of the ordinary. */
+const row = (name: string): Entry => ({
+  name,
+  role: "menuitem",
+  checked: false,
+  warns: false,
+});
+
+describe("the conversation, with the answer's menu pressed", () => {
+  let shown: StepsShown = {};
+  /** What one conversation showed. A scenario that stopped short fails the test that reads it. */
+  const seen = (name: string): Seen => {
+    const scenario = shown[name];
+    if (!scenario) throw new Error(`the scenario "${name}" did not run`);
+    if (scenario.error) {
+      throw new Error(
+        `"${name}" stopped: ${scenario.error}\n${JSON.stringify(scenario)}`,
+      );
+    }
+    return scenario;
+  };
+
+  beforeAll(async () => {
+    const child = Bun.spawn(
+      ["bun", join(import.meta.dir, "support/steps-render.tsx")],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const [stdout, stderr, status] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    const line = stdout
+      .split("\n")
+      .find((candidate) => candidate.startsWith("STEPS_RENDER "));
+    if (status !== 0 || !line) {
+      throw new Error(
+        `the conversations were not pressed to the end (exit ${status}):\n${stderr.slice(-3000)}`,
+      );
+    }
+    shown = JSON.parse(line.slice("STEPS_RENDER ".length)) as StepsShown;
+  }, 180_000);
+
+  describe("a finished conversation", () => {
+    test("draws no step, and two controls under the answer; the record is the last row of its menu — pressed, every step of the turn; pressed again, none", () => {
+      const { frames, menus, notes } = seen("record");
+      expect(frames.closed).toEqual({
+        rows: ["q-asked", "a-answer"],
+        lines: 0,
+        // Two, and no warning over steps that all worked.
+        controls: { "a-answer": ["Copy this reply", "More"] },
+        warned: [],
+      });
+      // Named for what it opens, and last: after what every answer's menu has.
+      expect(menus.closed).toEqual([
+        row("Quote in a reply"),
+        row("What it did for this answer: 4 steps"),
+      ]);
+
+      // Where they happened: between the question and the answer.
+      expect(frames.opened?.rows).toEqual([
+        "q-asked",
+        "call-1",
+        "call-2",
+        "call-3",
+        "call-4",
+        "a-answer",
+      ]);
+      expect(frames.opened?.lines).toBe(4);
+      expect(names(menus.opened)).toEqual([
+        "Quote in a reply",
+        "Hide what it did",
+      ]);
+
+      expect(frames["put away"]).toEqual(frames.closed);
+      expect(menus["put away"]).toEqual(menus.closed);
+      // The answer is where it was throughout.
+      expect(notes["the answer is where it was"]).toBe(true);
+    });
+
+    /*
+     * THE ROW OF CONTROLS IS DRAWN WHILE THE POINTER IS OVER THE ANSWER, and the menu is drawn
+     * somewhere else in the document. The pointer goes to the menu, and the button the menu hangs
+     * from would fade out from under it — so the row is held up for as long as its menu is open.
+     */
+    test("the row of controls is held up while its menu is open, and let go when it closes", () => {
+      const { notes } = seen("record");
+      expect({
+        before: notes["held up, before"],
+        open: notes["held up, menu open"],
+        closed: notes["held up, menu closed"],
+      }).toEqual({ before: false, open: true, closed: false });
+    });
+
+    test("does not draw a step alone either, and a sentence the Bot spoke between opens only what came before it", () => {
+      const { frames, menus } = seen("alone");
+      expect(frames.closed?.lines).toBe(0);
+      expect(frames.closed?.rows).toEqual(["q-asked", "a-between", "a-answer"]);
+      expect(names(menus["between, closed"]).at(-1)).toBe(
+        "What it did for this answer: 1 steps",
+      );
+      expect(names(menus["answer, closed"]).at(-1)).toBe(
+        "What it did for this answer: 2 steps",
+      );
+
+      expect(frames["between opened"]?.rows).toEqual([
+        "q-asked",
+        "call-1",
+        "a-between",
+        "a-answer",
+      ]);
+      // Open under the one that was pressed, and still to be opened under the other.
+      expect(names(menus["between, opened"]).at(-1)).toBe("Hide what it did");
+      expect(names(menus["answer, still closed"]).at(-1)).toBe(
+        "What it did for this answer: 2 steps",
+      );
+    });
+
+    /*
+     * NOTHING ELSE LEAVES THE CONVERSATION. A card, a file, the clock: each is a thing the Bot made
+     * or said, drawn by name, and is where it was with the record closed and with it open.
+     */
+    test("leaves what is drawn by name where it was, and opens the runs either side of it together", () => {
+      const { frames, menus } = seen("card");
+      expect(frames.closed?.rows).toEqual(["q-asked", "call-card", "a-answer"]);
+      expect(names(menus.closed).at(-1)).toBe(
+        "What it did for this answer: 3 steps",
+      );
+      expect(frames.opened?.lines).toBe(3);
+      expect(frames.opened?.rows).toEqual([
+        "q-asked",
+        "call-1",
+        "call-2",
+        "call-card",
+        "call-3",
+        "a-answer",
+      ]);
+      expect(names(menus.opened).at(-1)).toBe("Hide what it did");
+    });
+  });
+
+  describe("a step with something on it for the person", () => {
+    test("stays drawn with the steps around it put away: the mail a one-time code was in", () => {
+      const { frames, menus } = seen("code");
+      // The row of the call that read the mail is in the document, where its 보기 is drawn.
+      expect(frames.closed?.lines).toBe(1);
+      expect(frames.closed?.rows).toEqual(["q-asked", "call-2", "a-answer"]);
+      // It is one of the four the answer names, and opening draws the other three around it.
+      expect(names(menus.closed).at(-1)).toBe(
+        "What it did for this answer: 4 steps",
+      );
+      expect(frames.opened?.lines).toBe(4);
+      expect(frames["put away"]?.lines).toBe(1);
+      expect(frames["put away"]?.rows).toEqual([
+        "q-asked",
+        "call-2",
+        "a-answer",
+      ]);
+    });
+
+    test("and where it is all the answer was written from, the menu has no row for it: there is nothing to open", () => {
+      const { frames, menus } = seen("code alone");
+      expect(frames.drawn?.rows).toEqual(["q-asked", "call-1", "a-answer"]);
+      expect(menus.drawn).toEqual([row("Quote in a reply")]);
+    });
+
+    /*
+     * A STEP THAT DID NOT WORK IS NOT ONE OF THEM (the owner, 2026-10-04). It used to stay drawn.
+     * What keeps a failure from being hidden is the control it is behind: the "more" button's
+     * colour and its name, and the row that opens the record, which says how many.
+     */
+    test("a step that did not work is not drawn, and the button it is behind says so in its colour and its name", () => {
+      const { frames, menus } = seen("failed");
+      expect(frames.closed).toEqual({
+        rows: ["q-asked", "a-answer"],
+        lines: 0,
+        controls: {
+          "a-answer": ["Copy this reply", "More. A step did not work"],
+        },
+        warned: ["a-answer"],
+      });
+      expect(menus.closed).toEqual([
+        row("Quote in a reply"),
+        {
+          ...row("What it did for this answer: 4 steps, 1 did not work"),
+          warns: true,
+        },
+      ]);
+      // Opened, the step that did not work is there with the rest.
+      expect(frames.opened?.rows.slice(1, 5)).toEqual([
+        "call-1",
+        "call-2",
+        "call-3",
+        "call-4",
+      ]);
+      // And the button goes on saying so: the failure is in the record, open or put away.
+      expect(frames.opened?.warned).toEqual(["a-answer"]);
+    });
+  });
+
+  describe("a row another screen sends the person to", () => {
+    /*
+     * 오늘, 만든 것 and 수첩 name a row and the transcript goes to it once it is in the document —
+     * which a step that is over is not. The LAST step of a run is the one this used to leave alone:
+     * it was the line that was drawn.
+     */
+    test("is opened to — the last step of a run too — and stays open", () => {
+      const { frames, menus } = seen("jump");
+      expect(frames.closed?.lines).toBe(0);
+      expect(frames["after the jump"]?.lines).toBe(3);
+      // The answer's own menu knows: the record it opens is open, and it is what closes it.
+      expect(names(menus["after the jump"]).at(-1)).toBe("Hide what it did");
+      expect(frames["put away"]?.lines).toBe(0);
+    });
+
+    /*
+     * AN ANSWER'S RECORD IS OPEN WHEN ALL OF IT IS. A jump opens the run that holds the row and not
+     * the one the other side of a card, so the answer's menu still offers to open — and opens the
+     * rest — rather than offering to hide a record half of which was never shown.
+     */
+    test("opens the run it is in and not the rest of the record, which the answer's menu still opens", () => {
+      const { frames, menus } = seen("jump to half");
+      expect(frames["after the jump"]?.rows).toEqual([
+        "q-asked",
+        "call-card",
+        "call-3",
+        "a-answer",
+      ]);
+      expect(names(menus["after the jump"]).at(-1)).toBe(
+        "What it did for this answer: 3 steps",
+      );
+      expect(frames.opened?.lines).toBe(3);
+      expect(names(menus.opened).at(-1)).toBe("Hide what it did");
+      expect(frames["put away"]?.lines).toBe(0);
+    });
+
+    test("opens nothing when it is drawn already: the steps around it were not asked for", () => {
+      const { frames, menus } = seen("jump to a drawn row");
+      expect(frames.closed?.lines).toBe(1);
+      expect(frames["after the jump"]?.lines).toBe(1);
+      expect(names(menus["after the jump"]).at(-1)).toBe(
+        "What it did for this answer: 3 steps",
+      );
+    });
+  });
+
+  describe("a record at the edge of what is drawn", () => {
+    /*
+     * THE WINDOW IS FORTY ROWS, COUNTED OVER EVERY ROW — the ones not drawn too. Cut inside a run,
+     * the fold read 이전 5단계 and opening it drew the two the window held, under a button that said
+     * the record was open (review of pull request 44, round 1).
+     */
+    test("is whole: a window that would begin inside a run begins at its first step", () => {
+      const { menus, notes } = seen("window");
+      expect(names(menus.closed).at(-1)).toBe(
+        "What it did for this answer: 6 steps",
+      );
+      expect(notes["first row, closed"]).toBe("a-answer");
+      expect(notes["first seven rows, opened"]).toBe(
+        "call-1 call-2 call-3 call-4 call-5 call-6 a-answer",
+      );
+    });
+
+    /*
+     * AND THE ANSWER IS THE CONTROL NOW. A window that began at the answer itself held none of the
+     * steps it names: three steps, and a press that drew nothing under a row saying it was open.
+     */
+    test("and one that would begin at the answer begins at the first step that answer opens", () => {
+      const { menus, notes } = seen("window at the answer");
+      expect(notes["first row, closed"]).toBe("a-answer");
+      expect(names(menus.closed).at(-1)).toBe(
+        "What it did for this answer: 3 steps",
+      );
+      expect(notes["first four rows, opened"]).toBe(
+        "call-1 call-2 call-3 a-answer",
+      );
+    });
+
+    test("stays open when the page above arrives with the steps before it", () => {
+      const { frames, menus } = seen("page");
+      expect(names(menus["the newest page"]).at(-1)).toBe(
+        "What it did for this answer: 2 steps",
+      );
+      // The window was pinned to the row it began at, the third step: now inside the run, so it
+      // begins at the run's first step, and the run is open by the row it was opened by.
+      expect(frames["the page above arrived"]?.rows).toEqual([
+        "call-1",
+        "call-2",
+        "call-3",
+        "call-4",
+        "a-answer",
+      ]);
+      expect(names(menus["the page above arrived"]).at(-1)).toBe(
+        "Hide what it did",
+      );
+      // Closed by any row of it: none drawn, and the count is the whole record's.
+      expect(frames["put away"]?.lines).toBe(0);
+      expect(names(menus["put away"]).at(-1)).toBe(
+        "What it did for this answer: 4 steps",
+      );
+    });
+  });
+
+  describe("a turn that is still going", () => {
+    test("shows the step that is out and none of the finished ones, and its answer opens them all", () => {
+      const { frames, menus } = seen("going");
+      // The one in hand is the only line, however many came before it; and no answer, no control.
+      expect(frames["the first step out"]).toEqual({
+        rows: ["q-asked", "call-1"],
+        lines: 1,
+        controls: {},
+        warned: [],
+      });
+      expect(frames["the third step out"]).toEqual({
+        rows: ["q-asked", "call-3"],
+        lines: 1,
+        controls: {},
+        warned: [],
+      });
+      // The answer arrives: no step is left drawn, and the answer carries all three.
+      expect(frames["the answer arrived"]?.rows).toEqual([
+        "q-asked",
+        "a-answer",
+      ]);
+      // The record is all its menu holds: an answer still being written is not quoted or rated.
+      expect(menus["the answer arrived"]).toEqual([
+        row("What it did for this answer: 3 steps"),
+      ]);
+      expect(frames.opened?.lines).toBe(3);
+    });
+
+    /*
+     * THE PRESS IS ONE FUNCTION FOR AS LONG AS THE TRANSCRIPT IS MOUNTED, and a finished answer is
+     * handed it once. After the answer under it has been written, chunk by chunk, the row still
+     * does what it did: the function it was given is the same one, not a dead one.
+     */
+    test("a finished answer's record is still put away and opened after the answer under it was written", () => {
+      const { frames } = seen("pressed while the next answer is written");
+      expect(frames["the next answer written"]?.lines).toBe(2);
+      // The one being written has 복사 and nothing else: no steps, and not yet to be quoted or rated.
+      expect(frames["the next answer written"]?.controls).toEqual({
+        "a-told": ["Copy this reply", "More"],
+        "a-urgent": ["Copy this reply"],
+      });
+      expect(frames["put away"]?.lines).toBe(0);
+      expect(frames["opened again"]?.lines).toBe(2);
+    });
+  });
+
+  /*
+   * WHAT THE MENU HOLDS, IN ORDER (the owner's "proposal A", 2026-10-04): 인용해 답하기, 좋아요,
+   * 아쉬워요, and — where the answer has steps — the row that opens the record. An answer that can
+   * be neither quoted nor rated has the record alone, and with no record has no menu.
+   */
+  describe("what an answer's menu holds", () => {
+    const choice = (name: string, checked = false): Entry => ({
+      name,
+      role: "menuitemradio",
+      checked,
+      warns: false,
+    });
+
+    test("an answer with steps: quote, the two a rating is chosen from, and the record, last", () => {
+      expect(seen("menus").menus["with steps"]).toEqual([
+        row("Quote in a reply"),
+        choice("Good answer"),
+        choice("Could be better"),
+        row("What it did for this answer: 2 steps"),
+      ]);
+    });
+
+    test("an answer without: the first three", () => {
+      expect(seen("menus").menus.without).toEqual([
+        row("Quote in a reply"),
+        choice("Good answer"),
+        choice("Could be better"),
+      ]);
+    });
+
+    test("an answer still being written, which can be neither quoted nor rated: the record alone — and with no record, no menu", () => {
+      const { frames, menus } = seen("menus");
+      expect(menus["being written, with steps"]).toEqual([
+        row("What it did for this answer: 1 steps"),
+      ]);
+      expect(menus["being written, without"]).toEqual([]);
+      // Two controls under each, and under the one with nothing to put in a menu, 복사 alone.
+      expect(frames.drawn?.controls).toEqual({
+        "a-steps": ["Copy this reply", "More"],
+        "a-plain": ["Copy this reply", "More"],
+        "a-writing": ["Copy this reply", "More"],
+        "a-bare": ["Copy this reply"],
+      });
+    });
+
+    test("좋아요 from the menu is what the thumb was: sent as nothing but itself, and drawn as chosen once the server has it", () => {
+      const { frames, menus, notes } = seen("menus");
+      expect(notes.put).toBe(JSON.stringify([{ rating: "up" }]));
+      expect(menus.rated).toEqual([
+        row("Quote in a reply"),
+        choice("Good answer", true),
+        choice("Could be better"),
+      ]);
+      // And still two controls: what the rating came to is said beside them, not with a third —
+      // and the row is held up for as long as it is being said, wherever the pointer went.
+      expect(frames.rated?.controls["a-plain"]).toEqual([
+        "Copy this reply",
+        "More",
+      ]);
+      expect(notes["held up while the rating is said"]).toBe(true);
+    });
+  });
+});
+
 const log = (host: HTMLElement) => host.querySelector('[role="log"]');
 /** How many step lines of the stand-in tool the transcript is drawing. */
 const linesDrawn = (host: HTMLElement) =>
   (log(host)?.textContent ?? "").split("Used a connected service").length - 1;
-/**
- * The buttons that open what was done for an answer. By their own mark, not by `aria-expanded`: the
- * thumbs beside them open a popover, and say so the same way.
- */
-const records = (host: HTMLElement) => [
-  ...(log(host)?.querySelectorAll<HTMLButtonElement>(
-    '[data-testid="transcript-answer-steps"]',
-  ) ?? []),
-];
-const record = (host: HTMLElement) => records(host)[0] ?? null;
-/**
- * How many of them there are. What is asserted about a button is a number or its name, never the
- * element: a comparison that fails is printed, and an element is printed by walking the document it
- * is in — measured here, one failed `toBeNull()` on a button kept the run busy for the ten minutes
- * it was given, at 900 MB, instead of failing.
- */
-const recordsDrawn = (host: HTMLElement) => records(host).length;
-/** The one under a given answer: it is drawn inside that answer's own row. */
-const recordUnder = (host: HTMLElement, answerId: string) =>
-  log(host)?.querySelector<HTMLButtonElement>(
-    `[data-message-id="${answerId}"] [data-testid="transcript-answer-steps"]`,
-  ) ?? null;
-/** What the button is called: it is an icon, so its name is all it says. */
-const named = (button: Element | null | undefined) =>
-  button?.getAttribute("aria-label") ?? null;
-const isOpen = (button: Element | null | undefined) =>
-  button?.getAttribute("aria-expanded") ?? null;
 const rowsDrawn = (host: HTMLElement) =>
   [
     ...(log(host)?.querySelectorAll<HTMLElement>("[data-message-id]") ?? []),
   ].map((row) => row.dataset.messageId);
 /** The same, as one string: what a wait compares. */
 const drawn = (host: HTMLElement) => rowsDrawn(host).join(" ");
+/**
+ * How many answers have a "more" under them. A number, never the element: a comparison that fails
+ * is printed, and an element is printed by walking the document it is in — measured here, one
+ * failed `toBeNull()` on a button kept the run busy for the ten minutes it was given, at 900 MB,
+ * instead of failing.
+ */
+const moresDrawn = (host: HTMLElement) =>
+  log(host)?.querySelectorAll('[data-slot="answer-more"] button').length ?? 0;
 
-async function conversation(channelId: string, history: Message[]) {
-  const server = turnServer({ channelId, history });
-  const view = await mountApp({
-    path: `/channel/${channelId}`,
-    api: server.api,
-  });
-  await view.waitFor(
-    () => log(view.host)?.textContent?.includes(String(ASKED.content)) === true,
-    "the conversation",
-    8000,
-  );
-  return { server, view };
-}
-
-describe("a finished conversation", () => {
-  test("draws no step, and one icon under the answer named for what it opens; pressed, every step of the turn; pressed again, none", async () => {
-    const { server, view } = await conversation("channel_steps-record", [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      ...done("4"),
-      said("a-answer", "비즈니스 메일 한 통 와 있어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(linesDrawn(view.host)).toBe(0);
-    expect(rowsDrawn(view.host)).toEqual(["q-asked", "a-answer"]);
-    // One, and in the row of the answer the steps were taken for.
-    expect(recordsDrawn(view.host)).toBe(1);
-    expect(named(recordUnder(view.host, "a-answer"))).toBe(
-      "What it did for this answer: 4 steps",
-    );
-    expect(record(view.host)?.getAttribute("title")).toBe(
-      "What it did for this answer: 4 steps",
-    );
-    expect(isOpen(record(view.host))).toBe("false");
-    // An icon and nothing else, and no warning over steps that all worked.
-    expect(record(view.host)?.textContent).toBe("");
-    expect(record(view.host)?.className).not.toContain("text-warning");
-
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 4, "every step", 4000);
-    // Where they happened: between the question and the answer.
-    expect(rowsDrawn(view.host)).toEqual([
-      "q-asked",
-      "call-1",
-      "call-2",
-      "call-3",
-      "call-4",
-      "a-answer",
-    ]);
-    expect(named(record(view.host))).toBe("Hide what it did");
-    expect(isOpen(record(view.host))).toBe("true");
-
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 0, "none again", 4000);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 4 steps",
-    );
-    // The answer is where it was throughout.
-    expect(log(view.host)?.textContent).toContain(
-      "비즈니스 메일 한 통 와 있어요.",
-    );
-    server.close();
-    await view.unmount();
-  });
-
-  test("does not draw a step alone either, and a sentence the Bot spoke between opens only what came before it", async () => {
-    const { server, view } = await conversation("channel_steps-alone", [
-      ASKED,
-      ...done("1"),
-      said("a-between", "두 통 더 볼게요."),
-      ...done("2"),
-      ...done("3"),
-      said("a-answer", "세 통 와 있어요."),
-    ]);
-    await view.waitFor(
-      () => records(view.host).length === 2,
-      "an icon under each",
-      4000,
-    );
-    expect(linesDrawn(view.host)).toBe(0);
-    expect(named(recordUnder(view.host, "a-between"))).toBe(
-      "What it did for this answer: 1 steps",
-    );
-    expect(named(recordUnder(view.host, "a-answer"))).toBe(
-      "What it did for this answer: 2 steps",
-    );
-
-    await view.click(recordUnder(view.host, "a-between") as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 1, "its one step", 4000);
-    expect(rowsDrawn(view.host)).toEqual([
-      "q-asked",
-      "call-1",
-      "a-between",
-      "a-answer",
-    ]);
-    expect(isOpen(recordUnder(view.host, "a-between"))).toBe("true");
-    expect(isOpen(recordUnder(view.host, "a-answer"))).toBe("false");
-    server.close();
-    await view.unmount();
-  });
-
-  /*
-   * NOTHING ELSE LEAVES THE CONVERSATION. A card, a file, the clock: each is a thing the Bot made
-   * or said, drawn by name, and is where it was with the record closed and with it open.
-   */
-  test("leaves what is drawn by name where it was, and opens the runs either side of it together", async () => {
-    const { server, view } = await conversation("channel_steps-card", [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("card", "now"),
-      ...done("3"),
-      said("a-answer", "다 봤어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(rowsDrawn(view.host)).toEqual(["q-asked", "call-card", "a-answer"]);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 3 steps",
-    );
-
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 3, "all three", 4000);
-    expect(rowsDrawn(view.host)).toEqual([
-      "q-asked",
-      "call-1",
-      "call-2",
-      "call-card",
-      "call-3",
-      "a-answer",
-    ]);
-    expect(isOpen(record(view.host))).toBe("true");
-    server.close();
-    await view.unmount();
-  });
-});
-
-describe("a step with something on it for the person", () => {
-  test("stays drawn with the steps around it put away: the mail a one-time code was in", async () => {
-    const { server, view } = await conversation("channel_steps-code", [
-      ASKED,
-      ...done("1"),
-      called("2"),
-      answered("2", MAIL_WITH_A_CODE),
-      ...done("3"),
-      ...done("4"),
-      said("a-answer", "인증번호가 온 메일이 있어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    // The row of the call that read the mail is in the document, where its 보기 is drawn.
-    expect(linesDrawn(view.host)).toBe(1);
-    expect(rowsDrawn(view.host)).toEqual(["q-asked", "call-2", "a-answer"]);
-    // It is one of the four the answer names, and opening draws the other three around it.
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 4 steps",
-    );
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 4000);
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 1, "the mail", 4000);
-    expect(rowsDrawn(view.host)).toEqual(["q-asked", "call-2", "a-answer"]);
-    server.close();
-    await view.unmount();
-  });
-
-  test("and where it is all the answer was written from, the answer carries no icon: there is nothing to open", async () => {
-    const { server, view } = await conversation("channel_steps-code-alone", [
-      ASKED,
-      called("1"),
-      answered("1", MAIL_WITH_A_CODE),
-      said("a-answer", "인증번호가 온 메일이에요."),
-    ]);
-    await view.waitFor(
-      () => drawn(view.host) === "q-asked call-1 a-answer",
-      "the mail and the answer",
-      4000,
-    );
-    expect(recordsDrawn(view.host)).toBe(0);
-    server.close();
-    await view.unmount();
-  });
-
-  /*
-   * A STEP THAT DID NOT WORK IS NOT ONE OF THEM (the owner, 2026-10-04). It used to stay drawn. What
-   * keeps a failure from being hidden is the control that opens it: its colour, and its name.
-   */
-  test("a step that did not work is not drawn, and the icon says so in its colour and its name", async () => {
-    const { server, view } = await conversation("channel_steps-failed", [
-      ASKED,
-      ...done("1"),
-      called("2"),
-      answered("2", toolErrorText("quota exceeded")),
-      ...done("3"),
-      ...done("4"),
-      said("a-answer", "두 번째는 안 됐어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(recordsDrawn(view.host)).toBe(1);
-    expect(linesDrawn(view.host)).toBe(0);
-    expect(rowsDrawn(view.host)).toEqual(["q-asked", "a-answer"]);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 4 steps, 1 did not work",
-    );
-    expect(record(view.host)?.className).toContain("text-warning");
-    // Still an icon and nothing else.
-    expect(record(view.host)?.textContent).toBe("");
-    // Opened, the step that did not work is there with the rest.
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 4000);
-    expect(rowsDrawn(view.host).slice(1, 5)).toEqual([
-      "call-1",
-      "call-2",
-      "call-3",
-      "call-4",
-    ]);
-    server.close();
-    await view.unmount();
-  });
-
+/*
+ * WHAT NEEDS NO PRESS OF THE MENU IS MOUNTED HERE, in this process, as it always was.
+ */
+describe("a turn that ended on a step that is not drawn", () => {
   /*
    * THE LINE THAT SAYS A TURN DIED IS NOT A STEP. A turn that dies mid-task leaves its last row a
    * step's result, so the server keys the failure there and names the question beside it, and the
    * line is drawn after the last row that turn drew (`failurePlaces`) — a step that is over, which
    * is not drawn. The line is: a turn that failed on a step nobody can see has still failed.
    */
-  test("a turn that ended on a step that is not drawn still says that it failed", async () => {
+  test("still says that it failed", async () => {
     const channelId = "channel_steps-died";
     const server = turnServer({ channelId, history: [ASKED, ...done("1")] });
     const view = await mountApp({
@@ -922,264 +1080,7 @@ describe("a step with something on it for the person", () => {
   });
 });
 
-describe("a row another screen sends the person to", () => {
-  /*
-   * 오늘, 만든 것 and 수첩 name a row and the transcript goes to it once it is in the document —
-   * which a step that is over is not. The LAST step of a run is the one this used to leave alone:
-   * it was the line that was drawn.
-   */
-  test("is opened to — the last step of a run too — and stays open", async () => {
-    const channelId = "channel_steps-jump";
-    const { server, view } = await conversation(channelId, [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      said("a-answer", "세 번 찾아봤어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(linesDrawn(view.host)).toBe(0);
-
-    const { requestJump } = await import("../src/lib/channels/jump");
-    await acted(() => requestJump({ channelId, messageId: "call-3" }));
-    await view.waitFor(() => linesDrawn(view.host) === 3, "every step", 4000);
-    await view.waitFor(
-      () =>
-        log(view.host)
-          ?.querySelector('[data-message-id="call-3"]')
-          ?.getAttribute("data-jumped") === "true",
-      "the row marked",
-      4000,
-    );
-    // The answer's own button knows: the record it opens is open, and it is what closes it.
-    expect(isOpen(record(view.host))).toBe("true");
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 0, "none again", 4000);
-    server.close();
-    await view.unmount();
-  });
-
-  /*
-   * AN ANSWER'S RECORD IS OPEN WHEN ALL OF IT IS. A jump opens the run that holds the row and not
-   * the one the other side of a card, so the answer's button still offers to open — and opens the
-   * rest — rather than offering to hide a record half of which was never shown.
-   */
-  test("opens the run it is in and not the rest of the record, which the answer's button still opens", async () => {
-    const channelId = "channel_steps-jump-half";
-    const { server, view } = await conversation(channelId, [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("card", "now"),
-      ...done("3"),
-      said("a-answer", "다 봤어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-
-    const { requestJump } = await import("../src/lib/channels/jump");
-    await acted(() => requestJump({ channelId, messageId: "call-3" }));
-    await view.waitFor(
-      () => drawn(view.host) === "q-asked call-card call-3 a-answer",
-      "the run the row is in",
-      4000,
-    );
-    expect(isOpen(record(view.host))).toBe("false");
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 3 steps",
-    );
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 3, "all three", 4000);
-    expect(isOpen(record(view.host))).toBe("true");
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 0, "none", 4000);
-    server.close();
-    await view.unmount();
-  });
-
-  test("opens nothing when it is drawn already: the steps around it were not asked for", async () => {
-    const channelId = "channel_steps-jump-drawn";
-    const { server, view } = await conversation(channelId, [
-      ASKED,
-      ...done("1"),
-      called("2"),
-      answered("2", MAIL_WITH_A_CODE),
-      ...done("3"),
-      said("a-answer", "인증번호가 온 메일이 있어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(linesDrawn(view.host)).toBe(1);
-
-    const { requestJump } = await import("../src/lib/channels/jump");
-    await acted(() => requestJump({ channelId, messageId: "call-2" }));
-    await view.waitFor(
-      () =>
-        log(view.host)
-          ?.querySelector('[data-message-id="call-2"]')
-          ?.getAttribute("data-jumped") === "true",
-      "the row marked",
-      4000,
-    );
-    expect(linesDrawn(view.host)).toBe(1);
-    expect(isOpen(record(view.host))).toBe("false");
-    server.close();
-    await view.unmount();
-  });
-});
-
-/** Rows of talk after a turn, enough to put that turn at the top of the drawn window. */
-const talk = (pairs: number): Message[] =>
-  Array.from({ length: pairs }, (_, at) => [
-    asked(`q-later-${at}`, `질문 ${at}`),
-    said(`a-later-${at}`, `답 ${at}`),
-  ]).flat();
-
-describe("a record at the edge of what is drawn", () => {
-  /*
-   * THE WINDOW IS FORTY ROWS, COUNTED OVER EVERY ROW — the ones not drawn too. Cut inside a run, the
-   * fold read 이전 5단계 and opening it drew the two the window held, under a button that said the
-   * record was open (review of pull request 44, round 1).
-   */
-  test("is whole: a window that would begin inside a run begins at its first step", async () => {
-    const history = [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      ...done("4"),
-      ...done("5"),
-      ...done("6"),
-      said("a-answer", "여섯 번 찾아봤어요."),
-      // Forty-four rows in all: the newest forty begin at the fourth step.
-      ...talk(18),
-    ];
-    const channelId = "channel_steps-window";
-    const server = turnServer({ channelId, history });
-    const view = await mountApp({
-      path: `/channel/${channelId}`,
-      api: server.api,
-    });
-    // The question the steps answer is above the window; the newest row is what says it arrived.
-    await view.waitFor(
-      () => log(view.host)?.textContent?.includes("답 17") === true,
-      "the conversation",
-      8000,
-    );
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 6 steps",
-    );
-    expect(rowsDrawn(view.host)[0]).toBe("a-answer");
-
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 6, "every step", 4000);
-    expect(rowsDrawn(view.host).slice(0, 7)).toEqual([
-      "call-1",
-      "call-2",
-      "call-3",
-      "call-4",
-      "call-5",
-      "call-6",
-      "a-answer",
-    ]);
-    server.close();
-    await view.unmount();
-  });
-
-  /*
-   * AND THE ANSWER IS THE CONTROL NOW. A window that began at the answer itself held none of the
-   * steps it names: three steps, and a press that drew nothing under a button saying it was open.
-   */
-  test("and one that would begin at the answer begins at the first step that answer opens", async () => {
-    const history = [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      said("a-answer", "세 번 찾아봤어요."),
-      said("a-more", "더 볼까요?"),
-      // Forty-four rows in all: the newest forty begin at the answer.
-      ...talk(19),
-    ];
-    const channelId = "channel_steps-window-answer";
-    const server = turnServer({ channelId, history });
-    const view = await mountApp({
-      path: `/channel/${channelId}`,
-      api: server.api,
-    });
-    await view.waitFor(
-      () => log(view.host)?.textContent?.includes("답 18") === true,
-      "the conversation",
-      8000,
-    );
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(rowsDrawn(view.host)[0]).toBe("a-answer");
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 3 steps",
-    );
-
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 3, "every step", 4000);
-    expect(rowsDrawn(view.host).slice(0, 4)).toEqual([
-      "call-1",
-      "call-2",
-      "call-3",
-      "a-answer",
-    ]);
-    server.close();
-    await view.unmount();
-  });
-
-  test("stays open when the page above arrives with the steps before it", async () => {
-    const channelId = "channel_steps-page";
-    const history = [
-      ASKED,
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      ...done("4"),
-      said("a-answer", "네 번 찾아봤어요."),
-    ];
-    // A page of five messages: the newest holds the last two steps and the answer.
-    const server = turnServer({ channelId, history, historyPage: 5 });
-    const view = await mountApp({
-      path: `/channel/${channelId}`,
-      api: server.api,
-    });
-    await view.waitFor(() => record(view.host) !== null, "the icon", 8000);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 2 steps",
-    );
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 2, "both steps", 4000);
-
-    const earlier = [...view.host.querySelectorAll("button")].find(
-      (button) => button.textContent === "Show earlier messages",
-    );
-    await view.click(earlier as HTMLButtonElement);
-    // The window was pinned to the row it began at, the third step: now inside the run, so it
-    // begins at the run's first step, and the run is open by the row it was opened by.
-    await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 8000);
-    expect(isOpen(record(view.host))).toBe("true");
-    expect(named(record(view.host))).toBe("Hide what it did");
-    expect(rowsDrawn(view.host)).toEqual([
-      "call-1",
-      "call-2",
-      "call-3",
-      "call-4",
-      "a-answer",
-    ]);
-    // Closed by any row of it: none drawn, and the count is the whole record's.
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 0, "none", 4000);
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 4 steps",
-    );
-    server.close();
-    await view.unmount();
-  });
-});
-
-describe("a turn that is still going", () => {
+describe("a turn that is still going, watched", () => {
   /** A turn that has the Bot, and has drawn nothing but the question yet. */
   async function running(channelId: string) {
     const server = turnServer({
@@ -1224,48 +1125,6 @@ describe("a turn that is still going", () => {
     await view.unmount();
   });
 
-  test("shows the step that is out and none of the finished ones, and its answer opens them all", async () => {
-    const { server, view, writes } = await running("channel_steps-going");
-
-    await writes([called("1")]);
-    await view.waitFor(() => linesDrawn(view.host) === 1, "the first step");
-    expect(recordsDrawn(view.host)).toBe(0);
-
-    // The one in hand is the only line, however many came before it.
-    await writes([...done("1"), called("2")]);
-    await view.waitFor(
-      () => drawn(view.host) === "q-asked call-2",
-      "the second step in place of the first",
-      4000,
-    );
-    await writes([...done("1"), ...done("2"), called("3")]);
-    await view.waitFor(
-      () => drawn(view.host) === "q-asked call-3",
-      "the third in place of the second",
-      4000,
-    );
-    expect(linesDrawn(view.host)).toBe(1);
-    expect(recordsDrawn(view.host)).toBe(0);
-
-    // The answer arrives: no step is left drawn, and the answer carries all three.
-    await writes([
-      ...done("1"),
-      ...done("2"),
-      ...done("3"),
-      said("a-answer", "세 통 와 있어요."),
-    ]);
-    await view.waitFor(() => record(view.host) !== null, "the icon", 4000);
-    expect(drawn(view.host)).toBe("q-asked a-answer");
-    expect(named(record(view.host))).toBe(
-      "What it did for this answer: 3 steps",
-    );
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 3, "all three", 4000);
-
-    server.close();
-    await view.unmount();
-  });
-
   test("a run opened part-way stays open as it grows: it is open by a row it holds", async () => {
     const channelId = "channel_steps-growing";
     const { server, view, writes } = await running(channelId);
@@ -1302,6 +1161,11 @@ describe("a turn that is still going", () => {
    * props had changed: counted, each was drawn once a chunk (Codex on pull request 44, round 9).
    * It is the answer that is handed it now, so it is the answer that is counted — with the steps
    * it opened, which are rows again once they are drawn.
+   *
+   * OPENED BY A JUMP HERE, NOT BY A PRESS: the press is a row of a menu that does not open in this
+   * process. A jump opens the same run, and what is counted is what is drawn after that. That the
+   * row still presses afterwards is held where it can be pressed (`steps-render.tsx`, "pressed
+   * while the next answer is written").
    */
   test("does not draw a finished answer, or the steps it opened, again with each chunk of the answer after it", async () => {
     const channelId = "channel_steps-still";
@@ -1323,13 +1187,15 @@ describe("a turn that is still going", () => {
       path: `/channel/${channelId}`,
       api: server.api,
     });
-    await view.waitFor(() => record(view.host) !== null, "the icon", 8000);
+    await view.waitFor(
+      () => moresDrawn(view.host) === 1,
+      "the answer's controls",
+      8000,
+    );
     expect(linesDrawn(view.host)).toBe(0);
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 2, "both steps", 4000);
 
     // The stand-in tool has no renderer of its own, so each drawing of its row asks for its words;
-    // and each drawing of the answer's button asks for its name.
+    // and each drawing of the answer's menu asks for the name of the row that closes the record.
     const labels = await import("../src/lib/copilot/step-labels");
     const worded = spyOn(labels, "stepLineOf");
     const stepsDrawn = () =>
@@ -1339,9 +1205,20 @@ describe("a turn that is still going", () => {
     const answersDrawn = () =>
       translated.mock.calls.filter(([key]) => key === "Hide what it did")
         .length;
+
+    const { requestJump } = await import("../src/lib/channels/jump");
+    await acted(() => requestJump({ channelId, messageId: "call-1" }));
+    await view.waitFor(() => linesDrawn(view.host) === 2, "both steps", 4000);
+    // Both counts count: opened, the answer asked for that name and each step for its words.
+    expect(answersDrawn()).toBeGreaterThan(0);
+    expect(stepsDrawn()).toBeGreaterThan(0);
+    // Past the jump's own second look at the row (`JumpToRow`), so nothing of it is counted below.
+    await view.settle(700);
+    worded.mockClear();
+    translated.mockClear();
+
     const writes = (text: string) =>
       acted(() => server.say([said("a-urgent", text)]));
-
     const CHUNKS = [
       "두 번째",
       "두 번째 메일이",
@@ -1357,15 +1234,6 @@ describe("a turn that is still going", () => {
     }
     expect(stepsDrawn()).toBe(0);
     expect(answersDrawn()).toBe(0);
-    // And the button still does what it did: the function it was given is the same one, not a dead one.
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 0, "none", 4000);
-    expect(answersDrawn()).toBe(0);
-    await view.click(record(view.host) as HTMLButtonElement);
-    await view.waitFor(() => linesDrawn(view.host) === 2, "both steps", 4000);
-    // And both counts count: opened again, the answer asked for its name and each step for its words.
-    expect(answersDrawn()).toBeGreaterThan(0);
-    expect(stepsDrawn()).toBeGreaterThan(0);
 
     translated.mockRestore();
     worded.mockRestore();

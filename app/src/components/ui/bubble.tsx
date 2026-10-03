@@ -24,13 +24,19 @@ const bubbleVariants = cva(
         muted:
           "*:data-[slot=bubble-content]:bg-muted [&>[data-slot=bubble-content]:is(button,a):hover]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]",
         /*
-         * THE TWO BUBBLES THE TRANSCRIPT ACTUALLY USES.
+         * THE TWO BUBBLES THE APP ACTUALLY DRAWS.
          *
          * `--sand-fill-bubble-agent` and `--sand-fill-bubble-user` are their own tokens in Grok's
          * palette, not the generic muted/primary surfaces — the Bot's grey is #eeeeee where `muted`
          * is a #777777 alpha, and the person's is solid near-black in light and a mid grey in dark,
          * which no combination of the shadcn names reproduces. Bubbles are the most-looked-at
          * surface in the product; they get the tokens that were measured for them.
+         *
+         * `user` IS THE PERSON'S MESSAGE, everywhere. `agent` IS THE BOT'S GREETING AND NOTHING
+         * ELSE, since 2026-10-04: an answer in the conversation is words on the page, with no
+         * bubble (`chat-transcript.tsx`). The greeting was not part of that change and is as it
+         * was — its questions are rows drawn on this grey (`components/agents/greeting.tsx`) —
+         * so whether it follows the answers is still to be decided.
          *
          * THE BOT'S BUBBLE TAKES THE PHONE'S WIDTH. The cap above keeps an 82px gutter, and at 375
          * wide that gutter was empty while an answer sat in 261px: a table scrolled inside a 217px
@@ -67,7 +73,7 @@ function Bubble({
 }: React.ComponentProps<"div"> &
   VariantProps<typeof bubbleVariants> & {
     align?: "start" | "end"
-    /** This bubble continues the one above it, from the same speaker. */
+    /** This bubble continues the one above it, from the same speaker. On the person's side only. */
     joinedPrev?: boolean
     /** The bubble below it continues this one. */
     joinedNext?: boolean
@@ -108,8 +114,11 @@ function BubbleContent({
            * `data-joined-*` on the Bubble above: a run of messages from one speaker keeps its outer
            * corners round and tightens the two where it meets its neighbour to 6px, which is what
            * makes three bubbles read as one turn instead of three separate remarks.
+           *
+           * ON THE RIGHT ONLY. The left pair tightened a run of the Bot's bubbles, and the Bot's
+           * answers are not bubbles any more; the greeting's never were joined.
            */
-          `w-fit max-w-full min-w-0 overflow-hidden rounded-3xl border border-transparent px-3 py-2 wrap-break-word group-data-[joined-prev]/bubble:group-data-[align=start]/bubble:rounded-tl-bubble-joined group-data-[joined-next]/bubble:group-data-[align=start]/bubble:rounded-bl-bubble-joined group-data-[joined-prev]/bubble:group-data-[align=end]/bubble:rounded-tr-bubble-joined group-data-[joined-next]/bubble:group-data-[align=end]/bubble:rounded-br-bubble-joined group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors ${focusRingNested}`,
+          `w-fit max-w-full min-w-0 overflow-hidden rounded-3xl border border-transparent px-3 py-2 wrap-break-word group-data-[joined-prev]/bubble:group-data-[align=end]/bubble:rounded-tr-bubble-joined group-data-[joined-next]/bubble:group-data-[align=end]/bubble:rounded-br-bubble-joined group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors ${focusRingNested}`,
           className
         ),
       },

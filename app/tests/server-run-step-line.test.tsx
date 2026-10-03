@@ -26,6 +26,7 @@ import {
   unmountApps,
 } from "./support/app-router";
 import {
+  acted,
   installTurnStreams,
   removeTurnStreams,
   turnServer,
@@ -238,22 +239,38 @@ describe("a conversation whose steps the server ran", () => {
     const row = (id: string) =>
       log()?.querySelector<HTMLElement>(`[data-message-id="${id}"]`) ?? null;
     /*
-     * A FINISHED STEP IS NOT DRAWN UNTIL ITS RECORD IS OPENED: the answer after it carries the
-     * control (`StepsOfAnswer`). What each control was called is kept before it is pressed —
-     * closed, that name and its colour are all the conversation says about how the steps behind it
-     * ended — and then every one is opened, so the lines read below are the ones a person sees
-     * having pressed it. A step with a code on it is drawn anyway, and has no control.
+     * A FINISHED STEP IS NOT DRAWN UNTIL ITS RECORD IS OPENED, and the record is opened from the
+     * answer's "more" (`answer-more.tsx`) — a menu, which does not open in the suite's process
+     * (`support/steps-render.tsx` has why, and presses it in a process of its own). So here:
+     *
+     *  - WHAT THE CLOSED RECORD SAYS is read off the button itself. Its name and its colour are
+     *    all the conversation says about how the steps behind it ended, and every finished answer
+     *    in a conversation has the button, with a record or without.
+     *  - WHICH STEPS ARE ON THE SCREEN ANYWAY is read before anything is opened: a step with a
+     *    code on it is drawn without anybody pressing anything.
+     *  - AND THE RECORD IS OPENED THE WAY ANOTHER SCREEN OPENS ONE, by sending the person to a row
+     *    in it (`requestJump`): the lines read below are the ones a person sees having opened it.
      */
-    const controls = [
+    const steps = history.flatMap((message) =>
+      "toolCalls" in message && Array.isArray(message.toolCalls)
+        ? message.toolCalls.map((call) => call.id)
+        : [],
+    );
+    const records = [
       ...(log()?.querySelectorAll<HTMLButtonElement>(
-        '[data-testid="transcript-answer-steps"]',
+        '[data-slot="answer-more"] button',
       ) ?? []),
-    ];
-    const records = controls.map((control) => ({
-      name: control.getAttribute("aria-label"),
-      isWarned: control.className.includes("text-warning"),
+    ].map((button) => ({
+      name: button.getAttribute("aria-label"),
+      isWarned: button.className.includes("text-warning"),
     }));
-    for (const control of controls) await view.click(control);
+    const drawnUnopened = steps.filter((id) => row(id) !== null);
+    const { requestJump } = await import("../src/lib/channels/jump");
+    for (const id of steps) {
+      if (row(id) !== null) continue;
+      await acted(() => requestJump({ channelId, messageId: id }));
+      await view.waitFor(() => row(id) !== null, `the record of ${id}`, 4000);
+    }
     // The renderer is registered once the Bot's grants have been read.
     await view.waitFor(
       () => log()?.textContent?.includes("Gmail") === true,
@@ -261,8 +278,10 @@ describe("a conversation whose steps the server ran", () => {
       8000,
     );
     return {
-      /** The controls under the answers, as they were before they were pressed, in order. */
+      /** The "more" under each answer, as it stood over its closed record, in order. */
       records,
+      /** The steps that were on the screen before any record was opened. */
+      drawnUnopened,
       whole: () => log()?.textContent ?? "",
       read: (id: string) => {
         const drawn = row(id);
@@ -290,7 +309,8 @@ describe("a conversation whose steps the server ran", () => {
       ...step("held", MAIL),
     ]);
     // On the screen without anybody opening anything: the person is waiting on the code.
-    expect(drawn.records).toEqual([]);
+    expect(drawn.drawnUnopened).toEqual(["held"]);
+    expect(drawn.records).toEqual([{ name: "More", isWarned: false }]);
     const line = drawn.read("held");
     expect(line.buttons).toEqual(["Show me"]);
     expect(line.text).toContain(
@@ -308,12 +328,10 @@ describe("a conversation whose steps the server ran", () => {
       { id: "q", role: "user", content: "메일 읽어줘" },
       ...step("broke", toolErrorText("quota exceeded")),
     ]);
-    // Closed, the control over it says so: the step itself is not drawn.
+    // Closed, the button over it says so: the step itself is not drawn.
+    expect(drawn.drawnUnopened).toEqual([]);
     expect(drawn.records).toEqual([
-      {
-        name: "What it did for this answer: 1 steps, 1 did not work",
-        isWarned: true,
-      },
+      { name: "More. A step did not work", isWarned: true },
     ]);
     const line = drawn.read("broke");
     expect(line.text).toContain("Reading a mail, didn't work");
@@ -351,7 +369,7 @@ describe("a conversation whose steps the server ran", () => {
       ...step("down", SERVER_FAILED),
       ...step("fine", "메일 2통을 찾았어요."),
     ]);
-    // One control an answer, and each says what the line behind it will: two did not work, one did.
+    // One button an answer, and each says what the line behind it will: two did not work, one did.
     expect(drawn.records.map((record) => record.isWarned)).toEqual([
       true,
       true,
@@ -403,13 +421,13 @@ describe("a conversation whose steps the server ran", () => {
   });
 
   /*
-   * THE CONTROL AND THE LINE BEHIND IT SAY THE SAME THING. They were read by two functions: the
+   * THE BUTTON AND THE LINE BEHIND IT SAY THE SAME THING. They were read by two functions: the
    * count by one that took any object saying `ok: false` for a failure, the line by one that takes
    * only this app's own. Carried onto the change that puts the steps away, a service's ordinary
-   * answer made the control say "1 did not work", in the warning's colour, over a record in which
-   * the line said nothing of the kind.
+   * answer made the button over the record say a step had not worked, in the warning's colour,
+   * over a record in which the line said nothing of the kind.
    */
-  test("a service's own answer that says `ok: false` is counted by nothing: not by the control, not by the line", async () => {
+  test("a service's own answer that says `ok: false` is counted by nothing: not by the button, not by the line", async () => {
     const drawn = await rows([
       { id: "q", role: "user", content: "메일 읽어줘" },
       ...step(
@@ -421,12 +439,9 @@ describe("a conversation whose steps the server ran", () => {
       ...step("ours", JSON.stringify({ ok: false, code: "laf:tool_unknown" })),
     ]);
     expect(drawn.records).toEqual([
-      { name: "What it did for this answer: 1 steps", isWarned: false },
-      { name: "What it did for this answer: 1 steps", isWarned: false },
-      {
-        name: "What it did for this answer: 1 steps, 1 did not work",
-        isWarned: true,
-      },
+      { name: "More", isWarned: false },
+      { name: "More", isWarned: false },
+      { name: "More. A step did not work", isWarned: true },
     ]);
     for (const id of ["status", "no"]) {
       const line = drawn.read(id);

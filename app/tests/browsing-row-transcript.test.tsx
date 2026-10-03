@@ -233,10 +233,16 @@ const rowsDrawn = (host: HTMLElement) =>
   [
     ...(log(host)?.querySelectorAll<HTMLElement>("[data-message-id]") ?? []),
   ].map((row) => row.dataset.messageId);
-/** Every task that is over, wherever it is: the buttons they fold by. */
+/**
+ * Every task that is over, wherever it is: the buttons they fold by.
+ *
+ * NOT THE BUTTON THAT OPENS AN ANSWER'S MENU, which says whether it is open the same way: with the
+ * answers' controls behind "more" (`answer-more.tsx`) every answer in the log has one, and counted
+ * here a conversation with one task in it had two "folds". A menu's button says what it opens.
+ */
 const folds = (host: HTMLElement) => [
   ...(log(host)?.querySelectorAll<HTMLButtonElement>(
-    "button[aria-expanded]:not([aria-controls])",
+    "button[aria-expanded]:not([aria-controls]):not([aria-haspopup])",
   ) ?? []),
 ];
 

@@ -5,15 +5,18 @@ import { join } from "node:path";
 import type { RatingScenario, RatingShown } from "./support/rating-render";
 
 /**
- * 좋아요·아쉬워요 UNDER AN ANSWER, AS A KOREAN READER MEETS THEM.
+ * 좋아요·아쉬워요 FOR AN ANSWER, AS A KOREAN READER MEETS THEM.
  *
  * The server's half — who may rate what, the replace, who is told and what they are told — is
- * `server/tests/answer-ratings.integration.test.ts`. This is the screen: the controls sit under the
- * Bot's answer and nowhere else, 좋아요 is sent as nothing but itself and drawn as chosen only once
- * the server has it, 아쉬워요 asks why in a popover and sends the reason and the words, the popover
- * says the words arrived, the person can change their mind, and a rating the server already holds is
- * drawn — reason and words — when the conversation is opened again. And a deployment with no rating
- * route draws no controls at all. Rendered in a process of its own (`support/rating-render.tsx`).
+ * `server/tests/answer-ratings.integration.test.ts`. This is the screen. Under the Bot's answer
+ * and nowhere else there are two controls, 복사 and 더 보기, and the two ratings are rows of the
+ * menu 더 보기 opens (the owner's "proposal A", 2026-10-04: they were two of five buttons in that
+ * row). What they do is what the buttons did: 좋아요 is sent as nothing but itself and drawn as
+ * chosen only once the server has it, 아쉬워요 asks why in a popover and sends the reason and the
+ * words, a line under the answer says the words arrived, the person can change their mind, and a
+ * rating the server already holds is drawn — reason and words — when the conversation is opened
+ * again. And a deployment with no rating route offers neither row. Rendered in a process of its
+ * own (`support/rating-render.tsx`).
  */
 
 async function render(scenario: RatingScenario): Promise<RatingShown> {
@@ -62,14 +65,16 @@ describe("rating an answer", () => {
       note,
     });
 
-    // Under the Bot's answer, beside 복사 and 인용; under the person's own question, nothing.
+    // Two controls under the Bot's answer, and no more; under the person's own question, nothing.
     expect(shown.controls).toEqual([
       { said: "오늘 매출 얼마야?", buttons: [] },
       {
         said: "오늘 매출은 1,234,000원이에요.",
-        buttons: ["이 답장 복사", "인용해 답하기", "좋아요", "아쉬워요"],
+        buttons: ["이 답장 복사", "더 보기"],
       },
     ]);
+    // What the second one opens, in this order.
+    expect(shown.menu).toEqual(["인용해 답하기", "좋아요", "아쉬워요"]);
     expect(shown.pressedOnOpen).toEqual({ up: false, down: false });
 
     // What left the browser: which way, and for 아쉬워요 the reason key and the words. Nothing else.
@@ -81,6 +86,8 @@ describe("rating an answer", () => {
     expect(JSON.stringify(shown.puts)).not.toContain("1,234,000");
 
     expect(shown.upStatus).toBe("잘 받았어요. 고마워요.");
+    // Said beside the two controls: what a rating came to did not bring a third one back.
+    expect(shown.buttonsWhileSaid).toEqual(["이 답장 복사", "더 보기"]);
     for (const said of [
       "어떤 점이 아쉬웠나요?",
       "요청과 달라요",
@@ -99,10 +106,12 @@ describe("rating an answer", () => {
     }
     // A popover opened on a 좋아요 starts empty: no reason chosen, no words.
     expect(shown.prefilled).toEqual({ reasons: [], note: "" });
-    // Said beside the thumbs, once the server had it, and the popover out of the way.
+    // Said under the answer, once the server had it, and the popover out of the way.
     expect(shown.receipt).toBe("보냈어요. 앱을 만드는 사람들에게 전달됐어요.");
     expect(shown.popoverClosed).toBe(true);
-    // The person changed their mind twice, and the screen followed both times.
+    // The row that opened it is gone with its menu: the keyboard goes back to the button that stays.
+    expect(shown.popoverReturnsTo).toBe("더 보기");
+    // The person changed their mind twice, and the menu's rows followed both times.
     expect(shown.pressedAfterDown).toEqual({ up: false, down: true });
     expect(shown.pressedAfterUpAgain).toEqual({ up: true, down: false });
   }, 120_000);
@@ -133,7 +142,7 @@ describe("rating an answer", () => {
     expect(shown.puts).toEqual([]);
   }, 120_000);
 
-  test("a deployment with no rating route draws no rating controls — 복사 stays", async () => {
+  test("a deployment with no rating route offers neither rating — 복사 stays, and 인용 in the menu", async () => {
     const shown = await render({
       stored: [],
       ratingsRoute: false,
@@ -145,9 +154,11 @@ describe("rating an answer", () => {
       { said: "오늘 매출 얼마야?", buttons: [] },
       {
         said: "오늘 매출은 1,234,000원이에요.",
-        buttons: ["이 답장 복사", "인용해 답하기"],
+        buttons: ["이 답장 복사", "더 보기"],
       },
     ]);
+    expect(shown.menu).toEqual(["인용해 답하기"]);
+    expect(shown.pressedOnOpen).toBeNull();
     expect(shown.puts).toEqual([]);
   }, 120_000);
 
@@ -168,5 +179,7 @@ describe("rating an answer", () => {
     expect(shown.actionsRow).toContain("opacity-0");
     expect(shown.actionsRow).toContain("group-hover/message:opacity-100");
     expect(shown.actionsRow).toContain("has-focus-visible:opacity-100");
+    // And while a control in it is in use — its menu open, a rating being said — with no hover.
+    expect(shown.actionsRow).toContain("has-data-[lingering=true]:opacity-100");
   }, 120_000);
 });
