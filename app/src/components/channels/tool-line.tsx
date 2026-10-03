@@ -1,5 +1,6 @@
 import {
   IconBrowser,
+  IconChevronRight,
   IconCircleDot,
   IconFileText,
   IconMessage,
@@ -133,12 +134,15 @@ export function ToolLine({
        * of this component's React state.
        */}
       <summary className="flex cursor-pointer list-none items-center gap-1.5">
-        <span
-          aria-hidden
-          className="tool-line-chevron shrink-0 text-xs text-muted-foreground transition-transform"
-        >
-          ▸
-        </span>
+        {/*
+         * An icon, not the glyph `▸`: a character is drawn by whichever fallback font the platform
+         * has for it — a different size and weight on a Mac, on Windows and on a phone — and this
+         * is the same chevron the cards and the step fold draw.
+         */}
+        <IconChevronRight
+          aria-hidden="true"
+          className="tool-line-chevron size-3 shrink-0 text-muted-foreground transition-transform"
+        />
         {text}
       </summary>
       {/*

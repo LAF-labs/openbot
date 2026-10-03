@@ -24,6 +24,7 @@ import {
   chatCardPadding,
   chatCardTitle,
 } from "@/components/ui/card-surface";
+import { touchTall } from "@/components/ui/touch";
 import {
   type ApprovalDecision,
   decisionOn,
@@ -55,12 +56,6 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
 import { plainLine, plainText, taskHeading } from "./task-title";
-
-/**
- * The card's buttons under a finger: 28px is a pointer's size, and on a phone 다시 해 보기 and 한 일
- * sat a thumb's width apart at that height (they were 24px until 2026-10-03).
- */
-const TOUCH_TALL = "pointer-coarse:h-9 pointer-coarse:px-3";
 
 /**
  * ONE BROWSING TASK, AS ONE CARD: WHERE THE BOT WENT, WHAT IT DID, AND WHAT IT LAST SAW.
@@ -256,7 +251,7 @@ function TaskCard({
            */}
           {canAskAgain ? (
             <Button
-              className={TOUCH_TALL}
+              className={touchTall}
               onClick={() => conversation.ask(asked)}
               size="sm"
               variant={
@@ -270,7 +265,7 @@ function TaskCard({
           ) : null}
           {canView ? (
             <Button
-              className={TOUCH_TALL}
+              className={touchTall}
               onClick={() => setScreenOpen(true)}
               size="sm"
               variant="secondary"
@@ -289,7 +284,7 @@ function TaskCard({
           <Button
             aria-controls={stepsId}
             aria-expanded={isExpanded}
-            className={cn("ms-auto", TOUCH_TALL)}
+            className={cn("ms-auto", touchTall)}
             onClick={() => setIsExpanded((was) => !was)}
             size="sm"
             variant="ghost"
