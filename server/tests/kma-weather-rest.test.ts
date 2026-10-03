@@ -163,6 +163,7 @@ const connection = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 
 type Facts = {
   source: string;
+  cite: string;
   place: string;
   basis?: string;
   issued: { now?: string; hours?: string; days?: string };
@@ -450,6 +451,9 @@ describe("what a Bot is handed", () => {
 
     expect(facts).toEqual({
       source: "기상청",
+      // The source line the law asks for since 2026-09-18, in the wording 기상청's own guide gives:
+      // said to the model so its words carry it where no transcript draws it.
+      cite: "이 자료로 사람에게 날씨를 말할 때는 그 말 끝에 '출처: 기상청'을 한 번 적는다.",
       place: "위도 37.57, 경도 126.98",
       issued: { now: "10-02 00:00", hours: "10-02 00:00", days: "10-01 23:00" },
       units: "기온 ℃, 습도·강수확률 %, 바람 m/s",

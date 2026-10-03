@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { TranscriptItem } from "../src/components/channels/chat-messages";
-import { sourcesByAnswer } from "../src/components/channels/sources";
+import {
+  CREDITED,
+  creditsByAnswer,
+  sourcesByAnswer,
+} from "../src/components/channels/sources";
+import { ko } from "../src/lib/i18n-ko";
 import { siteIsForThisShop, sitesInShopOrder } from "../src/lib/shop/catalogue";
 
 /**
@@ -202,6 +207,135 @@ describe("where an answer came from", () => {
       "https://a.kr/",
     ]);
     expect(found.has("a2")).toBe(false);
+  });
+});
+
+/*
+ * DATA THAT HAS TO SAY WHERE IT CAME FROM. 기상청's weather data, and anything said from it, has had
+ * to carry a source line since 2026-09-18 (기상법 as amended; the API hub's notice of 2026-09-14):
+ * `출처: 기상청`, readable on the screen the data is on. The Bot's weather answer had nothing under
+ * it. The line is the transcript's — taken from the call, like the pages above, never left to what
+ * the model chose to write.
+ */
+describe("who an answer has to name", () => {
+  const KMA = "Korea Meteorological Administration";
+  /** The weather tool's call, as it sits in the transcript. */
+  const weather = (id: string, result?: object | string): TranscriptItem => ({
+    kind: "tool",
+    id,
+    toolCall: {
+      id,
+      type: "function",
+      function: { name: "mcp__kma-weather__get_weather", arguments: "{}" },
+    },
+    ...(result === undefined
+      ? {}
+      : {
+          result: typeof result === "string" ? result : JSON.stringify(result),
+        }),
+  });
+  const DATA = { source: "기상청", place: "서울", now: { temp: 17.7 } };
+
+  test("an answer said after the weather came back names 기상청", () => {
+    const credits = creditsByAnswer(
+      [
+        said("u1", "user", "서울 날씨 어때?"),
+        weather("w1", DATA),
+        said("a1", "assistant", "서울은 지금 17.7도예요."),
+      ],
+      false,
+    );
+    expect([...credits]).toEqual([["a1", [KMA]]]);
+  });
+
+  test("every sentence after it in that turn, once each, and none in the next", () => {
+    const credits = creditsByAnswer(
+      [
+        said("u1", "user", "서울이랑 부산 날씨"),
+        said("a0", "assistant", "찾아볼게요."),
+        weather("w1", DATA),
+        said("a1", "assistant", "서울은 17.7도예요."),
+        weather("w2", DATA),
+        said("a2", "assistant", "부산은 19.5도예요."),
+        said("u2", "user", "고마워"),
+        said("a3", "assistant", "별말씀을요."),
+      ],
+      false,
+    );
+    expect([...credits]).toEqual([
+      ["a1", [KMA]],
+      ["a2", [KMA]],
+    ]);
+  });
+
+  /*
+   * The model ends its answer with the line, and the screen leaves its own out where the answer's
+   * words carry it — so under an answer still growing the line was drawn, and then taken away.
+   */
+  test("a sentence still being written waits for its line; a finished one does not", () => {
+    const turn = [
+      said("u1", "user", "서울 날씨 보고 우산 파는 곳도 찾아 줘"),
+      weather("w1", DATA),
+      said("a1", "assistant", "서울은 지금 17.7"),
+    ];
+    // The turn is running and this is the row being written.
+    expect([...creditsByAnswer(turn, true)]).toEqual([]);
+    // Anything after it and it is finished, however long the rest of the turn takes.
+    expect([...creditsByAnswer([...turn, searched("s1")], true)]).toEqual([
+      ["a1", [KMA]],
+    ]);
+    // And the turn over: the same sentence, owed its line.
+    expect([...creditsByAnswer(turn, false)]).toEqual([["a1", [KMA]]]);
+    // An answer from an earlier turn is never the one being written.
+    expect([
+      ...creditsByAnswer(
+        [...turn, said("u2", "user", "고마워"), said("a2", "assistant", "별")],
+        true,
+      ),
+    ]).toEqual([["a1", [KMA]]]);
+  });
+
+  test("a call that brought no data back owes nothing: refused, failed, or still out", () => {
+    for (const result of [
+      undefined,
+      "그 곳은 기상청 예보가 닿지 않는 곳이라 이 툴로는 날씨를 알 수 없다.",
+      "laf:weather_unreachable",
+      JSON.stringify({ ok: false, code: "laf:tool_unknown" }),
+    ]) {
+      expect([
+        result,
+        [
+          ...creditsByAnswer(
+            [
+              said("u1", "user", "날씨"),
+              weather("w1", result),
+              said("a1", "assistant", "지금은 알 수 없어요."),
+            ],
+            false,
+          ),
+        ],
+      ]).toEqual([result, []]);
+    }
+    // And a search is not weather: its pages are listed, nobody is owed a line.
+    expect([
+      ...creditsByAnswer(
+        [
+          said("u1", "user", "날씨 뉴스"),
+          searched("s1", { source: "웹 검색", results: [] }),
+          said("a1", "assistant", "찾아봤어요."),
+        ],
+        false,
+      ),
+    ]).toEqual([]);
+  });
+
+  test("every name in the table, and the line itself, has its Korean", () => {
+    expect(Object.values(CREDITED)).toEqual([KMA]);
+    for (const name of Object.values(CREDITED)) {
+      expect([name, typeof ko[name]]).toEqual([name, "string"]);
+    }
+    expect(ko[KMA]).toBe("기상청");
+    expect(ko["Source: {names}"]).toBe("출처: {names}");
   });
 });
 

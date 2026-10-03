@@ -54,3 +54,40 @@ export function SourcesRow({ sources }: { sources: readonly Source[] }) {
     </details>
   );
 }
+
+/** A source line the answer's own words already carry: "출처: 기상청", "자료 제공: 기상청". */
+function alreadySays(text: string, name: string): boolean {
+  const said = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:출처|자료(?:\\s*제공)?|source)\\s*[:：-]?\\s*${said}`,
+    "i",
+  ).test(text);
+}
+
+/**
+ * "출처: 기상청" under an answer said from data that must name its source (`creditsByAnswer`).
+ *
+ * NOT FOLDED, unlike the pages beside it: the rule is that the line is readable where the data is,
+ * and a count to press is a link, not a line. Left out for a provider the answer's own words
+ * already credit — the model is asked to write it — so the screen does not say it twice.
+ */
+export function CreditLine({
+  names,
+  text,
+}: {
+  names: readonly string[];
+  text: string;
+}) {
+  const owed = names
+    .map((name) => t(name))
+    .filter((name) => !alreadySays(text, name));
+  if (owed.length === 0) return null;
+  return (
+    <p
+      className="mt-1 text-muted-foreground text-xs"
+      data-testid="answer-credit"
+    >
+      {t("Source: {names}", { names: owed.join(", ") })}
+    </p>
+  );
+}

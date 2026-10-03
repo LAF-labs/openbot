@@ -103,8 +103,8 @@ import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { readingColumn } from "./reading-column";
-import { type Source, sourcesByAnswer } from "./sources";
-import { SourcesRow } from "./sources-row";
+import { creditsByAnswer, type Source, sourcesByAnswer } from "./sources";
+import { CreditLine, SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
@@ -1019,6 +1019,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   steps,
   isStepsOpen = false,
   onToggleSteps,
+  credits,
   text,
 }: {
   /**
@@ -1043,6 +1044,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
    * carries one is drawn again — its markdown with it — with each chunk of the next.
    */
   onToggleSteps?: ToggleSteps;
+  /** Who this answer's data has to name, as JSON (`creditsByAnswer`). Absent draws no line. */
+  credits?: string;
   /** The conversation, for the rating of an answer. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
@@ -1211,6 +1214,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
            * to the wrapper's bottom edge, and a row drawn after the wrapper sat exactly under them —
            * measured, 좋아요 took the click meant for 출처.
            */}
+          {credits ? (
+            <CreditLine names={JSON.parse(credits) as string[]} text={text} />
+          ) : null}
           {sources ? (
             <SourcesRow sources={JSON.parse(sources) as Source[]} />
           ) : null}
@@ -1804,6 +1810,8 @@ export function ChatTranscript({
   const settledBefore = unsettledFrom(items, busy);
   /** The pages each answer was read from, by the answer's id (`sources.ts`). */
   const sources = sourcesByAnswer(items);
+  /** Who each answer has to name — 기상청, under an answer said from its data (`sources.ts`). */
+  const credits = creditsByAnswer(items, busy);
   /** The task still being done, and the newest task — the one the live screen would show. */
   const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
   /*
@@ -2313,6 +2321,14 @@ export function ChatTranscript({
                             ),
                             onToggleSteps: handleToggleSteps,
                           }
+                        : {})}
+                      /*
+                       * Not held back until the turn is over, as the pages are: the line is owed
+                       * wherever the data is on screen. Only the sentence still being written
+                       * waits for it (`creditsByAnswer`).
+                       */
+                      {...(credits.has(item.id)
+                        ? { credits: JSON.stringify(credits.get(item.id)) }
                         : {})}
                       {...(item.attachments
                         ? { attachments: JSON.stringify(item.attachments) }

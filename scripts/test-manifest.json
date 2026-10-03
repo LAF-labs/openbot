@@ -114,6 +114,7 @@
   "app/tests/conversation-return.test.tsx",
   "app/tests/copied-reply.test.tsx",
   "app/tests/credential-form.test.ts",
+  "app/tests/credit-line.test.tsx",
   "app/tests/current-user-guard.test.ts",
   "app/tests/cursor-wheel.test.ts",
   "app/tests/design-tokens.test.ts",

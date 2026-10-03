@@ -1,4 +1,4 @@
-import { DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
+import { DEFERRED_TOOL_PREFIX, WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import { outcomeOf } from "@/lib/computer/browsing";
 import type { TranscriptItem } from "./chat-messages";
 
@@ -111,6 +111,78 @@ export function sourcesByAnswer(
     }
   }
   close();
+  return found;
+}
+
+/**
+ * DATA THAT HAS TO SAY WHERE IT CAME FROM, ON THE SCREEN IT IS SHOWN ON.
+ *
+ * 기상청's weather data, and anything said from it, has had to carry a source line since 2026-09-18
+ * (기상법 as amended; the API hub's notice of 2026-09-14, "기상기후데이터 사용 시 출처표시 안내", and
+ * the guide attached to it: `출처: 기상청`, readable where the person sees the data — a link or a
+ * button alone does not count). The Bot's weather answer read "서울은 지금 17.7도" with nothing under
+ * it, and the step line that names 기상청 can sit behind a later step.
+ *
+ * By the call's own name, to the English key the surface has words for. `t(variable)` is invisible
+ * to the coverage test, so `answer-sources.test.ts` walks this table.
+ */
+export const CREDITED: Readonly<Record<string, string>> = {
+  [WEATHER_TOOL_NAME]: "Korea Meteorological Administration",
+};
+
+/** Whether a credited call came back with data: the tool's own object, not a sentence about why not. */
+function gaveData(result: string | undefined): boolean {
+  if (!result) return false;
+  try {
+    const parsed: unknown = JSON.parse(result);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { source?: unknown }).source === "string"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * WHO EACH ANSWER HAS TO NAME, TAKEN FROM THE CALLS OF ITS TURN, NEVER FROM THE MODEL.
+ *
+ * Every sentence the Bot says after such a call, until the person speaks again, carries the credit:
+ * nothing says which of them the weather is in, and a line too many under a turn is a smaller
+ * wrong than weather said with none. The model is asked to write the line too (the tool's own
+ * result says so) — that is for places with no transcript; here it is drawn whatever was written.
+ *
+ * NOT UNDER A SENTENCE STILL BEING WRITTEN. The model ends its answer with the line, and the screen
+ * leaves its own out where the answer's words carry it (`CreditLine`) — so a line drawn under a
+ * growing answer stood for the seconds the model took to reach its own, and then went. `writing` is
+ * the turn still running, and the row being written is the last one. A sentence with anything
+ * after it is finished and gets its line at once, however long the rest of the turn takes: the
+ * pages wait for the whole turn, and this must not.
+ */
+export function creditsByAnswer(
+  items: readonly TranscriptItem[],
+  writing: boolean,
+): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  let owed: string[] = [];
+  for (const [index, item] of items.entries()) {
+    if (item.kind === "text" && item.role === "user") {
+      owed = [];
+      continue;
+    }
+    if (item.kind === "tool") {
+      const name = CREDITED[item.toolCall.function.name];
+      if (name && gaveData(item.result) && !owed.includes(name)) {
+        owed = [...owed, name];
+      }
+      continue;
+    }
+    if (item.kind === "text" && item.role === "assistant" && owed.length > 0) {
+      if (writing && index === items.length - 1) continue;
+      found.set(item.id, owed);
+    }
+  }
   return found;
 }
 

@@ -2754,6 +2754,7 @@ export const ko: Record<string, string> = {
   "It comes with {count} skills of its own.":
     "기본 스킬 {count}개가 들어 있어요.",
   "{count} sources": "출처 {count}개",
+  "Source: {names}": "출처: {names}",
   "Try it now": "지금 해 보기",
   // attach
   "Attach a file": "파일 붙이기",
