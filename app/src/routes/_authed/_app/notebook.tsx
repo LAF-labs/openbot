@@ -41,12 +41,9 @@ function NotebookScreen() {
     : undefined;
 
   return (
-    <PageShell
-      description={t(
-        "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.",
-      )}
-      title={t("Notebook")}
-    >
+    // No sentence under the title (2026-10-04). That a correction reaches the Bot from the next
+    // message is said when one is made, by the line that says it was saved.
+    <PageShell title={t("Notebook")}>
       <ReadNotice
         line={
           settled

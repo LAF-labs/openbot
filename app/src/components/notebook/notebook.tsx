@@ -4,14 +4,18 @@ import {
   NOTEBOOK_SLOTS,
   type NotebookSlot,
 } from "@shared/notebook";
+import {
+  IconChevronRight,
+  IconMessageCircle,
+  IconPencil,
+} from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
-import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -72,6 +76,14 @@ type Busy = string | null;
  * The shop's facts were split between memories and 내 가게. The three a shop is asked about most —
  * its name, its hours, what it sells — are lines here; the rest of 내 가게 is shown from there and
  * changed there, so nothing is kept twice.
+ *
+ * THE PAGE SAYS LESS (2026-10-04, the owner: too many characters, and words where an icon would
+ * do). It opened on a sentence, and each of its three sections on another: 149 characters of the
+ * page explaining itself before a line of what the Bot knows. A title stands alone, with one
+ * exception that is a consequence rather than an explanation: 일하는 방식 still says a change there
+ * reaches the Bot the next day. 수정 is the pencil this app draws for changing a thing, named.
+ * 지우기 and 잊기 keep their words: a forgotten line cannot be written back, and no icon this app
+ * draws says that.
  */
 export function Notebook({ agentId }: { agentId: string }) {
   const queryClient = useQueryClient();
@@ -145,13 +157,7 @@ export function Notebook({ agentId }: { agentId: string }) {
         </LiveRegion>
       </div>
 
-      <PageSection
-        className="mt-6"
-        description={t(
-          "What your Bot reads about the shop before every conversation.",
-        )}
-        title={t("The shop")}
-      >
+      <PageSection className="mt-6" title={t("The shop")}>
         <div className="mt-4 flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
           {NOTEBOOK_SLOTS.map((slot) => (
             <SlotRow
@@ -176,16 +182,11 @@ export function Notebook({ agentId }: { agentId: string }) {
               slot={slot}
             />
           ))}
-          <ShopProfileRows />
+          <MyInfoRow />
         </div>
       </PageSection>
 
-      <PageSection
-        description={t(
-          "What your Bot has learned in conversations, and what you wrote down. Edit anything that is wrong.",
-        )}
-        title={t("What it remembers")}
-      >
+      <PageSection title={t("What it remembers")}>
         <AddLine
           busy={busy}
           onWrite={(content) =>
@@ -198,9 +199,7 @@ export function Notebook({ agentId }: { agentId: string }) {
         />
         {settled?.state === "ready" && memories.length === 0 ? (
           <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-sm">
-            {t(
-              "Nothing yet. What your Bot learns in conversations appears here.",
-            )}
+            {t("What your Bot learns in conversations appears here.")}
           </p>
         ) : null}
         {reading.state === "loading" ? (
@@ -244,17 +243,18 @@ export function Notebook({ agentId }: { agentId: string }) {
        * HOW YOU LIKE TO WORK — the nightly dream's reading of the day's conversation, one line each
        * (`server/src/agents/dream.ts`). It reaches the Bot the next day, never mid-conversation, and
        * the page says so: a change here that seemed to do nothing until tomorrow would read as broken.
+       *
+       * THE ONE SENTENCE A SECTION KEEPS, cut to that. Where the lines come from went; what a change
+       * here does, and when, is something to know before making one.
        */}
       <PageSection
-        description={t(
-          "Each night your Bot notes how you like to work from the day's conversations. Changes here reach it from the next day.",
-        )}
+        description={t("Changes here reach your Bot from the next day.")}
         title={t("How you like to work")}
       >
         {settled?.state === "ready" && guidance.length === 0 ? (
           <p className="mt-4 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-sm">
             {t(
-              "Nothing yet. After a day of conversations, your Bot notes here how you like to work.",
+              "After a day of conversations, your Bot notes here how you like to work.",
             )}
           </p>
         ) : null}
@@ -289,7 +289,13 @@ export function Notebook({ agentId }: { agentId: string }) {
   );
 }
 
-/** One line of how the owner likes to work: the words, who wrote them, edit and remove. */
+/**
+ * One line of how the owner likes to work: the words, and edit and remove beside them.
+ *
+ * WHO WROTE IT IS SAID ONLY WHERE IT IS NOT THE BOT. Every line here is the Bot's nightly note
+ * unless its person rewrote it, and "봇이 대화에서 알아챔" under each of them was one sentence five
+ * times over (45 of the page's 509 characters, measured 2026-10-04). The exception is marked.
+ */
 function GuidanceRow({
   busy,
   line,
@@ -303,7 +309,7 @@ function GuidanceRow({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   return (
-    <li className="flex flex-col gap-2 px-3 py-3">
+    <li className="flex flex-col gap-1 px-3 py-2.5" data-guidance={line.source}>
       {isEditing ? (
         <LineEditor
           initial={line.content}
@@ -320,63 +326,87 @@ function GuidanceRow({
           saveLabel={t("Save")}
         />
       ) : (
-        <p className="text-pretty text-sm">{line.content}</p>
-      )}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-muted-foreground text-xs">
-          {line.source === "owner"
-            ? t("You wrote this")
-            : t("Your Bot noticed this in your conversations")}
-        </span>
-        {isEditing ? null : (
-          <div className="ml-auto flex gap-1">
-            <Button
+        <div className="flex items-start gap-2">
+          <p className="min-w-0 flex-1 text-pretty pt-1 text-sm">
+            {line.content}
+          </p>
+          <div className="flex shrink-0 items-center gap-1">
+            <EditButton
               disabled={Boolean(busy)}
+              label={t("Edit")}
               onClick={() => setIsEditing(true)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Edit")}
-            </Button>
+            />
             <ForgetButton
               disabled={Boolean(busy)}
               label={t("Clear it")}
               onConfirm={() => void onForget()}
             />
           </div>
-        )}
-      </div>
+        </div>
+      )}
+      {line.source === "owner" ? (
+        <span className="text-muted-foreground text-xs">
+          {t("You wrote this")}
+        </span>
+      ) : null}
     </li>
+  );
+}
+
+/**
+ * 수정, as the pencil this app already draws for changing a thing (the Bot's name, its profile):
+ * its name is in `aria-label` and in the tooltip.
+ */
+function EditButton({
+  disabled,
+  label,
+  onClick,
+}: {
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      aria-label={label}
+      data-notebook-edit
+      disabled={disabled}
+      onClick={onClick}
+      size="icon-sm"
+      title={label}
+      variant="ghost"
+    >
+      <IconPencil aria-hidden="true" />
+    </Button>
   );
 }
 
 /**
  * How full the memory is. The cap is characters because that is what stands in front of every
  * turn; the bar is a native `<progress>` so its width needs no inline style.
+ *
+ * THE BAR AND ITS COUNT. It was headed 수첩 공간 over them; the count says what the bar is, and the
+ * heading is the bar's own name now, for a screen reader.
  */
 function Gauge({ cap, used }: { cap: number; used: number }) {
   const isNearlyFull = used >= cap * 0.9;
   return (
     <div className="mt-6 flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="font-medium">{t("Room in the Notebook")}</span>
-        <span
-          className={
-            isNearlyFull ? "text-destructive" : "text-muted-foreground"
-          }
-        >
-          {t("{used} of {cap} characters", {
-            used: used.toLocaleString(activeLocale),
-            cap: cap.toLocaleString(activeLocale),
-          })}
-        </span>
-      </div>
       <progress
         aria-label={t("Room in the Notebook")}
         className="h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-primary"
         max={cap}
         value={Math.min(used, cap)}
       />
+      <span
+        className={`self-end text-xs ${isNearlyFull ? "text-destructive" : "text-muted-foreground"}`}
+        data-notebook-room
+      >
+        {t("{used} of {cap} characters", {
+          used: used.toLocaleString(activeLocale),
+          cap: cap.toLocaleString(activeLocale),
+        })}
+      </span>
     </div>
   );
 }
@@ -451,11 +481,15 @@ export function LineEditor({
             {t("Cancel")}
           </Button>
         ) : null}
-        <span
-          className={`ml-auto text-xs ${isTooLong ? "text-destructive" : "text-muted-foreground"}`}
-        >
-          {`${trimmed.length}/${maxLength}`}
-        </span>
+        {/* Once there is something to count: "0/400" under an empty box is a number about nothing. */}
+        {trimmed ? (
+          <span
+            className={`ml-auto text-xs ${isTooLong ? "text-destructive" : "text-muted-foreground"}`}
+            data-line-count
+          >
+            {`${trimmed.length}/${maxLength}`}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -475,16 +509,21 @@ function AddLine({
         isBusy={busy === "new"}
         label={t("Write something down for your Bot")}
         onSave={onWrite}
-        placeholder={t(
-          "e.g. Parcels go by the post office. Regulars get a free drink.",
-        )}
+        // Anybody's example, not a shop's: the persona is a hint, and this box is everybody's.
+        placeholder={t("e.g. I have meetings on Friday afternoons.")}
         saveLabel={t("Write it down")}
       />
     </div>
   );
 }
 
-/** One of the shop's named lines: its value, or an invitation to write it. */
+/**
+ * One of the shop's named lines: its value, or a pencil to write it.
+ *
+ * AN EMPTY LINE'S PRESS IS THE PENCIL. It was a button saying the row's own name again — 가게 이름
+ * beside 가게 이름 적기, 영업시간 beside 영업시간 적기 — on all three, for everybody who has no shop.
+ * The words are the pencil's name now.
+ */
 function SlotRow({
   busy,
   isLoading,
@@ -505,12 +544,21 @@ function SlotRow({
   const isBusy = busy === slot || (line !== null && busy === line.id);
 
   return (
-    <div className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-start sm:gap-4">
-      <span className="shrink-0 font-medium text-sm sm:w-28 sm:pt-1">
+    <div
+      // Being written, the box takes the row's width under its name on a phone; read, the name,
+      // the line and its presses share one row at every width.
+      className={
+        isEditing
+          ? "flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-start sm:gap-4"
+          : "flex items-start gap-4 px-3 py-2.5"
+      }
+      data-notebook-slot={slot}
+    >
+      <span className="shrink-0 pt-1 font-medium text-sm sm:w-28">
         {t(words.name)}
       </span>
-      <div className="min-w-0 flex-1">
-        {isEditing ? (
+      {isEditing ? (
+        <div className="min-w-0 flex-1">
           <LineEditor
             initial={line?.content ?? ""}
             isBusy={isBusy}
@@ -524,86 +572,77 @@ function SlotRow({
             placeholder={t(words.example)}
             saveLabel={t("Save")}
           />
-        ) : isLoading ? (
-          <Skeleton className="h-5 w-40" />
-        ) : line ? (
-          <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-            <p className="min-w-0 flex-1 text-pretty text-sm sm:pt-1">
-              {line.content}
-            </p>
-            <div className="flex shrink-0 gap-1">
-              <Button
-                disabled={Boolean(busy)}
-                onClick={() => setIsEditing(true)}
-                size="sm"
-                variant="ghost"
-              >
-                {t("Edit")}
-              </Button>
-              <ForgetButton
-                disabled={Boolean(busy)}
-                label={t("Clear it")}
-                onConfirm={() => void onForget(line)}
-              />
-            </div>
+        </div>
+      ) : (
+        <>
+          <div className="min-w-0 flex-1 pt-1">
+            {isLoading ? (
+              <Skeleton className="h-5 w-40" />
+            ) : line ? (
+              <p className="text-pretty text-sm">{line.content}</p>
+            ) : null}
           </div>
-        ) : (
-          <Button
-            disabled={Boolean(busy)}
-            onClick={() => setIsEditing(true)}
-            size="sm"
-            variant="outline"
-          >
-            {t(words.write)}
-          </Button>
-        )}
-      </div>
+          {isLoading ? null : (
+            <div className="flex shrink-0 items-center gap-1">
+              <EditButton
+                disabled={Boolean(busy)}
+                label={line ? t("Edit") : t(words.write)}
+                onClick={() => setIsEditing(true)}
+              />
+              {line ? (
+                <ForgetButton
+                  disabled={Boolean(busy)}
+                  label={t("Clear it")}
+                  onConfirm={() => void onForget(line)}
+                />
+              ) : null}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
 /**
- * What 내 가게 holds, read here and changed there. Kept on 내 가게 because the first run writes it
+ * What 내 정보 holds, read here and changed there. Kept on 내 정보 because the first run writes it
  * and the Bot's browser follows the location; a second copy here would be two answers to one
  * question.
+ *
+ * ONE ROW. It was three labelled rows — 하는 일, 매일 쓰는 곳, 위치 — each saying 아직 없음 until it
+ * was set, and a link under them: 31 characters to say nothing on an account that had set none
+ * (measured 2026-10-04). What is set is listed, and reads as what it is without its label
+ * (음식점·카페 · 네이버 스마트스토어 · 춘천); what is not set is not drawn. The way to 내 정보 is the
+ * chevron this app draws on a row that leads somewhere, named.
  */
-function ShopProfileRows() {
+function MyInfoRow() {
   const { data: user } = useQuery(currentUserQueryOptions());
   const kind = BUSINESS_KINDS.find((entry) => entry.id === user?.shop?.kind);
   const places = (user?.shop?.places ?? [])
     .map((id) => dailyPlaceById(id))
     .filter((place) => place !== null)
     .map((place) => t(place.name));
-  const location = user?.whereabouts?.place ?? null;
-  const rows: Array<[string, string | null]> = [
-    [t("What you do"), kind && kind.id !== "other" ? t(kind.name) : null],
-    [
-      t("Places you use every day"),
-      places.length > 0 ? places.join(", ") : null,
-    ],
-    [t("Shop location"), location],
-  ];
+  const set = [
+    kind && kind.id !== "other" ? t(kind.name) : null,
+    places.length > 0 ? places.join(", ") : null,
+    user?.whereabouts?.place ?? null,
+  ].filter((value) => value !== null);
 
   return (
-    <div className="flex flex-col gap-2 px-3 py-3">
-      {rows.map(([name, value]) => (
-        <div
-          className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-4"
-          key={name}
-        >
-          <span className="shrink-0 font-medium text-sm sm:w-28">{name}</span>
-          <span
-            className={`min-w-0 flex-1 text-pretty text-sm ${value ? "" : "text-muted-foreground"}`}
-          >
-            {value ?? t("Not set")}
-          </span>
-        </div>
-      ))}
+    <div className="flex items-start gap-4 px-3 py-2.5" data-notebook-my-info>
+      <span className="shrink-0 pt-1 font-medium text-sm sm:w-28">
+        {t("My shop")}
+      </span>
+      <span className="min-w-0 flex-1 text-pretty pt-1 text-muted-foreground text-sm">
+        {set.join(" · ")}
+      </span>
       <Link
-        className={`mt-1 self-start text-muted-foreground text-sm underline underline-offset-2 hover:text-foreground ${focusRing}`}
+        aria-label={t("Change these on My shop")}
+        className={buttonVariants({ size: "icon-sm", variant: "ghost" })}
+        title={t("Change these on My shop")}
         to="/settings/shop"
       >
-        {t("Change these on My shop")}
+        <IconChevronRight aria-hidden="true" />
       </Link>
     </div>
   );
@@ -636,19 +675,31 @@ function LearnedFrom({
     requestJump({ channelId, messageId });
   };
   return (
-    <div className="flex flex-col gap-1 rounded-md bg-muted/60 px-2.5 py-1.5 text-xs">
-      <span className="text-muted-foreground">
-        {t("Where it learned this")}
-      </span>
-      <q className="text-pretty text-foreground">{excerpt}</q>
+    /*
+     * THE WORDS IT LEARNED FROM, AND THE WAY BACK TO THEM, ON ONE LINE. It was headed 어디서 알게
+     * 됐나 over the quotation, with 대화에서 보기 under it: the quotation marks say whose words these
+     * are, the heading is the box's tooltip, and the way back is the speech bubble this app draws
+     * for the conversation, named.
+     */
+    <div
+      className="flex items-start gap-1 rounded-md bg-muted/60 py-1 pr-1 pl-2.5 text-xs"
+      data-notebook-learned
+      title={t("Where it learned this")}
+    >
+      <q className="min-w-0 flex-1 text-pretty py-1 text-foreground">
+        {excerpt}
+      </q>
       {channelId && messageId ? (
-        <button
-          className={`self-start rounded-sm text-link underline-offset-4 hover:underline ${focusRing}`}
+        <Button
+          aria-label={t("Show it in the conversation")}
+          className="text-muted-foreground"
           onClick={() => void handleShow()}
-          type="button"
+          size="icon-xs"
+          title={t("Show it in the conversation")}
+          variant="ghost"
         >
-          {t("Show it in the conversation")}
-        </button>
+          <IconMessageCircle aria-hidden="true" />
+        </Button>
       ) : null}
     </div>
   );
@@ -681,7 +732,7 @@ function MemoryRow({
   const evidence = line.evidence;
 
   return (
-    <li className="flex flex-col gap-2 px-3 py-3">
+    <li className="flex flex-col gap-2 px-3 py-3" data-memory={line.source}>
       {isEditing ? (
         <LineEditor
           initial={line.content}
@@ -723,7 +774,7 @@ function MemoryRow({
           </span>
         )}
         {isEditing ? null : (
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex items-center gap-1">
             {line.confirmed ? null : (
               <Button
                 disabled={Boolean(busy)}
@@ -734,14 +785,11 @@ function MemoryRow({
                 {t("That's right")}
               </Button>
             )}
-            <Button
+            <EditButton
               disabled={Boolean(busy)}
+              label={t("Edit")}
               onClick={() => setIsEditing(true)}
-              size="sm"
-              variant="ghost"
-            >
-              {t("Edit")}
-            </Button>
+            />
             <ForgetButton
               disabled={Boolean(busy)}
               label={t("Forget")}

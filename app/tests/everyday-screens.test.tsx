@@ -112,6 +112,7 @@ const SCREENS = [
   ["Made", "/made"],
   ["Routines", "/routines"],
   ["Skills", "/skills"],
+  ["Notebook", "/notebook"],
 ] as const;
 
 describe("a page's title stands alone", () => {
@@ -857,5 +858,245 @@ describe("스킬", () => {
     ).toEqual(["New skill"]);
     // A built-in skill's row still shows the one thing a person types.
     expect(view.said("section code")).toEqual(["/네이버블로그"]);
+  });
+});
+
+describe("수첩", () => {
+  const LEARNED = {
+    id: "m-1",
+    slot: null,
+    content: "금요일 오후에는 회의가 있어서 답이 늦다.",
+    source: "bot",
+    confirmed: false,
+    carried: true,
+    createdAt: "2026-09-30T03:00:00.000Z",
+    evidence: {
+      trust: "evidence",
+      confidence: 0.9,
+      channelId: "ch-1",
+      messageId: "msg-1",
+      excerpt: "금요일 오후엔 회의라 답 늦을 수 있어",
+    },
+  };
+  const HOURS = {
+    id: "m-slot",
+    slot: "hours",
+    content: "평일 10:00–21:00",
+    source: "owner",
+    confirmed: true,
+    carried: true,
+    createdAt: "2026-09-20T03:00:00.000Z",
+  };
+  const NOTICED = {
+    id: "g-1",
+    content: "이 사람은 짧은 답을 원한다.",
+    source: "dream",
+    day: "2026-09-28",
+    createdAt: "2026-09-28T05:00:00.000Z",
+  };
+  const REWRITTEN = { ...NOTICED, id: "g-2", source: "owner" };
+  const notebook = (
+    lines: { memories?: unknown[]; guidance?: unknown[] } = {},
+    me?: Record<string, unknown>,
+  ): ApiAnswer => {
+    return ({ pathname }) => {
+      if (pathname === "/api/agents/bot-1/memories") {
+        return json({
+          memories: lines.memories ?? [],
+          used: 120,
+          cap: 2200,
+          guidance: lines.guidance ?? [],
+        });
+      }
+      if (me && pathname === "/api/me") {
+        return json({
+          user: {
+            id: "user-1",
+            email: "dev@laf.local",
+            name: "Dev",
+            image: null,
+            role: "user",
+            onboarded: true,
+            ...me,
+          },
+          deployment: { effort: true, autoReview: true },
+        });
+      }
+      return undefined;
+    };
+  };
+  /** A press as the page draws it: its words, or for an icon the name it carries, marked. */
+  const presses = (row: Element) =>
+    [...row.querySelectorAll("button, a")].map((press) =>
+      press.textContent
+        ? press.textContent
+        : `icon:${press.getAttribute("aria-label")}|${press.getAttribute("title")}`,
+    );
+
+  test("a section's title stands alone — but 일하는 방식 still says when a change reaches the Bot", async () => {
+    const view = await screen("/notebook", notebook({ guidance: [NOTICED] }));
+    const sections = [...view.main.querySelectorAll("section")].map(
+      (section) => ({
+        title: section.querySelector("h2")?.textContent,
+        sentences: [...section.querySelectorAll(":scope > p")].map(
+          (line) => line.textContent,
+        ),
+      }),
+    );
+    expect(sections).toEqual([
+      { title: "The shop", sentences: [] },
+      // Its empty list says what will be here, in one line.
+      {
+        title: "What it remembers",
+        sentences: ["What your Bot learns in conversations appears here."],
+      },
+      // A consequence, not an explanation: something to know before changing a line.
+      {
+        title: "How you like to work",
+        sentences: ["Changes here reach your Bot from the next day."],
+      },
+    ]);
+    expect(ko["Changes here reach your Bot from the next day."]).toContain(
+      "다음 날",
+    );
+  });
+
+  test("the gauge is the bar and its count, and the bar carries the name", async () => {
+    const view = await screen("/notebook", notebook());
+    expect(view.said("[data-notebook-room]")).toEqual([
+      "120 of 2,200 characters",
+    ]);
+    expect(view.one("progress").getAttribute("aria-label")).toBe(
+      "Room in the Notebook",
+    );
+    expect(view.main.textContent).not.toContain("Room in the Notebook");
+  });
+
+  test("수정 is a named pencil; 맞아요, 잊기 and 지우기 keep their words", async () => {
+    const view = await screen(
+      "/notebook",
+      notebook({ memories: [LEARNED, HOURS], guidance: [NOTICED] }),
+    );
+    expect(presses(view.one('[data-memory="bot"]'))).toEqual([
+      "icon:Show it in the conversation|Show it in the conversation",
+      "That's right",
+      "icon:Edit|Edit",
+      "Forget",
+    ]);
+    expect(presses(view.one('[data-guidance="dream"]'))).toEqual([
+      "icon:Edit|Edit",
+      "Clear it",
+    ]);
+    expect(presses(view.one('[data-notebook-slot="hours"]'))).toEqual([
+      "icon:Edit|Edit",
+      "Clear it",
+    ]);
+    // Every icon on the page is a button with one glyph and no words.
+    for (const pencil of view.main.querySelectorAll("[data-notebook-edit]")) {
+      expect({
+        words: pencil.textContent,
+        glyphs: pencil.querySelectorAll("svg").length,
+      }).toEqual({ words: "", glyphs: 1 });
+    }
+  });
+
+  test("an empty shop line's press is the pencil, named for the line it writes", async () => {
+    const view = await screen("/notebook", notebook({ memories: [HOURS] }));
+    expect(presses(view.one('[data-notebook-slot="shop_name"]'))).toEqual([
+      "icon:Write the shop name|Write the shop name",
+    ]);
+    expect(presses(view.one('[data-notebook-slot="offer"]'))).toEqual([
+      "icon:Write what you sell|Write what you sell",
+    ]);
+    // The row says its name once.
+    expect(view.one('[data-notebook-slot="shop_name"]').textContent).toBe(
+      "Shop name",
+    );
+
+    // And the pencil still opens the box, with the line's own example in it.
+    const pencil = view.one('[data-notebook-slot="shop_name"] button');
+    await view.click(pencil);
+    expect(
+      view
+        .one('[data-notebook-slot="shop_name"] textarea')
+        .getAttribute("placeholder"),
+    ).toBe("e.g. Miso Café");
+  });
+
+  test("내 정보 is one row: what is set, and a named way there — nothing about what is not set", async () => {
+    const bare = await screen("/notebook", notebook());
+    const row = bare.one("[data-notebook-my-info]");
+    expect(row.textContent).toBe("My shop");
+    expect(presses(row)).toEqual([
+      "icon:Change these on My shop|Change these on My shop",
+    ]);
+    expect(row.querySelector("a")?.getAttribute("href")).toBe("/settings/shop");
+    await bare.unmount();
+
+    const set = await screen(
+      "/notebook",
+      notebook(
+        {},
+        {
+          shop: { kind: "food", places: ["naver-smartplace"] },
+          whereabouts: {
+            place: "춘천",
+            timeZone: "Asia/Seoul",
+            locale: "ko-KR",
+          },
+        },
+      ),
+    );
+    expect(set.one("[data-notebook-my-info]").textContent).toBe(
+      "My shopRestaurant or café · Naver Smart Place · 춘천",
+    );
+  });
+
+  test("what the Bot learned a line from is one line: the words, and a named way back to them", async () => {
+    const view = await screen("/notebook", notebook({ memories: [LEARNED] }));
+    const learned = view.one("[data-notebook-learned]");
+    expect({
+      said: learned.textContent,
+      heading: learned.getAttribute("title"),
+      lines: learned.children.length,
+    }).toEqual({
+      said: "금요일 오후엔 회의라 답 늦을 수 있어",
+      heading: "Where it learned this",
+      lines: 2,
+    });
+  });
+
+  test("a line of 일하는 방식 says who wrote it only where it was not the Bot", async () => {
+    const view = await screen(
+      "/notebook",
+      notebook({ guidance: [NOTICED, REWRITTEN] }),
+    );
+    expect(
+      [...view.one('[data-guidance="dream"]').querySelectorAll("span")].map(
+        (line) => line.textContent,
+      ),
+    ).toEqual([]);
+    expect(
+      [...view.one('[data-guidance="owner"]').querySelectorAll("span")].map(
+        (line) => line.textContent,
+      ),
+    ).toEqual(["You wrote this"]);
+  });
+
+  test("the box for a new line is anybody's example, and counts once there is something to count", async () => {
+    const view = await screen("/notebook", notebook());
+    const box = view.one(
+      'textarea[aria-label="Write something down for your Bot"]',
+    );
+    expect(box.getAttribute("placeholder")).toBe(
+      "e.g. I have meetings on Friday afternoons.",
+    );
+    // No shop in the example: the box is everybody's (CLAUDE.md, the persona is a hint).
+    expect(ko["e.g. I have meetings on Friday afternoons."]).not.toMatch(
+      /가게|손님|사장/,
+    );
+    expect(view.count("[data-line-count]")).toBe(0);
+    await view.type(box as HTMLTextAreaElement, "메모");
+    expect(view.said("[data-line-count]")).toEqual(["2/400"]);
   });
 });
