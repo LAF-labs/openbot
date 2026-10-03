@@ -311,7 +311,24 @@ body {
  * (measured in headless Chromium for the design spec, 2026-10-03). Hangul only: its Latin is left
  * to the faces after it. A machine without 맑은 고딕 has no source for this face and skips it.
  *
- * NOT SEEN ON A WINDOWS PC. The number is the fonts'; the look is still to be looked at.
+ * `size-adjust` SCALES THE WHOLE GLYPH, not its advance alone (Codex on pull request 48) — so what
+ * was matched for width was then measured for height. The 맑은 고딕 file itself (the one an
+ * installed Office carries), drawn through this face's descriptors in Chromium, the engine
+ * WebView2 is, 2026-10-04, per Hangul syllable in em:
+ *
+ *                        advance   ink, top to bottom
+ *   Pretendard            0.864        0.880
+ *   맑은 고딕 at 86%       0.860        0.825
+ *   맑은 고딕 at 100%      1.000        0.960
+ *
+ * At 86% a line is as wide as Pretendard's to half a percent and its Hangul 6% shorter. Left at
+ * 100% it is 16% wider — every line of the page breaks somewhere else when the slice lands — and
+ * 9% taller. No one number matches both, and width is the one that moves the page. The 6% lasts
+ * until the slice arrives — and for good where it never does, which is still nearer the design
+ * than 맑은 고딕 as it comes.
+ *
+ * NOT SEEN ON A WINDOWS PC. The numbers are the font's own outlines; how Windows draws them at
+ * these sizes is still to be looked at.
  */
 @font-face {
   font-family: "LAF Hangul Fallback";
