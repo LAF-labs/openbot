@@ -24,8 +24,8 @@ function RouteComponent() {
      *
      * The roster is a plain flex child rather than the sidebar primitive it used to be. That
      * primitive brought its own width, a collapse mechanism, a mobile sheet and a keyboard
-     * shortcut; the column here is a fixed 280px that is always the inbox, so there is nothing to
-     * collapse and nothing to bring back.
+     * shortcut; the column here is a fixed width (`w-sidebar`, 216px) that is always the inbox, so
+     * there is nothing to collapse and nothing to bring back.
      *
      * ON A PHONE, A COLUMN: the screen, then the bar (`phone-tab-bar.tsx`) under it.
      */
@@ -56,7 +56,7 @@ function RouteComponent() {
        * seam's fallback, which is the column's ground on a PC, is a line at the bottom on a phone.
        */}
       <SectionBoundary
-        className="h-full w-70 max-w-[40vw] shrink-0 border-border border-r bg-sidebar max-md:order-last max-md:h-auto max-md:w-full max-md:max-w-none max-md:border-t max-md:border-r-0"
+        className="h-full w-sidebar max-w-[40vw] shrink-0 border-border border-r bg-sidebar max-md:order-last max-md:h-auto max-md:w-full max-md:max-w-none max-md:border-t max-md:border-r-0"
         queryKeys={ROSTER_QUERIES}
         section="sidebar"
       >

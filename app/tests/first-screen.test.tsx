@@ -339,8 +339,14 @@ describe("the sidebar", () => {
     ]);
     const text = nav(view).textContent ?? "";
     expect(text).toContain("초롱");
-    // Every place that changes how it works is one press away under the one 메뉴 row (phase 9).
-    expect(text).toContain("Menu");
+    // Every place that changes how it works is one press away under 메뉴 (phase 9) — an icon at
+    // the foot since 2026-10-04, with the word as its name rather than beside it.
+    expect(
+      nav(view)
+        .querySelector("[data-sidebar-menu]")
+        ?.getAttribute("aria-label"),
+    ).toBe("Menu");
+    expect(text).not.toContain("Menu");
     // The profile is the Bot itself, at the top of the column (2026-09-24), not a second link.
     expect(
       nav(view).querySelector('a[href^="/agents"]')?.getAttribute("aria-label"),

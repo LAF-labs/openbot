@@ -6,12 +6,15 @@ import {
   expect,
   test,
 } from "bun:test";
+import { join } from "node:path";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { footerLinksFor } from "../src/components/app-sidebar/places";
 import { focusRing } from "../src/components/ui/focus";
 import { activeLocale } from "../src/lib/i18n";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
 import { json, mount, routerAt, unmountAll } from "./support/mount";
+import type { FootShown } from "./support/sidebar-foot-render";
 
 /**
  * The roster's column, rendered.
@@ -30,7 +33,9 @@ import { json, mount, routerAt, unmountAll } from "./support/mount";
  * `matchMedia` was handed.
  *
  * Popups — the context menu, the account menu, every tooltip — render nothing here (see
- * `confirm-dialog.test.tsx`), so nothing below asserts on their contents.
+ * `confirm-dialog.test.tsx`), so nothing mounted below asserts on their contents. What the foot's
+ * two buttons open is read from a process of its own (`support/sidebar-foot-render.tsx`), where the
+ * menus are the real ones.
  */
 
 /**
@@ -101,6 +106,9 @@ const TODAY = new Date(
   0,
   1,
 ).toISOString();
+
+/** Who is signed in, as the foot's picture is named: the name and the address `/api/me` gives. */
+const ACCOUNT = "김기범 · kim@example.com";
 
 /** What the first Bot did today and what it does next, as the server would list them. */
 const DONE_TODAY = "예스24에서 책 찾아 줘";
@@ -298,7 +306,10 @@ async function roster(
           row.querySelector(".text-base")?.textContent === name ||
           row.getAttribute("aria-label")?.startsWith(name),
       ),
-    /** The footer: one 메뉴 row since phase 9, the button that holds every place. */
+    /**
+     * The foot's controls. In the full column one row of two since 2026-10-04: the account's
+     * picture, then 메뉴. In the rail 메뉴 alone, a row of its own with the account under it.
+     */
     footerLinks: () => [
       ...column().querySelectorAll<HTMLAnchorElement>(
         "[data-sidebar-nav] a, [data-sidebar-nav] button",
@@ -487,7 +498,7 @@ describe("the roster's controls", () => {
     // with nothing on screen saying which one it was on.
     const view = await roster();
     const links = [...view.rows(), ...view.footerLinks()];
-    // The Bots' rows and the footer's one 메뉴 row (phase 9).
+    // The Bots' rows and the foot's two buttons.
     expect(links.length).toBeGreaterThanOrEqual(4);
     const bare = links
       .filter((link) =>
@@ -526,20 +537,26 @@ describe("the roster speaks the app's language", () => {
    * is rendered in Korean by `korean-render.test.ts`: this process's locale is English whichever way
    * the call is written, so only a Korean process can tell the two apart.
    */
-  test("the footer's labels are all translated", async () => {
-    // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
+  test("the foot's buttons are named at both widths, and every place 메뉴 holds has its Korean", async () => {
+    // Neither has a word beside it since 2026-10-04, so the name is all there is to read aloud.
     const view = await roster();
-    const labels = view.footerLinks().map((link) => link.textContent);
-    expect(labels).toEqual(["Menu"]);
-    for (const label of labels) {
-      expect(ko[label as string]).toBeTruthy();
-    }
+    expect(
+      view.footerLinks().map((link) => link.getAttribute("aria-label")),
+    ).toEqual([ACCOUNT, "Menu"]);
+    expect(ko.Menu).toBe("메뉴");
     await view.unmount();
-    // In the rail the same words move into the labels.
+    // In the rail 메뉴 is the row of its own it was, with the same name.
     const rail = await roster({ wide: false });
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),
-    ).toEqual(labels);
+    ).toEqual(["Menu"]);
+    // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
+    for (const { label } of footerLinksFor(true)) {
+      expect({ label, korean: Boolean(ko[label]) }).toEqual({
+        label,
+        korean: true,
+      });
+    }
   });
 });
 
@@ -561,7 +578,7 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(identity?.closest("ul")).toBeNull();
   });
 
-  test("its conversation is one row, to its channel, with the last line and the unread mark — and 소식, 아이디어, 목표 and 만든 것 under it", async () => {
+  test("its conversation is one row like the four under it — an icon and 대화, no preview and no time — and unread is a dot at its edge", async () => {
     const view = await roster({ bots: one() });
     const rows = view.rows();
     expect(rows).toHaveLength(5);
@@ -573,10 +590,94 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(rows[3]?.textContent).toBe("Goals");
     expect(rows[4]?.getAttribute("href")).toBe("/made");
     expect(rows[4]?.textContent).toBe("Made");
-    expect(rows[0]?.getAttribute("href")).toBe("/channel/ch-1");
-    expect(rows[0]?.textContent).toContain("Conversation");
-    expect(rows[0]?.textContent).toContain("3 orders are sorted, take a look");
-    expect(rows[0]?.querySelector(".sr-only")?.textContent).toBe("Unread");
+    /*
+     * NO PREVIEW AND NO TIME SINCE 2026-10-04. The row carried the last thing said and when — the
+     * line a roster of several needs — and with one Bot it was the longest run of words in a column
+     * the owner asked to have fewer words in. The server here has a last line and a time to give;
+     * the row draws its name, and for whoever cannot see the dot, the word for it.
+     */
+    const conversation = rows[0];
+    expect(conversation?.getAttribute("href")).toBe("/channel/ch-1");
+    expect(conversation?.textContent).toBe("ConversationUnread");
+    expect(conversation?.querySelector(".tabular-nums")).toBeNull();
+    expect(view.column().textContent).not.toContain("3 orders are sorted");
+    const dot = conversation?.querySelector('[data-mark="unread"]');
+    expect(dot?.getAttribute("aria-hidden")).toBe("true");
+    expect(classes(dot)).toContain("ml-auto");
+    expect(conversation?.querySelector(".sr-only")?.textContent).toBe("Unread");
+    // One height for the five: 36px.
+    expect(rows.map((row) => classes(row).includes("h-9"))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+  });
+
+  test("the Bot's row is its face and its name: no word for what it is doing at rest, and the word when it is the person's turn", async () => {
+    /*
+     * THE LINE OF STATUS WORDS UNDER THE NAME WENT ON 2026-10-04: 쉬는 중 all day, under a face
+     * that says so. It is the dot's name and title now, and the link's. One word is still drawn —
+     * 확인 필요, in the amber pill — because that one asks the person for something.
+     */
+    const view = await roster({ bots: one() });
+    const identity = () =>
+      view.column().querySelector<HTMLAnchorElement>('a[href^="/agents"]');
+    const state = () => identity()?.querySelector("[data-presence]");
+    expect(identity()?.textContent).toBe("초롱");
+    expect(state()?.getAttribute("data-presence")).toBe("quiet");
+    expect(state()?.getAttribute("aria-label")).toBe("Ready");
+    expect(state()?.getAttribute("title")).toBe("Ready");
+    expect(identity()?.getAttribute("aria-label")).toBe(
+      "초롱 · Ready. Bot profile",
+    );
+    // One row of 44px, the face 32px in it.
+    expect(classes(identity())).toContain("h-11");
+    expect(identity()?.querySelector("svg")?.getAttribute("width")).toBe("32");
+
+    const { closeQuestion, openQuestion } = await import(
+      "../src/lib/approvals"
+    );
+    const { act } = await import("react");
+    await act(async () => {
+      openQuestion("call-1", {
+        approvalId: "approval-1",
+        botId: "bot-1",
+        subject: undefined,
+        rule: null,
+        expiresAt: "",
+      });
+    });
+    try {
+      await view.settle();
+      expect(identity()?.textContent).toBe("초롱Needs your OK");
+      expect(state()?.getAttribute("data-presence")).toBe("attention");
+      expect(ko["Needs your OK"]).toBe("확인 필요");
+    } finally {
+      await act(async () => {
+        closeQuestion("call-1");
+      });
+    }
+  });
+
+  test("the foot is one row — the account's picture and 메뉴 — with no name, address or word written out", async () => {
+    const view = await roster({ bots: one() });
+    const foot = view.column().querySelector("[data-sidebar-nav]");
+    const [account, menu] = view.footerLinks();
+    expect(view.footerLinks()).toHaveLength(2);
+    expect(account?.parentElement).toBe(menu?.parentElement ?? null);
+    // Nobody's name or address is drawn: the picture's one letter is all the text the foot has.
+    expect(foot?.textContent).toBe("김");
+    // They are the picture's name and its title, for a screen reader and for a pointer.
+    expect(account?.getAttribute("aria-label")).toBe(ACCOUNT);
+    expect(account?.getAttribute("title")).toBe(ACCOUNT);
+    expect(ACCOUNT).toContain("kim@example.com");
+    // And 메뉴 is an icon whose word is its name.
+    expect(menu?.hasAttribute("data-sidebar-menu")).toBe(true);
+    expect(menu?.textContent).toBe("");
+    expect(menu?.getAttribute("aria-label")).toBe("Menu");
+    expect(menu?.getAttribute("title")).toBe("Menu");
   });
 
   test("and under those rows nothing: the column does not list the Bot's day, or ask for it", async () => {
@@ -604,15 +705,16 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
   test("the nav has no second way to the profile, and is pinned below the part that scrolls", async () => {
     const view = await roster({ bots: one() });
     /*
-     * ONE 메뉴 ROW (muse-shape plan §4, settled with phase 9): with 목표 the fourth row above it, the
-     * phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut the first row of 오늘, which the column listed
-     * under its rows then, at 1024×640 (measured: footer from 420, the row to 426). 오늘 has left the
-     * column since (2026-10-04) and the footer stayed one row. Every place is one press under it,
-     * the same list as the 메뉴 page.
+     * ONE 메뉴 CONTROL (muse-shape plan §4, settled with phase 9): with 목표 the fourth row above it,
+     * the phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut the first row of 오늘, which the column
+     * listed under its rows then, at 1024×640 (measured: footer from 420, the row to 426). 오늘 has
+     * left the column since (2026-10-04), 메뉴 became an icon beside the account's picture the same
+     * day, and the places stayed folded. Every place is one press under it, the same list as the
+     * 메뉴 page.
      */
-    expect(view.footerLinks().map((link) => link.textContent)).toEqual([
-      "Menu",
-    ]);
+    expect(
+      view.footerLinks().map((link) => link.getAttribute("aria-label")),
+    ).toEqual([ACCOUNT, "Menu"]);
     const nav0 = view.column().querySelector("[data-sidebar-nav]");
     expect(nav0?.querySelectorAll("a")).toHaveLength(0);
     /*
@@ -657,4 +759,67 @@ describe("on a phone there is no sheet", () => {
     expect(ko["Open the menu"]).toBeUndefined();
     expect(ko["Close the menu"]).toBeUndefined();
   });
+});
+
+/**
+ * WHAT THE FOOT'S TWO BUTTONS OPEN, read off menus that really opened.
+ *
+ * In the full column neither button has a word beside it, so the menu is the whole of what it says
+ * — and a popup renders nothing in this process (see the top of the file). The column is mounted
+ * in a process of its own, in Korean, and both buttons are pressed there.
+ */
+let footRendering: Promise<FootShown> | undefined;
+
+function footRendered(): Promise<FootShown> {
+  footRendering ??= renderFoot();
+  return footRendering;
+}
+
+async function renderFoot(): Promise<FootShown> {
+  const child = Bun.spawn(
+    ["bun", join(import.meta.dir, "support/sidebar-foot-render.tsx")],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [stdout, stderr, status] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  const line = stdout
+    .split("\n")
+    .find((candidate) => candidate.startsWith("SIDEBAR_FOOT "));
+  if (status !== 0 || !line) {
+    throw new Error(
+      `the foot's render did not finish (exit ${status}):\n${stderr.slice(-3000)}`,
+    );
+  }
+  return JSON.parse(line.slice("SIDEBAR_FOOT ".length)) as FootShown;
+}
+
+describe("what the foot's two buttons open", () => {
+  test("메뉴, an icon with no word beside it, opens the places the 메뉴 row did", async () => {
+    const { foot, places } = await footRendered();
+    expect(foot.menu).toEqual({ label: "메뉴", title: "메뉴", text: "" });
+    // The same list, in the same order, to the same addresses: the one the 메뉴 page draws.
+    expect(places).toEqual(
+      footerLinksFor(false).map((link) => [ko[link.label] ?? "", link.to]),
+    );
+    expect(places.map(([name]) => name)).toEqual([
+      "수첩",
+      "루틴",
+      "스킬",
+      "연결",
+      "도움말",
+    ]);
+  }, 120_000);
+
+  test("the account's picture, with no name beside it, opens what the account's row did", async () => {
+    const { account, foot } = await footRendered();
+    expect(foot.text).toBe("김");
+    expect(foot.account).toEqual({
+      label: "김기범 · kim@example.com",
+      title: "김기범 · kim@example.com",
+    });
+    expect(account).toEqual(["모두 멈추기", "설정", "로그아웃"]);
+  }, 120_000);
 });

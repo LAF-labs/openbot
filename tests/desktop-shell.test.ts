@@ -331,6 +331,9 @@ test("a file dropped on the window is left to the page", () => {
  * conversation — 1024. Between the two the app did not break; it just could not be used, because
  * the pane laid over a conversation that had nowhere left to go. The two numbers are written down
  * in different files in different languages, so this is the one place they are read together.
+ *
+ * The layout's minimum is 960 since 2026-10-04, when the roster went from 280px to 216: the
+ * window's own was left at 1024, so at its smallest the conversation has 64px more than it needs.
  */
 test("the window cannot be dragged smaller than the layout it holds", () => {
   const styles = read("app/src/styles.css");
