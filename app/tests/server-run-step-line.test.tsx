@@ -122,7 +122,31 @@ describe("how a failed step ended, read back from its result", () => {
     expect(
       stepFailureOf(JSON.stringify({ ok: false, refused: true, reason: "no" })),
     ).toEqual({ kind: "refused", code: null });
-    expect(stepFailureOf(JSON.stringify({ ok: false }))).toEqual({
+    /*
+     * A SERVICE'S OWN ANSWER CAN SAY `ok: false` TOO. Only an object written by this app — the
+     * window's wrapper, the server's refusal with its `laf:` fact, its "an approval is being asked"
+     * — is one of ours. A status a service sends as an ordinary answer read "did not work", or
+     * "blocked" for a `refused: true` of its own, on a call that was made and answered (Codex on
+     * pull request 52).
+     */
+    for (const answer of [
+      { ok: false },
+      { ok: false, error: "channel_not_found" },
+      { refused: true, by: "the recipient" },
+      { ok: false, items: [], next: null },
+      { ok: false, code: "E_QUOTA", reason: "quota" },
+    ]) {
+      expect([answer, stepFailureOf(JSON.stringify(answer))]).toEqual([
+        answer,
+        null,
+      ]);
+    }
+    expect(
+      stepFailureOf(
+        JSON.stringify({ ok: false, awaitingApproval: true, approvalId: "a1" }),
+      ),
+    ).toEqual({ kind: "failed", code: null });
+    expect(stepFailureOf("Error: the handler threw")).toEqual({
       kind: "failed",
       code: null,
     });
