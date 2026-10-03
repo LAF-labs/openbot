@@ -41,9 +41,14 @@ export function CategorySheet({
           <DialogTitle>
             {t("Make a {category} goal", { category: name })}
           </DialogTitle>
+          {/*
+           * WHAT THE BUTTON DOES, AND NOTHING AFTER IT. 대화에서 시작 is the one press on 목표 that
+           * sends a message for the person, so the sentence that says a conversation follows stays.
+           * The one after it — that the goal can then be followed here — said what the page is.
+           */}
           <DialogDescription>
             {t(
-              "First I'll ask you a few things in the conversation and we'll shape the goal together. Once it is set, you can follow how it is going here.",
+              "First I'll ask you a few things in the conversation and we'll shape the goal together.",
             )}
           </DialogDescription>
         </DialogHeader>

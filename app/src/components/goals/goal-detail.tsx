@@ -1,4 +1,5 @@
 import type { GoalStatus } from "@shared/goals";
+import { IconPencil } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -140,22 +141,32 @@ export function GoalDetail({
             {t("Take it up again")}
           </Button>
         )}
+        {/*
+         * A PENCIL, NAMED: the press that changes a thing, as on the Bot's name and on 소식's
+         * routine. The two that settle the goal keep their words, and so does 삭제.
+         */}
         {channelId ? (
           <Link
-            className={buttonVariants({ size: "sm", variant: "outline" })}
+            aria-label={t("Change it in the conversation")}
+            className={buttonVariants({ size: "icon-sm", variant: "outline" })}
+            data-goal-change
             params={{ channelId }}
             search={{ draft }}
+            title={t("Change it in the conversation")}
             to="/channel/$channelId"
           >
-            {t("Change it in the conversation")}
+            <IconPencil aria-hidden="true" />
           </Link>
         ) : agentId ? (
           <Link
-            className={buttonVariants({ size: "sm", variant: "outline" })}
+            aria-label={t("Change it in the conversation")}
+            className={buttonVariants({ size: "icon-sm", variant: "outline" })}
+            data-goal-change
             search={{ agent: agentId, draft }}
+            title={t("Change it in the conversation")}
             to="/channel/new"
           >
-            {t("Change it in the conversation")}
+            <IconPencil aria-hidden="true" />
           </Link>
         ) : null}
         <Button
@@ -173,10 +184,8 @@ export function GoalDetail({
       <div className="flex flex-col gap-2">
         <h3 className="font-medium text-sm">{t("How it has gone")}</h3>
         {entries.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            {t(
-              "Nothing logged yet. Tell the Bot how it went in the conversation, or ask it to check at a time you choose.",
-            )}
+          <p className="text-muted-foreground text-sm" data-goal-timeline-empty>
+            {t("What you tell the Bot about it is logged here.")}
           </p>
         ) : (
           <ol className="flex flex-col gap-2" data-goal-timeline>

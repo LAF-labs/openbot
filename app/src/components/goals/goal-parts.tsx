@@ -67,7 +67,16 @@ export function dueLine(dueOn: string | null): string | null {
   });
 }
 
-/** One goal in the list: its category, title, how it is going and what to watch. */
+/**
+ * One goal in the list: its title and how it is going, and one line under them.
+ *
+ * ONE LINE UNDER THE TITLE (2026-10-04). A row was three: the title with its chip, the target, and
+ * a line of four facts — the category's name beside the category's icon, the day it is due, the
+ * number it watches, how many entries. The line is what a person checks from the list: when it is
+ * due and where the number stands; for a goal that watches neither, the target, which is all it
+ * has. The category is its icon, named in its tooltip. The target and every entry are a press
+ * away, in the goal opened.
+ */
 export function GoalRow({
   goal,
   isSelected,
@@ -78,39 +87,37 @@ export function GoalRow({
   onSelect: () => void;
 }) {
   const Icon = CATEGORY_ICONS[goal.category] ?? IconDots;
-  const measure = measureLine(goal);
-  const due = dueLine(goal.dueOn);
+  const watched = [dueLine(goal.dueOn), measureLine(goal)].filter(
+    (fact) => fact !== null,
+  );
   return (
     <button
       aria-pressed={isSelected}
       className={cn(
-        "flex w-full items-start gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent aria-pressed:border-foreground/30 aria-pressed:bg-accent",
+        "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent aria-pressed:border-foreground/30 aria-pressed:bg-accent",
         focusRing,
       )}
       data-goal={goal.id}
       onClick={onSelect}
       type="button"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <span
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+        title={categoryName(goal.category)}
+      >
         <Icon aria-hidden="true" className="size-4.5" />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex flex-wrap items-center gap-1.5">
-          <span className="font-medium">{goal.title}</span>
+          <span className="font-medium text-sm leading-5">{goal.title}</span>
           {goal.status === "active" ? (
             <MomentumChip momentum={goal.momentum} />
           ) : (
             <Badge>{t(STATUS_LABELS[goal.status])}</Badge>
           )}
         </span>
-        <span className="text-muted-foreground text-sm">{goal.target}</span>
-        <span className="flex flex-wrap gap-x-3 text-muted-foreground text-xs">
-          <span>{categoryName(goal.category)}</span>
-          {due ? <span>{due}</span> : null}
-          {measure ? <span>{measure}</span> : null}
-          {goal.entryCount > 0 ? (
-            <span>{t("{count} entries", { count: goal.entryCount })}</span>
-          ) : null}
+        <span className="text-muted-foreground text-xs" data-goal-line>
+          {watched.length > 0 ? watched.join(" · ") : goal.target}
         </span>
       </span>
     </button>
