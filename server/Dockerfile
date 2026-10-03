@@ -17,7 +17,7 @@
 # `tests/dockerfiles.test.ts` is what refuses a FROM without one.
 
 # oven/bun:1.3.14 — the same bun the lockfile and CI use.
-FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS install
+FROM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS install
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ RUN bun build server/src/index.ts --target=bun --outfile server/dist/index.js
 RUN bun build server/src/converter.ts --target=bun --outfile server/dist/converter.js
 
 # oven/bun:1.3.14 — the same digest as the install stage, so the two never run different runtimes.
-FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4
+FROM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895
 
 WORKDIR /app
 
