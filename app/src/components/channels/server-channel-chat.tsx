@@ -805,7 +805,9 @@ export function ServerChannelChat({
      * Until it is in, the screen is gone — or the words are no longer kept for their card: settled
      * meanwhile by the stream or by another window, they are nothing this read is for, and with
      * the history down it went on asking every eight seconds for as long as the conversation was
-     * open (review, fifteenth round).
+     * open (review, fifteenth round). Kept for their card as the outbox means it (`isKeptForCard`):
+     * handed to the person by another window they still carry the card's mark, and are the
+     * person's now — the mark alone kept this read going (sixteenth round).
      */
     const record = await readRecord(
       channel.threadId,
@@ -813,7 +815,7 @@ export function ServerChannelChat({
       () =>
         rests.current.isGone ||
         !readUnsent(channel.id).some(
-          (kept) => kept.id === id && kept.answerTo !== undefined,
+          (kept) => kept.id === id && isKeptForCard(kept),
         ),
     );
     confirming.current.delete(id);
