@@ -89,6 +89,7 @@ import {
   isTaskUnfolded,
   openBrowsingTask,
   openStepRuns,
+  type StepRunPlace,
   stepRunsOf,
   stepsByAnswer,
   type TranscriptItem,
@@ -1497,6 +1498,9 @@ function continues(
  * the renderer leaves between two paragraphs of one answer. The person's own run is 4px, as it was.
  *
  * A row that opens a sitting begins a run whoever spoke last: the time is drawn above it.
+ *
+ * AN ANSWER UNDER A STEP THAT IS DRAWN CONTINUES IT (`stepRowSpacing` has the step's own row).
+ * With its record closed there is no step above, and the answer begins its run as it did.
  */
 export function rowSpacing(
   role: "user" | "assistant",
@@ -1504,6 +1508,59 @@ export function rowSpacing(
 ): string {
   if (role === "assistant") return continuesRun ? "py-2" : "py-2 pt-5";
   return continuesRun ? "py-0.5" : "py-0.5 pt-3";
+}
+
+/**
+ * The row drawn right above `index`, by its place in `items`: the nearest one that is not a step
+ * put away (`stepRunsOf`). -1 where there is none. What a row stands under is what is on the
+ * screen above it, and the steps of a closed record are not.
+ */
+function drawnAbove(
+  stepRuns: ReadonlyMap<number, StepRunPlace>,
+  openRuns: ReadonlySet<string>,
+  index: number,
+): number {
+  for (let above = index - 1; above >= 0; above -= 1) {
+    const place = stepRuns.get(above);
+    if (!place || place.staysDrawn || openRuns.has(place.runId)) return above;
+  }
+  return -1;
+}
+
+/**
+ * The space above and below a step's row, where it is drawn.
+ *
+ * A STEP IS THE BOT'S, AND THE RECORD OF STEPS STANDS BY THE ANSWER IT WAS DONE FOR. Every step's
+ * row was 12px under whatever was above it, and the answer under it began a run of its own.
+ * Looked at in the running app with a record opened, 2026-10-04, ink to ink: the step's line stood
+ * 16px under the person's message and the answer 28px under the step — the record nearer the
+ * question than the answer, so it read as a note on what was asked; and three steps of one record
+ * stood 22px apart, as far from each other as from anything else.
+ *
+ *  - THE FIRST THING OF THE BOT'S UNDER THE PERSON'S MESSAGE BEGINS ITS SIDE: the 20px an answer
+ *    begins a run with. 24px ink to ink, where the answer's own first line would be 25px.
+ *  - THE STEPS OF ONE OPENED RECORD ARE A LIST: nothing but the rows' own 2px between two that
+ *    were put away.
+ *  - A step that is drawn anyway — still out, a question on it, a code to show — keeps its 12px:
+ *    it carries more than a line.
+ *  - And the answer under a step continues (`rowSpacing`): 16px ink to ink.
+ *
+ * The step a turn is still working on is such a row too. It now stands where the answer's first
+ * line will, and not 8px higher.
+ */
+function stepRowSpacing(
+  items: readonly TranscriptItem[],
+  stepRuns: ReadonlyMap<number, StepRunPlace>,
+  openRuns: ReadonlySet<string>,
+  index: number,
+): string {
+  const above = drawnAbove(stepRuns, openRuns, index);
+  const row = items[above];
+  if (row === undefined || (row.kind === "text" && row.role === "user")) {
+    return "py-0.5 pt-5";
+  }
+  const isPutAway = (at: number) => stepRuns.get(at)?.staysDrawn === false;
+  return isPutAway(index) && isPutAway(above) ? "py-0.5" : "py-0.5 pt-3";
 }
 
 export function ChatTranscript({
@@ -2147,7 +2204,12 @@ export function ChatTranscript({
                    */}
                   {run && !run.staysDrawn && !openRuns.has(run.runId) ? null : (
                     <MessageScrollerItem
-                      className="py-0.5 pt-3"
+                      className={stepRowSpacing(
+                        items,
+                        stepRuns,
+                        openRuns,
+                        index,
+                      )}
                       messageId={item.id}
                     >
                       <TranscriptToolCall
@@ -2172,7 +2234,12 @@ export function ChatTranscript({
                   <MessageScrollerItem
                     className={rowSpacing(
                       item.role,
-                      continues(items[index - 1], item.role) &&
+                      (continues(items[index - 1], item.role) ||
+                        // An answer under a step that is drawn stands by it (`stepRowSpacing`).
+                        (item.role === "assistant" &&
+                          stepRuns.has(
+                            drawnAbove(stepRuns, openRuns, index),
+                          ))) &&
                         !separators.has(item.id),
                     )}
                     messageId={item.id}
