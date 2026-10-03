@@ -162,6 +162,12 @@ struct ShellState {
 /// holds — the same reason 열기 and 종료 are Korean literals below — and a page that could put any
 /// text it liked into a native menu is a page that could make the menu say anything. Three codes,
 /// three sentences, and a code this list does not know is refused.
+///
+/// THE APP'S OWN WORDS, AND NOBODY'S TITLE. The person's turn was "사장님 차례" here until
+/// 2026-10-03 — in every menu bar, a student's and an office worker's too, a week after the app
+/// stopped assuming a shop. The page's cards say 내 차례, and so does this. The three are held to
+/// the app's dictionary by `tests/desktop-shell.test.ts`, since nothing else ties a literal in this
+/// file to the page's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BotStatus {
     Working,
@@ -182,7 +188,7 @@ impl BotStatus {
     fn words(self) -> &'static str {
         match self {
             Self::Working => "일하는 중",
-            Self::Waiting => "사장님 차례",
+            Self::Waiting => "내 차례",
             Self::Idle => "쉬는 중",
         }
     }
@@ -1116,7 +1122,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     )?;
     /*
      * WHAT THE BOT IS DOING, under which shell this is. A fact rather than a button, like the line
-     * above it, so a person can see "사장님 차례" without opening the window — which is the only
+     * above it, so a person can see "내 차례" without opening the window — which is the only
      * question most people open a tray menu to answer. It says 쉬는 중 until the page first
      * reports, and again whenever the window starts loading a page (`on_page_load` in `run`): a page
      * that is gone cannot still be saying the Bot is working.
@@ -1552,7 +1558,7 @@ mod tests {
         assert_eq!(BotStatus::from_code("working"), Some(BotStatus::Working));
         assert_eq!(BotStatus::from_code("waiting"), Some(BotStatus::Waiting));
         assert_eq!(BotStatus::from_code("idle"), Some(BotStatus::Idle));
-        for refused in ["Working", "idle ", "", "busy", "사장님 차례", "<b>idle</b>"] {
+        for refused in ["Working", "idle ", "", "busy", "내 차례", "<b>idle</b>"] {
             assert_eq!(
                 BotStatus::from_code(refused),
                 None,
@@ -1560,7 +1566,7 @@ mod tests {
             );
         }
         // The words are the tray's own, and the person's turn is the only one with a dot of amber.
-        assert_eq!(BotStatus::Waiting.words(), "사장님 차례");
+        assert_eq!(BotStatus::Waiting.words(), "내 차례");
         assert_eq!(BotStatus::Idle.dot(), None);
         assert_ne!(BotStatus::Waiting.dot(), BotStatus::Working.dot());
     }

@@ -441,6 +441,38 @@ test("the tray's first line is the shell's own name and version, and is not a bu
 });
 
 /**
+ * THE TRAY'S THREE WORDS ARE THE APP'S OWN.
+ *
+ * The operating system draws the tray out of strings the shell holds, so they are Korean literals
+ * in `lib.rs` and nothing ties them to the page's dictionary. The person's turn read "사장님 차례"
+ * there — to a student and to an office worker too — for a week after the app had stopped assuming
+ * a shop (the first run asks who the person is since 2026-09-27, and the answer is a hint, never a
+ * name for everybody). The page's cards say 내 차례. Each of the three is held to the dictionary's
+ * entry for the same thing, so the next change of a word is made in both or fails here.
+ */
+test("the tray says what the app says: at work, the person's turn, at rest — and calls nobody 사장님", async () => {
+  const { ko } = await import("../app/src/lib/i18n-ko");
+  const shell = read("desktop/src-tauri/src/lib.rs");
+  const words = (state: string) =>
+    new RegExp(`Self::${state} => "([^"]+)",`).exec(shell)?.[1];
+  expect(words("Working")).toBe(ko["Busy working"]);
+  expect(words("Waiting")).toBe(ko["Your turn"]);
+  expect(words("Idle")).toBe(ko.Ready);
+  expect(words("Waiting")).toBe("내 차례");
+  // Among what the shell holds to show a person, nobody is given a title. A comment may still
+  // name the old word, so comments are left out.
+  const code = shell
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+    .join("\n");
+  const shown = [...code.matchAll(/"([^"\n]*[가-힣][^"\n]*)"/g)].map(
+    (match) => match[1] ?? "",
+  );
+  expect(shown.length).toBeGreaterThan(5);
+  expect(shown.filter((text) => text.includes("사장님"))).toEqual([]);
+});
+
+/**
  * WHAT THE SHELL HANDLES, WHAT IT DECLARES AND WHAT IT GRANTS ARE ONE LIST, READ THREE TIMES.
  *
  * A command in `generate_handler!` that is missing from `build.rs`'s app manifest, or whose
