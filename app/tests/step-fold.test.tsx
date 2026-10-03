@@ -417,7 +417,9 @@ describe("what an answer opens", () => {
       TOOL_RESULT_KO["laf:person_declined"] as string,
       TOOL_RESULT_KO["laf:stopped"] as string,
       JSON.stringify({ ok: false, code: "laf:tool_unknown", reason: "…" }),
-      JSON.stringify({ refused: true }),
+      // The window's own wrapper, and the server's "an approval is being asked".
+      toolFailureText({ refused: true, reason: "A route's own sentence." }),
+      JSON.stringify({ ok: false, awaitingApproval: true, approvalId: "a1" }),
       "Error: the handler threw",
     ];
     for (const result of failures) {
@@ -477,8 +479,12 @@ describe("what an answer opens", () => {
     for (const [code, sentence] of Object.entries(TOOL_RESULT_KO)) {
       expect([code, stepDidNotWork(sentence)]).toEqual([code, true]);
     }
-    // A service's own answer is not: prose, a list, an object that says it went well — and one too
-    // long to be an object of ours, and not beginning as ours do, is not read to find out.
+    /*
+     * A service's own answer is not: prose, a list, an object that says it went well — and AN
+     * OBJECT THAT SAYS IT DID NOT, where it is not one this app wrote. A status a service sends as
+     * an ordinary answer was counted, and the line of that step, opened, said nothing had failed:
+     * the count and the line are read by one function now (`stepFailureOf`; pull request 52).
+     */
     for (const result of [
       "ok",
       "메일 2통을 찾았어요.",
@@ -486,11 +492,23 @@ describe("what an answer opens", () => {
       JSON.stringify([{ id: 1 }]),
       `${TOOL_RESULT_KO["laf:stopped"]} 라고 적힌 메일`,
       JSON.stringify({ pad: "x".repeat(5000), ok: false }),
+      JSON.stringify({ ok: false, error: "channel_not_found" }),
+      JSON.stringify({ refused: true }),
+      JSON.stringify({ stopped: true, at: "the service's own queue" }),
     ]) {
       expect([result.slice(0, 40), stepDidNotWork(result)]).toEqual([
         result.slice(0, 40),
         false,
       ]);
+      expect([
+        result.slice(0, 40),
+        takenBy([
+          ASKED,
+          called("1"),
+          answered("1", result),
+          said("a-answer", "찾아봤어요."),
+        ])["a-answer"]?.failed,
+      ]).toEqual([result.slice(0, 40), 0]);
     }
   });
 
@@ -514,6 +532,8 @@ describe("what an answer opens", () => {
       { refused: true, reason: "이 도구는 여기서 쓸 수 없어요." },
       { refused: false, reason: "The server did not answer." },
       { refused: false, reason: "" },
+      // A reason that is somebody else's object says nothing by itself: it is wrapped like prose.
+      { refused: false, reason: JSON.stringify({ ok: false, error: "x" }) },
     ]) {
       const written = toolFailureText(failure);
       expect([failure.reason, stepDidNotWork(written)]).toEqual([

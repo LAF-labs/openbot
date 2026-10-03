@@ -32,12 +32,15 @@ export function toolErrorText(text: string): string {
 const BARE_FACT = /^laf:[a-z0-9_]+$/;
 
 /**
- * Every sentence this server answers a call with in the service's place. A connected service
- * never says one of these: where a step's whole result is one, the server answered instead —
- * refused, stopped, unanswered, failed — and the service's answer never came.
+ * Every sentence this server answers a call with in the service's place, back to the fact it is
+ * the words for (the first, where two agree). A connected service never says one of these: where a
+ * step's whole result is one, the server answered instead — refused, stopped, unanswered, failed —
+ * and the service's answer never came.
  */
-const SAID_IN_THE_SERVICES_PLACE: ReadonlySet<string> = new Set(
-  Object.values(TOOL_RESULT_KO),
+const FACT_OF_SENTENCE: ReadonlyMap<string, string> = new Map(
+  Object.entries(TOOL_RESULT_KO)
+    .reverse()
+    .map(([code, sentence]) => [sentence, code]),
 );
 const LONGEST_SENTENCE = Math.max(
   ...Object.values(TOOL_RESULT_KO).map((sentence) => sentence.length),
@@ -46,53 +49,34 @@ const LONGEST_SENTENCE = Math.max(
 /**
  * An object of ours that says a call was refused — `{ ok: false, code, reason }` — is a few hundred
  * characters. A service's own JSON can be megabytes, and this is asked of every step of a
- * conversation on every chunk of a streaming answer: nothing longer than this is parsed to find out.
+ * conversation on every chunk of a streaming answer: nothing longer than this is parsed to find out
+ * what one says beyond that it is ours.
  */
 const REFUSAL_OBJECT_MAX = 4096;
-
-/**
- * How an object of ours that says no begins, whatever it goes on to hold: `ok` is written first by
- * every writer of one — `toolFailureText` below, and `refusal` in `server/src/turns/chat-tools.ts`.
- *
- * Read off the head, not parsed, so the bound above cannot hide one: a reason is whatever a route
- * wrote, and a 5,000-character reason made a wrapper too long to be parsed — which then read back
- * as the service's answer (Codex on pull request 44, round 5).
- */
-const OWN_REFUSAL_HEAD = '{"ok":false,';
 
 /** How the runtime writes a handler that threw: "Error: <message>". */
 const THROWN_HEAD = "Error:";
 
 /**
- * Whether a finished step ended any way but with the service's own answer.
+ * Whether a finished step ended any way but with the service's own answer: `stepFailureOf` says
+ * how, and this is whether it says anything.
  *
- * ERRS TOWARDS YES. A step reached through the bridge may be one of the Bot's own tools, whose
- * good news is a sentence of that table too; said to have not worked, it costs the warning's
- * colour on a record in which everything went well. Erring the other way would put a failure
- * behind a control that looks like nothing happened.
+ * ONE READING, FOR THE COUNT AND FOR THE LINE. This was a reader of its own, and looser: any object
+ * that said `ok: false` counted. That was right while it only decided whether a line stayed in the
+ * open. Since the steps are put away it decides what the control that opens them says — "3 steps, 1
+ * did not work", in the warning's colour — and the line, opened, is drawn by `stepFailureOf`, which
+ * reads only this app's own objects as failures. Carried onto that change, a service's ordinary
+ * answer of `{"ok":false,"error":"channel_not_found"}` made the control say one step had not
+ * worked and the record behind it show three that had.
+ *
+ * IT STILL ERRS TOWARDS YES IN ONE PLACE: the table's sentences. No connected service says one,
+ * but a step reached through the bridge may be one of the Bot's own tools, whose good news is a
+ * sentence of that table too; said to have not worked, it costs the warning's colour on a record in
+ * which everything went well. Erring the other way would put a failure behind a control that looks
+ * like nothing happened.
  */
 export function stepDidNotWork(result: string): boolean {
-  if (result.startsWith(TOOL_ERROR_PREFIX) || result === TOOL_NOT_ALLOWED) {
-    return true;
-  }
-  if (result === UNANSWERED_RESULT) return true;
-  if (
-    result.length <= LONGEST_SENTENCE &&
-    SAID_IN_THE_SERVICES_PLACE.has(result)
-  ) {
-    return true;
-  }
-  // Before the bound: these two say so in their first characters, however long they run on.
-  if (result.startsWith(OWN_REFUSAL_HEAD) || result.startsWith(THROWN_HEAD)) {
-    return true;
-  }
-  if (result.length > REFUSAL_OBJECT_MAX) return false;
-  if (BARE_FACT.test(result)) return true;
-  const facts = resultFactsOf(result);
-  return (
-    facts !== null &&
-    (facts.ok === false || facts.refused === true || facts.stopped === true)
-  );
+  return stepFailureOf(result) !== null;
 }
 
 /**
@@ -111,20 +95,13 @@ export function toolFailureText(failure: {
   reason: string;
 }): string {
   if (stepDidNotWork(failure.reason)) return failure.reason;
-  // `ok` FIRST: the head `stepDidNotWork` reads is the first key written here.
+  // IN THIS ORDER: `ok`, `refused`, `reason` is the head an object of ours is known by (`OWN_ENVELOPE`).
   return JSON.stringify({
     ok: false,
     refused: failure.refused,
     reason: failure.reason,
   });
 }
-
-/** Each sentence of the table, back to the fact it is the words for. The first, where two agree. */
-const FACT_OF_SENTENCE: ReadonlyMap<string, string> = new Map(
-  Object.entries(TOOL_RESULT_KO)
-    .reverse()
-    .map(([code, sentence]) => [sentence, code]),
-);
 
 /**
  * How a step that did not work ended, as far as its stored result says.
@@ -171,20 +148,21 @@ const REFUSED_FACTS: ReadonlySet<string> = new Set([
  * `ok`, `refused`, `reason`), the server's refusal (`refusal` in `server/src/turns/chat-tools.ts`:
  * `ok`, `code` — a `laf:` fact), and its "an approval is being asked" (`ok`, `awaitingApproval`).
  *
- * A SERVICE'S OWN ANSWER CAN SAY `ok: false` TOO. `stepDidNotWork` errs towards yes on purpose: it
- * only decided whether a line stayed in the open, and a line left out for no reason costs nothing.
- * A LABEL is another matter. A call that came back with the service's own JSON — a status of
- * `{"ok":false,"error":"channel_not_found"}`, which a service sends as an ordinary answer — read
- * "did not work", or "blocked" for a `refused: true` of its own, on a call that was made and
- * answered (Codex on pull request 52). So only an object written by one of this app's own writers
- * is read as one of ours; anything else is the service's answer, whatever it says.
+ * A SERVICE'S OWN ANSWER CAN SAY `ok: false` TOO. A call that came back with the service's own
+ * JSON — a status of `{"ok":false,"error":"channel_not_found"}`, which a service sends as an
+ * ordinary answer — read "did not work", or "blocked" for a `refused: true` of its own, on a call
+ * that was made and answered (Codex on pull request 52). So only an object written by one of this
+ * app's own writers is read as one of ours; anything else is the service's answer, whatever it says.
+ *
+ * READ OFF THE HEAD, NOT PARSED, so the bound on parsing cannot hide one: a reason is whatever a
+ * route wrote, and a 5,000-character reason made a wrapper too long to be parsed — which then read
+ * back as the service's answer (Codex on pull request 44, round 5). Every writer writes `ok` first.
  */
 const OWN_ENVELOPE =
   /^\{"ok":false,"(?:refused":(?:true|false),"reason":|code":"laf:[a-z0-9_]+"|awaitingApproval":true)/;
 
 /** How a finished step failed, or null for one that ended with the service's own answer. */
 export function stepFailureOf(result: string): StepFailure | null {
-  if (!stepDidNotWork(result)) return null;
   if (result.startsWith(TOOL_ERROR_PREFIX)) {
     return { kind: "error", text: result.slice(TOOL_ERROR_PREFIX.length) };
   }
@@ -192,8 +170,11 @@ export function stepFailureOf(result: string): StepFailure | null {
   if (result === UNANSWERED_RESULT) return { kind: "failed", code: null };
   const kindOf = (code: string | null) =>
     code !== null && REFUSED_FACTS.has(code) ? "refused" : "failed";
-  const said = FACT_OF_SENTENCE.get(result);
-  if (said !== undefined) return { kind: kindOf(said), code: said };
+  // Nothing longer than the longest sentence is one: a megabyte of mail is not looked up.
+  if (result.length <= LONGEST_SENTENCE) {
+    const said = FACT_OF_SENTENCE.get(result);
+    if (said !== undefined) return { kind: kindOf(said), code: said };
+  }
   if (BARE_FACT.test(result)) return { kind: kindOf(result), code: result };
   if (result.startsWith(THROWN_HEAD)) return { kind: "failed", code: null };
   // An object, then — and only one of ours is a failure (`OWN_ENVELOPE`).
