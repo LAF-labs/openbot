@@ -1077,16 +1077,12 @@ export const ko: Record<string, string> = {
   "Working…": "처리 중…",
   "Workspace skills": "워크스페이스 스킬",
   "Built-in skills": "기본 스킬",
-  "They come built in, and your Bot reaches for one when a task needs it. Type / and the name to ask for one yourself.":
-    "처음부터 들어 있는 스킬이에요. 봇이 일에 맞춰 알아서 꺼내 쓰고, /와 이름을 치면 직접 시킬 수도 있어요.",
   "Write a component and watch it render as you type.":
     "컴포넌트를 작성하면서 그려지는 모습을 바로 확인해요.",
   "Write a component here and publish it without a deployment. What you edit is a draft; a conversation only ever draws what is published.":
     "여기서 컴포넌트를 작성하고 배포 없이 게시할 수 있어요. 편집 중인 것은 초안이며, 대화에는 게시된 것만 그려져요.",
   "Write a skill": "스킬 작성",
   "Write a skill for the deployment": "배포 전체용 스킬 작성",
-  "Written for everyone by an administrator. Which Bots carry them is decided in Admin.":
-    "관리자가 모두를 위해 작성했어요. 어느 봇이 지니는지는 관리에서 정해요.",
   "You already have a skill called /{slug}. Saving would replace it — open it from the list to edit it instead.":
     "이미 /{slug} 스킬이 있어요. 저장하면 덮어써요 — 목록에서 열어 수정하세요.",
   "You do not own a Bot to put this on yet.":
@@ -2589,10 +2585,8 @@ export const ko: Record<string, string> = {
     "{name}에게 자주 시키는 일을 이름 붙여 저장해요. 저장하면 {name}에게 바로 주고, 다른 사람에게는 보이지 않아요.",
   "The skill was saved, but {name} could not be given it. Open it from the list and press {name}.":
     "스킬은 저장했지만 {name}에게 주지 못했어요. 목록에서 스킬을 열어 이름 버튼을 눌러 주세요.",
-  "Things you ask for often, saved under a name. Type / and the name in the conversation — /review-reply, say — and the Bot does it the way you wrote it.":
-    "자주 시키는 일을 이름 붙여 저장해 두는 곳이에요. 대화창에 /와 이름(예: /리뷰답장)을 치면 적어 둔 대로 봇이 해요.",
-  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.":
-    "아직 저장한 일이 없어요. 새 리뷰에 정중한 답글 쓰기처럼 자주 시키는 일을 저장해 보세요.",
+  "Save something you ask for often, and call it in the conversation by / and its name.":
+    "자주 시키는 일을 저장해 두면 대화에서 /와 이름으로 불러 써요.",
 
   // 0.5.3 B — 봇의 컴퓨터: 넘겨받기와 실시간 화면, 사이트 연결.
   "Turn it on again": "다시 켜기",

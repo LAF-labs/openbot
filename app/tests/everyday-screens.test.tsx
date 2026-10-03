@@ -111,6 +111,7 @@ const SCREENS = [
   ["Goals", "/goals"],
   ["Made", "/made"],
   ["Routines", "/routines"],
+  ["Skills", "/skills"],
 ] as const;
 
 describe("a page's title stands alone", () => {
@@ -790,5 +791,71 @@ describe("루틴", () => {
         (press) => press.textContent,
       ),
     ).toEqual(["New routine"]);
+  });
+});
+
+describe("스킬", () => {
+  const skill = (over: Record<string, unknown>) => ({
+    ownerUserId: null,
+    summary: "",
+    instructions: "",
+    origin: "personal",
+    installedBy: null,
+    grantedTo: [],
+    ...over,
+  });
+  const BUILT_IN = skill({
+    id: "skill-1",
+    slug: "네이버블로그",
+    title: "네이버 블로그 글 찾아 읽기",
+    origin: "built_in",
+  });
+  const WORKSPACE = skill({
+    id: "skill-2",
+    slug: "standup",
+    title: "Standup notes",
+  });
+  const skills = (list: unknown[]): ApiAnswer => {
+    return ({ pathname }) =>
+      pathname === "/api/plugins"
+        ? json({ catalogue: [], servers: [], skills: list })
+        : undefined;
+  };
+
+  test("a section's title stands alone: no sentence under 내 스킬, 기본 스킬 or 워크스페이스 스킬", async () => {
+    const view = await screen("/skills", skills([BUILT_IN, WORKSPACE]));
+    const sections = [...view.main.querySelectorAll("section")].map(
+      (section) => ({
+        title: section.querySelector("h2")?.textContent,
+        // `PageSection` draws its description as the paragraph right under the title's row.
+        sentences: section.querySelectorAll(":scope > p").length,
+      }),
+    );
+    expect(sections).toEqual([
+      { title: "Your skills", sentences: 0 },
+      { title: "Built-in skills", sentences: 0 },
+      { title: "Workspace skills", sentences: 0 },
+    ]);
+  });
+
+  test("with none of the person's own: a face and one line that says how one is called, and the header's verb", async () => {
+    const view = await screen("/skills", skills([BUILT_IN]));
+    const empty = view.one("[data-skills-empty]");
+    expect({
+      said: [...empty.querySelectorAll("p")].map((line) => line.textContent),
+      presses: empty.querySelectorAll("a, button").length,
+    }).toEqual({
+      said: [
+        "Save something you ask for often, and call it in the conversation by / and its name.",
+      ],
+      presses: 0,
+    });
+    expect(
+      [...view.main.querySelectorAll('a[href="/skills?new=true"]')].map(
+        (press) => press.textContent,
+      ),
+    ).toEqual(["New skill"]);
+    // A built-in skill's row still shows the one thing a person types.
+    expect(view.said("section code")).toEqual(["/네이버블로그"]);
   });
 });
