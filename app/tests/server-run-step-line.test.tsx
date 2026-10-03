@@ -98,6 +98,22 @@ describe("how a failed step ended, read back from its result", () => {
       kind: "refused",
       code: null,
     });
+    // The deployment's own no: a tool this Bot was not given, a tool held for review — as a bare
+    // fact and as the sentence the model was told. And what is nobody's no stays a failure.
+    for (const code of ["laf:tool_not_granted", "laf:tool_needs_review"]) {
+      expect(stepFailureOf(code)).toEqual({ kind: "refused", code });
+      expect(stepFailureOf(TOOL_RESULT_KO[code] as string)).toEqual({
+        kind: "refused",
+        code,
+      });
+    }
+    for (const code of [
+      "laf:grant_withdrawn",
+      "laf:tool_arguments_invalid",
+      "laf:weather_place_outside",
+    ]) {
+      expect(stepFailureOf(code)).toEqual({ kind: "failed", code });
+    }
     expect(stepFailureOf(UNANSWERED_RESULT)).toEqual({
       kind: "failed",
       code: null,

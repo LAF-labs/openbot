@@ -149,12 +149,21 @@ export type StepFailure =
  * forecast does not reach read "날씨 확인하기 — 차단됨" in red: nobody had blocked anything
  * (2026-10-03). A fact nobody listed here says only that the step did not work, which is always
  * true of it.
+ *
+ * THE DEPLOYMENT SAYS NO TOO, not only its rules and the person: a tool this Bot was not given, and
+ * a tool held until somebody looks at a definition that changed (`server/src/plugins/call.ts`).
+ * Left out, both read "did not work" — as if the service had failed, where the answer is that the
+ * call was never made (Codex on pull request 52). What stays out is everything that is nobody's
+ * no: an account to connect again, a key the machine was not given, arguments that were wrong, a
+ * place the forecast does not reach.
  */
 const REFUSED_FACTS: ReadonlySet<string> = new Set([
   "laf:policy_denied",
   "laf:no_rule_allows",
   "laf:declined_recently",
   "laf:person_declined",
+  "laf:tool_not_granted",
+  "laf:tool_needs_review",
 ]);
 
 /** How a finished step failed, or null for one that ended with the service's own answer. */
