@@ -825,15 +825,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * question whose notice was pressed and not answered, a routine's question in the Bot's only
  * conversation, and the sidebar's row for a question raised in another conversation.
  *
+ * MEASURED TOGETHER 2026-10-03, to what the gate counts once two days of pull requests had landed.
+ * Each had left this line alone, or raised it by its own tests only, so as not to meet the others
+ * on it — and a floor that far under the count lets an area go without the run failing, which is
+ * what it is for: `server` 3418 to 3431, `app` 1764 to 2081 (the kept conversation and its model,
+ * a typed answer to a card, 새 메시지, the tilde, the copy button, a card asked with nothing in it,
+ * the engine's update notice), `root` 608 to 610 (the shell's floor, and the tray's words held to
+ * the dictionary).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3418, roots: ["server"] },
-  { name: "app", floor: 1764, roots: ["app"] },
+  { name: "server", floor: 3431, roots: ["server"] },
+  { name: "app", floor: 2081, roots: ["app"] },
   { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
-  { name: "root", floor: 608, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 610, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
