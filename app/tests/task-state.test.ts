@@ -71,22 +71,30 @@ describe("how a task stands, in words", () => {
   });
 
   /*
-   * NOR FOR A REFUSAL NO SECOND ASKING CHANGES. The floor under every rule refuses the app's own
-   * address and an address inside the deployment whoever asks; the card offered 다시 해 보기 under
-   * both, a button that could only fail again. A rule that refused is different: the person can
-   * change the rule, and pressing it again is then what they do next.
+   * NOR FOR A REFUSAL NO SECOND ASKING CHANGES — and only for one. The floor under every rule
+   * refuses the app's own address whoever asks; the card offered 다시 해 보기 under it, a button that
+   * could only fail again. `laf:navigation_refused` is not such a code: the floor says it for an
+   * address inside the deployment, and also for a name that would not resolve just then and for
+   * an address the Bot wrote wrongly, and asking again can get past those (review of this change).
+   * Nor is a rule that refused: the person can change the rule.
    */
-  test("nor for what the floor refuses; a rule's refusal can still be asked again", () => {
-    for (const code of ["laf:own_address_refused", "laf:navigation_refused"]) {
-      expect([code, canRetry({ kind: "failed", code })]).toEqual([code, false]);
-    }
+  test("nor for the app's own address; what a second asking can change is still offered", () => {
+    expect(canRetry({ kind: "failed", code: "laf:own_address_refused" })).toBe(
+      false,
+    );
     for (const code of [
+      "laf:navigation_refused",
+      "laf:url_invalid",
       "laf:policy_denied",
       "laf:no_rule_allows",
       "laf:computer_unreachable",
     ]) {
       expect([code, canRetry({ kind: "failed", code })]).toEqual([code, true]);
     }
+    expect([...NO_RETRY].sort()).toEqual([
+      "laf:own_address_refused",
+      "laf:person_declined",
+    ]);
     // Every code named there is one the card has words for: no retry and no reason would be a
     // card that says only 못 끝냄.
     for (const code of NO_RETRY) {

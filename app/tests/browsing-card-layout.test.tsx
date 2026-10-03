@@ -211,7 +211,7 @@ describe("a browsing card", () => {
     expect(asked).toEqual(["토스증권에서 테슬라 주가 알려줘"]);
   });
 
-  test("that the floor refused: said, and no 다시 해 보기 — asking again is the same question", async () => {
+  test("that was refused for being the app's own address: said, and no 다시 해 보기 — asking again is the same question", async () => {
     const view = await drawn(({ BrowsingCard }) => (
       <>
         <BrowsingCard
@@ -231,10 +231,12 @@ describe("a browsing card", () => {
     const [own, inside] = cardsIn(view.host).map(read);
     expect(own?.detail).toBe("This app's own address was not opened");
     expect(own?.buttons).toEqual(["What it did"]);
+    // The floor's other refusal is also said for a name that would not resolve just then, and for
+    // an address the Bot wrote wrongly: a second asking can get past those, so it is offered.
     expect(inside?.detail).toBe(
       "An address inside this deployment was blocked",
     );
-    expect(inside?.buttons).toEqual(["What it did"]);
+    expect(inside?.buttons).toEqual(["Try it again", "What it did"]);
   });
 
   test("still being done: a chip with a dot, the page on its way in the picture's place", async () => {
