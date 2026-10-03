@@ -23,7 +23,7 @@ import { t } from "@/lib/i18n";
 import { useIsWideViewport } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
 import { pressStopAll, stopEverything } from "@/lib/work/stop-all";
-import { PILL_CLASS, PILL_TONES, PresencePillBody } from "./bot-header";
+import { PresencePillBody, presenceClass, saysItsWord } from "./bot-header";
 
 /**
  * THE PILL OPENS A DRAWER: WHAT THE BOT IS DOING, WHAT IS WAITING ON THE PERSON, WHAT IS NEXT.
@@ -73,23 +73,29 @@ export function PresenceDrawer({
               status: t(presence.label),
             })}
             className={cn(
-              PILL_CLASS,
-              PILL_TONES[presence.tone],
+              presenceClass(presence),
               focusRingInset,
-              "cursor-pointer transition-[filter] hover:brightness-95 dark:hover:brightness-125",
+              saysItsWord(presence)
+                ? "cursor-pointer transition-[filter] hover:brightness-95 dark:hover:brightness-125"
+                : "cursor-pointer transition-colors hover:bg-muted",
             )}
+            // The word a dot does not say: what is pointed at is named.
+            title={t(presence.label)}
             type="button"
           />
         }
       >
         <PresencePillBody presence={presence} />
-        <IconChevronDown
-          aria-hidden="true"
-          className={cn(
-            "size-3 shrink-0 opacity-70 transition-transform",
-            isOpen && "rotate-180",
-          )}
-        />
+        {/* The chevron goes with the word: beside a bare dot it would be the larger of the two. */}
+        {saysItsWord(presence) ? (
+          <IconChevronDown
+            aria-hidden="true"
+            className={cn(
+              "size-3 shrink-0 opacity-70 transition-transform",
+              isOpen && "rotate-180",
+            )}
+          />
+        ) : null}
       </PopoverTrigger>
       <PopoverContent
         align="start"

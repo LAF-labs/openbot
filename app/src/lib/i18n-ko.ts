@@ -1653,7 +1653,6 @@ export const ko: Record<string, string> = {
   "Hide this for this task": "이번 작업에서는 숨기기",
   "The Bot is using its browser. View its screen":
     "봇이 지금 브라우저를 쓰는 중이에요. 화면 보기",
-  "In use": "사용 중",
   "Not connected": "연결 안 됨",
   "Connecting to the screen…": "화면에 연결하는 중…",
   "Live · {site}": "실시간 · {site}",
