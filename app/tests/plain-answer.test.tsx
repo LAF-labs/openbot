@@ -445,6 +445,27 @@ describe("the one reading column", () => {
     );
     expect(width(head ?? null)).toEqual(column);
 
+    /*
+     * AND IT IS SET AS THE ANSWER UNDER IT IS. It was three grey bubbles above plain answers, the
+     * one place left where the Bot spoke from a plate; now each piece of it is in the very
+     * classes an answer is in, so the two cannot be a notch apart, and in no bubble
+     * (`greeting-head.test.tsx` has the rest of what the greeting draws).
+     */
+    const answer = view.host.querySelector(
+      '[data-message-id="a-1"] [data-slot="answer"]',
+    );
+    const greeted = [
+      ...(greeting?.querySelectorAll('[data-slot="greeting-words"]') ?? []),
+    ].map((words) => words.className);
+    expect(greeted.length).toBe(3);
+    expect(greeted).toEqual(greeted.map(() => answer?.className ?? ""));
+    expect(greeting?.querySelectorAll('[data-slot="bubble"]').length).toBe(0);
+    // The greeting is nobody's answer: nothing that looks for one finds it.
+    expect(greeting?.querySelectorAll('[data-slot="answer"]').length).toBe(0);
+    expect(
+      greeting?.querySelectorAll('[data-slot="bubble-content"]').length,
+    ).toBe(0);
+
     server.close();
     await view.unmount();
   });

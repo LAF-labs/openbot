@@ -15,7 +15,7 @@ import { BOT_AVATAR_PALETTES } from "../src/lib/avatar/bot-avatar";
  *
  *  - the label on a filled control, and on its hover (4.5:1, it is text);
  *  - the same value as text — a link, the name of what the Bot is waiting on — on the page, the
- *    sidebar, a card and the Bot's own bubble, and on the accent's own 8% tint (4.5:1);
+ *    sidebar and a card, and on the accent's own 8% tint (4.5:1);
  *  - the value as a focus ring or a border against the page (3:1, WCAG 1.4.11).
  *
  * And the words around them: secondary text and the amber of "확인 필요", which were measured here
@@ -87,7 +87,13 @@ function contrast(
   return (light + 0.05) / (darker + 0.05);
 }
 
-/** Every surface a control, a link or a line of the Bot's colour can sit on. */
+/**
+ * Every surface a control, a link or a line of the Bot's colour can sit on.
+ *
+ * There was a fourth, the grey of the Bot's own bubble (`--sand-fill-bubble-agent`). The Bot has
+ * had no bubble since 2026-10-04 — its answers and its greeting are words on the page — and the
+ * token went with it (`components/ui/bubble.tsx`).
+ */
 function surfaces(theme: Theme): Record<string, [number, number, number]> {
   const values = palette(theme);
   const page = rgb(values["--sand-bg-base"] as string);
@@ -95,7 +101,6 @@ function surfaces(theme: Theme): Record<string, [number, number, number]> {
     page,
     sidebar: rgb(values["--sand-bg-subtle"] as string),
     card: rgb(values["--sand-bg-elevated"] as string),
-    bubble: rgb(values["--sand-fill-bubble-agent"] as string),
   };
 }
 
@@ -136,7 +141,7 @@ describe("every palette a face can have is an accent the app can be drawn in", (
       expect(short).toEqual([]);
     });
 
-    test(`${theme}: as text it reads at 4.5:1 on the page, the sidebar, a card and the Bot's bubble`, () => {
+    test(`${theme}: as text it reads at 4.5:1 on the page, the sidebar and a card`, () => {
       const short: string[] = [];
       for (const id of PALETTE_IDS) {
         const { ink, fill } = accent(id, theme);
