@@ -13,13 +13,15 @@
  *  - THE ANSWER AS DRAWN (`text/html`), with our own controls and styling taken off, so a table
  *    lands in a document as a table and bold as bold.
  *
- * BOTH ARE READ OFF THE BUBBLE ON SCREEN, NOT OUT OF THE MARKDOWN. The first two versions of this
- * took the marks off the markdown with a pass of their own, and each review found another place
- * where that pass and the renderer disagreed about what a mark is: a table whose rule has one
- * hyphen, a fence inside a longer fence, an escaped star, a star with spaces round it, an indented
- * code block, a reference link — seven in two rounds, every one true, and no end to them, because a
- * second reading of markdown is a second parser. What the renderer drew is the one reading there
- * is. The words are what it drew, read in order.
+ * BOTH ARE READ OFF THE ANSWER ON SCREEN, NOT OUT OF THE MARKDOWN — the element the transcript
+ * still names `bubble-content`, though since 2026-10-04 an answer is drawn in no bubble
+ * (`chat-transcript.tsx`). The first two versions of this took the marks off the markdown with a
+ * pass of their own, and each review found another place where that pass and the renderer
+ * disagreed about what a mark is: a table whose rule has one hyphen, a fence inside a longer
+ * fence, an escaped star, a star with spaces round it, an indented code block, a reference link —
+ * seven in two rounds, every one true, and no end to them, because a second reading of markdown is
+ * a second parser. What the renderer drew is the one reading there is. The words are what it
+ * drew, read in order.
  *
  * AND WHAT IT CAN DRAW IS A LIST WITH AN END. The renderer cleans what an answer writes as HTML and
  * lets through some fifty elements and a handful of attributes — a start and a value on a list, a
@@ -29,7 +31,7 @@
  * none gets through that is not on it.
  */
 
-/** What the renderer and this app put in a bubble that is not the answer. */
+/** What the renderer and this app put beside the words that is not the answer. */
 export const NOT_THE_ANSWER = [
   "button",
   "svg",
@@ -384,7 +386,7 @@ export function copiedWords(body: Element): string {
   return blocks.filter(Boolean).join("\n\n");
 }
 
-/** What survives on an element copied out of the bubble. Everything else is ours, not the answer's. */
+/** What survives on an element copied out of the answer. Everything else is ours, not the answer's. */
 const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   a: ["href"],
   img: ["src", "alt"],
@@ -428,7 +430,7 @@ export function copiedHtml(body: Element | null | undefined): string | null {
     for (const name of element.getAttributeNames()) {
       if (!kept.includes(name)) element.removeAttribute(name);
     }
-    // A footnote's number points at a place in this bubble, which is not where it is going.
+    // A footnote's number points at a place in this answer, which is not where it is going.
     if (element.getAttribute("href")?.startsWith("#")) {
       element.removeAttribute("href");
     }

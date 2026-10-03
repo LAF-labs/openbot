@@ -1,9 +1,13 @@
 /**
- * 좋아요·아쉬워요 UNDER AN ANSWER, RENDERED IN KOREAN, PRESSED THE WAY A PERSON PRESSES THEM.
+ * 좋아요·아쉬워요 IN AN ANSWER'S "MORE" MENU, RENDERED IN KOREAN, PRESSED THE WAY A PERSON PRESSES THEM.
  *
  * In a process of its own for the two reasons `feedback-render.tsx` gives: the locale is decided when
  * the dictionary is first loaded, and Base UI decides once, when it is first evaluated, whether there
  * is a DOM to put a popup into. Both are settled here before any app module is imported.
+ *
+ * They were two thumbs in the row under the answer until 2026-10-04, and this pressed the thumbs.
+ * They are two rows of the menu the answer's second control opens (`answer-more.tsx`), so every
+ * press here opens that menu first, and what is drawn as chosen is read off its rows.
  *
  * Reads a scenario from the JSON file named by its one argument — what the server already holds for
  * the conversation, whether the rating route answers at all, and what to press — opens a conversation
@@ -37,18 +41,24 @@ export type RatingScenario = {
 
 /** What the screen drew, and what the browser sent, in the order it happened. */
 export type RatingShown = {
-  /** The accessible names of the buttons under each bubble, in transcript order. */
+  /** The accessible names of the buttons under each message, in transcript order. */
   controls: Array<{ said: string; buttons: string[] }>;
+  /** The rows of the answer's menu as it reads when it is first opened, in order. */
+  menu: string[];
   /** The class list of the row those buttons sit in, under the answer. */
   actionsRow: string[];
-  /** Which of the two is pressed, when the controls first appear. */
+  /** Which of the two is drawn as chosen, when the menu is first opened. */
   pressedOnOpen: { up: boolean; down: boolean } | null;
   /** Every body the controls put, in order. */
   puts: unknown[];
   /** The line under the answer once 좋아요 came back. */
   upStatus: string | null;
+  /** The answer's controls while that line is up: it is said beside them, not with a third. */
+  buttonsWhileSaid: string[] | null;
   /** The popover, as a person reads it when it opens. */
   popover: string | null;
+  /** The control the popover is closed back to: the one that stays under the answer. */
+  popoverReturnsTo: string | null;
   /** The reasons drawn as chosen when the popover opened, and the words already in the box. */
   prefilled: { reasons: string[]; note: string } | null;
   /** The line beside the thumbs once 보내기 came back. */
@@ -146,15 +156,57 @@ const button = (root: Element | null | undefined, label: string) =>
   [...(root?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
     (candidate) => candidate.getAttribute("aria-label") === label,
   );
-const pressed = () => {
-  const row = answerRow();
-  const up = button(row, "좋아요");
-  const down = button(row, "아쉬워요");
+/** The menu that is open. Drawn in the document's body, not in the row it was opened from. */
+const menu = () => body.querySelector('[data-slot="dropdown-menu-content"]');
+const menuRows = () =>
+  [...(menu()?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])].map(
+    (row) => ({
+      row,
+      name: row.textContent?.trim() ?? "",
+      checked: row.getAttribute("aria-checked") === "true",
+    }),
+  );
+const openMenu = async () => {
+  const more = button(answerRow(), "더 보기");
+  if (!more) throw new Error("더 보기 is not under the answer");
+  await view.click(more);
+  await view.waitFor(() => menu() !== null, "the answer's menu");
+};
+const closeMenu = async () => {
+  const { act } = await import("react");
+  await act(async () => {
+    menu()?.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await view.waitFor(() => menu() === null, "the answer's menu to close");
+};
+/** The menu's rows as they read now: opened, written down, and closed without choosing. */
+const readMenu = async () => {
+  await openMenu();
+  const rows = menuRows().map(({ name, checked }) => ({ name, checked }));
+  await closeMenu();
+  return rows;
+};
+/** Which of the two the menu draws as chosen, or null where it offers neither. */
+const pressed = async () => {
+  const rows = await readMenu();
+  const up = rows.find((row) => row.name === "좋아요");
+  const down = rows.find((row) => row.name === "아쉬워요");
   if (!up || !down) return null;
-  return {
-    up: up.getAttribute("aria-pressed") === "true",
-    down: down.getAttribute("aria-pressed") === "true",
-  };
+  return { up: up.checked, down: down.checked };
+};
+/** Open the menu and press the row with this name, as a person does. */
+const choose = async (name: string) => {
+  await openMenu();
+  const found = menuRows().find((row) => row.name === name);
+  if (!found) throw new Error(`${name} is not in the answer's menu`);
+  await view.click(found.row);
+  await view.waitFor(() => menu() === null, `the menu to close on ${name}`);
 };
 const popover = () => body.querySelector('[data-slot="popover-content"]');
 const namedButtonIn = (root: Element | null, name: string) =>
@@ -167,28 +219,35 @@ await view.waitFor(
   "the answer in the transcript",
   8000,
 );
-// The controls wait for the conversation's ratings; without a route they never come, so a short
-// settle is the whole wait there.
-if (scenario.ratingsRoute) {
-  await view.waitFor(() => pressed() !== null, "the rating controls", 8000);
-} else {
-  await view.settle(300);
-}
+// The two rows wait for the conversation's ratings to be read, and are not offered where the read
+// is refused: either way the menu is opened only once the server has answered it.
+await view.waitFor(
+  () => view.requests.some((request) => request.pathname === ratingsPath),
+  "the conversation's ratings to be asked for",
+  8000,
+);
+await view.settle(300);
+
+const buttonsUnder = (row: Element | undefined) =>
+  [...(row?.querySelectorAll("button") ?? [])].map(
+    (candidate) => candidate.getAttribute("aria-label") ?? "",
+  );
 
 const shown: RatingShown = {
   controls: rows().map((row) => ({
     said: row.querySelector('[data-slot="bubble-content"]')?.textContent ?? "",
-    buttons: [...row.querySelectorAll("button")].map(
-      (candidate) => candidate.getAttribute("aria-label") ?? "",
-    ),
+    buttons: buttonsUnder(row),
   })),
+  menu: (await readMenu()).map((row) => row.name),
   actionsRow: [
     ...(body.querySelector('[data-slot="reply-actions"]')?.classList ?? []),
   ],
-  pressedOnOpen: pressed(),
+  pressedOnOpen: await pressed(),
   puts,
   upStatus: null,
+  buttonsWhileSaid: null,
   popover: null,
+  popoverReturnsTo: null,
   prefilled: null,
   receipt: null,
   popoverClosed: null,
@@ -204,9 +263,10 @@ const statusUnderAnswer = () =>
     .trim();
 
 const openPopover = async () => {
-  await view.click(button(answerRow(), "아쉬워요") as Element);
+  await choose("아쉬워요");
   await view.waitFor(() => popover() !== null, "the 아쉬워요 popover");
-  await view.settle(30);
+  // Long enough for a panel that opened and lost the keyboard to the closing menu to have gone.
+  await view.settle(120);
   shown.popover = popover()?.textContent ?? "";
   shown.prefilled = {
     reasons: [
@@ -217,13 +277,14 @@ const openPopover = async () => {
 };
 
 if (scenario.steps === "rate") {
-  await view.click(button(answerRow(), "좋아요") as Element);
+  await choose("좋아요");
   await view.waitFor(() => puts.length === 1, "the 좋아요 to be sent");
   await view.waitFor(
     () => statusUnderAnswer() !== "",
     "the 좋아요 to be acknowledged",
   );
   shown.upStatus = statusUnderAnswer();
+  shown.buttonsWhileSaid = buttonsUnder(answerRow());
 
   await openPopover();
   const reason = namedButtonIn(popover(), "사실과 달라요");
@@ -246,15 +307,18 @@ if (scenario.steps === "rate") {
     "the sent popover to close",
   );
   shown.popoverClosed = true;
-  shown.pressedAfterDown = pressed();
+  shown.popoverReturnsTo =
+    document.activeElement?.getAttribute("aria-label") ?? null;
+  shown.pressedAfterDown = await pressed();
 
-  await view.click(button(answerRow(), "좋아요") as Element);
+  await choose("좋아요");
   await view.waitFor(() => puts.length === 3, "the change back to 좋아요");
+  // Drawn as chosen once the server's answer is in the cache: said under the answer when it is.
   await view.waitFor(
-    () => pressed()?.up === true,
-    "좋아요 to be drawn as chosen again",
+    () => statusUnderAnswer().startsWith("잘 받았어요"),
+    "the change back to be acknowledged",
   );
-  shown.pressedAfterUpAgain = pressed();
+  shown.pressedAfterUpAgain = await pressed();
 } else if (scenario.steps === "reopen") {
   await openPopover();
 } else if (scenario.steps === "offline") {
@@ -263,7 +327,7 @@ if (scenario.steps === "rate") {
       .map((alert) => alert.textContent ?? "")
       .join(" ")
       .trim();
-  await view.click(button(answerRow(), "좋아요") as Element);
+  await choose("좋아요");
   await view.waitFor(() => alertUnderAnswer() !== "", "the failed 좋아요");
   shown.offlineAlert = alertUnderAnswer();
 }

@@ -10,8 +10,6 @@ import {
   IconCheck,
   IconCopy,
   IconInfoCircle,
-  IconListDetails,
-  IconQuote,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, useReducedMotion } from "motion/react";
@@ -27,7 +25,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Streamdown } from "streamdown";
-import { offerDraft } from "@/components/channels/composer/prefill";
 import { BrowsingCard } from "@/components/computer/browsing-card";
 import { FeedQuoteChip } from "@/components/feed/feed-quote-chip";
 import { useIsOnline } from "@/components/layout/connection-notice";
@@ -56,7 +53,6 @@ import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
-import { quotedReply } from "@/lib/channels/quote";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
 import { spokenText } from "@/lib/channels/spoken-text";
 import {
@@ -81,9 +77,8 @@ import { noteTurnFailure } from "@/lib/support/last-failure";
 import { useElapsedSeconds } from "@/lib/use-elapsed";
 import { useLasting } from "@/lib/use-lasting";
 import { useNow } from "@/lib/use-now";
-import { AnswerRatingControls } from "./answer-rating";
+import { AnswerMore, type ToggleSteps } from "./answer-more";
 import {
-  type AnswerSteps,
   arrivedBelow,
   type BrowsingItem,
   browsingTaskHolding,
@@ -106,6 +101,7 @@ import {
 import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
+import { readingColumn } from "./reading-column";
 import { type Source, sourcesByAnswer } from "./sources";
 import { SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -1024,7 +1020,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
   sources?: string;
   /**
    * What the Bot did on the way to this answer, as JSON (`AnswerSteps`) — a string, like `sources`.
-   * Absent draws no control: nothing was done for it that is not already in the conversation.
+   * Absent, the answer's menu has no row for it: nothing was done for it that is not already in
+   * the conversation.
    */
   steps?: string;
   /** Every one of those steps is drawn above the answer. */
@@ -1033,12 +1030,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
    * Open that record, or put it away. The same function on every render, or every answer that
    * carries one is drawn again — its markdown with it — with each chunk of the next.
    */
-  onToggleSteps?: (
-    runIds: readonly string[],
-    rows: readonly string[],
-    isOpen: boolean,
-  ) => void;
-  /** The conversation, for the rating controls. See ChatTranscriptProps. */
+  onToggleSteps?: ToggleSteps;
+  /** The conversation, for the rating of an answer. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
   delay: number;
@@ -1052,7 +1045,10 @@ const TranscriptMessage = memo(function TranscriptMessage({
   partial?: boolean;
   /** A finished answer, as opposed to one still being written. See `unsettledFrom`. */
   rateable?: boolean;
-  /** The message below is from the same speaker, with no tool line between them. */
+  /**
+   * The message below is the person's too, with nothing between them. Of a person's message only:
+   * it is what tightens two corners of their bubble, and an answer has no corners (see below).
+   */
   joinedNext?: boolean;
   /** The message above is. */
   joinedPrev?: boolean;
@@ -1082,29 +1078,36 @@ const TranscriptMessage = memo(function TranscriptMessage({
           ) : null}
           {/* The chat measure: what a Bot says and what a person typed read at one size. */}
           {/*
-           * BOTH SIDES GET A BUBBLE.
+           * THE PERSON'S MESSAGE IS A BUBBLE. THE BOT'S ANSWER IS WORDS ON THE PAGE.
            *
-           * A Bot's reply used to be bare prose on the page while the person's message sat in a
-           * grey box — which reads as one participant talking and the other narrating. Grok gives
-           * the Bot the grey bubble and the person the near-black one, and that symmetry is what
-           * makes the transcript read as a conversation between two parties.
+           * It has been both. A Bot's reply was bare prose while the person's message sat in a grey
+           * box, "which reads as one participant talking and the other narrating"; on 2026-08-21
+           * both sides got a bubble, the way Grok draws them, so the transcript read as two parties.
+           * The owner, 2026-10-04: the app shows far too many words and looks bad beside Grok Bot
+           * and Muse — and of the mock-ups for the conversation chose "proposal A", the answer with
+           * no plate round it.
+           *
+           * What still says who is speaking is the person's side: their message keeps its dark
+           * bubble, on the right, and everything on the left that is not in one is the Bot's.
            */}
           {/* Files handed over without a word are the whole message: no empty bubble under them. */}
           {text ? (
-            <Bubble
-              align={align}
-              className={partial ? "chat-prose opacity-60" : "chat-prose"}
-              joinedNext={joinedNext}
-              joinedPrev={joinedPrev}
-              variant={isUser ? "user" : "agent"}
-            >
-              <BubbleContent>
-                {isUser ? (
-                  // A person's own message is shown exactly as they typed it. Rendering it as markdown
-                  // would silently reformat what they said, and an asterisk in a sentence is not
-                  // emphasis. The chip is the one exception, and it is not reformatting: it is drawing
-                  // the thing that was already a chip in the composer as a chip here too, so the
-                  // transcript shows a skill was used rather than a slash that was typed.
+            isUser ? (
+              <Bubble
+                align="end"
+                className="chat-prose"
+                joinedNext={joinedNext}
+                joinedPrev={joinedPrev}
+                variant="user"
+              >
+                <BubbleContent>
+                  {/*
+                   * A person's own message is shown exactly as they typed it. Rendering it as
+                   * markdown would silently reformat what they said, and an asterisk in a sentence is
+                   * not emphasis. The chip is the one exception, and it is not reformatting: it is
+                   * drawing the thing that was already a chip in the composer as a chip here too, so
+                   * the transcript shows a skill was used rather than a slash that was typed.
+                   */}
                   <span className="whitespace-pre-wrap">
                     {invoked ? (
                       <>
@@ -1123,16 +1126,58 @@ const TranscriptMessage = memo(function TranscriptMessage({
                       text
                     )}
                   </span>
-                ) : (
-                  /*
+                </BubbleContent>
+              </Bubble>
+            ) : (
+              /*
+               * THE MEASURE: 680px, or the row where the row is narrower. The bubble capped its own
+               * width; with no bubble the words are capped here, a little inside the column
+               * (`reading-column.ts`), which also holds the person's bubble and the cards.
+               *
+               * ITS OWN COLOUR, AS THE BUBBLE GAVE IT ONE. Left to inherit, the colour comes down
+               * through the row, and the row's colours are on a 700ms transition (the glow on a
+               * row somebody was sent to). Laid out in headless Chromium and WebKit, 2026-10-04,
+               * and the theme switched: the page was dark at once and the answer's words were
+               * still the light theme's ink 100ms later, dark on dark, and right only after most
+               * of a second. With the colour on the answer itself they follow at once.
+               */
+              <div
+                className={
+                  partial
+                    ? "chat-prose w-full max-w-170 text-foreground opacity-60"
+                    : "chat-prose w-full max-w-170 text-foreground"
+                }
+                data-slot="answer"
+              >
+                {/*
+                 * `bubble-content` IS STILL ITS NAME, though it is in no bubble: it is the name of
+                 * "what was said in this row" on both sides, and 복사 finds the answer by it, as a
+                 * dozen tests do. A second name for the Bot's side would be a second thing for each
+                 * of them to ask for.
+                 *
+                 * WHAT THE PLATE WAS ALSO DOING: holding in whatever is wider than the measure. The
+                 * renderer lets a table scroll inside itself, and nothing promises that of
+                 * everything else an answer can hold. Laid out at 375px in headless Chromium and
+                 * WebKit (a static copy of the mounted conversation, 2026-10-04) with something
+                 * 2,000px wide inside an answer: cut off here, the conversation stayed 375px
+                 * across; not cut off, it was 2,016px and every row of it could be dragged
+                 * sideways. Cut off at the sides only, and 4px out from the words, not at them —
+                 * where the plate's padding was, the ring round a link that begins a line still
+                 * has somewhere to be drawn.
+                 */}
+                <div
+                  className="-mx-1 overflow-x-clip px-1"
+                  data-slot="bubble-content"
+                >
+                  {/*
                    * A Bot's prose is markdown, and it arrives in pieces.
                    *
-                   * Rendered with a streaming-aware renderer rather than an ordinary one: half a fenced
-                   * code block or an unclosed bold marker is the NORMAL state for most of a run, and a
-                   * plain markdown parser draws that as literal asterisks and backticks until the
-                   * closing token arrives, so the answer visibly rewrites itself as it lands. This
-                   * closes them for the duration.
-                   */
+                   * Rendered with a streaming-aware renderer rather than an ordinary one: half a
+                   * fenced code block or an unclosed bold marker is the NORMAL state for most of a
+                   * run, and a plain markdown parser draws that as literal asterisks and backticks
+                   * until the closing token arrives, so the answer visibly rewrites itself as it
+                   * lands. This closes them for the duration.
+                   */}
                   <Streamdown
                     components={markdownComponents}
                     plugins={markdownPlugins}
@@ -1142,9 +1187,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
                   >
                     {text}
                   </Streamdown>
-                )}
-              </BubbleContent>
-            </Bubble>
+                </div>
+              </div>
+            )
           ) : null}
           {partial ? (
             <p className="mt-1 text-muted-foreground text-xs">
@@ -1166,28 +1211,23 @@ const TranscriptMessage = memo(function TranscriptMessage({
            * only way to take it anywhere was to select it by hand across a markdown block. On the
            * assistant's side only: a person already has what they typed, and has nothing to rate.
            *
-           * 좋아요·아쉬워요 sit beside it, on a finished answer in a conversation that can keep a
-           * rating (`answer-rating.tsx`).
-           *
-           * And last, what the Bot did to write it (`StepsOfAnswer`). Last, so the buttons that
-           * every answer has stay where they are whether or not this one took a step.
+           * TWO CONTROLS, AND NO MORE (the owner's "proposal A", 2026-10-04). The row had grown to
+           * five — 복사, 인용, 좋아요, 아쉬워요, and the icon for what the Bot did — under every
+           * answer. 복사 stays as it was; the rest are behind "more" (`answer-more.tsx`), in that
+           * order, each doing what it did.
            */}
           {isUser ? null : (
             <ReplyActions>
               <CopyReply text={text} />
-              {channelId && rateable ? (
-                <QuoteReply channelId={channelId} text={text} />
-              ) : null}
-              {channelId && rateable ? (
-                <AnswerRatingControls channelId={channelId} messageId={id} />
-              ) : null}
-              {steps && onToggleSteps ? (
-                <StepsOfAnswer
-                  isOpen={isStepsOpen}
-                  onToggle={onToggleSteps}
-                  steps={steps}
-                />
-              ) : null}
+              <AnswerMore
+                // Quoted and rated in a conversation that can keep it, once the answer is finished.
+                channelId={rateable ? channelId : undefined}
+                isStepsOpen={isStepsOpen}
+                messageId={id}
+                onToggleSteps={onToggleSteps}
+                steps={steps}
+                text={text}
+              />
             </ReplyActions>
           )}
         </Arriving>
@@ -1203,54 +1243,42 @@ const TranscriptMessage = memo(function TranscriptMessage({
  * assistant bubble at `opacity: 0` — invisible, and still occupying its height plus margin in the
  * column. That is where the transcript's spacing actually went: two replies in a row read 48px apart
  * when the measured rhythm is 4px, and no amount of tuning the gap could fix it because the space
- * was a button nobody could see. Absolute, hugging the bubble's bottom edge, in the gutter the
- * bubble's max-width leaves — the whole row now, not the one button.
+ * was a button nobody could see. Absolute, at the bottom edge of the answer — the whole row, not
+ * the one button.
+ *
+ * PULLED 6px UP, AS IT WAS, AND FOR A NEW REASON. While the answer was a bubble that put the row on
+ * the bubble's own padding. Under plain words it puts the icons in the middle of the space between
+ * this answer's last line and whatever is next: a button is 28px round a 14px icon, so its icon
+ * sits 7px inside it. Laid out in headless Chromium and WebKit, 2026-10-04 — a static copy of the
+ * mounted conversation with the built stylesheet, not the running app — two answers of one turn
+ * are 22px apart letter to letter, and the icons stand 4px under the upper one's last line and end
+ * 4px over the lower one's first. Hung 2px below the line instead, as the first draft of the
+ * plain answer had it, they ran 4px into the next answer's first words. The line that says a
+ * rating arrived is in this row and stands in the same gap, 3px clear of the words on either side.
+ *
+ * AND 6px TO THE LEFT, which is new: it is the icon, not the edge of its button, that belongs
+ * under the first letter of the answer. Measured the same way, the first icon begins 1px in from
+ * the words. Against a bubble the row began at the bubble's edge, 12px before its words.
  *
  * Revealed on hover and on keyboard focus, so it is reachable by keyboard and does not sit over the
  * transcript the rest of the time — and held up while a control in it says it is in use
- * (`data-lingering`): a popover the person is typing into, or the line saying a rating arrived,
- * must not vanish because the pointer moved on to read the answer.
+ * (`data-lingering`): the "more" menu while it is open, the question 아쉬워요 asks, or the line
+ * saying a rating arrived, must not vanish because the pointer moved on to read the answer.
  *
  * ON A TOUCH SCREEN, SHOWN AND IN FLOW (`pointer-coarse:`). A finger has no hover, so on a phone the
  * row never appeared: copying a reply to paste somewhere else — a review answer into the 배민 app —
  * is exactly what a person does on a phone, and it was a long-press-and-drag across a bubble (first-
  * hour walk, 2026-09-27). There it is always drawn, and in flow, so it takes its own height under
- * the answer rather than lying over the next bubble 4px below. A pointer keeps the hover row above.
+ * the answer rather than lying over the next row. A pointer keeps the hover row above.
  */
 function ReplyActions({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="-mt-1.5 absolute top-full left-0 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 has-focus-visible:opacity-100 has-data-[lingering=true]:opacity-100 pointer-coarse:static pointer-coarse:mt-0.5 pointer-coarse:opacity-100"
+      className="-mt-1.5 -ml-1.5 absolute top-full left-0 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 has-focus-visible:opacity-100 has-data-[lingering=true]:opacity-100 pointer-coarse:static pointer-coarse:mt-0.5 pointer-coarse:opacity-100"
       data-slot="reply-actions"
     >
       {children}
     </div>
-  );
-}
-
-/**
- * 인용해 답하기: the reply's first line, quoted, in this conversation's composer with the caret under
- * it — "> 춘천은 오늘 구름많고…" and a new line to answer on. Through the composer's own offer
- * (`prefill.ts`), so it never writes over something the person was already typing.
- */
-function QuoteReply({ channelId, text }: { channelId: string; text: string }) {
-  const handleQuote = () => {
-    const quoted = quotedReply(text);
-    if (quoted) offerDraft(channelId, quoted);
-  };
-
-  return (
-    <Button
-      aria-label={t("Quote in a reply")}
-      className="text-muted-foreground"
-      onClick={handleQuote}
-      size="icon-sm"
-      title={t("Quote in a reply")}
-      type="button"
-      variant="ghost"
-    >
-      <IconQuote className="size-3.5" />
-    </Button>
   );
 }
 
@@ -1270,11 +1298,11 @@ function CopyReply({ text }: { text: string }) {
   );
 
   const handleCopy = async (event: React.MouseEvent<HTMLElement>) => {
-    // The bubble this button sits under: the actions row is its sibling inside the message.
+    // The answer this button sits under: the actions row is its sibling inside the message.
     const drawn = event.currentTarget
       .closest('[data-slot="reply-actions"]')
       ?.parentElement?.querySelector('[data-slot="bubble-content"]');
-    // With no bubble to read — which a button under one should never find — the text as it came.
+    // With nothing drawn to read — which a button under an answer should never find — the text as it came.
     const copied = await copyRich({
       text: drawn ? copiedWords(drawn) : text,
       html: copiedHtml(drawn),
@@ -1300,67 +1328,6 @@ function CopyReply({ text }: { text: string }) {
       ) : (
         <IconCopy className="size-3.5" />
       )}
-    </Button>
-  );
-}
-
-/**
- * What the Bot did on the way to this answer: the button that opens the record, and puts it away.
- *
- * THE STEPS ARE NOT IN THE CONVERSATION, AND THIS IS THE WAY BACK TO THEM (the owner, 2026-10-04;
- * `stepRunsOf` has the history). A look-up, a mail read, a search: none of them is drawn once it is
- * over, so that a finished turn is what the Bot said. What it did is still the record, and the
- * answer it was done for carries it — pressed, every step is drawn where it happened, above the
- * answer; pressed again, they go.
- *
- * AN ICON, WITH ITS NAME FOR A SCREEN READER AND ON HOVER. The fold this replaces began as words
- * beside every run — "이전 3단계" — on a screen whose trouble was the number of words. How many
- * steps it stands for is its name, and is what opening it shows.
- *
- * AND IT SAYS WHEN ONE OF THEM DID NOT WORK, in its colour and in its name. A failed or refused
- * step is put away like any other (`staysInTheOpen`), and a control that looked the same over a
- * failure as over four things that went well would be hiding it.
- *
- * A real button, so the keyboard reaches it and a screen reader is told whether the record is open.
- */
-function StepsOfAnswer({
-  steps,
-  isOpen,
-  onToggle,
-}: {
-  /** `AnswerSteps`, as JSON: the answer's row is memoised on primitives. */
-  steps: string;
-  isOpen: boolean;
-  onToggle: (
-    runIds: readonly string[],
-    rows: readonly string[],
-    isOpen: boolean,
-  ) => void;
-}) {
-  const { runIds, rows, failed } = JSON.parse(steps) as AnswerSteps;
-  const count = rows.length;
-  const name = isOpen
-    ? t("Hide what it did")
-    : failed > 0
-      ? t("What it did for this answer: {count} steps, {failed} did not work", {
-          count,
-          failed,
-        })
-      : t("What it did for this answer: {count} steps", { count });
-
-  return (
-    <Button
-      aria-expanded={isOpen}
-      aria-label={name}
-      className={failed > 0 ? "text-warning" : "text-muted-foreground"}
-      data-testid="transcript-answer-steps"
-      onClick={() => onToggle(runIds, rows, isOpen)}
-      size="icon-sm"
-      title={name}
-      type="button"
-      variant="ghost"
-    >
-      <IconListDetails className="size-3.5" />
     </Button>
   );
 }
@@ -1496,8 +1463,8 @@ function TimeSeparator({ at }: { at: string }) {
  * Is the neighbouring item another message from the same speaker?
  *
  * A tool line between two replies breaks the run on purpose: the Bot did something in between, and
- * drawing those two bubbles as one uninterrupted turn would hide that it had. A step that is over
- * is not drawn (`stepRunsOf`) and breaks it all the same: the two bubbles stand apart, and the one
+ * drawing those two answers as one uninterrupted turn would hide that it had. A step that is over
+ * is not drawn (`stepRunsOf`) and breaks it all the same: the two answers stand apart, and the one
  * after it carries what was done.
  */
 function continues(
@@ -1505,6 +1472,38 @@ function continues(
   role: "user" | "assistant",
 ): boolean {
   return neighbour?.kind === "text" && neighbour.role === role;
+}
+
+/**
+ * The space above and below one message's row.
+ *
+ * THE RHYTHM IS THE ROWS', NOT A GAP BETWEEN THEM: 2px above and below each, and 12px above the
+ * row that begins a run — 4px inside a run of one speaker's bubbles, 14px where the speaker
+ * changes (measured from Grok, 2026-08-21). The person's side is still exactly that.
+ *
+ * THE BOT'S SIDE CARRIES WHAT ITS PLATE DID. While an answer was a bubble, the bubble's own 8px of
+ * padding stood between the words and everything round them, and the rows could sit 4px apart.
+ * With the plate gone (the owner's "proposal A", 2026-10-04) the same classes would put two
+ * answers of one turn 4px apart — closer than two paragraphs of one answer, which the renderer
+ * sets 16px apart — and an answer's first line 14px under the person's dark bubble. So an
+ * answer's row takes the plate's 8px: 8px above and below, which is 16px between two answers of a
+ * run, so they read as one block; and 20px above the first of a run, 12 and the 8. What comes
+ * after an answer keeps its own 12px and gets the answer's 8 under it.
+ *
+ * WHAT THAT COMES TO, letter to letter, laid out in headless Chromium on a static copy of the
+ * mounted conversation with the built stylesheet (2026-10-04; not the running app), before and
+ * after: the person's bubble to the answer's first line 26px → 25px; the answer's last line to the
+ * person's next bubble 26px → 23px; between two answers of one turn 28px → 22px, which is what
+ * the renderer leaves between two paragraphs of one answer. The person's own run is 4px, as it was.
+ *
+ * A row that opens a sitting begins a run whoever spoke last: the time is drawn above it.
+ */
+export function rowSpacing(
+  role: "user" | "assistant",
+  continuesRun: boolean,
+): string {
+  if (role === "assistant") return continuesRun ? "py-2" : "py-2 pt-5";
+  return continuesRun ? "py-0.5" : "py-0.5 pt-3";
 }
 
 export function ChatTranscript({
@@ -2061,25 +2060,30 @@ export function ChatTranscript({
             /*
              * WHERE THE BUTTON WAS, and outside the content for the same reason: the scroller keeps
              * the reading position by the content's first child, and the greeting is not a row.
+             * In the same column as the rows under it: it is the top of the same conversation.
              */
-            <div className="px-4 pt-4">{head}</div>
+            <div className={`${readingColumn} pt-4`}>{head}</div>
           ) : null}
           <MessageScrollerContent
             aria-busy={busy}
             /*
-             * NO GAP, AND NO CENTRED COLUMN.
+             * NO GAP, AND ONE CENTRED COLUMN.
              *
              * The scroller's own `gap-6` put 24px between every message, so a Bot's three-sentence
-             * answer arrived as three remarks a beat apart instead of as one turn. Grok spaces the
-             * transcript from the rows instead: 2px above and below each, and 12px on the row that
-             * starts a new turn — 4px inside a run, 16px when the speaker changes. The bubble caps
-             * its own measure, so the column does not need to.
+             * answer arrived as three remarks a beat apart instead of as one turn. The transcript
+             * is spaced from its rows instead (`rowSpacing`).
+             *
+             * THE COLUMN IS BACK, AND THE COMPOSER IS IN IT (`reading-column.ts`). It went on
+             * 2026-08-21, `max-w-none` on purpose: "the bubble caps its own measure, so the column
+             * does not need to". That reason went with the Bot's bubble. An answer is words on the
+             * page now, and on a wide window nothing was left to stop a line running the width of
+             * the pane.
              *
              * `min-h-0` UNDER THE GREETING: the content is at least the viewport's height so a short
              * conversation sits at the bottom, and with the greeting above it that minimum pushed
              * the greeting a whole screen up, out of sight on a conversation with nothing in it.
              */
-            className={`mx-auto w-full max-w-none gap-0 px-4 py-4 ${head && !hasEarlier ? "min-h-0" : ""}`}
+            className={`${readingColumn} gap-0 py-4 ${head && !hasEarlier ? "min-h-0" : ""}`}
           >
             {/*
              * The memo boundary is INSIDE the scroller item, not around it. `MessageScrollerItem`
@@ -2166,13 +2170,11 @@ export function ChatTranscript({
                     <TimeSeparator at={separators.get(item.id) as string} />
                   ) : null}
                   <MessageScrollerItem
-                    className={
-                      // A row that opens a sitting already has the separator's 8px above it.
+                    className={rowSpacing(
+                      item.role,
                       continues(items[index - 1], item.role) &&
-                      !separators.has(item.id)
-                        ? "py-0.5"
-                        : "py-0.5 pt-3"
-                    }
+                        !separators.has(item.id),
+                    )}
                     messageId={item.id}
                     scrollAnchor={anchors.isAnchor(
                       item.id,
@@ -2195,8 +2197,18 @@ export function ChatTranscript({
                         index < settledBefore &&
                         failures[item.id]?.askedId === undefined
                       }
-                      joinedNext={continues(items[index + 1], item.role)}
-                      joinedPrev={continues(items[index - 1], item.role)}
+                      /*
+                       * The person's bubbles only. An answer has no corners to tighten, and a
+                       * prop that moved when its neighbour arrived would draw it again for nothing.
+                       */
+                      joinedNext={
+                        item.role === "user" &&
+                        continues(items[index + 1], item.role)
+                      }
+                      joinedPrev={
+                        item.role === "user" &&
+                        continues(items[index - 1], item.role)
+                      }
                       role={item.role}
                       /*
                        * Where the answer came from, once the turn is over: an answer still being

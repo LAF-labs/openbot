@@ -21,6 +21,7 @@ import {
   type QueuedMessage,
   reduceQueue,
 } from "@/components/channels/composer";
+import { readingColumn } from "@/components/channels/reading-column";
 import { UsageNotice } from "@/components/channels/usage-notice";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import type { StandingFailure } from "@/lib/channels/retry";
@@ -337,14 +338,22 @@ export function ConversationView({
         </SectionBoundary>
       </div>
       {/*
-       * FULL WIDTH, `px-4`, matching the transcript above it.
+       * IN THE TRANSCRIPT'S COLUMN, edge for edge (`reading-column.ts`).
        *
-       * Both used to be capped at a centred 588px column, which is a document's layout — it left
-       * the composer floating in the middle of a wide pane with dead space on either side. The
-       * transcript now runs the width of the pane and lets each bubble cap its own measure, and
-       * the box a person types into has to sit under the width it types into.
+       * It has been both ways. Both were a centred 588px column until 2026-08-21; then the
+       * transcript ran the width of the pane with each bubble capping its own measure, and this
+       * followed it, because the box a person types into has to sit under the width it types
+       * into. That is still the rule. What changed is the width above: the Bot's answer is words
+       * on the page now (the owner's "proposal A", 2026-10-04), the column is their measure, and
+       * a composer running the width of the pane under a 720px column of text would be the
+       * mismatch the rule is about.
+       *
+       * The notices sit in it too: they are about what is typed next.
        */}
-      <div className="w-full shrink-0 px-4 pb-4">
+      <div
+        className={`${readingColumn} shrink-0 pb-4`}
+        data-slot="composer-column"
+      >
         {/* Every conversation screen, not one caller's: the next question is typed here on all of them. */}
         <UsageNotice />
         {notice}

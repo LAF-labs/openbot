@@ -17,6 +17,10 @@ import { mount, unmountAll } from "./support/mount";
  * 100% - 82px)`, whose 82px gutter is empty on a phone — and a table scrolled inside a 217px box.
  * happy-dom lays nothing out, so this holds the class that makes the exception; the widths were
  * measured in the browser (261 → 319 at 375, 640 unchanged at 1280).
+ *
+ * THE BUBBLE IS THE GREETING'S NOW. Since 2026-10-04 a Bot's answer in the conversation is words
+ * on the page with no bubble, the whole row wide on a phone (`plain-answer.test.tsx`). The `agent`
+ * bubble is still what the Bot's greeting is drawn in, and this is still its width there.
  */
 
 beforeAll(() => GlobalRegistrator.register());

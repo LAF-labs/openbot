@@ -113,11 +113,13 @@ export const ko: Record<string, string> = {
    * "하는 중" 꼴, 연결된 서비스의 도구는 위 카드 이름처럼 "하기" 꼴.
    */
   "Finding a tool": "도구 찾는 중",
-  // The name of the icon under an answer that opens what was done for it (`chat-transcript.tsx`, `StepsOfAnswer`).
+  // The row of an answer's "more" menu that opens what was done for it (`answer-more.tsx`).
   "What it did for this answer: {count} steps": "이 답을 위해 한 일 {count}개",
   "What it did for this answer: {count} steps, {failed} did not work":
     "이 답을 위해 한 일 {count}개 · {failed}개는 안 됨",
   "Hide what it did": "한 일 접기",
+  // The "more" button's own name where that record holds a step that did not work: the failure is behind it.
+  "More. A step did not work": "더 보기 · 안 된 단계 있음",
   "Calling a tool": "도구 부르는 중",
   "Checking the clock": "시각 보는 중",
   "Writing it down": "기억해 두는 중",
@@ -2127,8 +2129,9 @@ export const ko: Record<string, string> = {
   browser: "브라우저",
   "unknown system": "운영체제 모름",
   /*
-   * 봇의 답 아래 좋아요·아쉬워요. 버튼 두 개의 말투에 맞춰 해요체로 썼다. 서버는 이유를 키로만
-   * 받고(`not-as-asked`…), 여기서 그 키를 말로 바꾼다. 운영자에게 가는 알림의 말은 서버 쪽이다.
+   * 봇의 답 아래 '더 보기' 메뉴의 좋아요·아쉬워요(2026-10-04까지는 답 아래 버튼 두 개였다). 두 줄의
+   * 말투에 맞춰 해요체로 썼다. 서버는 이유를 키로만 받고(`not-as-asked`…), 여기서 그 키를 말로
+   * 바꾼다. 운영자에게 가는 알림의 말은 서버 쪽이다.
    */
   "Good answer": "좋아요",
   "Could be better": "아쉬워요",

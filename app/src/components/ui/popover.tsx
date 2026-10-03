@@ -16,6 +16,10 @@ import { cn } from "@/lib/utils";
  *
  * `shadow-popover` and `rounded-lg`, the same surface every menu and select in the app is drawn on
  * (docs/laf/design-tokens.md §2 and §4) — a new kind of floating panel is not a new elevation.
+ *
+ * `anchor` IS FOR A PANEL WITH NO TRIGGER OF ITS OWN. 아쉬워요 is a row of an answer's menu now, and
+ * the row is gone by the time its question opens; the panel is opened from state and placed
+ * against the button that stays (`answer-rating.tsx`).
  */
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -29,19 +33,21 @@ function PopoverContent({
   className,
   align = "start",
   alignOffset = 0,
+  anchor,
   side = "bottom",
   sideOffset = 6,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
+    "align" | "alignOffset" | "anchor" | "side" | "sideOffset"
   >) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
+        anchor={anchor}
         className="isolate z-50 outline-hidden"
         side={side}
         sideOffset={sideOffset}
