@@ -247,14 +247,14 @@ describe("which lines are a run", () => {
       expect([code, stepDidNotWork(sentence)]).toEqual([code, true]);
     }
     // A service's own answer is not: prose, a list, an object that says it went well — and one too
-    // long to be an object of ours is not read to find out.
+    // long to be an object of ours, and not beginning as ours do, is not read to find out.
     for (const result of [
       "ok",
       "메일 2통을 찾았어요.",
       JSON.stringify({ ok: true, items: [] }),
       JSON.stringify([{ id: 1 }]),
       `${TOOL_RESULT_KO["laf:stopped"]} 라고 적힌 메일`,
-      JSON.stringify({ ok: false, pad: "x".repeat(5000) }),
+      JSON.stringify({ pad: "x".repeat(5000), ok: false }),
     ]) {
       expect([result.slice(0, 40), stepDidNotWork(result)]).toEqual([
         result.slice(0, 40),
@@ -301,6 +301,21 @@ describe("which lines are a run", () => {
         ]).map(([id]) => id),
       ).toEqual(["call-2", "call-3"]);
     }
+    // However long the reason: a wrapper too long to be parsed is known by how it begins (round 5).
+    const long = toolFailureText({ refused: true, reason: "가".repeat(5000) });
+    expect(long.length).toBeGreaterThan(4096);
+    expect(stepDidNotWork(long)).toBe(true);
+    expect(stepDidNotWork(`Error: ${"x".repeat(5000)}`)).toBe(true);
+    // The server's own refusals are written the same way, `ok` first.
+    expect(
+      stepDidNotWork(
+        JSON.stringify({ ok: false, code: "laf:x", reason: "y".repeat(5000) }),
+      ),
+    ).toBe(true);
+    // A service's own long answer is still not read to find out — wherever it says `ok`.
+    expect(
+      stepDidNotWork(JSON.stringify({ items: ["z".repeat(5000)], ok: false })),
+    ).toBe(false);
     // A fact the table has no sentence for is handed over as itself, and is one too.
     expect(stepDidNotWork("laf:some_new_fact")).toBe(true);
     expect(stepDidNotWork("laf: 로 시작하는 메일 제목")).toBe(false);
