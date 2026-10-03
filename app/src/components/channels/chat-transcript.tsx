@@ -86,6 +86,8 @@ import {
   failurePlaces,
   furthestSeen,
   openBrowsingTask,
+  openStepRuns,
+  rowsOfStepRun,
   stepRunsOf,
   type TranscriptItem,
   toVisibleChatItems,
@@ -1489,15 +1491,22 @@ export function ChatTranscript({
    * thinking line, the failures, the jumps — goes on reading every step.
    */
   const stepRuns = stepRunsOf(items);
-  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(
+  /** The rows a run was opened by: a run is open while it holds one (`openStepRuns` says why). */
+  const [openedRows, setOpenedRows] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const handleToggleRun = (runId: string) =>
-    setOpenRuns((open) => {
-      const next = new Set(open);
-      if (!next.delete(runId)) next.add(runId);
+  const openRuns = openStepRuns(items, stepRuns, openedRows);
+  const handleToggleRun = (runId: string) => {
+    const rows = rowsOfStepRun(items, stepRuns, runId);
+    const isOpen = openRuns.has(runId);
+    setOpenedRows((opened) => {
+      const next = new Set(opened);
+      // Closed by every row of it, so no row left behind keeps it open.
+      if (isOpen) for (const row of rows) next.delete(row);
+      else next.add(runId);
       return next;
     });
+  };
   /*
    * A ROW SOMEBODY WAS SENT TO IS NOT LEFT BEHIND A FOLD. 오늘, 만든 것 and 수첩 name a row by its id
    * (`lib/channels/jump.ts`) and the transcript goes to it once it is in the document — which a
@@ -1512,11 +1521,11 @@ export function ChatTranscript({
   const pendingRunId =
     pendingRow && !pendingRow.isNewest ? pendingRow.runId : null;
   useEffect(() => {
-    if (pendingRunId === null) return;
-    setOpenRuns((open) =>
-      open.has(pendingRunId) ? open : new Set(open).add(pendingRunId),
+    if (pendingRunId === null || pendingRowId === null) return;
+    setOpenedRows((opened) =>
+      opened.has(pendingRowId) ? opened : new Set(opened).add(pendingRowId),
     );
-  }, [pendingRunId]);
+  }, [pendingRunId, pendingRowId]);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1826,12 +1835,20 @@ export function ChatTranscript({
    */
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const jumpId = usePendingJump(channelId)?.messageId ?? null;
-  const start = windowStart(
+  const cut = windowStart(
     items.map((item) => item.id),
     pinnedId,
     firstUnreadId,
     jumpId,
   );
+  /*
+   * A WINDOW NEVER BEGINS PART-WAY INTO A RUN OF STEP LINES. The fold beside a run's newest line
+   * counts the whole run, and opening it draws the run's rows — the ones the window holds. Cut
+   * inside a run, it read 이전 5단계 and drew one of them, under a button that then said the record
+   * was open (review of this change, round 1). So the window reaches back to the run's first line.
+   * Folded, those rows are not drawn, and cost nothing to hold.
+   */
+  const start = stepRuns.get(cut)?.first ?? cut;
   const firstShownId = items[start]?.id ?? null;
   /** Past the top of what this window holds, the server has more: the page above is asked for. */
   const hasOlderPages = start === 0 && older?.has === true;
