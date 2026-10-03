@@ -183,13 +183,12 @@ function SkillsPage() {
           </Button>
         }
         /*
-         * WHAT A SKILL IS FOR, BEFORE WHAT IT IS. "A named instruction you invoke with /" is how the
-         * feature works; what somebody running a shop wants to know is that this is where the things
-         * they ask for every week are kept (UI/UX audit 0.5.3, item 11).
+         * NO SENTENCE UNDER THE TITLE, AND NONE UNDER A SECTION'S (2026-10-04, the owner: too many
+         * characters on the screen). The page said what a skill is for and how to call one, and the
+         * section of built-in ones said it again for its own rows: 96 of the page's 258 characters.
+         * What a skill is for and how it is called is one line, said where it is needed — in the
+         * person's own list while it is empty. A list that has rows shows the command on each.
          */
-        description={t(
-          "Things you ask for often, saved under a name. Type / and the name in the conversation — /review-reply, say — and the Bot does it the way you wrote it.",
-        )}
         title={t("Skills")}
       >
         {/*
@@ -251,9 +250,15 @@ function SkillsPage() {
            * A section title over nothing at all reads as a screen that failed to load. Routines and
            * the agents roster both answer this with a face and a sentence; this is that, so the
            * three of them say "none yet" the same way.
+           *
+           * ONE LINE, AND NO SECOND 새 스킬. The line is what a skill is for and how it is called —
+           * what the page's own sentence said — and the verb is the one on the title's row.
            */}
           {settled?.state === "empty" ? (
-            <div className="flex flex-col items-center gap-3 py-10">
+            <div
+              className="flex flex-col items-center gap-3 py-10"
+              data-skills-empty
+            >
               {/* The plainest face the generator makes: a skill is a note, not a character. */}
               <BotAvatar
                 className="opacity-80"
@@ -262,21 +267,9 @@ function SkillsPage() {
               />
               <p className="text-center text-sm text-muted-foreground">
                 {t(
-                  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.",
+                  "Save something you ask for often, and call it in the conversation by / and its name.",
                 )}
               </p>
-              {/* The way to write one, where the sentence says to — not only in the header. */}
-              {showCreate ? null : (
-                <Button
-                  nativeButton={false}
-                  render={(props) => (
-                    <Link search={{ new: true }} to="/skills" {...props} />
-                  )}
-                  variant="secondary"
-                >
-                  {t("New skill")}
-                </Button>
-              )}
             </div>
           ) : null}
           {!!mine?.length && (
@@ -367,12 +360,7 @@ function SkillsPage() {
         </PageSection>
 
         {builtIn.length > 0 ? (
-          <PageSection
-            description={t(
-              "They come built in, and your Bot reaches for one when a task needs it. Type / and the name to ask for one yourself.",
-            )}
-            title={t("Built-in skills")}
-          >
+          <PageSection title={t("Built-in skills")}>
             <PageRows>
               {builtIn.map((skill, index) => (
                 <StaggerItem index={index} key={skill.id}>
@@ -405,12 +393,7 @@ function SkillsPage() {
          * written nothing yet is the normal case, and a permanently empty section reads as broken.
          */}
         {deployment.length > 0 ? (
-          <PageSection
-            description={t(
-              "Written for everyone by an administrator. Which Bots carry them is decided in Admin.",
-            )}
-            title={t("Workspace skills")}
-          >
+          <PageSection title={t("Workspace skills")}>
             <PageRows>
               {deployment.map((skill, index) => (
                 <StaggerItem index={index} key={skill.id}>

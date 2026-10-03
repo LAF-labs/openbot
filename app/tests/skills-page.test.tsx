@@ -42,9 +42,10 @@ afterAll(async () => {
   await removeAppDom();
 });
 
-// A shop's example since 2026-09-24 (UI/UX audit 0.5.3, item 11), not "any Bot you own".
+// One line since 2026-10-04: what a skill is for and how it is called, said by the empty list (the
+// page's own sentence, and a shop's example under it, went — `everyday-screens.test.tsx`).
 const NONE_YET =
-  "Nothing saved yet. Save something you ask for often, like a polite reply to a new review.";
+  "Save something you ask for often, and call it in the conversation by / and its name.";
 const FAILED = "Your skills could not be loaded.";
 
 function skill(
