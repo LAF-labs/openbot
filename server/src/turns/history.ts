@@ -6,8 +6,16 @@
  * window now opens on the newest page and asks for the one before it as the person scrolls up, by
  * the thread store's own `seq`: the durable cursor, which never changes for a message once written.
  *
- * A PAGE NEVER STARTS ON A RESULT. A tool's result read without the call it answers draws as nothing
- * and looks like a gap; the page reaches back past results to the message that asked for them.
+ * A PAGE BEGINS WHERE A TURN BEGAN, where that is within reach (`rowsOfPage`): at the person's
+ * message. What a window draws under an answer is read from the steps of its own turn — the pages
+ * it was read from, the record of what was done for it, and whose data it was said from, a line a
+ * weather answer owes by law — and a page that began on the answer itself had none of them to read:
+ * the answer stood at the top of the conversation with no source under it until the person asked
+ * for the page above (Codex on pull request 50).
+ *
+ * AND IT NEVER STARTS ON A RESULT, however long the turn. A tool's result read without the call it
+ * answers draws as nothing and looks like a gap; where the turn's beginning is out of reach the
+ * page reaches back past results to the message that asked for them, as it always did.
  */
 import type { Message } from "@ag-ui/client";
 import { and, desc, eq, lt } from "drizzle-orm";
@@ -25,8 +33,30 @@ export const HISTORY_PAGE = 80;
 /** The most a window may ask for in one page. */
 export const HISTORY_PAGE_MAX = 200;
 
-/** How far a page reaches back past results for the call they answer. */
-const REACH_BACK = 40;
+/** How far a page reaches back for the beginning of the turn it would otherwise start inside. */
+export const REACH_BACK = 40;
+
+/**
+ * How many of the rows read the page keeps. `roles` is newest first, as they are read; at most
+ * `limit` of them are the page, and the rest are what it may reach back into.
+ *
+ *  1. To the person's message that began the turn the page would start in.
+ *  2. Where that is further back than was read — a turn of more than `REACH_BACK` rows above the
+ *     page — past results only, to the call that asked for them.
+ *
+ * A turn that long keeps the old seam: its first answer on this page is drawn without what its
+ * earlier steps would have put under it, until the page above is asked for.
+ */
+export function rowsOfPage(roles: readonly string[], limit: number): number {
+  const page = Math.min(limit, roles.length);
+  if (page === 0) return 0;
+  let take = page;
+  while (take < roles.length && roles[take - 1] !== "user") take += 1;
+  if (roles[take - 1] === "user") return take;
+  take = page;
+  while (take < roles.length && roles[take - 1] === "tool") take += 1;
+  return take;
+}
 
 export type HistoryPage = {
   /** Oldest first, as the transcript draws them. */
@@ -81,11 +111,11 @@ export async function historyPage(
     const message = parseMessage(row.message);
     return message ? [{ seq: row.seq, message }] : [];
   });
-  // Newest first here: keep the page, then reach past any results at its top for their call.
-  let take = Math.min(limit, parsed.length);
-  while (take < parsed.length && parsed[take - 1]?.message.role === "tool") {
-    take += 1;
-  }
+  // Newest first here: keep the page, and reach back to where the turn at its top began.
+  const take = rowsOfPage(
+    parsed.map((entry) => entry.message.role),
+    limit,
+  );
   const page = parsed.slice(0, take).reverse();
   // More was read than kept, or the read itself stopped at its limit with older rows beyond it.
   const hasOlder =
