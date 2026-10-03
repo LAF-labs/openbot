@@ -1,11 +1,12 @@
+import type { Message, ToolCall } from "@ag-ui/core";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
-import { TOOL_SEARCH } from "@shared/tools/bridge";
+import { serverKeyOf, TOOL_CALL, TOOL_SEARCH } from "@shared/tools/bridge";
 import {
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
 } from "@shared/tools/gallery";
-import type { Message, ToolCall } from "@ag-ui/core";
+import { withheldMarksIn } from "@shared/tools/withheld";
 import {
   BROWSING_TOOLS,
   type BrowsingStep,
@@ -139,6 +140,91 @@ export function withBrowsingTasks(
     out.push(item);
   }
   return out;
+}
+
+/**
+ * Whether a call is drawn as a plain step line that a newer one may stand in front of.
+ *
+ * ONLY THE LINES KNOWN TO BE LINES. A connected service's tool ("메일 찾기 · 지메일"), and the two
+ * ways a Bot reaches a tool that is not in front of it. Everything else that is drawn by name — a
+ * card from the gallery, a file handed over, the clock, a note — is left where it is: a card folded
+ * behind the line after it would be a thing the Bot made, hidden by the next thing it did. A name
+ * left off this list is a line that stays in the open, which is how every line was until now.
+ */
+export function isFoldableStep(name: string): boolean {
+  return (
+    name === TOOL_SEARCH || name === TOOL_CALL || serverKeyOf(name) !== null
+  );
+}
+
+/**
+ * Whether a step line has something on it the person is waited on for, or was promised — a line
+ * that is never put behind a fold, whatever comes after it.
+ *
+ * - STILL OUT: no result yet. A boundary's question is drawn on the line of the call that raised it
+ *   (`ApprovalRequest`), and a model may ask for two calls in one breath, so the call waiting on the
+ *   person need not be the newest. Behind a fold its card would be drawn nowhere: a question nobody
+ *   can see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
+ * - A WITHHELD MARK IN ITS RESULT. The 보기 for a mail's one-time code belongs on that call's own
+ *   line (`WithheldSecrets`), and the person who asked for the code is waiting on it — not on the
+ *   search the Bot made after reading the mail.
+ */
+function staysInTheOpen(
+  step: Extract<VisibleChatItem, { kind: "tool" }>,
+): boolean {
+  if (step.result === undefined) return true;
+  // The cheap look first: this runs over every step of the conversation on every chunk.
+  return (
+    step.result.includes("[[withheld:") &&
+    withheldMarksIn(step.result).length > 0
+  );
+}
+
+/** Where an item sits in a run of step lines: the run's first id, its length, and whether last. */
+export type StepRunPlace = { runId: string; size: number; isNewest: boolean };
+
+/**
+ * The runs of step lines: two or more drawn one after another with nothing between them.
+ *
+ * MEASURED ON A TRIAL DEPLOYMENT, 2026-10-03 (the owner's screenshot): "내 지메일에 비즈니스메일
+ * 온 거 있나 보고 알려줘" left five grey lines stacked above the answer — 도구 찾는 중, 메일 찾기 ·
+ * 지메일 twice, 메일 읽기 · 지메일 twice — each a row of its own, and the answer a screen further
+ * down for it. The owner's rule: one line that shows the newest, and the whole record when it is
+ * opened.
+ *
+ * By index into `items`, and only for the members of a run: a line alone is drawn as it always
+ * was. Anything between two lines ends the run — the Bot's own sentence, a card, a browsing task,
+ * the person's next message — so what is folded is only ever lines, and a run never crosses a turn.
+ *
+ * And a line that must stay in the open (`staysInTheOpen`) ends its run WITH itself: it is that
+ * run's newest, so it is the one drawn, and the steps after it begin a run of their own. What is
+ * behind a fold is therefore only ever a finished step with nothing on it for the person.
+ */
+export function stepRunsOf(
+  items: readonly TranscriptItem[],
+): Map<number, StepRunPlace> {
+  const places = new Map<number, StepRunPlace>();
+  let from = -1;
+  const close = (until: number) => {
+    const size = until - from;
+    if (from >= 0 && size >= 2) {
+      const runId = items[from]?.id ?? "";
+      for (let at = from; at < until; at += 1) {
+        places.set(at, { runId, size, isNewest: at === until - 1 });
+      }
+    }
+    from = -1;
+  };
+  items.forEach((item, index) => {
+    if (item.kind !== "tool" || !isFoldableStep(item.toolCall.function.name)) {
+      close(index);
+      return;
+    }
+    if (from < 0) from = index;
+    if (staysInTheOpen(item)) close(index + 1);
+  });
+  close(items.length);
+  return places;
 }
 
 /**

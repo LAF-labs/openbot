@@ -1,0 +1,387 @@
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
+import type { Message } from "@ag-ui/core";
+import { withheldMark } from "@shared/tools/withheld";
+import {
+  isFoldableStep,
+  stepRunsOf,
+  toVisibleChatItems,
+  withBrowsingTasks,
+} from "../src/components/channels/chat-messages";
+import {
+  APP_DOM_TIMEOUT_MS,
+  installAppDom,
+  mountApp,
+  removeAppDom,
+  unmountApps,
+} from "./support/app-router";
+import {
+  acted,
+  installTurnStreams,
+  removeTurnStreams,
+  turnServer,
+} from "./support/turn-server";
+
+/**
+ * STEP LINES, ONE TO A RUN.
+ *
+ * Measured on a trial deployment, 2026-10-03 (the owner's screenshot): "내 지메일에 비즈니스메일 온
+ * 거 있나 보고 알려줘" left five grey lines stacked above the answer — 도구 찾는 중, 메일 찾기 ·
+ * 지메일 twice, 메일 읽기 · 지메일 twice — a row each. The owner's rule: one line that shows the
+ * newest, and the whole record when it is opened.
+ *
+ * The projection first (which lines are a run), then the conversation people use, mounted, with the
+ * server's own history and a turn that is still going.
+ */
+
+beforeAll(async () => {
+  await installAppDom();
+  installTurnStreams();
+}, APP_DOM_TIMEOUT_MS);
+afterEach(async () => {
+  await unmountApps();
+});
+setDefaultTimeout(30_000);
+afterAll(async () => {
+  removeTurnStreams();
+  await removeAppDom();
+});
+
+const ASKED: Message = {
+  id: "q-asked",
+  role: "user",
+  content: "내 메일에 온 것 있나 보고 알려줘",
+};
+/** A connected service's tool this app has no words for: its line reads "Used a connected service". */
+const SERVICE_TOOL = "mcp__orders__look_up";
+const called = (id: string, name = SERVICE_TOOL): Message =>
+  ({
+    id: `a-${id}`,
+    role: "assistant",
+    content: "",
+    toolCalls: [
+      {
+        id: `call-${id}`,
+        type: "function",
+        function: { name, arguments: "{}" },
+      },
+    ],
+  }) as Message;
+const answered = (id: string, content = "ok"): Message =>
+  ({
+    id: `t-${id}`,
+    role: "tool",
+    toolCallId: `call-${id}`,
+    content,
+  }) as Message;
+/** A mail's text as the Bot was given it: the one-time code taken out, a mark where it was. */
+const MAIL_WITH_A_CODE = `제목: 인증번호 안내\n인증번호: ${withheldMark("code", "Ab12Cd34Ef56")}`;
+const said = (id: string, text: string): Message => ({
+  id,
+  role: "assistant",
+  content: text,
+});
+/** A step and its result, as the record holds a finished one. */
+const done = (id: string, name?: string): Message[] => [
+  called(id, name),
+  answered(id),
+];
+
+const placesOf = (messages: Message[]) => {
+  const items = withBrowsingTasks(toVisibleChatItems(messages));
+  return [...stepRunsOf(items)].map(([index, place]) => [
+    items[index]?.id,
+    place.runId,
+    place.size,
+    place.isNewest,
+  ]);
+};
+
+describe("which lines are a run", () => {
+  test("a connected service's tool and the Bot's two ways to a tool; nothing that draws a card", () => {
+    for (const name of [
+      "mcp__gmail__search_messages",
+      "mcp__web-search__search",
+      "tool_search",
+      "tool_call",
+    ]) {
+      expect([name, isFoldableStep(name)]).toEqual([name, true]);
+    }
+    for (const name of [
+      "askChoice",
+      "now",
+      "remember",
+      "computer_navigate",
+      "look_up_orders",
+    ]) {
+      expect([name, isFoldableStep(name)]).toEqual([name, false]);
+    }
+  });
+
+  test("two or more lines with nothing between them are one run, named by its first", () => {
+    expect(
+      placesOf([
+        ASKED,
+        ...done("1"),
+        ...done("2"),
+        ...done("3"),
+        said("a", "한 통 와 있어요."),
+      ]),
+    ).toEqual([
+      ["call-1", "call-1", 3, false],
+      ["call-2", "call-1", 3, false],
+      ["call-3", "call-1", 3, true],
+    ]);
+  });
+
+  test("a line alone is not a run, and a run still going ends at the step that is out", () => {
+    expect(placesOf([ASKED, ...done("1"), said("a", "없어요.")])).toEqual([]);
+    expect(placesOf([ASKED, ...done("1"), called("2")])).toEqual([
+      ["call-1", "call-1", 2, false],
+      ["call-2", "call-1", 2, true],
+    ]);
+  });
+
+  /*
+   * WHAT A PERSON IS WAITED ON FOR IS NEVER BEHIND A FOLD. A boundary's question is drawn on the
+   * line of the call that raised it, and the 보기 for a mail's one-time code on the line of the call
+   * that read the mail. A model may ask for two calls in one breath, and reads on after a mail — so
+   * neither line need be the newest, and folded, its card or its button would be drawn nowhere.
+   */
+  test("a step still out and a step holding something for the person each end their run, drawn", () => {
+    // Two calls in one breath, the first perhaps waiting on its answer: both lines stay.
+    expect(placesOf([ASKED, called("1"), called("2")])).toEqual([]);
+    expect(placesOf([ASKED, ...done("1"), called("2"), called("3")])).toEqual([
+      ["call-1", "call-1", 2, false],
+      ["call-2", "call-1", 2, true],
+    ]);
+    // The mail the code was in, read second of four: its line is the newest of the first run.
+    expect(
+      placesOf([
+        ASKED,
+        ...done("1"),
+        called("2"),
+        answered("2", MAIL_WITH_A_CODE),
+        ...done("3"),
+        ...done("4"),
+      ]),
+    ).toEqual([
+      ["call-1", "call-1", 2, false],
+      ["call-2", "call-1", 2, true],
+      ["call-3", "call-3", 2, false],
+      ["call-4", "call-3", 2, true],
+    ]);
+    // Text that only looks like the start of a mark is an ordinary result.
+    expect(
+      placesOf([
+        ASKED,
+        called("1"),
+        answered("1", "[[withheld:nothing]] 라고 적힌 메일"),
+        ...done("2"),
+      ]),
+    ).toEqual([
+      ["call-1", "call-1", 2, false],
+      ["call-2", "call-1", 2, true],
+    ]);
+  });
+
+  test("the Bot's own sentence, a card and the person's next message each end a run", () => {
+    expect(
+      placesOf([
+        ASKED,
+        ...done("1"),
+        ...done("2"),
+        said("between", "두 통 더 볼게요."),
+        ...done("3"),
+        ...done("4"),
+        ...done("card", "now"),
+        ...done("5"),
+        { id: "q-2", role: "user", content: "그럼 답장도 써 줘" },
+        ...done("6"),
+        ...done("7"),
+      ]),
+    ).toEqual([
+      ["call-1", "call-1", 2, false],
+      ["call-2", "call-1", 2, true],
+      ["call-3", "call-3", 2, false],
+      ["call-4", "call-3", 2, true],
+      ["call-6", "call-6", 2, false],
+      ["call-7", "call-6", 2, true],
+    ]);
+  });
+});
+
+const log = (host: HTMLElement) => host.querySelector('[role="log"]');
+/** How many step lines of the stand-in tool the transcript is drawing. */
+const linesDrawn = (host: HTMLElement) =>
+  (log(host)?.textContent ?? "").split("Used a connected service").length - 1;
+const folds = (host: HTMLElement) => [
+  ...(log(host)?.querySelectorAll<HTMLButtonElement>("button[aria-expanded]") ??
+    []),
+];
+const fold = (host: HTMLElement) => folds(host)[0] ?? null;
+
+async function conversation(channelId: string, history: Message[]) {
+  const server = turnServer({ channelId, history });
+  const view = await mountApp({
+    path: `/channel/${channelId}`,
+    api: server.api,
+  });
+  await view.waitFor(
+    () => log(view.host)?.textContent?.includes(String(ASKED.content)) === true,
+    "the conversation",
+    8000,
+  );
+  return { server, view };
+}
+
+describe("a finished conversation with a run of steps", () => {
+  test("draws the newest line and a fold for the rest; opened, the whole record; closed again, one", async () => {
+    const { server, view } = await conversation("channel_fold-record", [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      ...done("3"),
+      ...done("4"),
+      said("a-answer", "비즈니스 메일 한 통 와 있어요."),
+    ]);
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(linesDrawn(view.host)).toBe(1);
+    expect(fold(view.host)?.textContent).toBe("3 earlier steps");
+    expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("false");
+
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 4, "every line", 4000);
+    expect(fold(view.host)?.textContent).toBe("Hide earlier steps");
+    expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
+
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 1, "one line", 4000);
+    // The answer is where it was throughout.
+    expect(log(view.host)?.textContent).toContain(
+      "비즈니스 메일 한 통 와 있어요.",
+    );
+    server.close();
+    await view.unmount();
+  });
+
+  test("leaves a line alone as it was, and lines the Bot spoke between as two", async () => {
+    const { server, view } = await conversation("channel_fold-alone", [
+      ASKED,
+      ...done("1"),
+      said("a-between", "한 통 더 볼게요."),
+      ...done("2"),
+      said("a-answer", "두 통 와 있어요."),
+    ]);
+    await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
+    expect(fold(view.host)).toBeNull();
+    server.close();
+    await view.unmount();
+  });
+});
+
+describe("a line with something on it for the person", () => {
+  test("stays drawn with steps after it: the mail a code was in, and the newest, a fold beside each", async () => {
+    const { server, view } = await conversation("channel_fold-code", [
+      ASKED,
+      ...done("1"),
+      called("2"),
+      answered("2", MAIL_WITH_A_CODE),
+      ...done("3"),
+      ...done("4"),
+      said("a-answer", "인증번호가 온 메일이 있어요."),
+    ]);
+    await view.waitFor(() => folds(view.host).length === 2, "two folds", 4000);
+    expect(linesDrawn(view.host)).toBe(2);
+    expect(folds(view.host).map((button) => button.textContent)).toEqual([
+      "1 earlier steps",
+      "1 earlier steps",
+    ]);
+    // The row of the call that read the mail is in the document, where its 보기 is drawn.
+    expect(
+      log(view.host)?.querySelector('[data-message-id="call-2"]'),
+    ).not.toBeNull();
+    expect(
+      log(view.host)?.querySelector('[data-message-id="call-1"]'),
+    ).toBeNull();
+    server.close();
+    await view.unmount();
+  });
+
+  test("a row another screen sends the person to is opened to, and stays open", async () => {
+    const channelId = "channel_fold-jump";
+    const { server, view } = await conversation(channelId, [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      ...done("3"),
+      said("a-answer", "세 번 찾아봤어요."),
+    ]);
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(linesDrawn(view.host)).toBe(1);
+
+    const { requestJump } = await import("../src/lib/channels/jump");
+    await acted(() => requestJump({ channelId, messageId: "call-1" }));
+    await view.waitFor(() => linesDrawn(view.host) === 3, "every line", 4000);
+    await view.waitFor(
+      () =>
+        log(view.host)
+          ?.querySelector('[data-message-id="call-1"]')
+          ?.getAttribute("data-jumped") === "true",
+      "the row marked",
+      4000,
+    );
+    expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
+    server.close();
+    await view.unmount();
+  });
+});
+
+describe("a turn that is still going", () => {
+  test("shows the step that is out, with the ones before it behind the fold as they pile up", async () => {
+    const channelId = "channel_fold-going";
+    const server = turnServer({
+      channelId,
+      history: [ASKED],
+      turn: { id: "turn-0", status: "running", asked: [ASKED.id] },
+      turnMessages: [ASKED],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () =>
+        log(view.host)?.textContent?.includes(String(ASKED.content)) === true,
+      "the question the turn is for",
+      8000,
+    );
+    const writes = (messages: Message[]) => acted(() => server.say(messages));
+
+    await writes([called("1")]);
+    await view.waitFor(() => linesDrawn(view.host) === 1, "the first step");
+    expect(fold(view.host)).toBeNull();
+
+    await writes([...done("1"), called("2")]);
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(linesDrawn(view.host)).toBe(1);
+    expect(fold(view.host)?.textContent).toBe("1 earlier steps");
+
+    // Opened mid-task, it stays open as the run grows: the run is named by its first line.
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
+    await writes([...done("1"), ...done("2"), called("3")]);
+    await view.waitFor(() => linesDrawn(view.host) === 3, "all three", 4000);
+    expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
+
+    server.close();
+    await view.unmount();
+  });
+});
