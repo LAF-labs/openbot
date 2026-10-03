@@ -245,10 +245,15 @@ describe("words kept for a card are shown on the card itself", () => {
     expect(isShownOnCard(undefined)).toBe(true);
   });
 
-  test("not once the door has failed to take them, through every offer made again", () => {
-    expect(isShownOnCard({ at: "resting", tries: 1 })).toBe(false);
-    expect(isShownOnCard({ at: "due", tries: 1 })).toBe(false);
-    expect(isShownOnCard({ at: "out", tries: 1 })).toBe(false);
+  // Review, thirteenth round: back under the card, they gave its options back beside the offer.
+  test("and while the door has not taken them, through every offer made again", () => {
+    expect(isShownOnCard({ at: "resting", tries: 1 })).toBe(true);
+    expect(isShownOnCard({ at: "due", tries: 1 })).toBe(true);
+    expect(isShownOnCard({ at: "out", tries: 1 })).toBe(true);
+  });
+
+  test("but not once another answer to the question reached the card first", () => {
+    expect(isShownOnCard({ at: "answered", tries: 0 })).toBe(false);
   });
 });
 

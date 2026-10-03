@@ -90,23 +90,24 @@ export type Offer = {
 };
 
 /**
- * Whether the card itself shows words kept for it (`useAnswerOnItsWay`), rather than the list of
- * what waits for the turn: yes, unless the door has failed to take them since this screen opened.
- * `offer` is how this screen's offer of them stands, where it has made one.
+ * Whether the card itself shows words kept for it (`useAnswerOnItsWay`), and so takes no press:
+ * yes, for as long as they are kept for it — but not once another answer to the question reached
+ * the card first (`answered`), when they are what the person says next.
  *
- * So: on their way to the door for the first time, taken by it — and kept from before a reload,
- * until this screen's own offer of them says otherwise. An answer is taken at once and filed only
- * when the Bot is free again (`awaitPerson` in the server's engine), which behind a routine is
- * minutes: a page reloaded in that time read "보낼 예정 · 지금 일이 끝나면 전해요" under words the
- * Bot already had.
+ * An answer is taken at once and filed only when the Bot is free again (`awaitPerson` in the
+ * server's engine), which behind a routine is minutes: a page reloaded in that time read "보낼 예정
+ * · 지금 일이 끝나면 전해요" under words the Bot already had.
  *
- * ONCE THE DOOR HAS NOT TAKEN THEM THEY STAY UNDER THE CARD AS WAITING, through every offer made
- * again: taken off that list for each one, they blinked on every retry and pulled the transcript
- * to the end each time they came back.
+ * AND WHILE THE DOOR HAS NOT TAKEN THEM, TOO. They used to go back under the card as waiting once
+ * the door had failed to take them, and the card's options came back with them: a press then went
+ * to the door beside the words being offered again, either could win, and where the press did the
+ * words went after the turn as a message nobody meant (review, thirteenth round). So the card
+ * shows them, and takes no press, until the conversation says what became of them; a door that
+ * stays down leaves the card showing them with nothing to press, and typing again is the way to
+ * change the answer.
  */
 export function isShownOnCard(offer: Offer | undefined): boolean {
-  if (offer?.at === "answered") return false;
-  return offer === undefined || offer.at === "taken" || offer.tries === 0;
+  return offer?.at !== "answered";
 }
 
 /**
