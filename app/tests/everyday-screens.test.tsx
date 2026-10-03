@@ -109,6 +109,7 @@ const SCREENS = [
   ["Updates", "/feed"],
   ["Ideas", "/ideas"],
   ["Goals", "/goals"],
+  ["Made", "/made"],
 ] as const;
 
 describe("a page's title stands alone", () => {
@@ -576,5 +577,89 @@ describe("목표", () => {
       ];
     expect(said).toContain("대화");
     expect(ko["Start in the conversation"]).toBe("대화에서 시작");
+  });
+});
+
+describe("만든 것", () => {
+  const item = (tool: string, shelf: string, title: string | null) => ({
+    tool,
+    shelf,
+    title,
+    at: "2026-10-02T08:05:00.000Z",
+    channelId: "ch-1",
+    messageId: `msg-${tool}`,
+  });
+  const made = (items: unknown[]): ApiAnswer => {
+    return ({ pathname, url }) => {
+      if (pathname !== "/api/agents/bot-1/made") return undefined;
+      const shelf = url.searchParams.get("shelf");
+      return json({
+        items: shelf
+          ? items.filter((one) => (one as { shelf: string }).shelf === shelf)
+          : items,
+        next: null,
+      });
+    };
+  };
+
+  test("a card's kind is its icon: the word is beside the time only where it says more", async () => {
+    const view = await screen(
+      "/made",
+      made([
+        item("showFile", "file", "9월 정산.csv"),
+        item("markdownTable", "table", "메뉴 가격표"),
+        item("showBarChart", "table", "요일별 매출"),
+        item("showChecklist", "checklist", null),
+      ]),
+    );
+    const cards = [...view.main.querySelectorAll("[data-made-item]")].map(
+      (card) => ({
+        kind: card.getAttribute("data-made-item"),
+        title: card.querySelector("span > span")?.textContent,
+        // What the muted line says before its time.
+        beside: (
+          card.querySelector("[data-made-when]")?.textContent ?? ""
+        ).includes(" · "),
+        icon: card.querySelector(":scope > span")?.getAttribute("title"),
+      }),
+    );
+    expect(cards).toEqual([
+      // The file icon says 파일, the table icon 표: neither is said again in words.
+      { kind: "showFile", title: "9월 정산.csv", beside: false, icon: "File" },
+      {
+        kind: "markdownTable",
+        title: "메뉴 가격표",
+        beside: false,
+        icon: "Table",
+      },
+      // A chart sits under the table icon, so its kind is still a word.
+      {
+        kind: "showBarChart",
+        title: "요일별 매출",
+        beside: true,
+        icon: "Bar chart",
+      },
+      // Untitled, it is called by its kind — once.
+      {
+        kind: "showChecklist",
+        title: "Checklist",
+        beside: false,
+        icon: "Checklist",
+      },
+    ]);
+    expect(
+      view.one('[data-made-item="showBarChart"] [data-made-when]').textContent,
+    ).toStartWith("Bar chart · ");
+  });
+
+  test("with nothing made: one line saying what will be here, and the header's one verb", async () => {
+    const view = await screen("/made", made([]));
+    expect(view.said("[data-made-empty]")).toEqual([
+      "Tables, checklists, writing and files your Bot makes are kept here.",
+    ]);
+    expect(view.said("[data-made-start]")).toEqual(["Make"]);
+    expect(
+      ko["Tables, checklists, writing and files your Bot makes are kept here."],
+    ).toBeTruthy();
   });
 });
