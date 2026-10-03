@@ -2230,17 +2230,16 @@ export function ChatTranscript({
                         /*
                          * What the Bot said between the task's steps is inside the card; said
                          * from the weather, its source line is under the card (`creditsByAnswer`)
-                         * — for as long as one of those sentences is on it, which is the card's to
-                         * know: a task that is over is a row with none of them.
+                         * — for as long as one of those sentences is on it, and read against the
+                         * ones that are. Both are the card's to know: a task that is over is a row
+                         * with none of them, and an open card shows the newest.
                          */
                         {...(credits.has(item.id)
                           ? {
-                              credit: (
+                              credit: (wordsDrawn: string) => (
                                 <CreditLine
                                   names={credits.get(item.id) ?? []}
-                                  text={item.notes
-                                    .map((note) => note.text)
-                                    .join("\n")}
+                                  text={wordsDrawn}
                                 />
                               ),
                             }

@@ -102,13 +102,18 @@ type BrowsingCardProps = {
   /** The row was pressed, or the head of the card it opened to: open it, or fold it back. */
   onFold: (isUnfolded: boolean) => void;
   /**
-   * The line naming whose data the Bot's sentences in this task were said from (`creditsByAnswer`).
-   * Drawn under the card WHILE ONE OF THOSE SENTENCES IS ON IT, and by the card because only the
-   * card knows when that is: the newest one stands on an open card, the rest are in its list —
-   * and a task that is over is a row with none of them on it. A source line under that row would
-   * be crediting words nobody can see.
+   * The line naming whose data the Bot's sentences in this task were said from (`creditsByAnswer`),
+   * GIVEN THE SENTENCES THAT ARE ON THE CARD RIGHT NOW. Drawn under the card while one of them is,
+   * and by the card because only the card knows which: the newest one stands on an open card, the
+   * rest are in its list — and a task that is over is a row with none of them on it. A source line
+   * under that row would be crediting words nobody can see.
+   *
+   * THE WORDS ARE HANDED BACK because the line is left out where the words already carry it, and
+   * that has to be asked of what is drawn. Asked of every sentence of the task, one in the closed
+   * list that named its source took the line away from the one on the card that did not (Codex on
+   * pull request 50).
    */
-  credit?: React.ReactNode;
+  credit?: (wordsDrawn: string) => React.ReactNode;
 };
 
 export function BrowsingCard(props: BrowsingCardProps) {
@@ -234,11 +239,15 @@ function TaskCard({
     onFold(isFolded);
   };
   /**
-   * One of the Bot's sentences is drawn: every one of them in the open list, or the newest on the
-   * open card — which gives its line to the state's own words where there are some (`detail`).
+   * The Bot's sentences that are drawn, or null where none is: every one of them in the open list,
+   * or the newest on the open card — which gives its line to the state's own words where there
+   * are some (`detail`).
    */
-  const saysTheBotsWords =
-    isExpanded || (!isFolded && !detail && latest !== undefined);
+  const wordsDrawn = isExpanded
+    ? item.notes.map((note) => note.text).join("\n")
+    : !isFolded && !detail && latest !== undefined
+      ? latest.text
+      : null;
 
   const picture = (
     <TaskPicture
@@ -502,7 +511,7 @@ function TaskCard({
             })
           : null}
       </div>
-      {saysTheBotsWords ? credit : null}
+      {credit && wordsDrawn !== null ? credit(wordsDrawn) : null}
     </>
   );
 }

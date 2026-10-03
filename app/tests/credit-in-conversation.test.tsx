@@ -229,4 +229,68 @@ describe("the source line, in the conversation", () => {
     server.close();
     await view.unmount();
   });
+
+  /*
+   * THE LINE IS LEFT OUT WHERE THE WORDS ON THE SCREEN CARRY IT — THE ONES ON THE SCREEN. An open
+   * card shows the newest thing the Bot said and keeps the rest in its list. Asked of every
+   * sentence of the task, an earlier one that named its source, out of sight, took the line away
+   * from the one on the card that did not (Codex on pull request 50).
+   */
+  test("is read against the sentence the card is showing, not against one in its closed list", async () => {
+    const page = { ok: true, url: "https://shop.example/", title: "우산" };
+    const channelId = "channel_credit-shown";
+    const server = turnServer({
+      channelId,
+      history: [
+        asked("비 오면 우산 살 곳 찾아 줘"),
+        ...weather("w1"),
+        ...done("b1", "computer_navigate", page),
+        // The first sentence names its source itself; the newest one does not.
+        said("a-first", "서울은 저녁에 비가 와요. 출처: 기상청"),
+        ...done("b2", "computer_read", page),
+        said("a-second", "비가 오니 우산 파는 곳을 더 볼게요."),
+        ...done("b3", "computer_read", page),
+        said("a-told", "근처에 두 곳이 있어요. 출처: 기상청"),
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    const task = () =>
+      log(view.host)?.querySelector<HTMLElement>(
+        '[data-message-id="call-b1"]',
+      ) ?? null;
+    const fold = () =>
+      task()?.querySelector<HTMLButtonElement>(
+        "button[aria-expanded]:not([aria-controls])",
+      ) ?? null;
+    const list = () =>
+      task()?.querySelector<HTMLButtonElement>("button[aria-controls]") ?? null;
+    await view.waitFor(() => fold() !== null, "the task's row", 8000);
+
+    // Opened: the card shows the newest sentence, which names nobody — so the screen does.
+    await view.click(fold() as HTMLButtonElement);
+    await view.waitFor(
+      () => lines(view.host).length === 1,
+      "the source line",
+      4000,
+    );
+    expect(task()?.textContent).toContain(
+      "비가 오니 우산 파는 곳을 더 볼게요.",
+    );
+    expect(task()?.textContent).not.toContain("서울은 저녁에 비가 와요.");
+
+    // The list opened: every sentence is on the screen, and one of them carries the line itself.
+    await view.click(list() as HTMLButtonElement);
+    await view.waitFor(
+      () => task()?.textContent?.includes("서울은 저녁에 비가 와요.") === true,
+      "the list",
+      4000,
+    );
+    expect(lines(view.host).map((line) => line.textContent)).toEqual([]);
+
+    server.close();
+    await view.unmount();
+  });
 });
