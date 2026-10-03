@@ -1,5 +1,9 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { toolErrorText, toolFailureText } from "@shared/tools/step-result";
+import {
+  stepFailureOf,
+  toolErrorText,
+  toolFailureText,
+} from "@shared/tools/step-result";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import * as z from "zod";
@@ -9,8 +13,10 @@ import {
   WithheldSecrets,
   withheldForDisplay,
 } from "@/components/channels/withheld-secrets";
+import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { stepLineOf } from "@/lib/copilot/step-labels";
+import { t } from "@/lib/i18n";
 import { LazyMarkdown } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
@@ -212,18 +218,44 @@ function PluginTool({
       // In a form the transcript can read back as "this did not happen" (`toolFailureText`).
       return toolFailureText(result);
     },
-    render: ({ status, toolCallId }) => {
+    render: ({ status, toolCallId, result: stored }) => {
       const entry = calls.current.get(toolCallId ?? "") ?? {};
       const { result, outcome } = entry;
 
-      // Render policy refusals separately from vendor/server failures.
-      if (outcome) {
+      /*
+       * HOW A CALL ENDED IS READ FROM ITS RESULT — THE ONE THE CONVERSATION KEEPS — WHOEVER RAN IT.
+       *
+       * This read what this window's own handler had learned, and nothing else. A turn the server
+       * owns never calls that handler, nor does a conversation read back after a reload. Measured
+       * 2026-10-03, mounted with a granted tool and a stored conversation: a step whose result was
+       * the service's error read "메일 읽기 · 지메일" with no warning, and a step whose result held
+       * a withheld code had no 보기 — the one thing the person who asked for the code was waiting
+       * on. Every chat turn is the server's now, so that was every step.
+       *
+       * So the line is drawn from the kept result (`stepFailureOf`). And where this window did run
+       * the call, from the very text its handler answered with (`toolFailureText`) rather than
+       * from the outcome beside it: one reader, so a line cannot say 차단됨 while the window is
+       * open and 실패 after a reload. A refusal's own sentence is the model's and is not shown —
+       * the line says what a person is told for that fact, where there are such words, and
+       * otherwise only that it was blocked or did not work. It used to be shown, as the detail.
+       */
+      const kept =
+        result === undefined && typeof stored === "string" && stored !== ""
+          ? stored
+          : undefined;
+      const failure = outcome
+        ? stepFailureOf(toolFailureText(outcome))
+        : kept === undefined
+          ? null
+          : stepFailureOf(kept);
+      if (failure && failure.kind !== "error") {
+        const words = failure.code ? OUTCOME_LABELS[failure.code] : undefined;
         return (
           <ToolLine
-            detail={outcome.reason}
-            failed={!outcome.refused}
+            detail={words ? t(words) : line.detail}
+            failed={failure.kind === "failed"}
             label={line.label}
-            refused={outcome.refused}
+            refused={failure.kind === "refused"}
           />
         );
       }
@@ -237,7 +269,7 @@ function PluginTool({
           <ApprovalRequest toolCallId={toolCallId} />
           <ToolLine
             detail={line.detail}
-            failed={result?.isError}
+            failed={result?.isError ?? failure?.kind === "error"}
             label={line.label}
             running={status !== "complete"}
           >
@@ -247,11 +279,20 @@ function PluginTool({
               <LazyMarkdown>
                 {withheldForDisplay(forDisplay(result.text))}
               </LazyMarkdown>
+            ) : failure?.kind === "error" ? (
+              // The service's own error, in its own words: what went wrong is the detail.
+              <LazyMarkdown>{forDisplay(failure.text)}</LazyMarkdown>
             ) : null}
           </ToolLine>
           {/* What a mail held that the Bot was not given — outside the folded detail, because the
-              owner who asked for a code is waiting on it, not on the mail around it. */}
-          {result ? <WithheldSecrets botId={botId} text={result.text} /> : null}
+              owner who asked for a code is waiting on it, not on the mail around it. Read from the
+              kept result for a call this window did not run; the answer itself stays folded away
+              there, as it was after every reload. */}
+          {result ? (
+            <WithheldSecrets botId={botId} text={result.text} />
+          ) : kept !== undefined && failure === null ? (
+            <WithheldSecrets botId={botId} text={kept} />
+          ) : null}
         </>
       );
     },
