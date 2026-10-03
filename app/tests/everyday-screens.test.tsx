@@ -110,6 +110,7 @@ const SCREENS = [
   ["Ideas", "/ideas"],
   ["Goals", "/goals"],
   ["Made", "/made"],
+  ["Routines", "/routines"],
 ] as const;
 
 describe("a page's title stands alone", () => {
@@ -661,5 +662,133 @@ describe("만든 것", () => {
     expect(
       ko["Tables, checklists, writing and files your Bot makes are kept here."],
     ).toBeTruthy();
+  });
+});
+
+describe("루틴", () => {
+  const routine = (over: Record<string, unknown> = {}) => ({
+    id: "routine-1",
+    agentId: "bot-1",
+    name: "아침 브리핑",
+    instruction: "매일 아침이다. 오늘 일정과 날씨를 세 줄로 알린다.",
+    summary: "오늘 날씨와 일정을 세 줄로 알려 드려요.",
+    scheduleKind: "daily",
+    intervalMinutes: null,
+    dailyLocal: "07:30",
+    dailyTimeZone: "Asia/Seoul",
+    dailyDays: [],
+    enabled: true,
+    pausedReason: null,
+    keepRunning: false,
+    lastRunAt: "2026-10-02T22:30:00.000Z",
+    nextRunAt: "2026-10-04T22:30:00.000Z",
+    ...over,
+  });
+  const routines = (list: unknown[]): ApiAnswer => {
+    return ({ pathname }) => {
+      if (pathname === "/api/routines") return json({ routines: list });
+      if (pathname === "/api/routines/suggestions") {
+        return json({ suggestions: [] });
+      }
+      if (pathname.endsWith("/runs")) return json({ runs: [] });
+      if (pathname.endsWith("/notepad")) {
+        return json({ notepad: { entries: [], updatedAt: null } });
+      }
+      return undefined;
+    };
+  };
+
+  test("a row is its name and one line, and opens by its chevron — not by a word", async () => {
+    const view = await screen("/routines", routines([routine()]));
+    const row = view.one("[data-routine-row]");
+    const lines = () =>
+      [...row.querySelectorAll(":scope > span")].map(
+        (line) => line.textContent,
+      );
+    expect(lines()).toHaveLength(2);
+    expect(lines()[0]).toBe("아침 브리핑");
+    // When it goes, and when it last went: the evidence that the switch kept its promise.
+    expect(lines()[1]).toContain("7:30");
+    expect(lines()[1]).toContain(" · Last ");
+    expect({
+      chevrons: row.querySelectorAll("svg").length,
+      open: row.getAttribute("aria-expanded"),
+      tip: row.getAttribute("title"),
+    }).toEqual({ chevrons: 1, open: "false", tip: "Details" });
+    // What it does and when it goes next are not on the row.
+    expect(view.count("[data-routine-summary]")).toBe(0);
+    expect(view.count("[data-routine-next]")).toBe(0);
+
+    await view.click(row);
+    expect({
+      open: row.getAttribute("aria-expanded"),
+      tip: row.getAttribute("title"),
+      summary: view.said("[data-routine-summary]"),
+      next: view.count("[data-routine-next]"),
+    }).toEqual({
+      open: "true",
+      tip: "Less",
+      summary: ["오늘 날씨와 일정을 세 줄로 알려 드려요."],
+      next: 1,
+    });
+    expect(view.one("[data-routine-next]").textContent).toStartWith("Next ");
+    expect(view.main.textContent).toContain("What the Bot is told each time");
+  });
+
+  test("지금 실행 keeps its words: a clock named only by a tooltip was a press nobody found", async () => {
+    // The first-hour walk, 2026-09-27 (`routine-form.test.ts` holds the source to it).
+    const view = await screen("/routines", routines([routine()]));
+    expect(view.buttonNamed("Run now")?.querySelectorAll("svg")).toHaveLength(
+      1,
+    );
+  });
+
+  test("a routine that is off says nothing about a next run, and one that never ran nothing about a last", async () => {
+    // Measured 2026-10-04: a routine switched off drew the run it had missed, "다음 실행 어제".
+    const view = await screen(
+      "/routines",
+      routines([routine({ enabled: false, lastRunAt: null })]),
+    );
+    const row = view.one("[data-routine-row]");
+    expect(view.one("[data-routine-line]").textContent).not.toContain("·");
+    await view.click(row);
+    expect(view.count("[data-routine-next]")).toBe(0);
+    expect(view.said("[data-routine-summary]")).toEqual([
+      "오늘 날씨와 일정을 세 줄로 알려 드려요.",
+    ]);
+  });
+
+  test("a routine the unread rule paused still says why, on its row, in words", async () => {
+    const view = await screen(
+      "/routines",
+      routines([routine({ enabled: false, pausedReason: "unread" })]),
+    );
+    const row = view.one("[data-routine-row]");
+    expect(
+      [...row.querySelectorAll(":scope > span")].map(
+        (line) => line.textContent,
+      )[2],
+    ).toBe("Paused — its results went unread for a while");
+    // And the banner over the list keeps every word: what it did, why, and what each press does.
+    expect(view.main.textContent).toContain(
+      "Keep running means they will not stop like this again, read or not.",
+    );
+  });
+
+  test("with no routine: a face and one line, and the one verb is the header's", async () => {
+    const view = await screen("/routines", routines([]));
+    const empty = view.one("[data-routines-empty]");
+    expect({
+      said: [...empty.querySelectorAll("p")].map((line) => line.textContent),
+      presses: empty.querySelectorAll("a, button").length,
+    }).toEqual({
+      said: ["What your Bot does on its own at set times is kept here."],
+      presses: 0,
+    });
+    expect(
+      [...view.main.querySelectorAll('a[href="/routines?new=true"]')].map(
+        (press) => press.textContent,
+      ),
+    ).toEqual(["New routine"]);
   });
 });

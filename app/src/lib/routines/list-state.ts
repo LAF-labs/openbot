@@ -47,7 +47,7 @@ export function routineListView(
      */
     empty:
       reading.state === "empty" && !isCreating
-        ? t("No routines yet. Give a Bot something to do every morning.")
+        ? t("What your Bot does on its own at set times is kept here.")
         : null,
   };
 }

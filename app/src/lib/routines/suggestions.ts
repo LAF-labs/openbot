@@ -129,6 +129,9 @@ export function routineSuggestionsQueryOptions() {
  *
  * The schedule is said by the same `scheduleLabel` a saved routine's row uses, so the card cannot
  * promise "매주 월요일 오전 8:00" in words the list would then write differently.
+ *
+ * A CARD THAT NEEDS NO CONNECTION SAYS ONLY WHEN. It said "연결 없이 바로" before its time: the
+ * absence of a thing, in words, on every card of a person who has connected nothing.
  */
 export function suggestionFactsLine(suggestion: RoutineSuggestion): string {
   const when = scheduleLabel({
@@ -143,11 +146,9 @@ export function suggestionFactsLine(suggestion: RoutineSuggestion): string {
     name: "",
     scheduleKind: "daily",
   } as Routine);
-  const on =
-    suggestion.via.length > 0
-      ? t("Using {connections}", {
-          connections: suggestion.via.map((one) => t(one.title)).join(", "),
-        })
-      : t("Needs no connection");
-  return `${on} · ${when}`;
+  return suggestion.via.length > 0
+    ? `${t("Using {connections}", {
+        connections: suggestion.via.map((one) => t(one.title)).join(", "),
+      })} · ${when}`
+    : when;
 }

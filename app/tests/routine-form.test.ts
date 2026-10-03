@@ -171,7 +171,9 @@ describe("the row", () => {
   test("shows both timings the server has been sending all along", () => {
     expect(page).toContain('t("Next {when}"');
     expect(page).toContain('t("Last {when}"');
-    expect(page).toContain('t("Not run yet")');
+    // A routine that has never run says nothing about a last run (2026-10-04): the row is its
+    // name and one line, and `everyday-screens.test.tsx` holds where each timing is drawn.
+    expect(page).not.toContain('t("Not run yet")');
   });
 
   test("names its switch for the routine, not for a state it may not be in", () => {

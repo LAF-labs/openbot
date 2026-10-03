@@ -1,3 +1,4 @@
+import { IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -39,6 +40,13 @@ import {
  * card names; with one Bot there is nothing to name and the picker is not drawn. The card is then
  * gone from here and the routine is in the list below, and a status line says so — a card that
  * vanishes on a press with nothing said reads as a card that failed.
+ *
+ * A CARD IS ITS NAME AND ONE LINE (2026-10-04, the owner: too many characters, and words where an
+ * icon would do). Under the heading stood a sentence — where the cards came from, and that nothing
+ * is made before 만들기 is pressed — and on each card a sentence on why it is worth having over a
+ * line of facts. The heading stands alone; the line is the facts, because that is what 만들기 will
+ * make: what it runs on, and when. Why it is worth having is the card's tooltip. 다음에 is the ×
+ * this app draws to put a thing away, named.
  */
 
 type Bot = { id: string; name: string };
@@ -110,17 +118,22 @@ const SuggestionCard = ({
   const problem = failed ? savingFailure(failed) : null;
 
   return (
-    <li className="rounded-xl border border-border bg-card p-4">
-      <div className="flex flex-col gap-1">
+    <li
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card p-3 pl-4"
+      data-suggestion={suggestion.key}
+    >
+      {/* A key this surface has no sentence for has no tooltip: the facts line still says what
+          it runs on and when, which is the part that cannot be wrong. */}
+      <div
+        className="flex min-w-40 flex-1 flex-col gap-0.5"
+        title={why ? t(why) : undefined}
+      >
         <span className="font-medium text-sm">{suggestion.name}</span>
-        {/* A key this surface has no sentence for draws no sentence: the facts line still says
-            what it runs on and when, which is the part that cannot be wrong. */}
-        {why ? <p className="text-muted-foreground text-sm">{t(why)}</p> : null}
-        <p className="text-muted-foreground/80 text-xs">
+        <p className="text-muted-foreground text-xs">
           {suggestionFactsLine(suggestion)}
         </p>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-1">
         {bots.length > 1 ? (
           <Select
             onValueChange={(value) => setAgentId(value ?? "")}
@@ -154,17 +167,21 @@ const SuggestionCard = ({
           {accept.isPending ? t("Making…") : t("Make")}
         </Button>
         <Button
+          aria-label={t("Not now")}
+          className="text-muted-foreground"
+          data-suggestion-dismiss
           disabled={dismiss.isPending || accept.isPending}
           onClick={() => dismiss.mutate()}
-          size="sm"
+          size="icon-sm"
+          title={t("Not now")}
           type="button"
           variant="ghost"
         >
-          {t("Not now")}
+          <IconX aria-hidden="true" />
         </Button>
       </div>
       {problem ? (
-        <p className="mt-2 text-destructive text-xs" role="alert">
+        <p className="basis-full text-destructive text-xs" role="alert">
           {problem}
         </p>
       ) : null}
@@ -218,27 +235,16 @@ export const RoutineSuggestions = () => {
           aria-labelledby={cards.length > 0 ? headingId : undefined}
           className="mb-8"
         >
+          {/*
+           * THE HEADING STANDS ALONE. The sentence under it said where the cards came from — and
+           * once told a person who had connected nothing that it had read their connections
+           * (first-hour walk, 2026-09-27) — and that nothing is made before 만들기 is pressed, which
+           * is what a button called 만들기 says. A card that runs on a connection names it.
+           */}
           {cards.length > 0 ? (
-            <>
-              <h2 className="font-medium text-sm" id={headingId}>
-                {t("Routines you might want")}
-              </h2>
-              {/*
-               * "PICKED FROM WHAT YOU CONNECTED" ONLY WHEN SOMETHING WAS. With nothing connected every
-               * card here is one that needs nothing (`via` is empty only then), and the line told a
-               * person who had connected nothing that it had read their connections (first-hour
-               * walk, 2026-09-27).
-               */}
-              <p className="mt-1 text-muted-foreground text-xs">
-                {cards.some((card) => card.via.length > 0)
-                  ? t(
-                      "Made from what you have connected. Nothing is created until you press Make.",
-                    )
-                  : t(
-                      "These work without connecting anything. Nothing is created until you press Make.",
-                    )}
-              </p>
-            </>
+            <h2 className="font-medium text-sm" id={headingId}>
+              {t("Routines you might want")}
+            </h2>
           ) : null}
           {/* Mounted with the cards, so what a press made is heard when it is said. */}
           <LiveRegion as="p" className="mt-2 text-muted-foreground text-xs">

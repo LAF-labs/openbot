@@ -59,15 +59,11 @@ export const RoutineNotepad = ({ routineId }: { routineId: string }) => {
       aria-labelledby={headingId}
       className="border-border border-b py-3"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-medium text-xs" id={headingId}>
-            {t("Notepad")}
-          </h3>
-          <p className="text-muted-foreground text-xs">
-            {t("Where this routine left off, as its last run noted it.")}
-          </p>
-        </div>
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        {/* The heading stands alone: 지난번에 적어 둔 것 is what the sentence under it said again. */}
+        <h3 className="min-w-0 font-medium text-xs" id={headingId}>
+          {t("Notepad")}
+        </h3>
         {entries.length > 0 ? (
           <Button
             onClick={() => setIsConfirming(true)}

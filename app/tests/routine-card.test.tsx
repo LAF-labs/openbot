@@ -309,7 +309,7 @@ describe("the card in the conversation", () => {
 });
 
 describe("the Routines screen", () => {
-  test("leads with the name, the schedule and the person's line, and folds the instruction", async () => {
+  test("leads with the name and the schedule, and folds the person's line and the instruction", async () => {
     const app = await mountApp({
       path: "/routines",
       api: (request) => {
@@ -330,16 +330,19 @@ describe("the Routines screen", () => {
       "the routine row",
     );
     const text = app.main()?.textContent ?? "";
-    expect(text).toContain("지난주 매출을 정리해 드려요");
+    // The row is its name and one line since 2026-10-04: what it does is one press down.
+    expect(text).not.toContain("지난주 매출을 정리해 드려요");
     expect(text).not.toContain("매주 월요일 아침이다");
     // One Bot: its name is not on the row.
     expect(text).not.toContain("연남이 ·");
 
-    const details = [...(app.main()?.querySelectorAll("button") ?? [])].find(
-      (button) => button.textContent?.includes("Details"),
-    );
-    if (!details) throw new Error("the row offered no Details");
+    // The row opens on a press, and says so by its chevron and its state — not by a word.
+    const details = app.main()?.querySelector("button[aria-expanded]");
+    if (!details) throw new Error("the row does not open");
+    expect(details.getAttribute("aria-expanded")).toBe("false");
     await app.click(details);
+    expect(details.getAttribute("aria-expanded")).toBe("true");
+    expect(app.main()?.textContent).toContain("지난주 매출을 정리해 드려요");
     expect(app.main()?.textContent).toContain("매주 월요일 아침이다");
     expect(app.main()?.textContent).toContain("What the Bot is told each time");
   });
