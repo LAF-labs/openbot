@@ -321,10 +321,15 @@ describe("words typed while the Bot waits on a choice", () => {
 
     await sendWords(view, TYPED);
     await view.waitFor(
-      () => view.host.textContent?.includes(WAITS) === true,
-      "the words kept as waiting for the Bot",
+      () => turns.asks() === 1,
+      "the door to refuse them",
       4000,
     );
+    await view.settle(200);
+    // Still the card's until the conversation says what became of its question: on it, and not
+    // under it as waiting for the Bot.
+    expect(view.host.textContent).not.toContain(WAITS);
+    expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
     expect(turns.answers()).toHaveLength(0);
     expect(turns.sends).toHaveLength(0);
 
@@ -398,12 +403,10 @@ describe("words typed while the Bot waits on a choice", () => {
       turns.answersDown();
 
       await sendWords(view, TYPED);
-      await view.waitFor(
-        () => view.host.textContent?.includes(WAITS) === true,
-        "the words kept as waiting",
-        4000,
-      );
+      await view.waitFor(() => turns.asks() >= 1, "the door asked", 4000);
       await view.settle(300);
+      // On the card, which takes no press meanwhile — not under it as waiting.
+      expect(view.host.textContent).not.toContain(WAITS);
       expect(isNotSent(view.host)).toBe(false);
       expect(turns.sends).toHaveLength(0);
       expect(turns.answers()).toHaveLength(0);
@@ -437,21 +440,17 @@ describe("words typed while the Bot waits on a choice", () => {
       turns.answersDown();
 
       await sendWords(view, TYPED);
-      await view.waitFor(
-        () => view.host.textContent?.includes(WAITS) === true,
-        "the words kept as waiting",
-        4000,
-      );
+      await view.waitFor(() => turns.asks() >= 1, "the door asked", 4000);
       expect(turns.answers()).toHaveLength(0);
       /*
-       * Asked again and again while it is down, behind words that stay where they are. They used
-       * to leave the list of waiting words for every offer and come back when it failed: a blink
-       * on each retry, and the transcript pulled to the end each time (adversarial read,
-       * 2026-10-03).
+       * Asked again and again while it is down, with the words on their card the whole time. They
+       * used to leave the list of waiting words for every offer and come back when it failed: a
+       * blink on each retry, and the transcript pulled to the end each time (adversarial read,
+       * 2026-10-03). Since the thirteenth round they are never on that list at all.
        */
-      let isGoneAtAnyTime = false;
+      let isWaitingAtAnyTime = false;
       const watch = new MutationObserver(() => {
-        if (!view.host.textContent?.includes(WAITS)) isGoneAtAnyTime = true;
+        if (view.host.textContent?.includes(WAITS)) isWaitingAtAnyTime = true;
       });
       watch.observe(view.host, {
         childList: true,
@@ -460,7 +459,7 @@ describe("words typed while the Bot waits on a choice", () => {
       });
       await view.waitFor(() => turns.asks() >= 4, "the door asked again", 4000);
       watch.disconnect();
-      expect(isGoneAtAnyTime).toBe(false);
+      expect(isWaitingAtAnyTime).toBe(false);
 
       // The door is there again. Nothing tells the page so: it asks again by itself.
       turns.answersUp();
@@ -716,6 +715,65 @@ describe("words typed while the Bot waits on a choice", () => {
         expect(kept()).toMatchObject([
           { text: "아니, 그냥 비빔밥", answerTo: CALL },
         ]);
+      });
+
+      /*
+       * The line at the door was one screen's, and the words are every window's: a screen that
+       * left the conversation and came back offered them beside the request the old one still had
+       * out, and so would a second window (review, thirteenth round). One at a time across
+       * windows, by `navigator.locks`.
+       */
+      test("a screen that left and came back waits for the request the old one still has out", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        // happy-dom has no `navigator.locks`: one lock manager for both screens, as a browser has.
+        const lines = new Map<string, Promise<unknown>>();
+        const locks = {
+          request: (name: string, run: () => Promise<unknown>) => {
+            const mine = (lines.get(name) ?? Promise.resolve()).then(run, run);
+            lines.set(
+              name,
+              mine.catch(() => {}),
+            );
+            return mine;
+          },
+        };
+        Object.defineProperty(navigator, "locks", {
+          value: locks,
+          configurable: true,
+        });
+        try {
+          const { api, turns } = server();
+          const { door, release, asked } = holdingDoor(api);
+          const view = await mountApp({
+            path: `/channel/${CHANNEL}`,
+            api: door,
+          });
+          await ask(view, turns);
+          await sendWords(view, TYPED);
+          await view.waitFor(
+            () => asked() === 1,
+            "the first at the door",
+            4000,
+          );
+
+          // Away to 소식 and back: a new screen, and the old one's request still out.
+          await view.navigate("/feed");
+          await view.navigate(`/channel/${CHANNEL}`);
+          await view.settle(400);
+          expect(asked()).toBe(1);
+
+          await acted(() => release("taken"));
+          await view.settle(400);
+          expect(asked()).toBe(1);
+          expect(turns.answers()).toEqual([
+            { toolCallId: CALL, value: { answer: TYPED } },
+          ]);
+        } finally {
+          Object.defineProperty(navigator, "locks", {
+            value: undefined,
+            configurable: true,
+          });
+        }
       });
 
       /*
@@ -1211,11 +1269,9 @@ describe("words typed while the Bot waits on a choice", () => {
         "the door to take the answer",
         4000,
       );
-      await view.waitFor(
-        () => view.host.textContent?.includes(WAITS) === true,
-        "the words kept as waiting, the reply having been lost",
-        4000,
-      );
+      await view.settle(300);
+      // The reply lost: still the card's, on it, and not under it as waiting.
+      expect(view.host.textContent).not.toContain(WAITS);
       turns.answersUp();
       // Nothing waits on the card now, and nothing says yet what answered it: they stay as they are.
       await acted(() => {

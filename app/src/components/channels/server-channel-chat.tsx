@@ -138,6 +138,23 @@ function questionOf(message: UnsentMessage): string {
 }
 
 /**
+ * ONE AT A TIME ACROSS EVERY WINDOW OF THIS BROWSER — `navigator.locks`, which the webviews the app
+ * runs in have (Safari 15.4, the oldest it calls for anything). Without it, one at a time in this
+ * window only, as before.
+ *
+ * The line at the door for a question (`flights`) was one screen's. The words are not: they are in
+ * the outbox, which every window reads, and a screen that left the conversation and came back
+ * (`kept-threads.ts`) is a new screen with the old one's request still out. Either offered the same
+ * question beside the other, and whichever reached the server first won the card (review,
+ * thirteenth round).
+ */
+async function oneAtATime<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  if (!locks || typeof locks.request !== "function") return run();
+  return locks.request(name, run);
+}
+
+/**
  * WORDS KEPT FOR AN EARLIER QUESTION UNDER THE SAME ID: the conversation's newest call under the
  * id they were kept for is another message's than the one that asked them (`askedBy`).
  *
@@ -604,6 +621,11 @@ export function ServerChannelChat({
       held.timers.clear();
     };
   }, []);
+  /** What the stream says the turn waits on, as it says it now: read after waiting for the line. */
+  const waitingNow = useRef<readonly string[]>([]);
+  useEffect(() => {
+    waitingNow.current = thread.waiting;
+  }, [thread.waiting]);
   /** These words are still kept for their card: not forgotten, nor replaced, nor let go of it. */
   const isStillForCard = (message: UnsentMessage) =>
     readUnsent(channel.id).some(
@@ -647,11 +669,16 @@ export function ServerChannelChat({
       if (earlier === "maybe" && tries === 0) {
         return { delivery: "unsettled", left: "maybe" };
       }
-      const delivery = await answerCard(
-        channel.threadId,
-        call,
-        typedAnswer(message.text),
+      const delivery = await oneAtATime(
+        `laf:answer:${channel.threadId}:${question}`,
+        async () => {
+          // Another window, or this screen before it came back, may have settled it meanwhile.
+          if (!isStillForCard(message)) return "replaced" as const;
+          if (!waitingNow.current.includes(call)) return "refused" as const;
+          return answerCard(channel.threadId, call, typedAnswer(message.text));
+        },
       );
+      if (delivery === "replaced") return { delivery, left: earlier };
       return {
         delivery,
         left:
