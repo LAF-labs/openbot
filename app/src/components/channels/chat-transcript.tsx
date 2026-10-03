@@ -1499,7 +1499,7 @@ function continues(
  *
  * A row that opens a sitting begins a run whoever spoke last: the time is drawn above it.
  *
- * AN ANSWER UNDER A STEP THAT IS DRAWN CONTINUES IT (`stepRowSpacing` has the step's own row).
+ * AN ANSWER UNDER A STEP THAT IS DRAWN CONTINUES IT (`botRowSpacing` has the step's own row).
  * With its record closed there is no step above, and the answer begins its run as it did.
  */
 export function rowSpacing(
@@ -1528,27 +1528,31 @@ function drawnAbove(
 }
 
 /**
- * The space above and below a step's row, where it is drawn.
+ * The space above and below a row of the Bot's that is not its words: a step, a card it made, a
+ * file it handed over, a browsing task.
  *
- * A STEP IS THE BOT'S, AND THE RECORD OF STEPS STANDS BY THE ANSWER IT WAS DONE FOR. Every step's
+ * A STEP IS THE BOT'S, AND THE RECORD OF STEPS STANDS BY THE ANSWER IT WAS DONE FOR. Every such
  * row was 12px under whatever was above it, and the answer under it began a run of its own.
  * Looked at in the running app with a record opened, 2026-10-04, ink to ink: the step's line stood
  * 16px under the person's message and the answer 28px under the step — the record nearer the
  * question than the answer, so it read as a note on what was asked; and three steps of one record
  * stood 22px apart, as far from each other as from anything else.
  *
- *  - THE FIRST THING OF THE BOT'S UNDER THE PERSON'S MESSAGE BEGINS ITS SIDE: the 20px an answer
- *    begins a run with. 24px ink to ink, where the answer's own first line would be 25px.
+ *  - WHATEVER THE BOT'S SIDE BEGINS WITH, IT BEGINS AT ONE DISTANCE: the 20px an answer begins a
+ *    run with. Measured on the stored conversation, edge to edge under the person's message: an
+ *    answer 22px, and a card, a file, a browsing task or a step 14px — the Bot's side began
+ *    nearer the question when it began with anything but words.
  *  - THE STEPS OF ONE OPENED RECORD ARE A LIST: nothing but the rows' own 2px between two that
  *    were put away.
- *  - A step that is drawn anyway — still out, a question on it, a code to show — keeps its 12px:
- *    it carries more than a line.
+ *  - Under anything else of the Bot's, a row keeps its 12px — a card under a card, and a step
+ *    that is drawn anyway (still out, a question on it, a code to show), which carries more than
+ *    a line.
  *  - And the answer under a step continues (`rowSpacing`): 16px ink to ink.
  *
  * The step a turn is still working on is such a row too. It now stands where the answer's first
  * line will, and not 8px higher.
  */
-function stepRowSpacing(
+function botRowSpacing(
   items: readonly TranscriptItem[],
   stepRuns: ReadonlyMap<number, StepRunPlace>,
   openRuns: ReadonlySet<string>,
@@ -2155,7 +2159,7 @@ export function ChatTranscript({
               return item.kind === "browse" ? (
                 <Fragment key={item.id}>
                   <MessageScrollerItem
-                    className="py-0.5 pt-3"
+                    className={botRowSpacing(items, stepRuns, openRuns, index)}
                     messageId={item.id}
                   >
                     <Arriving
@@ -2204,7 +2208,7 @@ export function ChatTranscript({
                    */}
                   {run && !run.staysDrawn && !openRuns.has(run.runId) ? null : (
                     <MessageScrollerItem
-                      className={stepRowSpacing(
+                      className={botRowSpacing(
                         items,
                         stepRuns,
                         openRuns,
@@ -2235,7 +2239,7 @@ export function ChatTranscript({
                     className={rowSpacing(
                       item.role,
                       (continues(items[index - 1], item.role) ||
-                        // An answer under a step that is drawn stands by it (`stepRowSpacing`).
+                        // An answer under a step that is drawn stands by it (`botRowSpacing`).
                         (item.role === "assistant" &&
                           stepRuns.has(
                             drawnAbove(stepRuns, openRuns, index),
