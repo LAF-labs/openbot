@@ -105,7 +105,10 @@ async function screen(path: string, extra?: ApiAnswer) {
 }
 
 /** The screens, by the title each draws. Each is added here by the change that cut its words. */
-const SCREENS = [["Updates", "/feed"]] as const;
+const SCREENS = [
+  ["Updates", "/feed"],
+  ["Ideas", "/ideas"],
+] as const;
 
 describe("a page's title stands alone", () => {
   /*
@@ -325,5 +328,119 @@ describe("소식", () => {
       "the conversation to open",
     );
     expect(view.router.state.location.pathname).toBe("/channel/ch-1");
+  });
+});
+
+describe("아이디어", () => {
+  const ASK = { key: "price-compare", state: "ready", via: [], needs: [] };
+  const ROUTINE = { key: "word-quiz", state: "ready", via: [], needs: [] };
+  const WAITS = {
+    key: "review-replies",
+    state: "connect",
+    via: [],
+    needs: [
+      { kind: "site", id: "baemin-ceo" },
+      { kind: "site", id: "naver-smartplace" },
+    ],
+  };
+  const ideas = (
+    cards: unknown[],
+    persona: string | null = null,
+  ): ApiAnswer => {
+    return ({ pathname }) =>
+      pathname === "/api/ideas" ? json({ persona, ideas: cards }) : undefined;
+  };
+  const card = (view: Awaited<ReturnType<typeof screen>>, key: string) =>
+    view.one(`[data-idea="${key}"]`);
+
+  test("a card is one line — what the Bot will do — under its category's icon", async () => {
+    // A student, on a card the catalogue leads with for students: nothing says so in words.
+    const view = await screen("/ideas", ideas([ASK, ROUTINE], "student"));
+    const ask = card(view, "price-compare");
+    const press = ask.querySelector("a");
+    expect({
+      words: press?.textContent,
+      lines: press?.querySelectorAll(":scope > span > span").length,
+      // The category is its icon, named when asked; what comes out is the card's own tooltip.
+      category: ask
+        .querySelector("[data-idea-category]")
+        ?.getAttribute("title"),
+      icon: ask.querySelectorAll("[data-idea-category] svg").length,
+      tip: press?.getAttribute("title"),
+    }).toEqual({
+      words: "I'll compare prices on Naver Shopping",
+      lines: 1,
+      category: "Money and tax",
+      icon: 1,
+      tip: "The five lowest prices, with links.",
+    });
+    expect(view.count("[data-idea-waits]")).toBe(0);
+  });
+
+  test("a routine is marked by 루틴's clock, which says what a sentence under every one said", async () => {
+    const view = await screen("/ideas", ideas([ASK, ROUTINE]));
+    const marks = view.main.querySelectorAll("[data-idea-repeats]");
+    expect(marks).toHaveLength(1);
+    const mark = card(view, "word-quiz").querySelector("[data-idea-repeats]");
+    const SAID =
+      "It repeats at the time in the sentence. Change the time before you send it.";
+    expect({
+      words: mark?.textContent,
+      icon: mark?.querySelectorAll("svg").length,
+      name: mark?.getAttribute("aria-label"),
+      tip: mark?.getAttribute("title"),
+    }).toEqual({ words: "", icon: 1, name: SAID, tip: SAID });
+    expect(ko[SAID]).toBeTruthy();
+    // Nothing but the title is drawn as words.
+    expect(card(view, "word-quiz").querySelector("a")?.textContent).toBe(
+      "I'll quiz you on ten English words every evening",
+    );
+  });
+
+  test("a card that waits on a connection still says so in words, and still goes to 연결", async () => {
+    const view = await screen("/ideas", ideas([WAITS]));
+    const waiting = card(view, "review-replies");
+    expect(view.said("[data-idea-waits]")).toEqual([
+      "Can do this once one is connected: Baemin for Owners · Naver Smart Place",
+    ]);
+    expect(waiting.querySelector("a")?.getAttribute("href")).toBe(
+      "/settings/connected-accounts",
+    );
+    // A routine that cannot be asked yet is not marked as one: its line is what it waits on.
+    expect(view.count("[data-idea-repeats]")).toBe(0);
+  });
+
+  test("the press is what it was: the sentence in the conversation's box, for the person to send", async () => {
+    const view = await screen("/ideas", ideas([ASK]));
+    const href = card(view, "price-compare")
+      .querySelector("a")
+      ?.getAttribute("href");
+    const address = new URL(href ?? "", "http://localhost");
+    expect({
+      path: address.pathname,
+      draft: address.searchParams.get("draft"),
+    }).toEqual({
+      path: "/channel/ch-1",
+      draft:
+        "Compare the five lowest prices on Naver Shopping for this product: ",
+    });
+    // 다음에 is still behind ⋯, named for its card.
+    expect(
+      card(view, "price-compare")
+        .querySelector("button")
+        ?.getAttribute("aria-label"),
+    ).toBe("Options for “I'll compare prices on Naver Shopping”");
+    // Drawing the page asks for the cards and writes nothing about them.
+    expect(
+      view.requests
+        .filter((request) => request.pathname.startsWith("/api/ideas"))
+        .map((request) => `${request.method} ${request.pathname}`),
+    ).toEqual(["GET /api/ideas"]);
+  });
+
+  test("with every idea put away, the page says so in one line", async () => {
+    const view = await screen("/ideas", ideas([]));
+    expect(view.said("[data-ideas-empty]")).toEqual(["No ideas left."]);
+    expect(ko["No ideas left."]).toBeTruthy();
   });
 });

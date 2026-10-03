@@ -7,8 +7,6 @@ import { CATEGORIES, type Category, type Persona } from "@shared/persona";
 import { siteById } from "@shared/sites/catalogue";
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
-import { josa } from "@/lib/josa";
-import { PERSONA_LABELS } from "@/lib/persona/labels";
 import { RequestRefusedError } from "@/lib/refusals";
 
 /**
@@ -16,9 +14,8 @@ import { RequestRefusedError } from "@/lib/refusals";
  *
  * The server answers keys and connection states in this person's order (`server/src/ideas/`); what
  * a card SAYS is this surface's — the catalogue's English keys (`shared/ideas/catalogue.ts`) through
- * `t()`, and the one line on why it is near the top, written here from facts: who the person said
- * they are, or which connection it works through. Nothing here is the model's, and nothing a card
- * shows cost a call to make.
+ * `t()`, and for a card that cannot be asked yet, the one line naming what it waits on. Nothing here
+ * is the model's, and nothing a card shows cost a call to make.
  */
 
 export type OfferedIdea = {
@@ -78,7 +75,7 @@ export function ideaFor(card: Pick<OfferedIdea, "key">): IdeaEntry | undefined {
   return ideaByKey(card.key);
 }
 
-/** A category's name, through `t()`. */
+/** A category's name, through `t()`: what its icon on a card is called. */
 export function categoryLabel(category: Category): string {
   const known = CATEGORIES.find((one) => one.id === category);
   return known ? t(known.name) : "";
@@ -94,56 +91,29 @@ export function needLabel(need: IdeaNeed & { title?: string }): string {
 }
 
 /**
- * WHY THIS CARD IS HERE, FROM FACTS — the plan's "why it fits", never the model's opinion.
+ * WHAT A CARD WAITS ON, or null for one that can be asked now.
  *
- *  - It works through something connected: that connection, named ("네이버 스마트스토어가 연결돼 있어서").
- *  - It waits on a connection: which ones would do.
- *  - It leads for who they said they are: that answer ("학생에게 잘 맞아요").
- *  - Otherwise nothing: a line that says "추천" about everything says nothing.
+ * The one line a card still says under its title, because it changes where the press goes: such a
+ * card opens 연결, not the conversation. Three names and a count: seven places in one line was a
+ * paragraph on a card (measured, 정산).
+ *
+ * IT USED TO SAY WHY A CARD WAS NEAR THE TOP AS WELL — "학생에게 잘 맞아요", "네이버 스마트스토어가
+ * 연결돼 있어서". The order is how the page says that; said again in words under every card that
+ * led (six to ten of the twenty-five, by persona) it was a line nobody could act on (2026-10-04).
  */
-export function ideaReason(
-  card: OfferedIdea,
-  persona: Persona | null,
-): { kind: "via" | "connect" | "persona"; text: string } | null {
-  if (card.state === "connect") {
-    // Three names and a count: seven places in one line was a paragraph on a card (measured, 정산).
-    const names = card.needs.map(needLabel);
-    const shown = names.slice(0, 3).join(" · ");
-    return {
-      kind: "connect",
-      text: t("Can do this once one is connected: {connections}", {
-        connections:
-          names.length > 3
-            ? t("{names} and {count} more", {
-                names: shown,
-                count: names.length - 3,
-              })
-            : shown,
-      }),
-    };
-  }
-  const [first] = card.via;
-  if (first) {
-    const name = needLabel(first);
-    return {
-      kind: "via",
-      text: t("Because {connection} is connected", {
-        connection: name,
-        josa: josa(name, "이/가"),
-      }),
-    };
-  }
-  const idea = ideaFor(card);
-  if (persona && idea?.lead.includes(persona)) {
-    return {
-      kind: "persona",
-      text:
-        persona === "other"
-          ? t("Useful for anyone")
-          : t("Suits a {persona}", { persona: t(PERSONA_LABELS[persona]) }),
-    };
-  }
-  return null;
+export function ideaWaitsOn(card: OfferedIdea): string | null {
+  if (card.state !== "connect") return null;
+  const names = card.needs.map(needLabel);
+  const shown = names.slice(0, 3).join(" · ");
+  return t("Can do this once one is connected: {connections}", {
+    connections:
+      names.length > 3
+        ? t("{names} and {count} more", {
+            names: shown,
+            count: names.length - 3,
+          })
+        : shown,
+  });
 }
 
 /** Where a pressed card goes when it can be asked now: the conversation, with the sentence in it. */

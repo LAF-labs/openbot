@@ -21,10 +21,14 @@ import { settledOf, useReading } from "@/lib/reading";
 /**
  * 아이디어 — THINGS THE BOT CAN DO FOR YOU (muse-shape plan §3.3, phase 5, 2026-09-27).
  *
- * A page of cards, each a sentence the person could have typed: what the Bot will do, what comes
- * out, and why it is near the top. Pressing one opens the conversation with the sentence in the
- * composer and sends NOTHING — most of them want a date, a product or a time first, and the person
- * finishes the sentence. A card that waits on a connection goes to 연결 instead.
+ * A page of cards, each a sentence the person could have typed: what the Bot will do. Pressing one
+ * opens the conversation with the sentence in the composer and sends NOTHING — most of them want a
+ * date, a product or a time first, and the person finishes the sentence. A card that waits on a
+ * connection goes to 연결 instead, and says so.
+ *
+ * NO SENTENCE UNDER THE TITLE (2026-10-04). It said what the cards are and that pressing one sends
+ * nothing — true, and the composer shows it the moment a card is pressed. A catalogue that is never
+ * empty explains nothing; what a card says is in `idea-card.tsx`.
  *
  * THE SAME CARDS FOR EVERYONE (`shared/ideas/catalogue.ts`), in this person's order. A 사장님 and a
  * 학생 scroll the same page; only what is at the top differs.
@@ -75,53 +79,55 @@ function IdeasPage() {
   };
 
   return (
-    <PageShell
-      description={t(
-        "Things I can do for you. Press one and its sentence goes into the conversation's box — nothing is sent until you send it, so change it first if you like.",
-      )}
-      title={t("Ideas")}
-      width="wide"
-    >
-      <ReadNotice
-        className="mb-3"
-        line={readLineOf(reading, {
-          failed: t("The ideas could not be loaded."),
-          notHere: t("There are no ideas on this deployment."),
-        })}
-        onRetry={() => void ideas.refetch()}
-      />
-      <LiveRegion as="p" className="mb-3 text-destructive text-sm" tone="alert">
-        {problem}
-      </LiveRegion>
-      {reading.state === "loading" ? (
-        <div className="grid gap-3 xl:grid-cols-2">
-          <Skeleton className="h-28 rounded-xl" />
-          <Skeleton className="h-28 rounded-xl" />
-          <Skeleton className="h-28 rounded-xl" />
-        </div>
-      ) : null}
-      {reading.state === "empty" ? (
-        <p className="text-muted-foreground text-sm">
-          {t(
-            "Nothing left here — you have put every idea away. Ask for anything in the conversation.",
-          )}
-        </p>
-      ) : null}
-      {settled && settled.data.ideas.length > 0 ? (
-        <ul className="grid gap-3 xl:grid-cols-2" data-ideas>
-          {settled.data.ideas.map((card) => (
-            <li className="contents" key={card.key}>
-              <IdeaCard
-                agentId={bot?.id}
-                card={card}
-                channelId={conversation?.id}
-                onDismiss={() => void handleDismiss(card.key)}
-                persona={settled.data.persona}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+    <PageShell title={t("Ideas")} width="wide">
+      {/*
+       * The title stands alone, so what is under it keeps its own distance. The sentence that was
+       * here ran straight into the first row of cards (measured: 0px between them — a silent notice
+       * and a silent alert take no room), and without it the cards would sit against the heading.
+       */}
+      <div className="mt-6">
+        <ReadNotice
+          className="mb-3"
+          line={readLineOf(reading, {
+            failed: t("The ideas could not be loaded."),
+            notHere: t("There are no ideas on this deployment."),
+          })}
+          onRetry={() => void ideas.refetch()}
+        />
+        <LiveRegion
+          as="p"
+          className="mb-3 text-destructive text-sm"
+          tone="alert"
+        >
+          {problem}
+        </LiveRegion>
+        {reading.state === "loading" ? (
+          <div className="grid gap-2 xl:grid-cols-2">
+            <Skeleton className="h-15 rounded-xl" />
+            <Skeleton className="h-15 rounded-xl" />
+            <Skeleton className="h-15 rounded-xl" />
+          </div>
+        ) : null}
+        {reading.state === "empty" ? (
+          <p className="text-muted-foreground text-sm" data-ideas-empty>
+            {t("No ideas left.")}
+          </p>
+        ) : null}
+        {settled && settled.data.ideas.length > 0 ? (
+          <ul className="grid gap-2 xl:grid-cols-2" data-ideas>
+            {settled.data.ideas.map((card) => (
+              <li className="contents" key={card.key}>
+                <IdeaCard
+                  agentId={bot?.id}
+                  card={card}
+                  channelId={conversation?.id}
+                  onDismiss={() => void handleDismiss(card.key)}
+                />
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </PageShell>
   );
 }

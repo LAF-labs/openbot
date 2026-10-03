@@ -3030,22 +3030,16 @@ export const ko: Record<string, string> = {
   "Everyday life": "생활",
   Ideas: "아이디어",
   More: "더 보기",
-  "Things I can do for you. Press one and its sentence goes into the conversation's box — nothing is sent until you send it, so change it first if you like.":
-    "제가 할 수 있는 일이에요. 누르면 그 문장이 대화 입력칸에 들어가요. 보내기 전까지는 아무것도 보내지 않으니, 먼저 고쳐도 돼요.",
   "The ideas could not be loaded.": "아이디어를 불러오지 못했어요.",
   "There are no ideas on this deployment.": "여기서는 아이디어를 볼 수 없어요.",
-  "Nothing left here — you have put every idea away. Ask for anything in the conversation.":
-    "남은 아이디어가 없어요. 무엇이든 대화에서 부탁해 주세요.",
+  "No ideas left.": "남은 아이디어가 없어요.",
   "That idea is no longer on offer.": "이제 없는 아이디어예요.",
   "Options for “{title}”": "‘{title}’ 메뉴",
   "It repeats at the time in the sentence. Change the time before you send it.":
     "문장에 적힌 시간마다 해요. 보내기 전에 시간을 바꿔도 돼요.",
   "Can do this once one is connected: {connections}":
     "연결하면 할 수 있어요 · {connections}",
-  "Because {connection} is connected": "{connection}{josa} 연결돼 있어서",
-  "Useful for anyone": "누구에게나 쓸모 있어요",
   "{names} and {count} more": "{names} 외 {count}곳",
-  "Suits a {persona}": "{persona}에게 잘 맞아요",
   "I'll gather new reviews every morning and draft the replies":
     "새 리뷰를 매일 아침 모아 답글 초안까지 써 둘게요",
   "A list each morning with reply drafts. Nothing is posted until you say so.":
