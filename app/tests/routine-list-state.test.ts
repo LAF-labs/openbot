@@ -99,9 +99,13 @@ describe("the list area", () => {
   });
 
   test("says none yet only once the answer is in, and not beside the form for the first one", () => {
+    // One line saying what will be here; the verb that makes one is on the title's row.
     expect(view({ state: "empty", data: [] }).empty).toBe(
-      "No routines yet. Give a Bot something to do every morning.",
+      "What your Bot does on its own at set times is kept here.",
     );
+    expect(
+      ko["What your Bot does on its own at set times is kept here."],
+    ).toBeTruthy();
     expect(view({ state: "empty", data: [] }, true).empty).toBeNull();
     // A list that was empty when it was read, and could not be read again, is not "none yet" now.
     expect(

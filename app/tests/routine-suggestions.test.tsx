@@ -133,7 +133,7 @@ describe("the card's line of facts", () => {
     expect(line).not.toContain("07:30");
   });
 
-  test("a card that needs nothing says so, and a weekly one says its day", () => {
+  test("a card that needs nothing says only when, and a weekly one says its day", () => {
     const line = suggestionFactsLine(
       card({
         key: "tax-calendar",
@@ -145,8 +145,10 @@ describe("the card's line of facts", () => {
         },
       }),
     );
-    expect(line).toContain("Needs no connection");
+    // It said "Needs no connection" before its time: the absence of a thing, in words (2026-10-04).
+    expect(line).not.toContain("·");
     expect(line).toMatch(/Mon/);
+    expect(line).toContain("9:00");
   });
 });
 
@@ -243,17 +245,27 @@ async function mountedSection() {
   return {
     ...view,
     cards: () => [...view.host.querySelectorAll("li")],
-    /** The verbs on a card: its buttons, less the Bot picker's trigger. */
+    /**
+     * The verbs on a card: its buttons, less the Bot picker's trigger — by the words on them, or
+     * for the one that is an icon (다음에, the × since 2026-10-04) by the name it carries.
+     */
     verbs: (li: Element) =>
       [...li.querySelectorAll("button")]
         .filter((button) => button.dataset.slot !== "select-trigger")
-        .map((button) => button.textContent),
+        .map(
+          (button) => button.textContent || button.getAttribute("aria-label"),
+        ),
     buttonNamed: (li: Element, label: string) =>
       [...li.querySelectorAll("button")].find(
-        (button) => button.textContent === label,
+        (button) =>
+          button.textContent === label ||
+          button.getAttribute("aria-label") === label,
       ),
   };
 }
+
+/** When the fixture card runs, as the list's own clock says it in the runner's zone. */
+const WHEN = suggestionFactsLine(card());
 
 describe("the section", () => {
   test("is busy, not blank, while the cards are on their way", async () => {
@@ -302,14 +314,28 @@ describe("the section", () => {
     expect(view.cards()).toHaveLength(1);
   });
 
-  test("says it read the connections only when a card uses one", async () => {
-    // First-hour walk, 2026-09-27: nothing connected, and the line said it had picked from them.
+  test("the heading stands alone, and a card says what it runs on only when it runs on something", async () => {
+    /*
+     * First-hour walk, 2026-09-27: nothing connected, and a sentence under the heading said the
+     * cards had been picked from the person's connections. The sentence is gone (2026-10-04); a
+     * card that uses a connection names it on its own line, and one that uses none says only when.
+     */
     server({ cards: [card()] });
     const bare = await mountedSection();
-    expect(bare.host.textContent).toContain(
-      "These work without connecting anything.",
+    const section = bare.host.querySelector("section");
+    expect(section?.querySelector("h2")?.textContent).toBe(
+      "Routines you might want",
     );
-    expect(bare.host.textContent).not.toContain("what you have connected");
+    // Under the heading: the status line (silent) and the cards. No sentence of the section's own.
+    expect(
+      [...(section?.querySelectorAll(":scope > p") ?? [])]
+        .map((line) => line.textContent ?? "")
+        .filter(Boolean),
+    ).toEqual([]);
+    expect(
+      bare.cards().map((one) => one.querySelector("p")?.textContent),
+    ).toEqual([WHEN]);
+    expect(WHEN).not.toContain("·");
     await bare.unmount();
 
     server({
@@ -320,17 +346,32 @@ describe("the section", () => {
       ],
     });
     const connected = await mountedSection();
-    expect(connected.host.textContent).toContain(
-      "Made from what you have connected.",
-    );
-    await connected.unmount();
     expect(
-      ko[
-        "These work without connecting anything. Nothing is created until you press Make."
-      ],
-    ).toBe(
-      "연결 없이 바로 쓸 수 있는 것들이에요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
-    );
+      connected.cards().map((one) => one.querySelector("p")?.textContent),
+    ).toEqual([`Using Baemin for Owners · ${WHEN}`]);
+    await connected.unmount();
+  });
+
+  test("a card is its name and one line, and why it is worth having is there to be asked for", async () => {
+    server({ cards: [card()] });
+    const view = await mountedSection();
+    const [one] = view.cards();
+    const words = one?.querySelector("div");
+    expect({
+      lines: [...(words?.children ?? [])].map((line) => line.textContent),
+      why: words?.getAttribute("title"),
+    }).toEqual({
+      lines: ["아침 브리핑", WHEN],
+      why: SUGGESTION_WHY["morning-brief"] as string,
+    });
+    // 다음에 is the × that puts a thing away, and says its name both ways.
+    const dismiss = one?.querySelector("[data-suggestion-dismiss]");
+    expect({
+      words: dismiss?.textContent,
+      icon: dismiss?.querySelectorAll("svg").length,
+      name: dismiss?.getAttribute("aria-label"),
+      tip: dismiss?.getAttribute("title"),
+    }).toEqual({ words: "", icon: 1, name: "Not now", tip: "Not now" });
   });
 
   test("draws nothing when there is nothing to offer", async () => {
@@ -352,9 +393,6 @@ describe("the section", () => {
     for (const one of cards) {
       expect(view.verbs(one)).toEqual(["Make", "Not now"]);
     }
-    expect(view.host.textContent).toContain(
-      "Nothing is created until you press Make.",
-    );
     // With one Bot there is nothing to choose, so the picker is not drawn.
     expect(view.host.querySelector('[aria-label="Which Bot"]')).toBeNull();
     // Rendering is not a request: the only writes are behind a press.

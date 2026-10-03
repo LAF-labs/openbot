@@ -66,10 +66,14 @@ import { useNow } from "@/lib/use-now";
 /**
  * Routines: something the Bot does on its own, at a time.
  *
- * A routine's row leads with its name and when it goes, then the line its Bot wrote for the person
- * about what it does. The instruction the Bot runs is kept, folded under 자세히 with the runs: it is
- * written to the Bot's future self, and as the row's body it read like a system prompt (UI/UX audit
- * 0.5.3, item 8). Changing one starts a sentence in the Bot's conversation; the form is still there.
+ * A ROW IS ITS NAME AND ONE LINE: when it goes, and when it last went (2026-10-04, the owner: too
+ * many characters on the screen). It was up to five — the name, the schedule, the line its Bot
+ * wrote about what it does, the next and the last run, and the word 자세히 beside a chevron. The
+ * row opens on a press, as it did, and the chevron says so; what it does, when it goes next, the
+ * instruction the Bot runs, its notepad and its runs are all under that one press. The instruction
+ * is written to the Bot's future self, and as the row's body it read like a system prompt (UI/UX
+ * audit 0.5.3, item 8). Changing one starts a sentence in the Bot's conversation; the form is still
+ * there.
  */
 
 function RunHistory({ routineId }: { routineId: string }) {
@@ -237,31 +241,44 @@ function RoutineRow({
           aria-expanded={showRuns}
           // The house ring. It had none at all, so tabbing across a list of routines went dark.
           className={`flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md text-left ${focusRing}`}
+          data-routine-row
           onClick={() => setShowRuns((open) => !open)}
+          // What the chevron means, for a pointer that rests on the row.
+          title={showRuns ? t("Less") : t("Details")}
           type="button"
         >
           {/*
-           * TWO LINES, WRAPPED, NEVER CUT. At 375 the name read "주…", the Bot "연남이…" and the next
-           * run "9월 2…" — every fact on the card truncated to its first syllable. What it is called,
+           * WRAPPED, NEVER CUT. At 375 the name read "주…", the Bot "연남이…" and the next run
+           * "9월 2…" — every fact on the card truncated to its first syllable. What it is called,
            * then when it goes; a long name takes a second line rather than the schedule's place.
+           *
+           * THE CHEVRON IS THE WHOLE OF "자세히". A row that opens on a press looked like a row
+           * with nothing more in it, so it said 자세히 beside a chevron on a line of its own; the
+           * chevron alone says it, on the name's line, and the button says whether it is open.
            */}
           <span className="wrap-break-word font-medium text-sm">
             {routine.name}
-          </span>
-          <span className="text-muted-foreground text-xs">
-            {bot?.name ? `${bot.name} · ` : ""}
-            {scheduleLabel(routine)}
+            <IconChevronDown
+              aria-hidden="true"
+              className={`ml-1 inline size-3.5 align-[-0.125em] text-muted-foreground transition-transform ${showRuns ? "rotate-180" : ""}`}
+            />
           </span>
           {/*
-           * WHAT IT DOES, IN THE PERSON'S WORDS — the line its Bot wrote for them. The instruction
-           * is the Bot's note to its future self ("매주 월요일 아침이다. 사용자에게 …"), and it was
-           * the row's body; it is under 자세히 now, beside the runs it produced.
+           * WHEN IT GOES, AND WHEN IT LAST WENT — the one line under the name.
+           *
+           * The server has sent `nextRunAt` and `lastRunAt` on every row since routines existed and
+           * the screen threw both away, so the one question anybody has about a schedule — is it
+           * actually running — could only be answered by opening the run history. 마지막 실행 is the
+           * evidence the switch kept its promise, so it stays on the row. 다음 실행 is the promise
+           * itself, which the schedule beside the switch already makes; it is one press down.
            */}
-          {routine.summary ? (
-            <span className="mt-0.5 wrap-break-word text-sm">
-              {routine.summary}
-            </span>
-          ) : null}
+          <span className="text-muted-foreground text-xs" data-routine-line>
+            {bot?.name ? `${bot.name} · ` : ""}
+            {scheduleLabel(routine)}
+            {routine.lastRunAt
+              ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt, now) })}`
+              : ""}
+          </span>
           {/*
            * WHY IT IS OFF, when nobody here turned it off. A switch at off reads as something the
            * person did and forgot; this line says the rule did it, and the banner above has the
@@ -272,28 +289,6 @@ function RoutineRow({
               {t(UNREAD_PAUSE_SENTENCES.row)}
             </span>
           ) : null}
-          {/*
-           * WHEN IT LAST WENT AND WHEN IT GOES NEXT.
-           *
-           * The server has sent `nextRunAt` and `lastRunAt` on every row since routines existed and
-           * the screen threw both away, so the one question anybody has about a schedule — is it
-           * actually running — could only be answered by opening the run history. 다음 실행 is the
-           * promise the switch is making; 마지막 실행 is the evidence it kept it.
-           */}
-          <span className="text-muted-foreground/80 text-xs">
-            {t("Next {when}", { when: whenLabel(routine.nextRunAt, now) })}
-            {routine.lastRunAt
-              ? ` · ${t("Last {when}", { when: whenLabel(routine.lastRunAt, now) })}`
-              : ` · ${t("Not run yet")}`}
-          </span>
-          {/* Said, because a row that opens on a press looked like a row with nothing more in it. */}
-          <span className="mt-0.5 inline-flex items-center gap-0.5 text-muted-foreground text-xs">
-            {showRuns ? t("Less") : t("Details")}
-            <IconChevronDown
-              aria-hidden="true"
-              className={`size-3.5 transition-transform ${showRuns ? "rotate-180" : ""}`}
-            />
-          </span>
         </button>
         <div className="flex shrink-0 items-center gap-1">
           {/*
@@ -477,7 +472,24 @@ function RoutineRow({
            * needs the real thing; folded, because they are written to the Bot, not to the person.
            */}
           <div className="py-3">
-            <p className="text-muted-foreground text-xs">
+            {/*
+             * WHAT IT DOES, IN THE PERSON'S WORDS — the line its Bot wrote for them — and when it
+             * goes next. Both were on the row. Next only while it is on: a routine switched off
+             * drew the run it had missed, "다음 실행 어제 오전 7:30" (measured 2026-10-04).
+             */}
+            {routine.summary ? (
+              <p className="wrap-break-word text-sm" data-routine-summary>
+                {routine.summary}
+              </p>
+            ) : null}
+            {routine.enabled ? (
+              <p className="text-muted-foreground text-xs" data-routine-next>
+                {t("Next {when}", { when: whenLabel(routine.nextRunAt, now) })}
+              </p>
+            ) : null}
+            <p
+              className={`text-muted-foreground text-xs ${routine.summary || routine.enabled ? "mt-3" : ""}`}
+            >
               {t("What the Bot is told each time")}
             </p>
             <p className="mt-1 wrap-break-word whitespace-pre-wrap text-sm leading-relaxed">
@@ -613,11 +625,7 @@ function RoutinesPage() {
     >
       <PageShell
         title={t("Routines")}
-        // Examples from a shop's week, not "다이제스트": that word was the one on this page nobody
-        // who runs a shop would use (UI/UX audit 0.5.3, item 8).
-        description={t(
-          "Things your Bot does on its own at set times — a weekly sales summary, a daily look at new reviews.",
-        )}
+        // No sentence under the title (2026-10-04): the empty list says what will be here.
         action={
           <Button
             nativeButton={false}
@@ -666,8 +674,16 @@ function RoutinesPage() {
                 showBot={showBot}
               />
             ))}
+            {/*
+             * A FACE AND ONE LINE. It drew 새 루틴 a second time under the sentence, because the
+             * sentence told the person to make one; it says what will be here now, and the verb is
+             * the one on the title's row, on screen with it.
+             */}
             {list.empty ? (
-              <div className="flex flex-col items-center gap-3 py-10">
+              <div
+                className="flex flex-col items-center gap-3 py-10"
+                data-routines-empty
+              >
                 {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
                 <BotAvatar
                   className="opacity-80"
@@ -677,16 +693,6 @@ function RoutinesPage() {
                 <p className="text-center text-muted-foreground text-sm">
                   {list.empty}
                 </p>
-                {/* The way to make one, where the sentence says to — not only in the header. */}
-                <Button
-                  nativeButton={false}
-                  render={(props) => (
-                    <Link search={{ new: true }} to="/routines" {...props} />
-                  )}
-                  variant="secondary"
-                >
-                  {t("New routine")}
-                </Button>
               </div>
             ) : null}
           </div>

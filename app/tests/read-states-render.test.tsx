@@ -366,7 +366,9 @@ describe("routines", () => {
       "the unavailable line",
     );
     expect(tryAgainIn(view.main()) === undefined).toBe(true);
-    expect(view.main()?.textContent).not.toContain("No routines yet.");
+    expect(view.main()?.querySelectorAll("[data-routines-empty]")).toHaveLength(
+      0,
+    );
   });
 });
 

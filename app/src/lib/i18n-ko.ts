@@ -931,8 +931,8 @@ export const ko: Record<string, string> = {
   "This account already holds as many routines as it can. Delete one to make room.":
     "이 계정이 만들 수 있는 루틴을 모두 채웠어요. 하나를 지우고 다시 만들어 주세요.",
   "That routine is no longer there.": "그 루틴은 이제 없어요.",
-  "No routines yet. Give a Bot something to do every morning.":
-    "루틴이 아직 없어요. 봇에게 매일 아침 할 일을 하나 맡겨보세요.",
+  "What your Bot does on its own at set times is kept here.":
+    "봇이 정해 둔 시각에 알아서 하는 일이 여기에 모여요.",
   "Pick a face": "얼굴 고르기",
   "Another face": "다른 얼굴",
   // 얼굴 고르기의 세 줄. 눈 모양은 줄이 없고 "다른 얼굴"이 굴린다.
@@ -1740,7 +1740,6 @@ export const ko: Record<string, string> = {
    */
   "Next {when}": "다음 실행 {when}",
   "Last {when}": "마지막 실행 {when}",
-  "Not run yet": "아직 실행한 적 없음",
   "Run now": "지금 실행",
   "On schedule": "예약대로 실행 중",
   "Running now…": "실행 중…",
@@ -1903,12 +1902,7 @@ export const ko: Record<string, string> = {
    * `routine-suggestions.test.ts`가 걷는다.
    */
   "Routines you might want": "이런 루틴은 어떠세요",
-  "Made from what you have connected. Nothing is created until you press Make.":
-    "연결해 둔 것을 보고 골랐어요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
-  "These work without connecting anything. Nothing is created until you press Make.":
-    "연결 없이 바로 쓸 수 있는 것들이에요. 만들기를 누르기 전에는 아무것도 만들지 않아요.",
   "Using {connections}": "{connections} 연결로",
-  "Needs no connection": "연결 없이 바로",
   Make: "만들기",
   "Making…": "만드는 중…",
   "Not now": "다음에",
@@ -2325,8 +2319,6 @@ export const ko: Record<string, string> = {
    * 있다(`components/routines/notepad.tsx`). "기준점"이나 "워터마크" 대신 "어디까지"라고 쓴다.
    */
   Notepad: "지난번에 적어 둔 것",
-  "Where this routine left off, as its last run noted it.":
-    "이 루틴이 어디까지 했는지, 지난 실행이 적어 둔 그대로예요.",
   Clear: "비우기",
   "Clearing…": "비우는 중…",
   "Loading the notepad…": "적어 둔 것을 불러오는 중…",
@@ -2569,8 +2561,6 @@ export const ko: Record<string, string> = {
   "Change it yourself": "직접 고치기",
   Less: "접기",
   "What the Bot is told each time": "봇에게 준 지시",
-  "Things your Bot does on its own at set times — a weekly sales summary, a daily look at new reviews.":
-    "봇이 정해진 시각에 알아서 하는 일이에요. 주간 매출 요약이나 매일 새 리뷰 확인처럼요.",
   "What it does, and when. You can change all of it later.":
     "무엇을, 언제 할지. 나중에 모두 바꿀 수 있어요.",
   "Name, e.g. Weekly sales summary": "이름 (예: 주간 매출 요약)",
