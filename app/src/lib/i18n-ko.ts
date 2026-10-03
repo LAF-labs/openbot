@@ -2654,6 +2654,7 @@ export const ko: Record<string, string> = {
   YES24: "예스24",
   "Kyobo Book Centre": "교보문고",
   Aladin: "알라딘",
+  "Toss Securities": "토스증권",
   Toss: "토스",
   "Korea Meteorological Administration": "기상청",
   Government24: "정부24",
@@ -2723,6 +2724,8 @@ export const ko: Record<string, string> = {
   // 0.5.4 BC
   "Couldn't finish": "못 끝냄",
   "The site turned the Bot away": "사이트가 봇을 막았어요",
+  "It is waiting for your answer. The question is just above.":
+    "답을 기다려요. 묻는 카드는 바로 위에 있어요.",
   "You said no": "내가 거절함",
   "Try it again": "다시 해 보기",
   "No page is open now.": "지금 열린 페이지가 없어요.",

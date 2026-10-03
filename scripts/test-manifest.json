@@ -76,6 +76,7 @@
   "app/tests/bot-profile.test.ts",
   "app/tests/browsing-card-decisions.test.tsx",
   "app/tests/browsing-card-frame.test.tsx",
+  "app/tests/browsing-card-layout.test.tsx",
   "app/tests/browsing-card-title.test.ts",
   "app/tests/browsing-tasks.test.ts",
   "app/tests/browsing-turn-end.test.tsx",

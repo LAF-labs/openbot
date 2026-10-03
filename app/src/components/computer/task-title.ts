@@ -47,6 +47,8 @@ export const EVERYDAY_SITES: readonly {
   { hosts: ["yes24.com"], name: "YES24" },
   { hosts: ["kyobobook.co.kr"], name: "Kyobo Book Centre" },
   { hosts: ["aladin.co.kr"], name: "Aladin" },
+  // Before 토스: the owner's own card read "tossinvest.com · 테슬라" (2026-10-03).
+  { hosts: ["tossinvest.com"], name: "Toss Securities" },
   { hosts: ["toss.im"], name: "Toss" },
   { hosts: ["weather.go.kr"], name: "Korea Meteorological Administration" },
   { hosts: ["gov.kr"], name: "Government24" },
@@ -91,6 +93,36 @@ export function taskTitle(
   const site = siteNamesOf(hosts).at(-1) ?? null;
   const title = [site, lookedUp?.trim() || null].filter(Boolean).join(" · ");
   return title || null;
+}
+
+/** One name written two ways is one name: width, case and the spaces inside it aside. */
+function isSameName(one: string, other: string): boolean {
+  const fold = (name: string) =>
+    name.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  return fold(one) === fold(other);
+}
+
+/**
+ * THE CARD'S OWN TWO LINES: where, small, and what, as the title.
+ *
+ * {@link taskTitle} is one line for a place that has one — the banner. On the card that line put
+ * the site first and gave it the title's weight, so the thing a person asked about came second and
+ * was the part cut off: "tossinvest.com · 테슬라". And where the Bot had searched for the site
+ * itself the card said it twice: "tossinvest.com · 토스증권" (the owner's screenshot, 2026-10-03).
+ *
+ * So the title is what was looked up, and the site is the small line above it. With nothing looked
+ * up — or only the site's own name — the site is the title and nothing is said above it.
+ */
+export function taskHeading(
+  hosts: readonly string[],
+  lookedUp: string | undefined,
+): { site: string | null; title: string | null } {
+  const site = siteNamesOf(hosts).at(-1) ?? null;
+  const what = lookedUp?.trim() || null;
+  if (what === null || (site !== null && isSameName(what, site))) {
+    return { site: null, title: site };
+  }
+  return { site, title: what };
 }
 
 /**

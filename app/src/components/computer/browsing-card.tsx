@@ -1,3 +1,4 @@
+import { SITE_REFUSED } from "@shared/task-ending";
 import {
   IconBrowser,
   IconChevronDown,
@@ -15,7 +16,12 @@ import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import {
   chatCard,
+  chatCardChip,
+  chatCardChipLive,
+  chatCardChipQuiet,
+  chatCardChipSignal,
   chatCardMeta,
+  chatCardPadding,
   chatCardTitle,
 } from "@/components/ui/card-surface";
 import {
@@ -40,14 +46,21 @@ import { setScreenOpen, useScreenPanel } from "@/lib/computer/screen-panel";
 import {
   canRetry,
   type TaskState,
-  taskStateLine,
+  taskStateDetail,
+  taskStateWord,
 } from "@/lib/computer/task-state";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
-import { plainLine, plainText, taskTitle } from "./task-title";
+import { plainLine, plainText, taskHeading } from "./task-title";
+
+/**
+ * The card's buttons under a finger: 28px is a pointer's size, and on a phone 다시 해 보기 and 한 일
+ * sat a thumb's width apart at that height (they were 24px until 2026-10-03).
+ */
+const TOUCH_TALL = "pointer-coarse:h-9 pointer-coarse:px-3";
 
 /**
  * ONE BROWSING TASK, AS ONE CARD: WHERE THE BOT WENT, WHAT IT DID, AND WHAT IT LAST SAW.
@@ -152,8 +165,15 @@ function TaskCard({
   const asked = item.asked;
   const canAskAgain =
     canRetry(state) && asked !== undefined && conversation !== null;
-  const title = taskTitle(sitesOf(item.steps), lookedUpOf(item.steps));
+  const heading = taskHeading(sitesOf(item.steps), lookedUpOf(item.steps));
+  const detail = taskStateDetail(state);
   const latest = item.notes.at(-1);
+  /*
+   * A PICTURE WHERE THERE IS ONE, AND NO BOX WHERE THERE IS NOT. The frame used to be drawn always,
+   * so a task with no picture kept an empty grey rectangle a third of the card wide. While the task
+   * runs the page is on its way, and the box holds its place.
+   */
+  const hasPicture = isOpen || hasFrame;
 
   const picture = (
     <TaskPicture
@@ -168,95 +188,118 @@ function TaskCard({
 
   return (
     <>
-      <div className={cn(chatCard, "flex gap-3 p-2.5")}>
-        {canView ? (
-          <button
-            aria-label={t("View the Bot's screen")}
-            className="shrink-0 cursor-zoom-in rounded-lg"
-            onClick={() => setScreenOpen(true)}
-            type="button"
-          >
-            {picture}
-          </button>
-        ) : (
-          <div className="shrink-0">{picture}</div>
-        )}
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {/* Two lines, not one: at 375px one line held the site and three words of the task. */}
-          <p className={cn(chatCardTitle, "line-clamp-2 break-words")}>
-            {title ?? t("The Bot's browser")}
-          </p>
-          {/*
-           * The newest thing the Bot said while doing this, one line: what it is up to, in its own
-           * words. The rest of what it said is under 한 일, where it was said.
-           */}
-          {latest ? (
-            <p className={cn(chatCardMeta, "truncate")}>
-              {plainLine(latest.text)}
-            </p>
-          ) : null}
-          {/*
-           * No count of steps. "완료 · 3단계" asked somebody to care how many calls a task took, which
-           * is the one number about it that means nothing to them.
-           */}
-          <p
-            className={cn(
-              "text-xs",
-              state.kind === "yourTurn"
-                ? "font-medium text-warning"
-                : state.kind === "failed"
-                  ? "text-warning"
-                  : "text-muted-foreground",
-            )}
-          >
-            {taskStateLine(state)}
-          </p>
-          <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
+      <div className={cn(chatCard, chatCardPadding, "flex flex-col gap-2.5")}>
+        <div className="flex gap-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
             {/*
-             * 다시 해 보기: the owner's own words again, as if typed. Measured (UX review 0.5.4,
-             * item 3): after a failed task the Bot said "다시 시도해 달라고 해 주시면", and the owner
-             * had to type the whole request out a second time.
+             * WHERE, AND HOW IT STANDS, on one small line; then what, as the title. The site used
+             * to lead the title and the state trailed in the smallest text on the card
+             * (`taskHeading`, `taskStateDetail`).
              */}
-            {canAskAgain ? (
-              <Button
-                onClick={() => conversation.ask(asked)}
-                size="xs"
-                variant="secondary"
-              >
-                {t("Try it again")}
-              </Button>
-            ) : null}
-            {canView ? (
-              <Button
-                onClick={() => setScreenOpen(true)}
-                size="xs"
-                variant="secondary"
-              >
-                {t("View screen")}
-              </Button>
-            ) : null}
-            {/* Mounted with the card, so the page going away is heard when it is said. */}
-            <LiveRegion as="span" className="text-muted-foreground text-xs">
-              {!canView && isNewest && isPageGone && !isOpen
-                ? hasFrame
-                  ? t("No page is open now. The picture is the last one.")
-                  : t("No page is open now.")
-                : null}
-            </LiveRegion>
-            <Button
-              aria-controls={stepsId}
-              aria-expanded={isExpanded}
-              onClick={() => setIsExpanded((was) => !was)}
-              size="xs"
-              variant="ghost"
+            <div className="flex min-h-5 items-center justify-between gap-2">
+              {heading.site ? (
+                <span className={cn(chatCardMeta, "min-w-0 truncate")}>
+                  {heading.site}
+                </span>
+              ) : null}
+              <TaskStateChip state={state} />
+            </div>
+            {/* Two lines, not one: at 375px one line held three words of the task. */}
+            <p
+              className={cn(
+                chatCardTitle,
+                "line-clamp-2 text-balance break-words",
+              )}
             >
-              {t("What it did")}
-              <IconChevronDown
-                aria-hidden="true"
-                className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
-              />
-            </Button>
+              {heading.title ?? t("The Bot's browser")}
+            </p>
+            {detail ? (
+              <p className="break-words text-sm">{detail}</p>
+            ) : latest ? (
+              /*
+               * The newest thing the Bot said while doing this, one line: what it is up to, in its
+               * own words. The rest of what it said is under 한 일, where it was said.
+               */
+              <p className={cn(chatCardMeta, "truncate")}>
+                {plainLine(latest.text)}
+              </p>
+            ) : null}
           </div>
+          {hasPicture ? (
+            canView ? (
+              <button
+                aria-label={t("View the Bot's screen")}
+                className="shrink-0 cursor-zoom-in self-start rounded-lg"
+                onClick={() => setScreenOpen(true)}
+                type="button"
+              >
+                {picture}
+              </button>
+            ) : (
+              <div className="shrink-0 self-start">{picture}</div>
+            )
+          ) : null}
+        </div>
+        {/*
+         * No count of steps. "완료 · 3단계" asked somebody to care how many calls a task took, which
+         * is the one number about it that means nothing to them.
+         */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/*
+           * 다시 해 보기: the owner's own words again, as if typed. Measured (UX review 0.5.4, item
+           * 3): after a failed task the Bot said "다시 시도해 달라고 해 주시면", and the owner had to
+           * type the whole request out a second time.
+           *
+           * THE ONE FILLED BUTTON, where pressing it is what there is to do. Not after a site
+           * turned the Bot away: asking again is most often turned away again, and the page it
+           * showed is the other thing worth pressing — so there the two sit side by side.
+           */}
+          {canAskAgain ? (
+            <Button
+              className={TOUCH_TALL}
+              onClick={() => conversation.ask(asked)}
+              size="sm"
+              variant={
+                state.kind === "failed" && state.code === SITE_REFUSED
+                  ? "secondary"
+                  : "default"
+              }
+            >
+              {t("Try it again")}
+            </Button>
+          ) : null}
+          {canView ? (
+            <Button
+              className={TOUCH_TALL}
+              onClick={() => setScreenOpen(true)}
+              size="sm"
+              variant="secondary"
+            >
+              {t("View screen")}
+            </Button>
+          ) : null}
+          {/* Mounted with the card, so the page going away is heard when it is said. */}
+          <LiveRegion as="span" className="text-muted-foreground text-xs">
+            {!canView && isNewest && isPageGone && !isOpen
+              ? hasFrame
+                ? t("No page is open now. The picture is the last one.")
+                : t("No page is open now.")
+              : null}
+          </LiveRegion>
+          <Button
+            aria-controls={stepsId}
+            aria-expanded={isExpanded}
+            className={cn("ms-auto", TOUCH_TALL)}
+            onClick={() => setIsExpanded((was) => !was)}
+            size="sm"
+            variant="ghost"
+          >
+            {t("What it did")}
+            <IconChevronDown
+              aria-hidden="true"
+              className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            />
+          </Button>
         </div>
       </div>
       <div
@@ -295,6 +338,41 @@ function TaskCard({
           : null}
       </div>
     </>
+  );
+}
+
+/**
+ * How the task stands, as the chip on the card's first line: the same five words everything else
+ * says it with (`taskStateWord`), toned by the kind of news each is.
+ *
+ * A dot before the two that are happening now — the Bot at work, the person awaited — so they are
+ * told apart from the three that are over by more than a colour.
+ */
+function TaskStateChip({ state }: { state: TaskState }) {
+  const isNow = state.kind === "running" || state.kind === "yourTurn";
+  return (
+    <span
+      className={cn(
+        chatCardChip,
+        "gap-1.5",
+        state.kind === "running"
+          ? chatCardChipLive
+          : state.kind === "yourTurn" || state.kind === "failed"
+            ? chatCardChipSignal
+            : chatCardChipQuiet,
+      )}
+    >
+      {isNow ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-1.5 rounded-full",
+            state.kind === "running" ? "bg-mark" : "bg-warning",
+          )}
+        />
+      ) : null}
+      {taskStateWord(state)}
+    </span>
   );
 }
 
@@ -353,7 +431,7 @@ function TaskPicture({
   version: number;
 }) {
   return (
-    <span className="relative flex aspect-[16/10] w-28 items-center justify-center overflow-hidden rounded-lg bg-muted sm:w-36">
+    <span className="relative flex aspect-[16/10] w-24 items-center justify-center overflow-hidden rounded-lg bg-muted">
       <IconBrowser
         aria-hidden="true"
         className={`size-5 text-muted-foreground/60 ${isOpen ? "animate-pulse" : ""}`}

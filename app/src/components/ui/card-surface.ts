@@ -36,3 +36,13 @@ export const chatCardMeta = "text-muted-foreground text-xs";
 /** A short status word on a card's title line ("도움 필요", "건너뜀"). Tone is added beside it. */
 export const chatCardChip =
   "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 font-medium text-xs";
+
+/**
+ * A chip's tone, by the kind of news its word is — three, so two cards cannot say the same thing in
+ * two colours. Quiet for what is simply over. Live for what is going on now: the link ink, which
+ * is how the rest of the app writes "active". Amber for what did not finish and for the person's
+ * turn: a signal, whatever the Bot's colour (`chatCardWaiting` says why).
+ */
+export const chatCardChipQuiet = "bg-muted text-muted-foreground";
+export const chatCardChipLive = "bg-muted text-link";
+export const chatCardChipSignal = "bg-warning/12 text-warning";
