@@ -150,8 +150,9 @@ function gaveData(result: string | undefined): boolean {
  *
  * Every sentence the Bot says after such a call, until the person speaks again, carries the credit:
  * nothing says which of them the weather is in, and a line too many under a turn is a smaller
- * wrong than weather said with none. The model is asked to write the line too (the tool's own
- * result says so) — that is for places with no transcript; here it is drawn whatever was written.
+ * wrong than weather said with none. The model is asked to write the line too (the tool's
+ * description says so) — that is for places with no transcript; here it is drawn whatever was
+ * written.
  *
  * NOT UNDER A SENTENCE STILL BEING WRITTEN. The model ends its answer with the line, and the screen
  * leaves its own out where the answer's words carry it (`CreditLine`) — so a line drawn under a

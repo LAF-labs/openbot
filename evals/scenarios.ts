@@ -1615,6 +1615,19 @@ function weatherFromTheAgency(): Scenario[] {
   const asksWhere = (text: string) =>
     /(어디|어느|위치|지역|동네)/.test(text) &&
     /[?？]|알려\s?주|말씀해\s?주/.test(text);
+  /*
+   * WEATHER SAID FROM 기상청's DATA NAMES 기상청 — a duty since 2026-09-18 (기상법; the tool's
+   * description says to). The conversation draws the line itself whatever the model writes; a
+   * routine's answer and a post in 소식 have only the model's words, and a candidate that leaves
+   * the line out leaves them with none. Measured when the sentence went into the description: with
+   * neither it nor anything else, no answer of nine named 기상청 at all.
+   *
+   * By the guide's own wording and no other. The screen's test for words already said
+   * (`alreadySays`, `sources-row.tsx`) is looser on purpose: that one only keeps the screen from
+   * saying the line twice, and this one holds a model to the line.
+   */
+  const NAMES_THE_SOURCE = "기상청 자료로 답하면서 '출처: 기상청'을 적지 않음";
+  const namesTheSource = (text: string) => /출처\s*[:：]\s*기상청/.test(text);
 
   return [
     {
@@ -1646,6 +1659,7 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+          [NAMES_THE_SOURCE, namesTheSource(turn.text)],
         ]),
     },
     {
@@ -1674,6 +1688,7 @@ function weatherFromTheAgency(): Scenario[] {
             `저장된 곳(강남)의 내일 최고(${GANGNAM.tomorrowMax}도)로 답함`,
             !saysDegrees(turn.text, GANGNAM.tomorrowMax),
           ],
+          [NAMES_THE_SOURCE, namesTheSource(turn.text)],
         ]),
     },
     {
@@ -1736,6 +1751,7 @@ function weatherFromTheAgency(): Scenario[] {
             turn.text.includes("마포"),
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+          [NAMES_THE_SOURCE, namesTheSource(turn.text)],
         ]);
       },
     },

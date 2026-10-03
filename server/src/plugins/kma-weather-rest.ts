@@ -201,12 +201,27 @@ const TOOL = "get_weather";
  * emptied: then there is no `place` argument and the description does not mention names. An
  * argument that can only ever answer "not found" is a control that does nothing, and a Bot offered
  * it would use it first every time.
+ *
+ * AND IT SAYS TO NAME THE SOURCE. Since 2026-09-18 weather data from 기상청 — and anything said
+ * from it — has to carry a source line where it is published or passed on (기상법 as amended; the
+ * API hub's notice of 2026-09-14, "기상기후데이터 사용 시 출처표시 안내",
+ * `apihub.kma.go.kr/notice.do?seqNotice=57`, whose guide gives the wording). The conversation draws
+ * the line itself, under the answer, whatever the model writes
+ * (`app/src/components/channels/sources.ts`); this sentence is for everywhere a Bot's words go with
+ * no transcript around them — a routine's delivered answer, a post in 소식.
+ *
+ * HERE, AND NOT IN THE ANSWER THE TOOL GIVES. It was first a field of the result (`cite`), and a
+ * result is drawn: where the window runs the tool, the step's detail shows the JSON whole, and an
+ * instruction to the model was on the person's screen, in Korean on an English one (Codex on pull
+ * request 50). The description is read by the model and by nobody else. Measured on the eval
+ * pack's three weather scenarios, three times each, muse-spark, 2026-10-04: with neither, no
+ * answer of nine named 기상청 at all; with this sentence, nine of nine ended `출처: 기상청`.
  */
 export function kmaWeatherTools(
   withPlaceNames: boolean,
 ): readonly PartnerToolSpec[] {
   const what =
-    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만.";
+    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 이 자료로 날씨를 말할 때는 그 말 끝에 '출처: 기상청'을 한 번 적는다. 한국 안만.";
   const coordinates = {
     latitude: {
       type: "number",
@@ -563,19 +578,6 @@ function daysOf(issued: Issued, morning: Issued | null, at: Date) {
   return rows;
 }
 
-/**
- * WHAT THE MODEL IS TOLD ABOUT SAYING WHERE THIS CAME FROM.
- *
- * Since 2026-09-18 weather data from 기상청 — and anything said from it — has to carry a source line
- * where it is published or passed on (기상법 as amended; the API hub's notice of 2026-09-14,
- * "기상기후데이터 사용 시 출처표시 안내", `apihub.kma.go.kr/notice.do?seqNotice=57`, whose guide gives
- * the wording). The conversation draws the line itself, under the answer, whatever the model writes
- * (`app/src/components/channels/sources.ts`). This sentence is for everywhere else a Bot's words go
- * with no transcript around them — a routine's delivered answer, a post in 소식.
- */
-const WEATHER_CITE =
-  "이 자료로 사람에게 날씨를 말할 때는 그 말 끝에 '출처: 기상청'을 한 번 적는다.";
-
 /** What each part of the answer is called when it could not be had. */
 const PART_NAMES: Record<KmaOperation, string> = {
   now: "현재 관측",
@@ -610,7 +612,6 @@ function summariseWeather(input: {
   ];
   return JSON.stringify({
     source: "기상청",
-    cite: WEATHER_CITE,
     place: input.place,
     ...(input.saved ? { basis: "저장된 위치" } : {}),
     issued: {
