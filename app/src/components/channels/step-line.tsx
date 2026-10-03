@@ -17,8 +17,13 @@ export type StepFold = { count: number; isOpen: boolean; onToggle: () => void };
  * pull request 44, round 4). The fold is the transcript's own and draws nothing a tool supplied; it
  * stands beside whatever the seam shows.
  *
- * On one row, so the fold sits beside the words it belongs to; it wraps under them where the line
- * is drawn with a question above it.
+ * WHAT A TOOL DRAWS IS ONE THING BESIDE THE FOLD, HOWEVER MANY THINGS IT IS. A connected service's
+ * renderer hands back a question's card, its line and the rows for what a mail held, as siblings —
+ * and the seam passes them through as they are. Put straight into this row they were each a peer
+ * of the fold: a card beside its own line on a wide screen, squeezed and wrapping on a narrow one
+ * (Codex on pull request 44, round 7). So they are stacked in a block of their own, as they were
+ * before there was a fold, and the fold is that block's one neighbour: beside it where it is a
+ * line, at its foot — where the line is — or under it where it is wider than the row.
  */
 export function StepLine({
   name,
@@ -33,8 +38,8 @@ export function StepLine({
   const line = <ToolRenderBoundary name={name}>{children}</ToolRenderBoundary>;
   if (!fold) return line;
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      {line}
+    <div className="flex min-w-0 flex-wrap items-end gap-x-2 gap-y-1">
+      <div className="min-w-0 max-w-full">{line}</div>
       <StepRunFold {...fold} />
     </div>
   );
