@@ -166,6 +166,22 @@ const REFUSED_FACTS: ReadonlySet<string> = new Set([
   "laf:tool_needs_review",
 ]);
 
+/**
+ * How an object written by THIS APP begins, to the key: the window's wrapper (`toolFailureText`:
+ * `ok`, `refused`, `reason`), the server's refusal (`refusal` in `server/src/turns/chat-tools.ts`:
+ * `ok`, `code` — a `laf:` fact), and its "an approval is being asked" (`ok`, `awaitingApproval`).
+ *
+ * A SERVICE'S OWN ANSWER CAN SAY `ok: false` TOO. `stepDidNotWork` errs towards yes on purpose: it
+ * only decided whether a line stayed in the open, and a line left out for no reason costs nothing.
+ * A LABEL is another matter. A call that came back with the service's own JSON — a status of
+ * `{"ok":false,"error":"channel_not_found"}`, which a service sends as an ordinary answer — read
+ * "did not work", or "blocked" for a `refused: true` of its own, on a call that was made and
+ * answered (Codex on pull request 52). So only an object written by one of this app's own writers
+ * is read as one of ours; anything else is the service's answer, whatever it says.
+ */
+const OWN_ENVELOPE =
+  /^\{"ok":false,"(?:refused":(?:true|false),"reason":|code":"laf:[a-z0-9_]+"|awaitingApproval":true)/;
+
 /** How a finished step failed, or null for one that ended with the service's own answer. */
 export function stepFailureOf(result: string): StepFailure | null {
   if (!stepDidNotWork(result)) return null;
@@ -179,7 +195,10 @@ export function stepFailureOf(result: string): StepFailure | null {
   const said = FACT_OF_SENTENCE.get(result);
   if (said !== undefined) return { kind: kindOf(said), code: said };
   if (BARE_FACT.test(result)) return { kind: kindOf(result), code: result };
-  // An object of ours, or a handler that threw. Too long to parse, it says no more than that.
+  if (result.startsWith(THROWN_HEAD)) return { kind: "failed", code: null };
+  // An object, then — and only one of ours is a failure (`OWN_ENVELOPE`).
+  if (!OWN_ENVELOPE.test(result)) return null;
+  // Too long to parse, it says no more than that it is ours.
   const facts =
     result.length > REFUSAL_OBJECT_MAX ? null : resultFactsOf(result);
   const code = facts?.code ?? null;
