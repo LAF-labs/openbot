@@ -39,6 +39,7 @@ import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { t } from "@/lib/i18n";
 import { agentPluginsQueryOptions } from "@/lib/plugins/queries";
 import { routineListQueryOptions, whenLabel } from "@/lib/routines/queries";
+import { cardThread } from "@/lib/turns/questions";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
@@ -212,9 +213,19 @@ export function BotDay({
               }
               key={entry.key}
               onPress={() =>
-                handleShowInConversation(conversation?.id, {
-                  waitingCard: entry.card,
-                })
+                handleShowInConversation(
+                  /*
+                   * The conversation the question was raised in, where the record has said; the
+                   * Bot's own otherwise. An account that kept several with one Bot has its
+                   * questions listed from all of them, and the card is on one.
+                   */
+                  (entry.threadId
+                    ? channels.data?.find(
+                        (channel) => channel.threadId === entry.threadId,
+                      )?.id
+                    : undefined) ?? conversation?.id,
+                  { waitingCard: entry.card },
+                )
               }
               text={entry.text}
               tone="attention"
@@ -580,7 +591,13 @@ function FirstThings({
   );
 }
 
-type Waiting = { key: string; card: string; text: string };
+type Waiting = {
+  key: string;
+  card: string;
+  text: string;
+  /** The conversation that draws the card, where a watch has read it off the record. */
+  threadId?: string;
+};
 
 /**
  * What is waiting on the person for this Bot: the approvals its conversation has open, and a
@@ -597,12 +614,15 @@ function useWaiting(botId: string): Waiting[] {
     () => "[]",
   );
   const control = useControl(botId, false);
-  const questions = JSON.parse(asking) as [string, string][];
-  const waiting: Waiting[] = questions.map(([toolCallId, subject]) => ({
-    key: toolCallId,
-    card: toolCallId,
-    text: t("Approval needed · {subject}", { subject }),
-  }));
+  const questions = JSON.parse(asking) as [string, string, string][];
+  const waiting: Waiting[] = questions.map(
+    ([toolCallId, subject, threadId]) => ({
+      key: toolCallId,
+      card: toolCallId,
+      text: t("Approval needed · {subject}", { subject }),
+      ...(threadId ? { threadId } : {}),
+    }),
+  );
   if (
     control !== null &&
     (control.requested || control.secretWanted !== undefined)
@@ -629,6 +649,8 @@ function questionsKey(botId: string): string {
           : t(
               "It is waiting on an answer about something this screen cannot name.",
             ),
+        // In the key, so a row is drawn again once the record has said where its card is.
+        cardThread(botId, toolCallId) ?? "",
       ]),
   );
 }

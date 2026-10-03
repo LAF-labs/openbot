@@ -78,6 +78,22 @@ export function questionThread(
 }
 
 /**
+ * The conversation whose line draws a card, when a watch has drawn it: where a press on the
+ * question's row in the sidebar leads. A Bot's questions are listed whichever of its conversations
+ * raised them, and the row used to open the Bot's oldest one — where, for an account that kept
+ * several, the card was not (review, ninth round).
+ */
+export function cardThread(
+  botId: string,
+  toolCallId: string,
+): string | undefined {
+  for (const card of shownByBot.get(botId)?.values() ?? []) {
+    if (card.toolCallId === toolCallId) return card.threadId;
+  }
+  return undefined;
+}
+
+/**
  * Put what the server's record says on the lines it names, and fold what it no longer holds.
  *
  * `covers` says which conversations this caller answers for: a conversation's own watch, its
