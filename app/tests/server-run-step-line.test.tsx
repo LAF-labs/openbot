@@ -237,6 +237,23 @@ describe("a conversation whose steps the server ran", () => {
     );
     const row = (id: string) =>
       log()?.querySelector<HTMLElement>(`[data-message-id="${id}"]`) ?? null;
+    /*
+     * A FINISHED STEP IS NOT DRAWN UNTIL ITS RECORD IS OPENED: the answer after it carries the
+     * control (`StepsOfAnswer`). What each control was called is kept before it is pressed —
+     * closed, that name and its colour are all the conversation says about how the steps behind it
+     * ended — and then every one is opened, so the lines read below are the ones a person sees
+     * having pressed it. A step with a code on it is drawn anyway, and has no control.
+     */
+    const controls = [
+      ...(log()?.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="transcript-answer-steps"]',
+      ) ?? []),
+    ];
+    const records = controls.map((control) => ({
+      name: control.getAttribute("aria-label"),
+      isWarned: control.className.includes("text-warning"),
+    }));
+    for (const control of controls) await view.click(control);
     // The renderer is registered once the Bot's grants have been read.
     await view.waitFor(
       () => log()?.textContent?.includes("Gmail") === true,
@@ -244,6 +261,8 @@ describe("a conversation whose steps the server ran", () => {
       8000,
     );
     return {
+      /** The controls under the answers, as they were before they were pressed, in order. */
+      records,
       whole: () => log()?.textContent ?? "",
       read: (id: string) => {
         const drawn = row(id);
@@ -270,6 +289,8 @@ describe("a conversation whose steps the server ran", () => {
       { id: "q", role: "user", content: "인증번호 온 메일 읽어줘" },
       ...step("held", MAIL),
     ]);
+    // On the screen without anybody opening anything: the person is waiting on the code.
+    expect(drawn.records).toEqual([]);
     const line = drawn.read("held");
     expect(line.buttons).toEqual(["Show me"]);
     expect(line.text).toContain(
@@ -286,6 +307,13 @@ describe("a conversation whose steps the server ran", () => {
     const drawn = await rows([
       { id: "q", role: "user", content: "메일 읽어줘" },
       ...step("broke", toolErrorText("quota exceeded")),
+    ]);
+    // Closed, the control over it says so: the step itself is not drawn.
+    expect(drawn.records).toEqual([
+      {
+        name: "What it did for this answer: 1 steps, 1 did not work",
+        isWarned: true,
+      },
     ]);
     const line = drawn.read("broke");
     expect(line.text).toContain("Reading a mail, didn't work");
@@ -322,6 +350,12 @@ describe("a conversation whose steps the server ran", () => {
       ...step("denied", POLICY_DENIED),
       ...step("down", SERVER_FAILED),
       ...step("fine", "메일 2통을 찾았어요."),
+    ]);
+    // One control an answer, and each says what the line behind it will: two did not work, one did.
+    expect(drawn.records.map((record) => record.isWarned)).toEqual([
+      true,
+      true,
+      false,
     ]);
     const denied = drawn.read("denied");
     expect(denied.text).toContain("Reading a mail, blocked");
@@ -365,6 +399,41 @@ describe("a conversation whose steps the server ran", () => {
     expect(drawn.read("broke").isWarned).toBe(true);
     const went = drawn.read("went");
     expect(went.isWarned || went.isRefused).toBe(false);
+    await drawn.close();
+  });
+
+  /*
+   * THE CONTROL AND THE LINE BEHIND IT SAY THE SAME THING. They were read by two functions: the
+   * count by one that took any object saying `ok: false` for a failure, the line by one that takes
+   * only this app's own. Carried onto the change that puts the steps away, a service's ordinary
+   * answer made the control say "1 did not work", in the warning's colour, over a record in which
+   * the line said nothing of the kind.
+   */
+  test("a service's own answer that says `ok: false` is counted by nothing: not by the control, not by the line", async () => {
+    const drawn = await rows([
+      { id: "q", role: "user", content: "메일 읽어줘" },
+      ...step(
+        "status",
+        JSON.stringify({ ok: false, error: "channel_not_found" }),
+      ),
+      ...step("no", JSON.stringify({ refused: true, by: "the recipient" })),
+      // One of ours beside them, so the control is seen to count at all.
+      ...step("ours", JSON.stringify({ ok: false, code: "laf:tool_unknown" })),
+    ]);
+    expect(drawn.records).toEqual([
+      { name: "What it did for this answer: 1 steps", isWarned: false },
+      { name: "What it did for this answer: 1 steps", isWarned: false },
+      {
+        name: "What it did for this answer: 1 steps, 1 did not work",
+        isWarned: true,
+      },
+    ]);
+    for (const id of ["status", "no"]) {
+      const line = drawn.read(id);
+      expect([id, line.text]).toEqual([id, "Reading a mail·Gmail"]);
+      expect([id, line.isWarned || line.isRefused]).toEqual([id, false]);
+    }
+    expect(drawn.read("ours").isWarned).toBe(true);
     await drawn.close();
   });
 });
