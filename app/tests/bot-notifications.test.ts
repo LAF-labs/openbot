@@ -122,8 +122,17 @@ describe("which screens draw a Bot's question", () => {
     expect(place("/channel/channel_mine", "appr_1", "thread-mine")).toBe(
       "here",
     );
-    // The Bot's one conversation, before anybody has read which conversation the question is in.
+    // A request with no approval — help, a password — is drawn in the Bot's one conversation.
     expect(place("/channel/channel_mine")).toBe("here");
+  });
+
+  /*
+   * Eighth round. A question that names no conversation was taken for the open one's wherever the
+   * Bot had only one — the ordinary deployment — and a routine's question, which has no step and so
+   * no card on any line, was said by nothing while that conversation was on screen.
+   */
+  test("a question whose conversation nobody has read is not known to be there, even in the Bot's only one", () => {
+    expect(place("/channel/channel_mine", "appr_1")).toBe("unknown");
   });
 
   test("another Bot's conversation does not", () => {

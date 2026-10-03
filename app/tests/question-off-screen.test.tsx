@@ -467,6 +467,29 @@ describe("whether the person is interrupted", () => {
     expect(ShownNotice.shown).toHaveLength(0);
   });
 
+  /*
+   * Eighth round. One Bot with one conversation is the ordinary deployment, and there a question
+   * that named no conversation was taken for the open one's. A routine's has no step, so no line
+   * draws it and it never reaches the store: with the conversation on screen it was said by nothing.
+   */
+  test("a routine's question is said in the Bot's only conversation too: no line there draws it", async () => {
+    installNotices();
+    const { api, state } = server();
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the conversation's look", 6000);
+    const { step: _step, ...stepless } = question();
+    state.approvals = [stepless];
+    await outboxSays(stepless.id);
+    await view.waitFor(
+      () => ShownNotice.shown.length === 1,
+      "the notice for a question no conversation draws",
+      4000,
+    );
+    await view.settle(150);
+    expect(ShownNotice.shown).toHaveLength(1);
+    expect(pill(view.host)).not.toBe("Needs your OK");
+  });
+
   test("a question that was already waiting when the page opened is shown, not shouted", async () => {
     installNotices();
     // The worst order: the question is on screen before the page has read what was already told.
