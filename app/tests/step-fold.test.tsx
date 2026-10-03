@@ -763,4 +763,70 @@ describe("a turn that is still going", () => {
     server.close();
     await view.unmount();
   });
+  /*
+   * AN ANSWER BEING WRITTEN DRAWS NO FINISHED LINE AGAIN. The row of a step is memoised so that a
+   * finished chart, or a mail drawn as markdown, is not drawn again with every chunk of the sentence
+   * after it. The fold's press was a function made new on every render and handed to each run's
+   * newest line, which made every one of them a row whose props had changed: counted here, each
+   * was drawn once a chunk (Codex on pull request 44, round 9).
+   */
+  test("does not draw a finished run's line again with each chunk of the answer after it", async () => {
+    const channelId = "channel_fold-still";
+    const ASKED_AGAIN: Message = {
+      id: "q-again",
+      role: "user",
+      content: "그 중에 급한 게 있어?",
+    };
+    const history = [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      said("a-told", "메일이 두 통 있어요."),
+      ASKED_AGAIN,
+    ];
+    const server = turnServer({
+      channelId,
+      history,
+      turn: { id: "turn-1", status: "running", asked: [ASKED_AGAIN.id] },
+      turnMessages: history,
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 8000);
+    expect(linesDrawn(view.host)).toBe(1);
+
+    // The stand-in tool has no renderer of its own, so each drawing of its row asks for its words.
+    const labels = await import("../src/lib/copilot/step-labels");
+    const worded = spyOn(labels, "stepLineOf");
+    const drawings = () =>
+      worded.mock.calls.filter(([name]) => name === SERVICE_TOOL).length;
+    const writes = (text: string) =>
+      acted(() => server.say([said("a-urgent", text)]));
+
+    const CHUNKS = [
+      "두 번째",
+      "두 번째 메일이",
+      "두 번째 메일이 오늘까지예요.",
+    ];
+    for (const text of CHUNKS) {
+      await writes(text);
+      await view.waitFor(
+        () => log(view.host)?.textContent?.includes(text) === true,
+        `the answer as far as "${text}"`,
+        4000,
+      );
+    }
+    expect(drawings()).toBe(0);
+    // And the fold still does what it did: the function it was given is the same one, not a dead one.
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 1, "one line", 4000);
+
+    worded.mockRestore();
+    server.close();
+    await view.unmount();
+  });
 });

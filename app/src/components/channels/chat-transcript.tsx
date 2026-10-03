@@ -16,6 +16,7 @@ import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
   memo,
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -1276,6 +1277,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   runId,
   earlier = 0,
   isRunOpen = false,
+  runRows = "[]",
   onToggleRun,
 }: {
   delay: number;
@@ -1288,7 +1290,14 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   /** How many lines of that run came before this one: what the fold beside it stands for. */
   earlier?: number;
   isRunOpen?: boolean;
-  onToggleRun?: (runId: string) => void;
+  /** The ids of that run's rows, as JSON: what closing it has to take back (`openStepRuns`). */
+  runRows?: string;
+  /** The same function on every render, or this row is drawn again with every chunk of an answer. */
+  onToggleRun?: (
+    runId: string,
+    rows: readonly string[],
+    isOpen: boolean,
+  ) => void;
 }) {
   const renderToolCall = useRenderToolCall();
   const toolCall = useMemo(
@@ -1342,7 +1351,12 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
               fold: {
                 count: earlier,
                 isOpen: isRunOpen,
-                onToggle: () => onToggleRun(runId),
+                onToggle: () =>
+                  onToggleRun(
+                    runId,
+                    JSON.parse(runRows) as string[],
+                    isRunOpen,
+                  ),
               },
             }
           : {})}
@@ -1459,17 +1473,26 @@ export function ChatTranscript({
     () => new Set(),
   );
   const openRuns = openStepRuns(items, stepRuns, openedRows);
-  const handleToggleRun = (runId: string) => {
-    const rows = rowsOfStepRun(items, stepRuns, runId);
-    const isOpen = openRuns.has(runId);
-    setOpenedRows((opened) => {
-      const next = new Set(opened);
-      // Closed by every row of it, so no row left behind keeps it open.
-      if (isOpen) for (const row of rows) next.delete(row);
-      else next.add(runId);
-      return next;
-    });
-  };
+  /*
+   * ONE FUNCTION FOR AS LONG AS THE TRANSCRIPT IS MOUNTED. It is handed to the memoised step rows
+   * (`TranscriptToolCall`), and it used to be made again on every render out of the rows as they
+   * then stood — so every chunk of an answer being written changed a prop of every run's newest
+   * line and drew each of them again, its renderer and its markdown with it (Codex on pull request
+   * 44, round 9; counted: once a chunk). What it has to know of the run is handed back to it by the
+   * row that was pressed.
+   */
+  const handleToggleRun = useCallback(
+    (runId: string, rows: readonly string[], isOpen: boolean) => {
+      setOpenedRows((opened) => {
+        const next = new Set(opened);
+        // Closed by every row of it, so no row left behind keeps it open.
+        if (isOpen) for (const row of rows) next.delete(row);
+        else next.add(runId);
+        return next;
+      });
+    },
+    [],
+  );
   /*
    * A ROW SOMEBODY WAS SENT TO IS NOT LEFT BEHIND A FOLD. 오늘, 만든 것 and 수첩 name a row by its id
    * (`lib/channels/jump.ts`) and the transcript goes to it once it is in the document — which a
@@ -1980,6 +2003,10 @@ export function ChatTranscript({
                               runId: run.runId,
                               earlier: run.size - 1,
                               isRunOpen: openRuns.has(run.runId),
+                              // As text, as every list a memoised row is given: a new array is a new prop.
+                              runRows: JSON.stringify(
+                                rowsOfStepRun(items, stepRuns, run.runId),
+                              ),
                               onToggleRun: handleToggleRun,
                             }
                           : {})}
