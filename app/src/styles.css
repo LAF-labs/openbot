@@ -3,7 +3,21 @@
 @import "shadcn/tailwind.css";
 /* Composer chips/dropdown. Reads the shadcn tokens declared below, so it themes itself. */
 @import "prompt-area/tailwind.css";
-@import "@fontsource-variable/inter";
+/*
+ * PRETENDARD, SHIPPED WITH THE APP (the owner, 2026-10-03).
+ *
+ * The stack below has named it first all along and shipped none of it, so only a machine that
+ * happened to have it installed drew the app in it — the owner's Mac did, which is why the spacing
+ * looked right there. Everybody else got the bundled Inter for Latin and the platform's own Hangul:
+ * on Windows that is 맑은 고딕, measured 16% wider than Pretendard with gaps three quarters larger,
+ * and with no weight between Regular and Bold, so every `font-medium` drew Hangul at Regular.
+ *
+ * THE DYNAMIC SUBSET, not the one file: the variable face is 2.06 MB whole. Cut into ninety-two
+ * slices by `unicode-range`, a screen fetches only the slices its own text touches, and keeps
+ * them. The package's own files, unmodified — the licence (SIL OFL 1.1) reserves the font's name.
+ * Latin and digits come from it too, as they already did on the owner's Mac, so Inter is gone.
+ */
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
 /*
  * Streamdown draws a Bot's prose, and Tailwind only ships classes it can see used. Its markup lives
@@ -266,9 +280,9 @@ body {
    * Variable", sans-serif`. The bundled face registers as "Inter Variable", so the body's `Inter`
    * matched only on a machine that happened to have Inter installed — everywhere else the whole app,
    * Latin and digits included, was drawn in Apple SD Gothic Neo while the one element carrying
-   * `font-sans` got Inter. Now Latin and digits are the bundled Inter and Hangul is the platform's
-   * own face (Apple SD Gothic Neo, Malgun Gothic), with Pretendard first for whoever has it — it is
-   * Inter's metrics with Hangul, which is the pairing this stack approximates. No network font.
+   * `font-sans` got Inter. Since 2026-10-03 the whole stack's first face is one the app ships —
+   * Pretendard, Latin and Hangul alike (see the import at the top) — and the platform's own faces
+   * are what is drawn until its slices arrive, or if they never do.
    */
   word-break: keep-all;
 }
@@ -287,11 +301,31 @@ body {
  * not in that selector list — rendered a size smaller than the fields they belonged to.
  */
 
+/*
+ * WHAT IS DRAWN ON WINDOWS UNTIL PRETENDARD'S SLICES ARRIVE: 맑은 고딕 at Pretendard's width.
+ *
+ * `font-display: swap` draws the text at once in the next face of the stack and swaps when the
+ * slice lands. On a Mac that face is Apple SD Gothic Neo, whose Hangul is the same width as
+ * Pretendard's (0.865 em against 0.864) and nothing moves. On Windows it is 맑은 고딕 at 1.000 em,
+ * and the swap would re-flow every line. 86% = 0.864 / 1.000, from the font files' own advances
+ * (measured in headless Chromium for the design spec, 2026-10-03). Hangul only: its Latin is left
+ * to the faces after it. A machine without 맑은 고딕 has no source for this face and skips it.
+ *
+ * NOT SEEN ON A WINDOWS PC. The number is the fonts'; the look is still to be looked at.
+ */
+@font-face {
+  font-family: "LAF Hangul Fallback";
+  src: local("Malgun Gothic"), local("맑은 고딕");
+  size-adjust: 86%;
+  unicode-range: U+1100-11FF, U+3130-318F, U+AC00-D7A3;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans:
-    "Pretendard Variable", Pretendard, "Inter Variable", "Apple SD Gothic Neo",
-    "Malgun Gothic", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
+    "Pretendard Variable", Pretendard, "LAF Hangul Fallback",
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", ui-sans-serif,
+    system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
