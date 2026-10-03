@@ -299,18 +299,23 @@ describe("a turn the server owns", () => {
     expect((bot as { threadId?: string }).threadId).toBe(threadId);
     await until(async () => announced.length > 0);
     expect(announced).toEqual(["다 됐어요."]);
-    // And it reads back a page at a time, newest last, each with its durable cursor.
+    // And it reads back a page at a time, newest last, each with its durable cursor. A page of
+    // two would begin on the tool's answer: it reaches back to the message that began the turn.
     const page = await historyPage(database, threadId, { limit: 2 });
     expect(page.messages.map((message) => message.role)).toEqual([
+      "user",
       "assistant",
       "tool",
       "assistant",
     ]);
-    expect(page.hasOlder).toBe(true);
+    expect(page.messages[0]?.id).toBe(question.id);
+    expect(page.hasOlder).toBe(false);
+    // The cursor is the oldest message's own, and nothing is above it.
     const above = await historyPage(database, threadId, {
       before: page.oldestSeq,
     });
-    expect(above.messages.map((message) => message.id)).toEqual([question.id]);
+    expect(above.messages).toEqual([]);
+    expect(above.hasOlder).toBe(false);
   });
 
   test("a tool's answer cut through an emoji is filed sound, and the turn is kept", async () => {
