@@ -1218,7 +1218,7 @@ export function ChannelChat({
     // Keep `seed` in state; transcriptMessages hides it as soon as agent messages exist.
   }, [joinGatePromise]);
 
-  // A first message started for this conversation while it is already on screen (a sidebar chip).
+  // A first message started for this conversation while it is already on screen (a drawer chip).
   useEffect(
     () =>
       hearFirstMessages(channel.id, (text) => {

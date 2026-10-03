@@ -77,6 +77,9 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
+/** Every address the column asked the server for: what it reads is part of what it is. */
+const asked: string[] = [];
+
 const realFetch = globalThis.fetch;
 afterEach(async () => {
   await unmountAll();
@@ -84,6 +87,7 @@ afterEach(async () => {
   viewport.wide = true;
   viewport.queries = [];
   viewport.subscriptions.clear();
+  asked.length = 0;
 });
 
 const NOW = new Date();
@@ -97,6 +101,10 @@ const TODAY = new Date(
   0,
   1,
 ).toISOString();
+
+/** What the first Bot did today and what it does next, as the server would list them. */
+const DONE_TODAY = "예스24에서 책 찾아 줘";
+const COMING_NEXT = "아침 브리핑";
 
 const agent = (id: string, name: string) => ({
   id,
@@ -128,11 +136,57 @@ function server(
 ) {
   globalThis.fetch = stubFetch(async (input) => {
     const url = String(input);
+    asked.push(url);
     if (url === "/api/agents") {
       return json({ agents: bots });
     }
     if (url === "/api/agents?hidden=true") return json({ agents: [] });
     if (url === "/api/agents/working") return json({ working: [] });
+    /*
+     * A DAY WITH WORK IN IT AND A ROUTINE TO COME, WHICH THE COLUMN NEVER ASKS FOR. It listed both
+     * under its rows until 2026-10-04. They are answered so that the test holding it to that can
+     * fail: refused, as every other address this server does not know is, a list put back would
+     * have nothing to draw and would read as gone.
+     */
+    if (url === "/api/agents/bot-1/day") {
+      return json({
+        day: "2026-10-04",
+        zone: "Asia/Seoul",
+        items: [
+          {
+            kind: "chat",
+            runId: "run-1",
+            at: TODAY,
+            status: "done",
+            label: DONE_TODAY,
+            channelId: "ch-1",
+            messageId: "m-1",
+            frameToolCallId: null,
+          },
+        ],
+        more: false,
+      });
+    }
+    if (url === "/api/routines") {
+      return json({
+        routines: [
+          {
+            id: "rt-1",
+            agentId: "bot-1",
+            name: COMING_NEXT,
+            instruction: COMING_NEXT,
+            scheduleKind: "daily",
+            intervalMinutes: null,
+            dailyLocal: "07:30",
+            dailyTimeZone: "Asia/Seoul",
+            dailyDays: null,
+            enabled: true,
+            lastRunAt: null,
+            nextRunAt: new Date(NOW.getTime() + 3_600_000).toISOString(),
+          },
+        ],
+      });
+    }
     if (url === "/api/me") {
       return json({
         user: {
@@ -525,12 +579,36 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(rows[0]?.querySelector(".sr-only")?.textContent).toBe("Unread");
   });
 
+  test("and under those rows nothing: the column does not list the Bot's day, or ask for it", async () => {
+    /*
+     * 오늘 — 기다리는 일, 한 일, 다음 — STOOD UNDER THESE ROWS UNTIL 2026-10-04, and the owner had it
+     * removed outright: too much text on the screen. The day is on 소식, a row away. The server here
+     * has a day with work in it and a routine to come, so a list put back has something to draw.
+     */
+    const view = await roster({ bots: one() });
+    expect(view.width()).toBe("w-sidebar");
+    const text = view.column().textContent ?? "";
+    expect(
+      ["Today", "What it did", "Up next", DONE_TODAY, COMING_NEXT].filter(
+        (words) => text.includes(words),
+      ),
+    ).toEqual([]);
+    // The list's own element, whatever its words: nothing else in the column is a section. Counted,
+    // because an element handed to `expect` is printed whole when it fails, and that took minutes.
+    expect(view.column().querySelectorAll("section").length).toBe(0);
+    // Not read and left undrawn, either: the column asks for what it draws and not for the day.
+    expect(asked).toContain("/api/channels");
+    expect(asked).not.toContain("/api/agents/bot-1/day");
+  });
+
   test("the nav has no second way to the profile, and is pinned below the part that scrolls", async () => {
     const view = await roster({ bots: one() });
     /*
      * ONE 메뉴 ROW (muse-shape plan §4, settled with phase 9): with 목표 the fourth row above it, the
-     * phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut 오늘's first row at 1024×640 (measured: footer
-     * from 420, the row to 426). Every place is one press under it, the same list as the 메뉴 page.
+     * phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut the first row of 오늘, which the column listed
+     * under its rows then, at 1024×640 (measured: footer from 420, the row to 426). 오늘 has left the
+     * column since (2026-10-04) and the footer stayed one row. Every place is one press under it,
+     * the same list as the 메뉴 page.
      */
     expect(view.footerLinks().map((link) => link.textContent)).toEqual([
       "Menu",
@@ -539,8 +617,8 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(nav0?.querySelectorAll("a")).toHaveLength(0);
     /*
      * OUT OF THE SCROLLING PART, PINNED ABOVE THE ACCOUNT. At the PC app's smallest window (1024×640)
-     * 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold when they scrolled with it (UX review 0.5.4,
-     * item 4). The Bot, its conversation and 오늘 scroll; the links do not.
+     * 오늘, in the column then, pushed 루틴, 스킬, 연결 and 도움말 below the fold when they scrolled
+     * with it (UX review 0.5.4, item 4). The Bot and the rows under it scroll; the links do not.
      */
     const nav = view.column().querySelector("[data-sidebar-nav]");
     expect(nav?.className).toContain("shrink-0");

@@ -759,11 +759,12 @@ describe("the support-programme chip", () => {
 /**
  * WHO THE FIRST TASKS ARE DEALT TO, DECIDED IN ONE PLACE.
  *
- * Three places deal them — the first screen's chips, the 7:30 briefing beside them, and the
- * sidebar's row on a day nothing has been done yet. They were three expressions. The briefing left
- * the person out of 지원사업, so a 학생 was offered "월요일마다 새 지원사업"; the sidebar's row left the
- * person out altogether, so it dealt a 학생 가게 소개 문구 and "our shop"'s 지원사업 (the 2026-09-27
- * sweep, never merged). The persona is a hint — it orders and words — and 가게 is not assumed.
+ * Three places deal them — the first screen's chips, the 7:30 briefing beside them, and 오늘's row
+ * on a day nothing has been done yet (drawn in the sidebar then, and still on 소식 and in the
+ * header's drawer). They were three expressions. The briefing left the person out of 지원사업, so a
+ * 학생 was offered "월요일마다 새 지원사업"; 오늘's row left the person out altogether, so it dealt a
+ * 학생 가게 소개 문구 and "our shop"'s 지원사업 (the 2026-09-27 sweep, never merged). The persona is
+ * a hint — it orders and words — and 가게 is not assumed.
  */
 describe("who the first tasks are dealt to", () => {
   const holds = { tools: [{ ref: SUPPORT_PROGRAMS_TOOL }] };

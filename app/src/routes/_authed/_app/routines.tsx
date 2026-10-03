@@ -215,7 +215,8 @@ function RoutineRow({
   return (
     <div
       className="scroll-mt-4 rounded-xl border border-border bg-card transition-shadow duration-700 data-[jumped=true]:ring-2 data-[jumped=true]:ring-primary/40"
-      // 오늘 and the drawer link here by this (`app-sidebar/bot-day.tsx`, `revealWhenDrawn`).
+      // 오늘 links here by this, from 소식 and from the header's drawer (`app-sidebar/bot-day.tsx`,
+      // `revealWhenDrawn`).
       id={`routine-${routine.id}`}
     >
       <div className="flex items-start gap-3 p-4">

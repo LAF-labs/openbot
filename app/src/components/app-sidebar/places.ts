@@ -29,8 +29,9 @@ export const FOOTER_LINKS = [
   /*
    * ONE 메뉴 ROW ON THE PC SIDEBAR SINCE PHASE 9 (muse-shape plan §4). Phase 5 kept 수첩, 루틴 and 연결
    * in sight with 스킬 and 도움말 under 더 보기; with the fourth row above (목표), that footer cut
-   * 오늘's first row at 1024×640 — measured, see `MenuLinks` in `bot-sidebar.tsx` — so the whole
-   * list moved under one row, the same list the 메뉴 page draws.
+   * the first row of 오늘, which the column still listed then, at 1024×640 — measured, see
+   * `MenuLinks` in `bot-sidebar.tsx` — so the whole list moved under one row, the same list the
+   * 메뉴 page draws.
    */
   { to: "/skills", icon: IconBox, label: "Skills" },
   {

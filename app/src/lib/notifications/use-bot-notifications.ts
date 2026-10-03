@@ -83,9 +83,9 @@ export function openChannelFrom(pathname: string): string | null {
  * Where a question's card is, as far as this screen can tell: on it, somewhere else, or not known.
  *
  * Two screens draw the card: the conversation it was raised in, on the line of the call that raised
- * it, and the page a notice opens for one question. Every other screen has the pill and the
- * sidebar's 기다리는 일 at most, and a pill changing colour at the edge of what somebody is reading
- * is not them being asked.
+ * it, and the page a notice opens for one question. Every other screen has the pill at most (소식
+ * lists the question under 기다리는 일 as well, as the sidebar did until 2026-10-04), and a pill
+ * changing colour at the edge of what somebody is reading is not them being asked.
  *
  * THE CONVERSATION IT WAS RAISED IN, NOT ANY CONVERSATION WITH THE BOT. An account that kept what it
  * had before the limit can hold several with one Bot, and each draws only its own thread's cards:

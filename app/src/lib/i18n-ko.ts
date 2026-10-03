@@ -3249,7 +3249,6 @@ export const ko: Record<string, string> = {
   "About this update": "이 소식에 대해",
   "Remove “{title}”": "‘{title}’ 빼기",
   "{count} new": "새 소식 {count}개",
-  "See it all on Updates": "소식에서 모두 보기",
   "That post is no longer there.": "그 소식은 이제 없어요.",
   "News about my line of business": "업종 뉴스",
   "Changes to rules and support for small businesses":

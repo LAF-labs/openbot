@@ -21,10 +21,10 @@ import {
  * A QUESTION THE BOT STOPPED ON IS KNOWN ON EVERY SCREEN, NOT ONLY IN ITS CONVERSATION.
  *
  * The server's record of open questions was read by the open conversation alone. Everything else
- * that says "the Bot is waiting on you" — the pill, the tray, the sidebar's 기다리는 일, the phone
- * bar's dot — reads the store that reading fills. So on any other screen a question raised after
- * the person left said nothing, and one raised before they left went on saying 확인 필요 after
- * somebody had answered it.
+ * that says "the Bot is waiting on you" — the pill, the tray, 기다리는 일 (in the sidebar then; on
+ * 소식 and in the header's drawer now), the phone bar's dot — reads the store that reading fills.
+ * So on any other screen a question raised after the person left said nothing, and one raised
+ * before they left went on saying 확인 필요 after somebody had answered it.
  *
  * Read from the code, 2026-10-02, and NOT pressed on the running app: raising a real question means
  * the Bot pressing something on a money site, which that session was not permitted to do.
@@ -296,8 +296,9 @@ describe("the shell's watch and a conversation's", () => {
 
 /*
  * Codex, on the pull request. The approval's own page registers the question on a line of its own;
- * with the shell's watch on that page too, the same question was on two lines, and the sidebar's
- * 기다리는 일 listed it twice — the second row leading to a card that is on no conversation.
+ * with the shell's watch on that page too, the same question was on two lines, and 기다리는 일 —
+ * drawn in the sidebar beside that page, until 2026-10-04 — listed it twice, the second row
+ * leading to a card that is on no conversation.
  */
 describe("one question on two lines", () => {
   const asking = (approvalId: string) => ({

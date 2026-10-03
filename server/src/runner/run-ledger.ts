@@ -136,10 +136,10 @@ export function headOf(text: string, limit: number): string | null {
  * A chat run's label: the start of what the person said, when the person is what started it.
  *
  * The column always said "in the person's own words where there are any", and a chat run is the one
- * run that has some; only routines ever wrote it. 오늘 (the Bot's day in the sidebar) reads it to
- * name a turn. Only when the newest message IS the person's: a browser step coming back to the Bot is
- * also a chat run, and its newest message is a tool's result — that run carries the turn on, and
- * has no words of its own (`runner/laf-runner.ts`, `carriesAStepOn`).
+ * run that has some; only routines ever wrote it. 오늘 (the Bot's day, on 소식 and in the header's
+ * drawer) reads it to name a turn. Only when the newest message IS the person's: a browser step
+ * coming back to the Bot is also a chat run, and its newest message is a tool's result — that run
+ * carries the turn on, and has no words of its own (`runner/laf-runner.ts`, `carriesAStepOn`).
  *
  * Written when the run opens, after nothing the model reads: the label is never read into a prompt.
  */
