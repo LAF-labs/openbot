@@ -78,6 +78,32 @@ describe("the source line under an answer", () => {
     expect(await line("기상청 발표로는 내일 비가 와요.")).not.toBeNull();
   });
 
+  /*
+   * By the words a person reads, not the markdown the Bot wrote (Codex on #50): looked for in
+   * the source, the line was found where nobody sees it and missed where everybody does.
+   */
+  test("knows the line by what is read: marked up it is still said, hidden it is not", async () => {
+    for (const said of [
+      "서울은 17.7도예요.\n\n출처: **기상청**",
+      "서울은 17.7도예요.\n\n**출처:** 기상청",
+      "서울은 17.7도예요. *출처: 기상청*",
+      "서울은 17.7도예요. [출처: 기상청](https://www.weather.go.kr)",
+      "- 서울 17.7도\n- 출처: `기상청`",
+    ]) {
+      expect([said, await line(said)]).toEqual([said, null]);
+    }
+    for (const hidden of [
+      "서울은 17.7도예요.<!-- 출처: 기상청 -->",
+      '서울은 17.7도예요. [날씨 보기](https://www.weather.go.kr "출처: 기상청")',
+      '<span title="출처: 기상청">서울은 17.7도예요.</span>',
+    ]) {
+      expect([hidden, (await line(hidden))?.textContent]).toEqual([
+        hidden,
+        `Source: ${KMA}`,
+      ]);
+    }
+  });
+
   test("names each provider once, and draws nothing where none is owed", async () => {
     expect(await line("…", [])).toBeNull();
     const two = await line("…", [KMA, "Another agency"]);

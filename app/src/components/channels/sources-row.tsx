@@ -1,5 +1,6 @@
 import { IconExternalLink, IconWorld } from "@tabler/icons-react";
 import { focusRing } from "@/components/ui/focus";
+import { spokenText } from "@/lib/channels/spoken-text";
 import { t } from "@/lib/i18n";
 import { ko } from "@/lib/i18n-ko";
 import type { Source } from "./sources";
@@ -69,6 +70,21 @@ function writtenAs(name: string): string[] {
   return [...new Set([name, ko[name] ?? name])];
 }
 
+/**
+ * The answer as the words a person reads, not as the markdown the Bot wrote.
+ *
+ * Looked for in what the Bot wrote, the line was found where nobody sees it — in a comment, in a
+ * link's title — and the screen left its own out, and it was missed where everybody sees it:
+ * `출처: **기상청**`, drawn bold, got a second line (Codex on pull request 50). The marks come off
+ * the way they do for a screen reader (`spokenText`), and what HTML hides goes with its tags.
+ * Not the drawn bubble itself: that is the renderer's, lazily, and this is decided as the row is.
+ */
+function wordsOf(text: string): string {
+  return spokenText(
+    text.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, ""),
+  );
+}
+
 /** A source line the answer's own words already carry: "출처: 기상청", "자료 제공: 기상청". */
 function alreadySays(text: string, name: string): boolean {
   const said = writtenAs(name)
@@ -94,8 +110,9 @@ export function CreditLine({
   names: readonly string[];
   text: string;
 }) {
+  const words = wordsOf(text);
   const owed = names
-    .filter((name) => !alreadySays(text, name))
+    .filter((name) => !alreadySays(words, name))
     .map((name) => t(name));
   if (owed.length === 0) return null;
   return (
