@@ -166,22 +166,36 @@ export function isFoldableStep(name: string): boolean {
  *   (`ApprovalRequest`), and a model may ask for two calls in one breath, so the call waiting on the
  *   person need not be the newest. Behind a fold its card would be drawn nowhere: a question nobody
  *   can see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
- * - IT DID NOT WORK: the service's own error, or this server's answer in the service's place — a
- *   refusal, a stop, a call that never got its answer (`stepDidNotWork`). Folded behind the step
- *   after it, an action that was refused would read as one more thing the Bot did.
  * - A WITHHELD MARK IN ITS RESULT. The 보기 for a mail's one-time code belongs on that call's own
  *   line (`WithheldSecrets`), and the person who asked for the code is waiting on it — not on the
  *   search the Bot made after reading the mail.
+ *
+ * A STEP THAT DID NOT WORK IS NOT ONE OF THEM ANY MORE (the owner, 2026-10-04). It was: a refused or
+ * failed step ended its run and stayed drawn, so that it could not read as one more thing the Bot
+ * did. What that left on the screen was the owner's own example of too many words — a weather
+ * look-up that failed and the one after it that worked, a line each, above an answer that already
+ * says which did not work. The rule now is the one asked for: the newest line, and an icon that
+ * opens the rest. That a step behind the fold did not work is said BY THE FOLD — its colour and its
+ * name (`StepRunPlace.failed`) — so nothing that failed is behind a control that looks like nothing
+ * happened.
  */
 function staysInTheOpen(
   step: Extract<VisibleChatItem, { kind: "tool" }>,
 ): boolean {
   if (step.result === undefined) return true;
-  if (stepDidNotWork(step.result)) return true;
   // The cheap look first: this runs over every step of the conversation on every chunk.
   return (
     step.result.includes("[[withheld:") &&
     withheldMarksIn(step.result).length > 0
+  );
+}
+
+/** Whether a row is a finished step that did not work (`stepDidNotWork`). */
+function didNotWork(item: TranscriptItem): boolean {
+  return (
+    item.kind === "tool" &&
+    item.result !== undefined &&
+    stepDidNotWork(item.result)
   );
 }
 
@@ -194,6 +208,8 @@ export type StepRunPlace = {
   first: number;
   size: number;
   isNewest: boolean;
+  /** How many of the lines before the newest did not work: what the fold has to say for them. */
+  failed: number;
 };
 
 /**
@@ -211,7 +227,8 @@ export type StepRunPlace = {
  *
  * And a line that must stay in the open (`staysInTheOpen`) ends its run WITH itself: it is that
  * run's newest, so it is the one drawn, and the steps after it begin a run of their own. What is
- * behind a fold is therefore only ever a finished step with nothing on it for the person.
+ * behind a fold is therefore only ever a finished step with nothing on it for the person to
+ * press — one that did not work among them, counted for the fold to say (`failed`).
  */
 export function stepRunsOf(
   items: readonly TranscriptItem[],
@@ -222,12 +239,16 @@ export function stepRunsOf(
     const size = until - from;
     if (from >= 0 && size >= 2) {
       const runId = items[from]?.id ?? "";
+      // Of the lines the fold stands for — every one but the newest, which is drawn and says so
+      // itself.
+      const failed = items.slice(from, until - 1).filter(didNotWork).length;
       for (let at = from; at < until; at += 1) {
         places.set(at, {
           runId,
           first: from,
           size,
           isNewest: at === until - 1,
+          failed,
         });
       }
     }

@@ -115,6 +115,12 @@ const placesOf = (messages: Message[]) => {
   ]);
 };
 
+/** How many lines behind each row's fold did not work, row by row. */
+const failedOf = (messages: Message[]) => {
+  const items = withBrowsingTasks(toVisibleChatItems(messages));
+  return [...stepRunsOf(items).values()].map((place) => place.failed);
+};
+
 describe("which lines are a run", () => {
   test("a connected service's tool and the Bot's two ways to a tool; nothing that draws a card", () => {
     for (const name of [
@@ -209,7 +215,7 @@ describe("which lines are a run", () => {
    * written in are read back: the service's own error, this server's answer in the service's
    * place, an object of ours that says no.
    */
-  test("a step that did not work ends its run, drawn, in every form a failure is written in", () => {
+  test("a step that did not work is folded like any other and counted for the fold, in every form a failure is written in", () => {
     const failures = [
       toolErrorText("quota exceeded"),
       TOOL_NOT_ALLOWED,
@@ -225,22 +231,28 @@ describe("which lines are a run", () => {
         result.slice(0, 40),
         true,
       ]);
-      // Second of four: the newest of the first run, and the two after it are a run of their own.
+      // Second of four: one run, the fourth its newest, and the fold told that one did not work.
+      const turn = [
+        ASKED,
+        ...done("1"),
+        called("2"),
+        answered("2", result),
+        ...done("3"),
+        ...done("4"),
+      ];
       expect(
-        placesOf([
-          ASKED,
-          ...done("1"),
-          called("2"),
-          answered("2", result),
-          ...done("3"),
-          ...done("4"),
-        ]).map(([id, , , isNewest]) => [id, isNewest]),
+        placesOf(turn).map(([id, , , isNewest]) => [id, isNewest]),
       ).toEqual([
         ["call-1", false],
-        ["call-2", true],
+        ["call-2", false],
         ["call-3", false],
         ["call-4", true],
       ]);
+      expect(failedOf(turn)).toEqual([1, 1, 1, 1]);
+      // The newest is drawn and says so itself: it is not one of the ones the fold stands for.
+      expect(
+        failedOf([ASKED, ...done("1"), called("2"), answered("2", result)]),
+      ).toEqual([0, 0]);
     }
     // Every sentence the server answers with in a service's place is one of them.
     for (const [code, sentence] of Object.entries(TOOL_RESULT_KO)) {
@@ -291,15 +303,20 @@ describe("which lines are a run", () => {
       ]);
       // The model is told the same reason, and whether it was a refusal.
       expect(JSON.parse(written)).toEqual({ ok: false, ...failure });
-      expect(
-        placesOf([
-          ASKED,
-          called("1"),
-          answered("1", written),
-          ...done("2"),
-          ...done("3"),
-        ]).map(([id]) => id),
-      ).toEqual(["call-2", "call-3"]);
+      // And read back, it is a step that did not work: folded, and counted for the fold.
+      const turn = [
+        ASKED,
+        called("1"),
+        answered("1", written),
+        ...done("2"),
+        ...done("3"),
+      ];
+      expect(placesOf(turn).map(([id]) => id)).toEqual([
+        "call-1",
+        "call-2",
+        "call-3",
+      ]);
+      expect(failedOf(turn)).toEqual([1, 1, 1]);
     }
     // However long the reason: a wrapper too long to be parsed is known by how it begins (round 5).
     const long = toolFailureText({ refused: true, reason: "가".repeat(5000) });
@@ -387,6 +404,9 @@ const folds = (host: HTMLElement) => [
     []),
 ];
 const fold = (host: HTMLElement) => folds(host)[0] ?? null;
+/** What the fold is called: it is an icon, so its name is all it says. */
+const named = (button: Element | null | undefined) =>
+  button?.getAttribute("aria-label") ?? null;
 
 async function conversation(channelId: string, history: Message[]) {
   const server = turnServer({ channelId, history });
@@ -414,12 +434,12 @@ describe("a finished conversation with a run of steps", () => {
     ]);
     await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
     expect(linesDrawn(view.host)).toBe(1);
-    expect(fold(view.host)?.textContent).toBe("3 earlier steps");
+    expect(named(fold(view.host))).toBe("3 earlier steps");
     expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("false");
 
     await view.click(fold(view.host) as HTMLButtonElement);
     await view.waitFor(() => linesDrawn(view.host) === 4, "every line", 4000);
-    expect(fold(view.host)?.textContent).toBe("Hide earlier steps");
+    expect(named(fold(view.host))).toBe("Hide earlier steps");
     expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
 
     await view.click(fold(view.host) as HTMLButtonElement);
@@ -490,7 +510,7 @@ describe("a run at the edge of what is drawn", () => {
       8000,
     );
     await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
-    expect(fold(view.host)?.textContent).toBe("5 earlier steps");
+    expect(named(fold(view.host))).toBe("5 earlier steps");
     expect(rowsDrawn(view.host)[0]).toBe("call-6");
 
     await view.click(fold(view.host) as HTMLButtonElement);
@@ -525,7 +545,7 @@ describe("a run at the edge of what is drawn", () => {
       api: server.api,
     });
     await view.waitFor(() => fold(view.host) !== null, "the fold", 8000);
-    expect(fold(view.host)?.textContent).toBe("1 earlier steps");
+    expect(named(fold(view.host))).toBe("1 earlier steps");
     await view.click(fold(view.host) as HTMLButtonElement);
     await view.waitFor(() => linesDrawn(view.host) === 2, "both lines", 4000);
 
@@ -537,7 +557,7 @@ describe("a run at the edge of what is drawn", () => {
     // begins at the run's first line, and the run is open by the row it was opened by.
     await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 8000);
     expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
-    expect(fold(view.host)?.textContent).toBe("Hide earlier steps");
+    expect(named(fold(view.host))).toBe("Hide earlier steps");
     expect(rowsDrawn(view.host)).toEqual([
       "call-1",
       "call-2",
@@ -548,7 +568,7 @@ describe("a run at the edge of what is drawn", () => {
     // Closed by any row of it: one line again, and the count is the whole run's.
     await view.click(fold(view.host) as HTMLButtonElement);
     await view.waitFor(() => linesDrawn(view.host) === 1, "one line", 4000);
-    expect(fold(view.host)?.textContent).toBe("3 earlier steps");
+    expect(named(fold(view.host))).toBe("3 earlier steps");
     server.close();
     await view.unmount();
   });
@@ -567,7 +587,7 @@ describe("a line with something on it for the person", () => {
     ]);
     await view.waitFor(() => folds(view.host).length === 2, "two folds", 4000);
     expect(linesDrawn(view.host)).toBe(2);
-    expect(folds(view.host).map((button) => button.textContent)).toEqual([
+    expect(folds(view.host).map(named)).toEqual([
       "1 earlier steps",
       "1 earlier steps",
     ]);
@@ -582,7 +602,12 @@ describe("a line with something on it for the person", () => {
     await view.unmount();
   });
 
-  test("stays drawn when it did not work: the step a service refused, with the ones after it folded behind their own", async () => {
+  /*
+   * A STEP THAT DID NOT WORK IS FOLDED LIKE ANY OTHER (the owner, 2026-10-04: the newest line and
+   * an icon that opens the rest). It used to end its run and stay drawn. What keeps a failure from
+   * being hidden is the fold: its colour, and its name.
+   */
+  test("a step that did not work is behind the fold, and the fold says so in its colour and its name", async () => {
     const { server, view } = await conversation("channel_fold-failed", [
       ASKED,
       ...done("1"),
@@ -592,9 +617,37 @@ describe("a line with something on it for the person", () => {
       ...done("4"),
       said("a-answer", "두 번째는 안 됐어요."),
     ]);
-    await view.waitFor(() => folds(view.host).length === 2, "two folds", 4000);
-    expect(rowsDrawn(view.host).slice(1, 3)).toEqual(["call-2", "call-4"]);
-    expect(linesDrawn(view.host)).toBe(2);
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(folds(view.host)).toHaveLength(1);
+    expect(linesDrawn(view.host)).toBe(1);
+    expect(rowsDrawn(view.host).slice(1, 2)).toEqual(["call-4"]);
+    expect(named(fold(view.host))).toBe("3 earlier steps, 1 did not work");
+    expect(fold(view.host)?.className).toContain("text-warning");
+    // Opened, the step that did not work is there with the rest.
+    await view.click(fold(view.host) as HTMLButtonElement);
+    await view.waitFor(() => linesDrawn(view.host) === 4, "all four", 4000);
+    expect(rowsDrawn(view.host).slice(1, 5)).toEqual([
+      "call-1",
+      "call-2",
+      "call-3",
+      "call-4",
+    ]);
+    server.close();
+    await view.unmount();
+  });
+
+  test("a fold over steps that all worked carries no warning", async () => {
+    const { server, view } = await conversation("channel_fold-quiet", [
+      ASKED,
+      ...done("1"),
+      ...done("2"),
+      said("a-answer", "다 됐어요."),
+    ]);
+    await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
+    expect(named(fold(view.host))).toBe("1 earlier steps");
+    expect(fold(view.host)?.className).not.toContain("text-warning");
+    // An icon and nothing else.
+    expect(fold(view.host)?.textContent).toBe("");
     server.close();
     await view.unmount();
   });
@@ -650,6 +703,7 @@ describe("the newest line of a run that could not be drawn", () => {
         name: "look_up",
         fold: {
           count: 2,
+          failed: 0,
           isOpen: false,
           onToggle: () => {
             presses.push("fold");
@@ -664,7 +718,9 @@ describe("the newest line of a run that could not be drawn", () => {
     const button = view.host.querySelector<HTMLButtonElement>(
       "button[aria-expanded]",
     );
-    expect(button?.textContent).toBe("2 earlier steps");
+    expect(named(button)).toBe("2 earlier steps");
+    // An icon and nothing else: no word is drawn beside the line.
+    expect(button?.textContent).toBe("");
     await view.press(button as Element);
     expect(presses).toEqual(["fold"]);
     quiet.mockRestore();
@@ -683,7 +739,7 @@ describe("the newest line of a run that could not be drawn", () => {
     const view = await mount(
       createElement(StepLine, {
         name: "read_message",
-        fold: { count: 1, isOpen: false, onToggle: () => {} },
+        fold: { count: 1, failed: 0, isOpen: false, onToggle: () => {} },
         children: createElement(
           Fragment,
           null,
@@ -751,7 +807,7 @@ describe("a turn that is still going", () => {
     await writes([...done("1"), called("2")]);
     await view.waitFor(() => fold(view.host) !== null, "the fold", 4000);
     expect(linesDrawn(view.host)).toBe(1);
-    expect(fold(view.host)?.textContent).toBe("1 earlier steps");
+    expect(named(fold(view.host))).toBe("1 earlier steps");
 
     // Opened mid-task, it stays open as the run grows: the run is named by its first line.
     await view.click(fold(view.host) as HTMLButtonElement);
