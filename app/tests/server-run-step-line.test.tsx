@@ -257,6 +257,27 @@ describe("a conversation whose steps the server ran", () => {
     await drawn.close();
   });
 
+  /*
+   * A mail tool that fails part-way has still read what it read: the server takes the code out and
+   * keeps it before it looks at whether the call failed. The 보기 was left out for every failure,
+   * and the error's words were drawn as they came — the mark and nothing to press (Codex on #52).
+   */
+  test("a step that did not work and still held a code offers the 보기, and never the mark", async () => {
+    const drawn = await rows([
+      { id: "q", role: "user", content: "인증번호 온 메일 읽어줘" },
+      ...step("half", toolErrorText(`본문을 끝까지 읽지 못했다.\n${MAIL}`)),
+    ]);
+    const line = drawn.read("half");
+    expect(line.text).toContain("Reading a mail, didn't work");
+    expect(line.isWarned).toBe(true);
+    expect(line.buttons).toEqual(["Show me"]);
+    expect(line.text).toContain("본문을 끝까지 읽지 못했다.");
+    // Neither the mark that stands for the code nor the code is anywhere on the row.
+    expect(line.text).not.toContain("withheld");
+    expect(line.text).not.toContain("Ab12Cd34Ef56");
+    await drawn.close();
+  });
+
   test("says a step was blocked in a person's words, and never in the sentence written for the model", async () => {
     const drawn = await rows([
       { id: "q", role: "user", content: "메일 읽어줘" },
