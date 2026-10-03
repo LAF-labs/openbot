@@ -2227,15 +2227,25 @@ export function ChatTranscript({
                         onFold={(isUnfolded) =>
                           handleFoldTask(item, isUnfolded)
                         }
+                        /*
+                         * What the Bot said between the task's steps is inside the card; said
+                         * from the weather, its source line is under the card (`creditsByAnswer`)
+                         * — for as long as one of those sentences is on it, which is the card's to
+                         * know: a task that is over is a row with none of them.
+                         */
+                        {...(credits.has(item.id)
+                          ? {
+                              credit: (
+                                <CreditLine
+                                  names={credits.get(item.id) ?? []}
+                                  text={item.notes
+                                    .map((note) => note.text)
+                                    .join("\n")}
+                                />
+                              ),
+                            }
+                          : {})}
                       />
-                      {/* What the Bot said between the task's steps is inside the card; said from
-                          the weather, its source line is under the card (`creditsByAnswer`). */}
-                      {credits.has(item.id) ? (
-                        <CreditLine
-                          names={credits.get(item.id) ?? []}
-                          text={item.notes.map((note) => note.text).join("\n")}
-                        />
-                      ) : null}
                     </Arriving>
                   </MessageScrollerItem>
                   {failuresDrawnAfter(item.id)}

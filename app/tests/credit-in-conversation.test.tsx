@@ -164,24 +164,67 @@ describe("the source line, in the conversation", () => {
     await view.unmount();
   });
 
-  test("is under a browsing card that holds what the Bot said after the weather", async () => {
+  /*
+   * A TASK THAT IS OVER IS ONE ROW, WITH NONE OF THE BOT'S WORDS ON IT (the browsing row,
+   * 2026-10-04). The line is owed where the weather's words are on the screen: on the card the row
+   * opens to, which shows the newest thing the Bot said while doing it — and not under the row,
+   * where it would be a source for words nobody can see.
+   */
+  test("is under a browsing card that holds what the Bot said after the weather — the card, not the row it folds to", async () => {
     const page = { ok: true, url: "https://shop.example/", title: "우산" };
-    const { server, view } = await conversation("channel_credit-card", [
-      asked("비 오면 우산 살 곳 찾아 줘"),
-      ...weather("w1"),
-      ...done("b1", "computer_navigate", page),
-      // Said between two steps of the task: drawn inside the card, not as a row of its own.
-      said("a-between", "서울은 저녁에 비가 온다니 우산 파는 곳을 찾아볼게요."),
-      ...done("b2", "computer_read", page),
-      // The answer carries the line in its own words — in Korean, on this English screen.
-      said("a-told", "근처에 두 곳이 있어요. 출처: 기상청"),
-    ]);
+    const channelId = "channel_credit-card";
+    const server = turnServer({
+      channelId,
+      history: [
+        asked("비 오면 우산 살 곳 찾아 줘"),
+        ...weather("w1"),
+        ...done("b1", "computer_navigate", page),
+        // Said between two steps of the task: drawn inside the card, not as a row of its own.
+        said(
+          "a-between",
+          "서울은 저녁에 비가 온다니 우산 파는 곳을 찾아볼게요.",
+        ),
+        ...done("b2", "computer_read", page),
+        // The answer carries the line in its own words — in Korean, on this English screen.
+        said("a-told", "근처에 두 곳이 있어요. 출처: 기상청"),
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    // The task is named by its first step, and folds by the one button on its row.
+    const fold = () =>
+      log(view.host)?.querySelector<HTMLButtonElement>(
+        '[data-message-id="call-b1"] button[aria-expanded]:not([aria-controls])',
+      ) ?? null;
+    await view.waitFor(() => fold() !== null, "the task's row", 8000);
+    expect(fold()?.getAttribute("aria-expanded")).toBe("false");
+    // Nothing the Bot said is on the row, and the answer's own words carry the answer's line.
+    expect(lines(view.host).map((line) => line.textContent)).toEqual([]);
 
-    // One line, and it is the card's: the answer's own words carry the answer's.
+    await view.click(fold() as HTMLButtonElement);
+    await view.waitFor(
+      () => lines(view.host).length === 1,
+      "the source line",
+      4000,
+    );
+    // One line, and it is the card's.
     expect(lines(view.host).map((line) => line.textContent)).toEqual([LINE]);
-    const row = lines(view.host)[0]?.parentElement;
-    expect(row?.textContent).toContain("shop.example");
+    const row = lines(view.host)[0]?.closest("[data-message-id]");
+    expect(row?.getAttribute("data-message-id")).toBe("call-b1");
+    expect(row?.textContent).toContain(
+      "서울은 저녁에 비가 온다니 우산 파는 곳을 찾아볼게요.",
+    );
     expect(row?.textContent).not.toContain("근처에 두 곳이 있어요.");
+
+    // Folded again, the words go and the line with them.
+    await view.click(fold() as HTMLButtonElement);
+    await view.waitFor(
+      () => lines(view.host).length === 0,
+      "the row again",
+      4000,
+    );
 
     server.close();
     await view.unmount();
