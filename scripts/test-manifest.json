@@ -387,6 +387,7 @@
   "server/tests/health.test.ts",
   "server/tests/help-opened-route.test.ts",
   "server/tests/high-risk.test.ts",
+  "server/tests/history-page.test.ts",
   "server/tests/ideas.test.ts",
   "server/tests/insights-read.integration.test.ts",
   "server/tests/insights-routes.test.ts",
