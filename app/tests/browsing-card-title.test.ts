@@ -210,6 +210,26 @@ describe("the card's heading: where, small, and what, as the title", () => {
         { site: null, title: "Toss Securities" },
       ]);
     }
+    // And in the other language this app speaks: a Bot searches in the language of the request,
+    // which need not be the screen's (review, round 2). Tests read the English keys, so here the
+    // Korean name is the other one.
+    for (const lookedUp of ["토스증권", " 토스 증권 "]) {
+      expect([lookedUp, taskHeading(["tossinvest.com"], lookedUp)]).toEqual([
+        lookedUp,
+        { site: null, title: "Toss Securities" },
+      ]);
+    }
+    expect(taskHeading(["shopping.naver.com"], "네이버 쇼핑")).toEqual({
+      site: null,
+      title: "Naver Shopping",
+    });
+    // A business site, named as the 연결 screen names it, the same way.
+    const store = siteNameOf("smartstore.naver.com");
+    expect(ko[store]).toBeString();
+    expect(taskHeading(["smartstore.naver.com"], ko[store])).toEqual({
+      site: null,
+      title: store,
+    });
     // A name that only begins the same is something looked up there.
     expect(taskHeading(["tossinvest.com"], "Toss Securities 수수료")).toEqual({
       site: "Toss Securities",

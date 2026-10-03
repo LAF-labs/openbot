@@ -16,6 +16,7 @@
  */
 import { siteForUrl } from "@shared/sites/catalogue";
 import { t } from "@/lib/i18n";
+import { ko } from "@/lib/i18n-ko";
 
 /**
  * Everyday sites a Bot is asked to look things up on, by the name people use for them.
@@ -59,13 +60,34 @@ function under(host: string, hosts: readonly string[]): boolean {
   return hosts.some((known) => host === known || host.endsWith(`.${known}`));
 }
 
-/** The name a person would call a host by, in their language; the host itself when unknown. */
-export function siteNameOf(host: string): string {
+/** The name a host is known by in the two tables, as its English key; null where neither has it. */
+function siteKeyOf(host: string): string | null {
   const lowered = host.toLowerCase();
   const business = siteForUrl(`https://${lowered}/`);
-  if (business) return t(business.name);
-  const everyday = EVERYDAY_SITES.find((site) => under(lowered, site.hosts));
-  return everyday ? t(everyday.name) : lowered.replace(/^www\./, "");
+  if (business) return business.name;
+  return (
+    EVERYDAY_SITES.find((site) => under(lowered, site.hosts))?.name ?? null
+  );
+}
+
+/** The name a person would call a host by, in their language; the host itself when unknown. */
+export function siteNameOf(host: string): string {
+  const key = siteKeyOf(host);
+  return key ? t(key) : host.toLowerCase().replace(/^www\./, "");
+}
+
+/**
+ * Every way a site is written here: its name in each language this app speaks.
+ *
+ * What a Bot looked up is in the language it searched in, which need not be the reader's: a Korean
+ * screen whose Bot searched for "Toss Securities", an English one whose Bot searched for 토스증권.
+ */
+function everyNameOf(host: string): string[] {
+  const key = siteKeyOf(host);
+  if (key === null) return [siteNameOf(host)];
+  return [key, ko[key], t(key)].filter(
+    (name): name is string => typeof name === "string" && name !== "",
+  );
 }
 
 /**
@@ -119,7 +141,13 @@ export function taskHeading(
 ): { site: string | null; title: string | null } {
   const site = siteNamesOf(hosts).at(-1) ?? null;
   const what = lookedUp?.trim() || null;
-  if (what === null || (site !== null && isSameName(what, site))) {
+  if (what === null || site === null)
+    return { site: null, title: what ?? site };
+  // In whichever language it was looked up in: the reader's, or the other (review, round 2).
+  const names = hosts
+    .filter((host) => siteNameOf(host) === site)
+    .flatMap(everyNameOf);
+  if (names.some((name) => isSameName(what, name))) {
     return { site: null, title: site };
   }
   return { site, title: what };
