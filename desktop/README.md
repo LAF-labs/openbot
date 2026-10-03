@@ -203,13 +203,16 @@ needs telling. So:
 - **A tray icon**, with 열기 / 알림 받기 / 로그인할 때 자동 실행 / 종료. Its
   strings are Korean and live in `lib.rs`, because a tray menu is drawn by the
   operating system out of strings this process holds: there is no page to ask.
-- **The Bot's status in the tray**: 일하는 중 / 사장님 차례 / 쉬는 중, as a line
+- **The Bot's status in the tray**: 일하는 중 / 내 차례 / 쉬는 중, as a line
   under the version, in the tooltip, and as a dot on the icon (amber for the
   person's turn, green while working, none at rest). The page derives it — the
   same answer as the pill under the Bot's face (`app/src/lib/agents/presence.ts`)
   — and sends one of three codes; the words stay here for the reason above, and a
   page cannot put text of its own into a native menu. Every page load starts it
   at 쉬는 중, so a page that went away cannot leave it saying the Bot is busy.
+  The three are the app's own words (`Busy working`, `Your turn`, `Ready` in its
+  dictionary) and a test holds them to it: the person's turn read 사장님 차례
+  here until 2026-10-03, to everybody, whoever they had said they were.
 - **A summon shortcut**, ⌃⌥L (Ctrl+Alt+L) unless the person picks another or
   turns it off on Settings. Registered from Rust through the official
   global-shortcut plugin, from a fixed list (`SUMMON_CHOICES`, with why each
