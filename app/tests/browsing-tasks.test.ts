@@ -4,7 +4,10 @@ import { SITE_REFUSED, UNANSWERED_RESULT } from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import {
+  browsingTaskHolding,
   cutOffOf,
+  isHandedToThePerson,
+  isTaskUnfolded,
   openBrowsingTask,
   toVisibleChatItems,
   turnFailedAfter,
@@ -612,6 +615,138 @@ describe("what the card and the banner say", () => {
     const answered = step("computer_navigate", {}, { ok: true });
     expect(pictureStepOf([answered, step("computer_click")])).toBe(answered.id);
     expect(pictureStepOf([step("computer_click")])).toBeNull();
+  });
+});
+
+/*
+ * A TASK THAT IS OVER IS ONE ROW (`browsing-card.tsx`, 2026-10-04). What the transcript decides for
+ * it is decided here: which task a person opened, which task a jump from another screen lands in,
+ * and which task only looks over because the Bot stopped to ask for a hand.
+ */
+describe("a task folded to its row", () => {
+  const turn = () => [
+    said("user", "서울, 부산 날씨 알려줘"),
+    ...calls({
+      name: "computer_navigate",
+      args: { url: "https://search.naver.com/?query=서울날씨" },
+      result: { ok: true },
+    }),
+    said("assistant", "서울 확인했어요. 부산으로 갈게요."),
+    ...calls({
+      name: "computer_navigate",
+      args: { url: "https://search.naver.com/?query=부산날씨" },
+      result: { ok: true },
+    }),
+    said("assistant", "서울 22도, 부산 24도예요."),
+  ];
+  const taskOf = (messages: Message[]) => {
+    const items = itemsOf(messages);
+    const task = items.find((item) => item.kind === "browse");
+    if (task?.kind !== "browse") throw new Error("no task");
+    return { items, task };
+  };
+
+  test("is opened by the row it was opened by, and by nothing else", () => {
+    const { task } = taskOf(turn());
+    expect(isTaskUnfolded(task, new Set())).toBe(false);
+    expect(isTaskUnfolded(task, new Set([task.id]))).toBe(true);
+    expect(isTaskUnfolded(task, new Set(["call-of-another-task"]))).toBe(false);
+  });
+
+  /*
+   * A TASK IS NAMED BY ITS FIRST STEP, AND THE PAGE ABOVE CAN BRING AN EARLIER ONE. Remembered by
+   * its name, a task somebody had opened at the top of what had arrived would fold shut in front of
+   * them when the rest of it did — what `openStepRuns` was written to stop for a run of steps.
+   */
+  test("stays opened when the page above arrives with the steps before it", () => {
+    const messages = turn();
+    // The newest page begins at the Bot's sentence: the task there is its second navigate alone.
+    const { task: tail } = taskOf(messages.slice(3));
+    const { task: whole } = taskOf(messages);
+    expect(tail.id).not.toBe(whole.id);
+    expect(whole.steps.map((step) => step.id)).toContain(tail.id);
+    const opened = new Set([tail.id]);
+    expect(isTaskUnfolded(tail, opened)).toBe(true);
+    expect(isTaskUnfolded(whole, opened)).toBe(true);
+  });
+
+  test("holds every id its row draws: itself, each step, each sentence said between two", () => {
+    const messages = turn();
+    const { items, task } = taskOf(messages);
+    const [first, second] = task.steps;
+    const note = task.notes[0];
+    expect(task.id).toBe(first?.id as string);
+    expect(browsingTaskHolding(items, task.id)?.id).toBe(task.id);
+    expect(browsingTaskHolding(items, second?.id as string)?.id).toBe(task.id);
+    expect(browsingTaskHolding(items, note?.id as string)?.id).toBe(task.id);
+    // The question and the answer are rows of their own, and an id nobody drew is nobody's.
+    expect(browsingTaskHolding(items, messages[0]?.id as string)).toBeNull();
+    expect(
+      browsingTaskHolding(items, messages.at(-1)?.id as string),
+    ).toBeNull();
+    expect(browsingTaskHolding(items, "call-from-last-week")).toBeNull();
+  });
+
+  /*
+   * A REQUEST FOR A HAND ENDS THE TASK IN FRONT OF IT (`withBrowsingTasks`), so by its steps that
+   * task is over while the Bot is in the middle of it. It keeps its card until the request has an
+   * answer, whatever the Bot said on the way to asking.
+   */
+  test("is not over while the Bot waits for a hand it asked for right after it", () => {
+    const browsed = [
+      said("user", "스마트스토어 주문 확인해 줘"),
+      ...calls({
+        name: "computer_navigate",
+        args: { url: "https://sell.smartstore.naver.com" },
+        result: { ok: true },
+      }),
+    ];
+    const indexOfTask = (messages: Message[]) =>
+      itemsOf(messages).findIndex((item) => item.kind === "browse");
+    const handed = (messages: Message[]) =>
+      isHandedToThePerson(itemsOf(messages), indexOfTask(messages));
+
+    expect(handed(browsed)).toBe(false);
+    for (const name of ["computer_request_help", "computer_request_secret"]) {
+      const waiting = [...browsed, ...calls({ name })];
+      expect([name, handed(waiting)]).toEqual([name, true]);
+      // The Bot's own words before it asks do not come between the task and the request.
+      expect(
+        handed([
+          ...browsed,
+          said("assistant", "로그인이 필요해요."),
+          ...calls({ name }),
+        ]),
+      ).toBe(true);
+      // Answered — done, skipped, or nobody came — the Bot has moved on.
+      expect(
+        handed([
+          ...browsed,
+          ...calls({
+            name,
+            result: { ok: true, code: "laf:control_returned" },
+          }),
+        ]),
+      ).toBe(false);
+    }
+    // Anything else after it is not a request for the person: a card, the answer, the next turn.
+    expect(handed([...browsed, ...calls({ name: "remember" })])).toBe(false);
+    expect(handed([...browsed, said("assistant", "주문이 3건 있어요.")])).toBe(
+      false,
+    );
+    expect(
+      handed([
+        ...browsed,
+        said("user", "됐어, 그만"),
+        ...calls({ name: "computer_request_help" }),
+      ]),
+    ).toBe(false);
+    // And only a task: the row of a request is not handed over to anybody.
+    const waiting = itemsOf([
+      ...browsed,
+      ...calls({ name: "computer_request_help" }),
+    ]);
+    expect(isHandedToThePerson(waiting, waiting.length - 1)).toBe(false);
   });
 });
 

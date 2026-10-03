@@ -9,7 +9,8 @@ import {
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { ReactNode } from "react";
 import { stubFetch } from "./support/fetch";
-import { mount, unmountAll } from "./support/mount";
+import { foldingCard, foldOf } from "./support/folding-card";
+import { type Mounted, mount, unmountAll } from "./support/mount";
 
 /**
  * WHAT A BROWSING CARD SAYS, AND WHAT IT OFFERS, PER STATE.
@@ -22,6 +23,9 @@ import { mount, unmountAll } from "./support/mount";
  * So: the site and a chip for how it stands on one small line, what was looked up as the title, why
  * it did not finish as a sentence of its own, one filled button where pressing it is what there is
  * to do, and a picture only where there is one.
+ *
+ * A TASK THAT IS OVER IS A ROW UNTIL IT IS OPENED (2026-10-04, `browsing-card-row.test.tsx`), so
+ * each ended task here is opened first: this file is about the card the row opens to.
  */
 
 const realFetch = globalThis.fetch;
@@ -73,7 +77,7 @@ const task = (id: string, answer: Record<string, unknown>, url: string) => ({
 });
 
 const TESLA = "https://www.tossinvest.com/stocks/US20100629001/order";
-const opened = (id: string, more: Record<string, unknown> = {}) =>
+const landed = (id: string, more: Record<string, unknown> = {}) =>
   task(id, { ok: true, url: TESLA, title: "테슬라", ...more }, TESLA);
 const refusedBy = (id: string, code: string) =>
   task(id, { ok: false, refused: true, code }, TESLA);
@@ -81,15 +85,13 @@ const refusedBy = (id: string, code: string) =>
 /** A conversation and its Bot around the cards: what 다시 해 보기 and 화면 보기 need to be offered. */
 async function drawn(
   cards: (parts: {
-    BrowsingCard: typeof import("../src/components/computer/browsing-card").BrowsingCard;
+    BrowsingCard: Awaited<ReturnType<typeof foldingCard>>;
   }) => ReactNode,
 ) {
   const { QueryClient, QueryClientProvider } = await import(
     "@tanstack/react-query"
   );
-  const { BrowsingCard } = await import(
-    "../src/components/computer/browsing-card"
-  );
+  const BrowsingCard = await foldingCard();
   const { ActiveBotProvider, useActiveBot } = await import(
     "../src/lib/copilot/active-bot"
   );
@@ -116,10 +118,21 @@ async function drawn(
   return view;
 }
 
+/** Every task that is over, opened from its row: the cards, in the order they are drawn. */
+async function opened(view: Mounted) {
+  for (const card of cardsIn(view.host)) {
+    const fold = foldOf(card);
+    if (fold?.getAttribute("aria-expanded") === "false") await view.press(fold);
+  }
+  return cardsIn(view.host);
+}
+
 /** What one card reads, part by part. Tests read the English keys. */
 function read(card: Element) {
+  // The head an ended card folds by is not one of the things the card offers to do.
   const buttons = [...card.querySelectorAll("button")].filter(
-    (button) => (button.textContent ?? "").trim() !== "",
+    (button) =>
+      (button.textContent ?? "").trim() !== "" && button !== foldOf(card),
   );
   return {
     chip: card.querySelector("span.rounded-full")?.textContent ?? null,
@@ -135,9 +148,9 @@ function read(card: Element) {
   };
 }
 
-const cardsIn = (host: HTMLElement) => [
-  ...host.querySelectorAll('[class*="shadow-card"]'),
-];
+function cardsIn(host: HTMLElement) {
+  return [...host.querySelectorAll('[class*="shadow-card"]')];
+}
 
 describe("a browsing card", () => {
   test("that finished: the site above, what was looked up as the title, and no box where there is no picture", async () => {
@@ -146,10 +159,10 @@ describe("a browsing card", () => {
         channelId="ch-1"
         isNewest={false}
         isOpen={false}
-        item={opened("call-plain")}
+        item={landed("call-plain")}
       />
     ));
-    const [card] = cardsIn(view.host);
+    const [card] = await opened(view);
     const said = read(card as Element);
     expect(said.chip).toBe("Finished");
     expect(said.hasDot).toBe(false);
@@ -168,10 +181,10 @@ describe("a browsing card", () => {
         channelId="ch-1"
         isNewest
         isOpen={false}
-        item={opened("call-framed", { httpStatus: 403 })}
+        item={landed("call-framed", { httpStatus: 403 })}
       />
     ));
-    const said = read(cardsIn(view.host)[0] as Element);
+    const said = read((await opened(view))[0] as Element);
     expect(said.chip).toBe("Couldn't finish");
     expect(said.detail).toBe("The site turned the Bot away");
     // The word is on the chip once, not again in front of the reason.
@@ -195,7 +208,7 @@ describe("a browsing card", () => {
         item={refusedBy("call-down", "laf:computer_unreachable")}
       />
     ));
-    const card = cardsIn(view.host)[0] as Element;
+    const card = (await opened(view))[0] as Element;
     const said = read(card);
     expect(said.chip).toBe("Couldn't finish");
     expect(said.detail).toBe("The Bot's computer could not be reached");
@@ -228,7 +241,7 @@ describe("a browsing card", () => {
         />
       </>
     ));
-    const [own, inside] = cardsIn(view.host).map(read);
+    const [own, inside] = (await opened(view)).map(read);
     expect(own?.detail).toBe("This app's own address was not opened");
     expect(own?.buttons).toEqual(["What it did"]);
     // The floor's other refusal is also said for a name that would not resolve just then, and for
