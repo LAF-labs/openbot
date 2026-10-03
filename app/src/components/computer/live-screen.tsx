@@ -1,3 +1,4 @@
+import { decodeScreenFrame } from "@shared/screen-frame";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import {
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { pokeControl } from "./control-poll";
-import { decodeScreenFrame } from "@shared/screen-frame";
 import { decodeFrame, decodeFrameBytes, paintFrame } from "./frame-bitmap";
 import { pageCoordinates } from "./take-the-wheel";
 
@@ -204,6 +204,12 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
   );
   /** Keys whose keydown was left to this browser — the paste shortcut's V — by physical code. */
   const localKeysRef = useRef(new Set<string>());
+  /**
+   * Whether a button is down on the Bot's page — for the pointer's pressed shape and nothing else.
+   * What is sent to the page is decided off `pressedRef`, which a handler reads in the tick it was
+   * written; this is the same fact as state, because a class cannot be read off a ref while drawing.
+   */
+  const [isPressing, setIsPressing] = useState(false);
   const [connected, setConnected] = useState(false);
   /**
    * The stream had been showing a picture and then dropped. Drawn under the picture until a picture
@@ -377,6 +383,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
         setConnected(false);
         // What was held went with the socket: the computer let go of it as the socket closed.
         pressedRef.current.clear();
+        setIsPressing(false);
         heldKeysRef.current.clear();
         // Cut off only once there was a picture to cut; before one, the wait above speaks.
         if (hadFrame && !isShowingLoss) {
@@ -477,6 +484,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
       count: clickCount,
     };
     pressedRef.current.set(button, clickCount);
+    setIsPressing(true);
     sendMouse("pressed", point, button, modifierBits(event), clickCount);
   };
 
@@ -489,6 +497,8 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     const clickCount = pressedRef.current.get(button);
     if (clickCount === undefined) return;
     pressedRef.current.delete(button);
+    // The last button up: one of two held together leaves the pointer pressed.
+    if (pressedRef.current.size === 0) setIsPressing(false);
     // The same count its press carried: Chrome pairs the two to decide what was clicked.
     sendMouse("released", point, button, modifiers, clickCount);
   };
@@ -580,6 +590,8 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
     const localKeys = localKeysRef.current;
     return () => {
       pressed.clear();
+      // Or the next takeover would begin with the pointer drawn pressed, nothing being held.
+      setIsPressing(false);
       heldKeys.clear();
       localKeys.clear();
     };
@@ -792,7 +804,9 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
         // and scroll, with the bottom of the Bot's page below the fold.
         // `touch-none` while driving: a finger on the picture is the Bot's page's, not a scroll of ours,
         // and a browser that takes a touch for panning cancels the pointer mid-press.
-        className={`block max-h-full max-w-full outline-none ${driving ? "cursor-crosshair touch-none" : ""}`}
+        // The pointer while driving is our own (`.cursor-wheel` in styles.css), drawn in while a
+        // button is down; it was the system's crosshair.
+        className={`block max-h-full max-w-full outline-none ${driving ? `${isPressing ? "cursor-wheel-pressed" : "cursor-wheel"} touch-none` : ""}`}
         // Only forward input during takeover.
         {...(driving
           ? {
@@ -825,6 +839,19 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
         aria-label={driving ? undefined : t("The assistant's screen, live")}
         data-connected={connected}
       />
+      {driving ? (
+        /*
+         * THE PRESSED POINTER'S PICTURE, ASKED FOR BEFORE THE FIRST PRESS. An engine fetches a
+         * cursor's picture when a rule that names it first applies to something, and until it has
+         * arrived draws the next entry of the list — the system's crosshair, between our two
+         * pointers, on the first press of a takeover. So the rule applies to this from the moment
+         * the wheel is taken. Nothing is drawn here and nothing can be pointed at.
+         */
+        <span
+          aria-hidden="true"
+          className="cursor-wheel-pressed pointer-events-none absolute size-0"
+        />
+      ) : null}
       <div className="-translate-x-1/2 pointer-events-none absolute bottom-2 left-1/2 flex items-center gap-2">
         {/* Mounted with the screen, so the cut is heard when it happens and not only seen. */}
         <LiveRegion
