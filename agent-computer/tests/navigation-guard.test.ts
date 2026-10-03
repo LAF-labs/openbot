@@ -284,7 +284,7 @@ describe("the floor, resolved", () => {
 describe("the deployment's own addresses, per hop", () => {
   const OWN = ["shop.agent.example.com:", "auth.agent.example.com:"];
 
-  test("the computer reads them from the server's own variables, and holds none where it is handed none", () => {
+  test("the computer reads them from the server's own variables, and holds the server's default where it is handed none", () => {
     const told = readConfig({
       COMPUTER_TOKEN: "t",
       BETTER_AUTH_URL: "https://shop.agent.example.com",
@@ -293,8 +293,11 @@ describe("the deployment's own addresses, per hop", () => {
       LAF_OIDC_ISSUER: "https://auth.agent.example.com",
     });
     expect(told?.ownAddresses).toEqual(OWN);
-    // A container started by a compose file from before it was handed them.
-    expect(readConfig({ COMPUTER_TOKEN: "t" })?.ownAddresses).toEqual([]);
+    // A container started by a compose file from before it was handed them, and a computer run
+    // from source beside a server that was told nothing either: the app nobody named.
+    expect(readConfig({ COMPUTER_TOKEN: "t" })?.ownAddresses).toEqual([
+      "localhost:3000",
+    ]);
   });
 
   test("a hop to the app or to its sign-in is refused under its own code, opt-in or not", () => {

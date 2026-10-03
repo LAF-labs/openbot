@@ -1,5 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import {
+  addressKeyOf,
+  DEFAULT_TRUSTED_ORIGIN,
+} from "../../shared/net/own-addresses";
+import {
   ENVIRONMENT,
   loadConfig,
   TEST_TOKEN_ENCRYPTION_KEY,
@@ -43,6 +47,43 @@ describe("deployment configuration", () => {
     });
 
     expect(config.auth).toBeUndefined();
+  });
+
+  /*
+   * EVERY ORIGIN THE SERVER TRUSTS IS AN ADDRESS ITS BOT'S BROWSER NEVER OPENS.
+   *
+   * A trusted origin is where the app's own requests come from: the screen a person answers a Bot's
+   * question on. The list of addresses the browser refuses was first read from the raw variable, and
+   * the origin the server falls back to when that variable is unset was in the one list and not the
+   * other (Codex on pull request 43). Held here on the resolved configuration, the default included,
+   * so a new way to resolve an origin cannot leave the refusal behind.
+   */
+  test("refuses its Bot's browser every origin it trusts, the default among them", () => {
+    for (const written of [
+      undefined,
+      "",
+      "http://localhost:3010",
+      "https://shop.agent.example.com, http://localhost:3010/",
+    ]) {
+      const config = loadConfig({
+        ...baseEnvironment,
+        // A deployment with a browser: one without has nothing to refuse.
+        AGENT_COMPUTER_URL: "http://localhost:4100",
+        ...(written === undefined ? {} : { TRUSTED_ORIGINS: written }),
+      });
+      const refused = config.computer?.ownAddresses ?? [];
+      expect(config.trustedOrigins.length).toBeGreaterThan(0);
+      for (const origin of config.trustedOrigins) {
+        expect([
+          written,
+          origin,
+          refused.includes(addressKeyOf(new URL(origin))),
+        ]).toEqual([written, origin, true]);
+      }
+    }
+    expect(loadConfig(baseEnvironment).trustedOrigins).toEqual([
+      DEFAULT_TRUSTED_ORIGIN,
+    ]);
   });
 
   /*

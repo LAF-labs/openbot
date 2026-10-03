@@ -39,6 +39,17 @@ export const OWN_ADDRESS_VARIABLES = [
 ] as const;
 
 /**
+ * WHERE THE APP IS TAKEN TO BE WHEN NOBODY NAMED IT: the Vite dev server, which is what a laptop is.
+ *
+ * The server trusts this origin when `TRUSTED_ORIGINS` names nothing (`trustedOrigins` in
+ * `server/src/config.ts` reads this constant), so it is an address of the app like any that was
+ * written down — and the first version of this list read the variable raw and left it out: a laptop
+ * with no `TRUSTED_ORIGINS` and the private-host opt-in on had an app its Bot's browser could open
+ * (Codex on pull request 43). One constant, read by both, so the two cannot drift again.
+ */
+export const DEFAULT_TRUSTED_ORIGIN = "http://localhost:3000";
+
+/**
  * What two addresses of one app share: the host, and the port where one is said.
  *
  * `URL.port` is empty for the scheme's own port, so `https://shop.example` and
@@ -54,16 +65,27 @@ export function addressKeyOf(url: URL): string {
  * A value that is not a web address names nothing and is left out: the server's own configuration
  * is where a malformed one is refused, with the variable's name, and this must not be a second
  * place that fails a start.
+ *
+ * `TRUSTED_ORIGINS` that names nothing stands for {@link DEFAULT_TRUSTED_ORIGIN}, as it does for the
+ * server — decided on the same terms the server decides it, entries trimmed and the empty ones
+ * dropped, so a variable holding something unreadable is not taken for one left unset.
  */
 export function ownAddressesFrom(
   environment: Record<string, string | undefined>,
 ): string[] {
   const keys = new Set<string>();
   for (const name of OWN_ADDRESS_VARIABLES) {
-    for (const value of (environment[name] ?? "").split(",")) {
-      const written = value.trim();
-      if (!written || !URL.canParse(written)) continue;
-      const url = new URL(written);
+    const written = (environment[name] ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const values =
+      name === "TRUSTED_ORIGINS" && written.length === 0
+        ? [DEFAULT_TRUSTED_ORIGIN]
+        : written;
+    for (const value of values) {
+      if (!URL.canParse(value)) continue;
+      const url = new URL(value);
       if (url.protocol !== "http:" && url.protocol !== "https:") continue;
       keys.add(addressKeyOf(url));
     }

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { addressKeyOf, ownAddressesFrom } from "../../shared/net/own-addresses";
+import {
+  addressKeyOf,
+  DEFAULT_TRUSTED_ORIGIN,
+  ownAddressesFrom,
+} from "../../shared/net/own-addresses";
 import {
   checkNavigationTarget,
   OWN_ADDRESS_REFUSED,
@@ -213,15 +217,56 @@ describe("the deployment's own addresses", () => {
   });
 
   test("a value that names no web address names nothing, and stops nothing from starting", () => {
-    expect(ownAddressesFrom({})).toEqual([]);
     expect(
       ownAddressesFrom({
         BETTER_AUTH_URL: "",
         PUBLIC_ORIGIN: "shop.example.com",
-        TRUSTED_ORIGINS: ",, ,",
+        TRUSTED_ORIGINS: "not an address",
         LAF_OIDC_ISSUER: "ftp://auth.example.com",
       }),
     ).toEqual([]);
+  });
+
+  /*
+   * THE ORIGIN THE SERVER TRUSTS BY DEFAULT IS THE APP TOO. The first version read the variable raw:
+   * with `TRUSTED_ORIGINS` unset the server still trusted the Vite dev server and this list held
+   * nothing, so a laptop with the private-host opt-in on had an app its Bot's browser could open
+   * (Codex on pull request 43).
+   */
+  test("an app nobody named is the server's own default, on the server's own terms", () => {
+    expect(DEFAULT_TRUSTED_ORIGIN).toBe("http://localhost:3000");
+    expect(ownAddressesFrom({})).toEqual(["localhost:3000"]);
+    // Nothing but commas and spaces is nothing written, as the server reads it.
+    expect(ownAddressesFrom({ TRUSTED_ORIGINS: ",, ," })).toEqual([
+      "localhost:3000",
+    ]);
+    // Beside the other three, not instead of them.
+    expect(
+      ownAddressesFrom({ BETTER_AUTH_URL: "http://localhost:3001" }),
+    ).toEqual(["localhost:3001", "localhost:3000"]);
+    // Written down, it is what was written and the default is not added to it.
+    expect(
+      ownAddressesFrom({ TRUSTED_ORIGINS: "http://localhost:3010" }),
+    ).toEqual(["localhost:3010"]);
+
+    const opted = (url: string) =>
+      checkNavigationTarget(url, {
+        allowPrivateHosts: true,
+        ownAddresses: ownAddressesFrom({}),
+      });
+    for (const url of [
+      "http://localhost:3000/",
+      "http://localhost:3000/settings/boundaries",
+      "https://localhost:3000/approve/approval_1",
+    ]) {
+      const verdict = opted(url);
+      expect([url, verdict.allowed]).toEqual([url, false]);
+      expect(!verdict.allowed && verdict.fact).toBe(OWN_ADDRESS_REFUSED);
+    }
+    // Every other local page the opt-in is for stays open.
+    for (const url of ["http://localhost:8080/", "http://localhost/"]) {
+      expect([url, opted(url).allowed]).toEqual([url, true]);
+    }
   });
 
   test("the app is refused however its address is written, under a code of its own", () => {
