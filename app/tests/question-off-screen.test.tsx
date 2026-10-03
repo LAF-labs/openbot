@@ -802,6 +802,31 @@ describe("an account that kept two conversations with one Bot", () => {
     );
   });
 
+  /*
+   * Ninth round. The sidebar lists a Bot's questions whichever of its conversations raised them,
+   * and every row opened the Bot's oldest conversation — where a question raised in another one
+   * has no card.
+   */
+  test("and its row in the sidebar leads to the conversation it was raised in", async () => {
+    const { api, state } = server({ twoConversations: true });
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => state.reads >= 1, "the first look", 6000);
+    const asking = elsewhere();
+    state.approvals = [asking];
+    await outboxSays(asking.id);
+    await view.waitFor(
+      () => waitingRows(view.host).length === 1,
+      "the question to be listed",
+      6000,
+    );
+    await view.click(waitingRows(view.host)[0] as HTMLButtonElement);
+    await view.waitFor(
+      () => view.router.state.location.pathname === `/channel/${OTHER_CHANNEL}`,
+      "the conversation the question was raised in to open",
+      6000,
+    );
+  });
+
   test("and this conversation's transcript does not say it is waiting for an answer", async () => {
     const { api, state } = server({ twoConversations: true });
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
