@@ -1711,6 +1711,21 @@ export function ChatTranscript({
           : null
       : null;
   const thinkingBetweenSteps = useLasting(stillTail, BETWEEN_STEPS_MS);
+  /*
+   * AFTER A STEP THAT IS PUT AWAY, AT ONCE. The wait above is for a tail that is still on the
+   * screen: a finished step's line stood there, and the thinking line came under it 1.2 s later.
+   * A step that is not drawn leaves nothing standing — pressed on the running app, 2026-10-04: the
+   * weather's line went as its result arrived and the end of the conversation was empty for
+   * 1.2 s before "생각 중", which is the stalled-looking Bot this line was made to end. So where
+   * the last thing that happened is a step nobody sees, the Bot is thinking as of now.
+   */
+  const lastPlace = stepRuns.get(items.length - 1);
+  const thinkingAfterHiddenStep =
+    stillTail !== null &&
+    lastItem?.kind === "tool" &&
+    lastPlace !== undefined &&
+    !lastPlace.staysDrawn &&
+    !openRuns.has(lastPlace.runId);
   const newestTaskId =
     items.findLast((item) => item.kind === "browse")?.id ?? null;
   /** Each stored failure, drawn after the last row its turn drew (`failurePlaces`). */
@@ -2196,7 +2211,9 @@ export function ChatTranscript({
             ) : queuedBehind ? (
               // Before thinking, never beside it: a Bot busy with another job is not thinking of this one.
               <WaitingForBot />
-            ) : waitingOnFirstToken || thinkingBetweenSteps ? (
+            ) : waitingOnFirstToken ||
+              thinkingBetweenSteps ||
+              thinkingAfterHiddenStep ? (
               <Thinking />
             ) : noticeCode && !busy && turnNotice(noticeCode) ? (
               <p
@@ -2252,7 +2269,9 @@ export function ChatTranscript({
                 ? null
                 : queuedBehind
                   ? t("Finishing another job first · this one is next")
-                  : waitingOnFirstToken || thinkingBetweenSteps
+                  : waitingOnFirstToken ||
+                      thinkingBetweenSteps ||
+                      thinkingAfterHiddenStep
                     ? t("Thinking")
                     : noticeCode && !busy
                       ? turnNotice(noticeCode)
