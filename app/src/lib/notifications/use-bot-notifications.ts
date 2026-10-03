@@ -91,8 +91,16 @@ export function openChannelFrom(pathname: string): string | null {
  * had before the limit can hold several with one Bot, and each draws only its own thread's cards:
  * being in one of them is not looking at a question raised in another (review of this change, first
  * round). `threadId` is the question's conversation when the server's record has said. Without it,
- * a Bot with one conversation can only mean that one — and a Bot with several is "unknown", which
- * is an answer of its own: the caller that cannot tell must not decide (second round).
+ * a Bot with several is "unknown", which is an answer of its own: the caller that cannot tell must
+ * not decide (second round).
+ *
+ * AND A QUESTION THAT NAMES NO CONVERSATION MAY HAVE NO CARD ANYWHERE. A routine's has no step, so
+ * no line of any conversation draws it, and being in the Bot's only conversation says nothing about
+ * that: it is "unknown" too, until the record has said. It used to be "here" — one conversation
+ * "can only mean that one" — and on the ordinary deployment, one Bot with one conversation, a
+ * routine's question raised while that conversation was open was said by nothing at all (eighth
+ * round). What a Bot with one conversation does settle is a request with no approval — help, a
+ * password — which is drawn from the Bot's control state in whichever conversation of its is open.
  *
  * While the list of conversations has not been read, which Bot the open conversation is with is
  * not known either, and that too is "unknown" — it used to be taken as "here", which on an account
@@ -128,6 +136,7 @@ export function cardPlace(input: {
   if (input.threadId) {
     return channel.threadId === input.threadId ? "here" : "elsewhere";
   }
+  if (input.approvalId) return "unknown";
   const withBot = input.channels.filter((entry) =>
     entry.agentIds.includes(input.botId),
   );
@@ -339,9 +348,10 @@ export function useBotNotifications(): void {
       );
       if (first !== "unknown") return first === "here";
       /*
-       * One of the Bot's several conversations is open and the question names none. A request for
-       * help or a password has no approval and no card of its own: it is drawn from the Bot's
-       * control state, in whichever of its conversations is open.
+       * A conversation of the Bot's is open and what is asked names none. A request for help or a
+       * password has no approval and no card of its own: it is drawn from the Bot's control state,
+       * in whichever of its conversations is open. A question has a card only on the line of the
+       * call that raised it, and the record says whether there is such a line.
        */
       if (!approvalId || asked.raisedHere) return true;
       const approvals = await readApprovals(asked.botId);
