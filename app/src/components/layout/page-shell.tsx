@@ -47,6 +47,15 @@ export function PageShell({
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /**
+   * The sentence under the title. FOR CONFIGURATION — 설정, 관리, 연결 — which is mostly reading.
+   *
+   * The seven everyday screens (소식, 아이디어, 목표, 만든 것, 루틴, 스킬, 수첩) pass none since
+   * 2026-10-04: every one of them opened on a sentence explaining itself, and the owner's word on
+   * the app was that it shows too many characters. A title stands alone there, and a list that
+   * can be empty says in one line what will be in it. `everyday-screens.test.tsx` walks the seven
+   * and fails on a paragraph in their header, since nothing in this type can.
+   */
   description?: React.ReactNode;
   title: string;
   width?: ShellWidth;
@@ -101,6 +110,11 @@ export function PageSection({
   action?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
+  /**
+   * The sentence under a section's title. On the everyday screens it is kept only where it says
+   * what a press in the section will do before it is pressed — 수첩's 일하는 방식 says a change
+   * reaches the Bot the next day — and never to say what the rows under it already show.
+   */
   description?: React.ReactNode;
   title?: string;
 }) {
