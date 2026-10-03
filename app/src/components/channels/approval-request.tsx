@@ -24,6 +24,7 @@ import {
   chatCardWaiting,
 } from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
+import { touchTall } from "@/components/ui/touch";
 import {
   type AllowanceScope,
   type ApprovalDecision,
@@ -207,6 +208,7 @@ export function ApprovalRequest({
       />
       <div className="mt-2.5 flex flex-wrap items-center gap-2 ps-6">
         <Button
+          className={touchTall}
           // Described by the question rather than wrapped in a group role: "Allow" on its own says
           // nothing about what is being allowed.
           aria-describedby={questionId}
@@ -225,6 +227,7 @@ export function ApprovalRequest({
          */}
         {asking.scope && asking.threadId && asking.taskId ? (
           <Button
+            className={touchTall}
             aria-describedby={questionId}
             disabled={answering}
             onClick={() => void answer(true, "task")}
@@ -236,6 +239,7 @@ export function ApprovalRequest({
         ) : null}
         {asking.scope && asking.threadId ? (
           <Button
+            className={touchTall}
             aria-describedby={questionId}
             disabled={answering}
             onClick={() => void answer(true, "thread")}
@@ -247,6 +251,7 @@ export function ApprovalRequest({
         ) : null}
         {asking.scope ? (
           <Button
+            className={touchTall}
             aria-describedby={questionId}
             disabled={answering}
             onClick={() => void answer(true, "day")}
@@ -265,6 +270,7 @@ export function ApprovalRequest({
          */}
         {asking.scope ? (
           <Button
+            className={touchTall}
             aria-describedby={questionId}
             disabled={answering}
             onClick={() => void answer(true, "always")}
@@ -275,6 +281,7 @@ export function ApprovalRequest({
           </Button>
         ) : null}
         <Button
+          className={touchTall}
           aria-describedby={questionId}
           disabled={answering}
           onClick={() => void answer(false)}

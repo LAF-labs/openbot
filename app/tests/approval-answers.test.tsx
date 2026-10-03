@@ -246,6 +246,37 @@ async function lineCard(
 }
 
 describe("the card on a conversation's line", () => {
+  /*
+   * UNDER A FINGER, EVERY ANSWER IS 36px. They were 28px — a pointer's size — and on a phone 이번만
+   * 허용 and 거부 sat a thumb's width apart: the two buttons in the app where a press on the wrong
+   * one costs the most. The height is a class a coarse pointer turns on (`ui/touch.ts`); what a
+   * test can hold is that no answer is drawn without it, the widest ones included.
+   */
+  test("gives every answer the height a finger needs, however many it offers", async () => {
+    const card = await lineCard({
+      scope: { kind: "host", host: "smartstore.naver.com" } as never,
+      threadId: "thread-1",
+      taskId: "task-1",
+    });
+    const answers = [
+      ...card.host.querySelectorAll<HTMLButtonElement>("button"),
+    ].filter((button) => button.getAttribute("aria-describedby") !== null);
+    expect(answers.length).toBeGreaterThanOrEqual(2);
+    expect(answers.map((button) => button.textContent?.trim())).toContain(
+      "Allow once",
+    );
+    expect(answers.map((button) => button.textContent?.trim())).toContain(
+      "Deny",
+    );
+    for (const button of answers) {
+      expect([
+        button.textContent?.trim(),
+        button.className.includes("pointer-coarse:h-9"),
+      ]).toEqual([button.textContent?.trim(), true]);
+    }
+    await card.unmount();
+  });
+
   test("is answered by the Bot's owner without an administrator's role, and comes down", async () => {
     const posts = answering("user", () =>
       json({ id: APPROVAL, botId: BOT, granted: true, answeredBy: "owner-1" }),
