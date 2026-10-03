@@ -14,6 +14,7 @@
  * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
  * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */
+import { ownAddressesFrom } from "../../shared/net/own-addresses";
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from "../../shared/prompt";
 import { retentionDays } from "./account/retention";
 import { admittedAddresses } from "./auth/allowlist";
@@ -351,6 +352,13 @@ export type DeploymentConfig = {
     token?: string;
     /** True on a laptop, where browsing the deployment's own services is the point. */
     allowPrivateHosts: boolean;
+    /**
+     * This deployment's own addresses — the app, and where people sign in to it — which a Bot's
+     * browser never opens (`shared/net/own-addresses.ts`). Read from the variables that already
+     * name them, the same ones the browser's container is handed, so the two halves of the floor
+     * are told one thing.
+     */
+    ownAddresses: string[];
     /**
      * What Bots may do on their computers. Absent means the built-in default applies.
      *
@@ -836,6 +844,7 @@ function computerConfig(
     baseUrl,
     allowPrivateHosts:
       optional(environment, "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS") === "true",
+    ownAddresses: ownAddressesFrom(environment),
     ...(policy ? { policy } : {}),
     ...(repeatWindowMs ? { repeatWindowMs } : {}),
     ...(computerToken ? { token: computerToken } : {}),

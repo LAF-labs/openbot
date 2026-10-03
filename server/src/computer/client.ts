@@ -36,7 +36,7 @@ import type {
   WriteFileInput,
   WriteFileResult,
 } from "./schema";
-import { checkNavigationTarget } from "./target";
+import { checkNavigationTarget, OWN_ADDRESS_REFUSED } from "./target";
 
 /**
  * How the server talks to a Bot's computer.
@@ -57,6 +57,8 @@ export type ComputerClientOptions = {
   baseUrl: string;
   /** True on a laptop, where browsing the deployment's own services is the point. */
   allowPrivateHosts?: boolean;
+  /** This deployment's own app and its sign-in, never opened (`shared/net/own-addresses.ts`). */
+  ownAddresses?: readonly string[];
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   /**
@@ -295,6 +297,7 @@ export const COMPUTER_ANSWERS = {
   "laf:navigation_failed": PageLoadFailedError,
   // Never: the floor, and the workspace's walls.
   "laf:navigation_refused": NavigationRefusedError,
+  [OWN_ADDRESS_REFUSED]: NavigationRefusedError,
   "laf:file_path_refused": WorkspaceRefusedError,
   // Send something different.
   "laf:file_not_found": WorkspaceRequestError,
@@ -571,11 +574,13 @@ export function createComputerClient(options: ComputerClientOptions) {
         caller?: AbortSignal,
         navigation: NavigateOptions = {},
       ): Promise<NavigateResult> {
-        const verdict = checkNavigationTarget(url, {
+        const floor = {
           allowPrivateHosts: options.allowPrivateHosts,
-        });
+          ownAddresses: options.ownAddresses,
+        };
+        const verdict = checkNavigationTarget(url, floor);
         if (!verdict.allowed) {
-          throw new NavigationRefusedError(floorRefusalOf(url));
+          throw new NavigationRefusedError(verdict.fact ?? floorRefusalOf(url));
         }
 
         const result = (await call(
@@ -605,12 +610,10 @@ export function createComputerClient(options: ComputerClientOptions) {
          * `about:blank` after a refusal is not a host that was reached.
          */
         if (/^https?:/i.test(result.url)) {
-          const landed = checkNavigationTarget(result.url, {
-            allowPrivateHosts: options.allowPrivateHosts,
-          });
+          const landed = checkNavigationTarget(result.url, floor);
           if (!landed.allowed) {
             await computer.stopComputer().catch(() => undefined);
-            throw new NavigationRefusedError(NAVIGATION_REFUSED);
+            throw new NavigationRefusedError(landed.fact ?? NAVIGATION_REFUSED);
           }
         }
         return result;

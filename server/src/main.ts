@@ -313,6 +313,7 @@ const computerClient = config.computer
   ? createComputerClient({
       baseUrl: config.computer.baseUrl,
       allowPrivateHosts: config.computer.allowPrivateHosts,
+      ownAddresses: config.computer.ownAddresses,
       ...(config.computer.token ? { token: config.computer.token } : {}),
       whereaboutsFor: browserWhereabouts.forBot,
     })

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { BrowserContext } from "playwright";
 import { forgetResolvedHosts } from "../../shared/net/host-verdict";
+import { OWN_ADDRESS_REFUSED } from "../../shared/net/navigation-target";
+import { readConfig } from "../src/config";
 import { judgedLabelOf, nameToMatch } from "../src/label-hold";
 import {
   guardNavigations,
@@ -269,6 +271,122 @@ describe("the floor, resolved", () => {
     ]);
     expect(refused).toEqual([
       ["http://127.0.0.1.nip.io:5432/", "https://www.naver.com/next"],
+    ]);
+  });
+});
+
+/*
+ * THE APP ITSELF, PER HOP (`shared/net/own-addresses.ts`). The server refuses the app's address
+ * where a Bot names it. The hop after somebody's sign-in — a provider's redirect back to the app's
+ * callback, where a session would be set — is one only this process sees, and so is a link or a
+ * frame a page points at the app.
+ */
+describe("the deployment's own addresses, per hop", () => {
+  const OWN = ["shop.agent.example.com:", "auth.agent.example.com:"];
+
+  test("the computer reads them from the server's own variables, and holds none where it is handed none", () => {
+    const told = readConfig({
+      COMPUTER_TOKEN: "t",
+      BETTER_AUTH_URL: "https://shop.agent.example.com",
+      TRUSTED_ORIGINS: "https://shop.agent.example.com",
+      PUBLIC_ORIGIN: "https://shop.agent.example.com",
+      LAF_OIDC_ISSUER: "https://auth.agent.example.com",
+    });
+    expect(told?.ownAddresses).toEqual(OWN);
+    // A container started by a compose file from before it was handed them.
+    expect(readConfig({ COMPUTER_TOKEN: "t" })?.ownAddresses).toEqual([]);
+  });
+
+  test("a hop to the app or to its sign-in is refused under its own code, opt-in or not", () => {
+    for (const url of [
+      "https://shop.agent.example.com/api/auth/callback/naver?code=abc",
+      "http://shop.agent.example.com/",
+      "https://auth.agent.example.com/authorize",
+    ]) {
+      for (const allowPrivateHosts of [false, true]) {
+        const verdict = hopVerdict(url, allowPrivateHosts, OWN);
+        expect([url, allowPrivateHosts, verdict.allowed]).toEqual([
+          url,
+          allowPrivateHosts,
+          false,
+        ]);
+        expect(!verdict.allowed && verdict.fact).toBe(OWN_ADDRESS_REFUSED);
+      }
+    }
+  });
+
+  test("a neighbour, a document made in the browser and an ordinary refusal are as they were", () => {
+    expect(
+      hopVerdict("https://other.agent.example.com/", false, OWN).allowed,
+    ).toBe(true);
+    expect(hopVerdict("about:blank", false, OWN).allowed).toBe(true);
+    const inside = hopVerdict("http://10.0.0.5/", false, OWN);
+    expect(inside.allowed).toBe(false);
+    expect(!inside.allowed && inside.fact).toBeUndefined();
+    // Told no list, the address is an ordinary public one.
+    expect(hopVerdict("https://shop.agent.example.com/", false).allowed).toBe(
+      true,
+    );
+  });
+
+  test("the guard fails a provider's redirect back to the app before it is sent, and says which refusal", async () => {
+    type Paused = {
+      requestId: string;
+      request: { url: string; method: string; headers: Record<string, string> };
+      frameId: string;
+      redirectedRequestId?: string;
+    };
+    let paused: ((event: Paused) => Promise<void>) | undefined;
+    const sent: [string, string][] = [];
+    const session = {
+      on: (_event: string, handler: (event: Paused) => Promise<void>) => {
+        paused = handler;
+      },
+      send: async (method: string, params?: { requestId?: string }) => {
+        sent.push([method, params?.requestId ?? ""]);
+        return {};
+      },
+    };
+    const context = {
+      browser: () => ({ newBrowserCDPSession: async () => session }),
+      on: () => undefined,
+    };
+    const refused: [string, string | null, string | undefined][] = [];
+    forgetResolvedHosts();
+    await guardNavigations(context as unknown as BrowserContext, {
+      allowPrivateHosts: false,
+      ownAddresses: OWN,
+      resolve: async () => ["93.184.216.34"],
+      onRefused: (hop, refusal) =>
+        refused.push([hop.url, hop.redirectedFrom, refusal.fact]),
+    });
+    const hop = (requestId: string, url: string, from?: string): Paused => ({
+      requestId,
+      request: { url, method: "GET", headers: {} },
+      frameId: "tab",
+      ...(from ? { redirectedRequestId: from } : {}),
+    });
+    await paused?.(hop("1", "https://nid.provider.example/oauth2.0/authorize"));
+    await paused?.(
+      hop(
+        "2",
+        "https://shop.agent.example.com/api/auth/callback/naver?code=abc",
+        "1",
+      ),
+    );
+    await paused?.(hop("3", "https://www.provider.example/"));
+    expect(sent).toEqual([
+      ["Fetch.enable", ""],
+      ["Fetch.continueRequest", "1"],
+      ["Fetch.failRequest", "2"],
+      ["Fetch.continueRequest", "3"],
+    ]);
+    expect(refused).toEqual([
+      [
+        "https://shop.agent.example.com/api/auth/callback/naver?code=abc",
+        "https://nid.provider.example/oauth2.0/authorize",
+        OWN_ADDRESS_REFUSED,
+      ],
     ]);
   });
 });

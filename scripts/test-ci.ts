@@ -833,15 +833,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the engine's update notice), `root` 608 to 610 (the shell's floor, and the tray's words held to
  * the dictionary).
  *
+ * RAISED 2026-10-03 with the Bot's browser refusing the deployment's own app, each by exactly what
+ * was added: fourteen to `server` (the floor's table for a deployment's own addresses, and the
+ * client refusing where the Bot names one, where the browser landed on one and where the container
+ * stopped the hop), eight to `agent-computer` (the guard on a stand-in for Chromium's session, and
+ * four against a real Chromium with a second local server standing for the app), one to `root`
+ * (compose handing the browser the server's own four variables).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3431, roots: ["server"] },
+  { name: "server", floor: 3445, roots: ["server"] },
   { name: "app", floor: 2081, roots: ["app"] },
-  { name: "agent-computer", floor: 410, roots: ["agent-computer"] },
-  { name: "root", floor: 610, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 418, roots: ["agent-computer"] },
+  { name: "root", floor: 611, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

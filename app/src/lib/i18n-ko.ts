@@ -2219,6 +2219,7 @@ export const ko: Record<string, string> = {
   "The page did not open in time": "페이지가 제시간에 열리지 않음",
   "The page could not be opened": "페이지를 열지 못함",
   "An address inside this deployment was blocked": "배포 안쪽 주소라 막음",
+  "This app's own address was not opened": "이 앱 자신의 주소라 열지 않음",
   "The screen had changed": "화면이 바뀌어 있었음",
   "The control had been renamed": "누르려던 요소의 이름이 바뀌었음",
   "That element could not be used": "그 요소에 할 수 없었음",

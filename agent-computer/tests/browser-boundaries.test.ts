@@ -25,6 +25,9 @@ import {
  *  - A CONTROL IS HELD TO THE LABEL IT WAS JUDGED ON: "저장" renamed "결제하기" under the same ref is
  *    refused with the name it has now.
  *  - A RESET TAKES THE BOT'S DIRECTORY WITH IT, and does not write it back.
+ *  - THE DEPLOYMENT'S OWN APP IS NEVER OPENED (`shared/net/own-addresses.ts`): named outright, reached
+ *    by a redirect — a provider's, back to the app's sign-in callback, is the hop a session would be
+ *    set on — or pointed at by a frame. `app` below stands for it and counts what it is asked.
  *
  * The computer runs with private hosts ALLOWED, because both servers are on this machine's loopback.
  * What stays refused under that opt-in is the metadata endpoint, by address and by name — so that is
@@ -61,6 +64,10 @@ let workspaceDir = "";
 /** The counting host. Every request it answers is recorded, so "never contacted" is checkable. */
 let site: ReturnType<typeof Bun.serve> | null = null;
 const received: string[] = [];
+/** The deployment's own app, as far as the computer is told: it counts what reaches it. */
+let app: ReturnType<typeof Bun.serve> | null = null;
+const appReceived: string[] = [];
+const onApp = (path: string) => `http://127.0.0.1:${app?.port}${path}`;
 const onLoopback = (path: string) => `http://127.0.0.1:${site?.port}${path}`;
 const onLocalhost = (path: string) => `http://localhost:${site?.port}${path}`;
 
@@ -143,6 +150,16 @@ beforeAll(async () => {
   if (!HAS_BROWSER) return;
   fixture = serveFixture();
   site = serveCountingSite();
+  app = Bun.serve({
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      appReceived.push(`${url.pathname}${url.search}`);
+      return new Response("<!doctype html><h1>the app</h1>", {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    },
+  });
   profilesDir = await mkdtemp(join(tmpdir(), "laf-bound-profiles-"));
   workspaceDir = await mkdtemp(join(tmpdir(), "laf-bound-workspace-"));
   const port = await freePort();
@@ -157,9 +174,21 @@ beforeAll(async () => {
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
       // A laptop has no host to hold the browser's egress rules (egress-guard.ts).
       AGENT_COMPUTER_EGRESS_FIREWALL: "off",
+      // The deployment's own app, in the server's own variables. All four are set, so nothing a
+      // developer's own `.env` names is taken for this run's app.
+      BETTER_AUTH_URL: `http://127.0.0.1:${app.port}`,
+      TRUSTED_ORIGINS: `http://127.0.0.1:${app.port}`,
+      PUBLIC_ORIGIN: "",
+      LAF_OIDC_ISSUER: "",
     },
-    stdout: "pipe",
-    stderr: "pipe",
+    /*
+     * NOT A PIPE NOBODY READS. The computer logs a line for every request and every refusal, and a
+     * pipe holds some tens of kilobytes: with four more tests in this file the log outgrew it, the
+     * computer blocked on its next line, and every test after that point failed with a closed socket
+     * (2026-10-03 — fifteen tests fitted, nineteen did not).
+     */
+    stdout: "ignore",
+    stderr: "ignore",
   });
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const alive = await fetch(`${base}/health`).catch(() => null);
@@ -173,6 +202,7 @@ afterAll(async () => {
   child?.kill();
   fixture?.stop();
   await site?.stop(true);
+  await app?.stop(true);
   if (profilesDir) await rm(profilesDir, { recursive: true, force: true });
   if (workspaceDir) await rm(workspaceDir, { recursive: true, force: true });
 });
@@ -231,6 +261,72 @@ describe.skipIf(!HAS_BROWSER)("every hop, before it is sent", () => {
     expect(opened.status).toBe(200);
     expect(String(opened.body.text)).toContain(VISIBLE_TEXT);
     expect(noteCodes(opened.body)).toContain("laf:navigation_refused");
+  });
+});
+
+/*
+ * A person answers a Bot's questions in the app and signs in to it with the accounts this browser
+ * holds logins for. The private-host opt-in is ON in this run and the app is a local address: the
+ * opt-in opens every other local page here and does not open that one.
+ */
+describe.skipIf(!HAS_BROWSER)("the deployment's own app, at every hop", () => {
+  test("named outright it never reaches the browser, and the answer says which refusal", async () => {
+    appReceived.length = 0;
+    const refused = await post("/navigate", {
+      url: onApp("/channel/channel_1"),
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("laf:own_address_refused");
+    expect(refused.body.refused).toEqual({
+      origin: `http://127.0.0.1:${app?.port}`,
+    });
+    expect(appReceived).toEqual([]);
+  });
+
+  test("a redirect back to its sign-in callback is refused at the hop: the app never hears it", async () => {
+    appReceived.length = 0;
+    received.length = 0;
+    const callback = onApp("/api/auth/callback/naver?code=one-time-code");
+    const refused = await post("/navigate", {
+      url: onLoopback(`/redirect?to=${encodeURIComponent(callback)}`),
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("laf:own_address_refused");
+    expect(refused.body.refused).toEqual({
+      origin: `http://127.0.0.1:${app?.port}`,
+      redirectedFrom: `http://127.0.0.1:${site?.port}`,
+    });
+    // The redirecting host was asked; the app was not, so no session was ever set on a reply.
+    expect(received).toEqual(["127.0.0.1/redirect"]);
+    expect(appReceived).toEqual([]);
+    // Origins only: the code a provider put in the address is nowhere in the answer.
+    expect(JSON.stringify(refused.body)).not.toContain("one-time-code");
+
+    // Another local page opens as before, under the same opt-in.
+    const next = await post("/navigate", { url: onLoopback("/after") });
+    expect(next.status).toBe(200);
+    expect(String(next.body.text)).toContain(VISIBLE_TEXT);
+  });
+
+  test("a frame pointed at it is refused and noted under the same code, and the page still opens", async () => {
+    appReceived.length = 0;
+    const opened = await post("/navigate", {
+      url: onLoopback(`/frame?to=${encodeURIComponent(onApp("/"))}`),
+    });
+    expect(opened.status).toBe(200);
+    expect(String(opened.body.text)).toContain(VISIBLE_TEXT);
+    expect(noteCodes(opened.body)).toContain("laf:own_address_refused");
+    expect(appReceived).toEqual([]);
+  });
+
+  test("a script that leaves for it is stopped the same way", async () => {
+    appReceived.length = 0;
+    const left = await post("/navigate", {
+      url: onLoopback(`/script?to=${encodeURIComponent(onApp("/approve/1"))}`),
+    });
+    expect(left.status).toBe(403);
+    expect(left.body.code).toBe("laf:own_address_refused");
+    expect(appReceived).toEqual([]);
   });
 });
 

@@ -443,6 +443,18 @@ services:
       # API server applies to the address a Bot asks for. Empty is off, which is what a hosted
       # deployment wants; a laptop that sets it for the server sets it here with the same word.
       AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: ${AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS:-}
+      # THE ADDRESSES THIS DEPLOYMENT ITSELF ANSWERS AT, which its Bot's browser never opens: the
+      # app, where a person presses 허용 on a Bot's question, and the sign-in a session for it
+      # begins at. The profile in this container holds the person's Naver, Kakao and Google logins
+      # — the same accounts the app is signed in to with — so a browser that could open the app
+      # could answer the Bot's own question (shared/net/own-addresses.ts). The server refuses the
+      # address a Bot asks for; only this container sees the hops after it, a provider's redirect
+      # back to the app's callback among them. The four variables the API server reads them from,
+      # in the same four expressions as above, so the two halves are told one thing.
+      BETTER_AUTH_URL: ${AUTH_PROVIDERS:+${PUBLIC_ORIGIN}}
+      TRUSTED_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      LAF_OIDC_ISSUER: ${LAF_OIDC_ISSUER:-}
       # Whether a browser waits for the host's egress firewall (agent-computer/src/egress-guard.ts).
       # Empty is on: before any browser opens, the computer asks the network whether the host is
       # refusing 169.254.169.254, the private ranges and itself, and refuses to browse

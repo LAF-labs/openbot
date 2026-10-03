@@ -220,6 +220,112 @@ describe("computer client", () => {
     ).rejects.toThrow(NavigationRefusedError);
   });
 
+  /*
+   * THE APP ITSELF, AND ITS SIGN-IN (`shared/net/own-addresses.ts`). A person answers the Bot's
+   * questions in the app, and the Bot's browser holds the logins the app is signed in to with — so
+   * the app's own address is refused where the Bot names it, where the browser lands on it under a
+   * container that was not told the list, and where the container refuses a hop to it itself. Each
+   * under the code that says so, which is not the one for the deployment's network.
+   */
+  describe("the deployment's own app", () => {
+    const OWN = ["shop.agent.example.com:", "auth.agent.example.com:"];
+    const ownClient = (
+      handler: (
+        url: string,
+        init?: RequestInit,
+      ) => Promise<Response> | Response,
+    ) =>
+      createComputerClient({
+        baseUrl: "http://agent-computer:4100",
+        ownAddresses: OWN,
+        fetchImpl: ((url: string, init?: RequestInit) =>
+          Promise.resolve(handler(url, init))) as unknown as typeof fetch,
+      });
+
+    test("is refused where the Bot names it, without calling the computer", async () => {
+      let calls = 0;
+      const client = ownClient(() => {
+        calls += 1;
+        return ok({});
+      });
+      for (const url of [
+        "https://shop.agent.example.com/channel/channel_1",
+        "http://shop.agent.example.com/",
+        "https://auth.agent.example.com/authorize?client_id=shop",
+      ]) {
+        const refusal = await client.navigate(url).catch((error) => error);
+        expect([url, refusal instanceof NavigationRefusedError]).toEqual([
+          url,
+          true,
+        ]);
+        expect([url, (refusal as Error).message]).toEqual([
+          url,
+          "laf:own_address_refused",
+        ]);
+      }
+      expect(calls).toBe(0);
+    });
+
+    test("is refused where the browser landed on it, and the browser is closed", async () => {
+      const paths: string[] = [];
+      const client = ownClient((url) => {
+        paths.push(new URL(url).pathname);
+        if (url.endsWith("/navigate")) {
+          // A provider's redirect back to the app's callback, followed by a container that holds
+          // no list: one started by a compose file from before it was handed one.
+          return ok({
+            url: "https://shop.agent.example.com/api/auth/callback/naver?code=abc",
+            title: "",
+            text: "",
+            truncated: false,
+            elapsedMs: 20,
+          });
+        }
+        return ok({ stopped: true, wasRunning: true });
+      });
+      const refusal = await client
+        .navigate("https://nid.naver.example/oauth2.0/authorize?client_id=x")
+        .catch((error) => error);
+      expect(refusal instanceof NavigationRefusedError).toBe(true);
+      expect((refusal as Error).message).toBe("laf:own_address_refused");
+      expect(paths).toEqual(["/navigate", "/computers/stop"]);
+    });
+
+    test("is a refusal, under its own code, where the container stopped the hop itself", async () => {
+      const client = ownClient(
+        () =>
+          new Response(
+            JSON.stringify({
+              error: "laf:own_address_refused",
+              code: "laf:own_address_refused",
+              refused: { origin: "https://shop.agent.example.com" },
+            }),
+            { status: 403, headers: { "content-type": "application/json" } },
+          ),
+      );
+      const refusal = await client
+        .navigate("https://bit.ly/3xYz")
+        .catch((error) => error);
+      expect(refusal instanceof NavigationRefusedError).toBe(true);
+      expect((refusal as Error).message).toBe("laf:own_address_refused");
+    });
+
+    test("a client told no list opens the address as it always did", async () => {
+      const client = clientWith(() =>
+        ok({
+          url: "https://shop.agent.example.com/",
+          title: "",
+          text: "",
+          truncated: false,
+          elapsedMs: 1,
+        }),
+      );
+      await expect(
+        client.navigate("https://shop.agent.example.com/"),
+      ).resolves.toMatchObject({ url: "https://shop.agent.example.com/" });
+    });
+  });
+
   // Two different failures that read identically to a person unless we separate them: the computer
   // being absent is an operator problem, a page failing to load is not.
   test("reports an absent computer distinctly from a failed page", async () => {

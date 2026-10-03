@@ -51,10 +51,15 @@ export type NavigationHop = {
   referer: string | null;
 };
 
+/** A hop the floor refused: its words, and which refusal it was where that is said differently. */
+export type HopRefusal = Extract<TargetVerdict, { allowed: false }>;
+
 export type NavigationGuardOptions = {
   allowPrivateHosts: boolean;
+  /** The deployment's own app and its sign-in (`config.ts`). Never opened, opt-in or not. */
+  ownAddresses?: readonly string[];
   /** A hop the floor refused. Told before the request is failed; facts about a URL, never content. */
-  onRefused?: (hop: NavigationHop, reason: string) => void;
+  onRefused?: (hop: NavigationHop, refusal: HopRefusal) => void;
   /**
    * Whether an allowed hop is stopped so somebody else can judge it first.
    *
@@ -100,15 +105,16 @@ const REMEMBERED_REQUESTS = 256;
 export function hopVerdict(
   url: string,
   allowPrivateHosts: boolean,
+  ownAddresses: readonly string[] = [],
 ): TargetVerdict {
   let scheme: string;
   try {
     scheme = new URL(url).protocol;
   } catch {
-    return checkNavigationTarget(url, { allowPrivateHosts });
+    return checkNavigationTarget(url, { allowPrivateHosts, ownAddresses });
   }
   if (!HOST_SCHEMES.has(scheme)) return { allowed: true, url };
-  return checkNavigationTarget(url, { allowPrivateHosts });
+  return checkNavigationTarget(url, { allowPrivateHosts, ownAddresses });
 }
 
 /**
@@ -121,12 +127,17 @@ export async function resolvedHopVerdict(
   url: string,
   allowPrivateHosts: boolean,
   resolve?: HostResolver,
+  ownAddresses: readonly string[] = [],
 ): Promise<TargetVerdict> {
-  const verdict = hopVerdict(url, allowPrivateHosts);
+  const verdict = hopVerdict(url, allowPrivateHosts, ownAddresses);
   if (!verdict.allowed || !HOST_SCHEMES.has(new URL(url).protocol)) {
     return verdict;
   }
-  return resolvedNavigationTarget(url, { allowPrivateHosts, resolve });
+  return resolvedNavigationTarget(url, {
+    allowPrivateHosts,
+    ownAddresses,
+    resolve,
+  });
 }
 
 /**
@@ -229,9 +240,10 @@ export async function guardNavigations(
         hop.url,
         options.allowPrivateHosts,
         options.resolve,
+        options.ownAddresses,
       );
       if (!verdict.allowed) {
-        options.onRefused?.(hop, verdict.reason);
+        options.onRefused?.(hop, verdict);
         stop = true;
       } else {
         stop = options.holds?.(hop) === true;
@@ -267,7 +279,7 @@ export async function guardNavigations(
             method: response.request().method(),
             referer: null,
           },
-          CONNECTED_PRIVATELY,
+          { allowed: false, reason: CONNECTED_PRIVATELY },
         );
         log.warn("navigation_connected_privately", {
           origin: originOf(response.url()),

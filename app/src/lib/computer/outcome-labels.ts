@@ -67,6 +67,7 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:page_timeout": "The page did not open in time",
   "laf:navigation_failed": "The page could not be opened",
   "laf:navigation_refused": "An address inside this deployment was blocked",
+  "laf:own_address_refused": "This app's own address was not opened",
   // Acting on it.
   "laf:stale_refs": "The screen had changed",
   "laf:label_changed": "The control had been renamed",

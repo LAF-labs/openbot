@@ -83,6 +83,10 @@ export const COMPUTER_CODES = {
   // A hop into the deployment's own network, stopped before it was sent. The answer to `/navigate`,
   // and a note on the next result when a click or a script took the page there.
   "laf:navigation_refused": { status: 403, caller: "bot", note: true },
+  // A hop to this deployment's own app or its sign-in — where a person answers for the Bot —
+  // stopped before it was sent (`shared/net/own-addresses.ts`). Answered and noted like the one
+  // above, under a code of its own because what the Bot should say about it is not the same.
+  "laf:own_address_refused": { status: 403, caller: "bot", note: true },
 
   /* ── Acting on a page ─────────────────────────────────────────────────────────────────── */
 

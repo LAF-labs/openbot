@@ -321,6 +321,7 @@ describe("the live screen of a removed person", () => {
         baseUrl: `http://127.0.0.1:${computer.port}/`,
         token: "computer-token",
         allowPrivateHosts: false,
+        ownAddresses: [],
       },
       trustedOrigins: [ORIGIN],
       actorOf: deployment.actors.resolveOrNull,

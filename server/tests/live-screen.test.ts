@@ -72,6 +72,7 @@ const computerConfig = {
   baseUrl: `http://127.0.0.1:${computer.port}/`,
   token: TOKEN,
   allowPrivateHosts: false,
+  ownAddresses: [],
 };
 
 const opened: Array<{ botId: string; viewer: ScreenViewer }> = [];

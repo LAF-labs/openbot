@@ -5,6 +5,7 @@
  * `index.ts` and the code that acts on a value can never read two different spellings of it — and
  * so a test can hand a module a setting without touching `process.env`.
  */
+import { ownAddressesFrom } from "../../shared/net/own-addresses";
 
 export type ComputerConfig = {
   /** See {@link readConfig}: without it the process does not start. */
@@ -13,6 +14,8 @@ export type ComputerConfig = {
   navigationTimeoutMs: number;
   actionTimeoutMs: number;
   allowPrivateHosts: boolean;
+  /** See {@link readConfig}: the deployment's own app and its sign-in, never opened. */
+  ownAddresses: string[];
   /** See {@link readConfig}: false only where the deployment said `off`. */
   egressFirewall: boolean;
   profilesDir: string;
@@ -65,6 +68,17 @@ export function readConfig(
      */
     allowPrivateHosts:
       environment.AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS?.trim() === "true",
+    /**
+     * The addresses this deployment itself answers at, which this browser never opens
+     * (`shared/net/own-addresses.ts` says why).
+     *
+     * THE SERVER'S OWN VARIABLES, handed to this container under their own names
+     * (`docker-compose.yml`), for the reason the line above gives: the server refuses the address
+     * a Bot asks for, and only this process sees the hops after it — a provider's redirect back to
+     * the app's sign-in callback is one. A container started without them holds an empty list and
+     * the server's two checks are what is left, on the address asked for and the one landed on.
+     */
+    ownAddresses: ownAddressesFrom(environment),
     /**
      * Whether a browser waits for the host's egress rules (egress-guard.ts).
      *
