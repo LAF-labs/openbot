@@ -121,10 +121,10 @@ import { cn } from "@/lib/utils";
  * when, at 54px (`bot-row.tsx`) — because with several faces in a list that line is how somebody
  * sees which one said what. Nothing else in the app behaves as if there were several.
  *
- * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of faces and icons with
- * their names in tooltips, which the titlebar's toggle puts back to full for as long as somebody
- * wants — measured at an 800px window, a fixed 280 was 35% of everything the person could see. The
- * rail is drawn as it was before 2026-10-04: it had no words to lose.
+ * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of faces and icons
+ * with their names in tooltips, which the titlebar's toggle puts back to full for as long as
+ * somebody wants — measured at an 800px window, a fixed 280 was 35% of everything the person could
+ * see. The rail is drawn as it was before 2026-10-04: it had no words to lose.
  * And below `md`, NO COLUMN: at 375px the rail was 15% of the screen and five unlabelled icons
  * (UI/UX audit 0.5.3, item 20). There the phone's bottom bar is the way around — 대화 · 소식 · 메뉴
  * (`phone-tab-bar.tsx`) — and the sheet this column used to slide in as, from a menu button in each
@@ -227,8 +227,8 @@ function BotRowMenu({
 }
 
 /**
- * The dot beside the Bot's name, per tone: amber for the person's turn, the Bot's colour while it is
- * busy, grey at rest. The conversation header's pill has the same three (`DOT_TONES` in
+ * The dot beside the Bot's name, per tone: amber for the person's turn, the Bot's colour while it
+ * is busy, grey at rest. The conversation header's pill has the same three (`DOT_TONES` in
  * `channels/bot-header.tsx`), which that file keeps to itself.
  */
 const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
@@ -238,8 +238,8 @@ const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
 };
 
 /**
- * THE BOT, AT THE TOP OF ITS COLUMN, ON ONE ROW: the face with what it is doing on it, and the name.
- * The way to its profile, which is why the pencil shows on hover.
+ * THE BOT, AT THE TOP OF ITS COLUMN, ON ONE ROW: the face with what it is doing on it, and the
+ * name. The way to its profile, which is why the pencil shows on hover.
  *
  * NO LINE OF STATUS WORDS UNDER THE NAME (2026-10-04). It read 쉬는 중 all day under a face that
  * already says so, and the owner's complaint about the column was its words: "아이콘으로도 되는 걸
@@ -983,9 +983,9 @@ export function BotSidebar() {
        * 메뉴 on the right, and no word beside either. It was two rows, 메뉴 with its word and under
        * it the picture with the name or the address written out; the owner had the column's words
        * cut to the ones that navigate ("아이콘으로도 되는 걸 항상 글자로 표시하는 게 문제"), and
-       * neither of these is a place. Both open what they opened. PINNED either way, outside the part
-       * that scrolls: when the places scrolled with the rows above them, the smallest window put
-       * 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
+       * neither of these is a place. Both open what they opened. PINNED either way, outside the
+       * part that scrolls: when the places scrolled with the rows above them, the smallest window
+       * put 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
        *
        * The rail keeps its two rows: 64px does not seat two buttons side by side.
        */}
