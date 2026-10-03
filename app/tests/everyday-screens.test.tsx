@@ -108,6 +108,7 @@ async function screen(path: string, extra?: ApiAnswer) {
 const SCREENS = [
   ["Updates", "/feed"],
   ["Ideas", "/ideas"],
+  ["Goals", "/goals"],
 ] as const;
 
 describe("a page's title stands alone", () => {
@@ -442,5 +443,138 @@ describe("아이디어", () => {
     const view = await screen("/ideas", ideas([]));
     expect(view.said("[data-ideas-empty]")).toEqual(["No ideas left."]);
     expect(ko["No ideas left."]).toBeTruthy();
+  });
+});
+
+describe("목표", () => {
+  const goal = (over: Record<string, unknown>) => ({
+    agentId: "bot-1",
+    measure: null,
+    dueOn: null,
+    status: "active",
+    momentum: "on_track",
+    createdAt: "2026-09-20T09:00:00.000Z",
+    updatedAt: "2026-10-01T09:00:00.000Z",
+    lastEntryAt: "2026-10-01T09:00:00.000Z",
+    entryCount: 3,
+    latestValue: null,
+    routines: [],
+    ...over,
+  });
+  const WATCHED = goal({
+    id: "goal-1",
+    category: "study",
+    title: "12월 토익 800점",
+    target: "12월 정기 시험에서 800점 넘기",
+    measure: { unit: "점", start: 720, goal: 800 },
+    latestValue: 760,
+    dueOn: "2026-12-20",
+  });
+  const PLAIN = goal({
+    id: "goal-2",
+    category: "health",
+    title: "주 3회 30분 걷기",
+    target: "월·수·금 저녁에 30분씩 걷기",
+    momentum: "at_risk",
+  });
+  const goals = (list: unknown[]): ApiAnswer => {
+    return ({ pathname }) => {
+      if (pathname === "/api/goals") {
+        return json({ goals: list, active: list.length });
+      }
+      if (pathname === "/api/goals/goal-1") {
+        return json({ goal: WATCHED, entries: [] });
+      }
+      return undefined;
+    };
+  };
+
+  test("before any goal: the seven kinds, and one line saying what will be here", async () => {
+    const view = await screen("/goals", goals([]));
+    expect(view.count("[data-goal-categories] button")).toBe(7);
+    expect(view.said("[data-goals-empty]")).toEqual([
+      "Goals you set in the conversation are kept here.",
+    ]);
+    // No goal the person does not have is drawn as an example of one.
+    expect(view.count("[data-goal]")).toBe(0);
+    expect(view.main.textContent).not.toContain("Example");
+    expect(ko["Goals you set in the conversation are kept here."]).toBeTruthy();
+  });
+
+  test("a goal's row: its title and how it is going, and one line under them", async () => {
+    const view = await screen("/goals", goals([WATCHED, PLAIN]));
+    const row = (id: string) => {
+      const found = view.one(`[data-goal="${id}"]`);
+      return {
+        lines: [...found.querySelectorAll(":scope > span > span")].map(
+          (line) => line.textContent,
+        ),
+        // The category is the icon, named when asked — not a word beside it.
+        category: found.querySelector(":scope > span")?.getAttribute("title"),
+      };
+    };
+    expect(row("goal-1")).toEqual({
+      // What it watches: the day it is due and where the number stands.
+      lines: [
+        "12월 토익 800점On track",
+        "Until December 20 · Now 760 · goal 800점",
+      ],
+      category: "Study and growth",
+    });
+    expect(row("goal-2")).toEqual({
+      // A goal that watches neither says its target, which is all it has.
+      lines: [
+        "주 3회 30분 걷기Slipping a little",
+        "월·수·금 저녁에 30분씩 걷기",
+      ],
+      category: "Health",
+    });
+  });
+
+  test("a goal opened: the press that changes it is a named pencil, and the ones that settle it keep their words", async () => {
+    const view = await screen("/goals?goal=goal-1", goals([WATCHED]));
+    await view.waitFor(
+      () => view.count("[data-goal-detail] h2") === 1,
+      "the goal to open",
+    );
+    const detail = view.one("[data-goal-detail]");
+    const change = view.one("[data-goal-change]");
+    const address = new URL(change.getAttribute("href") ?? "", "http://x");
+    expect({
+      words: change.textContent,
+      icon: change.querySelectorAll("svg").length,
+      name: change.getAttribute("aria-label"),
+      tip: change.getAttribute("title"),
+      // The same press: the goal named in a sentence in the conversation's box.
+      path: address.pathname,
+      draft: address.searchParams.get("draft"),
+    }).toEqual({
+      words: "",
+      icon: 1,
+      name: "Change it in the conversation",
+      tip: "Change it in the conversation",
+      path: "/channel/ch-1",
+      draft: "Change the goal “12월 토익 800점” like this: ",
+    });
+    expect(
+      [...detail.querySelectorAll("button")].map((press) => press.textContent),
+    ).toEqual(["Mark as done", "Stop this goal", "Delete"]);
+    expect(view.said("[data-goal-timeline-empty]")).toEqual([
+      "What you tell the Bot about it is logged here.",
+    ]);
+  });
+
+  test("the sheet a kind opens still says a conversation follows — its button sends a message", () => {
+    /*
+     * 대화에서 시작 is the one press on this page that sends for the person, so the sentence before
+     * it keeps the word. Read from the dictionary: the sheet is a dialog, and Base UI decides once
+     * per process whether one can open (`confirm-dialog.test.tsx`).
+     */
+    const said =
+      ko[
+        "First I'll ask you a few things in the conversation and we'll shape the goal together."
+      ];
+    expect(said).toContain("대화");
+    expect(ko["Start in the conversation"]).toBe("대화에서 시작");
   });
 });

@@ -3250,19 +3250,15 @@ export const ko: Record<string, string> = {
   "{count} in progress": "진행 중인 목표 {count}개",
   "Kinds of goal": "목표 분류",
   Suggested: "추천",
-  "Pick a kind of goal and we'll shape it together in the conversation. It is saved only when you say yes, and you can follow it here.":
-    "분류를 고르면 대화에서 함께 목표를 다듬어요. 예라고 하신 것만 저장되고, 진행 상황은 여기서 볼 수 있어요.",
+  "Goals you set in the conversation are kept here.":
+    "대화에서 함께 정한 목표가 여기에 모여요.",
   "Goals could not be loaded.": "목표를 불러오지 못했어요.",
   "This deployment does not keep goals.": "이 배포에는 목표 기능이 없어요.",
   "In progress": "진행 중",
   "Finished and stopped": "끝냈거나 그만둔 목표",
-  Example: "예시",
-  "Try out my Bot for a week": "일주일 동안 봇 써 보기",
-  "Ask it for one thing a day for seven days. Each time you tell it how it went, a line appears here.":
-    "7일 동안 하루에 한 가지씩 부탁해 보기. 어땠는지 말해 주실 때마다 여기에 한 줄씩 쌓여요.",
   "Make a {category} goal": "{category} 목표 만들기",
-  "First I'll ask you a few things in the conversation and we'll shape the goal together. Once it is set, you can follow how it is going here.":
-    "먼저 대화에서 몇 가지를 여쭤보고 목표를 함께 다듬을게요. 정해지면 여기서 진행 상황을 볼 수 있어요.",
+  "First I'll ask you a few things in the conversation and we'll shape the goal together.":
+    "먼저 대화에서 몇 가지를 여쭤보고 목표를 함께 다듬을게요.",
   "Start in the conversation": "대화에서 시작",
   "Help me set a goal for {category}": "{category} 목표를 같이 세워 줘",
   "Change the goal “{title}” like this: ":
@@ -3274,7 +3270,6 @@ export const ko: Record<string, string> = {
   "Goal: {goal}{unit}": "목표 {goal}{unit}",
   "Now {now} · goal {goal}{unit}": "지금 {now} · 목표 {goal}{unit}",
   "Until {date}": "{date}까지",
-  "{count} entries": "기록 {count}개",
   "That goal is no longer there.": "그 목표는 이제 없어요.",
   "That goal could not be loaded.": "그 목표를 불러오지 못했어요.",
   "Checked by the {name} routine": "‘{name}’ 루틴이 점검해요",
@@ -3283,8 +3278,8 @@ export const ko: Record<string, string> = {
   "Take it up again": "다시 진행",
   "Change it in the conversation": "대화에서 바꾸기",
   "How it has gone": "지금까지의 기록",
-  "Nothing logged yet. Tell the Bot how it went in the conversation, or ask it to check at a time you choose.":
-    "아직 기록이 없어요. 대화에서 어땠는지 말해 주시거나, 정한 시간에 점검해 달라고 부탁해 보세요.",
+  "What you tell the Bot about it is logged here.":
+    "대화에서 알려 주신 진행 상황이 여기에 쌓여요.",
   "The goal and everything logged on it go. A routine that checked it stays, and checks nothing.":
     "목표와 그 기록이 모두 지워져요. 점검하던 루틴은 남고, 더는 아무 목표도 점검하지 않아요.",
   "Delete “{title}”?": "‘{title}’을 지울까요?",

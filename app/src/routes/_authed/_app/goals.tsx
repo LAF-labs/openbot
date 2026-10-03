@@ -13,11 +13,7 @@ import {
 import { Badge } from "@/components/gallery/frame";
 import { CategorySheet } from "@/components/goals/category-sheet";
 import { GoalDetail } from "@/components/goals/goal-detail";
-import {
-  CATEGORY_ICONS,
-  GoalRow,
-  MomentumChip,
-} from "@/components/goals/goal-parts";
+import { CATEGORY_ICONS, GoalRow } from "@/components/goals/goal-parts";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
 import { focusRing } from "@/components/ui/focus";
@@ -46,7 +42,13 @@ import { cn } from "@/lib/utils";
  *
  * THEN THE GOALS: active first, each with its three-word momentum (잘 가고 있어요 · 조금 밀렸어요 ·
  * 늦어지고 있어요) and what it watches; a goal opens its timeline. Finished and stopped goals under
- * them. Before any goal, a sample drawn by the page — Muse's empty state (teardown §4), at no cost.
+ * them.
+ *
+ * THE TITLE STANDS ALONE, AND BEFORE ANY GOAL THE PAGE SAYS ONE LINE (2026-10-04, the owner: too
+ * many characters on the screen). It opened on a sentence about what happens when a kind is
+ * pressed — which the sheet that press opens says, where it is needed — and before any goal it
+ * drew a sample goal, Muse's empty state (teardown §4): a made-up title, three badges and two
+ * sentences, 60 of the page's 129 characters, about a goal the person does not have.
  */
 export const Route = createFileRoute("/_authed/_app/goals")({
   validateSearch: (search: Record<string, unknown>): { goal?: string } =>
@@ -102,16 +104,10 @@ function GoalsPage() {
   };
 
   return (
-    <PageShell
-      description={t(
-        "Pick a kind of goal and we'll shape it together in the conversation. It is saved only when you say yes, and you can follow it here.",
-      )}
-      title={t("Goals")}
-      width="wide"
-    >
+    <PageShell title={t("Goals")} width="wide">
       <ul
         aria-label={t("Kinds of goal")}
-        className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"
+        className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4"
         data-goal-categories
       >
         {order.map((category) => {
@@ -162,7 +158,12 @@ function GoalsPage() {
         </div>
       ) : null}
 
-      {settled && all.length === 0 ? <SampleGoal /> : null}
+      {/* What will be here, in a line. The seven kinds above are the press that makes one. */}
+      {settled && all.length === 0 ? (
+        <p className="mt-6 text-muted-foreground text-sm" data-goals-empty>
+          {t("Goals you set in the conversation are kept here.")}
+        </p>
+      ) : null}
 
       {active.length > 0 || selected ? (
         <PageSection className="mt-8" title={t("In progress")}>
@@ -219,31 +220,5 @@ function GoalsPage() {
         onStart={handleStart}
       />
     </PageShell>
-  );
-}
-
-/**
- * Before any goal: what one will look like, drawn by the page and marked as an example. Nothing is
- * stored and nothing is asked of the model.
- */
-function SampleGoal() {
-  return (
-    <section
-      aria-label={t("Example")}
-      className="mt-8 flex flex-col gap-2 rounded-xl border border-border border-dashed p-4"
-      data-goal-sample
-    >
-      <span className="flex flex-wrap items-center gap-1.5 text-muted-foreground text-xs">
-        <Badge>{t("Example")}</Badge>
-        <span>{categoryName("study")}</span>
-        <MomentumChip momentum="on_track" />
-      </span>
-      <p className="font-medium">{t("Try out my Bot for a week")}</p>
-      <p className="text-muted-foreground text-sm">
-        {t(
-          "Ask it for one thing a day for seven days. Each time you tell it how it went, a line appears here.",
-        )}
-      </p>
-    </section>
   );
 }
