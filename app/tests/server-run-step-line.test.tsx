@@ -60,14 +60,12 @@ const SERVER_FAILED = TOOL_RESULT_KO["laf:tool_server_failed"] as string;
 const MAIL = `제목: 인증번호 안내\n인증번호: ${withheldMark("code", "Ab12Cd34Ef56")}`;
 
 /** One step and what the conversation kept as its result, with the Bot's sentence after it. */
-const step = (id: string, result: string): Message[] => [
+const step = (id: string, result: string, name = TOOL): Message[] => [
   {
     id: `a-${id}`,
     role: "assistant",
     content: "",
-    toolCalls: [
-      { id, type: "function", function: { name: TOOL, arguments: "{}" } },
-    ],
+    toolCalls: [{ id, type: "function", function: { name, arguments: "{}" } }],
   } as Message,
   { id: `t-${id}`, role: "tool", toolCallId: id, content: result } as Message,
   { id: `s-${id}`, role: "assistant", content: `${id} 다음 말` },
@@ -321,6 +319,28 @@ describe("a conversation whose steps the server ran", () => {
     for (const sentence of [POLICY_DENIED, SERVER_FAILED]) {
       expect(drawn.whole()).not.toContain(sentence);
     }
+    await drawn.close();
+  });
+  /*
+   * A TOOL THIS BOT NO LONGER HOLDS HAS NO RENDERER — and the commonest refusal of all is that the
+   * tool was taken back between the Bot finding it and calling it. Read back after a reload, that
+   * refusal was the transcript's plain line for a call it has no renderer for, which reads as a
+   * thing that was done (Codex on #52). The plain line reads the kept result too.
+   */
+  test("a step of a tool the Bot no longer holds still says it was blocked, or did not work", async () => {
+    const GONE = "mcp__calendar__add_event";
+    const drawn = await rows([
+      { id: "q", role: "user", content: "일정 넣어줘" },
+      ...step("taken", "laf:tool_not_granted", GONE),
+      ...step("broke", toolErrorText("quota exceeded"), GONE),
+      ...step("went", "일정을 넣었어요.", GONE),
+      // Something the granted tool draws, so the harness knows the renderers are registered.
+      ...step("fine", "메일 2통을 찾았어요."),
+    ]);
+    expect(drawn.read("taken").isRefused).toBe(true);
+    expect(drawn.read("broke").isWarned).toBe(true);
+    const went = drawn.read("went");
+    expect(went.isWarned || went.isRefused).toBe(false);
     await drawn.close();
   });
 });
