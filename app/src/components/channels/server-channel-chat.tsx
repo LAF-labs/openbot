@@ -626,10 +626,15 @@ export function ServerChannelChat({
   useEffect(() => {
     waitingNow.current = thread.waiting;
   }, [thread.waiting]);
-  /** These words are still kept for their card: not forgotten, nor replaced, nor let go of it. */
+  /**
+   * These words are still kept for their card: not forgotten, nor replaced, nor let go of it — nor
+   * handed to the person (`handToPerson` keeps the mark and takes off `waiting`). Read by the mark
+   * alone, a request a screen that had left still had queued went out for words another screen
+   * had just handed to the person as theirs to send (second reviewer, thirteenth round).
+   */
   const isStillForCard = (message: UnsentMessage) =>
     readUnsent(channel.id).some(
-      (kept) => kept.id === message.id && kept.answerTo !== undefined,
+      (kept) => kept.id === message.id && isKeptForCard(kept),
     );
   /*
    * ONE REQUEST AT THE DOOR AT A TIME FOR A QUESTION, AND THE LATEST WORDS LAST. Two answers out

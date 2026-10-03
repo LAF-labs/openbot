@@ -777,6 +777,64 @@ describe("words typed while the Bot waits on a choice", () => {
       });
 
       /*
+       * A request still queued for words that were handed to the person meanwhile — the turn
+       * over, the record silent about the question — went out all the same: its check read the
+       * mark, which handing them over keeps (second reviewer, thirteenth round).
+       */
+      test("handed to the person while a request for them waited its turn, that request is not made", async () => {
+        await restFor(NEVER_IN_THIS_TEST);
+        // One lock manager, and the line held by something else until the test lets it go.
+        let letGo = () => {};
+        const blocker = new Promise<void>((resolve) => {
+          letGo = resolve;
+        });
+        const lines = new Map<string, Promise<unknown>>();
+        const locks = {
+          request: (name: string, run: () => Promise<unknown>) => {
+            const mine = (lines.get(name) ?? blocker).then(run, run);
+            lines.set(
+              name,
+              mine.catch(() => {}),
+            );
+            return mine;
+          },
+        };
+        Object.defineProperty(navigator, "locks", {
+          value: locks,
+          configurable: true,
+        });
+        try {
+          const { api, turns } = server();
+          const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+          await ask(view, turns);
+          await sendWords(view, TYPED);
+          await view.waitFor(() => kept().length === 1, "the words kept", 4000);
+
+          // Away; the turn ends, and nothing the record holds says what became of the question.
+          await view.navigate("/feed");
+          await acted(() => turns.announceUnheard("done"));
+          await view.navigate(`/channel/${CHANNEL}`);
+          await view.waitFor(
+            () => kept()[0]?.waiting === undefined,
+            "the words handed to the person",
+            4000,
+          );
+          expect(kept()).toMatchObject([{ text: TYPED, answerTo: CALL }]);
+
+          // The line is free: the old screen's request, queued all along, must not go.
+          await acted(() => letGo());
+          await view.settle(400);
+          expect(turns.asks()).toBe(0);
+          expect(turns.answers()).toHaveLength(0);
+        } finally {
+          Object.defineProperty(navigator, "locks", {
+            value: undefined,
+            configurable: true,
+          });
+        }
+      });
+
+      /*
        * Nothing came back for the first: it may have been taken — what "unknown" means. Read as
        * "not taken", the second went out while the first could still win the card (review,
        * twelfth round). It rests first, and goes once the card is seen still waiting.
