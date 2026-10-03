@@ -1,8 +1,10 @@
 /**
  * THE APP RUNS IN A WEBVIEW BEFORE IT RUNS IN A BROWSER, and the webview's engine is whatever the
- * person's system ships (`desktop/`: macOS 12 and up). A call that engine does not have throws
- * where it is evaluated — and inside a `try` around a request, that reads as the request failing.
- * A property it does not have reads as nothing, and says nothing at all.
+ * person's system ships. The page asks it for one thing before it starts — a pattern that looks
+ * behind, which is Safari 16.4 (`lib/engine-floor.ts`) — and an engine that has that can still be
+ * without what is listed here. A call an engine does not have throws where it is evaluated — and
+ * inside a `try` around a request, that reads as the request failing. A property it does not have
+ * reads as nothing, and says nothing at all.
  *
  * Two changes in a row bounded a request with `AbortSignal.timeout` (Safari 16): every read of the
  * conversation's history, and an answer typed to a card. On a system webview without it the first
@@ -19,7 +21,7 @@ import { join, relative } from "node:path";
 
 const SOURCE = join(import.meta.dir, "..", "src");
 
-/** What is newer than the oldest webview the shell is built for, and what stands in for it. */
+/** What is newer than the oldest engine the page starts on, and what stands in for it. */
 const NOT_THERE: [pattern: RegExp, instead: string][] = [
   [/AbortSignal\s*\.\s*timeout\s*\(/, "deadline() in lib/deadline.ts"],
   [
