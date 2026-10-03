@@ -6,6 +6,7 @@ import {
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
 } from "@shared/tools/gallery";
+import { stepDidNotWork } from "@shared/tools/step-result";
 import { withheldMarksIn } from "@shared/tools/withheld";
 import {
   BROWSING_TOOLS,
@@ -158,13 +159,16 @@ export function isFoldableStep(name: string): boolean {
 }
 
 /**
- * Whether a step line has something on it the person is waited on for, or was promised — a line
- * that is never put behind a fold, whatever comes after it.
+ * Whether a step line has something on it for the person — a line that is never put behind a fold,
+ * whatever comes after it.
  *
  * - STILL OUT: no result yet. A boundary's question is drawn on the line of the call that raised it
  *   (`ApprovalRequest`), and a model may ask for two calls in one breath, so the call waiting on the
  *   person need not be the newest. Behind a fold its card would be drawn nowhere: a question nobody
  *   can see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
+ * - IT DID NOT WORK: the service's own error, or this server's answer in the service's place — a
+ *   refusal, a stop, a call that never got its answer (`stepDidNotWork`). Folded behind the step
+ *   after it, an action that was refused would read as one more thing the Bot did.
  * - A WITHHELD MARK IN ITS RESULT. The 보기 for a mail's one-time code belongs on that call's own
  *   line (`WithheldSecrets`), and the person who asked for the code is waiting on it — not on the
  *   search the Bot made after reading the mail.
@@ -173,6 +177,7 @@ function staysInTheOpen(
   step: Extract<VisibleChatItem, { kind: "tool" }>,
 ): boolean {
   if (step.result === undefined) return true;
+  if (stepDidNotWork(step.result)) return true;
   // The cheap look first: this runs over every step of the conversation on every chunk.
   return (
     step.result.includes("[[withheld:") &&

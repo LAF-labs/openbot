@@ -1,4 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { toolErrorText } from "@shared/tools/step-result";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import * as z from "zod";
@@ -201,9 +202,7 @@ function PluginTool({
         });
         touch();
         // Return MCP text to the model; vendor errors stay as tool results instead of thrown errors.
-        return result.isError
-          ? `The tool reported an error: ${result.text}`
-          : result.text;
+        return result.isError ? toolErrorText(result.text) : result.text;
       }
 
       calls.current.set(id, {

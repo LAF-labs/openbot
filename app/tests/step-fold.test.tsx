@@ -8,6 +8,13 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
+import { TOOL_RESULT_KO } from "@shared/prompt/tool-results.ko";
+import { UNANSWERED_RESULT } from "@shared/task-ending";
+import {
+  stepDidNotWork,
+  TOOL_NOT_ALLOWED,
+  toolErrorText,
+} from "@shared/tools/step-result";
 import { withheldMark } from "@shared/tools/withheld";
 import {
   isFoldableStep,
@@ -192,6 +199,66 @@ describe("which lines are a run", () => {
       ["call-1", "call-1", 2, false],
       ["call-2", "call-1", 2, true],
     ]);
+  });
+
+  /*
+   * A STEP THAT DID NOT WORK IS SOMETHING FOR THE PERSON TOO (review, round 2). Its result is the
+   * text the model was told, and nothing beside it says how it ended — so the forms a failure is
+   * written in are read back: the service's own error, this server's answer in the service's
+   * place, an object of ours that says no.
+   */
+  test("a step that did not work ends its run, drawn, in every form a failure is written in", () => {
+    const failures = [
+      toolErrorText("quota exceeded"),
+      TOOL_NOT_ALLOWED,
+      UNANSWERED_RESULT,
+      TOOL_RESULT_KO["laf:person_declined"] as string,
+      TOOL_RESULT_KO["laf:stopped"] as string,
+      JSON.stringify({ ok: false, code: "laf:tool_unknown", reason: "…" }),
+      JSON.stringify({ refused: true }),
+      "Error: the handler threw",
+    ];
+    for (const result of failures) {
+      expect([result.slice(0, 40), stepDidNotWork(result)]).toEqual([
+        result.slice(0, 40),
+        true,
+      ]);
+      // Second of four: the newest of the first run, and the two after it are a run of their own.
+      expect(
+        placesOf([
+          ASKED,
+          ...done("1"),
+          called("2"),
+          answered("2", result),
+          ...done("3"),
+          ...done("4"),
+        ]).map(([id, , , isNewest]) => [id, isNewest]),
+      ).toEqual([
+        ["call-1", false],
+        ["call-2", true],
+        ["call-3", false],
+        ["call-4", true],
+      ]);
+    }
+    // Every sentence the server answers with in a service's place is one of them.
+    for (const [code, sentence] of Object.entries(TOOL_RESULT_KO)) {
+      expect([code, stepDidNotWork(sentence)]).toEqual([code, true]);
+    }
+    // A service's own answer is not: prose, a list, an object that says it went well — and one too
+    // long to be an object of ours is not read to find out.
+    for (const result of [
+      "ok",
+      "메일 2통을 찾았어요.",
+      JSON.stringify({ ok: true, items: [] }),
+      JSON.stringify([{ id: 1 }]),
+      `${TOOL_RESULT_KO["laf:stopped"]} 라고 적힌 메일`,
+      JSON.stringify({ ok: false, pad: "x".repeat(5000) }),
+    ]) {
+      expect([result.slice(0, 40), stepDidNotWork(result)]).toEqual([
+        result.slice(0, 40),
+        false,
+      ]);
+    }
   });
 
   /*
@@ -451,6 +518,23 @@ describe("a line with something on it for the person", () => {
     expect(
       log(view.host)?.querySelector('[data-message-id="call-1"]'),
     ).toBeNull();
+    server.close();
+    await view.unmount();
+  });
+
+  test("stays drawn when it did not work: the step a service refused, with the ones after it folded behind their own", async () => {
+    const { server, view } = await conversation("channel_fold-failed", [
+      ASKED,
+      ...done("1"),
+      called("2"),
+      answered("2", toolErrorText("quota exceeded")),
+      ...done("3"),
+      ...done("4"),
+      said("a-answer", "두 번째는 안 됐어요."),
+    ]);
+    await view.waitFor(() => folds(view.host).length === 2, "two folds", 4000);
+    expect(rowsDrawn(view.host).slice(1, 3)).toEqual(["call-2", "call-4"]);
+    expect(linesDrawn(view.host)).toBe(2);
     server.close();
     await view.unmount();
   });
