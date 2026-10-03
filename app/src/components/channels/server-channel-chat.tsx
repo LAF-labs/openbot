@@ -801,10 +801,20 @@ export function ServerChannelChat({
     const { id, answerTo: call } = message;
     if (!call || confirming.current.has(id)) return;
     confirming.current.add(id);
+    /*
+     * Until it is in, the screen is gone — or the words are no longer kept for their card: settled
+     * meanwhile by the stream or by another window, they are nothing this read is for, and with
+     * the history down it went on asking every eight seconds for as long as the conversation was
+     * open (review, fifteenth round).
+     */
     const record = await readRecord(
       channel.threadId,
       { call, in: message.askedBy },
-      () => rests.current.isGone,
+      () =>
+        rests.current.isGone ||
+        !readUnsent(channel.id).some(
+          (kept) => kept.id === id && kept.answerTo !== undefined,
+        ),
     );
     confirming.current.delete(id);
     if (!record) return;
