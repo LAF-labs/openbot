@@ -49,6 +49,19 @@ const LONGEST_SENTENCE = Math.max(
 const REFUSAL_OBJECT_MAX = 4096;
 
 /**
+ * How an object of ours that says no begins, whatever it goes on to hold: `ok` is written first by
+ * every writer of one — `toolFailureText` below, and `refusal` in `server/src/turns/chat-tools.ts`.
+ *
+ * Read off the head, not parsed, so the bound above cannot hide one: a reason is whatever a route
+ * wrote, and a 5,000-character reason made a wrapper too long to be parsed — which then read back
+ * as the service's answer (Codex on pull request 44, round 5).
+ */
+const OWN_REFUSAL_HEAD = '{"ok":false,';
+
+/** How the runtime writes a handler that threw: "Error: <message>". */
+const THROWN_HEAD = "Error:";
+
+/**
  * Whether a finished step ended any way but with the service's own answer.
  *
  * ERRS TOWARDS YES. A step reached through the bridge may be one of the Bot's own tools, whose
@@ -64,6 +77,10 @@ export function stepDidNotWork(result: string): boolean {
     result.length <= LONGEST_SENTENCE &&
     SAID_IN_THE_SERVICES_PLACE.has(result)
   ) {
+    return true;
+  }
+  // Before the bound: these two say so in their first characters, however long they run on.
+  if (result.startsWith(OWN_REFUSAL_HEAD) || result.startsWith(THROWN_HEAD)) {
     return true;
   }
   if (result.length > REFUSAL_OBJECT_MAX) return false;
@@ -90,11 +107,11 @@ export function toolFailureText(failure: {
   refused: boolean;
   reason: string;
 }): string {
-  return stepDidNotWork(failure.reason)
-    ? failure.reason
-    : JSON.stringify({
-        ok: false,
-        refused: failure.refused,
-        reason: failure.reason,
-      });
+  if (stepDidNotWork(failure.reason)) return failure.reason;
+  // `ok` FIRST: the head `stepDidNotWork` reads is the first key written here.
+  return JSON.stringify({
+    ok: false,
+    refused: failure.refused,
+    reason: failure.reason,
+  });
 }
