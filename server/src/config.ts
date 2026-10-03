@@ -14,7 +14,10 @@
  * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
  * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */
-import { ownAddressesFrom } from "../../shared/net/own-addresses";
+import {
+  DEFAULT_TRUSTED_ORIGIN,
+  ownAddressesFrom,
+} from "../../shared/net/own-addresses";
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from "../../shared/prompt";
 import { retentionDays } from "./account/retention";
 import { admittedAddresses } from "./auth/allowlist";
@@ -658,10 +661,14 @@ type ProviderName = (typeof PROVIDER_NAMES)[number];
  *
  * The default is the Vite dev server, which is what a laptop is. A deployment names its own with
  * `TRUSTED_ORIGINS`; the installed shell loads the deployment's origin, so that is the one to list.
+ *
+ * The default is spelt in one place, beside the list of addresses the Bot's browser never opens
+ * (`shared/net/own-addresses.ts`), which falls back to it on the same terms: an origin this server
+ * trusts is an address of the app, whether somebody wrote it down or not.
  */
 function trustedOrigins(environment: Environment): string[] {
   const configured = commaSeparated(environment, "TRUSTED_ORIGINS");
-  return configured.length > 0 ? configured : ["http://localhost:3000"];
+  return configured.length > 0 ? configured : [DEFAULT_TRUSTED_ORIGIN];
 }
 
 function authConfig(

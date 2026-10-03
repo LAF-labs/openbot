@@ -199,9 +199,11 @@ log.info("boot", {
   actionTimeoutMs: config.actionTimeoutMs,
   // A boundary a deployment can move, so the boot line is where an operator checks it.
   allowPrivateHosts: config.allowPrivateHosts,
-  // How many of the deployment's own addresses this browser was told never to open. Zero on a
-  // container started by a compose file from before 2026-10-03, which hands it none.
-  ownAddresses: config.ownAddresses.length,
+  // The deployment's own addresses this browser never opens, by host and port — the list itself, so
+  // an operator reads what is refused rather than how many. `localhost:3000` alone, the default for
+  // an app nobody named, on a container started by a compose file from before 2026-10-03, which
+  // hands it none. Names from the deployment's own configuration; nothing a person typed.
+  ownAddresses: config.ownAddresses,
   // Which user the browser runs as. `0` here is the finding this image was rebuilt to close.
   uid: typeof process.getuid === "function" ? process.getuid() : null,
 });
