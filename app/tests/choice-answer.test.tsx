@@ -476,8 +476,9 @@ describe("words typed while the Bot waits on a choice", () => {
     });
 
     test("a second answer typed for the same card takes the first one's place", async () => {
-      // The first is not offered again meanwhile: the second is what reaches the door.
-      await restFor(NEVER_IN_THIS_TEST);
+      // Nothing came back for the first, so the second rests before it goes (twelfth round):
+      // the door stays down until it has been typed, and the first is not taken meanwhile.
+      await restFor(40);
       const { api, turns } = server();
       const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
       await ask(view, turns);
@@ -485,8 +486,8 @@ describe("words typed while the Bot waits on a choice", () => {
 
       await sendWords(view, TYPED);
       await view.waitFor(() => kept().length === 1, "the first kept", 4000);
-      turns.answersUp();
       await sendWords(view, "아니, 그냥 비빔밥");
+      turns.answersUp();
       await view.waitFor(
         () => turns.answers().length === 1,
         "the second answer to reach the card's door",
@@ -506,9 +507,15 @@ describe("words typed while the Bot waits on a choice", () => {
      * message of its own (review, tenth round). The second waits for the first's answer.
      */
     describe("a second answer typed while the first is still on its way", () => {
-      /** A door that holds the first request until the test lets it answer, as `answer` says. */
+      /**
+       * A door that holds the first request until the test lets it answer: `taken`; `refused`
+       * (nothing waits, says the server); `lost` (it never reached the server, and the window
+       * hears nothing it can read); or `taken unheard` (the server took it, and the window heard
+       * nothing it can read).
+       */
+      type Release = "taken" | "refused" | "lost" | "taken unheard";
       function holdingDoor(api: ReturnType<typeof server>["api"]) {
-        let release = (_answer: "taken" | "lost") => {};
+        let release = (_answer: Release) => {};
         let asked = 0;
         const door = (
           request: ApiRequest,
@@ -521,17 +528,20 @@ describe("words typed while the Bot waits on a choice", () => {
           }
           asked += 1;
           if (asked > 1) return api(request);
-          return new Promise<"taken" | "lost">((resolve) => {
+          return new Promise<Release>((resolve) => {
             release = resolve;
-          }).then((answer) =>
-            answer === "taken"
-              ? (api(request) as Response)
-              : new Response("", { status: 503 }),
-          );
+          }).then((answer) => {
+            if (answer === "taken") return api(request) as Response;
+            if (answer === "refused") {
+              return json({ code: "laf:no_longer_waiting" }, 409);
+            }
+            if (answer === "taken unheard") api(request);
+            return new Response("", { status: 503 });
+          });
         };
         return {
           door,
-          release: (answer: "taken" | "lost") => release(answer),
+          release: (answer: Release) => release(answer),
           asked: () => asked,
         };
       }
@@ -586,7 +596,7 @@ describe("words typed while the Bot waits on a choice", () => {
         await view.settle(200);
         expect(asked()).toBe(1);
 
-        await acted(() => release("lost"));
+        await acted(() => release("refused"));
         await view.waitFor(
           () => turns.answers().length === 1,
           "the latest words to reach the card's door",
@@ -681,7 +691,7 @@ describe("words typed while the Bot waits on a choice", () => {
         ).toEqual(["아니, 그냥 비빔밥"]);
       });
 
-      test("and goes to the card in its place where the door did not take the first", async () => {
+      test("and goes to the card in its place where the door refused the first", async () => {
         await restFor(NEVER_IN_THIS_TEST);
         const { api, turns } = server();
         const { door, release, asked } = holdingDoor(api);
@@ -694,7 +704,7 @@ describe("words typed while the Bot waits on a choice", () => {
         await view.settle(200);
         expect(asked()).toBe(1);
 
-        await acted(() => release("lost"));
+        await acted(() => release("refused"));
         await view.waitFor(
           () => turns.answers().length === 1,
           "the second to reach the card's door",
@@ -705,6 +715,65 @@ describe("words typed while the Bot waits on a choice", () => {
         ]);
         expect(kept()).toMatchObject([
           { text: "아니, 그냥 비빔밥", answerTo: CALL },
+        ]);
+      });
+
+      /*
+       * Nothing came back for the first: it may have been taken — what "unknown" means. Read as
+       * "not taken", the second went out while the first could still win the card (review,
+       * twelfth round). It rests first, and goes once the card is seen still waiting.
+       */
+      test("where nothing came back for the first, it goes only once the card is seen still waiting", async () => {
+        await restFor(400);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        await acted(() => release("lost"));
+        await view.settle(150);
+        // Not at once: the first may yet be the card's answer.
+        expect(asked()).toBe(1);
+        await view.waitFor(
+          () => turns.answers().length === 1,
+          "the second to reach the card's door after its rest",
+          4000,
+        );
+        expect(turns.answers()).toEqual([
+          { toolCallId: CALL, value: { answer: "아니, 그냥 비빔밥" } },
+        ]);
+      });
+
+      test("and where the first was taken after all, the second is what is said next", async () => {
+        await restFor(40);
+        const { api, turns } = server();
+        const { door, release, asked } = holdingDoor(api);
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api: door });
+        await ask(view, turns);
+
+        await sendWords(view, TYPED);
+        await view.waitFor(() => asked() === 1, "the first at the door", 4000);
+        await sendWords(view, "아니, 그냥 비빔밥");
+        // The server takes the first and says the card waits no more; the window hears no reply.
+        await acted(() => release("taken unheard"));
+        await view.settle(400);
+        expect(asked()).toBe(1);
+        // The record files it: the card's answer is the first.
+        await acted(() => turns.say([answeredWith(TYPED)]));
+        await view.waitFor(
+          () => kept().length === 1 && kept()[0]?.answerTo === undefined,
+          "the second kept as words for after the turn",
+          4000,
+        );
+        expect(asked()).toBe(1);
+        expect(turns.answers()).toEqual([
+          { toolCallId: CALL, value: { answer: TYPED } },
+        ]);
+        expect(kept().map((message) => message.text)).toEqual([
+          "아니, 그냥 비빔밥",
         ]);
       });
     });

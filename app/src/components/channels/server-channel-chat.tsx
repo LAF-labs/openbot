@@ -588,10 +588,11 @@ export function ServerChannelChat({
   const rests = useRef({
     timers: new Map<string, ReturnType<typeof setTimeout>>(),
     /**
-     * THE LATEST OFFER TO EACH QUESTION, as whether it gave the card its answer (`questionOf`).
-     * Each offer waits for the one before it: one request at the door at a time for a question.
+     * THE LATEST OFFER TO EACH QUESTION, as what it left the card (`questionOf`): an answer, no
+     * answer, or — nothing came back — maybe one. Each offer waits for the one before it: one
+     * request at the door at a time for a question.
      */
-    flights: new Map<string, Promise<boolean>>(),
+    flights: new Map<string, Promise<"answered" | "open" | "maybe">>(),
     isGone: false,
   });
   useEffect(() => {
@@ -619,6 +620,12 @@ export function ServerChannelChat({
    * card its answer, nothing can take that back: these are what the person says next (`answered`),
    * and the settling lets go of the mark — sending them at once where the turn is already over,
    * which the turn's own end, heard before this, did not (eleventh round).
+   *
+   * AND WHERE NOTHING CAME BACK FOR THE ONE BEFORE, IT MAY HAVE BEEN TAKEN — which is what
+   * "unknown" says everywhere else in this. Read as "not taken", the next went out while the
+   * first could still reach the server and win the card (twelfth round). So the next rests
+   * first, as words the door did not take do, and is offered again only once its rest is over
+   * and the card still waits: by then the stream has said the card was answered, if it was.
    */
   const offer = async (message: UnsentMessage, tries: number) => {
     const call = message.answerTo;
@@ -627,22 +634,37 @@ export function ServerChannelChat({
     const question = questionOf(message);
     const before = flights.get(question);
     const flight = (async (): Promise<{
-      delivery: AnswerDelivery | "replaced" | "answered";
-      isAnswered: boolean;
+      delivery: AnswerDelivery | "replaced" | "answered" | "unsettled";
+      left: "answered" | "open" | "maybe";
     }> => {
-      const isAnswered = before ? await before : false;
-      if (!isStillForCard(message)) return { delivery: "replaced", isAnswered };
-      if (isAnswered) return { delivery: "answered", isAnswered };
+      const earlier = before ? await before : "open";
+      if (!isStillForCard(message))
+        return { delivery: "replaced", left: earlier };
+      if (earlier === "answered") {
+        return { delivery: "answered", left: "answered" };
+      }
+      // Not offered at once behind one that may have been taken: after a rest, if the card waits.
+      if (earlier === "maybe" && tries === 0) {
+        return { delivery: "unsettled", left: "maybe" };
+      }
       const delivery = await answerCard(
         channel.threadId,
         call,
         typedAnswer(message.text),
       );
-      return { delivery, isAnswered: delivery === "taken" };
+      return {
+        delivery,
+        left:
+          delivery === "taken"
+            ? "answered"
+            : delivery === "unknown"
+              ? "maybe"
+              : "open",
+      };
     })();
     flights.set(
       question,
-      flight.then((offered) => offered.isAnswered),
+      flight.then((offered) => offered.left),
     );
     const { delivery } = await flight;
     const { timers, isGone } = rests.current;
