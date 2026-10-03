@@ -15,6 +15,7 @@ import {
   plainLine,
   siteNameOf,
   siteNamesOf,
+  taskHeading,
   taskTitle,
 } from "../src/components/computer/task-title";
 import {
@@ -172,6 +173,64 @@ describe("the whole title", () => {
     expect(taskTitle(["yes24.com"], undefined)).toBe("YES24");
     expect(taskTitle(["yes24.com"], "  ")).toBe("YES24");
     expect(taskTitle([], undefined)).toBeNull();
+  });
+});
+
+/*
+ * THE CARD'S TWO LINES (the owner's screenshot, 2026-10-03): "tossinvest.com · 테슬라" led with a
+ * host and cut what was asked about, and "tossinvest.com · 토스증권" said the site twice.
+ */
+describe("the card's heading: where, small, and what, as the title", () => {
+  test("토스증권 is named, before 토스 and under its own host", () => {
+    expect(siteNameOf("tossinvest.com")).toBe("Toss Securities");
+    expect(siteNameOf("www.tossinvest.com")).toBe("Toss Securities");
+    expect(siteNameOf("toss.im")).toBe("Toss");
+    expect(ko["Toss Securities"]).toBe("토스증권");
+  });
+
+  test("what was looked up is the title, and the site the line above it", () => {
+    expect(taskHeading(["tossinvest.com"], "테슬라")).toEqual({
+      site: "Toss Securities",
+      title: "테슬라",
+    });
+    expect(
+      taskHeading(["naver.com", "search.shopping.naver.com"], " 원두 1kg "),
+    ).toEqual({ site: "Naver Shopping", title: "원두 1kg" });
+  });
+
+  test("the site's own name looked up is said once, as the title", () => {
+    for (const lookedUp of [
+      "Toss Securities",
+      "toss securities",
+      " TossSecurities ",
+      "Ｔoss Securities",
+    ]) {
+      expect([lookedUp, taskHeading(["tossinvest.com"], lookedUp)]).toEqual([
+        lookedUp,
+        { site: null, title: "Toss Securities" },
+      ]);
+    }
+    // A name that only begins the same is something looked up there.
+    expect(taskHeading(["tossinvest.com"], "Toss Securities 수수료")).toEqual({
+      site: "Toss Securities",
+      title: "Toss Securities 수수료",
+    });
+  });
+
+  test("with nothing looked up the site is the title, and with neither there is none", () => {
+    expect(taskHeading(["yes24.com"], undefined)).toEqual({
+      site: null,
+      title: "YES24",
+    });
+    expect(taskHeading(["yes24.com"], "  ")).toEqual({
+      site: null,
+      title: "YES24",
+    });
+    expect(taskHeading([], "소년이 온다")).toEqual({
+      site: null,
+      title: "소년이 온다",
+    });
+    expect(taskHeading([], undefined)).toEqual({ site: null, title: null });
   });
 });
 

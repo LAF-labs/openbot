@@ -6,11 +6,14 @@
  */
 import { describe, expect, test } from "bun:test";
 import { SITE_REFUSED } from "@shared/task-ending";
+import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import {
   canRetry,
   failureReason,
+  NO_RETRY,
   REASONS,
   type TaskState,
+  taskStateDetail,
   taskStateLine,
   taskStateWord,
 } from "@/lib/computer/task-state";
@@ -65,5 +68,53 @@ describe("how a task stands, in words", () => {
     );
     expect(canRetry({ kind: "stopped" })).toBe(false);
     expect(canRetry({ kind: "done" })).toBe(false);
+  });
+
+  /*
+   * NOR FOR A REFUSAL NO SECOND ASKING CHANGES. The floor under every rule refuses the app's own
+   * address and an address inside the deployment whoever asks; the card offered 다시 해 보기 under
+   * both, a button that could only fail again. A rule that refused is different: the person can
+   * change the rule, and pressing it again is then what they do next.
+   */
+  test("nor for what the floor refuses; a rule's refusal can still be asked again", () => {
+    for (const code of ["laf:own_address_refused", "laf:navigation_refused"]) {
+      expect([code, canRetry({ kind: "failed", code })]).toEqual([code, false]);
+    }
+    for (const code of [
+      "laf:policy_denied",
+      "laf:no_rule_allows",
+      "laf:computer_unreachable",
+    ]) {
+      expect([code, canRetry({ kind: "failed", code })]).toEqual([code, true]);
+    }
+    // Every code named there is one the card has words for: no retry and no reason would be a
+    // card that says only 못 끝냄.
+    for (const code of NO_RETRY) {
+      expect([code, failureReason(code) !== undefined]).toEqual([code, true]);
+      expect(
+        ko[(REASONS[code] ?? OUTCOME_LABELS[code]) as string],
+      ).toBeTruthy();
+    }
+  });
+
+  test("the line under the title: why it did not finish, or whose turn it is, and nothing else", () => {
+    expect(taskStateDetail({ kind: "failed", code: SITE_REFUSED })).toBe(
+      "The site turned the Bot away",
+    );
+    expect(
+      taskStateDetail({ kind: "failed", code: "laf:own_address_refused" }),
+    ).toBe("This app's own address was not opened");
+    // The facts do not say why: nothing is made up, and the card says what the Bot said last.
+    expect(taskStateDetail({ kind: "failed", code: null })).toBeUndefined();
+    const waiting = taskStateDetail({ kind: "yourTurn" });
+    expect(waiting).toBe(
+      "It is waiting for your answer. The question is just above.",
+    );
+    expect(ko[waiting as string]).toBe(
+      "답을 기다려요. 묻는 카드는 바로 위에 있어요.",
+    );
+    for (const kind of ["running", "done", "stopped"] as const) {
+      expect([kind, taskStateDetail({ kind })]).toEqual([kind, undefined]);
+    }
   });
 });

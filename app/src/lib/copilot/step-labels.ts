@@ -93,6 +93,13 @@ export const SERVICE_STEP_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Services whose one step already says where it happens. "웹 검색하기 · 웹 검색" said the same thing
+ * twice, on a line of its own between two cards (the owner's screenshot, 2026-10-03): the place IS
+ * what was done.
+ */
+const SAID_BY_ITS_OWN_STEP: ReadonlySet<string> = new Set(["web-search"]);
+
+/**
  * The line for one call: what was done, and — for a connected service's tool — where.
  *
  * A tool nobody here has a name for still never shows its own name. A connected service's falls
@@ -114,7 +121,11 @@ export function stepLineOf(
   const service = serviceLabel(server);
   const known = SERVICE_STEP_LABELS[ref];
   const label = known ? t(known) : toolLabel(ref);
-  if (label) return service ? { label, detail: service } : { label };
+  if (label) {
+    return service && !SAID_BY_ITS_OWN_STEP.has(server)
+      ? { label, detail: service }
+      : { label };
+  }
   return {
     label: service
       ? t("Used {service}", { service })

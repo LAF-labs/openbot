@@ -60,9 +60,41 @@ export function taskStateLine(state: TaskState): string {
 }
 
 /**
- * A failed task worth offering again: not one the owner declined — asking again would be the Bot
- * asking the same question it was just told no to.
+ * What the card says under its title where the state has words of its own: why a task did not
+ * finish, or that it is the person the Bot is waiting on. Undefined everywhere else — the card
+ * then says the newest thing the Bot said while doing it.
+ *
+ * A LINE OF ITS OWN, IN THE CARD'S READING SIZE. It used to ride behind the state's word in the
+ * smallest text on the card ("못 끝냄 · 사이트가 봇을 막았어요"): the one thing a person needed to read
+ * was the hardest to (the owner's screenshot, 2026-10-03). The word is a chip now, and this is the
+ * sentence.
  */
+export function taskStateDetail(state: TaskState): string | undefined {
+  if (state.kind === "failed") return failureReason(state.code);
+  if (state.kind === "yourTurn") {
+    return t("It is waiting for your answer. The question is just above.");
+  }
+  return undefined;
+}
+
+/**
+ * Failures no second asking changes, by their code: the answer was decided by what was asked for,
+ * and asking for it again is the same question.
+ *
+ * - the owner's own no: the Bot would be asking what it was just told no to;
+ * - the app's own address, and an address inside the deployment: the floor under every rule refuses
+ *   those whoever asks and however often, and nothing a person can press changes it.
+ *
+ * A rule that refused is NOT here: a person can change the rule, and 다시 해 보기 is then exactly
+ * what they press next.
+ */
+export const NO_RETRY: ReadonlySet<string> = new Set([
+  "laf:person_declined",
+  "laf:own_address_refused",
+  "laf:navigation_refused",
+]);
+
+/** A failed task worth offering again: any but the ones {@link NO_RETRY} names. */
 export function canRetry(state: TaskState): boolean {
-  return state.kind === "failed" && state.code !== "laf:person_declined";
+  return state.kind === "failed" && !(state.code && NO_RETRY.has(state.code));
 }

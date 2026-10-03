@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { BRIDGE_TOOL_NAMES, DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
 import { COMPUTER_TOOLS } from "@shared/tools/computer";
 import { NOW_TOOL_NAME } from "@shared/tools/now";
 import { ROUTINE_NOTE } from "@shared/tools/routine-note";
 import { SELF_TOOLS } from "@shared/tools/self";
 import { SKILL_VIEW } from "@shared/tools/skills";
-import { BRIDGE_TOOL_NAMES, DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
 import {
   SERVICE_STEP_LABELS,
   STEP_DONE_LABELS,
@@ -122,15 +122,33 @@ describe("the step labels", () => {
     }
     expect(shipped.length).toBeGreaterThan(20);
 
+    const lineOf = ({ server, tool }: { server: string; tool: string }) =>
+      stepLineOf(`${DEFERRED_TOOL_PREFIX}${server}__${tool}`);
     const unnamed = shipped.filter(({ server, tool }) => {
-      const line = stepLineOf(`${DEFERRED_TOOL_PREFIX}${server}__${tool}`);
+      const line = lineOf({ server, tool });
       return (
         !inKorean(line.label) ||
         line.label.includes(tool) ||
-        !inKorean(line.detail)
+        (line.detail !== undefined && !inKorean(line.detail))
       );
     });
     expect(unnamed).toEqual([]);
+    /*
+     * WHERE IT HAPPENED IS SAID ON EVERY LINE BUT ONE. "웹 검색하기 · 웹 검색" said the same thing
+     * twice (the owner's screenshot, 2026-10-03): for that service the step is the place. Every
+     * other service's line still names it, so a line that lost its place by accident fails here.
+     */
+    const placeless = shipped.filter(
+      (tool) => lineOf(tool).detail === undefined,
+    );
+    expect([...new Set(placeless.map(({ server }) => server))]).toEqual([
+      "web-search",
+    ]);
+    // Tests read the English keys; on a Korean screen this line is "웹 검색하기", and nothing more.
+    expect(lineOf({ server: "web-search", tool: "search" })).toEqual({
+      label: "Searching the web",
+    });
+    expect(ko["Searching the web"]).toBe("웹 검색하기");
 
     // Every service has a title for a tool of its own nobody named here — Notion's tools are its
     // own MCP server's — and the line is that title, never the tool.
