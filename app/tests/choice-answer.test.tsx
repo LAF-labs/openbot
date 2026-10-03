@@ -1141,6 +1141,50 @@ describe("words typed while the Bot waits on a choice", () => {
         expect(turns.historyReads()).toBe(after);
       });
 
+      /*
+       * Words another window handed to the person keep the card's mark (`answerTo`) and are no
+       * longer waiting on it. The read looked for the mark alone, so it went on (review, sixteenth
+       * round).
+       */
+      test("nor once another window has handed them to the person", async () => {
+        await restFor(40);
+        const { api, turns } = server();
+        const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+        await ask(view, turns);
+        await acted(() => turns.announce("done"));
+        await view.settle(300);
+        turns.historyDown();
+        const outbox = await import(
+          "../src/components/channels/composer/outbox"
+        );
+        const words = {
+          id: "kept-for-the-card",
+          text: TYPED,
+          instructions: [],
+          at: "2026-10-03T00:00:00.000Z",
+          autoTried: false,
+          waiting: true as const,
+          answerTo: CALL,
+        };
+        await acted(() => outbox.keepUnsent(CHANNEL, words));
+        const first = turns.historyReads();
+        await view.waitFor(
+          () => turns.historyReads() >= first + 3,
+          "the record read again while it cannot be",
+          4000,
+        );
+        // What the other window does once its own read of the record is in.
+        await acted(() => outbox.handToPerson(CHANNEL, words));
+        expect(kept()).toMatchObject([
+          { id: "kept-for-the-card", answerTo: CALL, autoTried: true },
+        ]);
+        expect(kept()[0]?.waiting).toBeUndefined();
+        await view.settle(400);
+        const after = turns.historyReads();
+        await view.settle(1500);
+        expect(turns.historyReads()).toBe(after);
+      });
+
       test("nor while the record cannot be read: it is read again until it can be", async () => {
         await restFor(40);
         const { api, turns } = server();
