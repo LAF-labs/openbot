@@ -179,6 +179,16 @@ export function creditsByAnswer(
       }
       continue;
     }
+    if (item.kind === "browse") {
+      /*
+       * What the Bot said between two steps of a browsing task is drawn INSIDE the task's card
+       * (`withBrowsingTasks`), not as a row of its own — "비가 온다니 우산 파는 곳을 찾아볼게요",
+       * said from the weather and then folded into the card it led to, had no line (Codex on pull
+       * request 50). The card is named, and the line is drawn under it.
+       */
+      if (owed.length > 0 && item.notes.length > 0) found.set(item.id, owed);
+      continue;
+    }
     if (item.kind === "text" && item.role === "assistant" && owed.length > 0) {
       if (writing && index === items.length - 1) continue;
       found.set(item.id, owed);

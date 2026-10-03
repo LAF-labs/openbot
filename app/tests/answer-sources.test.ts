@@ -329,6 +329,44 @@ describe("who an answer has to name", () => {
     ]).toEqual([]);
   });
 
+  /*
+   * What the Bot says between two steps of a browsing task is drawn inside the task's card, not as
+   * a row of its own (`withBrowsingTasks`). Said from the weather, it had no line (Codex on #50).
+   */
+  test("a card that holds what the Bot said after the weather owes the line too", () => {
+    const visited = { ok: true, url: "https://shop.kr/", title: "우산" };
+    const card = (notes: string[]): TranscriptItem => ({
+      ...(task("b1", [
+        { name: "computer_navigate", result: visited },
+        { name: "computer_click", result: visited },
+      ]) as Extract<TranscriptItem, { kind: "browse" }>),
+      notes: notes.map((text, index) => ({ id: `n${index}`, text, after: 1 })),
+    });
+    const NOTE = "비가 온다니 우산 파는 곳을 찾아볼게요.";
+    // The weather, then a task with a sentence inside it.
+    expect([
+      ...creditsByAnswer(
+        [
+          said("u1", "user", "비 오면 우산 살 곳"),
+          weather("w1", DATA),
+          card([NOTE]),
+        ],
+        false,
+      ),
+    ]).toEqual([["b1", [KMA]]]);
+    // A card with nothing said inside it shows no words of the Bot's, and owes nothing.
+    expect([
+      ...creditsByAnswer(
+        [said("u1", "user", "우산"), weather("w1", DATA), card([])],
+        false,
+      ),
+    ]).toEqual([]);
+    // And with no weather before it, what is said inside is nobody's data.
+    expect([
+      ...creditsByAnswer([said("u1", "user", "우산"), card([NOTE])], false),
+    ]).toEqual([]);
+  });
+
   test("every name in the table, and the line itself, has its Korean", () => {
     expect(Object.values(CREDITED)).toEqual([KMA]);
     for (const name of Object.values(CREDITED)) {

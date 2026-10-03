@@ -49,7 +49,11 @@ import {
   useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
 import { anyQuestionOn, watchQuestions } from "@/lib/approvals";
-import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
+import {
+  copiedHtml,
+  copiedWords,
+  withSourceLine,
+} from "@/lib/channels/copied-reply";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
@@ -1316,14 +1320,22 @@ function CopyReply({ text }: { text: string }) {
 
   const handleCopy = async (event: React.MouseEvent<HTMLElement>) => {
     // The answer this button sits under: the actions row is its sibling inside the message.
-    const drawn = event.currentTarget
-      .closest('[data-slot="reply-actions"]')
-      ?.parentElement?.querySelector('[data-slot="bubble-content"]');
-    // With nothing drawn to read — which a button under an answer should never find — the text as it came.
-    const copied = await copyRich({
-      text: drawn ? copiedWords(drawn) : text,
-      html: copiedHtml(drawn),
-    });
+    const message = event.currentTarget.closest(
+      '[data-slot="reply-actions"]',
+    )?.parentElement;
+    const drawn = message?.querySelector('[data-slot="bubble-content"]');
+    // With nothing drawn to read — which a button under an answer should never find — the text as
+    // it came. And the source line drawn under it, where there is one: it is owed wherever the
+    // answer goes.
+    const copied = await copyRich(
+      withSourceLine(
+        {
+          text: drawn ? copiedWords(drawn) : text,
+          html: copiedHtml(drawn),
+        },
+        message?.querySelector('[data-slot="answer-credit"]'),
+      ),
+    );
     if (!copied) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
@@ -2216,6 +2228,14 @@ export function ChatTranscript({
                           handleFoldTask(item, isUnfolded)
                         }
                       />
+                      {/* What the Bot said between the task's steps is inside the card; said from
+                          the weather, its source line is under the card (`creditsByAnswer`). */}
+                      {credits.has(item.id) ? (
+                        <CreditLine
+                          names={credits.get(item.id) ?? []}
+                          text={item.notes.map((note) => note.text).join("\n")}
+                        />
+                      ) : null}
                     </Arriving>
                   </MessageScrollerItem>
                   {failuresDrawnAfter(item.id)}

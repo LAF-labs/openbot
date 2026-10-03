@@ -61,6 +61,23 @@ describe("the source line under an answer", () => {
     expect(await line(`${KMA}은 내일 비가 온다고 해요.`)).not.toBeNull();
   });
 
+  /*
+   * The answer's language is the Bot's, not the screen's. This screen is English (a test reads
+   * the keys); the model is told to write `출처: 기상청`. Looked for only in the screen's words,
+   * that answer read as one with no credit and got a second line, in English (Codex on #50).
+   */
+  test("knows the line in the answer's language, whatever the screen's", async () => {
+    for (const text of [
+      "서울은 지금 17.7도예요. 출처: 기상청",
+      "서울은 지금 17.7도예요.\n\n(자료 제공: 기상청)",
+      `It is 17.7°C in Seoul. Source: ${KMA}`,
+    ]) {
+      expect([text, await line(text)]).toEqual([text, null]);
+    }
+    // 기상청 named, and not as where it came from: still owed.
+    expect(await line("기상청 발표로는 내일 비가 와요.")).not.toBeNull();
+  });
+
   test("names each provider once, and draws nothing where none is owed", async () => {
     expect(await line("…", [])).toBeNull();
     const two = await line("…", [KMA, "Another agency"]);
@@ -116,5 +133,53 @@ describe("which row is being written", () => {
     expect(await then("answer-9", true)).toBe("true");
     const empty = await conversation(null, true);
     expect(await empty(null, true)).toBe("false");
+  });
+});
+
+/*
+ * COPIED, THE LINE GOES WITH THE ANSWER. The line is a sibling of the bubble, and 복사 read the
+ * bubble alone: an answer whose line the screen had to draw was copied out without it — and a copy
+ * is how an answer is passed on, which is where the line is owed above all (Codex on #50).
+ */
+describe("the source line, copied with the answer", () => {
+  async function drawn(credit: string | null) {
+    const { copiedHtml, copiedWords, withSourceLine } = await import(
+      "../src/lib/channels/copied-reply"
+    );
+    const view = await mount(
+      <div>
+        <div data-slot="bubble-content">
+          <p>서울은 지금 17.7도예요.</p>
+        </div>
+        {credit ? <p data-slot="answer-credit">{credit}</p> : null}
+      </div>,
+    );
+    const bubble = view.host.querySelector('[data-slot="bubble-content"]');
+    if (!bubble) throw new Error("no bubble was drawn");
+    return withSourceLine(
+      { text: copiedWords(bubble), html: copiedHtml(bubble) },
+      view.host.querySelector('[data-slot="answer-credit"]'),
+    );
+  }
+
+  test("in both of what the clipboard is given: the words, and the answer as drawn", async () => {
+    const copied = await drawn("출처: 기상청");
+    expect(copied.text).toBe("서울은 지금 17.7도예요.\n\n출처: 기상청");
+    expect(copied.html).toBe(
+      "<p>서울은 지금 17.7도예요.</p><p>출처: 기상청</p>",
+    );
+  });
+
+  test("and an answer with no line drawn under it is copied as it was", async () => {
+    const copied = await drawn(null);
+    expect(copied.text).toBe("서울은 지금 17.7도예요.");
+    expect(copied.html).toBe("<p>서울은 지금 17.7도예요.</p>");
+  });
+
+  test("the line the screen draws is the one the copy looks for", async () => {
+    // The two are tied by an attribute and nothing else: a line drawn without it is left behind.
+    expect(
+      (await line("서울은 지금 17.7도예요."))?.getAttribute("data-slot"),
+    ).toBe("answer-credit");
   });
 });

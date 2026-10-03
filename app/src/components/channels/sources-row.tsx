@@ -1,6 +1,7 @@
 import { IconExternalLink, IconWorld } from "@tabler/icons-react";
 import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
+import { ko } from "@/lib/i18n-ko";
 import type { Source } from "./sources";
 
 /**
@@ -55,11 +56,26 @@ export function SourcesRow({ sources }: { sources: readonly Source[] }) {
   );
 }
 
+/**
+ * Every way a provider's name is written, whatever language the screen is in: its key, which is
+ * its English, and its Korean.
+ *
+ * The answer's language is the Bot's, not the screen's. Looked for only as the screen says it, an
+ * English screen read "출처: 기상청" — what the model is told to write — as an answer with no
+ * credit, and drew a second line in English under it; a Korean screen did the same to an answer
+ * asked for in English (Codex on pull request 50).
+ */
+function writtenAs(name: string): string[] {
+  return [...new Set([name, ko[name] ?? name])];
+}
+
 /** A source line the answer's own words already carry: "출처: 기상청", "자료 제공: 기상청". */
 function alreadySays(text: string, name: string): boolean {
-  const said = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const said = writtenAs(name)
+    .map((written) => written.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
   return new RegExp(
-    `(?:출처|자료(?:\\s*제공)?|source)\\s*[:：-]?\\s*${said}`,
+    `(?:출처|자료(?:\\s*제공)?|source)\\s*[:：-]?\\s*(?:${said})`,
     "i",
   ).test(text);
 }
@@ -79,12 +95,14 @@ export function CreditLine({
   text: string;
 }) {
   const owed = names
-    .map((name) => t(name))
-    .filter((name) => !alreadySays(text, name));
+    .filter((name) => !alreadySays(text, name))
+    .map((name) => t(name));
   if (owed.length === 0) return null;
   return (
     <p
       className="mt-1 text-muted-foreground text-xs"
+      // What 복사 takes with the answer (`withSourceLine`): the line is a sibling of the bubble.
+      data-slot="answer-credit"
       data-testid="answer-credit"
     >
       {t("Source: {names}", { names: owed.join(", ") })}

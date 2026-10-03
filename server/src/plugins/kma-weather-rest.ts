@@ -213,9 +213,16 @@ const TOOL = "get_weather";
  * HERE, AND NOT IN THE ANSWER THE TOOL GIVES. It was first a field of the result (`cite`), and a
  * result is drawn: where the window runs the tool, the step's detail shows the JSON whole, and an
  * instruction to the model was on the person's screen, in Korean on an English one (Codex on pull
- * request 50). The description is read by the model and by nobody else. Measured on the eval
- * pack's three weather scenarios, three times each, muse-spark, 2026-10-04: with neither, no
- * answer of nine named 기상청 at all; with this sentence, nine of nine ended `출처: 기상청`.
+ * request 50). A description is drawn in no conversation. Measured on the eval pack's three
+ * weather scenarios, three times each, muse-spark, 2026-10-04: with neither, no answer of nine
+ * named 기상청 at all; with this sentence, nine of nine ended `출처: 기상청`.
+ *
+ * It IS drawn in one place: the administrator's page of plugins lists every tool with its
+ * description as the Bot is given it (`app/src/routes/_authed/admin/plugins.tsx`) — the page where
+ * a definition that changed is shown to be approved, so the definition itself is what it has to
+ * show. The sentence before
+ * this one ("검색하거나 브라우저로 찾지 말고 이것으로 답한다") has been read there since the tool
+ * was made.
  */
 export function kmaWeatherTools(
   withPlaceNames: boolean,

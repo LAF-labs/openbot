@@ -438,3 +438,25 @@ export function copiedHtml(body: Element | null | undefined): string | null {
   const html = copy.innerHTML.trim();
   return html ? html : null;
 }
+
+/**
+ * THE SOURCE LINE THE SCREEN DREW UNDER AN ANSWER GOES WITH THE ANSWER.
+ *
+ * `출처: 기상청` under weather said from 기상청's data is drawn by the transcript where the answer's
+ * own words do not carry it (`CreditLine`) — as a sibling of the bubble. A copy that read the
+ * bubble alone left the line behind, and copying an answer is how it is passed on: the one place
+ * the line is owed above all (Codex on pull request 50).
+ */
+export function withSourceLine(
+  copied: { text: string; html: string | null },
+  line: Element | null | undefined,
+): { text: string; html: string | null } {
+  const said = line?.textContent?.trim();
+  if (!line || !said) return copied;
+  const paragraph = line.ownerDocument.createElement("p");
+  paragraph.textContent = said;
+  return {
+    text: copied.text ? `${copied.text}\n\n${said}` : said,
+    html: copied.html === null ? null : `${copied.html}${paragraph.outerHTML}`,
+  };
+}
