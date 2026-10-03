@@ -6,9 +6,11 @@ import { resultFactsOf, UNANSWERED_RESULT } from "../task-ending";
  *
  * A step's result is kept as the text its Bot was given, and nothing beside it says whether the
  * step worked: the service's own answer, the service's own error, and this server's refusal are all
- * a string. The transcript has to tell them apart after the fact — a step that did not work is
- * something for the person, and must not be folded away behind the step after it
- * (`stepRunsOf` in the app; Codex on pull request 44).
+ * a string. The transcript has to tell them apart after the fact: a step is not drawn once it is
+ * over, and the control that opens the record of them says when one did not work — in its colour
+ * and its name — which it can only do if it can tell (`stepsByAnswer` in the app). It was first
+ * read back so that such a step would not go behind the fold of the step after it (Codex on pull
+ * request 44).
  *
  * So the forms a failure is written in are named here, once, for the two sides that write them
  * (`server/src/turns/chat-tools.ts`, the app's own handler in `plugin-tools.tsx`) and the side that
@@ -65,8 +67,9 @@ const THROWN_HEAD = "Error:";
  * Whether a finished step ended any way but with the service's own answer.
  *
  * ERRS TOWARDS YES. A step reached through the bridge may be one of the Bot's own tools, whose
- * good news is a sentence of that table too; said to have not worked, its line is only left in the
- * open, which is where every line was until there was a fold.
+ * good news is a sentence of that table too; said to have not worked, it costs the warning's
+ * colour on a record in which everything went well. Erring the other way would put a failure
+ * behind a control that looks like nothing happened.
  */
 export function stepDidNotWork(result: string): boolean {
   if (result.startsWith(TOOL_ERROR_PREFIX) || result === TOOL_NOT_ALLOWED) {

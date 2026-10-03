@@ -9,6 +9,7 @@ import {
   IconCheck,
   IconCopy,
   IconInfoCircle,
+  IconListDetails,
   IconQuote,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -81,26 +82,28 @@ import { useLasting } from "@/lib/use-lasting";
 import { useNow } from "@/lib/use-now";
 import { AnswerRatingControls } from "./answer-rating";
 import {
+  type AnswerSteps,
   arrivedBelow,
   cutOffOf,
   failurePlaces,
   furthestSeen,
   openBrowsingTask,
   openStepRuns,
-  rowsOfStepRun,
   stepRunsOf,
+  stepsByAnswer,
   type TranscriptItem,
   toVisibleChatItems,
   turnFailedAfter,
   unsettledFrom,
   withBrowsingTasks,
+  wholeFrom,
 } from "./chat-messages";
 import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { type Source, sourcesByAnswer } from "./sources";
 import { SourcesRow } from "./sources-row";
-import { StepLine } from "./step-line";
+import { ToolRenderBoundary } from "./tool-boundary";
 import { ToolLine, toolKindOf } from "./tool-line";
 
 type ChatTranscriptProps = {
@@ -991,6 +994,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
   rateable = false,
   role,
   sources,
+  steps,
+  isStepsOpen = false,
+  onToggleSteps,
   text,
 }: {
   /**
@@ -1002,6 +1008,22 @@ const TranscriptMessage = memo(function TranscriptMessage({
   quotes?: string;
   /** The pages this answer was read from, as JSON (`sources.ts`). Absent draws no row. */
   sources?: string;
+  /**
+   * What the Bot did on the way to this answer, as JSON (`AnswerSteps`) — a string, like `sources`.
+   * Absent draws no control: nothing was done for it that is not already in the conversation.
+   */
+  steps?: string;
+  /** Every one of those steps is drawn above the answer. */
+  isStepsOpen?: boolean;
+  /**
+   * Open that record, or put it away. The same function on every render, or every answer that
+   * carries one is drawn again — its markdown with it — with each chunk of the next.
+   */
+  onToggleSteps?: (
+    runIds: readonly string[],
+    rows: readonly string[],
+    isOpen: boolean,
+  ) => void;
   /** The conversation, for the rating controls. See ChatTranscriptProps. */
   channelId?: string | undefined;
   commandNames?: string;
@@ -1132,6 +1154,9 @@ const TranscriptMessage = memo(function TranscriptMessage({
            *
            * 좋아요·아쉬워요 sit beside it, on a finished answer in a conversation that can keep a
            * rating (`answer-rating.tsx`).
+           *
+           * And last, what the Bot did to write it (`StepsOfAnswer`). Last, so the buttons that
+           * every answer has stay where they are whether or not this one took a step.
            */}
           {isUser ? null : (
             <ReplyActions>
@@ -1141,6 +1166,13 @@ const TranscriptMessage = memo(function TranscriptMessage({
               ) : null}
               {channelId && rateable ? (
                 <AnswerRatingControls channelId={channelId} messageId={id} />
+              ) : null}
+              {steps && onToggleSteps ? (
+                <StepsOfAnswer
+                  isOpen={isStepsOpen}
+                  onToggle={onToggleSteps}
+                  steps={steps}
+                />
               ) : null}
             </ReplyActions>
           )}
@@ -1259,6 +1291,67 @@ function CopyReply({ text }: { text: string }) {
 }
 
 /**
+ * What the Bot did on the way to this answer: the button that opens the record, and puts it away.
+ *
+ * THE STEPS ARE NOT IN THE CONVERSATION, AND THIS IS THE WAY BACK TO THEM (the owner, 2026-10-04;
+ * `stepRunsOf` has the history). A look-up, a mail read, a search: none of them is drawn once it is
+ * over, so that a finished turn is what the Bot said. What it did is still the record, and the
+ * answer it was done for carries it — pressed, every step is drawn where it happened, above the
+ * answer; pressed again, they go.
+ *
+ * AN ICON, WITH ITS NAME FOR A SCREEN READER AND ON HOVER. The fold this replaces began as words
+ * beside every run — "이전 3단계" — on a screen whose trouble was the number of words. How many
+ * steps it stands for is its name, and is what opening it shows.
+ *
+ * AND IT SAYS WHEN ONE OF THEM DID NOT WORK, in its colour and in its name. A failed or refused
+ * step is put away like any other (`staysInTheOpen`), and a control that looked the same over a
+ * failure as over four things that went well would be hiding it.
+ *
+ * A real button, so the keyboard reaches it and a screen reader is told whether the record is open.
+ */
+function StepsOfAnswer({
+  steps,
+  isOpen,
+  onToggle,
+}: {
+  /** `AnswerSteps`, as JSON: the answer's row is memoised on primitives. */
+  steps: string;
+  isOpen: boolean;
+  onToggle: (
+    runIds: readonly string[],
+    rows: readonly string[],
+    isOpen: boolean,
+  ) => void;
+}) {
+  const { runIds, rows, failed } = JSON.parse(steps) as AnswerSteps;
+  const count = rows.length;
+  const name = isOpen
+    ? t("Hide what it did")
+    : failed > 0
+      ? t("What it did for this answer: {count} steps, {failed} did not work", {
+          count,
+          failed,
+        })
+      : t("What it did for this answer: {count} steps", { count });
+
+  return (
+    <Button
+      aria-expanded={isOpen}
+      aria-label={name}
+      className={failed > 0 ? "text-warning" : "text-muted-foreground"}
+      data-testid="transcript-answer-steps"
+      onClick={() => onToggle(runIds, rows, isOpen)}
+      size="icon-sm"
+      title={name}
+      type="button"
+      variant="ghost"
+    >
+      <IconListDetails className="size-3.5" />
+    </Button>
+  );
+}
+
+/**
  * One drawn tool call, memoised on the same terms.
  *
  * The `toolCall` object is rebuilt here from its parts rather than passed down, because the one on
@@ -1274,33 +1367,12 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   name,
   args,
   result,
-  runId,
-  earlier = 0,
-  earlierFailed = 0,
-  isRunOpen = false,
-  runRows = "[]",
-  onToggleRun,
 }: {
   delay: number;
   toolCallId: string;
   name: string;
   args: string;
   result?: string;
-  /** The run of step lines this one is the newest of, where there is one (`stepRunsOf`). */
-  runId?: string;
-  /** How many lines of that run came before this one: what the fold beside it stands for. */
-  earlier?: number;
-  /** How many of those did not work: the fold says so, since they are behind it. */
-  earlierFailed?: number;
-  isRunOpen?: boolean;
-  /** The ids of that run's rows, as JSON: what closing it has to take back (`openStepRuns`). */
-  runRows?: string;
-  /** The same function on every render, or this row is drawn again with every chunk of an answer. */
-  onToggleRun?: (
-    runId: string,
-    rows: readonly string[],
-    isOpen: boolean,
-  ) => void;
 }) {
   const renderToolCall = useRenderToolCall();
   const toolCall = useMemo(
@@ -1326,47 +1398,28 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
         }),
   });
 
-  /*
-   * A TOOL WITH NO REGISTERED RENDERER STILL HAPPENED. `renderToolCall` draws whatever was
-   * registered for the name and nothing at all for anything else, which left a Bot that called
-   * something the app does not know about looking like a Bot that did nothing — the same failure
-   * `ToolRenderBoundary` exists to prevent, arriving by a different route.
-   *
-   * The fallback is a plain tool line: what was done, shimmering until its result lands. It is the
-   * same line the computer and MCP tools draw, so an unrecognised call reads as an ordinary event
-   * rather than as damage. In the owner's words, never the tool's name: this line read
-   * "tool_search" to a shop owner on their first task (`step-labels.ts`).
-   */
-  const line = drawn ?? (
-    <ToolLine
-      {...stepLineOf(name, result !== undefined)}
-      kind={toolKindOf(name)}
-      running={result === undefined}
-    />
-  );
-
   return (
     <Arriving delay={delay}>
-      <StepLine
-        name={name}
-        {...(runId && earlier > 0 && onToggleRun
-          ? {
-              fold: {
-                count: earlier,
-                failed: earlierFailed,
-                isOpen: isRunOpen,
-                onToggle: () =>
-                  onToggleRun(
-                    runId,
-                    JSON.parse(runRows) as string[],
-                    isRunOpen,
-                  ),
-              },
-            }
-          : {})}
-      >
-        {line}
-      </StepLine>
+      <ToolRenderBoundary name={name}>
+        {/*
+         * A TOOL WITH NO REGISTERED RENDERER STILL HAPPENED. `renderToolCall` draws whatever was
+         * registered for the name and nothing at all for anything else, which left a Bot that called
+         * something the app does not know about looking like a Bot that did nothing — the same
+         * failure `ToolRenderBoundary` exists to prevent, arriving by a different route.
+         *
+         * The fallback is a plain tool line: what was done, shimmering until its result lands. It
+         * is the same line the computer and MCP tools draw, so an unrecognised call reads as an
+         * ordinary event rather than as damage. In the owner's words, never the tool's name: this
+         * line read "tool_search" to a shop owner on their first task (`step-labels.ts`).
+         */}
+        {drawn ?? (
+          <ToolLine
+            {...stepLineOf(name, result !== undefined)}
+            kind={toolKindOf(name)}
+            running={result === undefined}
+          />
+        )}
+      </ToolRenderBoundary>
     </Arriving>
   );
 });
@@ -1418,7 +1471,9 @@ function TimeSeparator({ at }: { at: string }) {
  * Is the neighbouring item another message from the same speaker?
  *
  * A tool line between two replies breaks the run on purpose: the Bot did something in between, and
- * drawing those two bubbles as one uninterrupted turn would hide that it had.
+ * drawing those two bubbles as one uninterrupted turn would hide that it had. A step that is over
+ * is not drawn (`stepRunsOf`) and breaks it all the same: the two bubbles stand apart, and the one
+ * after it carries what was done.
  */
 function continues(
   neighbour: TranscriptItem | undefined,
@@ -1465,43 +1520,46 @@ export function ChatTranscript({
    */
   const items = withBrowsingTasks(toVisibleChatItems(messages, messageTimes));
   /*
-   * STEP LINES, ONE TO A RUN (`stepRunsOf`). Only the newest of a run is drawn until the person
-   * opens it, and which runs they opened is theirs for as long as the transcript is mounted — a
-   * run keeps its first line's id while it grows, so one opened mid-task stays open as it grows.
-   * Decided here, where the rows are drawn, and nowhere else: everything that reads `items` — the
-   * thinking line, the failures, the jumps — goes on reading every step.
+   * STEPS OF WORK ARE NOT DRAWN (`stepRunsOf`): only the one still out, and one holding something
+   * for the person. The rest are the record, opened from the answer they were taken for
+   * (`stepsByAnswer`) — and which runs are open is the person's for as long as the transcript is
+   * mounted. Decided here, where the rows are drawn, and nowhere else: everything that reads
+   * `items` — the thinking line, the failures, the jumps — goes on reading every step.
    */
   const stepRuns = stepRunsOf(items);
+  const answerSteps = stepsByAnswer(items, stepRuns);
   /** The rows a run was opened by: a run is open while it holds one (`openStepRuns` says why). */
   const [openedRows, setOpenedRows] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const openRuns = openStepRuns(items, stepRuns, openedRows);
   /*
-   * ONE FUNCTION FOR AS LONG AS THE TRANSCRIPT IS MOUNTED. It is handed to the memoised step rows
-   * (`TranscriptToolCall`), and it used to be made again on every render out of the rows as they
-   * then stood — so every chunk of an answer being written changed a prop of every run's newest
-   * line and drew each of them again, its renderer and its markdown with it (Codex on pull request
-   * 44, round 9; counted: once a chunk). What it has to know of the run is handed back to it by the
-   * row that was pressed.
+   * ONE FUNCTION FOR AS LONG AS THE TRANSCRIPT IS MOUNTED. It is handed to memoised rows — the
+   * answers now (`TranscriptMessage`), the newest step of each run when the fold stood beside
+   * one — and it used to be made again on every render out of the rows as they then stood. So
+   * every chunk of an answer being written changed a prop of each of those rows and drew it
+   * again, its renderer and its markdown with it (Codex on pull request 44, round 9; counted: once
+   * a chunk). What it has to know of the runs is handed back to it by the answer that was pressed.
    */
-  const handleToggleRun = useCallback(
-    (runId: string, rows: readonly string[], isOpen: boolean) => {
+  const handleToggleSteps = useCallback(
+    (runIds: readonly string[], rows: readonly string[], isOpen: boolean) => {
       setOpenedRows((opened) => {
         const next = new Set(opened);
-        // Closed by every row of it, so no row left behind keeps it open.
+        // Closed by every row of them, so no row left behind — one a jump opened by — keeps a run open.
         if (isOpen) for (const row of rows) next.delete(row);
-        else next.add(runId);
+        else for (const runId of runIds) next.add(runId);
         return next;
       });
     },
     [],
   );
   /*
-   * A ROW SOMEBODY WAS SENT TO IS NOT LEFT BEHIND A FOLD. 오늘, 만든 것 and 수첩 name a row by its id
+   * A ROW SOMEBODY WAS SENT TO IS DRAWN. 오늘, 만든 것 and 수첩 name a row by its id
    * (`lib/channels/jump.ts`) and the transcript goes to it once it is in the document — which a
-   * folded line never is. So a jump that names one opens its run, and the run stays open after the
-   * jump is taken: the row the person was brought to does not fold away under them.
+   * step that is over is not. So a jump that names one opens its run, and the run stays open after
+   * the jump is taken: the row the person was brought to is not taken away from under them. A step
+   * that is drawn anyway opens nothing: the row is there to go to, and the steps around it were
+   * not asked for.
    */
   const pendingRowId = usePendingJump(channelId)?.messageId ?? null;
   const pendingRow =
@@ -1509,7 +1567,7 @@ export function ChatTranscript({
       ? undefined
       : stepRuns.get(items.findIndex((item) => item.id === pendingRowId));
   const pendingRunId =
-    pendingRow && !pendingRow.isNewest ? pendingRow.runId : null;
+    pendingRow && !pendingRow.staysDrawn ? pendingRow.runId : null;
   useEffect(() => {
     if (pendingRunId === null || pendingRowId === null) return;
     setOpenedRows((opened) =>
@@ -1832,13 +1890,10 @@ export function ChatTranscript({
     jumpId,
   );
   /*
-   * A WINDOW NEVER BEGINS PART-WAY INTO A RUN OF STEP LINES. The fold beside a run's newest line
-   * counts the whole run, and opening it draws the run's rows — the ones the window holds. Cut
-   * inside a run, it read 이전 5단계 and drew one of them, under a button that then said the record
-   * was open (review of this change, round 1). So the window reaches back to the run's first line.
-   * Folded, those rows are not drawn, and cost nothing to hold.
+   * A WINDOW NEVER BEGINS AMONG STEPS THAT A ROW IT HOLDS WOULD OPEN (`wholeFrom`): an answer
+   * names how many steps it opens, and only the rows the window holds can be drawn.
    */
-  const start = stepRuns.get(cut)?.first ?? cut;
+  const start = wholeFrom(items, stepRuns, cut);
   const firstShownId = items[start]?.id ?? null;
   /** Past the top of what this window holds, the server has more: the page above is asked for. */
   const hasOlderPages = start === 0 && older?.has === true;
@@ -1958,6 +2013,7 @@ export function ChatTranscript({
             {items.slice(start).map((item, offset) => {
               const index = start + offset;
               const run = stepRuns.get(index);
+              const taken = answerSteps.get(item.id);
               return item.kind === "browse" ? (
                 <Fragment key={item.id}>
                   <MessageScrollerItem
@@ -1990,8 +2046,17 @@ export function ChatTranscript({
                 </Fragment>
               ) : item.kind === "tool" ? (
                 <Fragment key={item.id}>
-                  {/* A line with a newer one after it in its run is behind the fold until opened. */}
-                  {run && !run.isNewest && !openRuns.has(run.runId) ? null : (
+                  {/*
+                   * A STEP OF WORK IS NOT DRAWN ONCE IT IS OVER (`stepRunsOf`): until its run is
+                   * opened — from the answer it was taken for, or by a jump to a row of it — only
+                   * the step still out is, and one holding something for the person. A card, the
+                   * clock and every other row drawn by name have no place in a run, and are drawn
+                   * as they always were.
+                   *
+                   * The failure line a turn ended on is outside this, as it is outside the row: a
+                   * turn that died on a step that is not drawn still says that it died.
+                   */}
+                  {run && !run.staysDrawn && !openRuns.has(run.runId) ? null : (
                     <MessageScrollerItem
                       className="py-0.5 pt-3"
                       messageId={item.id}
@@ -2002,19 +2067,6 @@ export function ChatTranscript({
                         name={item.toolCall.function.name}
                         result={item.result}
                         toolCallId={item.toolCall.id}
-                        {...(run?.isNewest
-                          ? {
-                              runId: run.runId,
-                              earlier: run.size - 1,
-                              earlierFailed: run.failed,
-                              isRunOpen: openRuns.has(run.runId),
-                              // As text, as every list a memoised row is given: a new array is a new prop.
-                              runRows: JSON.stringify(
-                                rowsOfStepRun(items, stepRuns, run.runId),
-                              ),
-                              onToggleRun: handleToggleRun,
-                            }
-                          : {})}
                       />
                     </MessageScrollerItem>
                   )}
@@ -2069,6 +2121,21 @@ export function ChatTranscript({
                        */
                       {...(index < settledBefore && sources.has(item.id)
                         ? { sources: JSON.stringify(sources.get(item.id)) }
+                        : {})}
+                      /*
+                       * What was done for it — while the turn is still going too, which the pages
+                       * above are not: every step a sentence takes came before it, so nothing the
+                       * turn does next can grow the record under it. As a string, and with the
+                       * one function every answer shares, so the memo still holds.
+                       */
+                      {...(taken
+                        ? {
+                            steps: JSON.stringify(taken),
+                            isStepsOpen: taken.runIds.every((runId) =>
+                              openRuns.has(runId),
+                            ),
+                            onToggleSteps: handleToggleSteps,
+                          }
                         : {})}
                       {...(item.attachments
                         ? { attachments: JSON.stringify(item.attachments) }
@@ -2194,7 +2261,7 @@ export function ChatTranscript({
         </MessageScrollerViewport>
         <ScrollToNewest items={items} />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
-        {/* Asked again when a fold opens too: the row a jump names may be one it was holding. */}
+        {/* Asked again when a run of steps opens too: the row a jump names may be one of its rows. */}
         <JumpToRow channelId={channelId} rows={items.length + openRuns.size} />
       </MessageScroller>
     </MessageScrollerProvider>
