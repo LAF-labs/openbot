@@ -288,7 +288,6 @@ export const ko: Record<string, string> = {
   Instagram: "인스타그램",
   "Toss Payments": "토스페이먼츠",
   "My shop": "내 정보",
-  "What you do": "하는 일",
   "Shop or business, if you have one": "가게·사업 (있다면)",
   "Places you use every day": "매일 쓰는 곳",
   "Your Bots look there first, and ask you to connect any that are not connected yet.":
@@ -2784,8 +2783,6 @@ export const ko: Record<string, string> = {
     "파일을 붙이지 못했어요. 다시 해 주세요.",
   // notebook
   Notebook: "수첩",
-  "What your Bot knows about the shop and about you. Fix anything that is wrong here, and your Bot knows from your next message.":
-    "봇이 나에 대해 아는 것이에요. 틀린 게 있으면 여기서 고치세요. 다음 메시지부터 봇이 알아요.",
   "The Notebook could not be loaded.": "수첩을 불러오지 못했어요.",
   /*
    * 쓴 양이지 남은 양이 아니다. "수첩에 남은 자리 · 2,200자 중 41자"는 41자가 남았다고 읽혔다
@@ -2794,8 +2791,6 @@ export const ko: Record<string, string> = {
   "Room in the Notebook": "수첩 공간",
   "{used} of {cap} characters": "{cap}자 중 {used}자 씀",
   "The shop": "가게 (있다면)",
-  "What your Bot reads about the shop before every conversation.":
-    "가게가 있다면, 봇이 대화를 시작할 때마다 읽는 가게 정보예요. 없으면 비워 두세요.",
   "Shop name": "가게 이름",
   "e.g. Miso Café": "예: 미소카페",
   "Write the shop name": "가게 이름 적기",
@@ -2807,16 +2802,13 @@ export const ko: Record<string, string> = {
   "e.g. Americano, latte, bakery": "예: 아메리카노, 라떼, 베이커리",
   "Write what you sell": "파는 것 적기",
   "Clear it": "지우기",
-  "Not set": "아직 없음",
   "Change these on My shop": "내 정보에서 바꾸기",
-  "What your Bot has learned in conversations, and what you wrote down. Edit anything that is wrong.":
-    "봇이 대화에서 알게 된 것과 내가 적은 것이에요. 틀린 건 바로 고치세요.",
   "Write something down for your Bot": "봇에게 알려 줄 것 적기",
-  "e.g. Parcels go by the post office. Regulars get a free drink.":
-    "예: 택배는 우체국으로 보내요. 단골손님께는 음료 한 잔을 서비스해요.",
+  "e.g. I have meetings on Friday afternoons.":
+    "예: 금요일 오후에는 회의가 있어요.",
   "Write it down": "적기",
-  "Nothing yet. What your Bot learns in conversations appears here.":
-    "아직 없어요. 봇이 대화에서 알게 된 것이 여기에 쌓여요.",
+  "What your Bot learns in conversations appears here.":
+    "봇이 대화에서 알게 된 것이 여기에 쌓여요.",
   "You wrote this · {date}": "내가 적음 · {date}",
   "Your Bot wrote this in a conversation · {date}":
     "봇이 대화에서 적음 · {date}",
@@ -2846,13 +2838,12 @@ export const ko: Record<string, string> = {
   "Show it in the conversation": "대화에서 보기",
   "Matches what you said": "내 말과 맞음",
   "How you like to work": "일하는 방식",
-  "Each night your Bot notes how you like to work from the day's conversations. Changes here reach it from the next day.":
-    "봇이 밤마다 그날 대화를 보고 내가 일하는 방식을 적어 둬요. 여기서 고친 것은 다음 날부터 봇이 알아요.",
-  "Nothing yet. After a day of conversations, your Bot notes here how you like to work.":
-    "아직 없어요. 하루 대화가 쌓이면 봇이 여기에 내가 일하는 방식을 적어 둬요.",
+  "Changes here reach your Bot from the next day.":
+    "여기서 고친 것은 다음 날부터 봇이 알아요.",
+  "After a day of conversations, your Bot notes here how you like to work.":
+    "하루 대화가 쌓이면 봇이 여기에 내가 일하는 방식을 적어 둬요.",
   "Edit how you like to work": "일하는 방식 고치기",
   "You wrote this": "내가 적음",
-  "Your Bot noticed this in your conversations": "봇이 대화에서 알아챔",
   "Removed. Your Bot stops reading it from the next day.":
     "지웠어요. 다음 날부터 봇이 읽지 않아요.",
   "Saved. Your Bot reads it from the next day.":
