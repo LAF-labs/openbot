@@ -34,6 +34,13 @@ import {
  * itself except the open conversation, so the pill went on saying what it said before and the
  * sidebar's 기다리는 일 stayed empty for the question's ten minutes.
  *
+ * THE SIDEBAR LISTS NOTHING SINCE 2026-10-04 (the owner had 오늘 taken out of it: too much text on
+ * the screen), and five tests here leaned on that list — its rows, its going empty, its reading of
+ * the routines. What each held is held where the thing still is: 소식 draws the same rows, so the
+ * way to the card and the list going empty are pressed there; the approval's own page has no list
+ * beside it, so "once" is read from the store a list reads; and the routines are watched on the
+ * routines page, which is the list that frame is for.
+ *
  * Mounted at the network edge, on a screen that is not the conversation. Not pressed on the running
  * app: see `shell-questions.test.ts`.
  */
@@ -324,19 +331,18 @@ const pill = (host: HTMLElement) => {
   return label.slice("닻 · ".length).replace(/\. Bot profile$/, "");
 };
 
-/** The sidebar's rows under "Waiting on the owner". */
+/** The rows under "Waiting on the owner", on a screen that draws 오늘: 소식, of the ones here. */
 const waitingRows = (host: HTMLElement) =>
   [...host.querySelectorAll("button")].filter((button) =>
     button.textContent?.includes("Approval needed"),
   );
 
 describe("a question raised while another screen is open", () => {
-  test("the pill turns to the person's turn and the sidebar lists it, with the way to the card", async () => {
+  test("the pill turns to the person's turn, and 소식 lists it with the way to the card", async () => {
     const { api, state } = server();
     const view = await mountApp({ path: "/made", api });
     await view.waitFor(() => pill(view.host) !== "", "the Bot's row", 6000);
     expect(pill(view.host)).not.toBe("Needs your OK");
-    expect(waitingRows(view.host)).toHaveLength(0);
 
     const asking = question();
     state.approvals = [asking];
@@ -347,9 +353,13 @@ describe("a question raised while another screen is open", () => {
       "the pill to say the Bot is waiting on the person",
       4000,
     );
+    // On 만든 것 the pill is all that says so: the column beside it lists nothing any more.
+    expect(waitingRows(view.host)).toHaveLength(0);
+
+    await view.navigate("/feed");
     await view.waitFor(
       () => waitingRows(view.host).length === 1,
-      "the sidebar to list what is waiting",
+      "소식 to list what is waiting",
       4000,
     );
     // The row is the way to the card: the conversation, on the line of the call that asked.
@@ -366,12 +376,17 @@ describe("a question raised while another screen is open", () => {
     const { api, state } = server();
     const asking = question();
     state.approvals = [asking];
-    const view = await mountApp({ path: "/made", api });
+    const view = await mountApp({ path: "/feed", api });
     // Open when the screen was: found by the look on mounting, with no frame at all.
     await view.waitFor(
       () => pill(view.host) === "Needs your OK",
       "the pill to say the Bot is waiting",
       6000,
+    );
+    await view.waitFor(
+      () => waitingRows(view.host).length === 1,
+      "소식 to list what is waiting",
+      4000,
     );
     state.approvals = [{ ...asking, granted: true }];
     await view.waitFor(
@@ -395,10 +410,13 @@ describe("a question raised while another screen is open", () => {
 /*
  * Codex, on the pull request. The approval's own page puts the question on a line of its own, and
  * the shell's watch — mounted on that page as on every other — puts it on the conversation's. Two
- * lines for one question were two rows under 기다리는 일.
+ * lines for one question were two rows under 기다리는 일, in the sidebar beside that page.
+ *
+ * No list is drawn beside that page since 2026-10-04, so "once" is read where the list reads it:
+ * the store's own enumeration, with the page really mounted and both lines really registered.
  */
 describe("the approval's own page", () => {
-  test("lists the question once in the sidebar, and the row leads to the conversation's card", async () => {
+  test("holds the question on two lines and lists it once, on the conversation's card", async () => {
     const { api, state } = server();
     const asking = question();
     state.approvals = [asking];
@@ -415,13 +433,19 @@ describe("the approval's own page", () => {
       4000,
     );
     await view.settle(80);
-    expect(waitingRows(view.host)).toHaveLength(1);
-    await view.click(waitingRows(view.host)[0] as HTMLButtonElement);
-    await view.waitFor(
-      () => view.router.state.location.pathname === `/channel/${CHANNEL}`,
-      "the conversation to open",
-      6000,
+    const { approvePageCall, openQuestionCalls, questionOn } = await import(
+      "../src/lib/approvals"
     );
+    const card = asking.step?.toolCallId ?? "";
+    // Both lines are there, or this would hold nothing.
+    expect(questionOn(approvePageCall(asking.id))?.approvalId).toBe(asking.id);
+    expect(questionOn(card)?.approvalId).toBe(asking.id);
+    // One row for whoever lists it, and it is the call a row jumps to: the conversation's card.
+    expect(
+      openQuestionCalls()
+        .filter(({ question: one }) => one.botId === BOT_ID)
+        .map((entry) => entry.toolCallId),
+    ).toEqual([card]);
   });
 });
 
@@ -747,7 +771,8 @@ describe("a question raised while the first read is on its way", () => {
 describe("a frame that arrives before the first read is answered", () => {
   test("refreshes the routines it says were paused", async () => {
     const { api, toldReads } = server({ toldFailures: 1 });
-    const view = await mountApp({ path: "/made", api });
+    // On the routines page: an open list of them is what the frame is for, and what reads them.
+    const view = await mountApp({ path: "/routines", api });
     await view.waitFor(() => toldReads() >= 1, "the first, failed read", 6000);
     await view.settle(80);
     const routinesReads = () =>
@@ -803,17 +828,23 @@ describe("an account that kept two conversations with one Bot", () => {
   });
 
   /*
-   * Ninth round. The sidebar lists a Bot's questions whichever of its conversations raised them,
+   * Ninth round. 기다리는 일 lists a Bot's questions whichever of its conversations raised them,
    * and every row opened the Bot's oldest conversation — where a question raised in another one
-   * has no card.
+   * has no card. It was the sidebar's list then, beside the conversation; 소식 draws the same rows.
    */
-  test("and its row in the sidebar leads to the conversation it was raised in", async () => {
+  test("and its row under 기다리는 일 leads to the conversation it was raised in", async () => {
     const { api, state } = server({ twoConversations: true });
     const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
     await view.waitFor(() => state.reads >= 1, "the first look", 6000);
     const asking = elsewhere();
     state.approvals = [asking];
     await outboxSays(asking.id);
+    await view.waitFor(
+      () => pill(view.host) === "Needs your OK",
+      "the question to be known",
+      6000,
+    );
+    await view.navigate("/feed");
     await view.waitFor(
       () => waitingRows(view.host).length === 1,
       "the question to be listed",

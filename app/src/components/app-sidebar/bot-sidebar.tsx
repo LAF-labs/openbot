@@ -18,7 +18,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { BotDay } from "@/components/app-sidebar/bot-day";
 import {
   BotRow,
   ROSTER_RAIL_ROW_CLASS,
@@ -86,21 +85,23 @@ import { cn } from "@/lib/utils";
  *  1. THE BOT. Its face, alive (the same presence as the conversation's header: working, waiting on
  *     the person, glad it finished), its name, and one word for what it is doing. Pressing it opens
  *     its profile — the only place its name and face change.
- *  2. THE CONVERSATION. One row: the last thing said, when, and whether it is unread — and under
- *     it 오늘, what the Bot did today, what is waiting on the person and what is next
- *     (`bot-day.tsx`), in the height that used to be empty.
- *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, pinned to the bottom above the account.
- *     They sat right under 오늘 in the one scrolling column until 2026-09-25, and at the PC app's
- *     smallest window (1024×640) 오늘 pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review
- *     0.5.4, item 4). Now the Bot, its conversation and 오늘 scroll in their own region, and the
- *     links never move.
+ *  2. THE CONVERSATION, AND THE PLACES A PERSON GOES TO LOOK. One row for the conversation: the
+ *     last thing said, when, and whether it is unread. Under it a row each for 소식, 아이디어, 목표
+ *     and 만든 것 (`LOOK_ROWS`), and under those nothing.
+ *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, behind one 메뉴 row (`MenuLinks`) pinned to
+ *     the bottom above the account. They sat in the one scrolling column until 2026-09-25, right
+ *     under 오늘 — the list the next paragraph is about — and at the PC app's smallest window
+ *     (1024×640) it pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4). Now
+ *     the Bot and the rows under it scroll in their own region, and the links never move.
  *
- * SINCE PHASE 5 (muse-shape plan §4): 아이디어 is a row under the conversation, the first of the
- * places a person goes to look (소식, 목표 and 만든 것 join it later), and the footer keeps 수첩 · 루틴 ·
- * 연결 in sight with 스킬 and 도움말 under 더 보기. Measured at 1024×640 with the Korean app: the first
- * row of 오늘 ends at 312 and the footer starts at 420; with three more rows reserved it would end at
- * 426, six pixels under the footer — and at 382 above a one-row 메뉴 footer starting at 534. Which of
- * the two the column takes is decided when those rows exist, with 오늘 capped as §4 says.
+ * 오늘 WAS UNDER THOSE ROWS UNTIL 2026-10-04. From 2026-09-25 the height that had been empty held
+ * the Bot's day — what is waiting on the person, what it did, what is next (`bot-day.tsx`) — and
+ * the column was shaped around it: the links pinned so it could not push them off the screen, the
+ * footer folded into one row so its first rows showed whole (`MenuLinks` has the measurements). The
+ * owner had it removed outright: too much text on the screen. So the height under the rows is empty
+ * again, on purpose. The day is a row away, on 소식, which draws it whole; that something waits on
+ * the person is still said here, by the face and the word under the name. What was shaped around it
+ * stayed as it was — the links still pinned, the footer still one row.
  *
  * AN ACCOUNT FROM BEFORE THE CAP CAME DOWN keeps every Bot it had, and reaches them the old way: with
  * more than one, the list under "내 봇" is back, a row per Bot, each its own conversation, and 봇
@@ -291,8 +292,9 @@ function BotIdentity({
  * THE PLACES A PERSON GOES TO LOOK (muse-shape plan §4): the rows under the conversation, rather than
  * the footer's places that change how the Bot works. 아이디어 came first (phase 5), 만든 것 with its
  * page (phase 6), 소식 on top with its posts (phase 7), and 목표 last, with its own (phase 9), in the
- * plan's order: 소식 · 아이디어 · 목표 · 만든 것. One line each, a desktop row like the footer's,
- * because the column's height at 1024×640 is what 오늘 lives on.
+ * plan's order: 소식 · 아이디어 · 목표 · 만든 것. One line each, a desktop row like the footer's: they
+ * were kept that short for 오늘, which lived on the height under them until 2026-10-04, and a
+ * place's name needs no more.
  */
 const LOOK_ROWS = [
   { to: "/feed", icon: IconLayoutList, label: "Updates", row: "feed" },
@@ -392,11 +394,16 @@ function LookRow({
  * the Bot works — 수첩 · 루틴 · 연결 · 스킬 · 도움말 — open upward from it, the same list the phone's
  * 메뉴 page draws (`places.ts`).
  *
- * MEASURED at 1024×640, the PC app's smallest window, in the Korean app with all four rows above
- * (소식 · 아이디어 · 목표 · 만든 것 at 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the
- * footer began at 420 and 오늘's first row ran 382–426 — six pixels under it, so the first thing the
- * sidebar exists to answer ("is my employee working?") was cut. With this one row the footer begins
- * at 534 and 오늘 shows its first rows whole. The price is a second press for 수첩 and 루틴.
+ * IT BECAME ONE ROW FOR 오늘, WHICH THE COLUMN NO LONGER HOLDS. Measured at 1024×640, the PC app's
+ * smallest window, in the Korean app with all four rows above (소식 · 아이디어 · 목표 · 만든 것 at
+ * 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the footer began at 420 and the first row
+ * of 오늘 — the Bot's day, listed under those rows then — ran 382–426, six pixels under it, so the
+ * row that answered "is my employee working?" was cut. With this one row the footer begins at 534,
+ * and 오늘 showed its first rows whole. The price is a second press for 수첩 and 루틴.
+ *
+ * 오늘 left the column on 2026-10-04 (the owner: too much text on the screen), and the room this was
+ * folded to make is empty. It stayed one row all the same: four rows back in sight would be text on
+ * the screen again, and whether they come back is the owner's to say.
  */
 function MenuLinks({
   isCompact,
@@ -719,13 +726,6 @@ export function BotSidebar() {
                 </li>
               ))}
             </ul>
-            {/*
-             * 오늘: what the Bot did today, between its conversation and the links. Not in the
-             * rail, which has no room for a sentence — the face's dot already says something waits.
-             */}
-            {isRail ? null : (
-              <BotDay botId={only.agent.id} placement="sidebar" />
-            )}
           </>
         ) : null}
 

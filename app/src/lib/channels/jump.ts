@@ -3,14 +3,14 @@ import { useSyncExternalStore } from "react";
 /**
  * A PLACE IN A CONVERSATION ANOTHER PART OF THE SCREEN WANTS SHOWN.
  *
- * 오늘 in the sidebar lists what the Bot did; pressing a row goes to where it happened — the Bot's
- * first message of a turn, a routine's delivered answer, or the card an approval is waiting on. The
- * sidebar is not inside the transcript, and the transcript may not even be mounted yet when the
- * press lands (it is on another screen, or its history is still arriving). So the press is left
- * here, named for its conversation, and the transcript takes it once the row it names is drawn
- * (`chat-transcript.tsx`, `JumpToRow`) — through the scroller's own `scrollToMessage`, because a
- * plain `scrollIntoView` is undone by the scroller following the bottom the next time anything
- * arrives.
+ * 오늘 lists what the Bot did — on 소식 and in the header's drawer; in the sidebar too, until
+ * 2026-10-04 — and pressing a row goes to where it happened: the Bot's first message of a turn, a
+ * routine's delivered answer, or the card an approval is waiting on. Neither place is inside the
+ * transcript, and the transcript may not even be mounted yet when the press lands (it is on
+ * another screen, or its history is still arriving). So the press is left here, named for its
+ * conversation, and the transcript takes it once the row it names is drawn (`chat-transcript.tsx`,
+ * `JumpToRow`) — through the scroller's own `scrollToMessage`, because a plain `scrollIntoView` is
+ * undone by the scroller following the bottom the next time anything arrives.
  *
  * The same shape as the composer's offered draft (`composer/prefill.ts`): one at a time, the latest
  * wins, and a conversation takes only what was left for it.

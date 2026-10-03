@@ -38,14 +38,16 @@ import { PILL_CLASS, PILL_TONES, PresencePillBody } from "./bot-header";
  * is a map, and a second place to press 허용 would be a second description of one grant.
  *
  * "지금" is read from what the app already holds — the banner's task and the working poll. Everything
- * under it is 오늘, the sidebar's own component (`app-sidebar/bot-day.tsx`), since 2026-09-25: the
- * pill and the sidebar showed the same waiting and the same next routines from two copies of the
- * same code, and one copy is how they stay the same.
+ * under it is 오늘 (`app-sidebar/bot-day.tsx`), the component 소식 draws as a page, since 2026-09-25:
+ * the pill and the sidebar, which listed the day then, showed the same waiting and the same next
+ * routines from two copies of the same code, and one copy is how two places stay the same.
  *
- * ON THE PC APP, ONLY WHAT THE SIDEBAR DOES NOT SAY (2026-09-25, UX review 0.5.4 item 12): 지금, with
- * a Stop beside it, and 기다리는 일. The full column beside it already shows 한 일 and 다음, and the
- * drawer repeated them word for word. Below `lg` the column is a rail or a sheet that is away, and the
- * drawer shows the whole day.
+ * ON THE PC APP, ONLY 지금, with a Stop beside it, AND 기다리는 일 (2026-09-25, UX review 0.5.4 item
+ * 12). The full column beside it showed 한 일 and 다음 then, and the drawer repeated them word for
+ * word. The column's list went on 2026-10-04 (the owner: too much text on the screen) and this was
+ * left as it was, so on the PC app 한 일 and 다음 are on 소식 and nowhere else; whether the drawer
+ * takes them back there is the owner's to say. Below `lg`, where the column is a rail or is not
+ * drawn, the drawer shows the whole day, as it always has.
  *
  * STOP IS HERE, BESIDE WHAT IS BEING DONE (item 17). It lived only in the account menu, as 모두 멈추기,
  * and 지금 said what the Bot was doing with no way to make it stop. It is the same stop — this window's
@@ -183,12 +185,7 @@ function DrawerBody({
           <DrawerEmpty>{t("Nothing going on right now.")}</DrawerEmpty>
         )}
       </section>
-      <BotDay
-        botId={botId}
-        onLeave={onClose}
-        placement="drawer"
-        waitingOnly={isWide}
-      />
+      <BotDay botId={botId} onLeave={onClose} waitingOnly={isWide} />
     </div>
   );
 }

@@ -44,10 +44,11 @@ const firstMessages = new Map<string, string>();
  * The conversations on screen now, each ready to send a message handed to it.
  *
  * A stash is read only when a conversation MOUNTS, and starting a channel that already exists lands
- * on that same channel. So a first message for the conversation already on screen — the sidebar's
- * 오늘 chips on an empty one — was stashed, navigated to the page it was on, and never read: nothing
- * mounted. The chip then put its sentence in the composer instead, which on a fresh account it sent.
- * Measured 2026-09-25. A conversation on screen now takes it as it is stashed, and sends it.
+ * on that same channel. So a first message for the conversation already on screen — 오늘's chips on
+ * an empty one, which the sidebar drew then and the header's drawer still does — was stashed,
+ * navigated to the page it was on, and never read: nothing mounted. The chip then put its sentence
+ * in the composer instead, which on a fresh account it sent. Measured 2026-09-25. A conversation on
+ * screen now takes it as it is stashed, and sends it.
  */
 const listening = new Map<string, (text: string) => void>();
 

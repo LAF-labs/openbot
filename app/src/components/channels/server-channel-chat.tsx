@@ -1246,7 +1246,7 @@ export function ServerChannelChat({
     void sayNow(typeof seed.content === "string" ? seed.content : "");
   }, [seed]);
 
-  // A first message started for this conversation while it is already on screen (a sidebar chip).
+  // A first message started for this conversation while it is already on screen (a drawer chip).
   useEffect(
     () =>
       hearFirstMessages(channel.id, (text) => {

@@ -8,14 +8,15 @@
  *
  * AND EVERY SCREEN KNOWS ONE IS OPEN, NOT ONLY THE CONVERSATION. The record was read by the open
  * conversation alone, and everything that says "the Bot is waiting on you" reads the store this
- * fills: the pill under the Bot's name and the tray, the sidebar's 기다리는 일, 오늘's mark, the
- * phone bar's dot. So a Bot that stopped to ask while the person was reading 소식 said nothing on
- * that screen, and the question ran out its ten minutes unseen; and a question that was open when
- * the person left the conversation went on saying 확인 필요 after somebody had answered it
- * elsewhere, because nothing was left to hear that it had been. The shell keeps a watch of its own
- * now (`watchShellQuestions`, mounted once for every signed-in screen): it leaves to a conversation
- * on screen that conversation's own questions, and has every other one — and takes those over too
- * the moment the conversation leaves.
+ * fills: the pill under the Bot's name and the tray, 기다리는 일 (on 소식 and in the header's
+ * drawer; in the sidebar too, until 2026-10-04), 오늘's mark, the phone bar's dot. So a Bot that
+ * stopped to ask while the person was reading 소식 said nothing on that screen, and the question
+ * ran out its ten minutes unseen; and a question that was open when the person left the
+ * conversation went on saying 확인 필요 after somebody had answered it elsewhere, because nothing
+ * was left to hear that it had been. The shell keeps a watch of its own now (`watchShellQuestions`,
+ * mounted once for every signed-in screen): it leaves to a conversation on screen that
+ * conversation's own questions, and has every other one — and takes those over too the moment the
+ * conversation leaves.
  */
 import {
   closeQuestion,
@@ -79,7 +80,7 @@ export function questionThread(
 
 /**
  * The conversation whose line draws a card, when a watch has drawn it: where a press on the
- * question's row in the sidebar leads. A Bot's questions are listed whichever of its conversations
+ * question's row under 기다리는 일 leads. A Bot's questions are listed whichever of its conversations
  * raised them, and the row used to open the Bot's oldest one — where, for an account that kept
  * several, the card was not (review, ninth round).
  */

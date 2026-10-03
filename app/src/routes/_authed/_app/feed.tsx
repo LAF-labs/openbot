@@ -45,8 +45,10 @@ import { useNow } from "@/lib/use-now";
  * 소식 — WHAT THE BOT DID TODAY, AND WHAT IT FOUND (muse-shape plan §3.2, phases 3 and 7).
  *
  * 오늘 on top, as it has been since phase 3 (`bot-day.tsx`): what waits on the person, what the Bot
- * did, what comes next. Under it the posts a 소식 routine wrote — at most three a morning, each from
- * pages its run opened (`server/src/routines/feed.ts`) — with 좋아요, 숨기기 and 이야기하기.
+ * did, what comes next. On the PC app this is the one place the last two are listed since
+ * 2026-10-04: the sidebar's list went, and the header's drawer there shows only what is waiting.
+ * Under it the posts a 소식 routine wrote — at most three a morning, each from pages its run opened
+ * (`server/src/routines/feed.ts`) — with 좋아요, 숨기기 and 이야기하기.
  *
  * MADE BY ONE PRESS, NEVER BY DEFAULT (plan D3). Before there is a 소식 routine the page says what
  * would come here and offers the one button; the 7:30 chip on a first conversation makes it too.
@@ -89,7 +91,6 @@ function FeedPageScreen() {
                   )}
                 </p>
               }
-              placement="drawer"
             />
           </div>
         </PageSection>

@@ -947,9 +947,10 @@ export function approvePageCall(approvalId: string): string {
  * Each question once, on its conversation's line where it has one.
  *
  * ONE QUESTION CAN BE ON TWO LINES: the call that raised it, and the approval page's own line while
- * that page is open. Enumerated as two, the page's sidebar listed the same thing twice under 기다리는
- * 일, and the second row led to a card that is on no conversation (review of this change, first
- * round — the shell's watch is what put the first line there on that page).
+ * that page is open. Enumerated as two, the sidebar beside that page — which listed 기다리는 일 then,
+ * and did until 2026-10-04 — showed the same thing twice, and the second row led to a card that is
+ * on no conversation (review of this change, first round — the shell's watch is what put the first
+ * line there on that page).
  */
 function onePerQuestion(): [string, OpenQuestion][] {
   const byApproval = new Map<string, [string, OpenQuestion]>();

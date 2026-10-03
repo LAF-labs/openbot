@@ -413,8 +413,8 @@ export function createApp(
   /**
    * 오늘: what a Bot did today, read from the ledgers (agents/day.ts). Last, like everything new.
    *
-   * Absent leaves `GET /api/agents/:agentId/day` unmounted — a 404 the sidebar draws nothing for,
-   * rather than an empty day that reads as a Bot that did nothing.
+   * Absent leaves `GET /api/agents/:agentId/day` unmounted — a 404 the app draws nothing for, on
+   * 소식 and in the header's drawer, rather than an empty day that reads as a Bot that did nothing.
    */
   readDay?: DayReader,
   /**

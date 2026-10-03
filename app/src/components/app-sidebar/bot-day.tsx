@@ -46,15 +46,17 @@ import { cn } from "@/lib/utils";
 /**
  * 오늘: THE BOT'S DAY — WHAT IS WAITING ON THE PERSON, WHAT IT DID, WHAT IS NEXT.
  *
- * The sidebar of one Bot held a face, one conversation row and five links, with the column's whole
- * height of nothing in between, while the Bot worked all day out of sight: a routine that found
- * nothing new said so nowhere, a browsing task was a card three screens up, and a fact it learned
- * was on the profile. This is that work, from the ledgers (`GET /api/agents/:agentId/day`), in the
- * column that is always there on the PC app (its window is never narrower than `lg`).
+ * The Bot worked all day out of sight: a routine that found nothing new said so nowhere, a browsing
+ * task was a card three screens up, and a fact it learned was on the profile. This is that work,
+ * from the ledgers (`GET /api/agents/:agentId/day`).
  *
- * THE SAME COMPONENT IN THE HEADER'S DRAWER, so the pill and the sidebar can never disagree about
- * what is waiting or what comes next. "지금" stays the drawer's own: the sidebar's identity row
- * already says what the Bot is doing.
+ * DRAWN IN TWO PLACES, AND NO LONGER IN THE SIDEBAR. It was written for the sidebar (2026-09-25):
+ * one Bot's column had its whole height empty under the conversation, which is why this file is in
+ * this directory, and the list stood there under a heading of its own, three rows and then a link
+ * to 소식 for the rest. The owner had it taken out on 2026-10-04 — too much text on the screen. What
+ * draws it now is 소식, as a page (`routes/_authed/_app/feed.tsx`), and the header's drawer, under
+ * 지금 (`channels/presence-drawer.tsx`): one component, so the two can never disagree about what is
+ * waiting or what comes next.
  *
  * NOTHING IS ANSWERED HERE. A row goes to where the thing is — the Bot's first message of the turn,
  * the delivered answer, the card with the buttons (`lib/channels/jump.ts`), the routine, what it
@@ -63,29 +65,28 @@ import { cn } from "@/lib/utils";
  *
  * NOTHING POLLS HERE either: see `lib/agents/day.ts` for what refreshes it.
  *
- * WHAT THE DRAWER SHOWS DEPENDS ON WHETHER THE SIDEBAR IS THERE (2026-09-25, UX review 0.5.4 item
- * 12). On the PC app the full column always is, and the pill's drawer repeated it word for word; there
- * the drawer asks for `waiting` only — what needs the owner now, beside 지금. Below `lg` the column is a
- * rail or a sheet that is away, and the drawer is the one place 한 일 and 다음 are, so it shows all.
+ * THE DRAWER ON THE PC APP ASKS FOR `waitingOnly` (2026-09-25, UX review 0.5.4 item 12). The full
+ * column beside it showed 한 일 and 다음 then, and the drawer repeated them word for word. The column
+ * shows neither since 2026-10-04 and the drawer was left as it was, so on the PC app they are on
+ * 소식 and nowhere else; whether the drawer takes them back there is the owner's to say. Below `lg`
+ * the drawer shows the whole day.
  */
 export function BotDay({
   botId,
   empty = null,
   onLeave,
-  placement,
   waitingOnly = false,
 }: {
   botId: string;
   /**
-   * What to draw when there is nothing in any group. Nothing, in the sidebar and the drawer, where
-   * the column goes on without it; a line on 소식, which is a page of its own and would otherwise be
-   * a title over a blank screen.
+   * What to draw when there is nothing in any group. Nothing, in the drawer, which has 지금 above
+   * it and goes on without it; a line on 소식, which is a page of its own and would otherwise be a
+   * title over a blank screen.
    */
   empty?: ReactNode;
-  /** Called before a press leaves for somewhere else: the drawer closes, the phone's sheet goes. */
+  /** Called before a press leaves for somewhere else: the drawer closes. */
   onLeave?: () => void;
-  placement: "sidebar" | "drawer";
-  /** Only what is waiting on the owner: the drawer, beside a sidebar that shows the rest. */
+  /** Only what is waiting on the owner: the drawer on the PC app, for the reason above. */
   waitingOnly?: boolean;
 }) {
   const now = useNow();
@@ -105,8 +106,7 @@ export function BotDay({
   });
 
   const items = waitingOnly ? [] : (day.data?.items ?? []);
-  const visible = placement === "sidebar" ? SIDEBAR_ROWS : VISIBLE_ROWS;
-  const shown = isExpanded ? items : items.slice(0, visible);
+  const shown = isExpanded ? items : items.slice(0, VISIBLE_ROWS);
   const hidden = items.length - shown.length;
   const isNewBot =
     channels.data !== undefined && isFirstConversation(channels.data, botId);
@@ -157,11 +157,11 @@ export function BotDay({
     handleShowInConversation(item.channelId, { messageId: item.messageId });
   };
 
-  const isSidebar = placement === "sidebar";
   /*
-   * NOT BESIDE THE EMPTY CONVERSATION, WHICH OFFERS THE SAME SENTENCES. The first screen showed the
-   * same chips twice, in the sidebar and under the face (UX review 0.5.4, item 12). The conversation's
-   * are the ones to press: they are where the answer will appear.
+   * NOT OVER THE EMPTY CONVERSATION, WHICH OFFERS THE SAME SENTENCES. The first screen showed the
+   * same chips twice, under the face and in the sidebar beside it, where this list was then (UX
+   * review 0.5.4, item 12); the drawer opened on that screen would be the second copy now. The
+   * conversation's are the ones to press: they are where the answer will appear.
    */
   const isFirstThings =
     items.length === 0 &&
@@ -181,28 +181,20 @@ export function BotDay({
   }
 
   /*
-   * 오늘 ONLY OVER SOMETHING OF TODAY. With a routine made and nothing run yet, the sidebar read
-   * "오늘 / 다음 / 아침 브리핑" — a heading for today over nothing but tomorrow's plan (first-hour walk,
-   * 2026-09-27). 다음 says what it is by itself.
+   * NAMED 오늘 ONLY OVER SOMETHING OF TODAY. With a routine made and nothing run yet, the sidebar
+   * read "오늘 / 다음 / 아침 브리핑" — a heading for today over nothing but tomorrow's plan (first-hour
+   * walk, 2026-09-27). The heading went with the sidebar's copy (2026-10-04); the name a screen
+   * reader is given keeps the rule. 다음 says what it is by itself.
    */
   const hasToday = waiting.length > 0 || items.length > 0 || isFirstThings;
 
   return (
     <section
       aria-label={hasToday ? t("Today") : t("Up next")}
-      className={cn(
-        "flex flex-col",
-        isSidebar ? "mt-3 gap-3 px-2" : "divide-y divide-border",
-      )}
+      className="flex flex-col divide-y divide-border"
     >
-      {isSidebar && hasToday ? (
-        <h2 className="font-medium text-muted-foreground text-xs">
-          {t("Today")}
-        </h2>
-      ) : null}
-
       {waiting.length > 0 ? (
-        <DayGroup placement={placement} title={t("Waiting on the owner")}>
+        <DayGroup title={t("Waiting on the owner")}>
           {waiting.map((entry) => (
             <DayRow
               icon={
@@ -235,7 +227,7 @@ export function BotDay({
       ) : null}
 
       {items.length > 0 ? (
-        <DayGroup placement={placement} title={t("What it did")}>
+        <DayGroup title={t("What it did")}>
           {shown.map((item) => (
             <DayItemRow
               isAsking={waiting.length > 0}
@@ -251,23 +243,7 @@ export function BotDay({
               zone={day.data?.zone ?? ""}
             />
           ))}
-          {hidden > 0 && placement === "sidebar" ? (
-            /*
-             * THE SIDEBAR'S 오늘 IS SHORT AND POINTS AT THE WHOLE ONE (muse-shape plan §3.2, §4):
-             * with 소식's row above it, the column at 1024×640 has room for 기다리는 일 and three
-             * rows, and the rest is a page away on 소식, where 오늘 is drawn in full.
-             */
-            <Link
-              className={cn(
-                "self-start rounded-sm px-1 font-medium text-link text-xs underline-offset-4 hover:underline",
-                focusRing,
-              )}
-              onClick={onLeave}
-              to="/feed"
-            >
-              {t("See it all on Updates")}
-            </Link>
-          ) : hidden > 0 ? (
+          {hidden > 0 ? (
             <button
               className={cn(
                 "self-start rounded-sm px-1 font-medium text-link text-xs underline-offset-4 hover:underline",
@@ -281,13 +257,13 @@ export function BotDay({
           ) : null}
         </DayGroup>
       ) : isFirstThings ? (
-        <DayGroup placement={placement} title={t("What it did")}>
+        <DayGroup title={t("What it did")}>
           <FirstThings botId={botId} onLeave={onLeave} />
         </DayGroup>
       ) : null}
 
       {next.length > 0 ? (
-        <DayGroup placement={placement} title={t("Up next")}>
+        <DayGroup title={t("Up next")}>
           {next.map((routine) => (
             <DayRow
               icon={
@@ -319,28 +295,10 @@ export function BotDay({
 
 /** Six, then "n개 더 보기": the drawer is a glance, and the conversation holds the rest. */
 const VISIBLE_ROWS = 6;
-/**
- * Three in the sidebar (muse-shape plan §4, phase 7): four fitted under the Bot and its conversation
- * at the PC app's smallest window (1024×640) until 소식, 아이디어 and 만든 것 took rows above it.
- */
-const SIDEBAR_ROWS = 3;
 
-function DayGroup({
-  children,
-  placement,
-  title,
-}: {
-  children: ReactNode;
-  placement: "sidebar" | "drawer";
-  title: string;
-}) {
+function DayGroup({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-0.5",
-        placement === "drawer" && "px-2 py-2.5",
-      )}
-    >
+    <div className="flex flex-col gap-0.5 px-2 py-2.5">
       <h3 className="px-1 pb-0.5 text-muted-foreground text-xs">{title}</h3>
       {children}
     </div>

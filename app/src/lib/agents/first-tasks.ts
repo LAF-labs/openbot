@@ -166,10 +166,11 @@ export function offersSupportPrograms(
  *
  * ONE FUNCTION, BECAUSE IT WAS THREE EXPRESSIONS AND TWO OF THEM LEFT THE PERSON OUT. The first
  * screen's chips passed the persona and kept 지원사업 for a shop. The 7:30 briefing beside them
- * did not: a 학생 was offered "넣을 것: 날씨, 월요일마다 새 지원사업". And the sidebar's row — the
- * same chips, on any day nothing had been done yet — passed no persona at all, so it dealt a 학생
- * 가게 소개 문구 and "our shop"'s 지원사업 (found by the 2026-09-27 sweep, and left on a branch).
- * A place that deals first tasks reads this and nothing else.
+ * did not: a 학생 was offered "넣을 것: 날씨, 월요일마다 새 지원사업". And 오늘's row — the same
+ * chips, on any day nothing had been done yet, in the sidebar then and on 소식 and in the header's
+ * drawer still — passed no persona at all, so it dealt a 학생 가게 소개 문구 and "our shop"'s
+ * 지원사업 (found by the 2026-09-27 sweep, and left on a branch). A place that deals first tasks
+ * reads this and nothing else.
  */
 export function firstTaskDeal(
   who: { persona?: Persona | null; shop?: ShopProfile } | null | undefined,

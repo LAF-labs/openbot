@@ -16,6 +16,11 @@ import { json, mount, routerAt, unmountAll } from "./support/mount";
  * Mounted against a stub server rather than walked as source: the facts are the server's
  * (`GET /api/agents/:id/day`), the words are this component's, and what is asserted is what a
  * person would read and where their press lands.
+ *
+ * ONE SHAPE SINCE 2026-10-04. The sidebar drew a shorter one of its own — a heading, three rows, a
+ * link to 소식 — and most of these mounted that; it went with the sidebar's list (the owner: too
+ * much text on the screen), and `sidebar-rail.test.tsx` holds the column to not drawing it. What
+ * is mounted here is what 소식 and the header's drawer draw.
  */
 
 beforeAll(() => {
@@ -150,11 +155,7 @@ const PATHS = ["/channel/$channelId", "/channel/new", "/routines", "/agents"];
 
 async function day(
   options: Parameters<typeof server>[0],
-  where: {
-    path?: string;
-    placement?: "sidebar" | "drawer";
-    waitingOnly?: boolean;
-  } = {},
+  where: { path?: string; waitingOnly?: boolean } = {},
 ) {
   const asked = server(options);
   const { QueryClient, QueryClientProvider } = await import(
@@ -167,11 +168,7 @@ async function day(
   });
   const router = await routerAt(where.path ?? "/channel/ch-1", PATHS, () => (
     <QueryClientProvider client={client}>
-      <BotDay
-        botId="bot-1"
-        placement={where.placement ?? "sidebar"}
-        waitingOnly={where.waitingOnly ?? false}
-      />
+      <BotDay botId="bot-1" waitingOnly={where.waitingOnly ?? false} />
     </QueryClientProvider>
   ));
   const view = await mount(<RouterProvider router={router} />);
@@ -191,33 +188,29 @@ async function day(
 
 describe("오늘", () => {
   test("each kind of work is a row, newest first, marked only when it did not finish", async () => {
-    const view = await day(
-      {
-        items: [
-          {
-            kind: "routine",
-            runId: "r-silent",
-            routineId: "rt-1",
-            at: at(2, 30),
-            status: "done",
-            name: "아침 주문 확인",
-            silent: true,
-            channelId: "ch-1",
-            messageId: null,
-          },
-          {
-            kind: "learned",
-            memoryId: "m-1",
-            at: at(2),
-            head: "월요일은 쉰다",
-          },
-          chat("c-1", { frameToolCallId: "call-1" }),
-          chat("c-2", { status: "error", label: "주문서 만들어 줘" }),
-        ],
-      },
-      // Four rows: the drawer's, since the sidebar shows three (phase 7).
-      { placement: "drawer" },
-    );
+    const view = await day({
+      items: [
+        {
+          kind: "routine",
+          runId: "r-silent",
+          routineId: "rt-1",
+          at: at(2, 30),
+          status: "done",
+          name: "아침 주문 확인",
+          silent: true,
+          channelId: "ch-1",
+          messageId: null,
+        },
+        {
+          kind: "learned",
+          memoryId: "m-1",
+          at: at(2),
+          head: "월요일은 쉰다",
+        },
+        chat("c-1", { frameToolCallId: "call-1" }),
+        chat("c-2", { status: "error", label: "주문서 만들어 줘" }),
+      ],
+    });
     expect(view.groups()).toEqual(["What it did"]);
     const rows = view.rows();
     expect(rows[0]).toContain("아침 주문 확인 · Nothing new");
@@ -263,24 +256,16 @@ describe("오늘", () => {
     expect(view.router.state.location.pathname).toBe("/channel/ch-1");
   });
 
-  test("three rows in the sidebar and a way to 소식 for the rest; six in the drawer, then the rest behind one press", async () => {
-    // Three since 소식, 아이디어 and 만든 것 took rows above it (muse-shape plan §4, phase 7).
+  test("six rows, then the rest behind one press", async () => {
     const items = Array.from({ length: 8 }, (_, index) =>
       chat(`c-${index}`, { label: `일 ${index}` }),
     );
     const view = await day({ items });
-    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(3);
-    const all = [...view.host.querySelectorAll("a")].find(
-      (link) => link.textContent === "See it all on Updates",
-    );
-    expect(all?.getAttribute("href")).toBe("/feed");
-    expect(view.button("more")).toBeUndefined();
-    await unmountAll();
-
-    const drawer = await day({ items }, { placement: "drawer" });
-    expect(drawer.rows().filter((row) => row.startsWith("일"))).toHaveLength(6);
-    await drawer.press(drawer.button("Show 2 more"));
-    expect(drawer.rows().filter((row) => row.startsWith("일"))).toHaveLength(8);
+    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(6);
+    // The rest is here, a press away: the link that sent somebody to 소식 for it was the sidebar's.
+    expect(view.host.querySelector('a[href="/feed"]')).toBeNull();
+    await view.press(view.button("Show 2 more"));
+    expect(view.rows().filter((row) => row.startsWith("일"))).toHaveLength(8);
   });
 
   test("the card's words: 못 끝냄 with why, 멈춤 for a stop, 하는 중", async () => {
@@ -347,13 +332,14 @@ describe("오늘", () => {
     expect(rows[2]).toContain("Overnight: tidied 3 memories");
   });
 
-  test("the drawer beside the full sidebar shows only what waits on the owner", async () => {
+  test("the drawer on the PC app shows only what waits on the owner", async () => {
+    // Asked for beside a full sidebar that listed the rest (2026-09-25), and kept after that went.
     const view = await day(
       {
         items: [chat("c-1")],
         routines: [routine("rt-1", "리뷰 확인", later(1))],
       },
-      { placement: "drawer", waitingOnly: true },
+      { waitingOnly: true },
     );
     expect(view.groups()).toEqual([]);
     expect(view.host.textContent).not.toContain("예스24에서 책 찾아 줘");
@@ -378,8 +364,12 @@ describe("오늘", () => {
     expect(view.host.textContent).toContain("See all routines");
   });
 
-  test("with only what comes next, no 오늘 heading over nothing of today", async () => {
-    // First-hour walk, 2026-09-27: "오늘 / 다음 / 아침 브리핑" before the briefing had ever run.
+  test("with only what comes next, the list is not named 오늘 over nothing of today", async () => {
+    /*
+     * First-hour walk, 2026-09-27: "오늘 / 다음 / 아침 브리핑" before the briefing had ever run. That
+     * was the sidebar's heading, which went with the sidebar's list (2026-10-04); the name the list
+     * gives a screen reader follows the same rule, and no heading of its own is drawn anywhere.
+     */
     const view = await day({
       items: [],
       routines: [routine("rt-1", "아침 브리핑", later(1))],
@@ -391,12 +381,16 @@ describe("오늘", () => {
     );
     await unmountAll();
 
-    // With something of today, the heading is back.
+    // With something of today, it is named for today.
     const busy = await day({
       items: [chat("c-1")],
       routines: [routine("rt-1", "아침 브리핑", later(1))],
     });
-    expect(busy.host.querySelector("h2")?.textContent).toBe("Today");
+    expect(busy.groups()).toEqual(["What it did", "Up next"]);
+    expect(busy.host.querySelector("h2")).toBeNull();
+    expect(busy.host.querySelector("section")?.getAttribute("aria-label")).toBe(
+      "Today",
+    );
   });
 
   test("a quiet day draws nothing for what it did; a Bot nobody has spoken to is offered first things", async () => {

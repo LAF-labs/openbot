@@ -8,9 +8,9 @@ import { useSyncExternalStore } from "react";
  * truncated, is a rail only to the eye. `rem` inside a media query is the INITIAL root font size and
  * not this app's 14px root, so 64rem here is the same 1024px `lg:` compiles to.
  *
- * Read by the sidebar (full column or rail) and by the header's drawer, which leaves out what the
- * full column already shows (`presence-drawer.tsx`). The PC app's window is never narrower than
- * this (`desktop/src-tauri/tauri.conf.json`).
+ * Read by the sidebar (full column or rail) and by the header's drawer, which lists the whole day
+ * only below it (`presence-drawer.tsx` says why, and what became of the reason). The PC app's
+ * window is never narrower than this (`desktop/src-tauri/tauri.conf.json`).
  */
 const WIDE_QUERY = "(min-width: 64rem)";
 
