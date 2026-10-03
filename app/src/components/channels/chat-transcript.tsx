@@ -7,7 +7,6 @@ import {
   IconArrowDown,
   IconBox,
   IconCheck,
-  IconChevronRight,
   IconCopy,
   IconInfoCircle,
   IconQuote,
@@ -100,7 +99,7 @@ import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { type Source, sourcesByAnswer } from "./sources";
 import { SourcesRow } from "./sources-row";
-import { ToolRenderBoundary } from "./tool-boundary";
+import { StepLine } from "./step-line";
 import { ToolLine, toolKindOf } from "./tool-line";
 
 type ChatTranscriptProps = {
@@ -1336,59 +1335,23 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 
   return (
     <Arriving delay={delay}>
-      <ToolRenderBoundary name={name}>
-        {runId && earlier > 0 && onToggleRun ? (
-          /*
-           * THE NEWEST LINE OF A RUN, AND THE FOLD FOR THE ONES BEFORE IT, on one row. A row
-           * rather than a column so the fold sits beside the words it belongs to; it wraps under
-           * them where the line is drawn with a question above it.
-           */
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            {line}
-            <StepRunFold
-              count={earlier}
-              isOpen={isRunOpen}
-              onToggle={() => onToggleRun(runId)}
-            />
-          </div>
-        ) : (
-          line
-        )}
-      </ToolRenderBoundary>
+      <StepLine
+        name={name}
+        {...(runId && earlier > 0 && onToggleRun
+          ? {
+              fold: {
+                count: earlier,
+                isOpen: isRunOpen,
+                onToggle: () => onToggleRun(runId),
+              },
+            }
+          : {})}
+      >
+        {line}
+      </StepLine>
     </Arriving>
   );
 });
-
-/**
- * The fold beside the newest line of a run of steps: how many came before it, and the way to them.
- *
- * A real button, so the keyboard reaches it and a screen reader is told whether the record is open.
- * Taller under a finger than under a pointer: the line it sits on is one line of small text.
- */
-function StepRunFold({
-  count,
-  isOpen,
-  onToggle,
-}: {
-  count: number;
-  isOpen: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      aria-expanded={isOpen}
-      className={`inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground pointer-coarse:h-9 pointer-coarse:px-2.5 ${focusRing}`}
-      onClick={onToggle}
-      type="button"
-    >
-      <IconChevronRight
-        aria-hidden="true"
-        className={`size-3 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
-      />
-      {isOpen ? t("Hide earlier steps") : t("{count} earlier steps", { count })}
-    </button>
-  );
-}
 
 /** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});

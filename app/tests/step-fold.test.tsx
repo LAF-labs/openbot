@@ -5,6 +5,7 @@ import {
   describe,
   expect,
   setDefaultTimeout,
+  spyOn,
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
@@ -608,6 +609,65 @@ describe("a line with something on it for the person", () => {
     );
     expect(fold(view.host)?.getAttribute("aria-expanded")).toBe("true");
     server.close();
+    await view.unmount();
+  });
+});
+
+/*
+ * THE FOLD IS OUTSIDE THE LINE'S OWN SEAM (review, round 4). A line that throws is replaced by the
+ * seam's one sentence, and what is inside the seam goes with it. The earlier lines of a run are not
+ * drawn until the fold is pressed — so inside the seam, a newest line that failed to draw took with
+ * it the only way to the record behind it.
+ */
+describe("the newest line of a run that could not be drawn", () => {
+  test("says so in its place, and the fold beside it is still there to press", async () => {
+    const quiet = spyOn(console, "error").mockImplementation(() => {});
+    const { createElement } = await import("react");
+    const { StepLine } = await import("../src/components/channels/step-line");
+    const { mount } = await import("./support/mount");
+    const Thrower = (): never => {
+      throw new RangeError("a renderer that broke");
+    };
+    const Line = () => createElement(Thrower);
+    const presses: string[] = [];
+    const view = await mount(
+      createElement(StepLine, {
+        name: "look_up",
+        fold: {
+          count: 2,
+          isOpen: false,
+          onToggle: () => {
+            presses.push("fold");
+          },
+        },
+        children: createElement(Line),
+      }),
+    );
+    await view.settle(30);
+
+    expect(view.host.textContent).toContain("could not be drawn");
+    const button = view.host.querySelector<HTMLButtonElement>(
+      "button[aria-expanded]",
+    );
+    expect(button?.textContent).toBe("2 earlier steps");
+    await view.press(button as Element);
+    expect(presses).toEqual(["fold"]);
+    quiet.mockRestore();
+    await view.unmount();
+  });
+
+  test("and a line with no run before it is its seam and nothing else", async () => {
+    const { createElement } = await import("react");
+    const { StepLine } = await import("../src/components/channels/step-line");
+    const { mount } = await import("./support/mount");
+    const view = await mount(
+      createElement(StepLine, {
+        name: "look_up",
+        children: createElement("span", null, "a line"),
+      }),
+    );
+    expect(view.host.textContent).toBe("a line");
+    expect(view.host.querySelector("button")).toBeNull();
     await view.unmount();
   });
 });
