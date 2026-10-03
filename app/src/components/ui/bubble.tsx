@@ -10,7 +10,7 @@ const bubbleVariants = cva(
   /*
  * `min(88%, 640px, 100% - 82px)` is the measured cap. Three limits because they bind at
  * different widths: 88% keeps a bubble off the far edge in a narrow pane, 640px stops a long
- * answer from running to an unreadable measure on a wide one, and the 82px inset leaves the
+ * message from running to an unreadable measure on a wide one, and the 82px inset leaves the
  * gutter the avatar and hover actions live in.
  */
   "group/bubble relative flex w-fit max-w-[min(88%,640px,calc(100%-82px))] min-w-0 flex-col gap-1 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-full",
@@ -24,28 +24,22 @@ const bubbleVariants = cva(
         muted:
           "*:data-[slot=bubble-content]:bg-muted [&>[data-slot=bubble-content]:is(button,a):hover]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]",
         /*
-         * THE TWO BUBBLES THE APP ACTUALLY DRAWS.
+         * THE BUBBLE THE APP ACTUALLY DRAWS IS THE PERSON'S: `user`, their message, everywhere
+         * (and `muted` above, for one they typed that is still waiting its turn).
          *
-         * `--sand-fill-bubble-agent` and `--sand-fill-bubble-user` are their own tokens in Grok's
-         * palette, not the generic muted/primary surfaces — the Bot's grey is #eeeeee where `muted`
-         * is a #777777 alpha, and the person's is solid near-black in light and a mid grey in dark,
-         * which no combination of the shadcn names reproduces. Bubbles are the most-looked-at
-         * surface in the product; they get the tokens that were measured for them.
+         * `--sand-fill-bubble-user` is its own token in Grok's palette, not a generic primary
+         * surface — solid near-black in light and a mid grey in dark, which no combination of the
+         * shadcn names reproduces. The bubble is the most-looked-at surface in the product; it
+         * gets the token that was measured for it.
          *
-         * `user` IS THE PERSON'S MESSAGE, everywhere. `agent` IS THE BOT'S GREETING AND NOTHING
-         * ELSE, since 2026-10-04: an answer in the conversation is words on the page, with no
-         * bubble (`chat-transcript.tsx`). The greeting was not part of that change and is as it
-         * was — its questions are rows drawn on this grey (`components/agents/greeting.tsx`) —
-         * so whether it follows the answers is still to be decided.
-         *
-         * THE BOT'S BUBBLE TAKES THE PHONE'S WIDTH. The cap above keeps an 82px gutter, and at 375
-         * wide that gutter was empty while an answer sat in 261px: a table scrolled inside a 217px
-         * box and a long answer ran twice as tall (first-hour walk, 2026-09-27). Below `sm` it keeps
-         * 24px, enough to tell the sides apart. The person's bubble keeps the cap, so their side
-         * still reads as theirs; the desktop cap is untouched.
+         * THE BOT HAS NONE. There was an `agent` variant: a grey of its own
+         * (`--sand-fill-bubble-agent`), and below `sm` a wider cap than the one above. An answer
+         * in the conversation has been words on the page since 2026-10-04
+         * (`chat-transcript.tsx`), and the greeting — the last thing drawn in that grey —
+         * followed the same day (`components/agents/greeting.tsx`). With nothing left to draw in
+         * it, the variant, its token and its phone exception went. What tells the two sides apart
+         * is that the person's is the one in a bubble.
          */
-        agent:
-          "max-sm:max-w-[calc(100%-24px)] *:data-[slot=bubble-content]:bg-bubble-agent *:data-[slot=bubble-content]:text-foreground",
         user: "*:data-[slot=bubble-content]:bg-bubble-user *:data-[slot=bubble-content]:text-on-color",
         tinted:
           "*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.93_calc(c*0.4)_h)] *:data-[slot=bubble-content]:text-foreground dark:*:data-[slot=bubble-content]:bg-[oklch(from_var(--primary)_0.3_calc(c*0.4)_h)] [&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.88_calc(c*0.5)_h)] dark:[&>[data-slot=bubble-content]:is(button,a):hover]:bg-[oklch(from_var(--primary)_0.35_calc(c*0.5)_h)]",
@@ -115,8 +109,8 @@ function BubbleContent({
            * corners round and tightens the two where it meets its neighbour to 6px, which is what
            * makes three bubbles read as one turn instead of three separate remarks.
            *
-           * ON THE RIGHT ONLY. The left pair tightened a run of the Bot's bubbles, and the Bot's
-           * answers are not bubbles any more; the greeting's never were joined.
+           * ON THE RIGHT ONLY. The left pair tightened a run of the Bot's bubbles, and the Bot
+           * has no bubbles any more.
            */
           `w-fit max-w-full min-w-0 overflow-hidden rounded-3xl border border-transparent px-3 py-2 wrap-break-word group-data-[joined-prev]/bubble:group-data-[align=end]/bubble:rounded-tr-bubble-joined group-data-[joined-next]/bubble:group-data-[align=end]/bubble:rounded-br-bubble-joined group-data-[align=end]/bubble:self-end [button]:text-left [button,a]:transition-colors ${focusRingNested}`,
           className

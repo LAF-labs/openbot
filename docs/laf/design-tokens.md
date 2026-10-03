@@ -232,14 +232,16 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 | `bg-primary` / `hover:bg-primary-hover` | `--sand-fill-primary` / `-hover` | 채운 컨트롤 |
 | `text-muted-foreground` | `--sand-text-secondary` | 보조 문장 |
 | `border-border` / `border-input` / `border-ring` | `--sand-border-weak` / `-default` / `-focus` | 선 |
-| `bg-bubble-agent` / `bg-bubble-user` | `--sand-fill-bubble-*` | 말풍선 |
+| `bg-bubble-user` | `--sand-fill-bubble-user` | 사람의 말풍선. 봇에게는 말풍선이 없다 |
 | `text-on-color` | `--sand-text-on-color` | 사람 말풍선 위의 글자 — **테마를 따라 뒤집지 않는다** |
 | `bg-mark` | `--sand-fill-accent` | "봇이 기다린다"는 파란 점 |
 | `text-link` | `--sand-text-accent` | 링크 |
 
 `bg-mark`, `text-link`, `bg-bubble-*`, `text-on-color`, `bg-primary-hover`는 2026-09-06에
 새로 이름을 붙였다. 이름이 없어서 이스케이프로 쓰이던 것들이고, 이름이 없는 칸 하나가 열려
-있으면 이미 별칭이 있는 색까지 그 문으로 나간다.
+있으면 이미 별칭이 있는 색까지 그 문으로 나간다. 그중 `bg-bubble-agent`는 2026-10-04에 없앴다:
+봇의 답과 인사가 말풍선 없이 페이지 위의 글이 되어(`components/ui/bubble.tsx`), 그 회색을 쓰는
+곳이 남지 않았다.
 
 **파란색은 광고가 아니다.** 채운 컨트롤은 near-black(`bg-primary`)이고, 파랑은 링크·포커스·
 알림 점에만 쓴다.
@@ -255,7 +257,7 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 | `--bot-accent` | 채움(`bg-primary`), 링(`ring-ring`) | 위의 글자와 4.5:1, 바탕과 3:1 |
 | `--bot-accent-hover` | 누르기 전 채움(`bg-primary-hover`) | 위의 글자와 4.5:1 |
 | `--bot-accent-foreground` | 채움 위의 글자 | 라이트는 흰색, 다크는 거의 검정 |
-| `--bot-accent-ink` | 글자로서의 색(`text-link`) | 페이지·사이드바·카드·봇 말풍선·자기 8% 틴트 위에서 4.5:1 |
+| `--bot-accent-ink` | 글자로서의 색(`text-link`) | 페이지·사이드바·카드·자기 8% 틴트 위에서 4.5:1 |
 
 **얼굴의 색을 그대로 쓰지 않는다.** #FF781C 위의 흰 글자는 2.9:1이다. 같은 색상(hue)과 채도를
 OKLCH 밝기만 옮겨서, 라이트에서는 흰 글자가, 다크에서는 검은 글자가 4.6:1을 넘고 같은 값이 글자로서도

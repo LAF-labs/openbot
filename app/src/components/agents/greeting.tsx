@@ -11,6 +11,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import {
+  answerMeasure,
+  rowSpacing,
+} from "@/components/channels/chat-transcript";
 import { ConnectionChoices } from "@/components/connections/connection-choices";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -43,16 +47,49 @@ import { savePlace } from "@/lib/whereabouts/queries";
  * THE BOT SPEAKS FIRST — drawn by the app, with no model call and no cost.
  *
  * The owner, 2026-09-27: "처음에 학생/직장인/사장님/기타를 먼저 묻고 시작한다. 빠르게 개인화할 수
- * 있도록." So a new conversation opens on the Bot introducing itself in two bubbles, then asking who
- * the person is, with the four answers drawn inside its bubble as rows to press — the pattern Muse's
- * first run uses, in our own words (`~/laf/docs/muse-ux-teardown-2026-09-27.md` §1). One tailored
- * follow-up comes after, then the first things to ask.
+ * 있도록." So a new conversation opens on the Bot introducing itself, then asking who the person
+ * is, with the four answers under the question as rows to press — the pattern Muse's first run
+ * uses, in our own words (`~/laf/docs/muse-ux-teardown-2026-09-27.md` §1). One tailored follow-up
+ * comes after, then the first things to ask.
+ *
+ * IT SPEAKS THE WAY ITS ANSWERS DO: WORDS ON THE PAGE, WITH NO PLATE. Every piece of the Bot's
+ * here was a grey bubble, and its questions were rows drawn on that grey. The owner, 2026-10-04,
+ * chose "proposal A" for the conversation — the answer with no plate round it
+ * (`chat-transcript.tsx`) — and that left the top of a conversation as three grey bubbles above
+ * plain answers, the one place where the Bot still spoke from a plate. So the greeting is set as
+ * an answer is: its measure and its colour (`answerMeasure`) and the space round its rows
+ * (`rowSpacing`) are the transcript's own, read from where the transcript reads them, and nothing
+ * here has a number of its own for them. What says who is speaking is what says it below: the
+ * person's side keeps its dark bubble, on the right.
+ *
+ * WHAT IS PRESSED OR TYPED IS STILL AN OBJECT — the rows, the field, the switches, the places.
+ * They stood on the bubble's grey and took their width from it. On the page each has an edge and
+ * a width of its own (`pressableWidth`, `cardWidth`).
+ *
+ * LAID OUT BEFORE AND AFTER in headless Chromium and WebKit, at 1280 and at 375 — a static copy of
+ * the mounted greeting with the built stylesheet (2026-10-04; not the running app):
+ *  - the Bot's words began 13px inside the column, behind its bubble's edge and padding, 417
+ *    against an answer's 404. They begin where an answer's do: 404, and 16 at 375;
+ *  - the introduction's sentences are 22px apart, ink to ink (21 in WebKit), and the question
+ *    22px under them — what two answers of one turn are, measured under the same greeting. The
+ *    rows are 11px under their question, the person's answer 20px under the last row, and the
+ *    Bot's next question 25px under that answer, or under 바꾸기 where it has one: the
+ *    transcript's own 25. A step that follows something to press stands 31px under it — 33px
+ *    under the line that ends the card of accounts;
+ *  - at 375 nothing pans: the page and the scroller are both 375 across.
+ * And the top of a real conversation was looked at in the running app — this app on the local
+ * server, both engines, a question nobody had answered, with no row pressed: the same edges, the
+ * same 22px, rows of 360px and 343px, and the ring of a row reached by keyboard drawn whole. (A
+ * row stands at the column's own edge now. The nearest box that would cut its ring was the
+ * bubble, 13px beyond the row; it is the scroller, 16px beyond on a phone.) What a press draws
+ * after it — the lock, the follow-up, the accounts, the places — was laid out on the static
+ * copies only.
  *
  * NOTHING HERE IS A MESSAGE. The model is not called until the person presses a task or types: the
  * greeting and the answers are not stored in the conversation (`muse-shape-plan` §3.1), which keeps
  * `isFirstConversation` and the `/` redirect on their one rule, and keeps server prose off the
- * surface. A press is still SHOWN as the person's answer — a bubble on their side, the card locked
- * with the other rows dimmed — so the screen reads like a reply was given, because one was: to the
+ * surface. A press is still SHOWN as the person's answer — a bubble on their side, the rows locked
+ * with the others dimmed — so the screen reads like a reply was given, because one was: to the
  * app, through the person's own session (`PUT /api/me/persona`, `/shop`, `/place`, the 수첩's pen).
  *
  * TWO PLACES DRAW IT. `compose` is the empty conversation, where the follow-up and the chips are.
@@ -60,32 +97,72 @@ import { savePlace } from "@/lib/whereabouts/queries";
  * page is loaded (`ChatTranscript`'s `head`): the introduction and the answer, locked, with a way to
  * change it. A question still unanswered stays pressable in both.
  *
- * A TYPED ANSWER HAS ITS OWN FIELD, INSIDE THE BUBBLE — not the composer. The composer means "ask the
- * Bot"; if it meant "answer the greeting" while a follow-up waited, "오늘 날씨 알려줘" typed at that
- * moment would become somebody's 전공. Muse's "something else" row that focuses the composer belongs
- * to the Bot's own question card (`askChoice`), which is a later phase.
+ * A TYPED ANSWER HAS ITS OWN FIELD, UNDER ITS QUESTION — not the composer. The composer means "ask
+ * the Bot"; if it meant "answer the greeting" while a follow-up waited, "오늘 날씨 알려줘" typed at
+ * that moment would become somebody's 전공. Muse's "something else" row that focuses the composer
+ * belongs to the Bot's own question card (`askChoice`), which is a later phase.
  */
 
 type Option = { id: string; name: string };
 
-/** The Bot's side: a grey bubble, left. */
+/**
+ * HOW WIDE SOMETHING TO PRESS OR TO TYPE INTO STANDS ON THE PAGE: the row, up to 360px.
+ *
+ * Inside the bubble the rows were as wide as the question over them — the bubble shrank to its
+ * widest line — so four answers were 218px under one question, five were 135px under the next,
+ * and a field was whatever its engine thought a field is: 218px in Chromium and 277px in WebKit
+ * under the same question. (They asked for 16rem at least, `min-w-[min(16rem,100%)]`, and never
+ * got it: a percentage of a box that is sized by its own contents is nothing.) With no bubble
+ * there is nothing to take a width from but the measure, and a column of two-syllable answers
+ * 680px across is a table with one column. So the rows, the field and the places have one width
+ * of their own: 360px, which is the whole row on a phone — 343px at 375, measured — where a
+ * narrower cap would leave a ragged strip beside every row.
+ */
+const pressableWidth = "w-full max-w-90";
+
+/**
+ * And a card — 연결's switches — is as wide as the cards the Bot puts in the conversation
+ * (`gallery/frame.tsx`), where the same switches are drawn when a task needs an account: 588px,
+ * and the whole row on a phone. Narrower, each account's one line of what it is for breaks in two.
+ */
+const cardWidth = "w-full max-w-2xl";
+
+/**
+ * The Bot's side: words on the page, set as an answer is (the head of this file has why).
+ *
+ * `greeting-words`, not `answer`: nothing here is an answer. It cannot be copied, quoted or
+ * rated, and whatever looks for an answer must not find the greeting.
+ */
 function BotSays({
   children,
   delay = 0,
   animate,
   reveal = false,
+  continuesRun = false,
 }: {
   children: ReactNode;
   delay?: number;
   animate: boolean;
   /** Scroll it into view on arrival: a step the person's press just caused. */
   reveal?: boolean;
+  /**
+   * The row above is the Bot's too and is words alone, so this is their next paragraph — the
+   * transcript's rule for two answers of one turn (`rowSpacing`). Under the person's answer, under
+   * something to press, or turning to something else, the Bot begins again, which is the default.
+   */
+  continuesRun?: boolean;
 }) {
   return (
-    <Said align="start" animate={animate} delay={delay} reveal={reveal}>
-      <Bubble align="start" className="chat-prose" variant="agent">
-        <BubbleContent>{children}</BubbleContent>
-      </Bubble>
+    <Said
+      align="start"
+      animate={animate}
+      delay={delay}
+      reveal={reveal}
+      spacing={rowSpacing("assistant", continuesRun)}
+    >
+      <div className={answerMeasure} data-slot="greeting-words">
+        {children}
+      </div>
     </Said>
   );
 }
@@ -100,7 +177,13 @@ function PersonSays({
   live?: boolean;
 }) {
   return (
-    <Said align="end" animate={live} reveal={live}>
+    // One answer at a time, always under something of the Bot's: it begins the person's run.
+    <Said
+      align="end"
+      animate={live}
+      reveal={live}
+      spacing={rowSpacing("user", false)}
+    >
       <Bubble align="end" className="chat-prose" variant="user">
         <BubbleContent>
           <span className="whitespace-pre-wrap">{children}</span>
@@ -114,6 +197,9 @@ function PersonSays({
  * One row of the greeting, arriving the way a transcript row does: a fade and a short rise, the rise
  * dropped under reduced motion. `data-slot` because `MessageContent` right-aligns its data-slot
  * children (see `Arriving` in `chat-transcript.tsx`).
+ *
+ * SPACED AS A TRANSCRIPT ROW IS, by the row's own padding (`rowSpacing`). Every row here was 2px
+ * above and below, whoever spoke, and the bubbles' padding did the rest.
  */
 function Said({
   align,
@@ -121,12 +207,15 @@ function Said({
   children,
   delay = 0,
   reveal,
+  spacing,
 }: {
   align: "start" | "end";
   animate: boolean;
   children: ReactNode;
   delay?: number;
   reveal: boolean;
+  /** The row's padding, above and below: what `rowSpacing` gives this speaker here. */
+  spacing: string;
 }) {
   const shouldReduceMotion = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
@@ -138,7 +227,7 @@ function Said({
     });
   }, [reveal, shouldReduceMotion]);
   return (
-    <MessageRow align={align} className="py-0.5">
+    <MessageRow align={align} className={spacing}>
       <MessageContent>
         <motion.div
           animate={{ opacity: 1, transform: "translateY(0px)" }}
@@ -167,11 +256,18 @@ function Said({
 }
 
 /**
- * The answers, inside the Bot's bubble: dashed rows, one press each.
+ * The answers, under the Bot's question: dashed rows, one press each.
  *
  * LOCKED ONCE PICKED, like Muse's option card: the chosen row turns solid and says so to a reader
  * (`aria-pressed`), the others dim, and none can be pressed again here — the answer is changed on
  * 내 정보, which is what 바꾸기 opens.
+ *
+ * THE FILLS ARE THE PAGE'S. On the bubble's grey a row under the pointer and the chosen row were
+ * lifted towards the page (`bg-background/60`, `/70`) — which on the page itself is the page
+ * painted on the page, and drew nothing. Under the pointer a row takes the fill a row of this app
+ * takes there (`bg-accent`), and the chosen one the fill of a surface that is filled in
+ * (`bg-muted`): read back from the engines, 8% and 9% of the grey where there was the page's own
+ * colour at 60% and 70%.
  */
 function OptionRows({
   chosen,
@@ -190,14 +286,14 @@ function OptionRows({
   return (
     <fieldset
       aria-labelledby={labelledBy}
-      className="mt-2 flex min-w-[min(16rem,100%)] flex-col gap-1.5"
+      className={`mt-2 flex flex-col gap-1.5 ${pressableWidth}`}
     >
       {options.map((option) => {
         const isChosen = chosen === option.id;
         return (
           <button
             aria-pressed={isChosen}
-            className={`flex min-h-11 w-full items-center rounded-xl border border-foreground/25 border-dashed px-3 py-2 text-left transition-colors enabled:hover:border-foreground/50 enabled:hover:bg-background/60 disabled:cursor-default data-[chosen=true]:border-foreground/60 data-[chosen=true]:border-solid data-[chosen=true]:bg-background/70 data-[dimmed=true]:opacity-45 ${focusRing}`}
+            className={`flex min-h-11 w-full items-center rounded-xl border border-foreground/25 border-dashed px-3 py-2 text-left transition-colors enabled:hover:border-foreground/50 enabled:hover:bg-accent disabled:cursor-default data-[chosen=true]:border-foreground/60 data-[chosen=true]:border-solid data-[chosen=true]:bg-muted data-[dimmed=true]:opacity-45 ${focusRing}`}
             data-chosen={isChosen}
             data-dimmed={locked && !isChosen}
             disabled={locked || disabled}
@@ -213,7 +309,13 @@ function OptionRows({
   );
 }
 
-/** A line typed inside the Bot's bubble, with 저장 and 건너뛰기. Enter saves; IME composition does not. */
+/**
+ * A line typed under the Bot's question, with 저장 and 건너뛰기. Enter saves; IME composition does not.
+ *
+ * THE FIELD IS THE APP'S OWN FIELD. On the bubble's grey it was given the page's colour so it read
+ * as a hole to write in. On the page that is nothing: what says "type here" is its edge, the
+ * hairline every field on a screen of this app has (`ui/input.tsx`), and no fill is given it here.
+ */
 function TypedAnswer({
   busy,
   label,
@@ -236,12 +338,11 @@ function TypedAnswer({
     onSave(text.trim());
   };
   return (
-    <div className="mt-2 flex min-w-[min(16rem,100%)] flex-col gap-2">
+    <div className={`mt-2 flex flex-col gap-2 ${pressableWidth}`}>
       <label className="sr-only" htmlFor={inputId}>
         {label}
       </label>
       <Input
-        className="bg-background"
         disabled={busy}
         id={inputId}
         maxLength={maxLength}
@@ -331,7 +432,7 @@ function PersonaQuestion({
 
   return (
     <>
-      <BotSays animate={animate} delay={delay}>
+      <BotSays animate={animate} continuesRun delay={delay}>
         <p id={questionId}>
           {t("First, one question. Which of these are you?")}
         </p>
@@ -654,7 +755,8 @@ function NotebookFollowUp({
         </>
       ) : null}
       {written !== null ? (
-        <BotSays animate reveal>
+        // Skipped with a pick, nothing stands between this and the question above it.
+        <BotSays animate continuesRun={typed === null} reveal>
           <p>
             {t("I wrote it in the Notebook, where you can change it any time.")}{" "}
             <Link
@@ -690,7 +792,9 @@ function ConnectStep({ persona }: { persona: Persona }) {
           "Connect the accounts you use and I can look at them and handle things myself. You can skip this and do it any time.",
         )}
       </p>
-      <ConnectionChoices ids={ids} limit={SUGGESTED_COUNT} />
+      <div className={cardWidth}>
+        <ConnectionChoices ids={ids} limit={SUGGESTED_COUNT} />
+      </div>
       <p className="mt-2 text-xs">
         <Link
           className={`underline underline-offset-2 ${focusRing}`}
@@ -735,11 +839,11 @@ function PlacesStep() {
   return (
     <BotSays animate reveal>
       <p>{t("Beside this conversation there is more:")}</p>
-      <ul className="mt-2 flex min-w-[min(16rem,100%)] flex-col gap-1.5">
+      <ul className={`mt-2 flex flex-col gap-1.5 ${pressableWidth}`}>
         {PLACES.map((place) => (
           <li key={place.to}>
             <Link
-              className={`flex min-h-11 w-full flex-col rounded-xl border border-foreground/25 px-3 py-2 text-left transition-colors hover:border-foreground/50 hover:bg-background/60 ${focusRing}`}
+              className={`flex min-h-11 w-full flex-col rounded-xl border border-foreground/25 px-3 py-2 text-left transition-colors hover:border-foreground/50 hover:bg-accent ${focusRing}`}
               to={place.to}
             >
               <span className="font-medium">{t(place.name)}</span>
@@ -794,7 +898,7 @@ export function Greeting({
           )}
         </p>
       </BotSays>
-      <BotSays animate={animate} delay={0.35}>
+      <BotSays animate={animate} continuesRun delay={0.35}>
         <p>{t("This is how I work:")}</p>
         <ul className="mt-1 list-disc space-y-1 pl-5">
           <li>
@@ -836,7 +940,11 @@ export function Greeting({
           <BotSays animate reveal={persona !== null}>
             <p>{t("Good. Shall we start with one of these?")}</p>
           </BotSays>
-          <div className="px-1 pt-2 pb-4">{after}</div>
+          {/*
+           * At the words' own edge. It was 4px in, to stand inside the bubble's corner over it;
+           * and the 8px over it is the row's now.
+           */}
+          <div className="pb-4">{after}</div>
         </>
       ) : null}
     </section>

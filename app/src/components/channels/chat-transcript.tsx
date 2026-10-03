@@ -980,6 +980,17 @@ function Arriving({
 }
 
 /**
+ * THE MEASURE OF THE BOT'S WORDS, AS ONE STRING: 680px or the row where the row is narrower, the
+ * chat's own size and line, and a colour of their own (the answer below has why each is there).
+ *
+ * Named, and not written out where the answer is drawn, since 2026-10-04: the Bot's greeting is
+ * words on the page too (`components/agents/greeting.tsx`), above the answers and in the same
+ * column, and it is set in this very string. A greeting a notch wider than the answer under it,
+ * or a size apart, is the misalignment the one column is there to end.
+ */
+export const answerMeasure = "chat-prose w-full max-w-170 text-foreground";
+
+/**
  * One drawn message, and it is memoised on PRIMITIVES ON PURPOSE.
  *
  * A streamed answer changes `messages` on every chunk, and `toVisibleChatItems` builds fresh objects
@@ -1144,9 +1155,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
                */
               <div
                 className={
-                  partial
-                    ? "chat-prose w-full max-w-170 text-foreground opacity-60"
-                    : "chat-prose w-full max-w-170 text-foreground"
+                  partial ? `${answerMeasure} opacity-60` : answerMeasure
                 }
                 data-slot="answer"
               >

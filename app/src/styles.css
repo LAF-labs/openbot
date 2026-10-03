@@ -131,7 +131,6 @@ html {
   --sand-fill-ghost-hover: #71788214;
   --sand-fill-ghost-selected: #71788226;
   --sand-fill-elevated: #ffffff;
-  --sand-fill-bubble-agent: #f0f1f3;
   --sand-fill-bubble-user: #26292e;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #0c64c1;
@@ -172,8 +171,10 @@ html {
    * The face's own colour is never used as-is. #FF781C with white on it is 2.9:1; the value here is
    * the same hue and chroma moved in OKLCH lightness until white text on it clears 4.6:1 in light,
    * and dark text 4.6:1 in dark, and until the same value as text clears 4.6:1 on every surface it
-   * can sit on — the page, the sidebar, a card and the Bot's own bubble. So one value is the button,
-   * the ring and the link at once. `app/tests/accent-contrast.test.ts` recomputes every pair.
+   * can sit on — the page, the sidebar and a card. (And the Bot's own bubble, while it had one: the
+   * values were worked out against that grey too, and it went on 2026-10-04.) So one value is the
+   * button, the ring and the link at once. `app/tests/accent-contrast.test.ts` recomputes every
+   * pair.
    */
   --bot-accent: var(--sand-fill-primary);
   --bot-accent-hover: var(--sand-fill-primary-hover);
@@ -249,7 +250,6 @@ html {
   --sand-fill-ghost-hover: #8a909926;
   --sand-fill-ghost-selected: #8a909942;
   --sand-fill-elevated: #2a2c31;
-  --sand-fill-bubble-agent: #222428;
   --sand-fill-bubble-user: #3a3d44;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #459ffe;
@@ -390,11 +390,11 @@ body {
    * `bg-muted`, `--sand-fill-ghost-selected` is `bg-sidebar-accent`, `--sand-bg-subtle` is
    * `bg-sidebar`. Those are drift and `docs/laf/design-tokens.md` says so.
    *
-   * These six are the ones that genuinely had nowhere to go. A raw variable in a class is invisible
+   * These are the ones that genuinely had nowhere to go — six of them, until the Bot's bubble and
+   * its grey went on 2026-10-04 (`components/ui/bubble.tsx`). A raw variable in a class is invisible
    * to every tool that reads Tailwind — it cannot be linted, autocompleted or found by the drift
    * test — so leaving them unnamed guaranteed the escape hatch stayed open for the aliased ones too.
    */
-  --color-bubble-agent: var(--sand-fill-bubble-agent);
   --color-bubble-user: var(--sand-fill-bubble-user);
   /* Deliberately does NOT invert with the theme; see the note on --sand-text-on-color. */
   --color-on-color: var(--sand-text-on-color);
@@ -405,9 +405,9 @@ body {
    */
   --color-mark: var(--sand-fill-accent);
   /*
-   * Links are the Bot's colour as TEXT (`--bot-accent-ink`) — readable on the page, a card and the
-   * Bot's own bubble — which is not the same promise as `text-primary`, the colour of a filled
-   * control, even where the accent table makes them one value.
+   * Links are the Bot's colour as TEXT (`--bot-accent-ink`) — readable on the page, the sidebar
+   * and a card — which is not the same promise as `text-primary`, the colour of a filled control,
+   * even where the accent table makes them one value.
    */
   --color-link: var(--bot-accent-ink);
   /* Grok's ladder is stated, not derived: 2 / 4 / 6 / 8 / 10 / 14 / 16 / 18. A multiplier off a
