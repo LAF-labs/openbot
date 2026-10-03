@@ -84,9 +84,13 @@ import { AnswerRatingControls } from "./answer-rating";
 import {
   type AnswerSteps,
   arrivedBelow,
+  type BrowsingItem,
+  browsingTaskHolding,
   cutOffOf,
   failurePlaces,
   furthestSeen,
+  isHandedToThePerson,
+  isTaskUnfolded,
   openBrowsingTask,
   openStepRuns,
   stepRunsOf,
@@ -655,9 +659,18 @@ function ScrollToNewest({ items }: { items: readonly TranscriptItem[] }) {
 function JumpToRow({
   channelId,
   rows,
+  rowId,
 }: {
   channelId: string | undefined;
   rows: number;
+  /**
+   * The row that draws what a jump's `messageId` names: that row itself, or — for a later step of
+   * a browsing task, or a sentence the Bot said inside one — the task's row, which is the only
+   * place either is drawn (`browsingTaskHolding`). Looked for under the id it named, neither was
+   * ever found: measured 2026-10-04, the jump was never taken and the transcript read every older
+   * page the server had, looking for a row that is on no page (`browsing-row-transcript.test.tsx`).
+   */
+  rowId: string | null;
 }) {
   const jump = usePendingJump(channelId);
   const { scrollToMessage } = useMessageScroller();
@@ -673,7 +686,7 @@ function JumpToRow({
         ].at(-1)
       : jump.messageId
         ? document.querySelector<HTMLElement>(
-            `[data-message-id="${CSS.escape(jump.messageId)}"]`,
+            `[data-message-id="${CSS.escape(rowId ?? jump.messageId)}"]`,
           )
         : null;
     if (!target) return;
@@ -724,7 +737,7 @@ function JumpToRow({
     }
     row?.setAttribute("data-jumped", "true");
     setTimeout(() => row?.removeAttribute("data-jumped"), 2400);
-  }, [jump, rows, scrollToMessage]);
+  }, [jump, rows, rowId, scrollToMessage]);
 
   // A jump left for this conversation and never taken goes with it.
   useEffect(() => {
@@ -1574,6 +1587,42 @@ export function ChatTranscript({
       opened.has(pendingRowId) ? opened : new Set(opened).add(pendingRowId),
     );
   }, [pendingRunId, pendingRowId]);
+  /*
+   * A BROWSING TASK THAT IS OVER IS ONE ROW (`browsing-card.tsx`), and which ones the person opened
+   * is theirs for as long as the transcript is mounted — kept here for the reason the runs above
+   * are: the card of a task is drawn anew when its first step changes, and would forget. By a step
+   * of the task, not by its name (`isTaskUnfolded`). Not kept across a reload: a conversation read
+   * again is rows again.
+   */
+  const [openedTasks, setOpenedTasks] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const handleFoldTask = (task: BrowsingItem, isUnfolded: boolean) => {
+    setOpenedTasks((opened) => {
+      const next = new Set(opened);
+      // Folded by every step of it, so no step left behind keeps it open.
+      for (const step of task.steps) next.delete(step.id);
+      if (isUnfolded) next.add(task.id);
+      return next;
+    });
+  };
+  /*
+   * AND A TASK SOMEBODY WAS SENT INTO IS OPENED, AND STAYS OPEN. 오늘 names the first thing a turn
+   * did, which for a turn that began in the browser is a task's own row; a jump may as well name a
+   * later step of it or a sentence the Bot said between two, and those are drawn by that row too.
+   * So the jump is taken to the row that draws what it names (`jumpId` below, `JumpToRow`), and the
+   * row is opened — the person was brought to what the task did, not to a line saying it ended.
+   */
+  const pendingTaskId =
+    pendingRowId === null
+      ? null
+      : (browsingTaskHolding(items, pendingRowId)?.id ?? null);
+  useEffect(() => {
+    if (pendingTaskId === null) return;
+    setOpenedTasks((opened) =>
+      opened.has(pendingTaskId) ? opened : new Set(opened).add(pendingTaskId),
+    );
+  }, [pendingTaskId]);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1897,7 +1946,8 @@ export function ChatTranscript({
    * conversation, because those are walks over plain objects; what cost was drawing every row.
    */
   const [pinnedId, setPinnedId] = useState<string | null>(null);
-  const jumpId = usePendingJump(channelId)?.messageId ?? null;
+  // The row a jump is taken to: the one it names, or the task's that draws what it names.
+  const jumpId = pendingTaskId ?? pendingRowId;
   const cut = windowStart(
     items.map((item) => item.id),
     pinnedId,
@@ -2051,9 +2101,17 @@ export function ChatTranscript({
                                     item.id === lastItem?.id),
                               })
                         }
+                        isHandedOver={
+                          item.id === newestTaskId &&
+                          isHandedToThePerson(items, index)
+                        }
                         isNewest={item.id === newestTaskId}
                         isOpen={item.id === openTaskId}
+                        isUnfolded={isTaskUnfolded(item, openedTasks)}
                         item={item}
+                        onFold={(isUnfolded) =>
+                          handleFoldTask(item, isUnfolded)
+                        }
                       />
                     </Arriving>
                   </MessageScrollerItem>
@@ -2280,8 +2338,12 @@ export function ChatTranscript({
         </MessageScrollerViewport>
         <ScrollToNewest items={items} />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
-        {/* Asked again when a run of steps opens too: the row a jump names may be one of its rows. */}
-        <JumpToRow channelId={channelId} rows={items.length + openRuns.size} />
+        {/* Asked again when a fold opens too: the row a jump names may be one it was holding. */}
+        <JumpToRow
+          channelId={channelId}
+          rowId={jumpId}
+          rows={items.length + openRuns.size}
+        />
       </MessageScroller>
     </MessageScrollerProvider>
   );

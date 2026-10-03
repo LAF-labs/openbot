@@ -7,6 +7,7 @@ import {
   expect,
   test,
 } from "bun:test";
+import { foldingCard, foldOf } from "./support/folding-card";
 import { mount, unmountAll } from "./support/mount";
 
 /**
@@ -44,9 +45,7 @@ describe("a browsing card's 한 일", () => {
     const { QueryClient, QueryClientProvider } = await import(
       "@tanstack/react-query"
     );
-    const { BrowsingCard } = await import(
-      "../src/components/computer/browsing-card"
-    );
+    const BrowsingCard = await foldingCard();
     const { decideQuestion } = await import("../src/lib/approvals");
     decideQuestion("call-press", {
       outcome: "declined",
@@ -92,6 +91,10 @@ describe("a browsing card's 한 일", () => {
       </QueryClientProvider>,
     );
     await view.settle(30);
+    // The task is over, so it is a row: 한 일 is on the card the row opens to.
+    const fold = foldOf(view.host);
+    if (!fold) throw new Error("no row to open");
+    await view.press(fold);
     const toggle = [...view.host.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "What it did",
     );

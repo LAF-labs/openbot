@@ -11,6 +11,7 @@ import {
 import type { ReactElement } from "react";
 import type { ScreenErrorReport } from "../../shared/screen-errors";
 import type { BrowsingStep } from "../src/lib/computer/browsing";
+import { foldingCard } from "./support/folding-card";
 import { mount, unmountAll } from "./support/mount";
 
 /**
@@ -83,9 +84,7 @@ async function drawn(element: ReactElement) {
 describe("a browsing card", () => {
   test("that throws is replaced by the section's line, and the card beside it still draws", async () => {
     consoleError = spyOn(console, "error").mockImplementation(() => {});
-    const { BrowsingCard } = await import(
-      "../src/components/computer/browsing-card"
-    );
+    const BrowsingCard = await foldingCard();
     const { configureScreenErrorReports } = await import(
       "../src/lib/support/screen-errors"
     );

@@ -432,6 +432,52 @@ export function turnFailedAfter(
   return false;
 }
 
+/**
+ * Whether the person opened this task: one of its steps is a row they opened it by.
+ *
+ * A task that is over is drawn as one row (`browsing-card.tsx`), and which ones a person opened is
+ * theirs for as long as the transcript is mounted.
+ *
+ * BY A STEP OF IT, NOT BY THE TASK'S NAME — the reason `openStepRuns` gives for a run. A task is
+ * named by its first step, and the page above can arrive carrying the earlier steps of the same
+ * task: it has a new first step then, and one remembered by its old name would fold shut in front
+ * of the person reading it. The step they opened it by is still in it.
+ */
+export function isTaskUnfolded(
+  item: BrowsingItem,
+  openedTasks: ReadonlySet<string>,
+): boolean {
+  return (
+    openedTasks.size > 0 && item.steps.some((step) => openedTasks.has(step.id))
+  );
+}
+
+/**
+ * The task an id is drawn inside: a step of it — the task's own id is its first step's — or a
+ * sentence the Bot said between two steps. Every id `failurePlaces` counts as that row's. Null for
+ * an id no task holds.
+ *
+ * FOR A JUMP INTO A TASK. 오늘 sends a person to the first thing a turn did, which for a turn that
+ * began in the browser is a task's row, and a task that is over is folded to one line. What they
+ * were sent to must not be behind a fold when they get there — the promise a folded run of step
+ * lines already keeps (`chat-transcript.tsx`).
+ */
+export function browsingTaskHolding(
+  items: readonly TranscriptItem[],
+  id: string,
+): BrowsingItem | null {
+  for (const item of items) {
+    if (item.kind !== "browse") continue;
+    if (
+      item.steps.some((step) => step.id === id) ||
+      item.notes.some((note) => note.id === id)
+    ) {
+      return item;
+    }
+  }
+  return null;
+}
+
 /** A tool result, as it arrives, its own message, pointing back at the call it answers. */
 type ToolResultMessage = { role: "tool"; toolCallId: string; content?: string };
 
@@ -589,6 +635,34 @@ const ASKS_THE_PERSON: ReadonlySet<string> = new Set([
   "computer_request_help",
   "computer_request_secret",
 ]);
+
+/**
+ * Whether the Bot stopped right after the task at `index` to ask the person for a hand, and has not
+ * been answered: the first thing after the task that is not the Bot's own words is a request for
+ * help, or for a value it must not see, with no result yet.
+ *
+ * Such a request ends the task in front of it (`withBrowsingTasks`), so by its steps that task is
+ * over — while the Bot is in the middle of it, and the page it is stuck on is that task's picture.
+ * A task that is over folds to one row; this one is not over to the person looking at it, and keeps
+ * its card for as long as the request waits (`browsing-card.tsx`).
+ */
+export function isHandedToThePerson(
+  items: readonly TranscriptItem[],
+  index: number,
+): boolean {
+  if (items[index]?.kind !== "browse") return false;
+  for (let at = index + 1; at < items.length; at += 1) {
+    const item = items[at];
+    if (!item) return false;
+    if (item.kind === "text" && item.role === "assistant") continue;
+    return (
+      item.kind === "tool" &&
+      ASKS_THE_PERSON.has(item.toolCall.function.name) &&
+      item.result === undefined
+    );
+  }
+  return false;
+}
 
 /**
  * Whether a call is something the Bot put in front of the person — a card to read, or to answer —

@@ -3,6 +3,7 @@ import {
   IconBrowser,
   IconChevronDown,
   IconClockX,
+  IconRefresh,
   IconShieldCheck,
   IconShieldX,
 } from "@tabler/icons-react";
@@ -24,6 +25,7 @@ import {
   chatCardPadding,
   chatCardTitle,
 } from "@/components/ui/card-surface";
+import { focusRingInset } from "@/components/ui/focus";
 import { touchTall } from "@/components/ui/touch";
 import {
   type ApprovalDecision,
@@ -58,12 +60,19 @@ import { FrameCanvas, useLiveFrame } from "./live-thumbnail";
 import { plainLine, plainText, taskHeading } from "./task-title";
 
 /**
- * ONE BROWSING TASK, AS ONE CARD: WHERE THE BOT WENT, WHAT IT DID, AND WHAT IT LAST SAW.
+ * ONE BROWSING TASK: A CARD WHILE IT IS HAPPENING, AND ONE ROW ONCE IT IS OVER.
  *
  * It replaces a line per browser call and a live screen per page opened — four screens for a Bot
- * that checked the weather, each polling once a second. The card stays in the conversation after
- * the task, so scrolling back shows what was done, and its picture is the last thing the browser
+ * that checked the weather, each polling once a second. The task stays in the conversation after
+ * it is done, so scrolling back shows what was done, and its picture is the last thing the browser
  * showed (`last-frame.ts`) — which is also what a person has left when the Bot closes the page.
+ *
+ * OVER, IT IS A ROW: THE SITE, HOW IT ENDED, AND A WAY IN. The owner, 2026-10-04: "불필요한 정보도
+ * 보여주고 아이콘으로도 되는 걸 항상 글자로 표시하는 게 문제". A task that had ended stayed a whole
+ * card — a chip, a title, a sentence, a picture, up to three buttons — so a morning of looking
+ * things up was a column of cards with the answers somewhere between them. What somebody scrolling
+ * back wants first is where the Bot went and whether it worked; the rest is the same card, one
+ * press away, in place (`isFolded` in `TaskCard` is the whole rule).
  *
  * 화면 보기 opens the live screen, and only the newest card offers it: the live screen shows the
  * Bot's browser as it is now, which is where the newest task left it and nowhere an older card was.
@@ -79,6 +88,19 @@ type BrowsingCardProps = {
   isNewest: boolean;
   /** Its turn ended right after it, with nothing said: how (`CutOff`). */
   cutOff?: CutOff;
+  /**
+   * The Bot stopped right after it to ask the person for a hand, and is still waiting
+   * (`isHandedToThePerson`): over by its steps, and not over to the person looking at it.
+   */
+  isHandedOver?: boolean;
+  /**
+   * The person opened it once it was over. Theirs, and kept by whoever draws the conversation for
+   * as long as that is mounted (`chat-transcript.tsx`) — not here, where a task whose first step
+   * arrives with the page above is drawn anew and would forget it.
+   */
+  isUnfolded: boolean;
+  /** The row was pressed, or the head of the card it opened to: open it, or fold it back. */
+  onFold: (isUnfolded: boolean) => void;
 };
 
 export function BrowsingCard(props: BrowsingCardProps) {
@@ -113,12 +135,16 @@ function TaskCard({
   isOpen,
   isNewest,
   cutOff = null,
+  isHandedOver = false,
+  isUnfolded,
+  onFold,
 }: BrowsingCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const stepsId = useId();
   const botId = useDeclaredBotId();
   const now = useBrowsingNow();
   const conversation = useConversation();
+  const { isOpen: isScreenOpen } = useScreenPanel();
   /*
    * A step of this task is waiting on the person — an approval above the card. Subscribed, so the
    * card says so the moment it is asked and stops the moment it is answered.
@@ -158,8 +184,11 @@ function TaskCard({
     !isPageGone &&
     !(state.kind === "failed" && !hasFrame);
   const asked = item.asked;
-  const canAskAgain =
-    canRetry(state) && asked !== undefined && conversation !== null;
+  /** 다시 해 보기, where it is offered: the person's own words again, as if typed. */
+  const askAgain =
+    canRetry(state) && asked !== undefined && conversation !== null
+      ? () => conversation.ask(asked)
+      : null;
   const heading = taskHeading(sitesOf(item.steps), lookedUpOf(item.steps));
   const detail = taskStateDetail(state);
   const latest = item.notes.at(-1);
@@ -169,6 +198,32 @@ function TaskCard({
    * runs the page is on its way, and the box holds its place.
    */
   const hasPicture = isOpen || hasFrame;
+  /*
+   * A CARD FOR AS LONG AS IT IS THE THING BEING WATCHED OR ANSWERED, whatever anybody pressed:
+   *  - the Bot is doing it, or a step of it is waiting on the person's answer — the two states the
+   *    chip marks with a dot, because they are happening now;
+   *  - the Bot stopped right after it to ask for a hand, and the page it is stuck on is this
+   *    card's picture;
+   *  - it is the one the live screen is showing, or just looked for: "지금 열린 페이지가 없어요" is
+   *    said on this card, to the person whose screen closed itself a moment ago.
+   * Such a card is today's card and has nothing to fold with — its head is not a button.
+   */
+  const isHeld =
+    state.kind === "running" ||
+    state.kind === "yourTurn" ||
+    isHandedOver ||
+    (isNewest && (isScreenOpen || isPageGone));
+  /*
+   * ANY OTHER TASK IS OVER, AND IS ONE ROW UNTIL THE PERSON OPENS IT. An open list of what it did
+   * counts as opened: somebody reading 한 일 while the Bot worked would have had the list folded
+   * away under them the moment the task ended.
+   */
+  const isFolded = !isHeld && !isUnfolded && !isExpanded;
+  const handleFold = () => {
+    // Folded by its head, the list goes with it — an open list is one of the things holding it open.
+    if (!isFolded) setIsExpanded(false);
+    onFold(isFolded);
+  };
 
   const picture = (
     <TaskPicture
@@ -183,44 +238,142 @@ function TaskCard({
 
   return (
     <>
-      <div className={cn(chatCard, chatCardPadding, "flex flex-col gap-2.5")}>
-        <div className="flex gap-3">
+      <div
+        className={cn(
+          chatCard,
+          "flex flex-col gap-2.5",
+          isFolded ? null : chatCardPadding,
+        )}
+      >
+        <div className={cn("flex", isFolded ? "items-center" : "gap-3")}>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {/*
-             * WHERE, AND HOW IT STANDS, on one small line; then what, as the title. The site used
-             * to lead the title and the state trailed in the smallest text on the card
-             * (`taskHeading`, `taskStateDetail`).
-             */}
-            <div className="flex min-h-5 items-center justify-between gap-2">
-              {heading.site ? (
-                <span className={cn(chatCardMeta, "min-w-0 truncate")}>
-                  {heading.site}
-                </span>
-              ) : null}
-              <TaskStateChip state={state} />
-            </div>
-            {/* Two lines, not one: at 375px one line held three words of the task. */}
-            <p
-              className={cn(
-                chatCardTitle,
-                "line-clamp-2 text-balance break-words",
-              )}
-            >
-              {heading.title ?? t("The Bot's browser")}
-            </p>
-            {detail ? (
-              <p className="break-words text-sm">{detail}</p>
-            ) : latest ? (
+            {isHeld ? (
               /*
-               * The newest thing the Bot said while doing this, one line: what it is up to, in its
-               * own words. The rest of what it said is under 한 일, where it was said.
+               * WHERE, AND HOW IT STANDS, on one small line; then what, as the title. The site used
+               * to lead the title and the state trailed in the smallest text on the card
+               * (`taskHeading`, `taskStateDetail`).
                */
-              <p className={cn(chatCardMeta, "truncate")}>
-                {plainLine(latest.text)}
-              </p>
-            ) : null}
+              <div className="flex min-h-5 items-center justify-between gap-2">
+                {heading.site ? (
+                  <span className={cn(chatCardMeta, "min-w-0 truncate")}>
+                    {heading.site}
+                  </span>
+                ) : null}
+                <TaskStateChip state={state} />
+              </div>
+            ) : (
+              /*
+               * THE SAME LINE AS A BUTTON, ONCE THE TASK IS OVER: the whole row while it is folded,
+               * the card's first line once it is open. One element in one place for both, so the
+               * keyboard is still on it after it is pressed and the next press folds it back.
+               *
+               * A REAL BUTTON THAT SAYS WHETHER IT IS OPEN, and nothing else that can be pressed
+               * inside it: 다시 해 보기 is its neighbour, not its child.
+               *
+               * Folded, a row a finger can hit (44px). Open, it takes the place the line has on a
+               * card that cannot fold and no more — its box reaches past that place by its own
+               * padding, further under a finger, and the card is not a pixel taller for it.
+               */
+              <button
+                aria-expanded={!isFolded}
+                className={cn(
+                  "flex items-center gap-2 text-left transition-colors",
+                  focusRingInset,
+                  isFolded
+                    ? "h-11 rounded-2xl px-3 hover:bg-muted/50"
+                    : "-mx-1.5 -my-1 min-h-7 rounded-lg px-1.5 py-1 hover:bg-muted/60 pointer-coarse:-my-2 pointer-coarse:min-h-9",
+                )}
+                onClick={handleFold}
+                type="button"
+              >
+                {isFolded ? (
+                  <>
+                    <IconBrowser
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-muted-foreground"
+                    />
+                    {/*
+                     * The site as people call it, then what was looked up there — one run of text
+                     * cut at its end, so on a narrow row it is the looked-up half that gives way
+                     * and the site is the last thing to go.
+                     */}
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      <span className="font-medium">
+                        {heading.site ??
+                          heading.title ??
+                          t("The Bot's browser")}
+                      </span>
+                      {heading.site && heading.title ? (
+                        <span className="text-muted-foreground">
+                          {` · ${heading.title}`}
+                        </span>
+                      ) : null}
+                    </span>
+                  </>
+                ) : heading.site ? (
+                  <span className={cn(chatCardMeta, "min-w-0 flex-1 truncate")}>
+                    {heading.site}
+                  </span>
+                ) : null}
+                {/*
+                 * THE CARD'S OWN CHIP, so a row cannot say how a task ended in other words or
+                 * another colour than its card does: amber where it did not finish.
+                 */}
+                <TaskStateChip state={state} />
+                <IconChevronDown
+                  aria-hidden="true"
+                  className={cn(
+                    "size-4 shrink-0 text-muted-foreground transition-transform",
+                    isFolded ? null : "ms-auto rotate-180",
+                  )}
+                />
+              </button>
+            )}
+            {isFolded ? null : (
+              <>
+                {/* Two lines, not one: at 375px one line held three words of the task. */}
+                <p
+                  className={cn(
+                    chatCardTitle,
+                    "line-clamp-2 text-balance break-words",
+                  )}
+                >
+                  {heading.title ?? t("The Bot's browser")}
+                </p>
+                {detail ? (
+                  <p className="break-words text-sm">{detail}</p>
+                ) : latest ? (
+                  /*
+                   * The newest thing the Bot said while doing this, one line: what it is up to, in
+                   * its own words. The rest of what it said is under 한 일, where it was said.
+                   */
+                  <p className={cn(chatCardMeta, "truncate")}>
+                    {plainLine(latest.text)}
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
-          {hasPicture ? (
+          {isFolded ? (
+            /*
+             * 다시 해 보기 STAYS ONE PRESS AWAY ON A ROW THAT FAILED, as an icon beside the row's own
+             * button. Behind the fold it would be two, for the one thing there is to do about a
+             * task that did not finish — and a row is where the words went that an icon can stand
+             * for. Named for a screen reader and on hover; drawn only where the card offers it.
+             */
+            askAgain ? (
+              <Button
+                aria-label={t("Try it again")}
+                className="me-1"
+                onClick={askAgain}
+                size="icon-lg"
+                title={t("Try it again")}
+                variant="ghost"
+              >
+                <IconRefresh aria-hidden="true" />
+              </Button>
+            ) : null
+          ) : hasPicture ? (
             canView ? (
               <button
                 aria-label={t("View the Bot's screen")}
@@ -239,63 +392,65 @@ function TaskCard({
          * No count of steps. "완료 · 3단계" asked somebody to care how many calls a task took, which
          * is the one number about it that means nothing to them.
          */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/*
-           * 다시 해 보기: the owner's own words again, as if typed. Measured (UX review 0.5.4, item
-           * 3): after a failed task the Bot said "다시 시도해 달라고 해 주시면", and the owner had to
-           * type the whole request out a second time.
-           *
-           * THE ONE FILLED BUTTON, where pressing it is what there is to do. Not after a site
-           * turned the Bot away: asking again is most often turned away again, and the page it
-           * showed is the other thing worth pressing — so there the two sit side by side.
-           */}
-          {canAskAgain ? (
+        {isFolded ? null : (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/*
+             * 다시 해 보기: the owner's own words again, as if typed. Measured (UX review 0.5.4, item
+             * 3): after a failed task the Bot said "다시 시도해 달라고 해 주시면", and the owner had to
+             * type the whole request out a second time.
+             *
+             * THE ONE FILLED BUTTON, where pressing it is what there is to do. Not after a site
+             * turned the Bot away: asking again is most often turned away again, and the page it
+             * showed is the other thing worth pressing — so there the two sit side by side.
+             */}
+            {askAgain ? (
+              <Button
+                className={touchTall}
+                onClick={askAgain}
+                size="sm"
+                variant={
+                  state.kind === "failed" && state.code === SITE_REFUSED
+                    ? "secondary"
+                    : "default"
+                }
+              >
+                {t("Try it again")}
+              </Button>
+            ) : null}
+            {canView ? (
+              <Button
+                className={touchTall}
+                onClick={() => setScreenOpen(true)}
+                size="sm"
+                variant="secondary"
+              >
+                {t("View screen")}
+              </Button>
+            ) : null}
+            {/* Mounted with the card, so the page going away is heard when it is said. */}
+            <LiveRegion as="span" className="text-muted-foreground text-xs">
+              {!canView && isNewest && isPageGone && !isOpen
+                ? hasFrame
+                  ? t("No page is open now. The picture is the last one.")
+                  : t("No page is open now.")
+                : null}
+            </LiveRegion>
             <Button
-              className={touchTall}
-              onClick={() => conversation.ask(asked)}
+              aria-controls={stepsId}
+              aria-expanded={isExpanded}
+              className={cn("ms-auto", touchTall)}
+              onClick={() => setIsExpanded((was) => !was)}
               size="sm"
-              variant={
-                state.kind === "failed" && state.code === SITE_REFUSED
-                  ? "secondary"
-                  : "default"
-              }
+              variant="ghost"
             >
-              {t("Try it again")}
+              {t("What it did")}
+              <IconChevronDown
+                aria-hidden="true"
+                className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              />
             </Button>
-          ) : null}
-          {canView ? (
-            <Button
-              className={touchTall}
-              onClick={() => setScreenOpen(true)}
-              size="sm"
-              variant="secondary"
-            >
-              {t("View screen")}
-            </Button>
-          ) : null}
-          {/* Mounted with the card, so the page going away is heard when it is said. */}
-          <LiveRegion as="span" className="text-muted-foreground text-xs">
-            {!canView && isNewest && isPageGone && !isOpen
-              ? hasFrame
-                ? t("No page is open now. The picture is the last one.")
-                : t("No page is open now.")
-              : null}
-          </LiveRegion>
-          <Button
-            aria-controls={stepsId}
-            aria-expanded={isExpanded}
-            className={cn("ms-auto", touchTall)}
-            onClick={() => setIsExpanded((was) => !was)}
-            size="sm"
-            variant="ghost"
-          >
-            {t("What it did")}
-            <IconChevronDown
-              aria-hidden="true"
-              className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
-            />
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
       <div
         className="flex max-w-md flex-col pl-3"

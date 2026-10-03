@@ -8,6 +8,7 @@ import {
   test,
 } from "bun:test";
 import { stubFetch } from "./support/fetch";
+import { foldingCard, foldOf } from "./support/folding-card";
 import { mount, unmountAll } from "./support/mount";
 
 /**
@@ -17,6 +18,9 @@ import { mount, unmountAll } from "./support/mount";
  * from before pictures, or ended with a person at the wheel — answered 404 in the console (0.5.4
  * QA). The conversation's list of framed calls is read once; a card not on it draws its quiet mark
  * and asks nothing.
+ *
+ * AND A TASK STILL FOLDED TO ITS ROW ASKS FOR NO PICTURE AT ALL (2026-10-04): it draws none. The
+ * list is read while it is folded, so the card it opens to has its picture at once.
  */
 
 const realFetch = globalThis.fetch;
@@ -66,9 +70,7 @@ describe("an ended browsing card's picture", () => {
     const { QueryClient, QueryClientProvider } = await import(
       "@tanstack/react-query"
     );
-    const { BrowsingCard } = await import(
-      "../src/components/computer/browsing-card"
-    );
+    const BrowsingCard = await foldingCard();
     const view = await mount(
       <QueryClientProvider client={new QueryClient()}>
         <BrowsingCard
@@ -86,6 +88,14 @@ describe("an ended browsing card's picture", () => {
       </QueryClientProvider>,
     );
     await view.settle(50);
+    // Two rows, and the list already read once for both: no picture is drawn, and none asked for.
+    expect(view.host.querySelectorAll("img")).toHaveLength(0);
+    expect(asked.filter((path) => path.includes("/frames/"))).toEqual([]);
+    for (const fold of [...view.host.querySelectorAll('[class*="shadow-card"]')]
+      .map(foldOf)
+      .filter((fold) => fold !== null)) {
+      await view.press(fold);
+    }
 
     const pictures = [...view.host.querySelectorAll("img")].map(
       (image) => image.getAttribute("src") ?? "",
