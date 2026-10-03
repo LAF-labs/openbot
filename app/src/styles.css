@@ -501,6 +501,92 @@ body {
 }
 
 /*
+ * OUR OWN POINTER ON THE BOT'S SCREEN, while a person drives it (`live-screen.tsx`).
+ *
+ * It was the system's crosshair: a mark for aiming that says nothing of whose it is, and thin
+ * enough to be lost on a dark page (the owner, 2026-10-03). This is a dart in ink inside a white
+ * ring, so it is found on a light page and on a dark one, with a dot in the app's signal blue — the
+ * colour of "live" — that says this hand is the person's, in the Bot's browser. Pressed, the dart
+ * draws in and the dot opens into a ring: a change of shape, not of colour, so it reads on any page.
+ *
+ * THE TIP IS THE HOTSPOT: 4 3, in the picture's own 32 × 32 box. The second picture of each pair is
+ * the same one at twice the pixels, and the hotspot is still written 4 3 — a set is measured in the
+ * first picture's box. A press lands where the tip is.
+ *
+ * PNG, NOT SVG: the Mac app is a WKWebView, where an SVG cursor is not dependable. The vector
+ * masters sit beside the pictures (`assets/cursors/*.svg`) for whoever redraws them.
+ *
+ * THE PLAIN PICTURE FIRST, THEN THE PAIR WHERE AN ENGINE SAYS IT READS ONE — under the name older
+ * WebKit knows a set by, then under its own. Behind support queries rather than as three
+ * declarations in one rule: a minifier is free to keep only the last of those, and an engine that
+ * could not read it would be left with no pointer of ours at all. The system's crosshair ends each
+ * value, for an engine that will not draw a picture.
+ */
+.cursor-wheel {
+  cursor:
+    url("./assets/cursors/wheel.png?no-inline") 4 3,
+    crosshair;
+}
+
+.cursor-wheel-pressed {
+  cursor:
+    url("./assets/cursors/wheel-pressed.png?no-inline") 4 3,
+    crosshair;
+}
+
+@supports (
+    cursor:
+      -webkit-image-set(url("data:,") 1x) 0 0,
+      auto
+  ) {
+  .cursor-wheel {
+    cursor:
+      -webkit-image-set(
+        url("./assets/cursors/wheel.png?no-inline") 1x,
+        url("./assets/cursors/wheel-2x.png?no-inline") 2x
+      )
+      4 3,
+      crosshair;
+  }
+
+  .cursor-wheel-pressed {
+    cursor:
+      -webkit-image-set(
+        url("./assets/cursors/wheel-pressed.png?no-inline") 1x,
+        url("./assets/cursors/wheel-pressed-2x.png?no-inline") 2x
+      )
+      4 3,
+      crosshair;
+  }
+}
+
+@supports (
+    cursor:
+      image-set(url("data:,") 1x) 0 0,
+      auto
+  ) {
+  .cursor-wheel {
+    cursor:
+      image-set(
+        url("./assets/cursors/wheel.png?no-inline") 1x,
+        url("./assets/cursors/wheel-2x.png?no-inline") 2x
+      )
+      4 3,
+      crosshair;
+  }
+
+  .cursor-wheel-pressed {
+    cursor:
+      image-set(
+        url("./assets/cursors/wheel-pressed.png?no-inline") 1x,
+        url("./assets/cursors/wheel-pressed-2x.png?no-inline") 2x
+      )
+      4 3,
+      crosshair;
+  }
+}
+
+/*
  * A BOT'S FACE.
  *
  * The body is one colour and the eyes are the page showing through it, so the eyes need no colour

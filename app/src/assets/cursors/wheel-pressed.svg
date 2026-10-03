@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <title>The same pointer while a button is held down</title>
+  <!--
+    LAF Agent — the same pointer while a button is held down. Hotspot: 4 3.
+    The dart is the resting one drawn at 92% about its tip, and the dot has grown into a ring: a press
+    shows as a change of shape, not of colour, so it reads on any page.
+  -->
+  <defs>
+    <filter id="lift" x="-25%" y="-25%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0.5" stdDeviation="0.6" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#lift)">
+    <path d="M5 4L23.400 10.900L14.660 13.660L11.900 22.400Z" fill="#ffffff" stroke="#ffffff" stroke-width="4.500" stroke-linejoin="round"/>
+    <path d="M5 4L23.400 10.900L14.660 13.660L11.900 22.400Z" fill="#17191c" stroke="#17191c" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="20.600" cy="19.600" r="4.250" fill="none" stroke="#ffffff" stroke-width="4"/>
+    <circle cx="20.600" cy="19.600" r="4.250" fill="none" stroke="#1084fe" stroke-width="2"/>
+  </g>
+</svg>

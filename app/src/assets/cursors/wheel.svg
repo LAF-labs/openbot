@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <title>The pointer a person drives the Bot's browser with</title>
+  <!--
+    LAF Agent — the pointer a person sees on the live screen while they drive the Bot's browser.
+    Hotspot: 4 3 (the tip of the dart), in CSS px of the 32 x 32 box. At 2x the bitmap is 64 x 64 and
+    the hotspot is still written 4 3: CSS takes it in the 1x coordinate space of an image-set.
+    The dart is ink with a white ring, so it reads on a light page and on a dark one; the dot is the
+    app's signal blue (styles.css, sand-fill-accent), the same blue as the dot that says "live".
+    Geometry is symmetric about the line y = x - 1 through the tip.
+  -->
+  <defs>
+    <filter id="lift" x="-25%" y="-25%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="0.9" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#lift)">
+    <path d="M5 4L25 11.5L15.500 14.500L12.500 24Z" fill="#ffffff" stroke="#ffffff" stroke-width="4.500" stroke-linejoin="round"/>
+    <path d="M5 4L25 11.5L15.500 14.500L12.500 24Z" fill="#17191c" stroke="#17191c" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="22" cy="21" r="3.250" fill="#1084fe" stroke="#ffffff" stroke-width="1.500"/>
+  </g>
+</svg>

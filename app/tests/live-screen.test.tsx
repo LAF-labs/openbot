@@ -1,4 +1,3 @@
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   afterAll,
   afterEach,
@@ -8,12 +7,13 @@ import {
   jest,
   test,
 } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { createElement } from "react";
+import { encodeScreenFrame } from "../../shared/screen-frame";
 import {
   LIVE_SCREEN_RETRY,
   SCREEN_STALL_MS,
 } from "../src/components/computer/live-screen";
-import { encodeScreenFrame } from "../../shared/screen-frame";
 import { SCREEN_STALLED } from "../src/lib/computer/screen-problems";
 import { ko } from "../src/lib/i18n-ko";
 import { stubFetch } from "./support/fetch";
@@ -901,6 +901,61 @@ describe("a person's mouse and keys on the live screen", () => {
       }),
     );
     expect(typed()).toEqual(["text 한"]);
+    await screen.unmount();
+  });
+
+  /*
+   * THE POINTER IS OUR OWN WHILE A PERSON DRIVES. It was the system's crosshair (the owner,
+   * 2026-10-03). The shape is a class, and which class is the one fact kept as state: resting, or
+   * drawn in while any button is down on the Bot's page.
+   */
+  test("driving, the pointer is ours, and drawn in for as long as a button is down", async () => {
+    const { screen, pointer } = await driven();
+    const shape = () =>
+      [...screen.canvas().classList].filter((name) => name.includes("cursor"));
+    expect(shape()).toEqual(["cursor-wheel"]);
+
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    expect(shape()).toEqual(["cursor-wheel-pressed"]);
+    // A second button while the first is held, then the first let go of: one is still down.
+    await pointer("pointermove", { x: 100, y: 50, button: 2, buttons: 3 });
+    await pointer("pointermove", { x: 100, y: 50, button: 0, buttons: 2 });
+    expect(shape()).toEqual(["cursor-wheel-pressed"]);
+    await pointer("pointerup", { x: 100, y: 50, button: 2, buttons: 0 });
+    expect(shape()).toEqual(["cursor-wheel"]);
+    await screen.unmount();
+  });
+
+  test("a press taken away mid-way, or cut with the socket, leaves the pointer resting", async () => {
+    const { screen, pointer } = await driven();
+    const shape = () =>
+      [...screen.canvas().classList].filter((name) => name.includes("cursor"));
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    await pointer("pointercancel", { x: 100, y: 50, button: 0, buttons: 0 });
+    expect(shape()).toEqual(["cursor-wheel"]);
+
+    await pointer("pointerdown", { x: 100, y: 50, button: 0, buttons: 1 });
+    expect(shape()).toEqual(["cursor-wheel-pressed"]);
+    await screen.act(() => sockets[0]?.close());
+    expect(shape()).toEqual(["cursor-wheel"]);
+    await screen.unmount();
+  });
+
+  test("the pressed pointer's picture is asked for from the moment the wheel is taken", async () => {
+    const { screen } = await driven();
+    // On something nothing can point at and no reader is told of: the first press must not wait
+    // for a picture, with the system's crosshair drawn in the meantime.
+    const early = screen.host.querySelector("span.cursor-wheel-pressed");
+    expect(early?.getAttribute("aria-hidden")).toBe("true");
+    expect(early?.classList.contains("pointer-events-none")).toBe(true);
+    await screen.unmount();
+  });
+
+  test("watching, not driving, the pointer is the app's and nothing is fetched for it", async () => {
+    const screen = await mountedScreen(false);
+    await screen.act(() => sockets[0]?.open());
+    expect(screen.canvas().className).not.toContain("cursor");
+    expect(screen.host.querySelector(".cursor-wheel-pressed")).toBeNull();
     await screen.unmount();
   });
 

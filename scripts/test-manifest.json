@@ -112,6 +112,7 @@
   "app/tests/copied-reply.test.tsx",
   "app/tests/credential-form.test.ts",
   "app/tests/current-user-guard.test.ts",
+  "app/tests/cursor-wheel.test.ts",
   "app/tests/design-tokens.test.ts",
   "app/tests/detail-sheet.test.tsx",
   "app/tests/download-notice.test.tsx",
