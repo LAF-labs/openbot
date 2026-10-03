@@ -131,6 +131,7 @@
   "app/tests/first-screen.test.tsx",
   "app/tests/first-task-chips.test.tsx",
   "app/tests/first-tasks.test.ts",
+  "app/tests/font-stack.test.ts",
   "app/tests/goals.test.ts",
   "app/tests/greeting-head.test.tsx",
   "app/tests/help-card-reload.test.tsx",
