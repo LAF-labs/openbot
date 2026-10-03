@@ -82,16 +82,19 @@ export function taskStateDetail(state: TaskState): string | undefined {
  * and asking for it again is the same question.
  *
  * - the owner's own no: the Bot would be asking what it was just told no to;
- * - the app's own address, and an address inside the deployment: the floor under every rule refuses
- *   those whoever asks and however often, and nothing a person can press changes it.
+ * - the app's own address: the floor under every rule refuses it whoever asks and however often,
+ *   and nothing a person can press changes it.
  *
- * A rule that refused is NOT here: a person can change the rule, and 다시 해 보기 is then exactly
- * what they press next.
+ * ONLY A CODE THAT PROVES THE DESTINATION CANNOT CHANGE. `laf:navigation_refused` was here and is
+ * not such a code (review of this change): the floor answers with it for an address inside the
+ * deployment, and also for a name that would not resolve just then, and for an address the Bot
+ * wrote wrongly — and asking again can get past both of those, by the name resolving or the Bot
+ * writing a better one. A rule that refused is not here either: a person can change the rule, and
+ * 다시 해 보기 is then exactly what they press next.
  */
 export const NO_RETRY: ReadonlySet<string> = new Set([
   "laf:person_declined",
   "laf:own_address_refused",
-  "laf:navigation_refused",
 ]);
 
 /** A failed task worth offering again: any but the ones {@link NO_RETRY} names. */
