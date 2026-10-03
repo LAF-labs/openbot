@@ -3160,15 +3160,13 @@ export const ko: Record<string, string> = {
   "Write a message for this occasion in three tones: ":
     "이 상황에 맞는 메시지를 세 가지 말투로 써 줘: ",
   Made: "만든 것",
-  "The tables, checklists, notices and files your Bot made for you. Press one to see it in the conversation.":
-    "봇이 만들어 드린 표, 체크리스트, 안내문, 파일이에요. 누르면 대화에서 그 자리를 보여 드려요.",
   Show: "보기",
   "What your Bot made could not be read.": "봇이 만든 것을 불러오지 못했어요.",
   "This deployment does not keep what the Bot made.":
     "이 배포에서는 봇이 만든 것을 볼 수 없어요.",
   "Nothing here yet.": "아직 여기엔 없어요.",
-  "Nothing made yet. Ask for a table or a notice in the conversation.":
-    "아직 만든 게 없어요. 대화에서 표나 안내문을 부탁해 보세요.",
+  "Tables, checklists, writing and files your Bot makes are kept here.":
+    "봇이 만든 표·체크리스트·글·파일이 여기에 모여요.",
   "Show older": "이전 것 더 보기",
   "Make something": "새로 만들기",
   All: "전체",

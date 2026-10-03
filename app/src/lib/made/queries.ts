@@ -97,6 +97,28 @@ export function kindLabel(tool: string): string {
   return key ? t(key) : "";
 }
 
+/**
+ * The kind a shelf's own icon already says: the table icon is 표, the checklist's 체크리스트, the
+ * page's 안내문, the downloaded file's 파일.
+ *
+ * A card drew "파일 · 10월 2일 오후 5:05" under a file's name, beside the file icon — the kind twice,
+ * on eleven of eleven cards on the account this was measured on (2026-10-04). The word is drawn
+ * only where it says more than the icon: 막대 차트, 기록, 주요 수치 on the table shelf.
+ */
+const SAID_BY_THE_ICON: Readonly<Record<MadeShelf, string>> = {
+  table: MARKDOWN_TABLE,
+  checklist: "showChecklist",
+  text: "showNotice",
+  file: "showFile",
+};
+
+/** The kind to draw beside a card's time, or null where the card's icon is that kind. */
+export function kindBesideTime(item: Pick<MadeItem, "tool" | "shelf">) {
+  return SAID_BY_THE_ICON[item.shelf] === item.tool
+    ? null
+    : kindLabel(item.tool) || null;
+}
+
 async function madeRequest(path: string): Promise<MadePage> {
   const response = await fetch(path, { credentials: "include" });
   const body = (await response.json().catch(() => null)) as Record<

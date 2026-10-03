@@ -25,6 +25,7 @@ import { requestJump } from "@/lib/channels/jump";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import {
+  kindBesideTime,
   kindLabel,
   MADE_STARTERS,
   type MadeItem,
@@ -102,15 +103,16 @@ function MadePage() {
       action={
         bot ? <StartMenu agentId={bot.id} channelId={conversation?.id} /> : null
       }
-      description={t(
-        "The tables, checklists, notices and files your Bot made for you. Press one to see it in the conversation.",
-      )}
       title={t("Made")}
       width="wide"
     >
+      {/*
+       * The title stands alone (2026-10-04). The sentence that was under it listed the four shelves
+       * the filters below it name, and it ran straight into them: measured, 0px between the two.
+       */}
       <nav
         aria-label={t("Show")}
-        className="-mx-1 mb-4 flex flex-wrap gap-1.5 px-1"
+        className="-mx-1 mt-6 mb-4 flex flex-wrap gap-1.5 px-1"
       >
         {shelvesDrawn(hasFile).map((key) => {
           const isActive = (shelf ?? "all") === key;
@@ -154,7 +156,7 @@ function MadePage() {
           {shelf
             ? t("Nothing here yet.")
             : t(
-                "Nothing made yet. Ask for a table or a notice in the conversation.",
+                "Tables, checklists, writing and files your Bot makes are kept here.",
               )}
         </p>
       ) : null}
@@ -194,11 +196,18 @@ function madeWhen(iso: string): string {
   });
 }
 
-/** One thing the Bot made: its kind, the title it gave it, when — and a press back to it. */
+/**
+ * One thing the Bot made: the title it gave it, when — and a press back to it.
+ *
+ * ITS KIND IS ITS ICON, named in the icon's tooltip. The word is drawn beside the time only where
+ * it says more than the icon does (`kindBesideTime`).
+ */
 function MadeCard({ item }: { item: MadeItem }) {
   const navigate = useNavigate();
   const Icon = SHELF_ICONS[item.shelf];
   const kind = kindLabel(item.tool);
+  // A card the Bot gave no title is called by its kind; the kind is then not said a second time.
+  const beside = item.title ? kindBesideTime(item) : null;
 
   const handleOpen = () => {
     requestJump({ channelId: item.channelId, messageId: item.messageId });
@@ -211,22 +220,26 @@ function MadeCard({ item }: { item: MadeItem }) {
   return (
     <button
       className={cn(
-        "flex min-w-0 items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-accent",
+        "flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent",
         focusRing,
       )}
       data-made-item={item.tool}
       onClick={handleOpen}
       type="button"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <span
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+        title={kind}
+      >
         <Icon aria-hidden="true" className="size-4.5" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="line-clamp-2 font-medium text-sm leading-5">
           {item.title ?? kind}
         </span>
-        <span className="text-muted-foreground text-xs">
-          {kind} · {madeWhen(item.at)}
+        <span className="text-muted-foreground text-xs" data-made-when>
+          {beside ? `${beside} · ` : ""}
+          {madeWhen(item.at)}
         </span>
       </span>
     </button>

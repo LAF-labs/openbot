@@ -14,6 +14,7 @@ import {
 import { ko } from "../src/lib/i18n-ko";
 import {
   KIND_LABELS,
+  kindBesideTime,
   MADE_REFUSALS,
   MADE_STARTERS,
   SHELF_LABELS,
@@ -139,6 +140,28 @@ describe("the page's words, in Korean", () => {
     expect(SHELF_ORDER).toEqual(["all", ...MADE_SHELVES]);
     for (const name of [...Object.keys(MADE_CARD_SHELF), MARKDOWN_TABLE]) {
       expect(KIND_LABELS[name]).toBeDefined();
+    }
+  });
+
+  /*
+   * A card drew its kind beside its time under the icon that already says it (2026-10-04: 파일 beside
+   * the file icon on every file). The word stays where the icon is the shelf's and the kind is not.
+   */
+  test("a kind is a word beside the time only where the shelf's icon does not say it", () => {
+    const beside = (tool: string) => {
+      const shelf = shelfOf(tool);
+      if (!shelf) throw new Error(`${tool} is on no shelf`);
+      return kindBesideTime({ tool, shelf });
+    };
+    expect(
+      [MARKDOWN_TABLE, "showChecklist", "showNotice", "showFile"].map(beside),
+    ).toEqual([null, null, null, null]);
+    // Everything else on the table shelf sits under the table icon and is not a table.
+    for (const tool of cardsOn("table")) {
+      expect({ tool, said: beside(tool) }).toEqual({
+        tool,
+        said: KIND_LABELS[tool] as string,
+      });
     }
   });
 
