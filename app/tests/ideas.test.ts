@@ -9,7 +9,7 @@ import {
 import { BUSINESS_SITES } from "@shared/sites/catalogue";
 import { CATALOGUE } from "../../server/src/plugins/catalogue";
 import { ko } from "../src/lib/i18n-ko";
-import { ideaReason, type OfferedIdea } from "../src/lib/ideas/queries";
+import { ideaWaitsOn, type OfferedIdea } from "../src/lib/ideas/queries";
 
 /**
  * 아이디어'S TABLE, WALKED (muse-shape plan §3.3, phase 5).
@@ -134,7 +134,7 @@ describe("the order", () => {
   });
 });
 
-describe("why a card is here", () => {
+describe("what a card waits on", () => {
   const card = (over: Partial<OfferedIdea>): OfferedIdea => ({
     key: "study-plan",
     state: "ready",
@@ -143,38 +143,55 @@ describe("why a card is here", () => {
     ...over,
   });
 
-  test("a connection it works through, one it waits on, or the persona it leads for — never a guess", () => {
+  /*
+   * The one line a card says under its title since 2026-10-04. It used to say why a card was near
+   * the top too — the persona it leads for, the connection it works through — and the order says
+   * that; this line stays because a card that waits opens 연결, not the conversation.
+   */
+  test("a card that can be asked now says nothing under its title, whoever is reading", () => {
+    expect(ideaWaitsOn(card({}))).toBeNull();
     expect(
-      ideaReason(
+      ideaWaitsOn(
         card({
           key: "orders-today",
           via: [{ kind: "site", id: "naver-smartstore" }],
         }),
-        null,
-      )?.kind,
-    ).toBe("via");
+      ),
+    ).toBeNull();
+  });
+
+  test("a card that waits names what would do: three places and a count, never seven", () => {
     expect(
-      ideaReason(
+      ideaWaitsOn(
         card({
           key: "orders-today",
           state: "connect",
           needs: [{ kind: "site", id: "naver-smartstore" }],
         }),
-        "owner",
-      )?.kind,
-    ).toBe("connect");
-    expect(ideaReason(card({}), "student")?.kind).toBe("persona");
-    // A card that does not lead for this persona says nothing about why: it is simply there.
-    expect(ideaReason(card({}), "owner")).toBeNull();
-    expect(ideaReason(card({}), null)).toBeNull();
+      ),
+    ).toBe(
+      "Can do this once one is connected: Naver Smart Store Seller Centre",
+    );
+    const many = ideaWaitsOn(
+      card({
+        key: "settlement-check",
+        state: "connect",
+        needs: [
+          { kind: "site", id: "baemin-ceo" },
+          { kind: "site", id: "coupangeats-store" },
+          { kind: "site", id: "yogiyo-ceo" },
+          { kind: "site", id: "tosspayments" },
+          { kind: "site", id: "naver-smartstore" },
+        ],
+      }),
+    );
+    expect(many?.split(" · ")).toHaveLength(3);
+    expect(many).toEndWith(" and 2 more");
   });
 
   test("its words are in the dictionary", () => {
     for (const key of [
       "Can do this once one is connected: {connections}",
-      "Because {connection} is connected",
-      "Useful for anyone",
-      "Suits a {persona}",
       "{names} and {count} more",
     ]) {
       expect(ko[key]).toBeTruthy();

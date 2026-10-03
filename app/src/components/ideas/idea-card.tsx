@@ -1,6 +1,6 @@
-import type { Persona } from "@shared/persona";
-import { IconDots, IconPlugConnected } from "@tabler/icons-react";
+import { IconClock, IconDots, IconPlugConnected } from "@tabler/icons-react";
 import { Link } from "@tanstack/react-router";
+import { CATEGORY_ICONS } from "@/components/goals/goal-parts";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,13 +14,13 @@ import {
   categoryLabel,
   ideaDraft,
   ideaFor,
-  ideaReason,
+  ideaWaitsOn,
   type OfferedIdea,
 } from "@/lib/ideas/queries";
 import { cn } from "@/lib/utils";
 
 /**
- * One 아이디어: what the Bot will do, what comes out, and why it is here.
+ * One 아이디어: what the Bot will do, in a line.
  *
  * THE WHOLE CARD IS THE PRESS, AND IT SENDS NOTHING. A card somebody can ask now opens the
  * conversation with its sentence in the composer (`?draft=`, `composer/prefill.ts`) for them to
@@ -30,62 +30,100 @@ import { cn } from "@/lib/utils";
  *
  * 다음에 SITS BEHIND ⋯, OUTSIDE THE PRESS. A button inside a link is two presses in one place; the
  * menu is beside the card's content, not in it.
+ *
+ * ONE LINE (2026-10-04, the owner: too many characters, and words where an icon would do). A card
+ * was up to five lines — its category, what the Bot will do, what comes out, why it is near the
+ * top, and on a routine a sentence about the time — and the page of twenty-two was 1,042
+ * characters at 1280, the most of any screen. What is left is the one a person chooses by:
+ *  - the category is its ICON, the one 목표 draws for the same seven, named in its tooltip;
+ *  - what comes out mostly said the title again ("세 가지로 써 드릴게요" / "골라 쓸 수 있는 세 가지")
+ *    and is the card's tooltip and description now, there to be asked for;
+ *  - a routine is marked by the clock this app draws for 루틴, and the sentence about its time is
+ *    the clock's name — the time is in the title and in the composer before anything is sent;
+ *  - why it is near the top is the order itself.
+ * The one line that stays under a title is what a card waits on: it changes where the press goes.
  */
 export function IdeaCard({
   agentId,
   card,
   channelId,
   onDismiss,
-  persona,
 }: {
   agentId: string | undefined;
   card: OfferedIdea;
   channelId: string | undefined;
   onDismiss: () => void;
-  persona: Persona | null;
 }) {
   const idea = ideaFor(card);
   // A key a newer server knows and this build does not: nothing to say about it, so nothing drawn.
   if (!idea) return null;
-  const reason = ideaReason(card, persona);
   const isConnect = card.state === "connect";
+  const waitsOn = ideaWaitsOn(card);
   const title = t(idea.title);
+  const makes = t(idea.makes);
+  const Icon = CATEGORY_ICONS[idea.category];
+  const repeats = t(
+    "It repeats at the time in the sentence. Change the time before you send it.",
+  );
+  // A routine that cannot be asked yet is not marked as one: its line is what it waits on.
+  const isMarkedRoutine = idea.kind === "routine" && !isConnect;
+  const lastWordAt = title.lastIndexOf(" ") + 1;
 
   const body = (
     <>
-      <span className="text-muted-foreground text-xs">
-        {categoryLabel(idea.category)}
+      <span
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+        data-idea-category={idea.category}
+        title={categoryLabel(idea.category)}
+      >
+        <Icon aria-hidden="true" className="size-4.5" />
       </span>
-      <span className="font-medium text-base leading-6">{title}</span>
-      <span className="text-muted-foreground text-sm">{t(idea.makes)}</span>
-      {reason ? (
-        <span
-          className={cn(
-            "mt-1 flex items-center gap-1 text-xs",
-            reason.kind === "connect"
-              ? "text-warning"
-              : "text-muted-foreground",
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium text-sm leading-5">
+          {isMarkedRoutine ? (
+            <>
+              {title.slice(0, lastWordAt)}
+              {/*
+               * The clock is kept with the title's last word: measured at 375, a title that filled
+               * its line sent the clock to a line of its own under it — a margin does not hold it
+               * there, and neither does a no-break space before an inline box.
+               */}
+              <span className="whitespace-nowrap">
+                {title.slice(lastWordAt)}
+                <span
+                  aria-label={repeats}
+                  className="ml-1.5 inline-flex align-[-0.125em] text-muted-foreground"
+                  data-idea-repeats
+                  role="img"
+                  title={repeats}
+                >
+                  <IconClock aria-hidden="true" className="size-3.5" />
+                </span>
+              </span>
+            </>
+          ) : (
+            title
           )}
-          data-idea-reason={reason.kind}
-        >
-          {reason.kind === "connect" ? (
-            <IconPlugConnected aria-hidden="true" className="size-3.5" />
-          ) : null}
-          {reason.text}
         </span>
-      ) : null}
-      {idea.kind === "routine" && !isConnect ? (
-        <span className="text-muted-foreground text-xs">
-          {t(
-            "It repeats at the time in the sentence. Change the time before you send it.",
-          )}
-        </span>
-      ) : null}
+        {waitsOn ? (
+          <span
+            className="flex items-start gap-1 text-warning text-xs"
+            data-idea-waits
+          >
+            {/* On the line's first row when the names wrap, not between its two. */}
+            <IconPlugConnected
+              aria-hidden="true"
+              className="mt-0.5 size-3.5 shrink-0"
+            />
+            {waitsOn}
+          </span>
+        ) : null}
+      </span>
     </>
   );
 
   const linkClass = cn(
-    "flex min-w-0 flex-1 flex-col gap-1 rounded-xl p-4 pr-12 text-left transition-colors hover:bg-accent",
+    "flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 pr-11 text-left transition-colors hover:bg-accent",
     focusRing,
   );
 
@@ -96,7 +134,11 @@ export function IdeaCard({
       data-idea-state={card.state}
     >
       {isConnect ? (
-        <Link className={linkClass} to="/settings/connected-accounts">
+        <Link
+          className={linkClass}
+          title={makes}
+          to="/settings/connected-accounts"
+        >
           {body}
         </Link>
       ) : channelId ? (
@@ -104,6 +146,7 @@ export function IdeaCard({
           className={linkClass}
           params={{ channelId }}
           search={{ draft: ideaDraft(idea) }}
+          title={makes}
           to="/channel/$channelId"
         >
           {body}
@@ -115,12 +158,13 @@ export function IdeaCard({
             ...(agentId ? { agent: agentId } : {}),
             draft: ideaDraft(idea),
           }}
+          title={makes}
           to="/channel/new"
         >
           {body}
         </Link>
       )}
-      <div className="absolute top-2 right-2">
+      <div className="absolute top-1/2 right-2 -translate-y-1/2">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
