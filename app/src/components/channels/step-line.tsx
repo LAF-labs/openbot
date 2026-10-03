@@ -5,7 +5,13 @@ import { t } from "@/lib/i18n";
 import { ToolRenderBoundary } from "./tool-boundary";
 
 /** The fold beside a run's newest line: how many came before it, and whether they are drawn. */
-export type StepFold = { count: number; isOpen: boolean; onToggle: () => void };
+export type StepFold = {
+  count: number;
+  /** How many of the lines it stands for did not work. */
+  failed: number;
+  isOpen: boolean;
+  onToggle: () => void;
+};
 
 /**
  * One drawn step, inside its own seam — and, where it is the newest of a run, the fold for the ones
@@ -46,24 +52,42 @@ export function StepLine({
 }
 
 /**
- * The fold beside the newest line of a run of steps: how many came before it, and the way to them.
+ * The fold beside the newest line of a run of steps: the way to the ones before it.
+ *
+ * AN ICON, NOT WORDS (the owner, 2026-10-04: "가장 최근 1개 + 펼치기 아이콘"). It read "이전 3단계"
+ * beside every run — one more phrase on a screen whose trouble is the number of phrases. How many
+ * steps it stands for is its name, for a screen reader and on hover, and is what opening it shows.
+ *
+ * AND IT SAYS WHEN ONE OF THEM DID NOT WORK, in its colour and in its name. A failed or refused
+ * step is folded like any other now (`staysInTheOpen`), and a control that looked the same over a
+ * failure as over four things that went well would be hiding it.
  *
  * A real button, so the keyboard reaches it and a screen reader is told whether the record is open.
  * Taller under a finger than under a pointer: the line it sits on is one line of small text.
  */
-function StepRunFold({ count, isOpen, onToggle }: StepFold) {
+function StepRunFold({ count, failed, isOpen, onToggle }: StepFold) {
+  const name = isOpen
+    ? t("Hide earlier steps")
+    : failed > 0
+      ? t("{count} earlier steps, {failed} did not work", { count, failed })
+      : t("{count} earlier steps", { count });
   return (
     <button
       aria-expanded={isOpen}
-      className={`inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground pointer-coarse:h-9 pointer-coarse:px-2.5 ${focusRing}`}
+      aria-label={name}
+      className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted pointer-coarse:size-9 ${
+        failed > 0
+          ? "text-warning"
+          : "text-muted-foreground hover:text-foreground"
+      } ${focusRing}`}
       onClick={onToggle}
+      title={name}
       type="button"
     >
       <IconChevronRight
         aria-hidden="true"
-        className={`size-3 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
+        className={`size-3.5 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
       />
-      {isOpen ? t("Hide earlier steps") : t("{count} earlier steps", { count })}
     </button>
   );
 }

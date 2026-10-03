@@ -1276,6 +1276,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   result,
   runId,
   earlier = 0,
+  earlierFailed = 0,
   isRunOpen = false,
   runRows = "[]",
   onToggleRun,
@@ -1289,6 +1290,8 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   runId?: string;
   /** How many lines of that run came before this one: what the fold beside it stands for. */
   earlier?: number;
+  /** How many of those did not work: the fold says so, since they are behind it. */
+  earlierFailed?: number;
   isRunOpen?: boolean;
   /** The ids of that run's rows, as JSON: what closing it has to take back (`openStepRuns`). */
   runRows?: string;
@@ -1350,6 +1353,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
           ? {
               fold: {
                 count: earlier,
+                failed: earlierFailed,
                 isOpen: isRunOpen,
                 onToggle: () =>
                   onToggleRun(
@@ -2002,6 +2006,7 @@ export function ChatTranscript({
                           ? {
                               runId: run.runId,
                               earlier: run.size - 1,
+                              earlierFailed: run.failed,
                               isRunOpen: openRuns.has(run.runId),
                               // As text, as every list a memoised row is given: a new array is a new prop.
                               runRows: JSON.stringify(

@@ -115,6 +115,8 @@ export const ko: Record<string, string> = {
   "Finding a tool": "도구 찾는 중",
   // The fold beside the newest of a run of step lines (`chat-transcript.tsx`, `StepRunFold`).
   "{count} earlier steps": "이전 {count}단계",
+  "{count} earlier steps, {failed} did not work":
+    "이전 {count}단계 · {failed}개는 안 됨",
   "Hide earlier steps": "이전 단계 접기",
   "Calling a tool": "도구 부르는 중",
   "Checking the clock": "시각 보는 중",
