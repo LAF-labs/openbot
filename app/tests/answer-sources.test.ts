@@ -295,6 +295,28 @@ describe("who an answer has to name", () => {
     ]).toEqual([["a1", [KMA]]]);
   });
 
+  /*
+   * A turn can be started while another is still running — a card's button does it — and its
+   * message then lands between the first turn's weather and the first turn's answer. A message
+   * ended what was owed, so that answer had no line (Codex on #50). It ends only what has been said.
+   */
+  test("a message that lands before the weather has been said does not end what is owed", () => {
+    const credits = creditsByAnswer(
+      [
+        said("u1", "user", "서울 날씨 어때?"),
+        weather("w1", DATA),
+        // Pressed on a card while the first turn was still running.
+        said("u2", "user", "이 일정 등록해 줘"),
+        said("a1", "assistant", "서울은 지금 17.7도예요."),
+        said("u3", "user", "고마워"),
+        said("a3", "assistant", "별말씀을요."),
+      ],
+      false,
+    );
+    // The answer said from the data, and nothing after the message that follows it.
+    expect([...credits]).toEqual([["a1", [KMA]]]);
+  });
+
   test("a call that brought no data back owes nothing: refused, failed, or still out", () => {
     for (const result of [
       undefined,

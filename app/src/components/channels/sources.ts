@@ -167,15 +167,27 @@ export function creditsByAnswer(
 ): Map<string, string[]> {
   const found = new Map<string, string[]>();
   let owed: string[] = [];
+  /*
+   * WHAT IS OWED IS OWED UNTIL IT HAS BEEN SAID. The person's next message ended it, on the
+   * reading that a message begins a turn and what follows answers it. But a turn can be started
+   * while another is still running — a card's button does it (`channel-chat.tsx`) — and then that
+   * message lands between the first turn's weather and the first turn's answer: the answer said
+   * from the data came after a message that had wiped the debt (Codex on pull request 50). The rows
+   * carry no turn to go by, so a message ends only a debt some sentence has already carried. The
+   * cost is the other way round: a turn that fetched the weather and said nothing leaves the line
+   * to the next answer, which is one line too many.
+   */
+  let isSaid = true;
   for (const [index, item] of items.entries()) {
     if (item.kind === "text" && item.role === "user") {
-      owed = [];
+      if (isSaid) owed = [];
       continue;
     }
     if (item.kind === "tool") {
       const name = CREDITED[item.toolCall.function.name];
-      if (name && gaveData(item.result) && !owed.includes(name)) {
-        owed = [...owed, name];
+      if (name && gaveData(item.result)) {
+        if (!owed.includes(name)) owed = [...owed, name];
+        isSaid = false;
       }
       continue;
     }
@@ -186,12 +198,16 @@ export function creditsByAnswer(
        * said from the weather and then folded into the card it led to, had no line (Codex on pull
        * request 50). The card is named, and the line is drawn under it.
        */
-      if (owed.length > 0 && item.notes.length > 0) found.set(item.id, owed);
+      if (owed.length > 0 && item.notes.length > 0) {
+        found.set(item.id, owed);
+        isSaid = true;
+      }
       continue;
     }
     if (item.kind === "text" && item.role === "assistant" && owed.length > 0) {
       if (writing && index === items.length - 1) continue;
       found.set(item.id, owed);
+      isSaid = true;
     }
   }
   return found;
