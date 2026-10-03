@@ -103,6 +103,7 @@ import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { readingColumn } from "./reading-column";
+import { useLastRowIsBeingWritten } from "./row-being-written";
 import { creditsByAnswer, type Source, sourcesByAnswer } from "./sources";
 import { CreditLine, SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -1810,8 +1811,16 @@ export function ChatTranscript({
   const settledBefore = unsettledFrom(items, busy);
   /** The pages each answer was read from, by the answer's id (`sources.ts`). */
   const sources = sourcesByAnswer(items);
+  /**
+   * The sentence being written waits for its source line. The answer before it never does, though
+   * it is the last row of a running turn until the person's message lands (`row-being-written.ts`).
+   */
+  const isWritingLastRow = useLastRowIsBeingWritten(
+    items.at(-1)?.id ?? null,
+    busy,
+  );
   /** Who each answer has to name — 기상청, under an answer said from its data (`sources.ts`). */
-  const credits = creditsByAnswer(items, busy);
+  const credits = creditsByAnswer(items, isWritingLastRow);
   /** The task still being done, and the newest task — the one the live screen would show. */
   const openTaskId = openBrowsingTask(items, busy)?.id ?? null;
   /*
