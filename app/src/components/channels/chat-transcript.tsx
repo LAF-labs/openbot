@@ -1,12 +1,13 @@
-import type { AttachmentPart } from "@shared/attachments";
-import type { FeedQuotePart } from "@shared/feed";
 import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
+import type { AttachmentPart } from "@shared/attachments";
+import type { FeedQuotePart } from "@shared/feed";
 import {
   IconAlertTriangle,
   IconArrowDown,
   IconBox,
   IconCheck,
+  IconChevronRight,
   IconCopy,
   IconInfoCircle,
   IconQuote,
@@ -49,12 +50,12 @@ import {
   useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
 import { anyQuestionOn, watchQuestions } from "@/lib/approvals";
+import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
 import { sittingLabel, startsNewSitting } from "@/lib/channels/message-time";
 import { channelKeys } from "@/lib/channels/queries";
 import { quotedReply } from "@/lib/channels/quote";
 import { retryWay, type StandingFailure } from "@/lib/channels/retry";
-import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { spokenText } from "@/lib/channels/spoken-text";
 import {
   type FailureGroup,
@@ -82,9 +83,10 @@ import { AnswerRatingControls } from "./answer-rating";
 import {
   arrivedBelow,
   cutOffOf,
-  furthestSeen,
   failurePlaces,
+  furthestSeen,
   openBrowsingTask,
+  stepRunsOf,
   type TranscriptItem,
   toVisibleChatItems,
   turnFailedAfter,
@@ -1270,12 +1272,22 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   name,
   args,
   result,
+  runId,
+  earlier = 0,
+  isRunOpen = false,
+  onToggleRun,
 }: {
   delay: number;
   toolCallId: string;
   name: string;
   args: string;
   result?: string;
+  /** The run of step lines this one is the newest of, where there is one (`stepRunsOf`). */
+  runId?: string;
+  /** How many lines of that run came before this one: what the fold beside it stands for. */
+  earlier?: number;
+  isRunOpen?: boolean;
+  onToggleRun?: (runId: string) => void;
 }) {
   const renderToolCall = useRenderToolCall();
   const toolCall = useMemo(
@@ -1301,31 +1313,80 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
         }),
   });
 
+  /*
+   * A TOOL WITH NO REGISTERED RENDERER STILL HAPPENED. `renderToolCall` draws whatever was
+   * registered for the name and nothing at all for anything else, which left a Bot that called
+   * something the app does not know about looking like a Bot that did nothing — the same failure
+   * `ToolRenderBoundary` exists to prevent, arriving by a different route.
+   *
+   * The fallback is a plain tool line: what was done, shimmering until its result lands. It is the
+   * same line the computer and MCP tools draw, so an unrecognised call reads as an ordinary event
+   * rather than as damage. In the owner's words, never the tool's name: this line read
+   * "tool_search" to a shop owner on their first task (`step-labels.ts`).
+   */
+  const line = drawn ?? (
+    <ToolLine
+      {...stepLineOf(name, result !== undefined)}
+      kind={toolKindOf(name)}
+      running={result === undefined}
+    />
+  );
+
   return (
     <Arriving delay={delay}>
       <ToolRenderBoundary name={name}>
-        {/*
-         * A TOOL WITH NO REGISTERED RENDERER STILL HAPPENED. `renderToolCall` draws whatever was
-         * registered for the name and nothing at all for anything else, which left a Bot that called
-         * something the app does not know about looking like a Bot that did nothing — the same
-         * failure `ToolRenderBoundary` exists to prevent, arriving by a different route.
-         *
-         * The fallback is a plain tool line: what was done, shimmering until its result lands. It
-         * is the same line the computer and MCP tools draw, so an unrecognised call reads as an
-         * ordinary event rather than as damage. In the owner's words, never the tool's name: this
-         * line read "tool_search" to a shop owner on their first task (`step-labels.ts`).
-         */}
-        {drawn ?? (
-          <ToolLine
-            {...stepLineOf(name, result !== undefined)}
-            kind={toolKindOf(name)}
-            running={result === undefined}
-          />
+        {runId && earlier > 0 && onToggleRun ? (
+          /*
+           * THE NEWEST LINE OF A RUN, AND THE FOLD FOR THE ONES BEFORE IT, on one row. A row
+           * rather than a column so the fold sits beside the words it belongs to; it wraps under
+           * them where the line is drawn with a question above it.
+           */
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {line}
+            <StepRunFold
+              count={earlier}
+              isOpen={isRunOpen}
+              onToggle={() => onToggleRun(runId)}
+            />
+          </div>
+        ) : (
+          line
         )}
       </ToolRenderBoundary>
     </Arriving>
   );
 });
+
+/**
+ * The fold beside the newest line of a run of steps: how many came before it, and the way to them.
+ *
+ * A real button, so the keyboard reaches it and a screen reader is told whether the record is open.
+ * Taller under a finger than under a pointer: the line it sits on is one line of small text.
+ */
+function StepRunFold({
+  count,
+  isOpen,
+  onToggle,
+}: {
+  count: number;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={isOpen}
+      className={`inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-muted-foreground text-xs transition-colors hover:bg-muted hover:text-foreground pointer-coarse:h-9 pointer-coarse:px-2.5 ${focusRing}`}
+      onClick={onToggle}
+      type="button"
+    >
+      <IconChevronRight
+        aria-hidden="true"
+        className={`size-3 shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
+      />
+      {isOpen ? t("Hide earlier steps") : t("{count} earlier steps", { count })}
+    </button>
+  );
+}
 
 /** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
@@ -1420,6 +1481,42 @@ export function ChatTranscript({
    * which is where the 25x came from.
    */
   const items = withBrowsingTasks(toVisibleChatItems(messages, messageTimes));
+  /*
+   * STEP LINES, ONE TO A RUN (`stepRunsOf`). Only the newest of a run is drawn until the person
+   * opens it, and which runs they opened is theirs for as long as the transcript is mounted — a
+   * run keeps its first line's id while it grows, so one opened mid-task stays open as it grows.
+   * Decided here, where the rows are drawn, and nowhere else: everything that reads `items` — the
+   * thinking line, the failures, the jumps — goes on reading every step.
+   */
+  const stepRuns = stepRunsOf(items);
+  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const handleToggleRun = (runId: string) =>
+    setOpenRuns((open) => {
+      const next = new Set(open);
+      if (!next.delete(runId)) next.add(runId);
+      return next;
+    });
+  /*
+   * A ROW SOMEBODY WAS SENT TO IS NOT LEFT BEHIND A FOLD. 오늘, 만든 것 and 수첩 name a row by its id
+   * (`lib/channels/jump.ts`) and the transcript goes to it once it is in the document — which a
+   * folded line never is. So a jump that names one opens its run, and the run stays open after the
+   * jump is taken: the row the person was brought to does not fold away under them.
+   */
+  const pendingRowId = usePendingJump(channelId)?.messageId ?? null;
+  const pendingRow =
+    pendingRowId === null
+      ? undefined
+      : stepRuns.get(items.findIndex((item) => item.id === pendingRowId));
+  const pendingRunId =
+    pendingRow && !pendingRow.isNewest ? pendingRow.runId : null;
+  useEffect(() => {
+    if (pendingRunId === null) return;
+    setOpenRuns((open) =>
+      open.has(pendingRunId) ? open : new Set(open).add(pendingRunId),
+    );
+  }, [pendingRunId]);
 
   /*
    * ONLY WHILE THERE IS NOTHING ELSE TO LOOK AT. Once a reply starts streaming, or a tool line
@@ -1853,6 +1950,7 @@ export function ChatTranscript({
              */}
             {items.slice(start).map((item, offset) => {
               const index = start + offset;
+              const run = stepRuns.get(index);
               return item.kind === "browse" ? (
                 <Fragment key={item.id}>
                   <MessageScrollerItem
@@ -1885,18 +1983,29 @@ export function ChatTranscript({
                 </Fragment>
               ) : item.kind === "tool" ? (
                 <Fragment key={item.id}>
-                  <MessageScrollerItem
-                    className="py-0.5 pt-3"
-                    messageId={item.id}
-                  >
-                    <TranscriptToolCall
-                      args={item.toolCall.function.arguments}
-                      delay={delays.delayFor(item.id, index, items.length)}
-                      name={item.toolCall.function.name}
-                      result={item.result}
-                      toolCallId={item.toolCall.id}
-                    />
-                  </MessageScrollerItem>
+                  {/* A line with a newer one after it in its run is behind the fold until opened. */}
+                  {run && !run.isNewest && !openRuns.has(run.runId) ? null : (
+                    <MessageScrollerItem
+                      className="py-0.5 pt-3"
+                      messageId={item.id}
+                    >
+                      <TranscriptToolCall
+                        args={item.toolCall.function.arguments}
+                        delay={delays.delayFor(item.id, index, items.length)}
+                        name={item.toolCall.function.name}
+                        result={item.result}
+                        toolCallId={item.toolCall.id}
+                        {...(run?.isNewest
+                          ? {
+                              runId: run.runId,
+                              earlier: run.size - 1,
+                              isRunOpen: openRuns.has(run.runId),
+                              onToggleRun: handleToggleRun,
+                            }
+                          : {})}
+                      />
+                    </MessageScrollerItem>
+                  )}
                   {failuresDrawnAfter(item.id)}
                 </Fragment>
               ) : (
@@ -2073,7 +2182,8 @@ export function ChatTranscript({
         </MessageScrollerViewport>
         <ScrollToNewest items={items} />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
-        <JumpToRow channelId={channelId} rows={items.length} />
+        {/* Asked again when a fold opens too: the row a jump names may be one it was holding. */}
+        <JumpToRow channelId={channelId} rows={items.length + openRuns.size} />
       </MessageScroller>
     </MessageScrollerProvider>
   );

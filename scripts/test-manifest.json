@@ -233,6 +233,7 @@
   "app/tests/spoken-text.test.ts",
   "app/tests/status-regions.test.tsx",
   "app/tests/step-elsewhere.test.tsx",
+  "app/tests/step-fold.test.tsx",
   "app/tests/step-labels.test.ts",
   "app/tests/stop-all.test.ts",
   "app/tests/stopped-turn.test.ts",

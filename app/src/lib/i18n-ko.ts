@@ -113,6 +113,9 @@ export const ko: Record<string, string> = {
    * "하는 중" 꼴, 연결된 서비스의 도구는 위 카드 이름처럼 "하기" 꼴.
    */
   "Finding a tool": "도구 찾는 중",
+  // The fold beside the newest of a run of step lines (`chat-transcript.tsx`, `StepRunFold`).
+  "{count} earlier steps": "이전 {count}단계",
+  "Hide earlier steps": "이전 단계 접기",
   "Calling a tool": "도구 부르는 중",
   "Checking the clock": "시각 보는 중",
   "Writing it down": "기억해 두는 중",
