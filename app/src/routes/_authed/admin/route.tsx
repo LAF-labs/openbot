@@ -25,10 +25,11 @@ function RouteComponent() {
   return (
     <SidebarProvider
       /*
-       * The 280px the app and Settings use — `--sand-sidebar-width`. It said 340px and claimed to
-       * match them, and `--sidebar-width-mobile` beside it reached nothing after the Sheet left.
+       * The width the app and Settings use — `--sand-sidebar-width`, 216px since 2026-10-04. It said
+       * 340px and claimed to match them, and `--sidebar-width-mobile` beside it reached nothing after
+       * the Sheet left.
        */
-      style={{ "--sidebar-width": "280px" } as React.CSSProperties}
+      style={{ "--sidebar-width": "216px" } as React.CSSProperties}
     >
       <ShellTitleBar />
       {/* The rail is `fixed inset-y-0`: the inset goes on it, not on the layout around it. */}

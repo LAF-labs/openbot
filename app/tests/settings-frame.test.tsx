@@ -26,7 +26,9 @@ import { mount, routerAt, unmountAll } from "./support/mount";
  * admin rail had made that argument for `/admin` and this one never had.
  *
  * The rail was 340px and its comment said that was "the same 340px the app shell uses". The app
- * shell is `--sand-sidebar-width`, which is 280.
+ * shell is `--sand-sidebar-width`, which was 280 — and is 216 since 2026-10-04, when the Bot's column
+ * lost most of its words and the two rails here narrowed with it: a rail that changes width at the
+ * door of Settings reads as the whole frame moving (`settings/route.tsx`).
  *
  * And below `lg` there was no way out of a fixed 280px column: the Sheet that `--sidebar-width-mobile`
  * fed left with the phone decision, and so did `useIsMobile` and Cmd+B, but `md:block` stayed.
@@ -37,7 +39,7 @@ import { mount, routerAt, unmountAll } from "./support/mount";
  * location, so the row and the column are mounted in a memory router and asked at `/settings`,
  * `/settings/connected-accounts` and `/settings/account` in turn. The breakpoints and the width
  * are read off the rendered elements the same way — the route's own component is lifted out of
- * its file route and drawn, so the `280px` asserted is the one the screen actually gets. What a
+ * its file route and drawn, so the width asserted is the one the screen actually gets. What a
  * browser adds on top of that (the column really disappearing at 900px) was measured at 1200,
  * 900, 700 and 420px.
  */
@@ -276,7 +278,7 @@ describe("the rail is the width it says it is", () => {
     // The token itself is a stylesheet's, so that one line is still read as text.
     const shell = readFileSync(join(APP, "styles.css"), "utf8");
     const declared = shell.match(/--sand-sidebar-width:\s*(\d+)px/)?.[1];
-    expect(declared).toBe("280");
+    expect(declared).toBe("216");
     for (const screen of [
       await settingsScreenAt("/settings"),
       await adminScreenAt("/admin"),

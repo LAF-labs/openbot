@@ -98,9 +98,10 @@ export const PersonAvatar = ({
 
   return (
     /*
-     * Decorative. Both call sites put the name in text beside it, so announcing it here would read
-     * the person's name twice — and `alt` on a provider's avatar is not information a screen
-     * reader gains anything from.
+     * Decorative. Settings puts the name in text beside it, and the sidebar's foot — where the
+     * picture is all that is drawn since 2026-10-04 — names the button it sits in, so announcing it
+     * here would read the person's name twice. And `alt` on a provider's avatar is not information
+     * a screen reader gains anything from.
      */
     <span
       aria-hidden="true"

@@ -21,8 +21,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   BotRow,
   ROSTER_RAIL_ROW_CLASS,
-  ROSTER_ROW_CLASS,
-  RosterRowLines,
   RosterUnreadDot,
 } from "@/components/app-sidebar/bot-row";
 import {
@@ -32,7 +30,7 @@ import {
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
-import { PresencePillBody } from "@/components/channels/bot-header";
+import { PILL_CLASS, PILL_TONES } from "@/components/channels/bot-header";
 import { usePresence } from "@/components/channels/use-presence";
 import { ReadNotice } from "@/components/layout/read-states";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -58,6 +56,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useBotMood } from "@/lib/agents/bot-mood";
 import { conversationOf, useMyBots } from "@/lib/agents/my-bots";
+import type { Presence } from "@/lib/agents/presence";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { rosterNotice } from "@/lib/agents/roster-state";
@@ -80,44 +79,60 @@ import { cn } from "@/lib/utils";
  * It was built as a roster — one row per colleague, newest first, a preview line so somebody could
  * glance at four Bots and see which needed them — and after the decision that a person has one Bot
  * (docs/laf/deployment-model.md, "봇은 하나다") it held one row and a footer of links, with the
- * column's whole height of nothing in between. Now it says three things, top to bottom:
+ * column's whole height of nothing in between. Then it filled up: a word under the face for what
+ * the Bot was doing, the last thing said and when, the Bot's whole day, four places, a 메뉴 row and
+ * the account's address.
  *
- *  1. THE BOT. Its face, alive (the same presence as the conversation's header: working, waiting on
- *     the person, glad it finished), its name, and one word for what it is doing. Pressing it opens
- *     its profile — the only place its name and face change.
- *  2. THE CONVERSATION, AND THE PLACES A PERSON GOES TO LOOK. One row for the conversation: the
- *     last thing said, when, and whether it is unread. Under it a row each for 소식, 아이디어, 목표
- *     and 만든 것 (`LOOK_ROWS`), and under those nothing.
- *  3. THE PLACES A PERSON GOES TO CHANGE HOW IT WORKS, behind one 메뉴 row (`MenuLinks`) pinned to
- *     the bottom above the account. They sat in the one scrolling column until 2026-09-25, right
- *     under 오늘 — the list the next paragraph is about — and at the PC app's smallest window
- *     (1024×640) it pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4). Now
- *     the Bot and the rows under it scroll in their own region, and the links never move.
+ * 216px OF FACE, NAME AND FIVE LABELLED ROWS (2026-10-04, the layout the owner chose). The
+ * complaint was the number of words on the screen — "아이콘으로도 되는 걸 항상 글자로 표시하는 게
+ * 문제" — so a word is drawn where it is the only way to say the thing, and a face, an icon or a
+ * dot says the rest. Top to bottom:
  *
- * 오늘 WAS UNDER THOSE ROWS UNTIL 2026-10-04. From 2026-09-25 the height that had been empty held
- * the Bot's day — what is waiting on the person, what it did, what is next (`bot-day.tsx`) — and
- * the column was shaped around it: the links pinned so it could not push them off the screen, the
- * footer folded into one row so its first rows showed whole (`MenuLinks` has the measurements). The
- * owner had it removed outright: too much text on the screen. So the height under the rows is empty
- * again, on purpose. The day is a row away, on 소식, which draws it whole; that something waits on
- * the person is still said here, by the face and the word under the name. What was shaped around it
- * stayed as it was — the links still pinned, the footer still one row.
+ *  1. THE BOT, on one row of 44px: its face (32px), alive — the same presence as the conversation's
+ *     header: working, waiting on the person, glad it finished — and its name. What it is doing is
+ *     a dot beside the name; the word is drawn only when it is the person's turn (`BotIdentity`).
+ *     Pressing the row opens the profile, the only place the name and the face change.
+ *  2. THE CONVERSATION AND THE PLACES A PERSON GOES TO LOOK: five rows of 36px, an icon and a name
+ *     each — 대화 · 소식 · 아이디어 · 목표 · 만든 것. These keep their names because they are the
+ *     navigation (`LOOK_ROWS`). 대화 no longer carries the last thing said or when
+ *     (`ConversationRow`). Under the rows, nothing.
+ *  3. THE FOOT, one row pinned under the part that scrolls: the account's picture, and a 메뉴 button
+ *     for the places that change how the Bot works (`MenuLinks`). No word beside either.
+ *
+ * WHAT WAS MEASURED ON THE WAY HERE AND STILL DECIDES SOMETHING:
+ *
+ *  - THE FOOT DOES NOT SCROLL. The places that change how the Bot works sat in the one scrolling
+ *    column until 2026-09-25, and at the PC app's smallest window (1024×640) what was above them
+ *    pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
+ *  - THOSE PLACES ARE BEHIND ONE CONTROL. Three of them and 더 보기 in sight cut what was above them
+ *    at 1024×640 (`MenuLinks` has the numbers).
+ *  - 오늘 IS NOT HERE. From 2026-09-25 the height under the rows held the Bot's day — what is
+ *    waiting on the person, what it did, what is next (`bot-day.tsx`) — and it was the first thing
+ *    the owner had taken out, the same day and for the same reason. The day is a row away, on 소식;
+ *    that something waits on the person is still said here, by the face and the amber pill.
+ *  - THE WIDTH WAS 280px, a roster's: a face, a name, a line of preview and a time. One Bot's name
+ *    and five short labels have no line that long. Settings and Admin draw their rails at this
+ *    column's width, so they narrowed with it — at different widths, crossing into Settings read as
+ *    the whole frame moving (`settings-frame.test.tsx` holds the three together).
  *
  * AN ACCOUNT FROM BEFORE THE CAP CAME DOWN keeps every Bot it had, and reaches them the old way: with
  * more than one, the list under "내 봇" is back, a row per Bot, each its own conversation, and 봇
- * 프로필 is a link again. Nothing else in the app behaves as if there were several.
+ * 프로필 is a link again. Those rows are the roster's still — the name, the last thing said and
+ * when, at 54px (`bot-row.tsx`) — because with several faces in a list that line is how somebody
+ * sees which one said what. Nothing else in the app behaves as if there were several.
  *
- * THREE WIDTHS. The full column (280px) at `lg` and up. Below it, a 64px rail of faces and icons with
+ * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of faces and icons with
  * their names in tooltips, which the titlebar's toggle puts back to full for as long as somebody
- * wants — measured at an 800px window, the fixed 280 was 35% of everything the person could see.
+ * wants — measured at an 800px window, a fixed 280 was 35% of everything the person could see. The
+ * rail is drawn as it was before 2026-10-04: it had no words to lose.
  * And below `md`, NO COLUMN: at 375px the rail was 15% of the screen and five unlabelled icons
  * (UI/UX audit 0.5.3, item 20). There the phone's bottom bar is the way around — 대화 · 소식 · 메뉴
  * (`phone-tab-bar.tsx`) — and the sheet this column used to slide in as, from a menu button in each
  * screen's header, is gone (2026-09-27, muse-shape plan phase 3). The column stays MOUNTED there,
  * only hidden (`max-md:hidden` on the nav): its watch on the working poll is what refreshes the
- * conversation's unread mark when a routine's answer lands, and the bar's dot reads the same list. The installed app's window
- * cannot be narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so the phone's width is the
- * phone's and the browser's, never the PC app's.
+ * conversation's unread mark when a routine's answer lands, and the bar's dot reads the same list.
+ * The installed app's window cannot be narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so
+ * the phone's width is the phone's and the browser's, never the PC app's.
  */
 
 /**
@@ -212,8 +227,31 @@ function BotRowMenu({
 }
 
 /**
- * THE BOT, AT THE TOP OF ITS COLUMN: the face with what it is doing on it, the name, the one word.
+ * The dot beside the Bot's name, per tone: amber for the person's turn, the Bot's colour while it is
+ * busy, grey at rest. The conversation header's pill has the same three (`DOT_TONES` in
+ * `channels/bot-header.tsx`), which that file keeps to itself.
+ */
+const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
+  attention: "animate-pulse bg-warning",
+  active: "animate-pulse bg-primary",
+  quiet: "bg-muted-foreground/50",
+};
+
+/**
+ * THE BOT, AT THE TOP OF ITS COLUMN, ON ONE ROW: the face with what it is doing on it, and the name.
  * The way to its profile, which is why the pencil shows on hover.
+ *
+ * NO LINE OF STATUS WORDS UNDER THE NAME (2026-10-04). It read 쉬는 중 all day under a face that
+ * already says so, and the owner's complaint about the column was its words: "아이콘으로도 되는 걸
+ * 항상 글자로 표시하는 게 문제". So what the Bot is doing is a dot beside the name, and the word is
+ * the dot's name and title — and the link's own name, as it always was, for whoever cannot see a
+ * dot. ONE WORD IS STILL DRAWN: when the Bot is waiting on the person, the amber pill stays, with
+ * 확인 필요 or 도움 필요 in it, because that is the one state that asks them for something and a
+ * dot changing colour at the edge of what somebody is reading is not them being asked.
+ *
+ * Drawn here rather than through the header's `PresencePillBody`: the conversation's header is
+ * having the same done to it on another branch, in that component, and the two would have met in
+ * one file. When both are in, one of them can read the other.
  */
 function BotIdentity({
   agent,
@@ -231,7 +269,8 @@ function BotIdentity({
     lastMessageAt,
   });
   const face = mood === "working" ? presence.face : mood;
-  const label = `${agent.name} · ${t(presence.label)}`;
+  const word = t(presence.label);
+  const label = `${agent.name} · ${word}`;
 
   if (isCompact) {
     return (
@@ -256,11 +295,12 @@ function BotIdentity({
     );
   }
 
+  const isAsking = presence.tone === "attention";
   return (
     <Link
       aria-label={`${label}. ${t("Bot profile")}`}
       className={cn(
-        "group flex w-full items-center gap-3 rounded-xl border border-transparent px-2 py-2.5 transition-colors hover:bg-accent data-[status=active]:bg-sidebar-accent",
+        "group flex h-11 w-full items-center gap-2 rounded-xl border border-transparent px-2 transition-colors hover:bg-accent data-[status=active]:bg-sidebar-accent",
         focusRing,
       )}
       search={{ agent: agent.id }}
@@ -269,21 +309,47 @@ function BotIdentity({
       <BotAvatar
         className="shrink-0"
         seed={agent.avatarSeed}
-        size={44}
+        size={32}
         state={face}
       />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate font-semibold text-lg leading-6">
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="min-w-0 truncate font-semibold text-base">
           {agent.name}
         </span>
-        <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-          <PresencePillBody presence={presence} />
-        </span>
+        {isAsking ? (
+          <span
+            className={cn(PILL_CLASS, PILL_TONES.attention, "shrink-0")}
+            data-presence="attention"
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                PRESENCE_DOT_TONES.attention,
+              )}
+            />
+            <span className="truncate">{word}</span>
+          </span>
+        ) : (
+          <span
+            aria-label={word}
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              PRESENCE_DOT_TONES[presence.tone],
+            )}
+            data-presence={presence.tone}
+            role="img"
+            title={word}
+          />
+        )}
       </span>
-      <IconPencil
-        aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-      />
+      {/* Not beside the pill: at 216px there is room for the name and one of the two. */}
+      {isAsking ? null : (
+        <IconPencil
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        />
+      )}
     </Link>
   );
 }
@@ -292,9 +358,13 @@ function BotIdentity({
  * THE PLACES A PERSON GOES TO LOOK (muse-shape plan §4): the rows under the conversation, rather than
  * the footer's places that change how the Bot works. 아이디어 came first (phase 5), 만든 것 with its
  * page (phase 6), 소식 on top with its posts (phase 7), and 목표 last, with its own (phase 9), in the
- * plan's order: 소식 · 아이디어 · 목표 · 만든 것. One line each, a desktop row like the footer's: they
+ * plan's order: 소식 · 아이디어 · 목표 · 만든 것. One line each, an icon and the place's name: they
  * were kept that short for 오늘, which lived on the height under them until 2026-10-04, and a
  * place's name needs no more.
+ *
+ * THE NAMES STAY, in a column that lost most of its other words that day. These rows are how a
+ * person gets about, and navigation by icon alone is what the rail's five unlabelled icons were at
+ * 375px (UI/UX audit 0.5.3, item 20) — the phone's bar was given its labels for that.
  */
 const LOOK_ROWS = [
   { to: "/feed", icon: IconLayoutList, label: "Updates", row: "feed" },
@@ -390,20 +460,25 @@ function LookRow({
 }
 
 /**
- * 메뉴: THE FOOTER IS ONE ROW (muse-shape plan §4, settled with phase 9). The places that change how
- * the Bot works — 수첩 · 루틴 · 연결 · 스킬 · 도움말 — open upward from it, the same list the phone's
- * 메뉴 page draws (`places.ts`).
+ * 메뉴: ONE BUTTON FOR THE PLACES THAT CHANGE HOW THE BOT WORKS — 수첩 · 루틴 · 스킬 · 연결 · 도움말,
+ * opening upward from it, the same list the phone's 메뉴 page draws (`places.ts`).
  *
- * IT BECAME ONE ROW FOR 오늘, WHICH THE COLUMN NO LONGER HOLDS. Measured at 1024×640, the PC app's
- * smallest window, in the Korean app with all four rows above (소식 · 아이디어 · 목표 · 만든 것 at
- * 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the footer began at 420 and the first row
- * of 오늘 — the Bot's day, listed under those rows then — ran 382–426, six pixels under it, so the
- * row that answered "is my employee working?" was cut. With this one row the footer begins at 534,
- * and 오늘 showed its first rows whole. The price is a second press for 수첩 and 루틴.
+ * AN ICON AT THE FOOT'S RIGHT END SINCE 2026-10-04, where it was a row of its own with the word
+ * beside it: the owner had the column's words cut to the ones that navigate, and this is not a
+ * place but the way to a list of them. 메뉴 is its name and its title. In the rail it is what it
+ * was, a row of the rail's width with the same icon.
  *
- * 오늘 left the column on 2026-10-04 (the owner: too much text on the screen), and the room this was
- * folded to make is empty. It stayed one row all the same: four rows back in sight would be text on
- * the screen again, and whether they come back is the owner's to say.
+ * WHY THE PLACES ARE BEHIND ONE CONTROL AT ALL (muse-shape plan §4, settled with phase 9). Measured
+ * at 1024×640, the PC app's smallest window, in the Korean app with all four rows above (소식 ·
+ * 아이디어 · 목표 · 만든 것 at 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the footer
+ * began at 420 and the first row of 오늘 — the Bot's day, listed under those rows then — ran
+ * 382–426, six pixels under it, so the row that answered "is my employee working?" was cut. Folded
+ * into one row the footer began at 534, and 오늘 showed its first rows whole. The price is a second
+ * press for 수첩 and 루틴.
+ *
+ * 오늘 left the column the same day this became an icon, so the room it was folded to make is
+ * empty. The places stay folded: four rows of words back in sight is what the owner asked to have
+ * less of.
  */
 function MenuLinks({
   isCompact,
@@ -419,21 +494,30 @@ function MenuLinks({
       <DropdownMenuTrigger
         render={
           <button
-            aria-label={isCompact ? label : undefined}
+            aria-label={label}
             className={cn(
               NAV_LINK_CLASS,
-              "w-full",
-              isCompact ? "justify-center" : "gap-2.5 px-2.5",
+              isCompact
+                ? "w-full justify-center"
+                : "size-9 shrink-0 justify-center",
             )}
             data-sidebar-menu
+            title={isCompact ? undefined : label}
             type="button"
           />
         }
       >
         <IconMenu2 aria-hidden="true" className="size-4.5 shrink-0" />
-        {isCompact ? null : label}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="p-1.5" side="top">
+      {/*
+       * The list is given a width, 192px, about the column's own: by default a menu takes its
+       * button's, and this button is 36px. From the right end it opens leftward, inside the column.
+       */}
+      <DropdownMenuContent
+        align={isCompact ? "start" : "end"}
+        className={isCompact ? "p-1.5" : "w-48 p-1.5"}
+        side="top"
+      >
         {links.map(({ icon: Icon, label: name, to }) => (
           <DropdownMenuItem
             className="gap-2 px-2 py-1.5"
@@ -449,30 +533,30 @@ function MenuLinks({
   );
 }
 
-/** THE CONVERSATION: one row, the last thing said and when, and a dot when it is unread. */
+/**
+ * THE CONVERSATION: one row like the four under it — an icon, 대화, and a dot at the right edge
+ * when something in it is unread.
+ *
+ * IT CARRIED THE LAST THING SAID AND WHEN UNTIL 2026-10-04, at the roster row's 54px: the
+ * preview a roster of several needs to tell which colleague said what. With one Bot it was a
+ * sentence the person had just read, or was a press away from reading, drawn again beside the
+ * conversation it came from — and it was the longest run of words in the column the owner asked to
+ * have fewer words in. What a routine is doing as it runs went with it; the face and the dot beside
+ * the name say the Bot is busy. The several-Bots list keeps its preview (`bot-row.tsx`).
+ *
+ * In the rail it is what it was: the icon in its tile, the dot on the tile's corner.
+ */
 function ConversationRow({
   agentId,
   channelId,
   isCompact,
-  subtitle,
-  time,
   unread,
-  working,
 }: {
   agentId: string;
   channelId: string | undefined;
   isCompact: boolean;
-  subtitle: string | undefined;
-  time: string | undefined;
   unread: boolean;
-  working: string | undefined;
 }) {
-  const icon = (
-    <span className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-      <IconMessageCircle aria-hidden="true" className="size-4.5" />
-      {unread ? <RosterUnreadDot /> : null}
-    </span>
-  );
   const name = t("Conversation");
   const announced = unread ? `${name} · ${t("Unread")}` : name;
   const destination = channelId
@@ -491,7 +575,10 @@ function ConversationRow({
             />
           }
         >
-          {icon}
+          <span className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <IconMessageCircle aria-hidden="true" className="size-4.5" />
+            {unread ? <RosterUnreadDot /> : null}
+          </span>
         </TooltipTrigger>
         <TooltipContent side="right">{name}</TooltipContent>
       </Tooltip>
@@ -499,16 +586,23 @@ function ConversationRow({
   }
 
   return (
-    <Link className={ROSTER_ROW_CLASS} {...destination}>
-      {unread ? <span className="sr-only">{t("Unread")}</span> : null}
-      {icon}
-      <RosterRowLines
-        isSubtitleLive={Boolean(working)}
-        isUnread={unread}
-        name={name}
-        subtitle={working ?? subtitle}
-        time={time}
-      />
+    <Link
+      className={cn(NAV_LINK_CLASS, "gap-2.5 px-2.5")}
+      data-sidebar-row="conversation"
+      {...destination}
+    >
+      <IconMessageCircle aria-hidden="true" className="size-4.5 shrink-0" />
+      {name}
+      {unread ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="ml-auto size-2 shrink-0 rounded-full bg-mark"
+            data-mark="unread"
+          />
+          <span className="sr-only">{t("Unread")}</span>
+        </>
+      ) : null}
     </Link>
   );
 }
@@ -637,6 +731,109 @@ export function BotSidebar() {
   const [only] = rows;
   const links = footerLinksFor(isLegacy);
 
+  /*
+   * WHO IS SIGNED IN, as the picture's name and title: the name and the address, whichever there
+   * are. One of them was written out beside the picture until 2026-10-04 — the name, or the
+   * address where there was none, which was the longest word in the column and one a person reads
+   * once. Both are a hover away now, and a screen reader's. The rail's picture is named as it
+   * always was, by the one that used to be written out.
+   *
+   * In two statements: joined and defaulted in one, the React Compiler left the whole column
+   * uncompiled ("Unexpected terminal kind `optional` for logical test block").
+   */
+  const signedInAs = [currentUser?.name, currentUser?.email]
+    .filter((part) => Boolean(part))
+    .join(" · ");
+  const accountName = isRail
+    ? currentUser?.name || currentUser?.email || t("Account")
+    : signedInAs || t("Account");
+
+  const account = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            aria-label={accountName}
+            className={
+              isRail
+                ? "h-10 w-full font-normal text-sm hover:bg-accent justify-center px-0"
+                : "size-9 rounded-full p-0 hover:bg-accent"
+            }
+            data-sidebar-account={isRail ? undefined : ""}
+            title={isRail ? undefined : accountName}
+            variant="ghost"
+          />
+        }
+      >
+        {/* The person's own picture when the provider handed one over, which all three do. */}
+        <PersonAvatar
+          email={currentUser?.email}
+          image={currentUser?.image}
+          name={currentUser?.name}
+          size="sm"
+        />
+      </DropdownMenuTrigger>
+      {/* A width of its own in the full column, for the reason `MenuLinks` gives. */}
+      <DropdownMenuContent
+        align="start"
+        className={isRail ? "p-1.5" : "w-48 p-1.5"}
+        side="top"
+      >
+        {/*
+         * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry: a
+         * conversation and a routine can both be running, and Stop lives inside one
+         * conversation at a time.
+         */}
+        <DropdownMenuItem
+          className="gap-2 px-2 py-1.5"
+          onClick={() => setStoppingAll(true)}
+        >
+          <IconPlayerStop />
+          {t("Stop everything")}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {currentUser?.role === "admin" ? (
+          <DropdownMenuItem
+            className="gap-2 px-2 py-1.5"
+            render={<Link to="/admin" />}
+          >
+            <IconShieldLock />
+            {t("Admin")}
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem
+          className="gap-2 px-2 py-1.5"
+          render={<Link to="/settings" />}
+        >
+          <IconSettings />
+          {t("Settings")}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="gap-2 px-2 py-1.5"
+          disabled={signOut.isPending}
+          onClick={handleSignOut}
+          variant="destructive"
+        >
+          <IconLogout />
+          {signOut.isPending ? t("Logging out…") : t("Log out")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  /* Outside the menu, which closes on click: an error inside it dies with the interaction. */
+  const underAccount = (
+    <>
+      {signOutError ? (
+        <p className="px-2 pt-1 text-destructive text-xs" role="alert">
+          {signOutError}
+        </p>
+      ) : null}
+      <StopAllDialog onOpenChange={setStoppingAll} open={stoppingAll} />
+    </>
+  );
+
   return (
     <nav
       aria-label={t("Your Bot")}
@@ -713,10 +910,7 @@ export function BotSidebar() {
                     agentId={only.agent.id}
                     channelId={only.channel?.id}
                     isCompact={isRail}
-                    subtitle={only.subtitle}
-                    time={rosterTime(only.at, now)}
                     unread={only.channel?.unread ?? false}
-                    working={only.working}
                   />
                 </BotRowMenu>
               </li>
@@ -784,93 +978,42 @@ export function BotSidebar() {
         ) : null}
       </div>
 
-      <div
-        className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
-        data-sidebar-nav
-      >
-        <MenuLinks isCompact={isRail} links={links} />
-      </div>
-
-      <div className="shrink-0 border-border border-t px-2 py-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                aria-label={
-                  currentUser?.name || currentUser?.email || t("Account")
-                }
-                className={cn(
-                  "h-10 w-full font-normal text-sm hover:bg-accent",
-                  isRail ? "justify-center px-0" : "justify-start gap-2.5 px-2",
-                )}
-                variant="ghost"
-              />
-            }
+      {/*
+       * THE FOOT. In the full column ONE ROW since 2026-10-04: the account's picture on the left,
+       * 메뉴 on the right, and no word beside either. It was two rows, 메뉴 with its word and under
+       * it the picture with the name or the address written out; the owner had the column's words
+       * cut to the ones that navigate ("아이콘으로도 되는 걸 항상 글자로 표시하는 게 문제"), and
+       * neither of these is a place. Both open what they opened. PINNED either way, outside the part
+       * that scrolls: when the places scrolled with the rows above them, the smallest window put
+       * 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
+       *
+       * The rail keeps its two rows: 64px does not seat two buttons side by side.
+       */}
+      {isRail ? (
+        <>
+          <div
+            className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
+            data-sidebar-nav
           >
-            {/* The person's own picture when the provider handed one over, which all three do. */}
-            <PersonAvatar
-              email={currentUser?.email}
-              image={currentUser?.image}
-              name={currentUser?.name}
-              size="sm"
-            />
-            {isRail ? null : (
-              <span className="min-w-0 truncate">
-                {currentUser?.name || currentUser?.email || t("Account")}
-              </span>
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="p-1.5" side="top">
-            {/*
-             * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry: a
-             * conversation and a routine can both be running, and Stop lives inside one
-             * conversation at a time.
-             */}
-            <DropdownMenuItem
-              className="gap-2 px-2 py-1.5"
-              onClick={() => setStoppingAll(true)}
-            >
-              <IconPlayerStop />
-              {t("Stop everything")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {currentUser?.role === "admin" ? (
-              <DropdownMenuItem
-                className="gap-2 px-2 py-1.5"
-                render={<Link to="/admin" />}
-              >
-                <IconShieldLock />
-                {t("Admin")}
-              </DropdownMenuItem>
-            ) : null}
-            <DropdownMenuItem
-              className="gap-2 px-2 py-1.5"
-              render={<Link to="/settings" />}
-            >
-              <IconSettings />
-              {t("Settings")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="gap-2 px-2 py-1.5"
-              disabled={signOut.isPending}
-              onClick={handleSignOut}
-              variant="destructive"
-            >
-              <IconLogout />
-              {signOut.isPending ? t("Logging out…") : t("Log out")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Outside the menu, which closes on click: an error inside it dies with the interaction. */}
-        {signOutError ? (
-          <p className="px-2 pt-1 text-destructive text-xs" role="alert">
-            {signOutError}
-          </p>
-        ) : null}
-        <StopAllDialog onOpenChange={setStoppingAll} open={stoppingAll} />
-      </div>
+            <MenuLinks isCompact links={links} />
+          </div>
+          <div className="shrink-0 border-border border-t px-2 py-2">
+            {account}
+            {underAccount}
+          </div>
+        </>
+      ) : (
+        <div
+          className="shrink-0 border-border border-t px-2 py-2"
+          data-sidebar-nav
+        >
+          <div className="flex items-center justify-between">
+            {account}
+            <MenuLinks isCompact={false} links={links} />
+          </div>
+          {underAccount}
+        </div>
+      )}
     </nav>
   );
 }

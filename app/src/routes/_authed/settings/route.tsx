@@ -21,15 +21,16 @@ function RouteComponent() {
   return (
     <SidebarProvider
       /*
-       * The 280px the app shell uses — `--sand-sidebar-width` in styles.css, which is what the
-       * roster is actually drawn at. This said 340px and claimed to match it, so crossing into
-       * Settings widened the rail by 60px and made the whole frame look like it had moved.
+       * The width the app shell uses — `--sand-sidebar-width` in styles.css, which is what the
+       * roster is actually drawn at: 216px since 2026-10-04, 280 before. This said 340px and claimed
+       * to match it, so crossing into Settings widened the rail by 60px and made the whole frame
+       * look like it had moved. The same would be true of leaving it at 280 now.
        *
        * `--sidebar-width-mobile` used to be handed in beside it and reached nothing: the Sheet
        * that read it left with the phone decision. Below `lg` there is no column at all now, so
        * there is no second width to name.
        */
-      style={{ "--sidebar-width": "280px" } as React.CSSProperties}
+      style={{ "--sidebar-width": "216px" } as React.CSSProperties}
     >
       <ShellTitleBar />
       {/* The rail is `fixed inset-y-0`, so the inset has to go on the rail itself: padding on the
