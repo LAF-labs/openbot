@@ -2,6 +2,7 @@ import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import type { AttachmentPart } from "@shared/attachments";
 import type { FeedQuotePart } from "@shared/feed";
+import { stepFailureOf } from "@shared/tools/step-result";
 import {
   IconAlertTriangle,
   IconArrowDown,
@@ -1411,6 +1412,15 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
         }),
   });
 
+  /*
+   * THE PLAIN LINE SAYS HOW THE CALL ENDED TOO, FROM THE RESULT THE CONVERSATION KEPT. A tool has
+   * no renderer when this Bot no longer holds it — and the commonest reason a call is refused is
+   * exactly that: the tool was taken back between the Bot finding it and calling it. Read back
+   * after a reload, the refusal was the plain line below, which reads as a thing that was done
+   * (Codex on pull request 52). The same reader the service's own line uses (`stepFailureOf`).
+   */
+  const ended = result === undefined ? null : stepFailureOf(result);
+
   return (
     <Arriving delay={delay}>
       <ToolRenderBoundary name={name}>
@@ -1428,7 +1438,9 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
         {drawn ?? (
           <ToolLine
             {...stepLineOf(name, result !== undefined)}
+            failed={ended !== null && ended.kind !== "refused"}
             kind={toolKindOf(name)}
+            refused={ended?.kind === "refused"}
             running={result === undefined}
           />
         )}
