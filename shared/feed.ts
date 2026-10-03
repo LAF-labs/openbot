@@ -38,15 +38,6 @@ export function urlsIn(text: string): string[] {
   );
 }
 
-/** A post's page, shortened for a line on 소식: `news.naver.com`. */
-export function sourceHost(raw: string): string | null {
-  try {
-    return new URL(raw).hostname.replace(/^(www|m)\./, "");
-  } catch {
-    return null;
-  }
-}
-
 /**
  * 이야기하기: A POST QUOTED INTO THE CONVERSATION BY ITS ID, NOT PASTED.
  *

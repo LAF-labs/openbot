@@ -13,10 +13,8 @@ import {
   FEED_REFUSALS,
   FEED_SKILL,
   FEED_TOPICS,
-  type FeedPost,
   feedInstruction,
   feedTopics,
-  whyLine,
 } from "../src/lib/feed/queries";
 import { ko } from "../src/lib/i18n-ko";
 import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
@@ -67,29 +65,6 @@ describe("소식's words", () => {
         "Post today's updates the way the {skill} skill says, on these topics:"
       ],
     ).toContain("{skill}");
-  });
-
-  test("why a post is here is said from its sources' sites, never the model's words", () => {
-    const post: FeedPost = {
-      id: POST_ID,
-      agentId: "bot-1",
-      routineId: "routine-1",
-      topic: "업종 뉴스",
-      title: "제목",
-      body: "본문",
-      sources: [
-        { title: "a", url: "https://www.apnews.kr/news/1" },
-        { title: "b", url: "https://m.apnews.kr/news/2" },
-        { title: "c", url: "https://news.naver.com/x" },
-      ],
-      createdAt: "2026-09-27T09:53:54Z",
-      seen: false,
-      liked: false,
-    };
-    const line = whyLine(post, "소식");
-    expect(line).toContain("apnews.kr, news.naver.com");
-    expect(line).toContain("업종 뉴스");
-    expect(line).not.toContain("본문");
   });
 });
 

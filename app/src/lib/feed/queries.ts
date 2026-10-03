@@ -1,4 +1,3 @@
-import { sourceHost } from "@shared/feed";
 import type { Persona } from "@shared/persona";
 import { BUSINESS_KINDS, type BusinessKindId } from "@shared/shop/catalogue";
 import {
@@ -224,27 +223,4 @@ export async function makeFeedRoutine(
     queryClient.invalidateQueries({ queryKey: routineKeys.all }),
     queryClient.invalidateQueries({ queryKey: feedKeys.all }),
   ]);
-}
-
-/**
- * "왜 이 소식" — WHY THIS POST IS HERE, FROM FACTS (teardown §2): the routine that looked and the
- * pages it read, never the model's own account of itself.
- */
-export function whyLine(post: FeedPost, routineName: string | null): string {
-  const hosts = [
-    ...new Set(
-      post.sources.flatMap((source) => {
-        const host = sourceHost(source.url);
-        return host ? [host] : [];
-      }),
-    ),
-  ];
-  return t(
-    "Why this: the {routine} routine, looking for “{topic}”, on {sites}",
-    {
-      routine: routineName ?? t("Updates"),
-      sites: hosts.join(", "),
-      topic: post.topic,
-    },
-  );
 }

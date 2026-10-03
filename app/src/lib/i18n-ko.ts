@@ -388,22 +388,12 @@ export const ko: Record<string, string> = {
   "Getting started": "시작하기",
   "Connect what you use, and I can handle it myself":
     "쓰시는 서비스를 연결하면 제가 직접 처리해요",
-  "Calendar, mail, Notion, Canva, and the sites a shop runs on. What I may do with each is yours to set.":
-    "캘린더, 메일, 노션, 캔바, 그리고 가게를 운영하는 사이트까지. 무엇을 해도 되는지는 직접 정하세요.",
   "Things worth handing me, one press each":
     "저한테 맡겨 볼 만한 일, 누르면 바로",
-  "Pick one and it waits in the conversation for you to finish the sentence. Nothing starts until you send it.":
-    "하나 고르면 대화창에 문장이 들어가요. 보내기 전까지는 아무것도 시작하지 않아요.",
   "Tell me a goal and I keep track of it with you":
     "목표를 말해 주시면 함께 챙겨요",
-  "An exam, a habit, this month's sales. I save it only when you say yes, and log each step on its timeline.":
-    "시험, 습관, 이번 달 매출까지. 좋다고 하실 때만 저장하고, 한 걸음씩 기록해요.",
   "Checks I run at the times you set": "정해 둔 시간에 제가 알아서 확인해요",
-  "A morning briefing, a weekly summary, a watch on a price. Say it in the conversation and I set it up.":
-    "아침 브리핑, 주간 요약, 가격 지켜보기. 대화에서 말씀하시면 제가 만들어 둘게요.",
   "Everything I make, kept in one place": "제가 만든 것은 한곳에 모아 둬요",
-  "Tables, checklists and drafts from our conversation, to open again whenever you need them.":
-    "대화에서 만든 표, 체크리스트, 초안을 필요할 때 다시 열어 보세요.",
   "Connected. You can ask me this now:":
     "연결됐어요. 이제 이렇게 부탁해 보세요:",
   "Make a one-page poster in Canva for what I am working on.":
@@ -3214,40 +3204,30 @@ export const ko: Record<string, string> = {
   "Make this for me: ": "만들어 줘: ",
   "That Bot is not yours to see.": "볼 수 없는 봇이에요.",
   "What it found": "찾은 소식",
-  "What your Bot did today, what is waiting on you, and what it found for you.":
-    "봇이 오늘 한 일과 기다리는 일, 그리고 찾아 온 소식이에요.",
   "Updates could not be loaded.": "소식을 불러오지 못했어요.",
   "This deployment does not post updates.":
     "이 배포에서는 소식을 올리지 않아요.",
   "Hidden. The next updates will pick fewer like it.":
     "숨겼어요. 다음 소식부터 이런 것은 덜 골라요.",
   Undo: "되돌리기",
-  "Nothing posted yet. The first updates come at the next run, or press Make now.":
-    "아직 올라온 소식이 없어요. 다음 실행 때 올라오고, 지금 만들기를 눌러도 돼요.",
+  "Nothing posted yet.": "아직 올라온 소식이 없어요.",
   "Next updates: {when}": "다음 소식: {when}",
   "Paused: updates piled up unseen for a week.":
     "멈춤: 보지 않은 소식이 일주일 동안 쌓였어요.",
   "Paused.": "멈춤",
   "Looks for: {topics}": "찾는 것: {topics}",
-  "Making them — they appear here in a few minutes":
-    "만드는 중이에요 — 몇 분 뒤 여기에 올라와요",
+  "Making them — a few minutes": "만드는 중이에요 · 몇 분 걸려요",
   "Make now": "지금 만들기",
   "Change in the conversation": "대화에서 바꾸기",
   "Turn it back on in Routines": "루틴에서 다시 켜기",
-  "What I find comes here": "제가 찾은 소식이 여기에 올라와요",
-  "Every morning I look up what changed and post up to three, each with where it came from. Tell me in the conversation what to look for.":
-    "매일 아침 바뀐 것을 찾아 출처와 함께 세 개까지 올려요. 무엇을 찾을지는 대화에서 말씀해 주세요.",
-  "Not sure what to ask?": "무엇을 맡길지 모르겠다면",
-  "Ideas has things I can do for you.":
-    "아이디어에 제가 할 수 있는 일이 있어요.",
-  "See ideas": "아이디어 보기",
-  "It starts by looking for: {topics}": "처음에는 이것부터 찾아요: {topics}",
+  "Every morning, posted here: {topics}": "매일 아침 여기에 올라와요: {topics}",
   "Get updates every morning": "매일 아침 소식 받기",
   Like: "좋아요",
   "Talk about it": "이야기하기",
   Hide: "숨기기",
-  "Why this: the {routine} routine, looking for “{topic}”, on {sites}":
-    "왜 이 소식: {routine} 루틴 · 찾던 것 ‘{topic}’ · 출처 {sites}",
+  "Like “{title}”": "‘{title}’ 좋아요",
+  "Talk about “{title}”": "‘{title}’ 이야기하기",
+  "Hide “{title}”": "‘{title}’ 숨기기",
   "About this update": "이 소식에 대해",
   "Remove “{title}”": "‘{title}’ 빼기",
   "{count} new": "새 소식 {count}개",

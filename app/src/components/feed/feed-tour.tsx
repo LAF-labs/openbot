@@ -1,4 +1,11 @@
 import { effectivePersona, type Persona } from "@shared/persona";
+import {
+  IconBulb,
+  IconClock,
+  IconLayoutGrid,
+  IconPlugConnected,
+  IconTarget,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { focusRing } from "@/components/ui/focus";
@@ -11,11 +18,16 @@ import { t } from "@/lib/i18n";
  * Muse's first edition is nine posts written by the product rather than the model — one per place,
  * plus how to change the feed (`~/laf/docs/muse-web-walkthrough-2026-09-28.md`) — and its generated
  * posts then took a day to arrive. Ours opened on one grey line. So until the first post lands, the
- * page shows a post-shaped card for each place beside the conversation, each a press away, at no
- * model cost. They are not stored and not counted as unseen: they are the page's own words, and they
- * go the moment there is something real to read.
+ * page shows a row for each place beside the conversation, each a press away, at no model cost.
+ * They are not stored and not counted as unseen: they are the page's own words, and they go the
+ * moment there is something real to read.
  *
  * THE SAME FIVE FOR EVERYBODY; the persona only orders them (CLAUDE.md: a hint, never a gate).
+ *
+ * ONE LINE EACH, BESIDE THE PLACE'S OWN ICON (2026-10-04). Each stop was a card of three lines —
+ * the place, what it does, and two sentences more — 269 characters in Korean for five links, on a
+ * page whose job that day is to offer one button. A stop is what the place does for the person, in
+ * a line, with the place's name under it and the icon the sidebar and the menu already draw for it.
  */
 type Stop = {
   key: string;
@@ -25,46 +37,47 @@ type Stop = {
     | "/made"
     | "/routines"
     | "/settings/connected-accounts";
+  /** The place's icon, as `app-sidebar/places.ts` and the sidebar draw it. */
+  icon: typeof IconBulb;
   topic: string;
   title: string;
-  body: string;
 };
 
 const STOPS: readonly Stop[] = [
   {
     key: "connections",
     to: "/settings/connected-accounts",
+    icon: IconPlugConnected,
     topic: "Connections",
     title: "Connect what you use, and I can handle it myself",
-    body: "Calendar, mail, Notion, Canva, and the sites a shop runs on. What I may do with each is yours to set.",
   },
   {
     key: "ideas",
     to: "/ideas",
+    icon: IconBulb,
     topic: "Ideas",
     title: "Things worth handing me, one press each",
-    body: "Pick one and it waits in the conversation for you to finish the sentence. Nothing starts until you send it.",
   },
   {
     key: "goals",
     to: "/goals",
+    icon: IconTarget,
     topic: "Goals",
     title: "Tell me a goal and I keep track of it with you",
-    body: "An exam, a habit, this month's sales. I save it only when you say yes, and log each step on its timeline.",
   },
   {
     key: "routines",
     to: "/routines",
+    icon: IconClock,
     topic: "Routines",
     title: "Checks I run at the times you set",
-    body: "A morning briefing, a weekly summary, a watch on a price. Say it in the conversation and I set it up.",
   },
   {
     key: "made",
     to: "/made",
+    icon: IconLayoutGrid,
     topic: "Made",
     title: "Everything I make, kept in one place",
-    body: "Tables, checklists and drafts from our conversation, to open again whenever you need them.",
   },
 ];
 
@@ -89,24 +102,26 @@ export function FeedTour() {
   return (
     <section
       aria-label={t("Getting started")}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-2"
       data-feed-tour
     >
       {stops.map((stop) => (
         <Link
-          className={`flex flex-col gap-2 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/40 ${focusRing}`}
+          className={`flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:bg-accent ${focusRing}`}
           data-tour-stop={stop.key}
           key={stop.key}
           to={stop.to}
         >
-          <span className="font-medium text-foreground/80 text-xs">
-            {t(stop.topic)}
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <stop.icon aria-hidden="true" className="size-4.5" />
           </span>
-          <span className="font-semibold text-base leading-6">
-            {t(stop.title)}
-          </span>
-          <span className="text-muted-foreground text-sm leading-6">
-            {t(stop.body)}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium text-sm leading-5">
+              {t(stop.title)}
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {t(stop.topic)}
+            </span>
           </span>
         </Link>
       ))}
