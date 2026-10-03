@@ -1185,6 +1185,25 @@ describe("a turn that is still going", () => {
     };
   }
 
+  /*
+   * A STEP THAT IS PUT AWAY LEAVES NOTHING STANDING. The thinking line waits 1.2 s under a tail
+   * that is still on the screen. Pressed on the running app with steps no longer drawn: the
+   * weather's line went as its result arrived, and the end of the conversation was empty for
+   * 1.2 s before "생각 중" — a Bot that has stalled looks exactly like that.
+   */
+  test("says it is thinking at once after a step that is put away", async () => {
+    const { server, view, writes } = await running("channel_steps-thinking");
+    await writes([called("1")]);
+    await view.waitFor(() => linesDrawn(view.host) === 1, "the step");
+    await writes([...done("1")]);
+    await view.waitFor(() => linesDrawn(view.host) === 0, "the step gone");
+    // Well inside the 1.2 s the line waits under a tail that is still drawn.
+    await view.settle(200);
+    expect(log(view.host)?.textContent).toContain("Thinking");
+    server.close();
+    await view.unmount();
+  });
+
   test("shows the step that is out and none of the finished ones, and its answer opens them all", async () => {
     const { server, view, writes } = await running("channel_steps-going");
 
