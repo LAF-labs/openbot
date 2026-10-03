@@ -219,16 +219,12 @@ function RouteComponent() {
               variant="ghost"
             >
               <IconDeviceDesktop className="size-4.5" />
+              {/* The dot alone: the button's name already says the browser is in use. */}
               {isComputerInUse ? (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="size-1.5 animate-pulse rounded-full bg-primary"
-                  />
-                  <span className="text-muted-foreground text-xs">
-                    {t("In use")}
-                  </span>
-                </>
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 animate-pulse rounded-full bg-primary"
+                />
               ) : null}
             </Button>
             {/*

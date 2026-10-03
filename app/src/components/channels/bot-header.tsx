@@ -20,9 +20,13 @@ import { usePresence } from "./use-presence";
  * carries `data-tauri-drag-region` itself — not from its children — so the face and the name carry it
  * too, and the pill and the buttons, which are pressed rather than dragged, do not. Inert in a tab.
  *
- * 56px, not the 44 the sidebar's title row is: the face and two lines need it, and the rows do not
- * line up across the column border anyway — the sidebar's top row is the traffic lights' and holds
- * nothing.
+ * ONE QUIET ROW (the owner, 2026-10-04: too many words on the screen; the proposal they chose has
+ * a small face, the name and a dot). It was 56px with a 36px face and, under the name, a pill that
+ * always said a word — "쉬는 중" for most of every day, which tells nobody anything, and "생각 중"
+ * while the end of the transcript was already saying so. Now the row is 48px, the face 24, and the
+ * state sits beside the name as a dot: grey at rest, the Bot's colour and pulsing while it works.
+ * The word is still the dot's name, for a screen reader and on hover, and the dot still opens the
+ * drawer. Only one state keeps its word on the screen — the person's turn (`saysItsWord`).
  */
 export function BotHeader({
   actions,
@@ -55,36 +59,31 @@ export function BotHeader({
 
   return (
     <header
-      className="sticky top-0 z-10 flex h-14 shrink-0 select-none items-center gap-2 bg-background/90 px-3 backdrop-blur-sm"
+      className="sticky top-0 z-10 flex h-12 shrink-0 select-none items-center gap-2 bg-background/90 px-3 backdrop-blur-sm"
       data-tauri-drag-region
     >
       {leading}
       <div
-        className="flex min-w-0 flex-1 items-center gap-2.5"
+        className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
       >
         {avatarSeed === undefined ? (
-          <span className="size-9 shrink-0 rounded-full bg-muted" />
+          <span className="size-6 shrink-0 rounded-full bg-muted" />
         ) : (
           <BotAvatar
             className="shrink-0"
             seed={avatarSeed}
-            size={36}
+            size={24}
             state={face}
           />
         )}
-        <div
-          className="flex min-w-0 flex-col items-start gap-0.5"
+        <h1
+          className="min-w-0 truncate font-semibold text-sm leading-5"
           data-tauri-drag-region
         >
-          <h1
-            className="max-w-full truncate font-semibold text-base leading-5"
-            data-tauri-drag-region
-          >
-            {name}
-          </h1>
-          {pill ? pill(presence) : <PresencePill presence={presence} />}
-        </div>
+          {name}
+        </h1>
+        {pill ? pill(presence) : <PresencePill presence={presence} />}
       </div>
       {actions ? (
         <div className="flex shrink-0 items-center gap-1">{actions}</div>
@@ -112,7 +111,18 @@ const DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
   quiet: "bg-muted-foreground/50",
 };
 
-/** The pill's face: a dot and one word. Shared by the static pill and the drawer's trigger. */
+/**
+ * Whether the state is said in a word on the screen, or only shown as a dot.
+ *
+ * ONLY THE PERSON'S TURN. Amber is the one state somebody has to act on, and a dot alone would not
+ * say what is wanted. Resting says nothing a person needs, and working is already said where the
+ * work is — the end of the conversation. The word is the dot's name either way.
+ */
+export function saysItsWord(presence: Presence): boolean {
+  return presence.tone === "attention";
+}
+
+/** The pill's face: a dot, and its word where the word is said. Shared with the drawer's trigger. */
 export function PresencePillBody({ presence }: { presence: Presence }) {
   return (
     <>
@@ -123,7 +133,9 @@ export function PresencePillBody({ presence }: { presence: Presence }) {
           DOT_TONES[presence.tone],
         )}
       />
-      <span className="truncate">{t(presence.label)}</span>
+      {saysItsWord(presence) ? (
+        <span className="truncate">{t(presence.label)}</span>
+      ) : null}
     </>
   );
 }
@@ -131,11 +143,25 @@ export function PresencePillBody({ presence }: { presence: Presence }) {
 export const PILL_CLASS =
   "inline-flex h-5 max-w-full items-center gap-1.5 rounded-full px-2 font-medium text-xs";
 
-/** The pill where there is nothing to open — before the first conversation exists. */
+/** The dot by itself: a 20px place to press or point at, with no plate under it. */
+export const DOT_CLASS =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-full pointer-coarse:size-9";
+
+/** The state's look: the pill where it says its word, the bare dot where it does not. */
+export function presenceClass(presence: Presence): string {
+  return saysItsWord(presence)
+    ? cn(PILL_CLASS, PILL_TONES[presence.tone])
+    : DOT_CLASS;
+}
+
+/** The state where there is nothing to open — before the first conversation exists. */
 export function PresencePill({ presence }: { presence: Presence }) {
   return (
-    <span className={cn(PILL_CLASS, PILL_TONES[presence.tone])}>
+    <span className={presenceClass(presence)} title={t(presence.label)}>
       <PresencePillBody presence={presence} />
+      {saysItsWord(presence) ? null : (
+        <span className="sr-only">{t(presence.label)}</span>
+      )}
     </span>
   );
 }
