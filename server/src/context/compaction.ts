@@ -42,6 +42,7 @@ import { jsonObjectOf } from "../../../shared/json-object";
 import { settledAttachmentText } from "../../../shared/prompt/attachments.ko";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { redactedInput, redactText, resultExcerpt } from "./judge-redaction";
+import { textOf } from "./message-text";
 import {
   type CallDecision,
   collectToolCalls,
@@ -86,20 +87,6 @@ export const DROPPED_RESULT_HEAD = 300;
 export function droppedResultText(content: string): string {
   const head = cutAtCodeUnits(content, DROPPED_RESULT_HEAD);
   return `${head}${content.length > DROPPED_RESULT_HEAD ? "…" : ""}\n${toolResultText("laf:tool_result_compacted")}`;
-}
-
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) =>
-        part && typeof part === "object" && "text" in part
-          ? String((part as { text: unknown }).text ?? "")
-          : "",
-      )
-      .join("");
-  }
-  return "";
 }
 
 type Call = { id: string; function: { name: string; arguments: string } };

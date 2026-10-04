@@ -35,6 +35,7 @@ import { jsonObjectOf } from "../../../shared/json-object";
 import { dayLabel } from "../../../shared/prompt/zone";
 import { type Ask, askModel, type ModelCall } from "../computer/model-call";
 import { redactedInput, redactText, resultExcerpt } from "./judge-redaction";
+import { textOf } from "./message-text";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -78,20 +79,6 @@ export const SUMMARY_MAX_CHARS = 3_000;
 
 /** The date part of a day label, which compares in order. */
 export const dayKey = (label: string) => label.slice(0, 10);
-
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) =>
-        part && typeof part === "object" && "text" in part
-          ? String((part as { text: unknown }).text ?? "")
-          : "",
-      )
-      .join("");
-  }
-  return "";
-}
 
 /** When the thread store first saw a message, or null for a row from before stamps. */
 function stampOf(message: StampedMessage): string | null {
