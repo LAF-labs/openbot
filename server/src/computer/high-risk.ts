@@ -294,7 +294,14 @@ export function highRiskSignals(facts: HighRiskFacts): Signals {
   const hard: string[] = [];
   const soft: string[] = [];
   const kinds = new Set<HighRiskKind>();
+  /*
+   * The label as the snapshot wrote it, and with its spaces taken out: a name built from a
+   * control's contents may carry spaces the page's own name does not ("결 제" for 결제, `policy.ts`
+   * says why), and a paying control is one under either spelling.
+   */
   const label = facts.element?.name ?? "";
+  const says = (pattern: RegExp) =>
+    pattern.test(label) || pattern.test(label.replace(/\s+/g, ""));
   const typed = [...facts.typed, ...(facts.typedNow ? [facts.typedNow] : [])];
   const typedKinds = new Set(typed.flatMap((entry) => entry.kinds));
 
@@ -305,11 +312,11 @@ export function highRiskSignals(facts: HighRiskFacts): Signals {
     }
   }
   const sends = facts.submit || facts.intent === "activate";
-  if (sends && PAYING.test(label)) {
+  if (sends && says(PAYING)) {
     hard.push("paying_control");
     kinds.add("payment");
   }
-  if (sends && ACCOUNT_CHANGE.test(label)) {
+  if (sends && says(ACCOUNT_CHANGE)) {
     hard.push("account_control");
     kinds.add("account");
   }
@@ -333,8 +340,7 @@ export function highRiskSignals(facts: HighRiskFacts): Signals {
   if (facts.secretHere) soft.push("secret_entered_here");
   if (MONEY_HOST.test(facts.host)) soft.push("money_site");
   if (RISKY_PATH.test(facts.path)) soft.push("risky_path");
-  if (typed.length > 0 && SUBMITTING.test(label))
-    soft.push("submitting_control");
+  if (typed.length > 0 && says(SUBMITTING)) soft.push("submitting_control");
   return { hard, soft, kinds: [...kinds] };
 }
 

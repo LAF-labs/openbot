@@ -71,6 +71,39 @@ describe("evaluateActionPolicy", () => {
     expect(decision.code).toBe("laf:policy_denied");
   });
 
+  /*
+   * A NAME BUILT FROM A CONTROL'S CONTENTS may carry spaces the page's own name does not: "결 제"
+   * for 결제 (aria-snapshot.ts, `nameFromWithin`). A rule about 결제 held against the spaced
+   * spelling alone is a rule the markup steps round, and the hold afterwards treats the two
+   * spellings as one (Codex on pull request 65). The stricter reading stands.
+   */
+  test("a label is judged with and without its spaces, and the stricter reading stands", () => {
+    const paying: ActionPolicy = {
+      ...permissive,
+      ask: ['matches(element.name, "결제|송금")'],
+    };
+    const spaced = (name: string) =>
+      evaluateActionPolicy(
+        paying,
+        context({ element: { ref: "e1", role: "button", name } }),
+      );
+    expect(spaced("결 제").source).toBe("ask");
+    expect(spaced("결 제").matched).toBe('matches(element.name, "결제|송금")');
+    expect(spaced("바로 송 금 하기").source).toBe("ask");
+    // A name with no space in it is judged once, as it was.
+    expect(spaced("결제").source).toBe("ask");
+    expect(spaced("장바구니").source).toBe("allow");
+    // And a space never makes a rule match that would not have: "결제" is not in "결 과 제 출".
+    expect(spaced("결 과 제 출").source).toBe("allow");
+    // Deny outranks ask, whichever spelling found it.
+    expect(
+      evaluateActionPolicy(
+        { ...paying, deny: ['matches(element.name, "송금")'] },
+        context({ element: { ref: "e1", role: "button", name: "송 금" } }),
+      ).source,
+    ).toBe("deny");
+  });
+
   test("a deny rule leaves unrelated elements alone", () => {
     const decision = evaluateActionPolicy(
       { ...permissive, deny: ['contains(element.name, "submit")'] },

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
 import {
   createHighRiskCheck,
   createTypedLedger,
@@ -10,6 +9,7 @@ import {
   piiKindsOfLabel,
   typedEntryOf,
 } from "../src/computer/high-risk";
+import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
 
 /**
  * THE HIGH-RISK CHECK, AS FACTS IN AND A VERDICT OUT.
@@ -423,6 +423,23 @@ describe("what the judge is shown", () => {
     expect(said).toContain("로그인해서");
     expect(said).toContain("결제해 줘");
     expect((state.owner_task as string).length).toBeLessThanOrEqual(600);
+  });
+
+  test("a paying label is one with its spaces taken out as well", () => {
+    // "결 제" is how the snapshot spells a 결제 button whose letters sit in two spans (`nameFromWithin`).
+    const spaced = highRiskSignals(
+      facts({ element: { role: "button", name: "결 제 하기" } }),
+    );
+    expect(spaced.hard).toEqual(["paying_control"]);
+    const account = highRiskSignals(
+      facts({ element: { role: "button", name: "회원 탈 퇴" } }),
+    );
+    expect(account.hard).toEqual(["account_control"]);
+    // Taking spaces out never makes a word that was not there.
+    const unrelated = highRiskSignals(
+      facts({ element: { role: "button", name: "결 과 보기" } }),
+    );
+    expect(unrelated.hard).toEqual([]);
   });
 
   test("the deterministic reading names its signals", () => {
