@@ -202,7 +202,7 @@ describe("an answer's sources", () => {
     const { links, buttons } = await row([NEWS, COUNCIL]);
     expect(links().length).toBe(1);
     expect(buttons().map((button) => button.textContent)).toEqual(["+1"]);
-    expect(buttons()[0]?.getAttribute("aria-label")).toBe("1 more sources");
+    expect(buttons()[0]?.getAttribute("aria-label")).toBe("Sources: 1 more");
   });
 
   test("with no sources nothing is drawn", async () => {
@@ -276,15 +276,15 @@ describe("what a pill is called", () => {
 
   test("+n says how many more, to a screen reader and to a pointer", async () => {
     const { buttons } = await row([NEWS, BRIEFING, COUNCIL]);
-    expect(buttons()[0]?.getAttribute("aria-label")).toBe("2 more sources");
-    expect(buttons()[0]?.getAttribute("title")).toBe("2 more sources");
+    expect(buttons()[0]?.getAttribute("aria-label")).toBe("Sources: 2 more");
+    expect(buttons()[0]?.getAttribute("title")).toBe("Sources: 2 more");
   });
 
   test("both names have Korean, and the fold's count is gone from the dictionary", () => {
     expect(ko["Source: {site}, opens in a new tab"]).toBe(
       "출처: {site}, 새 탭에서 열림",
     );
-    expect(ko["{count} more sources"]).toBe("출처 {count}개 더");
+    expect(ko["Sources: {count} more"]).toBe("출처 {count}개 더");
     expect("{count} sources" in ko).toBe(false);
   });
 });
