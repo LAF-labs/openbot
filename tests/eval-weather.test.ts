@@ -58,4 +58,29 @@ describe("an answer under the weather card", () => {
       expect([answer, leavesItToTheCard(answer)]).toEqual([answer, false]);
     }
   });
+
+  /*
+   * A sentence was split from the next only at a space, so two that follow one another with none
+   * were one (Codex on pull request 62, a round later). What follows a mark decides: more words are
+   * a second sentence; a digit is the rest of a figure; a closing bracket or quote, or another mark,
+   * is the end of the same sentence.
+   */
+  test("counts a sentence that follows another with no space, and not the point inside a figure", () => {
+    for (const answer of [
+      "오늘은 맑아요.내일은 흐려요.",
+      "오늘은 맑아요!내일은 비가 와요",
+      "비는 안 와요?네, 안 와요.",
+    ]) {
+      expect([answer, leavesItToTheCard(answer)]).toEqual([answer, false]);
+    }
+    for (const answer of [
+      "지금은 17.3도예요.",
+      "내일 최고는 20.5도까지 올라가요",
+      "우산은 안 챙기셔도 돼요!!",
+      "오늘은 맑아요(내일은 흐려요.)",
+      '네, "맑음"이에요.',
+    ]) {
+      expect([answer, leavesItToTheCard(answer)]).toEqual([answer, true]);
+    }
+  });
 });

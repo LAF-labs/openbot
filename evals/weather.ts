@@ -162,14 +162,19 @@ export function weatherPlacesAsked(calls: readonly ObservedCall[]): string[] {
  *  - no word of where the data is from: the card names 기상청, and the rule says not to again.
  * The first cut counted characters and figures only, and "오늘은 흐리고 비가 옵니다. 자세한 예보는
  * 기상청 자료입니다." passed it — two sentences and the source, under a check that says "one
- * sentence" in its own failure line (Codex on pull request 62).
+ * sentence" in its own failure line (Codex on pull request 62). The second split sentences only at
+ * a space, and "오늘은 맑아요.내일은 흐려요." was one (the same review, a round later).
  */
 export function leavesItToTheCard(text: string): boolean {
   const said = text.trim();
   if (said.length === 0 || said.length > 80) return false;
-  // A sentence ends at its mark where more follows it. "17.3도" has no space after its point.
+  /*
+   * A sentence ends at its mark where more follows it — after a space or straight on: "맑아요.내일은"
+   * is two. What follows a point inside a figure is a digit ("17.3도"), and what follows a mark in a
+   * run of them, or before a closing bracket or quote, is not a new sentence either.
+   */
   const sentences = said
-    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .split(/(?<=[.!?。！？])(?:\s+|(?=[^\s\d.!?。！？)\]}"'”’]))|\n+/)
     .filter((part) => part.trim().length > 0);
   const figures = said.match(/(?<![\d.])\d+(?:\.\d+)?\s?(?:도|℃|°)/g) ?? [];
   return (
