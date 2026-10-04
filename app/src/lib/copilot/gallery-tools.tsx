@@ -1,7 +1,11 @@
 import { useFrontendTool, useHumanInTheLoop } from "@copilotkit/react-core/v2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
-import { RefusedCard } from "@/components/gallery/refused";
+import {
+  CardNotShown,
+  cardEndingOf,
+  RefusedCard,
+} from "@/components/gallery/refused";
 import {
   agentComponentsQueryOptions,
   announceGallery,
@@ -60,6 +64,50 @@ export function GalleryTools() {
   );
 }
 
+/**
+ * What one call of a gallery card is drawn as.
+ *
+ * Out here, and exported, because the gallery itself is found through Vite and no card of it can be
+ * mounted under `bun test`: what a call is drawn as is tested by drawing this
+ * (`server-run-step-line.test.tsx`).
+ */
+export function CardCall({
+  Component,
+  args,
+  isHeld,
+  result,
+  title,
+}: {
+  Component: GalleryComponent["Component"];
+  args: Record<string, unknown> | undefined;
+  /** Whether this Bot holds the card now, by the grants this window polls. */
+  isHeld: boolean;
+  /** What the conversation kept as the call's result, once it has one. */
+  result?: string | undefined;
+  /** The card's own title, already in the reader's language. */
+  title: string;
+}) {
+  /*
+   * THE CALL'S OWN ANSWER FIRST: a card the Bot was told was not shown is not drawn as the card,
+   * whatever this Bot holds now (`cardEndingOf`).
+   */
+  const ending = cardEndingOf(result);
+  if (ending) return <CardNotShown ending={ending} title={title} />;
+  // Render from the polled grant snapshot so revocations show before a new call starts.
+  if (!isHeld) {
+    return (
+      <RefusedCard
+        reason={t(
+          "{title} is not switched on for this Bot at the moment. It can be turned back on for this Bot from the admin screen.",
+          { title },
+        )}
+        title={title}
+      />
+    );
+  }
+  return <Component {...(args ?? {})} />;
+}
+
 function GrantedTool({
   spec,
   held,
@@ -73,21 +121,15 @@ function GrantedTool({
   const Component = spec.Component;
 
   const render = useCallback(
-    (props: { args?: Record<string, unknown> }) => {
-      // Render from the polled grant snapshot so revocations show before a new call starts.
-      if (!isHeld) {
-        return (
-          <RefusedCard
-            reason={t(
-              "{title} is not switched on for this Bot at the moment. It can be turned back on for this Bot from the admin screen.",
-              { title: t(spec.title) },
-            )}
-            title={t(spec.title)}
-          />
-        );
-      }
-      return <Component {...(props.args ?? {})} />;
-    },
+    (props: { args?: Record<string, unknown>; result?: string }) => (
+      <CardCall
+        Component={Component}
+        args={props.args}
+        isHeld={isHeld}
+        result={props.result}
+        title={t(spec.title)}
+      />
+    ),
     [Component, isHeld, spec.title],
   );
 

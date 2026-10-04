@@ -38,6 +38,16 @@ export const FILE_CARD = "showFile";
 export const ON_SCREEN = "It is now on screen for the person.";
 
 /**
+ * What a card's call answers when the grant could not be asked about at all — the store threw.
+ *
+ * Named, because it is the one way a card's call ends without the card that is neither a fact from
+ * the table nor an object of this server's: the surface could not tell it from the card going on
+ * screen, and drew the card (`cardEndingOf` in the app's `components/gallery/refused.tsx`).
+ */
+export const CARD_NOT_ASKED =
+  "This deployment could not be asked whether that card is allowed, so it was not shown.";
+
+/**
  * The cards whose call IS a question to the person: the call waits for their answer, and the answer
  * is its result. No confirmation, because there is nothing to confirm until somebody chooses.
  */

@@ -14,6 +14,7 @@ import type { AgentEffort } from "@/lib/agents/effort-label";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { useDeclaredBotId } from "./active-bot";
+import { keptText } from "./kept-result";
 
 /**
  * A Bot rewriting its own profile, and its own routines, from inside the conversation: what the
@@ -88,15 +89,13 @@ export function SelfTools() {
      * Named for what happened, not for the tool. A person watching their Bot change its own profile
      * should read "this Bot updated its own profile", not `update_profile`.
      */
-    render: ({ status }) => {
+    render: ({ status, result }) => {
       const running = status !== "complete";
+      const line = profileLineFor(result);
       return (
         <ToolLine
-          label={
-            running
-              ? t("Updating its own profile")
-              : t("Updated its own profile")
-          }
+          failed={!running && line.failed === true}
+          label={running ? t("Updating its own profile") : line.done}
           running={running}
         />
       );
@@ -114,11 +113,16 @@ export function SelfTools() {
        * The line says what the Bot did. One tool does several things, and saying "saved a routine"
        * while it deleted one is the kind of small lie that makes a person stop reading these lines:
        * a Bot that only listed its routines read "Changed a routine" until 2026-09-24. Drawn from
-       * the action the Bot asked for.
+       * the action the Bot asked for, and from the answer it got (`routineLineOf`): a save the
+       * server refused is not "루틴을 저장했어요".
        */
-      const said = routineLineFor(asked?.action);
+      const said = routineLineOf(asked?.action, result);
       const line = (
-        <ToolLine label={running ? said.doing : said.done} running={running} />
+        <ToolLine
+          failed={!running && said.failed === true}
+          label={running ? said.doing : said.done}
+          running={running}
+        />
       );
       /*
        * A SAVE OR AN EDIT THAT WENT THROUGH IS DRAWN AS THE ROUTINE, not as a sentence about it:
@@ -127,7 +131,7 @@ export function SelfTools() {
        * already reads the routine as it is. Anything else — a list, a pause, a refusal — keeps the
        * line, and so does a routine the list no longer holds.
        */
-      if (running || !routineCallLanded(asked?.action, result)) {
+      if (running || said.failed || !routineCallLanded(asked?.action, result)) {
         return line;
       }
       return (
@@ -187,6 +191,92 @@ export function SelfTools() {
 }
 
 /**
+ * WHETHER ONE OF THE BOT'S OWN CALLS WENT THROUGH, READ OFF THE ANSWER THE CONVERSATION KEEPS.
+ *
+ * These lines said what they knew from the handler the window ran — it wrote "루틴을 저장하지
+ * 못했어요" for its renderer when a route refused. A turn the server carries out never ran that
+ * handler, so from v0.5.7 a line knew nothing and said what a line that knows nothing says: a
+ * routine refused for a time of "8시" read "루틴을 저장했어요", and a profile the server would not
+ * change read "자기 프로필을 바꿨어요" (review of pull request 83). The answer is the one account
+ * of the call both sides have.
+ *
+ * BY THE SENTENCE A SUCCESS IS ANSWERED WITH, NOT BY A LIST OF FAILURES. These tools' good news is
+ * a sentence of the same table their refusals are (`shared/prompt/tool-results.ko.ts`), so the
+ * reader a connected service's line uses (`stepFailureOf`) would call every one of them a failure.
+ * A call went through when its answer is the one its action is answered with — from the table the
+ * server writes it from, so the two cannot drift apart — and any other answer is a call that did
+ * not: a refusal, a turn stopped under it, a call nothing answered. No answer kept at all says
+ * nothing either way, and reads as it always did.
+ */
+const opens = (code: string) =>
+  (TOOL_RESULT_KO[code] ?? "").split("{")[0] ?? "";
+
+/** What a profile line says once its call is over. */
+export function profileLineFor(result: string | undefined): {
+  done: string;
+  failed?: boolean;
+} {
+  const said = keptText(result);
+  return !said || said === toolResultText("laf:profile_updated")
+    ? { done: t("Updated its own profile") }
+    : { done: t("Could not update its own profile"), failed: true };
+}
+
+/** Whether a routine call's answer is the one that action is answered with when it goes through. */
+function routineWentThrough(
+  action: RoutineArgs["action"] | undefined,
+  said: string,
+): boolean {
+  switch (action) {
+    case "create":
+      // Saved, or saved with a schedule that could not be read back: either way a save.
+      return (
+        said.startsWith(opens("laf:routine_saved")) ||
+        said === toolResultText("laf:routine_saved_unread")
+      );
+    case "list":
+      return (
+        said.startsWith(opens("laf:routine_list")) ||
+        said === toolResultText("laf:routine_list_empty")
+      );
+    case "delete":
+      return said === toolResultText("laf:routine_deleted");
+    case "update":
+      /*
+       * An edit that stood — whatever became of a switch asked for with it, which the server does
+       * only after the edit (`routineAction`) — or the switch alone.
+       */
+      return (
+        said.startsWith(opens("laf:routine_updated")) ||
+        said === toolResultText("laf:routine_saved_unread") ||
+        said === toolResultText("laf:routine_paused") ||
+        said === toolResultText("laf:routine_resumed")
+      );
+    default:
+      return false;
+  }
+}
+
+/** What a routine line says: the action the Bot asked for, and whether its answer says it went through. */
+export function routineLineOf(
+  action: RoutineArgs["action"] | undefined,
+  result: string | undefined,
+): { doing: string; done: string; failed?: boolean } {
+  const line = routineLineFor(action);
+  const said = keptText(result);
+  if (!said || routineWentThrough(action, said)) return line;
+  const could =
+    action === "create"
+      ? t("Could not save a routine")
+      : action === "list"
+        ? t("Could not look at its routines")
+        : action === "delete"
+          ? t("Could not delete a routine")
+          : t("Could not change a routine");
+  return { doing: line.doing, done: could, failed: true };
+}
+
+/**
  * Whether a routine call saved or changed a routine — the only two that are drawn as its card.
  *
  * The Bot's answer is what the conversation keeps of the call, so it is read for the sentence a
@@ -198,7 +288,7 @@ export function routineCallLanded(
   result: string | undefined,
 ): boolean {
   if (action !== "create" && action !== "update") return false;
-  const said = answerText(result);
+  const said = keptText(result);
   const opening = (
     TOOL_RESULT_KO[
       action === "create" ? "laf:routine_saved" : "laf:routine_updated"
@@ -219,7 +309,7 @@ export function rememberLineFor(
   args: { fact?: string; place?: string } | undefined,
   result: string | undefined,
 ): { done: string; note?: string; failed?: boolean } {
-  const said = answerText(result);
+  const said = keptText(result);
   /*
    * A failed line reads "{action} — 실패", so its action is the thing tried, not the thing done:
    * "기억해 두었어요 — 실패" said both at once (walked 2026-09-27, a refused remember after a cut).
@@ -234,18 +324,6 @@ export function rememberLineFor(
   return said === toolResultText("laf:remembered") && args?.fact
     ? { done: t("Remembered something"), note: args.fact }
     : failed(t("Remember something"));
-}
-
-/** A tool result as the transcript keeps it: the answer's string, sometimes JSON-quoted once. */
-function answerText(result: string | undefined): string {
-  if (!result) return "";
-  if (!result.startsWith('"')) return result;
-  try {
-    const parsed: unknown = JSON.parse(result);
-    return typeof parsed === "string" ? parsed : result;
-  } catch {
-    return result;
-  }
 }
 
 /** What a routine line says, from the action the Bot asked for. */
