@@ -79,6 +79,23 @@ describe("what Jev is shown", () => {
     expect(state.page.text.length).toBe(600);
   });
 
+  /*
+   * REDACTED BEFORE IT IS CUT. Cut first, a credential straddling the 600th character left as a
+   * fragment the patterns no longer recognise — "kim.chulsoo@e" (review of the eval). The bound
+   * holds because the cut is last.
+   */
+  test("a credential straddling the cut is redacted whole, and the bound still holds", () => {
+    const state = pageFactsStateOf(
+      page({ head600: `${"가".repeat(587)}kim.chulsoo@example.com 뒤` }),
+    );
+    expect(state.page.text.length).toBeLessThanOrEqual(600);
+    const sent = JSON.stringify(state);
+    for (const value of ["kim.chulsoo", "@e", "example.com"]) {
+      expect([value, sent.includes(value)]).toEqual([value, false]);
+    }
+    expect(state.page.text).toContain("[email] 뒤");
+  });
+
   test("a tab left on about:blank is shown as that, not as nothing", () => {
     expect(pageFactsStateOf(page({ finalUrl: "about:blank" })).page.url).toBe(
       "about:blank",

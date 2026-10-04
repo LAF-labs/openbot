@@ -153,7 +153,9 @@ export function pageFactsStateOf(
     page: {
       url: redactText(addressOf(page.finalUrl)),
       title: redactText(page.title),
-      text: redactText(page.head600.slice(0, PAGE_FACTS_HEAD_CHARS)),
+      // Redact first, cut second: a credential that straddles the cut would otherwise leave as a
+      // fragment the patterns no longer recognise ("kim.chulsoo@e"; review).
+      text: redactText(page.head600).slice(0, PAGE_FACTS_HEAD_CHARS),
     },
   };
 }

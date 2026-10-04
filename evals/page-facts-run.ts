@@ -177,11 +177,23 @@ async function all<T, R>(
   return out;
 }
 
-async function asked(): Promise<{ asks: Ask[]; warmUp: Ask | null }> {
+/** What a saved report says about the asks it holds: whose model, how wide, when. */
+type Saved = { model?: string; width?: number; ranAt?: string };
+
+async function asked(): Promise<{
+  asks: Ask[];
+  warmUp: Ask | null;
+  saved: Saved | null;
+}> {
   if (FROM) {
-    return JSON.parse(await Bun.file(FROM).text()) as {
+    const report = JSON.parse(await Bun.file(FROM).text()) as {
       asks: Ask[];
       warmUp: Ask | null;
+    } & Saved;
+    return {
+      asks: report.asks,
+      warmUp: report.warmUp,
+      saved: { model: report.model, width: report.width, ranAt: report.ranAt },
     };
   }
   const decisionBase = decisionBaseUrlOf(BASE);
@@ -210,10 +222,10 @@ async function asked(): Promise<{ asks: Ask[]; warmUp: Ask | null }> {
         )),
       );
     }
-    return { asks: out, warmUp };
+    return { asks: out, warmUp, saved: null };
   });
 }
-const { asks, warmUp } = await asked();
+const { asks, warmUp, saved } = await asked();
 
 const plainAsks = asks.filter((item) => item.variant !== "dialog");
 const dialogAsks = asks.filter((item) => item.variant === "dialog");
@@ -284,7 +296,7 @@ const count = <T>(items: readonly T[], key: (item: T) => string) =>
     .join(", ");
 
 console.log(
-  `\npage facts · ${MODEL} · ${pages.length} labelled pages × ${runCount} run(s) · width ${WIDTH}${FROM ? ` · scored again from ${FROM}` : ""}\n`,
+  `\npage facts · ${saved?.model ?? MODEL} · ${pages.length} labelled pages × ${runCount} run(s) · width ${saved?.width ?? WIDTH}${FROM ? ` · scored again from ${FROM} (asked ${saved?.ranAt ?? "?"})` : ""}\n`,
 );
 console.log("the set");
 console.log(
@@ -486,7 +498,7 @@ console.log(
   `  usable pages that raised a dialog: ${usable.filter((page) => raisedDialog.has(page.id)).length} — what an alert costs a good page is not measured by this set`,
 );
 console.log(
-  `  ${pad("bar", 6)}${pad("false unusable", 22)}${pad("soft caught (59)", 22)}${pad("from text (46)", 22)}${pad(`text or dialog (${soft.filter(decidableWithDialogs).length})`, 24)}same 3 runs`,
+  `  ${pad("bar", 6)}${pad("false unusable", 22)}${pad(`soft caught (${soft.length})`, 22)}${pad(`from text (${soft.filter(decidableFromText).length})`, 22)}${pad(`text or dialog (${soft.filter(decidableWithDialogs).length})`, 24)}same 3 runs`,
 );
 for (const step of dialogSweep) {
   console.log(
@@ -653,10 +665,13 @@ await Bun.write(
   file,
   JSON.stringify(
     {
-      model: MODEL,
-      ranAt: new Date().toISOString(),
+      // A run scored again from a saved report carries that report's model, width and time — the
+      // asks are its — and says which file it was scored from (review).
+      model: saved?.model ?? MODEL,
+      ranAt: saved?.ranAt ?? new Date().toISOString(),
+      ...(FROM ? { scoredFrom: FROM, scoredAt: new Date().toISOString() } : {}),
       runs: runCount,
-      width: WIDTH,
+      width: saved?.width ?? WIDTH,
       bar,
       recommended,
       dialogBar,
