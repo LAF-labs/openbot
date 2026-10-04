@@ -1,39 +1,46 @@
 name: CI
 
-# The gate on the refs that `images.yml` does not already gate. Pull requests and the long-lived
-# `laf/**` branches run here; main and `v*` tags run the same `checks.yml` inside `images.yml`, as
-# the prerequisite of the build that publishes them. Until 2026-09-10 main and tags ran here too,
-# because a `v*` tag is what puts code in front of the whole fleet and for a while it was the one
-# ref nobody checked — but `images.yml` has gated on the checks since then, so the same commit was
-# checked twice. Measured 2026-09-01..10: 77 pushes to main, 4 Linux minutes each, 308 minutes, 62
-# of them for pushes that changed only documentation. A public repository can ignore that; a
-# private one on the Free plan's 2,000 minutes a month cannot — this one was private from
-# 2026-09-10 to 2026-09-16 and spent nearly the whole month's minutes in that week, which is why it
-# is public again. Checking a commit once stays the rule. The README badge still points here and
-# reports the branches this runs on.
+# The gate on pull requests, which is where `images.yml` does not already gate: main and `v*` tags
+# run the same `checks.yml` inside `images.yml`, as the prerequisite of the build that publishes
+# them. Until 2026-09-10 main and tags ran here too, because a `v*` tag is what puts code in front
+# of the whole fleet and for a while it was the one ref nobody checked — but `images.yml` has gated
+# on the checks since then, so the same commit was checked twice. Measured 2026-09-01..10: 77 pushes
+# to main, 4 Linux minutes each, 308 minutes, 62 of them for pushes that changed only documentation.
+# A public repository can ignore that; a private one on the Free plan's 2,000 minutes a month
+# cannot — this one was private from 2026-09-10 to 2026-09-16 and spent nearly the whole month's
+# minutes in that week, which is why it is public again. Checking a commit once stays the rule.
+#
+# A PUSH TO `laf/**` RAN HERE TOO, UNTIL 2026-10-05, and it was the same commit twice again. The
+# trigger was for the days development landed on long-lived laf branches by direct push: without it
+# those pushes ran nothing at all, and the test floor, the fresh-database run and the typecheck
+# were only as good as the last time somebody happened to open a pull request. Since 2026-10-02
+# nothing is pushed to main and every change is a `laf/<slug>` branch WITH a pull request
+# (CLAUDE.md, "How a change lands"), so each push raised both events, and the two runs sat in two
+# concurrency groups — `github.ref` is the branch for a push and `refs/pull/N/merge` for a pull
+# request — where neither could cancel the other. Measured 2026-10-03..04: 104 commits on `laf/**`
+# branches, 207 runs of this workflow, 103 of the commits checked once by each event, seconds
+# apart, and every pull request's check list showing each check twice. Main has no required checks
+# for either run to satisfy, so the push run was only the second copy.
+#
+# What follows from `pull_request` alone: a branch pushed with no pull request open runs nothing
+# until one is opened, and opening it runs the gate. And there is no documentation filter. The one
+# this file had sat under `push` and left with it; a pull request has always run whatever it
+# changed, and still does — a check list with nothing on it reads as "not checked", not as "only
+# words changed". `images.yml` keeps its own filter for main.
+#
+# The README badge still points here, and what it reports is the runs this workflow has: pull
+# requests'.
 
 on:
   pull_request:
-  push:
-    # laf/** because development lands on long-lived laf branches by direct push, not by pull
-    # request. Without it those pushes run nothing at all, and every guarantee below — the test
-    # floor, the fresh-database run, the typecheck — is only as good as the last time somebody
-    # happened to open a PR.
-    branches: ["laf/**"]
-    # Documentation cannot fail the gate — nothing `checks.yml` runs reads it — so it does not pay
-    # for one. Same list as images.yml.
-    paths-ignore:
-      - "docs/**"
-      - "*.md"
-      - "**/README.md"
-      - ".github/pull_request_template.md"
 
 # Least privilege by default. Jobs that need more must declare it locally.
 permissions:
   contents: read
 
-# The newest push wins. Cancelling the run for an older commit on a pull request or a laf/** branch
-# loses nothing a person will read: the newest commit is the one that gets reviewed.
+# The newest push wins. Cancelling the run for an older commit on a pull request loses nothing a
+# person will read: the newest commit is the one that gets reviewed. One group per pull request —
+# `github.ref` is `refs/pull/N/merge` here, now that no other event starts this workflow.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
