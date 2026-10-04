@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { callComponentFunction, refusalSaid } from "@/lib/components/queries";
-import { useActiveBotId } from "@/lib/copilot/active-bot";
+import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
@@ -60,15 +60,25 @@ export function ActivityReportCard({
   title,
   days,
 }: Partial<ActivityArgs>) {
-  const botId = useActiveBotId();
+  /*
+   * THE DECLARED BOT, OR NOBODY. This read `useActiveBotId`, which answers the sentinel `default`
+   * until the surface has declared its Bot — and a surface declares in an effect that runs after
+   * this card's own. Measured 2026-10-05 in a render under `bun test`: drawn in a surface's first
+   * commit, the card asked `/api/components/showActivityReport/call` for `agentId: "default"`, was
+   * answered 404 `laf:bot_not_found`, and asked again for the real Bot a render later. In the app
+   * the card is drawn by a renderer that shows a refusal while no grant is held (`gallery-tools.tsx`),
+   * which is what kept that request rare; it was never this card that refused to make it.
+   */
+  const botId = useDeclaredBotId();
   const conversation = useConversation();
   const [state, setState] = useState<State>({ status: "reading" });
 
   const functionName = report ? FUNCTION_FOR[report] : undefined;
 
   useEffect(() => {
-    // Nothing to read until the arguments have finished streaming in.
-    if (!functionName) return;
+    // Nothing to read until the arguments have finished streaming in, and nobody to read it for
+    // until the surface has said which Bot it drives.
+    if (!functionName || !botId) return;
     let current = true;
 
     void callComponentFunction(
