@@ -233,8 +233,9 @@ export function ChoiceCard(
   const queryClient = useQueryClient();
   const [sending, setSending] = useState<string | null>(null);
   /*
-   * Words are taken as the answer only by a turn the server owns (`lib/turns/typed-answer.ts`). In
-   * a conversation the window drives, what is typed waits for the turn to end, as it always has.
+   * Words are taken as the answer by the turn that is waiting on this card
+   * (`lib/turns/typed-answer.ts`), so the card says so only inside a conversation: drawn anywhere
+   * else there is no turn, and nothing typed would reach it.
    */
   const isServerTurn = useServerOwnsTurn();
 

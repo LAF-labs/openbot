@@ -6,7 +6,6 @@ import {
   UNANSWERED_RESULT,
 } from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
-import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import {
   browsingTaskHolding,
   cutOffOf,
@@ -34,7 +33,7 @@ import {
   readBrowsingNow,
   setLingerFor,
 } from "../src/lib/computer/browsing-now";
-import { skipHelp, takeSkip } from "../src/lib/computer/help-skips";
+import { skipOnServer } from "../src/lib/turns/client";
 
 /**
  * A BOT'S BROWSING, AS THE CONVERSATION DRAWS IT: ONE CARD PER TASK, AND NOTHING THAT OPENS ITSELF.
@@ -622,7 +621,8 @@ describe("what the card and the banner say", () => {
 
   test("a reload cannot turn 멈춤 into 끝남: the placeholder answer is the same stop", () => {
     // UX review 0.5.4, item 2: 멈춤 in one load and 끝남 in the next, for a task that never got its
-    // answer. Before the next turn the app answers the call with a placeholder; it is still a stop.
+    // answer. A turn that stops or fails files a placeholder for the call (`UNANSWERED_RESULT`,
+    // `server/src/turns/engine.ts`); it is still a stop.
     const unanswered = step("computer_click");
     const repaired: BrowsingStep = {
       ...unanswered,
@@ -630,31 +630,6 @@ describe("what the card and the banner say", () => {
     };
     expect(endingOf([unanswered], false)).toEqual({ kind: "stopped" });
     expect(endingOf([repaired], false)).toEqual({ kind: "stopped" });
-    const [placeholder] = repairUnansweredToolCalls([
-      {
-        id: "a",
-        role: "assistant",
-        content: "",
-        toolCalls: [
-          {
-            id: unanswered.id,
-            type: "function",
-            function: { name: "computer_click", arguments: "{}" },
-          },
-        ],
-      },
-    ] as Message[]).slice(1);
-    expect(
-      endingOf(
-        [
-          {
-            ...unanswered,
-            result: (placeholder as { content: string }).content,
-          },
-        ],
-        false,
-      ),
-    ).toEqual({ kind: "stopped" });
   });
 
   test("a site that answered with a refusal page is 못 끝냄, until the Bot lands somewhere else", () => {
@@ -868,11 +843,41 @@ describe("what the rest of the screen hears", () => {
 });
 
 describe("skipping a request for help", () => {
-  test("answers that one request, once", () => {
-    skipHelp("call-help");
-    expect(takeSkip("call-other")).toBe(false);
-    expect(takeSkip("call-help")).toBe(true);
-    expect(takeSkip("call-help")).toBe(false);
-    expect(takeSkip(undefined)).toBe(false);
+  /*
+   * It was a mark in the tab, read once by the call waiting there (`takeSkip`), while a window
+   * carried the Bot's calls out. The call waits on the server now, so the skip is told to it —
+   * which nothing in the app's tests had asked the door for.
+   */
+  test("is told to the turn that waits on it: that Bot, that one call, once", async () => {
+    const asked: { url: string; method?: string; body: unknown }[] = [];
+    const fetched = globalThis.fetch;
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      asked.push({
+        url: String(input),
+        ...(init?.method ? { method: init.method } : {}),
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      await skipOnServer("bot-1", "call-help");
+      expect(asked).toEqual([
+        {
+          url: "/api/turns/skips",
+          method: "POST",
+          body: { botId: "bot-1", toolCallId: "call-help" },
+        },
+      ]);
+      // A door that is not there is a skip not pressed: the call runs out on its own.
+      globalThis.fetch = (async () => {
+        throw new TypeError("Failed to fetch");
+      }) as unknown as typeof fetch;
+      await skipOnServer("bot-1", "call-help");
+    } finally {
+      globalThis.fetch = fetched;
+    }
   });
 });

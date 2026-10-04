@@ -1,11 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { QueryClient } from "@tanstack/react-query";
+import { describe, expect, test } from "bun:test";
 import {
   routineSavedText,
   TOOL_RESULT_KO,
 } from "../../shared/prompt/tool-results.ko";
-import { routineAction } from "../src/lib/copilot/self-tools";
-import { stubFetch } from "./support/fetch";
 
 /**
  * What a Bot is told when it has saved a routine. Audit 2026-09-16, R2 F1.
@@ -15,6 +12,9 @@ import { stubFetch } from "./support/fetch";
  * deployment's zone in now, and the tool result says the schedule back as the server STORED it —
  * the time, the days and the zone — so the Bot can repeat it and a wrong one is caught in the same
  * conversation instead of the next morning.
+ *
+ * The sentence is here; that a save answers with it, from the row and not from the request, is
+ * `server/tests/chat-tools.test.ts`, where the call is carried out.
  */
 
 /** The schedule half of a routine row, as `POST /api/routines` answers it. */
@@ -103,103 +103,5 @@ describe("the saved schedule, in the model's words", () => {
       expect(said).not.toMatch(/[{}]/);
       expect(said).not.toContain("laf:");
     }
-  });
-});
-
-describe("manage_routine, after a save", () => {
-  const realFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
-  const create = {
-    action: "create" as const,
-    name: "아침 브리핑",
-    instruction: "오늘 할 일 알려줘",
-    // What a model sends for "평일 7시 반": no zone, and here not even the days.
-    schedule: { kind: "daily" as const, time: "07:30" },
-  };
-
-  test("tells the Bot the routine the server stored, not the one it asked for", async () => {
-    const sent: unknown[] = [];
-    globalThis.fetch = stubFetch(async (_url, init) => {
-      sent.push(JSON.parse(String(init?.body)));
-      return Response.json(
-        {
-          routine: {
-            id: "routine_1",
-            agentId: "bot-1",
-            name: create.name,
-            instruction: create.instruction,
-            ...daily([1, 2, 3, 4, 5]),
-            enabled: true,
-            nextRunAt: "2026-09-16T22:30:00.000Z",
-            // Shown once, to whoever made the routine. Not a thing a model is handed.
-            triggerToken: "the-token-once",
-          },
-        },
-        { status: 201 },
-      );
-    });
-    const lines: unknown[] = [];
-
-    const said = await routineAction(
-      create,
-      "bot-1",
-      (entry, failed) => lines.push({ entry, failed }),
-      new QueryClient(),
-    );
-
-    // The request carried no zone and no days; the answer names both, so they came from the row.
-    expect(sent).toEqual([
-      {
-        agentId: "bot-1",
-        name: create.name,
-        instruction: create.instruction,
-        schedule: { kind: "daily", time: "07:30" },
-      },
-    ]);
-    expect(said).toBe(routineSavedText(daily([1, 2, 3, 4, 5])));
-    expect(said).toContain("매주 월·화·수·목·금 07:30");
-    expect(said).toContain("Asia/Seoul");
-    expect(said).not.toContain("the-token-once");
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ failed: false });
-  });
-
-  test("a refused save is still told why, and no schedule", async () => {
-    globalThis.fetch = stubFetch(async () =>
-      Response.json(
-        {
-          error: "laf:routine_time_invalid",
-          code: "laf:routine_time_invalid",
-        },
-        { status: 400 },
-      ),
-    );
-
-    const said = await routineAction(
-      create,
-      "bot-1",
-      () => {},
-      new QueryClient(),
-    );
-
-    expect(said).toBe(TOOL_RESULT_KO["laf:routine_time_invalid"] as string);
-  });
-
-  test("a save whose reply cannot be read says so rather than inventing a schedule", async () => {
-    globalThis.fetch = stubFetch(
-      async () => new Response("<!doctype html>", { status: 200 }),
-    );
-
-    const said = await routineAction(
-      create,
-      "bot-1",
-      () => {},
-      new QueryClient(),
-    );
-
-    expect(said).toBe(TOOL_RESULT_KO["laf:routine_saved_unread"] as string);
   });
 });

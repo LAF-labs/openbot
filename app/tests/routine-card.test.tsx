@@ -6,7 +6,10 @@ import {
   expect,
   test,
 } from "bun:test";
-import { routineSavedText } from "../../shared/prompt/tool-results.ko";
+import {
+  routineSavedText,
+  toolResultText,
+} from "../../shared/prompt/tool-results.ko";
 import {
   editDraft,
   editInChatHref,
@@ -100,41 +103,22 @@ describe("which routine a line is about", () => {
   });
 
   test("is drawn as a routine only when the save or the edit went through", () => {
-    const saved = { done: "Saved a routine", doing: "Saving a routine" };
-    expect(
-      routineCallLanded(
-        "create",
-        { ...saved, routineId: "routine_weekly" },
-        undefined,
-      ),
-    ).toBe(true);
-    expect(
-      routineCallLanded(
-        "create",
-        { ...saved, routineId: "routine_weekly", failed: true },
-        undefined,
-      ),
-    ).toBe(false);
-    // A pause is a line of its own, not the routine's card.
-    expect(
-      routineCallLanded(
-        "update",
-        { done: "Paused a routine", doing: "Pausing a routine" },
-        undefined,
-      ),
-    ).toBe(false);
-    expect(routineCallLanded("list", undefined, "anything")).toBe(false);
+    expect(routineCallLanded("list", "anything")).toBe(false);
+    // Nothing answered yet, or nothing kept of the answer: a line, not a card.
+    expect(routineCallLanded("create", undefined)).toBe(false);
 
-    // After a reload only the Bot's answer is left: the sentence a success hands it.
+    // The Bot's answer is what the conversation keeps: the sentence a success hands it.
     const answer = routineSavedText(
       routine({ dailyTimeZone: "Asia/Seoul" }) as unknown,
     );
-    expect(routineCallLanded("create", undefined, answer)).toBe(true);
-    expect(routineCallLanded("create", undefined, JSON.stringify(answer))).toBe(
-      true,
+    expect(routineCallLanded("create", answer)).toBe(true);
+    expect(routineCallLanded("create", JSON.stringify(answer))).toBe(true);
+    expect(routineCallLanded("create", "시각은 07:30처럼 HH:MM으로")).toBe(
+      false,
     );
+    // A pause answers with its own sentence, and is a line of its own, not the routine's card.
     expect(
-      routineCallLanded("create", undefined, "시각은 07:30처럼 HH:MM으로"),
+      routineCallLanded("update", toolResultText("laf:routine_paused")),
     ).toBe(false);
   });
 });

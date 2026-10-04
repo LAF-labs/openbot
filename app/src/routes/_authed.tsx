@@ -85,9 +85,9 @@ function AuthedShell() {
   // In the desktop shell, a `target="_blank"` link has nowhere to go; hand it to the browser.
   useEffect(handleShellLinks, []);
   /*
-   * THIS DEVICE'S CLOCK, KEPT ON THE ACCOUNT, once per open. A chat run carries the device's zone
-   * itself (`lib/copilot/provider.tsx`); a routine at 07:30 runs with no device present and reads
-   * the zone the person was last in, which is this.
+   * THIS DEVICE'S CLOCK, KEPT ON THE ACCOUNT, once per open. A chat turn carries the device's zone
+   * itself (`sendTurn`, `components/channels/server-channel-chat.tsx`); a routine at 07:30 runs with
+   * no device present and reads the zone the person was last in, which is this.
    */
   const queryClient = useQueryClient();
   useEffect(() => {

@@ -57,9 +57,9 @@ type ConnectionArgs = z.infer<typeof ConnectionCardProps>;
  * the Bot goes straight on with what was asked. The rows are 연결's own (`ConnectionChoices`), so
  * they read live state; this adds only the answer.
  *
- * WHAT IT SAYS IS NOT WHAT THE BOT IS TOLD, on a turn the server owns: the server reads 연결 itself
- * once anything answers (`server/src/turns/chat-tools.ts`). In a conversation this window drives,
- * the answer below is the result, read from the same overview the rows are drawn from.
+ * WHAT IT SAYS IS NOT WHAT THE BOT IS TOLD: the server reads 연결 itself once anything answers
+ * (`server/src/turns/chat-tools.ts`). The answer below is what ends the wait, read from the same
+ * overview the rows are drawn from; it was the call's result while a window carried the call out.
  */
 export function ConnectionCard(props: Waiting<ConnectionArgs>) {
   const { args, status, respond } = props;

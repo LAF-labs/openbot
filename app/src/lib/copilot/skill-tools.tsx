@@ -1,12 +1,8 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { toolResultText } from "@shared/prompt/tool-results.ko";
-import { normalizeSkillName, SKILL_VIEW } from "@shared/tools/skills";
+import { SKILL_VIEW } from "@shared/tools/skills";
 import { asStandardSchema } from "@shared/tools/standard-schema";
-import { useRef, useState } from "react";
 import { ToolLine } from "@/components/channels/tool-line";
 import { t } from "@/lib/i18n";
-import { viewSkill } from "@/lib/plugins/queries";
-import { useActiveBotHolder } from "./active-bot";
 
 /**
  * A Bot reading one of its own skills, from inside the conversation.
@@ -24,54 +20,20 @@ import { useActiveBotHolder } from "./active-bot";
  * never add or remove a tool mid-session. Its description says to read only a skill the prompt
  * lists, and a Bot that holds none is answered `laf:skill_not_granted` by the server.
  *
- * The body and the audit row come from the server (`viewSkill`), which rechecks the grant. The
- * instructions are in the grants query already, but reading them here would leave no trace of a
- * Bot choosing a skill nobody typed with `/` — and that trace is the point.
+ * The body and the audit row come from the server (`viewSkill` in the plugin store, called by
+ * `server/src/turns/chat-tools.ts`), which rechecks the grant: reading the instructions here would
+ * leave no trace of a Bot choosing a skill nobody typed with `/` — and that trace is the point.
+ * This is the registration the turn offers the tool from, and its line.
  */
 export function SkillTools() {
-  const bot = useActiveBotHolder();
-  /** Per-call render state. The SDK captures `render` at registration, so it reads a ref. */
-  const calls = useRef(
-    new Map<string, { name: string; title?: string; failed?: boolean }>(),
-  );
-  const [, redraw] = useState(0);
-  const touch = () => redraw((tick) => tick + 1);
-
   useFrontendTool({
     name: SKILL_VIEW.name,
     description: SKILL_VIEW.description,
     parameters: asStandardSchema<{ name: string }>(SKILL_VIEW.parameters),
-    handler: async (
-      args: { name?: string },
-      call: { toolCall?: { id?: string } } = {},
-    ) => {
-      const id = call.toolCall?.id ?? "";
-      const name = normalizeSkillName(String(args.name ?? ""));
-      calls.current.set(id, { name });
-      touch();
-
-      const viewed = await viewSkill(bot.current, name);
-      if (!viewed.ok) {
-        calls.current.set(id, { name, failed: true });
-        touch();
-        // The same sentence a routine's Bot reads for the same code.
-        return {
-          ok: false,
-          code: viewed.code,
-          reason: toolResultText(viewed.code),
-        };
-      }
-      calls.current.set(id, { name, title: viewed.skill.title });
-      touch();
-      return { ok: true, ...viewed.skill };
-    },
-    render: ({ status, toolCallId }) => {
-      const entry = calls.current.get(toolCallId ?? "");
+    render: ({ status }) => {
       const running = status !== "complete";
       return (
         <ToolLine
-          detail={entry?.title ?? entry?.name}
-          failed={entry?.failed === true}
           kind="document"
           label={running ? t("Reading a skill") : t("Read a skill")}
           running={running}

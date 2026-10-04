@@ -1,11 +1,7 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import {
-  stepFailureOf,
-  toolErrorText,
-  toolFailureText,
-} from "@shared/tools/step-result";
+import { stepFailureOf } from "@shared/tools/step-result";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import * as z from "zod";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
@@ -20,7 +16,6 @@ import { t } from "@/lib/i18n";
 import { LazyMarkdown } from "@/lib/markdown";
 import {
   agentPluginsQueryOptions,
-  callPluginTool,
   type GrantedPlugins,
 } from "@/lib/plugins/queries";
 
@@ -42,8 +37,9 @@ function withTools(
 }
 
 /**
- * Runtime-discovered MCP tools granted to the active Bot. Registration controls what is offered;
- * the server still rechecks each call.
+ * Runtime-discovered MCP tools granted to the active Bot. Registration is what the turn is told
+ * this window offers; the server carries each call out and rechecks the grant as it does
+ * (`server/src/turns/chat-tools.ts`).
  */
 export function PluginTools() {
   const botId = useActiveBotId();
@@ -53,7 +49,8 @@ export function PluginTools() {
   const granted: GrantedPlugins = data ?? { tools: [], skills: [] };
 
   /**
-   * Keep previously offered tools mounted so mid-run revocations can return explicit refusals.
+   * Keep previously offered tools mounted, so a step of a tool the Bot no longer holds still has
+   * its line: revoked mid-conversation, its calls stay in the transcript.
    *
    * State adjusted while rendering — React's pattern for remembering what earlier renders saw —
    * rather than a ref filled in during render, which the React Compiler refuses to compile. React
@@ -151,23 +148,6 @@ function PluginTool({
   inputSchema: Record<string, unknown>;
   botId: string;
 }) {
-  /**
-   * Per-call render state. The SDK captures `render` at registration, so the renderer must read
-   * current results from a ref keyed by tool call id.
-   */
-  const calls = useRef(
-    new Map<
-      string,
-      {
-        result?: { text: string; isError: boolean };
-        outcome?: { refused: boolean; reason: string };
-      }
-    >(),
-  );
-  /** Bumped only to make React redraw; the data itself lives in the ref above. */
-  const [, redraw] = useState(0);
-  const touch = () => redraw((tick) => tick + 1);
-
   const [serverId, ...rest] = toolRef.split("/");
   const bareName = rest.join("/");
   /*
@@ -186,68 +166,25 @@ function PluginTool({
       ? `${description} (${serverId})`
       : `${bareName} on ${serverId}.`,
     parameters: parametersFor(inputSchema),
-    handler: async (
-      args: Record<string, unknown>,
-      // DEFAULTED, because the context argument is optional and a handler that destructures it
-      // unconditionally throws on any call that omits it.
-      context: { signal?: AbortSignal; toolCall?: { id?: string } } = {},
-    ) => {
-      const id = context.toolCall?.id ?? "";
-      const result = await callPluginTool(
-        toolRef,
-        args ?? {},
-        botId,
-        context.signal,
-        // So a question the boundary raises about this call is drawn on this call's own line.
-        id,
-      );
-
-      if (result.ok) {
-        calls.current.set(id, {
-          result: { text: result.text, isError: result.isError },
-        });
-        touch();
-        // Return MCP text to the model; vendor errors stay as tool results instead of thrown errors.
-        return result.isError ? toolErrorText(result.text) : result.text;
-      }
-
-      calls.current.set(id, {
-        outcome: { refused: result.refused, reason: result.reason },
-      });
-      touch();
-      // In a form the transcript can read back as "this did not happen" (`toolFailureText`).
-      return toolFailureText(result);
-    },
     render: ({ status, toolCallId, result: stored }) => {
-      const entry = calls.current.get(toolCallId ?? "") ?? {};
-      const { result, outcome } = entry;
-
       /*
-       * HOW A CALL ENDED IS READ FROM ITS RESULT — THE ONE THE CONVERSATION KEEPS — WHOEVER RAN IT.
+       * HOW A CALL ENDED IS READ FROM ITS RESULT — THE ONE THE CONVERSATION KEEPS.
        *
        * This read what this window's own handler had learned, and nothing else. A turn the server
-       * owns never calls that handler, nor does a conversation read back after a reload. Measured
+       * owns never called that handler, nor did a conversation read back after a reload. Measured
        * 2026-10-03, mounted with a granted tool and a stored conversation: a step whose result was
        * the service's error read "메일 읽기 · 지메일" with no warning, and a step whose result held
        * a withheld code had no 보기 — the one thing the person who asked for the code was waiting
-       * on. Every chat turn is the server's now, so that was every step.
+       * on. Every chat turn was the server's by then, so that was every step; the handler itself
+       * went with the window-driven path (2026-10-05), and the kept result is the only reader.
        *
-       * So the line is drawn from the kept result (`stepFailureOf`). And where this window did run
-       * the call, from the very text its handler answered with (`toolFailureText`) rather than
-       * from the outcome beside it: one reader, so a line cannot say 차단됨 while the window is
-       * open and 실패 after a reload. A refusal's own sentence is the model's and is not shown —
-       * the line says what a person is told for that fact, where there are such words, and
-       * otherwise only that it was blocked or did not work. It used to be shown, as the detail.
+       * A refusal's own sentence is the model's and is not shown — the line says what a person is
+       * told for that fact, where there are such words, and otherwise only that it was blocked or
+       * did not work.
        */
       const kept =
-        result === undefined && typeof stored === "string" && stored !== ""
-          ? stored
-          : undefined;
-      const failure = outcome
-        ? stepFailureOf(toolFailureText(outcome))
-        : kept === undefined
-          ? null
-          : stepFailureOf(kept);
+        typeof stored === "string" && stored !== "" ? stored : undefined;
+      const failure = kept === undefined ? null : stepFailureOf(kept);
       if (failure && failure.kind !== "error") {
         const words = failure.code ? OUTCOME_LABELS[failure.code] : undefined;
         return (
@@ -269,19 +206,14 @@ function PluginTool({
           <ApprovalRequest toolCallId={toolCallId} />
           <ToolLine
             detail={line.detail}
-            failed={result?.isError ?? failure?.kind === "error"}
+            failed={failure?.kind === "error"}
             label={line.label}
             running={status !== "complete"}
           >
-            {result ? (
-              /* The server's own words, drawn the way a Bot's prose is drawn — behind the lazy
-                 boundary, because this renderer is registered on every signed-in screen. */
-              <LazyMarkdown>
-                {withheldForDisplay(forDisplay(result.text))}
-              </LazyMarkdown>
-            ) : failure?.kind === "error" ? (
-              // The service's own error, in its own words: what went wrong is the detail. With
-              // the same stand-in for what was withheld from it as an answer gets — see below.
+            {failure?.kind === "error" ? (
+              // The service's own error, in its own words: what went wrong is the detail — behind
+              // the lazy boundary, because this renderer is registered on every conversation
+              // screen — with a stand-in for what was withheld from it. See below.
               <LazyMarkdown>
                 {withheldForDisplay(forDisplay(failure.text))}
               </LazyMarkdown>
@@ -289,17 +221,14 @@ function PluginTool({
           </ToolLine>
           {/* What a mail held that the Bot was not given — outside the folded detail, because the
               owner who asked for a code is waiting on it, not on the mail around it. Read from the
-              kept result for a call this window did not run; the answer itself stays folded away
-              there, as it was after every reload.
+              kept result; the answer itself stays folded away.
 
               AN ERROR CAN HOLD ONE TOO. A mail tool that fails part-way has still read what it
               read, and the server takes a code out and keeps it before it looks at whether the
               call failed (`server/src/plugins/call.ts`). The row was left out for every failure,
               and the error's words were drawn as they came: the person saw the mark that stands
               for the code and nothing to press (Codex on pull request 52). */}
-          {result ? (
-            <WithheldSecrets botId={botId} text={result.text} />
-          ) : kept !== undefined ? (
+          {kept !== undefined ? (
             <WithheldSecrets botId={botId} text={kept} />
           ) : null}
         </>
