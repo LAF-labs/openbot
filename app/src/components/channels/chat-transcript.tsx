@@ -2,7 +2,6 @@ import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import type { AttachmentPart } from "@shared/attachments";
 import type { FeedQuotePart } from "@shared/feed";
-import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import { stepFailureOf } from "@shared/tools/step-result";
 import {
   IconAlertTriangle,
@@ -27,7 +26,6 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { BrowsingCard } from "@/components/computer/browsing-card";
-import { WeatherCard } from "@/components/weather/weather-card";
 import { FeedQuoteChip } from "@/components/feed/feed-quote-chip";
 import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -50,6 +48,7 @@ import {
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
+import { WeatherCard } from "@/components/weather/weather-card";
 import { anyQuestionOn, watchQuestions } from "@/lib/approvals";
 import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
@@ -89,7 +88,6 @@ import {
   furthestSeen,
   isHandedToThePerson,
   isTaskUnfolded,
-  isWeatherCard,
   openBrowsingTask,
   openStepRuns,
   type StepRunPlace,
@@ -99,8 +97,9 @@ import {
   toVisibleChatItems,
   turnFailedAfter,
   unsettledFrom,
-  withBrowsingTasks,
+  weatherCardsOf,
   wholeFrom,
+  withBrowsingTasks,
 } from "./chat-messages";
 import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
@@ -1362,12 +1361,15 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   name,
   args,
   result,
+  isWeatherCard,
 }: {
   delay: number;
   toolCallId: string;
   name: string;
   args: string;
   result?: string;
+  /** Whether this call's answer is drawn as the weather card (`weatherCardsOf`). */
+  isWeatherCard: boolean;
 }) {
   const renderToolCall = useRenderToolCall();
   const toolCall = useMemo(
@@ -1404,16 +1406,13 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
 
   /*
    * THE WEATHER IS A CARD, DRAWN FROM THE CALL'S OWN ANSWER (`WeatherCard`). By the tool's name
-   * and by what came back, here and not through a registered renderer: a card of data is not a
-   * line of work, and it is owed wherever the call is in the record — after a reload, after the
-   * tool was taken back, in a window that never held it. An answer with no data in it (a refusal,
-   * a failure) is null there, and is drawn below as the step it was.
+   * and by what came back (`weatherCardsOf`), here and not through a registered renderer: a card
+   * of data is not a line of work, and it is owed wherever the call is in the record — after a
+   * reload, after the tool was taken back, in a window that never held it. An answer with no data
+   * in it (a refusal, a failure), and a first move the Bot asked again after, are not cards, and
+   * are drawn below as the steps they were.
    */
-  if (
-    name === WEATHER_TOOL_NAME &&
-    result !== undefined &&
-    isWeatherCard(result)
-  ) {
+  if (isWeatherCard && result !== undefined) {
     return (
       <Arriving delay={delay}>
         <ToolRenderBoundary name={name}>
@@ -1647,6 +1646,8 @@ export function ChatTranscript({
    */
   const stepRuns = stepRunsOf(items);
   const answerSteps = stepsByAnswer(items, stepRuns);
+  /** The weather calls drawn as cards; every other one is a step, in `stepRuns`. */
+  const weatherCards = weatherCardsOf(items);
   /** The rows a run was opened by: a run is open while it holds one (`openStepRuns` says why). */
   const [openedRows, setOpenedRows] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -2253,6 +2254,7 @@ export function ChatTranscript({
                       <TranscriptToolCall
                         args={item.toolCall.function.arguments}
                         delay={delays.delayFor(item.id, index, items.length)}
+                        isWeatherCard={weatherCards.has(item.id)}
                         name={item.toolCall.function.name}
                         result={item.result}
                         toolCallId={item.toolCall.id}

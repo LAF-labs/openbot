@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
+import { isFirstMoveCall } from "../../shared/first-move";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -1158,6 +1159,13 @@ describe("the turn's first move", () => {
     const call = asking?.role === "assistant" ? asking.toolCalls?.[0] : null;
     expect(call?.function).toEqual({ name: WEATHER, arguments: "{}" });
     expect(call?.id).toBe(executed[0]?.id);
+    /*
+     * As a call the Bot made in every way but its id, which is how the app tells a move the Bot
+     * asked again after from a place it was asked about (`shared/first-move.ts`) — and no longer
+     * than the id it replaced: some model providers refuse a call id past 40 characters.
+     */
+    expect(isFirstMoveCall(call?.id ?? "")).toBe(true);
+    expect(call?.id).toMatch(/^first_move_[0-9a-f]{26}$/);
     expect((result as { toolCallId?: string }).toolCallId).toBe(call?.id);
     expect(result?.content).toBe('{"source":"기상청","now":{"temp":7.8}}');
     expect(asking?.lafAgentId).toBe(BOT);

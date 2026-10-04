@@ -8,11 +8,13 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
+import { firstMoveCallId } from "@shared/first-move";
 import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import {
   stepRunsOf,
   stepsByAnswer,
   toVisibleChatItems,
+  weatherCardsOf,
   withBrowsingTasks,
 } from "../src/components/channels/chat-messages";
 import {
@@ -22,7 +24,14 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { ASKED, answered, called, done, said } from "./support/step-fixtures";
+import {
+  ASKED,
+  answered,
+  asked,
+  called,
+  done,
+  said,
+} from "./support/step-fixtures";
 import {
   installTurnStreams,
   removeTurnStreams,
@@ -59,6 +68,7 @@ const DATA = JSON.stringify({
   days: [
     {
       date: "2026-10-04",
+      when: "오늘",
       min: 15,
       max: 24,
       am: "구름많음 30%",
@@ -67,10 +77,28 @@ const DATA = JSON.stringify({
     },
     {
       date: "2026-10-05",
+      when: "내일",
       min: 13,
       max: 22,
       am: "맑음 0%",
       pm: "맑음 0%",
+      precip: "없음",
+    },
+  ],
+});
+/** The same, for the place that was asked about when the first move fetched home. */
+const ELSEWHERE = JSON.stringify({
+  source: "기상청",
+  place: "부산광역시 해운대구",
+  now: { temp: 21.4, humidity: 61, precip: "없음", wind: 2.4 },
+  days: [
+    {
+      date: "2026-10-04",
+      when: "오늘",
+      min: 18,
+      max: 25,
+      am: "맑음 0%",
+      pm: "맑음 10%",
       precip: "없음",
     },
   ],
@@ -158,6 +186,97 @@ describe("which weather calls are steps", () => {
   });
 });
 
+/*
+ * THE FIRST MOVE: the weather for where the person lives, fetched by the server before the Bot's
+ * model is asked (`first-move.ts`), on a small model's word that the question is about there. When
+ * that word was wrong the Bot asks again for the place that was meant, and both calls came back
+ * with data — two cards, the first for a place nobody asked about (Codex on pull request 62).
+ */
+const MOVE = firstMoveCallId("1".repeat(32));
+/** The move as the engine files it: an empty message that asks, with no argument, and the answer. */
+const moved = (content: string): Message[] => [
+  {
+    id: "a-moved",
+    role: "assistant",
+    content: "",
+    toolCalls: [
+      {
+        id: MOVE,
+        type: "function",
+        function: { name: WEATHER_TOOL_NAME, arguments: "{}" },
+      },
+    ],
+  } as Message,
+  { id: "t-moved", role: "tool", toolCallId: MOVE, content } as Message,
+];
+const cardsOf = (messages: Message[]) => [...weatherCardsOf(itemsOf(messages))];
+
+describe("a first move's answer", () => {
+  test("is the card when the Bot answers from it", () => {
+    const turn = [ASKED, ...moved(DATA), said("a-answer", "지금은 선선해요.")];
+    expect(cardsOf(turn)).toEqual([MOVE]);
+    expect(stepsOf(turn)).toEqual({ steps: [], taken: {} });
+  });
+
+  test("is a step once the Bot asks for the weather itself — the card is the one it asked for", () => {
+    const turn = [
+      ASKED,
+      ...moved(DATA),
+      called("w", WEATHER_TOOL_NAME),
+      answered("w", ELSEWHERE),
+      said("a-answer", "해운대는 내일 25도까지 올라가요."),
+    ];
+    expect(cardsOf(turn)).toEqual(["call-w"]);
+    // Put away with the steps, and counted for the answer as one that worked.
+    expect(stepsOf(turn)).toEqual({
+      steps: [MOVE],
+      taken: { "a-answer": { runIds: [MOVE], rows: [MOVE], failed: 0 } },
+    });
+  });
+
+  test("is put away from the moment the Bot asks, and whatever comes of asking", () => {
+    // Still out: the move is already a step, and the Bot's call is the line of a turn at work.
+    const asking = [ASKED, ...moved(DATA), called("w", WEATHER_TOOL_NAME)];
+    expect(cardsOf(asking)).toEqual([]);
+    expect(stepsOf(asking).steps).toEqual([MOVE, "call-w"]);
+    // Refused: no card at all. The Bot said the first was not the answer, and has no other.
+    expect(
+      cardsOf([
+        ...asking,
+        answered("w", REFUSED),
+        said("a-answer", "그곳은 예보가 닿지 않아요."),
+      ]),
+    ).toEqual([]);
+  });
+
+  test("is not put away by a call in a later turn", () => {
+    expect(
+      cardsOf([
+        ASKED,
+        ...moved(DATA),
+        said("a-answer", "지금은 선선해요."),
+        asked("q-next", "부산은?"),
+        called("w", WEATHER_TOOL_NAME),
+        answered("w", ELSEWHERE),
+        said("a-next", "부산은 더 따뜻해요."),
+      ]),
+    ).toEqual([MOVE, "call-w"]);
+  });
+
+  test("and two calls the Bot made itself are two places it was asked about: two cards", () => {
+    expect(
+      cardsOf([
+        ASKED,
+        called("1", WEATHER_TOOL_NAME),
+        answered("1", DATA),
+        called("2", WEATHER_TOOL_NAME),
+        answered("2", ELSEWHERE),
+        said("a-answer", "부산이 더 따뜻해요."),
+      ]),
+    ).toEqual(["call-1", "call-2"]);
+  });
+});
+
 describe("a conversation with a weather call in it", () => {
   const log = (host: HTMLElement) => host.querySelector('[role="log"]');
   const rowsDrawn = (host: HTMLElement) =>
@@ -204,6 +323,44 @@ describe("a conversation with a weather call in it", () => {
     expect(
       log(view.host)?.querySelector('[data-message-id="call-w"]')?.textContent,
     ).not.toContain("Checking the weather");
+
+    server.close();
+    await view.unmount();
+  });
+
+  test("draws one card where a first move was put right: the place that was asked about", async () => {
+    const channelId = "channel_weather-put-right";
+    const server = turnServer({
+      channelId,
+      history: [
+        ASKED,
+        ...moved(DATA),
+        called("w", WEATHER_TOOL_NAME),
+        answered("w", ELSEWHERE),
+        said("a-answer", "해운대는 내일 25도까지 올라가요."),
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () =>
+        log(view.host)?.querySelector('[data-slot="weather-card"]') !== null &&
+        log(view.host)?.textContent?.includes("25도까지") === true,
+      "the card and the answer",
+      8000,
+    );
+    // The move's row is not drawn: it is a step, behind the answer's record.
+    expect(rowsDrawn(view.host)).toEqual(["q-asked", "call-w", "a-answer"]);
+    const cards = [
+      ...(log(view.host)?.querySelectorAll<HTMLElement>(
+        '[data-slot="weather-card"]',
+      ) ?? []),
+    ];
+    expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Weather for 부산광역시 해운대구",
+    ]);
 
     server.close();
     await view.unmount();

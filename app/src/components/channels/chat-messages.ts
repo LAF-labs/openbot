@@ -1,6 +1,7 @@
 import type { Message, ToolCall } from "@ag-ui/core";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
+import { isFirstMoveCall } from "@shared/first-move";
 import {
   serverKeyOf,
   TOOL_CALL,
@@ -186,6 +187,53 @@ export function isWeatherCard(result: string): boolean {
 }
 
 /**
+ * The weather calls of a conversation that are drawn as cards, by their rows' ids: each one that
+ * came back with something to draw (`isWeatherCard`) — but for a first move the Bot asked again
+ * after.
+ *
+ * A FIRST MOVE THE BOT DID NOT ANSWER FROM IS A STEP. With the first move on, the server fetches
+ * the weather for where the person lives before the Bot's model is asked (`first-move.ts`), on a
+ * small model's word that the question is about there. When that word was wrong — "내일 부산
+ * 해운대 날씨 어때?" — the Bot asks again for the place that was meant
+ * (`first-move-for-the-wrong-place-is-put-right` holds it to that), and both answers came back
+ * with data: the conversation showed the forecast for home, then the one for 해운대, over a
+ * sentence about 해운대 (Codex on pull request 62). So once the Bot asks for the weather itself,
+ * the turn's first move is what it was before there were cards — a step on the way, put away with
+ * the others and counted with them.
+ *
+ * FROM THE MOMENT THE BOT ASKS, not from when its answer comes back: whatever becomes of the second
+ * call, the Bot has said the first was not the answer.
+ *
+ * ONLY A FIRST MOVE, known by its id (`isFirstMoveCall`). Two calls the Bot made itself are two
+ * places it was asked about — "서울이랑 부산 날씨 비교해 줘" — and two cards.
+ */
+export function weatherCardsOf(items: readonly TranscriptItem[]): Set<string> {
+  const cards = new Set<string>();
+  /** This turn's first move, while it is drawn as a card and the Bot has not asked again. */
+  let moved: string | null = null;
+  for (const item of items) {
+    if (item.kind === "text" && item.role === "user") {
+      moved = null;
+      continue;
+    }
+    if (
+      item.kind !== "tool" ||
+      item.toolCall.function.name !== WEATHER_TOOL_NAME
+    ) {
+      continue;
+    }
+    if (moved !== null) {
+      cards.delete(moved);
+      moved = null;
+    }
+    if (item.result === undefined || !isWeatherCard(item.result)) continue;
+    cards.add(item.id);
+    if (isFirstMoveCall(item.toolCall.id)) moved = item.id;
+  }
+  return cards;
+}
+
+/**
  * Whether a step has something on it for the person — a line that is drawn whether or not anybody
  * opened the record it belongs to.
  *
@@ -264,14 +312,13 @@ export function stepRunsOf(
   items: readonly TranscriptItem[],
 ): Map<number, StepRunPlace> {
   const places = new Map<number, StepRunPlace>();
+  const cards = weatherCardsOf(items);
   let runId: string | null = null;
   items.forEach((item, index) => {
     if (
       item.kind !== "tool" ||
       !isFoldableStep(item.toolCall.function.name) ||
-      (item.toolCall.function.name === WEATHER_TOOL_NAME &&
-        item.result !== undefined &&
-        isWeatherCard(item.result))
+      cards.has(item.id)
     ) {
       runId = null;
       return;
