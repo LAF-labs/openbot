@@ -861,13 +861,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * 기상청's regions a place is in, the shipped table's every row among them; and one on a deployment
  * handing the weather the portal's key).
  *
+ * RAISED 2026-10-05 with the help card reading its own Bot, by exactly what was added: four to `app`
+ * (a card that was waiting on the person when its conversation is drawn again — from another place,
+ * and under a screen that stayed, for a hand and for a secret — and the activity card asking only
+ * for the Bot its conversation names).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3492, roots: ["server"] },
-  { name: "app", floor: 2081, roots: ["app"] },
+  { name: "app", floor: 2085, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 613, roots: ["tests", "agent-bot"] },
 ] as const;

@@ -540,10 +540,11 @@ export function ComputerTools() {
               : "laf:secret_not_entered";
       return { ok: true, code, result: toolResultText(code) };
     },
-    // A card in the conversation with the masked box, where the Bot asked — never a pop-up.
+    // A card in the conversation with the masked box, where the Bot asked — never a pop-up. It is
+    // not told whose computer: this closure is drawn through a memo and would hand it a stale
+    // holder, so the card reads the declared Bot itself (`help-card.tsx`). The same below.
     render: ({ args, result, status, toolCallId }) => (
       <HelpCard
-        botId={bot.current}
         kind="secret"
         result={result}
         said={typeof args?.label === "string" ? args.label : undefined}
@@ -588,7 +589,6 @@ export function ComputerTools() {
     // A card in the conversation: 직접 하기, 다 했어요, 건너뛰기 (`help-card.tsx`).
     render: ({ args, result, status, toolCallId }) => (
       <HelpCard
-        botId={bot.current}
         kind="help"
         result={result}
         said={typeof args?.reason === "string" ? args.reason : undefined}

@@ -73,6 +73,30 @@ afterAll(async () => {
   await removeAppDom();
 });
 
+/** The person's one Bot and its one conversation, as the roster reads them. */
+function roster(request: ApiRequest): Response | undefined {
+  if (request.pathname === "/api/agents") {
+    return json({
+      agents: [agentFixture({ id: BOT_ID, name: "닻", mine: true })],
+    });
+  }
+  if (request.pathname === "/api/channels") {
+    return json({
+      channels: [
+        {
+          id: CHANNEL,
+          name: "닻",
+          agentIds: [BOT_ID],
+          threadId: THREAD_ID,
+          active: true,
+          unread: false,
+        },
+      ],
+    });
+  }
+  return undefined;
+}
+
 /** One conversation's server, whose read of the history a test can keep on its way. */
 function server(history: Message[]) {
   const turns = turnServer({ channelId: CHANNEL, history, turn: null });
@@ -82,25 +106,8 @@ function server(history: Message[]) {
     release = resolve;
   });
   const api = (request: ApiRequest) => {
-    if (request.pathname === "/api/agents") {
-      return json({
-        agents: [agentFixture({ id: BOT_ID, name: "닻", mine: true })],
-      });
-    }
-    if (request.pathname === "/api/channels") {
-      return json({
-        channels: [
-          {
-            id: CHANNEL,
-            name: "닻",
-            agentIds: [BOT_ID],
-            threadId: THREAD_ID,
-            active: true,
-            unread: false,
-          },
-        ],
-      });
-    }
+    const listed = roster(request);
+    if (listed) return listed;
     if (request.pathname === `/api/turns/${THREAD_ID}/history`) {
       state.reads += 1;
       if (state.holding) {
@@ -217,6 +224,203 @@ describe("words this device kept, on coming back", () => {
     expect(turns.sends[0]?.messages.map((message) => message.content)).toEqual([
       "그리고 모레는요?",
     ]);
+  });
+});
+
+/*
+ * Review of pull request 78, 2026-10-05. The card a Bot asks for a hand with was handed its Bot by
+ * the renderer that draws it — `botId={bot.current}`, the holder a surface fills in an effect — and
+ * that renderer is registered once per screen and drawn through a memo that does not hear the
+ * holder change. So a card drawn in a surface's first commit read the sentinel: it asked the
+ * computer about a Bot called `default`, was told there is none, and stood there with no chip, no
+ * buttons and, for a secret, no box — under a header saying 도움 필요 — until the Bot's wait ran out.
+ *
+ * WHICH COMING BACK, measured here on the code before the change. Not from another place: the
+ * screen that runs a Bot mounts CopilotKit itself (`channel/$channelId.tsx`), so leaving takes the
+ * renderers with it, they are registered again in the effects of coming back, and by the time a
+ * card is drawn the Bot has been declared — the first test below passed before the change and is
+ * kept so that stays true. It is the conversation drawn again UNDER A SCREEN THAT STAYED: the
+ * channel could not be read for a moment (`Could not load this channel.`) and then could. The
+ * renderers were there, the kept conversation's cards were in the first commit, and the last two
+ * tests failed: no buttons, no box, and one request for `/api/computers/default/control`.
+ *
+ * Driven through the real route and the real renderer, with the computer answering as the server
+ * does: the request for this conversation's Bot, and 404 for any other id.
+ */
+describe("a card that was waiting on the person, when its conversation is drawn again", () => {
+  const REASON = "로그인 화면에서 막혔어요";
+  const LABEL = "네이버 비밀번호";
+  const asking = (name: string, args: Record<string, unknown>): Message =>
+    ({
+      id: "a-asking",
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-asking",
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+    }) as Message;
+  const FOR_A_HAND = {
+    call: asking("computer_request_help", { reason: REASON }),
+    control: { requested: true, reason: REASON },
+  };
+  const FOR_A_SECRET = {
+    call: asking("computer_request_secret", {
+      label: LABEL,
+      ref: "e12",
+      snapshotId: 3,
+    }),
+    control: { requested: false, secretWanted: LABEL },
+  };
+
+  /** A turn that is waiting on its last call, and the computer holding that request. */
+  function waiting(on: { call: Message; control: Record<string, unknown> }) {
+    const turns = turnServer({
+      channelId: CHANNEL,
+      history: [ASKED],
+      turn: { id: "turn-1", status: "running", asked: [ASKED.id] },
+      turnMessages: [ASKED, on.call],
+    });
+    const state = { channelDown: false };
+    const api = (request: ApiRequest) => {
+      const listed = roster(request);
+      if (listed) return listed;
+      if (
+        state.channelDown &&
+        request.pathname === `/api/channels/${CHANNEL}`
+      ) {
+        return json({ error: "down" }, 500);
+      }
+      if (request.pathname === `/api/computers/${BOT_ID}/control`) {
+        return json({
+          holder: "bot",
+          since: "2026-10-05T00:00:00Z",
+          ...on.control,
+        });
+      }
+      // What `requireBotAccess` answers for an id this deployment has no Bot for.
+      if (request.pathname.startsWith("/api/computers/")) {
+        return json(
+          { error: "laf:bot_not_found", code: "laf:bot_not_found" },
+          404,
+        );
+      }
+      return turns.api(request);
+    };
+    return { api, turns, state };
+  }
+
+  const card = (host: HTMLElement) =>
+    host.querySelector<HTMLElement>("[data-waiting-card]");
+  const buttons = (host: HTMLElement) =>
+    [...(card(host)?.querySelectorAll("button") ?? [])].map(
+      (button) => button.textContent,
+    );
+  const hasBox = (host: HTMLElement) =>
+    card(host)?.querySelector('input[type="password"]') != null;
+  /** Every Bot the computer was asked about that is not this conversation's. */
+  const askedOfNobody = (requests: ApiRequest[]) =>
+    requests
+      .map((request) => request.pathname)
+      .filter(
+        (pathname) =>
+          pathname.startsWith("/api/computers/") &&
+          !pathname.startsWith(`/api/computers/${BOT_ID}/`),
+      );
+
+  /**
+   * The channel cannot be read, and then can: the conversation leaves the screen and is drawn
+   * again, while the screen around it — and every renderer it registered — stays where it was.
+   */
+  async function drawnAgain(
+    view: Awaited<ReturnType<typeof mountApp>>,
+    state: { channelDown: boolean },
+  ) {
+    const { channelKeys } = await import("../src/lib/channels/queries");
+    const readAgain = () =>
+      acted(() => {
+        void view.queryClient.invalidateQueries({
+          queryKey: channelKeys.detail(CHANNEL),
+        });
+      });
+    state.channelDown = true;
+    await readAgain();
+    await view.waitFor(
+      () =>
+        view.host.textContent?.includes("Could not load this channel.") ===
+        true,
+      "the conversation to leave the screen",
+      8000,
+    );
+    state.channelDown = false;
+    await readAgain();
+    await view.waitFor(
+      () => view.host.querySelector('[role="log"]') !== null,
+      "the conversation to be drawn again",
+      8000,
+    );
+  }
+
+  test("coming back from another place, a request for a hand has its buttons", async () => {
+    const { api, turns } = waiting(FOR_A_HAND);
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => buttons(view.host).includes("I'm done"),
+      "the card's buttons",
+      6000,
+    );
+
+    await view.navigate("/made");
+    await view.navigate(`/channel/${CHANNEL}`);
+    await view.waitFor(
+      () => buttons(view.host).includes("I'm done"),
+      "the card's buttons, on coming back",
+      6000,
+    );
+    expect(buttons(view.host)).toContain("Skip");
+    expect(askedOfNobody(view.requests)).toEqual([]);
+    turns.close();
+  });
+
+  test("under a screen that stayed, a request for a hand keeps its buttons, and nobody called `default` is asked about", async () => {
+    const { api, turns, state } = waiting(FOR_A_HAND);
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(
+      () => buttons(view.host).includes("I'm done"),
+      "the card's buttons",
+      6000,
+    );
+
+    await drawnAgain(view, state);
+    await view.waitFor(
+      () => buttons(view.host).includes("I'm done"),
+      "the card's buttons, drawn again",
+      6000,
+    );
+    expect(buttons(view.host)).toEqual(["Do it myself", "I'm done", "Skip"]);
+    expect(card(view.host)?.textContent).toContain("Needs you");
+    expect(askedOfNobody(view.requests)).toEqual([]);
+    turns.close();
+  });
+
+  test("and a value the Bot must not see keeps the box it is typed into", async () => {
+    const { api, turns, state } = waiting(FOR_A_SECRET);
+    const view = await mountApp({ path: `/channel/${CHANNEL}`, api });
+    await view.waitFor(() => hasBox(view.host), "the masked box", 6000);
+
+    await drawnAgain(view, state);
+    await view.waitFor(
+      () => hasBox(view.host),
+      "the masked box, drawn again",
+      6000,
+    );
+    expect(buttons(view.host)).toContain("Send to the page");
+    expect(buttons(view.host)).toContain("Skip");
+    expect(askedOfNobody(view.requests)).toEqual([]);
+    turns.close();
   });
 });
 

@@ -16,6 +16,7 @@ import {
   setScreenOpen,
   useScreenPanelViewport,
 } from "@/lib/computer/screen-panel";
+import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { useServerOwnsTurn } from "@/lib/turns/answers";
 import { cn } from "@/lib/utils";
@@ -45,14 +46,12 @@ import { useControl } from "./use-control";
  * and never into the conversation, the model, or anything that outlives this form.
  */
 export function HelpCard({
-  botId,
   toolCallId,
   kind,
   said,
   status,
   result,
 }: {
-  botId: string;
   toolCallId: string;
   kind: "help" | "secret";
   /** The Bot's own words for what it needs: the reason, or the secret's label. */
@@ -60,6 +59,22 @@ export function HelpCard({
   status: "inProgress" | "executing" | "complete";
   result: string | undefined;
 }) {
+  /*
+   * WHOSE COMPUTER, READ HERE AND NOT HANDED IN. The card was given its Bot by the renderer that
+   * draws it, as `botId={bot.current}` — the holder a surface fills in an effect. That renderer is
+   * registered once for as long as the screen is mounted, and CopilotKit draws it through a memo
+   * that compares the call and nothing else, so the holder was read when the card was first drawn
+   * and never again. Whenever the conversation was drawn afresh under a screen that had stayed —
+   * the channel could not be read for a moment and then could — its cards were in the first commit,
+   * before the surface had declared its Bot, and the holder still said the sentinel. Measured
+   * 2026-10-05 through the real route (`conversation-return.test.tsx`): the card asked
+   * `/api/computers/default/control`, was told there is no such Bot, and stood with no chip, no
+   * buttons and, for a secret, no box, under a header saying 도움 필요, until the Bot's wait ran out.
+   *
+   * The declared Bot is state, and a card that reads it is drawn again when it is declared — the
+   * memo above it has no say. Until then there is nobody to ask about and nothing to press.
+   */
+  const botId = useDeclaredBotId();
   /*
    * WAITING IS WHAT THE COMPUTER SAYS, NOT ONLY WHAT THIS TAB IS RUNNING.
    *
@@ -90,6 +105,7 @@ export function HelpCard({
   const ending = status === "complete" ? endingOf(result) : null;
 
   const handleTakeOver = async () => {
+    if (!botId) return;
     setIsPressing(true);
     const state = await takeControl(botId).catch(() => null);
     setIsPressing(false);
@@ -98,6 +114,7 @@ export function HelpCard({
   };
 
   const handleDone = async () => {
+    if (!botId) return;
     setIsPressing(true);
     await releaseControl(botId).catch(() => null);
     setIsPressing(false);
@@ -107,6 +124,7 @@ export function HelpCard({
   const handleSkip = async () => {
     // The skip first: the release below is read by the waiting call as "done" unless it knows.
     // Told to the turn only where the server owns it; the window's own wait reads the skip here.
+    if (!botId) return;
     await skipHelp(toolCallId, serverOwned ? botId : undefined);
     await handleDone();
   };
@@ -172,7 +190,7 @@ export function HelpCard({
           className="flex flex-col gap-1.5 ps-6"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (!secret || isSending) return;
+            if (!botId || !secret || isSending) return;
             setIsSending(true);
             const sent = await supplySecret(botId, secret);
             setIsSending(false);
@@ -235,7 +253,7 @@ export function HelpCard({
           {/* On a wide screen only: driving a page by touch has not been measured yet. */}
           {isWide && !isDriving ? (
             <Button
-              disabled={isPressing}
+              disabled={isPressing || !botId}
               onClick={() => void handleTakeOver()}
               size="sm"
             >
@@ -253,7 +271,7 @@ export function HelpCard({
           ) : null}
           {kind === "help" || isDriving ? (
             <Button
-              disabled={isPressing}
+              disabled={isPressing || !botId}
               onClick={() => void handleDone()}
               size="sm"
               variant={isDriving ? "default" : "secondary"}
@@ -262,7 +280,7 @@ export function HelpCard({
             </Button>
           ) : null}
           <Button
-            disabled={isPressing}
+            disabled={isPressing || !botId}
             onClick={() => void handleSkip()}
             size="sm"
             title={t("The Bot carries on without this step")}

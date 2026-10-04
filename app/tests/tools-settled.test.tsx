@@ -135,3 +135,47 @@ describe("ChannelChat waits for it", () => {
     expect(source.match(/await untilReady\(\);/g)?.length).toBe(3);
   });
 });
+
+/*
+ * THE SAME ORDER OF THINGS, SEEN FROM A CARD. A conversation names its Bot in an effect, and what
+ * is drawn beneath it has run its own effects by then. `ActivityReportCard` read the Bot it is
+ * drawn for from `useActiveBotId`, which answers the sentinel `default` until one is named, and
+ * asked for it. Measured 2026-10-05 with this render, before the card read the declared Bot: two
+ * requests, the first with `agentId: "default"` — which the server answers 404 `laf:bot_not_found`
+ * — and the second for the real one. Pull request 78 fixed it and kept no test; this is that render.
+ */
+describe("a card drawn as the conversation mounts", () => {
+  test("reads for the Bot the conversation names, and for nobody before it has named one", async () => {
+    const asked: { url: string; agentId: unknown }[] = [];
+    globalThis.fetch = stubFetch(async (input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        agentId?: unknown;
+      };
+      asked.push({ url: String(input), agentId: body.agentId });
+      return json({ allowed: true, data: { days: 7, rows: [] } });
+    });
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    const { ActivityReportCard } = await import(
+      "../src/components/gallery/activity"
+    );
+    function Conversation() {
+      useActiveBot("bot-1");
+      return <ActivityReportCard report="activity" />;
+    }
+    const view = await mount(
+      <ActiveBotProvider>
+        <Conversation />
+      </ActiveBotProvider>,
+    );
+    await view.settle(60);
+    expect(asked).toEqual([
+      { url: "/api/components/showActivityReport/call", agentId: "bot-1" },
+    ]);
+    // And it drew what it read, rather than standing at "Reading…".
+    expect(view.host.textContent).toContain(
+      "No Bot has done anything in the last 7 days.",
+    );
+  });
+});
