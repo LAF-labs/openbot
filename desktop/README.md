@@ -117,8 +117,11 @@ opener plugin is NOT granted to the origin. Neither is the updater, the process
 plugin, nor the global-shortcut plugin. The shell checks for updates from Rust,
 on release builds only, and never restarts an app somebody is using on its own:
 the page shows one quiet 새 버전이 준비됐어요 card with 지금 다시 시작, withheld
-while the Bot is working or waiting on the person — the window drives the turn,
-so a restart would end it. So a page running somebody else's script cannot make
+while the Bot is working or waiting on the person. That rule was made while the
+window drove the Bot's turn and a restart ended it; the server runs the turn now
+and it goes on through a restart, and the rule was kept — a restart still takes
+the answer off the screen somebody is watching it arrive on. So a page running
+somebody else's script cannot make
 this process install software, restart itself into anything but the signed
 update it already holds, take a key combination from the rest of the machine,
 or hand an arbitrary scheme to the operating system.

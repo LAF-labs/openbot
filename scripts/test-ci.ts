@@ -905,14 +905,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * card refused at call time is the refusal and not the card (one), and a gallery card's call drawn
  * by the function its renderer is (three). And by one more in `app`: the same words queued twice
  * are two messages, and taking one back leaves the other to go — the one rule of the deleted
- * in-mount queue's reducer that nothing held for the outbox.
+ * in-mount queue's reducer that nothing held for the outbox. And by one in `server`: compose
+ * still hands on `SERVER_TURNS`, retired, so that a stale `off` reaches the refusal.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3507, roots: ["server"] },
+  { name: "server", floor: 3508, roots: ["server"] },
   { name: "app", floor: 2027, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },

@@ -114,6 +114,16 @@ describe("the compose file", () => {
     ).toEqual([]);
   });
 
+  test("still hands on the retired switch whose stale value has to reach the refusal", () => {
+    /*
+     * `SERVER_TURNS=off` named the window-driven chat path, which was removed. The server refuses
+     * to start with it — but only if it is told: dropped here, an `.env` left saying `off` would
+     * boot a deployment that answers "off" with turns the server owns, and nobody would hear of it.
+     */
+    expect(ENVIRONMENT.SERVER_TURNS).toBe("retired");
+    expect(passed.has("SERVER_TURNS")).toBe(true);
+  });
+
   test("never hands it one that belongs only to development", () => {
     // PORT is what Caddy and the healthcheck expect; LAF_DEV_NO_AUTH and
     // AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS would make a VM unsafe on the strength of one line.

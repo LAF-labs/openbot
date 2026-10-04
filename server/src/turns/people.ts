@@ -35,9 +35,10 @@ function pause(ms: number, signal: AbortSignal): Promise<void> {
 /**
  * Wait for a person to answer one question, holding it as the step's keeper.
  *
- * HELD, NOT ONLY WATCHED. A window from before this change carries a step on itself when it sees a
- * question nobody holds (`step-watcher.ts` in the app): the server holding it is what keeps an old
- * window from running the same call a second time beside this one. The hold is renewed on every
+ * HELD, NOT ONLY WATCHED. An app build from before the window-driven path was removed (2026-10-05)
+ * carries a step on itself when it sees a question nobody holds — its step watcher, deleted from
+ * the app since: the server holding it is what keeps such a window, left open through an upgrade,
+ * from running the same call a second time beside this one. The hold is renewed on every
  * look, well inside the registry's lapse, so it never goes stale while the turn is alive — and it
  * does go stale on its own when the process that held it dies.
  *

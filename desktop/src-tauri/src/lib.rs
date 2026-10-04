@@ -1045,8 +1045,9 @@ fn take_ready_update(held: &Mutex<Option<ReadyUpdate>>) -> Result<ReadyUpdate, S
 /// verified update in hand it refuses, so a page running somebody else's script can at most restart
 /// the app into the signed version the shell itself downloaded, which is what the person's own
 /// press of 지금 다시 시작 would do. It is never called by anything but that press; the notice
-/// withholds the button while the Bot is working, because the window drives the turn and a restart
-/// would end it.
+/// withholds the button while the Bot is working. That was because the window drove the turn and a
+/// restart ended it; the server runs the turn now and it goes on through a restart, and the notice
+/// still withholds — a restart takes the answer off the screen somebody is watching.
 #[tauri::command]
 fn restart_to_update(app: tauri::AppHandle) -> Result<(), String> {
     let ready = take_ready_update(&app.state::<ShellState>().update).inspect_err(|refusal| {
@@ -1088,8 +1089,9 @@ fn pretend_update(app: &tauri::AppHandle) {
 /// app that cannot reach its update endpoint is an app that still has to run.
 ///
 /// NEVER A RESTART THE PERSON DID NOT ASK FOR. Restarting an app somebody is using, to deliver a
-/// change they did not ask for, is the behaviour that teaches people to dread updates — and here it
-/// would also end whatever the Bot was doing, because the window drives the turn. So the update is
+/// change they did not ask for, is the behaviour that teaches people to dread updates. (It used to
+/// end whatever the Bot was doing as well, while the window drove the turn; the server runs the
+/// turn now, and it goes on through a restart.) So the update is
 /// fetched and verified, the page is told, and it shows one quiet notice with 지금 다시 시작. On
 /// macOS it is also installed at once, so it applies on the next launch whether or not they press
 /// it; on Windows installing IS exiting (see `ReadyUpdate`), so it waits for the press.

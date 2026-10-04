@@ -584,6 +584,15 @@ same upgrade without any of that: no dump to go back to, no waiting, and no
 check — so an upgrade that left the deployment answering 503 finishes looking
 exactly like one that worked.
 
+**If `.env` has a `SERVER_TURNS` line that says `off`, delete it first.** It
+chose the path where the open window drove a chat turn. That path was removed
+(2026-10-05), and a server from that change on refuses to start with the line
+rather than boot and ignore it: one sentence in its log says the path was
+removed and to delete the line. `on`, or no line at all, starts as before. No
+provisioner ever wrote the line, so it is only there if somebody added it by
+hand. Missed, the new server never answers `/health`, and the script prints
+NOT HEALTHY with the rollback.
+
 **A version is chosen in `.env`, and only there.** To move a deployment to
 another release — or from `stable` to a pinned `vX.Y.Z`, or back — set the
 `IMAGE_TAG` line of `.env` first, then run the script. An `IMAGE_TAG` in the
@@ -817,6 +826,13 @@ older than that:
   the line, and must gain it before upgrading. The run's own `.env` carries it
   from the start, so this was read from the two compose files, not measured as
   a failed start.
+
+One more of the same kind, later and the other way round — a line a VM must
+LOSE before upgrading. A server built after 2026-10-05 refuses to start with
+`SERVER_TURNS=off` (see Upgrading, above): the window-driven chat path that
+setting chose is gone. Read from `server/src/config.ts` and held by
+`server/tests/config.test.ts`, not measured as a failed start on a VM: the
+provisioner has never written the line.
 
 ### What a VM runs
 

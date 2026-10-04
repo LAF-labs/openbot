@@ -1224,7 +1224,7 @@ async function leave(signal: string): Promise<void> {
   log.info("shutdown", { reason: signal });
   void server.stop();
   const writes = Promise.allSettled([
-    turnEngine?.flush(),
+    turnEngine.flush(),
     conversations.settled(),
     resultSpill?.settled(),
   ]);
