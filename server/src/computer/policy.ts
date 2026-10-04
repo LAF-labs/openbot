@@ -383,11 +383,7 @@ export function policyDecidesOnSnapshot(
  * states its permissions explicitly rather than relying on a default, so that what a Bot may do is
  * always something somebody wrote down.
  */
-/**
- * How much a decision holds back, so the stricter of two readings of one action can be taken.
- * `default` is the floor — nothing matched and the action is not carried out — which holds back
- * more than an `allow` and less than a rule that asked.
- */
+/** How much a rule holds back, so the stricter of two readings of one action can be taken. */
 const HOLDS_BACK: Record<PolicyDecision["source"], number> = {
   deny: 3,
   ask: 2,
@@ -407,6 +403,11 @@ const HOLDS_BACK: Record<PolicyDecision["source"], number> = {
  * the two spellings as one on purpose (`label-hold.ts`, `nameToMatch`) — so the judgement must be
  * at least as strict as it would be on either spelling (Codex on pull request 65). The decision
  * recorded is the stricter one; its `matched` names the rule that made it so.
+ *
+ * ONLY A RULE THAT HOLDS BACK IS LOOKED FOR IN THE SECOND SPELLING. An allow written for the words
+ * as the list shows them — `element.name == "Submit order"` — is not required to match
+ * "Submitorder" as well: a second reading that found no rule is not a refusal, it is a reading that
+ * found nothing (the same review, round 2).
  */
 export function evaluateActionPolicy(
   policy: ActionPolicy | null | undefined,
@@ -419,7 +420,8 @@ export function evaluateActionPolicy(
     ...context,
     element: { ...element, name: element.name.replace(/\s+/g, "") },
   });
-  return HOLDS_BACK[squeezed.source] > HOLDS_BACK[asWritten.source]
+  const holdsBack = squeezed.source === "deny" || squeezed.source === "ask";
+  return holdsBack && HOLDS_BACK[squeezed.source] > HOLDS_BACK[asWritten.source]
     ? squeezed
     : asWritten;
 }
