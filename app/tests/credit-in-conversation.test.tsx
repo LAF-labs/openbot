@@ -165,6 +165,36 @@ describe("the source line, in the conversation", () => {
   });
 
   /*
+   * THE RENDERER DRAWS A `<details>` THE BOT WROTE, CLOSED — held here because the rule in
+   * `credit-line.test.tsx` rests on it. A source line inside the fold is behind a press, so the
+   * screen draws its own (Codex on pull request 50).
+   */
+  test("is drawn under an answer whose own line is folded away", async () => {
+    const { server, view } = await conversation("channel_credit-folded", [
+      asked("서울 날씨 어때?"),
+      ...weather("w1"),
+      said(
+        "a-told",
+        "서울 17도\n\n<details><summary>더 보기</summary>출처: 기상청</details>",
+      ),
+    ]);
+    const answer = log(view.host)?.querySelector('[data-message-id="a-told"]');
+    const fold = answer?.querySelector("details");
+    // What the premise is: a fold, closed, with its summary to press.
+    expect(fold?.querySelector("summary")?.textContent).toBe("더 보기");
+    expect(fold?.hasAttribute("open")).toBe(false);
+    expect(lines(view.host).map((line) => line.textContent)).toEqual([LINE]);
+    expect(
+      lines(view.host)[0]
+        ?.closest("[data-message-id]")
+        ?.getAttribute("data-message-id"),
+    ).toBe("a-told");
+
+    server.close();
+    await view.unmount();
+  });
+
+  /*
    * A TASK THAT IS OVER IS ONE ROW, WITH NONE OF THE BOT'S WORDS ON IT (the browsing row,
    * 2026-10-04). The line is owed where the weather's words are on the screen: on the card the row
    * opens to, which shows the newest thing the Bot said while doing it — and not under the row,

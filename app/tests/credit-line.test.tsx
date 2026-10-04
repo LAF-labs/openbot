@@ -104,6 +104,39 @@ describe("the source line under an answer", () => {
     }
   });
 
+  /*
+   * THE RENDERER DRAWS `<details>`, CLOSED: what is inside it is behind a press. Its tags came
+   * off with the words left behind, so an answer whose source line was inside a fold "already
+   * said" it and got no line on the screen (Codex on pull request 50). A closed fold shows its
+   * summary; an open one shows all of it.
+   */
+  test("does not take a line folded away for a line that is said", async () => {
+    for (const folded of [
+      "서울 17도\n\n<details><summary>더 보기</summary>출처: 기상청</details>",
+      "서울 17도\n\n<details>\n<summary>더 보기</summary>\n\n출처: 기상청\n\n</details>",
+      // Still being written: the fold has not been closed yet.
+      "서울 17도\n\n<details><summary>더 보기</summary>출처: 기상청",
+      // An open fold inside a closed one is as hidden as the one that holds it.
+      "서울 17도<details><summary>더</summary><details open>출처: 기상청</details></details>",
+      '서울 17도<DETAILS class="x"><summary>더 보기</summary>출처: 기상청</DETAILS>',
+    ]) {
+      expect([folded, (await line(folded))?.textContent]).toEqual([
+        folded,
+        `Source: ${KMA}`,
+      ]);
+    }
+    for (const shown of [
+      "서울 17도\n\n<details open><summary>더 보기</summary>출처: 기상청</details>",
+      // The summary is what a closed fold shows.
+      "서울 17도\n\n<details><summary>출처: 기상청</summary>자세한 예보</details>",
+      // Said outside the fold, whatever the fold holds.
+      "서울 17도. 출처: 기상청\n\n<details><summary>더 보기</summary>시간별 예보</details>",
+      "<details><summary>더 보기</summary>시간별 예보</details>\n\n출처: 기상청",
+    ]) {
+      expect([shown, await line(shown)]).toEqual([shown, null]);
+    }
+  });
+
   test("names each provider once, and draws nothing where none is owed", async () => {
     expect(await line("…", [])).toBeNull();
     const two = await line("…", [KMA, "Another agency"]);

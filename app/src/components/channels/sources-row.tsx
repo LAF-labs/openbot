@@ -76,13 +76,50 @@ function writtenAs(name: string): string[] {
  * Looked for in what the Bot wrote, the line was found where nobody sees it — in a comment, in a
  * link's title — and the screen left its own out, and it was missed where everybody sees it:
  * `출처: **기상청**`, drawn bold, got a second line (Codex on pull request 50). The marks come off
- * the way they do for a screen reader (`spokenText`), and what HTML hides goes with its tags.
- * Not the drawn bubble itself: that is the renderer's, lazily, and this is decided as the row is.
+ * the way they do for a screen reader (`spokenText`), what HTML hides goes with its tags, and
+ * what a closed fold holds goes with the fold (`withoutWhatIsFolded`).
+ * Not the drawn answer itself: that is the renderer's, lazily, and this is decided as the row is.
  */
 function wordsOf(text: string): string {
   return spokenText(
-    text.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, ""),
+    withoutWhatIsFolded(text.replace(/<!--[\s\S]*?-->/g, "")).replace(
+      /<[^>]*>/g,
+      "",
+    ),
   );
+}
+
+/** A `<details>` with no other inside it, to its end — or to the text's, while it is being written. */
+const INNERMOST_DETAILS =
+  /<details\b([^>]*)>((?:(?!<details\b)[\s\S])*?)(?:<\/details\s*>|$)/gi;
+const SUMMARY = /<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i;
+
+/**
+ * The answer without what a folded `<details>` holds.
+ *
+ * THE RENDERER DRAWS `<details>`, CLOSED. Mounted, 2026-10-04: an answer of "서울 17도" and
+ * `<details><summary>더 보기</summary>출처: 기상청</details>` was drawn as the sentence and a closed
+ * fold named 더 보기 — and the tags came off above with the words left behind, so the answer
+ * "already said" where its data was from and the screen drew no line: weather on the screen, and
+ * its source behind a press (Codex on pull request 50). What a closed fold shows is its summary;
+ * an open one (`<details open>`) shows all of it.
+ *
+ * Innermost first, so a fold inside a fold is settled before the one that holds it; six deep is
+ * more than anything a Bot writes.
+ */
+function withoutWhatIsFolded(text: string): string {
+  if (!/<details\b/i.test(text)) return text;
+  let shown = text;
+  for (let depth = 0; depth < 6; depth += 1) {
+    const next = shown.replace(
+      INNERMOST_DETAILS,
+      (_whole, attributes: string, body: string) =>
+        /\sopen\b/i.test(attributes) ? body : (SUMMARY.exec(body)?.[1] ?? ""),
+    );
+    if (next === shown) break;
+    shown = next;
+  }
+  return shown;
 }
 
 /** A source line the answer's own words already carry: "출처: 기상청", "자료 제공: 기상청". */
