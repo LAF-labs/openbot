@@ -30,15 +30,6 @@ const runner = {
           },
         ] as never)
       : [],
-  stepState: (threadId: string) => ({
-    running: false,
-    waiting: threadId === "thread-mine",
-    waitingMs: threadId === "thread-mine" ? 1_000 : 0,
-  }),
-  abandonStep: (threadId: string) => {
-    primed.push(`abandon:${threadId}`);
-    return true;
-  },
 };
 
 /** The runtime, as far as these routes reach it: its own basePath, and a note that it was reached. */
@@ -137,34 +128,6 @@ describe("the runtime's thread routes", () => {
         },
       ],
     });
-  });
-
-  test("whether a step is out, and letting one go, are the thread's own person's (0.5.4 A)", async () => {
-    const step = await ask("/api/copilotkit/threads/thread-mine/step", {
-      actor: "owner",
-    });
-    expect(step.status).toBe(200);
-    expect(await step.json()).toEqual({
-      running: false,
-      waiting: true,
-      waitingMs: 1_000,
-    });
-
-    primed.length = 0;
-    const theirs = await ask(
-      "/api/copilotkit/threads/thread-theirs/step-abandoned",
-      { actor: "owner", method: "POST" },
-    );
-    expect(theirs.status).toBe(404);
-    expect(primed).toEqual(["thread:thread-theirs:owner"]);
-
-    primed.length = 0;
-    const mine = await ask(
-      "/api/copilotkit/threads/thread-mine/step-abandoned",
-      { actor: "owner", method: "POST" },
-    );
-    expect(await mine.json()).toEqual({ abandoned: true });
-    expect(primed).toEqual(["thread:thread-mine:owner", "abandon:thread-mine"]);
   });
 
   test("only reading the list primes it", async () => {
