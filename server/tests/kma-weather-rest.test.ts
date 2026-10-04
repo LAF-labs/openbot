@@ -164,15 +164,17 @@ const SEA: Served = {
   "days 20261001/2300": OPEN_SEA.days,
 };
 
-/** A call made in a conversation somebody is looking at — the app's own, where a card is drawn. */
+/** A call made in a conversation: its row is drawn there, and the forecast as a card on it. */
 const connection = {
   url: KMA_HOST,
   actorId: "person-1",
   botId: "bot-1",
-  watched: true,
+  drawnOn: "conversation" as const,
 };
-/** The same call from a routine: nobody watches, and the answer reaches the person as words. */
-const unwatched = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
+/** The same call from a routine: nothing of it is drawn, and the answer reaches the person as words. */
+const fromARoutine = { ...connection, drawnOn: "nowhere" as const };
+/** A connection that does not say where the answer goes: drawn nowhere. */
+const unsaid = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 
 type Facts = {
   source: string;
@@ -552,19 +554,22 @@ describe("what a Bot is handed", () => {
     expect(Buffer.byteLength(text)).toBeLessThan(1_500);
 
     /*
-     * AND NOT WHEN NOBODY IS LOOKING. A routine's call draws no card — its answer reaches the
+     * AND NOT WHERE NOTHING IS DRAWN. A routine's call draws no card — its answer reaches the
      * person as the Bot's words — so its forecast is not said to be shown, and the model writes it
-     * out as it did before there were cards (review, round 7). The data is the same data.
+     * out as it did before there were cards (review, round 7). The data is the same data. A
+     * connection that does not say where its answer goes is read the same way.
      */
-    const routine = await made.transport.callTool(
-      unwatched,
-      "get_weather",
-      SEOUL,
-    );
-    const unseen = JSON.parse(routine.text) as Facts;
-    expect(unseen.shown).toBeUndefined();
-    expect(unseen.days).toEqual(facts.days);
-    expect(unseen.now).toEqual(facts.now);
+    for (const drawnNowhere of [fromARoutine, unsaid]) {
+      const routine = await made.transport.callTool(
+        drawnNowhere,
+        "get_weather",
+        SEOUL,
+      );
+      const unseen = JSON.parse(routine.text) as Facts;
+      expect(unseen.shown).toBeUndefined();
+      expect(unseen.days).toEqual(facts.days);
+      expect(unseen.now).toEqual(facts.now);
+    }
 
     /*
      * AND THE APP'S CARD IS DRAWN FROM THIS VERY TEXT (`shared/weather.ts`): it is known as data

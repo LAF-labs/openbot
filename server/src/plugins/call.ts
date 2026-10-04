@@ -32,6 +32,7 @@ import {
   TOOL_UNKNOWN,
   toolNameFor,
 } from "./store";
+import type { DrawnOn } from "./transport";
 
 /**
  * The one path a tool call takes: decide, record, act.
@@ -380,17 +381,21 @@ export function createCallPath(
        */
       approvalId?: string | undefined;
       /**
-       * Whether a person is watching this call happen — the app's own call, never a routine's.
+       * Where what this call answers will be drawn (`DrawnOn`, `transport.ts`), said by the door it
+       * came through: `conversation` from a chat turn (`turns/chat-tools.ts`) and from the app's own
+       * call (`routes.ts`), `nowhere` from a routine (`runner/unattended.ts`). Absent is `nowhere`:
+       * a caller that does not say where the answer goes has drawn it nowhere.
        *
        * It decides two things. Whether a code or link withheld from a mail (`mail-secrets.ts`) is
-       * kept a while for that person to be shown on the call's line: nobody watches a routine, so
-       * its values are kept nowhere and the result says only that one was there. And, handed to
-       * the transport, whether what the call answers will be drawn where the person looks: the
-       * weather tool tells the model its forecast is on the screen as a card only then
-       * (`kma-weather-rest.ts`) — a routine's forecast reaches the person as the Bot's words alone.
+       * kept a while to be shown on the call's row: a routine's call has no row, so its values are
+       * kept nowhere and the result says only that one was there. And, handed to the transport,
+       * whether the answer is drawn as a card: the weather tool tells the model its forecast is on
+       * the screen only then (`kma-weather-rest.ts`) — a routine's forecast reaches the person as
+       * the Bot's words alone.
        */
-      watched?: boolean | undefined;
+      drawnOn?: DrawnOn | undefined;
     }): Promise<{ text: string; isError: boolean }> {
+      const drawnOn: DrawnOn = input.drawnOn ?? "nowhere";
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
       if (!serverId || !toolName) {
@@ -864,7 +869,7 @@ export function createCallPath(
             token,
             actorId: input.actorId,
             botId: input.botId,
-            watched: input.watched === true,
+            drawnOn,
           },
           toolName,
           args,
@@ -885,15 +890,17 @@ export function createCallPath(
         })
           ? await withholdMailSecrets(answered.text, {
               judge: options.mailSecretJudge ?? null,
-              keep: input.watched
-                ? (kind, value) =>
-                    context.withheld.keep({
-                      botId: input.botId,
-                      actorId: input.actorId,
-                      kind,
-                      value,
-                    })
-                : null,
+              // Kept only to be shown on the call's row: where nothing is drawn, nothing is kept.
+              keep:
+                drawnOn === "conversation"
+                  ? (kind, value) =>
+                      context.withheld.keep({
+                        botId: input.botId,
+                        actorId: input.actorId,
+                        kind,
+                        value,
+                      })
+                  : null,
             })
           : null;
         const withheldKinds = withheld?.withheld ?? [];
@@ -903,7 +910,7 @@ export function createCallPath(
             tool: input.ref,
             count: withheldKinds.length,
             kinds: [...new Set(withheldKinds)],
-            kept: input.watched === true,
+            kept: drawnOn === "conversation",
           });
         }
         const result = withheld

@@ -395,6 +395,12 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             // server is settled in the same terms as a click.
             ...(actor.threadId ? { threadId: actor.threadId } : {}),
             ...(approvalId ? { approvalId } : {}),
+            /*
+             * NOTHING OF A ROUTINE'S CALL IS DRAWN: what it found reaches the person as the Bot's
+             * words alone. So a code withheld from a mail is kept for nobody, and a forecast is
+             * written out rather than left to a card nobody has (`DrawnOn`, `transport.ts`).
+             */
+            drawnOn: "nowhere",
           });
           return { ok: !result.isError, text: result.text };
         }

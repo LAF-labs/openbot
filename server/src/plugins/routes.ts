@@ -1245,9 +1245,9 @@ export function createPluginRoutes(
         ...(typeof body.approvalId === "string" && body.approvalId
           ? { approvalId: body.approvalId }
           : {}),
-        // The person is in front of this call, so a code withheld from a mail is kept for them to
-        // be shown on its line (`mail-secrets.ts`). A routine reaches the store without this.
-        watched: true,
+        // The app's own call, made from a conversation and drawn on its line there: a code withheld
+        // from a mail is kept to be shown on it (`mail-secrets.ts`). A routine's is `nowhere`.
+        drawnOn: "conversation",
       });
       return context.json(result);
     } catch (error) {
