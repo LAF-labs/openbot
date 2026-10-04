@@ -6,6 +6,7 @@ import type { Page } from "playwright";
 import { log } from "./log";
 import { originOf } from "./navigation-guard";
 import { titleOf } from "./page-text";
+import { within } from "./within";
 
 /** One tab in a Bot's browser, as the snapshot lists them. */
 export type TabSummary = {
@@ -56,8 +57,9 @@ export const IDLE_SWEEP_MS = 60_000;
  * kept calling: every `target=_blank` link and every window a site opens is adopted (`adoptOpened`),
  * no route closes a tab, and the idle close looks at the Bot's last call (`IDLE_CLOSE_MS`), so it
  * never comes for a Bot that is working. Measured 2026-10-05 against a real Chromium
- * (`tests/tab-cap.test.ts`, before this): one Bot, thirty opens — twenty-seven `_blank` clicks and
- * three `window.open` — and its tabs went 2, 3, 4 … 31, one more for every open.
+ * (`tests/tab-cap.test.ts`, run against the source as it was before this): one Bot, thirty opens —
+ * twenty-seven `_blank` clicks and three `window.open` — and its tabs went 2, 3, 4 … 31, one more
+ * for every open.
  *
  * WHAT A TAB COSTS, measured the same day in the stable image under `mem_limit: 3g`, on
  * news.naver.com: no browser 292 MiB and 19 processes; the browser and one tab 524 MiB and 87; five
@@ -66,12 +68,13 @@ export const IDLE_SWEEP_MS = 60_000;
  * — which Naver's results, each opening in a tab of its own, reach inside one long task.
  *
  * WHY SIX. What a task needs is small: a sign-in window and the page that opened it is two, a
- * payment window with its 본인인증 window three, a list and a handful of the pages off it five or
- * six. Six heavy tabs is about 1.2 GiB with the process around them, two fifths of the limit —
- * room for pages twice as heavy, for the seventh tab that exists for a moment before the oldest is
- * closed, and for a second Bot of a legacy account at its own six (about 2 GiB together; five Bots
- * all at six would be 4.4 GiB, and never fit before this either). And six is more than the tabs
- * that may not be closed can ever be (`keepToCap`: at most five), so there is always one to close.
+ * payment window with its 본인인증 window and the page under them three — each kept by rule while
+ * the window that reports to it is open (`keepToCap`), not by having been used lately — a list and
+ * a handful of the pages off it five or six. Six heavy tabs is about 1.2 GiB with the process
+ * around them, two fifths of the limit — room for pages twice as heavy, for the seventh tab that
+ * exists for a moment before another is closed, and for a second Bot of a legacy account at its
+ * own six (about 2 GiB together; five Bots all at six would be 4.4 GiB, and never fit before this
+ * either).
  *
  * A CONSTANT, NOT A SETTING. The number follows from the image's memory limit and what a page
  * costs, both of which are this repository's; a deployment has no reason to hold another.
@@ -82,6 +85,26 @@ export const TAB_CAP = 6;
 const LINE_MS = 60_000;
 
 /**
+ * How many closed tabs' sites are kept for a Bot that has not read its list since. The count of
+ * them is exact however many go; the sites are the last few.
+ */
+const CLOSED_SITES_KEPT = 6;
+
+/** How long the browser is given to say whether a new tab can report to the one that opened it. */
+const REPORTS_WAIT_MS = 1_000;
+
+/**
+ * How long a tab may be nobody's before the idle sweep closes it.
+ *
+ * A tab is adopted on the browser's own `page` event, within one question to the browser of its
+ * opening (`adoptOpened`), and a tab this process opens is claimed in the tick it exists
+ * (`profiles.page`). A minute is some thousands of times that. Counted from the sweep that first
+ * finds the tab nobody's, and the sweep comes once a minute (`IDLE_SWEEP_MS`): a stray is gone a
+ * minute or two after it is first seen.
+ */
+export const STRAY_GRACE_MS = 60_000;
+
+/**
  * The tab a Bot was on, gone from under it: how, and which site it was showing — the origin only,
  * for the reason a log line carries no more (a path and a query are the page's).
  */
@@ -89,10 +112,10 @@ export type TabLost = { cause: "crashed" | "closed"; origin: string };
 
 /**
  * The tabs of a Bot's closed to keep them to {@link TAB_CAP} since it last read its list: how many,
- * and the site the last of them was showing — the origin only, as everywhere a tab is spoken of.
- * Never the tab the Bot was on.
+ * and the sites they were showing — origins only, as everywhere a tab is spoken of, each once, and
+ * of the last few when many went ({@link CLOSED_SITES_KEPT}). Never the tab the Bot was on.
  */
-type TabCapped = { origin: string; closed: number };
+type TabCapped = { closed: number; origins: string[] };
 
 /** What is kept for a Bot for as long as it has tabs. See `live`. */
 type Live = {
@@ -110,8 +133,8 @@ type Live = {
    */
   capped: number;
   listed: number;
-  /** The site the last tab closed for the cap was showing. */
-  cappedOrigin?: string;
+  /** The sites of the tabs closed for the cap and not yet read of, oldest first, one a close. */
+  unread: string[];
 };
 
 /** What the bookkeeping needs from the browser it keeps the books of. */
@@ -133,6 +156,11 @@ type TabsBrowser = {
    * (`ProfileOptions.holdsTab`). Such a tab is never the one closed for the cap.
    */
   holds: (botId: string, page: Page) => boolean;
+  /**
+   * Whether a tab a site opened can reach the window that opened it — the browser's own answer
+   * (`canAccessOpener`), never the page's. See `openers`.
+   */
+  reportsToOpener: (page: Page) => Promise<boolean>;
 };
 
 /**
@@ -167,10 +195,11 @@ export function createTabs(browser: TabsBrowser) {
   const crashed = new WeakSet<Page>();
 
   /**
-   * The tabs closed for the cap, for as long as the browser still lists them: let go of at once
-   * and closed a moment later, like a crashed one, and like it never the spare a Bot is handed.
+   * The tabs this process is closing — for the cap, or for being nobody's — for as long as the
+   * browser still lists them: let go of at once and closed a moment later, like a crashed one,
+   * and like it never the spare a Bot is handed.
    */
-  const capped = new WeakSet<Page>();
+  const closing = new WeakSet<Page>();
 
   /**
    * When each tab was last the one its Bot was on, as a place in the order of every such moment.
@@ -187,8 +216,28 @@ export function createTabs(browser: TabsBrowser) {
     used.set(page, uses);
   };
 
-  /** The tab that opened each tab a site opened, as the browser said when it was adopted. */
+  /**
+   * The tab each tab reports to: the one that opened it, where the new tab can reach it.
+   *
+   * NOT EVERY TAB THAT WAS OPENED BY ANOTHER. Playwright's `opener()` names the page a tab came
+   * from, and names it for every tab alike. Measured 2026-10-05 on 1.62.1, a tab opened six ways:
+   * `opener()` was the page for all six; `window.opener` in the new tab, and the browser's
+   * `canAccessOpener` for it, were set for `window.open(url)`, `window.open(url, name, "popup")`
+   * and `<a target=_blank rel=opener>`, and not for a plain `<a target=_blank>`, one with
+   * `rel=noopener`, or `window.open(url, "_blank", "noopener")`. A sign-in window is the first
+   * kind and hands its result to the page behind it. A result opened from a list is the second:
+   * it has nothing to say to the list, and keeping every such page for the tab it opened would
+   * keep a chain of them whole — a Bot reading one related article after another would have no
+   * number at all.
+   *
+   * KEPT FROM THE MOMENT THE TAB IS ADOPTED, AND TAKEN BACK WHEN THE BROWSER SAYS NO. The answer
+   * is a question to the browser, and a second tab can open while it is on its way: until it
+   * comes — and if it never does — the opener is kept, which costs a tab and breaks nothing.
+   */
   const openers = new WeakMap<Page, Page>();
+
+  /** When the idle sweep first found each tab nobody's. See `closeStrays`. */
+  const strays = new WeakMap<Page, number>();
 
   /** This Bot's open tabs, in the browser's own order. */
   const pagesOf = (botId: string): Page[] =>
@@ -216,7 +265,11 @@ export function createTabs(browser: TabsBrowser) {
    * counted on the next one that is.
    */
   const say = (
-    event: "tab_crashed" | "tab_capped" | "tab_cap_exceeded",
+    event:
+      | "tab_crashed"
+      | "tab_capped"
+      | "tab_cap_exceeded"
+      | "tab_stray_closed",
     botId: string | undefined,
     facts: Record<string, string | number>,
   ): void => {
@@ -328,6 +381,7 @@ export function createTabs(browser: TabsBrowser) {
       since: new Date().toISOString(),
       capped: 0,
       listed: 0,
+      unread: [],
       ...live.get(botId),
       page,
       usedAt: now(),
@@ -353,10 +407,10 @@ export function createTabs(browser: TabsBrowser) {
     !page.isClosed() &&
     !owners.has(page) &&
     !crashed.has(page) &&
-    !capped.has(page);
+    !closing.has(page);
 
   /*
-   * A BOT HOLDS `TAB_CAP` TABS, AND THE ONE IT USED LONGEST AGO MAKES ROOM FOR A NEW ONE.
+   * A BOT HOLDS `TAB_CAP` TABS, AND ONE IT HAS NOT USED FOR LONGEST MAKES ROOM FOR A NEW ONE.
    *
    * Asked whenever a tab becomes a Bot's that it did not have (`adoptOpened`, the one place a
    * Bot's tabs grow), so the new tab exists before the old one goes: closing first would close a
@@ -365,18 +419,19 @@ export function createTabs(browser: TabsBrowser) {
    * WHICH TAB MAY NOT GO, whatever its place in the order:
    *
    *  - the tab the Bot is on. That would be the loss `tab-loss.ts` guards, done by this process;
-   *  - the tab that opened the one the Bot is on. A sign-in window reports to the page that
-   *    opened it, and a page closed behind its own window is a sign-in that lands nowhere;
+   *  - a tab that an open tab of the Bot's reports to (`openers`). A sign-in window hands its
+   *    result to the page that opened it, and a page closed behind its own window is a sign-in
+   *    that lands nowhere. For as long as the window is open, and whichever tab the Bot is on —
+   *    so a payment window, its 본인인증 window and the page under them are kept all the way up:
+   *    each is open, and each reports to the one before it;
    *  - a tab somebody outside these books holds (`holds`): the one a person has the wheel of, the
    *    one a live screen is casting, the one a value or a hand was asked for on.
    *
-   * ONLY THE OPENER OF THE TAB THE BOT IS ON, not of every tab it has: every tab a `_blank` link
-   * opened has one, and a rule that kept them all would keep a chain of pages opened one from
-   * the next whole, however long.
-   *
-   * At most five tabs — those two and the three a session can hold — so with seven there is
-   * always another. If ever there is not, nothing is closed: the Bot is over the cap by the tab
-   * that just opened, a line says so, and the next tab that opens asks again.
+   * So the tab that goes is the one used longest ago AMONG THOSE THAT MAY, which is not always the
+   * one used longest ago of all. And there may be none: seven windows each opened from the one
+   * before it, or everything held. Then nothing is closed — the Bot is over its number by the tab
+   * that just opened, a line says so, and the next tab that opens asks again, closing as many as
+   * it takes.
    *
    * ANOTHER BOT'S TABS ARE NOT IN THIS COUNT AND NEVER GO FOR IT. A legacy account's Bots share the
    * browser and each has its own six.
@@ -396,11 +451,11 @@ export function createTabs(browser: TabsBrowser) {
       const mine = pagesOf(botId);
       if (mine.length <= TAB_CAP) return;
       const on = running.page;
-      const opener = openers.get(on);
+      const reportedTo = new Set(mine.map((page) => openers.get(page)));
       const oldest = mine
         .filter(
           (page) =>
-            page !== on && page !== opener && !browser.holds(botId, page),
+            page !== on && !reportedTo.has(page) && !browser.holds(botId, page),
         )
         .sort((one, other) => (used.get(one) ?? 0) - (used.get(other) ?? 0))[0];
       if (!oldest) {
@@ -409,13 +464,65 @@ export function createTabs(browser: TabsBrowser) {
       }
       const origin = originOf(oldest.url());
       owners.delete(oldest);
-      capped.add(oldest);
+      closing.add(oldest);
       // Counted with the closed one still in it: how many the Bot held when one had to go.
       say("tab_capped", botId, { origin, tabs: mine.length });
       running.capped += 1;
-      running.cappedOrigin = origin;
+      running.unread.push(origin);
+      if (running.unread.length > CLOSED_SITES_KEPT) running.unread.shift();
       void oldest.close().catch(() => undefined);
     }
+  };
+
+  /*
+   * A TAB THAT IS NOBODY'S IS CLOSED ONCE IT HAS BEEN NOBODY'S FOR A MINUTE.
+   *
+   * Every count above is of a Bot's tabs, and some tabs are no Bot's: one whose opener had closed
+   * before the browser could say who opened it, one the browser opened by itself, and anything
+   * such a tab goes on to open (`adoptOpened` hands a tab to the Bot its opener belongs to, and
+   * that opener belongs to nobody). No list shows them, no cap counts them and no idle close
+   * reaches them, so they stayed for as long as any Bot had a tab — the same leak, by another door.
+   *
+   * ON THE IDLE SWEEP, AND ONLY AFTER {@link STRAY_GRACE_MS}: a tab is nobody's for a moment on
+   * its way to being somebody's, and that moment must never be the one it is closed in. So a sweep
+   * that finds a tab nobody's writes down when, a sweep that finds it owned forgets it, and only
+   * one that finds it still nobody's a minute on closes it.
+   *
+   * NEVER THE LAST TAB THE BROWSER HAS. A browser's one remaining tab that is nobody's is the
+   * spare a Bot with no tab is handed (`profiles.page`), and this must not fight that: closing it
+   * would only have the next call open another. When nobody has a tab at all it is the browser
+   * that goes, and that is the idle close's own work.
+   *
+   * A tab this process has already let go of — its renderer dead, or closed for the cap — has
+   * been asked to close and is not asked again. One bounded line, by the tab's origin only.
+   */
+  const closeStrays = (): number => {
+    const open = browser.pages().filter((page) => !page.isClosed());
+    let left = open.length;
+    let closed = 0;
+    for (const page of open) {
+      if (owners.has(page)) {
+        strays.delete(page);
+        continue;
+      }
+      if (crashed.has(page) || closing.has(page)) continue;
+      const since = strays.get(page);
+      if (since === undefined) {
+        strays.set(page, now());
+        continue;
+      }
+      if (now() - since < STRAY_GRACE_MS || left <= 1) continue;
+      left -= 1;
+      closed += 1;
+      // Never the spare from here on, like every tab this process is closing.
+      closing.add(page);
+      say("tab_stray_closed", undefined, {
+        origin: originOf(page.url()),
+        pages: open.length,
+      });
+      void page.close().catch(() => undefined);
+    }
+    return closed;
   };
 
   /*
@@ -450,6 +557,18 @@ export function createTabs(browser: TabsBrowser) {
       if (opener) openers.set(opened, opener);
       touch(botOf, opened);
       browser.onPage(botOf, opened);
+      /*
+       * AFTER THE TAB IS THE BOT'S, NOT BEFORE: a Bot's next look must find it on the tab its
+       * click opened (`actions.ts`, `POPUP_GRACE_MS`), and this is one more question to the
+       * browser. Only a plain no takes the opener back — see `openers`.
+       */
+      if (
+        opener &&
+        (await within(REPORTS_WAIT_MS, browser.reportsToOpener(opened))) ===
+          false
+      ) {
+        openers.delete(opened);
+      }
       keepToCap(botOf);
     })();
   };
@@ -487,6 +606,10 @@ export function createTabs(browser: TabsBrowser) {
    * The Bot has been handed its list as it stood at that count: an index is a place in that one
    * now. Returns what was closed for the cap since the list before it, once — undefined when
    * nothing was, or when the list this count was read from is gone and another begun.
+   *
+   * EVERY ONE OF THEM, NOT THE LAST. Two tabs can go between two looks — a page that opens two
+   * windows, a person with the wheel pressing two links — and a Bot told of one would look for
+   * the other. A tab closed after this list was read is not in it: it is left for the next.
    */
   const listRead = (botId: string, capped: number): TabCapped | undefined => {
     const running = live.get(botId);
@@ -494,8 +617,12 @@ export function createTabs(browser: TabsBrowser) {
       return undefined;
     }
     const closed = capped - running.listed;
+    const later = running.capped - capped;
+    const read = running.unread.length - later;
+    const origins = [...new Set(running.unread.slice(0, Math.max(0, read)))];
+    running.unread = running.unread.slice(Math.max(0, read));
     running.listed = capped;
-    return { origin: running.cappedOrigin ?? "", closed };
+    return { closed, origins };
   };
 
   /**
@@ -538,6 +665,7 @@ export function createTabs(browser: TabsBrowser) {
     touch,
     use,
     closeTabsOf,
+    closeStrays,
     adoptOpened,
     tabs,
     cappedOf,

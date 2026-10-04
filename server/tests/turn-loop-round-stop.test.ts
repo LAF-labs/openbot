@@ -163,6 +163,41 @@ const alerting = {
   }),
 } as unknown as ComputerGateway;
 
+/**
+ * A computer whose first look carries one fact, as the Bot's own look says a lost tab or a closed
+ * one once (`agent-computer/src/tab-loss.ts`, `tab-cap.ts`) — and which keeps what was done to it.
+ */
+function looking(note: Record<string, unknown>) {
+  let told = false;
+  const once = () => {
+    if (told) return {};
+    told = true;
+    return { notes: [note] };
+  };
+  const acted: string[] = [];
+  const page = { url: "https://shop.example/list", title: "목록" };
+  const gateway = {
+    snapshot: async () => ({
+      snapshotId: 2,
+      ...page,
+      elements: [],
+      truncated: false,
+      tabs: [{ index: 0, ...page, active: true }],
+      ...once(),
+    }),
+    read: async () => ({ ...page, text: "본문", truncated: false, ...once() }),
+    switchTab: async () => {
+      acted.push("switch");
+      return { action: "switch_tab", index: 0, tabs: [], url: page.url };
+    },
+    key: async () => {
+      acted.push("key");
+      return { action: "key", url: page.url };
+    },
+  } as unknown as ComputerGateway;
+  return { gateway, acted };
+}
+
 /** A chat turn's toolkit over this gateway, as the turn engine builds it. */
 const chatToolsOver = (gateway: ComputerGateway) =>
   createChatTools({ gateway, people: createPersonAnswers() })(
@@ -435,6 +470,100 @@ describe("a step that moved the page ends the round, and a look at the page stil
     expect(said).not.toHaveProperty("noteCodes");
   });
 
+  /*
+   * A LOOK THAT SAYS THE TABS MOVED ENDS THE ROUND, THOUGH A LOOK IS NEVER STOPPED BY ONE. The
+   * computer refuses a tab switch by an index from before a tab was closed, and every act on a
+   * tab the Bot was put on, until the Bot has looked again — and counts the look as it answers
+   * it. A model that asked for the look and the step in one reply had not read that answer: the
+   * snapshot re-armed the Bot, and the old index or the Enter went through.
+   */
+  test("a snapshot that says old tabs were closed: the tab switch and the key after it in the same reply are not reached", async () => {
+    const { gateway, acted } = looking({
+      code: "laf:old_tab_closed",
+      closed: 2,
+      origins: ["https://shop.example", "https://pay.example"],
+    });
+    const toolkit = await chatToolsOver(gateway);
+    const outcome = await run(
+      [
+        reply(
+          { id: "s1", name: "computer_snapshot" },
+          { id: "w2", name: "computer_switch_tab", args: { index: 2 } },
+          { id: "k3", name: "computer_key", args: { key: "Enter" } },
+          { id: "s4", name: "computer_snapshot" },
+        ),
+      ],
+      (name, args, call) => toolkit.execute(name, args, call),
+    );
+    // Both looks ran; neither step that would have landed by the old list did.
+    expect(outcome.executed).toEqual(["s1", "s4"]);
+    expect(outcome.filed.get("w2")).toEqual(NOT_REACHED);
+    expect(outcome.filed.get("k3")).toEqual(NOT_REACHED);
+    expect(acted).toEqual([]);
+    expect(outcome.unanswered).toEqual([]);
+    // What the model reads: the fact in words, with how many tabs went and their sites.
+    const said = outcome.filed.get("s1") as Record<string, unknown>;
+    expect(said.notes).toEqual([
+      `${toolResultText("laf:old_tab_closed")} (2개: https://shop.example, https://pay.example)`,
+    ]);
+    expect(said).not.toHaveProperty("noteCodes");
+  });
+
+  test("a routine's read that says its tab went from under it: the Enter and the tab switch after it in the same reply are not reached", async () => {
+    const { gateway, acted } = looking({
+      code: "laf:tab_replaced",
+      cause: "closed",
+      origin: "https://nid.naver.com",
+    });
+    const toolkit = await createUnattendedTools({ gateway })("bot-1", {
+      id: "owner-1",
+    });
+    const outcome = await run(
+      [
+        reply(
+          { id: "r1", name: "computer_read" },
+          { id: "k2", name: "computer_key", args: { key: "Enter" } },
+          { id: "w3", name: "computer_switch_tab", args: { index: 1 } },
+        ),
+      ],
+      (name, args, call) => toolkit.execute(name, args, call),
+    );
+    expect(outcome.executed).toEqual(["r1"]);
+    expect(outcome.filed.get("k2")).toEqual(NOT_REACHED);
+    expect(outcome.filed.get("w3")).toEqual(NOT_REACHED);
+    expect(acted).toEqual([]);
+    const said = outcome.filed.get("r1") as Record<string, unknown>;
+    expect(said.notes).toEqual([
+      `${toolResultText("laf:tab_replaced")} (https://nid.naver.com)`,
+    ]);
+  });
+
+  test("a look that says neither changes nothing: the steps after it in the same reply are carried out", async () => {
+    // A page still arriving is a fact on a look too, and not one about which tab the Bot is on.
+    const { gateway, acted } = looking({
+      code: "laf:page_loading",
+      origin: "https://slow.example",
+    });
+    const toolkit = await chatToolsOver(gateway);
+    const outcome = await run(
+      [
+        reply(
+          { id: "s1", name: "computer_snapshot" },
+          { id: "k2", name: "computer_key", args: { key: "Enter" } },
+          { id: "w3", name: "computer_switch_tab", args: { index: 0 } },
+        ),
+        // And a look with nothing to say at all.
+        reply(
+          { id: "s4", name: "computer_snapshot" },
+          { id: "k5", name: "computer_key", args: { key: "Tab" } },
+        ),
+      ],
+      (name, args, call) => toolkit.execute(name, args, call),
+    );
+    expect(outcome.executed).toEqual(["s1", "k2", "w3", "s4", "k5"]);
+    expect(acted).toEqual(["key", "switch", "key"]);
+  });
+
   test("an ordinary scroll, click or field does not end the round", async () => {
     const outcome = await run(
       [
@@ -518,6 +647,39 @@ describe("the rule's own reading", () => {
     ]) {
       expect(roundEndsAfter(name, { ok: false })).toBe(false);
     }
+  });
+
+  test("a result that says the Bot's tab or its list of tabs changed ends the round whichever tool answered it", () => {
+    for (const code of ["laf:tab_replaced", "laf:old_tab_closed"]) {
+      for (const name of [
+        "computer_snapshot",
+        "computer_read",
+        "computer_navigate",
+        "computer_scroll",
+      ]) {
+        expect({
+          name,
+          code,
+          ends: roundEndsAfter(name, { ok: true, noteCodes: [code] }),
+        }).toEqual({ name, code, ends: true });
+      }
+    }
+    // Any other fact on a look ends nothing: an alert ends a round after a step that acted.
+    for (const code of ["laf:dialog", "laf:page_loading", "laf:downloaded"]) {
+      expect(
+        roundEndsAfter("computer_snapshot", { ok: true, noteCodes: [code] }),
+      ).toBe(false);
+    }
+    // Words are not codes: a sentence, or the notes as the model reads them, is nothing to read.
+    expect(roundEndsAfter("computer_snapshot", "laf:old_tab_closed")).toBe(
+      false,
+    );
+    expect(
+      roundEndsAfter("computer_snapshot", {
+        ok: true,
+        notes: [toolResultText("laf:old_tab_closed")],
+      }),
+    ).toBe(false);
   });
 
   test("both server executors keep the notes' codes beside their words; the shared mapping does not", async () => {

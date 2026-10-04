@@ -132,18 +132,22 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "네가 보던 탭이 사라졌다. 로그인 창처럼 할 일을 마친 탭이 스스로 닫힌 것일 수도 있고, 브라우저가 그 탭을 멈춘 것일 수도 있다. 지금은 네 다른 탭이나 새 빈 탭에 있고, 이 답에 온 화면이 지금 네가 있는 곳이다. 사라진 탭에 있던 것(채우던 양식, 스크롤한 자리, 그 탭의 ref)은 없고, 사이트 로그인은 그대로 남아 있다. 사라진 탭의 페이지가 아직 필요한 경우에만 다시 열면 된다. 괄호 안은 사라진 탭이 보던 사이트다.",
 
   /*
-   * 봇이 탭을 정해진 수(agent-computer/src/tabs.ts의 TAB_CAP)보다 많이 열어서, 가장 오래 쓰지 않은
-   * 탭을 컴퓨터가 닫은 것. 실측(2026-10-05): 그 수가 없던 때에는 봇 하나가 새 탭을 30번 여는 동안 탭이
-   * 2, 3, 4 … 31로 늘었고(네이버 결과는 새 탭으로 열린다), 무거운 탭 하나는 130–140MiB였다. 봇이
-   * 보던 탭은 닫지 않으므로 `laf:tab_replaced`가 아니다 — 봇은 있던 자리에 그대로 있고, 멈추는 것도 없다.
-   * 달라진 것은 tabs 목록이다: 닫힌 탭 뒤의 탭들은 index가 하나씩 당겨졌고, 컴퓨터는 봇이 목록을 다시
-   * 읽기 전의 computer_switch_tab을 `laf:stale_refs`로 거절한다. 그 목록을 싣는 봇 자신의 스냅샷에 한
-   * 번만 오고, 닫힌 탭의 origin이 괄호 안에 붙는다(noteTexts).
+   * 봇의 탭이 정해진 수(agent-computer/src/tabs.ts의 TAB_CAP)를 넘어서, 봇이 쓰지 않던 탭을 컴퓨터가
+   * 닫은 것. 실측(2026-10-05): 그 수가 없던 때에는 봇 하나가 새 탭을 30번 여는 동안 탭이 2, 3, 4 … 31로
+   * 늘었고(네이버 결과는 새 탭으로 열린다), 무거운 탭 하나는 130–140MiB였다. 봇이 보던 탭은 닫지
+   * 않으므로 `laf:tab_replaced`가 아니다 — 봇은 있던 자리에 그대로 있고, 멈추는 것도 없다. 달라진 것은
+   * tabs 목록이다: 닫힌 탭 뒤의 탭들은 index가 당겨졌고, 컴퓨터는 봇이 목록을 다시 읽기 전의
+   * computer_switch_tab을 `laf:stale_refs`로 거절한다. 그 목록을 싣는 봇 자신의 스냅샷에 한 번만 온다.
+   *
+   * 몇 개가 닫혔는지와 그 탭들이 보던 사이트가 괄호 안에 붙는다(noteTexts) — 두 번의 보기 사이에 탭이
+   * 둘 닫힐 수 있다(페이지가 창을 둘 열 때, 운전대를 잡은 사람이 링크를 둘 누를 때). "가장 오래 쓰지
+   * 않은"이라고 말하지 않는다: 닫아도 되는 탭 가운데 가장 오래된 것이지, 전체에서 가장 오래된 것이
+   * 아닐 수 있다(더 오래된 탭이 로그인 창의 결과를 받을 페이지이거나 사람이 잡고 있는 탭일 때).
    *
    * `laf:tab_replaced`처럼 사실만 말하고 시키지 않는다 — 닫힌 탭이 아직 필요한지는 봇이 안다.
    */
   "laf:old_tab_closed":
-    "열려 있는 탭이 많아져서, 네가 가장 오래 쓰지 않은 탭을 컴퓨터가 닫았다. 네가 보고 있던 탭은 아니고, 너는 있던 자리에 그대로 있다. 이 답의 tabs 목록이 지금 열려 있는 탭이고, 탭이 닫히면서 index가 전과 달라졌다. 닫힌 탭에 있던 것(채우던 양식, 스크롤한 자리)은 없고, 사이트 로그인은 그대로 남아 있다. 닫힌 탭의 페이지가 아직 필요한 경우에만 다시 열면 된다. 괄호 안은 닫힌 탭이 보던 사이트다.",
+    "열려 있는 탭이 많아져서, 네가 쓰지 않던 탭을 컴퓨터가 닫았다. 네가 보고 있던 탭은 아니고, 너는 있던 자리에 그대로 있다. 이 답의 tabs 목록이 지금 열려 있는 탭이고, 탭이 닫히면서 index가 전과 달라졌다. 닫힌 탭에 있던 것(채우던 양식, 스크롤한 자리)은 없고, 사이트 로그인은 그대로 남아 있다. 닫힌 탭의 페이지가 아직 필요한 경우에만 다시 열면 된다. 괄호 안은 닫힌 탭의 수와 그 탭들이 보던 사이트다.",
 
   "laf:downloaded":
     "파일이 네 컴퓨터의 downloads/ 폴더에 저장됐다. path에 경로가 있고 computer_read_file로 열 수 있다.",
@@ -1112,8 +1116,23 @@ function savedSchedule(saved: unknown): string | undefined {
 /** 툴 결과에 얹혀 온 사실 하나. 코드와, 코드마다 다른 사실 몇 개. */
 export type ToolNote = { code: string } & Record<string, unknown>;
 
-/** 탭 하나가 없어졌다는 사실들. 문장 뒤 괄호에 그 탭이 보던 사이트(origin)가 붙는다. */
-const TAB_FACTS = new Set(["laf:tab_replaced", "laf:old_tab_closed"]);
+/**
+ * 캡으로 닫힌 탭의 수와 그 탭들이 보던 사이트: "2개: https://a, https://b". 사이트는 origin뿐이고,
+ * 컴퓨터가 하나씩만, 몇 개까지만 보낸다(agent-computer/src/tabs.ts). 수가 없으면 빈 글자.
+ */
+function closedTabs(note: ToolNote): string {
+  const closed =
+    typeof note.closed === "number" && Number.isInteger(note.closed)
+      ? note.closed
+      : 0;
+  if (closed < 1) return "";
+  const sites = Array.isArray(note.origins)
+    ? note.origins.filter(
+        (site): site is string => typeof site === "string" && site !== "",
+      )
+    : [];
+  return sites.length ? `${closed}개: ${sites.join(", ")}` : `${closed}개`;
+}
 
 /**
  * 브라우저가 실어 보낸 사실들에 모델이 읽을 문장을 붙인다.
@@ -1134,13 +1153,15 @@ export function noteTexts(notes: unknown): string[] | undefined {
       // 경고창의 message 처럼, 문장만으로는 쓸모없고 사실이 붙어야 뜻이 생기는 것들.
       const message = typeof note.message === "string" ? note.message : "";
       const path = typeof note.path === "string" ? note.path : "";
-      // 사라진 탭, 닫힌 탭이 보던 사이트 — origin뿐이다. 이 두 사실에만 붙인다: 다른 사실의
-      // origin은 제 문장이 이미 말하거나(열리는 중) 봇이 방금 부른 주소다.
+      // 사라진 탭이 보던 사이트 — origin뿐이다. 이 사실 하나에만 붙인다: 다른 사실의 origin은
+      // 제 문장이 이미 말하거나(열리는 중) 봇이 방금 부른 주소다.
       const site =
-        TAB_FACTS.has(note.code) && typeof note.origin === "string"
+        note.code === "laf:tab_replaced" && typeof note.origin === "string"
           ? note.origin
           : "";
-      const detail = message || path || site;
+      // 캡으로 닫힌 탭은 하나가 아닐 수 있다: 몇 개인지, 어느 사이트들인지.
+      const closed = note.code === "laf:old_tab_closed" ? closedTabs(note) : "";
+      const detail = message || path || site || closed;
       return detail ? `${text} (${detail})` : text;
     });
   return said.length ? said : undefined;

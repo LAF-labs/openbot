@@ -410,6 +410,7 @@ describe("a Bot's tabs, kept without a browser", () => {
       onPage: () => undefined,
       onLost: (botId, how) => lost.push([botId, how]),
       holds: () => false,
+      reportsToOpener: async () => false,
     });
     /** A tab this Bot is handed and is on, as `profiles.page` hands one. */
     const on = (botId: string, address: string): FakeTab => {

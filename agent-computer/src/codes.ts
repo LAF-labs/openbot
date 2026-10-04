@@ -157,10 +157,10 @@ export const COMPUTER_CODES = {
   // sign-ins are not; `cause` and the lost page's `origin` ride beside it. On the Bot's first look
   // after it, once, and nothing acts for the Bot before that look (tab-loss.ts).
   "laf:tab_replaced": { note: true },
-  // A tab of the Bot's — not the one it was on — was closed because it had more open than it may
-  // hold (`TAB_CAP`): the one it had used longest ago. The Bot is where it was; what changed is
-  // the list `computer_switch_tab` takes its index from. The closed tab's `origin` and how many
-  // were `closed` ride beside it. On the Bot's next snapshot, with the list, once (tab-cap.ts).
+  // Tabs of the Bot's — never the one it was on — were closed because it had more open than it
+  // may hold (`TAB_CAP`). The Bot is where it was; what changed is the list `computer_switch_tab`
+  // takes its index from. How many were `closed` and the `origins` they showed ride beside it. On
+  // the Bot's next snapshot, with the list, once (tab-cap.ts).
   "laf:old_tab_closed": { note: true },
 } as const satisfies Record<`laf:${string}`, Answer | Told>;
 

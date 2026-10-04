@@ -112,26 +112,59 @@ describe("putting a fact into words", () => {
     ).toEqual([toolResultText("laf:page_loading")]);
   });
 
-  test("a tab closed to keep the Bot's tabs to their number carries its site, and is not said as the Bot's own tab going", () => {
+  test("tabs closed to keep the Bot's tabs to their number carry how many went and their sites, and are not said as the Bot's own tab going", () => {
     const said = noteTexts([
       {
         code: "laf:old_tab_closed",
-        origin: "https://search.shopping.naver.com",
-        closed: 1,
+        closed: 2,
+        origins: [
+          "https://search.shopping.naver.com",
+          "https://smartstore.naver.com",
+        ],
       },
     ]);
+    // Two went between two looks: both, not the last one beside a sentence about one tab.
     expect(said).toEqual([
-      `${toolResultText("laf:old_tab_closed")} (https://search.shopping.naver.com)`,
+      `${toolResultText("laf:old_tab_closed")} (2개: https://search.shopping.naver.com, https://smartstore.naver.com)`,
     ]);
     // The Bot is where it was, and is told so: this is not the loss `laf:tab_replaced` is.
     expect(said?.[0]).toContain("네가 보고 있던 탭은 아니고");
     expect(said?.[0]).not.toContain("사라졌다");
+    // No order is claimed: the tab that goes is the oldest that MAY go, which is not always
+    // the one used longest ago.
+    expect(said?.[0]).not.toContain("가장 오래");
     // What did change is the list a tab is switched to by, and the sentence names it.
     expect(said?.[0]).toContain("tabs 목록");
     expect(said?.[0]).toContain("index");
-    // A fact, not an order: whether the closed page is still wanted is the Bot's to know.
+    // A fact, not an order: whether a closed page is still wanted is the Bot's to know.
     expect(said?.[0]).not.toContain("computer_navigate");
     expect(said?.[0]).not.toContain("해라");
+    // One tab, and a count with no sites beside it: said as what it is, never as an empty list.
+    expect(
+      noteTexts([
+        {
+          code: "laf:old_tab_closed",
+          closed: 1,
+          origins: ["https://a.example"],
+        },
+      ]),
+    ).toEqual([
+      `${toolResultText("laf:old_tab_closed")} (1개: https://a.example)`,
+    ]);
+    expect(noteTexts([{ code: "laf:old_tab_closed", closed: 3 }])).toEqual([
+      `${toolResultText("laf:old_tab_closed")} (3개)`,
+    ]);
+    // And a lost tab's origin is still the only fact its sentence takes.
+    expect(
+      noteTexts([
+        {
+          code: "laf:tab_replaced",
+          cause: "closed",
+          origin: "https://a.example",
+          closed: 2,
+        },
+      ]),
+    ).toEqual([`${toolResultText("laf:tab_replaced")} (https://a.example)`]);
   });
 
   test("a code with nothing to add is just its sentence", () => {

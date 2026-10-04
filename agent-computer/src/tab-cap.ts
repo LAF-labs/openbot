@@ -3,8 +3,9 @@
  * what the Bot is told when one is closed.
  *
  * `tabs.ts` counts a Bot's tabs and, when one more than `TAB_CAP` is open, closes the one the Bot
- * used longest ago. It keeps the order and it knows which tab the Bot is on and which tab opened
- * that one. What it cannot know is in the Bot's session, and is asked for here.
+ * used longest ago of those that may go. It keeps the order, and it knows which tab the Bot is on
+ * and which tabs an open window reports to. What it cannot know is in the Bot's session, and is
+ * asked for here.
  *
  * NOT THE LOSS `tab-loss.ts` GUARDS. The Bot was not on the tab that went. It is where it was, on
  * a page it has seen, and its refs name what they named — so nothing is frozen, no ask ends, and
@@ -25,10 +26,17 @@
  * costs a Bot one snapshot, which it takes after a click anyway — and a tab is only ever closed
  * for the cap by the tab a click, or a page, has just opened.
  *
- * THE FACT RIDES ON THE LIST, ONCE, AND ONLY ON THE BOT'S OWN. `laf:old_tab_closed`, with the
- * closed tab's origin, on the snapshot that hands the Bot its list as it now is. Not put in the
- * queue every answer drains, for the reason a lost tab is not (`tab-loss.ts`): a person's screen
- * takes snapshots too, and would carry it off in an answer the server throws away.
+ * THE FACT RIDES ON THE LIST, ONCE, AND ONLY ON THE BOT'S OWN. `laf:old_tab_closed`, with how
+ * many tabs went and the sites they showed, on the snapshot that hands the Bot its list as it now
+ * is. Not put in the queue every answer drains, for the reason a lost tab is not (`tab-loss.ts`):
+ * a person's screen takes snapshots too, and would carry it off in an answer the server throws
+ * away.
+ *
+ * AND THE ROUND ENDS ON THAT SNAPSHOT. A model may ask for a look and a switch in one reply, and
+ * the look re-arms the Bot here before the model has read the list it carried: the old index
+ * would land. The turn loop is where a round's steps stop, so a result carrying this fact — or
+ * `laf:tab_replaced` — leaves the acting steps after it in that reply untried
+ * (`server/src/runner/round-stop.ts`).
  */
 import type { Page } from "playwright";
 import type { NoteCode } from "./codes";
@@ -36,9 +44,9 @@ import type { Profiles } from "./profiles";
 import { type BotSession, note } from "./sessions";
 
 /**
- * The fact for a tab closed to keep a Bot's tabs to their number: not the one it was on, the one
- * it had used longest ago. `origin` — the site that tab was showing — and `closed`, how many went
- * since the Bot last read its list, ride beside it.
+ * The fact for tabs closed to keep a Bot's tabs to their number: never the one it was on. `closed`
+ * — how many went since the Bot last read its list — and `origins`, the sites they were showing,
+ * each once, ride beside it.
  */
 const OLD_TAB_CLOSED: NoteCode = "laf:old_tab_closed";
 

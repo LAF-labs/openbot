@@ -248,6 +248,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     touch,
     use,
     closeTabsOf,
+    closeStrays,
     adoptOpened,
     tabs,
     cappedOf,
@@ -260,6 +261,19 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     onPage: (botId, page) => options.onPage?.(botId, page),
     onLost: (botId, lost) => options.onTabLost?.(botId, lost),
     holds: (botId, page) => options.holdsTab?.(botId, page) ?? false,
+    /*
+     * Asked of the browser about the tab, on a session of its own: no line of the page runs, so
+     * no page can say it of itself. A failure is the caller's to read as "not known" (tabs.ts).
+     */
+    reportsToOpener: async (page) => {
+      const session = await page.context().newCDPSession(page);
+      try {
+        const { targetInfo } = await session.send("Target.getTargetInfo");
+        return targetInfo.canAccessOpener;
+      } finally {
+        void session.detach().catch(() => undefined);
+      }
+    },
   });
 
   const profileDirectory = (): string =>
@@ -527,6 +541,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       if (stale.length) {
         log.info("computer_idle_closed", { bots: stale, idleCloseMs });
       }
+      // And the tabs that are nobody's, which no Bot's idleness reaches (tabs.ts, `closeStrays`).
+      closeStrays();
       await closeIfUnused();
       return stale;
     },
