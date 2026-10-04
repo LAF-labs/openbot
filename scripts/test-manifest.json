@@ -31,6 +31,7 @@
   "agent-computer/tests/late-frame-secret.test.ts",
   "agent-computer/tests/live-screen-input.test.ts",
   "agent-computer/tests/navigation-guard.test.ts",
+  "agent-computer/tests/page-names.test.ts",
   "agent-computer/tests/person-typing.test.ts",
   "agent-computer/tests/reader.test.ts",
   "agent-computer/tests/reset-race.test.ts",

@@ -7,6 +7,8 @@ import {
   opaqueFramesIn,
   parseAriaSnapshot,
   parseDescriptor,
+  readAriaSnapshot,
+  withNames,
 } from "../src/aria-snapshot";
 import { listedTextEntryRefs } from "../src/secret-fields";
 
@@ -824,6 +826,85 @@ describe("a name the tree prints beneath the control", () => {
     );
     expect(elements[0]?.name).toBe("가".repeat(199));
     expect(elements[0]?.name.isWellFormed()).toBe(true);
+  });
+});
+
+/**
+ * The names above are the fallback. The page is asked for the name of every control the tree printed
+ * without one (`page-names.ts`), and what it answers takes the place of the words from inside.
+ */
+describe("the names the page gives in place of the tree's", () => {
+  test("the controls asked about are the nameless ones of a role named by its contents", () => {
+    const yaml = `- link "이름 있음" [ref=e1]:
+  - /url: /a
+- link [ref=e2]:
+  - /url: /b
+  - strong [ref=e3]: 헤드라인
+- button [ref=e4]
+- textbox [ref=e5]: 입력한 값
+- checkbox [ref=e6]:
+  - text: 동의
+- combobox [ref=e7]`;
+    expect(readAriaSnapshot(yaml).unnamed).toEqual(["e2", "e4", "e6"]);
+    // The list itself is the one `parseAriaSnapshot` gives.
+    expect(readAriaSnapshot(yaml).elements).toEqual(
+      parseAriaSnapshot(yaml).elements,
+    );
+  });
+
+  test("and only those the list keeps: a control cut from the list is not asked about", () => {
+    const lines = [
+      ...buttonsAt(1, 150, 900),
+      ...Array.from(
+        { length: 100 },
+        (_, index) =>
+          `- link [ref=n${index}] [cursor=pointer] [box=10,100,80,20]:\n  - text: 링크 ${index}`,
+      ),
+      "- link [ref=below] [box=10,2000,80,20]:\n  - text: 아래",
+    ];
+    const read = readAriaSnapshot(lines.join("\n"), {}, VIEWPORT);
+    expect(read.truncated).toBe(true);
+    expect(read.unnamed).toHaveLength(100);
+    expect(read.unnamed).not.toContain("below");
+    const kept = new Set(read.elements.map((element) => element.ref));
+    expect(read.unnamed.every((ref) => kept.has(ref))).toBe(true);
+  });
+
+  test("the page's name replaces the one from inside, cut like any other, and brings no value", () => {
+    const yaml = `- link [ref=e1]:
+  - /url: /a
+  - text: ★
+  - strong [ref=e2]: Headline
+- button [ref=e3]: 다음
+- link [ref=e4]:
+  - text: 그대로`;
+    const read = readAriaSnapshot(yaml);
+    expect(read.elements.map((element) => element.name)).toEqual([
+      "★ Headline",
+      "다음",
+      "그대로",
+    ]);
+    const long = `${"가".repeat(199)}😀나`;
+    const named = withNames(
+      read.elements,
+      new Map([
+        ["e1", "Headline"],
+        ["e3", long],
+      ]),
+    );
+    expect(named).toEqual([
+      { ref: "e1", role: "link", name: "Headline" },
+      { ref: "e3", role: "button", name: "가".repeat(199) },
+      // The page did not answer for this one: the words from inside stand.
+      { ref: "e4", role: "link", name: "그대로" },
+    ]);
+    // Nothing the page had no answer for is touched, and the list it was given is not changed.
+    expect(read.elements[0]?.name).toBe("★ Headline");
+  });
+
+  test("an empty name from the page is a name: the browser calls that control nothing", () => {
+    const read = readAriaSnapshot("- link [ref=e1]:\n  - text: 숨은 글자");
+    expect(withNames(read.elements, new Map([["e1", ""]]))[0]?.name).toBe("");
   });
 });
 

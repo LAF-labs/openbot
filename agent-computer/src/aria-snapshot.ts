@@ -413,7 +413,9 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
 
 /**
  * The name a control's contents give it, when the tree printed none: its words joined with one
- * space, or empty when nothing beneath it says anything.
+ * space, or empty when nothing beneath it says anything. THE FALLBACK — the list asks the page for
+ * the name the browser gives each of these controls (`page-names.ts`) and keeps this only where the
+ * page did not answer in time.
  *
  * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT. Playwright 1.62's AI snapshot drops the
  * name of a node whose name came from children it also prints, each with a ref of its own
@@ -422,27 +424,22 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
  * browser still calls that link by its headline, and the label hold asks the browser
  * (`label-hold.ts`): a click held to the empty name the list had given was refused as a rename.
  * Measured 2026-10-04 on five Korean pages (Naver home, news and search, Daum, 4insure): 190 links
- * were blank for this reason and the hold refused all 190; named from inside, it held 186 as the
- * same control. The four left are names the tree spells differently from the browser — a table
- * read whole where the browser reads its caption, and three links whose screen-reader-only words
- * the tree leaves out.
+ * were blank for this reason and the hold refused all 190; named by these words it held 186.
  *
- * One space between the words, where the browser joins inline neighbours with none
- * (`<b>A</b><i>B</i>` is named "AB"): the tree does not say which neighbours were inline, so the
- * hold compares names without regard to where the spaces fall (`nameToMatch`).
+ * WHY THESE WORDS ARE NOT ENOUGH, and the page is asked: the tree does not say which neighbours were
+ * inline, and the browser joins those with no space (`<b>A</b><i>B</i>` is named "AB") — 16 of 59
+ * links on a Naver search page were "무선 마우스" here and "무선마우스" to the browser; it prints a
+ * decoration the page hid from the accessibility tree like any other text (`<span
+ * aria-hidden="true">★</span>` is `- text: ★`, under a link the browser names "Headline"); and it
+ * reads a table whole where the browser reads its caption. Each was a refused click, or held only
+ * because the hold compared names with their spaces free — and the policy then had to judge every
+ * spaced name twice. With the page's names the same five pages held every control not hidden from
+ * the accessibility tree, exactly (203 of 203, measured 2026-10-04), and the hold is exact again.
+ * Where the page does not answer, these words stand, and a click held to them where the browser
+ * spaces its name otherwise is refused: a refusal, never a click on something else.
  *
  * An image with no alt text says nothing, so a link that holds only one stays nameless — which is
- * also what the browser calls it, so the hold still finds it.
- *
- * WHAT THE TREE PRINTS THAT THE BROWSER DOES NOT NAME: a decoration the page hides from the
- * accessibility tree (`<span aria-hidden="true">★</span>`) is printed as text like any other —
- * measured 2026-10-04 in headless Chromium, `- text: ★` under a link the browser names "Headline" —
- * and the tree carries no mark to tell it from a word. A name built here then holds a word the
- * browser's does not, and the hold refuses the click as a rename: a refusal, never a wrong click,
- * which is the side the boundary errs on (Codex on pull request 65, rounds 3 and 4). The browser's
- * own name is not to be had per element without breaking the refs (a default-mode `ariaSnapshot()`
- * on `aria-ref=eN` gives it, and invalidated the refs for the ones after); a name computed in the
- * page from the DOM, leaving `aria-hidden` out, is the follow-up that would close this.
+ * also what the browser calls it.
  */
 function nameFromWithin(value: unknown): string {
   return wordsWithin(value).join(" ").replace(/\s+/g, " ").trim();
@@ -571,6 +568,24 @@ export function parseAriaSnapshot(
   elements: SnapshotElement[];
   truncated: boolean;
 } {
+  const { elements, truncated } = readAriaSnapshot(yaml, secrets, viewport);
+  return { elements, truncated };
+}
+
+/**
+ * {@link parseAriaSnapshot}, and the refs of the kept controls the tree printed without a name —
+ * the ones whose name the page is asked for (`page-names.ts`), and which keep the name their
+ * contents give (`nameFromWithin`) until it answers.
+ */
+export function readAriaSnapshot(
+  yaml: string,
+  secrets: SecretSignals = {},
+  viewport?: Viewport,
+): {
+  elements: SnapshotElement[];
+  truncated: boolean;
+  unnamed: string[];
+} {
   const secretLabels = new Set(
     [...(secrets.labels ?? [])]
       .map((label) => label.replace(/\s+/g, " ").trim())
@@ -583,7 +598,11 @@ export function parseAriaSnapshot(
   );
   const found: Found[] = [];
 
-  const push = (element: SnapshotElement, seen: boolean): void => {
+  const push = (
+    element: SnapshotElement,
+    seen: boolean,
+    unnamed: boolean,
+  ): void => {
     if (TEXT_ENTRY_ROLES.has(element.role)) {
       const label = element.name.replace(/\s+/g, " ").trim();
       if (
@@ -609,7 +628,7 @@ export function parseAriaSnapshot(
         if (element.value !== undefined) element.value = "";
       }
     }
-    found.push({ element, seen });
+    found.push({ element, seen, unnamed });
   };
 
   let tree: unknown;
@@ -618,7 +637,7 @@ export function parseAriaSnapshot(
   } catch {
     // A snapshot that will not parse yields no elements rather than throwing. The caller's next move is
     // to take another one, and an exception here would reach the Bot as a broken computer.
-    return { elements: [], truncated: false };
+    return { elements: [], truncated: false, unnamed: [] };
   }
 
   /** One entry: an element if it is one, and then whatever is beneath it. */
@@ -626,8 +645,12 @@ export function parseAriaSnapshot(
     const descriptor = parseDescriptor(key);
     const box = descriptor && view ? boxOf(descriptor, view) : null;
     const element = descriptor ? toElement(descriptor, value) : null;
-    if (element) {
-      push(element, Boolean(box && view && overlap(box, view.clip)));
+    if (element && descriptor) {
+      push(
+        element,
+        Boolean(box && view && overlap(box, view.clip)),
+        !descriptor.name && NAMED_FROM_CONTENT.has(descriptor.role),
+      );
     }
     // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
     // its radios are. A frame's document measures its boxes from the frame's own corner.
@@ -669,11 +692,40 @@ export function parseAriaSnapshot(
         }
       : null,
   );
-  return keptOf(found);
+  const { kept, truncated } = keptOf(found);
+  return {
+    elements: kept.map(({ element }) => element),
+    truncated,
+    unnamed: kept.flatMap(({ element, unnamed }) =>
+      unnamed ? [element.ref] : [],
+    ),
+  };
 }
 
-/** An element, and whether any of it was inside the viewport when the tree was taken. */
-type Found = { element: SnapshotElement; seen: boolean };
+/**
+ * The list with the page's own names in place of the ones the tree's contents gave
+ * (`namesFromThePage`), cut where every name is cut.
+ *
+ * No value goes with a name replaced here: a nameless control of these roles never kept one
+ * (`toElement` says a value only when its contents gave no name, and then they were empty).
+ */
+export function withNames(
+  elements: SnapshotElement[],
+  names: ReadonlyMap<string, string>,
+): SnapshotElement[] {
+  return elements.map((element) => {
+    const name = names.get(element.ref);
+    return name === undefined
+      ? element
+      : { ...element, name: cutAtCodeUnits(name, 200) };
+  });
+}
+
+/**
+ * An element, whether any of it was inside the viewport when the tree was taken, and whether the
+ * tree printed it without a name.
+ */
+type Found = { element: SnapshotElement; seen: boolean; unnamed: boolean };
 
 /**
  * The elements the list keeps: all of them, or — past the limit — every one a person could see,
@@ -688,12 +740,9 @@ type Found = { element: SnapshotElement; seen: boolean };
  * Handed back in page order rather than seen-first, because the list is read as the page, top to
  * bottom (`server/src/computer/snapshot-lines.ts`).
  */
-function keptOf(found: Found[]): {
-  elements: SnapshotElement[];
-  truncated: boolean;
-} {
+function keptOf(found: Found[]): { kept: Found[]; truncated: boolean } {
   if (found.length <= SNAPSHOT_ELEMENT_LIMIT) {
-    return { elements: found.map(({ element }) => element), truncated: false };
+    return { kept: found, truncated: false };
   }
   const seen = found.filter((entry) => entry.seen).length;
   let roomForSeen = Math.min(seen, SNAPSHOT_ELEMENT_LIMIT);
@@ -702,5 +751,5 @@ function keptOf(found: Found[]): {
     if (entry.seen) return roomForSeen-- > 0;
     return roomForRest-- > 0;
   });
-  return { elements: kept.map(({ element }) => element), truncated: true };
+  return { kept, truncated: true };
 }

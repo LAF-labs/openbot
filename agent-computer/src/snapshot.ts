@@ -14,8 +14,9 @@
 import type { Page } from "playwright";
 import {
   opaqueFramesIn,
-  parseAriaSnapshot,
+  readAriaSnapshot,
   type SnapshotElement,
+  withNames,
 } from "./aria-snapshot";
 import {
   type Arrival,
@@ -23,6 +24,7 @@ import {
   arrivalOf,
   WHILE_ARRIVING_MS,
 } from "./page-arrival";
+import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
 import { type TabSummary, VIEWPORT } from "./profiles";
@@ -265,20 +267,33 @@ export async function snapshotPage(
    * (`person-typing.ts`): the box is somewhere on it, unfollowed, until the document is gone.
    */
   const unverified = !typedInto.complete || typedIntoBlind(session, target);
+  const read = readAriaSnapshot(
+    yaml,
+    {
+      labels: marks.labels,
+      values: marks.values,
+      refs: [...marks.refs, ...typedInto.refs],
+      ...(unverified ? { unverified: true } : {}),
+    },
+    viewport,
+  );
+  /*
+   * THE NAMES THE TREE LEFT OUT, ASKED OF THE PAGE (`page-names.ts`), after every other question:
+   * nothing here takes a snapshot, so the refs the Bot will act with are still the page's. Only for
+   * the controls the list keeps, and within what is left of the look — a name that does not come
+   * in time stays the one the tree's contents gave.
+   */
+  const names = await namesFromThePage(
+    target,
+    read.unnamed,
+    Math.min(PAGE_NAMES_MS, deadline - Date.now()),
+  );
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    ...parseAriaSnapshot(
-      yaml,
-      {
-        labels: marks.labels,
-        values: marks.values,
-        refs: [...marks.refs, ...typedInto.refs],
-        ...(unverified ? { unverified: true } : {}),
-      },
-      viewport,
-    ),
+    elements: withNames(read.elements, names),
+    truncated: read.truncated,
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.
      * A Bot that has to ask whether a second tab exists will not ask, and the tab a click just

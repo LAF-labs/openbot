@@ -68,33 +68,16 @@ describe("the name a control is held to", () => {
   });
 
   /**
-   * A name the list read from beneath a control is its words joined with one space, and the browser
-   * joins inline neighbours with none (`<mark>무선</mark>마우스`). Measured 2026-10-04 on a Naver search
-   * page: held exactly, 16 of 59 such links were refused as renamed.
+   * SPACES INCLUDED. For a day a judged name with a space in it matched the same words with the
+   * spaces anywhere, because the list joined the words beneath a control with one space where the
+   * browser joins inline neighbours with none (`<mark>무선</mark>마우스`: 16 of 59 links on a Naver
+   * search page refused as renamed). The list asks the page for the browser's spelling now
+   * (`page-names.ts`), so the two agree to the space, and a space moved is a different name again.
    */
-  test("with a space in it, the same words with the spaces anywhere or nowhere", () => {
-    const pattern = nameToMatch('무선 마우스 say "hi"') as RegExp;
-    expect(pattern).toBeInstanceOf(RegExp);
-    for (const live of [
-      '무선 마우스 say "hi"',
-      '무선마우스 say"hi"',
-      '무선  마우스 say "hi"',
-    ]) {
-      expect(pattern.test(live)).toBe(true);
-    }
-    // The words are what was judged: another word, a word more, or a word less is a rename.
-    for (const live of [
-      '무선 키보드 say "hi"',
-      '무선 마우스 say "hi" 결제',
-      '마우스 say "hi"',
-    ]) {
-      expect(pattern.test(live)).toBe(false);
-    }
-    // Only where the judged name had a space: the list never takes one away, so nothing else is let in.
-    expect(pattern.test('무선 마우 스 say "hi"')).toBe(false);
-    // Regex characters in a label are still the label's.
-    expect((nameToMatch("1+1 (a)") as RegExp).test("11 a")).toBe(false);
-    expect((nameToMatch("1+1 (a)") as RegExp).test("1+1(a)")).toBe(true);
+  test("with a space in it, exactly: the string itself, which the role engine compares as written", () => {
+    expect(nameToMatch("무선마우스 특가")).toBe("무선마우스 특가");
+    expect(nameToMatch("결 제")).toBe("결 제");
+    expect(nameToMatch("1+1 (a)")).toBe("1+1 (a)");
   });
 
   test("is a prefix when the server may have cut it", () => {
@@ -105,6 +88,12 @@ describe("the name a control is held to", () => {
     expect((pattern as RegExp).test(`${judged} 그리고 더 긴 이름`)).toBe(true);
     // Regex characters in a label are the label's, not the pattern's.
     expect((pattern as RegExp).test(`${"가".repeat(190)}11a.`)).toBe(false);
+    // And its spaces are where they were: the same words spaced otherwise are another name.
+    const spaced = `${"가".repeat(190)} 결 제 하기 ab`;
+    expect(spaced.length).toBe(200);
+    const prefix = nameToMatch(spaced) as RegExp;
+    expect(prefix.test(`${spaced} 더`)).toBe(true);
+    expect(prefix.test(`${"가".repeat(190)} 결제 하기 ab 더`)).toBe(false);
   });
 
   test("covers only the names a snapshot renders as none, when none was judged", () => {

@@ -840,6 +840,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * four against a real Chromium with a second local server standing for the app), one to `root`
  * (compose handing the browser the server's own four variables).
  *
+ * RAISED 2026-10-04 with the names the page gives the controls the tree left nameless, by exactly
+ * what was added: nine to `agent-computer` (four on the parser's unnamed refs and the names put in
+ * their place, four against a real Chromium holding each shape to the role engine and keeping a
+ * field's contents out, and the button around a search box through the routes).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -847,7 +852,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3447, roots: ["server"] },
   { name: "app", floor: 2081, roots: ["app"] },
-  { name: "agent-computer", floor: 418, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 427, roots: ["agent-computer"] },
   { name: "root", floor: 611, roots: ["tests", "agent-bot"] },
 ] as const;
 
