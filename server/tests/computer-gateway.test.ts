@@ -2339,10 +2339,9 @@ describe("a link named by what is inside it", () => {
   }
 
   test("the snapshot's name is the one judged, recorded and held to", async () => {
-    const { client, sent, page } = naverComputer();
-    expect(page.elements.find((element) => element.ref === "e137")?.name).toBe(
-      HEADLINE,
-    );
+    // `e137` is called HEADLINE because `naverComputer` wrote that in as the page's answer: what
+    // is asserted below is what the gateway does with the name it is handed, never the name.
+    const { client, sent } = naverComputer();
     const { store, rows } = fakeAudit();
     const gateway = createComputerGateway({
       client,

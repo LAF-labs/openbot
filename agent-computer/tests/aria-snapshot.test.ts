@@ -686,11 +686,12 @@ describe("a control the tree prints without a name", () => {
   /**
    * The thumbnail beside each headline goes to the same article and holds nothing with a name: on
    * the live page it is `aria-hidden`, and the label hold refuses it as not actionable whatever it
-   * is called (41 of 41 on 2026-10-04). It stays a nameless line rather than borrowing the
-   * headline's name — the browser would then call it a rename — and stays listed rather than
-   * dropped, which is a rule about addresses this list does not make.
+   * is called (41 of 41 on 2026-10-04). It stays listed rather than dropped, which is a rule about
+   * addresses this list does not make. What it is called is not decided here — every control the
+   * tree left nameless is nameless in the tree's list — but by the page (`page-names.test.ts`
+   * holds a link around an image with no alt text to the browser's name for it: none).
    */
-  test("the thumbnail link beside a headline stays nameless, and stays", () => {
+  test("the thumbnail link beside a headline stays a line of its own", () => {
     const { elements } = parseAriaSnapshot(NAVER_NEWS);
     expect(elements.map((element) => element.ref)).toEqual([
       "e117",
@@ -703,7 +704,6 @@ describe("a control the tree prints without a name", () => {
       "e154",
       "e161",
     ]);
-    expect(elements.find((element) => element.ref === "e135")?.name).toBe("");
   });
 
   /*
@@ -764,20 +764,19 @@ describe("a control the tree prints without a name", () => {
   });
 
   /**
-   * DECIDED: an image with no alt text says nothing, so a link holding only one stays nameless. The
-   * browser calls it nothing too — which is what the hold is asked about — and a name borrowed from
-   * a neighbour, or from the address, would be refused as a rename on the click.
+   * A control with nothing beneath it that could name it is asked about like any other: whether it
+   * has a name is the page's to say, and for a link holding only an image with no alt text the page
+   * says none (`page-names.test.ts`, where that decision can fail). Not borrowed from a neighbour
+   * or from the address here, which the browser would call a rename on the click.
    */
-  test("a link holding only an image without alt text, or nothing at all, stays nameless", () => {
+  test("a link holding only an image without alt text, or nothing at all, is one the page is asked about", () => {
     const yaml = `- link [ref=e1] [cursor=pointer]:
   - /url: https://example.test/thumb
 - link [ref=e2]:
   - /url: https://example.test/thumb
   - img [ref=e3]
 - button [ref=e4]`;
-    expect(
-      parseAriaSnapshot(yaml).elements.map((element) => element.name),
-    ).toEqual(["", "", ""]);
+    expect(readAriaSnapshot(yaml).unnamed).toEqual(["e1", "e2", "e4"]);
   });
 
   /*
