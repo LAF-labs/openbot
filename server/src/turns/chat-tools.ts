@@ -38,6 +38,7 @@ import {
   navigationOutcome,
 } from "../../../shared/tools/computer-reply";
 import {
+  CARD_NOT_ASKED,
   CONNECT_CARD,
   connectionAnswer,
   FILE_CARD,
@@ -1160,7 +1161,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       };
       const decision = await store.decide(name, botId).catch(() => null);
       if (!decision) {
-        return "This deployment could not be asked whether that card is allowed, so it was not shown.";
+        return CARD_NOT_ASKED;
       }
       if (!decision.allowed) {
         return refuse(String(decision.reason ?? ""), {});

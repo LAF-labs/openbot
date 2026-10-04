@@ -6,7 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import * as z from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
-import { RefusedCard } from "@/components/gallery/refused";
+import {
+  CardNotShown,
+  cardEndingOf,
+  RefusedCard,
+} from "@/components/gallery/refused";
 import {
   agentComponentsQueryOptions,
   type GrantedComponent,
@@ -76,7 +80,17 @@ function SandboxedTool({
   const isHeld = description !== undefined;
 
   const render = useCallback(
-    (props: { args?: Record<string, unknown>; status?: string }) => {
+    (props: {
+      args?: Record<string, unknown>;
+      status?: string;
+      result?: string;
+    }) => {
+      // The call's own answer first: a card the Bot was told was not shown is not drawn as the
+      // card (`cardEndingOf`), and the one drawn before it in the conversation stays drawn.
+      const ending = cardEndingOf(props.result);
+      if (ending) {
+        return <CardNotShown ending={ending} title={component.name} />;
+      }
       if (!isHeld) {
         return (
           <RefusedCard

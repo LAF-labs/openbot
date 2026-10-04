@@ -1,8 +1,10 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
-import { SKILL_VIEW } from "@shared/tools/skills";
+import { normalizeSkillName, SKILL_VIEW } from "@shared/tools/skills";
 import { asStandardSchema } from "@shared/tools/standard-schema";
+import { stepFailureOf } from "@shared/tools/step-result";
 import { ToolLine } from "@/components/channels/tool-line";
 import { t } from "@/lib/i18n";
+import { keptText } from "./kept-result";
 
 /**
  * A Bot reading one of its own skills, from inside the conversation.
@@ -24,18 +26,36 @@ import { t } from "@/lib/i18n";
  * `server/src/turns/chat-tools.ts`), which rechecks the grant: reading the instructions here would
  * leave no trace of a Bot choosing a skill nobody typed with `/` — and that trace is the point.
  * This is the registration the turn offers the tool from, and its line.
+ *
+ * THE LINE SAYS WHETHER THE SKILL WAS READ, FROM THE CALL'S OWN ANSWER. The server answers a skill
+ * this Bot does not hold with `{ ok: false, code }`, and the line read "스킬을 읽음" all the same:
+ * what it knew of a refusal it had from the handler the window ran, which a turn the server
+ * carries out never did (review of pull request 83). It names the skill asked for; the body is the
+ * Bot's to read and is not printed.
  */
 export function SkillTools() {
   useFrontendTool({
     name: SKILL_VIEW.name,
     description: SKILL_VIEW.description,
     parameters: asStandardSchema<{ name: string }>(SKILL_VIEW.parameters),
-    render: ({ status }) => {
+    render: ({ args, status, result }) => {
       const running = status !== "complete";
+      const kept = keptText(result);
+      const ending = running || !kept ? null : stepFailureOf(kept);
+      const name = typeof args?.name === "string" ? args.name : "";
       return (
         <ToolLine
+          detail={name ? normalizeSkillName(name) : undefined}
+          failed={ending !== null && ending.kind !== "refused"}
           kind="document"
-          label={running ? t("Reading a skill") : t("Read a skill")}
+          label={
+            running
+              ? t("Reading a skill")
+              : ending
+                ? t("Could not read a skill")
+                : t("Read a skill")
+          }
+          refused={ending?.kind === "refused"}
           running={running}
         />
       );

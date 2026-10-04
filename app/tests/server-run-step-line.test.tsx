@@ -10,6 +10,10 @@ import {
 import type { Message } from "@ag-ui/core";
 import { TOOL_RESULT_KO } from "@shared/prompt/tool-results.ko";
 import { UNANSWERED_RESULT } from "@shared/task-ending";
+import { CARD_NOT_ASKED, ON_SCREEN } from "@shared/tools/gallery";
+import { NOW_TOOL_NAME } from "@shared/tools/now";
+import { MANAGE_ROUTINE, UPDATE_PROFILE } from "@shared/tools/self";
+import { SKILL_VIEW } from "@shared/tools/skills";
 import {
   stepFailureOf,
   TOOL_NOT_ALLOWED,
@@ -17,6 +21,7 @@ import {
   toolFailureText,
 } from "@shared/tools/step-result";
 import { withheldMark } from "@shared/tools/withheld";
+import { ko } from "../src/lib/i18n-ko";
 import {
   APP_DOM_TIMEOUT_MS,
   installAppDom,
@@ -25,8 +30,10 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
+import { mount, unmountAll } from "./support/mount";
 import {
   acted,
+  BOT_ID,
   installTurnStreams,
   removeTurnStreams,
   turnServer,
@@ -48,6 +55,7 @@ beforeAll(async () => {
 }, APP_DOM_TIMEOUT_MS);
 afterEach(async () => {
   await unmountApps();
+  await unmountAll();
 });
 setDefaultTimeout(30_000);
 afterAll(async () => {
@@ -450,5 +458,401 @@ describe("a conversation whose steps the server ran", () => {
     }
     expect(drawn.read("ours").isWarned).toBe(true);
     await drawn.close();
+  });
+});
+
+/*
+ * THE BOT'S OWN CALLS, AND THE CARDS IT PUTS UP, SAY HOW THEY ENDED TOO.
+ *
+ * Each of these lines was filled in by the handler the window ran: it knew the save had been
+ * refused, and wrote "루틴을 저장하지 못했어요" for the renderer beside it to draw. A turn the server
+ * carries out never ran that handler, so from v0.5.7 the renderer drew what it draws when it
+ * knows nothing: a routine the server refused for a time of "8시" read "루틴을 저장했어요", a
+ * profile it would not change read "자기 프로필을 바꿨어요", a skill the Bot does not hold read
+ * "스킬을 읽음", and a card switched off since the Bot's list was read was drawn in the conversation
+ * while the Bot was told it had not been shown. The window-driven path was deleted on 2026-10-05
+ * and its tests with it — the only ones that had pinned the honest line — so the server's turn was
+ * the only path, and nothing held it (review of pull request 83). They read the result the
+ * conversation keeps, as the connected services' line above does.
+ */
+describe("the Bot's own calls, as the conversation keeps them", () => {
+  const CARD = "custom_weekly_sales";
+  const CARD_SAYS = "이번 주 매출 카드";
+
+  /** A call by name with its arguments, the result kept for it, and the Bot's sentence after. */
+  const called = (
+    id: string,
+    name: string,
+    args: Record<string, unknown>,
+    result: string,
+  ): Message[] => [
+    {
+      id: `a-${id}`,
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+    } as Message,
+    { id: `t-${id}`, role: "tool", toolCallId: id, content: result } as Message,
+    { id: `s-${id}`, role: "assistant", content: `${id} 다음 말` },
+  ];
+
+  async function conversation(history: Message[]) {
+    const channelId = "channel_own-calls";
+    const server = turnServer({ channelId, history });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: (request) => {
+        // A card authored in this deployment, which the Bot holds by the list this window read.
+        if (request.pathname === "/api/sandboxed/published") {
+          return json({
+            components: [
+              {
+                name: CARD,
+                html: `<p>${CARD_SAYS}</p>`,
+                css: "",
+                jsFunctions: "",
+                argumentSchema: { type: "object", properties: {} },
+              },
+            ],
+          });
+        }
+        if (request.pathname === `/api/components/for-agent/${BOT_ID}`) {
+          return json({ components: [{ name: CARD, description: CARD_SAYS }] });
+        }
+        return server.api(request);
+      },
+    });
+    const log = () => view.host.querySelector<HTMLElement>('[role="log"]');
+    const last = String(history.at(-1)?.content);
+    await view.waitFor(
+      () => log()?.textContent?.includes(last) === true,
+      "the conversation",
+      8000,
+    );
+    // The card's renderer is registered once the published list and the grants have been read.
+    await view.settle(300);
+    const row = (id: string) =>
+      log()?.querySelector<HTMLElement>(`[data-message-id="${id}"]`) ?? null;
+    return {
+      read: (id: string) => {
+        const drawn = row(id);
+        return {
+          text: drawn?.textContent ?? null,
+          isWarned: drawn?.querySelector('[class*="text-warning"]') !== null,
+          refusal:
+            drawn?.querySelector('[data-testid="component-refused"]')
+              ?.textContent ?? null,
+          /** The card itself: CopilotKit draws an authored card in a sandbox frame. */
+          frames: drawn?.querySelectorAll("iframe").length ?? 0,
+        };
+      },
+      close: async () => {
+        server.close();
+        await view.unmount();
+      },
+    };
+  }
+
+  const said = (code: string) => TOOL_RESULT_KO[code] as string;
+  const asking: Message = { id: "q", role: "user", content: "해 줘" };
+
+  test("a routine the server would not save says so, and one it saved says that", async () => {
+    const create = {
+      action: "create",
+      name: "아침 브리핑",
+      instruction: "오늘 할 일 알려줘",
+      schedule: { kind: "daily", time: "8시" },
+    };
+    const drawn = await conversation([
+      asking,
+      ...called(
+        "refused",
+        MANAGE_ROUTINE.name,
+        create,
+        said("laf:routine_time_invalid"),
+      ),
+      ...called(
+        "gone",
+        MANAGE_ROUTINE.name,
+        { action: "delete", routineId: "주간 정산" },
+        said("laf:routine_deleted"),
+      ),
+    ]);
+    const refused = drawn.read("refused");
+    expect(refused.text).toContain("Could not save a routine");
+    expect(refused.text).not.toContain("Saved a routine");
+    expect(refused.isWarned).toBe(true);
+    expect(ko["Could not save a routine"]).toBe("루틴을 저장하지 못했어요");
+    // And a call that went through is not said to have failed: the reading is of each call's own.
+    const gone = drawn.read("gone");
+    expect(gone.text).toContain("Deleted a routine");
+    expect(gone.isWarned).toBe(false);
+    await drawn.close();
+  });
+
+  test("a refused edit, a list that could not be read and a delete of nothing each say what did not happen", async () => {
+    const drawn = await conversation([
+      asking,
+      ...called(
+        "edit",
+        MANAGE_ROUTINE.name,
+        {
+          action: "update",
+          routineId: "아침 브리핑",
+          schedule: { kind: "daily", time: "8시" },
+        },
+        said("laf:routine_time_invalid"),
+      ),
+      ...called(
+        "list",
+        MANAGE_ROUTINE.name,
+        { action: "list" },
+        said("laf:routine_list_unavailable"),
+      ),
+      ...called(
+        "delete",
+        MANAGE_ROUTINE.name,
+        { action: "delete", routineId: "없는 루틴" },
+        said("laf:routine_name_unknown").replace("{list}", "(없음)"),
+      ),
+      // A pause is the switch alone, and answers with its own sentence: it went through.
+      ...called(
+        "pause",
+        MANAGE_ROUTINE.name,
+        { action: "update", routineId: "아침 브리핑", enabled: false },
+        said("laf:routine_paused"),
+      ),
+    ]);
+    // What main's `routine-tool-edit` held of the window's handler: the line is marked failed.
+    for (const [id, words] of [
+      ["edit", "Could not change a routine"],
+      ["list", "Could not look at its routines"],
+      ["delete", "Could not delete a routine"],
+    ] as const) {
+      const line = drawn.read(id);
+      expect([id, line.text?.includes(words), line.isWarned]).toEqual([
+        id,
+        true,
+        true,
+      ]);
+      expect([words, typeof ko[words]]).toEqual([words, "string"]);
+    }
+    const pause = drawn.read("pause");
+    expect(pause.text).toContain("Changed a routine");
+    expect(pause.isWarned).toBe(false);
+    await drawn.close();
+  });
+
+  test("a profile the server would not change says so", async () => {
+    const drawn = await conversation([
+      asking,
+      ...called(
+        "refused",
+        UPDATE_PROFILE.name,
+        { name: "" },
+        said("laf:profile_invalid"),
+      ),
+      ...called(
+        "changed",
+        UPDATE_PROFILE.name,
+        { name: "초롱" },
+        said("laf:profile_updated"),
+      ),
+    ]);
+    const refused = drawn.read("refused");
+    expect(refused.text).toContain("Could not update its own profile");
+    expect(refused.text).not.toContain("Updated its own profile");
+    expect(refused.isWarned).toBe(true);
+    expect(ko["Could not update its own profile"]).toBe(
+      "자기 프로필을 바꾸지 못했어요",
+    );
+    const changed = drawn.read("changed");
+    expect(changed.text).toContain("Updated its own profile");
+    expect(changed.isWarned).toBe(false);
+    await drawn.close();
+  });
+
+  test("a skill the Bot does not hold is not said to have been read", async () => {
+    const drawn = await conversation([
+      asking,
+      ...called(
+        "refused",
+        SKILL_VIEW.name,
+        { name: "재고 정리" },
+        JSON.stringify({
+          ok: false,
+          code: "laf:skill_not_granted",
+          reason: said("laf:skill_not_granted"),
+        }),
+      ),
+      ...called(
+        "read",
+        SKILL_VIEW.name,
+        { name: "주간 보고" },
+        JSON.stringify({
+          ok: true,
+          slug: "weekly-report",
+          title: "주간 보고",
+          summary: "",
+          instructions: "표로 정리한다.",
+        }),
+      ),
+    ]);
+    const refused = drawn.read("refused");
+    expect(refused.text).toContain("Could not read a skill");
+    expect(refused.text).not.toContain("Read a skill");
+    expect(refused.isWarned).toBe(true);
+    expect(ko["Could not read a skill"]).toBe("스킬을 읽지 못함");
+    const read = drawn.read("read");
+    expect(read.text).toContain("Read a skill");
+    expect(read.isWarned).toBe(false);
+    // The body is the Bot's to read, not the line's to print.
+    expect(read.text).not.toContain("표로 정리한다.");
+    await drawn.close();
+  });
+
+  test("a look at the clock a stop cut short is not said to have been taken", async () => {
+    const drawn = await conversation([
+      asking,
+      ...called(
+        "cut",
+        NOW_TOOL_NAME,
+        {},
+        JSON.stringify({ ok: false, code: "laf:stopped", stopped: true }),
+      ),
+      ...called(
+        "seen",
+        NOW_TOOL_NAME,
+        {},
+        JSON.stringify({ now: "2026-10-05T09:00:00+09:00" }),
+      ),
+    ]);
+    const cut = drawn.read("cut");
+    expect(cut.text).toContain("Could not check the time");
+    expect(cut.isWarned).toBe(true);
+    expect(ko["Could not check the time"]).toBe("시각을 확인하지 못함");
+    const seen = drawn.read("seen");
+    expect(seen.text).toBe("Checked the time");
+    expect(seen.isWarned).toBe(false);
+    await drawn.close();
+  });
+
+  /*
+   * What `sandboxed-refusal.test.tsx` held for the window, on the turn the server carries out: the
+   * card is offered from a list read once a minute, and whether the Bot may draw it is asked again
+   * when it calls (`component` in `server/src/turns/chat-tools.ts`).
+   */
+  test("a card switched off since the list was read shows the refusal, not the card — and the one drawn before it stays drawn", async () => {
+    const SWITCHED_OFF =
+      "That card is switched off for this Bot. It can be turned back on from the admin screen";
+    const drawn = await conversation([
+      asking,
+      ...called("shown", CARD, {}, ON_SCREEN),
+      ...called("refused", CARD, {}, said("laf:component_withheld")),
+      ...called("unasked", CARD, {}, CARD_NOT_ASKED),
+    ]);
+    expect(drawn.read("shown")).toMatchObject({ frames: 1, refusal: null });
+    const refused = drawn.read("refused");
+    expect(refused.refusal).toContain(SWITCHED_OFF);
+    expect(ko[SWITCHED_OFF]).toBeTruthy();
+    expect(refused.frames).toBe(0);
+    // And a card nobody could be asked about is not drawn either: the Bot was told it was not.
+    const unasked = drawn.read("unasked");
+    expect(unasked.frames).toBe(0);
+    expect(unasked.isWarned).toBe(true);
+    await drawn.close();
+  });
+});
+
+/*
+ * THE GALLERY'S OWN CARDS, BY THE FUNCTION THEIR RENDERER IS. The gallery is found through Vite
+ * (`import.meta.glob`), so under `bun test` no gallery card is registered and none can be mounted
+ * through the route; what a call is drawn as is decided by `CardCall`, which is drawn here.
+ */
+describe("a gallery card's call", () => {
+  async function drawnAs(result: string | undefined, isHeld = true) {
+    const { createElement } = await import("react");
+    const { CardCall } = await import("../src/lib/copilot/gallery-tools");
+    const view = await mount(
+      createElement(CardCall, {
+        Component: () => createElement("p", { "data-card": "" }, "매출 카드"),
+        args: {},
+        isHeld,
+        result,
+        title: "Record",
+      }),
+    );
+    return {
+      card: view.host.querySelector("[data-card]") !== null,
+      refusal:
+        view.host.querySelector('[data-testid="component-refused"]')
+          ?.textContent ?? null,
+      text: view.host.textContent ?? "",
+      isWarned: view.host.querySelector('[class*="text-warning"]') !== null,
+    };
+  }
+
+  test("is the card while it is out and once it is on screen", async () => {
+    expect((await drawnAs(undefined)).card).toBe(true);
+    expect(
+      (await drawnAs("The record is now on screen for the person.")).card,
+    ).toBe(true);
+    // As a window's runtime stored a sentence, in a conversation from before 2026-10-05.
+    expect(
+      (
+        await drawnAs(
+          JSON.stringify("The record is now on screen for the person."),
+        )
+      ).card,
+    ).toBe(true);
+  });
+
+  test("is not the card when the Bot was told it was not shown", async () => {
+    const withheld = await drawnAs(
+      TOOL_RESULT_KO["laf:component_withheld"] as string,
+    );
+    expect(withheld.card).toBe(false);
+    expect(withheld.refusal).toContain(
+      "That card is switched off for this Bot",
+    );
+    // A data source the card was not allowed, said in the person's words for it.
+    const noData = await drawnAs(
+      TOOL_RESULT_KO["laf:function_not_granted"] as string,
+    );
+    expect(noData.card).toBe(false);
+    expect(noData.refusal).toContain(
+      "That card has not been allowed to read this data",
+    );
+    // Stopped before it was shown, never answered, or nobody to ask: a line that says it did not
+    // work, with the card's own name — never the card.
+    for (const result of [
+      JSON.stringify({ ok: false, code: "laf:stopped", stopped: true }),
+      UNANSWERED_RESULT,
+      CARD_NOT_ASKED,
+      JSON.stringify({ ok: false, code: "laf:tool_unknown" }),
+    ]) {
+      const ended = await drawnAs(result);
+      expect([result, ended.card, ended.isWarned]).toEqual([
+        result,
+        false,
+        true,
+      ]);
+      expect(ended.text).toContain("Record, didn't work");
+    }
+  });
+
+  test("a card this Bot no longer holds is refused whatever its call said", async () => {
+    const taken = await drawnAs(
+      "The record is now on screen for the person.",
+      false,
+    );
+    expect(taken.card).toBe(false);
+    expect(taken.refusal).toContain("is not switched on for this Bot");
   });
 });
