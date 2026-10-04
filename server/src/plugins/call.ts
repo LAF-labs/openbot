@@ -11,6 +11,7 @@ import { readArgumentsKey } from "../computer/repeat";
 import { type SettleResult, settle } from "../computer/settle";
 import { allowanceFor } from "../computer/standing-approvals";
 import { mcpTools } from "../db/schema";
+import { log } from "../log";
 import { type CatalogueEntry, classifyTool } from "./catalogue";
 import type { Connections } from "./connections";
 import {
@@ -18,7 +19,6 @@ import {
   type LafGuard,
   type ToolAnnotations,
 } from "./laf-contract";
-import { log } from "../log";
 import { readsMail, withholdMailSecrets } from "./mail-secrets";
 import { McpRefusedError, McpServerError, trimDetail } from "./mcp";
 import { effectiveUrl, type Servers } from "./servers";
@@ -382,9 +382,12 @@ export function createCallPath(
       /**
        * Whether a person is watching this call happen — the app's own call, never a routine's.
        *
-       * It decides one thing: whether a code or link withheld from a mail (`mail-secrets.ts`) is kept
-       * a while for that person to be shown on the call's line. Nobody watches a routine, so its
-       * values are kept nowhere and the result says only that one was there.
+       * It decides two things. Whether a code or link withheld from a mail (`mail-secrets.ts`) is
+       * kept a while for that person to be shown on the call's line: nobody watches a routine, so
+       * its values are kept nowhere and the result says only that one was there. And, handed to
+       * the transport, whether what the call answers will be drawn where the person looks: the
+       * weather tool tells the model its forecast is on the screen as a card only then
+       * (`kma-weather-rest.ts`) — a routine's forecast reaches the person as the Bot's words alone.
        */
       watched?: boolean | undefined;
     }): Promise<{ text: string; isError: boolean }> {
@@ -861,6 +864,7 @@ export function createCallPath(
             token,
             actorId: input.actorId,
             botId: input.botId,
+            watched: input.watched === true,
           },
           toolName,
           args,

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { agreesWithTheCard, leavesItToTheCard } from "../evals/weather";
+import {
+  agreesWithTheCard,
+  GANGNAM,
+  HAEUNDAE,
+  leavesItToTheCard,
+  weatherAnswer,
+} from "../evals/weather";
 
 /**
  * THE JUDGE OF THE WEATHER SCENARIOS, JUDGED.
@@ -95,17 +101,39 @@ describe("an answer under the weather card", () => {
  * forecast is one sky: clear, clouds in the afternoon, nothing falling until the fourth day.
  */
 describe("an answer that agrees with the card", () => {
+  const card = weatherAnswer(GANGNAM, new Date("2026-10-04T03:00:00Z"), true);
   test("says something the card says", () => {
     for (const answer of [
       "사장님, 오늘은 맑고 선선한 하루예요.",
       "오늘 대구는 비 없이 구름만 조금 낀 정도예요",
       "지금 계신 곳은 비 없이 맑은 편이에요",
       "비는 안 와요, 우산은 두고 가셔도 돼요.",
+      "오늘은 바람도 약하고 하늘이 맑아요",
+      // The card's own figures, as written or rounded: the reading now, a day's low or high.
+      "강남구는 지금 17.3도예요",
+      "지금 17도 정도로 선선해요",
+      "오늘 최고 21도, 최저 12도예요",
+    ]) {
+      expect([answer, agreesWithTheCard(answer, card)]).toEqual([answer, true]);
+    }
+    // 해운대's card holds 31 as tomorrow's high; 강남's does not, and the same sentence fails under it.
+    const haeundae = weatherAnswer(
+      HAEUNDAE,
+      new Date("2026-10-04T03:00:00Z"),
+      false,
+    );
+    for (const answer of [
       "내일 최고 31도까지 올라가요, 사장님.",
       "사장님, 내일(10/5 월) 부산 해운대는 최고 31도까지 올라가니 낮에는 덥겠네요.",
-      "오늘은 바람도 약하고 하늘이 맑아요",
     ]) {
-      expect([answer, agreesWithTheCard(answer)]).toEqual([answer, true]);
+      expect([answer, agreesWithTheCard(answer, haeundae)]).toEqual([
+        answer,
+        true,
+      ]);
+      expect([answer, agreesWithTheCard(answer, card)]).toEqual([
+        answer,
+        false,
+      ]);
     }
   });
 
@@ -121,8 +149,14 @@ describe("an answer that agrees with the card", () => {
       "오늘은 바깥일하기 무난한 날이에요.",
       "네, 확인했어요.",
       "",
+      // A figure the card does not hold (review, round 7): 99 is nobody's temperature, 25 is not today's.
+      "강남은 지금 99도예요.",
+      "오늘 최고 25도까지 올라가요",
     ]) {
-      expect([answer, agreesWithTheCard(answer)]).toEqual([answer, false]);
+      expect([answer, agreesWithTheCard(answer, card)]).toEqual([
+        answer,
+        false,
+      ]);
     }
   });
 });

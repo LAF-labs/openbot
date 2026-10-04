@@ -62,6 +62,12 @@ export type VendorTransport = {
       actorId?: string;
       /** The Bot the run belongs to, never a name a model supplies. */
       botId?: string;
+      /**
+       * Whether a person is in front of this call — a window of the conversation, or later the
+       * transcript — so what it answers will be DRAWN where they look. False for a routine, whose
+       * answer reaches the person as the Bot's words alone (`call.ts` says who sets it).
+       */
+      watched?: boolean;
     },
     toolName: string,
     args: Record<string, unknown>,
