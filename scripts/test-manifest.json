@@ -19,6 +19,7 @@
   "agent-computer/tests/closed-browser-pipes.test.ts",
   "agent-computer/tests/code-list.test.ts",
   "agent-computer/tests/control.test.ts",
+  "agent-computer/tests/crashed-tab.test.ts",
   "agent-computer/tests/egress-guard.test.ts",
   "agent-computer/tests/egress.test.ts",
   "agent-computer/tests/fact-codes.test.ts",

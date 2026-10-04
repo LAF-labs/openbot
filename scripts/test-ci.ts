@@ -908,6 +908,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in-mount queue's reducer that nothing held for the outbox. And by one in `server`: compose
  * still hands on `SERVER_TURNS`, retired, so that a stale `off` reaches the refusal.
  *
+ * RAISED 2026-10-05 with a crashed tab let go of, by exactly what was added: ten to `agent-computer`
+ * (a navigation's failure told apart as the renderer's death or the site's, one; and nine against a
+ * real Chromium behind the real door — the next address opening, every look and a click answered
+ * about the tab that took its place, a crash while a page is opening answered as the browser's, the
+ * one line in the log with the origin and nothing else of the page, another Bot's tab untouched, a
+ * popup dropped and its refs retired, a tab that will not close handed to nobody, the live screen
+ * moved to the new tab, and a renderer the system killed heard the same way).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -915,7 +923,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3508, roots: ["server"] },
   { name: "app", floor: 2027, roots: ["app"] },
-  { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 454, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
 ] as const;
 
