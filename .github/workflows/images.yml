@@ -28,7 +28,7 @@ name: Images
 # a copy of the steps that drifts from the original. Before it, `:stable` moved on a tag with no
 # `needs` at all: measured on v0.3.2, images finished at 05:50:53 while CI was still a separate run
 # that a tag did not even start. Since 2026-09-10 this is the ONLY run of the checks on main and on
-# tags — `ci.yml` covers pull requests and `laf/**` — so a commit is checked once, not twice.
+# tags — `ci.yml` covers pull requests — so a commit is checked once, not twice.
 #
 # Both architectures are built on NATIVE runners — amd64 on `ubuntu-latest`, arm64 on
 # `ubuntu-24.04-arm` — and merged into one manifest per image; QEMU emulation would turn the app
@@ -59,7 +59,8 @@ on:
     branches: [main]
     # Documentation only. Not `**/*.md`, which this used to be: `app/src/help/guide.md` and
     # `app/src/legal/*.md` are bundled into the web image, and a change to the privacy policy alone
-    # published nothing. Same list as ci.yml.
+    # published nothing. `ci.yml` carried the same list on its `push` trigger until that trigger
+    # went (2026-10-05); pull requests were never filtered.
     paths-ignore:
       - "docs/**"
       - "*.md"

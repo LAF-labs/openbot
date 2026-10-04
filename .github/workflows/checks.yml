@@ -10,12 +10,14 @@ name: Checks
 # somebody edits one.
 #
 # So the jobs live here and both callers reference them, each on its own refs so that a commit is
-# checked once: `ci.yml` runs them on pull requests and on `laf/**` pushes; `images.yml` runs them
-# on main and on tags, as the prerequisite of the build that moves `:edge` and `:stable`. Called
-# from a tag, the reference resolves at that tag, so what is checked is exactly what is about to be
-# published. (Until 2026-09-10 `ci.yml` ran them on main and tags as well — the same commit twice,
-# which the repository, private on the Free plan's 2,000 minutes from 2026-09-10 to 2026-09-16,
-# could not afford; public again it could, and checking a commit once is still enough. See ci.yml.)
+# checked once: `ci.yml` runs them on pull requests; `images.yml` runs them on main and on tags, as
+# the prerequisite of the build that moves `:edge` and `:stable`. Called from a tag, the reference
+# resolves at that tag, so what is checked is exactly what is about to be published. (Until
+# 2026-09-10 `ci.yml` ran them on main and tags as well — the same commit twice, which the
+# repository, private on the Free plan's 2,000 minutes from 2026-09-10 to 2026-09-16, could not
+# afford; public again it could, and checking a commit once is still enough. And until 2026-10-05
+# it ran them on `laf/**` pushes beside the pull request each of those branches had, which was
+# twice again. See ci.yml.)
 
 on:
   workflow_call:

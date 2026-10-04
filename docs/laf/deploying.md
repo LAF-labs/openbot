@@ -1129,7 +1129,7 @@ shell for Linux or moves Tauri off `gtk` 0.18.
 
 | 워크플로 | 도는 때 | 안 도는 때 |
 | --- | --- | --- |
-| `ci.yml` | PR, `laf/**` 푸시 | `main`과 태그(`images.yml`이 같은 `checks.yml`을 돌린다), 문서만 바뀐 푸시 |
+| `ci.yml` | PR (2026-10-05부터 PR만. 그 전에는 `laf/**` 푸시에도 돌았는데, 브랜치마다 PR이 열려 있어 같은 커밋을 두 번 검사했다) | `main`과 태그(`images.yml`이 같은 `checks.yml`을 돌린다), PR이 없는 브랜치의 푸시 |
 | `images.yml` | `v*` 태그, `main` 푸시, 수동 | 문서만 바뀐 푸시 — `docs/**`, 루트 `*.md`, `**/README.md`. `app/src/**/*.md`는 이미지에 들어가므로 돈다 |
 | `release.yml` | `v*` 태그, `desktop/**`나 `release.yml`이 바뀐 `main` 푸시, 수동. PR은 `shell` 테스트만 | 그 밖의 `main` 푸시 전부 |
 | `smoke.yml` | 매일 02:40 UTC, 수동 | — |
