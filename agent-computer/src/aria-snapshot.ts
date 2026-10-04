@@ -51,7 +51,9 @@ const INTERACTIVE_ROLES = new Set([
 
 /**
  * The roles a Bot acts on whose accessible name is the text inside them (WAI-ARIA's name from
- * content, the list Playwright's own `allowsNameFromContent` keeps).
+ * content, the list Playwright's own `allowsNameFromContent` keeps). A control of one of these that
+ * the tree printed without a name is one the page is asked to name, and one that says no `value`
+ * (`leftNameless`).
  *
  * Not a textbox, searchbox, combobox or spinbutton: what sits under one of those in the tree is its
  * value, and a value never becomes a name. A password box's contents would otherwise ride out as its
@@ -367,86 +369,13 @@ export function parseDescriptor(text: string): Descriptor | null {
 }
 
 /**
- * The words an entry's contents say, as the tree writes them beneath it, in page order.
- *
- * A child with a name of its own says that name — `img "로고"`, `heading "공지"` — which is what it
- * gives the name of the control around it; one without says whatever is beneath it in turn. `text:`
- * is read the same way, as a node of role `text` with no name. A bare entry in a list is a node with
- * nothing beneath it, never loose text: Playwright writes text as `- text: …`. Properties (`/url`,
- * `/placeholder`) are the markup's, not the words', and a frame's document is no part of a name.
+ * Whether the tree printed this control without a name although its role is named by what is
+ * inside it. One predicate for the two things it decides, so they cannot come apart: the page is
+ * asked to name the control (`readAriaSnapshot`), and what the tree wrote after its colon is not
+ * handed on as a `value` (`toElement`).
  */
-function wordsWithin(value: unknown): string[] {
-  // Written after the colon, a string is the text itself.
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.flatMap(wordsOfChild);
-  return wordsOfChild(value);
-}
-
-function wordsOfChild(child: unknown): string[] {
-  // Standing alone in a list, a string is an entry with nothing beneath it.
-  if (typeof child === "string") return wordsOfEntry(child, undefined);
-  if (!child || typeof child !== "object" || Array.isArray(child)) return [];
-  return Object.entries(child).flatMap(([key, inner]) =>
-    wordsOfEntry(key, inner),
-  );
-}
-
-function wordsOfEntry(key: string, inner: unknown): string[] {
-  if (key.startsWith("/")) return [];
-  const descriptor = parseDescriptor(key);
-  if (!descriptor || descriptor.role === "iframe") return [];
-  if (descriptor.name) return [descriptor.name];
-  /*
-   * WHAT SITS UNDER A FIELD IS ITS VALUE, AND A VALUE NEVER BECOMES A NAME — not the field's own
-   * (`NAMED_FROM_CONTENT` leaves these roles out) and not the name of a control around it. A button
-   * wrapping an unnamed search box would otherwise be called by whatever was typed into the box,
-   * and the typed secret the field's own line withholds would ride out as the button's label, to
-   * the model and to the trail (Codex on pull request 65). A field's label, where the tree gave
-   * one, is a word like any other; its contents are nobody's name. A slider's value is a number
-   * the same way.
-   */
-  if (TEXT_ENTRY_ROLES.has(descriptor.role) || descriptor.role === "slider") {
-    return [];
-  }
-  return wordsWithin(inner);
-}
-
-/**
- * The name a control's contents give it, when the tree printed none: its words joined with one
- * space, or empty when nothing beneath it says anything. NOT THE NAME THE LIST SAYS — the look asks
- * the page for the name the browser gives each of these controls (`page-names.ts`), and one the
- * page did not name in time is left with no name at all, not with these words (`withNames`, which
- * says why; they were the fallback until 2026-10-04). What they still decide is the value: a
- * control whose contents gave it words is not handed the same words a second time as a `value`
- * (`toElement`). And they are the name in what the parser returns on its own (`parseAriaSnapshot`).
- *
- * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT. Playwright 1.62's AI snapshot drops the
- * name of a node whose name came from children it also prints, each with a ref of its own
- * (`removeRedundantNames`), so a link whose headline sits in a `<strong>` is written
- * `link [ref=e137]:` with the headline under it — and the model read `e137 link`, nothing more. The
- * browser still calls that link by its headline, and the label hold asks the browser
- * (`label-hold.ts`): a click held to the empty name the list had given was refused as a rename.
- * Measured 2026-10-04 on five Korean pages (Naver home, news and search, Daum, 4insure): 190 links
- * were blank for this reason and the hold refused all 190; named by these words it held 186.
- *
- * WHY THESE WORDS ARE NOT ENOUGH, and the page is asked: the tree does not say which neighbours were
- * inline, and the browser joins those with no space (`<b>A</b><i>B</i>` is named "AB") — 16 of 59
- * links on a Naver search page were "무선 마우스" here and "무선마우스" to the browser; it prints a
- * decoration the page hid from the accessibility tree like any other text (`<span
- * aria-hidden="true">★</span>` is `- text: ★`, under a link the browser names "Headline"); and it
- * reads a table whole where the browser reads its caption. Each was a refused click, or held only
- * because the hold compared names with their spaces free — and the policy then had to judge every
- * spaced name twice. With the page's names the same five pages held every control not hidden from
- * the accessibility tree, exactly (203 of 203, measured 2026-10-04), and the hold is exact again.
- * Where the page does not answer, the control is listed with no name (`withNames`), and a click
- * held to that empty name where the browser has one is refused: a refusal, never a click on
- * something else.
- *
- * An image with no alt text says nothing, so a link that holds only one stays nameless — which is
- * also what the browser calls it.
- */
-function nameFromWithin(value: unknown): string {
-  return wordsWithin(value).join(" ").replace(/\s+/g, " ").trim();
+function leftNameless(descriptor: Descriptor): boolean {
+  return !descriptor.name && NAMED_FROM_CONTENT.has(descriptor.role);
 }
 
 /** Build an element from a descriptor and whatever YAML gave as its value, or null if not actionable. */
@@ -460,21 +389,41 @@ function toElement(
   // No ref means nothing can be done to it, so it is noise in a list whose entire purpose is acting.
   if (!ref) return null;
 
-  const fromWithin =
-    !descriptor.name && NAMED_FROM_CONTENT.has(descriptor.role)
-      ? nameFromWithin(value)
-      : "";
   const element: SnapshotElement = {
     ref,
     role: descriptor.role,
+    // The name the tree printed, or none: this list never makes one up (`readAriaSnapshot`).
     // Between characters: the name goes into the trail's row before the action it names
     // (`shared/sound-text.ts`).
-    name: cutAtCodeUnits(descriptor.name || fromWithin, 200),
+    name: cutAtCodeUnits(descriptor.name, 200),
   };
 
-  // Values arrive as text, with quoting and escapes already resolved. Text that became the name is
-  // not said a second time as a value.
-  if (typeof value === "string" && !fromWithin) {
+  /*
+   * Values arrive as text, with quoting and escapes already resolved.
+   *
+   * NEVER FOR A CONTROL NAMED BY ITS CONTENTS THAT THE TREE LEFT NAMELESS. What is written after
+   * the colon of such a link or button is what is inside it — the words the page is about to be
+   * asked for as its name, and, where what is inside can be edited, what a person typed there.
+   * Handed on as a `value` they would reach the model and the trail beside whatever name the page
+   * gave, the one it leaves every field and editable region out of (`page-names.ts`) — or beside
+   * no name at all.
+   *
+   * This held only as a side effect until 2026-10-05: those words were the control's name here
+   * (`nameFromWithin`, pull request 65), and "text that became the name is not said a second time"
+   * was the rule. The name went — the look had replaced it on every such control since 572a3eab —
+   * and with the old condition left standing the contents came straight back as a `value` (seen in
+   * this parser's tests: `- button [ref=e1]: 다음` read `value: "다음"`). So the rule is its own,
+   * and says what it is about. A control the tree named keeps what is written after it, and so
+   * does a field.
+   *
+   * The shape is rare. Playwright drops a single run of text that is the control's own name,
+   * printed or not — a button whose words run past 900 characters is `button [ref=e30]` and
+   * nothing after it (measured 2026-10-05) — so text after a nameless control's colon takes a
+   * name it did not print and text that differs from that name: none of the 48 real pages' trees
+   * read that day had one. Unguarded, the one that does puts what is inside the control into a
+   * tool result.
+   */
+  if (typeof value === "string" && !leftNameless(descriptor)) {
     const text = value.trim();
     if (text) element.value = cutAtCodeUnits(text, 200);
   }
@@ -563,6 +512,9 @@ function frameView(box: Rect | null, view: View | null): View | null {
  *
  * `viewport` is the page's, for a tree taken with `boxes: true`: past the limit, what is on the
  * screen is kept first (`keptOf`). Without one, or without boxes, the cut is in page order.
+ *
+ * This is the tree's list and no more: a control the tree printed without a name has none here.
+ * The list a Bot is shown is the look's (`readAriaSnapshot`, then `withNames`).
  */
 export function parseAriaSnapshot(
   yaml: string,
@@ -577,10 +529,33 @@ export function parseAriaSnapshot(
 }
 
 /**
- * {@link parseAriaSnapshot}, and the refs of the kept controls the tree printed without a name —
- * the ones whose name the page is asked for (`page-names.ts`). Here they carry the name their
- * contents give (`nameFromWithin`); the look then replaces every one of them, with the page's name
- * or, where the page did not give one in time, with none (`withNames`).
+ * {@link parseAriaSnapshot}, and the refs of the kept controls the tree printed without a name
+ * although their role is named by what is inside them (`leftNameless`) — the ones whose name the
+ * page is asked for (`page-names.ts`). Here they have no name, and no value; the look gives each
+ * the page's name or, where the page did not give one in time, leaves it with none (`withNames`).
+ *
+ * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT. Playwright 1.62's AI snapshot drops the
+ * name of a node whose name came from children it also prints, each with a ref of its own
+ * (`removeRedundantNames`), so a link whose headline sits in a `<strong>` is written
+ * `link [ref=e137]:` with the headline under it — and the model read `e137 link`, nothing more. The
+ * browser still calls that link by its headline, and the label hold asks the browser
+ * (`label-hold.ts`): a click held to the empty name the list had given was refused as a rename.
+ * Measured 2026-10-04 on five Korean pages (Naver home, news and search, Daum, 4insure): 190 links
+ * were blank for this reason and the hold refused all 190.
+ *
+ * THE NAME IS NOT GUESSED HERE. For a day it was — the words the tree printed beneath the control,
+ * joined with one space (`nameFromWithin`, pull request 65), which held 186 of those 190. The
+ * tree does not say what a name needs: which neighbours were inline, and the browser joins those
+ * with no space (`<b>A</b><i>B</i>` is named "AB") — 16 of 59 links on a Naver search page were
+ * "무선 마우스" here and "무선마우스" to the browser; whether a decoration is hidden from the
+ * accessibility tree, which it prints like any other text (`<span aria-hidden="true">★</span>` is
+ * `- text: ★`, under a link the browser names "Headline"); that a table is named by its caption;
+ * or that a run of text can be edited, so that what a person typed into it would be the name of
+ * the link around it (`withNames`). With the page's names the same five pages held every control
+ * not hidden from the accessibility tree, exactly (203 of 203, measured 2026-10-04), and since
+ * 572a3eab the look replaced the guess on every control it was made for — computed, then thrown
+ * away. It was deleted on 2026-10-05; the list the look hands on was the same before and after on
+ * those five pages, control for control, with the page answering and with it silent (831 of 831).
  */
 export function readAriaSnapshot(
   yaml: string,
@@ -654,7 +629,7 @@ export function readAriaSnapshot(
       push(
         element,
         Boolean(box && view && overlap(box, view.clip)),
-        !descriptor.name && NAMED_FROM_CONTENT.has(descriptor.role),
+        leftNameless(descriptor),
       );
     }
     // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
@@ -708,21 +683,26 @@ export function readAriaSnapshot(
 }
 
 /**
- * The list with the page's own names in place of the ones the tree's contents gave
- * (`namesFromThePage`), cut where every name is cut.
+ * The list with the page's own names on the controls the tree left nameless (`namesFromThePage`),
+ * cut where every name is cut.
  *
- * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, not with the tree's words. The
- * tree-derived name cannot tell an editable region from ordinary text — Playwright prints a plain
+ * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, and nothing stands in for it. The
+ * words the tree printed beneath the control once did (`readAriaSnapshot` says what became of
+ * them), and they cannot tell an editable region from ordinary text — Playwright prints a plain
  * `contenteditable` as `generic` with no mark (`person-typing.ts` measured it, 2026-09-16) — so a
- * nameless link wrapping one would carry whatever had been typed into it as its name, to the model
- * and the trail (review of pull request 69). When the page's own name comes, it leaves editable
- * regions out on every path (`page-names.ts`); when it does not come in time, or the ref did not
- * resolve, the honest list has no name for that control — the hold then compares the empty name
- * with the browser's, which is a refusal and never a secret on the trail. A control the tree itself
- * named is untouched: the page was never asked about it.
+ * nameless link wrapping one would have carried whatever had been typed into it as its name, to
+ * the model and the trail (review of pull request 69). When the page's own name comes, it leaves
+ * editable regions out on every path (`page-names.ts`); when it does not come in time, or the ref
+ * did not resolve, the honest list has no name for that control — the hold then compares the
+ * empty name with the browser's, which is a refusal and never a secret on the trail. A control
+ * the tree itself named is untouched: the page was never asked about it.
  *
- * No value goes with a name replaced here: a nameless control of these roles never kept one
- * (`toElement` says a value only when its contents gave no name, and then they were empty).
+ * `asked` is the look's own statement of that rule, and holds whatever list it is handed. The
+ * tree's list already has no name for these controls, so on it this blanks nothing; it is kept so
+ * that the rule does not rest on what the parser happens to do.
+ *
+ * No value goes with a name given here: a control the tree left nameless never has one
+ * (`toElement`).
  */
 export function withNames(
   elements: SnapshotElement[],

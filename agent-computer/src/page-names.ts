@@ -3,12 +3,13 @@
  *
  * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT (`removeRedundantNames`, Playwright 1.62), and
  * the label hold asks the role engine what the control is called (`label-hold.ts`). The list used to
- * guess that name from the words the tree printed beneath the control (`nameFromWithin` in
- * aria-snapshot.ts), and the guess was wrong wherever the tree prints what the name leaves out or
- * spaces what the name runs together: an `aria-hidden` ★ before a headline, a `<mark>` inside a word,
- * a table read whole where the name is its caption, words only a screen reader is given. Each was a
- * click refused as `laf:label_changed`, and the spaces the guess put in made the policy and the
- * high-risk reading judge every name in two spellings.
+ * guess that name from the words the tree printed beneath the control (pull request 65; the guess
+ * was deleted on 2026-10-05, and `readAriaSnapshot` in aria-snapshot.ts keeps its record), and the
+ * guess was wrong wherever the tree prints what the name leaves out or spaces what the name runs
+ * together: an `aria-hidden` ★ before a headline, a `<mark>` inside a word, a table read whole
+ * where the name is its caption, words only a screen reader is given. Each was a click refused as
+ * `laf:label_changed`, and the spaces the guess put in made the policy and the high-risk reading
+ * judge every name in two spellings.
  *
  * So the name is computed here, from the DOM, by the same steps the role engine takes — Playwright
  * 1.62.1's `getTextAlternativeInternal` (packages/injected/src/roleUtils.ts, Apache-2.0), followed
@@ -33,8 +34,8 @@ import { fromDocument } from "./page-arrival";
 
 /**
  * How long the names of one look may take. Measured 2026-10-04 on five Korean pages: tens of
- * milliseconds. A look that runs out leaves the controls it asked about with no name: the tree's
- * own words for them are not kept (`withNames` in aria-snapshot.ts says why).
+ * milliseconds. A look that runs out leaves the controls it asked about with no name: nothing
+ * stands in for the page's (`withNames` in aria-snapshot.ts says why).
  */
 export const PAGE_NAMES_MS = 1_000;
 

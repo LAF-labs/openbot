@@ -285,7 +285,7 @@ export async function snapshotPage(
    * THE NAMES THE TREE LEFT OUT, ASKED OF THE PAGE (`page-names.ts`), after every other question:
    * nothing here takes a snapshot, so the refs the Bot will act with are still the page's. Only for
    * the controls the list keeps, and within what is left of the look — a name that does not come
-   * in time leaves that control nameless (`withNames` says why the tree's words are not kept).
+   * in time leaves that control nameless (`withNames` says why nothing stands in for it).
    */
   const names = await namesFromThePage(
     target,
