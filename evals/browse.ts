@@ -21,11 +21,10 @@
  *
  * `BROWSE_TASKS=naver-weather,news` picks tasks; `BROWSE_RUNS=2` repeats each; `BROWSE_SKILLS=off`
  * leaves the built-in skills out of the prompt and the executor, for a before/after on them.
- * `BROWSE_INVITE=on` puts one sentence inviting several steps in one reply into the prompt, at the
- * place a product edit would put it — inside the static layer, in front of the base's two
- * paragraphs about the computer (`withInvitation`, `browse-measure.ts`). It is the second arm of
- * that comparison, here and nowhere in the product. `BROWSE_BOT` names the Bot whose browser is
- * driven (its tab is its own), and `BROWSE_REPORT_DIR` where the report is written.
+ * `BROWSE_INVITE=off` takes the base's paragraph inviting several steps in one reply back out of
+ * the prompt (`withoutInvitation`, `browse-measure.ts`) — the arm the product's prompt was measured
+ * against on 2026-10-05, kept for the day the question is asked again. `BROWSE_BOT` names the Bot
+ * whose browser is driven (its tab is its own), and `BROWSE_REPORT_DIR` where the report is written.
  *
  * Success is judged by a pattern on the final answer plus the absence of a give-up, and every answer
  * is printed so a person reads them too: a pattern is a floor, not a verdict. A form is judged by
@@ -73,12 +72,15 @@ import { createUnattendedTools } from "../server/src/runner/unattended";
 import { createRunMeter } from "../server/src/telemetry/run-meter";
 import { modelUsageOf } from "../server/src/usage/model-usage";
 import {
+  ANSWER_JUDGES,
+  answerPasses,
   echoedForm,
   echoedSends,
+  GAVE_UP,
   judgeForm,
   roundStats,
   roundsOf,
-  withInvitation,
+  withoutInvitation,
 } from "./browse-measure";
 import { clientMessagesOf, eventsOfSse } from "./lib";
 import { EVAL_TIME_ZONE, systemMessageFor } from "./prompt";
@@ -110,43 +112,36 @@ type Task = { id: string; ask: string } & (
     }
 );
 
-/** Phrases a Bot uses when it did not get the thing. A pass needs none of them. */
-const GAVE_UP =
-  /(확인하지 못|찾지 못|열리지 않|열 수 없|막혀|접근이 제한|차단|보이지 않았|가져오지 못|읽지 못|실패했)/;
-
 export const TASKS: readonly Task[] = [
   {
     id: "naver-weather",
     ask: "네이버에서 서울 오늘 날씨 확인해서 지금 기온이랑 오늘 최저/최고 기온 알려 줘.",
-    expects: /-?\d+(\.\d+)?\s*°|\d+\s*도/,
+    ...ANSWER_JUDGES["naver-weather"],
   },
   {
     id: "naver-search",
     ask: "네이버에서 '성수동 브런치 카페' 검색해서 나오는 가게 이름 세 개만 알려 줘.",
-    expects: /[가-힣A-Za-z]{2,}/,
-    strict: true,
+    ...ANSWER_JUDGES["naver-search"],
   },
   {
     id: "naver-shopping",
     ask: "네이버 쇼핑에서 '무선 마우스' 검색해서 상품 세 개를 가격이랑 같이 알려 줘.",
-    expects: /\d{1,3}(,\d{3})+\s*원|\d{4,}\s*원/,
+    ...ANSWER_JUDGES["naver-shopping"],
   },
   {
     id: "coupang",
     ask: "쿠팡에서 '생수 2L' 검색해서 맨 위 상품 이름이랑 가격 알려 줘.",
-    expects: /\d{1,3}(,\d{3})+\s*원|\d{4,}\s*원/,
+    ...ANSWER_JUDGES.coupang,
   },
   {
     id: "news",
     ask: "네이버 뉴스 경제 섹션에서 맨 위 기사 하나 열어서 세 줄로 요약해 줘.",
-    expects: /([가-힣]{2,}[^가-힣]+){12,}/,
-    strict: true,
+    ...ANSWER_JUDGES.news,
   },
   {
     id: "blog",
     ask: "네이버 블로그에서 '제주 흑돼지 맛집' 검색해서 첫 번째 글을 열고 추천한 가게 이름이랑 이유를 알려 줘.",
-    expects: /([가-힣]{2,}[^가-힣]+){8,}/,
-    strict: true,
+    ...ANSWER_JUDGES.blog,
   },
   /*
    * THE FORM THAT CAN SHOW BATCHING: six fields nothing about which depends on another, and a press
@@ -179,10 +174,10 @@ const COMPUTER_URL =
   process.env.BROWSE_COMPUTER_URL?.trim() || "http://localhost:6801";
 const RUNS = Math.max(1, Number(process.env.BROWSE_RUNS ?? "1") || 1);
 const SKILLS = process.env.BROWSE_SKILLS?.trim() !== "off";
-const INVITE = process.env.BROWSE_INVITE?.trim() === "on";
+const INVITE = process.env.BROWSE_INVITE?.trim() !== "off";
 const LABEL =
   process.env.BROWSE_LABEL?.trim() ||
-  `${SKILLS ? "skills" : "bare"}${INVITE ? "-invite" : ""}`;
+  `${SKILLS ? "skills" : "bare"}${INVITE ? "" : "-no-invite"}`;
 const BOT_ID = process.env.BROWSE_BOT?.trim() || "browse_eval";
 const REPORT_DIR = process.env.BROWSE_REPORT_DIR?.trim() || "evals/reports";
 /** The loop's bound on a lost Bot: past it every call is answered `laf:tool_budget_spent`. */
@@ -254,12 +249,12 @@ const composed = SKILLS
   ? systemMessageFor("chat", undefined, undefined, BUILT_IN_SKILLS)
   : systemMessageFor("chat");
 /*
- * Arm B reads the prompt it would read the day the sentence shipped: the same composed message,
- * with the sentence inside the static layer and not after everything (`withInvitation`).
+ * The product's prompt, or — `BROWSE_INVITE=off` — the same composed message with the paragraph
+ * about several steps in one reply taken out of the base (`withoutInvitation`).
  */
 const SYSTEM = INVITE
-  ? { ...composed, content: withInvitation(composed.content) }
-  : composed;
+  ? composed
+  : { ...composed, content: withoutInvitation(composed.content) };
 
 type Messages = LoopAgent["messages"];
 type LoopEvent = Parameters<NonNullable<TurnLoopOptions["observe"]>>[0];
@@ -583,10 +578,7 @@ async function runTask(task: Task) {
   };
 
   if (!("form" in task)) {
-    const passed =
-      failure === null &&
-      task.expects.test(answer) &&
-      !(task.strict && GAVE_UP.test(answer));
+    const passed = failure === null && answerPasses(task, answer);
     return { ...base, passed };
   }
 

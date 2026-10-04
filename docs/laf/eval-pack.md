@@ -1501,6 +1501,90 @@ is not unusable.
 the fact — §6's second step, two scenarios in `eval:model`; an alert on a good page; anything signed
 in.
 
+## Several steps in one reply — a paragraph in the prompt, measured both ways (2026-10-05)
+
+The turn loop runs every call of a reply in the order written, and stops the acting steps after one
+that was refused, asked about, moved the page or raised an alert (`server/src/runner/round-stop.ts`,
+the day before). Fourteen days of the ledger had no reply with two browser steps in it, so the
+question was whether the fleet's model writes them at all, and whether one paragraph makes it.
+`bun run eval:browse` answers it since it runs on the product's own loop (`runTurnLoop`): the
+prompt with the paragraph (`SEVERAL_STEPS_KO`, `shared/prompt/base.ko.ts`) against the prompt
+without it (`BROWSE_INVITE=off`), interleaved in blocks, on `meta/muse-spark-1.3-contributor`,
+against the released browser image.
+
+**The form** — `httpbin-form`: six values to put into httpbin's order form and send; judged by what
+the site echoes back (sent once, every asked field as asked, nothing else filled). N=20 an arm.
+
+| | without the paragraph | with it |
+| --- | --- | --- |
+| model requests, p50 / p90 | 10 / 11 | **6 / 8** |
+| replies spent on the form itself, p50 | 7 | **2** |
+| seconds, p50 / p90 | 27.8 / 34.2 | **24.6** / 38.8 |
+| runs with a reply of two or more acting steps | 7/20 | **20/20** |
+| passed (sent once, as asked) | 20/20 | 20/20 |
+| wrong fields · unasked fields | 0 · 0 | 0 · 0 |
+| steps not reached · presses before a stop | 0 · 0 | 0 · 0 |
+| prompt tokens a run (of them cached) | 70,525 (63,448) | **47,829** (39,346) |
+| cost a run | $0.0011 | $0.0012 |
+
+The model already batched in a third of the runs with no paragraph — the ledger's "never" was a
+ledger of asks that hand over one value at a time. With the paragraph it always does. Requests fall
+by four in ten and prompt tokens by a third; seconds by an eighth, because a batched reply takes
+longer to write than a single step (2.9 s against 2.3 s a model turn); and **cost does not move**,
+because the tokens saved are cached ones. The send was never inside a batch in either arm — the
+model writes it alone, after a look — so the round-stop rule never fired here, and this says
+nothing about it.
+
+**What is not a form** — the six ordinary tasks, N=4 an arm (네이버 쇼핑 and 뉴스 at 8), re-scored
+from the stored answers after the 뉴스 judge was repaired (below). Passed / median model requests:
+
+| task | without | with |
+| --- | --- | --- |
+| naver-weather | 4/4 · 2.5 | 4/4 · 3 |
+| naver-search | 4/4 · 2.5 | 4/4 · 2 |
+| naver-shopping | 9/9 · 6 | 8/8 · 5 |
+| coupang | 4/4 · 3 | 4/4 · 3 |
+| news | 7/8 · 8 | 8/8 · 7 |
+| blog | 4/4 · 5 | 4/4 · 5 |
+
+No reply in either arm held two acting steps, nothing was asked about and nothing refused: on a
+task where each step needs the page the last one made, the paragraph changes nothing. The one
+failure is an answer that says the rotating headline "열 수 없었고" and then summarises the article
+under it — the strict judge's false alarm, in the arm without the paragraph.
+
+That table leaves out **seven runs in which the browser opened nothing**: after 57 tasks one Bot
+id's tab stopped opening any address (`laf:navigation_failed` nineteen times running, the container
+healthy, a fresh Bot id working at once — a crashed tab that is never replaced, which is a defect of
+its own). They fell on the seventh and eighth blocks, three in one arm and four in the other, by
+task count and not by prompt; two blocks were run again under a fresh Bot id. As run, with nothing
+left out and before the re-run: 뉴스 6/8 and 6/8, 네이버 쇼핑 7/8 without the paragraph and 6/8
+with it — the difference is the fourth dead run.
+
+**The rule it shipped on**, written before the second measurement: the paragraph goes in if, with
+it, no task passes less often, give-ups are not up, no task's median requests rise by more than
+one, nothing new is asked about or refused, and on the form requests and tokens fall with wrong
+fields not up. It met every clause. The bar the plan had set the day before — seconds down by
+three in ten — it did NOT meet (an eighth), and that bar stood on the premise that the model never
+batches; half the gain it priced was already there.
+
+**Two things the first run got wrong, kept as method.**
+
+- *Where the sentence was put.* The first arm appended it to the END of the system message, past
+  the context layer — the most salient place a prompt has, and one that leaves the cached prefix
+  alone. A shipped paragraph gets neither. Its numbers (requests 9 → 6) were an upper bound and
+  were set aside; the table above is the paragraph inside the base, byte for byte where it ships.
+- *What the 뉴스 judge counted.* Its floor was twelve words of two syllables or more IN A ROW, and
+  Korean is full of words of one: five complete three-line summaries failed at ten or eleven, in
+  both arms, and which arm drew more of them looked like a regression (5/8 against 6/8). It also
+  passed "화면이 응답하지 않아서 … 열지 못하고 있어요" as a summary. The floor is a count now
+  (`koreanProse`), the two phrases are give-ups, and both real answers are tests.
+
+**Limits of what this measures.** One form, one provider (Meta), one hour. The eval's gateway has
+no high-risk reviewer, so a press after a name and a phone number were typed is not asked about as
+production may ask; the "yes" to the send is an eval person who answers at once (a routine reads
+`laf:nobody_answered`); the prompt and the tool list are a chat's over the routine's executor; and
+the browser is the released image, not this tree's.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

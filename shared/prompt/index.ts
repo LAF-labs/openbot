@@ -42,7 +42,7 @@ import { aboutText } from "./shop.ko";
 import { deferredToolsText } from "../tools/bridge";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
-export { BASE_KO } from "./base.ko";
+export { BASE_KO, SEVERAL_STEPS_KO } from "./base.ko";
 export {
   type ContextFacts,
   contextLayerText,

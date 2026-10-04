@@ -1,17 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ANSWER_JUDGES,
+  answerPasses,
   echoedForm,
   echoedSends,
   type FiledMessage,
-  INVITATION,
+  GAVE_UP,
   judgeForm,
+  koreanProse,
   roundStats,
   roundsOf,
   unaskedFields,
-  withInvitation,
+  withoutInvitation,
   wrongFields,
 } from "../evals/browse-measure";
-import { BASE_KO, systemPromptText } from "../shared/prompt";
+import { BASE_KO, SEVERAL_STEPS_KO, systemPromptText } from "../shared/prompt";
 
 /**
  * THE JUDGES OF `eval:browse`, JUDGED.
@@ -24,32 +27,92 @@ import { BASE_KO, systemPromptText } from "../shared/prompt";
  * written by hand.
  */
 
-describe("the prompt of the second arm", () => {
-  test("is today's prompt with one paragraph more, inside the base and ahead of everything after it", () => {
+describe("the prompt of the other arm", () => {
+  test("is the product's prompt with one paragraph fewer — the base's, and every other byte where it was", () => {
     for (const mode of ["chat", "routine"] as const) {
       const today = systemPromptText(mode, "맥락: 호칭은 사장님이다.");
-      const before = today.split("\n\n");
-      const after = withInvitation(today).split("\n\n");
-      const at = after.indexOf(INVITATION);
-      // One paragraph of its own, once, and every other byte where it was.
-      expect(after.filter((paragraph) => paragraph === INVITATION)).toEqual([
-        INVITATION,
-      ]);
-      expect([...after.slice(0, at), ...after.slice(at + 1)]).toEqual(before);
-      // In the static layer's base — not after the context, where it was first measured.
+      const with_ = today.split("\n\n");
+      const without = withoutInvitation(today).split("\n\n");
+      const at = with_.indexOf(SEVERAL_STEPS_KO);
+      // The product's prompt holds it once, as a paragraph of its own…
+      expect(
+        with_.filter((paragraph) => paragraph === SEVERAL_STEPS_KO),
+      ).toEqual([SEVERAL_STEPS_KO]);
+      // …inside the base, not after the context, where it was first measured…
       expect(at).toBeLessThan(BASE_KO.split("\n\n").length);
-      // In front of the base's two paragraphs about the computer, which still follow in order.
-      expect(after[at + 1]).toStartWith(
+      // …in front of the base's two paragraphs about the computer, which still follow in order.
+      expect(with_[at + 1]).toStartWith(
         "사람이 컴퓨터를 잡고 있다는 결과가 오면",
       );
-      expect(after[at + 2]).toStartWith("이 배포의 정책이 막은 행동도");
-      expect(after.at(-1)).toBe("맥락: 호칭은 사장님이다.");
+      expect(with_[at + 2]).toStartWith("이 배포의 정책이 막은 행동도");
+      // And the other arm is that prompt without it: nothing else moved.
+      expect(without).toEqual([...with_.slice(0, at), ...with_.slice(at + 1)]);
+      expect(without).not.toContain(SEVERAL_STEPS_KO);
+      expect(without.at(-1)).toBe("맥락: 호칭은 사장님이다.");
     }
   });
 
-  test("has no place in a prompt that does not begin with the base, and says so", () => {
-    expect(() => withInvitation("너는 다른 봇이다.")).toThrow(/BASE_KO/);
-    expect(() => withInvitation(`머리말\n\n${BASE_KO}`)).toThrow(/BASE_KO/);
+  test("the paragraph is, byte for byte, the sentence that was measured", () => {
+    // The two arms of 2026-10-05 read these bytes or did not; a reworded paragraph is unmeasured.
+    expect(SEVERAL_STEPS_KO).toBe(
+      "다음 행동이 앞 결과를 볼 필요가 없을 때는 여러 행동을 한 번에, 순서대로 불러라. 페이지를 바꾸는 행동(검색·확인 누르기, Enter)은 마지막에만 둔다.",
+    );
+  });
+
+  test("cannot be made from a prompt that does not begin with the base, and says so", () => {
+    expect(() => withoutInvitation("너는 다른 봇이다.")).toThrow(/BASE_KO/);
+    expect(() => withoutInvitation(`머리말\n\n${BASE_KO}`)).toThrow(/BASE_KO/);
+  });
+});
+
+describe("whether an answer got the thing", () => {
+  /*
+   * Two answers of 2026-10-05's runs, as the Bot wrote them (the eval's person is addressed as
+   * 사장님). The first is a correct three-line summary the old floor failed; the second is an
+   * apology the old judge passed.
+   */
+  const summary = [
+    "사장님, 경제 섹션 맨 위 기사 열어봤어요.",
+    "",
+    "**민간아파트 부정청약 적발 5년간 1699건… 83%가 위장전입**",
+    "",
+    "1. 2021년부터 작년 6월까지 전국 민간분양 350개 단지 점검했더니 부정청약 1,669건이 적발됐어요.",
+    "2. 유형은 부양가족 가점을 노린 위장전입이 1,380건으로 83%를 차지했고, 통장 매매 240건이 뒤를 이었어요.",
+    "3. 수사의뢰 중 검찰 송치 655건 가운데 실제 당첨 취소는 273건에 그쳐 실효성 지적이 나왔어요.",
+  ].join("\n");
+  const apology =
+    "사장님, 지금 제 컴퓨터의 화면이 응답하지 않아서 네이버 뉴스 경제 섹션을 열지 못하고 있어요. 잠시 뒤에 다시 말씀해 주시면 바로 확인해 드릴게요.";
+  /** The floor as it was: twelve words of two syllables or more, one after another. */
+  const twelveInARow = /([가-힣]{2,}[^가-힣]+){12,}/;
+
+  test("a three-line summary is prose, wherever its one-syllable words fall", () => {
+    // "중", "뒤", "제" end a run: the old floor found no twelve in a row in a complete summary.
+    expect(twelveInARow.test(summary)).toBe(false);
+    expect(answerPasses(ANSWER_JUDGES.news, summary)).toBe(true);
+  });
+
+  test("an apology is not a summary, in the words a Bot really used", () => {
+    // Prose by any count, and passed as a summary until its two phrases were known for what they are.
+    expect(twelveInARow.test(apology)).toBe(true);
+    expect(koreanProse(20).test(apology)).toBe(true);
+    expect(GAVE_UP.test("화면이 응답하지 않아서")).toBe(true);
+    expect(GAVE_UP.test("섹션을 열지 못하고 있어요")).toBe(true);
+    expect(answerPasses(ANSWER_JUDGES.news, apology)).toBe(false);
+  });
+
+  test("a few words are not prose, and a price is its own proof whatever is said beside it", () => {
+    expect(answerPasses(ANSWER_JUDGES.news, "요약입니다. 금리 동결.")).toBe(
+      false,
+    );
+    expect(
+      answerPasses(
+        ANSWER_JUDGES["naver-shopping"],
+        "쇼핑 페이지는 막혀 있어 가격비교에서 찾았어요: 무선 마우스 12,900원",
+      ),
+    ).toBe(true);
+    expect(answerPasses(ANSWER_JUDGES["naver-search"], "찾지 못했어요")).toBe(
+      false,
+    );
   });
 });
 
