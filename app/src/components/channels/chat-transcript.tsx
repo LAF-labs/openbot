@@ -1209,7 +1209,8 @@ const TranscriptMessage = memo(function TranscriptMessage({
           {/*
            * Inside the answer's own wrapper, not after it: the reply actions are lifted out of flow
            * to the wrapper's bottom edge, and a row drawn after the wrapper sat exactly under them —
-           * measured, 좋아요 took the click meant for 출처.
+           * measured, 좋아요 took the click meant for 출처. Inside it they still reach 6px up over
+           * whatever is last, which is why the row keeps room under its pills (`sources-row.tsx`).
            */}
           {sources ? (
             <SourcesRow sources={JSON.parse(sources) as Source[]} />
@@ -2292,8 +2293,8 @@ export function ChatTranscript({
                       role={item.role}
                       /*
                        * Where the answer came from, once the turn is over: an answer still being
-                       * written may yet read another page, and a list that grows under it is a
-                       * list nobody can trust. As a string so the memo still holds — a fresh
+                       * written may yet read another page, and a "+2" that becomes "+3" under it
+                       * is a count nobody can trust. As a string so the memo still holds — a fresh
                        * array every chunk would re-render the answer it hangs from every chunk.
                        */
                       {...(index < settledBefore && sources.has(item.id)
