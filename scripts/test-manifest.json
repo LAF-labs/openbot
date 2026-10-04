@@ -551,6 +551,7 @@
   "tests/desktop-held.test.ts",
   "tests/desktop-shell.test.ts",
   "tests/dockerfiles.test.ts",
+  "tests/eval-browse.test.ts",
   "tests/eval-calendar.test.ts",
   "tests/eval-deferral.test.ts",
   "tests/eval-feed.test.ts",
