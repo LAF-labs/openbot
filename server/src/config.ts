@@ -49,8 +49,10 @@ import type { FirstMoveKind } from "./turns/first-move";
  *   development  a local run or a test sets it, and compose never passes it: the image is built around
  *                its default (`PORT` — Caddy and the healthcheck both ask :3001), or a deployment
  *                carrying it would be unsafe (`LAF_DEV_NO_AUTH`, `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`).
- *   retired      read only to refuse a stale spelling. Nobody should set it, so `.env.example` does
- *                not list it.
+ *   retired      read only to refuse: a stale spelling, or the one value of a switch that named
+ *                something since removed (`SERVER_TURNS=off`). Nobody should set it, so
+ *                `.env.example` does not offer it. Compose may still hand one on, so that a line
+ *                left in an `.env` reaches the refusal instead of being dropped on the way.
  *
  * `server/tests/configuration-documents.test.ts` holds `.env.example`, the deploying guide's table and
  * the compose file to this list, and `config.test.ts` holds this list to what `loadConfig` reads.
@@ -107,7 +109,7 @@ export const ENVIRONMENT = {
   COMPACTION_THRESHOLD_TOKENS: "compose",
   DAY_EPOCHS: "compose",
   // Once the switch back to turns the window drove. Read only to refuse `off` (`harnessConfig`).
-  SERVER_TURNS: "compose",
+  SERVER_TURNS: "retired",
   // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). Off unless set.
   FIRST_MOVE: "compose",
   // A laptop's way to turn the owner's day without waiting for midnight; refused in production.

@@ -175,8 +175,9 @@ function forTheBot(message: Message): Message {
 
 /**
  * The thread with every call that never got an answer answered, where it was made — a provider
- * rejects a conversation holding one, and an old call must never be carried out now. The same
- * repair the window made before every run (`repair-history.ts` in the app).
+ * rejects a conversation holding one, and an old call must never be carried out now. The repair the
+ * window made before every run it drove, until that path was removed (2026-10-05); this is the only
+ * one there is.
  */
 export function repairUnanswered(messages: readonly Message[]): Message[] {
   const answered = new Set<string>();
