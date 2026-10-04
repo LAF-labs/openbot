@@ -2640,6 +2640,8 @@ export const ko: Record<string, string> = {
   // The weather card (`weather-card.tsx`). The source's wording is 기상청's own: 출처: 기상청.
   "Source: {names}": "출처: {names}",
   "Weather for {place}": "{place} 날씨",
+  "Latitude {latitude}, longitude {longitude}":
+    "위도 {latitude}, 경도 {longitude}",
   Weather: "날씨",
   "High {max} · Low {min}": "최고 {max} · 최저 {min}",
   "Clear sky": "맑음",

@@ -102,6 +102,8 @@ describe("the weather tool's answer, read for the card", () => {
     } as const;
     expect(weatherOf(ANSWER)).toEqual({
       place: "인천광역시",
+      placeName: null,
+      coordinates: null,
       temp: 11.6,
       // The row the answer itself calls 오늘 — here the first, and not because it is first.
       today,
@@ -176,6 +178,8 @@ describe("the weather tool's answer, read for the card", () => {
     });
     expect(weatherOf(partial)).toEqual({
       place: "제주",
+      placeName: null,
+      coordinates: null,
       temp: null,
       // No row says which day it is, so none is taken for today.
       today: null,
@@ -361,6 +365,46 @@ describe("the weather card", () => {
    * 출처: 기상청 — in those words, readable where the data is (기상법, since 2026-09-18; the API
    * hub's notice of 2026-09-14). Small, and the card's own: there is no line of it under an answer.
    */
+  /*
+   * THE PLACE IN THE SURFACE'S WORDS (review, round 9). The answer carries the place for the model
+   * as words, and beside it the facts: the name alone, or the coordinates alone. The card draws the
+   * facts in its own language, and the model's line only for an answer from before the facts were
+   * written.
+   */
+  test("names the place from the facts, in its own words — and from the model's line only when there are none", async () => {
+    const base = JSON.parse(ANSWER) as Record<string, unknown>;
+    const named = await card(
+      JSON.stringify({
+        ...base,
+        place: "인천광역시 (위도 37.46, 경도 126.71)",
+        placeName: "인천광역시",
+        coordinates: { latitude: 37.46, longitude: 126.71 },
+      }),
+    );
+    expect(named?.querySelector("p")?.textContent).toBe("인천광역시");
+    expect(named?.getAttribute("aria-label")).toBe("Weather for 인천광역시");
+    const byCoordinates = await card(
+      JSON.stringify({
+        ...base,
+        place: "위도 37.46, 경도 126.71",
+        coordinates: { latitude: 37.46, longitude: 126.71 },
+      }),
+    );
+    expect(byCoordinates?.querySelector("p")?.textContent).toBe(
+      "Latitude 37.46, longitude 126.71",
+    );
+    expect(ko["Latitude {latitude}, longitude {longitude}"]).toBe(
+      "위도 {latitude}, 경도 {longitude}",
+    );
+    // An answer written before the facts: the model's line is all there is, and it is kept.
+    const older = await card(
+      JSON.stringify({ ...base, place: "위도 37.46, 경도 126.71" }),
+    );
+    expect(older?.querySelector("p")?.textContent).toBe(
+      "위도 37.46, 경도 126.71",
+    );
+  });
+
   test("names its source on the card, small, in the agency's own wording", async () => {
     const drawn = await card(ANSWER);
     const source = drawn?.querySelector<HTMLElement>("[data-weather-source]");

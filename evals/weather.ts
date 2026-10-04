@@ -72,6 +72,8 @@ export function weatherAnswer(
   return JSON.stringify({
     source: "기상청",
     place: place.name,
+    // The name alone beside the words, as the transport writes it for the card.
+    placeName: place.name,
     ...(saved ? { basis: "저장된 위치" } : {}),
     issued: { now: stamp(hour), hours: stamp(hour), days: stamp(2) },
     units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
@@ -198,7 +200,10 @@ export function leavesItToTheCard(text: string): boolean {
  *    it feels. "오늘은 바깥일하기 무난한 날이에요" says nothing the card says and fails here;
  *  - nothing falls, said as falling. A negated mention is how the Bot usually puts it ("비 없이",
  *    "비는 안 와요") and is right;
- *  - no weather the forecast does not hold: snow, a storm, a heat wave, an overcast sky;
+ *  - no weather the forecast does not hold FOR THE DAYS THE SCENARIOS ASK ABOUT — today and
+ *    tomorrow: snow, a storm, a heat wave, an overcast sky. The fixture's fourth day is overcast
+ *    with rain, and a sentence about 글피 would fail here; no scenario asks about it, and one that
+ *    did would need the check to take the day asked (review, round 9);
  *  - every temperature it says is one the card holds — the reading now, an hour's, a day's low or
  *    high, as written or rounded, WITH ITS SIGN: "영하 17도" and "-17도" are −17, not 17 (review,
  *    rounds 7 and 8). "강남은 지금 99도예요" passed the shape.

@@ -591,6 +591,13 @@ function summariseWeather(input: {
   place: string;
   /** Whether the place is the person's saved one rather than one the call named. */
   saved: boolean;
+  /**
+   * The place as FACTS beside its words: the name alone, and the coordinates alone. The surface
+   * draws these (review, round 9: the card drew "위도 37.57, 경도 126.98" — the server's own Korean —
+   * where the surface owns the words), and the model reads `place`.
+   */
+  placeName?: string | undefined;
+  coordinates?: { latitude: number; longitude: number } | undefined;
   /** Whether the answer will be drawn where the person looks (`transport.ts`): a card, or words only. */
   watched: boolean;
   now: Issued | null;
@@ -609,6 +616,8 @@ function summariseWeather(input: {
   return JSON.stringify({
     source: "기상청",
     place: input.place,
+    ...(input.placeName ? { placeName: input.placeName } : {}),
+    ...(input.coordinates ? { coordinates: input.coordinates } : {}),
     ...(input.saved ? { basis: "저장된 위치" } : {}),
     issued: {
       ...(input.now && now ? { now: stampOf(input.now.base) } : {}),
@@ -909,7 +918,16 @@ export function createKmaWeatherTransport(input: {
   async function whereOf(
     actorId: string | undefined,
     args: Record<string, unknown>,
-  ): Promise<{ cell: KmaCell; place: string; saved: boolean }> {
+  ): Promise<{
+    cell: KmaCell;
+    /** The place in words for the model: a name, or coordinates written out, or both. */
+    place: string;
+    /** The name alone, where the table has one — what a screen draws. */
+    placeName?: string;
+    /** The coordinates alone, where the place was asked by them — a screen writes them in its own words. */
+    coordinates?: { latitude: number; longitude: number };
+    saved: boolean;
+  }> {
     /*
      * Coordinates are answered with the name of what is there, when the table has one. A device's
      * are true and a model's may be invented; either way the Bot is told which 시·군·구 the numbers
@@ -920,7 +938,15 @@ export function createKmaWeatherTransport(input: {
       if (!cell) return null;
       const near = places.nameOf(cell);
       const said = `위도 ${latitude.toFixed(2)}, 경도 ${longitude.toFixed(2)}`;
-      return { cell, place: near ? `${near} (${said})` : said };
+      return {
+        cell,
+        place: near ? `${near} (${said})` : said,
+        ...(near ? { placeName: near } : {}),
+        coordinates: {
+          latitude: Number(latitude.toFixed(2)),
+          longitude: Number(longitude.toFixed(2)),
+        },
+      };
     };
     const named = (words: string) => {
       const found = places.find(words);
@@ -932,7 +958,7 @@ export function createKmaWeatherTransport(input: {
         );
       }
       return found.kind === "found"
-        ? { cell: found.cell, place: found.name }
+        ? { cell: found.cell, place: found.name, placeName: found.name }
         : null;
     };
 
@@ -1028,6 +1054,8 @@ export function createKmaWeatherTransport(input: {
     return summariseWeather({
       at,
       place: where.place,
+      placeName: where.placeName,
+      coordinates: where.coordinates,
       saved: where.saved,
       watched,
       now: had(0),

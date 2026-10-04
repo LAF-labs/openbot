@@ -32,7 +32,8 @@ import { cn } from "@/lib/utils";
  * WHAT IT SHOWS, and nothing else: where, the temperature measured there, today's high and low,
  * and one column a day for as many days as the answer holds — a picture of the sky, the high, the
  * low, and the chance of rain where there is one to speak of. 단기예보 reaches three or four days
- * out; the columns are laid out for seven and fill with what there is.
+ * out; the grid takes one column a day for as many as the answer holds, seven at the most
+ * (`DAYS_SHOWN`), so days five to seven appear the day 중기예보 is in the answer.
  *
  * `출처: 기상청` IS ON THE CARD, SMALL. Weather data from 기상청 has had to name its source where
  * it is shown since 2026-09-18 (기상법; the API hub's notice of 2026-09-14), in those words, and
@@ -139,21 +140,31 @@ export function WeatherCard({ result }: { result: string }) {
    * clock's (`dayLabel`).
    */
   const today = weather.today;
+  /*
+   * THE PLACE IN THE SURFACE'S WORDS. The answer names the place for the model (`place`), and
+   * beside it the facts: the name alone, or the coordinates alone. A card drew the model's line —
+   * "위도 37.57, 경도 126.98", the server's Korean — where the surface owns the words (review,
+   * round 9). An answer from before the facts were written has only the line, and keeps it.
+   */
+  const place =
+    weather.placeName ??
+    (weather.coordinates
+      ? t("Latitude {latitude}, longitude {longitude}", {
+          latitude: weather.coordinates.latitude.toFixed(2),
+          longitude: weather.coordinates.longitude.toFixed(2),
+        })
+      : weather.place);
 
   return (
     <section
-      aria-label={
-        weather.place
-          ? t("Weather for {place}", { place: weather.place })
-          : t("Weather")
-      }
+      aria-label={place ? t("Weather for {place}", { place }) : t("Weather")}
       className={cn(chatCard, chatCardPadding, "flex w-full flex-col gap-3")}
       data-slot="weather-card"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          {weather.place ? (
-            <p className={cn(chatCardMeta, "truncate")}>{weather.place}</p>
+          {place ? (
+            <p className={cn(chatCardMeta, "truncate")}>{place}</p>
           ) : null}
           <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             {weather.temp === null ? null : (

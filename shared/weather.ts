@@ -37,10 +37,12 @@ export const WEATHER_DATA_HEAD = '{"source":"기상청"';
  *  - THIS: the fact where the model reads it last, the rule where rules are read. A fact that is
  *    repeated to the person ("위에 카드로 보여 드렸어요") is true, and reads as the Bot speaking.
  *
- * AND IT IS A FACT ONLY WHERE A CARD IS DRAWN: the server writes it exactly when the answer holds
- * what `weatherOf` reads — a temperature now, or a day. An answer with the next hours and nothing
- * else (the observation and the daily forecast both missing, late in the evening) has no card, so
- * it is not told it has one, and the rule in the description hangs on this field being there.
+ * AND IT IS A FACT ONLY WHERE A CARD IS DRAWN: the server writes it when the answer holds what
+ * `weatherOf` reads — a temperature now, or a day — AND somebody is looking at the call (a chat's
+ * call; not a routine's, whose answer reaches the person as words with no card under them —
+ * `transport.ts`, `connection.watched`). An answer with the next hours and nothing else (the
+ * observation and the daily forecast both missing, late in the evening) has no card, so it is not
+ * told it has one, and the rule in the description hangs on this field being there.
  */
 export const WEATHER_SHOWN = "사용자 화면에 날씨 카드로 이미 표시됨";
 
@@ -90,7 +92,12 @@ export type WeatherDay = {
 
 /** The answer, as the card draws it. */
 export type WeatherData = {
+  /** The place in the server's words, for the model — drawn only where the two facts below are absent (answers from before they were written). */
   place: string;
+  /** The place's name alone, where the server had one. */
+  placeName: string | null;
+  /** The coordinates alone, where the place was asked by them: the surface writes them in its own words. */
+  coordinates: { latitude: number; longitude: number } | null;
   /** The temperature measured at the place, where the observation was had. */
   temp: number | null;
   /**
@@ -161,6 +168,15 @@ export function weatherOf(result: string): WeatherData | null {
   if (!parsed || typeof parsed !== "object") return null;
   const answer = parsed as Record<string, unknown>;
   const place = typeof answer.place === "string" ? answer.place : "";
+  const placeName =
+    typeof answer.placeName === "string" && answer.placeName.trim()
+      ? answer.placeName
+      : null;
+  const at = answer.coordinates as Record<string, unknown> | undefined;
+  const latitude = at ? numberOf(at.latitude) : null;
+  const longitude = at ? numberOf(at.longitude) : null;
+  const coordinates =
+    latitude !== null && longitude !== null ? { latitude, longitude } : null;
   const now = answer.now as Record<string, unknown> | undefined;
   const rows = (Array.isArray(answer.days) ? answer.days : []).flatMap(
     (entry): { isToday: boolean; row: WeatherDay }[] => {
@@ -193,6 +209,8 @@ export function weatherOf(result: string): WeatherData | null {
   if (temp === null && days.length === 0) return null;
   return {
     place,
+    placeName,
+    coordinates,
     temp,
     today: rows.find(({ isToday }) => isToday)?.row ?? null,
     days,
