@@ -51,35 +51,28 @@ export function judgedLabelOf(value: unknown): JudgedLabel | null {
 /** Where the server cuts a name (`toElement` in aria-snapshot.ts). A name this long may be a prefix. */
 const JUDGED_NAME_LIMIT = 200;
 
-/** A name as a pattern: its own characters, with any run of spaces in it free to be any run or none. */
-function spacedAnyhow(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"))
-    .join("\\s*");
-}
-
 /**
- * The name to ask the role engine for: what was judged, unless what was judged cannot be the whole
- * name, or cannot say where its spaces were.
+ * The name to ask the role engine for: exactly what was judged, unless what was judged cannot be the
+ * whole name.
  *
  *  - Cut at 200 by the server: the live name has to START with it.
  *  - Empty: the snapshot renders no name for one longer than 900 characters, and a name written
  *    `/like this/` without its quotes, which the parser then reads as no name. Those two, or empty.
- *  - With a space in it: the space may be one the snapshot put there. A name the tree printed
- *    beneath a control is its words joined with one space (`nameFromWithin` in aria-snapshot.ts),
- *    and the browser joins inline neighbours with none: `<mark>무선</mark>마우스` is "무선마우스" to the
- *    role engine and "무선 마우스" in the list. Held exactly, 16 of the 59 such links on a Naver
- *    search page were refused as renamed (measured 2026-10-04); compared with the spaces free, none
- *    were. Where the spaces fall is not a rename — the words are what the boundary judged.
+ *
+ * EXACTLY, SPACES INCLUDED. For a day (pull request 65) a judged name with a space in it matched the
+ * same words with the spaces anywhere or nowhere, because the list built a nameless control's name
+ * by joining the words printed beneath it with one space, where the browser joins inline neighbours
+ * with none (`<mark>무선</mark>마우스`). The list now asks the page for that name, computed as the
+ * role engine computes it (`page-names.ts`), and the two agree to the space: measured 2026-10-04 on
+ * the five pages that tolerance was measured on, 203 of the 203 nameless controls not hidden from
+ * the accessibility tree were held exactly (the rest are refused as hidden, as they were). A
+ * tolerance the list no longer needs is only room for a page to rename a control under the Bot.
  */
 export function nameToMatch(name: string): string | RegExp {
   if (name.length >= JUDGED_NAME_LIMIT) {
-    return new RegExp(`^\\s*${spacedAnyhow(name)}`);
+    return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}`);
   }
   if (name === "") return /^(|\/.*\/|.{901,})$/;
-  if (/\s/.test(name)) return new RegExp(`^\\s*${spacedAnyhow(name)}\\s*$`);
   return name;
 }
 

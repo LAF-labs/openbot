@@ -425,26 +425,35 @@ describe("what the judge is shown", () => {
     expect((state.owner_task as string).length).toBeLessThanOrEqual(600);
   });
 
-  test("a paying label is one with its spaces taken out as well", () => {
-    // "결 제" is how the snapshot spells a 결제 button whose letters sit in two spans (`nameFromWithin`).
-    const spaced = highRiskSignals(
-      facts({ element: { role: "button", name: "결 제 하기" } }),
+  /*
+   * Read once, as the browser spells it (`policy.ts`, `evaluateActionPolicy`, says why the squeezed
+   * reading was retired): on five Korean pages it marked one headline a paying control —
+   * "유출 금융" read as 출금 — and caught nothing the label as written did not.
+   */
+  test("a paying label is read as the browser spells it, once", () => {
+    const paying = highRiskSignals(
+      facts({ element: { role: "button", name: "결제하기" } }),
     );
-    expect(spaced.hard).toEqual(["paying_control"]);
+    expect(paying.hard).toEqual(["paying_control"]);
     const account = highRiskSignals(
-      facts({ element: { role: "button", name: "회원 탈 퇴" } }),
+      facts({ element: { role: "button", name: "회원 탈퇴" } }),
     );
     expect(account.hard).toEqual(["account_control"]);
-    // Taking spaces out never makes a word that was not there.
-    const unrelated = highRiskSignals(
-      facts({ element: { role: "button", name: "결 과 보기" } }),
-    );
-    expect(unrelated.hard).toEqual([]);
-    // A confirming press on a money site, spelled apart, is still the deterministic hard signal
-    // (review, round 5) — not the soft one a model may clear.
+    // Words that only meet across a space are not the word.
+    for (const name of [
+      "금융·공공 보안망 해킹, 정부24 정보 유출 금융권",
+      "해결 제안",
+      "결 과 보기",
+    ]) {
+      expect([
+        name,
+        highRiskSignals(facts({ element: { role: "button", name } })).hard,
+      ]).toEqual([name, []]);
+    }
+    // A confirming press on a money site is the deterministic hard signal, by its label or its path.
     const confirming = highRiskSignals(
       facts({
-        element: { role: "button", name: "확 인" },
+        element: { role: "button", name: "확인" },
         host: "pay.naver.com",
         path: "/somewhere",
         secretHere: true,

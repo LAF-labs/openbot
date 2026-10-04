@@ -382,51 +382,17 @@ export function policyDecidesOnSnapshot(
  * and the safe reading of silence is "nothing", not "anything". The shipped configuration therefore
  * states its permissions explicitly rather than relying on a default, so that what a Bot may do is
  * always something somebody wrote down.
- */
-/** How much a rule holds back, so the stricter of two readings of one action can be taken. */
-const HOLDS_BACK: Record<PolicyDecision["source"], number> = {
-  deny: 3,
-  ask: 2,
-  default: 1,
-  allow: 0,
-};
-
-/**
- * The policy's decision on an action — and, where the element's name has spaces in it, on the same
- * action with the name's spaces taken out, the stricter of the two standing.
  *
- * A NAME THE SNAPSHOT BUILT FROM A CONTROL'S CONTENTS joins the words with one space
- * (`nameFromWithin` in agent-computer's aria-snapshot.ts), and the tree does not say where the
- * page had them: `<button><span>결</span><span>제</span></button>` arrives as "결 제", which the
- * browser itself calls "결제". A rule about 결제 that is held only against the spaced spelling is a
- * rule a page's markup can step round, and the hold that lets the click through afterwards compares
- * the two spellings as one on purpose (`label-hold.ts`, `nameToMatch`) — so the judgement must be
- * at least as strict as it would be on either spelling (Codex on pull request 65). The decision
- * recorded is the stricter one; its `matched` names the rule that made it so.
- *
- * ONLY A RULE THAT HOLDS BACK IS LOOKED FOR IN THE SECOND SPELLING. An allow written for the words
- * as the list shows them — `element.name == "Submit order"` — is not required to match
- * "Submitorder" as well: a second reading that found no rule is not a refusal, it is a reading that
- * found nothing (the same review, round 2).
+ * ONE READING OF A NAME, AS THE BROWSER SPELLS IT. For a day (pull request 65) a name with spaces in
+ * it was also judged with them taken out, because the list built a nameless control's name by
+ * joining the words beneath it with one space — "결 제" for a 결제 button whose letters sit in two
+ * spans — and the hold let the click through on either spelling. The list now asks the page for
+ * the name the browser gives (agent-computer's `page-names.ts`) and the hold matches it exactly
+ * (`label-hold.ts`), so a name judged here is a name the browser has, spaces and all: a rule about
+ * 결제 reads "결제" for that button, and a click held to anything else is refused before it lands.
+ * The second spelling had a cost of its own besides: "해결 제안" read as 결제.
  */
 export function evaluateActionPolicy(
-  policy: ActionPolicy | null | undefined,
-  context: PolicyContext,
-): PolicyDecision {
-  const asWritten = decideActionPolicy(policy, context);
-  const element = context.element;
-  if (!element || !/\s/.test(element.name)) return asWritten;
-  const squeezed = decideActionPolicy(policy, {
-    ...context,
-    element: { ...element, name: element.name.replace(/\s+/g, "") },
-  });
-  const holdsBack = squeezed.source === "deny" || squeezed.source === "ask";
-  return holdsBack && HOLDS_BACK[squeezed.source] > HOLDS_BACK[asWritten.source]
-    ? squeezed
-    : asWritten;
-}
-
-function decideActionPolicy(
   policy: ActionPolicy | null | undefined,
   context: PolicyContext,
 ): PolicyDecision {

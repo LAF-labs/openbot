@@ -72,38 +72,36 @@ describe("evaluateActionPolicy", () => {
   });
 
   /*
-   * A NAME BUILT FROM A CONTROL'S CONTENTS may carry spaces the page's own name does not: "결 제"
-   * for 결제 (aria-snapshot.ts, `nameFromWithin`). A rule about 결제 held against the spaced
-   * spelling alone is a rule the markup steps round, and the hold afterwards treats the two
-   * spellings as one (Codex on pull request 65). The stricter reading stands.
+   * ONE READING OF A NAME, AS THE BROWSER SPELLS IT. For a day (pull request 65) a spaced name was
+   * also judged squeezed, because the list joined a nameless control's words with one space ("결 제"
+   * for a 결제 button in two spans) and the hold let the click through on either spelling. The list
+   * now asks the page for the browser's own name — that button is "결제" — and the hold matches it
+   * exactly (agent-computer's `page-names.ts`, `label-hold.ts`), so the second reading is gone, and
+   * with it the rules it fired that nobody wrote: measured 2026-10-04 on five Korean pages, the only
+   * decisions it changed were two headlines, "입주 문턱" read as 주문 and "유출 금융" as 출금.
    */
-  test("a label is judged with and without its spaces, and the stricter reading stands", () => {
+  test("a label is judged once, as written", () => {
     const paying: ActionPolicy = {
       ...permissive,
-      ask: ['matches(element.name, "결제|송금")'],
+      ask: ['matches(element.name, "결제|송금|주문")'],
     };
-    const spaced = (name: string) =>
+    const judged = (name: string) =>
       evaluateActionPolicy(
         paying,
         context({ element: { ref: "e1", role: "button", name } }),
       );
-    expect(spaced("결 제").source).toBe("ask");
-    expect(spaced("결 제").matched).toBe('matches(element.name, "결제|송금")');
-    expect(spaced("바로 송 금 하기").source).toBe("ask");
-    // A name with no space in it is judged once, as it was.
-    expect(spaced("결제").source).toBe("ask");
-    expect(spaced("장바구니").source).toBe("allow");
-    // And a space never makes a rule match that would not have: "결제" is not in "결 과 제 출".
-    expect(spaced("결 과 제 출").source).toBe("allow");
-    // Deny outranks ask, whichever spelling found it.
-    expect(
-      evaluateActionPolicy(
-        { ...paying, deny: ['matches(element.name, "송금")'] },
-        context({ element: { ref: "e1", role: "button", name: "송 금" } }),
-      ).source,
-    ).toBe("deny");
-    // An allow written for the words as the list shows them is not asked to match them squeezed
-    // (review, round 2): a second reading that found no rule is not a refusal.
+    expect(judged("결제").source).toBe("ask");
+    expect(judged("결제").matched).toBe(
+      'matches(element.name, "결제|송금|주문")',
+    );
+    expect(judged("바로 송금하기").source).toBe("ask");
+    // Words that only meet across a space are not the word.
+    expect(judged("입주 문턱 60세").source).toBe("allow");
+    expect(judged("해결 제안").source).toBe("allow");
+    // A name the browser itself spells apart — letters in inline-blocks — is judged as the browser
+    // spells it, which is what the click is held to. A rule meant for it has to say it that way.
+    expect(judged("결 제").source).toBe("allow");
+    // An allow written for the words as the list shows them matches them.
     const exact: ActionPolicy = {
       deny: [],
       ask: [],
@@ -115,14 +113,6 @@ describe("evaluateActionPolicy", () => {
     );
     expect(submit.source).toBe("allow");
     expect(submit.forward).toBe(true);
-    expect(
-      evaluateActionPolicy(
-        { ...exact, allow: ['contains(element.name, "submit order")'] },
-        context({
-          element: { ref: "e1", role: "button", name: "Submit order" },
-        }),
-      ).source,
-    ).toBe("allow");
   });
 
   test("a deny rule leaves unrelated elements alone", () => {

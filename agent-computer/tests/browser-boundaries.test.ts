@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import {
+  BOXED_BUTTON,
   FRAME_BUTTON,
   HEADLINE_LINKS,
+  HEADLINE_TREE_NAMES,
   RELABEL_AFTER,
   RELABEL_BEFORE,
   serveFixture,
@@ -548,11 +550,13 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
   /*
    * MEASURED 2026-10-04 on five Korean pages: every one of 190 links whose name the AI tree prints
    * beneath it was listed nameless, and the hold, asked about the empty name the gateway judged,
-   * refused every click on one — the role engine calls each link by its words. Named from inside,
-   * 186 were held as the same control; the four left are names the tree spells differently from
-   * the browser (a table's caption, screen-reader-only words).
+   * refused every click on one — the role engine calls each link by its words. Named by the words
+   * the tree printed beneath them, 186 were held; the four left were a table's caption and
+   * decorations or words the tree prints differently from the browser. Named by the page, the same
+   * way the role engine names them (`page-names.ts`), every one not hidden from the accessibility
+   * tree was held exactly — 203 of 203 on the same five pages that evening.
    */
-  test("a link named by what is inside it is held to that name, and can be clicked", async () => {
+  test("a link the tree left nameless is held to the name the page gives it, and can be clicked", async () => {
     for (const [key, name] of Object.entries(HEADLINE_LINKS)) {
       const opened = await post("/navigate", {
         url: `${fixture?.url}headlines`,
@@ -569,16 +573,28 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
             .join(" | ")}`,
         );
       }
-      if (key === "headline") {
-        // The name the list used to give it, which the browser does not call it.
+      // What the list used to call it, which the browser does not: blank before pull request 65,
+      // the tree's words after it — a ★ the browser leaves out, a space the browser does not put in.
+      const before =
+        key in HEADLINE_TREE_NAMES
+          ? HEADLINE_TREE_NAMES[key as keyof typeof HEADLINE_TREE_NAMES]
+          : key === "headline"
+            ? ""
+            : undefined;
+      if (before !== undefined) {
         const refused = await post("/click", {
           ref: link.ref,
           snapshotId: shot.snapshotId,
-          element: { role: "link", name: "" },
+          element: { role: "link", name: before },
         });
-        expect([refused.status, refused.body.code]).toEqual([
+        // Refused either way. The ★ is found by the hold's second question, which counts what is
+        // hidden from the accessibility tree, so that click is refused as one on a hidden control.
+        expect([key, refused.status, refused.body.code]).toEqual([
+          key,
           409,
-          "laf:label_changed",
+          key === "decorated"
+            ? "laf:element_not_actionable"
+            : "laf:label_changed",
         ]);
       }
       const clicked = await post("/click", {
@@ -595,6 +611,49 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
       const landed = await post("/snapshot", {});
       expect(String(landed.body.url)).toEndWith(`/landed-${key}`);
     }
+  });
+
+  /*
+   * NEVER A FIELD'S CONTENTS IN A NAME. The browser names a button wrapped around a search box by what
+   * is typed into the box as well; the page's name for it here leaves the box out, so a value a person
+   * typed never reaches the list as a label. The browser's name then differs from the listed one, and
+   * a click held to the listed name is refused as renamed — on purpose: a refusal, never the value.
+   */
+  test("a button around a search box is not named by what was typed into the box", async () => {
+    const typedText = "hunter2-무선마우스";
+    const opened = await post("/navigate", {
+      url: `${fixture?.url}headlines`,
+    });
+    expect(opened.status).toBe(200);
+    const first = await snapshot();
+    const box = first.elements.find(
+      (element) =>
+        element.role === "textbox" && element.name === BOXED_BUTTON.box,
+    );
+    if (!box) throw new Error("the fixture's search box was not listed");
+    const typed = await post("/type", {
+      ref: box.ref,
+      snapshotId: first.snapshotId,
+      text: typedText,
+      element: { role: box.role, name: box.name },
+    });
+    expect(typed.status).toBe(200);
+
+    const shot = await snapshot();
+    const button = shot.elements.find((element) => element.role === "button");
+    expect(button?.name).toBe(BOXED_BUTTON.word);
+    expect(
+      shot.elements.filter((element) => element.name.includes("hunter2")),
+    ).toEqual([]);
+    const refused = await post("/click", {
+      ref: button?.ref,
+      snapshotId: shot.snapshotId,
+      element: { role: "button", name: BOXED_BUTTON.word },
+    });
+    expect([refused.status, refused.body.code]).toEqual([
+      409,
+      "laf:label_changed",
+    ]);
   });
 
   test("a click with no judged label is not held to one (an older gateway)", async () => {

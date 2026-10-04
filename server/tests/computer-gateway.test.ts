@@ -2248,8 +2248,9 @@ describe("a control renamed after the snapshot", () => {
 /**
  * A link whose name the browser's tree prints beneath it (2026-10-04).
  *
- * The computer names such a link by its words (`nameFromWithin`, agent-computer/src/aria-snapshot.ts)
- * and holds a click to the name it is handed. This server has no name of its own for an element: it
+ * The computer names such a link as the page does (agent-computer/src/page-names.ts), or by the
+ * words the tree printed beneath it where the page did not answer (`nameFromWithin`,
+ * aria-snapshot.ts), and holds a click to the name it is handed. This server has no name of its own for an element: it
  * resolves the ref against the snapshot it took and judges, records and hands back THAT name. So the
  * one thing to prove here is that the name the computer's parser gave a real Naver headline is the
  * one the policy sees, the trail keeps and the hold is sent — not a blank, as it was.

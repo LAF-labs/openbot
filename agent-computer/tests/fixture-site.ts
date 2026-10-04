@@ -256,26 +256,47 @@ function relabelHtml(after: number, hide: boolean): string {
 
 /**
  * Links whose names the AI tree prints beneath them rather than beside them, by the name the list
- * gives each: a headline in a `<strong>` (Naver news's shape), words split across inline elements
- * that the browser joins with no space ("무선마우스 특가" to the role engine), and an image's alt text.
+ * gives each — the name the page computes (`page-names.ts`), which is the role engine's: a headline in
+ * a `<strong>` (Naver news's shape), words split across inline elements that the browser joins with
+ * no space, an image's alt text, a decoration hidden from the accessibility tree that the tree prints
+ * anyway (`- text: ★`), and a table named by a caption only a screen reader is given (Naver home's
+ * calendar link).
  */
 export const HEADLINE_LINKS = {
   headline: "오늘의 헤드라인 기사",
-  split: "무선 마우스 특가",
+  split: "무선마우스 특가",
   image: "프리미엄 바로가기",
+  decorated: "별 달린 헤드라인",
+  caption: "이달의 일정표",
 } as const;
+
+/** What the tree's own words would have called two of them, and the browser does not. */
+export const HEADLINE_TREE_NAMES = {
+  split: "무선 마우스 특가",
+  decorated: "★ 별 달린 헤드라인",
+} as const;
+
+/**
+ * A button around a search box, and the word on the button: the browser names the button by what is
+ * typed in the box as well, and the list never does (`page-names.ts`).
+ */
+export const BOXED_BUTTON = { word: "찾기", box: "검색어" } as const;
 
 /** A 1×1 PNG: an image has to be drawn to be given a ref. */
 const PIXEL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 const HEADLINES_HTML = `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>헤드라인</title></head>
+<html lang="ko"><head><meta charset="utf-8"><title>헤드라인</title>
+<style>.blind{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style></head>
 <body>
   <h1>${VISIBLE_TEXT}</h1>
   <p><a href="/landed-headline"><strong>${HEADLINE_LINKS.headline}</strong></a></p>
   <p><a href="/landed-split"><mark>무선</mark>마우스 <strong>특가</strong></a></p>
   <p><a href="/landed-image"><img src="${PIXEL}" width="80" height="40" alt="${HEADLINE_LINKS.image}"></a></p>
+  <p><a href="/landed-decorated"><span aria-hidden="true">★</span> <strong>${HEADLINE_LINKS.decorated}</strong></a></p>
+  <div><a href="/landed-caption"><table><caption class="blind">${HEADLINE_LINKS.caption}</caption><tr><td><b>1</b></td><td><b>2</b></td></tr></table></a></div>
+  <p><button type="button" onclick="document.title = '찾음'"><input aria-label="${BOXED_BUTTON.box}"> <strong>${BOXED_BUTTON.word}</strong></button></p>
 </body></html>`;
 
 /**
