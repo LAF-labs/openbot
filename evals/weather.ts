@@ -185,6 +185,37 @@ export function leavesItToTheCard(text: string): boolean {
   );
 }
 
+/**
+ * Whether the sentence agrees with the card it stands under.
+ *
+ * The forecast every weather scenario is handed (`weatherAnswer`) is the same sky: clear, then
+ * clouds in the afternoon, nothing falling today or tomorrow; rain comes only on the fourth day.
+ * `leavesItToTheCard` holds the shape of the answer and not its truth, so "오늘은 폭설이에요" —
+ * one sentence, no figure, no source — passed it under a card of clear sky (Codex on pull request
+ * 62). This is the truth check, as far as words can carry one without a model:
+ *
+ *  - it is about the weather at all — a sky, a temperature, what falls or does not, a word for how
+ *    it feels. "오늘은 바깥일하기 무난한 날이에요" says nothing the card says and fails here;
+ *  - nothing falls, said as falling. A negated mention is how the Bot usually puts it ("비 없이",
+ *    "비는 안 와요") and is right;
+ *  - no weather the forecast does not hold: snow, a storm, a heat wave, an overcast sky.
+ */
+export function agreesWithTheCard(text: string): boolean {
+  const said = text.replace(/\s+/g, " ");
+  const aboutTheWeather =
+    /맑|구름|흐|비|눈|바람|기온|℃|°|\d\s?도|덥|더워|더운|춥|추워|추운|선선|쌀쌀|따뜻|포근|우산|하늘|화창|쾌청|습도|습해|건조|날씨/.test(
+      said,
+    );
+  const saysItFalls =
+    /(비|눈)(가|이|는|도)?\s*(와|오|옵|올|내리|내릴)/.test(said) &&
+    !/없|안 |않|말고/.test(said);
+  const notInTheForecast =
+    /폭설|폭우|태풍|우박|소나기|장마|한파|폭염|천둥|번개|흐리|흐림|흐려|안개/.test(
+      said,
+    );
+  return aboutTheWeather && !saysItFalls && !notInTheForecast;
+}
+
 /** Whether a temperature was said as one: "31도", "31℃", "31°", "31 °C". A bare 31 is a date. */
 export function saysDegrees(text: string, degrees: number): boolean {
   const figure = String(degrees).replace(".", "\\.");

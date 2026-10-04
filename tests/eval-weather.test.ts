@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { leavesItToTheCard } from "../evals/weather";
+import { agreesWithTheCard, leavesItToTheCard } from "../evals/weather";
 
 /**
  * THE JUDGE OF THE WEATHER SCENARIOS, JUDGED.
@@ -85,6 +85,44 @@ describe("an answer under the weather card", () => {
       '네, "맑음"이에요.',
     ]) {
       expect([answer, leavesItToTheCard(answer)]).toEqual([answer, true]);
+    }
+  });
+});
+
+/*
+ * THE SHAPE IS NOT THE TRUTH. One sentence with no figure and no source can still contradict the card
+ * it stands under — "오늘은 폭설이에요" under a clear sky (Codex on pull request 62). The scenarios'
+ * forecast is one sky: clear, clouds in the afternoon, nothing falling until the fourth day.
+ */
+describe("an answer that agrees with the card", () => {
+  test("says something the card says", () => {
+    for (const answer of [
+      "사장님, 오늘은 맑고 선선한 하루예요.",
+      "오늘 대구는 비 없이 구름만 조금 낀 정도예요",
+      "지금 계신 곳은 비 없이 맑은 편이에요",
+      "비는 안 와요, 우산은 두고 가셔도 돼요.",
+      "내일 최고 31도까지 올라가요, 사장님.",
+      "사장님, 내일(10/5 월) 부산 해운대는 최고 31도까지 올라가니 낮에는 덥겠네요.",
+      "오늘은 바람도 약하고 하늘이 맑아요",
+    ]) {
+      expect([answer, agreesWithTheCard(answer)]).toEqual([answer, true]);
+    }
+  });
+
+  test("does not say weather the card does not show, or nothing about the weather at all", () => {
+    for (const answer of [
+      "오늘은 폭설이에요.",
+      "오늘은 비가 와요.",
+      "지금 눈이 내리고 있어요",
+      "오후부터 비가 올 거예요, 우산 챙기세요.",
+      "오늘은 흐려요.",
+      "태풍이 올라오고 있어요",
+      // Not wrong, and not the weather either: nothing in it is on the card.
+      "오늘은 바깥일하기 무난한 날이에요.",
+      "네, 확인했어요.",
+      "",
+    ]) {
+      expect([answer, agreesWithTheCard(answer)]).toEqual([answer, false]);
     }
   });
 });
