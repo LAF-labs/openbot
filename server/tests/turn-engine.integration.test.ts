@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
-import { isFirstMoveCall } from "../../shared/first-move";
+import { isFirstMove } from "../../shared/first-move";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -1113,13 +1113,15 @@ describe("the turn's first move", () => {
     const { threadId, channelId } = await aConversation();
     const bot = answeringBot("춘천 기준 지금 7.8도예요.");
     const executed: Array<{ name: string; args: unknown; id: string }> = [];
+    // A move for the first turn only: the second, below, is a thank-you.
+    let decided = 0;
     const { engine, hub } = engineWith(
       bot,
       async (name, args, call) => {
         executed.push({ name, args, id: call.id });
         return '{"source":"기상청","now":{"temp":7.8}}';
       },
-      { firstMove: async () => aMove },
+      { firstMove: async () => (decided++ === 0 ? aMove : null) },
     );
     const frames: TurnFrame[] = [];
     hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
@@ -1160,17 +1162,29 @@ describe("the turn's first move", () => {
     expect(call?.function).toEqual({ name: WEATHER, arguments: "{}" });
     expect(call?.id).toBe(executed[0]?.id);
     /*
-     * As a call the Bot made in every way but its id, which is how the app tells a move the Bot
-     * asked again after from a place it was asked about (`shared/first-move.ts`) — and no longer
-     * than the id it replaced: some model providers refuse a call id past 40 characters.
+     * As a call the Bot made in every way but one field of the message that carries it, which is
+     * how the app tells a move the Bot asked again after from a place it was asked about
+     * (`shared/first-move.ts`). The id is an ordinary one — "call_" and 32 hex digits, which the
+     * fleet's providers take — and the mark is on that message and nowhere else.
      */
-    expect(isFirstMoveCall(call?.id ?? "")).toBe(true);
-    expect(call?.id).toMatch(/^first_move_[0-9a-f]{26}$/);
+    expect(call?.id).toMatch(/^call_[0-9a-f]{32}$/);
+    expect(asking?.lafFirstMove).toBe(true);
+    expect(
+      stored.filter((message) => isFirstMove(message)).map(({ id }) => id),
+    ).toEqual([asking?.id]);
     expect((result as { toolCallId?: string }).toolCallId).toBe(call?.id);
     expect(result?.content).toBe('{"source":"기상청","now":{"temp":7.8}}');
     expect(asking?.lafAgentId).toBe(BOT);
 
-    // And every window is told in that order: the call, its result, then the first word.
+    // A window reading the thread back is handed the mark with the message.
+    const page = await historyPage(database, threadId);
+    expect(
+      page.messages
+        .filter((message) => isFirstMove(message))
+        .map(({ id }) => id),
+    ).toEqual([asking?.id]);
+
+    // And every window is told in that order: the call, marked, its result, then the first word.
     const told = frames.flatMap((frame) => {
       if (frame.kind === "messages") {
         return frame.messages.some(
@@ -1178,7 +1192,16 @@ describe("the turn's first move", () => {
             message.role === "assistant" &&
             message.toolCalls?.[0]?.id === call?.id,
         )
-          ? ["call"]
+          ? [
+              frame.messages.some(
+                (message) =>
+                  message.role === "assistant" &&
+                  message.toolCalls?.[0]?.id === call?.id &&
+                  isFirstMove(message),
+              )
+                ? "call"
+                : "unmarked call",
+            ]
           : [];
       }
       if (frame.kind !== "event") return [];
@@ -1192,6 +1215,31 @@ describe("the turn's first move", () => {
       "TOOL_CALL_RESULT",
       "TEXT_MESSAGE_START",
     ]);
+    // Every copy any window was sent, the step's and the end's as well as the first.
+    expect(told).not.toContain("unmarked call");
+
+    /*
+     * THE NEXT TURN IS HANDED THE THREAD WITHOUT IT, as without the other stamps (`forTheBot`) —
+     * and the thread still holds it after that turn has written itself.
+     */
+    const next = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("고마워")],
+      tools: null,
+    });
+    if (!next.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(next.turnId)) === "done");
+    expect(bot.inputs[1]?.some((message) => "lafFirstMove" in message)).toBe(
+      false,
+    );
+    expect(
+      (await messagesFor(database, threadId))
+        .filter((message) => isFirstMove(message))
+        .map(({ id }) => id),
+    ).toEqual([asking?.id]);
   });
 
   test("no move is the turn it always was", async () => {

@@ -27,7 +27,6 @@ import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
 import { carriedInstruction } from "../server/src/routines/run";
-import { firstMoveCallId } from "../shared/first-move";
 import {
   reminderBlock,
   routineRunLine,
@@ -1791,17 +1790,20 @@ function weatherFromTheAgency(): Scenario[] {
  *   is held to not making that move (`evals/first-move.ts`); this is what stands behind it.
  *
  * The thread is built exactly as the engine builds it: an empty assistant message carrying the
- * call with no argument, then the transport's own answer for the saved place.
+ * call with no argument and an ordinary call id, marked as the server's (`shared/first-move.ts`) —
+ * a mark the Bot service never sends on to the model — then the transport's own answer for the
+ * saved place.
  */
 function firstMoveThreads(): Scenario[] {
   const moved = (question: string): unknown[] => {
-    const callId = firstMoveCallId("0".repeat(32));
+    const callId = `call_${"0".repeat(32)}`;
     return [
       user(question),
       {
         id: "a_first_move",
         role: "assistant",
         content: "",
+        lafFirstMove: true,
         toolCalls: [
           {
             id: callId,

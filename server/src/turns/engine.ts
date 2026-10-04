@@ -18,7 +18,6 @@
  */
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
-import { firstMoveCallId } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
@@ -168,6 +167,7 @@ function forTheBot(message: Message): Message {
     lafAt: _at,
     lafAgentId: _by,
     lafRedacted: _redacted,
+    lafFirstMove: _moved,
     ...rest
   } = message as StoredMessage;
   return rest as Message;
@@ -507,12 +507,21 @@ export function createTurnEngine(options: TurnEngineOptions) {
             return null;
           })) ?? null;
       if (move && !signal.aborted) {
-        // Told from a call the Bot made by how its id begins, and by nothing else (`first-move.ts`).
-        const callId = firstMoveCallId(randomUUID());
-        const asking: Message = {
+        const callId = `call_${randomUUID().replaceAll("-", "")}`;
+        /*
+         * Told from a call the Bot made by its message's `lafFirstMove`, and by nothing else
+         * (`shared/first-move.ts`). ON THE TURN'S OWN COPY, not added on the way out: every window
+         * is sent the turn's messages from that copy — the frame below, each step's copies, the
+         * snapshot a window joining halfway is handed, the copies at the end — and the thread is
+         * written from it. Riding it, the mark reaches the Bot service with this turn's run, which
+         * builds what the model reads key by key (`agent-bot/src/transcript.ts`) and never sends it
+         * on; a later turn is handed the thread without it (`forTheBot`).
+         */
+        const asking: StoredMessage = {
           id: randomUUID(),
           role: "assistant",
           content: "",
+          lafFirstMove: true,
           toolCalls: [
             {
               id: callId,

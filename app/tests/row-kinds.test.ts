@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { firstMoveCallId } from "@shared/first-move";
+import type { FirstMoveMark } from "@shared/first-move";
 import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import {
   arrivedBelow,
@@ -54,13 +54,17 @@ const DATA = JSON.stringify({
   days: [{ date: "2026-10-04", when: "오늘", min: 18, max: 25 }],
 });
 
-/** The weather for home, fetched before the Bot was asked, and then put right by the Bot. */
-const MOVE = firstMoveCallId("2".repeat(32));
+/**
+ * The weather for home, fetched before the Bot was asked, and then put right by the Bot. An
+ * ordinary call id: what makes it the server's is the mark on its message (`@shared/first-move`).
+ */
+const MOVE = `call_${"2".repeat(32)}`;
 const moved: Message[] = [
   {
     id: "a-moved",
     role: "assistant",
     content: "",
+    lafFirstMove: true,
     toolCalls: [
       {
         id: MOVE,
@@ -142,6 +146,33 @@ describe("one conversation, every row", () => {
     expect(arrivedBelow(items, "q-weather", kinds)).toBe(7);
     const task = items.findIndex((item) => item.id === "call-nav");
     expect(isHandedToThePerson(items, task, kinds)).toBe(true);
+  });
+
+  /*
+   * A FIRST MOVE IS SAID ON ITS MESSAGE, AND READ FROM THE ROW. The call lives on the assistant
+   * message; the row it becomes is read without that message, so the mark rides onto the row — and
+   * only the mark decides: the same two calls without it are two places the Bot asked about.
+   */
+  test("a first move is known by the mark on its message, not by its id", () => {
+    const items = itemsOf(CONVERSATION.slice(0, 6));
+    expect(
+      items.flatMap((item) =>
+        item.kind === "tool" ? [[item.id, item.isFirstMove]] : [],
+      ),
+    ).toEqual([
+      [MOVE, true],
+      ["call-w", undefined],
+    ]);
+    const unmarked = CONVERSATION.slice(0, 6).map((message) => {
+      if (message.id !== "a-moved") return message;
+      const { lafFirstMove: _mark, ...rest } = message as Message &
+        FirstMoveMark;
+      return rest as Message;
+    });
+    expect(kindsOf(unmarked).slice(1, 3)).toEqual([
+      [MOVE, { kind: "card", card: "weather" }],
+      ["call-w", { kind: "card", card: "weather" }],
+    ]);
   });
 
   test("the weather card is drawn from its own entry", () => {

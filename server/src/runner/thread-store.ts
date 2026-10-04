@@ -23,6 +23,7 @@
  */
 import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
 import type { Database } from "../db/client";
 import { channelThreads, lafThreadMessages } from "../db/schema";
 import { storable } from "../db/schema/json";
@@ -41,17 +42,22 @@ import { redactSecretTyping } from "./secret-redaction";
  * `lafRedacted` says this row is not what arrived: a `computer_type` argument was taken out of it
  * because the boundary refused the typing as a secret. See `secret-redaction.ts`.
  *
+ * `lafFirstMove` says the call this assistant message carries was made by the server, as the
+ * turn's first move, and not by the Bot (`shared/first-move.ts`). Unlike the stamps, it is for the
+ * window too: the transcript reads it from the message (`turns/history.ts` leaves it on).
+ *
  * A room's messages also carried `lafRoomReceipts`, which members read one and how their part came
  * out. Rooms were removed on 2026-09-24 and migration 0047 deleted their rows and took the key off
  * any message still holding it.
  *
  * This is the ONLY definition. There were three (`StampedMessage` twice, `StoredMessage` once).
  */
-export type StoredMessage = Message & {
-  lafAt?: string;
-  lafAgentId?: string;
-  lafRedacted?: boolean;
-};
+export type StoredMessage = Message &
+  FirstMoveMark & {
+    lafAt?: string;
+    lafAgentId?: string;
+    lafRedacted?: boolean;
+  };
 
 /**
  * Anything that can run a statement: the pool, or a transaction already open around it.
@@ -163,6 +169,36 @@ export function attribute(
       (message as StoredMessage).lafAgentId ?? known.get(message.id);
     return existing ? { ...message, lafAgentId: existing } : { ...message };
   });
+}
+
+/** The messages a thread already holds as first moves, for the same reason `speakersOf` exists. */
+export function firstMovesOf(messages: readonly Message[]): Set<string> {
+  return new Set(
+    messages.filter((message) => isFirstMove(message)).map(({ id }) => id),
+  );
+}
+
+/**
+ * Keep the first-move mark on a message the thread holds as one, FIRST WRITER WINS — as `attribute`
+ * keeps a speaker.
+ *
+ * The mark is written once, by the turn that made the move (`turns/engine.ts`), and every copy that
+ * turn writes after carries it. A copy that comes back without it is an edit to the append, and the
+ * mark would go with it: a deployment that turns server-owned turns off goes back to the window's
+ * run (`laf-runner.ts`), which hands the whole history back through CopilotKit's message schemas,
+ * and they strip every key they do not know. The move would then read as a call the Bot made, and
+ * a move put right as two places asked about — two cards. Nothing takes a mark off.
+ */
+export function keepFirstMoves(
+  messages: readonly StoredMessage[],
+  known: ReadonlySet<string>,
+): StoredMessage[] {
+  if (known.size === 0) return [...messages];
+  return messages.map((message) =>
+    known.has(message.id) && !isFirstMove(message)
+      ? { ...message, lafFirstMove: true }
+      : message,
+  );
 }
 
 /**
@@ -340,6 +376,7 @@ export async function appendMessages(
     const heldMessages = [...stored.values()].map((row) => row.message);
     const known = stampsOf(heldMessages);
     const speakers = speakersOf(heldMessages);
+    const moves = firstMovesOf(heldMessages);
     /*
      * The credential comes out here, INSIDE the lock and before anything is written, so the row and
      * the list this function returns are the same object. Doing it in the callers instead would mean
@@ -347,9 +384,12 @@ export async function appendMessages(
      * the one nobody thought typed anything.
      */
     const merged = redactSecretTyping(
-      attribute(
-        stamp(relevant, known, new Set(stored.keys()), at.toISOString()),
-        speakers,
+      keepFirstMoves(
+        attribute(
+          stamp(relevant, known, new Set(stored.keys()), at.toISOString()),
+          speakers,
+        ),
+        moves,
       ),
       heldMessages,
     );
