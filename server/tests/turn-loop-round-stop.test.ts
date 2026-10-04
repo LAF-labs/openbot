@@ -538,8 +538,9 @@ describe("the rule's own reading", () => {
       ]);
     }
     /*
-     * What the window (`SERVER_TURNS=off`) and the eval hand a model straight from the mapping: no
-     * field of the loop's. Neither files through `forTheModel`, which is where the loop strips it.
+     * What the eval hands a model straight from the mapping — and the window did, while it carried
+     * the Bot's calls out: no field of the loop's. It does not file through `forTheModel`, which is
+     * where the loop strips it.
      */
     expect(
       computerReplyOutcome(200, {
