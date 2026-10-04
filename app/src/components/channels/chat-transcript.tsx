@@ -2,6 +2,7 @@ import type { Message } from "@ag-ui/core";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import type { AttachmentPart } from "@shared/attachments";
 import type { FeedQuotePart } from "@shared/feed";
+import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import { stepFailureOf } from "@shared/tools/step-result";
 import {
   IconAlertTriangle,
@@ -26,6 +27,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { BrowsingCard } from "@/components/computer/browsing-card";
+import { WeatherCard } from "@/components/weather/weather-card";
 import { FeedQuoteChip } from "@/components/feed/feed-quote-chip";
 import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -87,6 +89,7 @@ import {
   furthestSeen,
   isHandedToThePerson,
   isTaskUnfolded,
+  isWeatherCard,
   openBrowsingTask,
   openStepRuns,
   type StepRunPlace,
@@ -1397,6 +1400,27 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
    * (Codex on pull request 52). The same reader the service's own line uses (`stepFailureOf`).
    */
   const ended = result === undefined ? null : stepFailureOf(result);
+
+  /*
+   * THE WEATHER IS A CARD, DRAWN FROM THE CALL'S OWN ANSWER (`WeatherCard`). By the tool's name
+   * and by what came back, here and not through a registered renderer: a card of data is not a
+   * line of work, and it is owed wherever the call is in the record — after a reload, after the
+   * tool was taken back, in a window that never held it. An answer with no data in it (a refusal,
+   * a failure) is null there, and is drawn below as the step it was.
+   */
+  if (
+    name === WEATHER_TOOL_NAME &&
+    result !== undefined &&
+    isWeatherCard(result)
+  ) {
+    return (
+      <Arriving delay={delay}>
+        <ToolRenderBoundary name={name}>
+          <WeatherCard result={result} />
+        </ToolRenderBoundary>
+      </Arriving>
+    );
+  }
 
   return (
     <Arriving delay={delay}>
