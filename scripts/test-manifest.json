@@ -207,6 +207,7 @@
   "app/tests/routine-tool-edit.test.ts",
   "app/tests/routine-unread-pause.test.tsx",
   "app/tests/routines-copy.test.ts",
+  "app/tests/row-kinds.test.ts",
   "app/tests/sandboxed-refusal.test.tsx",
   "app/tests/screen-errors.test.ts",
   "app/tests/screen-panel.test.ts",
