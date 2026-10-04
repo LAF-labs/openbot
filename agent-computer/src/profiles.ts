@@ -42,10 +42,10 @@
  *   - Resetting is the whole computer's. `/computers/reset` empties the one profile every Bot uses,
  *     so it signs ALL of them out. `computer-routes.ts` and the app's words say so.
  *
- * WHAT DID NOT CHANGE. Each Bot still keeps its own TABS — `owners` below — because two Bots can act
- * at once (`server/src/runner/bot-lane.ts` queues per Bot, not per account) and sharing one tab would
- * put one Bot's click on the other's page and each one's snapshot stale under the other. Sharing
- * logins is the decision; sharing the thing being looked at is not.
+ * WHAT DID NOT CHANGE. Each Bot still keeps its own TABS — `owners` in tabs.ts — because two Bots
+ * can act at once (`server/src/runner/bot-lane.ts` queues per Bot, not per account) and sharing one
+ * tab would put one Bot's click on the other's page and each one's snapshot stale under the other.
+ * Sharing logins is the decision; sharing the thing being looked at is not.
  *
  * A profile is not a container. Two Bots in this process are isolated from each other's kernel,
  * filesystem or memory by nothing at all, and now from each other's cookies by nothing either.
@@ -77,7 +77,6 @@ import { LAUNCH_WAIT_MS, launchBrowser } from "./browser-launch";
 import { keepChildProcesses } from "./child-processes";
 import { deploymentEgress, deploymentEgressLabel } from "./egress";
 import { log } from "./log";
-import { titleOf } from "./page-text";
 import {
   DEFAULT_PROFILE_DIR,
   type ProfileAdoption,
@@ -86,12 +85,7 @@ import {
   sweepLocks,
   writePointer,
 } from "./profile-dir";
-import {
-  IDLE_CLOSE_MS,
-  IDLE_SWEEP_MS,
-  TabError,
-  type TabSummary,
-} from "./tabs";
+import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS } from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
 
@@ -235,17 +229,23 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    */
   let resetting: Promise<void> | null = null;
 
-  /**
-   * Which Bot each open tab belongs to.
-   *
-   * The cookie jar is shared and the tabs are not. Without this, one Bot's `/snapshot` would describe
-   * whatever page another Bot happened to open last, and `computer_switch_tab` would hand it the
-   * wheel of a tab it never opened.
-   */
-  const owners = new Map<Page, string>();
-
-  /** Each Bot's current tab, and when it last did anything. See IDLE_CLOSE_MS. */
-  const live = new Map<string, { page: Page; usedAt: number; since: string }>();
+  /** Which tab is whose. See tabs.ts. */
+  const {
+    owners,
+    live,
+    pagesOf,
+    own,
+    touch,
+    closeTabsOf,
+    adoptOpened,
+    tabs,
+    switchTab,
+  } = createTabs({
+    pages: () => shared?.context.pages() ?? [],
+    now,
+    // Read when a page arrives rather than now, as it always was.
+    onPage: (botId, page) => options.onPage?.(botId, page),
+  });
 
   const profileDirectory = (): string =>
     join(root, adoption?.directory ?? DEFAULT_PROFILE_DIR);
@@ -269,40 +269,6 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    * makes control looser — the one direction `restoredControl` exists to refuse.
    */
   const legacyStateDirectoryFor = (botId: string): string => join(root, botId);
-
-  /** This Bot's open tabs, in the browser's own order. */
-  const pagesOf = (botId: string): Page[] =>
-    (shared?.context.pages() ?? []).filter(
-      (page) => !page.isClosed() && owners.get(page) === botId,
-    );
-
-  /** Mark a tab as this Bot's, and stop saying so once it is closed. */
-  const own = (botId: string, page: Page): void => {
-    owners.set(page, botId);
-    page.once("close", () => {
-      if (owners.get(page) === botId) owners.delete(page);
-    });
-  };
-
-  /** Note that this Bot has a tab, without moving `since` if it already had one. */
-  const touch = (botId: string, page: Page): Page => {
-    const existing = live.get(botId);
-    live.set(botId, {
-      page,
-      usedAt: now(),
-      since: existing?.since ?? new Date().toISOString(),
-    });
-    return page;
-  };
-
-  /** Close this Bot's tabs and forget it is here. Says whether it had any. */
-  const closeTabsOf = async (botId: string): Promise<boolean> => {
-    const pages = pagesOf(botId);
-    live.delete(botId);
-    for (const page of pages) owners.delete(page);
-    await Promise.all(pages.map((page) => page.close().catch(() => undefined)));
-    return pages.length > 0;
-  };
 
   /** Close the browser itself, and make the wait for it visible to anything that wants to launch. */
   const closeBrowser = (): Promise<void> => {
@@ -396,34 +362,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         timeZone,
         geolocation,
       };
-      /*
-       * A TAB A SITE OPENED BELONGS TO THE BOT WHOSE CLICK OPENED IT.
-       *
-       * 네이버 opens half its links with `target=_blank`. Without this the Bot clicked, the page it
-       * asked for opened in a tab nothing here held a handle to, and both the Bot and the person
-       * watching the screencast went on looking at the page they had left — the click "worked" and
-       * nothing about the answer was true. Adopting the newest page is what a person does: the tab
-       * that just opened is the one they are looking at.
-       *
-       * WHOSE it is now has to be worked out rather than assumed, because the browser is everyone's.
-       * `opener()` is the browser's own answer to "which page opened this one", so the new tab lands
-       * with the Bot that clicked the link and in nobody else's list. A tab we opened ourselves has
-       * already been claimed by the time this resolves, and is left alone.
-       */
-      context.on("page", (opened) => {
-        void (async () => {
-          if (owners.has(opened)) return;
-          const opener = await opened.opener().catch(() => null);
-          if (owners.has(opened)) return;
-          const botOf = opener ? owners.get(opener) : undefined;
-          // Not ours to hand to anybody: a tab with no opener we did not open. Left unowned rather
-          // than guessed at — a page in the wrong Bot's list is a click landing on a stranger's page.
-          if (!botOf) return;
-          own(botOf, opened);
-          touch(botOf, opened);
-          options.onPage?.(botOf, opened);
-        })();
-      });
+      // A tab a site opens goes to the Bot whose click opened it (tabs.ts, `adoptOpened`).
+      context.on("page", adoptOpened);
       if (adoption.adoptedFrom && !adoptionTold) {
         adoptionTold = true;
         log.info("profile_adopted", {
@@ -494,46 +434,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     /** Where it used to go, for reading only. See the comment on the definition. */
     legacyStateDirectoryFor,
 
-    /**
-     * Every tab this Bot has open, in the browser's own order.
-     *
-     * Reported on every snapshot rather than only when asked: a Bot that cannot see that a second
-     * tab exists cannot decide to go to it, and the tab a click opened is usually the one holding
-     * the answer. Another Bot's tabs are not in this list — they are on the same browser, not in
-     * this Bot's hands.
-     */
-    async tabs(botId: string): Promise<TabSummary[]> {
-      const running = live.get(botId);
-      if (!running) return [];
-      return Promise.all(
-        pagesOf(botId).map(async (page, index) => ({
-          index,
-          // A page that navigates while we are describing it costs its title, not the list — and a
-          // tab between documents has none, never Playwright's `Loading <address>` (see `titleOf`).
-          title: await titleOf(page),
-          url: page.url(),
-          active: page === running.page,
-        })),
-      );
-    },
-
-    /** Move the Bot to one of them. Refuses an index that names nothing rather than picking one. */
-    async switchTab(botId: string, index: number): Promise<TabSummary[]> {
-      const running = live.get(botId);
-      if (!running) {
-        throw new TabError("laf:tab_missing");
-      }
-      const wanted = pagesOf(botId)[index];
-      if (!wanted) {
-        throw new TabError("laf:tab_missing");
-      }
-      running.page = wanted;
-      running.usedAt = now();
-      // Chromium keeps rendering a background tab differently — animations pause, some lazy content
-      // never loads — so the tab the Bot is on is brought to the front as a person's would be.
-      await wanted.bringToFront().catch(() => undefined);
-      return profiles.tabs(botId);
-    },
+    /** Every tab this Bot has open, and moving it to one of them. See tabs.ts. */
+    tabs,
+    switchTab,
 
     /**
      * Close the tabs nobody has used for a while, and the browser once nobody has any.
