@@ -155,11 +155,26 @@ export function weatherPlacesAsked(calls: readonly ObservedCall[]): string[] {
  * three figures in the middle one and up to six; the twelve of these scenarios after it ran 17 to
  * 47, with no figure or the one that was asked for.
  *
- * One figure is allowed: "최고 몇 도까지 올라가?" is answered with it.
+ * WHAT IT HOLDS AN ANSWER TO, each a way the long answer comes back:
+ *  - one sentence — a second one is where the recital starts ("…비가 옵니다. 자세한 예보는
+ *    …"), and so is a second line;
+ *  - at most one figure: "최고 몇 도까지 올라가?" is answered with it;
+ *  - no word of where the data is from: the card names 기상청, and the rule says not to again.
+ * The first cut counted characters and figures only, and "오늘은 흐리고 비가 옵니다. 자세한 예보는
+ * 기상청 자료입니다." passed it — two sentences and the source, under a check that says "one
+ * sentence" in its own failure line (Codex on pull request 62).
  */
 export function leavesItToTheCard(text: string): boolean {
-  const figures = text.match(/(?<![\d.])\d+(?:\.\d+)?\s?(?:도|℃|°)/g) ?? [];
-  return text.trim().length <= 80 && figures.length <= 1;
+  const said = text.trim();
+  if (said.length === 0 || said.length > 80) return false;
+  // A sentence ends at its mark where more follows it. "17.3도" has no space after its point.
+  const sentences = said
+    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .filter((part) => part.trim().length > 0);
+  const figures = said.match(/(?<![\d.])\d+(?:\.\d+)?\s?(?:도|℃|°)/g) ?? [];
+  return (
+    sentences.length === 1 && figures.length <= 1 && !/출처|기상청/.test(said)
+  );
 }
 
 /** Whether a temperature was said as one: "31도", "31℃", "31°", "31 °C". A bare 31 is a date. */
