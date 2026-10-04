@@ -895,13 +895,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * half answer's notice, 다시 시도, words the server never got, an answer's rating — were moved onto
  * the turns the server owns, in their own files, and count as before.
  *
+ * RAISED 2026-10-05 by two in `app`, with the row for a code a mail held reading its own Bot: it
+ * asks for the Bot the conversation names now and not the one its renderer was registered for, and
+ * for nobody before a conversation has named one.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3507, roots: ["server"] },
-  { name: "app", floor: 2015, roots: ["app"] },
+  { name: "app", floor: 2017, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
 ] as const;
