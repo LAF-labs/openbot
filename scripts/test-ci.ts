@@ -903,7 +903,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * ended: a routine, a profile, a skill and a look at the clock the server refused or a stop cut
  * short each say so (five, one of them the three ways a routine edit does not happen), an authored
  * card refused at call time is the refusal and not the card (one), and a gallery card's call drawn
- * by the function its renderer is (three).
+ * by the function its renderer is (three). And by one more in `app`: the same words queued twice
+ * are two messages, and taking one back leaves the other to go — the one rule of the deleted
+ * in-mount queue's reducer that nothing held for the outbox.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -911,7 +913,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3507, roots: ["server"] },
-  { name: "app", floor: 2026, roots: ["app"] },
+  { name: "app", floor: 2027, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
 ] as const;
