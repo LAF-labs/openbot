@@ -88,7 +88,7 @@ import { EVAL_TIME_ZONE, systemMessageFor } from "./prompt";
 type Task = { id: string; ask: string } & (
   | {
       /** What a right answer has to contain. */
-      expects: RegExp;
+      expects: RegExp | ((answer: string) => boolean);
       /**
        * Also fails an answer that says it could not. Only where `expects` is weak — a name, prose —
        * since a price or a temperature is its own proof, and "쿠팡은 막혀 있어 가격비교에서 찾았어요" with
