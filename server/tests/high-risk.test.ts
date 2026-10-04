@@ -440,6 +440,17 @@ describe("what the judge is shown", () => {
       facts({ element: { role: "button", name: "결 과 보기" } }),
     );
     expect(unrelated.hard).toEqual([]);
+    // A confirming press on a money site, spelled apart, is still the deterministic hard signal
+    // (review, round 5) — not the soft one a model may clear.
+    const confirming = highRiskSignals(
+      facts({
+        element: { role: "button", name: "확 인" },
+        host: "pay.naver.com",
+        path: "/somewhere",
+        secretHere: true,
+      }),
+    );
+    expect(confirming.hard).toEqual(["money_site_confirm"]);
   });
 
   test("the deterministic reading names its signals", () => {
