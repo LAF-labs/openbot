@@ -55,6 +55,8 @@ export type BrowsingNow = {
 };
 
 export const LINGER_MS = 2_500;
+/** `LINGER_MS`, always, in the app; a test of the linger sets it short (`setLingerFor`). */
+let lingerMs = LINGER_MS;
 
 const EMPTY: ReadonlySet<string> = new Set();
 
@@ -104,7 +106,7 @@ export function publishOpenTask(task: OpenTask | null): void {
   lingerTimer = setTimeout(() => {
     lingerTimer = undefined;
     set({ ...state, isLingering: false });
-  }, LINGER_MS);
+  }, lingerMs);
 }
 
 /** The banner, put away for this task. The next task has a banner of its own. */
@@ -117,6 +119,14 @@ export function dismissTask(taskId: string): void {
 export function markPageGone(botId: string): void {
   if (state.pageGoneFor === botId) return;
   set({ ...state, pageGoneFor: botId });
+}
+
+/**
+ * Test seam: how long the mark lingers, and back to `LINGER_MS` with no argument. The test of the
+ * linger waited it out on the real clock, 2.5 s of the app suite for one assertion.
+ */
+export function setLingerFor(ms: number = LINGER_MS): void {
+  lingerMs = ms;
 }
 
 /** Test seam: back to a tab that has seen nothing. */

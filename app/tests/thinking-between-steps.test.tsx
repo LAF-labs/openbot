@@ -42,20 +42,36 @@ beforeAll(async () => {
       happyDOM: { setWindowSize(size: { width: number }): void };
     }
   ).happyDOM.setWindowSize({ width: 375 });
+  (await import("../src/lib/use-lasting")).setLastingScale(SCALE);
 }, APP_DOM_TIMEOUT_MS);
 afterEach(async () => {
   await unmountApps();
 });
 setDefaultTimeout(30_000);
 afterAll(async () => {
+  // Back to the waits as written, for every file after this one.
+  (await import("../src/lib/use-lasting")).setLastingScale();
   removeTurnStreams();
   await removeAppDom();
 });
 
-/** Longer than the transcript waits before it says so (`BETWEEN_STEPS_MS`, 1200). */
-const LONG_ENOUGH_MS = 1500;
+/*
+ * THE WAIT IS THE PRODUCT'S, AND ITS CLOCK IS RUN AT A THIRD HERE (`setLastingScale`): every wait
+ * below is the one this file was written with, divided by three, and so is the transcript's — 400 ms
+ * for its 1200. The file waited out 15 s of real time before (measured 2026-10-04).
+ *
+ * Each "said" and "not said past the wait" is decided by the order two timers fire in, not by how
+ * fast the machine is: the transcript's timer is set as the write lands, before the test's look
+ * begins, and fires first when its deadline is earlier. Only a "not yet" leans on a margin — the
+ * look must end before the transcript's deadline — and at a third that margin is 233 ms (167 ms
+ * against 400) where it was 700, which a stall between two consecutive awaits would have to outlast.
+ */
+const SCALE = 1 / 3;
+const scaled = (ms: number) => Math.round(ms * SCALE);
+/** Longer than the transcript waits before it says so (`BETWEEN_STEPS_MS`, 1200, scaled). */
+const LONG_ENOUGH_MS = scaled(1500);
 /** Shorter: two steps that follow each other within the second say nothing between them. */
-const NOT_YET_MS = 500;
+const NOT_YET_MS = scaled(500);
 
 const ASKED: Message = {
   id: "q-asked",
@@ -237,7 +253,7 @@ describe("a turn that is going, with the Bot's words as its last row", () => {
     // A burst every few hundred milliseconds: never still for long enough.
     for (const text of ["찾아", "찾아볼", "찾아볼게", "찾아볼게요."]) {
       await writes([saying(text)]);
-      await view.settle(400);
+      await view.settle(scaled(400));
       expect(isThinking(view.host)).toBe(false);
     }
     // Then nothing more arrives and the turn goes on: the Bot is deciding what to do next.

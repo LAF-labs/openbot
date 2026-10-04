@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
 
 /**
+ * How long every wait here is, as a share of what its caller asked for: 1, always, in the app.
+ *
+ * A TEST SEAM, and only that. The waits are the product's and stay where they are written — the
+ * thinking line's 1.2 s between steps in `chat-transcript.tsx`, the queued line's 2 s in
+ * `server-channel-chat.tsx` — but a test of them waited them out on the real clock, several times
+ * a test: the two files that do took 23 s of the app suite (measured 2026-10-04). Scaled, a test
+ * keeps every proportion it asserts — "not yet" at a fraction of the wait, "said" once it has
+ * passed — in a fraction of the time. Read when the timer is set, never while rendering.
+ */
+let lastingScale = 1;
+
+/** Test seam: scale every lasting wait; with no argument, back to the waits as written. */
+export function setLastingScale(scale = 1): void {
+  lastingScale = scale;
+}
+
+/**
  * Whether something has lasted long enough to be worth saying.
  *
  * `what` names the thing that is going on — a turn's id while it waits for the Bot — or is null
@@ -20,7 +37,7 @@ export function useLasting(what: string | null, afterMs: number): boolean {
   const [lasted, setLasted] = useState<string | null>(null);
   useEffect(() => {
     if (what === null) return;
-    const timer = setTimeout(() => setLasted(what), afterMs);
+    const timer = setTimeout(() => setLasted(what), afterMs * lastingScale);
     return () => {
       clearTimeout(timer);
       setLasted(null);

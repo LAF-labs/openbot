@@ -50,12 +50,13 @@ async function drawn(markdown: string, arriving = false) {
     { id: "u-1", role: "user", content: "물어본 것" },
     { id: "a-1", role: "assistant", content: markdown },
   ];
+  // Read once `mount` has rendered and settled, with no longer wait: see `drawn` in
+  // `copied-reply.test.tsx`, measured over every answer in both files.
   const view = await mount(
     <QueryClientProvider client={new QueryClient()}>
       <ChatTranscript busy={arriving} messages={messages} />
     </QueryClientProvider>,
   );
-  await view.settle(120);
   const body = [
     ...view.host.querySelectorAll('[data-slot="bubble-content"]'),
   ].at(-1);

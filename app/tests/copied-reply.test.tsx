@@ -62,12 +62,17 @@ async function drawn(markdown: string) {
     { id: "u-1", role: "user", content: "물어본 것" },
     { id: "a-1", role: "assistant", content: markdown },
   ];
+  /*
+   * DRAWN WHOLE BY THE TIME `mount` HAS SETTLED. Measured 2026-10-04 over every answer in this file
+   * and in `markdown-tilde.test.tsx`: the bubble read the same once `mount` had rendered and settled
+   * as it did 120 ms later, where this used to wait. What still moves after that is the row's
+   * arrival motion — opacity and a few pixels, outside the bubble.
+   */
   const view = await mount(
     <QueryClientProvider client={new QueryClient()}>
       <ChatTranscript busy={false} messages={messages} />
     </QueryClientProvider>,
   );
-  await view.settle(120);
   const body = [
     ...view.host.querySelectorAll('[data-slot="bubble-content"]'),
   ].at(-1);
@@ -422,14 +427,19 @@ describe("the words, read off what was drawn", () => {
       `<a href="https://e.test/">x</a><img src="https://e.test/i.png" alt="x">`,
     ];
     for (const tag of EVERY_HTML_ELEMENT) {
-      const view = await mount(
+      /*
+       * Read the moment the render's `act` returns, with no wait after it. Measured 2026-10-04 for
+       * each of these 119 tags: the host's whole HTML was the same then as after the 35 ms this
+       * used to wait, and as after 235 ms — and the walk took 0.5 s instead of 6.
+       */
+      const view = await mount();
+      await view.render(
         <div data-drawn="">
           <Streamdown components={markdownComponents} plugins={markdownPlugins}>
             {places(tag).join("\n\n")}
           </Streamdown>
         </div>,
       );
-      await view.settle(5);
       for (const element of view.host.querySelectorAll("[data-drawn] *")) {
         // The renderer's own controls are taken off before anything is read.
         if (element.closest(NOT_THE_ANSWER)) continue;
