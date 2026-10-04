@@ -89,8 +89,19 @@ export type ReadResult = Omit<NavigateResult, "elapsedMs"> & {
   fromMissing?: true;
 };
 
+/**
+ * A look the Bot's own loop takes — a turn's or a routine's — whose answer its model reads.
+ *
+ * Said only there. Every other caller's look is a person's, and the computer does not count it as
+ * the Bot having seen its tab (`shared/bots-look.ts`).
+ */
+export type BotsLook = { botsLook?: true };
+
+/** What a turn and a routine hand each look they take: the two places a Bot's own loop runs. */
+export const BOTS_OWN_LOOK = { botsLook: true } as const satisfies BotsLook;
+
 /** How to read: the whole page rather than its article, and from which words on. */
-export type ReadOptions = { whole?: boolean; from?: string };
+export type ReadOptions = { whole?: boolean; from?: string } & BotsLook;
 
 /**
  * One thing on the page a Bot can act on.

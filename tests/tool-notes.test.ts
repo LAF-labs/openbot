@@ -90,6 +90,27 @@ describe("putting a fact into words", () => {
     expect(said?.[0]).toContain("downloads/정산내역.csv");
   });
 
+  test("a tab that went from under the Bot carries the site it was showing, and only the site", () => {
+    const said = noteTexts([
+      {
+        code: "laf:tab_replaced",
+        cause: "closed",
+        origin: "https://nid.naver.com",
+      },
+    ]);
+    expect(said).toEqual([
+      `${toolResultText("laf:tab_replaced")} (https://nid.naver.com)`,
+    ]);
+    // The model was told to reopen "that address" and had never been given one. It has the site
+    // now — and is not told to reopen a sign-in window that closed because it was finished.
+    expect(said?.[0]).not.toContain("computer_navigate");
+    expect(said?.[0]).toContain("로그인 창");
+    // An origin on any other fact is not appended: its sentence does not speak of a site.
+    expect(
+      noteTexts([{ code: "laf:page_loading", origin: "https://slow.example" }]),
+    ).toEqual([toolResultText("laf:page_loading")]);
+  });
+
   test("a code with nothing to add is just its sentence", () => {
     expect(noteTexts([{ code: "laf:secret_request_lost" }])).toEqual([
       toolResultText("laf:secret_request_lost"),

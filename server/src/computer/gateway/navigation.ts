@@ -9,7 +9,7 @@
  */
 import { siteForUrl } from "../../../../shared/sites/catalogue";
 import { type ComputerClient, NavigationRefusedError } from "../client";
-import type { NavigateResult } from "../schema";
+import type { BotsLook, NavigateResult } from "../schema";
 import { hostOf } from "./addresses";
 import type { ActionActor } from "./caller";
 import type { Govern } from "./govern";
@@ -142,6 +142,11 @@ export function createNavigation(deps: {
      * pass an approval id are untouched; nothing passed the signal here before.
      */
     signal?: AbortSignal,
+    /**
+     * Whose look the opened page is: the Bot's, when its own loop asks (`BotsLook`). Last, and
+     * a person's unless said — the app opens a site's page for a person through this same call.
+     */
+    look: BotsLook = {},
   ) {
     // The person's Stop travels with every hop, like the answer they gave.
     const presented = {
@@ -164,6 +169,7 @@ export function createNavigation(deps: {
           as(botId).navigate(target, signal, {
             holdAtNewHost: true,
             ...(sentReferer ? { referer: sentReferer } : {}),
+            ...(look.botsLook ? { botsLook: true } : {}),
           }),
       );
       const onward = result.redirect;

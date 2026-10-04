@@ -387,6 +387,10 @@ describe("a computer call, answered as the window answered it", () => {
     const lostUnder = async (
       name: "computer_request_help" | "computer_request_secret",
       args: Record<string, unknown>,
+      /** How the computer ends the ask: its tab went, unless the test says otherwise. */
+      end: (control: ReturnType<typeof createControl>) => void = (control) => {
+        expect(control.tabLost()).toBe(true);
+      },
     ) => {
       const control = createControl();
       const gateway = {
@@ -411,7 +415,7 @@ describe("a computer call, answered as the window answered it", () => {
       })(context, [tool(name)]);
       const waiting = toolkit.execute(name, args, call(`${name}-tab-lost`));
       await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(control.tabLost()).toBe(true);
+      end(control);
       return waiting;
     };
 
@@ -438,6 +442,76 @@ describe("a computer call, answered as the window answered it", () => {
         result: toolResultText("laf:secret_not_entered"),
       });
     });
+
+    /*
+     * A person typed it and the computer could not put it in the field — the box had left the
+     * page. The computer closes that ask too, and until 2026-10-05 closed it as it closes one that
+     * was answered: this said `laf:secret_entered`, and the Bot pressed the button under an empty
+     * box.
+     */
+    test("a value that could not be put in its field is not a value that was entered", async () => {
+      expect(
+        await lostUnder(
+          "computer_request_secret",
+          { label: "인증번호", ref: "e12", snapshotId: 4 },
+          (control) => control.secretNotSupplied(),
+        ),
+      ).toEqual({
+        ok: true,
+        code: "laf:secret_not_entered",
+        result: toolResultText("laf:secret_not_entered"),
+      });
+    });
+  });
+
+  /*
+   * WHOSE LOOK A LOOK IS. The computer lets a Bot act again, after the tab it was on went from
+   * under it, once the Bot has looked — and the app looks at the same page for a person, through
+   * the same gateway (`site-routes.ts`, the `/api/computers` routes). So the two places a Bot's
+   * own loop runs say that their looks are the Bot's (`BOTS_OWN_LOOK`), and nobody else's count.
+   */
+  test("the turn's own read, snapshot and opened page are said to be the Bot's look", async () => {
+    const looks: [string, unknown][] = [];
+    const page = {
+      title: "예시",
+      url: "https://example.com/",
+      text: "본문",
+      truncated: false,
+    };
+    const gateway = {
+      read: async (_bot: string, options?: { botsLook?: true }) => {
+        looks.push(["read", options?.botsLook]);
+        return page;
+      },
+      snapshot: async (_computer: string, caller?: { botsLook?: true }) => {
+        looks.push(["snapshot", caller?.botsLook]);
+        return { ...page, snapshotId: 1, elements: [], tabs: [] };
+      },
+      navigate: async (...asked: unknown[]) => {
+        looks.push(["navigate", (asked[6] as { botsLook?: true })?.botsLook]);
+        return page;
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+    })(context, [
+      tool("computer_read"),
+      tool("computer_snapshot"),
+      tool("computer_navigate"),
+    ]);
+    await toolkit.execute("computer_read", {}, call("look-1"));
+    await toolkit.execute("computer_snapshot", {}, call("look-2"));
+    await toolkit.execute(
+      "computer_navigate",
+      { url: "https://example.com" },
+      call("look-3"),
+    );
+    expect(looks).toEqual([
+      ["read", true],
+      ["snapshot", true],
+      ["navigate", true],
+    ]);
   });
 });
 

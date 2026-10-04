@@ -37,7 +37,7 @@ import {
   ActionRefusedError,
   type ComputerGateway,
 } from "../computer/gateway";
-import { readFileInputOf } from "../computer/schema";
+import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import {
   PluginNeedsApprovalError,
@@ -447,6 +447,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   String(args.url ?? ""),
                   approvalId,
                   signal,
+                  BOTS_OWN_LOOK,
                 ),
               ),
             };
@@ -459,6 +460,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                   ...(typeof args.from === "string" && args.from.trim()
                     ? { from: args.from.trim() }
                     : {}),
+                  ...BOTS_OWN_LOOK,
                 }),
               ),
             };
@@ -466,7 +468,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             return {
               ok: true,
               ...snapshotForModel(
-                withNotes(await gateway.snapshot(botId, { botId, actor })),
+                withNotes(
+                  await gateway.snapshot(botId, {
+                    botId,
+                    actor,
+                    ...BOTS_OWN_LOOK,
+                  }),
+                ),
               ),
             };
           case "computer_switch_tab": {

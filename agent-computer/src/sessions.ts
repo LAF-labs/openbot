@@ -19,6 +19,7 @@ import {
 import { log } from "./log";
 import type { Navigating } from "./navigation";
 import type { Screencast } from "./screencast";
+import type { TabLost } from "./tabs";
 
 /**
  * Something the browser noticed that nothing asked it about.
@@ -75,6 +76,13 @@ export type BotSession = {
    */
   tabsLost: number;
   tabsSeen: number;
+  /** The last of those losses: how the tab went, and the site it was showing. Said by the look. */
+  lostTab?: TabLost;
+  /**
+   * The tab the value the Bot is waiting for was asked on. A person's value goes into that tab or
+   * into none (`control-routes.ts`): a ref is a name within one tab's own last look.
+   */
+  secretTab?: Page;
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**

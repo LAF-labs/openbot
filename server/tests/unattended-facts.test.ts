@@ -68,6 +68,47 @@ function agentCalling(name: string, rawArguments: string): LoopAgent {
   return agent as unknown as LoopAgent;
 }
 
+describe("a routine's looks at the page", () => {
+  /*
+   * The computer counts a look as the Bot's — the one that lets it act again after its tab went
+   * from under it — only where the Bot's own loop says so (`shared/bots-look.ts`). A routine is one
+   * of the two places that loop runs; a look it did not mark would be a person's, and a routine
+   * whose sign-in window had closed itself could never act again.
+   */
+  test("are said to be the Bot's own", async () => {
+    const looks: [string, unknown][] = [];
+    const page = {
+      title: "예시",
+      url: "https://example.com/",
+      text: "본문",
+      truncated: false,
+    };
+    const gateway = {
+      read: async (_bot: string, options?: { botsLook?: true }) => {
+        looks.push(["read", options?.botsLook]);
+        return page;
+      },
+      snapshot: async (_computer: string, caller?: { botsLook?: true }) => {
+        looks.push(["snapshot", caller?.botsLook]);
+        return { ...page, snapshotId: 1, elements: [], tabs: [] };
+      },
+      navigate: async (...asked: unknown[]) => {
+        looks.push(["navigate", (asked[6] as { botsLook?: true })?.botsLook]);
+        return page;
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
+    await toolkit.execute("computer_read", {});
+    await toolkit.execute("computer_snapshot", {});
+    await toolkit.execute("computer_navigate", { url: "https://example.com" });
+    expect(looks).toEqual([
+      ["read", true],
+      ["snapshot", true],
+      ["navigate", true],
+    ]);
+  });
+});
+
 describe("what the executor refuses on its own", () => {
   test("arguments that are not what the tool takes", async () => {
     const toolkit = await createUnattendedTools({ gateway: UNTOUCHED })(

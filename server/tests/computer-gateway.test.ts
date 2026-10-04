@@ -13,6 +13,7 @@ import {
 } from "../src/computer/approvals";
 import {
   type ComputerClient,
+  ElementNotFoundError,
   StaleSnapshotError,
 } from "../src/computer/client";
 import {
@@ -1834,6 +1835,44 @@ describe("what a snapshot carries into this process", () => {
     // Supplying it clears the target, so a stale one cannot describe a later request.
     await gateway.supplySecret("default", "bot-1", ACTOR, "hunter2");
     expect((await gateway.control("default")).secretInto).toBeUndefined();
+  });
+
+  test("a value the computer could not put in its field is not written down as supplied", async () => {
+    /*
+     * The box left the page between the ask and the person's answer, and the computer refuses the
+     * value (`laf:element_not_actionable`). The trail must not say a value was supplied — and
+     * what the Bot went on to do next must not be judged as done on a site a secret was typed
+     * into (`suppliedOn`). The Bot is told the same by its wait (`chat-tools.test.ts`).
+     */
+    const { client, calls } = scriptedClient(LOGIN);
+    (client as unknown as { supplySecret: () => Promise<never> }).supplySecret =
+      async () => {
+        calls.push("supplySecret");
+        throw new ElementNotFoundError("laf:element_not_actionable");
+      };
+    const { store, rows } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+    });
+    await gateway.snapshot("default");
+    await gateway.requestSecret("default", "bot-1", ACTOR, {
+      label: "네이버 비밀번호",
+      ref: "e2",
+      snapshotId: 3,
+    });
+
+    const failure = await gateway
+      .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+      .catch((caught: unknown) => caught);
+
+    expect(failure).toBeInstanceOf(ElementNotFoundError);
+    expect(calls).toEqual(["requestSecret", "supplySecret"]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.secret_requested",
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("hunter2-NOT-TYPED");
   });
 
   test("a ref that is a button, or nothing, is refused with a row and reaches no computer", async () => {

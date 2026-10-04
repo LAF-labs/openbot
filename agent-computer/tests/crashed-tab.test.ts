@@ -13,13 +13,19 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Page } from "playwright";
+import { BOTS_LOOK, LOOK_HEADER, PERSONS_LOOK } from "../../shared/bots-look";
+import { askOutcome } from "../../shared/person-wait";
 import { decodeScreenFrame } from "../../shared/screen-frame";
 import type { Computer } from "../src/computer";
 import { readConfig } from "../src/config";
 import { createEgressGuard } from "../src/egress-guard";
 import { liveScreen, type StreamData } from "../src/live-screen";
 import { log } from "../src/log";
-import { diedUnder } from "../src/navigation";
+import {
+  diedUnder,
+  heldForJudgement,
+  navigationRefused,
+} from "../src/navigation";
 import { guardNavigations } from "../src/navigation-guard";
 import { watchPage } from "../src/page-watch";
 import { createProfiles } from "../src/profiles";
@@ -91,8 +97,12 @@ function serveUnfinished() {
     port: 0,
     hostname: "127.0.0.1",
     idleTimeout: 0,
-    fetch: () =>
-      new Response(
+    fetch: (request) => {
+      // And one way out of it to another host, for a hop the gateway would be handed to judge.
+      const asked = new URL(request.url);
+      const to = asked.searchParams.get("to");
+      if (asked.pathname === "/to" && to) return Response.redirect(to, 302);
+      return new Response(
         new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(
@@ -103,7 +113,8 @@ function serveUnfinished() {
           },
         }),
         { headers: { "content-type": "text/html; charset=utf-8" } },
-      ),
+      );
+    },
   });
   return {
     url: `http://127.0.0.1:${server.port}/`,
@@ -116,6 +127,8 @@ async function startComputer(): Promise<Running> {
   const config = readConfig({
     COMPUTER_TOKEN: TOKEN,
     NAVIGATION_TIMEOUT_MS: String(NAVIGATION_TIMEOUT_MS),
+    // Short: one test types into a box that has left the page, and waits this long to be told.
+    ACTION_TIMEOUT_MS: "2000",
     // The fixture is on 127.0.0.1, and a laptop has no host holding the egress rules.
     AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
     AGENT_COMPUTER_EGRESS_FIREWALL: "off",
@@ -136,15 +149,26 @@ async function startComputer(): Promise<Running> {
       watchPage(sessions.sessionFor(botId), botId, page, workspace),
     onTabLost: (botId, lost) =>
       tabLost(sessions.sessionFor(botId), botId, lost),
-    // The guard itself, on every request the browser makes. Whose hop it stopped is `index.ts`'s
-    // to work out, and nothing here is refused or held.
+    // The guard itself, on every request the browser makes. Whose hop it stopped is worked out
+    // the first of the three ways `index.ts` does — the Bot whose `/navigate` is driving that
+    // frame — which is all a hop of a navigation in flight needs.
     onContext: async (context) => {
       await guardNavigations(context, {
         allowPrivateHosts: config.allowPrivateHosts,
         ownAddresses: config.ownAddresses,
         behindProxy: false,
-        onRefused: () => undefined,
-        holds: () => false,
+        onRefused: (hop, refusal) => {
+          const botId = sessions.botNavigating(hop.frameId);
+          if (botId) {
+            navigationRefused(sessions.sessionFor(botId), botId, hop, refusal);
+          }
+        },
+        holds: (hop) => {
+          const botId = sessions.botNavigating(hop.frameId);
+          return botId
+            ? heldForJudgement(sessions.existing(botId)?.navigating, hop)
+            : false;
+        },
       });
     },
   });
@@ -185,6 +209,8 @@ async function call(
   path: string,
   bot: string,
   payload?: unknown,
+  /** Whose look it is, as the server says it on a read, a snapshot and a page opened. */
+  look?: typeof BOTS_LOOK | typeof PERSONS_LOOK,
 ): Promise<Answer> {
   const response = await fetch(`${computer?.url}${path}`, {
     method,
@@ -193,6 +219,7 @@ async function call(
       "content-type": "application/json",
       "x-openbot-computer-token": TOKEN,
       "x-openbot-bot-id": bot,
+      ...(look ? { [LOOK_HEADER]: look } : {}),
     },
   });
   const text = await response.text();
@@ -1055,6 +1082,246 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
       }
       expect(await tabOf(bot)).toBe(there.behind);
     }, 60_000);
+
+    /*
+     * WHOSE LOOK. The app reads the Bot's page for a person — 다 했어요 on a site hand-off asks
+     * whether they are signed in — and opens a site's page for them, through the same two calls a
+     * Bot looks with. On `a2824212` either one counted as the Bot having seen its tab and carried
+     * the fact off in an answer the server throws away: after a sign-in window closed itself, the
+     * person's 다 했어요 let the Bot's next Enter through, on the page behind.
+     */
+    test("that its site closed is not seen by the Bot because a person's screen read the page or opened one, and the fact waits for the Bot's own look", async () => {
+      const bot = "lost-persons-look-bot";
+      const there = await onAPopup(bot, "", "주문 상세 보기");
+      await there.popup.evaluate(() => window.close()).catch(() => undefined);
+      expect(await until(() => there.popup.isClosed())).toBe(true);
+
+      // As the server makes them for a person: the check after 다 했어요, and the page a hand-off opens.
+      for (const [method, path, payload] of [
+        ["GET", "/read?whole=1", undefined],
+        ["POST", "/snapshot", {}],
+        ["POST", "/navigate", { url: fixture?.url }],
+      ] as const) {
+        const theirs = await call(method, path, bot, payload, PERSONS_LOOK);
+        expect({ path, status: theirs.status }).toEqual({ path, status: 200 });
+        expect({ path, notes: theirs.body.notes }).toEqual({
+          path,
+          notes: undefined,
+        });
+        const key = await post("/key", bot, { key: "Enter" });
+        expect({ path, code: key.body.code }).toEqual({
+          path,
+          code: "laf:stale_refs",
+        });
+      }
+
+      // The Bot's own, as a turn or a routine makes it: told once, and acting again.
+      const own = await call("GET", "/read", bot, undefined, BOTS_LOOK);
+      expect(own.body.notes).toEqual([
+        {
+          code: "laf:tab_replaced",
+          cause: "closed",
+          origin: new URL(fixture?.url ?? "").origin,
+        },
+      ]);
+      expect((await post("/key", bot, { key: "Escape" })).status).toBe(200);
+    }, 60_000);
+
+    /*
+     * THE FACT RIDES ON THE ANSWER THE MODEL READS. The first call after a loss is usually the Bot
+     * opening the page again, and a navigation that reaches a new host is held for the gateway to
+     * judge: answered 200 with where it was going, which the gateway reads and drops before asking
+     * for that hop. On `a2824212` the fact was drained into that answer, and the page the Bot was
+     * then handed said nothing.
+     */
+    test("whose renderer died is said on the page the Bot's navigation lands on, not on a hop held on the way there", async () => {
+      const bot = "lost-held-hop-bot";
+      const there = await onAPopup(bot, "", "주문 상세 보기");
+      await crash(there.popup);
+      const landing = `http://localhost:${new URL(fixture?.url ?? "").port}/other`;
+
+      const held = await post("/navigate", bot, {
+        url: `${unfinished?.url}to?to=${encodeURIComponent(landing)}`,
+        holdAtNewHost: true,
+      });
+      expect(held.status).toBe(200);
+      expect(held.body.redirect).toMatchObject({ to: landing });
+      expect(held.body.notes).toBeUndefined();
+      // Held is not seen: the Bot has been told nothing about the tab it is on.
+      expect((await post("/scroll", bot, { deltaY: 100 })).status).toBe(409);
+
+      const landed = await post("/navigate", bot, {
+        url: landing,
+        holdAtNewHost: true,
+      });
+      expect(landed.status).toBe(200);
+      expect(String(landed.body.text)).toContain("주문 상세 화면");
+      expect(landed.body.notes).toEqual([
+        {
+          code: "laf:tab_replaced",
+          cause: "crashed",
+          origin: new URL(fixture?.url ?? "").origin,
+        },
+      ]);
+      expect((await post("/scroll", bot, { deltaY: 100 })).status).toBe(200);
+    }, 60_000);
+
+    /*
+     * A REF OF THE SNAPSHOT THE BOT IS ON. Looking again lets the Bot act — with what the look
+     * gave it. The ask for a value took any ref with any snapshot id: after the popup had gone and
+     * the Bot had read the page behind, the popup's ref was still accepted, and the value then
+     * went into the box the page behind knew by it (`a2824212`: 200, then 200 `supplied`).
+     */
+    test("whose renderer died leaves its refs behind: after a look, a value asked for by one is refused and nothing can be typed", async () => {
+      const bot = "lost-stale-ask-bot";
+      const TYPED = "PERSON-TYPED-INTO-A-STALE-ASK-7731";
+      const there = await onAPopup(bot, "to-hang", "이 화면 새 탭");
+      const box = boxOn(there.onPopup);
+      await crash(there.popup);
+      // A read: the Bot has looked, and holds no ref of the page it is now on.
+      expect((await call("GET", "/read", bot)).status).toBe(200);
+
+      const asked = await post("/control/secret", bot, {
+        label: "간편 확인 값",
+        ref: box.ref,
+        snapshotId: there.onPopup.body.snapshotId,
+      });
+      expect([asked.status, asked.body.code]).toEqual([409, "laf:stale_refs"]);
+      // And one that names no snapshot at all is no better.
+      const bare = await post("/control/secret", bot, {
+        label: "간편 확인 값",
+        ref: box.ref,
+      });
+      expect([bare.status, bare.body.code]).toEqual([409, "laf:stale_refs"]);
+
+      const typed = await post("/human/secret", bot, { text: TYPED });
+      expect([typed.status, typed.body.code]).toEqual([
+        409,
+        "laf:secret_not_pending",
+      ]);
+      expect(await boxesOf(there.behind)).toEqual([""]);
+
+      // With a ref of the look it is on, the ask is taken and the value goes where it was asked.
+      const fresh = await post("/snapshot", bot);
+      const taken = await post("/control/secret", bot, {
+        label: "간편 확인 값",
+        ref: boxOn(fresh).ref,
+        snapshotId: fresh.body.snapshotId,
+      });
+      expect(taken.status).toBe(200);
+      expect((await post("/human/secret", bot, { text: TYPED })).status).toBe(
+        200,
+      );
+      expect(await boxesOf(there.behind)).toEqual([TYPED]);
+    }, 60_000);
+  });
+
+  describe("is what the browser says it is, never what a page says", () => {
+    let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
+
+    afterEach(() => {
+      warned?.mockRestore();
+      warned = undefined;
+    });
+
+    /*
+     * THE WORDS FOR A CRASH CAN BE A PAGE'S. A call that fails with them lets go of its tab, and
+     * one route asks its question in the page's own world, where the page's functions answer:
+     * `throw "Target crashed"` from `document.elementFromPoint` comes back spelled as Playwright
+     * spells a dead renderer. On `a2824212` that closed the page's own tab — and would have ended
+     * whatever the Bot had asked a person for on it.
+     */
+    test("a page that throws the words for a crash keeps its tab", async () => {
+      const bot = "forged-crash-bot";
+      await post("/navigate", bot, { url: fixture?.url });
+      const tab = await tabOf(bot);
+      await tab.evaluate(() => {
+        document.elementFromPoint = () => {
+          throw "Target crashed";
+        };
+      });
+      warned = spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const asked = await post("/describe-point", bot, { x: 20, y: 20 });
+      expect([asked.status, asked.body.code]).toEqual([
+        502,
+        "laf:browser_failed",
+      ]);
+      await Bun.sleep(200);
+
+      expect(tab.isClosed()).toBe(false);
+      expect(await tabOf(bot)).toBe(tab);
+      expect(
+        warned.mock.calls.filter(([line]) =>
+          String(line).includes("tab_crashed"),
+        ),
+      ).toEqual([]);
+      // Still the Bot's page, and still acted on: nothing was lost, so nothing has to be looked at.
+      const read = await call("GET", "/read", bot);
+      expect(String(read.body.text)).toContain(VISIBLE_TEXT);
+      expect(read.body.notes).toBeUndefined();
+      expect((await post("/scroll", bot, { deltaY: 50 })).status).toBe(200);
+    }, 60_000);
+
+    /*
+     * THE TAB THE CALL WAS ON, NOT THE TAB THE BOT IS ON. A call that fails on a dead tab lets go
+     * of it — and by then the Bot is often on another: a click whose tab dies under it has opened
+     * a popup first, and the live screen asks for the Bot's tab once a second. On `a2824212` the
+     * tab let go of was whichever was current: here, a healthy popup.
+     */
+    test("a call that fails on a dead tab lets go of that tab, and not of the one the Bot has moved to", async () => {
+      const bot = "wrong-tab-bot";
+      await post("/navigate", bot, { url: fixture?.url });
+      const first = await tabOf(bot);
+      const shot = await post("/snapshot", bot);
+      const link = (shot.body.elements as Element[]).find(
+        (element) => element.name === "주문 상세 보기",
+      );
+      if (!link) throw new Error("the fixture has no new-tab link");
+      await post("/click", bot, {
+        ref: link.ref,
+        snapshotId: shot.body.snapshotId,
+        element: { role: "link", name: link.name },
+      });
+      const popup = await tabOf(bot);
+      expect(popup).not.toBe(first);
+
+      // Back on the first tab, a page that never finishes opening there — and the Bot moved to
+      // the popup while that call waits, as a click that opened it would have left it.
+      await computer?.profiles.switchTab(bot, 0);
+      const opening = post("/navigate", bot, { url: unfinished?.url });
+      opening.catch(() => undefined);
+      expect(await until(() => first.url() === unfinished?.url)).toBe(true);
+      await computer?.profiles.switchTab(bot, 1);
+      expect(await tabOf(bot)).toBe(popup);
+      // The event, missed: only the call that fails on the tab can say it died.
+      first.removeAllListeners("crash");
+      warned = spyOn(console, "warn").mockImplementation(() => undefined);
+      await crash(first);
+
+      const failed = await opening;
+      expect([failed.status, failed.body.code]).toEqual([
+        502,
+        "laf:browser_failed",
+      ]);
+      await until(() => first.isClosed());
+
+      // The popup is untouched and still the Bot's; the tab that died is the one that went.
+      expect(popup.isClosed()).toBe(false);
+      expect(first.isClosed()).toBe(true);
+      expect(await tabOf(bot)).toBe(popup);
+      const tabs = tabsOf(await post("/snapshot", bot));
+      expect(tabs.map((tab) => tab.url)).toEqual([`${fixture?.url}other`]);
+      const lines = warned.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("tab_crashed"));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({
+        bot,
+        origin: new URL(unfinished?.url ?? "").origin,
+        tabs: 2,
+      });
+    }, 60_000);
   });
 
   /*
@@ -1168,5 +1435,50 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
     for (const bot of bots) {
       expect(tabsOf(await post("/snapshot", bot))).toHaveLength(1);
     }
+  }, 60_000);
+});
+
+/*
+ * A VALUE THAT REACHED NO FIELD IS NOT A VALUE THAT WAS ENTERED. When typing it fails the ask is
+ * closed, because the field is gone and a person would retype their password into a dead ref
+ * for ever. It was closed the way an answered one is, and an ask that is simply gone is what the
+ * Bot's wait reads as "이 사람이 그 값을 칸에 직접 입력했다" (on main, and on `a2824212`).
+ */
+describe.skipIf(!HAS_BROWSER)("a value a person typed", () => {
+  test("that could not be put in its field closes the ask as nobody's answer, and is on no page", async () => {
+    const bot = "failed-supply-bot";
+    const TYPED = "PERSON-TYPED-FOR-A-BOX-THAT-LEFT-9082";
+    await post("/navigate", bot, { url: `${fixture?.url}to-hang` });
+    const tab = await tabOf(bot);
+    const shot = await post("/snapshot", bot);
+    const box = (shot.body.elements as Element[]).find(
+      (element) => element.name === TO_HANG_PIN,
+    );
+    if (!box) throw new Error("the /to-hang fixture has no box");
+    const asked = await post("/control/secret", bot, {
+      label: "간편 확인 값",
+      ref: box.ref,
+      snapshotId: shot.body.snapshotId,
+    });
+    expect(asked.status).toBe(200);
+    // The page changes under the request: the box it was for is no longer on it.
+    await tab.evaluate(() => document.querySelector("input")?.remove());
+
+    const typed = await post("/human/secret", bot, { text: TYPED });
+    expect([typed.status, typed.body.code]).toEqual([
+      409,
+      "laf:element_not_actionable",
+    ]);
+    expect(typed.text).not.toContain(TYPED);
+
+    const state = await call("GET", "/control", bot);
+    expect(state.body.secretWanted).toBeUndefined();
+    // What the Bot's wait reads: gone, and not because anybody's value went in.
+    expect(state.body.unanswered).toBe(true);
+    expect(askOutcome(state.body)).toBe("gave up");
+    // Nowhere on the page, which has no box left to hold it.
+    expect(await tab.evaluate(() => document.body.innerHTML)).not.toContain(
+      TYPED,
+    );
   }, 60_000);
 });

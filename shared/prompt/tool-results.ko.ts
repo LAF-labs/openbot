@@ -120,11 +120,16 @@ export const TOOL_RESULT_KO: Record<string, string> = {
    * 탭으로 옮기고, 봇이 다시 보기 전에는 그 봇의 어떤 행동도 받지 않는다
    * (agent-computer/src/tab-loss.ts). 실측(2026-10-05): 이 문장이 없던 때에는 렌더러가 죽은 뒤의
    * 첫 읽기가 빈 페이지로 왔고 아무 말도 없었다 — 반쯤 채운 양식이 사라졌다는 것도, 로그인은
-   * 그대로라는 것도. 사라진 탭 이후의 첫 보기에 한 번만 실리고, cause(crashed·closed)와 사라진
-   * 페이지의 origin이 함께 온다.
+   * 그대로라는 것도. 사라진 탭 이후 봇 자신의 첫 보기에 한 번만 실리고, cause(crashed·closed)와
+   * 사라진 페이지의 origin이 함께 온다 — origin은 괄호 안에 붙는다(noteTexts).
+   *
+   * 사실만 말하고 시키지 않는다. 처음 문장은 "필요하면 그 주소를 다시 열어라"였는데, 모델은 그 주소를
+   * 받은 적이 없었고(origin이 문장에 붙지 않았다), 로그인을 마치고 스스로 닫힌 창을 다시 열라는
+   * 말이 되기도 했다. 닫힌 까닭은 둘 다 말해 두고, 다시 여는 것은 그 페이지가 아직 필요할 때의 일로
+   * 남긴다.
    */
   "laf:tab_replaced":
-    "네가 보던 탭이 사라졌다 — 브라우저가 그 탭을 멈췄거나 사이트가 스스로 닫았다. 지금은 네 다른 탭이나 새로 연 빈 탭에 있다. 사라진 탭에 있던 것(채우던 양식, 스크롤한 자리, 그 탭의 ref)은 없어졌고, 사이트 로그인은 그대로 남아 있다. 지금 보이는 화면이 네가 있는 곳이니 여기서 다시 시작해라. 필요하면 그 주소를 computer_navigate로 다시 열고, 같은 일이 되풀이되면 그 페이지에서 탭이 계속 사라진다고 말해라.",
+    "네가 보던 탭이 사라졌다. 로그인 창처럼 할 일을 마친 탭이 스스로 닫힌 것일 수도 있고, 브라우저가 그 탭을 멈춘 것일 수도 있다. 지금은 네 다른 탭이나 새 빈 탭에 있고, 이 답에 온 화면이 지금 네가 있는 곳이다. 사라진 탭에 있던 것(채우던 양식, 스크롤한 자리, 그 탭의 ref)은 없고, 사이트 로그인은 그대로 남아 있다. 사라진 탭의 페이지가 아직 필요한 경우에만 다시 열면 된다. 괄호 안은 사라진 탭이 보던 사이트다.",
 
   "laf:downloaded":
     "파일이 네 컴퓨터의 downloads/ 폴더에 저장됐다. path에 경로가 있고 computer_read_file로 열 수 있다.",
@@ -1112,7 +1117,13 @@ export function noteTexts(notes: unknown): string[] | undefined {
       // 경고창의 message 처럼, 문장만으로는 쓸모없고 사실이 붙어야 뜻이 생기는 것들.
       const message = typeof note.message === "string" ? note.message : "";
       const path = typeof note.path === "string" ? note.path : "";
-      const detail = message || path;
+      // 사라진 탭이 보던 사이트 — origin뿐이다. 이 사실 하나에만 붙인다: 다른 사실의 origin은
+      // 제 문장이 이미 말하거나(열리는 중) 봇이 방금 부른 주소다.
+      const site =
+        note.code === "laf:tab_replaced" && typeof note.origin === "string"
+          ? note.origin
+          : "";
+      const detail = message || path || site;
       return detail ? `${text} (${detail})` : text;
     });
   return said.length ? said : undefined;

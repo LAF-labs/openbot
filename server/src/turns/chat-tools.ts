@@ -82,7 +82,7 @@ import {
   type ComputerGateway,
 } from "../computer/gateway";
 import { codeFor, isBadRequest, statusFor } from "../computer/routes";
-import { readFileInputOf } from "../computer/schema";
+import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
 import type { GoalStore } from "../goals/store";
@@ -603,6 +603,7 @@ export function createChatTools(deps: ChatToolsDeps) {
                 String(args.url).trim(),
                 approvalId,
                 signal,
+                BOTS_OWN_LOOK,
               ),
             navigationOutcome,
             false,
@@ -615,6 +616,7 @@ export function createChatTools(deps: ChatToolsDeps) {
                 ...(typeof args.from === "string" && args.from.trim()
                   ? { from: args.from.trim() }
                   : {}),
+                ...BOTS_OWN_LOOK,
               }),
             );
           } catch (error) {
@@ -630,6 +632,7 @@ export function createChatTools(deps: ChatToolsDeps) {
                     id: owner.id,
                     ...(owner.id === DEV_ACTOR.id ? {} : { userId: owner.id }),
                   },
+                  ...BOTS_OWN_LOOK,
                 }),
               ),
             );
