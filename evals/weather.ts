@@ -198,10 +198,19 @@ export function leavesItToTheCard(text: string): boolean {
  *    it feels. "오늘은 바깥일하기 무난한 날이에요" says nothing the card says and fails here;
  *  - nothing falls, said as falling. A negated mention is how the Bot usually puts it ("비 없이",
  *    "비는 안 와요") and is right;
- *  - no weather the forecast does not hold: snow, a storm, a heat wave, an overcast sky.
+ *  - no weather the forecast does not hold: snow, a storm, a heat wave, an overcast sky;
+ *  - every temperature it says is one the card holds — the reading now, an hour's, a day's low or
+ *    high, as written or rounded. "강남은 지금 99도예요" passed the shape (review, round 7).
  */
-export function agreesWithTheCard(text: string): boolean {
+export function agreesWithTheCard(text: string, card: string): boolean {
   const said = text.replace(/\s+/g, " ");
+  const figures = [
+    ...said.matchAll(/(?<![\d.])(\d+(?:\.\d+)?)\s?(?:도|℃|°)/g),
+  ].map((match) => Number(match[1]));
+  const onTheCard = temperaturesOf(card);
+  const everyFigureIsTheCards = figures.every(
+    (figure) => onTheCard.has(figure) || onTheCard.has(Math.round(figure)),
+  );
   const aboutTheWeather =
     /맑|구름|흐|비|눈|바람|기온|℃|°|\d\s?도|덥|더워|더운|춥|추워|추운|선선|쌀쌀|따뜻|포근|우산|하늘|화창|쾌청|습도|습해|건조|날씨/.test(
       said,
@@ -213,7 +222,39 @@ export function agreesWithTheCard(text: string): boolean {
     /폭설|폭우|태풍|우박|소나기|장마|한파|폭염|천둥|번개|흐리|흐림|흐려|안개/.test(
       said,
     );
-  return aboutTheWeather && !saysItFalls && !notInTheForecast;
+  return (
+    aboutTheWeather &&
+    !saysItFalls &&
+    !notInTheForecast &&
+    everyFigureIsTheCards
+  );
+}
+
+/** Every temperature the tool's answer holds, as written and rounded: what an answer may say in degrees. */
+function temperaturesOf(card: string): Set<number> {
+  const found = new Set<number>();
+  const add = (value: unknown) => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      found.add(value);
+      found.add(Math.round(value));
+    }
+  };
+  try {
+    const answer = JSON.parse(card) as {
+      now?: { temp?: unknown };
+      hours?: { temp?: unknown }[];
+      days?: { min?: unknown; max?: unknown }[];
+    };
+    add(answer.now?.temp);
+    for (const hour of answer.hours ?? []) add(hour.temp);
+    for (const day of answer.days ?? []) {
+      add(day.min);
+      add(day.max);
+    }
+  } catch {
+    // Not the tool's answer: nothing may be said in degrees.
+  }
+  return found;
 }
 
 /** Whether a temperature was said as one: "31도", "31℃", "31°", "31 °C". A bare 31 is a date. */
