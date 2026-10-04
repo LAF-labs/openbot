@@ -37,6 +37,12 @@ export type DeploymentKeyService = {
   /** Built once, and only on a deployment that was given the key. */
   transport: (input: {
     key: string;
+    /**
+     * Every key this deployment holds, the service's own among them. A service that reads another
+     * family's — the weather's days past the 단기예보 are asked with the public data portal's — reads
+     * it here; a family the deployment was not given is absent, and the service does without.
+     */
+    keys?: Partial<Record<DeploymentKeyFamily, string>>;
     fetchImpl?: typeof fetch;
     now?: () => Date;
     whereaboutsOf?: WhereaboutsReader;
@@ -93,6 +99,7 @@ export function createDeploymentKeyRuntime(input: {
   for (const service of held) {
     transports[service.family] = service.transport({
       key: input.keys[service.family] as string,
+      keys: input.keys,
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       ...(input.now ? { now: input.now } : {}),
       ...(input.whereaboutsOf ? { whereaboutsOf: input.whereaboutsOf } : {}),

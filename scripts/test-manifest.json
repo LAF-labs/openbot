@@ -401,6 +401,8 @@
   "server/tests/jsonb-encoding.integration.test.ts",
   "server/tests/jsonb-storable.integration.test.ts",
   "server/tests/kma-grid.test.ts",
+  "server/tests/kma-mid-forecast.test.ts",
+  "server/tests/kma-mid-regions.test.ts",
   "server/tests/kma-places.test.ts",
   "server/tests/kma-weather-entry.test.ts",
   "server/tests/kma-weather-rest.test.ts",

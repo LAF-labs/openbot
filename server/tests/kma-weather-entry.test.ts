@@ -118,6 +118,33 @@ describe("the weather, as an entry the fleet's key opens", () => {
     ).toBe("a+b/c==");
   });
 
+  test("a deployment that also carries the portal's key hands it to the weather, which then says how far it reaches", async () => {
+    const reach = async (
+      keys: Parameters<typeof createDeploymentKeyRuntime>[0]["keys"],
+    ) => {
+      const runtime = createDeploymentKeyRuntime({
+        keys,
+        services: DEPLOYMENT_KEY_SERVICES,
+        listBots: async () => [],
+        fetchImpl: fakeHub().fetchImpl,
+        now: () => AT,
+      });
+      const [tool] =
+        (await runtime.transports["kma-apihub"]?.listTools({
+          url: KMA_HOST,
+        })) ?? [];
+      return tool?.description ?? "";
+    };
+    // The hub's key alone: 단기예보, and the tool says so.
+    expect(await reach({ "kma-apihub": KEY })).toContain("3~4일 뒤까지");
+    // With the portal's too, days five to ten are asked with it (`kma-mid-forecast.ts`).
+    expect(
+      await reach({ "kma-apihub": KEY, "data-go-kr": "PortalKey0123" }),
+    ).toContain("최대 열흘 뒤까지");
+    // The portal's key alone opens no weather: the tool is the hub's.
+    expect(await reach({ "data-go-kr": "PortalKey0123" })).toBe("");
+  });
+
   test("the entry pins the host and the path every operation is under", () => {
     const entry = catalogueEntry(KMA_WEATHER_KEY);
     if (!entry) throw new Error("no entry");
