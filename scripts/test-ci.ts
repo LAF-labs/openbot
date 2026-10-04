@@ -878,13 +878,30 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * it out — three where two were; and the answer judges on two stored answers, a short one and the
  * count itself, four).
  *
+ * LOWERED 2026-10-05 in `app` by seventy, and RAISED in `server` by fifteen, with the window-driven
+ * chat path deleted — each by exactly what went, less what was carried over. The window that ran a
+ * turn itself (`ChannelChat`, `SERVER_TURNS=off`) was removed, and the tests of that mechanism went
+ * with it: the in-mount queue's reducer (fifteen), the history repair (seven), the stored-history
+ * mapping and its read (four), the watcher of a step another window took (three), the calls a
+ * window may carry on and where their results go (five), words kept for a card settled by the
+ * window (twelve), a turn as several runs and a send ordered behind the window's own history read
+ * (three), the playground card's refusal recorded by the window's handler (two), and the retry that
+ * merged a replayed run (one). Eighteen more in `app` were the tool handler's (`routineAction`
+ * over the routes): sixteen were carried to the server's own `routineAction` and two were already
+ * held there or by the shared sentence, which is the sixteen `server` gains — with one for
+ * `SERVER_TURNS=off` refusing to start, less two for the step lease's routes. Nothing that
+ * describes the product went: the tests that had mounted the window to check something else — the
+ * greeting, the first screen, a draft handed over, a routine's failure line, the polling budget, a
+ * half answer's notice, 다시 시도, words the server never got, an answer's rating — were moved onto
+ * the turns the server owns, in their own files, and count as before.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3492, roots: ["server"] },
-  { name: "app", floor: 2085, roots: ["app"] },
+  { name: "server", floor: 3507, roots: ["server"] },
+  { name: "app", floor: 2015, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
 ] as const;
