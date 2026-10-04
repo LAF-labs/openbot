@@ -237,6 +237,7 @@
   "app/tests/skill-korean.test.tsx",
   "app/tests/skills-page.test.tsx",
   "app/tests/socket-heartbeat.test.tsx",
+  "app/tests/sources-pill.test.tsx",
   "app/tests/spoken-text.test.ts",
   "app/tests/status-regions.test.tsx",
   "app/tests/step-elsewhere.test.tsx",

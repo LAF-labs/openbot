@@ -1,4 +1,5 @@
 import { DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
+import { siteNameOf } from "@/components/computer/task-title";
 import { outcomeOf } from "@/lib/computer/browsing";
 import type { TranscriptItem } from "./chat-messages";
 
@@ -26,7 +27,7 @@ const READING = new Set([
  */
 const WEB_SEARCH = `${DEFERRED_TOOL_PREFIX}web-search__search`;
 
-/** At most this many, newest reading last. An answer quoting twenty pages is not a thing to list. */
+/** At most this many sites. An answer quoting twenty pages is not a thing to list. */
 const MOST = 8;
 
 /** The pages a search handed back, as the tool wrote them. Anything else — a refusal, an error — is none. */
@@ -64,15 +65,34 @@ function searchResultsOf(result: string | undefined): Source[] {
  * Keyed on the answer: the LAST thing the Bot said in a turn that read at least one page, when that
  * came after the reading. A turn that read pages and then said nothing, or whose last word is still
  * a card's note, has no answer to hang them on and gets none. A failed read is not a source.
+ *
+ * NEAREST THE ANSWER FIRST, because the first is all an answer shows until "+n" is pressed
+ * (`sources-row.tsx`): the page the Bot read last, then the ones before it; a search's results in
+ * the order the search ranked them, behind any page opened since. They were kept in the order of
+ * reading, which put first wherever the Bot began. Measured in the owner's own conversation,
+ * 2026-10-04: asked for 성심당's opening hours, the Bot searched, opened the bakery's own page —
+ * the search's first result — and answered "공식 홈페이지에서 확인했어요"; the list began with
+ * placeview.co.kr and ended with the bakery. Asked for a share price on 토스증권, it began with a
+ * page titled "페이지를 찾을 수 없습니다".
+ *
+ * ONE A SITE, BY THE NAME THE PILL SAYS (`siteNameOf`). A pill says the site and nothing else, so
+ * two pages of one site are two pills nobody can tell apart — that share price's were 토스증권,
+ * 토스증권, tradingkey.com, fintel.io, kr.investing.com, itooza.com, 토스증권. The page a site keeps
+ * is its nearest the answer: of those three, the one titled "503,854원 +4.65% | 테슬라". By the
+ * NAME and not the host: `search.naver.com` and `m.naver.com` are both 네이버 and one pill, and
+ * 네이버 뉴스 is its own, as on a browsing task's title.
  */
 export function sourcesByAnswer(
   items: readonly TranscriptItem[],
 ): Map<string, Source[]> {
   const found = new Map<string, Source[]>();
+  // By how near the answer each is, the farthest first: a later reading is a nearer one.
   let read: Source[] = [];
   let answerId: string | null = null;
   const close = () => {
-    if (answerId && read.length > 0) found.set(answerId, read.slice(-MOST));
+    if (answerId && read.length > 0) {
+      found.set(answerId, nearestOfEachSite(read));
+    }
     read = [];
     answerId = null;
   };
@@ -99,7 +119,8 @@ export function sourcesByAnswer(
       continue;
     }
     if (item.kind === "tool" && item.toolCall.function.name === WEB_SEARCH) {
-      for (const source of searchResultsOf(item.result)) {
+      // Its first result last, which is nearest: that is the one the search ranked highest.
+      for (const source of searchResultsOf(item.result).reverse()) {
         read = read.filter((seen) => seen.url !== source.url);
         read.push(source);
       }
@@ -112,6 +133,20 @@ export function sourcesByAnswer(
   }
   close();
   return found;
+}
+
+/** One page a site, nearest the answer first, `MOST` at the most. `read` has the farthest first. */
+function nearestOfEachSite(read: readonly Source[]): Source[] {
+  const named = new Set<string>();
+  const kept: Source[] = [];
+  for (const source of [...read].reverse()) {
+    const name = siteNameOf(source.host);
+    if (named.has(name)) continue;
+    named.add(name);
+    kept.push(source);
+    if (kept.length === MOST) break;
+  }
+  return kept;
 }
 
 function isWebAddress(value: unknown): boolean {
