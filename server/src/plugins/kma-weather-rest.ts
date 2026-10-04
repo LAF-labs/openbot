@@ -181,9 +181,11 @@ export const RAW_RESPONSE_CAP_CHARS = 1_000_000;
 /** data.go.kr's code for "nothing there", which here is "not issued yet". */
 const NO_DATA = "03";
 /**
- * How many answers are kept. A deployment asks about a handful of cells, four entries each and two
- * more for 중기예보's regions; this is a bound on a Bot walking the map. A 단기예보 entry is its five hundred read values, some tens
- * of kilobytes, so a full table is a few megabytes.
+ * How many answers are kept. A deployment asks about a handful of cells: four entries each from the
+ * hub (the three operations and the day's 02:00 단기예보, `morningOf`), and two more for the two
+ * 중기예보 regions a place is in, kept by region so neighbouring cells share them. This is a bound
+ * on a Bot walking the map. A 단기예보 entry is its five hundred read values, some tens of
+ * kilobytes, so a full table is a few megabytes.
  */
 const MAX_KEPT = 64;
 /** A fallback issuance is kept at least this long, so a late publication is not asked for per call. */

@@ -3,9 +3,10 @@
  *
  * WHAT IT REPLACES. The app worked out "a Bot is waiting" from the tab the question was raised in
  * (`app/src/lib/notifications/use-bot-notifications.ts`), which is exactly right for a question the
- * person's own click caused and reaches nothing for a question raised by a routine, by a room turn
- * on the server, or in the other window. The socket is the one thing this deployment already has
- * open to every signed-in page, so it is where the frame goes.
+ * person's own click caused and reaches nothing for a question raised by a routine, by a turn the
+ * server is carrying out (`turns/engine.ts`; when this was written, a room's), or in the other
+ * window. The socket is the one thing this deployment already has open to every signed-in page, so
+ * it is where the frame goes.
  *
  * A FRAME IS AN OPTIMISATION AND NEVER A SOURCE OF TRUTH — the rule `channels/events.ts` opens
  * with, and it holds here for the same reason. The row is the truth and `GET /api/me/notifications`
@@ -99,13 +100,16 @@ export function createSocketAdapter(
 }
 
 /**
- * "A routine or a room turn finished while nobody watched" — the second clause of the field rule.
+ * "A routine or a turn on the server finished while nobody watched" — the second clause of the
+ * field rule. (It said "a room turn": rooms went on 2026-09-24, and a conversation's own turn is
+ * what the server carries out now.)
  *
  * WHY IT IS CONDITIONAL ON THE SOCKET. A person with the app open already hears the activity event
  * and the page decides for itself whether to raise anything (`decideNotice`, which stays quiet for
- * the room on screen). Writing a row for that would be a second notification for something they are
- * looking at, and thirty rows an hour in a busy room. Nobody connected is the case the outbox
- * exists for: the answer is in the room when they come back, and now so is a notification saying so.
+ * the conversation on screen). Writing a row for that would be a second notification for something
+ * they are looking at, and thirty rows an hour in a busy conversation. Nobody connected is the case
+ * the outbox exists for: the answer is in the conversation when they come back, and now so is a
+ * notification saying so.
  *
  * A person's own message is never news, which is why an event with no Bot behind it writes nothing.
  */

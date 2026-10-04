@@ -12,20 +12,35 @@ import {
 /**
  * Which Bot the surface in front of you is driving.
  *
- * The computer tools are registered once for the whole app, but a computer belongs to a Bot, and a supervisor gives
- * each one its own browser profile and its own egress, and the server picks which by the id in the
- * URL.
+ * The computer tools are registered once for the whole app, but a call acts for one Bot. The
+ * deployment has one browser and one profile, which every Bot the person has shares; what is a
+ * Bot's own in it is its tabs (`agent-computer/src/profiles.ts`). The server picks the Bot by the
+ * id in the URL and names it to the computer in `x-openbot-bot-id`.
  *
  * Tool handlers read the ref because a handler outlives the render that registered it. Components
  * read state because grants and renderers must re-render when the active Bot changes.
  *
- * DECLARED AND HELD ARE TWO DIFFERENT ANSWERS. `useActiveBotHolder` always has a string, because
- * `x-openbot-bot-id` must carry one and `agent-computer` falls back to its own default when it does
- * not. `useDeclaredBotId` is `undefined` until a surface actually says which Bot it drives, because
- * a per-Bot grant query keyed on the sentinel is a request for the grants of a Bot nobody has —
- * measured: on Settings, on the admin screens and on the roster with nothing open, the components
- * poll asked `/api/components/for-agent/default` every five seconds and the plugin poll every
- * fifteen, for the life of the tab.
+ * DECLARED AND HELD ARE TWO DIFFERENT ANSWERS. `useActiveBotHolder` always has a string, and until
+ * a surface declares, that string is the sentinel below — which is NOT a Bot, and nothing stands in
+ * for it any more. `agent-computer` used to answer a call that named no Bot from a default profile
+ * of its own; it refuses one now (`laf:bot_header_missing`, `agent-computer/src/routes.ts`), and
+ * the server answers an id this deployment has no Bot for 404 `laf:bot_not_found` before the
+ * computer is asked at all (`requireBotAccess`). So a request keyed on the sentinel is a request
+ * for nothing. `useDeclaredBotId` is `undefined` until a surface actually says which Bot it drives,
+ * because a per-Bot grant query keyed on the sentinel is a request for the grants of a Bot nobody
+ * has — measured: on Settings, on the admin screens and on the roster with nothing open, the
+ * components poll asked `/api/components/for-agent/default` every five seconds and the plugin poll
+ * every fifteen, for the life of the tab.
+ *
+ * AND THE HOLDER IS THE SENTINEL FOR A SURFACE'S WHOLE FIRST COMMIT. `useActiveBot` declares in an
+ * effect, and a child's effects run before its parent's, so whatever is drawn under a surface as
+ * it mounts renders, and runs its first effects, before the Bot is declared. Measured 2026-10-05
+ * in a render under `bun test`: a memoised row beneath a surface declaring `bot-1`, drawing an
+ * unfinished `HelpCard` with the holder's string, asked `/api/computers/default/control` and —
+ * the holder being a ref, which redraws nothing when it changes — did not ask about `bot-1`. That
+ * is how `computer-tools.tsx` draws a help or a secret card, and a conversation the tab has kept
+ * (`kept-threads.ts`) has its cards at the first commit. Something that needs the Bot while it is
+ * drawn reads `useDeclaredBotId` and waits for it.
  */
 
 const DEFAULT_BOT_ID = "default";

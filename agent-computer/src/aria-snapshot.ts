@@ -413,9 +413,12 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
 
 /**
  * The name a control's contents give it, when the tree printed none: its words joined with one
- * space, or empty when nothing beneath it says anything. THE FALLBACK — the list asks the page for
- * the name the browser gives each of these controls (`page-names.ts`) and keeps this only where the
- * page did not answer in time.
+ * space, or empty when nothing beneath it says anything. NOT THE NAME THE LIST SAYS — the look asks
+ * the page for the name the browser gives each of these controls (`page-names.ts`), and one the
+ * page did not name in time is left with no name at all, not with these words (`withNames`, which
+ * says why; they were the fallback until 2026-10-04). What they still decide is the value: a
+ * control whose contents gave it words is not handed the same words a second time as a `value`
+ * (`toElement`). And they are the name in what the parser returns on its own (`parseAriaSnapshot`).
  *
  * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT. Playwright 1.62's AI snapshot drops the
  * name of a node whose name came from children it also prints, each with a ref of its own
@@ -435,8 +438,9 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
  * because the hold compared names with their spaces free — and the policy then had to judge every
  * spaced name twice. With the page's names the same five pages held every control not hidden from
  * the accessibility tree, exactly (203 of 203, measured 2026-10-04), and the hold is exact again.
- * Where the page does not answer, these words stand, and a click held to them where the browser
- * spaces its name otherwise is refused: a refusal, never a click on something else.
+ * Where the page does not answer, the control is listed with no name (`withNames`), and a click
+ * held to that empty name where the browser has one is refused: a refusal, never a click on
+ * something else.
  *
  * An image with no alt text says nothing, so a link that holds only one stays nameless — which is
  * also what the browser calls it.
@@ -574,8 +578,9 @@ export function parseAriaSnapshot(
 
 /**
  * {@link parseAriaSnapshot}, and the refs of the kept controls the tree printed without a name —
- * the ones whose name the page is asked for (`page-names.ts`), and which keep the name their
- * contents give (`nameFromWithin`) until it answers.
+ * the ones whose name the page is asked for (`page-names.ts`). Here they carry the name their
+ * contents give (`nameFromWithin`); the look then replaces every one of them, with the page's name
+ * or, where the page did not give one in time, with none (`withNames`).
  */
 export function readAriaSnapshot(
   yaml: string,
