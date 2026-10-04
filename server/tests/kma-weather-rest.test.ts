@@ -164,7 +164,15 @@ const SEA: Served = {
   "days 20261001/2300": OPEN_SEA.days,
 };
 
-const connection = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
+/** A call made in a conversation somebody is looking at — the app's own, where a card is drawn. */
+const connection = {
+  url: KMA_HOST,
+  actorId: "person-1",
+  botId: "bot-1",
+  watched: true,
+};
+/** The same call from a routine: nobody watches, and the answer reaches the person as words. */
+const unwatched = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 
 type Facts = {
   source: string;
@@ -471,7 +479,8 @@ describe("what the hub is asked", () => {
 
 describe("what a Bot is handed", () => {
   test("서울 at a quarter to one: now, six hours and four days, in about a kilobyte", async () => {
-    const { facts, text } = await weatherOf(hub(MIDNIGHT));
+    const made = hub(MIDNIGHT);
+    const { facts, text } = await weatherOf(made);
 
     expect(facts).toEqual({
       source: "기상청",
@@ -537,6 +546,21 @@ describe("what a Bot is handed", () => {
     expect(facts.shown).toBe(WEATHER_SHOWN);
     // It rides in the model's context on every later turn. The three raw answers were 140 KB.
     expect(Buffer.byteLength(text)).toBeLessThan(1_500);
+
+    /*
+     * AND NOT WHEN NOBODY IS LOOKING. A routine's call draws no card — its answer reaches the
+     * person as the Bot's words — so its forecast is not said to be shown, and the model writes it
+     * out as it did before there were cards (review, round 7). The data is the same data.
+     */
+    const routine = await made.transport.callTool(
+      unwatched,
+      "get_weather",
+      SEOUL,
+    );
+    const unseen = JSON.parse(routine.text) as Facts;
+    expect(unseen.shown).toBeUndefined();
+    expect(unseen.days).toEqual(facts.days);
+    expect(unseen.now).toEqual(facts.now);
 
     /*
      * AND THE APP'S CARD IS DRAWN FROM THIS VERY TEXT (`shared/weather.ts`): it is known as data

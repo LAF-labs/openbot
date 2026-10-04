@@ -1651,7 +1651,10 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
-            agreesWithTheCard(turn.text),
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(GANGNAM, EVAL_NOW, true),
+            ),
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
@@ -1690,7 +1693,10 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
-            agreesWithTheCard(turn.text),
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(HAEUNDAE, EVAL_NOW, true),
+            ),
           ],
         ]),
     },
@@ -1758,7 +1764,7 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
-            agreesWithTheCard(turn.text),
+            agreesWithTheCard(turn.text, weatherAnswer(MAPO, EVAL_NOW, true)),
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
         ]);
@@ -1847,7 +1853,10 @@ function firstMoveThreads(): Scenario[] {
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
-            agreesWithTheCard(turn.text),
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(GANGNAM, EVAL_NOW, true),
+            ),
           ],
           ["답을 하지 않음", turn.text.trim().length > 0],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
@@ -1885,7 +1894,10 @@ function firstMoveThreads(): Scenario[] {
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
-            agreesWithTheCard(turn.text),
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(HAEUNDAE, EVAL_NOW, true),
+            ),
           ],
         ]),
     },

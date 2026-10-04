@@ -591,6 +591,8 @@ function summariseWeather(input: {
   place: string;
   /** Whether the place is the person's saved one rather than one the call named. */
   saved: boolean;
+  /** Whether the answer will be drawn where the person looks (`transport.ts`): a card, or words only. */
+  watched: boolean;
   now: Issued | null;
   hours: Issued | null;
   days: Issued | null;
@@ -625,9 +627,12 @@ function summariseWeather(input: {
     /*
      * The last thing the model reads before it answers: a fact (`WEATHER_SHOWN`) — and only where
      * it is one. The card draws a temperature now or a day; an answer with neither has no card,
-     * and is not told it has.
+     * and is not told it has. And a card is drawn only where somebody is looking at the call: a
+     * routine's answer reaches the person as the Bot's words alone, with no card under them, so a
+     * routine's forecast is written out as it was before there were cards (review, round 7: told
+     * the forecast was shown, the morning routine would have said one vague sentence about it).
      */
-    ...((now && now.temp !== null) || days.length > 0
+    ...(input.watched && ((now && now.temp !== null) || days.length > 0)
       ? { shown: WEATHER_SHOWN }
       : {}),
   });
@@ -970,6 +975,7 @@ export function createKmaWeatherTransport(input: {
 
   async function weather(
     actorId: string | undefined,
+    watched: boolean,
     args: Record<string, unknown>,
   ): Promise<string> {
     const at = now();
@@ -1023,6 +1029,7 @@ export function createKmaWeatherTransport(input: {
       at,
       place: where.place,
       saved: where.saved,
+      watched,
       now: had(0),
       hours: had(1),
       days: had(2),
@@ -1038,7 +1045,9 @@ export function createKmaWeatherTransport(input: {
       if (toolName !== TOOL) {
         return refuseWith("laf:weather_unknown_tool", toolName);
       }
-      return asResult(await weather(connection.actorId, args));
+      return asResult(
+        await weather(connection.actorId, connection.watched === true, args),
+      );
     },
   };
 }
