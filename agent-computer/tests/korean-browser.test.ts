@@ -38,10 +38,15 @@ describe("where the Bot lives", () => {
     expect(botTimeZone({ BOT_TIME_ZONE: "Mars/Olympus" })).toBe("Asia/Seoul");
   });
 
-  test("the user agent does not announce that nobody is looking", () => {
+  test("the user agent does not announce that nobody is looking, and reads as Chrome writes its own", () => {
     const agent = botUserAgent("151.0.7922.34");
-    expect(agent).toContain("Chrome/151.0.7922.34");
+    // The major version and zeros: the full build number was itself a mark no browser sends
+    // (measured 2026-10-04, 쿠팡's seller centre: refused with it, opened without).
+    expect(agent).toContain("Chrome/151.0.0.0");
+    expect(agent).not.toContain("7922");
     expect(agent).not.toContain("Headless");
+    // A version with no dots, as a stub might give, is still a version.
+    expect(botUserAgent("151")).toContain("Chrome/151.0.0.0");
     // Linux, consistently. Claiming Windows here would disagree with everything else the browser
     // says about itself, which is a louder signal than the one being removed.
     expect(agent).toContain("X11; Linux x86_64");
