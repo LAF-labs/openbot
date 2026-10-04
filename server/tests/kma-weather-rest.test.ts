@@ -177,6 +177,8 @@ const unwatched = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 type Facts = {
   source: string;
   place: string;
+  placeName?: string;
+  coordinates?: { latitude: number; longitude: number };
   /** That the forecast is drawn as a card: the model's, and the answer's last field. */
   shown?: string;
   basis?: string;
@@ -485,6 +487,8 @@ describe("what a Bot is handed", () => {
     expect(facts).toEqual({
       source: "기상청",
       place: "위도 37.57, 경도 126.98",
+      // The facts beside the words: coordinates alone here, since the table has no name for this cell.
+      coordinates: { latitude: 37.57, longitude: 126.98 },
       issued: { now: "10-02 00:00", hours: "10-02 00:00", days: "10-01 23:00" },
       units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
       now: { temp: 15.2, humidity: 37, precip: "없음", wind: 3.7 },
@@ -577,6 +581,8 @@ describe("what a Bot is handed", () => {
     } as const;
     expect(readForTheCard(text)).toEqual({
       place: "위도 37.57, 경도 126.98",
+      placeName: null,
+      coordinates: { latitude: 37.57, longitude: 126.98 },
       temp: 15.2,
       // The row this answer calls 오늘: what the card puts beside the temperature now.
       today,
@@ -1597,6 +1603,9 @@ describe("where the question is about", () => {
     const { facts } = await weatherOf(made, { place: "서울 종로" });
     expect(made.asked[0]?.cell).toBe("60,127");
     expect(facts.place).toBe("서울특별시 종로구");
+    // The name alone rides beside the words, for the card; no coordinates were asked.
+    expect(facts.placeName).toBe("서울특별시 종로구");
+    expect(facts.coordinates).toBeUndefined();
     expect(facts.basis).toBeUndefined();
 
     await made.transport
