@@ -185,15 +185,29 @@ describe("a mail read while the owner watches", () => {
 
 describe("a mail read by a routine", () => {
   test("keeps the code nowhere: the mark has no reference", async () => {
+    // As a routine calls (`runner/unattended.ts`): nothing of its call is drawn, so nothing is kept.
+    const result = await store.callTool({
+      ref: REF,
+      args: { messageId: "m1" },
+      botId,
+      actorId,
+      drawnOn: "nowhere",
+    });
+    expect(result.text).not.toContain(CODE);
+    const marks = withheldMarksIn(result.text);
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.every((mark) => mark.id === null)).toBe(true);
+  });
+
+  test("and a call that does not say where it is drawn is drawn nowhere", async () => {
     const result = await store.callTool({
       ref: REF,
       args: { messageId: "m1" },
       botId,
       actorId,
     });
-    expect(result.text).not.toContain(CODE);
-    expect(withheldMarksIn(result.text).every((mark) => mark.id === null)).toBe(
-      true,
-    );
+    const marks = withheldMarksIn(result.text);
+    expect(marks.length).toBeGreaterThan(0);
+    expect(marks.every((mark) => mark.id === null)).toBe(true);
   });
 });

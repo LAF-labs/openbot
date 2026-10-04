@@ -849,9 +849,9 @@ export function createChatTools(deps: ChatToolsDeps) {
           toolCallId: call.id,
           actorIsAdmin: owner.role === "admin",
           ...(approvalId ? { approvalId } : {}),
-          // Somebody may be in front of this call — a window of the conversation, or later the
-          // transcript — so a code withheld from a mail is kept to be shown on its line.
-          watched: true,
+          // A line of the conversation — a window of it now, or the transcript later — so a code
+          // withheld from a mail is kept to be shown on it, and a forecast is drawn as a card.
+          drawnOn: "conversation",
         });
       const said = (result: { text: string; isError: boolean }) =>
         result.isError ? toolErrorText(result.text) : result.text;

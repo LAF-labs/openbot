@@ -31,6 +31,24 @@ import * as mcp from "./mcp";
  * fork has its own routines system with its own surfaces, and a Bot scheduling its own future runs
  * is a capability to grant through that system's review, not to inherit through a port.
  */
+
+/**
+ * WHERE WHAT A CALL ANSWERS WILL BE DRAWN: the surface its result lands on, said by the door the
+ * call came in through (`call.ts` lists the three).
+ *
+ * - `conversation`: the call is a line of a conversation — a window of it now, or the transcript
+ *   later — so what it answers is drawn there, on its own row. A chat turn's calls, and the app's own.
+ * - `nowhere`: nothing of the call is drawn. A routine's answer reaches the person as the Bot's
+ *   words alone, with no row under them.
+ *
+ * A FACT ABOUT THE SURFACE, NOT ABOUT WHO IS LOOKING. It was a flag, `watched`, first set so a code
+ * withheld from a mail was kept for the person — and then also read by the weather tool for whether
+ * its forecast is on the screen as a card. One flag, two meanings, and the second was a guess from
+ * the first. Both readers ask this instead: a withheld value is kept only to be shown on its call's
+ * row (`call.ts`), and the forecast is a card only where the row is drawn (`kma-weather-rest.ts`).
+ */
+export type DrawnOn = "conversation" | "nowhere";
+
 export type VendorTransport = {
   /**
    * Whether discovering the tool list needs somebody's credential.
@@ -62,12 +80,8 @@ export type VendorTransport = {
       actorId?: string;
       /** The Bot the run belongs to, never a name a model supplies. */
       botId?: string;
-      /**
-       * Whether a person is in front of this call — a window of the conversation, or later the
-       * transcript — so what it answers will be DRAWN where they look. False for a routine, whose
-       * answer reaches the person as the Bot's words alone (`call.ts` says who sets it).
-       */
-      watched?: boolean;
+      /** Where what this call answers will be drawn (`DrawnOn`). Absent is `nowhere`. */
+      drawnOn?: DrawnOn;
     },
     toolName: string,
     args: Record<string, unknown>,

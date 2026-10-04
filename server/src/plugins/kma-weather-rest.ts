@@ -65,7 +65,7 @@ import { kstStamp, rowsOf, vendorHeaderOf } from "./public-data-rest";
 import { asResult, stringArg } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
-import type { VendorTransport } from "./transport";
+import type { DrawnOn, VendorTransport } from "./transport";
 
 /** The catalogue entry this tool lives under. Prefixes its ref: `kma-weather/get_weather`. */
 export const KMA_WEATHER_KEY = "kma-weather";
@@ -598,8 +598,8 @@ function summariseWeather(input: {
    */
   placeName?: string | undefined;
   coordinates?: { latitude: number; longitude: number } | undefined;
-  /** Whether the answer will be drawn where the person looks (`transport.ts`): a card, or words only. */
-  watched: boolean;
+  /** Where the answer will be drawn (`DrawnOn`, `transport.ts`): a card in a conversation, or nowhere. */
+  drawnOn: DrawnOn;
   now: Issued | null;
   hours: Issued | null;
   days: Issued | null;
@@ -636,12 +636,14 @@ function summariseWeather(input: {
     /*
      * The last thing the model reads before it answers: a fact (`WEATHER_SHOWN`) — and only where
      * it is one. The card draws a temperature now or a day; an answer with neither has no card,
-     * and is not told it has. And a card is drawn only where somebody is looking at the call: a
-     * routine's answer reaches the person as the Bot's words alone, with no card under them, so a
-     * routine's forecast is written out as it was before there were cards (review, round 7: told
-     * the forecast was shown, the morning routine would have said one vague sentence about it).
+     * and is not told it has. And a card is drawn only where the call's row is drawn — in a
+     * conversation: a routine's answer reaches the person as the Bot's words alone, with no card
+     * under them, so a routine's forecast is written out as it was before there were cards
+     * (review, round 7: told the forecast was shown, the morning routine would have said one vague
+     * sentence about it).
      */
-    ...(input.watched && ((now && now.temp !== null) || days.length > 0)
+    ...(input.drawnOn === "conversation" &&
+    ((now && now.temp !== null) || days.length > 0)
       ? { shown: WEATHER_SHOWN }
       : {}),
   });
@@ -1001,7 +1003,7 @@ export function createKmaWeatherTransport(input: {
 
   async function weather(
     actorId: string | undefined,
-    watched: boolean,
+    drawnOn: DrawnOn,
     args: Record<string, unknown>,
   ): Promise<string> {
     const at = now();
@@ -1057,7 +1059,7 @@ export function createKmaWeatherTransport(input: {
       placeName: where.placeName,
       coordinates: where.coordinates,
       saved: where.saved,
-      watched,
+      drawnOn,
       now: had(0),
       hours: had(1),
       days: had(2),
@@ -1074,7 +1076,11 @@ export function createKmaWeatherTransport(input: {
         return refuseWith("laf:weather_unknown_tool", toolName);
       }
       return asResult(
-        await weather(connection.actorId, connection.watched === true, args),
+        await weather(
+          connection.actorId,
+          connection.drawnOn ?? "nowhere",
+          args,
+        ),
       );
     },
   };
