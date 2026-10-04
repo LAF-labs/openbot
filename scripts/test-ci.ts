@@ -942,11 +942,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * LOWERED 2026-10-05 in `agent-computer` by three, with the name the list used to guess for a
  * control the tree printed without one deleted (`nameFromWithin`) — by exactly what went, less
  * what was added. The look had replaced that name on every control it was made for since
- * 572a3eab, so four tests held only the guess and went with it: its words found through nameless
- * wrappers one space apart, an address and a frame's contents left out of them, the name they gave
- * the control around a labelled field, and where they were cut. One was added: the control around
- * a field, or around text that can be edited, carries what was typed there in neither a name nor
- * a value. Nothing that describes the list a Bot is shown went — the tests that had read the guess
+ * 572a3eab, so five tests held only the guess and went with it, by title: the words a link took
+ * from inside it, those words found through nameless wrappers one space apart, an address and a
+ * frame's contents left out of them, the name they gave the control around a labelled field, and
+ * where they were cut. Two were added: whatever is beneath such a control gives it no name here,
+ * and the control around a field, or around text that can be edited, carries what was typed there
+ * in neither a name nor a value. Nothing that describes the list a Bot is shown went — the tests that had read the guess
  * to say something else now say it of the tree's list and the look's: which controls the page is
  * asked to name, that such a control has no name until it answers and no value ever, and that a
  * field's contents are nobody's name.

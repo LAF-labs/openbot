@@ -101,6 +101,12 @@ const CASES: [string, string][] = [
     // And these apart: the hold holds the click to the browser's own spelling.
     "결 제",
   ],
+  /*
+   * DECIDED: an image with no alt text says nothing, so a link holding only one has no name. The
+   * browser calls it nothing too — which is what the hold is asked about — and a name borrowed from
+   * a neighbour, or from the address, would be refused as a rename on the click.
+   */
+  [`<a href="/u"><img src="${PIXEL}" width="20" height="20"></a>`, ""],
 ];
 
 const STYLE = `.blind{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -168,6 +174,8 @@ describe.skipIf(!HAS_BROWSER)(
           "10월 캘린더",
           "로고뉴스",
           "A B",
+          // The link around an image with no alt text: asked about, and called nothing.
+          "",
         ]) {
           expect(outcomes).toContain(`${name} -> same`);
         }
