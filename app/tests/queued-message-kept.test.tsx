@@ -403,6 +403,54 @@ describe("a correction queued while the Bot works", () => {
     await view.unmount();
   });
 
+  /*
+   * The same words typed twice are two messages: taking one back is by the message, never by what
+   * it says. The reducer of the queue in the mount held this (`queue.test.ts`, "two identical
+   * corrections are two entries and only one is taken back"); that queue went with the window
+   * that drove its own turns (2026-10-05), and nothing held it for the outbox.
+   */
+  test("two identical corrections are two, and taking one back leaves the other to go", async () => {
+    const channelId = "channel_queued-twins";
+    const server = working(channelId);
+    const view = await open(channelId, server);
+    await queue(view, channelId, CORRECTION);
+    await typeAndPress(view, channelId, CORRECTION, "Queue message");
+    await view.waitFor(
+      () => waiting(view.host).length === 2,
+      "the same words waiting twice",
+      4000,
+    );
+    const kept = () =>
+      JSON.parse(localStorage.getItem(`laf:unsent:${channelId}`) ?? "[]") as {
+        id: string;
+        text: string;
+      }[];
+    const [first, second] = kept();
+    expect([first?.text, second?.text]).toEqual([CORRECTION, CORRECTION]);
+    expect(first?.id).not.toBe(second?.id);
+
+    const takeBack = [
+      ...view.host.querySelectorAll<HTMLButtonElement>("button"),
+    ].filter((button) => button.textContent?.trim() === "Remove");
+    expect(takeBack).toHaveLength(2);
+    await view.click(takeBack[0] as Element);
+    // The first is gone and the second, which says the same, is still waiting — under its own id.
+    expect(waiting(view.host)).toEqual([CORRECTION]);
+    expect(kept().map((message) => message.id)).toEqual([second?.id ?? ""]);
+
+    await finish(server);
+    await view.waitFor(
+      () => server.sends.length === 1,
+      "the correction that was left, sent once the turn was over",
+      8000,
+    );
+    expect(askedIn(server.sends[0]).map((message) => message.id)).toEqual([
+      second?.id ?? "",
+    ]);
+    server.close();
+    await view.unmount();
+  });
+
   test("that the server did not take says it was not sent, with a way to send it", async () => {
     const channelId = "channel_queued-refused";
     const server = working(channelId);
