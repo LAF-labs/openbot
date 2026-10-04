@@ -73,9 +73,10 @@ import {
 } from "./kma-mid-forecast";
 import { KMA_MID_REGIONS, type KmaMidRegions } from "./kma-mid-regions";
 import { KMA_PLACES, type KmaPlaces } from "./kma-places";
+import { HOUR, KST_OFFSET_MS, kstIssuanceAt, kstStamp, MINUTE } from "./kst";
 import { type McpCallResult, trimDetail, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
-import { kstStamp, rowsOf, vendorHeaderOf } from "./public-data-rest";
+import { rowsOf, vendorHeaderOf } from "./public-data-rest";
 import { asResult, stringArg } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
@@ -103,11 +104,6 @@ export const KMA_OPERATIONS = Object.freeze({
   days: `${SERVICE}/getVilageFcst`,
 });
 export type KmaOperation = keyof typeof KMA_OPERATIONS;
-
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-/** KST has no daylight saving; a fixed offset needs no ICU data (`kstStamp`). */
-const KST_OFFSET_MS = 9 * HOUR;
 
 /**
  * When each operation is issued, how long after that it answers, and how it wants to be asked.
@@ -161,28 +157,18 @@ export type KmaIssuance = {
 };
 
 /**
- * The newest issuance that should be answering at `at`, or the one `back` before it.
- *
- * Worked in KST as plain milliseconds: the clock is shifted nine hours and read through the UTC
- * getters, so midnight, the end of a month and the end of a year are the calendar's business and
- * not this function's. 00:05 on 1 January asks for 23:00 on 31 December.
+ * The newest issuance that should be answering at `at`, or the one `back` before it. The clock work
+ * is `kstIssuanceAt`'s, which 중기예보 asks the same way (`kma-mid-forecast.ts`); what is this
+ * operation's own is the minute part the hub wants to be asked with.
  */
 export function issuanceAt(
   operation: KmaOperation,
   at: Date,
   back = 0,
 ): KmaIssuance {
-  const { every, first, delay, minutes } = SCHEDULE[operation];
-  const wall = at.getTime() + KST_OFFSET_MS - delay;
-  const base =
-    Math.floor((wall - first) / every) * every + first - back * every;
-  // `base` is KST wall clock held as if it were UTC, so the ISO text is the Korean date and hour.
-  const text = new Date(base).toISOString();
-  return {
-    date: `${text.slice(0, 4)}${text.slice(5, 7)}${text.slice(8, 10)}`,
-    time: `${text.slice(11, 13)}${minutes}`,
-    supersededAt: base + every + delay - KST_OFFSET_MS,
-  };
+  const schedule = SCHEDULE[operation];
+  const { date, hour, supersededAt } = kstIssuanceAt(schedule, at, back);
+  return { date, time: `${hour}${schedule.minutes}`, supersededAt };
 }
 
 /**

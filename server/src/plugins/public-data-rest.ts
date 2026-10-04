@@ -33,6 +33,7 @@ import {
   type DeploymentKeyService,
   type DeploymentKeyStore,
 } from "./deployment-key-runtime";
+import { kstStamp } from "./kst";
 import { type McpCallResult, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
 import { asResult, countArg, stringArg } from "./rest-support";
@@ -280,20 +281,6 @@ export function plainText(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/**
- * `YYYYMMDDHHmm` in Korea Standard Time, which is what 나라장터 compares against.
- *
- * A fixed offset rather than `Intl`, because KST has no daylight saving and the alternative is a
- * formatter whose output depends on the ICU data the runtime was built with.
- */
-const KST_OFFSET_MS = 9 * 60 * 60_000;
-export function kstStamp(at: Date, time?: "0000" | "2359"): string {
-  const shifted = new Date(at.getTime() + KST_OFFSET_MS);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const day = `${shifted.getUTCFullYear()}${pad(shifted.getUTCMonth() + 1)}${pad(shifted.getUTCDate())}`;
-  return `${day}${time ?? `${pad(shifted.getUTCHours())}${pad(shifted.getUTCMinutes())}`}`;
 }
 
 /** The same day as a person writes it. */
