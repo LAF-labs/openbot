@@ -14,9 +14,9 @@ import {
   stepRunsOf,
   stepsByAnswer,
   toVisibleChatItems,
-  weatherCardsOf,
   withBrowsingTasks,
 } from "../src/components/channels/chat-messages";
+import { rowKindsOf } from "../src/components/channels/row-kinds";
 import {
   APP_DOM_TIMEOUT_MS,
   installAppDom,
@@ -209,7 +209,13 @@ const moved = (content: string): Message[] => [
   } as Message,
   { id: "t-moved", role: "tool", toolCallId: MOVE, content } as Message,
 ];
-const cardsOf = (messages: Message[]) => [...weatherCardsOf(itemsOf(messages))];
+/** The rows drawn as the weather card, by id (`rowKindsOf`). */
+const cardsOf = (messages: Message[]) => {
+  const items = itemsOf(messages);
+  return rowKindsOf(items).flatMap((kind, index) =>
+    kind.kind === "card" && kind.card === "weather" ? [items[index]?.id] : [],
+  );
+};
 
 describe("a first move's answer", () => {
   test("is the card when the Bot answers from it", () => {

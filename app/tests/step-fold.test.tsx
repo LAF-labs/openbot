@@ -19,7 +19,6 @@ import {
   toolFailureText,
 } from "@shared/tools/step-result";
 import {
-  isFoldableStep,
   openStepRuns,
   stepRunsOf,
   stepsByAnswer,
@@ -27,6 +26,7 @@ import {
   wholeFrom,
   withBrowsingTasks,
 } from "../src/components/channels/chat-messages";
+import { isFoldableStep } from "../src/components/channels/row-kinds";
 import {
   APP_DOM_TIMEOUT_MS,
   type ApiRequest,

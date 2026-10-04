@@ -48,7 +48,6 @@ import {
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@/components/ui/message-scroller";
-import { WeatherCard } from "@/components/weather/weather-card";
 import { anyQuestionOn, watchQuestions } from "@/lib/approvals";
 import { copiedHtml, copiedWords } from "@/lib/channels/copied-reply";
 import { dropJump, settleJump, usePendingJump } from "@/lib/channels/jump";
@@ -90,14 +89,12 @@ import {
   isTaskUnfolded,
   openBrowsingTask,
   openStepRuns,
-  type StepRunPlace,
   stepRunsOf,
   stepsByAnswer,
   type TranscriptItem,
   toVisibleChatItems,
   turnFailedAfter,
   unsettledFrom,
-  weatherCardsOf,
   wholeFrom,
   withBrowsingTasks,
 } from "./chat-messages";
@@ -105,6 +102,13 @@ import { LEADING_SKILL, type ParkedMessage } from "./composer";
 import { useResent, useUnsent } from "./composer/outbox";
 import { MessageAttachments } from "./message-attachments";
 import { readingColumn } from "./reading-column";
+import {
+  type CallRowKind,
+  cardDrawnFor,
+  isDrawn,
+  type RowKind,
+  rowKindsOf,
+} from "./row-kinds";
 import { type Source, sourcesByAnswer } from "./sources";
 import { SourcesRow } from "./sources-row";
 import { ToolRenderBoundary } from "./tool-boundary";
@@ -624,7 +628,14 @@ function ScrollNewestQueuedIntoView({ newest }: { newest: string | null }) {
  * reader is above the end and looking straight at the newest message. Counting from "the last time
  * they were at the end" called that answer news.
  */
-function ScrollToNewest({ items }: { items: readonly TranscriptItem[] }) {
+function ScrollToNewest({
+  items,
+  kinds,
+}: {
+  items: readonly TranscriptItem[];
+  /** What each row is (`rowKindsOf`): what counts as an arrival. */
+  kinds: readonly RowKind[];
+}) {
   const isAbove = useMessageScrollerScrollable().end;
   const onScreen = useMessageScrollerVisibility().visibleMessageIds;
   const newestId = items.at(-1)?.id ?? null;
@@ -635,7 +646,7 @@ function ScrollToNewest({ items }: { items: readonly TranscriptItem[] }) {
     );
   }, [isAbove, items, newestId, onScreen]);
 
-  const arrived = isAbove ? arrivedBelow(items, seenId) : 0;
+  const arrived = isAbove ? arrivedBelow(items, seenId, kinds) : 0;
   if (arrived === 0) return <MessageScrollerButton />;
   return (
     <MessageScrollerButton className="gap-1 px-3" size="sm">
@@ -1361,15 +1372,15 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   name,
   args,
   result,
-  isWeatherCard,
+  kind,
 }: {
   delay: number;
   toolCallId: string;
   name: string;
   args: string;
   result?: string;
-  /** Whether this call's answer is drawn as the weather card (`weatherCardsOf`). */
-  isWeatherCard: boolean;
+  /** What the row is (`rowKindsOf`). A string, so the memo still holds. */
+  kind: CallRowKind;
 }) {
   const renderToolCall = useRenderToolCall();
   const toolCall = useMemo(
@@ -1405,18 +1416,18 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
   const ended = result === undefined ? null : stepFailureOf(result);
 
   /*
-   * THE WEATHER IS A CARD, DRAWN FROM THE CALL'S OWN ANSWER (`WeatherCard`). By the tool's name
-   * and by what came back (`weatherCardsOf`), here and not through a registered renderer: a card
-   * of data is not a line of work, and it is owed wherever the call is in the record — after a
-   * reload, after the tool was taken back, in a window that never held it. An answer with no data
-   * in it (a refusal, a failure), and a first move the Bot asked again after, are not cards, and
-   * are drawn below as the steps they were.
+   * A CARD THE TRANSCRIPT DRAWS ITSELF, FROM THE CALL'S OWN ANSWER (`CARDS`: the weather's), and
+   * not through a registered renderer: a card of data is not a line of work, and it is owed
+   * wherever the call is in the record — after a reload, after the tool was taken back, in a
+   * window that never held it. The same call whose answer is not the card (a refusal, a failure, a
+   * first move the Bot asked again after) is told it is a step, and is drawn below as one.
    */
-  if (isWeatherCard && result !== undefined) {
+  const Drawn = kind === "card" ? cardDrawnFor(name) : null;
+  if (Drawn && result !== undefined) {
     return (
       <Arriving delay={delay}>
         <ToolRenderBoundary name={name}>
-          <WeatherCard result={result} />
+          <Drawn result={result} />
         </ToolRenderBoundary>
       </Arriving>
     );
@@ -1449,6 +1460,11 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
     </Arriving>
   );
 });
+
+/** What a call's row is told it is: a call is never the person's words, an answer or a task. */
+function callRowKindOf(kind: RowKind | undefined): CallRowKind {
+  return kind?.kind === "card" || kind?.kind === "step" ? kind.kind : "line";
+}
 
 /** Frozen and shared, so a transcript with no times does not rebuild its projection every render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
@@ -1498,7 +1514,7 @@ function TimeSeparator({ at }: { at: string }) {
  *
  * A tool line between two replies breaks the run on purpose: the Bot did something in between, and
  * drawing those two answers as one uninterrupted turn would hide that it had. A step that is over
- * is not drawn (`stepRunsOf`) and breaks it all the same: the two answers stand apart, and the one
+ * is not drawn (`rowKindsOf`) and breaks it all the same: the two answers stand apart, and the one
  * after it carries what was done.
  */
 function continues(
@@ -1545,17 +1561,16 @@ export function rowSpacing(
 
 /**
  * The row drawn right above `index`, by its place in `items`: the nearest one that is not a step
- * put away (`stepRunsOf`). -1 where there is none. What a row stands under is what is on the
- * screen above it, and the steps of a closed record are not.
+ * put away (`isDrawn`). -1 where there is none. What a row stands under is what is on the screen
+ * above it, and the steps of a closed record are not.
  */
 function drawnAbove(
-  stepRuns: ReadonlyMap<number, StepRunPlace>,
+  kinds: readonly RowKind[],
   openRuns: ReadonlySet<string>,
   index: number,
 ): number {
   for (let above = index - 1; above >= 0; above -= 1) {
-    const place = stepRuns.get(above);
-    if (!place || place.staysDrawn || openRuns.has(place.runId)) return above;
+    if (isDrawn(kinds[above], openRuns)) return above;
   }
   return -1;
 }
@@ -1586,17 +1601,17 @@ function drawnAbove(
  * line will, and not 8px higher.
  */
 function botRowSpacing(
-  items: readonly TranscriptItem[],
-  stepRuns: ReadonlyMap<number, StepRunPlace>,
+  kinds: readonly RowKind[],
   openRuns: ReadonlySet<string>,
   index: number,
 ): string {
-  const above = drawnAbove(stepRuns, openRuns, index);
-  const row = items[above];
-  if (row === undefined || (row.kind === "text" && row.role === "user")) {
-    return "py-0.5 pt-5";
-  }
-  const isPutAway = (at: number) => stepRuns.get(at)?.staysDrawn === false;
+  const above = drawnAbove(kinds, openRuns, index);
+  const row = kinds[above];
+  if (row === undefined || row.kind === "person") return "py-0.5 pt-5";
+  const isPutAway = (at: number) => {
+    const kind = kinds[at];
+    return kind?.kind === "step" && !kind.staysDrawn;
+  };
   return isPutAway(index) && isPutAway(above) ? "py-0.5" : "py-0.5 pt-3";
 }
 
@@ -1638,16 +1653,18 @@ export function ChatTranscript({
    */
   const items = withBrowsingTasks(toVisibleChatItems(messages, messageTimes));
   /*
-   * STEPS OF WORK ARE NOT DRAWN (`stepRunsOf`): only the one still out, and one holding something
-   * for the person. The rest are the record, opened from the answer they were taken for
-   * (`stepsByAnswer`) — and which runs are open is the person's for as long as the transcript is
-   * mounted. Decided here, where the rows are drawn, and nowhere else: everything that reads
-   * `items` — the thinking line, the failures, the jumps — goes on reading every step.
+   * WHAT EACH ROW IS, ONCE (`rowKindsOf`): what folds, what is drawn as what, what counts as an
+   * arrival — every one of them reads this, and nothing below decides it again.
+   *
+   * STEPS OF WORK ARE NOT DRAWN: only the one still out, and one holding something for the person.
+   * The rest are the record, opened from the answer they were taken for (`stepsByAnswer`) — and
+   * which runs are open is the person's for as long as the transcript is mounted. Decided here,
+   * where the rows are drawn, and nowhere else: everything that reads `items` — the thinking line,
+   * the failures, the jumps — goes on reading every step.
    */
-  const stepRuns = stepRunsOf(items);
+  const kinds = rowKindsOf(items);
+  const stepRuns = stepRunsOf(items, kinds);
   const answerSteps = stepsByAnswer(items, stepRuns);
-  /** The weather calls drawn as cards; every other one is a step, in `stepRuns`. */
-  const weatherCards = weatherCardsOf(items);
   /** The rows a run was opened by: a run is open while it holds one (`openStepRuns` says why). */
   const [openedRows, setOpenedRows] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -1685,9 +1702,11 @@ export function ChatTranscript({
   const pendingRow =
     pendingRowId === null
       ? undefined
-      : stepRuns.get(items.findIndex((item) => item.id === pendingRowId));
+      : kinds[items.findIndex((item) => item.id === pendingRowId)];
   const pendingRunId =
-    pendingRow && !pendingRow.staysDrawn ? pendingRow.runId : null;
+    pendingRow?.kind === "step" && !pendingRow.staysDrawn
+      ? pendingRow.runId
+      : null;
   useEffect(() => {
     if (pendingRunId === null || pendingRowId === null) return;
     setOpenedRows((opened) =>
@@ -1875,13 +1894,11 @@ export function ChatTranscript({
    * 1.2 s before "생각 중", which is the stalled-looking Bot this line was made to end. So where
    * the last thing that happened is a step nobody sees, the Bot is thinking as of now.
    */
-  const lastPlace = stepRuns.get(items.length - 1);
+  const lastKind = kinds.at(-1);
   const thinkingAfterHiddenStep =
     stillTail !== null &&
-    lastItem?.kind === "tool" &&
-    lastPlace !== undefined &&
-    !lastPlace.staysDrawn &&
-    !openRuns.has(lastPlace.runId);
+    lastKind?.kind === "step" &&
+    !isDrawn(lastKind, openRuns);
   const newestTaskId =
     items.findLast((item) => item.kind === "browse")?.id ?? null;
   /** Each stored failure, drawn after the last row its turn drew (`failurePlaces`). */
@@ -2189,12 +2206,12 @@ export function ChatTranscript({
              */}
             {items.slice(start).map((item, offset) => {
               const index = start + offset;
-              const run = stepRuns.get(index);
+              const kind = kinds[index];
               const taken = answerSteps.get(item.id);
               return item.kind === "browse" ? (
                 <Fragment key={item.id}>
                   <MessageScrollerItem
-                    className={botRowSpacing(items, stepRuns, openRuns, index)}
+                    className={botRowSpacing(kinds, openRuns, index)}
                     messageId={item.id}
                   >
                     <Arriving
@@ -2215,7 +2232,7 @@ export function ChatTranscript({
                         }
                         isHandedOver={
                           item.id === newestTaskId &&
-                          isHandedToThePerson(items, index)
+                          isHandedToThePerson(items, index, kinds)
                         }
                         isNewest={item.id === newestTaskId}
                         isOpen={item.id === openTaskId}
@@ -2232,7 +2249,7 @@ export function ChatTranscript({
               ) : item.kind === "tool" ? (
                 <Fragment key={item.id}>
                   {/*
-                   * A STEP OF WORK IS NOT DRAWN ONCE IT IS OVER (`stepRunsOf`): until its run is
+                   * A STEP OF WORK IS NOT DRAWN ONCE IT IS OVER (`isDrawn`): until its run is
                    * opened — from the answer it was taken for, or by a jump to a row of it — only
                    * the step still out is, and one holding something for the person. A card, the
                    * clock and every other row drawn by name have no place in a run, and are drawn
@@ -2241,20 +2258,15 @@ export function ChatTranscript({
                    * The failure line a turn ended on is outside this, as it is outside the row: a
                    * turn that died on a step that is not drawn still says that it died.
                    */}
-                  {run && !run.staysDrawn && !openRuns.has(run.runId) ? null : (
+                  {!isDrawn(kind, openRuns) ? null : (
                     <MessageScrollerItem
-                      className={botRowSpacing(
-                        items,
-                        stepRuns,
-                        openRuns,
-                        index,
-                      )}
+                      className={botRowSpacing(kinds, openRuns, index)}
                       messageId={item.id}
                     >
                       <TranscriptToolCall
                         args={item.toolCall.function.arguments}
                         delay={delays.delayFor(item.id, index, items.length)}
-                        isWeatherCard={weatherCards.has(item.id)}
+                        kind={callRowKindOf(kind)}
                         name={item.toolCall.function.name}
                         result={item.result}
                         toolCallId={item.toolCall.id}
@@ -2277,9 +2289,8 @@ export function ChatTranscript({
                       (continues(items[index - 1], item.role) ||
                         // An answer under a step that is drawn stands by it (`botRowSpacing`).
                         (item.role === "assistant" &&
-                          stepRuns.has(
-                            drawnAbove(stepRuns, openRuns, index),
-                          ))) &&
+                          kinds[drawnAbove(kinds, openRuns, index)]?.kind ===
+                            "step")) &&
                         !separators.has(item.id),
                     )}
                     messageId={item.id}
@@ -2467,7 +2478,7 @@ export function ChatTranscript({
                       : null}
           </LiveRegion>
         </MessageScrollerViewport>
-        <ScrollToNewest items={items} />
+        <ScrollToNewest items={items} kinds={kinds} />
         <ScrollNewestQueuedIntoView newest={queued.at(-1)?.id ?? null} />
         {/* Asked again when a fold opens too: the row a jump names may be one it was holding. */}
         <JumpToRow
