@@ -12,10 +12,11 @@ import {
 /**
  * Which Bot the surface in front of you is driving.
  *
- * The computer tools are registered once for the whole app, but a call acts for one Bot. The
- * deployment has one browser and one profile, which every Bot the person has shares; what is a
- * Bot's own in it is its tabs (`agent-computer/src/profiles.ts`). The server picks the Bot by the
- * id in the URL and names it to the computer in `x-openbot-bot-id`.
+ * The computer tools are registered once for each screen that runs a Bot (`provider.tsx`, which
+ * the conversation, the compose screen and the playground each mount), but a call acts for one
+ * Bot. The deployment has one browser and one profile, which every Bot the person has shares; what
+ * is a Bot's own in it is its tabs (`agent-computer/src/profiles.ts`). The server picks the Bot by
+ * the id in the URL and names it to the computer in `x-openbot-bot-id`.
  *
  * Tool handlers read the ref because a handler outlives the render that registered it. Components
  * read state because grants and renderers must re-render when the active Bot changes.
@@ -28,19 +29,27 @@ import {
  * computer is asked at all (`requireBotAccess`). So a request keyed on the sentinel is a request
  * for nothing. `useDeclaredBotId` is `undefined` until a surface actually says which Bot it drives,
  * because a per-Bot grant query keyed on the sentinel is a request for the grants of a Bot nobody
- * has — measured: on Settings, on the admin screens and on the roster with nothing open, the
- * components poll asked `/api/components/for-agent/default` every five seconds and the plugin poll
- * every fifteen, for the life of the tab.
+ * has — measured, when these tools were still mounted on every screen: on Settings, on the admin
+ * screens and on the roster with nothing open, the components poll asked
+ * `/api/components/for-agent/default` every five seconds and the plugin poll every fifteen, for
+ * the life of the tab.
  *
  * AND THE HOLDER IS THE SENTINEL FOR A SURFACE'S WHOLE FIRST COMMIT. `useActiveBot` declares in an
  * effect, and a child's effects run before its parent's, so whatever is drawn under a surface as
- * it mounts renders, and runs its first effects, before the Bot is declared. Measured 2026-10-05
- * in a render under `bun test`: a memoised row beneath a surface declaring `bot-1`, drawing an
- * unfinished `HelpCard` with the holder's string, asked `/api/computers/default/control` and —
- * the holder being a ref, which redraws nothing when it changes — did not ask about `bot-1`. That
- * is how `computer-tools.tsx` draws a help or a secret card, and a conversation the tab has kept
- * (`kept-threads.ts`) has its cards at the first commit. Something that needs the Bot while it is
- * drawn reads `useDeclaredBotId` and waits for it.
+ * it mounts renders, and runs its first effects, before the Bot is declared.
+ *
+ * SO A RENDERER NEVER HANDS THE HOLDER'S STRING DOWN AS A PROP. `computer-tools.tsx` did, to the
+ * help and the secret card (`botId={bot.current}`). A renderer is registered once and CopilotKit
+ * draws it through a memo that compares the call and nothing else, so the string was read when
+ * the card was first drawn and never again. Measured 2026-10-05 through the real route
+ * (`conversation-return.test.tsx`): a conversation drawn again under a screen that had stayed —
+ * its channel could not be read for a moment, then could — had its kept cards (`kept-threads.ts`)
+ * in that first commit, and the card asked `/api/computers/default/control`, was told there is no
+ * such Bot, and stood with no buttons until the Bot's wait ran out. Coming back from another
+ * screen did not do it, and was measured too: the tools are mounted with the screen, so they are
+ * registered again in the effects of coming back, by which time the Bot is declared. What needs
+ * the Bot while it is drawn reads `useDeclaredBotId` itself and waits for it, as `HelpCard` and
+ * `ActivityReportCard` do: that is state, and declaring it draws them again.
  */
 
 const DEFAULT_BOT_ID = "default";

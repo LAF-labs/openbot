@@ -101,15 +101,26 @@ describe("whose request is open", () => {
 describe("a help card a reload left unfinished", () => {
   test("keeps its buttons while the request is open, and settles it", async () => {
     const { HelpCard } = await import("../src/components/computer/help-card");
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    // The card reads whose computer it is from the conversation it is drawn in, as in the app.
+    function Conversation() {
+      useActiveBot("agent-reloaded");
+      return (
+        <HelpCard
+          kind="help"
+          result={undefined}
+          said={REASON}
+          status="inProgress"
+          toolCallId="call-before-reload"
+        />
+      );
+    }
     const view = await mount(
-      <HelpCard
-        botId="agent-reloaded"
-        kind="help"
-        result={undefined}
-        said={REASON}
-        status="inProgress"
-        toolCallId="call-before-reload"
-      />,
+      <ActiveBotProvider>
+        <Conversation />
+      </ActiveBotProvider>,
     );
     await view.settle(60);
     const buttons = () =>

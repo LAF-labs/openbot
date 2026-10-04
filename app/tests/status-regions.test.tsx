@@ -48,15 +48,27 @@ const statusRegions = (host: Element) => [
 describe("the Bot asking for help", () => {
   test("is heard when the Bot starts waiting, from a region that was there before", async () => {
     const { HelpCard } = await import("../src/components/computer/help-card");
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    // The conversation the card is drawn in, which is where it reads whose computer to watch. One
+    // component for both renders: a new one each time would mount a new card, and a new region.
+    function Conversation({ status }: { status: "inProgress" | "executing" }) {
+      useActiveBot("agent-1");
+      return (
+        <HelpCard
+          kind="help"
+          result={undefined}
+          said="로그인 화면에서 막혔어요"
+          status={status}
+          toolCallId="call-1"
+        />
+      );
+    }
     const card = (status: "inProgress" | "executing") => (
-      <HelpCard
-        botId="agent-1"
-        kind="help"
-        result={undefined}
-        said="로그인 화면에서 막혔어요"
-        status={status}
-        toolCallId="call-1"
-      />
+      <ActiveBotProvider>
+        <Conversation status={status} />
+      </ActiveBotProvider>
     );
     const view = await mount(card("inProgress"));
     await view.settle(30);
