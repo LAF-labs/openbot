@@ -82,14 +82,30 @@ describe("the name a control is held to", () => {
     ]) {
       expect(pattern.test(live)).toBe(true);
     }
-    // The words are what was judged: another word, a word more, or a word less is a rename.
+    // The words are what was judged: another word, or a word more, is a rename.
     for (const live of [
       '무선 키보드 say "hi"',
       '무선 마우스 say "hi" 결제',
-      '마우스 say "hi"',
+      '마우스 무선 say "hi"',
     ]) {
       expect(pattern.test(live)).toBe(false);
     }
+    /*
+     * A WORD FEWER IS NOT: the tree prints what the page hides from the accessibility tree
+     * (`aria-hidden` decoration) as text, so the list's name can hold a word the browser's does not
+     * — "★ Headline" for a control the browser calls "Headline". The words judged are then more than
+     * the browser's, which is the safe direction; the other direction stays a rename.
+     */
+    for (const live of ['마우스 say "hi"', "무선마우스", '무선 마우스 "hi"']) {
+      expect(pattern.test(live)).toBe(true);
+    }
+    const starred = nameToMatch("★ Headline") as RegExp;
+    expect(starred.test("Headline")).toBe(true);
+    expect(starred.test("★ Headline")).toBe(true);
+    expect(starred.test("")).toBe(false);
+    expect(starred.test("Headline extra")).toBe(false);
+    // A screen-reader-only word the list never showed is still a rename.
+    expect((nameToMatch("현재 가") as RegExp).test("현재가 3,200")).toBe(false);
     // Only where the judged name had a space: the list never takes one away, so nothing else is let in.
     expect(pattern.test('무선 마우 스 say "hi"')).toBe(false);
     // Regex characters in a label are still the label's.

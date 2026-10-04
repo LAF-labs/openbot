@@ -51,13 +51,29 @@ export function judgedLabelOf(value: unknown): JudgedLabel | null {
 /** Where the server cuts a name (`toElement` in aria-snapshot.ts). A name this long may be a prefix. */
 const JUDGED_NAME_LIMIT = 200;
 
+const escaped = (word: string) => word.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+
 /** A name as a pattern: its own characters, with any run of spaces in it free to be any run or none. */
 function spacedAnyhow(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((word) => word.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"))
-    .join("\\s*");
+  return name.trim().split(/\s+/).map(escaped).join("\\s*");
+}
+
+/**
+ * A name as a pattern that the same words IN THE SAME ORDER satisfy with some of them left out —
+ * at least one kept — and the spaces anywhere or nowhere.
+ *
+ * THE LIST CAN SAY MORE THAN THE BROWSER DOES. Playwright's tree prints a decoration the page
+ * hides from the accessibility tree (`<span aria-hidden="true">★</span>`) as text like any other,
+ * so a name built from a control's contents (`nameFromWithin`) carries it — "★ Headline" — while
+ * the browser names the control "Headline" (measured 2026-10-04 in headless Chromium; Codex on
+ * pull request 65). The words the boundary judged are then a superset of the browser's, which is
+ * the safe direction: every rule that held back on the superset has already held back. The other
+ * direction — a word in the browser's name that the list never showed, say a screen-reader-only
+ * 결제 inside a button the list called 확인 — is a rename and stays refused.
+ */
+function someOfTheWords(name: string): string {
+  const words = name.trim().split(/\s+/).map(escaped);
+  return `(?=\\S)${words.map((word) => `(?:${word})?`).join("\\s*")}`;
 }
 
 /**
@@ -72,14 +88,15 @@ function spacedAnyhow(name: string): string {
  *    and the browser joins inline neighbours with none: `<mark>무선</mark>마우스` is "무선마우스" to the
  *    role engine and "무선 마우스" in the list. Held exactly, 16 of the 59 such links on a Naver
  *    search page were refused as renamed (measured 2026-10-04); compared with the spaces free, none
- *    were. Where the spaces fall is not a rename — the words are what the boundary judged.
+ *    were. Where the spaces fall is not a rename — the words are what the boundary judged. And a
+ *    word the list showed that the browser leaves out is not one either (`someOfTheWords`).
  */
 export function nameToMatch(name: string): string | RegExp {
   if (name.length >= JUDGED_NAME_LIMIT) {
     return new RegExp(`^\\s*${spacedAnyhow(name)}`);
   }
   if (name === "") return /^(|\/.*\/|.{901,})$/;
-  if (/\s/.test(name)) return new RegExp(`^\\s*${spacedAnyhow(name)}\\s*$`);
+  if (/\s/.test(name)) return new RegExp(`^\\s*${someOfTheWords(name)}\\s*$`);
   return name;
 }
 
