@@ -964,14 +964,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * idle minutes still closing everything), one to `root` (the closed tab's site put beside its
  * sentence, which does not say the Bot's own tab went).
  *
+ * RAISED AGAIN 2026-10-05 after that change's review, each by exactly what was added: three to
+ * `agent-computer` (a tab that is nobody's closed by the sweep after a minute, on the bookkeeping
+ * and against a real Chromium, with the browser's last tab left as the spare; and a page kept under
+ * its sign-in window and two more above it, behind the real door), four to `server` (a snapshot
+ * saying old tabs were closed and a routine's read saying its tab went each ending the round for
+ * the switch and the key after it in the same reply, a look saying neither ending nothing, and the
+ * rule read on its own).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3515, roots: ["server"] },
+  { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 488, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 491, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

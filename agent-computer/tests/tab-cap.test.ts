@@ -29,6 +29,7 @@ import { tabLost } from "../src/tab-loss";
 import {
   createTabs,
   IDLE_CLOSE_MS,
+  STRAY_GRACE_MS,
   TAB_CAP,
   type TabLost,
   TabListError,
@@ -43,16 +44,19 @@ import { serveFixture, TO_HANG_PIN } from "./fixture-site";
  * tasks on Naver stopped opening anything: nothing counted a Bot's tabs and nothing closed one
  * while the Bot kept calling. Every `target=_blank` link and every window a site opens is adopted
  * as the Bot's, no route closes a tab, and the ten-minute idle close looks at the Bot's last call.
- * The first test below, run on `main` before the cap existed: one Bot, thirty opens, never idle —
- * its tabs after each were 2, 3, 4 … 31, and the browser's pages the same. And what one costs, in
+ * The first test below, run against `main`'s source (39341c2f, unpacked beside this file, with the
+ * three names this file imports that `main` does not have stood in for by a constant and two
+ * stubs — as it stands the file fails there at import): one Bot, thirty opens, never idle — its
+ * tabs after each were 2, 3, 4 … 31, and the browser's pages the same. And what one costs, in
  * the stable image on news.naver.com: 130–140 MiB and 13–14 processes for every tab after the
  * first, under a container limit of 3 GiB.
  *
- * So a Bot holds `TAB_CAP` tabs, and the one it used longest ago is closed to make room for a new
- * one — never the tab it is on, the tab that opened that one, or a tab a person or an ask is
- * holding. The Bot is not told it lost a tab, because it did not: what changed is the list its
+ * So a Bot holds `TAB_CAP` tabs, and one it has not used for longest is closed to make room for a
+ * new one — never the tab it is on, a tab an open window reports to, or a tab a person or an ask
+ * is holding. The Bot is not told it lost a tab, because it did not: what changed is the list its
  * `computer_switch_tab` index was read from, and an index from before is refused until it has
- * read the list again.
+ * read the list again. And a tab that is nobody's, which no count reaches, is closed by the idle
+ * sweep once it has been nobody's for a minute.
  *
  * IN THIS PROCESS, BEHIND THE REAL DOOR, as `crashed-tab.test.ts` is and for its reason: which tab
  * was closed can only be seen by whoever holds the tabs. Skipped where Playwright has no browser.
@@ -194,6 +198,17 @@ const elementsOf = (answer: Answer): Element[] =>
 const NEW_TAB = "주문 상세 보기";
 const SAME_IN_NEW_TAB = "이 화면 새 탭";
 
+/**
+ * A tab is adopted, then the browser is asked whether it reports to its opener, and only then is
+ * the Bot kept to its number: a moment behind the adoption, and waited for here.
+ */
+async function keptToItsNumber(bot: string): Promise<void> {
+  const kept = await until(
+    async () => ((await computer?.profiles.tabs(bot)) ?? []).length <= TAB_CAP,
+  );
+  if (!kept) throw new Error("the Bot was not brought back to its number");
+}
+
 /** Press a link on the tab the Bot is on, by a look just taken, and hand back the tab it opened. */
 async function pressForTab(bot: string, link: string): Promise<Page> {
   const from = await tabOf(bot);
@@ -210,6 +225,7 @@ async function pressForTab(bot: string, link: string): Promise<Page> {
   if (!(await until(async () => (await tabOf(bot)) !== from))) {
     throw new Error(`the tab ${link} opened was not adopted`);
   }
+  await keptToItsNumber(bot);
   return tabOf(bot);
 }
 
@@ -237,6 +253,7 @@ async function opensItself(bot: string, address: string): Promise<Page> {
   if (!(await until(async () => (await tabOf(bot)) !== from))) {
     throw new Error("the window the page opened was not adopted");
   }
+  await keptToItsNumber(bot);
   return tabOf(bot);
 }
 
@@ -299,12 +316,15 @@ describe("a Bot's tabs, counted without a browser", () => {
     const open: FakeTab[] = [];
     const lost: [string, TabLost][] = [];
     const clock = { now: 0 };
+    /** The tabs that can reach the one that opened them, as the browser says of a real one. */
+    const reporting = new WeakSet<Page>();
     const tabs = createTabs({
       pages: () => open,
       now: () => clock.now,
       onPage: () => undefined,
       onLost: (botId, how) => lost.push([botId, how]),
       holds: (_botId, page) => holds(page),
+      reportsToOpener: async (page) => reporting.has(page),
     });
     /** A Bot's first tab, as `profiles.page` hands one. */
     const first = (botId: string, address: string): FakeTab => {
@@ -314,9 +334,24 @@ describe("a Bot's tabs, counted without a browser", () => {
       tabs.touch(botId, made);
       return made;
     };
-    /** A tab a page opened, adopted as the browser's `page` event has it adopted. */
+    /**
+     * A tab a plain link opened — a result off a list — adopted as the browser's `page` event has
+     * it adopted. It cannot reach the page it came from.
+     */
     const opens = async (from: FakeTab, address: string): Promise<FakeTab> => {
       const made = tab(address, from);
+      open.push(made);
+      tabs.adoptOpened(made);
+      await Bun.sleep(0);
+      return made;
+    };
+    /** A window a page opened to hear back from — a sign-in, a payment — which reports to it. */
+    const opensWindow = async (
+      from: FakeTab,
+      address: string,
+    ): Promise<FakeTab> => {
+      const made = tab(address, from);
+      reporting.add(made);
       open.push(made);
       tabs.adoptOpened(made);
       await Bun.sleep(0);
@@ -331,7 +366,7 @@ describe("a Bot's tabs, counted without a browser", () => {
       }
       return { hub, opened };
     };
-    return { tabs, open, lost, clock, first, opens, full };
+    return { tabs, open, lost, clock, first, opens, opensWindow, full, tab };
   }
 
   let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
@@ -370,7 +405,8 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(tabs.pagesOf("other-bot")).toEqual([theirs.hub, ...theirs.opened]);
     for (const page of theirs.opened) expect(page.isClosed()).toBe(false);
 
-    // And the other Bot's own seventh closes one of its own, not one of this Bot's.
+    // And the other Bot's own seventh, pressed on its own list, closes one of its own.
+    tabs.touch("other-bot", theirs.hub);
     await opens(theirs.hub, "https://bank.example/item/new");
     expect(theirs.opened[0]?.isClosed()).toBe(true);
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
@@ -378,32 +414,74 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(lost).toEqual([]);
   });
 
-  test("never the tab that opened the one the Bot is on, however long ago it was used — and only for as long as the Bot is on that one", async () => {
+  /*
+   * A WINDOW REPORTS TO THE PAGE THAT OPENED IT, AND THAT PAGE IS KEPT BY RULE. The first version
+   * kept only the tab that opened the one the Bot was on. With a page, its sign-in window and two
+   * windows above that, the page — used longest ago — was closed under three open windows, and the
+   * sign-in had nowhere to hand its result (`d441b042`).
+   */
+  test("never a tab an open window reports to, all the way up a chain of them and whichever tab the Bot is on — while a tab a plain link opened keeps nothing", async () => {
     warned = spyOn(console, "warn").mockImplementation(() => undefined);
-    const { tabs, full, opens } = counting();
-    // The hub was used once, before everything it opened: the oldest of all.
-    const { hub, opened } = await full("bot", "https://shop.example");
-    const [second, third] = opened;
-    if (!second || !third) throw new Error("no tabs were opened");
+    const { tabs, first, opens, opensWindow } = counting();
+    // Three pages, a fourth, and a sign-in window the fourth opened.
+    const one = first("bot", "https://shop.example/list?q=1");
+    const two = await opens(one, "https://shop.example/item/2");
+    const three = await opens(one, "https://shop.example/item/3");
+    const page = await opens(one, "https://shop.example/checkout");
+    const signIn = await opensWindow(page, "https://id.example/sign-in");
+    // The Bot goes round the three and comes back to the window: the page under it is now the
+    // tab it used longest ago.
+    for (const visited of [one, two, three, signIn]) tabs.touch("bot", visited);
 
-    // A sign-in window opened from the hub. It reports to the hub, so the hub stays.
-    const signIn = await opens(hub, "https://id.example/sign-in");
-    expect(hub.isClosed()).toBe(false);
-    expect(second.isClosed()).toBe(true);
+    // The window opens a 본인인증 window, and that one opens another: seven.
+    const verify = await opensWindow(signIn, "https://cert.example/verify");
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
+    const app = await opensWindow(verify, "https://cert.example/app");
+    // Each window reports to the one before it and the first to the page: none of them goes.
+    // The one that does is the oldest of the rest.
+    expect(one.isClosed()).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([
+      two,
+      three,
+      page,
+      signIn,
+      verify,
+      app,
+    ]);
 
-    // A tab opened from another page: the Bot is on that one now, and the hub is only the oldest.
-    await opens(third, "https://shop.example/item/more");
-    expect(hub.isClosed()).toBe(true);
-    expect(signIn.isClosed()).toBe(false);
-    expect(third.isClosed()).toBe(false);
+    // Whichever tab the Bot is on: on a result a plain link opened from another page, the page
+    // under the sign-in window still stays — and the page that link was on goes, though the tab
+    // it opened is open and the Bot is on it. A result has nothing to say to its list.
+    const more = await opens(two, "https://shop.example/item/more");
+    expect(two.isClosed()).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([
+      three,
+      page,
+      signIn,
+      verify,
+      app,
+      more,
+    ]);
+
+    // Only for as long as the window is open. Its site closes the sign-in window; the page is
+    // then the tab used longest ago and nothing more, and goes when the Bot is over its number.
+    await signIn.close();
+    await opens(more, "https://shop.example/item/a");
+    expect(page.isClosed()).toBe(false);
+    await opens(more, "https://shop.example/item/b");
+    expect(page.isClosed()).toBe(true);
+    // The window above still has one reporting to it, and stays.
+    expect(verify.isClosed()).toBe(false);
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
   });
 
   test("never a tab that is held, and when nothing may go the Bot is over its number and a line says so", async () => {
     warned = spyOn(console, "warn").mockImplementation(() => undefined);
     const held = new Set<Page>();
-    const { tabs, clock, full, opens } = counting((page) => held.has(page));
+    const every = { tab: false };
+    const { tabs, clock, full, opens } = counting(
+      (page) => every.tab || held.has(page),
+    );
     const { hub, opened } = await full("bot", "https://shop.example");
     const [second, third] = opened;
     if (!second || !third) throw new Error("no tabs were opened");
@@ -417,7 +495,7 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
 
     // Every tab held: nothing is closed, the tab the Bot is on least of all.
-    for (const page of tabs.pagesOf("bot")) held.add(page);
+    every.tab = true;
     const eighth = await opens(seventh, "https://shop.example/item/8");
     const ninth = await opens(eighth, "https://shop.example/item/9");
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP + 2);
@@ -429,6 +507,7 @@ describe("a Bot's tabs, counted without a browser", () => {
 
     // Let go of: the next tab that opens brings the Bot back to its number, oldest first — the
     // three it opened first and has not been on since, and not the hub it went back to.
+    every.tab = false;
     held.clear();
     clock.now += 60_000;
     const tenth = await opens(ninth, "https://shop.example/item/10");
@@ -445,12 +524,13 @@ describe("a Bot's tabs, counted without a browser", () => {
 
   test("the line a closed tab leaves is one a minute for a Bot, by its site's origin only, and a crash's line is its own", async () => {
     warned = spyOn(console, "warn").mockImplementation(() => undefined);
-    const { clock, full, opens } = counting();
+    const { tabs, clock, full, opens } = counting();
     const { hub } = await full("loop-bot", "https://shop.example");
     const other = await full("other-bot", "https://bank.example");
 
-    // A Bot working down a list: every result is a tab, and every tab closes one.
+    // A Bot working down a list: back to the list, the next result is a tab, and a tab is closed.
     for (let item = 0; item < 3; item += 1) {
+      tabs.touch("loop-bot", hub);
       await opens(hub, `https://shop.example/item/more-${item}`);
       clock.now += 1_000;
     }
@@ -466,6 +546,7 @@ describe("a Bot's tabs, counted without a browser", () => {
     ]);
     expect(linesOf("tab_capped")[0]).not.toHaveProperty("unsaid");
     // Another Bot's is its own line, and a renderer that dies is said beside it, not instead.
+    tabs.touch("other-bot", other.hub);
     await opens(other.hub, "https://bank.example/item/more");
     other.hub.emit("crash");
     expect(linesOf("tab_capped").map((line) => line.bot)).toEqual([
@@ -475,6 +556,7 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(linesOf("tab_crashed")).toHaveLength(1);
 
     clock.now += 60_000;
+    tabs.touch("loop-bot", hub);
     await opens(hub, "https://shop.example/item/later");
     expect(linesOf("tab_capped").at(-1)).toMatchObject({
       bot: "loop-bot",
@@ -484,50 +566,72 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(JSON.stringify(warned.mock.calls)).not.toMatch(/item|list|from|q=/);
   });
 
-  test("an index read before a tab was closed is refused until the list is read again, and what was closed is handed over once", async () => {
+  test("an index read before a tab was closed is refused until the list is read again, and every tab that went is handed over once — how many, and their sites", async () => {
     warned = spyOn(console, "warn").mockImplementation(() => undefined);
-    const { tabs, first, full, opens } = counting();
-    const { hub, opened } = await full("bot", "https://shop.example");
-    const fourth = opened[2];
-    if (!fourth) throw new Error("no tabs were opened");
+    const { tabs, first, opens } = counting();
+    const hub = first("bot", "https://shop.example/list?q=1");
+    await opens(hub, "https://news.example/story?id=1");
+    await opens(hub, "https://pay.example/window?order=7");
+    await opens(hub, "https://shop.example/item/3");
+    await opens(hub, "https://shop.example/item/4");
+    const fifth = await opens(hub, "https://shop.example/item/5");
     // The list as the Bot reads it now: nothing closed, and an index is taken.
     const read = tabs.cappedOf("bot");
     expect(read).toBe(0);
     expect(tabs.listRead("bot", read)).toBeUndefined();
-    expect(tabs.pagesOf("bot")[3]).toBe(fourth);
+    expect(tabs.pagesOf("bot")[5]).toBe(fifth);
     await tabs.switchTab("bot", 0);
     expect(tabs.live.get("bot")?.page).toBe(hub);
 
-    // Two more open, and the two oldest go. `fourth` was index 3, and is index 1 of what is left:
-    // index 3 is another tab now.
-    const seventh = await opens(hub, "https://pay.example/window?order=7");
-    const eighth = await opens(seventh, "https://id.example/sign-in?next=8");
-    expect(tabs.pagesOf("bot")[1]).toBe(fourth);
-    expect(tabs.pagesOf("bot")[3]).not.toBe(fourth);
+    // Two more open before the Bot looks again, and two tabs go. `fifth` was index 5 and is
+    // index 3 of what is left: index 5 is another tab now.
+    const seventh = await opens(hub, "https://shop.example/item/7");
+    const eighth = await opens(seventh, "https://shop.example/item/8");
+    expect(tabs.pagesOf("bot")[3]).toBe(fifth);
+    expect(tabs.pagesOf("bot")[5]).toBe(eighth);
 
-    await expect(tabs.switchTab("bot", 3)).rejects.toBeInstanceOf(TabListError);
+    await expect(tabs.switchTab("bot", 5)).rejects.toBeInstanceOf(TabListError);
     // Refused, not moved: the Bot is on the tab it was on.
     expect(tabs.live.get("bot")?.page).toBe(eighth);
     // A list read before the close is not the list: it lets nothing through and says nothing.
     expect(tabs.listRead("bot", read)).toBeUndefined();
-    await expect(tabs.switchTab("bot", 3)).rejects.toBeInstanceOf(TabListError);
+    await expect(tabs.switchTab("bot", 5)).rejects.toBeInstanceOf(TabListError);
 
-    // The list as it is now: how many went, the last one's site, and only once.
+    // The list is read, and a third tab goes before its answer is written.
     const again = tabs.cappedOf("bot");
+    await opens(eighth, "https://shop.example/item/9");
+    // BOTH tabs that list no longer shows, by their sites — not the last one alone. The first
+    // version said `closed: 2` beside one origin, and its sentence spoke of one tab.
     expect(tabs.listRead("bot", again)).toEqual({
-      origin: "https://shop.example",
       closed: 2,
+      origins: ["https://news.example", "https://pay.example"],
     });
     expect(tabs.listRead("bot", again)).toBeUndefined();
-    await tabs.switchTab("bot", 1);
-    expect(tabs.live.get("bot")?.page).toBe(fourth);
+    // The third is not in that list: it is the next one's to say, and the index is still stale.
+    await expect(tabs.switchTab("bot", 2)).rejects.toBeInstanceOf(TabListError);
+    const latest = tabs.cappedOf("bot");
+    expect(tabs.listRead("bot", latest)).toEqual({
+      closed: 1,
+      origins: ["https://shop.example"],
+    });
+    expect(tabs.listRead("bot", latest)).toBeUndefined();
+    await tabs.switchTab("bot", 2);
+    expect(tabs.live.get("bot")?.page).toBe(fifth);
+
+    // Two tabs of one site: the site is said once, the count is still two.
+    const tenth = await opens(fifth, "https://shop.example/item/10");
+    await opens(tenth, "https://shop.example/item/11");
+    expect(tabs.listRead("bot", tabs.cappedOf("bot"))).toEqual({
+      closed: 2,
+      origins: ["https://shop.example"],
+    });
 
     // What became of a list ends with it: every tab closed, and the Bot's next tab starts clean.
-    await opens(fourth, "https://shop.example/item/9");
-    expect(tabs.cappedOf("bot")).toBe(3);
+    await opens(fifth, "https://shop.example/item/12");
+    expect(tabs.cappedOf("bot")).toBe(6);
     await tabs.closeTabsOf("bot");
     expect(tabs.cappedOf("bot")).toBe(0);
-    expect(tabs.listRead("bot", 3)).toBeUndefined();
+    expect(tabs.listRead("bot", 6)).toBeUndefined();
     const fresh = first("bot", "about:blank");
     await tabs.switchTab("bot", 0);
     expect(tabs.live.get("bot")?.page).toBe(fresh);
@@ -548,6 +652,70 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(tabs.owners.has(oldest)).toBe(false);
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
     expect(tabs.isSpare(oldest)).toBe(false);
+  });
+
+  /*
+   * A TAB THAT IS NOBODY'S. One whose opener was gone before the browser said who opened it, one
+   * the browser opened itself, and whatever such a tab opens: in no Bot's list and no Bot's
+   * count, and open for as long as any Bot had a tab (on `d441b042`, and on main).
+   */
+  test("a tab that is nobody's is closed by the sweep once it has been nobody's for a minute — not sooner, not one a Bot took meanwhile, and not the browser's last tab", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { tabs, open, clock, first, opens, tab } = counting();
+    const mine = first("bot", "https://shop.example/list?q=1");
+    // Nobody's: no Bot's page opened it. And the tab it opens is nobody's too.
+    const stray = tab("https://ads.example/landing?campaign=77");
+    open.push(stray);
+    tabs.adoptOpened(stray);
+    const child = await opens(stray, "https://ads.example/more?x=1");
+    // And one that is nobody's only on its way to being somebody's.
+    const taken = tab("about:blank");
+    open.push(taken);
+    expect([stray, child, taken].map((page) => tabs.owners.has(page))).toEqual([
+      false,
+      false,
+      false,
+    ]);
+
+    // The sweep that first finds them: seen, and left.
+    expect(tabs.closeStrays()).toBe(0);
+    tabs.own("other-bot", taken);
+    tabs.touch("other-bot", taken);
+    clock.now += STRAY_GRACE_MS - 1;
+    expect(tabs.closeStrays()).toBe(0);
+    expect([stray, child].map((page) => page.isClosed())).toEqual([
+      false,
+      false,
+    ]);
+
+    clock.now += 1;
+    expect(tabs.closeStrays()).toBe(2);
+    expect([stray, child].map((page) => page.isClosed())).toEqual([true, true]);
+    // A Bot's tab is untouched, and so is the one a Bot took before the minute was out.
+    expect([mine, taken].map((page) => page.isClosed())).toEqual([
+      false,
+      false,
+    ]);
+    // One line for the two, by the site's origin only, and about no Bot.
+    expect(linesOf("tab_stray_closed")).toEqual([
+      expect.objectContaining({ origin: "https://ads.example", pages: 4 }),
+    ]);
+    expect(linesOf("tab_stray_closed")[0]).not.toHaveProperty("bot");
+    expect(JSON.stringify(warned.mock.calls)).not.toMatch(
+      /landing|campaign|77|more|x=1/,
+    );
+
+    // THE LAST TAB IS THE SPARE. Every Bot's tab gone and one tab left that is nobody's: it is
+    // what the next Bot with no tab is handed, and the sweep does not take it.
+    await tabs.closeTabsOf("bot");
+    await tabs.closeTabsOf("other-bot");
+    const spare = tab("about:blank");
+    open.push(spare);
+    expect(tabs.closeStrays()).toBe(0);
+    clock.now += 2 * STRAY_GRACE_MS;
+    expect(tabs.closeStrays()).toBe(0);
+    expect(spare.isClosed()).toBe(false);
+    expect(tabs.isSpare(spare)).toBe(true);
   });
 });
 
@@ -628,7 +796,7 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
         context.pages().filter((page) => !page.isClosed()).length,
       ]);
     }
-    // On `main`, before the cap: [[2,2],[3,3],[4,4] … [31,31]].
+    // Against `main`'s source, before the cap: [[2,2],[3,3],[4,4] … [31,31]].
     console.info(
       `one Bot, ${OPENS} opens, never idle — [its tabs, the browser's pages] after each: ${JSON.stringify(counts)}`,
     );
@@ -706,11 +874,14 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
     expect(await tabOf(bot)).toBe(third);
   }, 60_000);
 
-  test("is told once, on its own next list, that an old tab was closed — not on a person's, and never that its own tab went", async () => {
+  test("is told once, on its own next list, how many tabs were closed and whose sites — not on a person's, and never that its own tab went", async () => {
     const bot = "cap-told-bot";
-    const { hub } = await atTheCap(bot);
+    await atTheCap(bot);
     await post("/snapshot", bot);
-    await openFromHub(bot, hub);
+    // Two windows open before the Bot looks again — a page that opens a window which opens
+    // another — and two tabs go.
+    await opensItself(bot, "/other?one");
+    await opensItself(bot, "/other?two");
 
     // A person's screen takes a snapshot too. It is not the Bot reading its list, and the fact
     // is not carried off in an answer the Bot never sees.
@@ -722,11 +893,12 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
     expect((await call("GET", "/read", bot)).body.notes).toBeUndefined();
 
     const own = await post("/snapshot", bot);
+    // Both of them, and the site they showed once: not `closed: 2` beside one tab's sentence.
     expect(own.body.notes).toEqual([
       {
         code: "laf:old_tab_closed",
-        origin: new URL(fixture?.url ?? "").origin,
-        closed: 1,
+        closed: 2,
+        origins: [new URL(fixture?.url ?? "").origin],
       },
     ]);
     expect(tabsOf(own)).toHaveLength(TAB_CAP);
@@ -777,6 +949,56 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
       }
     }, 60_000);
   });
+
+  /*
+   * A WINDOW REPORTS TO THE PAGE THAT OPENED IT. `window.open` is how a sign-in or a payment window
+   * is opened, and the new window can reach the one behind it (`window.opener`); a plain
+   * `target=_blank` link cannot. The first version kept only the tab that opened the tab the Bot
+   * was on: here the page went, used longest ago, with its sign-in window and two more above it
+   * still open (`d441b042`: `page.isClosed()` true).
+   */
+  test("keeps the page a sign-in window reports to, and every window above it, though it is the tab used longest ago", async () => {
+    const bot = "cap-chain-bot";
+    const hub = fixture?.url ?? "";
+    await post("/navigate", bot, { url: hub });
+    const list = await tabOf(bot);
+    const two = await openFromHub(bot, hub);
+    const three = await openFromHub(bot, hub);
+    const page = await openFromHub(bot, hub);
+    // The page opens a sign-in window, and the Bot is on it.
+    const signIn = await opensItself(bot, "/other?sign-in");
+    // The Bot goes round the other three and comes back to the window: the page under it is
+    // now the tab it used longest ago.
+    for (const [index, there] of [
+      [0, list],
+      [1, two],
+      [2, three],
+      [4, signIn],
+    ] as const) {
+      expect((await post("/tabs/switch", bot, { index })).status).toBe(200);
+      expect(await tabOf(bot)).toBe(there);
+    }
+
+    // The window opens a 본인인증 window, and that one opens another: seven.
+    const verify = await opensItself(bot, "/other?verify");
+    const app = await opensItself(bot, "/other?app");
+
+    // The oldest of the tabs that may go is the list. The page, the sign-in window and the
+    // window above it each have an open window reporting to them, and stay.
+    expect(await until(() => list.isClosed())).toBe(true);
+    for (const kept of [two, three, page, signIn, verify, app]) {
+      expect(kept.isClosed()).toBe(false);
+    }
+    expect(tabsOf(await post("/snapshot", bot))).toHaveLength(TAB_CAP);
+    // And the sign-in window can still reach the page it hands its result to.
+    expect(
+      await signIn.evaluate(
+        () => window.opener !== null && window.opener.closed === false,
+      ),
+    ).toBe(true);
+    // A plain link's tab cannot reach its page, which is why a list is not kept for its results.
+    expect(await two.evaluate(() => window.opener === null)).toBe(true);
+  }, 60_000);
 
   /*
    * THE TABS THAT MAY NOT GO, THROUGH THE DOOR. `/to-hang` has a link that opens the same page in
@@ -845,6 +1067,7 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
       const from = await tabOf(bot);
       expect((await post("/human/click", bot, at)).status).toBe(200);
       expect(await until(async () => (await tabOf(bot)) !== from)).toBe(true);
+      await keptToItsNumber(bot);
       chain.push(await tabOf(bot));
     }
     const [second, third, fourth] = chain;
@@ -906,7 +1129,11 @@ describe.skipIf(!HAS_BROWSER)(
           opened.push(await profiles.page(bot));
         }
         // Two more than it may hold were opened, and the two oldest went for the cap.
-        expect(await profiles.tabs(bot)).toHaveLength(TAB_CAP);
+        expect(
+          await until(
+            async () => (await profiles.tabs(bot)).length === TAB_CAP,
+          ),
+        ).toBe(true);
         expect(profiles.cappedOf(bot)).toBe(2);
         expect(said("tab_capped")).toHaveLength(1);
         const kept = [hub, ...opened.slice(2)];
@@ -945,3 +1172,103 @@ describe.skipIf(!HAS_BROWSER)(
     }, 60_000);
   },
 );
+
+/*
+ * A TAB THAT IS NOBODY'S, IN A REAL BROWSER. A page nothing of a Bot's opened is in no Bot's list:
+ * the cap does not count it, the idle close does not reach it, and anything it opens is nobody's
+ * too. A browser of its own, so the clock can be this test's.
+ */
+describe.skipIf(!HAS_BROWSER)("a tab that is nobody's", () => {
+  test("is closed by the sweep after a minute, with the tab it opened — a Bot's tabs are left, and the browser's last tab is the spare the next Bot is handed", async () => {
+    const bot = "stray-owner-bot";
+    const base = await mkdtemp(join(tmpdir(), "laf-tab-stray-"));
+    const clock = { now: 1_000_000 };
+    await mkdir(join(base, "profiles"), { recursive: true });
+    const profiles = createProfiles(join(base, "profiles"), {
+      idleCloseMs: IDLE_CLOSE_MS,
+      now: () => clock.now,
+    });
+    const warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const strayLines = () =>
+      warned.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("tab_stray_closed"));
+    try {
+      const mine = await profiles.page(bot);
+      await mine.goto(fixture?.url ?? "");
+      // A window of the Bot's own, adopted: it is the Bot's, and must be left.
+      await mine.evaluate(() => {
+        window.open("/other");
+      });
+      expect(await until(async () => (await profiles.page(bot)) !== mine)).toBe(
+        true,
+      );
+      const adopted = await profiles.page(bot);
+      const context = mine.context();
+      // Nobody's: no page of a Bot's opened it. And it opens a window, which is nobody's too.
+      const stray = await context.newPage();
+      await stray.goto(`${fixture?.url}other?orderno=20261005-7788`);
+      await stray.evaluate(() => {
+        window.open("/other?from=stray");
+      });
+      expect(await until(() => context.pages().length === 4)).toBe(true);
+      const child = context
+        .pages()
+        .find((page) => ![mine, adopted, stray].includes(page));
+      if (!child) throw new Error("the stray's window did not open");
+      await child.waitForLoadState("domcontentloaded");
+      // In no Bot's list, before or after.
+      expect(await profiles.tabs(bot)).toHaveLength(2);
+
+      // The sweep that first finds them, and one a millisecond short of the minute: all four open.
+      expect(await profiles.closeIdle()).toEqual([]);
+      clock.now += STRAY_GRACE_MS - 1;
+      expect(await profiles.closeIdle()).toEqual([]);
+      expect(context.pages().filter((page) => !page.isClosed())).toHaveLength(
+        4,
+      );
+      expect(strayLines()).toEqual([]);
+
+      clock.now += 1;
+      expect(await profiles.closeIdle()).toEqual([]);
+      expect(await until(() => stray.isClosed() && child.isClosed())).toBe(
+        true,
+      );
+      expect([mine, adopted].map((page) => page.isClosed())).toEqual([
+        false,
+        false,
+      ]);
+      expect(await profiles.tabs(bot)).toHaveLength(2);
+      // One line for the two, with an origin and nothing else of either page.
+      expect(strayLines()).toHaveLength(1);
+      const line = strayLines()[0] ?? "";
+      expect(JSON.parse(line)).toMatchObject({
+        level: "warn",
+        event: "tab_stray_closed",
+        origin: new URL(fixture?.url ?? "").origin,
+        pages: 4,
+      });
+      for (const kept of ["other", "orderno", "20261005", "stray-owner"]) {
+        expect({ kept, logged: line.includes(kept) }).toEqual({
+          kept,
+          logged: false,
+        });
+      }
+
+      // THE LAST TAB. The Bot's own tabs go, and the one tab left is nobody's: the sweep leaves
+      // it, and it is what the Bot is handed when it next asks for a tab.
+      await adopted.close();
+      await mine.close();
+      const spare = await context.newPage();
+      expect(await profiles.closeIdle()).toEqual([]);
+      clock.now += 2 * STRAY_GRACE_MS;
+      expect(await profiles.closeIdle()).toEqual([]);
+      expect(spare.isClosed()).toBe(false);
+      expect(await profiles.page(bot)).toBe(spare);
+    } finally {
+      warned.mockRestore();
+      await profiles.closeAll();
+      await rm(base, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
