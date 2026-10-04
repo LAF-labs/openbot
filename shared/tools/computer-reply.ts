@@ -11,11 +11,7 @@
  * The pause for a person (a 409 carrying `awaitingApproval`) is NOT read here: each caller waits
  * for the answer in its own way and sends the same call again, so the model never sees that reply.
  */
-import {
-  noteCodesOf,
-  noteTexts,
-  toolResultText,
-} from "../prompt/tool-results.ko";
+import { noteTexts, toolResultText } from "../prompt/tool-results.ko";
 
 /** What every computer call returns to the model: the result, or a reason it did not happen. */
 export type ComputerOutcome = Record<string, unknown> & { ok: boolean };
@@ -56,17 +52,9 @@ export function computerReplyOutcome(
    * The facts the browser noticed, put into the words the model reads. The computer ships
    * `{code: "laf:dialog", message}` and knows no locale; translated here, on the one path every
    * successful computer call comes back through.
-   *
-   * AND THE CODES KEPT BESIDE THE WORDS, for the turn loop: an alert ends the rest of a round of
-   * browser steps (`server/src/runner/round-stop.ts`), and once translated the fact was only a
-   * sentence. The loop strips them again before the model reads the outcome (`turn-loop.ts`).
    */
   const said = body ? noteTexts(body.notes) : undefined;
-  return {
-    ok: true,
-    ...(body ?? {}),
-    ...(said ? { notes: said, noteCodes: noteCodesOf(body?.notes) } : {}),
-  };
+  return { ok: true, ...(body ?? {}), ...(said ? { notes: said } : {}) };
 }
 
 /**

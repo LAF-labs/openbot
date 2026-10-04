@@ -110,6 +110,15 @@ export function endingOfSteps(steps: readonly EndingStep[]): TaskEnding {
    * 보기 after it, which `NO_RETRY` exists to refuse (`app/src/lib/computer/task-state.ts`).
    */
   const last = steps.findLast((step) => step.facts?.code !== STEP_NOT_REACHED);
+  /*
+   * NOTHING IN IT WAS TRIED. A request for a person ends the task in front of it
+   * (`app/src/components/channels/chat-messages.ts`) and ends the round, so a step asked for after
+   * one in the same reply is skipped and starts a task of its own. It is not 멈춤, which is the
+   * owner's Stop (`task-state.ts`): the task did not finish, and the skip is why.
+   */
+  if (!last && steps.length > 0) {
+    return { kind: "failed", code: STEP_NOT_REACHED };
+  }
   if (!last || last.facts === null) return { kind: "stopped" };
   const facts = last.facts;
   if (facts.unanswered === true || facts.stopped === true) {

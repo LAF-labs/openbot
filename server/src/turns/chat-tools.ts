@@ -23,6 +23,7 @@ import type { Tool } from "@ag-ui/client";
 import { PERSON_WAIT_MS } from "../../../shared/person-wait";
 import { isPersona } from "../../../shared/persona";
 import {
+  noteCodesOf,
   routineListResult,
   routineSavedText,
   routineUpdatedText,
@@ -237,10 +238,17 @@ function computerReply(result: unknown): ComputerOutcome {
   if (isBadRequest(result)) {
     return computerReplyOutcome(400, result as Record<string, unknown>);
   }
-  return computerReplyOutcome(
-    200,
-    overJson((result ?? {}) as Record<string, unknown>),
-  );
+  const body = overJson((result ?? {}) as Record<string, unknown>);
+  const outcome = computerReplyOutcome(200, body);
+  /*
+   * THE NOTES' CODES, KEPT FOR THE TURN LOOP. The shared mapping puts the notes into words and keeps
+   * nothing else, so "an alert went up" reached the loop as a Korean sentence — and an alert ends
+   * the rest of a round of browser steps (`runner/round-stop.ts`). Added here, on the server, not in
+   * the shared mapping: what the window and the eval hand a model straight from that mapping must
+   * not grow a field. The loop takes them off again before it files the result (`turn-loop.ts`).
+   */
+  const codes = noteCodesOf(body.notes);
+  return codes.length > 0 ? { ...outcome, noteCodes: codes } : outcome;
 }
 
 /**

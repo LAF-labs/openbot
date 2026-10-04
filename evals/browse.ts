@@ -30,6 +30,7 @@ import { SKILL_VIEW } from "../shared/tools/skills";
 import { createComputerClient } from "../server/src/computer/client";
 import { DEFAULT_ACTION_POLICY } from "../server/src/computer/default-policy";
 import { createComputerGateway } from "../server/src/computer/gateway";
+import { outcomeContent } from "../server/src/runner/turn-loop";
 import { createUnattendedTools } from "../server/src/runner/unattended";
 import { callsOf, eventsOfSse, resultsOf, textOf } from "./lib";
 import { EVAL_TIME_ZONE, systemMessageFor } from "./prompt";
@@ -251,9 +252,14 @@ async function runTask(task: Task) {
       })),
     });
     for (const call of calls) {
+      /*
+       * Filed the way the turn loop files it (`outcomeContent`), not as the executor returned it:
+       * the executor's result carries what only the loop reads (`noteCodes`, `round-stop.ts`) and
+       * what only a person's card reads (`preview`), and a model here must read what a routine's reads.
+       */
       const content =
         answered.get(call.id) ??
-        JSON.stringify(
+        outcomeContent(
           await toolkit.execute(call.name, call.arguments ?? {}, {
             id: call.id,
           }),

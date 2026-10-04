@@ -276,6 +276,8 @@ export async function runTurnLoop(
   let awaiting: string | null = null;
   /** How many of the last step's calls the Bot service answered itself. See `turn`. */
   let settledAhead = 0;
+  /** The last step's open calls that come after an acting call the Bot service refused. See `turn`. */
+  let voidedAhead = new Set<string>();
   /** Where this loop's own messages begin. See the function's comment. */
   const from = target.messages.length;
   /** How many times the model has been asked in this loop. See `runIdFor`. */
@@ -421,6 +423,31 @@ export async function runTurnLoop(
     const settled = asked.filter((call) => answeredInRun.has(call.id));
     const open = asked.filter((call) => !answeredInRun.has(call.id));
     settledAhead = settled.length;
+    /*
+     * AN ACTING STEP THE BOT SERVICE REFUSED ENDS THE ROUND TOO (`round-stop.ts`). It answers
+     * arguments that are not an object, and the same call over and over, inside the run
+     * (`agent-bot/src/run.ts`), so such a call never reaches `pending` — and a `computer_type` it
+     * refused left its field empty while the 검색 after it in the same reply was forwarded and
+     * pressed. Read per reply, in the model's order: a reply the service answered whole was read by
+     * the model before it wrote the next one, so it voids nothing of that next one.
+     */
+    voidedAhead = new Set(
+      added.flatMap((message) => {
+        if (message.role !== "assistant") return [];
+        let ended = false;
+        const voided: string[] = [];
+        for (const call of message.toolCalls ?? []) {
+          if (!answeredInRun.has(call.id)) {
+            if (ended) voided.push(call.id);
+            continue;
+          }
+          ended ||=
+            ACTING_COMPUTER_TOOLS.has(call.function?.name ?? "") &&
+            answeredInRun.get(call.id) === false;
+        }
+        return voided;
+      }),
+    );
     steps.push({
       ms: Date.now() - startedAt,
       text: added
@@ -479,6 +506,7 @@ export async function runTurnLoop(
     for (const [index, call] of pending.entries()) {
       let outcome: LoopOutcome;
       const args = parseArgs(call.args);
+      roundEnded ||= voidedAhead.has(call.id);
       if (outOfSteps) {
         outcome = {
           ok: false,
