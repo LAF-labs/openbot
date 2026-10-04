@@ -23,10 +23,15 @@ name: CI
 # for either run to satisfy, so the push run was only the second copy.
 #
 # What follows from `pull_request` alone: a branch pushed with no pull request open runs nothing
-# until one is opened, and opening it runs the gate. And there is no documentation filter. The one
-# this file had sat under `push` and left with it; a pull request has always run whatever it
-# changed, and still does — a check list with nothing on it reads as "not checked", not as "only
-# words changed". `images.yml` keeps its own filter for main.
+# until one is opened, and opening it runs the gate. A push to a pull request that CONFLICTS with
+# main runs nothing either: GitHub starts no `pull_request` run while the pull request has a merge
+# conflict (its documented rule for this event), so such a push shows no checks at all until the
+# branch is rebased. The push event used to cover that push. Nothing unverified merges because of
+# it — a conflicting pull request cannot be merged, and the push that resolves the conflict runs
+# the gate — but an empty check list on a conflicting branch means "rebase", not "passed". And
+# there is no documentation filter. The one this file had sat under `push` and left with it; a pull
+# request has always run whatever it changed, and still does — a check list with nothing on it
+# reads as "not checked", not as "only words changed". `images.yml` keeps its own filter for main.
 #
 # The README badge still points here, and what it reports is the runs this workflow has: pull
 # requests'.
