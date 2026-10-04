@@ -25,10 +25,10 @@ import {
   dismissTask,
   forgetBrowsingNow,
   isInUse,
-  LINGER_MS,
   markPageGone,
   publishOpenTask,
   readBrowsingNow,
+  setLingerFor,
 } from "../src/lib/computer/browsing-now";
 import { skipHelp, takeSkip } from "../src/lib/computer/help-skips";
 
@@ -759,13 +759,21 @@ describe("what the rest of the screen hears", () => {
   };
 
   test("in use while a task is open, and for a moment after it ends", async () => {
-    publishOpenTask(task);
-    expect(isInUse(readBrowsingNow(), "bot-1")).toBe(true);
-    publishOpenTask(null);
-    // Not off the instant it ends: the header's mark would blink between a step and the reply.
-    expect(isInUse(readBrowsingNow(), "bot-1")).toBe(true);
-    await Bun.sleep(LINGER_MS + 100);
-    expect(isInUse(readBrowsingNow(), "bot-1")).toBe(false);
+    // The moment is the product's 2.5 s (`LINGER_MS`), set short here: what is held is that it
+    // lingers at all, and then lets go.
+    const LINGER = 100;
+    setLingerFor(LINGER);
+    try {
+      publishOpenTask(task);
+      expect(isInUse(readBrowsingNow(), "bot-1")).toBe(true);
+      publishOpenTask(null);
+      // Not off the instant it ends: the header's mark would blink between a step and the reply.
+      expect(isInUse(readBrowsingNow(), "bot-1")).toBe(true);
+      await Bun.sleep(LINGER + 100);
+      expect(isInUse(readBrowsingNow(), "bot-1")).toBe(false);
+    } finally {
+      setLingerFor();
+    }
   });
 
   test("a banner put away stays away for that task only", () => {

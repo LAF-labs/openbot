@@ -19,7 +19,24 @@ import type { RatingScenario, RatingShown } from "./support/rating-render";
  * own (`support/rating-render.tsx`).
  */
 
-async function render(scenario: RatingScenario): Promise<RatingShown> {
+/**
+ * Each scenario is rendered once, in a process of its own, and a second test of the same scenario
+ * reads the same render: two of the tests below hold one screen — a deployment with no rating route
+ * — to different things, and rendered it twice, a second each (measured 2026-10-04). Different
+ * scenarios never share a process.
+ */
+const renders = new Map<string, Promise<RatingShown>>();
+function render(scenario: RatingScenario): Promise<RatingShown> {
+  const key = JSON.stringify(scenario);
+  let rendering = renders.get(key);
+  if (!rendering) {
+    rendering = renderAlone(scenario);
+    renders.set(key, rendering);
+  }
+  return rendering;
+}
+
+async function renderAlone(scenario: RatingScenario): Promise<RatingShown> {
   const directory = mkdtempSync(join(tmpdir(), "rating-render-"));
   const file = join(directory, "scenario.json");
   writeFileSync(file, JSON.stringify(scenario));

@@ -49,15 +49,29 @@ beforeAll(async () => {
       happyDOM: { setWindowSize(size: { width: number }): void };
     }
   ).happyDOM.setWindowSize({ width: 375 });
+  (await import("../src/lib/use-lasting")).setLastingScale(SCALE);
 }, APP_DOM_TIMEOUT_MS);
 afterEach(async () => {
   await unmountApps();
 });
 setDefaultTimeout(30_000);
 afterAll(async () => {
+  // Back to the waits as written, for every file after this one.
+  (await import("../src/lib/use-lasting")).setLastingScale();
   removeTurnStreams();
   await removeAppDom();
 });
+
+/*
+ * THE WAIT IS THE PRODUCT'S, AND ITS CLOCK IS RUN AT A THIRD HERE (`setLastingScale`): every wait
+ * below is the one this file was written with, divided by three, and so is the screen's — 667 ms
+ * for its 2000 (`QUEUED_SAID_AFTER_MS`). The file waited out 5 s of real time before (measured
+ * 2026-10-04). A "said" or "not said past the wait" is decided by the order two timers fire in; the
+ * one "not yet" (a third of 300 ms) ends about half a second before the screen's deadline — 567 ms,
+ * less whatever the mount spent after the turn was read as queued, which started the screen's wait.
+ */
+const SCALE = 1 / 3;
+const scaled = (ms: number) => Math.round(ms * SCALE);
 
 const WAITING = "Finishing another job first · this one is next";
 const EARLIER: Message = {
@@ -104,7 +118,7 @@ describe("a turn the server says is queued", () => {
   test("says the Bot is finishing something else, where it used to say it was thinking", async () => {
     const { server, view } = await conversation("channel_turn-queued");
     // Past the moment every turn is queued for: this one is waiting for the Bot.
-    await view.settle(2400);
+    await view.settle(scaled(2400));
     expect(said(view.host)).toContain(WAITING);
     expect(said(view.host)).not.toContain("Thinking");
     expect(ko[WAITING]).toBe(
@@ -163,11 +177,11 @@ describe("a turn the server says is queued", () => {
 
   test("says nothing new of the moment every turn is queued for before it runs", async () => {
     const { server, view } = await conversation("channel_turn-queued-briefly");
-    await view.settle(300);
+    await view.settle(scaled(300));
     expect(said(view.host)).not.toContain(WAITING);
     await acted(() => server.announce("running"));
     // Past the wait the line is said after: the wait ended with the queue, and says nothing now.
-    await view.settle(2400);
+    await view.settle(scaled(2400));
     expect(said(view.host)).not.toContain(WAITING);
     expect(said(view.host)).toContain("Thinking");
     server.close();

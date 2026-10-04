@@ -83,6 +83,25 @@ function account(extra: ApiAnswer = () => undefined): ApiAnswer {
   };
 }
 
+/**
+ * What the screen drew, without what a Bot's face draws into itself.
+ *
+ * The face is a frame loop (`grok-engine.ts`) that writes its body's transform, its eyes and its
+ * badge straight into its own SVG, every frame, for as long as it is on screen — so a page with a
+ * face never looked the same twice, and the loop below ran out its 150 looks: three seconds of
+ * waiting on every screen that greets an empty state with a face (measured 2026-10-04: 스킬 twice,
+ * 루틴 with no routine, the 스킬 title; 13 s of the gate). The face's own element stays — its class
+ * and its `data-bot-state` are what React drew — and only what the engine writes inside it is left
+ * out.
+ */
+function drawnOf(main: HTMLElement): string {
+  const copy = main.cloneNode(true) as HTMLElement;
+  for (const face of copy.querySelectorAll("svg.bot-avatar")) {
+    face.replaceChildren();
+  }
+  return copy.innerHTML;
+}
+
 async function screen(path: string, extra?: ApiAnswer) {
   const view = await mountApp({ path, api: account(extra) });
   const main = view.main();
@@ -95,10 +114,10 @@ async function screen(path: string, extra?: ApiAnswer) {
    * matches [data-feed-discuss]", the post not yet drawn, in a run that had three other suites
    * going beside it. Three looks in a row that find the same page, 20ms apart, is "drawn".
    */
-  let drawn = main.innerHTML;
+  let drawn = drawnOf(main);
   for (let same = 0, looks = 0; same < 3 && looks < 150; looks += 1) {
     await view.settle(20);
-    const now = main.innerHTML;
+    const now = drawnOf(main);
     same = now === drawn ? same + 1 : 0;
     drawn = now;
   }
