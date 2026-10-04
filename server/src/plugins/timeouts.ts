@@ -35,4 +35,12 @@ export const TIMEOUT_MS = Object.freeze({
   mcpCall: 60_000,
   /** One call to a partner vendor (솔라피). The same bound the webhook door uses. */
   partner: 10_000,
+  /**
+   * One request whose answer only ADDS to one a person is already getting.
+   *
+   * The weather's days past the 단기예보 come from a second vendor (`kma-mid-forecast.ts`); without
+   * them the answer is still a forecast. A part like that must not hold the answer for as long as
+   * the part it adds to may take (`rest`): every answer measured there took under a second.
+   */
+  addition: 8_000,
 });

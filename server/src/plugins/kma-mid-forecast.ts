@@ -51,6 +51,7 @@
 import { SKY_WORDS } from "../../../shared/weather";
 import type { KmaMidRegion } from "./kma-mid-regions";
 import { rowsOf, vendorHeaderOf } from "./public-data-rest";
+import { TIMEOUT_MS } from "./timeouts";
 
 /** The portal's one host, the same one the public-data entry pins. */
 export const KMA_MID_HOST = "https://apis.data.go.kr";
@@ -73,11 +74,6 @@ const EVERY_MS = 12 * HOUR;
 const FIRST_MS = 6 * HOUR;
 /** How long after its clock time an issuance is asked for. Chosen, not measured (see above). */
 const ISSUED_AFTER_MS = 10 * MINUTE;
-/**
- * How long one request may take. A part that only adds days must not hold the answer the way the
- * hub's three may (`TIMEOUT_MS.rest`, thirty seconds): every answer measured took under a second.
- */
-const MID_TIMEOUT_MS = 8_000;
 /** A good answer is one row of sixty short fields, under a kilobyte. */
 const MID_RESPONSE_CAP_CHARS = 100_000;
 /** How long a key the service refused is not tried again. */
@@ -304,7 +300,7 @@ export function createKmaMidForecast(input: {
           headers: { accept: "application/json" },
           // The key rides on the query string, so a redirect would carry it wherever the answer said.
           redirect: "manual",
-          signal: AbortSignal.timeout(MID_TIMEOUT_MS),
+          signal: AbortSignal.timeout(TIMEOUT_MS.addition),
         },
       );
     } catch {
@@ -399,5 +395,3 @@ export function createKmaMidForecast(input: {
     },
   };
 }
-
-export type KmaMidForecast = ReturnType<typeof createKmaMidForecast>;
