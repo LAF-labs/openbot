@@ -258,7 +258,7 @@ export function ConversationView({
           // With this screen's own send that has not resolved yet (`running`, above).
           pending={inFlight}
           /*
-           * The caller's answer, not `inFlight`. `running` is true from the instant `start` is
+           * The caller's answer, not `inFlight`. `running` is true from the instant `submit` is
            * entered, which is before `onSubmit` has done anything at all, so a Stop drawn from
            * `inFlight` appears while there is still nothing to stop — the press is swallowed and the
            * message goes anyway.
