@@ -760,9 +760,118 @@ describe("a name the tree prints beneath the control", () => {
     ).toEqual(["", "", ""]);
   });
 
-  test("text that became the name is not repeated as a value", () => {
-    const { elements } = parseAriaSnapshot("- button [ref=e1]: 다음");
-    expect(elements[0]).toEqual({ ref: "e1", role: "button", name: "다음" });
+  /*
+   * NEVER ITS CONTENTS AS A VALUE. What the tree writes after the colon of a link or a button it
+   * printed without a name is what is inside that control — its words, and where what is inside
+   * can be edited, what a person typed there. The name of such a control is the page's to give
+   * (`page-names.ts`, which leaves every field and editable region out), or nothing; handed on as
+   * a `value`, the same contents would reach the model and the trail beside that name whatever the
+   * page answered. Held for every role named by its contents, through the list the look hands on
+   * (`withNames`) with the page answering and with it silent — and only for those: a control the
+   * tree named keeps what is written after it, and so does a field.
+   */
+  test("a nameless control of a role named by its contents never hands those contents on as a value", () => {
+    const typed = "hunter2!SuperSecret";
+    const roles = [
+      "button",
+      "checkbox",
+      "link",
+      "menuitem",
+      "menuitemcheckbox",
+      "menuitemradio",
+      "option",
+      "radio",
+      "switch",
+      "tab",
+    ];
+    const yaml = [
+      ...roles.map((role, index) => `- ${role} [ref=e${index}]: ${typed}`),
+      // The line as Playwright writes a button whose only content is one run of text.
+      "- button [ref=e20]: 다음",
+      "- link [ref=e21] [cursor=pointer]: 대출 더 조이면 누가 영향받나",
+      // Named by the tree, and a field: what is after the colon is theirs to say.
+      '- button "장바구니" [ref=e30]: "3"',
+      "- searchbox [ref=e31]: 무선 마우스",
+    ].join("\n");
+    const read = readAriaSnapshot(yaml);
+    const nameless = [...roles.map((_, index) => `e${index}`), "e20", "e21"];
+    expect(read.unnamed).toEqual(nameless);
+    for (const element of read.elements) {
+      if (!nameless.includes(element.ref)) continue;
+      expect([element.ref, "value" in element]).toEqual([element.ref, false]);
+    }
+    // Silent, the page leaves each with no name; answering, with its own. Neither brings a value.
+    const silent = withNames(read.elements, new Map(), new Set(read.unnamed));
+    const answered = withNames(
+      read.elements,
+      new Map(nameless.map((ref) => [ref, "이름"])),
+      new Set(read.unnamed),
+    );
+    for (const listed of [silent, answered]) {
+      const written = JSON.stringify(listed);
+      expect(written).not.toContain(typed);
+      expect(written).not.toContain("다음");
+      expect(written).not.toContain("대출");
+      expect(
+        listed.filter((element) => "value" in element).map(({ ref }) => ref),
+      ).toEqual(["e30", "e31"]);
+    }
+    expect(silent.find((element) => element.ref === "e20")).toEqual({
+      ref: "e20",
+      role: "button",
+      name: "",
+    });
+    expect(silent.find((element) => element.ref === "e30")).toEqual({
+      ref: "e30",
+      role: "button",
+      name: "장바구니",
+      value: "3",
+    });
+    expect(silent.find((element) => element.ref === "e31")?.value).toBe(
+      "무선 마우스",
+    );
+  });
+
+  /*
+   * And beneath it, where the tree prints the contents as lines of their own: the shapes the
+   * review of pull request 69 was about. Nothing after the colon is a string there, so nothing is
+   * a value; what must hold is that the control around a field or an editable region carries what
+   * was typed in neither its name nor a value, with the page silent.
+   */
+  test("nor does the control around a field, or around text that can be edited, carry what was typed there", () => {
+    const typed = "hunter2!SuperSecret";
+    const yaml = `- button [ref=e1]:
+  - textbox [ref=e2]: ${typed}
+- link [ref=e3]:
+  - generic [ref=e4]: ${typed}
+  - text: 열기
+- link [ref=e5]:
+  - text: 검색
+  - searchbox [ref=e6]: ${typed}
+  - text: 하기
+- link [ref=e7]:
+  - text: 그대로`;
+    const read = readAriaSnapshot(yaml);
+    expect(read.unnamed).toEqual(["e1", "e3", "e5", "e7"]);
+    const silent = withNames(read.elements, new Map(), new Set(read.unnamed));
+    const around = silent.filter((element) =>
+      read.unnamed.includes(element.ref),
+    );
+    expect(around).toEqual([
+      { ref: "e1", role: "button", name: "" },
+      { ref: "e3", role: "link", name: "" },
+      { ref: "e5", role: "link", name: "" },
+      { ref: "e7", role: "link", name: "" },
+    ]);
+    expect(JSON.stringify(around)).not.toContain(typed);
+    // The fields themselves are lines of their own, and say what is in them unless it is a secret.
+    expect(silent.find((element) => element.ref === "e2")?.value).toBe(typed);
+    const marked = readAriaSnapshot(yaml, { refs: ["e2", "e6"] });
+    expect(
+      JSON.stringify(
+        withNames(marked.elements, new Map(), new Set(marked.unnamed)),
+      ),
+    ).not.toContain(typed);
   });
 
   /**
