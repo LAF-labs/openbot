@@ -773,6 +773,10 @@ function isPutBeforeThePerson(name: string): boolean {
  * to them — and neither is a step line, nor the card of a browsing task, which says what is being
  * done. A row that is not known (nothing seen yet, or it has left the list) counts nothing: saying
  * "3 new" by guessing is worse than the arrow alone.
+ *
+ * A WEATHER CARD IS ONE TOO (`weatherCardsOf`): it is a thing the Bot made, drawn in the
+ * conversation, and a turn can end on it. Known by what came back and not by the call's name,
+ * since the same name is a step when the answer holds nothing (review, round 8).
  */
 export function arrivedBelow(
   items: readonly TranscriptItem[],
@@ -781,12 +785,13 @@ export function arrivedBelow(
   if (seenId === null) return 0;
   const seen = items.findIndex((item) => item.id === seenId);
   if (seen < 0) return 0;
+  const cards = weatherCardsOf(items);
   let arrived = 0;
   for (const item of items.slice(seen + 1)) {
     if (item.kind === "text" && item.role === "assistant") arrived += 1;
     else if (
       item.kind === "tool" &&
-      isPutBeforeThePerson(item.toolCall.function.name)
+      (isPutBeforeThePerson(item.toolCall.function.name) || cards.has(item.id))
     ) {
       arrived += 1;
     }

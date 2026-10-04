@@ -200,13 +200,19 @@ export function leavesItToTheCard(text: string): boolean {
  *    "비는 안 와요") and is right;
  *  - no weather the forecast does not hold: snow, a storm, a heat wave, an overcast sky;
  *  - every temperature it says is one the card holds — the reading now, an hour's, a day's low or
- *    high, as written or rounded. "강남은 지금 99도예요" passed the shape (review, round 7).
+ *    high, as written or rounded, WITH ITS SIGN: "영하 17도" and "-17도" are −17, not 17 (review,
+ *    rounds 7 and 8). "강남은 지금 99도예요" passed the shape.
  */
 export function agreesWithTheCard(text: string, card: string): boolean {
   const said = text.replace(/\s+/g, " ");
   const figures = [
-    ...said.matchAll(/(?<![\d.])(\d+(?:\.\d+)?)\s?(?:도|℃|°)/g),
-  ].map((match) => Number(match[1]));
+    ...said.matchAll(
+      /(영하\s*)?(?<![\d.])([-−]?)(\d+(?:\.\d+)?)\s?(?:도|℃|°)/g,
+    ),
+  ].map((match) => {
+    const belowZero = match[1] !== undefined || match[2] !== "";
+    return (belowZero ? -1 : 1) * Number(match[3]);
+  });
   const onTheCard = temperaturesOf(card);
   const everyFigureIsTheCards = figures.every(
     (figure) => onTheCard.has(figure) || onTheCard.has(Math.round(figure)),
