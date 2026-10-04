@@ -1,0 +1,52 @@
+# The headline block of news.naver.com/section/101 as Playwright 1.62.1 wrote it, captured
+# 2026-10-04 with `ariaSnapshot({ mode: "ai", boxes: true })` in a 1280x800 viewport. A public page,
+# nobody signed in; the two article summaries are shortened. Two parts of the tree, each dedented:
+# the left column's two image links, then `main` down to the second headline.
+- link [ref=e117] [cursor=pointer] [box=100,480,71,16]:
+  - /url: https://media.naver.com/algorithm
+  - img "AI 뉴스 알고리즘 추천 알고리즘 궁금하다면? 바로가기" [ref=e118] [box=100,480,71,74]
+- link [ref=e120] [cursor=pointer] [box=100,574,71,16]:
+  - /url: https://contents.premium.naver.com/
+  - img "프리미엄콘텐츠 투자 정보부터 트렌드까지! 바로가기" [ref=e121] [box=100,574,71,74]
+- main [ref=e122] [box=205,149,645,5206]:
+  - generic [ref=e123] [box=235,174,584,589]:
+    - generic [ref=e124] [box=235,174,584,549]:
+      - link "헤드라인 뉴스 안내" [ref=e127] [cursor=pointer] [box=235,167,98,33]:
+        - /url: "#"
+        - text: 헤드라인 뉴스
+        - generic [ref=e128] [box=317,176,16,16]: 안내
+      - list [ref=e129] [box=235,204,584,514]:
+        - listitem [ref=e130] [box=235,204,584,90]:
+          - generic [ref=e132] [box=235,204,584,75]:
+            - link [ref=e135] [cursor=pointer] [box=235,204,110,75]:
+              - /url: https://n.news.naver.com/mnews/article/421/0009208712
+            - generic [ref=e136] [box=357,210,462,63]:
+              - link [ref=e137] [cursor=pointer] [box=357,210,462,18]:
+                - /url: https://n.news.naver.com/mnews/article/421/0009208712
+                - strong [ref=e138] [box=357,210,462,18]: LG전자 노사, 아동복지시설 봉사…가전 점검·AI 체험 지원
+              - generic [ref=e139] [box=357,228,462,21]: LG전자는 경영진과 LG전자노동조합이 지난 2일 서울 용산구 아동복지시설
+              - generic [ref=e140] [box=357,249,462,24]:
+                - generic [ref=e141] [box=357,250,25,23]:
+                  - generic [ref=e142] [box=357,258,25,15]: 뉴스1
+                  - text: 댓글 개수
+                - link "14 개의 관련뉴스 더보기" [ref=e144] [cursor=pointer] [box=790,257,29,16]:
+                  - /url: /cluster/c_202610041010_00000003/section/101?oid=421&aid=0009208712
+                  - generic [ref=e145] [box=795,258,20,14]: "14"
+                  - generic [ref=e146] [box=794,271,1,1]: 개의 관련뉴스 더보기
+        - listitem [ref=e147] [box=235,294,584,106]:
+          - generic [ref=e149] [box=235,310,584,75]:
+            - link [ref=e152] [cursor=pointer] [box=235,310,110,75]:
+              - /url: https://n.news.naver.com/mnews/article/014/0005584570
+            - generic [ref=e153] [box=357,316,462,63]:
+              - link [ref=e154] [cursor=pointer] [box=357,316,462,18]:
+                - /url: https://n.news.naver.com/mnews/article/014/0005584570
+                - strong [ref=e155] [box=357,316,462,18]: 19년간 팔지 못한 상업용지…LH 미매각 토지 21.9조원
+              - generic [ref=e156] [box=357,334,462,21]: 한국토지주택공사(LH)가 보유한 사업용 토지 가운데 민간에 팔지 못한 미
+              - generic [ref=e157] [box=357,355,462,24]:
+                - generic [ref=e158] [box=357,356,59,23]:
+                  - generic [ref=e159] [box=357,364,59,15]: 파이낸셜뉴스
+                  - text: 댓글 개수
+                - link "6 개의 관련뉴스 더보기" [ref=e161] [cursor=pointer] [box=795,363,24,16]:
+                  - /url: /cluster/c_202610030930_00000075/section/101?oid=014&aid=0005584570
+                  - generic [ref=e162] [box=800,364,15,14]: "6"
+                  - generic [ref=e163] [box=799,377,1,1]: 개의 관련뉴스 더보기

@@ -49,6 +49,28 @@ const INTERACTIVE_ROLES = new Set([
   "textbox",
 ]);
 
+/**
+ * The roles a Bot acts on whose accessible name is the text inside them (WAI-ARIA's name from
+ * content, the list Playwright's own `allowsNameFromContent` keeps).
+ *
+ * Not a textbox, searchbox, combobox or spinbutton: what sits under one of those in the tree is its
+ * value, and a value never becomes a name. A password box's contents would otherwise ride out as its
+ * label, and the server finds the box a person typed a secret into by its name
+ * (`server/src/computer/gateway/secrets.ts`).
+ */
+const NAMED_FROM_CONTENT = new Set([
+  "button",
+  "checkbox",
+  "link",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "option",
+  "radio",
+  "switch",
+  "tab",
+]);
+
 /** The roles whose unchecked state is meaningful, so absence of `[checked]` means false, not unknown. */
 const CHECKABLE_ROLES = new Set([
   "checkbox",
@@ -344,6 +366,65 @@ export function parseDescriptor(text: string): Descriptor | null {
   return { role, name, flags };
 }
 
+/**
+ * The words an entry's contents say, as the tree writes them beneath it, in page order.
+ *
+ * A child with a name of its own says that name — `img "로고"`, `heading "공지"` — which is what it
+ * gives the name of the control around it; one without says whatever is beneath it in turn. `text:`
+ * is read the same way, as a node of role `text` with no name. A bare entry in a list is a node with
+ * nothing beneath it, never loose text: Playwright writes text as `- text: …`. Properties (`/url`,
+ * `/placeholder`) are the markup's, not the words', and a frame's document is no part of a name.
+ */
+function wordsWithin(value: unknown): string[] {
+  // Written after the colon, a string is the text itself.
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(wordsOfChild);
+  return wordsOfChild(value);
+}
+
+function wordsOfChild(child: unknown): string[] {
+  // Standing alone in a list, a string is an entry with nothing beneath it.
+  if (typeof child === "string") return wordsOfEntry(child, undefined);
+  if (!child || typeof child !== "object" || Array.isArray(child)) return [];
+  return Object.entries(child).flatMap(([key, inner]) =>
+    wordsOfEntry(key, inner),
+  );
+}
+
+function wordsOfEntry(key: string, inner: unknown): string[] {
+  if (key.startsWith("/")) return [];
+  const descriptor = parseDescriptor(key);
+  if (!descriptor || descriptor.role === "iframe") return [];
+  return descriptor.name ? [descriptor.name] : wordsWithin(inner);
+}
+
+/**
+ * The name a control's contents give it, when the tree printed none: its words joined with one
+ * space, or empty when nothing beneath it says anything.
+ *
+ * THE TREE BLANKS A NAME THAT IS SPELLED OUT BENEATH IT. Playwright 1.62's AI snapshot drops the
+ * name of a node whose name came from children it also prints, each with a ref of its own
+ * (`removeRedundantNames`), so a link whose headline sits in a `<strong>` is written
+ * `link [ref=e137]:` with the headline under it — and the model read `e137 link`, nothing more. The
+ * browser still calls that link by its headline, and the label hold asks the browser
+ * (`label-hold.ts`): a click held to the empty name the list had given was refused as a rename.
+ * Measured 2026-10-04 on five Korean pages (Naver home, news and search, Daum, 4insure): 190 links
+ * were blank for this reason and the hold refused all 190; named from inside, it held 186 as the
+ * same control. The four left are names the tree spells differently from the browser — a table
+ * read whole where the browser reads its caption, and three links whose screen-reader-only words
+ * the tree leaves out.
+ *
+ * One space between the words, where the browser joins inline neighbours with none
+ * (`<b>A</b><i>B</i>` is named "AB"): the tree does not say which neighbours were inline, so the
+ * hold compares names without regard to where the spaces fall (`nameToMatch`).
+ *
+ * An image with no alt text says nothing, so a link that holds only one stays nameless — which is
+ * also what the browser calls it, so the hold still finds it.
+ */
+function nameFromWithin(value: unknown): string {
+  return wordsWithin(value).join(" ").replace(/\s+/g, " ").trim();
+}
+
 /** Build an element from a descriptor and whatever YAML gave as its value, or null if not actionable. */
 function toElement(
   descriptor: Descriptor,
@@ -355,16 +436,21 @@ function toElement(
   // No ref means nothing can be done to it, so it is noise in a list whose entire purpose is acting.
   if (!ref) return null;
 
+  const fromWithin =
+    !descriptor.name && NAMED_FROM_CONTENT.has(descriptor.role)
+      ? nameFromWithin(value)
+      : "";
   const element: SnapshotElement = {
     ref,
     role: descriptor.role,
     // Between characters: the name goes into the trail's row before the action it names
     // (`shared/sound-text.ts`).
-    name: cutAtCodeUnits(descriptor.name, 200),
+    name: cutAtCodeUnits(descriptor.name || fromWithin, 200),
   };
 
-  // Values arrive as text, with quoting and escapes already resolved.
-  if (typeof value === "string") {
+  // Values arrive as text, with quoting and escapes already resolved. Text that became the name is
+  // not said a second time as a value.
+  if (typeof value === "string" && !fromWithin) {
     const text = value.trim();
     if (text) element.value = cutAtCodeUnits(text, 200);
   }
@@ -391,6 +477,57 @@ function toElement(
   return element;
 }
 
+/** The page's viewport, in CSS pixels. */
+export type Viewport = { width: number; height: number };
+
+/** A rectangle in the page's viewport, in CSS pixels. */
+type Rect = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * Where the document being read sits in the page's viewport, and the part of it a person can see:
+ * the viewport itself for the page, narrowed by each frame a document is inside.
+ */
+type View = { originX: number; originY: number; clip: Rect };
+
+/**
+ * An entry's `[box=x,y,width,height]`, placed in the page's viewport.
+ *
+ * Playwright measures each box with `getBoundingClientRect` in the entry's own document, so a box
+ * inside a frame starts from the frame's corner, not the page's (`ariaSnapshotForFrame` asks every
+ * frame for boxes with the same options).
+ */
+function boxOf(descriptor: Descriptor, view: View): Rect | null {
+  const written = descriptor.flags.get("box")?.split(",").map(Number);
+  if (written?.length !== 4 || !written.every(Number.isFinite)) return null;
+  const [x = 0, y = 0, width = 0, height = 0] = written;
+  return {
+    left: view.originX + x,
+    top: view.originY + y,
+    right: view.originX + x + width,
+    bottom: view.originY + y + height,
+  };
+}
+
+/** What two rectangles share, or null when that is nothing — an empty box included. */
+function overlap(a: Rect, b: Rect): Rect | null {
+  const shared = {
+    left: Math.max(a.left, b.left),
+    top: Math.max(a.top, b.top),
+    right: Math.min(a.right, b.right),
+    bottom: Math.min(a.bottom, b.bottom),
+  };
+  return shared.left < shared.right && shared.top < shared.bottom
+    ? shared
+    : null;
+}
+
+/** The view inside a frame: from its corner, and only as much of it as shows. Null when none does. */
+function frameView(box: Rect | null, view: View | null): View | null {
+  if (!box || !view) return null;
+  const clip = overlap(box, view.clip);
+  return clip ? { originX: box.left, originY: box.top, clip } : null;
+}
+
 /**
  * Turn an aria snapshot into the flat element list the tool contract publishes.
  *
@@ -399,10 +536,14 @@ function toElement(
  * the label alone was not enough. Whatever a signal matches is marked `type: "password"` and loses
  * its value; a field's own label (`isSecretLabel`) drops the value on its own as well. Over-marking
  * costs a Bot the use of a text field it should have been asking a person to fill anyway.
+ *
+ * `viewport` is the page's, for a tree taken with `boxes: true`: past the limit, what is on the
+ * screen is kept first (`keptOf`). Without one, or without boxes, the cut is in page order.
  */
 export function parseAriaSnapshot(
   yaml: string,
   secrets: SecretSignals = {},
+  viewport?: Viewport,
 ): {
   elements: SnapshotElement[];
   truncated: boolean;
@@ -417,14 +558,9 @@ export function parseAriaSnapshot(
   const secretValues = new Set(
     [...(secrets.values ?? [])].map(comparableValue).filter(Boolean),
   );
-  const elements: SnapshotElement[] = [];
-  let truncated = false;
+  const found: Found[] = [];
 
-  const push = (element: SnapshotElement): void => {
-    if (elements.length >= SNAPSHOT_ELEMENT_LIMIT) {
-      truncated = true;
-      return;
-    }
+  const push = (element: SnapshotElement, seen: boolean): void => {
     if (TEXT_ENTRY_ROLES.has(element.role)) {
       const label = element.name.replace(/\s+/g, " ").trim();
       if (
@@ -450,7 +586,7 @@ export function parseAriaSnapshot(
         if (element.value !== undefined) element.value = "";
       }
     }
-    elements.push(element);
+    found.push({ element, seen });
   };
 
   let tree: unknown;
@@ -462,35 +598,86 @@ export function parseAriaSnapshot(
     return { elements: [], truncated: false };
   }
 
-  /** Depth first: the tree nests by containment, and a flat list is what a Bot acts on. */
-  const walk = (node: unknown): void => {
-    if (truncated) return;
+  /** One entry: an element if it is one, and then whatever is beneath it. */
+  const take = (key: string, value: unknown, view: View | null): void => {
+    const descriptor = parseDescriptor(key);
+    const box = descriptor && view ? boxOf(descriptor, view) : null;
+    const element = descriptor ? toElement(descriptor, value) : null;
+    if (element) {
+      push(element, Boolean(box && view && overlap(box, view.clip)));
+    }
+    // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
+    // its radios are. A frame's document measures its boxes from the frame's own corner.
+    if (value && typeof value === "object") {
+      walk(value, descriptor?.role === "iframe" ? frameView(box, view) : view);
+    }
+  };
 
+  /** Depth first: the tree nests by containment, and a flat list is what a Bot acts on. */
+  const walk = (node: unknown, view: View | null): void => {
     if (Array.isArray(node)) {
-      for (const child of node) walk(child);
+      for (const child of node) walk(child, view);
       return;
     }
 
     if (typeof node === "string") {
       // An entry with no value: `- button "Submit order" [ref=e44]`.
-      const descriptor = parseDescriptor(node);
-      const element = descriptor ? toElement(descriptor, undefined) : null;
-      if (element) push(element);
+      take(node, undefined, view);
       return;
     }
 
     if (node && typeof node === "object") {
-      for (const [key, value] of Object.entries(node)) {
-        const descriptor = parseDescriptor(key);
-        const element = descriptor ? toElement(descriptor, value) : null;
-        if (element) push(element);
-        // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
-        // its radios are.
-        if (value && typeof value === "object") walk(value);
-      }
+      for (const [key, value] of Object.entries(node)) take(key, value, view);
     }
   };
 
-  walk(tree);
-  return { elements, truncated };
+  walk(
+    tree,
+    viewport
+      ? {
+          originX: 0,
+          originY: 0,
+          clip: {
+            left: 0,
+            top: 0,
+            right: viewport.width,
+            bottom: viewport.height,
+          },
+        }
+      : null,
+  );
+  return keptOf(found);
+}
+
+/** An element, and whether any of it was inside the viewport when the tree was taken. */
+type Found = { element: SnapshotElement; seen: boolean };
+
+/**
+ * The elements the list keeps: all of them, or — past the limit — every one a person could see,
+ * then the rest, in page order within each and handed back in page order.
+ *
+ * THE CUT USED TO BE THE FIRST 200 IN PAGE ORDER, so a page whose header and menus run long lost
+ * what was on the screen and kept its footer. Measured 2026-10-04, frames placed by their frame:
+ * Daum lost 16 of the 69 controls on its screen, Naver search 11 of 61, Naver news 9 of 98, while
+ * links far below the fold stayed in; kept screen first, none of the 36 was lost. What the person
+ * is looking at is what a Bot is most often asked about.
+ *
+ * Handed back in page order rather than seen-first, because the list is read as the page, top to
+ * bottom (`server/src/computer/snapshot-lines.ts`).
+ */
+function keptOf(found: Found[]): {
+  elements: SnapshotElement[];
+  truncated: boolean;
+} {
+  if (found.length <= SNAPSHOT_ELEMENT_LIMIT) {
+    return { elements: found.map(({ element }) => element), truncated: false };
+  }
+  const seen = found.filter((entry) => entry.seen).length;
+  let roomForSeen = Math.min(seen, SNAPSHOT_ELEMENT_LIMIT);
+  let roomForRest = SNAPSHOT_ELEMENT_LIMIT - roomForSeen;
+  const kept = found.filter((entry) => {
+    if (entry.seen) return roomForSeen-- > 0;
+    return roomForRest-- > 0;
+  });
+  return { elements: kept.map(({ element }) => element), truncated: true };
 }

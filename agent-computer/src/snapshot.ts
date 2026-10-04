@@ -25,7 +25,7 @@ import {
 } from "./page-arrival";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
-import type { TabSummary } from "./profiles";
+import { type TabSummary, VIEWPORT } from "./profiles";
 import {
   SECRET_JOIN_TIMEOUT_MS,
   type SecretMarks,
@@ -115,7 +115,7 @@ async function pageTree(target: Page, deadline: number): Promise<string> {
   );
   if (first <= 0) throw new Error("laf:browser_failed");
   try {
-    return await target.ariaSnapshot({ mode: "ai", timeout: first });
+    return await target.ariaSnapshot({ ...TREE, timeout: first });
   } catch (error) {
     const again = left();
     if (
@@ -125,9 +125,20 @@ async function pageTree(target: Page, deadline: number): Promise<string> {
     ) {
       throw error;
     }
-    return target.ariaSnapshot({ mode: "ai", timeout: again });
+    return target.ariaSnapshot({ ...TREE, timeout: again });
   }
 }
+
+/**
+ * The page's tree, with where each node is on the screen.
+ *
+ * The boxes are what lets a long page be cut below the fold rather than wherever the 200th control
+ * happens to fall (`keptOf` in aria-snapshot.ts). Measured 2026-10-04 on Playwright 1.62.1, five
+ * Korean pages, median of three: the tree took as long with boxes as without (32/32, 56/56, 79/84,
+ * 67/69 and 6/7 ms). They change only what the tree says, not the refs it mints, and a frame's line
+ * still carries its ref before its box, which is what Playwright splices the frame's own tree under.
+ */
+const TREE = { mode: "ai", boxes: true } as const;
 
 /**
  * The look at a tab whose next document is on its way: nothing on it, because nothing on it answers.
@@ -235,7 +246,16 @@ export async function snapshotPage(
    * (`unverified`), which costs a Bot the sight of what is in the boxes for one look and never costs
    * anybody the secret.
    */
-  const typedInto = await typedIntoRefs(session, target, yaml, deadline);
+  // One viewport for the list's cut and for where a typed-into box is looked for, so the boxes
+  // looked through are the boxes listed (`listedTextEntryRefs`).
+  const viewport = target.viewportSize() ?? VIEWPORT;
+  const typedInto = await typedIntoRefs(
+    session,
+    target,
+    yaml,
+    deadline,
+    viewport,
+  );
   if (!typedInto.complete) {
     const arrival = arrivalOf(target);
     if (arrival) return stillArriving(session, target, tabs, arrival);
@@ -249,12 +269,16 @@ export async function snapshotPage(
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    ...parseAriaSnapshot(yaml, {
-      labels: marks.labels,
-      values: marks.values,
-      refs: [...marks.refs, ...typedInto.refs],
-      ...(unverified ? { unverified: true } : {}),
-    }),
+    ...parseAriaSnapshot(
+      yaml,
+      {
+        labels: marks.labels,
+        values: marks.values,
+        refs: [...marks.refs, ...typedInto.refs],
+        ...(unverified ? { unverified: true } : {}),
+      },
+      viewport,
+    ),
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.
      * A Bot that has to ask whether a second tab exists will not ask, and the tab a click just
