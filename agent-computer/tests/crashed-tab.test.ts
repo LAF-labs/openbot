@@ -39,10 +39,10 @@ import { serveFixture, VISIBLE_TEXT } from "./fixture-site";
  * asking.
  *
  * IN THIS PROCESS, BEHIND THE REAL DOOR. The other suites start `src/index.ts` as a child and
- * speak HTTP to it; a tab can only be crashed by whoever holds it, so this one builds the computer
- * the way `index.ts` does — the same routes, socket, profiles, sessions and navigation guard — and
- * keeps the `profiles` it was built from, to reach the tab a Bot was handed. Every call below still
- * goes in over HTTP with the token and the Bot's header.
+ * speak HTTP to it; which renderer is a tab's can only be found by whoever holds the tab, so this
+ * one builds the computer the way `index.ts` does — the same routes, socket, profiles, sessions and
+ * navigation guard — and keeps the `profiles` it was built from, to reach the tab a Bot was handed.
+ * Every call below still goes in over HTTP with the token and the Bot's header.
  *
  * Skipped where Playwright has no browser downloaded, like hung-site.test.ts.
  */
@@ -79,8 +79,8 @@ let unfinished: ReturnType<typeof serveUnfinished> | null = null;
  *
  * Its first bytes commit the navigation, so the tab has a document and a renderer to lose, and the
  * rest never comes, so `/navigate` is still waiting for it — the moment a heavy page dies in. Not
- * the fixture's `/hang`: a tab still waiting for a first byte is not handed what DevTools sends it
- * (page-arrival.ts), the crash included.
+ * the fixture's `/hang`: a tab still waiting for a first byte answers nothing asked of its document
+ * (page-arrival.ts), and finding its renderer is asked of its document (`crash`).
  */
 function serveUnfinished() {
   const server = Bun.serve({
@@ -220,19 +220,70 @@ const tabOf = (bot: string): Promise<Page> => {
   return computer.profiles.page(bot);
 };
 
+/** How long a tab is made to spin, to be found by. */
+const SPIN_MS = 400;
+
 /**
- * End a tab's renderer, as running out of memory on a heavy page does.
+ * Which process a tab's renderer is.
  *
- * `Page.crash` is DevTools' own way to do it, and it is never answered — the renderer that would
- * answer is the one it ends — so the send is not waited for and the browser's own `crash` event is.
+ * The browser lists its renderers and the CPU time each has used (`SystemInfo.getProcessInfo`),
+ * and not whose tab each is. So the tab is made to spin, and the renderer that spent the time is
+ * its own — measured with three tabs open: 0.503 s, against 0.001 s and 0.000 s for the other two.
+ * One renderer that spun and none beside it, or it is said rather than guessed at.
+ */
+async function rendererOf(page: Page): Promise<number> {
+  const browser = page.context().browser();
+  if (!browser) throw new Error("no browser");
+  const session = await browser.newBrowserCDPSession();
+  try {
+    const spentBy = async () => {
+      const { processInfo } = await session.send("SystemInfo.getProcessInfo");
+      return new Map(
+        processInfo
+          .filter((entry) => entry.type === "renderer")
+          .map((entry) => [entry.id, entry.cpuTime] as const),
+      );
+    };
+    const before = await spentBy();
+    await page.evaluate((ms) => {
+      const end = performance.now() + ms;
+      while (performance.now() < end);
+    }, SPIN_MS);
+    const [first, second] = [...(await spentBy())]
+      .map(([pid, cpu]) => ({ pid, spent: cpu - (before.get(pid) ?? 0) }))
+      .sort((one, other) => other.spent - one.spent);
+    if (
+      !first ||
+      first.spent < SPIN_MS / 4_000 ||
+      (second && second.spent > first.spent / 2)
+    ) {
+      throw new Error(
+        `no one renderer spun: ${JSON.stringify([first, second])}`,
+      );
+    }
+    return first.pid;
+  } finally {
+    void session.detach().catch(() => undefined);
+  }
+}
+
+/**
+ * End a tab's renderer the way running out of memory ends one on the machine this runs on: the
+ * system ends the process, and nothing in the page had a say.
+ *
+ * BY SIGNAL, NOT THROUGH DEVTOOLS. DevTools has a command for it (`Page.crash`), and on a laptop
+ * it left a tab in exactly the state a killed renderer does. On the Linux runner it ended nothing
+ * in the five seconds each of eight tests gave it (run 37226711757, 2026-10-05), while a renderer
+ * killed in that same run was heard at once; and it refuses a tab with a navigation pending
+ * outright (`Page has pending navigations, not killing`). The signal is what the kernel sends, and
+ * the browser calls it a crash on both.
  */
 async function crash(page: Page): Promise<void> {
   let heard = false;
   page.once("crash", () => {
     heard = true;
   });
-  const session = await page.context().newCDPSession(page);
-  void session.send("Page.crash").catch(() => undefined);
+  process.kill(await rendererOf(page), "SIGKILL");
   if (!(await until(() => heard))) throw new Error("the tab did not crash");
 }
 
@@ -382,15 +433,16 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
     await post("/navigate", bot, { url: fixture?.url });
     const tab = await tabOf(bot);
     // Not awaited: the navigation the renderer dies in the middle of.
-    const opening = timed(post("/navigate", bot, { url: unfinished?.url }));
+    const opening = post("/navigate", bot, { url: unfinished?.url });
     // Its failure is this test's to read below, and nobody's to trip over if the crash throws first.
     opening.catch(() => undefined);
     expect(await until(() => tab.url() === unfinished?.url)).toBe(true);
     await crash(tab);
 
-    const answered = await opening;
+    // From the crash: the call was already waiting, and is answered when its renderer goes.
+    const answered = await timed(opening);
     console.info(
-      `a crash during /navigate answered ${answered.result.status} ${answered.result.body.code} in ${answered.ms}ms`,
+      `a crash during /navigate answered ${answered.result.status} ${answered.result.body.code} ${answered.ms}ms after it`,
     );
     // "Try once more", which is true of a browser and not of a site that would not connect.
     expect([answered.result.status, answered.result.body.code]).toEqual([
@@ -601,29 +653,29 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
   }, 60_000);
 
   /*
-   * WHAT RUNNING OUT OF MEMORY IS, ON THE MACHINE THIS RUNS ON: the kernel ends the renderer's
-   * process, and nothing in the page had a say. The tests above end a renderer through DevTools,
-   * which is exact about which tab; this one ends it from outside, as the kernel does, and holds
-   * the browser to calling that a crash too — the event everything above hangs on.
-   *
-   * Last, and every renderer at once: the browser says which processes are renderers and not whose
-   * tab each is, and by now every other Bot in this file is done with its tab.
+   * A MACHINE SHORT OF MEMORY DOES NOT STOP AT ONE. Every renderer the browser has, ended in the
+   * same moment — every Bot's tab in this file with them, which is why this is last. Each Bot is
+   * then handed a tab of its own, and none of them another's.
    */
-  test("by the system ending its process is heard the same way, and the next address opens", async () => {
-    const bot = "crash-killed-bot";
-    await post("/navigate", bot, { url: fixture?.url });
-    const dead = await tabOf(bot);
-    let heard = false;
-    dead.once("crash", () => {
-      heard = true;
-    });
-    const browser = dead.context().browser();
+  test("along with every other tab in the browser leaves each Bot a tab of its own", async () => {
+    const bots = ["crash-all-first-bot", "crash-all-second-bot"];
+    const dead: Page[] = [];
+    let heard = 0;
+    for (const bot of bots) {
+      await post("/navigate", bot, { url: fixture?.url });
+      const tab = await tabOf(bot);
+      tab.once("crash", () => {
+        heard += 1;
+      });
+      dead.push(tab);
+    }
+    const browser = dead[0]?.context().browser();
     if (!browser) throw new Error("no browser");
     const session = await browser.newBrowserCDPSession();
     const { processInfo } = await session.send("SystemInfo.getProcessInfo");
     void session.detach().catch(() => undefined);
     const renderers = processInfo.filter((entry) => entry.type === "renderer");
-    expect(renderers.length).toBeGreaterThan(0);
+    expect(renderers.length).toBeGreaterThanOrEqual(bots.length);
     for (const renderer of renderers) {
       try {
         process.kill(renderer.id, "SIGKILL");
@@ -631,14 +683,21 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
         // Gone already: a renderer with no tab left is ended by the browser itself.
       }
     }
-    expect(await until(() => heard)).toBe(true);
+    expect(await until(() => heard === bots.length)).toBe(true);
 
-    const next = await timed(post("/navigate", bot, { url: fixture?.url }));
-    console.info(
-      `after its renderer was killed, /navigate answered ${next.result.status} in ${next.ms}ms`,
-    );
-    expect(next.result.status).toBe(200);
-    expect(String(next.result.body.text)).toContain(VISIBLE_TEXT);
-    expect(await tabOf(bot)).not.toBe(dead);
+    const replaced: Page[] = [];
+    for (const bot of bots) {
+      const next = await timed(post("/navigate", bot, { url: fixture?.url }));
+      console.info(
+        `after every renderer was killed, /navigate answered ${next.result.status} in ${next.ms}ms`,
+      );
+      expect(next.result.status).toBe(200);
+      expect(String(next.result.body.text)).toContain(VISIBLE_TEXT);
+      replaced.push(await tabOf(bot));
+    }
+    expect(new Set([...dead, ...replaced]).size).toBe(4);
+    for (const bot of bots) {
+      expect(tabsOf(await post("/snapshot", bot))).toHaveLength(1);
+    }
   }, 60_000);
 });
