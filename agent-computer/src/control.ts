@@ -39,6 +39,17 @@ export type ControlState = {
    */
   secretRef?: string;
   secretSnapshotId?: number;
+  /**
+   * The last ask was let go of with nobody having answered it, because the tab it was about went
+   * from under the Bot ({@link Control.tabLost}).
+   *
+   * SAID, BECAUSE AN ASK THAT IS GONE IS OTHERWISE READ AS AN ASK THAT WAS ANSWERED. The call
+   * that asked is still waiting, and it reads "nothing asked, and the Bot holds the wheel" as the
+   * person having come and gone (`shared/person-wait.ts`). An ask that ran out is let go of only
+   * after that wait is over ({@link REQUEST_TTL_MS}); this one is let go of in the middle of it, so
+   * the state has to say which it was. There until the next ask or handover.
+   */
+  unanswered?: true;
 };
 
 /** Refusal because a person is driving. Distinct from a failure, so the Bot can be told to wait. */
@@ -251,6 +262,7 @@ export function createControl(
       helpAskedAt = Date.parse(now());
       state = {
         ...state,
+        unanswered: undefined,
         requested: true,
         reason:
           typeof reason === "string" && reason.trim()
@@ -274,6 +286,7 @@ export function createControl(
       secretAskedAt = Date.parse(now());
       state = {
         ...state,
+        unanswered: undefined,
         secretWanted:
           typeof input.label === "string" && input.label.trim()
             ? input.label.trim()
@@ -316,6 +329,46 @@ export function createControl(
         secretSnapshotId: undefined,
       };
       changed();
+    },
+
+    /**
+     * The tab the Bot was on has gone from under it, and every ask about that tab goes with it.
+     *
+     * A value was wanted for a box on a page that no longer exists, and a hand for a page nobody
+     * can be shown. Left standing, the masked box would take a person's password for a ref that
+     * now names whatever the Bot's other tab calls it — measured 2026-10-05, before this: a value
+     * asked for on a sign-in popup, typed after the popup's renderer died, went into the page
+     * behind it. So both asks end here, marked as nobody's answer ({@link ControlState.unanswered}).
+     *
+     * ONLY EVER AN ASK. A person holding the wheel keeps it: they are looking at the screen, and
+     * taking the browser from their hands is worse than any page that went away under them.
+     *
+     * Says whether there was an ask to end.
+     */
+    tabLost(): boolean {
+      lapse();
+      const helpAsked = state.holder === "bot" && state.requested;
+      const secretAsked = Boolean(state.secretWanted);
+      if (!helpAsked && !secretAsked) return false;
+      // Neither is timed any more: there is nothing left to run out.
+      [helpAskedAt, secretAskedAt] = [
+        helpAsked ? undefined : helpAskedAt,
+        undefined,
+      ];
+      // The value's label goes with the field it named, as everywhere an ask for one ends.
+      const {
+        secretWanted: _was,
+        secretRef: _ref,
+        secretSnapshotId: _id,
+        ...rest
+      } = state;
+      state = {
+        ...rest,
+        ...(helpAsked ? { requested: false, reason: undefined } : {}),
+        unanswered: true,
+      };
+      changed();
+      return true;
     },
 
     /**

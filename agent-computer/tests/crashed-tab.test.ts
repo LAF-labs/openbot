@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,10 +23,13 @@ import { diedUnder } from "../src/navigation";
 import { guardNavigations } from "../src/navigation-guard";
 import { watchPage } from "../src/page-watch";
 import { createProfiles } from "../src/profiles";
+import { saysRendererDied } from "../src/respond";
 import { computerFetch } from "../src/routes";
 import { createSessions } from "../src/sessions";
+import { tabLost } from "../src/tab-loss";
+import { createTabs, type TabLost } from "../src/tabs";
 import { createWorkspace } from "../src/workspace";
-import { serveFixture, VISIBLE_TEXT } from "./fixture-site";
+import { serveFixture, TO_HANG_PIN, VISIBLE_TEXT } from "./fixture-site";
 
 /**
  * A TAB WHOSE RENDERER DIED, AND THE BOT THAT HAS TO GO ON WORKING AFTERWARDS.
@@ -130,6 +134,8 @@ async function startComputer(): Promise<Running> {
     idleCloseMs: 0,
     onPage: (botId, page) =>
       watchPage(sessions.sessionFor(botId), botId, page, workspace),
+    onTabLost: (botId, lost) =>
+      tabLost(sessions.sessionFor(botId), botId, lost),
     // The guard itself, on every request the browser makes. Whose hop it stopped is `index.ts`'s
     // to work out, and nothing here is refused or held.
     onContext: async (context) => {
@@ -332,6 +338,169 @@ describe("a navigation that failed", () => {
     // The browser's own event is enough, whatever the failure was called.
     expect(diedUnder(true, new Error("page.goto: anything"))).toBe(true);
     expect(diedUnder(false, "Page crashed")).toBe(false);
+    // And under an action on an element, where it is one level down: the element did not refuse.
+    const underAClick = new Error("laf:element_not_actionable", {
+      cause: new Error("locator.click: Target crashed"),
+    });
+    expect(saysRendererDied(underAClick)).toBe(true);
+    expect(
+      saysRendererDied(
+        new Error("laf:element_not_actionable", {
+          cause: new Error("locator.click: Timeout 10000ms exceeded."),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+/**
+ * The bookkeeping on its own, with tabs that are nothing but what it asks of one: an address,
+ * whether it is closed, and the two events. No browser, so a minute can pass in a line.
+ */
+describe("a Bot's tabs, kept without a browser", () => {
+  type FakeTab = Page & EventEmitter;
+
+  function tab(address: string): FakeTab {
+    const made = new EventEmitter();
+    let closed = false;
+    return Object.assign(made, {
+      url: () => address,
+      isClosed: () => closed,
+      close: async () => {
+        closed = true;
+        made.emit("close");
+      },
+    }) as unknown as FakeTab;
+  }
+
+  function keeping() {
+    const open: FakeTab[] = [];
+    const lost: [string, TabLost][] = [];
+    const clock = { now: 0 };
+    const tabs = createTabs({
+      pages: () => open,
+      now: () => clock.now,
+      onPage: () => undefined,
+      onLost: (botId, how) => lost.push([botId, how]),
+    });
+    /** A tab this Bot is handed and is on, as `profiles.page` hands one. */
+    const on = (botId: string, address: string): FakeTab => {
+      const made = tab(address);
+      open.push(made);
+      tabs.own(botId, made);
+      tabs.touch(botId, made);
+      return made;
+    };
+    return { tabs, open, lost, clock, on };
+  }
+
+  let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
+
+  afterEach(() => {
+    warned?.mockRestore();
+    warned = undefined;
+  });
+
+  const crashLines = () =>
+    (warned?.mock.calls ?? [])
+      .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+      .filter((line) => line.event === "tab_crashed");
+
+  test("the line a dead renderer leaves is one a minute for a Bot, and the ones not written are counted on the next", () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { clock, lost, on } = keeping();
+
+    // A machine too short of memory to keep a renderer: every tab the Bot is handed dies.
+    for (let died = 0; died < 4; died += 1) {
+      on("loop-bot", "https://shop.example/cart?item=77").emit("crash");
+      clock.now += 1_000;
+    }
+    expect(crashLines()).toEqual([
+      expect.objectContaining({
+        bot: "loop-bot",
+        origin: "https://shop.example",
+        tabs: 1,
+      }),
+    ]);
+    expect(crashLines()[0]).not.toHaveProperty("unsaid");
+    // Another Bot's is its own line: the bound is on a Bot's lines, not on the log.
+    on("other-bot", "https://bank.example/").emit("crash");
+    expect(crashLines().map((line) => line.bot)).toEqual([
+      "loop-bot",
+      "other-bot",
+    ]);
+
+    clock.now += 60_000;
+    on("loop-bot", "https://shop.example/cart?item=77").emit("crash");
+    expect(crashLines().at(-1)).toMatchObject({ bot: "loop-bot", unsaid: 3 });
+    expect(crashLines()).toHaveLength(3);
+    // The line is bounded; what the Bot is told is not. Every one of them was the tab it was on.
+    expect(lost.filter(([botId]) => botId === "loop-bot")).toHaveLength(5);
+    expect(JSON.stringify(warned.mock.calls)).not.toMatch(/cart|item|77/);
+  });
+
+  test("a Bot is told its tab is gone only when it was the tab the Bot was on, and never for a tab this process closed", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { tabs, lost, open, on } = keeping();
+    const front = on("bot", "https://shop.example/orders?q=1");
+    // A second tab of its own that it is not on: `own` without `touch`.
+    const back = tab("https://shop.example/help");
+    open.push(back);
+    tabs.own("bot", back);
+
+    back.emit("crash");
+    expect(lost).toEqual([]);
+    expect(tabs.pagesOf("bot")).toEqual([front]);
+
+    // Closed by its site, while it was the Bot's and the Bot was on it.
+    await front.close();
+    expect(lost).toEqual([
+      ["bot", { cause: "closed", origin: "https://shop.example" }],
+    ]);
+
+    // Closed by this process — a stop — which lets go of it first: nobody is told anything.
+    const again = on("bot", "https://shop.example/");
+    await tabs.closeTabsOf("bot");
+    expect(again.isClosed()).toBe(true);
+    expect(lost).toHaveLength(1);
+  });
+
+  test("a death is counted once, whichever way it is learned first", () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { tabs, lost, on } = keeping();
+    const dead = on("bot", "https://shop.example/");
+    // The call that failed on it, then the event, late; and the other way round.
+    tabs.died(dead);
+    dead.emit("crash");
+    tabs.died(dead);
+    expect(lost).toHaveLength(1);
+    expect(crashLines()).toHaveLength(1);
+    expect(tabs.hasCrashed(dead)).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([]);
+  });
+
+  test("a tab that died before the browser said whose it was is adopted by nobody", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { tabs, open, lost, on } = keeping();
+    const opener = on("bot", "https://shop.example/");
+    const popup = Object.assign(tab("https://pay.example/window"), {
+      opener: async () => opener,
+    }) as unknown as FakeTab;
+    open.push(popup);
+
+    tabs.adoptOpened(popup);
+    // Dead before `opener()` has answered.
+    popup.emit("crash");
+    await Bun.sleep(0);
+
+    expect(tabs.owners.has(popup)).toBe(false);
+    expect(tabs.live.get("bot")?.page).toBe(opener);
+    // The Bot never left the tab it clicked in, so it has lost nothing.
+    expect(lost).toEqual([]);
+    expect(crashLines()).toEqual([
+      expect.objectContaining({ origin: "https://pay.example", tabs: 0 }),
+    ]);
+    expect(crashLines()[0]).not.toHaveProperty("bot");
   });
 });
 
@@ -651,6 +820,306 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
       socket.close();
     }
   }, 60_000);
+
+  /*
+   * WHAT THE BOT MAY DO ON THE TAB IT WAS PUT ON: NOTHING, UNTIL IT HAS LOOKED.
+   *
+   * When a tab a site opened dies, the Bot's next call lands on the tab it came from — which is
+   * the right thing for a look and was, on the first version of this fix, the wrong thing for
+   * everything else. A key and a scroll name no element, and the masked box's door checks no
+   * snapshot: both went straight to the page behind. Each test below opens a popup from a page,
+   * ends the popup, and holds the page behind it to having been touched by nothing.
+   */
+  describe("that the Bot was on, with another tab of its own behind it", () => {
+    /** A page, and the tab one of its links opened: where the Bot is, and where it would land. */
+    async function onAPopup(bot: string, page: string, link: string) {
+      await post("/navigate", bot, { url: `${fixture?.url}${page}` });
+      const behind = await tabOf(bot);
+      const first = await post("/snapshot", bot);
+      const found = (first.body.elements as Element[]).find(
+        (element) => element.name === link,
+      );
+      if (!found) throw new Error(`the fixture has no ${link} link`);
+      const clicked = await post("/click", bot, {
+        ref: found.ref,
+        snapshotId: first.body.snapshotId,
+        element: { role: "link", name: found.name },
+      });
+      expect(clicked.status).toBe(200);
+      const popup = await tabOf(bot);
+      expect(popup).not.toBe(behind);
+      return { behind, popup, first, onPopup: await post("/snapshot", bot) };
+    }
+
+    /** The box on `/to-hang`, by the ref a look gave it. */
+    const boxOn = (look: Answer): Element => {
+      const box = (look.body.elements as Element[]).find(
+        (element) => element.name === TO_HANG_PIN,
+      );
+      if (!box) throw new Error("the /to-hang fixture has no box");
+      return box;
+    };
+
+    /** What every box on a page holds, asked of the page itself. */
+    const boxesOf = (page: Page): Promise<string[]> =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("input")].map((input) => input.value),
+      );
+
+    /** Everything this process writes to its log while `work` runs, one string a line. */
+    async function logged(work: () => Promise<void>): Promise<string[]> {
+      const lines: string[] = [];
+      const spies = (["log", "warn", "error"] as const).map((level) =>
+        spyOn(console, level).mockImplementation((...said: unknown[]) => {
+          lines.push(said.map(String).join(" "));
+        }),
+      );
+      try {
+        await work();
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+      return lines;
+    }
+
+    /*
+     * THE ASK ENDS WITH THE TAB — closed by its site, or its renderer dead — AND THE VALUE GOES
+     * NOWHERE. The Bot asks for a value into a box on the popup; the popup goes; the person, whose
+     * card was still up a moment ago, types. The page behind has a box of its own under the very
+     * same ref — each tab's refs are its own last look's — and that is where the value went
+     * (measured 2026-10-05 on `870673b9` for a dead renderer, and on main for a tab its site
+     * closed: 200 `supplied: true`, the value in the wrong page, the popup's site in the trail).
+     */
+    for (const [cause, lose] of [
+      ["crashed", (popup: Page) => crash(popup)],
+      [
+        "closed",
+        async (popup: Page) => {
+          // As a sign-in window that has done its work closes itself.
+          await popup.evaluate(() => window.close()).catch(() => undefined);
+          if (!(await until(() => popup.isClosed()))) {
+            throw new Error("the popup did not close itself");
+          }
+        },
+      ],
+    ] as const) {
+      test(`${cause === "crashed" ? "whose renderer died" : "that its site closed"} under an ask for a value ends the ask as nobody's answer, and what the person types reaches no page, no answer and no log line`, async () => {
+        const bot = `lost-${cause}-secret-bot`;
+        const SECRET = `PERSON-TYPED-AFTER-TAB-${cause.toUpperCase()}-5521`;
+        const answers: string[] = [];
+        let behind: Page | undefined;
+        const lines = await logged(async () => {
+          const there = await onAPopup(bot, "to-hang", "이 화면 새 탭");
+          behind = there.behind;
+          const box = boxOn(there.onPopup);
+          // The trap: the page behind knows its own box by this very ref.
+          expect(box.ref).toBe(boxOn(there.first).ref);
+          const asked = await post("/control/secret", bot, {
+            label: "간편 확인 값",
+            ref: box.ref,
+            snapshotId: there.onPopup.body.snapshotId,
+          });
+          expect(asked.body.secretWanted).toBe("간편 확인 값");
+
+          await lose(there.popup);
+
+          // The ask is over, and says nobody answered it: a wait reads that, not "it was typed".
+          const state = await call("GET", "/control", bot);
+          answers.push(state.text);
+          expect(state.body.secretWanted).toBeUndefined();
+          expect(state.body.unanswered).toBe(true);
+
+          const typed = await post("/human/secret", bot, { text: SECRET });
+          answers.push(typed.text);
+          expect([typed.status, typed.body.code]).toEqual([
+            409,
+            "laf:secret_not_pending",
+          ]);
+          // And the Bot may not ask again for a box it has not looked at.
+          const again = await post("/control/secret", bot, {
+            label: "간편 확인 값",
+            ref: box.ref,
+            snapshotId: there.onPopup.body.snapshotId,
+          });
+          answers.push(again.text);
+          expect([again.status, again.body.code]).toEqual([
+            409,
+            "laf:stale_refs",
+          ]);
+          const look = await post("/snapshot", bot);
+          answers.push(look.text);
+          expect(look.body.notes).toEqual([
+            {
+              code: "laf:tab_replaced",
+              cause,
+              origin: new URL(fixture?.url ?? "").origin,
+            },
+          ]);
+        });
+
+        // THE PAGE BEHIND: its one box holds what it held, which is nothing.
+        if (!behind) throw new Error("no page behind the popup");
+        expect(await boxesOf(behind)).toEqual([""]);
+        // The value, looked for the way a secret is: in the whole of every answer and every line.
+        for (const written of [...answers, ...lines]) {
+          expect(written.includes(SECRET)).toBe(false);
+        }
+        expect(lines.some((line) => line.includes("ask_ended_tab_lost"))).toBe(
+          true,
+        );
+      }, 60_000);
+    }
+
+    test("whose renderer died takes no key, scroll, tab switch or file until the Bot has looked", async () => {
+      const bot = "lost-unseen-bot";
+      const there = await onAPopup(bot, "", "주문 상세 보기");
+      const written = await post("/files/write", bot, {
+        path: "장부.csv",
+        contents: "날짜,금액\n",
+      });
+      expect(written.status).toBe(200);
+      const button = (there.first.body.elements as Element[]).find(
+        (element) => element.name === "알림",
+      );
+      if (!button) throw new Error("the fixture has no 알림 button");
+
+      await crash(there.popup);
+
+      // Enter was judged for the popup's site, and would be pressed on the page behind it.
+      for (const [path, payload] of [
+        ["/key", { key: "Enter" }],
+        ["/scroll", { deltaY: 400 }],
+        ["/tabs/switch", { index: 1 }],
+        ["/type", { ref: button.ref, text: "x" }],
+        [
+          "/upload",
+          {
+            ref: button.ref,
+            path: "장부.csv",
+            snapshotId: there.onPopup.body.snapshotId,
+          },
+        ],
+        // Twice: a refusal is not a look, and does not let the next one through.
+        ["/key", { key: "Enter" }],
+      ] as const) {
+        const refused = await timed(post(path, bot, payload));
+        expect({
+          path,
+          status: refused.result.status,
+          code: refused.result.body.code,
+        }).toEqual({ path, status: 409, code: "laf:stale_refs" });
+        expect(refused.ms).toBeLessThan(ANSWER_BOUND_MS);
+      }
+      // A person's own picture of the tab is not the Bot looking: the pane asks for one every two
+      // seconds, and would have let the Bot act again within two.
+      expect((await call("GET", "/screenshot", bot)).status).toBe(200);
+      expect((await post("/key", bot, { key: "Enter" })).body.code).toBe(
+        "laf:stale_refs",
+      );
+      // The page behind was sent nothing: no alert went up, and it says what it said.
+      expect(
+        await there.behind.evaluate(
+          () => document.getElementById("said")?.textContent,
+        ),
+      ).toBe("아직 아무 일도 없었습니다");
+    }, 60_000);
+
+    test("whose renderer died is said on the Bot's first look, once, and from that look on the Bot acts again", async () => {
+      const bot = "lost-look-bot";
+      const there = await onAPopup(bot, "", "주문 상세 보기");
+      await crash(there.popup);
+      expect((await post("/scroll", bot, { deltaY: 200 })).status).toBe(409);
+
+      const look = await call("GET", "/read", bot);
+      expect(look.status).toBe(200);
+      // Where the Bot is, and why it is not where it was: the fact, the cause and the site only.
+      expect(look.body.url).toBe(fixture?.url);
+      expect(String(look.body.text)).toContain(VISIBLE_TEXT);
+      expect(look.body.notes).toEqual([
+        {
+          code: "laf:tab_replaced",
+          cause: "crashed",
+          origin: new URL(fixture?.url ?? "").origin,
+        },
+      ]);
+      // Once: the next look has nothing to add.
+      expect((await call("GET", "/read", bot)).body.notes).toBeUndefined();
+      expect((await post("/snapshot", bot)).body.notes).toBeUndefined();
+
+      for (const [path, payload] of [
+        ["/scroll", { deltaY: 200 }],
+        ["/key", { key: "Escape" }],
+      ] as const) {
+        const acted = await post(path, bot, payload);
+        expect({ path, status: acted.status }).toEqual({ path, status: 200 });
+      }
+      expect(await tabOf(bot)).toBe(there.behind);
+    }, 60_000);
+  });
+
+  /*
+   * A DEATH THE `crash` EVENT DID NOT BRING. The event is heard on a tab from the moment the tab
+   * exists, and the first version listened only from the moment a Bot owned it: a tab that died
+   * in between was adopted dead or handed out as the spare, and the incident was back for that
+   * Bot. And an event can be missed outright, so the call that fails on a dead tab is the second
+   * way of knowing.
+   */
+  test("that died before any Bot owned it is handed to nobody", async () => {
+    const holder = "stray-holder-bot";
+    await post("/navigate", holder, { url: fixture?.url });
+    // A tab no Bot's click opened, as the tab a browser starts with is nobody's until one is
+    // taken: exactly what the next Bot with no tab is handed.
+    const stray = await (await tabOf(holder)).context().newPage();
+    await stray.goto(`${fixture?.url}other`);
+    await crash(stray);
+
+    const newcomer = "stray-newcomer-bot";
+    const opened = await post("/navigate", newcomer, { url: fixture?.url });
+    expect([opened.status, opened.body.code]).toEqual([200, undefined]);
+    expect(await tabOf(newcomer)).not.toBe(stray);
+    // And it is not left lying open for the one after either.
+    expect(await until(() => stray.isClosed())).toBe(true);
+  }, 60_000);
+
+  describe("that nothing heard die", () => {
+    let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
+
+    afterEach(() => {
+      warned?.mockRestore();
+      warned = undefined;
+    });
+
+    test("is learned from the call that fails on it, let go of once, and the next address opens", async () => {
+      const bot = "unheard-bot";
+      await post("/navigate", bot, { url: fixture?.url });
+      const dead = await tabOf(bot);
+      // The event, missed: nothing of this process is listening when the renderer goes.
+      dead.removeAllListeners("crash");
+      warned = spyOn(console, "warn").mockImplementation(() => undefined);
+      await crash(dead);
+      // Still the Bot's tab, and dead: every call on it failed for ever, before.
+      expect(await tabOf(bot)).toBe(dead);
+
+      const failed = await post("/navigate", bot, { url: fixture?.url });
+      expect([failed.status, failed.body.code]).toEqual([
+        502,
+        "laf:browser_failed",
+      ]);
+      const next = await post("/navigate", bot, { url: fixture?.url });
+      expect(next.status).toBe(200);
+      expect(String(next.body.text)).toContain(VISIBLE_TEXT);
+      expect(next.body.notes).toMatchObject([
+        { code: "laf:tab_replaced", cause: "crashed" },
+      ]);
+      expect(await tabOf(bot)).not.toBe(dead);
+      await post("/snapshot", bot);
+
+      const lines = warned.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("tab_crashed") && line.includes(bot));
+      expect(lines).toHaveLength(1);
+    }, 60_000);
+  });
 
   /*
    * A MACHINE SHORT OF MEMORY DOES NOT STOP AT ONE. Every renderer the browser has, ended in the

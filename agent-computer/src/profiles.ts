@@ -85,7 +85,7 @@ import {
   sweepLocks,
   writePointer,
 } from "./profile-dir";
-import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS } from "./tabs";
+import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS, type TabLost } from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
 
@@ -114,6 +114,15 @@ export type ProfileOptions = {
    * behaviour.
    */
   onPage?: (botId: string, page: Page) => void;
+  /**
+   * The tab a Bot was on has gone from under it: its renderer died, or its site closed it.
+   *
+   * Said the moment it happens, to whoever keeps what the Bot knows of its page (`index.ts`): the
+   * Bot's next call lands on another tab — one it has open, or a new one — and nothing it knew
+   * about the page it was on is true of that one. This module only moves the tab; what a Bot may
+   * do before it has looked at where it is now is the session's to decide (`tab-loss.ts`).
+   */
+  onTabLost?: (botId: string, lost: TabLost) => void;
   /**
    * The browser, the moment it exists and before its first page is handed out.
    *
@@ -221,6 +230,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     owners,
     live,
     hasCrashed,
+    hear,
+    died,
     pagesOf,
     own,
     touch,
@@ -233,6 +244,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     now,
     // Read when a page arrives rather than now, as it always was.
     onPage: (botId, page) => options.onPage?.(botId, page),
+    onLost: (botId, lost) => options.onTabLost?.(botId, lost),
   });
 
   const profileDirectory = (): string =>
@@ -352,6 +364,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       };
       // A tab a site opens goes to the Bot whose click opened it (tabs.ts, `adoptOpened`).
       context.on("page", adoptOpened);
+      // And the tab the browser starts with is listened to as every later one is: it is nobody's
+      // until a Bot takes it, and one that died meanwhile must not be the one handed out.
+      for (const page of context.pages()) hear(page);
       if (adoption.adoptedFrom && !adoptionTold) {
         adoptionTold = true;
         log.info("profile_adopted", {
@@ -387,7 +402,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       const existing = live.get(botId);
       /*
        * Still open AND still this Bot's. A tab whose renderer died is open as far as the browser
-       * says and is no longer anybody's (tabs.ts, `dropCrashed`); handing it back is how one crash
+       * says and is no longer anybody's (tabs.ts, `died`); handing it back is how one crash
        * became a Bot that could open no address at all (measured 2026-10-05).
        */
       if (
@@ -440,6 +455,19 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
 
     /** Whether this tab's renderer died, which ended its time as a Bot's tab. See tabs.ts. */
     hasCrashed,
+
+    /**
+     * A call for this Bot failed the way a call on a dead tab does (`answeredADeadTab`).
+     *
+     * THE SECOND WAY A DEATH IS LEARNED, for the one nothing heard: the tab the Bot is on is still
+     * its own, so no `crash` event let go of it, and it is dead. Let go of here exactly as the
+     * event would have (tabs.ts, `died`) — once: a death already heard has left nothing of the
+     * Bot's to let go of, and this does nothing.
+     */
+    deadTab(botId: string): void {
+      const entry = live.get(botId);
+      if (entry && owners.get(entry.page) === botId) died(entry.page);
+    },
 
     /**
      * Close the tabs nobody has used for a while, and the browser once nobody has any.

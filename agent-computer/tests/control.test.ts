@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PERSON_WAIT_MS } from "../../shared/person-wait";
+import { askOutcome, PERSON_WAIT_MS } from "../../shared/person-wait";
 import {
   ControlError,
   ControlRequestError,
@@ -460,5 +460,99 @@ describe("an ask nobody answered", () => {
       secretLost: false,
     });
     expect(kept[2]).toMatchObject({ holder: "bot", requested: false });
+  });
+});
+
+/**
+ * AN ASK WHOSE TAB WENT FROM UNDER THE BOT (2026-10-05).
+ *
+ * The one ask the computer ends in the middle of the Bot's wait: a value wanted for a box on a tab
+ * whose renderer has died, or a hand for a page its site has closed. Left standing, the masked box
+ * took a person's password into whatever the Bot's other tab called that ref
+ * (`tests/crashed-tab.test.ts`). And an ask that is gone is read as one that was answered, so the
+ * state has to say this one was not (`shared/person-wait.ts`, `askOutcome`).
+ */
+describe("an ask whose tab is gone", () => {
+  test("ends, both kinds, as nobody's answer — and the value's door closes with it", () => {
+    const { control } = fixture();
+    control.requestHelp("네이버 로그인");
+    control.requestSecret({ ref: "e7", label: "비밀번호", snapshotId: 4 });
+
+    expect(control.tabLost()).toBe(true);
+
+    const state = control.get();
+    expect(state).toMatchObject({
+      holder: "bot",
+      requested: false,
+      unanswered: true,
+    });
+    expect(state.reason).toBeUndefined();
+    expect(state.secretWanted).toBeUndefined();
+    expect(state.secretRef).toBeUndefined();
+    expect(control.pendingSecret()).toBeNull();
+    // What a wait reads, either kind: the ask is gone, and nobody came.
+    expect(askOutcome(state)).toBe("gave up");
+  });
+
+  test("with nothing asked changes nothing, and marks nothing as unanswered", () => {
+    const kept: ControlState[] = [];
+    const control = createControl(undefined, {
+      onChange: (state) => kept.push(state),
+    });
+    expect(control.tabLost()).toBe(false);
+    expect(kept).toEqual([]);
+    expect(control.get().unanswered).toBeUndefined();
+    expect(askOutcome(control.get())).toBe("answered");
+  });
+
+  test("never takes the wheel from a person who holds it", () => {
+    const { control } = fixture();
+    control.requestHelp("네이버 로그인");
+    control.take();
+    expect(control.tabLost()).toBe(false);
+    // Still theirs, with what they were asked to do: they are looking at the screen.
+    expect(control.get()).toMatchObject({
+      holder: "human",
+      reason: "네이버 로그인",
+    });
+    expect(control.get().unanswered).toBeUndefined();
+  });
+
+  test("is forgotten by the next ask, which is waited on afresh", () => {
+    const { control } = fixture();
+    control.requestSecret({ ref: "e7", label: "비밀번호" });
+    control.tabLost();
+
+    control.requestSecret({ ref: "e3", label: "비밀번호 다시" });
+    expect(control.get().unanswered).toBeUndefined();
+    control.secretSupplied();
+    expect(askOutcome(control.get())).toBe("answered");
+
+    control.requestHelp("다시 로그인");
+    control.tabLost();
+    control.requestHelp("한 번 더");
+    expect(control.get()).toMatchObject({
+      requested: true,
+      reason: "한 번 더",
+    });
+    expect(control.get().unanswered).toBeUndefined();
+    // And a hand-over or a hand-back says nothing of an old ask either.
+    control.tabLost();
+    expect(control.take().unanswered).toBeUndefined();
+    expect(control.release().unanswered).toBeUndefined();
+  });
+
+  test("is written down, and the next life of the process does not call it a lost request", () => {
+    const kept: ControlState[] = [];
+    const control = createControl(undefined, {
+      onChange: (state) => kept.push(state),
+    });
+    control.requestSecret({ ref: "e7", label: "비밀번호" });
+    control.tabLost();
+    expect(kept).toHaveLength(2);
+    // The Bot was told when its wait ended; a restart has nothing to add.
+    const restored = restoredControl(JSON.parse(JSON.stringify(kept[1])));
+    expect(restored.secretLost).toBe(false);
+    expect(restored.state).toBeUndefined();
   });
 });

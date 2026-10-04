@@ -41,7 +41,7 @@ import { HUMAN_INPUT, humanInput } from "./human-input";
 import type { StreamData } from "./live-screen";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
-import { fact } from "./respond";
+import { answeredADeadTab, fact } from "./respond";
 import { withoutTypedAddresses } from "./typed-values";
 import { whereaboutsOf } from "./whereabouts";
 
@@ -178,10 +178,16 @@ export function computerFetch(computer: Computer) {
        * one place every Bot route's answer passes is here, so this is where it is blanked — and an
        * answer from a Bot nobody has typed for goes out untouched. See `typed-values.ts`.
        */
-      return withoutTypedAddresses(
-        session,
-        await route({ request, url, botId, session }, computer),
-      );
+      const answer = await route({ request, url, botId, session }, computer);
+      /*
+       * A CALL THAT FAILED ON A DEAD TAB LETS GO OF THAT TAB. A renderer's death is heard as an
+       * event (tabs.ts), and one that was not heard leaves the Bot on a tab that fails every call
+       * for ever — the incident of 2026-10-05 again, by another door. The failure itself is the
+       * second way of knowing, and every route's failure is written in one place
+       * (`browserFailed`), so it is read here, before the answer is rewritten below.
+       */
+      if (answeredADeadTab(answer)) computer.profiles.deadTab(botId);
+      return withoutTypedAddresses(session, answer);
     }
 
     return fact("laf:computer_route_unknown");

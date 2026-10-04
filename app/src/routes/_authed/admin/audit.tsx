@@ -882,6 +882,8 @@ export const COMPUTER_FACTS: Record<string, string> = {
     "The page's own scripts stopped the reader, so its text was read plainly",
   "laf:page_loading":
     "The page was still loading, so nothing on it could be read",
+  "laf:tab_replaced":
+    "The tab the Bot was on went away, and the Bot was moved to another",
   "laf:profile_adopted":
     "The Bots now share one browser, which took over the profile last used",
 };

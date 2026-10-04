@@ -916,14 +916,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * popup dropped and its refs retired, a tab that will not close handed to nobody, the live screen
  * moved to the new tab, and every renderer ended at once with each Bot left a tab of its own).
  *
+ * RAISED AGAIN 2026-10-05 with nothing acting on a tab a Bot was put on and has not seen, each by
+ * exactly what was added: fifteen to `agent-computer` (five on the wheel's state — an ask whose tab
+ * is gone ending as nobody's answer, a person keeping the wheel, the next ask waited on afresh; four
+ * on the tab bookkeeping without a browser — the crash line bounded to one a minute with its count,
+ * a loss said only for the tab the Bot was on, a death counted once, a tab dead before adoption
+ * adopted by nobody; and six against a real Chromium — a value typed after its tab died and after
+ * its site closed it reaching no page, no answer and no log line, no key, scroll, switch or file
+ * before a look, the loss said once on the first look, a tab dead before it was owned handed to
+ * nobody, and a death nothing heard learned from the call that failed on it), two to `server` (a
+ * hand and a value asked for on a tab that is gone, each answered as nobody having come).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3508, roots: ["server"] },
+  { name: "server", floor: 3510, roots: ["server"] },
   { name: "app", floor: 2027, roots: ["app"] },
-  { name: "agent-computer", floor: 454, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 469, roots: ["agent-computer"] },
   { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
 ] as const;
 

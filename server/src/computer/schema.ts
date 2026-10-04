@@ -367,6 +367,12 @@ export type ControlState = {
   /** The field it goes in, as a ref from the snapshot the request named. */
   secretRef?: string;
   /**
+   * The last ask was let go of with nobody having answered it: the tab it was about went from
+   * under the Bot (`agent-computer/src/control.ts`). A wait that finds its ask gone reads this
+   * before it says somebody came (`shared/person-wait.ts`, `askOutcome`).
+   */
+  unanswered?: true;
+  /**
    * Where that field is, as THIS SERVER resolved it — never as the Bot described it.
    *
    * `secretWanted` is a label the model wrote, and a model steered by a page can write "네이버

@@ -14,7 +14,13 @@ import {
   STALE_REFS,
   StaleSnapshotError,
 } from "./refs";
-import { browserFailed, fact, invalid, RequestInvalidError } from "./respond";
+import {
+  browserFailed,
+  fact,
+  invalid,
+  RequestInvalidError,
+  saysRendererDied,
+} from "./respond";
 import { WorkspaceFileError, WorkspacePathError } from "./workspace";
 
 /**
@@ -55,6 +61,10 @@ export function actionFailure(error: unknown): Response {
     return fileFailure(error);
   }
   if (error instanceof ElementActionError) {
+    // The element did not refuse: its tab's renderer died under the action. The browser's failure,
+    // said as one, and kept for the door to let go of the tab by (`answeredADeadTab`).
+    // Its cause, not itself: this error's own message is the code for an element that refused.
+    if (saysRendererDied(error.cause)) return browserFailed(error.cause);
     return fact(ELEMENT_NOT_ACTIONABLE, { stale: true });
   }
   return browserFailed(error);

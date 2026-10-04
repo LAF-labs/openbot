@@ -27,8 +27,16 @@ import {
 } from "./navigation-guard";
 import { arrivalNote } from "./page-arrival";
 import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
-import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
+import {
+  bodyOf,
+  browserFailed,
+  fact,
+  invalid,
+  json,
+  saysRendererDied,
+} from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
+import { looked } from "./tab-loss";
 import { keepOwnAddress } from "./typed-values";
 
 /** A navigation this process stopped: where it was going, where it was sent from, and why. */
@@ -92,13 +100,12 @@ const isTimeout = (error: unknown): boolean =>
  *
  * The browser's own `crash` event is the fact, and the tab's bookkeeping heard it (`heard`, from
  * tabs.ts) — Playwright 1.62.1 sends the event before it fails the call the crash interrupted. Its
- * words are asked second, for the day that order changes: a crash has no class of its own, only
- * `Page crashed` from the page and `Target crashed` from a frame, the two names `reader.test.ts`
- * holds a crashed renderer to. A site's failure is neither, whatever else it says.
+ * words are asked second (`saysRendererDied`), for the day that order changes and for a tab that
+ * was dead before the call and that nothing heard die. A site's failure is neither, whatever else
+ * it says.
  */
 export const diedUnder = (heard: boolean, error: unknown): boolean =>
-  heard ||
-  (error instanceof Error && /\b(?:Page|Target) crashed\b/.test(error.message));
+  heard || saysRendererDied(error);
 
 /**
  * A hop the floor refused, reported where it will be read.
@@ -332,6 +339,7 @@ export const navigate: BotRoute = async (
   try {
     session.control.assertBotMayAct();
     target = await profiles.page(botId);
+    const seen = session.tabsLost;
     const commits: string[] = [];
     navigating = {
       page: target,
@@ -410,6 +418,9 @@ export const navigate: BotRoute = async (
         // already on its way elsewhere, rather than waited on (`readSettledPageText`).
         if (extract.arriving) note(session, arrivalNote(extract.arriving));
         if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
+        // A page the Bot opened and was handed is a page it has seen (`tab-loss.ts`). Only here: a
+        // navigation that was stopped or failed told it nothing about the tab it is on.
+        looked(session, seen);
         return json(
           withNotes(session, {
             url: target.url(),
@@ -470,8 +481,8 @@ export const navigate: BotRoute = async (
      * It was answered `laf:navigation_failed` — "that site does not take the connection, do not
      * open it again" — about a site that had answered and a browser whose renderer died on it
      * (measured 2026-10-05: 502 in 81 ms, the tab dead). `laf:browser_failed` says the true thing
-     * and the useful one: try once more. The tab is already let go of (tabs.ts, `dropCrashed`), so
-     * that one more try opens in a tab that works.
+     * and the useful one: try once more. The tab is let go of (tabs.ts, `died`), so that one more
+     * try opens in a tab that works.
      *
      * NOT TRIED AGAIN HERE. The page a renderer died on is the likeliest to end the next one too,
      * and a second try inside this call would spend a second renderer on it unseen, behind one

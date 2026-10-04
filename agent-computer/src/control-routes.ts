@@ -11,6 +11,7 @@ import { inTurn, settleTyping } from "./person-typing";
 import { locateRef, onElement, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
+import { assertLooked } from "./tab-loss";
 import { digestOf } from "./typed-values";
 import { within } from "./within";
 
@@ -35,8 +36,12 @@ export const requestSecret: BotRoute = async ({ request, session }) => {
     snapshotId?: unknown;
   }>(request);
   try {
+    // The field is named by a ref, and a ref from before the Bot's tab went from under it names
+    // something on a page that is gone — or on the tab the Bot is on now, which it has not seen.
+    assertLooked(session);
     return json(session.control.requestSecret(body ?? {}));
   } catch (error) {
+    if (error instanceof StaleSnapshotError) return actionFailure(error);
     // The one thing a request for a secret must say is which field it goes in.
     if (error instanceof ControlRequestError) return invalid("ref");
     throw error;
@@ -68,6 +73,13 @@ export const supplySecret: BotRoute = async (
   if (typeof text !== "string" || !text) return invalid("text");
   try {
     const target = await profiles.page(botId);
+    /*
+     * NEVER INTO A TAB THE BOT WAS PUT ON AFTER IT ASKED. The ask ends when the tab it was made on
+     * goes (`tab-loss.ts`), so nothing is pending by the time a person types and this is not
+     * reached; it is here because what it guards is a person's password, and the rule below is
+     * true of one tab only.
+     */
+    assertLooked(session);
     // Focus the field the Bot named, and let this throw if it cannot be found. A secret must not
     // be reported as delivered unless a field receives it.
     //
@@ -79,6 +91,9 @@ export const supplySecret: BotRoute = async (
     // new ref when an element's role or accessible name changes, so a recycled node cannot
     // inherit an old one. If the ref resolves, it is the field the Bot meant. If it does not,
     // nothing is typed, which is the outcome the generation check existed to guarantee.
+    //
+    // ON THE TAB THE BOT ASKED ON, which is the half of that the rules do not give: each tab has
+    // its own most recent snapshot, and the same ref names a different box on each.
     const field = locateRef(session, target, pending.ref, undefined);
     await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
     // A failure here must not say what it was filling: Playwright's message for it does.

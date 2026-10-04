@@ -372,6 +372,73 @@ describe("a computer call, answered as the window answered it", () => {
       });
     });
   });
+
+  describe("against an ask the computer ends in the middle of the wait", () => {
+    /*
+     * THE ONE ASK THAT GOES WHILE THE BOT IS STILL WAITING: the tab it was about went from under
+     * the Bot — its renderer died, or its site closed it — and a value typed after that would go
+     * into another page (`agent-computer/src/tab-loss.ts`, 2026-10-05). The ask is gone and the Bot
+     * holds the wheel, which is exactly what this wait reads as "they came, and it is done". The
+     * computer's state says nobody did (`unanswered`), and the wait answers that.
+     *
+     * The real state machine again, on the real clock: the wait has ten minutes and is answered in
+     * the moment the tab goes.
+     */
+    const lostUnder = async (
+      name: "computer_request_help" | "computer_request_secret",
+      args: Record<string, unknown>,
+    ) => {
+      const control = createControl();
+      const gateway = {
+        requestHelp: async (
+          _computer: string,
+          _bot: string,
+          _actor: unknown,
+          reason: string,
+        ) => control.requestHelp(reason),
+        requestSecret: async (
+          _computer: string,
+          _bot: string,
+          _actor: unknown,
+          input: { label: string; ref: string; snapshotId: number },
+        ) => control.requestSecret(input),
+        control: async () => control.get(),
+      } as unknown as ComputerGateway;
+      const toolkit = await createChatTools({
+        gateway,
+        people: createPersonAnswers(),
+        controlPollMs: 20,
+      })(context, [tool(name)]);
+      const waiting = toolkit.execute(name, args, call(`${name}-tab-lost`));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(control.tabLost()).toBe(true);
+      return waiting;
+    };
+
+    test("a hand asked for on a tab that is gone is nobody taking the wheel", async () => {
+      expect(
+        await lostUnder("computer_request_help", { reason: "로그인" }),
+      ).toEqual({
+        ok: true,
+        code: "laf:nobody_took_control",
+        result: toolResultText("laf:nobody_took_control"),
+      });
+    });
+
+    test("a value asked for on a tab that is gone is a value nobody typed", async () => {
+      expect(
+        await lostUnder("computer_request_secret", {
+          label: "인증번호",
+          ref: "e12",
+          snapshotId: 4,
+        }),
+      ).toEqual({
+        ok: true,
+        code: "laf:secret_not_entered",
+        result: toolResultText("laf:secret_not_entered"),
+      });
+    });
+  });
 });
 
 describe("a wait on a person while the Bot is let go of", () => {

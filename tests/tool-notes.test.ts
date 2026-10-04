@@ -54,6 +54,7 @@ describe("the codes the computer ships", () => {
     expect(codes).toContain("laf:bot_header_missing");
     expect(codes).toContain("laf:secret_request_lost");
     expect(codes).toContain("laf:stale_refs");
+    expect(codes).toContain("laf:tab_replaced");
   });
 
   /**
