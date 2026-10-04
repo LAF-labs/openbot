@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  weatherOf as readForTheCard,
   WEATHER_DATA_HEAD,
   WEATHER_SHOWN,
-  weatherOf as readForTheCard,
 } from "../../shared/weather";
 import {
   createKmaPlaces,
@@ -543,18 +543,21 @@ describe("what a Bot is handed", () => {
      * by how it begins, and every day's sky is one of the words the card can read back.
      */
     expect(text.startsWith(WEATHER_DATA_HEAD)).toBe(true);
+    const today = {
+      date: "2026-10-02",
+      min: 12,
+      max: 21,
+      sky: "clear",
+      chance: 0,
+      falls: null,
+    } as const;
     expect(readForTheCard(text)).toEqual({
       place: "위도 37.57, 경도 126.98",
       temp: 15.2,
+      // The row this answer calls 오늘: what the card puts beside the temperature now.
+      today,
       days: [
-        {
-          date: "2026-10-02",
-          min: 12,
-          max: 21,
-          sky: "clear",
-          chance: 0,
-          falls: null,
-        },
+        today,
         {
           date: "2026-10-03",
           min: 11,
@@ -1035,6 +1038,41 @@ describe("what a Bot is handed", () => {
       },
       // The one row at midnight of the 4th is where the issuance ends, not a day.
     ]);
+  });
+
+  /*
+   * AND WHEN THE MORNING'S ISSUANCE CANNOT BE HAD EITHER, THERE IS NO ROW FOR TODAY AT ALL: nothing
+   * of it is left in the 23:00 issuance and nothing says its 최저 or 최고. The answer begins with
+   * tomorrow — and says so (`when`), which is what the app's card reads: it took its first row for
+   * today, and put tomorrow's high and low beside the temperature now (Codex on pull request 62).
+   */
+  test("late at night without the morning's issuance, the answer begins with tomorrow and says it is tomorrow", async () => {
+    const made = hub(
+      {
+        "now 20261002/2300": observation(
+          { baseDate: "20261002", baseTime: "2300" },
+          { T1H: "13.4", REH: "80", PTY: "0", RN1: "0", WSD: "0.4" },
+        ),
+        "days 20261002/2300": shortForecast(
+          { baseDate: "20261002", baseTime: "2300", nx: 60, ny: 127 },
+          { numOfRows: 1100, totalCount: 30 },
+          `
+20261003 0600 | TMP=11; SKY=1; PTY=0; POP=0; PCP=강수없음; SNO=적설없음; TMN=11.0
+20261003 1500 | TMP=22; SKY=4; PTY=0; POP=30; PCP=강수없음; SNO=적설없음; TMX=22.0
+20261004 0000 | TMP=16; SKY=1; PTY=0; POP=0; PCP=강수없음; SNO=적설없음
+`,
+        ),
+      },
+      { at: kst("2026-10-02T23:30:00") },
+    );
+    const { facts, text } = await weatherOf(made);
+    expect(facts.days?.map((day) => [day.date, day.when])).toEqual([
+      ["2026-10-03", "내일"],
+    ]);
+    const card = readForTheCard(text);
+    expect(card?.temp).toBe(13.4);
+    expect(card?.today).toBe(null);
+    expect(card?.days.map((day) => day.date)).toEqual(["2026-10-03"]);
   });
 });
 

@@ -18,6 +18,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
+import { firstMoveCallId } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
@@ -506,7 +507,8 @@ export function createTurnEngine(options: TurnEngineOptions) {
             return null;
           })) ?? null;
       if (move && !signal.aborted) {
-        const callId = `call_${randomUUID().replaceAll("-", "")}`;
+        // Told from a call the Bot made by how its id begins, and by nothing else (`first-move.ts`).
+        const callId = firstMoveCallId(randomUUID());
         const asking: Message = {
           id: randomUUID(),
           role: "assistant",
