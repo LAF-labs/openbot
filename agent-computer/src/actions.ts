@@ -188,7 +188,7 @@ async function pageArrivedAt(
 ): Promise<Record<string, unknown> | undefined> {
   try {
     /*
-     * THE TAB THE ACTION OPENED, NOT THE ONE THE BOT IS HANDED NEXT. Adoption (`profiles.ts`) asks
+     * THE TAB THE ACTION OPENED, NOT THE ONE THE BOT IS HANDED NEXT. Adoption (`tabs.ts`) asks
      * the browser for the new tab's opener first, so it lands a moment after the click returns;
      * reading "the Bot's page" here read the old tab, measured on the blog search's
      * `target=_blank` results. The opener is asked here too: a tab another Bot's click opened in the
