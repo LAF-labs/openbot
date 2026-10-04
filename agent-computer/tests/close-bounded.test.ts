@@ -3,7 +3,7 @@ import {
   CLOSE_GRACE_MS,
   type ClosableContext,
   closeAndWait,
-} from "../src/profiles";
+} from "../src/browser-close";
 
 /**
  * The close that ends a browser which will not end itself — without a browser.

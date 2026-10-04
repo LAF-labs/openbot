@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { resolveProfile } from "../src/profiles";
+import { resolveProfile } from "../src/profile-dir";
 import { createSessions } from "../src/sessions";
 import { serveFixture, SIGNED_OUT_TEXT, signedInAs } from "./fixture-site";
 

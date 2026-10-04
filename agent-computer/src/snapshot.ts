@@ -18,6 +18,7 @@ import {
   type SnapshotElement,
   withNames,
 } from "./aria-snapshot";
+import { VIEWPORT } from "./browser-identity";
 import {
   type Arrival,
   arrivalNote,
@@ -27,7 +28,6 @@ import {
 import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
-import { type TabSummary, VIEWPORT } from "./profiles";
 import {
   SECRET_JOIN_TIMEOUT_MS,
   type SecretMarks,
@@ -35,6 +35,7 @@ import {
   typedIntoRefs,
 } from "./secret-fields";
 import { type BotSession, note } from "./sessions";
+import type { TabSummary } from "./tabs";
 
 export type Snapshot = {
   snapshotId: number;
