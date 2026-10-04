@@ -128,6 +128,12 @@ export type ProfileOptions = {
    */
   onTabLost?: (botId: string, lost: TabLost) => void;
   /**
+   * Whether a tab of a Bot's is held open by something this module does not keep: a person with
+   * the wheel, a live screen casting it, a value or a hand the Bot asked for on it (`tab-cap.ts`).
+   * Asked when the Bot is over its number of tabs, and a tab that is held is not the one closed.
+   */
+  holdsTab?: (botId: string, page: Page) => boolean;
+  /**
    * The browser, the moment it exists and before its first page is handed out.
    *
    * NAMES NO BOT, because the browser belongs to none of them. What goes here has to cover EVERY
@@ -234,14 +240,18 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     owners,
     live,
     hasCrashed,
+    isSpare,
     hear,
     died,
     pagesOf,
     own,
     touch,
+    use,
     closeTabsOf,
     adoptOpened,
     tabs,
+    cappedOf,
+    listRead,
     switchTab,
   } = createTabs({
     pages: () => shared?.context.pages() ?? [],
@@ -249,6 +259,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     // Read when a page arrives rather than now, as it always was.
     onPage: (botId, page) => options.onPage?.(botId, page),
     onLost: (botId, lost) => options.onTabLost?.(botId, lost),
+    holds: (botId, page) => options.holdsTab?.(botId, page) ?? false,
   });
 
   const profileDirectory = (): string =>
@@ -415,6 +426,8 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         owners.get(existing.page) === botId
       ) {
         existing.usedAt = now();
+        // And the tab's own place in the order its Bot used its tabs in (tabs.ts, `used`).
+        use(existing.page);
         return existing.page;
       }
       /*
@@ -430,18 +443,26 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       /*
        * A persistent context opens with a page already. The first Bot to ask takes it rather than
        * leaving a blank tab behind that belongs to nobody and shows up in nobody's list. Never a
-       * crashed one, which is nobody's too until its close lands.
+       * crashed one, or one closed for the cap, which is nobody's too until its close lands
+       * (tabs.ts, `isSpare`).
        */
-      const spare = context
-        .pages()
-        .find(
-          (page) => !page.isClosed() && !owners.has(page) && !hasCrashed(page),
-        );
+      const spare = context.pages().find(isSpare);
       const page = spare ?? (await context.newPage());
       own(botId, page);
       touch(botId, page);
       options.onPage?.(botId, page);
       return page;
+    },
+
+    /**
+     * The tab this Bot is on, if it has one — and nothing started to find out.
+     *
+     * For whoever has to remember which tab something was asked on (`control-routes.ts`): asking
+     * for a hand must not be what launches a browser.
+     */
+    tabOf(botId: string): Page | undefined {
+      const on = live.get(botId)?.page;
+      return on && !on.isClosed() && owners.get(on) === botId ? on : undefined;
     },
 
     /** Where the deployment's one browser profile is, for anything that has to look at it. */
@@ -456,6 +477,10 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     /** Every tab this Bot has open, and moving it to one of them. See tabs.ts. */
     tabs,
     switchTab,
+
+    /** What became of the Bot's list since it last read it: tabs closed for the cap. See tabs.ts. */
+    cappedOf,
+    listRead,
 
     /** Whether this tab's renderer died, which ended its time as a Bot's tab. See tabs.ts. */
     hasCrashed,
@@ -546,6 +571,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         own(botId, fresh);
         existing.page = fresh;
         existing.usedAt = now();
+        use(fresh);
         options.onPage?.(botId, fresh);
         // Not awaited: a tab that will not close must not hold the one that just opened hostage.
         owners.delete(stuck);

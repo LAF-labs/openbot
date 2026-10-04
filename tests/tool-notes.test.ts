@@ -55,6 +55,7 @@ describe("the codes the computer ships", () => {
     expect(codes).toContain("laf:secret_request_lost");
     expect(codes).toContain("laf:stale_refs");
     expect(codes).toContain("laf:tab_replaced");
+    expect(codes).toContain("laf:old_tab_closed");
   });
 
   /**
@@ -109,6 +110,28 @@ describe("putting a fact into words", () => {
     expect(
       noteTexts([{ code: "laf:page_loading", origin: "https://slow.example" }]),
     ).toEqual([toolResultText("laf:page_loading")]);
+  });
+
+  test("a tab closed to keep the Bot's tabs to their number carries its site, and is not said as the Bot's own tab going", () => {
+    const said = noteTexts([
+      {
+        code: "laf:old_tab_closed",
+        origin: "https://search.shopping.naver.com",
+        closed: 1,
+      },
+    ]);
+    expect(said).toEqual([
+      `${toolResultText("laf:old_tab_closed")} (https://search.shopping.naver.com)`,
+    ]);
+    // The Bot is where it was, and is told so: this is not the loss `laf:tab_replaced` is.
+    expect(said?.[0]).toContain("네가 보고 있던 탭은 아니고");
+    expect(said?.[0]).not.toContain("사라졌다");
+    // What did change is the list a tab is switched to by, and the sentence names it.
+    expect(said?.[0]).toContain("tabs 목록");
+    expect(said?.[0]).toContain("index");
+    // A fact, not an order: whether the closed page is still wanted is the Bot's to know.
+    expect(said?.[0]).not.toContain("computer_navigate");
+    expect(said?.[0]).not.toContain("해라");
   });
 
   test("a code with nothing to add is just its sentence", () => {

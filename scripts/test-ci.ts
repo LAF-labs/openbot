@@ -951,6 +951,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * asked to name, that such a control has no name until it answers and no value ever, and that a
  * field's contents are nobody's name.
  *
+ * RAISED AGAIN 2026-10-05 with a Bot's tabs kept to a number, each by exactly what was added:
+ * fifteen to `agent-computer` (six on the tab bookkeeping without a browser — the tab used longest
+ * ago closed and each Bot's number its own, the opener of the tab the Bot is on kept, a held tab
+ * kept and the Bot over its number when nothing may go, the line bounded to one a minute with an
+ * origin only, an index read before a close refused until the list is read again, a closed tab
+ * handed to nobody; one on what a session holds open — the cast, a value's tab, the wheel's tab;
+ * and eight against a real Chromium behind the real door — the count that stops growing, which had
+ * gone 2 to 31 in thirty opens, the oldest tab closed and another Bot's left alone, a stale index
+ * refused with the Bot not frozen, the fact said once on the Bot's own list, the one line in the
+ * log, the tab a value was asked for on kept, the tab a person holds the wheel on kept, and ten
+ * idle minutes still closing everything), one to `root` (the closed tab's site put beside its
+ * sentence, which does not say the Bot's own tab went).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -958,8 +971,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3515, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 473, roots: ["agent-computer"] },
-  { name: "root", floor: 632, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 488, roots: ["agent-computer"] },
+  { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

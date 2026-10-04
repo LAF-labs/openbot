@@ -23,8 +23,16 @@ export const controlState: BotRoute = ({ session }) =>
 // The Bot asking for help. It does not take control: it says it is stuck and why, and a person
 // decides. A Bot that could hand itself to a human could also hand a human a page they never
 // asked to see.
-export const requestHelp: BotRoute = async ({ request, session }) => {
+//
+// Which tab it asked on is kept: that page is what the person is being handed, and it is not the
+// tab closed to keep the Bot's tabs to their number while the ask stands (`tab-cap.ts`). Asked of
+// the books, not of the browser — asking for a hand must not be what starts one.
+export const requestHelp: BotRoute = async (
+  { request, botId, session },
+  { profiles },
+) => {
   const body = await bodyOf<{ reason?: unknown }>(request);
+  session.wheelTab = profiles.tabOf(botId);
   return json(session.control.requestHelp(body?.reason));
 };
 
@@ -164,8 +172,14 @@ export const supplySecret: BotRoute = async (
   }
 };
 
-export const takeControl: BotRoute = ({ session }) =>
-  json(session.control.take());
+// A person taking the wheel. The tab they take it on is kept as the one a hand was asked for on
+// is — and is that one, when the Bot had asked: it is the page they were handed.
+export const takeControl: BotRoute = ({ botId, session }, { profiles }) => {
+  if (!session.control.get().requested) {
+    session.wheelTab = profiles.tabOf(botId);
+  }
+  return json(session.control.take());
+};
 
 /*
  * `reason` is dropped on release: it described the thing the person was asked to do, and once
