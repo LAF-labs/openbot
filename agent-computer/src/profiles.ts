@@ -76,6 +76,7 @@ import { botTimeZone, PINNED_CHROMIUM_VERSION } from "./browser-identity";
 import { LAUNCH_WAIT_MS, launchBrowser } from "./browser-launch";
 import { keepChildProcesses } from "./child-processes";
 import { deploymentEgress, deploymentEgressLabel } from "./egress";
+import { saysRendererDied } from "./respond";
 import { log } from "./log";
 import {
   DEFAULT_PROFILE_DIR,
@@ -88,6 +89,9 @@ import {
 import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS, type TabLost } from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
+
+/** How long the browser is given to say whether a tab's renderer is gone. See `deadTab`. */
+const CONFIRM_DEAD_MS = 1_000;
 
 export type ProfileSummary = {
   botId: string;
@@ -457,16 +461,29 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     hasCrashed,
 
     /**
-     * A call for this Bot failed the way a call on a dead tab does (`answeredADeadTab`).
+     * A call on this tab failed the way a call on a dead tab does (`answeredADeadTab`).
      *
-     * THE SECOND WAY A DEATH IS LEARNED, for the one nothing heard: the tab the Bot is on is still
-     * its own, so no `crash` event let go of it, and it is dead. Let go of here exactly as the
-     * event would have (tabs.ts, `died`) — once: a death already heard has left nothing of the
-     * Bot's to let go of, and this does nothing.
+     * THE SECOND WAY A DEATH IS LEARNED, for the one nothing heard: no `crash` event let go of the
+     * tab, and it is dead. Let go of here exactly as the event would have (tabs.ts, `died`) —
+     * once: a death already heard is not counted again.
+     *
+     * CONFIRMED BY THE BROWSER BEFORE IT IS BELIEVED. The failure is known by Playwright's words
+     * for it, and words can be a page's: `throw "Target crashed"` inside anything a route runs in
+     * the page comes back spelled exactly as Playwright spells a dead renderer (measured:
+     * `evaluate: Target crashed`, against the real one's `evaluate: Target crashed ` — one space),
+     * and a page that did that would close its own tab and end whatever the Bot had asked a
+     * person for on it. So the browser is asked something it answers without running a line of
+     * the page: its emulated media, set to what they already are. On a dead tab Playwright refuses
+     * that at once in the same words (measured: 1 ms); on a live one it answers (11 ms), and the
+     * tab stays.
      */
-    deadTab(botId: string): void {
-      const entry = live.get(botId);
-      if (entry && owners.get(entry.page) === botId) died(entry.page);
+    async deadTab(page: Page): Promise<void> {
+      if (hasCrashed(page) || page.isClosed()) return;
+      const dead = await within(
+        CONFIRM_DEAD_MS,
+        page.emulateMedia({}).then(() => false, saysRendererDied),
+      );
+      if (dead === true) died(page);
     },
 
     /**

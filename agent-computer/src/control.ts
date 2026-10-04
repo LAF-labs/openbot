@@ -332,6 +332,26 @@ export function createControl(
     },
 
     /**
+     * The value could not be put in the field, and the request is closed as nobody's answer.
+     *
+     * CLOSED, because the field is gone and a person would retype their password into the same
+     * dead ref for ever. AS NOBODY'S ANSWER, because closing it any other way is read as the value
+     * having been typed: until 2026-10-05 this was `secretSupplied`, and the Bot was told "이
+     * 사람이 그 값을 칸에 직접 입력했다" about a value that reached no field.
+     */
+    secretNotSupplied(): void {
+      if (secretAskedAt !== undefined) secretAskedAt = undefined;
+      const {
+        secretWanted: _was,
+        secretRef: _ref,
+        secretSnapshotId: _id,
+        ...rest
+      } = state;
+      state = { ...rest, unanswered: true };
+      changed();
+    },
+
+    /**
      * The tab the Bot was on has gone from under it, and every ask about that tab goes with it.
      *
      * A value was wanted for a box on a page that no longer exists, and a hand for a page nobody
@@ -351,10 +371,8 @@ export function createControl(
       const secretAsked = Boolean(state.secretWanted);
       if (!helpAsked && !secretAsked) return false;
       // Neither is timed any more: there is nothing left to run out.
-      [helpAskedAt, secretAskedAt] = [
-        helpAsked ? undefined : helpAskedAt,
-        undefined,
-      ];
+      if (helpAsked) helpAskedAt = undefined;
+      if (secretAsked) secretAskedAt = undefined;
       // The value's label goes with the field it named, as everywhere an ask for one ends.
       const {
         secretWanted: _was,

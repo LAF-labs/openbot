@@ -241,11 +241,24 @@ export function HelpCard({
               "This goes straight to the page. It is not shown in the conversation and the Bot never receives it.",
             )}
           </p>
-          {/* Mounted with the box, so a value that did not go through is heard as it is said. */}
-          <LiveRegion as="p" className="text-destructive text-xs" tone="alert">
-            {secretProblem}
-          </LiveRegion>
         </form>
+      ) : null}
+
+      {/*
+       * WHY A VALUE DID NOT GO THROUGH, KEPT AFTER THE BOX HAS GONE. The computer closes the request
+       * when the value cannot be put in its field, so the box left the card in the same moment the
+       * failure arrived — and this line was inside the box's form: a person pressed 보내기, the
+       * box vanished, and nothing said the value had gone nowhere. Mounted with the card rather
+       * than with the box, so it stays, and so it is heard as it is said (`LiveRegion`).
+       */}
+      {kind === "secret" ? (
+        <LiveRegion
+          as="p"
+          className="ps-6 text-destructive text-xs"
+          tone="alert"
+        >
+          {secretProblem}
+        </LiveRegion>
       ) : null}
 
       {/* Mounted with the card, so taking the wheel is heard when it is said (`LiveRegion`). */}

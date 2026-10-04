@@ -556,3 +556,26 @@ describe("an ask whose tab is gone", () => {
     expect(restored.state).toBeUndefined();
   });
 });
+
+describe("a value that could not be put in its field", () => {
+  /*
+   * The route closes the ask when typing the value fails — the field is gone, and a person would
+   * retype their password into a dead ref for ever. It closed it with `secretSupplied`, and an ask
+   * that is simply gone is read by the Bot's wait as a value that was typed (2026-10-05).
+   */
+  test("closes the ask as nobody's answer, where a value that went in closes it as one", () => {
+    const { control } = fixture();
+    control.requestSecret({ ref: "e7", label: "비밀번호", snapshotId: 4 });
+    control.secretNotSupplied();
+    expect(control.pendingSecret()).toBeNull();
+    expect(control.get().secretWanted).toBeUndefined();
+    expect(control.get().secretRef).toBeUndefined();
+    expect(askOutcome(control.get())).toBe("gave up");
+
+    // The same ask, answered: gone the same way, and read as answered.
+    control.requestSecret({ ref: "e7", label: "비밀번호", snapshotId: 5 });
+    control.secretSupplied();
+    expect(control.pendingSecret()).toBeNull();
+    expect(askOutcome(control.get())).toBe("answered");
+  });
+});

@@ -1,4 +1,9 @@
 import {
+  BOTS_LOOK,
+  LOOK_HEADER,
+  PERSONS_LOOK,
+} from "../../../shared/bots-look";
+import {
   GEOLOCATION_HEADER,
   geolocationHeaderOf,
   TIME_ZONE_HEADER,
@@ -8,6 +13,7 @@ import type { BrowserWhereabouts } from "../account/whereabouts";
 import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
   ActionResult,
+  BotsLook,
   ClickInput,
   ComputerProfile,
   ComputerStatus,
@@ -587,7 +593,10 @@ export function createComputerClient(options: ComputerClientOptions) {
           "/navigate",
           {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: {
+              "content-type": "application/json",
+              ...lookOf(navigation),
+            },
             body: JSON.stringify({
               url: verdict.url,
               ...(navigation.holdAtNewHost ? { holdAtNewHost: true } : {}),
@@ -639,11 +648,16 @@ export function createComputerClient(options: ComputerClientOptions) {
         if (options.whole) query.set("whole", "1");
         if (options.from) query.set("from", options.from);
         const asked = query.size ? `/read?${query}` : "/read";
-        return (await call(asked)) as ReadResult;
+        return (await call(asked, {
+          headers: lookOf(options),
+        })) as ReadResult;
       },
 
-      async snapshot(): Promise<SnapshotResult> {
-        return (await call("/snapshot", { method: "POST" })) as SnapshotResult;
+      async snapshot(look: BotsLook = {}): Promise<SnapshotResult> {
+        return (await call("/snapshot", {
+          method: "POST",
+          headers: lookOf(look),
+        })) as SnapshotResult;
       },
 
       /**
@@ -846,7 +860,19 @@ export type NavigateOptions = {
   holdAtNewHost?: boolean;
   /** The `Referer` a held hop was carrying, sent again when that hop is asked for. */
   referer?: string;
-};
+} & BotsLook;
+
+/**
+ * Whose look a look is, as the computer is told it (`shared/bots-look.ts`).
+ *
+ * WRITTEN ON EVERY LOOK, AND A PERSON'S UNLESS THE CALLER SAID OTHERWISE. A caller that says
+ * nothing — a route the app calls, the next thing somebody wires up — has its look counted as a
+ * person's, so forgetting this leaves a Bot having to look again, never acting on a tab it has not
+ * seen.
+ */
+const lookOf = (look: BotsLook): Record<string, string> => ({
+  [LOOK_HEADER]: look.botsLook === true ? BOTS_LOOK : PERSONS_LOOK,
+});
 
 /**
  * Which refusal the navigation floor's verdict was.

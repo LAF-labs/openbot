@@ -15,7 +15,7 @@ import { StaleSnapshotError } from "./refs";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
-import { assertLooked, looked } from "./tab-loss";
+import { assertLooked, isBotsLook, looked } from "./tab-loss";
 import { TabError } from "./tabs";
 import { thumbnailOf } from "./thumbnail";
 
@@ -28,7 +28,7 @@ import { thumbnailOf } from "./thumbnail";
  * confirmation said. "I clicked the button" is not an answer to what happened.
  */
 export const readPage: BotRoute = async (
-  { botId, session, url },
+  { request, botId, session, url },
   { profiles },
 ) => {
   try {
@@ -43,8 +43,10 @@ export const readPage: BotRoute = async (
     });
     if (extract.arriving) note(session, arrivalNote(extract.arriving));
     if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
-    // The Bot has seen where it is: a tab it was put on may be acted on again (`tab-loss.ts`).
-    looked(session, seen);
+    // The Bot has seen where it is, and is told here if that is not where it was: a tab it was
+    // put on may be acted on again. Not for a person's read, whose answer the Bot never sees
+    // (`tab-loss.ts`).
+    if (isBotsLook(request)) looked(session, seen);
     return json(
       withNotes(session, {
         url: target.url(),
@@ -66,15 +68,18 @@ export const readPage: BotRoute = async (
  * page, stamping every element it describes, and a GET that changes the document is a lie that
  * caches and prefetchers eventually punish.
  */
-export const snapshot: BotRoute = async ({ botId, session }, { profiles }) => {
+export const snapshot: BotRoute = async (
+  { request, botId, session },
+  { profiles },
+) => {
   try {
     const target = await profiles.page(botId);
     const seen = session.tabsLost;
     const shot = await snapshotPage(session, target, () =>
       profiles.tabs(botId),
     );
-    // The Bot has seen where it is: a tab it was put on may be acted on again (`tab-loss.ts`).
-    looked(session, seen);
+    // The Bot's own look, and only that: see `readPage`.
+    if (isBotsLook(request)) looked(session, seen);
     return json(withNotes(session, shot));
   } catch (error) {
     return browserFailed(error);

@@ -10,6 +10,7 @@ import type { AuditStore } from "../../audit";
 import { log } from "../../log";
 import type { ComputerClient } from "../client";
 import type {
+  BotsLook,
   ReadOptions,
   ReadResult,
   SnapshotElement,
@@ -121,9 +122,12 @@ export function createPageReads(deps: {
    */
   async function snapshot(
     computerId: string,
-    caller?: { botId: string; actor: ActionActor },
+    caller?: { botId: string; actor: ActionActor } & BotsLook,
   ): Promise<SnapshotResult> {
-    const result = await as(computerId).snapshot();
+    // Whose look it is travels to the computer; said only by the Bot's own loop (`BotsLook`).
+    const result = await as(computerId).snapshot(
+      caller?.botsLook ? { botsLook: true } : {},
+    );
     const elements = withoutSecrets(computerId, result);
     snapshots.set(computerId, {
       snapshotId: result.snapshotId,

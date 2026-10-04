@@ -927,15 +927,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * nobody, and a death nothing heard learned from the call that failed on it), two to `server` (a
  * hand and a value asked for on a tab that is gone, each answered as nobody having come).
  *
+ * RAISED AGAIN 2026-10-05 with a look being the Bot's own, each by exactly what was added: seven to
+ * `agent-computer` (a value that could not be put in its field closing its ask as nobody's answer,
+ * on the wheel's state and through the door; and five against a real Chromium — a person's read,
+ * snapshot and opened page not counted as the Bot's look, the loss said on the page a navigation
+ * lands on and not on a hop held on the way, a stale ref refused for a value after a look, crash
+ * words thrown by a page not closing its tab, and a failure on one tab letting go of that tab and
+ * not the one the Bot moved to), five to `server` (the client saying whose look each look is, a
+ * turn's and a routine's looks said to be the Bot's, a value that could not be put in its field
+ * answered as not entered, and its failure leaving no supplied row), one to `root` (the lost tab's
+ * site put beside its sentence, and no other fact's), one to `app` (the card still saying why a
+ * value did not go through after its box has gone).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3510, roots: ["server"] },
-  { name: "app", floor: 2027, roots: ["app"] },
-  { name: "agent-computer", floor: 469, roots: ["agent-computer"] },
-  { name: "root", floor: 631, roots: ["tests", "agent-bot"] },
+  { name: "server", floor: 3515, roots: ["server"] },
+  { name: "app", floor: 2028, roots: ["app"] },
+  { name: "agent-computer", floor: 476, roots: ["agent-computer"] },
+  { name: "root", floor: 632, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

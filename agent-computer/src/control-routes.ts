@@ -8,7 +8,7 @@ import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
 import { inTurn, settleTyping } from "./person-typing";
-import { locateRef, onElement, StaleSnapshotError } from "./refs";
+import { locateRef, onElement, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
 import { assertLooked } from "./tab-loss";
@@ -28,23 +28,43 @@ export const requestHelp: BotRoute = async ({ request, session }) => {
   return json(session.control.requestHelp(body?.reason));
 };
 
-// The Bot asking for one value it must not be told. It has already focused the field.
-export const requestSecret: BotRoute = async ({ request, session }) => {
+/**
+ * The Bot asking for one value it must not be told, into a field it names by a ref.
+ *
+ * A REF OF THE SNAPSHOT THE BOT IS ON, LIKE EVERY OTHER CALL THAT NAMES ONE. This door took any
+ * ref with any snapshot id and wrote both down. Measured 2026-10-05: a Bot whose sign-in popup had
+ * gone, and which had looked again with a read, could still ask for a value into the popup's ref —
+ * and the person's value then went into whatever the page behind called that ref. A stale ref is
+ * refused here as it is on a click, and one with no snapshot id is stale by definition.
+ *
+ * AND OF THE TAB THAT SNAPSHOT WAS OF, which is kept: the value goes into that tab or into none
+ * (`supplySecret`).
+ */
+export const requestSecret: BotRoute = async (
+  { request, botId, session },
+  { profiles },
+) => {
   const body = await bodyOf<{
     label?: unknown;
     ref?: unknown;
     snapshotId?: unknown;
   }>(request);
+  // The one thing a request for a secret must say is which field it goes in.
+  if (typeof body?.ref !== "string" || !body.ref.trim()) return invalid("ref");
   try {
-    // The field is named by a ref, and a ref from before the Bot's tab went from under it names
-    // something on a page that is gone — or on the tab the Bot is on now, which it has not seen.
+    const tab = await profiles.page(botId);
+    // The ref may be from before the Bot's tab went from under it: it names something on a page
+    // that is gone, or on the tab the Bot is on now, which it has not seen.
     assertLooked(session);
-    return json(session.control.requestSecret(body ?? {}));
+    if (body.snapshotId !== session.snapshotId) {
+      throw new StaleSnapshotError(STALE_REFS);
+    }
+    const state = session.control.requestSecret(body);
+    session.secretTab = tab;
+    return json(state);
   } catch (error) {
-    if (error instanceof StaleSnapshotError) return actionFailure(error);
-    // The one thing a request for a secret must say is which field it goes in.
     if (error instanceof ControlRequestError) return invalid("ref");
-    throw error;
+    return actionFailure(error);
   }
 };
 
@@ -74,12 +94,14 @@ export const supplySecret: BotRoute = async (
   try {
     const target = await profiles.page(botId);
     /*
-     * NEVER INTO A TAB THE BOT WAS PUT ON AFTER IT ASKED. The ask ends when the tab it was made on
-     * goes (`tab-loss.ts`), so nothing is pending by the time a person types and this is not
-     * reached; it is here because what it guards is a person's password, and the rule below is
-     * true of one tab only.
+     * INTO THE TAB IT WAS ASKED ON, OR INTO NONE. The ask ends when the tab it was made on goes
+     * (`tab-loss.ts`), so nothing is pending by the time a person types and neither of these is
+     * reached that way. They are here because what they guard is a person's password, and the
+     * rule below is true of one tab only: a tab a site opened while the Bot waited becomes the
+     * Bot's tab without any tab having been lost, and the value was not asked for there.
      */
     assertLooked(session);
+    if (session.secretTab !== target) throw new StaleSnapshotError(STALE_REFS);
     // Focus the field the Bot named, and let this throw if it cannot be found. A secret must not
     // be reported as delivered unless a field receives it.
     //
@@ -122,17 +144,22 @@ export const supplySecret: BotRoute = async (
       digest: digestOf(text),
     });
     const characters = text.length;
-    // Cleared only after it actually landed, so a failure leaves the request open and the person
-    // can try again rather than being told to start over.
+    // Cleared only after it actually landed.
     session.control.secretSupplied();
+    session.secretTab = undefined;
     return json({ supplied: true, characters, url: target.url() });
   } catch (error) {
-    if (error instanceof StaleSnapshotError) return actionFailure(error);
-    // The field is gone, which is unretryable, so the request is closed rather than left open.
-    // Keeping it open is right for a mistyped value and wrong here: the person would retype their
-    // password into the same dead ref for ever. Clearing it also unblocks the Bot, which can see
-    // on its next turn that nothing is pending and ask again against a fresh snapshot.
-    session.control.secretSupplied();
+    /*
+     * THE VALUE REACHED NO FIELD, AND THE BOT IS NOT TOLD IT DID. The field is gone, which is
+     * unretryable, so the request is closed rather than left open: the person would retype their
+     * password into the same dead ref for ever. But closed as what it was. This called
+     * `secretSupplied`, and an ask that is simply gone is read by the Bot's wait as answered — the
+     * Bot heard "이 사람이 그 값을 칸에 직접 입력했다" and went on to press the button under an
+     * empty box. Closed as nobody's answer (`ControlState.unanswered`), the wait says the value
+     * was not entered, and the person's own card has this failure's code to say why.
+     */
+    session.control.secretNotSupplied();
+    session.secretTab = undefined;
     return actionFailure(error);
   }
 };

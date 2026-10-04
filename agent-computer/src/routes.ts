@@ -6,6 +6,7 @@
  * module that owns it; the table below is the index of them.
  */
 import type { Server } from "bun";
+import type { Page } from "playwright";
 import { ACTIONS, act, upload } from "./actions";
 import {
   BOT_ID_INVALID,
@@ -39,6 +40,7 @@ import {
 } from "./file-routes";
 import { HUMAN_INPUT, humanInput } from "./human-input";
 import type { StreamData } from "./live-screen";
+import type { Profiles } from "./profiles";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
 import { answeredADeadTab, fact } from "./respond";
@@ -178,15 +180,38 @@ export function computerFetch(computer: Computer) {
        * one place every Bot route's answer passes is here, so this is where it is blanked — and an
        * answer from a Bot nobody has typed for goes out untouched. See `typed-values.ts`.
        */
-      const answer = await route({ request, url, botId, session }, computer);
+      /*
+       * WHICH TAB THIS CALL WAS ON, kept as the route takes it. Each route asks for the Bot's tab
+       * itself, so the door hands it a view of the profiles that remembers the answer: the last
+       * tab this one request was handed, and nobody else's.
+       */
+      let on: Page | undefined;
+      const profiles: Profiles = Object.assign(
+        Object.create(computer.profiles) as Profiles,
+        {
+          page: async (asked: string): Promise<Page> => {
+            on = await computer.profiles.page(asked);
+            return on;
+          },
+        },
+      );
+      const answer = await route(
+        { request, url, botId, session },
+        { ...computer, profiles },
+      );
       /*
        * A CALL THAT FAILED ON A DEAD TAB LETS GO OF THAT TAB. A renderer's death is heard as an
        * event (tabs.ts), and one that was not heard leaves the Bot on a tab that fails every call
        * for ever — the incident of 2026-10-05 again, by another door. The failure itself is the
        * second way of knowing, and every route's failure is written in one place
        * (`browserFailed`), so it is read here, before the answer is rewritten below.
+       *
+       * THE TAB THE CALL WAS ON, NOT THE TAB THE BOT IS ON NOW. The two differ by the time a call
+       * fails: a click whose tab died under it has usually opened another first, and the live
+       * screen asks for the Bot's tab every second. The first version let go of whichever was
+       * current — a healthy popup closed, with its site's name in the crash line.
        */
-      if (answeredADeadTab(answer)) computer.profiles.deadTab(botId);
+      if (on && answeredADeadTab(answer)) await computer.profiles.deadTab(on);
       return withoutTypedAddresses(session, answer);
     }
 

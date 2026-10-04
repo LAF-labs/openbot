@@ -36,7 +36,7 @@ import {
   saysRendererDied,
 } from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
-import { looked } from "./tab-loss";
+import { isBotsLook, looked } from "./tab-loss";
 import { keepOwnAddress } from "./typed-values";
 
 /** A navigation this process stopped: where it was going, where it was sent from, and why. */
@@ -418,9 +418,11 @@ export const navigate: BotRoute = async (
         // already on its way elsewhere, rather than waited on (`readSettledPageText`).
         if (extract.arriving) note(session, arrivalNote(extract.arriving));
         if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
-        // A page the Bot opened and was handed is a page it has seen (`tab-loss.ts`). Only here: a
-        // navigation that was stopped or failed told it nothing about the tab it is on.
-        looked(session, seen);
+        // A page the Bot opened and was handed is a page it has seen, and this is the answer its
+        // model reads (`tab-loss.ts`). Only here: a navigation that was stopped, held for the
+        // gateway or failed told it nothing about the tab it is on — and not for a page the app
+        // opened for a person.
+        if (isBotsLook(request)) looked(session, seen);
         return json(
           withNotes(session, {
             url: target.url(),

@@ -1011,6 +1011,60 @@ describe("the header that says which Bot", () => {
  * connection and then stops answering on it without closing it — which is what a connection left open
  * by a forwarder looks like from this side — and a replacement listening on the same port.
  */
+describe("the header that says whose look a look is", () => {
+  /*
+   * A read, a snapshot and a page opened are looks, and the computer lets a Bot act again — after
+   * the tab it was on went from under it — only once the Bot has looked (`shared/bots-look.ts`).
+   * The app makes the same three calls for a person. Until 2026-10-05 nothing said which was
+   * which, and a person pressing 다 했어요 on a site hand-off counted as the Bot having seen its tab.
+   */
+  test("a person's, unless the caller said it is the Bot's own — and on no other call", async () => {
+    const sent: [string, string | null][] = [];
+    const client = clientWith((url, init) => {
+      sent.push([
+        new URL(url).pathname,
+        new Headers(init?.headers as HeadersInit | undefined).get(
+          "x-openbot-look",
+        ),
+      ]);
+      return ok({
+        url: "https://example.com/",
+        title: "Example",
+        text: "",
+        truncated: false,
+        snapshotId: 1,
+        elements: [],
+        elapsedMs: 1,
+      });
+    }, true).forBot("bot-7");
+
+    // Said by nobody: a route the app calls, or the next thing somebody wires up.
+    await client.read({ whole: true });
+    await client.snapshot();
+    await client.navigate("https://example.com/");
+    // Said by the Bot's own loop.
+    await client.read({ whole: true, botsLook: true });
+    await client.snapshot({ botsLook: true });
+    await client.navigate("https://example.com/", undefined, {
+      botsLook: true,
+    });
+    // Not a look.
+    await client.click({ ref: "e1", snapshotId: 1 });
+    await client.screenshot();
+
+    expect(sent).toEqual([
+      ["/read", "person"],
+      ["/snapshot", "person"],
+      ["/navigate", "person"],
+      ["/read", "bot"],
+      ["/snapshot", "bot"],
+      ["/navigate", "bot"],
+      ["/click", null],
+      ["/screenshot", null],
+    ]);
+  });
+});
+
 describe("a computer replaced under a running server", () => {
   const BODY = JSON.stringify({ status: "ok" });
   const ANSWER = `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${BODY.length}\r\nconnection: keep-alive\r\n\r\n${BODY}`;
