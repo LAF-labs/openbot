@@ -102,6 +102,27 @@ describe("evaluateActionPolicy", () => {
         context({ element: { ref: "e1", role: "button", name: "송 금" } }),
       ).source,
     ).toBe("deny");
+    // An allow written for the words as the list shows them is not asked to match them squeezed
+    // (review, round 2): a second reading that found no rule is not a refusal.
+    const exact: ActionPolicy = {
+      deny: [],
+      ask: [],
+      allow: ['element.name == "Submit order"'],
+    };
+    const submit = evaluateActionPolicy(
+      exact,
+      context({ element: { ref: "e1", role: "button", name: "Submit order" } }),
+    );
+    expect(submit.source).toBe("allow");
+    expect(submit.forward).toBe(true);
+    expect(
+      evaluateActionPolicy(
+        { ...exact, allow: ['contains(element.name, "submit order")'] },
+        context({
+          element: { ref: "e1", role: "button", name: "Submit order" },
+        }),
+      ).source,
+    ).toBe("allow");
   });
 
   test("a deny rule leaves unrelated elements alone", () => {
