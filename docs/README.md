@@ -24,8 +24,8 @@ actually runs.
   this repository.
 - [Connections](laf/connections.md) (한국어): why the catalogue is Notion and Google Drive and not
   the five vendors it used to name, and what it would take to add one back.
-- [Coworkers](laf/coworkers.md): durable Bot profiles, the shared computer, coworkers asking each
-  other, notifications, and rooms with more than one Bot in them.
+- [Coworkers](laf/coworkers.md): durable Bot profiles, the shared computer and notifications — and
+  what became of Bots asking each other and of rooms, both removed on 2026-09-24.
 - [Routines](laf/routines.md): an instruction, a Bot and a clock — scheduling, records, limits,
   webhook triggers.
 - [Model eval pack](laf/eval-pack.md) (한국어): the ritual a candidate model passes before it may

@@ -42,10 +42,11 @@ Per-run settings — the Bot's effort, and anything else decided at the moment o
 AG-UI `forwardedProps` through the middleware in `server/src/copilot.ts`. That is the one seam every
 path goes through, so a setting wired anywhere else reaches one path and not the others.
 
-Two paths do not have a browser watching them and run entirely on the server: a room's turn
-(`server/src/rooms/`) and a routine's unattended run (`server/src/runner/unattended.ts`). Both call
-the same gateway with the same policy, grants, audit rows and approval registry underneath. A tab
-that closes mid-turn no longer kills the turn.
+Two paths need no browser watching them and run entirely on the server: a conversation's turn
+(`server/src/turns/`, unless `SERVER_TURNS=off`, which leaves the turn to the window as in the steps
+above) and a routine's unattended run (`server/src/runner/unattended.ts`). Both call the same
+gateway with the same policy, grants, audit rows and approval registry underneath. A tab that closes
+mid-turn no longer kills the turn.
 
 ## Browser action governance
 
@@ -164,9 +165,8 @@ A coworker is a durable Bot profile:
 - `agent_profiles` stores name, title, role, owner, and deletion state.
 - `agent_preferences` stores per-user roster state.
 
-A channel is a conversation and a thread mapping. Most hold one coworker; a room holds several, and
-its turn runs on the server rather than in the browser. Starting a new channel creates a new thread,
-stored in PostgreSQL.
+A channel is a conversation and a thread mapping, and it holds one coworker. Starting a new channel
+creates a new thread, stored in PostgreSQL.
 
 See [laf/coworkers.md](laf/coworkers.md) and [laf/routines.md](laf/routines.md).
 
