@@ -18,12 +18,7 @@
   "ignoreExportsUsedInFile": true,
   "ignoreIssues": {
     // shadcn's generated primitives export every part; the app takes the parts it needs.
-    "app/src/components/ui/**": ["exports", "types"],
-    /*
-     * The wire contract with agent-computer, where a browsing branch is merging (2026-09-25).
-     * `NavigateInput` is unread today; it goes with that branch rather than across it.
-     */
-    "server/src/computer/schema.ts": ["types"]
+    "app/src/components/ui/**": ["exports", "types"]
   },
   "workspaces": {
     ".": {

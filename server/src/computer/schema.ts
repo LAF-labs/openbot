@@ -22,7 +22,6 @@
  * The wire shapes below are still the contract between the two services and stay here.
  */
 
-export type NavigateInput = { url: string };
 export type NavigateResult = {
   url: string;
   title: string;
