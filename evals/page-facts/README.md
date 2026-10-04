@@ -140,11 +140,12 @@ The browser uses the product's settings:
 
 - Playwright 1.62.1's headless Chromium 151.0.7922.34;
 - viewport 1280×800, locale `ko-KR`, time zone `Asia/Seoul`;
-- the user agent from `botUserAgent()` (`… Chrome/151.0.0.0 …`);
-- downloads refused.
+- the user agent from `botUserAgent()` (`… Chrome/151.0.0.0 …`).
 
 **Unlike the product**, every page had a fresh browser context, with no cookies carried from page to
-page, so consent banners show as on a first visit. Nothing went through the server gateway or the
+page, so consent banners show as on a first visit; and the capture set `acceptDownloads: false`, where the
+product accepts downloads into the Bot's workspace (`agent-computer/src/profiles.ts`, `page-watch.ts`) — no
+page in the set offered one, so no row is affected. Nothing went through the server gateway or the
 egress guard.
 
 One page at a time, at least 1.5 s between two requests to the same host. Nobody signed in, nothing
