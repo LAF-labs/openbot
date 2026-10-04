@@ -8,6 +8,10 @@ app/src/lib/generated/application-config.ts
 .logs/
 .demo-logs/
 
+# Finder's own file, one per directory it has opened. It was never tracked, but three sat untracked
+# in the main checkout and a `git add` of a directory would have taken them.
+.DS_Store
+
 # TanStack Router scratch output
 app/.tanstack/
 
