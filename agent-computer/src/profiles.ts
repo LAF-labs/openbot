@@ -17,8 +17,8 @@
  *     is why a site that only ever issues session cookies will still ask a Bot to sign in again.
  *   - Killing the browser process with SIGKILL leaves no stale singleton lock in the profile, and the
  *     profile reopens with its cookies intact. The widely-reported `SingletonLock` breakage does not
- *     reproduce here. The defensive sweep below stays anyway, because it is three lines and the
- *     failure it prevents is "the computer never comes back".
+ *     reproduce here. The defensive sweep (`profile-dir.ts`) stays anyway, because it is three lines
+ *     and the failure it prevents is "the computer never comes back".
  *
  * ONE PROFILE FOR THE DEPLOYMENT, NOT ONE PER BOT (decided 2026-09-16, reversing what this comment
  * said before). A deployment is one person's machine — `docs/laf/deployment-model.md`, and its second
@@ -54,196 +54,59 @@
  * that: access to the Docker socket is unrestricted root on the host. Stop and reset are
  * operations this process applies to its own browser, so the same design works under Compose,
  * Kubernetes or ECS, where the orchestrator's own restart policy brings a process back.
+ *
+ * THIS FILE COMPOSES; ITS PARTS LIVE BESIDE IT. What the browser says it is (`browser-identity.ts`),
+ * how it is started (`browser-launch.ts`) and ended (`browser-close.ts`), where its profile is on
+ * disk (`profile-dir.ts`) and a Bot's tabs in it (`tabs.ts`). What is here is the state that ties
+ * them together — the one browser, the launch, the close and the reset in flight — and the calls
+ * the routes make.
  */
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { type BrowserContext, chromium, type Page } from "playwright";
+import type { BrowserContext, Page } from "playwright";
 import type { Coordinates } from "../../shared/whereabouts";
 import { isBotId } from "./authorisation";
+import {
+  browserPidOf,
+  closeAndWait,
+  RECYCLE_STEP_MS,
+  wait,
+} from "./browser-close";
+import { botTimeZone, PINNED_CHROMIUM_VERSION } from "./browser-identity";
+import { LAUNCH_WAIT_MS, launchBrowser } from "./browser-launch";
 import { keepChildProcesses } from "./child-processes";
 import { deploymentEgress, deploymentEgressLabel } from "./egress";
 import { log } from "./log";
 import { titleOf } from "./page-text";
+import {
+  DEFAULT_PROFILE_DIR,
+  type ProfileAdoption,
+  resolveProfile,
+  STATE_DIR,
+  sweepLocks,
+  writePointer,
+} from "./profile-dir";
+import {
+  IDLE_CLOSE_MS,
+  IDLE_SWEEP_MS,
+  TabError,
+  type TabSummary,
+} from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
 
-/** The viewport, which is what a person's click coordinates are relative to. */
-export const VIEWPORT = { width: 1280, height: 800 };
-
-/**
- * The Bot lives in Korea.
- *
- * Measured before this line existed, inside the shipping image: `navigator.language` was
- * `en-US@posix` and `Intl.DateTimeFormat().resolvedOptions().timeZone` was `UTC`. A Korean site
- * reads both — 네이버 and 홈택스 render dates and some of their navigation from them — so the Bot
- * was browsing a foreign-language, wrong-day version of every page its owner reads in Korean.
+/*
+ * Names that moved out of this file with the split and are still read from here, so that what
+ * reads them — `snapshot.ts` (TabSummary, VIEWPORT) and the tests — did not change with it.
  */
-const LOCALE = "ko-KR";
-
-/** Where the Bot's clock is, defaulting to Seoul the way the server's own does. */
-export function botTimeZone(
-  environment: Record<string, string | undefined> = process.env,
-): string {
-  const wanted = environment.BOT_TIME_ZONE?.trim();
-  if (!wanted) return "Asia/Seoul";
-  try {
-    // A name Chromium would refuse takes the browser down at launch, which would make one typo in a
-    // deployment's environment the reason no Bot has a computer. Validated here and ignored if bad,
-    // the same decision `botTimeZone` in the server makes for the same variable.
-    new Intl.DateTimeFormat("en-US", { timeZone: wanted });
-    return wanted;
-  } catch {
-    log.warn("bot_time_zone_unusable", { value: wanted, using: "Asia/Seoul" });
-    return "Asia/Seoul";
-  }
-}
-
-/**
- * The Chromium this image ships, as the user agent has to spell it.
- *
- * Pinned rather than read from `playwright-core/browsers.json`: that file is not reachable through
- * the package's `exports`, and inside the image `playwright-core` does not resolve from this file at
- * all (measured). The Dockerfile already pins the Playwright version and the base image together
- * — "bump both or neither" — and this is the third thing in that set. It is also self-correcting:
- * the first launch compares this against what the browser actually reports and takes the browser's
- * answer for every launch after it.
- */
-const PINNED_CHROMIUM_VERSION = "151.0.7922.34";
-
-/**
- * What the page sees us as: the string the browser would send, without the word that says nobody is
- * looking.
- *
- * Playwright's headless Chromium reports `HeadlessChrome/151.0.0.0`. That word is the single
- * cheapest automation signal a site can read, and the sites this product exists for answer it:
- * measured 2026-10-04 from a browser saying it, G마켓 answered 403, 11번가 an empty page, 배민
- * 사장님 368 characters of a page a browser gets 2,300 of, 쿠팡 403 — and all four opened once the
- * word was gone (`~/laf/docs/bot-browser-choice-2026-10-04.md` §4).
- *
- * THE VERSION IS THE MAJOR AND ZEROS, AS CHROME ITSELF WRITES IT. The build number was written out
- * in full here (`Chrome/151.0.7922.34`) from 2026-09-03 to 2026-10-04, and no Chrome has sent a full
- * build in its user agent for years — it lives in the client hints, where the browser still puts it.
- * Measured the day this changed: 쿠팡's seller centre refused a real, headed Chrome carrying the full
- * number three times of three and opened three of three with the zeros; a headless shell saying
- * either was refused, which is a different fact about a different thing. A string no browser sends
- * is a mark of its own.
- *
- * WHAT THIS DOES NOT DO. The `Sec-Ch-Ua` header on every request and `navigator.userAgentData`
- * still carry `"HeadlessChrome";v="151"` from the headless shell — Playwright's override reaches
- * the string, not the brand list — so the page is told twice more what this string no longer says,
- * and `docs/laf/browser-limits.md` says so. The one cure is the browser that does not say it: the
- * full Chromium, headed or in the new headless mode, which is the measured recommendation of that
- * document and is not taken here.
- *
- * Linux is kept, and deliberately: claiming Windows here would disagree with `navigator.platform`,
- * the client hints Chromium sends alongside, and the fonts the container has. A quiet, consistent
- * Linux Chrome is a better answer than a loud, contradictory Windows one. (The client hints read
- * `x86 64` from this string on an ARM machine; the string says so too, and is left consistent with
- * itself until the browser changes.)
- */
-export function botUserAgent(version: string): string {
-  const major = version.split(".")[0] ?? version;
-  return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
-}
-
-/** One tab in a Bot's browser, as the snapshot lists them. */
-export type TabSummary = {
-  /** Position in the Bot's own list, which is what `computer_switch_tab` takes. */
-  index: number;
-  title: string;
-  url: string;
-  /** The one the Bot's next action lands on. */
-  active: boolean;
-};
-
-/** A tab index that names nothing. Its own type so the route can answer 400 rather than 502. */
-export class TabError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TabError";
-  }
-}
-
-/**
- * How long a Bot may leave its tabs untouched before they are closed.
- *
- * Ten minutes. Four of five Bots are usually asleep between a routine at nine and one at noon, and a
- * tab nobody is looking at still costs a renderer; closing them costs the next call a page load and
- * gives the machine its memory back. The cookies are on the volume and the profile is shared, so
- * nothing is signed out by it — and when the last Bot's tabs go, so does the browser.
- */
-const IDLE_CLOSE_MS = 10 * 60_000;
-
-/** How often idleness is checked. Coarse on purpose: this is housekeeping, not a deadline. */
-const IDLE_SWEEP_MS = 60_000;
-
-/**
- * Files Chromium uses to refuse a second instance on one profile.
- *
- * Swept on the way in rather than the way out, because the way out is the case that does not happen:
- * a container that is killed does not get to run cleanup. If this process is starting, no browser of
- * ours is running, so any lock here is by definition from a life that has already ended.
- */
-const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
-
-/**
- * How the browser is started, and why each flag is here.
- *
- * `--password-store=basic` makes a durable profile work in a container. Chromium normally encrypts
- * cookie values with a desktop keyring; containers have no stable gnome-keyring or kwallet, so the
- * default fallback can make stored cookies unreadable after restart.
- *
- * `basic` pins it to Chromium's own fixed fallback, which is deterministic and survives restarts.
- * This is obfuscation at rest, not protection. Anything that can read the volume can read the
- * cookies — a login cookie for somebody's bank included. One person per VM is what makes that
- * acceptable, and `docs/laf/browser-limits.md` says so out loud rather than leaving it in a comment.
- * The volume's own permissions are the security boundary.
- *
- * `--disk-cache-size` bounds the one thing in the profile that grows for ever. Without it Chromium
- * sizes its cache from the free space on the volume and the agent-profiles volume is the same disk
- * as Postgres; 100MB is enough that a portal's images survive between turns and small enough that it
- * cannot fill a 40GB box. It used to be 100MB per Bot, because there used to be a profile per Bot;
- * one profile means one cache, so the same number now bounds the whole deployment.
- *
- * THERE IS NO `--no-sandbox` HERE ANY MORE, AND THERE MUST NOT BE. It was the first flag in this
- * list from the day the image existed, and with the Dockerfile naming no `USER` it meant the one
- * process in this product that opens pages a model chose — holding somebody's bank and 홈택스 cookies
- * — ran its renderers unsandboxed as the container's root (audit A5 §1, `docker exec … id` → `uid=0`).
- * One renderer bug was the whole container, every Bot's profile included.
- *
- * Chromium's sandbox on Linux is user namespaces, and Docker's default seccomp profile refuses them
- * to an unprivileged process. Measured 2026-09-13 on the customer VMs' platform — Ubuntu 24.04.4,
- * kernel 6.8 aarch64, `apparmor_restrict_unprivileged_userns=1`, Docker 29.8 from get.docker.com —
- * in this image as `pwuser`: under the default profile Chromium exits 133 with "No usable sandbox!";
- * under Playwright's published profile (`agent-computer/seccomp_profile.json`, the same JSON) it
- * starts, and every renderer runs in a user, PID and network namespace of its own, where the shipped
- * image had them in the container's, as root. No AppArmor change: the container is confined by
- * `docker-default`, which does not mediate user namespaces, so Ubuntu's restriction — which is on
- * UNconfined processes — never applies. `docker-compose.yml` hands the container the profile, the
- * Dockerfile runs it as `pwuser`, and this list is what the two make possible. Putting the flag back
- * would "fix" a deployment that lost the profile by removing the boundary in silence;
- * `tests/sandbox.test.ts` pins its absence.
- *
- * AND ITS ABSENCE HERE WAS NOT ENOUGH. Playwright adds `--no-sandbox` itself unless it is launched
- * with `chromiumSandbox: true` (see the launch below). Measured 2026-09-13 in the rebuilt container
- * with the flag already gone from this list: the running browser's command line still carried
- * `--no-sandbox`, and every renderer sat in the container's own user and network namespaces. A
- * test that only read this array would have passed with the sandbox off.
- */
-const LAUNCH_ARGS = [
-  "--disable-dev-shm-usage",
-  "--password-store=basic",
-  "--disk-cache-size=104857600",
-];
-
-/**
- * How long to let a closing browser finish writing before moving on.
- *
- * The profile's Cookies file may be rewritten shortly after `close()` is called. This delay stays
- * clear of that window while remaining inside the container's
- * 30s stop grace period, so a shutdown never becomes the reason a computer does not come back.
- */
-const CLOSE_SETTLE_MS = 2_000;
+export { botTimeZone, botUserAgent, VIEWPORT } from "./browser-identity";
+export {
+  CLOSE_GRACE_MS,
+  type ClosableContext,
+  closeAndWait,
+} from "./browser-close";
+export { resolveProfile } from "./profile-dir";
+export type { TabSummary } from "./tabs";
 
 export type ProfileSummary = {
   botId: string;
@@ -258,289 +121,6 @@ export type ProfileSummary = {
    */
   egress: string | null;
 };
-
-/** A moment after the browser process is gone, for whatever it was still flushing. */
-const FLUSH_SETTLE_MS = 250;
-
-/**
- * How long a graceful close is given before the process is killed instead.
- *
- * Measured 2026-09-06 against 기업마당: a navigation that hit its 30s deadline left that Bot's
- * Chromium answering nothing at all — the next `goto` sat out its own deadline, `context.close()`
- * never returned, and because the launch path waits for a close in flight, every later call on that
- * Bot waited on it too. Stop, reset and ten idle minutes all queued behind the same promise. A close
- * that cannot finish in this long is not going to, and the kill below is what ends it.
- */
-export const CLOSE_GRACE_MS = 3_000;
-
-/** After a kill, how long the `disconnected` event is waited for before the profile is presumed free. */
-const KILL_SETTLE_MS = 1_000;
-
-/** How long a page-level recovery step (close the tab, open another) is given before the browser goes. */
-const RECYCLE_STEP_MS = 2_000;
-
-/**
- * How long a reset waits for a browser that was already starting when it arrived.
- *
- * Playwright's own bound on a browser starting — its default, which the launch below does not
- * change — so the longest a launch that is going to land can take. A reset always answers
- * (`computer-routes.ts`): past this it goes on without the launch, as it did for every launch
- * before it waited for any.
- */
-const LAUNCH_WAIT_MS = 30_000;
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** The slice of a context a close needs, so the bounded close can be tested without a browser. */
-export type ClosableContext = Pick<BrowserContext, "close"> & {
-  browser(): {
-    isConnected(): boolean;
-    once(event: "disconnected", handler: () => void): unknown;
-  } | null;
-};
-
-/**
- * Close a context and wait for Chromium to actually be gone — or make it go.
- *
- * Chromium batches cookie writes and commits them as it exits, while `close()` only asks it to exit.
- * Bounded, because a shutdown that hangs must never be the reason a computer does not come back. We
- * would rather lose the last few seconds of cookies than never restart.
- *
- * THE EXIT IS WAITED FOR, NOT ASSUMED. This used to sleep two seconds flat, on the stated grounds
- * that a persistent context exposes no exit signal — but `context.browser()` is not null in this
- * Playwright version (measured), so `disconnected` is exactly that signal. It matters more now that
- * a browser also closes on its own once every Bot has gone idle: returning from a close before the
- * process has released the profile directory is how two Chromiums end up on one user-data-dir, and
- * the second one comes up in a state where every call hangs until its timeout.
- *
- * AND THE CLOSE ITSELF IS BOUNDED, which it was not. `context.close()` was awaited without a limit
- * on the assumption that a browser asked to exit exits; a Chromium wedged mid-navigation does not,
- * and everything for that Bot then waited for ever (see CLOSE_GRACE_MS). So: ask nicely, wait the
- * grace, and if the browser is still connected, kill the process by the id recorded at launch. The
- * profile directory is on disk either way; what a kill costs is the last few seconds of cookies.
- */
-export async function closeAndWait(
-  context: ClosableContext,
-  process: { pid: number | null; kill?: (pid: number) => void } = {
-    pid: null,
-  },
-): Promise<void> {
-  const browser = context.browser();
-  const gone = browser
-    ? new Promise<void>((resolve) => {
-        browser.once("disconnected", () => resolve());
-      })
-    : null;
-  const asked = context.close().catch(() => undefined);
-  await Promise.race([asked, wait(CLOSE_GRACE_MS)]);
-  if (browser?.isConnected()) {
-    log.warn("computer_close_hung", {
-      pid: process.pid,
-      graceMs: CLOSE_GRACE_MS,
-    });
-    if (process.pid !== null) {
-      try {
-        (process.kill ?? killProcess)(process.pid);
-      } catch {
-        // Already gone between the check and the kill; nothing to end.
-      }
-    }
-    // With no pid there is nothing more to do than not wait: the caller gets its answer and the
-    // launch path's lock sweep takes its chances, which is what it did before this existed.
-    if (gone) await Promise.race([gone, wait(KILL_SETTLE_MS)]);
-    await wait(FLUSH_SETTLE_MS);
-    return;
-  }
-  if (gone) {
-    await Promise.race([gone, wait(CLOSE_SETTLE_MS)]);
-    await wait(FLUSH_SETTLE_MS);
-    return;
-  }
-  await wait(CLOSE_SETTLE_MS);
-}
-
-/** SIGKILL, not SIGTERM: a Chromium that ignored a graceful close is not going to honour a signal it may handle. */
-function killProcess(pid: number): void {
-  globalThis.process.kill(pid, "SIGKILL");
-}
-
-/**
- * The operating-system id of the browser behind a context, read the moment it starts.
- *
- * Playwright exposes no process for a persistent context, but the browser will say its own pid over
- * CDP. Asked once, at launch, while the browser is certainly answering: by the time a kill is needed
- * it no longer is, which is the whole point of asking early. Null when it cannot be read — then a
- * hung close still returns after the grace, it just cannot end the process.
- */
-async function browserPidOf(context: BrowserContext): Promise<number | null> {
-  try {
-    const browser = context.browser();
-    if (!browser) return null;
-    const session = await browser.newBrowserCDPSession();
-    const info = (await Promise.race([
-      session.send("SystemInfo.getProcessInfo"),
-      wait(RECYCLE_STEP_MS).then(() => null),
-    ])) as { processInfo?: { type: string; id: number }[] } | null;
-    await session.detach().catch(() => undefined);
-    const main = info?.processInfo?.find((entry) => entry.type === "browser");
-    return typeof main?.id === "number" ? main.id : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The file that records which directory under the profiles root the deployment's browser opens.
- *
- * A pointer rather than a fixed path, because an upgrade adopts a directory that already exists and
- * already holds somebody's logins. Written once, read every boot after: two boots must not disagree
- * about where the cookies are.
- */
-const POINTER_FILE = "profile.json";
-
-/**
- * The directory the shared profile gets when there is no per-Bot profile to take over.
- *
- * A dot in the name, deliberately: `isBotId` refuses any id with a dot in it, so no Bot anybody
- * creates can ever be called this and no per-Bot directory can ever collide with it. `bot.state`
- * below is dot-named for the same reason.
- */
-const DEFAULT_PROFILE_DIR = "shared.profile";
-
-/** Where per-Bot state that is NOT the cookie jar lives: who has the wheel (`sessions.ts`). */
-const STATE_DIR = "bot.state";
-
-/**
- * What a Chromium user-data directory has in it.
- *
- * Asked so that a directory holding nothing but `control.json` — a Bot that was driven before its
- * browser ever started — is not adopted as somebody's profile and reported as their logins.
- */
-const PROFILE_MARKERS = ["Default", "Local State"];
-
-/** Which directory the deployment's browser opens, and what taking it over cost. */
-export type ProfileAdoption = {
-  /** The directory the shared profile lives in, by name under the profiles root. */
-  directory: string;
-  /** The per-Bot profile it was taken over from, or null when a fresh one was made. */
-  adoptedFrom: string | null;
-  /** How many other per-Bot profiles were left exactly where they are. */
-  kept: number;
-};
-
-const isAdoption = (value: unknown): value is ProfileAdoption =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as ProfileAdoption).directory === "string" &&
-  (value as ProfileAdoption).directory.length > 0;
-
-/**
- * When a profile was last used, as well as the filesystem can say.
- *
- * The cookie database first: it is rewritten whenever a login changes, which is the closest thing on
- * disk to "this is the profile the person was actually using". The directory's own mtime is the
- * fallback, and it moves for any write at all — enough to order two profiles, not enough to be
- * trusted on its own.
- */
-async function profileUsedAt(dir: string): Promise<number> {
-  const candidates = [
-    join(dir, "Default", "Cookies"),
-    join(dir, "Default"),
-    join(dir, "Local State"),
-    dir,
-  ];
-  let newest = 0;
-  for (const path of candidates) {
-    const info = await stat(path).catch(() => null);
-    if (info) newest = Math.max(newest, info.mtimeMs);
-  }
-  return newest;
-}
-
-async function looksLikeProfile(dir: string): Promise<boolean> {
-  for (const marker of PROFILE_MARKERS) {
-    if (await stat(join(dir, marker)).catch(() => null)) return true;
-  }
-  return false;
-}
-
-/**
- * Which directory the deployment's browser opens — TAKING OVER A PERSON'S LOGINS RATHER THAN
- * THROWING THEM AWAY.
- *
- * A machine upgrading into this change has a directory per Bot, each with cookies in it, and the
- * cheap thing to do would be to start a clean shared profile and let the person sign into their
- * bank, 홈택스 and 스마트스토어 again on the strength of a version bump. So instead: the profile that
- * was used most recently BECOMES the shared one, in place, and the rest are left exactly where they
- * are — untouched, not merged and not deleted, because merging two Chromium profiles is not a thing
- * that can be done safely and deleting them is the person's call, not an upgrade's. The choice is
- * written to the pointer file so every later boot agrees with this one, and `laf:profile_adopted`
- * puts it in front of the Bot that caused the first launch.
- *
- * `kept` counts what was left behind, so "why is 배민 still asking me to log in" has an answer: it is
- * signed in in one of those, and the way to move it is to sign in once on the shared browser.
- */
-export async function resolveProfile(root: string): Promise<ProfileAdoption> {
-  const pointed = await readFile(join(root, POINTER_FILE), "utf8")
-    .then((text) => JSON.parse(text) as unknown)
-    .catch(() => null);
-  if (isAdoption(pointed)) {
-    // Field by field rather than handed back whole: the file also carries `at`, and a caller that
-    // compared two resolutions would be comparing timestamps.
-    return {
-      directory: pointed.directory,
-      adoptedFrom: pointed.adoptedFrom ?? null,
-      kept: typeof pointed.kept === "number" ? pointed.kept : 0,
-    };
-  }
-
-  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-  const candidates: { name: string; usedAt: number }[] = [];
-  for (const entry of entries) {
-    // Only a directory a Bot could have been called: `bot.state` and `shared.profile` carry a dot
-    // and so can never be one, and neither can a stray file.
-    if (!entry.isDirectory() || !isBotId(entry.name)) continue;
-    const dir = join(root, entry.name);
-    if (!(await looksLikeProfile(dir))) continue;
-    candidates.push({ name: entry.name, usedAt: await profileUsedAt(dir) });
-  }
-  // Newest first, and by name when two are the same age, so an upgrade run twice on one machine
-  // picks the same directory both times.
-  candidates.sort(
-    (a, b) => b.usedAt - a.usedAt || a.name.localeCompare(b.name),
-  );
-
-  const [newest] = candidates;
-  const adoption: ProfileAdoption = newest
-    ? {
-        directory: newest.name,
-        adoptedFrom: newest.name,
-        kept: candidates.length - 1,
-      }
-    : { directory: DEFAULT_PROFILE_DIR, adoptedFrom: null, kept: 0 };
-  await writePointer(root, adoption);
-  return adoption;
-}
-
-/**
- * The decision, written down.
- *
- * Best effort: a root that cannot be written to is a broken deployment already, and refusing to give
- * anybody a browser over it would turn "the pointer did not save" into "nothing works". The
- * resolution above is deterministic anyway, so the next boot reaches the same answer by itself.
- */
-async function writePointer(
-  root: string,
-  adoption: ProfileAdoption,
-): Promise<void> {
-  await writeFile(
-    join(root, POINTER_FILE),
-    JSON.stringify({ ...adoption, at: new Date().toISOString() }),
-    "utf8",
-  ).catch((error: unknown) => {
-    log.error("profile_pointer_not_saved", { reason: error });
-  });
-}
 
 /** What the process around this wants to know about a page the moment it exists. */
 export type ProfileOptions = {
@@ -690,14 +270,6 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
    */
   const legacyStateDirectoryFor = (botId: string): string => join(root, botId);
 
-  const sweepLocks = async (dir: string): Promise<void> => {
-    await Promise.all(
-      SINGLETON_FILES.map((name) =>
-        rm(join(dir, name), { force: true }).catch(() => undefined),
-      ),
-    );
-  };
-
   /** This Bot's open tabs, in the browser's own order. */
   const pagesOf = (botId: string): Page[] =>
     (shared?.context.pages() ?? []).filter(
@@ -795,26 +367,11 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       // Read once, so the browser is started on exactly what `shared` below says it was started on.
       const timeZone = wantedZone();
       const geolocation = wanted.geolocation;
-      const context = await chromium.launchPersistentContext(dir, {
-        args: LAUNCH_ARGS,
-        // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
-        chromiumSandbox: true,
-        viewport: VIEWPORT,
-        locale: LOCALE,
-        // The person's clock and place, not the VM's (whereabouts.ts). No place, no permission.
-        timezoneId: timeZone,
-        ...(geolocation ? { geolocation, permissions: ["geolocation"] } : {}),
-        userAgent: botUserAgent(chromiumVersion),
-        // A download with nowhere to go is refused by Chromium before anything here hears about
-        // it, so this is the switch that makes 세금계산서 PDF a thing a Bot can fetch at all. Where
-        // the file lands is decided by the `download` listener the page hook attaches.
-        acceptDownloads: true,
-        // This process owns shutdown. Playwright's signal handlers kill Chromium immediately on
-        // SIGTERM, before pending cookie writes have time to flush.
-        handleSIGTERM: false,
-        handleSIGINT: false,
-        handleSIGHUP: false,
-        ...(proxy ? { proxy } : {}),
+      const context = await launchBrowser(dir, {
+        timeZone,
+        geolocation,
+        chromiumVersion,
+        proxy,
       });
       const reported = context.browser()?.version();
       if (reported && reported !== chromiumVersion) {

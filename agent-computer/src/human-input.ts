@@ -13,10 +13,10 @@
  * `computer_request_secret` filled is. The value is never returned and never logged below.
  */
 import type { Page } from "playwright";
+import { VIEWPORT } from "./browser-identity";
 import type { BotRoute } from "./computer";
 import { TAKE_CONTROL_FIRST } from "./control";
 import { followTyping, inTurn, settleTyping } from "./person-typing";
-import { VIEWPORT } from "./profiles";
 import {
   bodyOf,
   browserFailed,

@@ -118,7 +118,7 @@ export type SnapshotElement = {
 /**
  * One tab the Bot's browser has open.
  *
- * Mirrors `TabSummary` in `agent-computer/src/profiles.ts`, duplicated for the same reason
+ * Mirrors `TabSummary` in `agent-computer/src/tabs.ts`, duplicated for the same reason
  * `SnapshotElement` is: two deployables with no code in common.
  */
 export type TabSummary = {

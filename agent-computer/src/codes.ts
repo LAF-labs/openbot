@@ -142,7 +142,7 @@ export const COMPUTER_CODES = {
   "laf:secret_request_lost": { note: true },
   // An upgrade from a profile per Bot took over the most recently used one as the deployment's
   // shared browser; `adopted` and `kept` ride beside it. Once, to the Bot whose call started the
-  // first browser after the upgrade (profiles.ts, `resolveProfile`).
+  // first browser after the upgrade (profile-dir.ts, `resolveProfile`).
   "laf:profile_adopted": { note: true },
   // A frame the page text could not include, on the `frames` of a read.
   "laf:frame_opaque": { note: true },

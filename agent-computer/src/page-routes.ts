@@ -10,10 +10,10 @@ import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
 import { readSettledPageText, titleOf } from "./page-text";
-import { TabError } from "./profiles";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
+import { TabError } from "./tabs";
 import { thumbnailOf } from "./thumbnail";
 
 /**

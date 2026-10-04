@@ -98,12 +98,13 @@ jobs:
       # way this step finds to install the wrong thing is a red job.
       - run: bunx playwright install --with-deps chromium
         working-directory: agent-computer
-      # The Bot's browser runs with its sandbox ON (agent-computer/src/profiles.ts), and the sandbox is
-      # unprivileged user namespaces, which Ubuntu 24.04 refuses to an unconfined process. The runner
-      # starts the computer on the host, unconfined; a deployment starts it in a container under
-      # `docker-default`, where the restriction does not apply. Measured 2026-09-13 on Ubuntu 24.04
-      # aarch64: unconfined with the restriction on, Chromium exits "No usable sandbox!"; off, it
-      # starts. Lifted on this throwaway runner only, so the suite drives the browser a VM runs.
+      # The Bot's browser runs with its sandbox ON (agent-computer/src/browser-launch.ts), and the
+      # sandbox is unprivileged user namespaces, which Ubuntu 24.04 refuses to an unconfined
+      # process. The runner starts the computer on the host, unconfined; a deployment starts it in a
+      # container under `docker-default`, where the restriction does not apply. Measured 2026-09-13
+      # on Ubuntu 24.04 aarch64: unconfined with the restriction on, Chromium exits "No usable
+      # sandbox!"; off, it starts. Lifted on this throwaway runner only, so the suite drives the
+      # browser a VM runs.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun run test:ci
         env:
