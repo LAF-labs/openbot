@@ -317,8 +317,9 @@ const unknownTool = (): ToolOutcome => ({
  * here, the same way a refusal's is. Without this a routine reads `laf:dialog` — a string it has
  * never seen — and goes on believing its click worked.
  *
- * The codes stay beside the words, as `computerReplyOutcome` keeps them for chat: the loop ends a
- * round of browser steps on an alert (`round-stop.ts`), and a routine must stop where chat stops.
+ * The codes stay beside the words, as chat's `computerReply` keeps them (`turns/chat-tools.ts`):
+ * the loop ends a round of browser steps on an alert (`round-stop.ts`), and a routine must stop
+ * where chat stops. The loop takes them off again before it files the result (`turn-loop.ts`).
  */
 const withNotes = <T extends Record<string, unknown>>(result: T) => {
   const said = noteTexts(result.notes);

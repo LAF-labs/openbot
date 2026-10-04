@@ -591,6 +591,35 @@ describe("what the card and the banner say", () => {
     ).toEqual({ kind: "done" });
   });
 
+  test("a task made only of skipped steps did not finish, and says the skip — never the owner's 멈춤", () => {
+    // A request for a person ends the task in front of it and the round: the press asked for after
+    // it in the same reply is skipped, and is a task of its own with nothing in it tried.
+    const items = itemsOf([
+      ...calls(
+        {
+          name: "computer_request_secret",
+          args: { ref: "e1", snapshotId: 1, label: "비밀번호" },
+          result: { ok: true, code: "laf:secret_entered" },
+        },
+        {
+          name: "computer_click",
+          args: { ref: "e9", snapshotId: 1 },
+          result: { ok: false, code: STEP_NOT_REACHED, reason: "skipped" },
+        },
+      ),
+    ]);
+    const tasks = items.flatMap((item) =>
+      item.kind === "browse" ? [item] : [],
+    );
+    expect(tasks).toHaveLength(1);
+    const [task] = tasks;
+    expect(task?.steps.map((one) => one.name)).toEqual(["computer_click"]);
+    expect(endingOf(task?.steps ?? [], false)).toEqual({
+      kind: "failed",
+      code: STEP_NOT_REACHED,
+    });
+  });
+
   test("a reload cannot turn 멈춤 into 끝남: the placeholder answer is the same stop", () => {
     // UX review 0.5.4, item 2: 멈춤 in one load and 끝남 in the next, for a task that never got its
     // answer. Before the next turn the app answers the call with a placeholder; it is still a stop.

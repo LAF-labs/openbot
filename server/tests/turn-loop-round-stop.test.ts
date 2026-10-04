@@ -17,6 +17,7 @@ import { createApprovalRegistry } from "../src/computer/approvals";
 import { createComputerClient } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
+  type ComputerGateway,
   createComputerGateway,
 } from "../src/computer/gateway";
 import {
@@ -65,8 +66,11 @@ const say = (text: string): Message => ({
   content: text,
 });
 
-/** A model that says each of these in turn, and finishes every run it is asked for. */
-function scripted(turns: Message[]): LoopAgent {
+/**
+ * A model that says each of these in turn, and finishes every run it is asked for. A run given as a
+ * list adds all of it: a reply and the answers the Bot service filed for it inside the same run.
+ */
+function scripted(turns: Array<Message | Message[]>): LoopAgent {
   let runs = 0;
   const agent = {
     messages: [] as Message[],
@@ -82,16 +86,17 @@ function scripted(turns: Message[]): LoopAgent {
     ) {
       const turn = turns[runs] ?? say("끝.");
       runs += 1;
-      agent.messages.push(turn);
+      const added = Array.isArray(turn) ? turn : [turn];
+      agent.messages.push(...added);
       subscriber?.onRunFinishedEvent?.();
-      return { result: undefined, newMessages: [turn] };
+      return { result: undefined, newMessages: added };
     },
   };
   return agent as unknown as LoopAgent;
 }
 
 /** Run the loop over these replies with this executor, and keep what each part of it saw. */
-async function run(turns: Message[], execute: LoopExecutor) {
+async function run(turns: Array<Message | Message[]>, execute: LoopExecutor) {
   const agent = scripted(turns);
   const executed: string[] = [];
   const started: string[] = [];
@@ -138,6 +143,37 @@ async function run(turns: Message[], execute: LoopExecutor) {
     unanswered: asked.filter((call) => !answered.has(call.id)).map((c) => c.id),
   };
 }
+
+/** The answer the Bot service files for a call it refused inside the run (`factResult`). */
+const answeredInRun = (toolCallId: string, code: string): Message =>
+  ({
+    id: `tool-${toolCallId}`,
+    role: "tool",
+    toolCallId,
+    content: JSON.stringify({ ok: false, code, reason: toolResultText(code) }),
+  }) as Message;
+
+/** A computer whose page raises an alert on every field typed into, as a page's own check does. */
+const alerting = {
+  type: async () => ({
+    action: "type",
+    url: "https://shop.example/form",
+    characters: 2,
+    notes: [{ code: "laf:dialog", message: "주소를 입력하세요" }],
+  }),
+} as unknown as ComputerGateway;
+
+/** A chat turn's toolkit over this gateway, as the turn engine builds it. */
+const chatToolsOver = (gateway: ComputerGateway) =>
+  createChatTools({ gateway, people: createPersonAnswers() })(
+    {
+      botId: "bot-1",
+      owner: { id: "owner-1", role: "user" },
+      threadId: "t-1",
+      runId: "r-1",
+    },
+    null,
+  );
 
 const NOT_REACHED = {
   ok: false,
@@ -282,6 +318,75 @@ describe("a round of browser steps stops where one of them stops", () => {
     expect(outcome.codeOf("t1")).toBe("laf:tool_arguments_invalid");
     expect(outcome.filed.get("c2")).toEqual(NOT_REACHED);
   });
+
+  /*
+   * THE PATH PRODUCTION TAKES. The Bot service answers arguments that are not an object — and the
+   * same call a third time — inside the run (`agent-bot/src/run.ts`), and forwards the rest of the
+   * reply. So the broken `computer_type` arrives already answered, never in the loop's `pending`, and
+   * only the press after it is left for the loop to carry out. The case above reaches the loop's own
+   * parse instead, which no deployed Bot does.
+   */
+  test("a field the Bot service refused inside the run: the press after it in the same reply does not land", async () => {
+    const outcome = await run(
+      [
+        [
+          reply(
+            { id: "t1", name: "computer_type", args: '{"ref": "e1", "text": ' },
+            press("c2"),
+            { id: "s3", name: "computer_snapshot" },
+          ),
+          answeredInRun("t1", "laf:tool_arguments_invalid"),
+        ],
+        say("다시 해 볼게요."),
+      ],
+      async () => ({ ok: true }),
+    );
+    expect(outcome.executed).toEqual(["s3"]);
+    expect(outcome.filed.get("c2")).toEqual(NOT_REACHED);
+    expect(outcome.unanswered).toEqual([]);
+    // In the record the service's answer comes first, then the open calls in their order.
+    expect(outcome.steps[0]?.calls).toEqual([
+      { name: "computer_type", ok: false },
+      { name: "computer_click", ok: false },
+      { name: "computer_snapshot", ok: true },
+    ]);
+  });
+
+  test("a reply the Bot service answered whole was read before the next: the next reply's steps are carried out", async () => {
+    const first = reply({
+      id: "t1",
+      name: "computer_type",
+      args: '{"ref": "e1", "text": ',
+    });
+    const second = { ...reply(field("t2", "e1"), press("c3")), id: "a-second" };
+    const outcome = await run(
+      [[first, answeredInRun("t1", "laf:tool_arguments_invalid"), second]],
+      async () => ({ ok: true }),
+    );
+    expect(outcome.executed).toEqual(["t2", "c3"]);
+  });
+
+  test("a lookup the Bot service answered inside the run ends nothing", async () => {
+    const outcome = await run(
+      [
+        [
+          reply(
+            { id: "q1", name: "tool_search", args: { query: "browser" } },
+            field("t2", "e1"),
+            press("c3"),
+          ),
+          {
+            id: "tool-q1",
+            role: "tool",
+            toolCallId: "q1",
+            content: "computer_type: …",
+          } as Message,
+        ],
+      ],
+      async () => ({ ok: true }),
+    );
+    expect(outcome.executed).toEqual(["t2", "c3"]);
+  });
 });
 
 describe("a step that moved the page ends the round, and a look at the page still runs", () => {
@@ -315,14 +420,10 @@ describe("a step that moved the page ends the round, and a look at the page stil
   });
 
   test("an alert ends the round; the model reads its words, never the codes kept for the loop", async () => {
+    const toolkit = await chatToolsOver(alerting);
     const outcome = await run(
       [reply(field("t1", "e1"), press("c2"))],
-      async () =>
-        computerReplyOutcome(200, {
-          action: "type",
-          characters: 2,
-          notes: [{ code: "laf:dialog", message: "주소를 입력하세요" }],
-        }),
+      (name, args, call) => toolkit.execute(name, args, call),
     );
     expect(outcome.executed).toEqual(["t1"]);
     expect(outcome.filed.get("c2")).toEqual(NOT_REACHED);
@@ -419,19 +520,40 @@ describe("the rule's own reading", () => {
     }
   });
 
-  test("a computer reply keeps the notes' codes beside their words, and only where there are notes", () => {
-    const noted = computerReplyOutcome(200, {
-      action: "click",
-      notes: [
+  test("both server executors keep the notes' codes beside their words; the shared mapping does not", async () => {
+    const asked = { ref: "e1", snapshotId: 1, text: "값" };
+    const chat = await (await chatToolsOver(alerting)).execute(
+      "computer_type",
+      asked,
+      { id: "n1", signal: new AbortController().signal },
+    );
+    const routine = await (
+      await createUnattendedTools({ gateway: alerting })("bot-1", {
+        id: "owner-1",
+      })
+    ).execute("computer_type", asked, { id: "n2" });
+    for (const outcome of [chat, routine]) {
+      expect(typeof outcome === "object" && outcome.noteCodes).toEqual([
+        "laf:dialog",
+      ]);
+    }
+    /*
+     * What the window (`SERVER_TURNS=off`) and the eval hand a model straight from the mapping: no
+     * field of the loop's. Neither files through `forTheModel`, which is where the loop strips it.
+     */
+    expect(
+      computerReplyOutcome(200, {
+        action: "type",
+        notes: [{ code: "laf:dialog", message: "확인하세요" }],
+      }),
+    ).not.toHaveProperty("noteCodes");
+    expect(
+      noteCodesOf([
         { code: "laf:dialog", message: "확인하세요" },
         { code: "laf:downloaded", path: "downloads/a.pdf" },
         "not a note",
-      ],
-    });
-    expect(noted.noteCodes).toEqual(["laf:dialog", "laf:downloaded"]);
-    expect(computerReplyOutcome(200, { action: "click" })).not.toHaveProperty(
-      "noteCodes",
-    );
+      ]),
+    ).toEqual(["laf:dialog", "laf:downloaded"]);
     // A chat handover's `notes` is a sentence, not a list of facts.
     expect(noteCodesOf("페이지가 바뀌었다")).toEqual([]);
   });
