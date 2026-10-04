@@ -26,7 +26,7 @@ import {
   privateServerAddressOf,
 } from "./navigation-guard";
 import { arrivalNote } from "./page-arrival";
-import { readSettledPageText, titleOf } from "./page-text";
+import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { type BotSession, note, withNotes } from "./sessions";
 import { keepOwnAddress } from "./typed-values";
@@ -396,6 +396,7 @@ export const navigate: BotRoute = async (
         // Or it left for somewhere that has not answered yet: what opened is said, and that it is
         // already on its way elsewhere, rather than waited on (`readSettledPageText`).
         if (extract.arriving) note(session, arrivalNote(extract.arriving));
+        if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
         return json(
           withNotes(session, {
             url: target.url(),

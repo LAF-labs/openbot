@@ -454,6 +454,40 @@ const ARTICLE_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"
 <footer>© 포털</footer></body></html>`;
 
 /**
+ * A page whose scripts take the builtins the reader's answer travels with.
+ *
+ * `Map` is 고용24's own, as work24.go.kr leaves it (measured 2026-10-04): `put`, `get`,
+ * `containsKey`, no `set`. Playwright counts the objects it hands back with the page's `Map`, so on
+ * that page every object an `evaluate` returned came back `undefined`, and the reader with it.
+ * `JSON.stringify` and `Object.prototype.toJSON` are the next things a page could take, and the
+ * reader must not lean on those either.
+ */
+export const REPLACED_BUILTINS_TEXT = "고용 안내 화면의 본문입니다";
+export const REPLACED_BUILTINS_SCRIPT = `function Map() { this.map = new Object(); }
+Map.prototype = {
+  put: function (key, value) { this.map[key] = value; },
+  get: function (key) { return this.map[key]; },
+  containsKey: function (key) { return key in this.map; },
+};
+JSON.stringify = function () { throw new Error("not for you"); };
+Object.defineProperty(Object.prototype, "toJSON", {
+  value: function () { return "tampered"; },
+  configurable: true,
+  writable: true,
+});`;
+const REPLACED_BUILTINS_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>고용 안내</title>
+<script>${REPLACED_BUILTINS_SCRIPT}</script></head><body><h1>고용 안내</h1><p>${REPLACED_BUILTINS_TEXT}</p></body></html>`;
+
+/**
+ * A page whose scripts make the reader itself throw: `document.querySelector`, which the reader asks
+ * whether the page calls itself an article — before it measures the page — refuses.
+ */
+export const READER_BROKEN_TEXT = "판독기가 멈춰도 이 문장은 읽힌다";
+const READER_BROKEN_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>막힌 판독기</title>
+<script>document.querySelector = function () { throw new Error("no"); };</script></head><body>
+<h1>${READER_BROKEN_TEXT}</h1>${Array.from({ length: 8 }, () => `<p>${ARTICLE_PARAGRAPH}</p>`).join("")}</body></html>`;
+
+/**
  * Serve it, and say where.
  *
  * Port 0, so two of these can run at once — the gate is run concurrently from more than one
@@ -531,6 +565,12 @@ export function serveFixture(port = 0) {
       }
       if (path === "/article") {
         return new Response(ARTICLE_HTML, { headers: html });
+      }
+      if (path === "/replaced-builtins") {
+        return new Response(REPLACED_BUILTINS_HTML, { headers: html });
+      }
+      if (path === "/reader-broken") {
+        return new Response(READER_BROKEN_HTML, { headers: html });
       }
       if (path === "/hanging-frame") {
         return new Response(HANGING_FRAME_HTML, { headers: html });

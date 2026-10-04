@@ -9,7 +9,13 @@
 import type { Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
-import { compactText, type FrameRead, readerScript } from "./reader";
+import {
+  compactText,
+  type FrameRead,
+  PLAIN_TEXT_SCRIPT,
+  parseFrameRead,
+  readerScript,
+} from "./reader";
 import { within } from "./within";
 import { cutAtCodeUnits } from "../../shared/sound-text";
 
@@ -105,12 +111,17 @@ export async function settle(target: Page): Promise<void> {
   const idle = target
     .waitForLoadState("networkidle", { timeout: NETWORK_IDLE_CAP_MS })
     .catch(() => undefined);
-  // A document that goes away while it is watched is no answer: the network's wait stands then.
+  /*
+   * A document that goes away while it is watched is no answer: the network's wait stands then.
+   * The two numbers are written into the source rather than passed: Playwright carries an argument
+   * into the page with the page's own `Map`, and on a page that replaces it, as 고용24 does, the
+   * array throws `refs.set is not a function` (`reader.ts`). The wait then falls to the network's,
+   * which cost 고용24 nothing — it goes idle in 0.6 s — and a page that polls the whole cap.
+   */
   const quiet = target
-    .evaluate(quietInPage, [DOM_QUIET_MS, NETWORK_IDLE_CAP_MS] as [
-      number,
-      number,
-    ])
+    .evaluate(
+      `(${quietInPage.toString()})([${DOM_QUIET_MS}, ${NETWORK_IDLE_CAP_MS}])`,
+    )
     .catch(() => idle);
   await Promise.race([idle, quiet]);
 }
@@ -185,9 +196,51 @@ class DocumentSilentError extends Error {
   }
 }
 
-/** What one frame's rendered text is: its article when it has one, all of it otherwise (`reader.ts`). */
-async function frameText(frame: Frame, whole: boolean): Promise<FrameRead> {
-  return frame.evaluate<FrameRead>(readerScript(whole));
+/** A frame's text, and whether it had to be read without the reader. */
+type FrameText = FrameRead & { plain?: true };
+
+/**
+ * The fact for a read the page's own scripts kept the reader from: the text is its visible text,
+ * read plainly, or nothing at all.
+ */
+export const PAGE_TEXT_PLAIN: NoteCode = "laf:page_text_plain";
+
+/**
+ * What one frame's rendered text is: its article when it has one, all of it otherwise (`reader.ts`).
+ *
+ * A PAGE CAN BREAK THE READER, AND IS THEN READ PLAINLY. 고용24 replaced the global `Map`, and the
+ * reader's answer arrived as `undefined` — read as `main.read.text`, which threw, and `/navigate`
+ * failed on a page a person sees in full. The reader answers with a string now, which that page
+ * leaves alone; this is for the next page that breaks something else. A page that leaves for
+ * another while it is read is not one of these: that error goes up, and the read starts again on the
+ * page it went to (`readSettledPageText`).
+ */
+async function frameText(frame: Frame, whole: boolean): Promise<FrameText> {
+  // The page's doing only while there is still a page: a tab that closed is the browser's answer.
+  const gone = (error: unknown) =>
+    isNavigatingAway(error) || frame.isDetached() || frame.page().isClosed();
+  try {
+    const read = parseFrameRead(await frame.evaluate(readerScript(whole)));
+    if (read) return read;
+  } catch (error) {
+    if (gone(error)) throw error;
+  }
+  /*
+   * Even this can fail on a page that takes `innerText` itself, and that is still an answer: empty,
+   * with the fact that says it could not be read, which the Bot hears instead of a 502 over a page a
+   * person can see.
+   */
+  const plain = await frame
+    .evaluate(PLAIN_TEXT_SCRIPT)
+    .catch((error: unknown) => {
+      if (gone(error)) throw error;
+      return undefined;
+    });
+  return {
+    text: typeof plain === "string" ? plain : "",
+    reader: false,
+    plain: true,
+  };
 }
 
 export type PageText = {
@@ -199,6 +252,12 @@ export type PageText = {
    * Bot that knows the page was abridged can read it whole.
    */
   reader?: true;
+  /**
+   * The page's own scripts kept the reader from running, so the text is what the page shows, read
+   * plainly — or empty, when even that did not answer, which is not the same as an empty page.
+   * Carried to the model as {@link PAGE_TEXT_PLAIN} by the route that read it.
+   */
+  plain?: true;
   /** `from` was asked for and is nowhere on the page, so the text starts at the top as usual. */
   fromMissing?: true;
   /** The iframes that contributed, and the ones that would not. */
@@ -261,10 +320,17 @@ async function readablePageText(
 
   const pieces = [main.read.text];
   let reader = main.read.reader;
+  /*
+   * The page's own read only. An advertiser's frame that broke the reader is read plainly and merged
+   * like any other frame — a frame is read whole unless it is an article anyway — and saying the
+   * page could not be read because one of forty ad frames could not is a fact about nothing the
+   * Bot asked for. A frame that could not be read even plainly is what it always was: opaque.
+   */
+  const plain = main.read.plain === true;
   const frames: NonNullable<PageText["frames"]> = [];
   others.forEach(({ url }, index) => {
     const read = texts[index];
-    if (read === undefined) {
+    if (read === undefined || (read.plain && !read.text.trim())) {
       frames.push({ url, chars: 0, code: "laf:frame_opaque" });
       return;
     }
@@ -290,6 +356,7 @@ async function readablePageText(
     truncated: collapsed.length > TEXT_EXTRACT_LIMIT,
     ...(from && at < 0 ? { fromMissing: true as const } : {}),
     ...(reader ? { reader: true as const } : {}),
+    ...(plain ? { plain: true as const } : {}),
     ...(frames.length ? { frames } : {}),
   };
 }
