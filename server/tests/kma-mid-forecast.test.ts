@@ -181,11 +181,14 @@ const connection = {
   drawnOn: "conversation" as const,
 };
 
-async function weatherOf(made: ReturnType<typeof stack>) {
+async function weatherOf(
+  made: ReturnType<typeof stack>,
+  where: { latitude: number; longitude: number } = SEOUL,
+) {
   const result = await made.transport.callTool(
     connection,
     "get_weather",
-    SEOUL,
+    where,
   );
   expect(result.isError).toBe(false);
   return { facts: JSON.parse(result.text) as Facts, text: result.text };
@@ -220,7 +223,7 @@ describe("the issuance to ask for", () => {
     );
   });
 
-  test("the same wherever the process's own clock is set, and the newest until the next is due", () => {
+  test("an instant is read as the Korean wall clock it is, and its issuance is the newest until the next is due", () => {
     const issuance = midIssuanceAt(new Date("2026-10-04T09:30:00Z"));
     expect(issuance.tmFc).toBe("202610041800");
     expect(new Date(issuance.supersededAt).toISOString()).toBe(
@@ -632,7 +635,7 @@ describe("a portal that does not answer", () => {
     expect(made.asked).toHaveLength(2);
   });
 
-  test("unreachable: the four days are answered, and the next call tries again", async () => {
+  test("unreachable: the four days are answered, and it is tried again two minutes on — not on every call", async () => {
     const made = stack(MIDNIGHT, () => {
       throw new Error(`failed to fetch ?serviceKey=${PORTAL_KEY}`);
     });
@@ -640,7 +643,79 @@ describe("a portal that does not answer", () => {
     expect(datesOf(facts)).toHaveLength(4);
     expect(facts.unavailable).toEqual(["5~10일 뒤 예보"]);
     expect(text).not.toContain(PORTAL_KEY);
+    expect(made.asked).toHaveLength(2);
+
+    // A portal that hangs would otherwise cost every answer its whole bound.
+    made.clock.at = kst("2026-10-02T00:46:30");
+    const resting = await weatherOf(made);
+    expect(made.asked).toHaveLength(2);
+    expect(resting.facts.unavailable).toEqual(["5~10일 뒤 예보"]);
+
+    made.clock.at = kst("2026-10-02T00:47:30");
     await weatherOf(made);
+    expect(made.asked).toHaveLength(4);
+  });
+
+  test("the service's own refusal of the key rests the portal as the gateway's does", async () => {
+    // The gateway's envelope is the one that was measured; this is the service's documented one.
+    const made = stack(
+      MIDNIGHT,
+      () =>
+        new Response(
+          JSON.stringify({
+            response: {
+              header: {
+                resultCode: "30",
+                resultMsg: "SERVICE KEY IS NOT REGISTERED ERROR.",
+              },
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    await weatherOf(made);
+    await weatherOf(made);
+    expect(made.asked).toHaveLength(2);
+  });
+
+  test("a place already read keeps its week while the portal rests over another place", async () => {
+    let refusing = false;
+    const made = stack(
+      MIDNIGHT,
+      (asked) =>
+        refusing
+          ? new Response(MID_KEY_NOT_REGISTERED, { status: 403 })
+          : new Response(
+              asked.operation === "temperature"
+                ? MID_TEMPERATURE_1800
+                : MID_LAND_1800,
+              { status: 200 },
+            ),
+      {
+        // Two places in two regions: the cell says which.
+        regions: {
+          size: 2,
+          of: (cell) =>
+            cell.ny > 100
+              ? { temperature: "11B10101", land: "11B00000", name: "서울" }
+              : { temperature: "11H20201", land: "11H20000", name: "부산" },
+        },
+      },
+    );
+    expect(datesOf((await weatherOf(made)).facts)).toHaveLength(10);
+
+    refusing = true;
+    const busan = await weatherOf(made, {
+      latitude: 35.1796,
+      longitude: 129.0756,
+    });
+    expect(busan.facts.unavailable).toEqual(["5~10일 뒤 예보"]);
+    expect(made.asked).toHaveLength(4);
+
+    // 서울's two rows are kept until the next issuance: the rest is on asking, not on answering.
+    const seoul = await weatherOf(made);
+    expect(datesOf(seoul.facts)).toHaveLength(10);
+    expect(seoul.facts.unavailable).toBeUndefined();
     expect(made.asked).toHaveLength(4);
   });
 
@@ -670,6 +745,30 @@ describe("a portal that does not answer", () => {
       expect(datesOf(facts)).toHaveLength(4);
       expect(facts.unavailable).toEqual(["5~10일 뒤 예보"]);
     }
+  });
+
+  test("a day neither forecast has is named, not left out between two rows", async () => {
+    // Hand-written: temperatures that begin six days after the issuance, as no real body does —
+    // the gap a late 단기예보 leaves beside an evening 중기예보, a day wide.
+    const late = JSON.stringify({
+      response: {
+        header: { resultCode: "00", resultMsg: "NORMAL_SERVICE" },
+        body: {
+          items: { item: [{ regId: "11B10101", taMin6: 13, taMax6: 25 }] },
+        },
+      },
+    });
+    const { facts } = await weatherOf(
+      stack(MIDNIGHT, { "temperature 202610011800": late }),
+    );
+    expect(datesOf(facts)).toEqual([
+      "2026-10-02",
+      "2026-10-03",
+      "2026-10-04",
+      "2026-10-05",
+      "2026-10-07",
+    ]);
+    expect(facts.unavailable).toEqual(["10월 6일 예보"]);
   });
 
   test("only the land forecast missing: the days are their temperatures", async () => {

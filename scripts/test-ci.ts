@@ -855,8 +855,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * from its review: a throw inside the page said by a name from our own list, a renderer that
  * crashed still the browser's failure under both of its names, and the one line a fallback leaves.
  *
- * RAISED 2026-10-05 with the days past the 단기예보, by exactly what was added: forty-two to `server`
- * (twenty-eight on 중기예보 — its issuances, the days two rows hold, what a Bot is handed with the
+ * RAISED 2026-10-05 with the days past the 단기예보, by exactly what was added: forty-five to `server`
+ * (thirty-one on 중기예보 — its issuances, the days two rows hold, what a Bot is handed with the
  * portal's key and without it, and every way the portal does not answer; thirteen on which of
  * 기상청's regions a place is in, the shipped table's every row among them; and one on a deployment
  * handing the weather the portal's key).
@@ -866,7 +866,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3489, roots: ["server"] },
+  { name: "server", floor: 3492, roots: ["server"] },
   { name: "app", floor: 2081, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 613, roots: ["tests", "agent-bot"] },
