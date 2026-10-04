@@ -87,6 +87,21 @@ async function screen(path: string, extra?: ApiAnswer) {
   const view = await mountApp({ path, api: account(extra) });
   const main = view.main();
   if (!main) throw new Error("the app shell did not draw its main pane");
+  /*
+   * A SCREEN IS HANDED OVER ONCE IT HAS STOPPED CHANGING. The shell is up when `mountApp` returns;
+   * what the screen draws from its own queries arrives on later turns of the loop — the next one
+   * on an idle machine, several on a busy one. The tests below ask for what a screen drew the
+   * moment they have it, and one of them asked too soon once in four runs of the gate: "nothing
+   * matches [data-feed-discuss]", the post not yet drawn, in a run that had three other suites
+   * going beside it. Three looks in a row that find the same page, 20ms apart, is "drawn".
+   */
+  let drawn = main.innerHTML;
+  for (let same = 0, looks = 0; same < 3 && looks < 150; looks += 1) {
+    await view.settle(20);
+    const now = main.innerHTML;
+    same = now === drawn ? same + 1 : 0;
+    drawn = now;
+  }
   return {
     ...view,
     main,
