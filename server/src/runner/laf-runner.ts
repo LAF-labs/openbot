@@ -216,6 +216,19 @@ export function runOutcome(
     : { status: "stopped", error: null };
 }
 
+/*
+ * WHAT IS BELOW ABOUT A STEP "WITH A BROWSER" IS REACHED ONLY THROUGH THE RUN DOOR, AND NOTHING IN
+ * THE APP OPENS IT ANY MORE. `POST /api/copilotkit/agent/:id/run` is how a window drove a chat turn:
+ * the model asked for a tool, the run ended, and the window carried the call out and started the
+ * next run with the result. The server runs a chat turn itself since v0.5.7 (`turns/engine.ts`,
+ * which uses none of this class), and the window-driven path was removed from the app on
+ * 2026-10-05 — with the two routes a second window asked about a step through (`…/step`,
+ * `…/step-abandoned`), which went from here that day. The door is still mounted, because the
+ * runtime that answers `/info` for the app's tool registry is the same handler, and this class is
+ * still what reconciles every origin's interrupted runs at boot (`create`). Whether the door and
+ * the step-wait under it go too is a decision of its own.
+ */
+
 /**
  * How long a step handed to a browser is listed as going on, and how long a turn stopped during one
  * stays stopped.
@@ -287,8 +300,6 @@ type StepWait = {
   eventCount: number;
   written: Promise<void>;
   timer: ReturnType<typeof setTimeout>;
-  /** When the step went to its window. See `stepState`. */
-  since: number;
 };
 
 /**
@@ -671,45 +682,6 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
   }
 
   /**
-   * Whether this thread's turn is still going on somewhere: a run on the wire, or a step handed to
-   * a window that has not come back yet. What a second window asks before saying a task stopped —
-   * from where it stands, a step another window is making looks exactly like one that died.
-   */
-  stepState(threadId: string): {
-    running: boolean;
-    waiting: boolean;
-    waitingMs: number;
-  } {
-    const live = this.latest.get(threadId);
-    const wait = this.stepWaits.get(threadId);
-    return {
-      running: live !== undefined && !live.over,
-      waiting: wait !== undefined,
-      /*
-       * How long the step has been out. A window that crashed says nothing, so its step is listed
-       * for the whole ten minutes (`BROWSER_STEP_MS`) — which stays, because a step legitimately
-       * waits that long on a person's 허용, and nothing here can tell a window that is thinking
-       * from one that is gone. What the second window does with the number is say so honestly:
-       * a step out far longer than one takes, with no question on it, is "다른 창에서 진행
-       * 중이었어요 · 이어서 하기" (`step-watcher.ts`), not a turn going on here.
-       */
-      waitingMs: wait ? Date.now() - wait.since : 0,
-    };
-  }
-
-  /**
-   * The window that held this thread's step is going away without it — closed or reloaded mid-step
-   * with no question open to outlive it. The run that handed the step over stopped, and says so now
-   * rather than ten minutes from now. False when no step was out.
-   */
-  abandonStep(threadId: string): boolean {
-    if (!this.stepWaits.has(threadId)) return false;
-    this.endStepWait(threadId, { status: "stopped", error: STEP_NOT_RETURNED });
-    this.inBrowser.get(threadId)?.();
-    return true;
-  }
-
-  /**
    * A run handed its step to a window: its row says `waiting` until the step comes back, and
    * `stopped` if it has not in the time the longest step may take.
    */
@@ -723,7 +695,6 @@ export class LafPostgresRunner extends InMemoryAgentRunner {
     if (previous) clearTimeout(previous.timer);
     let written: () => void = () => {};
     const entry: StepWait = {
-      since: Date.now(),
       runId,
       eventCount,
       written: new Promise<void>((resolve) => {

@@ -392,11 +392,6 @@ describe("a run whose step is with a window", () => {
       async () => (await statusOf(first.runId)) === "waiting",
       "the ledger to say waiting",
     );
-    const state = runner.stepState(threadId);
-    expect(state).toMatchObject({ running: false, waiting: true });
-    // How long it has been out, for a second window to judge whether it is still being made.
-    expect(state.waitingMs).toBeGreaterThanOrEqual(0);
-    expect(state.waitingMs).toBeLessThan(20_000);
     return { runner, threadId, first };
   }
 
@@ -410,7 +405,6 @@ describe("a run whose step is with a window", () => {
       async () => (await statusOf(first.runId)) === "done",
       "the step's run to say done",
     );
-    expect(runner.stepState(threadId).waiting).toBe(false);
   }, 20_000);
 
   test("is stopped when the person presses Stop while the window has the step", async () => {
@@ -420,21 +414,6 @@ describe("a run whose step is with a window", () => {
       async () => (await statusOf(first.runId)) === "stopped",
       "the step's run to say stopped",
     );
-  }, 20_000);
-
-  test("is stopped, with why, when its window goes away without it", async () => {
-    const { runner, threadId, first } = await handedOver();
-    expect(runner.abandonStep(threadId)).toBe(true);
-    await until(
-      async () => (await statusOf(first.runId)) === "stopped",
-      "the step's run to say stopped",
-    );
-    const [row] = await database
-      .select({ error: lafThreadRuns.error })
-      .from(lafThreadRuns)
-      .where(eq(lafThreadRuns.runId, first.runId));
-    expect(row?.error).toBe("laf:step_not_returned");
-    expect(runner.abandonStep(threadId)).toBe(false);
   }, 20_000);
 
   test("is stopped when the person says something new instead of the step coming back", async () => {
