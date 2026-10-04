@@ -83,6 +83,12 @@ export type BotSession = {
    * into none (`control-routes.ts`): a ref is a name within one tab's own last look.
    */
   secretTab?: Page;
+  /**
+   * The tab the Bot asked a person for a hand on, or a person took the wheel on. For as long as
+   * that ask stands or that person holds the wheel, it is not the tab closed to keep the Bot's
+   * tabs to their number (`tab-cap.ts`).
+   */
+  wheelTab?: Page;
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**

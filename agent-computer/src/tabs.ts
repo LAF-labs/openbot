@@ -1,5 +1,6 @@
 /**
- * A Bot's tabs in the deployment's one browser, and how long they may sit unused.
+ * A Bot's tabs in the deployment's one browser: how many it may hold, and how long they may sit
+ * unused.
  */
 import type { Page } from "playwright";
 import { log } from "./log";
@@ -25,6 +26,17 @@ export class TabError extends Error {
 }
 
 /**
+ * A tab index read from a list that has changed since. Its own type so the route can say to look
+ * again (409) rather than that there is no such tab: there may well be one, and it is another.
+ */
+export class TabListError extends Error {
+  constructor() {
+    super("laf:stale_refs");
+    this.name = "TabListError";
+  }
+}
+
+/**
  * How long a Bot may leave its tabs untouched before they are closed.
  *
  * Ten minutes. Four of five Bots are usually asleep between a routine at nine and one at noon, and a
@@ -37,14 +49,70 @@ export const IDLE_CLOSE_MS = 10 * 60_000;
 /** How often idleness is checked. Coarse on purpose: this is housekeeping, not a deadline. */
 export const IDLE_SWEEP_MS = 60_000;
 
-/** The shortest time between two `tab_crashed` lines about one Bot. See `sayCrashed`. */
-const CRASH_LINE_MS = 60_000;
+/**
+ * How many tabs one Bot holds. One more is opened, and the one it used longest ago is closed.
+ *
+ * WHY THERE IS A NUMBER AT ALL. Nothing counted a Bot's tabs and nothing closed one while the Bot
+ * kept calling: every `target=_blank` link and every window a site opens is adopted (`adoptOpened`),
+ * no route closes a tab, and the idle close looks at the Bot's last call (`IDLE_CLOSE_MS`), so it
+ * never comes for a Bot that is working. Measured 2026-10-05 against a real Chromium
+ * (`tests/tab-cap.test.ts`, before this): one Bot, thirty opens — twenty-seven `_blank` clicks and
+ * three `window.open` — and its tabs went 2, 3, 4 … 31, one more for every open.
+ *
+ * WHAT A TAB COSTS, measured the same day in the stable image under `mem_limit: 3g`, on
+ * news.naver.com: no browser 292 MiB and 19 processes; the browser and one tab 524 MiB and 87; five
+ * tabs 1,082 MiB and 142; ten 1,724 MiB and 208 (1,752 MiB twenty seconds later). So 130–140 MiB and
+ * 13–14 processes for every tab after the first, and about twenty such tabs is the whole container
+ * — which Naver's results, each opening in a tab of its own, reach inside one long task.
+ *
+ * WHY SIX. What a task needs is small: a sign-in window and the page that opened it is two, a
+ * payment window with its 본인인증 window three, a list and a handful of the pages off it five or
+ * six. Six heavy tabs is about 1.2 GiB with the process around them, two fifths of the limit —
+ * room for pages twice as heavy, for the seventh tab that exists for a moment before the oldest is
+ * closed, and for a second Bot of a legacy account at its own six (about 2 GiB together; five Bots
+ * all at six would be 4.4 GiB, and never fit before this either). And six is more than the tabs
+ * that may not be closed can ever be (`keepToCap`: at most five), so there is always one to close.
+ *
+ * A CONSTANT, NOT A SETTING. The number follows from the image's memory limit and what a page
+ * costs, both of which are this repository's; a deployment has no reason to hold another.
+ */
+export const TAB_CAP = 6;
+
+/** The shortest time between two lines of one kind about one Bot. See `say`. */
+const LINE_MS = 60_000;
 
 /**
  * The tab a Bot was on, gone from under it: how, and which site it was showing — the origin only,
  * for the reason a log line carries no more (a path and a query are the page's).
  */
 export type TabLost = { cause: "crashed" | "closed"; origin: string };
+
+/**
+ * The tabs of a Bot's closed to keep them to {@link TAB_CAP} since it last read its list: how many,
+ * and the site the last of them was showing — the origin only, as everywhere a tab is spoken of.
+ * Never the tab the Bot was on.
+ */
+type TabCapped = { origin: string; closed: number };
+
+/** What is kept for a Bot for as long as it has tabs. See `live`. */
+type Live = {
+  /** The tab the Bot's next call lands on. */
+  page: Page;
+  /** When the Bot last did anything. See IDLE_CLOSE_MS. */
+  usedAt: number;
+  since: string;
+  /**
+   * How many of its tabs were closed for the cap, and that count as it stood when the Bot last
+   * read its list. While the two differ the list an index was read from has changed (`switchTab`).
+   * Here and not with the Bot's session, because they are facts about this list and end with it:
+   * a Bot whose tabs were all closed — idle, stopped — starts again with one tab and nothing to
+   * be told about the ones before.
+   */
+  capped: number;
+  listed: number;
+  /** The site the last tab closed for the cap was showing. */
+  cappedOrigin?: string;
+};
 
 /** What the bookkeeping needs from the browser it keeps the books of. */
 type TabsBrowser = {
@@ -59,6 +127,12 @@ type TabsBrowser = {
    * open and was not on: the Bot is still where it last looked.
    */
   onLost: (botId: string, lost: TabLost) => void;
+  /**
+   * Whether something outside these books is holding this tab of the Bot's open: a person's hands,
+   * the picture a person is watching, something the Bot asked a person for on it
+   * (`ProfileOptions.holdsTab`). Such a tab is never the one closed for the cap.
+   */
+  holds: (botId: string, page: Page) => boolean;
 };
 
 /**
@@ -79,8 +153,8 @@ export function createTabs(browser: TabsBrowser) {
    */
   const owners = new Map<Page, string>();
 
-  /** Each Bot's current tab, and when it last did anything. See IDLE_CLOSE_MS. */
-  const live = new Map<string, { page: Page; usedAt: number; since: string }>();
+  /** Each Bot's current tab, when it last did anything, and what became of its list. */
+  const live = new Map<string, Live>();
 
   /**
    * The tabs whose renderer died, for as long as the browser still lists them.
@@ -92,6 +166,30 @@ export function createTabs(browser: TabsBrowser) {
    */
   const crashed = new WeakSet<Page>();
 
+  /**
+   * The tabs closed for the cap, for as long as the browser still lists them: let go of at once
+   * and closed a moment later, like a crashed one, and like it never the spare a Bot is handed.
+   */
+  const capped = new WeakSet<Page>();
+
+  /**
+   * When each tab was last the one its Bot was on, as a place in the order of every such moment.
+   *
+   * A COUNT, NOT A CLOCK. Which tab was used longest ago is a question about order, and two tabs
+   * touched in one millisecond — a click and the tab it opened — must still have one. Per tab,
+   * where `live` keeps one time for the whole Bot: that one decides when everything goes, this one
+   * which tab goes first.
+   */
+  const used = new WeakMap<Page, number>();
+  let uses = 0;
+  const use = (page: Page): void => {
+    uses += 1;
+    used.set(page, uses);
+  };
+
+  /** The tab that opened each tab a site opened, as the browser said when it was adopted. */
+  const openers = new WeakMap<Page, Page>();
+
   /** This Bot's open tabs, in the browser's own order. */
   const pagesOf = (botId: string): Page[] =>
     browser
@@ -102,34 +200,35 @@ export function createTabs(browser: TabsBrowser) {
   const isOn = (botId: string, page: Page): boolean =>
     live.get(botId)?.page === page;
 
-  /** When each Bot's last `tab_crashed` line was written, and how many deaths since went unsaid. */
+  /** When the last line of each kind about each Bot was written, and how many since went unsaid. */
   const lines = new Map<string, { at: number; unsaid: number }>();
 
   /**
-   * One line for a renderer that died, by the site's origin only — a path, a query and a title
-   * are the page's — and no more than one a minute for a Bot.
+   * One warn line about a Bot's tab — its renderer died, it was closed for the cap — and no more
+   * than one a minute of each kind for a Bot. A tab is named by its site's origin only: a path, a
+   * query and a title are the page's.
    *
    * BOUNDED, BECAUSE A LOOP IS POSSIBLE. A dead tab is replaced by an empty one, which has nothing
    * to die of; but a machine too short of memory to keep any renderer loses the replacement too,
    * and while a person has the live screen open a replacement is asked for every second
-   * (`live-screen.ts`). That is a line a second for as long as it lasts. The ones not written are
+   * (`live-screen.ts`). That is a line a second for as long as it lasts. And a Bot working through
+   * a list of results closes a tab for the cap with every one it opens. The ones not written are
    * counted on the next one that is.
    */
-  const sayCrashed = (
+  const say = (
+    event: "tab_crashed" | "tab_capped" | "tab_cap_exceeded",
     botId: string | undefined,
-    origin: string,
-    tabs: number,
+    facts: Record<string, string | number>,
   ): void => {
-    const key = botId ?? "";
+    const key = `${event} ${botId ?? ""}`;
     const last = lines.get(key);
-    if (last && now() - last.at < CRASH_LINE_MS) {
+    if (last && now() - last.at < LINE_MS) {
       last.unsaid += 1;
       return;
     }
-    log.warn("tab_crashed", {
+    log.warn(event, {
       ...(botId ? { bot: botId } : {}),
-      origin,
-      tabs,
+      ...facts,
       ...(last?.unsaid ? { unsaid: last.unsaid } : {}),
     });
     lines.set(key, { at: now(), unsaid: 0 });
@@ -169,13 +268,13 @@ export function createTabs(browser: TabsBrowser) {
     const botId = owners.get(page);
     if (botId === undefined) {
       // Nobody's: one no Bot had been handed yet, or one this process had already let go of.
-      sayCrashed(undefined, origin, 0);
+      say("tab_crashed", undefined, { origin, tabs: 0 });
     } else {
       // Counted with the dead one still in it: how many tabs the Bot was holding when it died.
       const had = pagesOf(botId).length;
       const wasOn = isOn(botId, page);
       owners.delete(page);
-      sayCrashed(botId, origin, had);
+      say("tab_crashed", botId, { origin, tabs: had });
       if (wasOn) browser.onLost(botId, { cause: "crashed", origin });
     }
     void page.close().catch(() => undefined);
@@ -202,10 +301,10 @@ export function createTabs(browser: TabsBrowser) {
    * Mark a tab as this Bot's, and stop saying so once it is closed or its renderer has died.
    *
    * A TAB THAT CLOSES WHILE IT IS STILL THE BOT'S WAS CLOSED BY ITS SITE. Everything this process
-   * closes it lets go of first — a stop, a tab replaced after a deadline, a dead renderer, the
-   * browser itself. So when the tab the Bot was ON closes that way, the Bot is somewhere it has
-   * not looked, exactly as when its renderer dies, and whoever keeps the Bot's session is told the
-   * same thing (`onLost`).
+   * closes it lets go of first — a stop, a tab replaced after a deadline, a dead renderer, a tab
+   * closed for the cap, the browser itself. So when the tab the Bot was ON closes that way, the
+   * Bot is somewhere it has not looked, exactly as when its renderer dies, and whoever keeps the
+   * Bot's session is told the same thing (`onLost`).
    */
   const own = (botId: string, page: Page): void => {
     owners.set(page, botId);
@@ -225,12 +324,15 @@ export function createTabs(browser: TabsBrowser) {
 
   /** Note that this Bot has a tab, without moving `since` if it already had one. */
   const touch = (botId: string, page: Page): Page => {
-    const existing = live.get(botId);
     live.set(botId, {
+      since: new Date().toISOString(),
+      capped: 0,
+      listed: 0,
+      ...live.get(botId),
       page,
       usedAt: now(),
-      since: existing?.since ?? new Date().toISOString(),
     });
+    use(page);
     return page;
   };
 
@@ -241,6 +343,79 @@ export function createTabs(browser: TabsBrowser) {
     for (const page of pages) owners.delete(page);
     await Promise.all(pages.map((page) => page.close().catch(() => undefined)));
     return pages.length > 0;
+  };
+
+  /**
+   * Whether a tab is open, nobody's, and may be handed to a Bot that has none (`profiles.page`).
+   * Never one this process has let go of and the browser has not closed yet.
+   */
+  const isSpare = (page: Page): boolean =>
+    !page.isClosed() &&
+    !owners.has(page) &&
+    !crashed.has(page) &&
+    !capped.has(page);
+
+  /*
+   * A BOT HOLDS `TAB_CAP` TABS, AND THE ONE IT USED LONGEST AGO MAKES ROOM FOR A NEW ONE.
+   *
+   * Asked whenever a tab becomes a Bot's that it did not have (`adoptOpened`, the one place a
+   * Bot's tabs grow), so the new tab exists before the old one goes: closing first would close a
+   * tab for a window that then never opened.
+   *
+   * WHICH TAB MAY NOT GO, whatever its place in the order:
+   *
+   *  - the tab the Bot is on. That would be the loss `tab-loss.ts` guards, done by this process;
+   *  - the tab that opened the one the Bot is on. A sign-in window reports to the page that
+   *    opened it, and a page closed behind its own window is a sign-in that lands nowhere;
+   *  - a tab somebody outside these books holds (`holds`): the one a person has the wheel of, the
+   *    one a live screen is casting, the one a value or a hand was asked for on.
+   *
+   * ONLY THE OPENER OF THE TAB THE BOT IS ON, not of every tab it has: every tab a `_blank` link
+   * opened has one, and a rule that kept them all would keep a chain of pages opened one from
+   * the next whole, however long.
+   *
+   * At most five tabs — those two and the three a session can hold — so with seven there is
+   * always another. If ever there is not, nothing is closed: the Bot is over the cap by the tab
+   * that just opened, a line says so, and the next tab that opens asks again.
+   *
+   * ANOTHER BOT'S TABS ARE NOT IN THIS COUNT AND NEVER GO FOR IT. A legacy account's Bots share the
+   * browser and each has its own six.
+   *
+   * NOT A LOSS, AND NOT SAID AS ONE. The Bot is where it was, so nothing is frozen and no ask
+   * ends. What changed is the list its `computer_switch_tab` index was read from, so the close is
+   * counted: an index from before is refused (`switchTab`), and the Bot's next list says once
+   * that an old tab was closed (`listRead`, `tab-cap.ts`).
+   *
+   * LET GO OF BEFORE IT IS CLOSED, like everything this process closes, so `own`'s listener does
+   * not take the close for the site's; and the close is asked for, never waited for.
+   */
+  const keepToCap = (botId: string): void => {
+    const running = live.get(botId);
+    if (!running) return;
+    for (;;) {
+      const mine = pagesOf(botId);
+      if (mine.length <= TAB_CAP) return;
+      const on = running.page;
+      const opener = openers.get(on);
+      const oldest = mine
+        .filter(
+          (page) =>
+            page !== on && page !== opener && !browser.holds(botId, page),
+        )
+        .sort((one, other) => (used.get(one) ?? 0) - (used.get(other) ?? 0))[0];
+      if (!oldest) {
+        say("tab_cap_exceeded", botId, { tabs: mine.length, cap: TAB_CAP });
+        return;
+      }
+      const origin = originOf(oldest.url());
+      owners.delete(oldest);
+      capped.add(oldest);
+      // Counted with the closed one still in it: how many the Bot held when one had to go.
+      say("tab_capped", botId, { origin, tabs: mine.length });
+      running.capped += 1;
+      running.cappedOrigin = origin;
+      void oldest.close().catch(() => undefined);
+    }
   };
 
   /*
@@ -272,8 +447,10 @@ export function createTabs(browser: TabsBrowser) {
       // than guessed at — a page in the wrong Bot's list is a click landing on a stranger's page.
       if (!botOf) return;
       own(botOf, opened);
+      if (opener) openers.set(opened, opener);
       touch(botOf, opened);
       browser.onPage(botOf, opened);
+      keepToCap(botOf);
     })();
   };
 
@@ -300,7 +477,32 @@ export function createTabs(browser: TabsBrowser) {
     );
   };
 
-  /** Move the Bot to one of them. Refuses an index that names nothing rather than picking one. */
+  /**
+   * How many of this Bot's tabs have been closed for the cap, for a look to keep as it reads the
+   * list (`tabs`) and hand back when its answer is written (`listRead`).
+   */
+  const cappedOf = (botId: string): number => live.get(botId)?.capped ?? 0;
+
+  /**
+   * The Bot has been handed its list as it stood at that count: an index is a place in that one
+   * now. Returns what was closed for the cap since the list before it, once — undefined when
+   * nothing was, or when the list this count was read from is gone and another begun.
+   */
+  const listRead = (botId: string, capped: number): TabCapped | undefined => {
+    const running = live.get(botId);
+    if (!running || capped <= running.listed || capped > running.capped) {
+      return undefined;
+    }
+    const closed = capped - running.listed;
+    running.listed = capped;
+    return { origin: running.cappedOrigin ?? "", closed };
+  };
+
+  /**
+   * Move the Bot to one of them. Refuses an index that names nothing rather than picking one —
+   * and an index read before a tab was closed for the cap, which names a place in a list that has
+   * moved up since: the same number is another tab now (`TabListError`).
+   */
   const switchTab = async (
     botId: string,
     index: number,
@@ -309,12 +511,14 @@ export function createTabs(browser: TabsBrowser) {
     if (!running) {
       throw new TabError("laf:tab_missing");
     }
+    if (running.listed !== running.capped) throw new TabListError();
     const wanted = pagesOf(botId)[index];
     if (!wanted) {
       throw new TabError("laf:tab_missing");
     }
     running.page = wanted;
     running.usedAt = now();
+    use(wanted);
     // Chromium keeps rendering a background tab differently — animations pause, some lazy content
     // never loads — so the tab the Bot is on is brought to the front as a person's would be.
     await wanted.bringToFront().catch(() => undefined);
@@ -326,14 +530,18 @@ export function createTabs(browser: TabsBrowser) {
     live,
     /** Whether this tab's renderer died. See `crashed`. */
     hasCrashed: (page: Page): boolean => crashed.has(page),
+    isSpare,
     hear,
     died,
     pagesOf,
     own,
     touch,
+    use,
     closeTabsOf,
     adoptOpened,
     tabs,
+    cappedOf,
+    listRead,
     switchTab,
   };
 }

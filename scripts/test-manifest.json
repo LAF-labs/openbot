@@ -40,6 +40,7 @@
   "agent-computer/tests/screencast-site.test.ts",
   "agent-computer/tests/secret-snapshot.test.ts",
   "agent-computer/tests/shared-profile.test.ts",
+  "agent-computer/tests/tab-cap.test.ts",
   "agent-computer/tests/takeover-secret.test.ts",
   "agent-computer/tests/thumbnail-cast.test.ts",
   "agent-computer/tests/typed-keys.test.ts",

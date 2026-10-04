@@ -11,12 +11,13 @@ import type { BotRoute } from "./computer";
 import { actionFailure } from "./failures";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
 import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
-import { StaleSnapshotError } from "./refs";
+import { STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
+import { listRead } from "./tab-cap";
 import { assertLooked, isBotsLook, looked } from "./tab-loss";
-import { TabError } from "./tabs";
+import { TabError, TabListError } from "./tabs";
 import { thumbnailOf } from "./thumbnail";
 
 /**
@@ -75,11 +76,18 @@ export const snapshot: BotRoute = async (
   try {
     const target = await profiles.page(botId);
     const seen = session.tabsLost;
-    const shot = await snapshotPage(session, target, () =>
-      profiles.tabs(botId),
-    );
-    // The Bot's own look, and only that: see `readPage`.
-    if (isBotsLook(request)) looked(session, seen);
+    // How many tabs had been closed for the cap in the tick the list was read (`tab-cap.ts`).
+    let capped = 0;
+    const shot = await snapshotPage(session, target, () => {
+      capped = profiles.cappedOf(botId);
+      return profiles.tabs(botId);
+    });
+    // The Bot's own look, and only that: see `readPage`. And its own list, which this look alone
+    // carries.
+    if (isBotsLook(request)) {
+      looked(session, seen);
+      listRead(session, profiles, botId, capped);
+    }
     return json(withNotes(session, shot));
   } catch (error) {
     return browserFailed(error);
@@ -212,6 +220,8 @@ export const switchTab: BotRoute = async (
     );
   } catch (error) {
     if (error instanceof TabError) return fact("laf:tab_missing");
+    // An index from before a tab was closed for the cap: look again, as after a loss (`tabs.ts`).
+    if (error instanceof TabListError) return fact(STALE_REFS);
     if (error instanceof StaleSnapshotError) return actionFailure(error);
     return browserFailed(error);
   }
