@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 import {
   FRAME_BUTTON,
+  HEADLINE_LINKS,
   RELABEL_AFTER,
   RELABEL_BEFORE,
   serveFixture,
@@ -542,6 +543,58 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
       200,
       undefined,
     ]);
+  });
+
+  /*
+   * MEASURED 2026-10-04 on five Korean pages: every one of 190 links whose name the AI tree prints
+   * beneath it was listed nameless, and the hold, asked about the empty name the gateway judged,
+   * refused every click on one — the role engine calls each link by its words. Named from inside,
+   * 186 were held as the same control; the four left are names the tree spells differently from
+   * the browser (a table's caption, screen-reader-only words).
+   */
+  test("a link named by what is inside it is held to that name, and can be clicked", async () => {
+    for (const [key, name] of Object.entries(HEADLINE_LINKS)) {
+      const opened = await post("/navigate", {
+        url: `${fixture?.url}headlines`,
+      });
+      expect(opened.status).toBe(200);
+      const shot = await snapshot();
+      const link = shot.elements.find(
+        (element) => element.role === "link" && element.name === name,
+      );
+      if (!link) {
+        throw new Error(
+          `the snapshot had no link named ${name}: ${shot.elements
+            .map((element) => `${element.ref}:${element.role}:${element.name}`)
+            .join(" | ")}`,
+        );
+      }
+      if (key === "headline") {
+        // The name the list used to give it, which the browser does not call it.
+        const refused = await post("/click", {
+          ref: link.ref,
+          snapshotId: shot.snapshotId,
+          element: { role: "link", name: "" },
+        });
+        expect([refused.status, refused.body.code]).toEqual([
+          409,
+          "laf:label_changed",
+        ]);
+      }
+      const clicked = await post("/click", {
+        ref: link.ref,
+        snapshotId: shot.snapshotId,
+        element: { role: link.role, name: link.name },
+      });
+      expect([name, clicked.status, clicked.body.code]).toEqual([
+        name,
+        200,
+        undefined,
+      ]);
+      // Landed where that link goes: the click reached the link it was judged as.
+      const landed = await post("/snapshot", {});
+      expect(String(landed.body.url)).toEndWith(`/landed-${key}`);
+    }
   });
 
   test("a click with no judged label is not held to one (an older gateway)", async () => {

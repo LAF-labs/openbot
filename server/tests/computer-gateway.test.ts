@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parseAriaSnapshot } from "../../agent-computer/src/aria-snapshot";
 import {
   type AuditEventInput,
   type AuditStore,
@@ -2239,6 +2242,98 @@ describe("a control renamed after the snapshot", () => {
     expect(askedAgain.subject.element?.name).toBe("결제하기");
     // 결제하기 was never pressed: the only click the computer let through is none.
     expect(sent).toEqual([{ role: "button", name: "저장" }]);
+  });
+});
+
+/**
+ * A link whose name the browser's tree prints beneath it (2026-10-04).
+ *
+ * The computer names such a link by its words (`nameFromWithin`, agent-computer/src/aria-snapshot.ts)
+ * and holds a click to the name it is handed. This server has no name of its own for an element: it
+ * resolves the ref against the snapshot it took and judges, records and hands back THAT name. So the
+ * one thing to prove here is that the name the computer's parser gave a real Naver headline is the
+ * one the policy sees, the trail keeps and the hold is sent — not a blank, as it was.
+ */
+describe("a link named by what is inside it", () => {
+  const NAVER_NEWS = readFileSync(
+    join(
+      import.meta.dir,
+      "../../agent-computer/tests/fixtures/naver-news-headlines.yaml",
+    ),
+    "utf8",
+  );
+  const HEADLINE = "LG전자 노사, 아동복지시설 봉사…가전 점검·AI 체험 지원";
+
+  function naverComputer() {
+    const sent: unknown[] = [];
+    const page: SnapshotResult = {
+      snapshotId: 11,
+      url: "https://news.naver.com/section/101",
+      title: "경제",
+      ...parseAriaSnapshot(NAVER_NEWS),
+    };
+    const client = {
+      snapshot: async () => page,
+      click: async (input: { element?: unknown }) => {
+        sent.push(input.element);
+        return { action: "click", url: page.url, elapsedMs: 1 } as never;
+      },
+      forBot() {
+        return client;
+      },
+    } as unknown as ComputerClient;
+    return { client, sent, page };
+  }
+
+  test("the snapshot's name is the one judged, recorded and held to", async () => {
+    const { client, sent, page } = naverComputer();
+    expect(page.elements.find((element) => element.ref === "e137")?.name).toBe(
+      HEADLINE,
+    );
+    const { store, rows } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+      approvals: createApprovalRegistry(),
+      standing: createStandingApprovalStore(),
+    });
+    const looked = await gateway.snapshot("default");
+    expect(
+      looked.elements.find((element) => element.ref === "e137")?.name,
+    ).toBe(HEADLINE);
+
+    const clicked = await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e137",
+      snapshotId: 11,
+    });
+    expect(sent).toEqual([{ role: "link", name: HEADLINE }]);
+    expect(clicked.element).toEqual({ role: "link", name: HEADLINE });
+    expect(rows.at(-1)?.payload.element).toMatchObject({
+      role: "link",
+      name: HEADLINE,
+    });
+  });
+
+  test("a rule about the words in a headline sees them", async () => {
+    const { client, sent } = naverComputer();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: fakeAudit().store,
+      policy: () => ({
+        ...PERMISSIVE,
+        ask: ['intent == "activate" && matches(element.name, "LG전자")'],
+      }),
+      approvals: createApprovalRegistry(),
+      standing: createStandingApprovalStore(),
+    });
+    await gateway.snapshot("default");
+    const asked = (await gateway
+      .click("default", "bot-1", ACTOR, { ref: "e137", snapshotId: 11 })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asked.subject.element?.name).toBe(HEADLINE);
+    expect(sent).toEqual([]);
   });
 });
 

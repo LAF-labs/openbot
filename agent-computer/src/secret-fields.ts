@@ -8,7 +8,11 @@
  * (`SecretSignals`), which has no Playwright in it; this is the half that asks the page.
  */
 import type { ElementHandle, Frame, Page } from "playwright";
-import { isTextEntryRole, parseAriaSnapshot } from "./aria-snapshot";
+import {
+  isTextEntryRole,
+  parseAriaSnapshot,
+  type Viewport,
+} from "./aria-snapshot";
 import type { BotSession, SecretField } from "./sessions";
 import { digestOf, keepTyped } from "./typed-values";
 import { within } from "./within";
@@ -264,6 +268,24 @@ export async function secretSignals(
 }
 
 /**
+ * The text-entry controls the look will list: where a field a person typed a secret into is looked
+ * for once its old ref no longer names it.
+ *
+ * BY THE LIST'S OWN CUT, from the same call with the same viewport. Past 200 controls the list keeps
+ * what is on the screen first (`keptOf` in aria-snapshot.ts); asked of the first 200 in page order,
+ * as this used to be, a box on the screen past that point would be listed with its contents and
+ * never looked for here — a renamed box holding a secret, shown.
+ */
+export function listedTextEntryRefs(
+  yaml: string,
+  viewport?: Viewport,
+): string[] {
+  return parseAriaSnapshot(yaml, {}, viewport)
+    .elements.filter((element) => isTextEntryRole(element.role))
+    .map((element) => element.ref);
+}
+
+/**
  * The refs, in the snapshot just taken, of the fields a person typed a secret into — and whether
  * every one of them was looked for to the end.
  *
@@ -285,6 +307,7 @@ export async function typedIntoRefs(
   target: Page,
   yaml: string,
   deadline: number,
+  viewport?: Viewport,
 ): Promise<{ refs: string[]; complete: boolean }> {
   const refs: string[] = [];
   let candidates: string[] | undefined;
@@ -295,9 +318,7 @@ export async function typedIntoRefs(
       refs.push(field.ref);
       continue;
     }
-    candidates ??= parseAriaSnapshot(yaml)
-      .elements.filter((element) => isTextEntryRole(element.role))
-      .map((element) => element.ref);
+    candidates ??= listedTextEntryRefs(yaml, viewport);
     for (const ref of candidates) {
       const named = await refNamesNode(target, ref, field.handle, deadline);
       if (named === undefined) return { refs, complete: false };

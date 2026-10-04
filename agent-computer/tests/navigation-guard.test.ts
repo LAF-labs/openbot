@@ -64,7 +64,37 @@ describe("the floor, per hop", () => {
 describe("the name a control is held to", () => {
   test("is the judged name exactly, in the ordinary case", () => {
     expect(nameToMatch("결제하기")).toBe("결제하기");
-    expect(nameToMatch('say "hi"')).toBe('say "hi"');
+    expect(nameToMatch('"hi"')).toBe('"hi"');
+  });
+
+  /**
+   * A name the list read from beneath a control is its words joined with one space, and the browser
+   * joins inline neighbours with none (`<mark>무선</mark>마우스`). Measured 2026-10-04 on a Naver search
+   * page: held exactly, 16 of 59 such links were refused as renamed.
+   */
+  test("with a space in it, the same words with the spaces anywhere or nowhere", () => {
+    const pattern = nameToMatch('무선 마우스 say "hi"') as RegExp;
+    expect(pattern).toBeInstanceOf(RegExp);
+    for (const live of [
+      '무선 마우스 say "hi"',
+      '무선마우스 say"hi"',
+      '무선  마우스 say "hi"',
+    ]) {
+      expect(pattern.test(live)).toBe(true);
+    }
+    // The words are what was judged: another word, a word more, or a word less is a rename.
+    for (const live of [
+      '무선 키보드 say "hi"',
+      '무선 마우스 say "hi" 결제',
+      '마우스 say "hi"',
+    ]) {
+      expect(pattern.test(live)).toBe(false);
+    }
+    // Only where the judged name had a space: the list never takes one away, so nothing else is let in.
+    expect(pattern.test('무선 마우 스 say "hi"')).toBe(false);
+    // Regex characters in a label are still the label's.
+    expect((nameToMatch("1+1 (a)") as RegExp).test("11 a")).toBe(false);
+    expect((nameToMatch("1+1 (a)") as RegExp).test("1+1(a)")).toBe(true);
   });
 
   test("is a prefix when the server may have cut it", () => {

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   isSecretLabel,
+  isTextEntryRole,
   opaqueFramesIn,
   parseAriaSnapshot,
   parseDescriptor,
 } from "../src/aria-snapshot";
+import { listedTextEntryRefs } from "../src/secret-fields";
 
 /**
  * The parser, tested against captured Playwright output.
@@ -612,5 +616,324 @@ describe("frames the snapshot could not see into", () => {
     const yaml = [...buttons, "- iframe [ref=e999]"].join("\n");
     expect(parseAriaSnapshot(yaml).truncated).toBe(true);
     expect(opaqueFramesIn(yaml)).toBe(1);
+  });
+});
+
+/**
+ * A control whose name the tree prints beneath it rather than beside it.
+ *
+ * Playwright 1.62's AI tree blanks the name of a node whose name came from children it also prints
+ * (`removeRedundantNames`), so `<a href><strong>헤드라인</strong></a>` arrives as `link [ref=…]:` with
+ * the headline one level down. The list read `e137 link` and nothing more on 85 of Naver news's 200
+ * lines (2026-10-04) — 44 of them its headlines — and the label hold, judging the empty name against a
+ * browser that calls each headline by its words, refused every click on one.
+ */
+describe("a name the tree prints beneath the control", () => {
+  /** Captured from news.naver.com/section/101 on 2026-10-04; see the file's own header. */
+  const NAVER_NEWS = readFileSync(
+    join(import.meta.dir, "fixtures", "naver-news-headlines.yaml"),
+    "utf8",
+  );
+
+  test("Naver's headlines are named by their headlines, as captured", () => {
+    const byRef = new Map(
+      parseAriaSnapshot(NAVER_NEWS).elements.map((element) => [
+        element.ref,
+        element.name,
+      ]),
+    );
+    // Each of these read `e137 link` and nothing else before.
+    expect(byRef.get("e137")).toBe(
+      "LG전자 노사, 아동복지시설 봉사…가전 점검·AI 체험 지원",
+    );
+    expect(byRef.get("e154")).toBe(
+      "19년간 팔지 못한 상업용지…LH 미매각 토지 21.9조원",
+    );
+    // An image link is named by its image's alt text.
+    expect(byRef.get("e117")).toBe(
+      "AI 뉴스 알고리즘 추천 알고리즘 궁금하다면? 바로가기",
+    );
+    // A link with a name of its own keeps it, and is not given its words a second time.
+    expect(byRef.get("e127")).toBe("헤드라인 뉴스 안내");
+    expect(byRef.get("e144")).toBe("14 개의 관련뉴스 더보기");
+  });
+
+  /**
+   * The thumbnail beside each headline goes to the same article and holds nothing with a name: on
+   * the live page it is `aria-hidden`, and the label hold refuses it as not actionable whatever it
+   * is called (41 of 41 on 2026-10-04). It stays a nameless line rather than borrowing the
+   * headline's name — the browser would then call it a rename — and stays listed rather than
+   * dropped, which is a rule about addresses this list does not make.
+   */
+  test("the thumbnail link beside a headline stays nameless, and stays", () => {
+    const { elements } = parseAriaSnapshot(NAVER_NEWS);
+    expect(elements.map((element) => element.ref)).toEqual([
+      "e117",
+      "e120",
+      "e127",
+      "e135",
+      "e137",
+      "e144",
+      "e152",
+      "e154",
+      "e161",
+    ]);
+    expect(elements.find((element) => element.ref === "e135")?.name).toBe("");
+  });
+
+  test("a link takes the words inside it: text, a child's text, a child's own name", () => {
+    const yaml = `- link [ref=e1] [cursor=pointer]:
+  - /url: https://example.test/a
+  - strong [ref=e2]: 대출 더 조이면 누가 영향받나
+- link [ref=e3] [cursor=pointer]:
+  - /url: https://example.test/b
+  - img "프리미엄콘텐츠 바로가기" [ref=e4]
+- button [ref=e5]:
+  - text: 장바구니
+  - generic [ref=e6]: "3"
+- link [ref=e7]:
+  - /url: https://example.test/c
+  - heading "공지사항" [level=3] [ref=e8]:
+    - strong [ref=e9]: 공지사항`;
+    expect(
+      parseAriaSnapshot(yaml).elements.map((element) => element.name),
+    ).toEqual([
+      "대출 더 조이면 누가 영향받나",
+      "프리미엄콘텐츠 바로가기",
+      "장바구니 3",
+      // A child that has a name says that name, once: the name is already made of what is under it.
+      "공지사항",
+    ]);
+  });
+
+  test("words nested through nameless wrappers are found, in page order, one space apart", () => {
+    const yaml = `- link [ref=e1]:
+  - /url: /news/1
+  - generic [ref=e2]:
+    - emphasis [ref=e3]: 동영상뉴스
+    - generic [ref=e4]:
+      - strong [ref=e5]: "반세기 만에 '역수출'"
+      - text: "  세계 시장 주도  "`;
+    expect(parseAriaSnapshot(yaml).elements[0]?.name).toBe(
+      "동영상뉴스 반세기 만에 '역수출' 세계 시장 주도",
+    );
+  });
+
+  test("a printed name is the name: what is beneath it is not added", () => {
+    const yaml = `- link "댓글 개수 10 이상 +" [ref=e1]:
+  - /url: /comments
+  - generic [ref=e2]: "10+"`;
+    expect(parseAriaSnapshot(yaml).elements[0]?.name).toBe(
+      "댓글 개수 10 이상 +",
+    );
+  });
+
+  test("an address, a placeholder and a frame's contents are no part of a name", () => {
+    const yaml = `- link [ref=e1]:
+  - /url: https://example.test/very/long/address
+  - /placeholder: 검색어
+  - iframe [ref=e2]:
+    - button "프레임 안" [ref=f1e1]
+  - text: 바로가기`;
+    const [link, inFrame] = parseAriaSnapshot(yaml).elements;
+    expect(link?.name).toBe("바로가기");
+    // The frame's own control is still listed on its own line.
+    expect(inFrame?.name).toBe("프레임 안");
+  });
+
+  /**
+   * DECIDED: an image with no alt text says nothing, so a link holding only one stays nameless. The
+   * browser calls it nothing too — which is what the hold is asked about — and a name borrowed from
+   * a neighbour, or from the address, would be refused as a rename on the click.
+   */
+  test("a link holding only an image without alt text, or nothing at all, stays nameless", () => {
+    const yaml = `- link [ref=e1] [cursor=pointer]:
+  - /url: https://example.test/thumb
+- link [ref=e2]:
+  - /url: https://example.test/thumb
+  - img [ref=e3]
+- button [ref=e4]`;
+    expect(
+      parseAriaSnapshot(yaml).elements.map((element) => element.name),
+    ).toEqual(["", "", ""]);
+  });
+
+  test("text that became the name is not repeated as a value", () => {
+    const { elements } = parseAriaSnapshot("- button [ref=e1]: 다음");
+    expect(elements[0]).toEqual({ ref: "e1", role: "button", name: "다음" });
+  });
+
+  /**
+   * NEVER A VALUE INTO A NAME. What sits under a textbox is what is typed in it, and a password box
+   * is a textbox: its contents as its label would undo everything `computer_request_secret` keeps.
+   */
+  test("a field's contents never become its name", () => {
+    const secret = "hunter2!SuperSecret";
+    const yaml = `- textbox [ref=e1]: ${secret}
+- searchbox [ref=e2]: 무선 마우스
+- combobox [ref=e3]:
+  - option "서울" [selected] [ref=e4]
+- spinbutton [ref=e5]: "482913"`;
+    const { elements } = parseAriaSnapshot(yaml, { refs: ["e1"] });
+    expect(elements.map((element) => element.name)).toEqual([
+      "",
+      "",
+      "",
+      "서울",
+      "",
+    ]);
+    expect(JSON.stringify(elements)).not.toContain(secret);
+  });
+
+  test("a name from inside is cut at its length between characters, like any other", () => {
+    const long = `${"가".repeat(199)}😀나`;
+    const { elements } = parseAriaSnapshot(
+      `- link [ref=e1]:\n  - /url: /x\n  - strong [ref=e2]: ${long}`,
+    );
+    expect(elements[0]?.name).toBe("가".repeat(199));
+    expect(elements[0]?.name.isWellFormed()).toBe(true);
+  });
+});
+
+/** `count` buttons from `ref` up, each at `y` in a 1280×800 viewport. */
+function buttonsAt(from: number, count: number, y: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      `- button "b${from + index}" [ref=e${from + index}] [cursor=pointer] [box=10,${y},80,20]`,
+  );
+}
+
+const VIEWPORT = { width: 1280, height: 800 };
+
+/**
+ * Past the limit, what a person can see is kept first.
+ *
+ * Measured 2026-10-04: the first-200 cut dropped 16 of the 69 controls on Daum's screen, 11 of 61 on
+ * a Naver search page and 9 of 98 on Naver news, and kept footer links far below the fold.
+ */
+describe("past the limit, the screen first", () => {
+  test("everything on the screen is kept, then the rest from the top, handed back in page order", () => {
+    // 150 below the fold, then 100 on the screen: the first-200 cut would keep 50 of the 100.
+    const yaml = [
+      ...buttonsAt(0, 150, 2_000),
+      ...buttonsAt(150, 100, 300),
+    ].join("\n");
+    const { elements, truncated } = parseAriaSnapshot(yaml, {}, VIEWPORT);
+    expect(truncated).toBe(true);
+    expect(elements).toHaveLength(200);
+    const kept = elements.map((element) => Number(element.ref.slice(1)));
+    // All 100 on the screen, the first 100 of the rest, and page order throughout.
+    expect(kept.filter((index) => index >= 150)).toHaveLength(100);
+    expect(kept.filter((index) => index < 150)).toEqual(
+      Array.from({ length: 100 }, (_, index) => index),
+    );
+    expect(kept).toEqual([...kept].sort((a, b) => a - b));
+  });
+
+  test("with more on the screen than the list holds, the first 200 of those", () => {
+    const yaml = [...buttonsAt(0, 20, 5_000), ...buttonsAt(20, 230, 100)].join(
+      "\n",
+    );
+    const kept = parseAriaSnapshot(yaml, {}, VIEWPORT).elements.map((element) =>
+      Number(element.ref.slice(1)),
+    );
+    expect(kept).toEqual(Array.from({ length: 200 }, (_, index) => index + 20));
+  });
+
+  test("without a viewport, or without boxes, the cut is in page order as it was", () => {
+    const boxed = [...buttonsAt(0, 150, 2_000), ...buttonsAt(150, 100, 300)];
+    const plain = boxed.map((line) => line.replace(/ \[box=[^\]]*\]/, ""));
+    for (const [yaml, viewport] of [
+      [boxed.join("\n"), undefined],
+      [plain.join("\n"), VIEWPORT],
+    ] as const) {
+      const kept = parseAriaSnapshot(yaml, {}, viewport).elements.map(
+        (element) => element.ref,
+      );
+      expect(kept).toEqual(
+        Array.from({ length: 200 }, (_, index) => `e${index}`),
+      );
+    }
+  });
+
+  test("a box only partly on the screen is on it; one beside it, or of no size, is not", () => {
+    const yaml = [
+      ...buttonsAt(0, 200, 3_000),
+      '- link "걸친" [ref=e900] [box=1200,780,200,40]',
+      '- link "오른쪽 밖" [ref=e901] [box=1280,100,50,20]',
+      '- link "크기 없음" [ref=e902] [box=10,10,0,0]',
+      '- link "위로 지나간" [ref=e903] [box=10,-60,50,20]',
+    ].join("\n");
+    const names = parseAriaSnapshot(yaml, {}, VIEWPORT).elements.map(
+      (element) => element.name,
+    );
+    expect(names).toContain("걸친");
+    for (const off of ["오른쪽 밖", "크기 없음", "위로 지나간"]) {
+      expect(names).not.toContain(off);
+    }
+  });
+
+  /**
+   * A frame's boxes are measured from the frame's own corner (`getBoundingClientRect` in its
+   * document), so a control at y=10 in a frame below the fold is below the fold, and one at y=900 in
+   * a 200-pixel frame on the screen is scrolled out of the frame.
+   */
+  test("a control in a frame is placed by the frame, and clipped by it", () => {
+    const yaml = [
+      ...buttonsAt(0, 200, 3_000),
+      "- iframe [ref=e900] [box=100,100,600,200]:",
+      '  - button "프레임 안 보임" [ref=f1e1] [box=10,10,80,20]',
+      '  - button "프레임 안 아래" [ref=f1e2] [box=10,900,80,20]',
+      "- iframe [ref=e901] [box=100,1500,600,200]:",
+      '  - button "아래 프레임" [ref=f2e1] [box=10,10,80,20]',
+    ].join("\n");
+    const names = parseAriaSnapshot(yaml, {}, VIEWPORT).elements.map(
+      (element) => element.name,
+    );
+    expect(names).toContain("프레임 안 보임");
+    expect(names).not.toContain("프레임 안 아래");
+    expect(names).not.toContain("아래 프레임");
+  });
+
+  test("a box is read wherever Playwright writes it among the flags", () => {
+    expect(
+      parseDescriptor(
+        'link "기사" [ref=e12] [cursor=pointer] [box=-4,120,640,24]',
+      )?.flags.get("box"),
+    ).toBe("-4,120,640,24");
+    // And a frame it could not enter still counts with a box beside its ref.
+    expect(opaqueFramesIn("- iframe [ref=e3] [box=0,0,300,250]")).toBe(1);
+  });
+
+  /**
+   * A box a person typed a secret into is found again, once the page renames it, among the boxes
+   * the list will show (`typedIntoRefs`). That search was the first 200 in page order: with the
+   * screen first, a box on the screen past that point would be listed, contents and all, and never
+   * searched.
+   */
+  test("the boxes searched for a typed secret are the boxes the list keeps", () => {
+    const yaml = [
+      ...buttonsAt(0, 210, 3_000),
+      '- textbox "인증 칸" [ref=e900] [box=10,100,80,20]: 482913',
+    ].join("\n");
+    const listed = parseAriaSnapshot(yaml, {}, VIEWPORT)
+      .elements.filter((element) => isTextEntryRole(element.role))
+      .map((element) => element.ref);
+    expect(listed).toEqual(["e900"]);
+    expect(listedTextEntryRefs(yaml, VIEWPORT)).toEqual(listed);
+    // What the search used to be, which this box was past.
+    expect(listedTextEntryRefs(yaml)).toEqual([]);
+  });
+
+  test("a secret field kept for being on the screen still loses its value", () => {
+    const yaml = [
+      ...buttonsAt(0, 210, 3_000),
+      '- textbox "비밀번호" [ref=e900] [box=10,100,80,20]: hunter2!SuperSecret',
+    ].join("\n");
+    const { elements, truncated } = parseAriaSnapshot(yaml, {}, VIEWPORT);
+    expect(truncated).toBe(true);
+    expect(elements.find((element) => element.ref === "e900")?.value).toBe("");
+    expect(JSON.stringify(elements)).not.toContain("hunter2");
   });
 });

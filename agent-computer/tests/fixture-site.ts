@@ -255,6 +255,30 @@ function relabelHtml(after: number, hide: boolean): string {
 }
 
 /**
+ * Links whose names the AI tree prints beneath them rather than beside them, by the name the list
+ * gives each: a headline in a `<strong>` (Naver news's shape), words split across inline elements
+ * that the browser joins with no space ("무선마우스 특가" to the role engine), and an image's alt text.
+ */
+export const HEADLINE_LINKS = {
+  headline: "오늘의 헤드라인 기사",
+  split: "무선 마우스 특가",
+  image: "프리미엄 바로가기",
+} as const;
+
+/** A 1×1 PNG: an image has to be drawn to be given a ref. */
+const PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+const HEADLINES_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>헤드라인</title></head>
+<body>
+  <h1>${VISIBLE_TEXT}</h1>
+  <p><a href="/landed-headline"><strong>${HEADLINE_LINKS.headline}</strong></a></p>
+  <p><a href="/landed-split"><mark>무선</mark>마우스 <strong>특가</strong></a></p>
+  <p><a href="/landed-image"><img src="${PIXEL}" width="80" height="40" alt="${HEADLINE_LINKS.image}"></a></p>
+</body></html>`;
+
+/**
  * The fields of the auditor's login page, by the accessible name each reaches the tree with, and
  * what — if anything — marks it as a secret in the markup.
  */
@@ -541,6 +565,9 @@ export function serveFixture(port = 0) {
         return new Response(OTHER_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+      if (path === "/headlines") {
+        return new Response(HEADLINES_HTML, { headers: html });
       }
       if (path === "/pw") {
         return new Response(PW_HTML, {
