@@ -52,6 +52,7 @@
 import {
   NOTHING_FALLS,
   SKY_WORDS,
+  TODAY,
   WEATHER_SHOWN,
 } from "../../../shared/weather";
 import { log } from "../log";
@@ -304,7 +305,7 @@ const FALLING: Readonly<Record<string, string>> = {
 };
 const NONE = NOTHING_FALLS;
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
-const DAYS_AHEAD = ["오늘", "내일", "모레", "글피", "그글피"] as const;
+const DAYS_AHEAD = [TODAY, "내일", "모레", "글피", "그글피"] as const;
 
 /**
  * A number 기상청 sent as text, or null for one that is not a measurement.

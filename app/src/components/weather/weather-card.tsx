@@ -128,7 +128,17 @@ export function WeatherCard({ result }: { result: string }) {
   const weather = weatherOf(result);
   if (!weather) return null;
   const days = weather.days.slice(0, DAYS_SHOWN);
-  const today = days[0];
+  /*
+   * THE DAY THE READING WAS TAKEN, AS THE ANSWER NAMES IT — not its first row. Late at night, with
+   * today's hours gone and the morning's issuance not to be had, the answer begins with tomorrow,
+   * and tomorrow's high, low and picture stood beside the temperature now as though they were
+   * today's (Codex on pull request 62). Then the head is the temperature alone.
+   *
+   * And not the day on the reader's clock either: read a week later, this is still that
+   * afternoon's temperature beside that day's high and low — only the columns' names are the
+   * clock's (`dayLabel`).
+   */
+  const today = weather.today;
 
   return (
     <section

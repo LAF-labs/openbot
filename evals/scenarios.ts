@@ -27,6 +27,7 @@ import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
 import { carriedInstruction } from "../server/src/routines/run";
+import { firstMoveCallId } from "../shared/first-move";
 import {
   reminderBlock,
   routineRunLine,
@@ -38,13 +39,13 @@ import type { PromptPerson } from "../shared/prompt/person.ko";
 import type { PromptSkill } from "../shared/prompt/skill-index";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
+import type { WireTool } from "../shared/tools/bridge";
 import {
   searchResultText,
   WEATHER_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
 } from "../shared/tools/bridge";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
-import type { WireTool } from "../shared/tools/bridge";
 import { FEED_POST } from "../shared/tools/feed-post";
 import { FILE_CARD, GALLERY_CONFIRMATIONS } from "../shared/tools/gallery";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
@@ -101,16 +102,6 @@ import {
   skillViewAnswer,
 } from "./support-programs";
 import {
-  GANGNAM,
-  HAEUNDAE,
-  MAPO,
-  saysDegrees,
-  leavesItToTheCard,
-  weatherAnswer,
-  weatherBackend,
-  weatherPlacesAsked,
-} from "./weather";
-import {
   CLICK,
   LIST_FILES,
   MANAGE_ROUTINE,
@@ -124,6 +115,16 @@ import {
   TYPE,
   UPDATE_PROFILE,
 } from "./tools";
+import {
+  GANGNAM,
+  HAEUNDAE,
+  leavesItToTheCard,
+  MAPO,
+  saysDegrees,
+  weatherAnswer,
+  weatherBackend,
+  weatherPlacesAsked,
+} from "./weather";
 
 export type Turn = {
   text: string;
@@ -1770,7 +1771,7 @@ function weatherFromTheAgency(): Scenario[] {
  */
 function firstMoveThreads(): Scenario[] {
   const moved = (question: string): unknown[] => {
-    const callId = "call_first_move_weather";
+    const callId = firstMoveCallId("0".repeat(32));
     return [
       user(question),
       {

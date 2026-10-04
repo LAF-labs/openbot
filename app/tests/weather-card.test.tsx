@@ -92,18 +92,21 @@ const ANSWER = JSON.stringify({
 describe("the weather tool's answer, read for the card", () => {
   test("is the place, the temperature now and each day's high, low, sky and chance", () => {
     expect(ANSWER.startsWith(WEATHER_DATA_HEAD)).toBe(true);
+    const today = {
+      date: "2026-10-04",
+      min: 15,
+      max: 24,
+      sky: "overcast",
+      chance: 60,
+      falls: "rain",
+    } as const;
     expect(weatherOf(ANSWER)).toEqual({
       place: "인천광역시",
       temp: 11.6,
+      // The row the answer itself calls 오늘 — here the first, and not because it is first.
+      today,
       days: [
-        {
-          date: "2026-10-04",
-          min: 15,
-          max: 24,
-          sky: "overcast",
-          chance: 60,
-          falls: "rain",
-        },
+        today,
         {
           date: "2026-10-05",
           min: 15,
@@ -174,6 +177,8 @@ describe("the weather tool's answer, read for the card", () => {
     expect(weatherOf(partial)).toEqual({
       place: "제주",
       temp: null,
+      // No row says which day it is, so none is taken for today.
+      today: null,
       days: [
         {
           date: "2026-10-04",
@@ -281,6 +286,75 @@ describe("the weather card", () => {
     ]);
     // Four columns for four days: the grid is as wide as what there is.
     expect(drawn?.querySelector("ol")?.className).toContain("grid-cols-4");
+  });
+
+  /*
+   * LATE AT NIGHT THE ANSWER CAN BEGIN WITH TOMORROW: today's hours are gone from the issuance,
+   * and when the morning's cannot be had either there is no 최저 or 최고 to say for today, so the
+   * server leaves the day out (`daysOf`). The head took its high, low and picture from the first
+   * row whatever day that was — tomorrow's, beside the temperature now (Codex on pull request 62).
+   */
+  test("with no row for today, the head is the temperature alone — never tomorrow's high and low", async () => {
+    const lateAtNight = JSON.stringify({
+      source: "기상청",
+      place: "인천광역시",
+      now: { temp: 13.4, humidity: 80, precip: "없음", wind: 0.4 },
+      days: [
+        {
+          date: "2026-10-05",
+          day: "월",
+          when: "내일",
+          min: 15,
+          max: 19,
+          am: "흐림 30%",
+          pm: "흐림 60%",
+          precip: "비 15~18시(1mm 미만)",
+        },
+        {
+          date: "2026-10-06",
+          day: "화",
+          when: "모레",
+          min: 11,
+          max: 21,
+          am: "맑음 20%",
+          pm: "맑음 20%",
+          precip: "없음",
+        },
+      ],
+    });
+    expect(weatherOf(lateAtNight)?.today).toBe(null);
+    const drawn = await card(lateAtNight);
+    expect(drawn?.querySelector("[data-weather-now]")?.textContent).toBe("13°");
+    expect(drawn?.querySelectorAll("[data-weather-today]").length).toBe(0);
+    // The picture beside the temperature was tomorrow's rain. The columns keep theirs.
+    const pictures = [...(drawn?.querySelectorAll('[role="img"]') ?? [])];
+    expect(
+      pictures.filter((picture) => !picture.closest("[data-weather-day]"))
+        .length,
+    ).toBe(0);
+    const days = [...(drawn?.querySelectorAll("[data-weather-day]") ?? [])];
+    expect(days.map((day) => day.getAttribute("data-weather-day"))).toEqual([
+      "2026-10-05",
+      "2026-10-06",
+    ]);
+    expect(
+      days.map((day) =>
+        day.querySelector('[role="img"]')?.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Rain", "Clear sky"]);
+  });
+
+  test("the head's day is the one the answer calls 오늘, wherever its row stands", async () => {
+    const answer = JSON.parse(ANSWER) as { days: unknown[] };
+    const turned = JSON.stringify({
+      ...answer,
+      days: [...answer.days].reverse(),
+    });
+    expect(weatherOf(turned)?.today?.date).toBe("2026-10-04");
+    const drawn = await card(turned);
+    expect(drawn?.querySelector("[data-weather-today]")?.textContent).toBe(
+      "High 24° · Low 15°",
+    );
   });
 
   /*

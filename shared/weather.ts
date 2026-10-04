@@ -55,6 +55,9 @@ export type SkyKind = keyof typeof SKY_WORDS;
 /** What a day with nothing falling says. */
 export const NOTHING_FALLS = "없음";
 
+/** How a day's row says it is the day the answer was written (`when`); the rows after it say 내일, 모레. */
+export const TODAY = "오늘";
+
 /**
  * 강수형태, as the answer says it, and the one of three pictures each is drawn with. "강수" is the
  * word for a code the server has no name for: still something falling, drawn as rain.
@@ -90,6 +93,12 @@ export type WeatherData = {
   place: string;
   /** The temperature measured at the place, where the observation was had. */
   temp: number | null;
+  /**
+   * The day the answer was written, where the answer has a row for it — the row it calls 오늘
+   * itself, and not whichever row is first. Late at night, with today's hours gone and the
+   * morning's issuance not to be had, the first row is tomorrow (`daysOf`).
+   */
+  today: WeatherDay | null;
   days: WeatherDay[];
 };
 
@@ -153,8 +162,8 @@ export function weatherOf(result: string): WeatherData | null {
   const answer = parsed as Record<string, unknown>;
   const place = typeof answer.place === "string" ? answer.place : "";
   const now = answer.now as Record<string, unknown> | undefined;
-  const days = (Array.isArray(answer.days) ? answer.days : []).flatMap(
-    (entry): WeatherDay[] => {
+  const rows = (Array.isArray(answer.days) ? answer.days : []).flatMap(
+    (entry): { isToday: boolean; row: WeatherDay }[] => {
       if (!entry || typeof entry !== "object") return [];
       const day = entry as Record<string, unknown>;
       if (typeof day.date !== "string") return [];
@@ -165,18 +174,27 @@ export function weatherOf(result: string): WeatherData | null {
       );
       return [
         {
-          date: day.date,
-          min: numberOf(day.min),
-          max: numberOf(day.max),
-          sky: afternoon.sky ?? morning.sky,
-          chance: chances.length > 0 ? Math.max(...chances) : null,
-          falls: fallOf(day.precip),
+          isToday: day.when === TODAY,
+          row: {
+            date: day.date,
+            min: numberOf(day.min),
+            max: numberOf(day.max),
+            sky: afternoon.sky ?? morning.sky,
+            chance: chances.length > 0 ? Math.max(...chances) : null,
+            falls: fallOf(day.precip),
+          },
         },
       ];
     },
   );
+  const days = rows.map(({ row }) => row);
   const temp = now ? numberOf(now.temp) : null;
   // Nothing to draw: no reading and no day. The line of the call says it was made.
   if (temp === null && days.length === 0) return null;
-  return { place, temp, days };
+  return {
+    place,
+    temp,
+    today: rows.find(({ isToday }) => isToday)?.row ?? null,
+    days,
+  };
 }
