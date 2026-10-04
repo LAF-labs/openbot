@@ -18,6 +18,7 @@ import { watchPage } from "./page-watch";
 import { createProfiles } from "./profiles";
 import { computerFetch } from "./routes";
 import { createSessions, note } from "./sessions";
+import { tabLost } from "./tab-loss";
 import { createWorkspace } from "./workspace";
 
 /**
@@ -140,6 +141,9 @@ const profiles = createProfiles(config.profilesDir, {
     rememberFrame(botId, page);
     watchPage(sessions.sessionFor(botId), botId, page, workspace);
   },
+  // The tab a Bot was on died or was closed by its site: nothing acts for that Bot until it has
+  // looked at the tab it is on now, and whatever it had asked a person for on the lost one ends.
+  onTabLost: (botId, lost) => tabLost(sessions.sessionFor(botId), botId, lost),
   // Before the first page is handed out, so no request this browser ever makes goes unjudged. Once
   // for the browser, not once per Bot: there is one browser.
   onContext: async (context) => {

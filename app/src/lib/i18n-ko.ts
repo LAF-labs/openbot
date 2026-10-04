@@ -2359,6 +2359,8 @@ export const ko: Record<string, string> = {
     "페이지의 스크립트가 본문 읽기를 막아서 화면 글자를 그대로 읽음",
   "The page was still loading, so nothing on it could be read":
     "페이지가 아직 열리는 중이라 내용을 읽지 못함",
+  "The tab the Bot was on went away, and the Bot was moved to another":
+    "봇이 보던 탭이 사라져서 봇을 다른 탭으로 옮김",
   "The Bots now share one browser, which took over the profile last used":
     "봇들이 브라우저 하나를 함께 쓰게 되면서, 가장 최근에 쓰던 프로파일을 이어받음",
   // 문의·의견 — 진단 정보 같이 보내기: 서버가 모은 것을 보여 주고, 보여 준 그대로 보낸다.

@@ -37,6 +37,15 @@ export const IDLE_CLOSE_MS = 10 * 60_000;
 /** How often idleness is checked. Coarse on purpose: this is housekeeping, not a deadline. */
 export const IDLE_SWEEP_MS = 60_000;
 
+/** The shortest time between two `tab_crashed` lines about one Bot. See `sayCrashed`. */
+const CRASH_LINE_MS = 60_000;
+
+/**
+ * The tab a Bot was on, gone from under it: how, and which site it was showing — the origin only,
+ * for the reason a log line carries no more (a path and a query are the page's).
+ */
+export type TabLost = { cause: "crashed" | "closed"; origin: string };
+
 /** What the bookkeeping needs from the browser it keeps the books of. */
 type TabsBrowser = {
   /** Every page the deployment's browser has open, none while it is not running. */
@@ -44,6 +53,12 @@ type TabsBrowser = {
   now: () => number;
   /** Told of every page the moment it becomes a Bot's (`ProfileOptions.onPage`). */
   onPage: (botId: string, page: Page) => void;
+  /**
+   * Told when the tab a Bot was ON goes from under it — its renderer died, or its site closed it
+   * (`ProfileOptions.onTabLost`). Not for a tab this process closed, and not for one the Bot had
+   * open and was not on: the Bot is still where it last looked.
+   */
+  onLost: (botId: string, lost: TabLost) => void;
 };
 
 /**
@@ -83,6 +98,43 @@ export function createTabs(browser: TabsBrowser) {
       .pages()
       .filter((page) => !page.isClosed() && owners.get(page) === botId);
 
+  /** Whether this is the tab the Bot's next call would have landed on. */
+  const isOn = (botId: string, page: Page): boolean =>
+    live.get(botId)?.page === page;
+
+  /** When each Bot's last `tab_crashed` line was written, and how many deaths since went unsaid. */
+  const lines = new Map<string, { at: number; unsaid: number }>();
+
+  /**
+   * One line for a renderer that died, by the site's origin only — a path, a query and a title
+   * are the page's — and no more than one a minute for a Bot.
+   *
+   * BOUNDED, BECAUSE A LOOP IS POSSIBLE. A dead tab is replaced by an empty one, which has nothing
+   * to die of; but a machine too short of memory to keep any renderer loses the replacement too,
+   * and while a person has the live screen open a replacement is asked for every second
+   * (`live-screen.ts`). That is a line a second for as long as it lasts. The ones not written are
+   * counted on the next one that is.
+   */
+  const sayCrashed = (
+    botId: string | undefined,
+    origin: string,
+    tabs: number,
+  ): void => {
+    const key = botId ?? "";
+    const last = lines.get(key);
+    if (last && now() - last.at < CRASH_LINE_MS) {
+      last.unsaid += 1;
+      return;
+    }
+    log.warn("tab_crashed", {
+      ...(botId ? { bot: botId } : {}),
+      origin,
+      tabs,
+      ...(last?.unsaid ? { unsaid: last.unsaid } : {}),
+    });
+    lines.set(key, { at: now(), unsaid: 0 });
+  };
+
   /*
    * A TAB WHOSE RENDERER DIED IS NOBODY'S TAB.
    *
@@ -96,37 +148,79 @@ export function createTabs(browser: TabsBrowser) {
    * `tests/crashed-tab.test.ts`: 502 in 0–4 ms, for as long as it was asked. That it was memory on
    * the day was not reproduced; that a dead renderer leaves exactly the day's shape was.
    *
-   * So the browser's own `crash` event ends the tab's time as this Bot's. `live` is left as it is,
-   * the way it is when a site closes a tab: `profiles.page` sees its tab is no longer the Bot's and
-   * falls back to another the Bot has, or opens one — on the next call, not here, because a tab
-   * opened the moment a renderer died for want of memory is one more renderer. One line says it
-   * happened, by the site's origin only: a path, a query and a title are the page's.
+   * So a renderer's death ends the tab's time as anybody's. `live` is left as it is, the way it is
+   * when a site closes a tab: `profiles.page` sees its tab is no longer the Bot's and falls back to
+   * another the Bot has, or opens one. NOT HERE, because a tab opened the moment a renderer died
+   * for want of memory is one more renderer — but not only on the Bot's next call either: whoever
+   * asks for the Bot's tab next opens it, and while a person is watching, the live screen asks once
+   * a second (`live-screen.ts`).
+   *
+   * LEARNED TWO WAYS, COUNTED ONCE. The browser's own `crash` event, heard on every tab from the
+   * moment it exists (`hear`); and, for a death nothing heard, the call that fails on the tab
+   * (`profiles.deadTab`, from the door). Whichever comes first lets go of it.
    *
    * THE CLOSE IS ASKED FOR, NEVER WAITED FOR. A browser that has just lost a renderer may not
    * answer it, and nothing is listening for the answer: the tab is already out of every list.
    */
-  const dropCrashed = (botId: string, page: Page): void => {
+  const died = (page: Page): void => {
+    if (crashed.has(page)) return;
     crashed.add(page);
-    // Already let go of — stopped, recycled, or the browser closed — and being closed by that.
-    if (owners.get(page) !== botId) return;
-    // Counted with the dead one still in it: how many tabs the Bot was holding when it died.
-    const had = pagesOf(botId).length;
-    owners.delete(page);
-    log.warn("tab_crashed", {
-      bot: botId,
-      origin: originOf(page.url()),
-      tabs: had,
-    });
+    const origin = originOf(page.url());
+    const botId = owners.get(page);
+    if (botId === undefined) {
+      // Nobody's: one no Bot had been handed yet, or one this process had already let go of.
+      sayCrashed(undefined, origin, 0);
+    } else {
+      // Counted with the dead one still in it: how many tabs the Bot was holding when it died.
+      const had = pagesOf(botId).length;
+      const wasOn = isOn(botId, page);
+      owners.delete(page);
+      sayCrashed(botId, origin, had);
+      if (wasOn) browser.onLost(botId, { cause: "crashed", origin });
+    }
     void page.close().catch(() => undefined);
   };
 
-  /** Mark a tab as this Bot's, and stop saying so once it is closed or its renderer has died. */
+  /** The tabs already listened to, so no tab is listened to twice. */
+  const heard = new WeakSet<Page>();
+
+  /**
+   * Listen for a tab's renderer dying, from the moment the tab exists and whoever's it becomes.
+   *
+   * NOT FROM THE MOMENT IT IS OWNED, which is where the listening began: a tab a site opened is
+   * owned only once the browser has said who opened it (`adoptOpened`), and the tab a browser
+   * starts with is owned by nobody until a Bot takes it (`profiles.page`). One that died in between
+   * was adopted dead — the Bot's tab, and failing every call for ever — or handed out as the spare.
+   */
+  const hear = (page: Page): void => {
+    if (heard.has(page)) return;
+    heard.add(page);
+    page.once("crash", () => died(page));
+  };
+
+  /**
+   * Mark a tab as this Bot's, and stop saying so once it is closed or its renderer has died.
+   *
+   * A TAB THAT CLOSES WHILE IT IS STILL THE BOT'S WAS CLOSED BY ITS SITE. Everything this process
+   * closes it lets go of first — a stop, a tab replaced after a deadline, a dead renderer, the
+   * browser itself. So when the tab the Bot was ON closes that way, the Bot is somewhere it has
+   * not looked, exactly as when its renderer dies, and whoever keeps the Bot's session is told the
+   * same thing (`onLost`).
+   */
   const own = (botId: string, page: Page): void => {
     owners.set(page, botId);
+    hear(page);
     page.once("close", () => {
-      if (owners.get(page) === botId) owners.delete(page);
+      if (owners.get(page) !== botId) return;
+      const wasOn = isOn(botId, page);
+      owners.delete(page);
+      if (wasOn) {
+        browser.onLost(botId, {
+          cause: "closed",
+          origin: originOf(page.url()),
+        });
+      }
     });
-    page.once("crash", () => dropCrashed(botId, page));
   };
 
   /** Note that this Bot has a tab, without moving `since` if it already had one. */
@@ -164,10 +258,15 @@ export function createTabs(browser: TabsBrowser) {
    * already been claimed by the time this resolves, and is left alone.
    */
   const adoptOpened = (opened: Page): void => {
+    // Before the browser is asked whose it is: a tab can die while that is being answered.
+    hear(opened);
     void (async () => {
       if (owners.has(opened)) return;
       const opener = await opened.opener().catch(() => null);
       if (owners.has(opened)) return;
+      // Gone already — its renderer died, or it closed itself — and never anybody's: the Bot is
+      // still on the tab it clicked in, and a dead tab made its own would be all it had.
+      if (crashed.has(opened) || opened.isClosed()) return;
       const botOf = opener ? owners.get(opener) : undefined;
       // Not ours to hand to anybody: a tab with no opener we did not open. Left unowned rather
       // than guessed at — a page in the wrong Bot's list is a click landing on a stranger's page.
@@ -227,6 +326,8 @@ export function createTabs(browser: TabsBrowser) {
     live,
     /** Whether this tab's renderer died. See `crashed`. */
     hasCrashed: (page: Page): boolean => crashed.has(page),
+    hear,
+    died,
     pagesOf,
     own,
     touch,

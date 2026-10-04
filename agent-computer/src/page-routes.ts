@@ -8,11 +8,14 @@
  */
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
+import { actionFailure } from "./failures";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
 import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
+import { StaleSnapshotError } from "./refs";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
+import { assertLooked, looked } from "./tab-loss";
 import { TabError } from "./tabs";
 import { thumbnailOf } from "./thumbnail";
 
@@ -30,6 +33,7 @@ export const readPage: BotRoute = async (
 ) => {
   try {
     const target = await profiles.page(botId);
+    const seen = session.tabsLost;
     // `?whole=1`: every word, not the article Reader View took out (`reader.ts`). `?from=`: from
     // the first place those words appear, for what an extract's cap left out.
     const from = url.searchParams.get("from")?.trim();
@@ -39,6 +43,8 @@ export const readPage: BotRoute = async (
     });
     if (extract.arriving) note(session, arrivalNote(extract.arriving));
     if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
+    // The Bot has seen where it is: a tab it was put on may be acted on again (`tab-loss.ts`).
+    looked(session, seen);
     return json(
       withNotes(session, {
         url: target.url(),
@@ -62,14 +68,14 @@ export const readPage: BotRoute = async (
  */
 export const snapshot: BotRoute = async ({ botId, session }, { profiles }) => {
   try {
-    return json(
-      withNotes(
-        session,
-        await snapshotPage(session, await profiles.page(botId), () =>
-          profiles.tabs(botId),
-        ),
-      ),
+    const target = await profiles.page(botId);
+    const seen = session.tabsLost;
+    const shot = await snapshotPage(session, target, () =>
+      profiles.tabs(botId),
     );
+    // The Bot has seen where it is: a tab it was put on may be acted on again (`tab-loss.ts`).
+    looked(session, seen);
+    return json(withNotes(session, shot));
   } catch (error) {
     return browserFailed(error);
   }
@@ -182,6 +188,9 @@ export const switchTab: BotRoute = async (
     // Started if it is not running, so a switch is never answered with "there are no tabs" on a
     // computer that simply has not been woken up yet.
     await profiles.page(botId);
+    // An index names a place in the list the Bot last saw, and a tab that went from under it took
+    // its place out of that list: the same number is another tab now.
+    assertLooked(session);
     const tabs = await profiles.switchTab(botId, body.index);
     session.snapshotId += 1;
     const target = await profiles.page(botId);
@@ -198,6 +207,7 @@ export const switchTab: BotRoute = async (
     );
   } catch (error) {
     if (error instanceof TabError) return fact("laf:tab_missing");
+    if (error instanceof StaleSnapshotError) return actionFailure(error);
     return browserFailed(error);
   }
 };

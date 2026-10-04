@@ -20,7 +20,7 @@
  * carry out, so the model is never offered a call nothing here would run.
  */
 import type { Tool } from "@ag-ui/client";
-import { PERSON_WAIT_MS } from "../../../shared/person-wait";
+import { askOutcome, PERSON_WAIT_MS } from "../../../shared/person-wait";
 import { isPersona } from "../../../shared/persona";
 import {
   noteCodesOf,
@@ -553,6 +553,9 @@ export function createChatTools(deps: ChatToolsDeps) {
      * `agent-computer/src/control.ts`) only after this wait's own time and a margin over it, and
      * both read the one number in `shared/person-wait.ts`: let go of any sooner, the last look
      * here would answer `laf:control_returned` about a person who never came.
+     *
+     * One ask the computer does end in the middle of this wait: the one whose tab went from under
+     * the Bot. Its state says nobody answered it, and that is what this answers (`askOutcome`).
      */
     const waitForPerson = async (
       toolCallId: string,
@@ -566,7 +569,9 @@ export function createChatTools(deps: ChatToolsDeps) {
         if (deps.people.takeSkip(toolCallId)) return "skipped";
         const state = await deps.gateway?.control(botId).catch(() => null);
         if (state && done(state as unknown as Record<string, unknown>)) {
-          return "answered";
+          // Gone because somebody answered it, or because the tab it was about went
+          // (`askOutcome`): only the first is a person having come.
+          return askOutcome(state);
         }
         await sleep(deps.controlPollMs ?? CONTROL_POLL_MS, signal);
       }

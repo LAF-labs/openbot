@@ -15,6 +15,7 @@ import { bodyOf, fact, invalid, json, RequestInvalidError } from "./respond";
 import { arrivalNote } from "./page-arrival";
 import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
 import { type BotSession, note, withNotes } from "./sessions";
+import { assertLooked } from "./tab-loss";
 import { digestOf, keepOwn } from "./typed-values";
 
 export type ActionBody = {
@@ -232,6 +233,9 @@ export const act: BotRoute = async (
   try {
     session.control.assertBotMayAct();
     const target = await profiles.page(botId);
+    // Never on a tab the Bot was put on and has not looked at — a key and a scroll name no element
+    // for a stale ref to refuse them by (`tab-loss.ts`).
+    assertLooked(session);
     const before = target.url();
     let opened: Page | undefined;
     let tabOpened = () => {};
@@ -335,6 +339,7 @@ export const upload: BotRoute = async (
     session.control.assertBotMayAct();
     const full = await workspace.resolvePath(body.path.trim(), false);
     const target = await profiles.page(botId);
+    assertLooked(session);
     const field = await resolveRef(
       session,
       target,

@@ -120,6 +120,37 @@ export function invalid(field: string): Response {
 }
 
 /**
+ * Whether a failure is Playwright saying the tab's renderer is dead.
+ *
+ * BY ITS WORDS, BECAUSE A CRASH HAS NO CLASS OF ITS OWN: `Page crashed` from the page and `Target
+ * crashed` from a frame, the two names `reader.test.ts` holds a crashed renderer to. A call that an
+ * element was asked to take carries it one level down (`ElementActionError`'s cause).
+ */
+export function saysRendererDied(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    /\b(?:Page|Target) crashed\b/.test(error.message) ||
+    saysRendererDied(error.cause)
+  );
+}
+
+/** The answers that were a renderer's death. See {@link answeredADeadTab}. */
+const deadTabAnswers = new WeakSet<Response>();
+
+/**
+ * Whether an answer was written for a call that failed on a dead tab.
+ *
+ * FOR THE DOOR (`routes.ts`), WHICH IS WHERE A CRASH NOBODY HEARD IS LEARNED. The browser's `crash`
+ * event is how a dead tab is let go of (tabs.ts), and an event can be missed: a tab that died before
+ * anything was listening is owned, current and dead, and every call on it fails for ever. The call
+ * that fails on it says so in the only way Playwright does — and every route writes that failure
+ * through `browserFailed`, so this is the one place it can be kept.
+ */
+export function answeredADeadTab(answer: Response): boolean {
+  return deadTabAnswers.has(answer);
+}
+
+/**
  * The browser did not do what it was asked, for a reason that is not a refusal: a page that went
  * away under the call, a tab that closed, a browser that would not start.
  *
@@ -127,5 +158,7 @@ export function invalid(field: string): Response {
  * — the guard that could not be installed — that code is the answer, with its own status.
  */
 export function browserFailed(error: unknown): Response {
-  return fact(codeOf(error) ?? "laf:browser_failed");
+  const answer = fact(codeOf(error) ?? "laf:browser_failed");
+  if (saysRendererDied(error)) deadTabAnswers.add(answer);
+  return answer;
 }

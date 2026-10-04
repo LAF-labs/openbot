@@ -68,6 +68,13 @@ export type BotSession = {
    * node cannot inherit an old one.
    */
   snapshotId: number;
+  /**
+   * How many times the tab this Bot was on has gone from under it, and that count as it stood at
+   * the Bot's last look. While the two differ the Bot is on a tab it has not seen, and nothing
+   * acts there (`tab-loss.ts`).
+   */
+  tabsLost: number;
+  tabsSeen: number;
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**
@@ -223,6 +230,8 @@ export function createSessions(directories: {
           onChange: (state) => writeControlFile(botId, state),
         }),
         snapshotId: 0,
+        tabsLost: 0,
+        tabsSeen: 0,
         notes: restored.secretLost ? [{ code: "laf:secret_request_lost" }] : [],
         secretFields: [],
         typedDigests: [],

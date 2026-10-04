@@ -152,6 +152,11 @@ export const COMPUTER_CODES = {
   // The tab's document is on its way and answers nothing until it arrives, so a look carries only what
   // the browser can say without it; `origin` and `loadingMs` ride beside it (page-arrival.ts).
   "laf:page_loading": { note: true },
+  // The tab the Bot was on went from under it — its renderer died, or its site closed it — and the
+  // Bot is on another: one it had open, or a new, empty one. What was on the page is gone and the
+  // sign-ins are not; `cause` and the lost page's `origin` ride beside it. On the Bot's first look
+  // after it, once, and nothing acts for the Bot before that look (tab-loss.ts).
+  "laf:tab_replaced": { note: true },
 } as const satisfies Record<`laf:${string}`, Answer | Told>;
 
 export type ComputerCode = keyof typeof COMPUTER_CODES;
