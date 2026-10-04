@@ -42,11 +42,10 @@ const row = "mt-1.5 flex w-full max-w-170 items-center gap-1 pb-2 text-xs";
  * pointer is told on hover, where the browser reported one — it often does not: measured, a
  * navigation hands back an empty title.
  *
- * A PILL IS A PAGE, NOT A SITE, so one site read three times is one name three times, with only
- * the title on hover to tell them apart — seen at once in the first conversation this was pressed
- * in (토스증권, 토스증권, …, 토스증권). Left so on purpose: one pill a site would have to choose
- * which of its pages to open and which to drop, and that is a decision about what a source is
- * (`sources.ts`), not about how one is drawn.
+ * A SITE IS NAMED ONCE, AND THE FIRST IS THE ONE NEAREST THE ANSWER. The row is handed one page a
+ * site, the page the Bot read last in front (`sourcesByAnswer`). Two pills that say the same word
+ * cannot be told apart — the first conversation this was pressed in drew 토스증권, 토스증권, …,
+ * 토스증권, the first of them a page that was not found — so "+n" counts sites, not pages.
  *
  * NO FAVICON. A site's own icon would be fetched from the site: every source's host called from
  * the person's device for a page they have not chosen to open. One globe, drawn here, for all.
@@ -107,12 +106,12 @@ export function SourcesRow({ sources }: { sources: readonly Source[] }) {
       ))}
       {more > 0 ? (
         <button
-          aria-label={t("{count} more sources", { count: more })}
+          aria-label={t("Sources: {count} more", { count: more })}
           className={`${pill} shrink-0`}
           onClick={() => setIsOpen(true)}
           tabIndex={0}
           // "+2" is not a word: a pointer is told what it counts, as a screen reader is.
-          title={t("{count} more sources", { count: more })}
+          title={t("Sources: {count} more", { count: more })}
           type="button"
         >
           +{more}
