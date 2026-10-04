@@ -277,9 +277,12 @@ is also the only cure for `new Date()`, since the check cannot see that one.
 
 A component that compiles can still behave differently, and the ceiling cannot
 see it. CopilotKit changes its message array in place while it streams, so a
-compiled component handed that array stops showing the reply after its first
-chunk: `ChannelChat` says `"use no memo"` and hands down a copy. And `bun test`
-never compiles, so a compiled component is only ever seen in the browser.
+compiled component handed that array stopped showing the reply after its first
+chunk: the window-driven chat (`ChannelChat`, removed 2026-10-05 — a turn is the
+server's now, and the window only watches it) said `"use no memo"` and handed
+down a copy for that reason. Anything handed an array that is changed in place
+needs the same. And `bun test` never compiles, so a compiled component is only
+ever seen in the browser.
 
 ## Conventions
 
