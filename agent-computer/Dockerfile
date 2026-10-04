@@ -5,11 +5,12 @@
 # neither.
 #
 # TWO STAGES, BECAUSE THE IMAGE CARRIES FOUR BROWSERS AND ONE RUNS. `launchPersistentContext` in
-# profiles.ts is headless, which Playwright answers with `chromium_headless_shell`; full Chromium,
-# Firefox and WebKit sat beside it with the system libraries only they load (GStreamer, GTK, Node).
-# Measured 2026-09-26 on arm64: 4.08 GB on disk (1.02 GB pulled), 1.2 GB of it browsers that never
-# started. The final stage is plain Ubuntu of the same release the Playwright image is built on,
-# given the headless shell and the libraries Playwright's own `install-deps` names for Chromium.
+# browser-launch.ts is headless, which Playwright answers with `chromium_headless_shell`; full
+# Chromium, Firefox and WebKit sat beside it with the system libraries only they load (GStreamer,
+# GTK, Node). Measured 2026-09-26 on arm64: 4.08 GB on disk (1.02 GB pulled), 1.2 GB of it browsers
+# that never started. The final stage is plain Ubuntu of the same release the Playwright image is
+# built on, given the headless shell and the libraries Playwright's own `install-deps` names for
+# Chromium.
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS browsers
 
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
@@ -105,10 +106,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --start-interval=1s -
 # the computer token, and until 2026-09-13 it did so as uid 0 with Chromium's sandbox switched off
 # (audit A5 §1: `docker exec … id` → `uid=0(root)`). One renderer bug was the whole container, every
 # Bot's profile included. `pwuser` is the account the Playwright image ships for this, and with
-# `--no-sandbox` gone from profiles.ts the renderers run in namespaces of their own — which Docker's
-# default seccomp profile refuses, so docker-compose.yml hands the container Playwright's profile.
-# Without it the browser does not start at all ("No usable sandbox!"), which is the honest failure:
-# a deployment that loses the profile finds out on its first page, not after a renderer is owned.
+# `--no-sandbox` gone from browser-launch.ts the renderers run in namespaces of their own — which
+# Docker's default seccomp profile refuses, so docker-compose.yml hands the container Playwright's
+# profile. Without it the browser does not start at all ("No usable sandbox!"), which is the honest
+# failure: a deployment that loses the profile finds out on its first page, not after a renderer is
+# owned.
 #
 # NOT ROOT FROM THE FIRST INSTRUCTION, EITHER. From 2026-09-25 to 2026-09-26 the entrypoint started as
 # root with NET_ADMIN to write the egress firewall (security review 2026-09-25 F1) into this

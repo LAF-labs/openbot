@@ -114,7 +114,7 @@ export const resetComputer: BotRoute = async (
   sessions.drop(botId);
   forgetSecretFields(session);
   await stopViewer(session).catch(() => undefined);
-  // Always answers: a browser that will not close is killed (profiles.ts, closeAndWait), so a
+  // Always answers: a browser that will not close is killed (browser-close.ts, closeAndWait), so a
   // reset cannot be the fourth thing queued behind a page that never loaded.
   await profiles.reset(botId);
   /*

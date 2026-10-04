@@ -39,9 +39,9 @@ const computer = compose.services["agent-computer"];
 
 describe("the browser's sandbox", () => {
   test("no launch arg turns the sandbox off", () => {
-    const profiles = read("agent-computer/src/profiles.ts");
-    const start = profiles.indexOf("const LAUNCH_ARGS = [");
-    const args = profiles.slice(start, profiles.indexOf("];", start));
+    const launch = read("agent-computer/src/browser-launch.ts");
+    const start = launch.indexOf("const LAUNCH_ARGS = [");
+    const args = launch.slice(start, launch.indexOf("];", start));
     expect(args).not.toContain("--no-sandbox");
     // The flags that stay are here on purpose; this pins that the array was found and read.
     expect(args).toContain("--disable-dev-shm-usage");
@@ -53,11 +53,11 @@ describe("the browser's sandbox", () => {
      * unless launched with `chromiumSandbox: true`; measured 2026-09-13, the rebuilt container ran
      * with the flag gone from LAUNCH_ARGS and still on the browser's command line.
      */
-    const profiles = read("agent-computer/src/profiles.ts");
-    expect(profiles).toMatch(
+    const launch = read("agent-computer/src/browser-launch.ts");
+    expect(launch).toMatch(
       /launchPersistentContext\(dir, \{[^}]*chromiumSandbox: true,/s,
     );
-    expect(profiles).not.toContain("chromiumSandbox: false");
+    expect(launch).not.toContain("chromiumSandbox: false");
   });
 
   test("the image runs as pwuser from its first instruction, and owns both volume roots by it", () => {

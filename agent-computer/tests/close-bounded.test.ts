@@ -8,7 +8,7 @@ import {
 /**
  * The close that ends a browser which will not end itself — without a browser.
  *
- * The wedge this guards against was measured on a real site (profiles.ts, CLOSE_GRACE_MS) and
+ * The wedge this guards against was measured on a real site (browser-close.ts, CLOSE_GRACE_MS) and
  * cannot be produced on demand from a fixture: what is testable is the contract of the close
  * itself. A `close()` that never resolves must not hold the caller, and the process must be killed
  * once the grace is up; a `close()` that resolves must never be killed.
