@@ -622,42 +622,65 @@ describe("frames the snapshot could not see into", () => {
 });
 
 /**
- * A control whose name the tree prints beneath it rather than beside it.
+ * A control the tree prints without a name, though the browser has one for it.
  *
  * Playwright 1.62's AI tree blanks the name of a node whose name came from children it also prints
  * (`removeRedundantNames`), so `<a href><strong>헤드라인</strong></a>` arrives as `link [ref=…]:` with
  * the headline one level down. The list read `e137 link` and nothing more on 85 of Naver news's 200
  * lines (2026-10-04) — 44 of them its headlines — and the label hold, judging the empty name against a
  * browser that calls each headline by its words, refused every click on one.
+ *
+ * The name is the page's to give (`page-names.ts`), and this list does not guess at it: for a day
+ * it did, from the words beneath the control, and `readAriaSnapshot` says what was wrong with
+ * that. What is held here is the tree's half — such a control has no name and no value, whatever
+ * is beneath it, and is one the page is asked about.
  */
-describe("a name the tree prints beneath the control", () => {
+describe("a control the tree prints without a name", () => {
   /** Captured from news.naver.com/section/101 on 2026-10-04; see the file's own header. */
   const NAVER_NEWS = readFileSync(
     join(import.meta.dir, "fixtures", "naver-news-headlines.yaml"),
     "utf8",
   );
 
-  test("Naver's headlines are named by their headlines, as captured", () => {
+  test("Naver's headlines, as captured, are the links the page is asked to name", () => {
+    const read = readAriaSnapshot(NAVER_NEWS);
+    // Each of these reads `e137 link` and nothing else in the tree's own list.
+    expect(read.unnamed).toEqual([
+      "e117",
+      "e120",
+      "e135",
+      "e137",
+      "e152",
+      "e154",
+    ]);
     const byRef = new Map(
-      parseAriaSnapshot(NAVER_NEWS).elements.map((element) => [
-        element.ref,
-        element.name,
-      ]),
+      read.elements.map((element) => [element.ref, element.name]),
     );
-    // Each of these read `e137 link` and nothing else before.
-    expect(byRef.get("e137")).toBe(
-      "LG전자 노사, 아동복지시설 봉사…가전 점검·AI 체험 지원",
-    );
-    expect(byRef.get("e154")).toBe(
-      "19년간 팔지 못한 상업용지…LH 미매각 토지 21.9조원",
-    );
-    // An image link is named by its image's alt text.
-    expect(byRef.get("e117")).toBe(
-      "AI 뉴스 알고리즘 추천 알고리즘 궁금하다면? 바로가기",
-    );
-    // A link with a name of its own keeps it, and is not given its words a second time.
+    for (const ref of read.unnamed) {
+      expect([ref, byRef.get(ref)]).toEqual([ref, ""]);
+    }
+    // A link with a name of its own keeps it, and the page is not asked about it.
     expect(byRef.get("e127")).toBe("헤드라인 뉴스 안내");
     expect(byRef.get("e144")).toBe("14 개의 관련뉴스 더보기");
+    // What the look hands on once the page has answered as the browser names them: a headline by
+    // its words, an image link by its image's alt text, the thumbnail by nothing.
+    const headline = "LG전자 노사, 아동복지시설 봉사…가전 점검·AI 체험 지원";
+    const banner = "AI 뉴스 알고리즘 추천 알고리즘 궁금하다면? 바로가기";
+    const listed = new Map(
+      withNames(
+        read.elements,
+        new Map([
+          ["e117", banner],
+          ["e135", ""],
+          ["e137", headline],
+        ]),
+        new Set(read.unnamed),
+      ).map((element) => [element.ref, element.name]),
+    );
+    expect(listed.get("e137")).toBe(headline);
+    expect(listed.get("e117")).toBe(banner);
+    expect(listed.get("e135")).toBe("");
+    expect(listed.get("e127")).toBe("헤드라인 뉴스 안내");
   });
 
   /**
@@ -683,7 +706,14 @@ describe("a name the tree prints beneath the control", () => {
     expect(elements.find((element) => element.ref === "e135")?.name).toBe("");
   });
 
-  test("a link takes the words inside it: text, a child's text, a child's own name", () => {
+  /*
+   * NOT GUESSED FROM WHAT IS BENEATH IT. Each of these was named by its words once — text, a
+   * child's text, a child's own name, words nested through wrappers, one space apart — and each of
+   * those names was the tree's spelling, which is not the browser's. Here they are what the tree
+   * says of them: a control, and no name. An address, a placeholder and a frame's contents were
+   * never part of one.
+   */
+  test("whatever is beneath it — text, a child's text, a child's own name — gives it no name here", () => {
     const yaml = `- link [ref=e1] [cursor=pointer]:
   - /url: https://example.test/a
   - strong [ref=e2]: 대출 더 조이면 누가 영향받나
@@ -696,29 +726,32 @@ describe("a name the tree prints beneath the control", () => {
 - link [ref=e7]:
   - /url: https://example.test/c
   - heading "공지사항" [level=3] [ref=e8]:
-    - strong [ref=e9]: 공지사항`;
-    expect(
-      parseAriaSnapshot(yaml).elements.map((element) => element.name),
-    ).toEqual([
-      "대출 더 조이면 누가 영향받나",
-      "프리미엄콘텐츠 바로가기",
-      "장바구니 3",
-      // A child that has a name says that name, once: the name is already made of what is under it.
-      "공지사항",
-    ]);
-  });
-
-  test("words nested through nameless wrappers are found, in page order, one space apart", () => {
-    const yaml = `- link [ref=e1]:
+    - strong [ref=e9]: 공지사항
+- link [ref=e10]:
   - /url: /news/1
-  - generic [ref=e2]:
-    - emphasis [ref=e3]: 동영상뉴스
-    - generic [ref=e4]:
-      - strong [ref=e5]: "반세기 만에 '역수출'"
-      - text: "  세계 시장 주도  "`;
-    expect(parseAriaSnapshot(yaml).elements[0]?.name).toBe(
-      "동영상뉴스 반세기 만에 '역수출' 세계 시장 주도",
-    );
+  - generic [ref=e11]:
+    - emphasis [ref=e12]: 동영상뉴스
+    - generic [ref=e13]:
+      - strong [ref=e14]: "반세기 만에 '역수출'"
+      - text: "  세계 시장 주도  "
+- link [ref=e15]:
+  - /url: https://example.test/very/long/address
+  - /placeholder: 검색어
+  - iframe [ref=e16]:
+    - button "프레임 안" [ref=f1e1]
+  - text: 바로가기`;
+    const read = readAriaSnapshot(yaml);
+    expect(read.elements).toEqual([
+      { ref: "e1", role: "link", name: "" },
+      { ref: "e3", role: "link", name: "" },
+      { ref: "e5", role: "button", name: "" },
+      { ref: "e7", role: "link", name: "" },
+      { ref: "e10", role: "link", name: "" },
+      { ref: "e15", role: "link", name: "" },
+      // A control inside one is still a line of its own, under the name the tree printed for it.
+      { ref: "f1e1", role: "button", name: "프레임 안" },
+    ]);
+    expect(read.unnamed).toEqual(["e1", "e3", "e5", "e7", "e10", "e15"]);
   });
 
   test("a printed name is the name: what is beneath it is not added", () => {
@@ -728,19 +761,6 @@ describe("a name the tree prints beneath the control", () => {
     expect(parseAriaSnapshot(yaml).elements[0]?.name).toBe(
       "댓글 개수 10 이상 +",
     );
-  });
-
-  test("an address, a placeholder and a frame's contents are no part of a name", () => {
-    const yaml = `- link [ref=e1]:
-  - /url: https://example.test/very/long/address
-  - /placeholder: 검색어
-  - iframe [ref=e2]:
-    - button "프레임 안" [ref=f1e1]
-  - text: 바로가기`;
-    const [link, inFrame] = parseAriaSnapshot(yaml).elements;
-    expect(link?.name).toBe("바로가기");
-    // The frame's own control is still listed on its own line.
-    expect(inFrame?.name).toBe("프레임 안");
   });
 
   /**
@@ -786,7 +806,9 @@ describe("a name the tree prints beneath the control", () => {
     ];
     const yaml = [
       ...roles.map((role, index) => `- ${role} [ref=e${index}]: ${typed}`),
-      // The line as Playwright writes a button whose only content is one run of text.
+      // The same shape in ordinary words. Playwright writes one run of text beneath a control
+      // after its colon, and drops it when it is the control's own name, printed or not: so this
+      // is a control whose name it did not print, over text that differs from that name.
       "- button [ref=e20]: 다음",
       "- link [ref=e21] [cursor=pointer]: 대출 더 조이면 누가 영향받나",
       // Named by the tree, and a field: what is after the colon is theirs to say.
@@ -834,9 +856,12 @@ describe("a name the tree prints beneath the control", () => {
 
   /*
    * And beneath it, where the tree prints the contents as lines of their own: the shapes the
-   * review of pull request 69 was about. Nothing after the colon is a string there, so nothing is
-   * a value; what must hold is that the control around a field or an editable region carries what
-   * was typed in neither its name nor a value, with the page silent.
+   * reviews of pull requests 65 and 69 were about — a nameless button around an unnamed search box
+   * was named by what had been typed into the box, and a link around text that can be edited would
+   * have been by what was typed there. Nothing after the colon is a string in these, so nothing is a
+   * value; what must hold is that the control around a field or an editable region carries what
+   * was typed in neither its name nor a value, with the page silent. A field's own label is not
+   * borrowed either: the page is asked.
    */
   test("nor does the control around a field, or around text that can be edited, carry what was typed there", () => {
     const typed = "hunter2!SuperSecret";
@@ -850,9 +875,13 @@ describe("a name the tree prints beneath the control", () => {
   - searchbox [ref=e6]: ${typed}
   - text: 하기
 - link [ref=e7]:
-  - text: 그대로`;
+  - text: 그대로
+- button [ref=e8]:
+  - textbox "검색어" [ref=e9]: ${typed}
+- button [ref=e10]:
+  - slider [ref=e11]: "73"`;
     const read = readAriaSnapshot(yaml);
-    expect(read.unnamed).toEqual(["e1", "e3", "e5", "e7"]);
+    expect(read.unnamed).toEqual(["e1", "e3", "e5", "e7", "e8", "e10"]);
     const silent = withNames(read.elements, new Map(), new Set(read.unnamed));
     const around = silent.filter((element) =>
       read.unnamed.includes(element.ref),
@@ -862,11 +891,13 @@ describe("a name the tree prints beneath the control", () => {
       { ref: "e3", role: "link", name: "" },
       { ref: "e5", role: "link", name: "" },
       { ref: "e7", role: "link", name: "" },
+      { ref: "e8", role: "button", name: "" },
+      { ref: "e10", role: "button", name: "" },
     ]);
-    expect(JSON.stringify(around)).not.toContain(typed);
     // The fields themselves are lines of their own, and say what is in them unless it is a secret.
     expect(silent.find((element) => element.ref === "e2")?.value).toBe(typed);
-    const marked = readAriaSnapshot(yaml, { refs: ["e2", "e6"] });
+    expect(silent.find((element) => element.ref === "e11")?.value).toBe("73");
+    const marked = readAriaSnapshot(yaml, { refs: ["e2", "e6", "e9"] });
     expect(
       JSON.stringify(
         withNames(marked.elements, new Map(), new Set(marked.unnamed)),
@@ -885,7 +916,7 @@ describe("a name the tree prints beneath the control", () => {
 - combobox [ref=e3]:
   - option "서울" [selected] [ref=e4]
 - spinbutton [ref=e5]: "482913"`;
-    const { elements } = parseAriaSnapshot(yaml, { refs: ["e1"] });
+    const { elements, unnamed } = readAriaSnapshot(yaml, { refs: ["e1"] });
     expect(elements.map((element) => element.name)).toEqual([
       "",
       "",
@@ -894,55 +925,16 @@ describe("a name the tree prints beneath the control", () => {
       "",
     ]);
     expect(JSON.stringify(elements)).not.toContain(secret);
-  });
-
-  /*
-   * Nor a control's name around the field: a nameless button wrapping an unnamed search box was
-   * named by what had been typed into the box (Codex on pull request 65). The field's own label
-   * is a word like any other; its contents are nobody's name.
-   */
-  test("a field's contents do not become the name of a control around it either", () => {
-    const secret = "hunter2!SuperSecret";
-    const yaml = `- button [ref=e1]:
-  - textbox [ref=e2]: ${secret}
-- link [ref=e3]:
-  - text: 검색
-  - searchbox [ref=e4]: ${secret}
-  - text: 하기
-- button [ref=e5]:
-  - textbox "검색어" [ref=e6]: ${secret}
-- button [ref=e7]:
-  - slider [ref=e8]: "73"`;
-    const { elements } = parseAriaSnapshot(yaml, { refs: ["e2", "e4", "e6"] });
-    const names = Object.fromEntries(elements.map((e) => [e.ref, e.name]));
-    expect(names).toEqual({
-      e1: "",
-      e2: "",
-      e3: "검색 하기",
-      e4: "",
-      e5: "검색어",
-      e6: "검색어",
-      e7: "",
-      e8: "",
-    });
-    expect(JSON.stringify(elements)).not.toContain(secret);
-  });
-
-  test("a name from inside is cut at its length between characters, like any other", () => {
-    const long = `${"가".repeat(199)}😀나`;
-    const { elements } = parseAriaSnapshot(
-      `- link [ref=e1]:\n  - /url: /x\n  - strong [ref=e2]: ${long}`,
-    );
-    expect(elements[0]?.name).toBe("가".repeat(199));
-    expect(elements[0]?.name.isWellFormed()).toBe(true);
+    // Nor is the page asked to name one: its name is the tree's, or none.
+    expect(unnamed).toEqual([]);
   });
 });
 
 /**
- * The names above are the fallback. The page is asked for the name of every control the tree printed
- * without one (`page-names.ts`), and what it answers takes the place of the words from inside.
+ * The page is asked for the name of every control the tree printed without one (`page-names.ts`),
+ * and what it answers is the name the list says. Where it does not answer, the list says none.
  */
-describe("the names the page gives in place of the tree's", () => {
+describe("the names the page gives the controls the tree left nameless", () => {
   test("the controls asked about are the nameless ones of a role named by its contents", () => {
     const yaml = `- link "이름 있음" [ref=e1]:
   - /url: /a
@@ -979,7 +971,7 @@ describe("the names the page gives in place of the tree's", () => {
     expect(read.unnamed.every((ref) => kept.has(ref))).toBe(true);
   });
 
-  test("the page's name replaces the one from inside, cut like any other, and brings no value", () => {
+  test("the page's name is the name the list says, cut like any other, and brings no value", () => {
     const yaml = `- link [ref=e1]:
   - /url: /a
   - text: ★
@@ -988,11 +980,7 @@ describe("the names the page gives in place of the tree's", () => {
 - link [ref=e4]:
   - text: 그대로`;
     const read = readAriaSnapshot(yaml);
-    expect(read.elements.map((element) => element.name)).toEqual([
-      "★ Headline",
-      "다음",
-      "그대로",
-    ]);
+    expect(read.elements.map((element) => element.name)).toEqual(["", "", ""]);
     const long = `${"가".repeat(199)}😀나`;
     const named = withNames(
       read.elements,
@@ -1004,30 +992,33 @@ describe("the names the page gives in place of the tree's", () => {
     expect(named).toEqual([
       { ref: "e1", role: "link", name: "Headline" },
       { ref: "e3", role: "button", name: "가".repeat(199) },
-      // Not among the refs the page was asked about: the words from inside stand (a test's map).
-      { ref: "e4", role: "link", name: "그대로" },
+      // The page gave no name for this one, and nothing else does.
+      { ref: "e4", role: "link", name: "" },
     ]);
     // The list it was given is not changed.
-    expect(read.elements[0]?.name).toBe("★ Headline");
+    expect(read.elements[0]?.name).toBe("");
   });
 
   /*
-   * A CONTROL THE PAGE WAS ASKED ABOUT AND DID NOT ANSWER FOR IS LEFT NAMELESS. The tree's words
-   * cannot tell an editable region from text — a plain `contenteditable` prints as `generic` — so
-   * keeping them would carry whatever was typed into one as a link's name (review of pull request
-   * 69). Nameless, the hold refuses the click as renamed: a refusal, never a secret on the trail.
+   * A CONTROL THE PAGE WAS ASKED ABOUT AND DID NOT ANSWER FOR IS LEFT NAMELESS. Nothing stands in
+   * for the page's name. The words the tree prints beneath a control did once, and they cannot tell
+   * an editable region from text — a plain `contenteditable` prints as `generic` — so as a name
+   * they would have carried whatever was typed into one (review of pull request 69). Nameless, the hold
+   * refuses the click as renamed: a refusal, never a secret on the trail. The tree's list has no
+   * name for these controls to begin with, and the look says so again whatever list it is handed
+   * (`asked`).
    */
-  test("a control the page did not answer for loses the tree's words, so a typed secret cannot ride out as a name", () => {
+  test("a control the page did not answer for has no name, so a typed secret cannot ride out as one", () => {
     const secret = "hunter2!SuperSecret";
     const read = readAriaSnapshot(`- link [ref=e1]:
   - generic [ref=e2]: ${secret}
   - text: 열기
 - link [ref=e3]:
   - text: 그대로`);
-    // The tree alone: the words from inside, secret included — which is why the page is asked.
-    expect(read.elements.map((element) => element.name)).toEqual([
-      `${secret} 열기`,
-      "그대로",
+    // The tree alone: no name, and nothing of what is beneath either link.
+    expect(read.elements).toEqual([
+      { ref: "e1", role: "link", name: "" },
+      { ref: "e3", role: "link", name: "" },
     ]);
     expect(read.unnamed).toEqual(["e1", "e3"]);
     // The page answered for e3 and not for e1 (out of time, or the ref did not resolve).
@@ -1041,6 +1032,17 @@ describe("the names the page gives in place of the tree's", () => {
     // And when the page answered nothing at all, every asked control is nameless.
     expect(
       withNames(read.elements, new Map(), new Set(read.unnamed)).map(
+        (element) => element.name,
+      ),
+    ).toEqual(["", ""]);
+    // The look's own rule, whatever it is handed: a name already on a control it asked about and
+    // got no answer for does not go on.
+    const carried = read.elements.map((element) => ({
+      ...element,
+      name: `${secret} 열기`,
+    }));
+    expect(
+      withNames(carried, new Map(), new Set(read.unnamed)).map(
         (element) => element.name,
       ),
     ).toEqual(["", ""]);

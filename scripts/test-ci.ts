@@ -939,6 +939,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * site put beside its sentence, and no other fact's), one to `app` (the card still saying why a
  * value did not go through after its box has gone).
  *
+ * LOWERED 2026-10-05 in `agent-computer` by three, with the name the list used to guess for a
+ * control the tree printed without one deleted (`nameFromWithin`) — by exactly what went, less
+ * what was added. The look had replaced that name on every control it was made for since
+ * 572a3eab, so four tests held only the guess and went with it: its words found through nameless
+ * wrappers one space apart, an address and a frame's contents left out of them, the name they gave
+ * the control around a labelled field, and where they were cut. One was added: the control around
+ * a field, or around text that can be edited, carries what was typed there in neither a name nor
+ * a value. Nothing that describes the list a Bot is shown went — the tests that had read the guess
+ * to say something else now say it of the tree's list and the look's: which controls the page is
+ * asked to name, that such a control has no name until it answers and no value ever, and that a
+ * field's contents are nobody's name.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -946,7 +958,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3515, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 476, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 473, roots: ["agent-computer"] },
   { name: "root", floor: 632, roots: ["tests", "agent-bot"] },
 ] as const;
 
