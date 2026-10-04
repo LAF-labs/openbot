@@ -84,7 +84,10 @@ const FRAME_WAIT_MS = 3_000;
 
 /**
  * What the tree leaves for the steps after it: the late join's wait, and the refs of a field a
- * person typed a secret into. A tree is never given time out of this.
+ * person typed a secret into. A tree is never given time out of this. The names asked of the page
+ * afterwards (`namesFromThePage`) take what is left of the look's deadline up to `PAGE_NAMES_MS`,
+ * not a reserve of their own: a look that has spent its time hands back the tree's list with the
+ * asked controls nameless (`withNames`), never a late one.
  */
 const AFTER_TREE_MS = 3 * SECRET_JOIN_TIMEOUT_MS;
 
@@ -281,7 +284,7 @@ export async function snapshotPage(
    * THE NAMES THE TREE LEFT OUT, ASKED OF THE PAGE (`page-names.ts`), after every other question:
    * nothing here takes a snapshot, so the refs the Bot will act with are still the page's. Only for
    * the controls the list keeps, and within what is left of the look — a name that does not come
-   * in time stays the one the tree's contents gave.
+   * in time leaves that control nameless (`withNames` says why the tree's words are not kept).
    */
   const names = await namesFromThePage(
     target,
@@ -292,7 +295,7 @@ export async function snapshotPage(
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    elements: withNames(read.elements, names),
+    elements: withNames(read.elements, names, new Set(read.unnamed)),
     truncated: read.truncated,
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.

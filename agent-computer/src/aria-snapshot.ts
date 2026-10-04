@@ -706,18 +706,30 @@ export function readAriaSnapshot(
  * The list with the page's own names in place of the ones the tree's contents gave
  * (`namesFromThePage`), cut where every name is cut.
  *
+ * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, not with the tree's words. The
+ * tree-derived name cannot tell an editable region from ordinary text — Playwright prints a plain
+ * `contenteditable` as `generic` with no mark (`person-typing.ts` measured it, 2026-09-16) — so a
+ * nameless link wrapping one would carry whatever had been typed into it as its name, to the model
+ * and the trail (review of pull request 69). When the page's own name comes, it leaves editable
+ * regions out on every path (`page-names.ts`); when it does not come in time, or the ref did not
+ * resolve, the honest list has no name for that control — the hold then compares the empty name
+ * with the browser's, which is a refusal and never a secret on the trail. A control the tree itself
+ * named is untouched: the page was never asked about it.
+ *
  * No value goes with a name replaced here: a nameless control of these roles never kept one
  * (`toElement` says a value only when its contents gave no name, and then they were empty).
  */
 export function withNames(
   elements: SnapshotElement[],
   names: ReadonlyMap<string, string>,
+  asked: ReadonlySet<string> = new Set(names.keys()),
 ): SnapshotElement[] {
   return elements.map((element) => {
     const name = names.get(element.ref);
-    return name === undefined
-      ? element
-      : { ...element, name: cutAtCodeUnits(name, 200) };
+    if (name !== undefined) {
+      return { ...element, name: cutAtCodeUnits(name, 200) };
+    }
+    return asked.has(element.ref) ? { ...element, name: "" } : element;
   });
 }
 
