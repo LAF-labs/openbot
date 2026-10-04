@@ -274,6 +274,8 @@
   "app/tests/use-now.test.tsx",
   "app/tests/version-line.test.tsx",
   "app/tests/waiting-for-bot-line.test.tsx",
+  "app/tests/weather-card-transcript.test.tsx",
+  "app/tests/weather-card.test.tsx",
   "app/tests/webview-apis.test.ts",
   "app/tests/withheld-secrets.test.tsx",
   "server/tests/account-lifecycle.integration.test.ts",

@@ -21,6 +21,7 @@
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
 import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
+import { WEATHER_SHOWN } from "../shared/weather";
 import { calendarDayAfter, weekdayOf } from "./grounded";
 import type { ObservedCall } from "./lib";
 
@@ -98,6 +99,8 @@ export function weatherAnswer(
         precip: ahead === 3 ? "비 9~18시(5mm)" : "없음",
       };
     }),
+    // The transport's own last field: the forecast is on the screen already.
+    shown: WEATHER_SHOWN,
   });
 }
 
@@ -142,17 +145,21 @@ export function weatherPlacesAsked(calls: readonly ObservedCall[]): string[] {
 }
 
 /**
- * Whether the answer gives the observation: the figure as 기상청 sent it, or rounded to a degree.
+ * Whether an answer leaves the forecast to the card.
  *
- * Rounded counts. The first three runs of `weather-from-the-agency` behind the new place line said
- * "지금 17도 정도" twice for 17.3 — which is how a person is told the temperature — and a check for
- * the decimal alone failed both. No other figure in the answer rounds to the same degree
- * (`weatherAnswer`'s hours are all below it), so a rounded figure is still this one.
+ * THE WEATHER IS DRAWN AS A CARD from the tool's own answer (the owner, 2026-10-04: "전용 카드 같은
+ * 걸 만들고, 모델 호출 비용은 최대한 줄여"), so what the model is asked for is one sentence about
+ * what was asked — not the temperature now, the day's low and high, the morning and the afternoon
+ * written out under a card that shows them. Measured: the 33 weather answers the local stack's
+ * conversation held from before the tool said so ran 43 to 222 characters, 80 at the middle, with
+ * three figures in the middle one and up to six; the twelve of these scenarios after it ran 17 to
+ * 47, with no figure or the one that was asked for.
+ *
+ * One figure is allowed: "최고 몇 도까지 올라가?" is answered with it.
  */
-export function saysNow(text: string, place: EvalWeatherPlace): boolean {
-  return (
-    text.includes(String(place.now)) || saysDegrees(text, Math.round(place.now))
-  );
+export function leavesItToTheCard(text: string): boolean {
+  const figures = text.match(/(?<![\d.])\d+(?:\.\d+)?\s?(?:도|℃|°)/g) ?? [];
+  return text.trim().length <= 80 && figures.length <= 1;
 }
 
 /** Whether a temperature was said as one: "31도", "31℃", "31°", "31 °C". A bare 31 is a date. */

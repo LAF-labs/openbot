@@ -49,6 +49,11 @@
  * live in this process's memory and in the request to 기상청, which is told a five-kilometre square
  * and not who asked.
  */
+import {
+  NOTHING_FALLS,
+  SKY_WORDS,
+  WEATHER_SHOWN,
+} from "../../../shared/weather";
 import { log } from "../log";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { type KmaCell, kmaCellOf } from "./kma-grid";
@@ -206,7 +211,7 @@ export function kmaWeatherTools(
   withPlaceNames: boolean,
 ): readonly PartnerToolSpec[] {
   const what =
-    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만.";
+    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만. 결과는 화면에 날씨 카드로 표시되니, 답에서는 예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다.";
   const coordinates = {
     latitude: {
       type: "number",
@@ -274,11 +279,14 @@ const READ: Record<KmaOperation, ReadonlySet<string>> = {
   days: new Set(["TMP", "SKY", "PTY", "POP", "PCP", "SNO", "TMN", "TMX"]),
 };
 
-/** 하늘상태. The codes are 1, 3 and 4 — the three every measured body used; there is no 2. */
+/**
+ * 하늘상태. The codes are 1, 3 and 4 — the three every measured body used; there is no 2. The
+ * words are the ones the app's card reads the sky back from (`shared/weather.ts`).
+ */
 const SKY: Readonly<Record<string, string>> = {
-  "1": "맑음",
-  "3": "구름많음",
-  "4": "흐림",
+  "1": SKY_WORDS.clear,
+  "3": SKY_WORDS.cloudy,
+  "4": SKY_WORDS.overcast,
 };
 /**
  * 강수형태, as the service is documented to use it: 0–4 in 단기예보, with 5–7 for the two 초단기
@@ -294,7 +302,7 @@ const FALLING: Readonly<Record<string, string>> = {
   "6": "빗방울눈날림",
   "7": "눈날림",
 };
-const NONE = "없음";
+const NONE = NOTHING_FALLS;
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 const DAYS_AHEAD = ["오늘", "내일", "모레", "글피", "그글피"] as const;
 
@@ -613,6 +621,8 @@ function summariseWeather(input: {
     ...(hours.length > 0 ? { hours } : {}),
     ...(days.length > 0 ? { days } : {}),
     ...(unavailable.length > 0 ? { unavailable } : {}),
+    // The last thing the model reads before it answers: a fact (`WEATHER_SHOWN`).
+    shown: WEATHER_SHOWN,
   });
 }
 
