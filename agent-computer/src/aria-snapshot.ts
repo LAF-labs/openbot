@@ -433,6 +433,16 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
  *
  * An image with no alt text says nothing, so a link that holds only one stays nameless — which is
  * also what the browser calls it, so the hold still finds it.
+ *
+ * WHAT THE TREE PRINTS THAT THE BROWSER DOES NOT NAME: a decoration the page hides from the
+ * accessibility tree (`<span aria-hidden="true">★</span>`) is printed as text like any other —
+ * measured 2026-10-04 in headless Chromium, `- text: ★` under a link the browser names "Headline" —
+ * and the tree carries no mark to tell it from a word. A name built here then holds a word the
+ * browser's does not, and the hold refuses the click as a rename: a refusal, never a wrong click,
+ * which is the side the boundary errs on (Codex on pull request 65, rounds 3 and 4). The browser's
+ * own name is not to be had per element without breaking the refs (a default-mode `ariaSnapshot()`
+ * on `aria-ref=eN` gives it, and invalidated the refs for the ones after); a name computed in the
+ * page from the DOM, leaving `aria-hidden` out, is the follow-up that would close this.
  */
 function nameFromWithin(value: unknown): string {
   return wordsWithin(value).join(" ").replace(/\s+/g, " ").trim();
