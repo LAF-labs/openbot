@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ARMS,
   asksJev,
+  dialogTextOf,
   dropReasons,
   factOf,
   type JevAnswer,
@@ -9,10 +10,12 @@ import {
   observe,
   PAGE_FACTS_QUESTIONS,
   pageFactsStateOf,
+  pageFactsStateWithDialogsOf,
   quantile,
   recommendedBar,
   SWEEP_BARS,
   scoreOf,
+  signInReadingsOf,
   stabilityOf,
   verdictOf,
 } from "../evals/page-facts";
@@ -42,6 +45,7 @@ const page = (over: Partial<LabelledPage> = {}): LabelledPage => ({
   hardGood: false,
   kind: "content",
   decidingIn: "text",
+  dialogs: [],
   ...over,
 });
 
@@ -227,6 +231,8 @@ describe("the scoring", () => {
     );
     expect(score.soft).toEqual({ n: 2, hit: 1, ids: ["soft"] });
     expect(score.softFromText).toEqual({ n: 1, hit: 1, ids: ["soft"] });
+    // With the dialog's words read too, the page that said so only in an alert is readable.
+    expect(score.softWithDialogs).toEqual({ n: 2, hit: 1, ids: ["soft"] });
     expect(score.walls).toEqual({ n: 1, hit: 1, ids: ["wall"] });
   });
 
@@ -408,6 +414,96 @@ describe("the questions", () => {
   });
 });
 
+/*
+ * POST-HOC, written after run 1 (2026-10-04): the arm that shows Jev a page's dialog words, and the
+ * password rule read as two facts. Held here like the rest so a later edit cannot quietly change
+ * what they measured.
+ */
+describe("the dialog's words, shown to Jev (post-hoc arm)", () => {
+  const alerted = page({
+    id: "alerted",
+    textLength: 0,
+    dialogs: [
+      {
+        kind: "alert",
+        message: "  존재하지 않는 공고입니다. 문의 02-123-4567  ",
+      },
+      { kind: "confirm", message: "홈으로 이동할까요?" },
+    ],
+  });
+
+  test("are the messages, one per line, redacted and cut to 300 characters", () => {
+    expect(dialogTextOf(alerted)).toBe(
+      "존재하지 않는 공고입니다. 문의 [phone]\n홈으로 이동할까요?",
+    );
+    expect(
+      dialogTextOf(
+        page({ dialogs: [{ kind: "alert", message: "가".repeat(500) }] }),
+      ),
+    ).toHaveLength(300);
+    expect(dialogTextOf(page())).toBe("");
+  });
+
+  test("sit beside the text, and a page that raised none is sent exactly what the proposal sends", () => {
+    const state = pageFactsStateWithDialogsOf(alerted);
+    expect(Object.keys(state.page)).toEqual(["url", "title", "text", "dialog"]);
+    expect(JSON.stringify(state)).not.toContain("02-123-4567");
+    const quiet = page({ head600: "본문" });
+    expect(pageFactsStateWithDialogsOf(quiet)).toEqual(pageFactsStateOf(quiet));
+  });
+
+  test("change nothing about when Jev is asked", () => {
+    for (const candidate of [
+      alerted,
+      page({ textLength: 1_501, dialogs: alerted.dialogs }),
+      page({ status: 404, dialogs: alerted.dialogs }),
+      page({ passwordFields: 1, dialogs: alerted.dialogs }),
+    ]) {
+      expect(asksJev(candidate, "rules+jev+dialog")).toBe(
+        asksJev(candidate, "rules+jev"),
+      );
+    }
+  });
+});
+
+describe("the password rule, read as two facts (post-hoc)", () => {
+  test("separates the walls from the login page that was asked for and a login box beside something else", () => {
+    const readings = signInReadingsOf([
+      page({
+        id: "wall",
+        passwordFields: 1,
+        unusable: true,
+        signInWall: true,
+        kind: "sign-in",
+      }),
+      page({ id: "asked", passwordFields: 1, kind: "sign-in", hardGood: true }),
+      page({ id: "portal", passwordFields: 1 }),
+      page({
+        id: "missing",
+        passwordFields: 1,
+        unusable: true,
+        kind: "not-found",
+      }),
+      page({
+        id: "missing-404",
+        passwordFields: 1,
+        unusable: true,
+        status: 404,
+        kind: "not-found",
+      }),
+      page({ id: "none" }),
+    ]);
+    expect(readings).toEqual({
+      withForm: ["wall", "asked", "portal", "missing", "missing-404"],
+      usableWithForm: ["asked", "portal"],
+      reached: ["wall", "asked", "portal", "missing"],
+      walls: ["wall"],
+      askedFor: ["asked"],
+      besideOther: ["portal", "missing"],
+    });
+  });
+});
+
 describe("the labelled set", () => {
   test("every row carries what the eval reads, in the type it reads it", async () => {
     const rows = (
@@ -437,6 +533,12 @@ describe("the labelled set", () => {
         decidingIn: ["text", "title", "dialog", "screen", "empty"].includes(
           row.decidingIn as string,
         ),
+        dialogs:
+          Array.isArray(row.dialogs) &&
+          row.dialogs.every(
+            (dialog: { message?: unknown }) =>
+              typeof dialog?.message === "string",
+          ),
       };
       expect([row.id, shape]).toEqual([
         row.id,
@@ -454,6 +556,7 @@ describe("the labelled set", () => {
           captcha: "boolean",
           hardGood: "boolean",
           decidingIn: true,
+          dialogs: true,
         },
       ]);
       ids.add(row.id);
