@@ -94,10 +94,21 @@ describe("whether an answer got the thing", () => {
   test("an apology is not a summary, in the words a Bot really used", () => {
     // Prose by any count, and passed as a summary until its two phrases were known for what they are.
     expect(twelveInARow.test(apology)).toBe(true);
-    expect(koreanProse(20).test(apology)).toBe(true);
+    expect(koreanProse(20)(apology)).toBe(true);
     expect(GAVE_UP.test("화면이 응답하지 않아서")).toBe(true);
     expect(GAVE_UP.test("섹션을 열지 못하고 있어요")).toBe(true);
     expect(answerPasses(ANSWER_JUDGES.news, apology)).toBe(false);
+  });
+
+  test("words are counted — syllables in a row are not words, and a long answer is judged at once", () => {
+    // The first repair was a pattern: it called 가나다라 two words, and took seconds to say no.
+    expect(koreanProse(2)("가나다라")).toBe(false);
+    expect(koreanProse(2)("가나 다라")).toBe(true);
+    const nearly = Array.from({ length: 19 }, () => "가나다").join(" ");
+    const started = performance.now();
+    expect(koreanProse(20)(nearly)).toBe(false);
+    expect(koreanProse(20)(`${nearly} 라마바`)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(100);
   });
 
   test("a few words are not prose, and a price is its own proof whatever is said beside it", () => {

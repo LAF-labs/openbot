@@ -1525,17 +1525,20 @@ the site echoes back (sent once, every asked field as asked, nothing else filled
 | wrong fields · unasked fields | 0 · 0 | 0 · 0 |
 | steps not reached · presses before a stop | 0 · 0 | 0 · 0 |
 | prompt tokens a run (of them cached) | 70,525 (63,448) | **47,829** (39,346) |
+| prompt tokens a run that were NOT cached | 7,077 | 8,484 |
 | cost a run | $0.0011 | $0.0012 |
 
 The model already batched in a third of the runs with no paragraph — the ledger's "never" was a
 ledger of asks that hand over one value at a time. With the paragraph it always does. Requests fall
 by four in ten and prompt tokens by a third; seconds by an eighth, because a batched reply takes
-longer to write than a single step (2.9 s against 2.3 s a model turn); and **cost does not move**,
-because the tokens saved are cached ones. The send was never inside a batch in either arm — the
-model writes it alone, after a look — so the round-stop rule never fired here, and this says
-nothing about it.
+longer to write than a single step (2.9 s against 2.3 s a model turn); and **cost did not fall**:
+the tokens saved are cached ones, the uncached ones rose a little, and the mean went from $0.00109
+to $0.00119 a run — inside the runs' own spread (sd $0.0003), and partly a matter of how often the
+first request found the cache warm (8 runs of 20 without the paragraph, 4 with). The send was never
+inside a batch in either arm — the model writes it in a reply of its own, 40 times of 40 — so the
+round-stop rule never fired here, and this says nothing about it.
 
-**What is not a form** — the six ordinary tasks, N=4 an arm (네이버 쇼핑 and 뉴스 at 8), re-scored
+**What is not a form** — the six ordinary tasks, N=4 an arm (네이버 쇼핑 and 뉴스 at 8 or 9), re-scored
 from the stored answers after the 뉴스 judge was repaired (below). Passed / median model requests:
 
 | task | without | with |
@@ -1574,10 +1577,13 @@ batches; half the gain it priced was already there.
   alone. A shipped paragraph gets neither. Its numbers (requests 9 → 6) were an upper bound and
   were set aside; the table above is the paragraph inside the base, byte for byte where it ships.
 - *What the 뉴스 judge counted.* Its floor was twelve words of two syllables or more IN A ROW, and
-  Korean is full of words of one: five complete three-line summaries failed at ten or eleven, in
-  both arms, and which arm drew more of them looked like a regression (5/8 against 6/8). It also
-  passed "화면이 응답하지 않아서 … 열지 못하고 있어요" as a summary. The floor is a count now
-  (`koreanProse`), the two phrases are give-ups, and both real answers are tests.
+  Korean is full of words of one: four complete three-line summaries failed at ten or eleven — one
+  without the paragraph and three with it — and which arm drew more of them looked like a
+  regression (5/8 against 6/8). It also passed "화면이 응답하지 않아서 … 열지 못하고 있어요" as a
+  summary. The floor is a count of words now (`koreanProse` — the first repair was a pattern that
+  counted pairs of syllables and backtracked for seconds; review caught that too), the two phrases
+  are give-ups, and both real answers are tests. A floor only tells prose from none: an apology in
+  words the give-up list does not hold still passes, as before.
 
 **Limits of what this measures.** One form, one provider (Meta), one hour. The eval's gateway has
 no high-risk reviewer, so a press after a name and a phone number were typed is not asked about as

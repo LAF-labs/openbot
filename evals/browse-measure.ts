@@ -65,13 +65,28 @@ export const GAVE_UP =
  *
  * THE WORDS ARE COUNTED, NOT REQUIRED IN A ROW. The floor used to be `([가-힣]{2,}[^가-힣]+){12,}` —
  * twelve such words one after another — and Korean is full of words of one syllable (수, 등, 및,
- * 이, 그): "늘릴 수 있다" ends a run. Measured 2026-10-05 on 16 stored answers to the news task: five
- * complete three-line summaries failed at ten or eleven in a row, in both arms alike, and the
- * comparison of the arms turned on which arm had drawn more of them. A floor is there to tell
- * prose from an apology or an empty answer, and a count does that.
+ * 이, 그): "늘릴 수 있다" ends a run. Measured 2026-10-05 on the stored answers to the news task:
+ * four complete three-line summaries failed at ten or eleven in a row — one without the paragraph
+ * about several steps, three with it — and the comparison of the two arms turned on which had
+ * drawn more of them.
+ *
+ * A COUNT, AND NOT A PATTERN THAT COUNTS. The first repair was a regular expression,
+ * `(?:[가-힣]{2,}[\s\S]*?){n,}`: it counted pairs of syllables rather than words (가나다라 was two),
+ * and on an answer just short of the floor it backtracked for seconds (review of pull request 81:
+ * 16.8 s on fifteen three-syllable words under V8). Matching every word once and counting is linear
+ * and says what it means.
+ *
+ * It tells prose from an empty or a two-word answer and nothing more: an apology is prose, and
+ * only `GAVE_UP` knows it for one — so a give-up in words that list does not hold still passes, as
+ * it did under the old floor.
  */
-export const koreanProse = (words: number): RegExp =>
-  new RegExp(`(?:[가-힣]{2,}[\\s\\S]*?){${words},}`);
+export const koreanProse =
+  (words: number) =>
+  (answer: string): boolean =>
+    (answer.match(/[가-힣]{2,}/g) ?? []).length >= words;
+
+/** What an answer has to hold: a pattern, or a test of its own. */
+type Expectation = RegExp | ((answer: string) => boolean);
 
 /** What a right answer to each ordinary task has to contain, and whether an apology fails it. */
 export const ANSWER_JUDGES = {
@@ -81,14 +96,18 @@ export const ANSWER_JUDGES = {
   coupang: { expects: /\d{1,3}(,\d{3})+\s*원|\d{4,}\s*원/ },
   news: { expects: koreanProse(20), strict: true },
   blog: { expects: koreanProse(8), strict: true },
-} as const satisfies Record<string, { expects: RegExp; strict?: true }>;
+} as const satisfies Record<string, { expects: Expectation; strict?: true }>;
 
 /** Whether an answer passes a task's judge: the pattern is there, and on a strict task no apology is. */
 export function answerPasses(
-  judge: { expects: RegExp; strict?: true },
+  judge: { expects: Expectation; strict?: true },
   answer: string,
 ): boolean {
-  return judge.expects.test(answer) && !(judge.strict && GAVE_UP.test(answer));
+  const held =
+    typeof judge.expects === "function"
+      ? judge.expects(answer)
+      : judge.expects.test(answer);
+  return held && !(judge.strict && GAVE_UP.test(answer));
 }
 
 /* ------------------------------------------------------------------------------------------ */
