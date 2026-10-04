@@ -211,7 +211,7 @@ export function kmaWeatherTools(
   withPlaceNames: boolean,
 ): readonly PartnerToolSpec[] {
   const what =
-    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만. 결과는 화면에 날씨 카드로 표시되니, 답에서는 예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다.";
+    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만. 결과에 shown이 있으면 예보가 이미 화면에 날씨 카드로 표시된 것이니, 답에서는 예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다.";
   const coordinates = {
     latitude: {
       type: "number",
@@ -621,8 +621,14 @@ function summariseWeather(input: {
     ...(hours.length > 0 ? { hours } : {}),
     ...(days.length > 0 ? { days } : {}),
     ...(unavailable.length > 0 ? { unavailable } : {}),
-    // The last thing the model reads before it answers: a fact (`WEATHER_SHOWN`).
-    shown: WEATHER_SHOWN,
+    /*
+     * The last thing the model reads before it answers: a fact (`WEATHER_SHOWN`) — and only where
+     * it is one. The card draws a temperature now or a day; an answer with neither has no card,
+     * and is not told it has.
+     */
+    ...((now && now.temp !== null) || days.length > 0
+      ? { shown: WEATHER_SHOWN }
+      : {}),
   });
 }
 

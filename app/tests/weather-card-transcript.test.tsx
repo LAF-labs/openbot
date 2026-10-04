@@ -76,6 +76,13 @@ const DATA = JSON.stringify({
   ],
 });
 const REFUSED = "laf:weather_place_outside";
+/** The tool's own partial answer, late in the evening: the next hours and nothing the card draws. */
+const HOURS_ONLY = JSON.stringify({
+  source: "기상청",
+  place: "서울특별시 종로구",
+  hours: [{ at: "22시", temp: 15, sky: "맑음", precip: "없음" }],
+  unavailable: ["현재 관측", "날짜별 예보"],
+});
 
 const itemsOf = (messages: Message[]) =>
   withBrowsingTasks(toVisibleChatItems(messages));
@@ -115,6 +122,21 @@ describe("which weather calls are steps", () => {
       ]).taken,
     ).toEqual({
       "a-answer": { runIds: ["call-w"], rows: ["call-w"], failed: 1 },
+    });
+    /*
+     * Data, and none of it the card's: no temperature now and no day. Known as a card by how the
+     * answer begins, it was no step and no card — nothing on the screen (Codex on pull request
+     * 62). It is a step that worked, opened from the answer like any other.
+     */
+    expect(
+      stepsOf([
+        ASKED,
+        called("w", WEATHER_TOOL_NAME),
+        answered("w", HOURS_ONLY),
+        said("a-answer", "밤 열 시에는 15도예요."),
+      ]).taken,
+    ).toEqual({
+      "a-answer": { runIds: ["call-w"], rows: ["call-w"], failed: 0 },
     });
     // A step, the card, a step: two runs of one, and the answer opens both.
     const mixed = stepsOf([

@@ -202,6 +202,44 @@ describe("the weather tool's answer, read for the card", () => {
       ],
     });
   });
+
+  /*
+   * A DAY THAT TURNED has several kinds, joined by a middle dot — the server's own fixture is
+   * "눈·비/눈·소나기 9~13시(…)". Read as one word it matched nothing, and a wet day was drawn with
+   * the sky's picture (Codex on pull request 62).
+   */
+  test("reads what falls on a day that turned: each kind, and rain with snow as either", () => {
+    const fallsOn = (precip: string) =>
+      weatherOf(
+        JSON.stringify({
+          source: "기상청",
+          place: "서울",
+          days: [{ date: "2026-12-19", min: -3, max: 4, precip }],
+        }),
+      )?.days[0]?.falls;
+    expect(
+      [
+        "눈·비/눈·소나기 9~13시(1.0mm·30.0~50.0mm·50.0mm 이상)",
+        "비·소나기 3~9시(5.0mm)",
+        "눈·눈날림 0~6시",
+        "비·눈 0~6시",
+        "빗방울눈날림 1~2시",
+        "강수 1~2시",
+        // A kind the table has no word for is still something falling.
+        "우박 14~15시",
+        "없음",
+      ].map(fallsOn),
+    ).toEqual([
+      "sleet",
+      "rain",
+      "snow",
+      "sleet",
+      "sleet",
+      "rain",
+      "rain",
+      null,
+    ]);
+  });
 });
 
 describe("the weather card", () => {
