@@ -32,12 +32,6 @@ Korean first, for the people who run a shop rather than a codebase.
 A Bot is a colleague you can hand a job to. It drives a real browser with your
 logins in it, and it can read and write files.
 
-Two of the three ways it works keep going when you close the window: a routine
-fires on its clock, and a room with several Bots takes its turn on the server. A
-one-to-one conversation is still driven by the open page and ends with it — the
-turn streams for free that way and needs no relay, and it is the piece of this
-sentence that is not yet true.
-
 **One VM per person, one computer on it.** However many Bots you make, they share
 that computer — its files, its logins, its browser sessions — and nobody else's
 Bots are on it. The Bots share one browser profile inside it, and the thing
@@ -77,9 +71,8 @@ architecture, kept and still running.
 | **One switch over both** | A deployment can refuse to have its boundary settled without a person, and it covers both of the above. |
 | **Teaching by demonstration** | Do the task once in the Bot's browser. It is written up as a procedure you edit, name, and invoke with `/`. It never records what you typed. |
 | **Routines** | An instruction, a Bot and a clock. It runs with its tools, through the same gateway, and reports back into its own conversation. |
-| **Rooms** | Several Bots in one conversation, with the turn running on the server — a tab that closes mid-turn no longer kills it. |
 | **Connected as the person asking** | Notion, Google Drive, Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, each person consenting for themselves, so two people asking the same question get the answers their own accounts can see. |
-| **Effort** | The one model setting, per Bot, carried into every run — chat, rooms and routines. |
+| **Effort** | The one model setting, per Bot, carried into every run — chat and routines. |
 | **Korean first** | Every user-facing string, enforced by a test. |
 | **One VM per person** | The deployment decides the architecture, not the other way round. |
 
@@ -161,7 +154,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Features
 
-- **One computer per account**: every Bot you make shares your computer — files, logins and browser sessions carry from one Bot to the next, which is what lets them hand work to each other. Bots are not a security boundary; the gateway in front of the computer is.
+- **One computer per account**: every Bot you make shares your computer — files, logins and browser sessions carry from one Bot to the next. Bots are not a security boundary; the gateway in front of the computer is.
 - **The gateway is the only way in**: it resolves the target from a server-held snapshot, evaluates the policy, writes the audit row, and only then calls the computer. There is no path that acts without the record existing first.
 - **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `submit`, `file.*`, `mcp.*` and `repeat.count`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
 - **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
@@ -171,7 +164,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 - **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, plus 카카오 알림톡 and 나라장터·기업마당 on an account or key the fleet holds. For the first seven, each person consents for themselves and calls run on their own grant, so two people asking the same question get the answers their own accounts can see. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
 - **Show it once**: drive the Bot's browser through a task yourself and the demonstration is written up as a procedure you edit, name and invoke with `/`. The recorder keeps that typing happened and into which field — never a value, passwords included, and a test serialises the whole record to prove it.
-- **Routines and rooms run on the server**: a routine fires on its clock with the Bot's tools underneath the same gateway, and a room with several Bots takes its turn server-side, so closing the window does not end either.
+- **Routines run on the server**: a routine fires on its clock with the Bot's tools underneath the same gateway, so closing the window does not end it.
 - **An audit trail you can read**: `/admin/audit` lists what was permitted, what was refused and what failed, and every refusal carries the rule that caused it.
 - **Credentials encrypted at rest**: stored through `/admin/credentials`, never returned by an API, and redacted from audit events.
 - **Loopback by default**: computers bind to `127.0.0.1` and require a per-container token, so nothing reaches a logged-in browser by knowing its port.
@@ -181,16 +174,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 Any AG-UI endpoint can be a Bot.
 
-From `/agents`, create a coworker with:
-
-- name, title, and role description;
-- optional AG-UI endpoint;
-- optional write-only authorization header.
-
 The server validates agent endpoints with the same target checks used for browser navigation. If no custom endpoint is set, product-created coworkers use `MANAGED_AGENT_AG_UI_URL`.
-
-Every coworker is made this way. The tenant package could once declare some of its own; it ships
-none, and a Bot belongs to the person who made it.
 
 See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](docs/laf/coworkers.md).
 
