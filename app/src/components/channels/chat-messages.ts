@@ -13,7 +13,7 @@ import {
 } from "@shared/tools/gallery";
 import { stepDidNotWork } from "@shared/tools/step-result";
 import { withheldMarksIn } from "@shared/tools/withheld";
-import { WEATHER_DATA_HEAD } from "@shared/weather";
+import { WEATHER_DATA_HEAD, weatherOf } from "@shared/weather";
 import {
   BROWSING_TOOLS,
   type BrowsingStep,
@@ -175,10 +175,14 @@ export function isFoldableStep(name: string): boolean {
  * conversation. Without — refused, failed, a place the forecast does not reach — it is the step it
  * always was: put away, and counted as one that did not work.
  *
- * By how the answer begins, not by reading it: this is asked of every step on every chunk.
+ * BY THE SAME READING THE CARD IS DRAWN FROM (`weatherOf`). By how the answer begins alone, an
+ * answer that held the next hours and nothing the card draws — no temperature now, no day; the
+ * tool's own partial answer, late in the evening — was no step and no card: nothing on the screen
+ * at all (Codex on pull request 62). The head is looked at first because this is asked of every
+ * step on every chunk, and only a weather answer is read.
  */
 export function isWeatherCard(result: string): boolean {
-  return result.startsWith(WEATHER_DATA_HEAD);
+  return result.startsWith(WEATHER_DATA_HEAD) && weatherOf(result) !== null;
 }
 
 /**
