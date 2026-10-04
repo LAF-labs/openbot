@@ -41,6 +41,12 @@
  *  - 단기예보 writes rainfall in words for the first two days ("강수없음", "1mm 미만") and as a bare
  *    number after ("0", "0.4", "2"), in one body. `amount` reads both.
  *
+ * THE DAYS AFTER THOSE come through a second door. 단기예보 ends three or four days out; days five
+ * to ten are 기상청's 중기예보, which the hub's key was never opened for and the public data portal's
+ * is (`kma-mid-forecast.ts`, which says what was measured there). They are rows added to the same
+ * answer by the same tool, on a deployment that also carries the portal's key — and a part like the
+ * other three: when it cannot be had it is named in `unavailable` and the rest is answered.
+ *
  * THE KEY RIDES ON THE QUERY STRING, so a redirect is never followed and every refusal's detail is
  * cut clean of it before it goes to the trail (`withoutCredential`).
  *
@@ -58,6 +64,14 @@ import {
 import { log } from "../log";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { type KmaCell, kmaCellOf } from "./kma-grid";
+import {
+  createKmaMidForecast,
+  dateMs,
+  dayAfter,
+  type KmaMidAnswer,
+  type KmaMidDay,
+} from "./kma-mid-forecast";
+import { KMA_MID_REGIONS, type KmaMidRegions } from "./kma-mid-regions";
 import { KMA_PLACES, type KmaPlaces } from "./kma-places";
 import { type McpCallResult, trimDetail, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
@@ -210,9 +224,15 @@ const TOOL = "get_weather";
  */
 export function kmaWeatherTools(
   withPlaceNames: boolean,
+  /**
+   * Whether this deployment carries the key the days past the 단기예보 are asked with. How far the
+   * forecast reaches is said as far as it can reach here, and no further: a Bot told "열흘" on a
+   * deployment that can only ever answer four days would promise a week it cannot have.
+   */
+  withLaterDays = false,
 ): readonly PartnerToolSpec[] {
-  const what =
-    "기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 3~4일 뒤까지 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만. 결과에 shown이 있으면 예보가 이미 화면에 날씨 카드로 표시된 것이니, 답에서는 예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다.";
+  const reach = withLaterDays ? "최대 열흘 뒤까지" : "3~4일 뒤까지";
+  const what = `기상청 날씨. 지금 기온·습도·강수와 앞으로 6시간, 오늘부터 ${reach} 날짜별 예보(최저·최고, 오전·오후 하늘과 강수확률, 비·눈)를 한 번에 준다. 날씨는 검색하거나 브라우저로 찾지 말고 이것으로 답한다. 한국 안만. 결과에 shown이 있으면 예보가 이미 화면에 날씨 카드로 표시된 것이니, 답에서는 예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다.`;
   const coordinates = {
     latitude: {
       type: "number",
@@ -360,20 +380,8 @@ function slotsOf(issued: Issued): [string, Slot][] {
   return [...slots.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/**
- * A calendar date (`20261002`), some days on, as milliseconds — the date held as if it were UTC,
- * which is how every date in this file is worked: the calendar does the months and the years.
- */
-const dateMs = (date: string, days = 0) =>
-  Date.UTC(
-    Number(date.slice(0, 4)),
-    Number(date.slice(4, 6)) - 1,
-    Number(date.slice(6, 8)) + days,
-  );
-
-/** `20261002` plus a number of days. */
-const dayAfter = (date: string, days: number) =>
-  new Date(dateMs(date, days)).toISOString().slice(0, 10).replaceAll("-", "");
+// `dateMs` and `dayAfter` — a calendar date held as if it were UTC, which is how every date in
+// this file is worked — are `kma-mid-forecast.ts`'s, which counts its days the same way.
 
 const weekdayOf = (date: string) =>
   WEEKDAYS[new Date(dateMs(date)).getUTCDay()];
@@ -528,17 +536,7 @@ function daysOf(issued: Issued, morning: Issued | null, at: Date) {
     return null;
   };
 
-  const rows: {
-    date: string;
-    day: string | undefined;
-    when: string | undefined;
-    min: number | null;
-    max: number | null;
-    am?: string;
-    pm?: string;
-    precip?: string;
-    snow?: string;
-  }[] = [];
+  const rows: DayRow[] = [];
   for (let ahead = 0; ahead < DAYS_AHEAD.length; ahead++) {
     const date = dayAfter(today, ahead);
     const ofDate = (slots: [string, Slot][]) =>
@@ -572,11 +570,56 @@ function daysOf(issued: Issued, morning: Issued | null, at: Date) {
   return rows;
 }
 
+/** A row of the answer's `days`: 단기예보's, and after them 중기예보's. */
+type DayRow = {
+  date: string;
+  day: string | undefined;
+  when: string | undefined;
+  min: number | null;
+  max: number | null;
+  am?: string;
+  pm?: string;
+  /** One sky and one chance for the whole day: 중기예보 from its eighth day. */
+  allDay?: string;
+  precip?: string;
+  snow?: string;
+};
+
+/**
+ * The days past the 단기예보's, as rows of the same shape.
+ *
+ * ONLY THE DAYS AFTER ITS LAST ONE. Where both forecasts have a day — the fourth, most evenings —
+ * the 단기예보's is the one said: it is for the five-kilometre cell and by the hour, and 중기예보's
+ * is for the 시·군 and the half day. And never today or before: an issuance that is still the newest
+ * past midnight has not got older, but its first days may have become days the answer already has.
+ */
+function laterRows(later: KmaMidDay[], short: DayRow[], at: Date): DayRow[] {
+  const today = kstStamp(at).slice(0, 8);
+  const last = short[short.length - 1]?.date.replaceAll("-", "") ?? today;
+  return later
+    .filter((day) => day.date > last)
+    .map((day) => ({
+      date: `${day.date.slice(0, 4)}-${day.date.slice(4, 6)}-${day.date.slice(6, 8)}`,
+      day: weekdayOf(day.date),
+      // 그글피 is as far as the words go; after it a day is its date and its weekday.
+      when: DAYS_AHEAD[
+        Math.round((dateMs(day.date) - dateMs(today)) / (24 * HOUR))
+      ],
+      min: day.min,
+      max: day.max,
+      ...(day.am ? { am: day.am } : {}),
+      ...(day.pm ? { pm: day.pm } : {}),
+      ...(day.allDay ? { allDay: day.allDay } : {}),
+      ...(day.precip ? { precip: day.precip } : {}),
+    }));
+}
+
 /** What each part of the answer is called when it could not be had. */
-const PART_NAMES: Record<KmaOperation, string> = {
+const PART_NAMES: Record<KmaOperation | "later", string> = {
   now: "현재 관측",
   hours: "시간별 예보",
   days: "날짜별 예보",
+  later: "5~10일 뒤 예보",
 };
 
 /**
@@ -604,14 +647,24 @@ function summariseWeather(input: {
   hours: Issued | null;
   days: Issued | null;
   morning: Issued | null;
+  /**
+   * 중기예보's days, or null on a deployment that does not ask for them. An answer that asked and
+   * got none still has the field, empty: that is a part that could not be had, and is named.
+   */
+  later: KmaMidAnswer | null;
 }): string {
   const now = input.now ? nowOf(input.now) : null;
   const hours = input.hours ? hoursOf(input.hours, input.at) : [];
-  const days = input.days ? daysOf(input.days, input.morning, input.at) : [];
+  const short = input.days ? daysOf(input.days, input.morning, input.at) : [];
+  const beyond = input.later
+    ? laterRows(input.later.days, short, input.at)
+    : [];
+  const days = [...short, ...beyond];
   const unavailable = [
     ...(now ? [] : [PART_NAMES.now]),
     ...(hours.length > 0 ? [] : [PART_NAMES.hours]),
-    ...(days.length > 0 ? [] : [PART_NAMES.days]),
+    ...(short.length > 0 ? [] : [PART_NAMES.days]),
+    ...(input.later && beyond.length === 0 ? [PART_NAMES.later] : []),
   ];
   return JSON.stringify({
     source: "기상청",
@@ -624,8 +677,11 @@ function summariseWeather(input: {
       ...(input.hours && hours.length > 0
         ? { hours: stampOf(input.hours.base) }
         : {}),
-      ...(input.days && days.length > 0
+      ...(input.days && short.length > 0
         ? { days: stampOf(input.days.base) }
+        : {}),
+      ...(input.later?.issued && beyond.length > 0
+        ? { later: stampOf(input.later.issued) }
         : {}),
     },
     units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
@@ -687,11 +743,20 @@ export function createKmaWeatherTransport(input: {
   placeOf?: (actorId: string) => Promise<string | null>;
   /** The table names are looked up in. The one this repository ships unless a test hands another. */
   places?: KmaPlaces;
+  /**
+   * The public data portal's key, where the deployment carries one: the days past the 단기예보 are
+   * asked for with it (`kma-mid-forecast.ts`). Without it nothing is asked there and the answer is
+   * the three or four days it always was.
+   */
+  serviceKey?: string;
+  /** Which 중기예보 regions a cell is in. The shipped table's unless a test hands another. */
+  midRegions?: KmaMidRegions;
 }): VendorTransport {
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? (() => new Date());
   const places = input.places ?? KMA_PLACES;
-  const tools = kmaWeatherTools(places.size > 0);
+  const midRegions = input.midRegions ?? KMA_MID_REGIONS;
+  const tools = kmaWeatherTools(places.size > 0, Boolean(input.serviceKey));
 
   /*
    * The key in every spelling an error could quote it in: as held, as the query string carries it
@@ -838,18 +903,16 @@ export function createKmaWeatherTransport(input: {
    * and a failure are never kept: the first is "ask again in a minute", the second is nobody's
    * answer.
    */
-  const kept = new Map<
-    string,
-    { until: number; answer: Promise<Issued | null> }
-  >();
-  function keeping(
+  const kept = new Map<string, { until: number; answer: Promise<unknown> }>();
+  /** `T` is whatever the key was first kept as: a key names one operation's one issuance. */
+  function keeping<T>(
     key: string,
     until: number,
-    fetchIt: () => Promise<Issued | null>,
-  ): Promise<Issued | null> {
+    fetchIt: () => Promise<T | null>,
+  ): Promise<T | null> {
     const at = now().getTime();
     const held = kept.get(key);
-    if (held && held.until > at) return held.answer;
+    if (held && held.until > at) return held.answer as Promise<T | null>;
     for (const [other, entry] of kept) {
       if (entry.until <= at) kept.delete(other);
     }
@@ -873,6 +936,16 @@ export function createKmaWeatherTransport(input: {
     }, forget);
     return entry.answer;
   }
+
+  /** 중기예보, on a deployment that carries the portal's key. Its answers are kept in the same table. */
+  const mid = input.serviceKey
+    ? createKmaMidForecast({
+        serviceKey: input.serviceKey,
+        fetchImpl,
+        now,
+        keeping,
+      })
+    : null;
 
   /** The newest issuance of one operation for one cell, stepping back once if it is not out. */
   async function latest(
@@ -928,6 +1001,8 @@ export function createKmaWeatherTransport(input: {
     placeName?: string;
     /** The coordinates alone, where the place was asked by them — a screen writes them in its own words. */
     coordinates?: { latitude: number; longitude: number };
+    /** The names the place was found by, the 시·도 first — which 시·군 was meant (`kma-mid-regions.ts`). */
+    levels?: readonly string[];
     saved: boolean;
   }> {
     /*
@@ -960,7 +1035,12 @@ export function createKmaWeatherTransport(input: {
         );
       }
       return found.kind === "found"
-        ? { cell: found.cell, place: found.name, placeName: found.name }
+        ? {
+            cell: found.cell,
+            place: found.name,
+            placeName: found.name,
+            levels: found.levels,
+          }
         : null;
     };
 
@@ -1009,11 +1089,15 @@ export function createKmaWeatherTransport(input: {
     const at = now();
     const where = await whereOf(actorId, args);
     const operations = ["now", "hours", "days"] as const;
-    const [answers, morning] = await Promise.all([
+    // A place with no 중기예보 region — a cell out at sea — is asked nothing, and the part is named.
+    const region = mid ? midRegions.of(where.cell, where.levels) : null;
+    const nothingLater: KmaMidAnswer = { days: [], issued: null, failed: [] };
+    const [answers, morning, later] = await Promise.all([
       Promise.allSettled(
         operations.map((operation) => latest(operation, where.cell, at)),
       ),
       morningOf(where.cell, at),
+      mid ? (region ? mid.daysFor(region, at) : nothingLater) : null,
     ]);
 
     /*
@@ -1049,6 +1133,10 @@ export function createKmaWeatherTransport(input: {
       });
     }
 
+    for (const code of later?.failed ?? []) {
+      log.warn("weather_part_unavailable", { part: "later", code });
+    }
+
     const had = (index: number) => {
       const answer = answers[index];
       return answer?.status === "fulfilled" ? answer.value : null;
@@ -1064,6 +1152,7 @@ export function createKmaWeatherTransport(input: {
       hours: had(1),
       days: had(2),
       morning,
+      later,
     });
   }
 
@@ -1097,9 +1186,11 @@ export const KMA_WEATHER_SERVICE: DeploymentKeyService = {
   key: KMA_WEATHER_KEY,
   family: "kma-apihub",
   tools: KMA_WEATHER_TOOLS,
-  transport: ({ key, fetchImpl, now, whereaboutsOf }) =>
+  transport: ({ key, keys, fetchImpl, now, whereaboutsOf }) =>
     createKmaWeatherTransport({
       authKey: key,
+      // The portal's key, when this deployment carries it too: days five to ten are asked with it.
+      ...(keys?.["data-go-kr"] ? { serviceKey: keys["data-go-kr"] } : {}),
       ...(fetchImpl ? { fetchImpl } : {}),
       ...(now ? { now } : {}),
       ...(whereaboutsOf

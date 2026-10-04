@@ -52,7 +52,13 @@ export type KmaPlace = {
 };
 
 export type KmaPlaceAnswer =
-  | { kind: "found"; name: string; cell: KmaCell }
+  | {
+      kind: "found";
+      name: string;
+      cell: KmaCell;
+      /** The row's names, the 시·도 first — what else is filed under them (`kma-mid-regions.ts`). */
+      levels: readonly string[];
+    }
   | { kind: "ambiguous"; candidates: string[] }
   | { kind: "unknown" };
 
@@ -486,6 +492,7 @@ export function createKmaPlaces(rows: readonly KmaPlace[]): KmaPlaces {
           kind: "found",
           name: nameFor(first),
           cell: { nx: first.nx, ny: first.ny },
+          levels: first.levels,
         };
       }
       return {

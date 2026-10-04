@@ -82,9 +82,12 @@ export type WeatherDay = {
   date: string;
   min: number | null;
   max: number | null;
-  /** The sky of the afternoon, or of the morning where the afternoon has none left. */
+  /**
+   * The sky of the afternoon, or of the morning where the afternoon has none left — or the day's
+   * one sky, where the forecast has one for the whole day (중기예보 from its eighth day, `allDay`).
+   */
   sky: SkyKind | null;
-  /** The higher of the day's two chances of precipitation, in percent. */
+  /** The highest of the day's chances of precipitation, in percent. */
   chance: number | null;
   /** What falls that day, where something does. */
   falls: FallKind | null;
@@ -131,7 +134,8 @@ function halfOf(said: unknown): { sky: SkyKind | null; chance: number | null } {
 }
 
 /**
- * "비 19~24시(1mm 미만)" → rain; "없음" → nothing.
+ * "비 19~24시(1mm 미만)" → rain; "없음" → nothing; and 중기예보's "비(오후)" → rain, said with the
+ * half of the day in place of the hours.
  *
  * A DAY CAN HAVE SEVERAL KINDS, joined by a middle dot: "눈·비/눈·소나기 9~13시(…)" is the server's
  * own fixture for a day that turned. Read as one word it matched nothing, and a wet day was drawn
@@ -185,7 +189,8 @@ export function weatherOf(result: string): WeatherData | null {
       if (typeof day.date !== "string") return [];
       const morning = halfOf(day.am);
       const afternoon = halfOf(day.pm);
-      const chances = [morning.chance, afternoon.chance].filter(
+      const whole = halfOf(day.allDay);
+      const chances = [morning.chance, afternoon.chance, whole.chance].filter(
         (chance): chance is number => chance !== null,
       );
       return [
@@ -195,7 +200,7 @@ export function weatherOf(result: string): WeatherData | null {
             date: day.date,
             min: numberOf(day.min),
             max: numberOf(day.max),
-            sky: afternoon.sky ?? morning.sky,
+            sky: afternoon.sky ?? morning.sky ?? whole.sky,
             chance: chances.length > 0 ? Math.max(...chances) : null,
             falls: fallOf(day.precip),
           },

@@ -32,8 +32,9 @@ import { cn } from "@/lib/utils";
  * WHAT IT SHOWS, and nothing else: where, the temperature measured there, today's high and low,
  * and one column a day for as many days as the answer holds — a picture of the sky, the high, the
  * low, and the chance of rain where there is one to speak of. 단기예보 reaches three or four days
- * out; the grid takes one column a day for as many as the answer holds, seven at the most
- * (`DAYS_SHOWN`), so days five to seven appear the day 중기예보 is in the answer.
+ * out and 중기예보 from there to the tenth, where the deployment has it; the grid takes one column a
+ * day for as many as the answer holds, seven at the most (`DAYS_SHOWN`) — a week, which is what
+ * was asked for, and what fits a phone's width. The days after it are in the answer for the Bot.
  *
  * `출처: 기상청` IS ON THE CARD, SMALL. Weather data from 기상청 has had to name its source where
  * it is shown since 2026-09-18 (기상법; the API hub's notice of 2026-09-14), in those words, and
