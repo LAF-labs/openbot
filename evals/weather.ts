@@ -170,11 +170,14 @@ export function leavesItToTheCard(text: string): boolean {
   if (said.length === 0 || said.length > 80) return false;
   /*
    * A sentence ends at its mark where more follows it — after a space or straight on: "맑아요.내일은"
-   * is two. What follows a point inside a figure is a digit ("17.3도"), and what follows a mark in a
-   * run of them, or before a closing bracket or quote, is not a new sentence either.
+   * is two. A closing bracket or quote belongs to the sentence its mark ended ("맑아요." 내일은 …
+   * is two as well; review, round 5), a digit after a point is the rest of a figure ("17.3도"), and
+   * a mark after a mark is the same ending.
    */
   const sentences = said
-    .split(/(?<=[.!?。！？])(?:\s+|(?=[^\s\d.!?。！？)\]}"'”’]))|\n+/)
+    .split(
+      /(?<=[.!?。！？][)\]}"'”’]*)(?:\s+|(?=[^\s\d.!?。！？)\]}"'”’]))|\n+/,
+    )
     .filter((part) => part.trim().length > 0);
   const figures = said.match(/(?<![\d.])\d+(?:\.\d+)?\s?(?:도|℃|°)/g) ?? [];
   return (

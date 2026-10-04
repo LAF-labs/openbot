@@ -1678,6 +1678,11 @@ function weatherFromTheAgency(): Scenario[] {
             `저장된 곳(강남)의 내일 최고(${GANGNAM.tomorrowMax}도)로 답함`,
             !saysDegrees(turn.text, GANGNAM.tomorrowMax),
           ],
+          // The card draws 해운대's forecast too: the figure that was asked for, and one sentence.
+          [
+            "한 문장을 넘기거나 출처를 다시 적음 (카드가 보여 주는 것)",
+            leavesItToTheCard(turn.text),
+          ],
         ]),
     },
     {
@@ -1855,6 +1860,11 @@ function firstMoveThreads(): Scenario[] {
           [
             `손에 쥔 강남의 내일 최고(${GANGNAM.tomorrowMax}도)로 답함`,
             !saysDegrees(turn.text, GANGNAM.tomorrowMax),
+          ],
+          // The second call's answer is the card the person sees (the first is put away): one sentence.
+          [
+            "한 문장을 넘기거나 출처를 다시 적음 (카드가 보여 주는 것)",
+            leavesItToTheCard(turn.text),
           ],
         ]),
     },
