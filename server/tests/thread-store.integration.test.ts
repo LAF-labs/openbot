@@ -216,6 +216,38 @@ describe("appending to a thread", () => {
     expect(stored[0]?.lafAgentId).toBe("bot-a");
   });
 
+  test("a first move's mark survives a copy that arrived without it", async () => {
+    /*
+     * The window's run hands the whole history back through CopilotKit's message schemas, which
+     * strip every key they do not know: written as it arrived, the move would read as a call the
+     * Bot made, and a move put right as two places asked about (`keepFirstMoves`).
+     */
+    const threadId = thread();
+    await appendMessages(database, threadId, [
+      { ...said("a1", "bot-a"), lafFirstMove: true } as StoredMessage,
+    ]);
+    await appendMessages(database, threadId, [
+      {
+        id: "a1",
+        role: "assistant",
+        content: "the window's copy",
+      } as unknown as StoredMessage,
+      said("a2", "bot-a"),
+    ]);
+
+    const stored = await messagesFor(database, threadId);
+    expect(
+      stored.map((message) => [
+        message.id,
+        (message as { content?: unknown }).content,
+        message.lafFirstMove,
+      ]),
+    ).toEqual([
+      ["a1", "the window's copy", true],
+      ["a2", "a2", undefined],
+    ]);
+  });
+
   test("a message stored before stamping existed is not given an invented time", async () => {
     const threadId = thread();
     await database.insert(lafThreadMessages).values({

@@ -71,7 +71,12 @@ export type HistoryPage = {
   hasOlder: boolean;
 };
 
-/** A stored message as a window is handed it: AG-UI's fields, none of the store's own. */
+/**
+ * A stored message as a window is handed it: AG-UI's fields, none of the store's own — but for
+ * `lafFirstMove`, which is the window's to read (`row-kinds.ts`). The stamps travel beside the
+ * messages instead (`times`); the mark is a fact about the message that carries it, and is drawn
+ * from with it.
+ */
 function forTheWindow(message: StoredMessage): Message {
   const {
     lafAt: _at,

@@ -1,4 +1,3 @@
-import { isFirstMoveCall } from "@shared/first-move";
 import {
   serverKeyOf,
   TOOL_CALL,
@@ -203,8 +202,9 @@ function staysInTheOpen(
  * FROM THE MOMENT THE BOT ASKS, not from when its answer comes back: whatever becomes of the second
  * call, the Bot has said the first was not the answer.
  *
- * ONLY A FIRST MOVE, known by its id (`isFirstMoveCall`). Two calls the Bot made itself are two
- * places it was asked about — "서울이랑 부산 날씨 비교해 줘" — and two cards.
+ * ONLY A FIRST MOVE, known by the mark on the message that carried it (`isFirstMove`,
+ * `@shared/first-move`), which the row is handed (`toVisibleChatItems`). Two calls the Bot made
+ * itself are two places it was asked about — "서울이랑 부산 날씨 비교해 줘" — and two cards.
  *
  * Found before the steps are, since a later row can take a card back.
  */
@@ -232,7 +232,7 @@ function cardsAt(
       if (item.result === undefined || !entry.isCard(item.result)) return;
     }
     at.set(index, entry.card);
-    if (isFirstMoveCall(item.toolCall.id)) moved = { index, name };
+    if (item.isFirstMove) moved = { index, name };
   });
   return at;
 }

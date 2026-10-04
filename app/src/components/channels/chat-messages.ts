@@ -1,6 +1,7 @@
 import type { Message, ToolCall } from "@ag-ui/core";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
+import { isFirstMove } from "@shared/first-move";
 import { TOOL_SEARCH } from "@shared/tools/bridge";
 import { GALLERY_DECISIONS } from "@shared/tools/gallery";
 import { stepDidNotWork } from "@shared/tools/step-result";
@@ -34,6 +35,12 @@ export type VisibleChatItem =
       toolCall: ToolCall;
       /** The result, once there is one. Absent means the call is still in flight. */
       result?: string;
+      /**
+       * The server made this call as the turn's first move, not the Bot (`@shared/first-move`):
+       * said on the message that carries the call, and carried here because a row is read without
+       * its message (`rowKindsOf`). Absent for every call the Bot made.
+       */
+      isFirstMove?: true;
     };
 
 /**
@@ -448,6 +455,7 @@ export function toVisibleChatItems(
   return messages.flatMap((message): VisibleChatItem[] => {
     if (message.role === "assistant") {
       const items: VisibleChatItem[] = [];
+      const moved = isFirstMove(message);
       if (message.content) {
         items.push({
           kind: "text",
@@ -500,6 +508,7 @@ export function toVisibleChatItems(
           ...(results.has(toolCall.id)
             ? { result: results.get(toolCall.id) }
             : {}),
+          ...(moved ? { isFirstMove: true as const } : {}),
         });
       }
       return items;

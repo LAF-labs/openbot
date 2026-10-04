@@ -8,7 +8,6 @@ import {
   test,
 } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { firstMoveCallId } from "@shared/first-move";
 import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import {
   stepRunsOf,
@@ -192,13 +191,17 @@ describe("which weather calls are steps", () => {
  * that word was wrong the Bot asks again for the place that was meant, and both calls came back
  * with data — two cards, the first for a place nobody asked about (Codex on pull request 62).
  */
-const MOVE = firstMoveCallId("1".repeat(32));
-/** The move as the engine files it: an empty message that asks, with no argument, and the answer. */
+const MOVE = `call_${"1".repeat(32)}`;
+/**
+ * The move as the engine files it: an empty message that asks, with no argument and an ordinary
+ * call id, marked as the server's (`@shared/first-move`) — and the answer.
+ */
 const moved = (content: string): Message[] => [
   {
     id: "a-moved",
     role: "assistant",
     content: "",
+    lafFirstMove: true,
     toolCalls: [
       {
         id: MOVE,
