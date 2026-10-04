@@ -281,7 +281,10 @@ describe("the weather tool", () => {
    */
   test("says the answer is shown as a card, and asks for one sentence that does not repeat it", () => {
     for (const [tool] of [kmaWeatherTools(false), kmaWeatherTools(true)]) {
-      expect(tool?.description).toContain("날씨 카드로 표시되니");
+      // The rule hangs on the fact: an answer with no card is not told it has one.
+      expect(tool?.description).toContain(
+        "결과에 shown이 있으면 예보가 이미 화면에 날씨 카드로 표시된 것이니",
+      );
       expect(tool?.description).toContain(
         "예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다",
       );
@@ -858,7 +861,7 @@ describe("what a Bot is handed", () => {
       },
       { at: kst("2026-10-02T22:20:00") },
     );
-    const { facts } = await weatherOf(made);
+    const { facts, text } = await weatherOf(made);
     expect(facts.hours).toEqual([
       { at: "22시", temp: 15, sky: "맑음", precip: "없음" },
       { at: "23시", temp: 14, sky: "구름많음", precip: "없음" },
@@ -868,6 +871,14 @@ describe("what a Bot is handed", () => {
       { at: "내일 3시", temp: 12, sky: "흐림", precip: "없음" },
     ]);
     expect(facts.unavailable).toEqual(["현재 관측", "날짜별 예보"]);
+    /*
+     * THE NEXT HOURS AND NOTHING ELSE: no temperature now and no day, so nothing the app's card
+     * draws. The answer is not told a card is on the screen, and the app reads it the same way —
+     * it stays a step, with the Bot's words for an answer (Codex on pull request 62).
+     */
+    expect(facts.shown).toBeUndefined();
+    expect(text.startsWith(WEATHER_DATA_HEAD)).toBe(true);
+    expect(readForTheCard(text)).toBe(null);
   });
 
   test("an hour already gone is not one of the next six", async () => {
@@ -935,7 +946,7 @@ describe("what a Bot is handed", () => {
       },
       { at: kst("2026-12-19T00:30:00") },
     );
-    const { facts } = await weatherOf(made);
+    const { facts, text } = await weatherOf(made);
     expect(facts.days).toEqual([
       {
         date: "2026-12-19",
@@ -949,6 +960,17 @@ describe("what a Bot is handed", () => {
         // Three kinds at most, in the order they come; the hours from the first to the end of the last.
         precip: "눈·비/눈·소나기 9~13시(1.0mm·30.0~50.0mm·50.0mm 이상)",
         snow: "1.0cm·5.0cm 이상·0.5cm 미만",
+      },
+    ]);
+    // And the card reads a day that turned as one where something falls: rain and snow both.
+    expect(readForTheCard(text)?.days).toEqual([
+      {
+        date: "2026-12-19",
+        min: -3,
+        max: 4,
+        sky: "cloudy",
+        chance: 80,
+        falls: "sleet",
       },
     ]);
   });
