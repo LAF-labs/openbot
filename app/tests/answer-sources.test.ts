@@ -4,8 +4,9 @@ import { sourcesByAnswer } from "../src/components/channels/sources";
 import { siteIsForThisShop, sitesInShopOrder } from "../src/lib/shop/catalogue";
 
 /**
- * "출처 N개" under an answer, taken from what the browser reported — never from the model
+ * Where an answer came from, taken from what the browser reported — never from the model
  * (ux-review-0.5.4, item 10) — and the connections list in the order this shop uses (item 20).
+ * How the sources are drawn — a pill at the end of the answer — is `sources-pill.test.tsx`.
  */
 
 const said = (id: string, role: "user" | "assistant", text = "…") =>
