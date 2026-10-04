@@ -33,6 +33,7 @@
  */
 import { describeFailure } from "../failure-text";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
+import { KST_OFFSET_MS } from "./kst";
 import { type McpCallResult, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
 import { asResult } from "./rest-support";
@@ -138,7 +139,7 @@ function refuseWith(code: string, detail?: string): never {
 
 /** `YYYY-MM-DD` in Korean time: the day the cap counts by. A fixed offset, as `kstStamp` is. */
 function kstDay(at: Date): string {
-  return new Date(at.getTime() + 9 * 60 * 60_000).toISOString().slice(0, 10);
+  return new Date(at.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 /**

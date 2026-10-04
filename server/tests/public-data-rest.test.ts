@@ -3,11 +3,11 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { catalogueEntry, classifyTool } from "../src/plugins/catalogue";
+import { kstStamp } from "../src/plugins/kst";
 import {
   BIDS_URL,
   createPublicDataRuntime,
   createPublicDataTransport,
-  kstStamp,
   plainText,
   PROGRAMS_URL,
   PUBLIC_DATA_KEY,

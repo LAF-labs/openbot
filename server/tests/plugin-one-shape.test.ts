@@ -96,4 +96,15 @@ describe("one shape for the plugins directory", () => {
     ]);
     expect(filesSaying(/^function asResult\(|^const failure = /m)).toEqual([]);
   });
+
+  test("Korean time is one offset, in one file, and so are the units it is written in", () => {
+    // Four files spelled the nine hours on 2026-10-05: both weather files by name, the 나라장터
+    // transport beside `kstStamp`, and the search cap inline. The weather files had the minute and
+    // the hour each as well.
+    expect(filesSaying(/KST_OFFSET_MS\s*=/)).toEqual(["kst.ts"]);
+    expect(filesSaying(/\b9 \* 60 \* 60_000\b/)).toEqual([]);
+    expect(filesSaying(/^(export )?const (MINUTE|HOUR)\s*=/m)).toEqual([
+      "kst.ts",
+    ]);
+  });
 });

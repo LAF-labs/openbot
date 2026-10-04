@@ -53,6 +53,7 @@
  */
 import { SKY_WORDS } from "../../../shared/weather";
 import type { KmaMidRegion } from "./kma-mid-regions";
+import { HOUR, kstIssuanceAt, MINUTE } from "./kst";
 import { rowsOf, vendorHeaderOf } from "./public-data-rest";
 import { TIMEOUT_MS } from "./timeouts";
 
@@ -69,9 +70,6 @@ export const KMA_MID_OPERATIONS = Object.freeze({
 });
 export type KmaMidOperation = keyof typeof KMA_MID_OPERATIONS;
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const KST_OFFSET_MS = 9 * HOUR;
 /** Twice a day, from 06:00 in Korea. */
 const EVERY_MS = 12 * HOUR;
 const FIRST_MS = 6 * HOUR;
@@ -124,21 +122,17 @@ export type KmaMidIssuance = {
   supersededAt: number;
 };
 
-/** The newest issuance that should be answering at `at`, or the one `back` before it. */
+/**
+ * The newest issuance that should be answering at `at`, or the one `back` before it — the hub's
+ * arithmetic (`kstIssuanceAt`) with this service's numbers.
+ */
 export function midIssuanceAt(at: Date, back = 0): KmaMidIssuance {
-  const wall = at.getTime() + KST_OFFSET_MS - ISSUED_AFTER_MS;
-  const base =
-    Math.floor((wall - FIRST_MS) / EVERY_MS) * EVERY_MS +
-    FIRST_MS -
-    back * EVERY_MS;
-  // `base` is KST wall clock held as if it were UTC, so the ISO text is the Korean date and hour.
-  const text = new Date(base).toISOString();
-  const date = `${text.slice(0, 4)}${text.slice(5, 7)}${text.slice(8, 10)}`;
-  return {
-    tmFc: `${date}${text.slice(11, 13)}00`,
-    date,
-    supersededAt: base + EVERY_MS + ISSUED_AFTER_MS - KST_OFFSET_MS,
-  };
+  const { date, hour, supersededAt } = kstIssuanceAt(
+    { every: EVERY_MS, first: FIRST_MS, delay: ISSUED_AFTER_MS },
+    at,
+    back,
+  );
+  return { tmFc: `${date}${hour}00`, date, supersededAt };
 }
 
 /** One day past the 단기예보, as the answer's row is built from it. */
