@@ -395,7 +395,20 @@ function wordsOfEntry(key: string, inner: unknown): string[] {
   if (key.startsWith("/")) return [];
   const descriptor = parseDescriptor(key);
   if (!descriptor || descriptor.role === "iframe") return [];
-  return descriptor.name ? [descriptor.name] : wordsWithin(inner);
+  if (descriptor.name) return [descriptor.name];
+  /*
+   * WHAT SITS UNDER A FIELD IS ITS VALUE, AND A VALUE NEVER BECOMES A NAME — not the field's own
+   * (`NAMED_FROM_CONTENT` leaves these roles out) and not the name of a control around it. A button
+   * wrapping an unnamed search box would otherwise be called by whatever was typed into the box,
+   * and the typed secret the field's own line withholds would ride out as the button's label, to
+   * the model and to the trail (Codex on pull request 65). A field's label, where the tree gave
+   * one, is a word like any other; its contents are nobody's name. A slider's value is a number
+   * the same way.
+   */
+  if (TEXT_ENTRY_ROLES.has(descriptor.role) || descriptor.role === "slider") {
+    return [];
+  }
+  return wordsWithin(inner);
 }
 
 /**

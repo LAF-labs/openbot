@@ -785,6 +785,38 @@ describe("a name the tree prints beneath the control", () => {
     expect(JSON.stringify(elements)).not.toContain(secret);
   });
 
+  /*
+   * Nor a control's name around the field: a nameless button wrapping an unnamed search box was
+   * named by what had been typed into the box (Codex on pull request 65). The field's own label
+   * is a word like any other; its contents are nobody's name.
+   */
+  test("a field's contents do not become the name of a control around it either", () => {
+    const secret = "hunter2!SuperSecret";
+    const yaml = `- button [ref=e1]:
+  - textbox [ref=e2]: ${secret}
+- link [ref=e3]:
+  - text: 검색
+  - searchbox [ref=e4]: ${secret}
+  - text: 하기
+- button [ref=e5]:
+  - textbox "검색어" [ref=e6]: ${secret}
+- button [ref=e7]:
+  - slider [ref=e8]: "73"`;
+    const { elements } = parseAriaSnapshot(yaml, { refs: ["e2", "e4", "e6"] });
+    const names = Object.fromEntries(elements.map((e) => [e.ref, e.name]));
+    expect(names).toEqual({
+      e1: "",
+      e2: "",
+      e3: "검색 하기",
+      e4: "",
+      e5: "검색어",
+      e6: "검색어",
+      e7: "",
+      e8: "",
+    });
+    expect(JSON.stringify(elements)).not.toContain(secret);
+  });
+
   test("a name from inside is cut at its length between characters, like any other", () => {
     const long = `${"가".repeat(199)}😀나`;
     const { elements } = parseAriaSnapshot(

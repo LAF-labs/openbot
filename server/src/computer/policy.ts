@@ -383,7 +383,48 @@ export function policyDecidesOnSnapshot(
  * states its permissions explicitly rather than relying on a default, so that what a Bot may do is
  * always something somebody wrote down.
  */
+/**
+ * How much a decision holds back, so the stricter of two readings of one action can be taken.
+ * `default` is the floor — nothing matched and the action is not carried out — which holds back
+ * more than an `allow` and less than a rule that asked.
+ */
+const HOLDS_BACK: Record<PolicyDecision["source"], number> = {
+  deny: 3,
+  ask: 2,
+  default: 1,
+  allow: 0,
+};
+
+/**
+ * The policy's decision on an action — and, where the element's name has spaces in it, on the same
+ * action with the name's spaces taken out, the stricter of the two standing.
+ *
+ * A NAME THE SNAPSHOT BUILT FROM A CONTROL'S CONTENTS joins the words with one space
+ * (`nameFromWithin` in agent-computer's aria-snapshot.ts), and the tree does not say where the
+ * page had them: `<button><span>결</span><span>제</span></button>` arrives as "결 제", which the
+ * browser itself calls "결제". A rule about 결제 that is held only against the spaced spelling is a
+ * rule a page's markup can step round, and the hold that lets the click through afterwards compares
+ * the two spellings as one on purpose (`label-hold.ts`, `nameToMatch`) — so the judgement must be
+ * at least as strict as it would be on either spelling (Codex on pull request 65). The decision
+ * recorded is the stricter one; its `matched` names the rule that made it so.
+ */
 export function evaluateActionPolicy(
+  policy: ActionPolicy | null | undefined,
+  context: PolicyContext,
+): PolicyDecision {
+  const asWritten = decideActionPolicy(policy, context);
+  const element = context.element;
+  if (!element || !/\s/.test(element.name)) return asWritten;
+  const squeezed = decideActionPolicy(policy, {
+    ...context,
+    element: { ...element, name: element.name.replace(/\s+/g, "") },
+  });
+  return HOLDS_BACK[squeezed.source] > HOLDS_BACK[asWritten.source]
+    ? squeezed
+    : asWritten;
+}
+
+function decideActionPolicy(
   policy: ActionPolicy | null | undefined,
   context: PolicyContext,
 ): PolicyDecision {
