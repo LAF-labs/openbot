@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { WEATHER_TOOL_NAME } from "@shared/tools/bridge";
 import { COMPUTER_TOOLS } from "@shared/tools/computer";
 import {
   GALLERY_CONFIRMATIONS,
@@ -116,6 +117,39 @@ describe("a card the Bot put there for the person is an arrival too", () => {
       { kind: "browse", id: "b-1", steps: [], notes: [] },
     ];
     expect(arrivedBelow(items, "a-3")).toBe(0);
+  });
+
+  /*
+   * THE WEATHER CARD, by what came back and not by the call's name: with data it is a card the Bot
+   * made, and a turn can end on it; refused, it is the step line it always was (review, round 8).
+   */
+  test("a weather card is one — and the same call come back empty is none", () => {
+    const weather = (id: string, result: string): TranscriptItem => ({
+      ...(called(id, WEATHER_TOOL_NAME) as Extract<
+        TranscriptItem,
+        { kind: "tool" }
+      >),
+      result,
+    });
+    const data = JSON.stringify({
+      source: "기상청",
+      place: "서울특별시 종로구",
+      now: { temp: 17.2 },
+      days: [{ date: "2026-10-04", when: "오늘", min: 15, max: 24 }],
+    });
+    expect(arrivedBelow([...ITEMS, weather("w-1", data)], "a-3")).toBe(1);
+    expect(
+      arrivedBelow(
+        [...ITEMS, weather("w-1", data), said("a-4", "assistant")],
+        "a-3",
+      ),
+    ).toBe(2);
+    expect(
+      arrivedBelow(
+        [...ITEMS, weather("w-2", "laf:weather_place_outside")],
+        "a-3",
+      ),
+    ).toBe(0);
   });
 });
 

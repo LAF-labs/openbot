@@ -152,6 +152,9 @@ describe("an answer that agrees with the card", () => {
       // A figure the card does not hold (review, round 7): 99 is nobody's temperature, 25 is not today's.
       "강남은 지금 99도예요.",
       "오늘 최고 25도까지 올라가요",
+      // The sign is part of the figure (round 8): the card says 17 above zero.
+      "강남은 지금 영하 17도예요.",
+      "강남은 지금 -17도예요.",
     ]) {
       expect([answer, agreesWithTheCard(answer, card)]).toEqual([
         answer,
