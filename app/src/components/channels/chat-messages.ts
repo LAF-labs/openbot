@@ -1,25 +1,15 @@
 import type { Message, ToolCall } from "@ag-ui/core";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
-import { isFirstMoveCall } from "@shared/first-move";
-import {
-  serverKeyOf,
-  TOOL_CALL,
-  TOOL_SEARCH,
-  WEATHER_TOOL_NAME,
-} from "@shared/tools/bridge";
-import {
-  GALLERY_CONFIRMATIONS,
-  GALLERY_DECISIONS,
-} from "@shared/tools/gallery";
+import { TOOL_SEARCH } from "@shared/tools/bridge";
+import { GALLERY_DECISIONS } from "@shared/tools/gallery";
 import { stepDidNotWork } from "@shared/tools/step-result";
-import { withheldMarksIn } from "@shared/tools/withheld";
-import { WEATHER_DATA_HEAD, weatherOf } from "@shared/weather";
 import {
   BROWSING_TOOLS,
   type BrowsingStep,
   type CutOff,
 } from "@/lib/computer/browsing";
+import { type RowKind, rowKindsOf } from "./row-kinds";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -150,121 +140,6 @@ export function withBrowsingTasks(
   return out;
 }
 
-/**
- * Whether a call is a step of work: a plain line saying what the Bot is doing, which is not drawn
- * in the conversation once it is over (`stepRunsOf`).
- *
- * ONLY THE LINES KNOWN TO BE LINES. A connected service's tool ("메일 찾기 · 지메일"), and the two
- * ways a Bot reaches a tool that is not in front of it. Everything else that is drawn by name — a
- * card from the gallery, a file handed over, the clock, a note — is left where it is: a card put
- * away with the steps around it would be a thing the Bot made, hidden as though it were a thing it
- * did on the way. A name left off this list is a line that stays in the conversation, which is how
- * every line was until 2026-10-03.
- */
-export function isFoldableStep(name: string): boolean {
-  return (
-    name === TOOL_SEARCH || name === TOOL_CALL || serverKeyOf(name) !== null
-  );
-}
-
-/**
- * Whether a weather call's answer is drawn as a card (`WeatherCard`): it came back with data.
- *
- * A CARD IS A THING THE BOT MADE, NOT A STEP ON THE WAY — the same line `isFoldableStep` draws by
- * name. The weather tool is a connected service's by its name, so its row would be put away with
- * the steps; with data in it, it is the card the owner asked for (2026-10-04) and stays in the
- * conversation. Without — refused, failed, a place the forecast does not reach — it is the step it
- * always was: put away, and counted as one that did not work.
- *
- * BY THE SAME READING THE CARD IS DRAWN FROM (`weatherOf`). By how the answer begins alone, an
- * answer that held the next hours and nothing the card draws — no temperature now, no day; the
- * tool's own partial answer, late in the evening — was no step and no card: nothing on the screen
- * at all (Codex on pull request 62). The head is looked at first because this is asked of every
- * step on every chunk, and only a weather answer is read.
- */
-export function isWeatherCard(result: string): boolean {
-  return result.startsWith(WEATHER_DATA_HEAD) && weatherOf(result) !== null;
-}
-
-/**
- * The weather calls of a conversation that are drawn as cards, by their rows' ids: each one that
- * came back with something to draw (`isWeatherCard`) — but for a first move the Bot asked again
- * after.
- *
- * A FIRST MOVE THE BOT DID NOT ANSWER FROM IS A STEP. With the first move on, the server fetches
- * the weather for where the person lives before the Bot's model is asked (`first-move.ts`), on a
- * small model's word that the question is about there. When that word was wrong — "내일 부산
- * 해운대 날씨 어때?" — the Bot asks again for the place that was meant
- * (`first-move-for-the-wrong-place-is-put-right` holds it to that), and both answers came back
- * with data: the conversation showed the forecast for home, then the one for 해운대, over a
- * sentence about 해운대 (Codex on pull request 62). So once the Bot asks for the weather itself,
- * the turn's first move is what it was before there were cards — a step on the way, put away with
- * the others and counted with them.
- *
- * FROM THE MOMENT THE BOT ASKS, not from when its answer comes back: whatever becomes of the second
- * call, the Bot has said the first was not the answer.
- *
- * ONLY A FIRST MOVE, known by its id (`isFirstMoveCall`). Two calls the Bot made itself are two
- * places it was asked about — "서울이랑 부산 날씨 비교해 줘" — and two cards.
- */
-export function weatherCardsOf(items: readonly TranscriptItem[]): Set<string> {
-  const cards = new Set<string>();
-  /** This turn's first move, while it is drawn as a card and the Bot has not asked again. */
-  let moved: string | null = null;
-  for (const item of items) {
-    if (item.kind === "text" && item.role === "user") {
-      moved = null;
-      continue;
-    }
-    if (
-      item.kind !== "tool" ||
-      item.toolCall.function.name !== WEATHER_TOOL_NAME
-    ) {
-      continue;
-    }
-    if (moved !== null) {
-      cards.delete(moved);
-      moved = null;
-    }
-    if (item.result === undefined || !isWeatherCard(item.result)) continue;
-    cards.add(item.id);
-    if (isFirstMoveCall(item.toolCall.id)) moved = item.id;
-  }
-  return cards;
-}
-
-/**
- * Whether a step has something on it for the person — a line that is drawn whether or not anybody
- * opened the record it belongs to.
- *
- * - STILL OUT: no result yet. It is the one line of a turn at work, shimmering at the end of the
- *   conversation, and a boundary's question is drawn on the line of the call that raised it
- *   (`ApprovalRequest`). A model may ask for two calls in one breath, so the call waiting on the
- *   person need not be the last. Not drawn, its card would be drawn nowhere: a question nobody can
- *   see, running out its ten minutes, and a press on 기다리는 일 that finds no card to go to.
- * - A WITHHELD MARK IN ITS RESULT. The 보기 for a mail's one-time code belongs on that call's own
- *   line (`WithheldSecrets`), and the person who asked for the code is waiting on it — not on the
- *   search the Bot made after reading the mail.
- *
- * A STEP THAT DID NOT WORK IS NOT ONE OF THEM (the owner, 2026-10-04). It was, at first: a refused
- * or failed step stayed drawn, so that it could not read as one more thing the Bot did. What that
- * left on the screen was the owner's own example of too many words — a weather look-up that failed
- * and the one after it that worked, a line each, above an answer that already says which did not
- * work. It is put away like any other, and that one of them did not work is said BY THE CONTROL
- * THAT OPENS THEM — its colour and its name (`AnswerSteps.failed`) — so nothing that failed is
- * behind a control that looks like nothing happened.
- */
-function staysInTheOpen(
-  step: Extract<VisibleChatItem, { kind: "tool" }>,
-): boolean {
-  if (step.result === undefined) return true;
-  // The cheap look first: this runs over every step of the conversation on every chunk.
-  return (
-    step.result.includes("[[withheld:") &&
-    withheldMarksIn(step.result).length > 0
-  );
-}
-
 /** Whether a row is a finished step that did not work (`stepDidNotWork`). */
 function didNotWork(item: TranscriptItem): boolean {
   return (
@@ -283,48 +158,20 @@ export type StepRunPlace = {
 };
 
 /**
- * The runs of steps: the step rows that follow one another with nothing between them — and a step
- * alone is a run of one.
+ * The runs of steps, by the step rows' places in `items`: the steps of the projection
+ * (`rowKindsOf`, which says what a run is and why steps are not drawn), as the readers of the
+ * record ask for them — what an answer opens, which runs are open, where a drawn window may begin.
  *
- * STEPS OF WORK ARE NOT DRAWN IN THE CONVERSATION (the owner, 2026-10-04, choosing "proposal A" of
- * the mock-up shown that day). A turn at work shows the one step that is still out, and a finished
- * turn leaves what the Bot said and the cards that need the person. The record is not thrown away:
- * the answer carries the control that opens what was done for it (`stepsByAnswer`).
- *
- * HOW IT CAME TO THIS. Measured on a trial deployment, 2026-10-03 (the owner's screenshot): "내
- * 지메일에 비즈니스메일 온 거 있나 보고 알려줘" left five grey lines stacked above the answer — 도구
- * 찾는 중, 메일 찾기 · 지메일 twice, 메일 읽기 · 지메일 twice — each a row of its own, and the answer
- * a screen further down for it. A run was first folded to its newest line, with the rest behind a
- * fold beside it: "이전 3단계", and then an icon, because the words were one more phrase on the
- * screen. That still left a line and a control above every answer that took two steps to write,
- * and a step alone was drawn as it always had been — and the owner's word on the app as a whole
- * was that it shows far too many words.
- *
- * By index into `items`. Anything between two steps ends the run — the Bot's own sentence, a card,
- * a browsing task, the person's next message — so what is put away is only ever steps, and a run
- * never crosses a turn. A run is what is opened together: with the others an answer was written
- * from, or by itself when another screen sends the person to a row inside it.
- *
- * A step that has something on it for the person (`staysInTheOpen`) is a member like any other,
- * marked: drawn while its run is closed, and still one of the steps the answer counts.
+ * `kinds` is the transcript's own, computed once per render; without it the rows are read here.
  */
 export function stepRunsOf(
   items: readonly TranscriptItem[],
+  kinds: readonly RowKind[] = rowKindsOf(items),
 ): Map<number, StepRunPlace> {
   const places = new Map<number, StepRunPlace>();
-  const cards = weatherCardsOf(items);
-  let runId: string | null = null;
-  items.forEach((item, index) => {
-    if (
-      item.kind !== "tool" ||
-      !isFoldableStep(item.toolCall.function.name) ||
-      cards.has(item.id)
-    ) {
-      runId = null;
-      return;
-    }
-    runId ??= item.id;
-    places.set(index, { runId, staysDrawn: staysInTheOpen(item) });
+  kinds.forEach((kind, index) => {
+    if (kind.kind !== "step") return;
+    places.set(index, { runId: kind.runId, staysDrawn: kind.staysDrawn });
   });
   return places;
 }
@@ -708,95 +555,46 @@ export function unsettledFrom(
   return 0;
 }
 
-/** The Bot asking the person for a hand, or for a value it must not see: a card of its own. */
-const ASKS_THE_PERSON: ReadonlySet<string> = new Set([
-  "computer_request_help",
-  "computer_request_secret",
-]);
-
 /**
  * Whether the Bot stopped right after the task at `index` to ask the person for a hand, and has not
- * been answered: the first thing after the task that is not the Bot's own words is a request for
- * help, or for a value it must not see, with no result yet.
- *
- * Such a request ends the task in front of it (`withBrowsingTasks`), so by its steps that task is
- * over — while the Bot is in the middle of it, and the page it is stuck on is that task's picture.
- * A task that is over folds to one row; this one is not over to the person looking at it, and keeps
- * its card for as long as the request waits (`browsing-card.tsx`).
+ * been answered (`rowKindsOf` says how that is known, and why such a task keeps its card).
  */
 export function isHandedToThePerson(
   items: readonly TranscriptItem[],
   index: number,
+  kinds: readonly RowKind[] = rowKindsOf(items),
 ): boolean {
-  if (items[index]?.kind !== "browse") return false;
-  for (let at = index + 1; at < items.length; at += 1) {
-    const item = items[at];
-    if (!item) return false;
-    if (item.kind === "text" && item.role === "assistant") continue;
-    return (
-      item.kind === "tool" &&
-      ASKS_THE_PERSON.has(item.toolCall.function.name) &&
-      item.result === undefined
-    );
-  }
-  return false;
-}
-
-/**
- * Whether a call is something the Bot put in front of the person — a card to read, or to answer —
- * and not a line saying what it is doing.
- *
- * By the call's name, from the lists the server answers these calls by (`@shared/tools/gallery`):
- * what the transcript draws for a name is a renderer registered with the runtime, which a function
- * over the list cannot ask. A component an administrator authored in the browser is in neither
- * list and is not counted.
- */
-function isPutBeforeThePerson(name: string): boolean {
-  return (
-    GALLERY_DECISIONS.has(name) ||
-    Object.hasOwn(GALLERY_CONFIRMATIONS, name) ||
-    ASKS_THE_PERSON.has(name)
-  );
+  const kind = kinds[index];
+  return kind?.kind === "browse" && kind.isHandedOver;
 }
 
 /**
  * How many things the Bot put there for the person arrived after `seenId`, the furthest row the
  * reader has had on screen (`furthestSeen`).
  *
- * Each bubble is one: a turn that answers in two is two things to read. AND EACH CARD IS ONE. A
- * question is often the whole of what arrives — the Bot's message is empty and its call is the
- * card — and counting bubbles alone left the arrow as it was over a Bot stopped on a question
- * below, which is the arrival that most needs saying (review, first round). So is a chart, a file,
- * a request for a hand or for a password.
+ * Each bubble is one: a turn that answers in two is two things to read. AND EACH CARD IS ONE
+ * (`CARDS`). A question is often the whole of what arrives — the Bot's message is empty and its
+ * call is the card — and counting bubbles alone left the arrow as it was over a Bot stopped on a
+ * question below, which is the arrival that most needs saying (review, first round). So is a
+ * chart, a file, a request for a hand or for a password — and the weather, which a turn can end on,
+ * and which was the card this count missed when it kept a list of its own (review, round 8).
  *
  * The person's own words are not counted — sent from another window of theirs, they are not news
  * to them — and neither is a step line, nor the card of a browsing task, which says what is being
  * done. A row that is not known (nothing seen yet, or it has left the list) counts nothing: saying
  * "3 new" by guessing is worse than the arrow alone.
- *
- * A WEATHER CARD IS ONE TOO (`weatherCardsOf`): it is a thing the Bot made, drawn in the
- * conversation, and a turn can end on it. Known by what came back and not by the call's name,
- * since the same name is a step when the answer holds nothing (review, round 8).
  */
 export function arrivedBelow(
   items: readonly TranscriptItem[],
   seenId: string | null,
+  kinds: readonly RowKind[] = rowKindsOf(items),
 ): number {
   if (seenId === null) return 0;
   const seen = items.findIndex((item) => item.id === seenId);
   if (seen < 0) return 0;
-  const cards = weatherCardsOf(items);
-  let arrived = 0;
-  for (const item of items.slice(seen + 1)) {
-    if (item.kind === "text" && item.role === "assistant") arrived += 1;
-    else if (
-      item.kind === "tool" &&
-      (isPutBeforeThePerson(item.toolCall.function.name) || cards.has(item.id))
-    ) {
-      arrived += 1;
-    }
-  }
-  return arrived;
+  return kinds
+    .slice(seen + 1)
+    .filter((kind) => kind.kind === "answer" || kind.kind === "card").length;
 }
 
 /**
