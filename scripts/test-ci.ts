@@ -867,9 +867,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * for the Bot its conversation names).
  *
  * RAISED 2026-10-05 with `eval:browse` run through the product's own loop, by exactly what was
- * added: nine to `root` (the judges of a browsing run — a thread read into the rounds the model
+ * added: thirteen to `root` (the judges of a browsing run — the prompt its second arm reads, the
+ * sentence where it would ship and nowhere else, two; a thread read into the rounds the model
  * asked for its steps in, the batched ones, the steps a round's stop left unreached and a press
- * written before its fields, five; and a form judged by what the site says it received, four).
+ * that went through before the rest, five; and a form judged by what the site says it received —
+ * its sends counted, and passed only when sent once from a clean tab exactly as asked, six).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -879,7 +881,7 @@ const GROUPS = [
   { name: "server", floor: 3492, roots: ["server"] },
   { name: "app", floor: 2085, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
-  { name: "root", floor: 622, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 626, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

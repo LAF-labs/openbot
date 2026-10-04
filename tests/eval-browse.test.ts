@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   echoedForm,
+  echoedSends,
   type FiledMessage,
+  INVITATION,
+  judgeForm,
   roundStats,
   roundsOf,
   unaskedFields,
+  withInvitation,
   wrongFields,
 } from "../evals/browse-measure";
+import { BASE_KO, systemPromptText } from "../shared/prompt";
 
 /**
  * THE JUDGES OF `eval:browse`, JUDGED.
@@ -14,8 +19,39 @@ import {
  * The runs call a real model against a real site and never run in the gate. What decides whether a
  * sentence goes into every Bot's prompt is two readings of such a run — how the model asked for its
  * steps, and what the site says it received — and a reading that could not come out wrong would
- * call every arm a success. The threads and echoes below are written by hand.
+ * call every arm a success. So is the prompt the second arm reads: measured anywhere but where the
+ * sentence would ship, the arm is a measurement of something else. The threads and echoes below are
+ * written by hand.
  */
+
+describe("the prompt of the second arm", () => {
+  test("is today's prompt with one paragraph more, inside the base and ahead of everything after it", () => {
+    for (const mode of ["chat", "routine"] as const) {
+      const today = systemPromptText(mode, "맥락: 호칭은 사장님이다.");
+      const before = today.split("\n\n");
+      const after = withInvitation(today).split("\n\n");
+      const at = after.indexOf(INVITATION);
+      // One paragraph of its own, once, and every other byte where it was.
+      expect(after.filter((paragraph) => paragraph === INVITATION)).toEqual([
+        INVITATION,
+      ]);
+      expect([...after.slice(0, at), ...after.slice(at + 1)]).toEqual(before);
+      // In the static layer's base — not after the context, where it was first measured.
+      expect(at).toBeLessThan(BASE_KO.split("\n\n").length);
+      // In front of the base's two paragraphs about the computer, which still follow in order.
+      expect(after[at + 1]).toStartWith(
+        "사람이 컴퓨터를 잡고 있다는 결과가 오면",
+      );
+      expect(after[at + 2]).toStartWith("이 배포의 정책이 막은 행동도");
+      expect(after.at(-1)).toBe("맥락: 호칭은 사장님이다.");
+    }
+  });
+
+  test("has no place in a prompt that does not begin with the base, and says so", () => {
+    expect(() => withInvitation("너는 다른 봇이다.")).toThrow(/BASE_KO/);
+    expect(() => withInvitation(`머리말\n\n${BASE_KO}`)).toThrow(/BASE_KO/);
+  });
+});
 
 type Asked = { id: string; name: string };
 
@@ -93,50 +129,77 @@ describe("the rounds of a run, read off its thread", () => {
     expect(stats.actingPerRound).toEqual([1, 3, 0]);
     expect(stats.batchedRounds).toBe(1);
     expect(stats.notReached).toBe(0);
-    expect(stats.clicksBeforeFields).toBe(0);
+    expect(stats.earlyPresses).toBe(0);
   });
 
-  test("a press written before its fields is counted, and so is everything it left unreached", () => {
+  test("a press that went through with steps still written after it is an early press", () => {
+    const sent = { ok: true, page: { url: "https://shop.example/sent" } };
     const rounds = roundsOf([
+      // 검색 pressed first: the page moved, and the fields after it were never typed.
       reply(
         { id: "c1", name: "computer_click" },
         { id: "t1", name: "computer_type" },
         { id: "t2", name: "computer_type" },
         { id: "s1", name: "computer_snapshot" },
       ),
-      // The press sent the form: the page moved, and the fields after it were never typed.
-      answer("c1", { ok: true, page: { url: "https://shop.example/sent" } }),
+      answer("c1", sent),
       answer("t1", NOT_REACHED),
       answer("t2", NOT_REACHED),
       answer("s1", { ok: true, snapshotId: 4 }),
+      // Enter between two fields — which a count of clicks could not see.
+      reply(
+        { id: "t3", name: "computer_type" },
+        { id: "k1", name: "computer_key" },
+        { id: "t4", name: "computer_type" },
+      ),
+      answer("t3", { ok: true, characters: 3 }),
+      answer("k1", sent),
+      answer("t4", NOT_REACHED),
+      // A field typed with `submit`, and the button under it written anyway.
+      reply(
+        { id: "t5", name: "computer_type" },
+        { id: "c2", name: "computer_click" },
+      ),
+      answer("t5", { ...sent, submitted: true }),
+      answer("c2", NOT_REACHED),
     ]);
     const stats = roundStats(rounds);
-    expect(stats.batchedRounds).toBe(1);
-    expect(stats.clicksBeforeFields).toBe(1);
-    expect(stats.notReached).toBe(2);
+    expect(stats.earlyPresses).toBe(3);
+    expect(stats.notReached).toBe(4);
   });
 
-  test("a press is before a field only inside one batched reply", () => {
+  test("a correct batch is no early press, and neither is a round a refusal ended", () => {
     const stats = roundStats([
-      // A radio ticked between two text fields counts by position, and leaves nothing unreached.
+      // httpbin's own order: a radio and a checkbox sit between the e-mail and the note. The count
+      // by position that this replaced scored this, the best a model can do, as two mistakes.
       [
         { name: "computer_type", ok: true },
-        { name: "computer_click", ok: true },
+        { name: "computer_type", ok: true },
         { name: "computer_type", ok: true },
         { name: "computer_click", ok: true },
+        { name: "computer_click", ok: true },
+        { name: "computer_type", ok: true },
       ],
-      // A press alone in its reply, with the fields typed in the next one, is not a batch.
-      [{ name: "computer_click", ok: true }],
-      [{ name: "computer_type", ok: true }],
-      // A refusal that is not the round-stop's is not counted as unreached.
+      // The policy refused the press: nothing was sent, and the rule did its work.
       [
         { name: "computer_click", ok: false, code: "laf:policy_denied" },
         { name: "computer_key", ok: false, code: "laf:step_not_reached" },
       ],
+      // Held for a person nobody was there to be: the same.
+      [
+        { name: "computer_type", ok: true },
+        { name: "computer_click", ok: false, code: "laf:nobody_answered" },
+        { name: "computer_type", ok: false, code: "laf:step_not_reached" },
+      ],
+      // A new address always ends its round, and is not a press.
+      [
+        { name: "computer_navigate", ok: true },
+        { name: "computer_type", ok: false, code: "laf:step_not_reached" },
+      ],
     ]);
-    expect(stats.clicksBeforeFields).toBe(1);
-    expect(stats.batchedRounds).toBe(2);
-    expect(stats.notReached).toBe(1);
+    expect(stats.earlyPresses).toBe(0);
+    expect(stats.batchedRounds).toBe(4);
+    expect(stats.notReached).toBe(3);
   });
 });
 
@@ -240,5 +303,95 @@ describe("a form judged by what the site says it received", () => {
     // Left empty as asked, it is in the echo as an empty string and is nobody's invention.
     expect(unaskedFields(echoedForm(ECHO_PAGE), ASKED)).toEqual([]);
     expect(unaskedFields(null, ASKED)).toEqual([]);
+  });
+
+  test("a send is a press the site answered with an echo: a second look at it is not one", () => {
+    const echo = {
+      url: "https://httpbin.org/post",
+      title: "",
+      text: ECHO_PAGE,
+    };
+    const halfFilled = ECHO_PAGE.replace('"medium"', '""');
+    const sends = echoedSends([
+      reply({ id: "c1", name: "computer_click" }),
+      answer("c1", {
+        ok: true,
+        action: "click",
+        page: { ...echo, text: halfFilled },
+      }),
+      // Reading the echo page again, and opening an address, send nothing.
+      reply(
+        { id: "r1", name: "computer_read" },
+        { id: "n1", name: "computer_navigate" },
+      ),
+      answer("r1", { ok: true, ...echo, text: halfFilled }),
+      answer("n1", { ok: true, ...echo }),
+      // A radio ticked: a press, and no echo.
+      reply({ id: "c2", name: "computer_click" }),
+      answer("c2", {
+        ok: true,
+        action: "click",
+        url: "https://httpbin.org/forms/post",
+      }),
+      // The last field typed with Enter sends the form a second time.
+      reply({ id: "t1", name: "computer_type" }),
+      answer("t1", { ok: true, action: "type", submitted: true, page: echo }),
+    ]);
+    expect(sends.map((form) => form.size)).toEqual(["", "medium"]);
+  });
+
+  test("a form passes when it was sent once, from a clean tab, exactly as asked — and by nothing less", () => {
+    const right = echoedForm(ECHO_PAGE) ?? {};
+    const run = {
+      startedClean: true,
+      sends: [right],
+      page: right,
+      asked: ASKED,
+    };
+    expect(judgeForm(run)).toEqual({
+      passed: true,
+      echoed: true,
+      sends: 1,
+      wrongFields: [],
+      unaskedFields: [],
+    });
+    // The Bot went somewhere else after sending: its one send still stands.
+    expect(judgeForm({ ...run, page: null }).passed).toBe(true);
+
+    // Sent half filled, then sent again right. The last echo used to win.
+    const twice = judgeForm({
+      ...run,
+      sends: [{ ...right, comments: "" }, right],
+    });
+    expect([twice.passed, twice.sends, twice.wrongFields]).toEqual([
+      false,
+      2,
+      [],
+    ]);
+    // The ask said to leave the delivery time empty.
+    const filled = { ...right, delivery: "12:30" };
+    const invented = judgeForm({ ...run, sends: [filled], page: filled });
+    expect([invented.passed, invented.unaskedFields]).toEqual([
+      false,
+      ["delivery"],
+    ]);
+    // The tab could not be put on the neutral page: the echo on it may be the run before's.
+    expect(judgeForm({ ...run, startedClean: false }).passed).toBe(false);
+    // An echo on the tab that no press of this run brought back is the run before's.
+    const stale = judgeForm({ ...run, sends: [] });
+    expect([stale.passed, stale.sends, stale.echoed]).toEqual([false, 0, true]);
+    // One send, one field wrong.
+    const wrong = { ...right, size: "large" };
+    expect(
+      judgeForm({ ...run, sends: [wrong], page: wrong }).wrongFields,
+    ).toEqual(["size"]);
+    // Never sent at all.
+    expect(judgeForm({ ...run, sends: [], page: null })).toEqual({
+      passed: false,
+      echoed: false,
+      sends: 0,
+      wrongFields: Object.keys(ASKED),
+      unaskedFields: [],
+    });
   });
 });
