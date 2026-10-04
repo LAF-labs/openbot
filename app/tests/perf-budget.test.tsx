@@ -219,7 +219,7 @@ describe("a 500-message conversation", () => {
       subtree: true,
     });
     for (let length = 8; length <= reply.length; length += 8) {
-      // A new array each time, as `ChannelChat` hands down (see its "use no memo").
+      // A new array each time, as the conversation hands one down whenever anything in it changed.
       await view.render(draw(said(length), true));
     }
     await view.settle();

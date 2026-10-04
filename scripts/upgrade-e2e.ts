@@ -2138,29 +2138,34 @@ async function main(): Promise<number> {
      * ONE CHAT TURN THROUGH THE FRONT DOOR. Since 2026-09-27 the server owns a chat turn and a window
      * watches it as numbered frames on an EventSource (`server/src/turns`). Every other turn in this
      * run is a routine's; this is the path a person types into, and the one check that the front
-     * door — Caddy, with `encode` on — hands the stream on as it is written. A build whose
-     * `deployment.serverTurns` is not true drives turns from the window; there is nothing to check.
+     * door — Caddy, with `encode` on — hands the stream on as it is written.
+     *
+     * AND THE BUILD SAYS IT OWNS ITS TURNS, AS A CHECK. This used to be a way out: a build whose
+     * `deployment.serverTurns` was not true drove turns from the window, and the turn was skipped
+     * with a finding. That window was removed 2026-10-05, so there is no such build to skip for —
+     * and the field is still what an app build from before then, left open in a window through the
+     * upgrade, picks its conversation screen by (`server/src/app.ts`). A build that stopped saying
+     * it would send that window to a screen whose turns nothing runs.
      */
     const meNow = await api("/api/me");
     const ownsTurns =
       (meNow.body.deployment as { serverTurns?: unknown } | undefined)
         ?.serverTurns === true;
-    if (!ownsTurns) {
-      report.finding(
-        "The upgraded build does not own chat turns (deployment.serverTurns is not true); the chat-turn check was skipped.",
-      );
-    } else {
-      const chat = await chatTurnThroughFrontDoor({
-        botId: orders,
-        cookie,
-        expect: `업그레이드 후 ${nonce}`,
-      });
-      report.check(
-        "a chat turn streams through the front door",
-        chat.ok,
-        chat.detail,
-      );
-    }
+    report.check(
+      "the upgraded build says it owns chat turns",
+      ownsTurns,
+      `deployment.serverTurns is ${JSON.stringify((meNow.body.deployment as { serverTurns?: unknown } | undefined)?.serverTurns)}; an app build from before 2026-10-05 reads it to choose its conversation screen`,
+    );
+    const chat = await chatTurnThroughFrontDoor({
+      botId: orders,
+      cookie,
+      expect: `업그레이드 후 ${nonce}`,
+    });
+    report.check(
+      "a chat turn streams through the front door",
+      chat.ok,
+      chat.detail,
+    );
 
     report.time("everything, first command to last check", total());
   } catch (error) {

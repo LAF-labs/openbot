@@ -101,9 +101,11 @@ export function stoppedReason(reported: unknown): string {
 /**
  * The sentence for a CUSTOM event the Bot's own stream carries, or null for one this ignores.
  *
- * `ChannelChat`'s run subscriber is what listens. The hook that used to (`useStoppedTurn`) was
- * mounted only by the `/bot` route, and when `4e68b040` deleted that route the two notices reached
- * no screen for three weeks — a half answer read as a whole one (`turn-notice.test.tsx`).
+ * The conversation's store keeps the event's name off the turn's stream (`lib/turns/frames.ts`,
+ * `notice`) and the transcript asks this for the words. The hook that once listened
+ * (`useStoppedTurn`) was mounted only by the `/bot` route, and when `4e68b040` deleted that route
+ * the two notices reached no screen for three weeks — a half answer read as a whole one
+ * (`turn-notice.test.tsx`).
  */
 export function turnNotice(name: unknown): string | null {
   const known = typeof name === "string" ? TURN_NOTICES[name] : undefined;

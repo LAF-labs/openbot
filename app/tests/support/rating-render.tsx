@@ -96,10 +96,12 @@ class NoSocket {
 (window as unknown as { WebSocket: unknown }).WebSocket = NoSocket;
 
 const { json, mountApp } = await import("./app-router");
-const { channelServer } = await import("./channel-server");
+const { installTurnStreams, turnServer } = await import("./turn-server");
+// The conversation's turns are the server's: its window opens a stream to watch them.
+installTurnStreams();
 
 const puts: unknown[] = [];
-const server = channelServer({
+const server = turnServer({
   channelId: RATED_CHANNEL,
   history: [
     { id: QUESTION_ID, role: "user", content: "오늘 매출 얼마야?" },

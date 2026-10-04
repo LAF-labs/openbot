@@ -7,6 +7,7 @@ import {
   setDefaultTimeout,
   test,
 } from "bun:test";
+import type { Message } from "@ag-ui/core";
 import type { FailureGroup } from "../src/lib/channels/turn-failure";
 import { activeLocale } from "../src/lib/i18n";
 import { ko } from "../src/lib/i18n-ko";
@@ -18,7 +19,11 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { channelServer } from "./support/channel-server";
+import {
+  installTurnStreams,
+  removeTurnStreams,
+  turnServer,
+} from "./support/turn-server";
 
 /**
  * A ROUTINE FAILING THE SAME WAY EVERY HOUR IS ONE LINE, AND 확인 MAKES IT STOP BEING RED.
@@ -29,13 +34,17 @@ import { channelServer } from "./support/channel-server";
  * (`server/src/notifications/failure-groups.ts`); this is the surface's half — the one line saying
  * how many and when last, and the press that quiets it.
  *
- * The real channel route, with the server stubbed at the network edge (`support/channel-server`).
+ * The real channel route, with the server stubbed at the network edge (`support/turn-server`).
  */
 
-beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
+beforeAll(async () => {
+  await installAppDom();
+  installTurnStreams();
+}, APP_DOM_TIMEOUT_MS);
 afterEach(unmountApps);
 setDefaultTimeout(20_000);
 afterAll(async () => {
+  removeTurnStreams();
   await removeAppDom();
 });
 
@@ -43,7 +52,7 @@ const line = '[data-testid="transcript-stopped"]';
 const REFUSED = "laf:turn_rate_limited";
 
 /** The routine's heading, as `routines/deliver.ts` writes a failure's mark into the conversation. */
-const heading = (id: string) => ({
+const heading = (id: string): Message => ({
   id,
   role: "assistant",
   content: "**리뷰 확인**",
@@ -63,7 +72,7 @@ function group(overrides: Partial<FailureGroup> = {}): FailureGroup {
 /** The channel, plus the one route 확인 reaches, recording what it was sent. */
 function conversation(options: {
   channelId: string;
-  history: { id: string; role: string; content: string }[];
+  history: Message[];
   failures: {
     messageId: string;
     code: string;
@@ -71,7 +80,7 @@ function conversation(options: {
     group?: FailureGroup;
   }[];
 }) {
-  const server = channelServer(options);
+  const server = turnServer(options);
   const acknowledged: string[] = [];
   const api = (request: ApiRequest) => {
     const match = /^\/api\/me\/notifications\/([^/]+)\/acknowledge$/.exec(

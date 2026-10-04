@@ -78,8 +78,8 @@ export function isSocketLost(): boolean {
  * WHETHER THE LOSS IS WORTH A PERSON'S ATTENTION YET — A DIFFERENT QUESTION FROM WHETHER IT HAPPENED.
  *
  * `isSocketLost()` turns true the instant the socket drops, because a turn that fails in that
- * instant must blame the connection and not the model (`channel-chat.tsx`, audit A4). The notice is
- * a different reader. Since the heartbeat, a socket found dead after a sleep is replaced within a
+ * instant must blame the connection and not the model (`server-channel-chat.tsx`, audit A4). The
+ * notice is a different reader. Since the heartbeat, a socket found dead after a sleep is replaced within a
  * second, and a pill that flashed for that second would be the app announcing a problem it had
  * already solved. So the notice waits out `NOTICE_GRACE_MS` of continuous loss (`"lost"`), and
  * past `SLOW_RECONNECT_MS` says that it has been a while (`"slow"`). Changes fire `SOCKET_TROUBLE`.

@@ -14,7 +14,11 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { channelServer } from "./support/channel-server";
+import {
+  installTurnStreams,
+  removeTurnStreams,
+  turnServer,
+} from "./support/turn-server";
 
 /**
  * `/channel/{id}?draft=<sentence>` STARTS THE COMPOSER WITH THE SENTENCE, ONCE.
@@ -33,6 +37,7 @@ import { channelServer } from "./support/channel-server";
 
 beforeAll(async () => {
   await installAppDom();
+  installTurnStreams();
   (
     window as unknown as {
       happyDOM: { setWindowSize(size: { width: number }): void };
@@ -42,6 +47,7 @@ beforeAll(async () => {
 afterEach(unmountApps);
 setDefaultTimeout(20_000);
 afterAll(async () => {
+  removeTurnStreams();
   await removeAppDom();
 });
 
@@ -53,7 +59,7 @@ const composerText = (host: HTMLElement) =>
 describe("a sentence handed to the conversation", () => {
   test("is in the composer, and no longer in the address", async () => {
     const channelId = "channel_draft-offer";
-    const server = channelServer({
+    const server = turnServer({
       channelId,
       history: [
         {
@@ -88,7 +94,7 @@ describe("a sentence handed to the conversation", () => {
       8000,
     );
     // Nothing was sent: it is the person's to finish.
-    expect(server.runs).toHaveLength(0);
+    expect(server.sends).toHaveLength(0);
     await view.unmount();
   });
 
@@ -104,7 +110,7 @@ describe("a sentence handed to the conversation", () => {
     withdrawDraft(channelId);
     expect(takeOfferedDraft(channelId)).toBeNull();
 
-    const server = channelServer({ channelId, history: [] });
+    const server = turnServer({ channelId, history: [] });
     const view = await mountApp({
       path: `/channel/${channelId}`,
       api: server.api,
@@ -153,7 +159,7 @@ describe("what is in the box when the page reloads for a new build (P1, G6)", ()
     thisTab();
     try {
       const channelId = "channel_draft-reload";
-      const server = channelServer({ channelId, history: [] });
+      const server = turnServer({ channelId, history: [] });
       const { editDraft, editInChatHref } = await import(
         "../src/components/routines/edit-in-chat"
       );
@@ -184,7 +190,7 @@ describe("what is in the box when the page reloads for a new build (P1, G6)", ()
         "what was typed, back in its box",
         8000,
       );
-      expect(server.runs).toHaveLength(0);
+      expect(server.sends).toHaveLength(0);
       await next.unmount();
     } finally {
       reloader.configureBuildReload(null);

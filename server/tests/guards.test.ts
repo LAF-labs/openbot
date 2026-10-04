@@ -127,9 +127,9 @@ describe("server authorization", () => {
         autoReview: true,
         attachments: false,
         images: false,
-        // And the turn is the window's to drive unless the server says it owns it: an app built
-        // with no turn doors mounted must not hand its turns to routes that are not there.
-        serverTurns: false,
+        // The server runs every chat turn, and says so for an app build from before the window
+        // that drove its own turns was removed — whatever this app was built with (`app.ts`).
+        serverTurns: true,
       },
     });
   });

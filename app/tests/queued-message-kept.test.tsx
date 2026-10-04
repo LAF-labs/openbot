@@ -16,10 +16,10 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { BOT_ID } from "./support/channel-server";
 import {
   acted,
   askedIn,
+  BOT_ID,
   installTurnStreams,
   removeTurnStreams,
   turnServer,

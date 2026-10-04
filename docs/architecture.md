@@ -30,23 +30,29 @@ Regenerate it with `bun run diagram` after changing anything it shows.
 
 ## Runtime flow
 
-1. The app opens a channel or direct Bot session.
-2. The server resolves the signed-in actor and selected coworker.
-3. CopilotKit runtime sends the turn to that Bot's AG-UI endpoint. Only Bots a package shipped are
-   `built_in`; everything anybody makes is `remote_ag_ui` and is answered by `agent-bot`.
-4. The surface registers available frontend tools: browser tools, MCP tools, and components granted to that Bot.
-5. Acting browser/file/MCP calls return to the server for authorization and audit.
-6. The server streams results back to the app and persists the thread in PostgreSQL.
+1. The app opens the conversation with the Bot. The surface registers the tools it can draw —
+   browser tools, MCP tools, and components granted to that Bot — and says which, with their
+   schemas, when it hands a message over (`POST /api/turns/:thread`).
+2. The server resolves the signed-in actor and the Bot, and runs the turn itself
+   (`server/src/turns/engine.ts`): it asks that Bot's AG-UI endpoint, carries out each tool call
+   (`server/src/turns/chat-tools.ts`) and asks again with the result. Only Bots a package shipped
+   are `built_in`; everything anybody makes is `remote_ag_ui` and is answered by `agent-bot`.
+3. Acting browser/file/MCP calls go through the server's gateway for authorization and audit.
+   Where a person is needed — an approval, a request for help, a choice — the turn waits on the
+   server until somebody answers from any window.
+4. Every window of the conversation watches the same numbered frames (`GET /api/turns/:thread/stream`)
+   and draws them; one that reopens catches up from its cursor. The thread is persisted in PostgreSQL.
 
 Per-run settings — the Bot's effort, and anything else decided at the moment of asking — travel as
 AG-UI `forwardedProps` through the middleware in `server/src/copilot.ts`. That is the one seam every
 path goes through, so a setting wired anywhere else reaches one path and not the others.
 
-Two paths need no browser watching them and run entirely on the server: a conversation's turn
-(`server/src/turns/`, unless `SERVER_TURNS=off`, which leaves the turn to the window as in the steps
-above) and a routine's unattended run (`server/src/runner/unattended.ts`). Both call the same
+No path needs a browser watching it: a conversation's turn (`server/src/turns/`) and a routine's
+unattended run (`server/src/runner/unattended.ts`) both run entirely on the server and call the same
 gateway with the same policy, grants, audit rows and approval registry underneath. A tab that closes
-mid-turn no longer kills the turn.
+mid-turn does not end the turn. Until 2026-10-05 a window could drive the turn instead
+(`SERVER_TURNS=off`): the page ran each tool call and started the next run with the result. That
+path was removed, and a deployment that still sets `SERVER_TURNS=off` refuses to start.
 
 ## Browser action governance
 

@@ -13,7 +13,7 @@ import { createContext, useSyncExternalStore } from "react";
  * has anything to do with it.
  *
  * FOR ONE CONVERSATION, AND TAKEN ONCE. The offer names the conversation it is for, and a composer
- * takes only an offer for the conversation it sits in (`DraftScope`, provided by `ChannelChat`).
+ * takes only an offer for the conversation it sits in (`DraftScope`, provided by `ServerChannelChat`).
  * Unscoped, the first composer to hear of it took it — measured in the full gate run, where a
  * composer another test had left mounted took the sentence and the conversation's box stayed empty.
  * The compose screen, which is in no conversation, never takes one; and the route withdraws an

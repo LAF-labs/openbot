@@ -888,6 +888,34 @@ describe("the agent harness's switches", () => {
     ).toThrow("LAF_CLOCK_OFFSET_MS");
   });
 
+  test("a deployment still switched to turns the window drove does not start, and is told why", () => {
+    /*
+     * `SERVER_TURNS=off` chose the window-driven chat path, which was removed (2026-10-05). Booting
+     * anyway would answer "off" with turns the server owns — a setting saved and doing nothing. So
+     * it is refused in one sentence that says what happened and what to do; `on` and unset, which
+     * say what is true, boot as before.
+     */
+    expect(() =>
+      loadConfig({ ...baseEnvironment, SERVER_TURNS: "off" }),
+    ).toThrow(
+      "SERVER_TURNS=off is refused: the window-driven chat path was removed and every turn runs on the server — delete the SERVER_TURNS line.",
+    );
+    expect(() =>
+      loadConfig({ ...baseEnvironment, SERVER_TURNS: "OFF" }),
+    ).toThrow("the window-driven chat path was removed");
+    expect(() =>
+      loadConfig({ ...baseEnvironment, SERVER_TURNS: "on" }),
+    ).not.toThrow();
+    expect(() => loadConfig(baseEnvironment)).not.toThrow();
+    // And a word that is neither is not read as on.
+    expect(() =>
+      loadConfig({ ...baseEnvironment, SERVER_TURNS: "window" }),
+    ).toThrow("SERVER_TURNS");
+    expect(loadConfig(baseEnvironment).harness).not.toHaveProperty(
+      "serverTurns",
+    );
+  });
+
   test("the first move is off unless it names a move, and a typo does not boot as either", () => {
     /*
      * Off by default for a reason that is not technical: on, short weather questions go to the

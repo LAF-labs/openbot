@@ -235,9 +235,10 @@ async function readRecord(
 /**
  * One conversation with the one Bot, while the server owns its turns (`server/src/turns/`).
  *
- * `ChannelChat` drove each turn from this window through CopilotKit — the page ran the model, carried
- * out every tool call and started the next run — so a closed laptop ended the task, and a second
- * window could only replay the first. Here the window hands over what the person said and WATCHES:
+ * Until 2026-10-05 a second screen (`ChannelChat`) drove each turn from the window through
+ * CopilotKit — the page ran the model, carried out every tool call and started the next run — so a
+ * closed laptop ended the task, and a second window could only replay the first. It was removed;
+ * this is the only conversation there is. The window hands over what the person said and WATCHES:
  * the turn runs on the server, every window of the conversation sees the same numbered frames, and a
  * window that reopens catches up from its cursor. What the person sees is kept the same — the same
  * transcript, tool lines, cards, questions, Stop, 이어서 하기, 다시 시도 and files — drawn from the
@@ -286,9 +287,19 @@ export function ServerChannelChat({
   );
 
   /*
-   * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED — once per mounted room,
-   * and the guard is load-bearing (see `ChannelChat`, which learnt it: the second call of a
-   * development double-mount answers with the mark the first had just written).
+   * OPENING A ROOM MARKS IT READ, AND HANDS BACK WHERE THE READING STOPPED.
+   *
+   * One call, on mount, per channel. The mark it replaced is the only thing that can place the
+   * "unread from here" line — the write destroys it, so a second request to read it would be a
+   * race with this one by construction. `readWindow` is state and never re-derived: the line has
+   * to stay where it was when the room was opened, not walk down the transcript as replies arrive.
+   *
+   * ONCE PER MOUNTED ROOM, AND THE GUARD IS LOAD-BEARING. The call is not idempotent by nature: it
+   * reports the mark it replaced. React runs mount effects twice in development, so the second call
+   * answered with the timestamp the first had just written — "now" — and the line had nothing
+   * newer than itself to sit above: it drew nothing, in development only, with both requests
+   * answering 200. A ref rather than a cleanup flag, because the second invocation must not send
+   * the request at all; it is fresh on a real mount, since this component is keyed on the channel.
    */
   const setRead = useMutation(setChannelReadMutationOptions(queryClient));
   const [readWindow, setReadWindow] = useState<{
@@ -581,7 +592,7 @@ export function ServerChannelChat({
    *    after a wait when the door did not take them, and at once when the connection returns.
    *
    * It was a row of its own kind with a press on it (보내지 못함 · 다시 보내기), taught to one reader of
-   * the outbox at a time: the resend, the next message, the screen that drives its own turns — and
+   * the outbox at a time: the resend, the next message, the screen that drove its own turns — and
    * each press decided from what its window happened to hold. Three rounds of review and a second
    * read found a reader each time.
    */

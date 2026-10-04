@@ -1642,10 +1642,11 @@ export function ChatTranscript({
    * and a reply never appeared. A Bot that answered looked like a Bot that had not.
    *
    * The React Compiler memoises this line exactly that way. It is correct because every caller
-   * passes a new array whenever anything in it changed: `ChannelChat` copies the agent's on every
-   * render, and is left uncompiled so that the copy is always taken, and a room's messages are
-   * immutable state. A caller that passed a live CopilotKit array straight through would bring the
-   * bug back.
+   * passes a new array whenever anything in it changed: the conversation's store hands out a new
+   * snapshot (`lib/turns/thread-store.ts`), and the compose screen's messages are immutable state.
+   * A caller that passed a live CopilotKit array straight through would bring the bug back — which
+   * is what the window-driven chat screen had to copy the agent's array on every render to avoid,
+   * until it was removed (2026-10-05).
    *
    * It was never the expensive part either. Rebuilding this list is a flatMap over messages; the
    * cost was markdown parsing and chart SVGs, and those are skipped by the memoised children below,

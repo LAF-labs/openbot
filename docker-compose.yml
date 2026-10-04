@@ -217,7 +217,9 @@ services:
       COMPACTION_THRESHOLD_TOKENS: ${COMPACTION_THRESHOLD_TOKENS:-}
       # A new epoch on a summary at the owner's local day boundary; on unless it says `off`.
       DAY_EPOCHS: ${DAY_EPOCHS:-}
-      # A chat turn runs on the server and windows only watch; on unless it says `off`.
+      # Not a switch any more: a chat turn always runs on the server and windows only watch. Still
+      # handed on so that an `.env` left saying `off` reaches the server, which refuses to start
+      # with the reason, instead of being dropped here and ignored.
       SERVER_TURNS: ${SERVER_TURNS:-}
       # A turn's first read-only call made by the server before the Bot's model is asked, when the
       # decisions model is sure what it is. OFF unless it names a move (`weather`), and it needs
