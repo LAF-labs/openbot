@@ -33,7 +33,8 @@ import { fromDocument } from "./page-arrival";
 
 /**
  * How long the names of one look may take. Measured 2026-10-04 on five Korean pages: tens of
- * milliseconds. A look that runs out keeps the names the tree gave (`nameFromWithin`).
+ * milliseconds. A look that runs out leaves the controls it asked about with no name: the tree's
+ * own words for them are not kept (`withNames` in aria-snapshot.ts says why).
  */
 export const PAGE_NAMES_MS = 1_000;
 

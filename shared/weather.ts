@@ -38,11 +38,12 @@ export const WEATHER_DATA_HEAD = '{"source":"기상청"';
  *    repeated to the person ("위에 카드로 보여 드렸어요") is true, and reads as the Bot speaking.
  *
  * AND IT IS A FACT ONLY WHERE A CARD IS DRAWN: the server writes it when the answer holds what
- * `weatherOf` reads — a temperature now, or a day — AND somebody is looking at the call (a chat's
- * call; not a routine's, whose answer reaches the person as words with no card under them —
- * `transport.ts`, `connection.watched`). An answer with the next hours and nothing else (the
- * observation and the daily forecast both missing, late in the evening) has no card, so it is not
- * told it has one, and the rule in the description hangs on this field being there.
+ * `weatherOf` reads — a temperature now, or a day — AND the call's row is drawn in a conversation
+ * (a chat turn's call; not a routine's, whose answer reaches the person as words with no card under
+ * them — `connection.drawnOn`, in `server/src/plugins/transport.ts`, which is about the surface
+ * and not about who is looking). An answer with the next hours and nothing else (the observation
+ * and the daily forecast both missing, late in the evening) has no card, so it is not told it has
+ * one, and the rule in the description hangs on this field being there.
  */
 export const WEATHER_SHOWN = "사용자 화면에 날씨 카드로 이미 표시됨";
 
