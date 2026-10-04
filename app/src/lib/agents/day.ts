@@ -211,7 +211,11 @@ export function dayMark(
    * Only while a question is open, though. With none, the step is a window's to make — or a
    * window's that crashed, which the server lists for ten minutes — and 사장님 차례 told the owner
    * to look for a question that was not there (0.5.4 final QA). It is still going on, as far as
-   * anything here can know; the conversation says the rest ("다른 창에서 진행 중이었어요").
+   * anything here can know.
+   *
+   * A ROW ONLY THE RUN DOOR WRITES (`server/src/runner/laf-runner.ts`), which the app stopped
+   * calling when the window-driven path was removed (2026-10-05): a turn the server owns is
+   * `running` while it waits on a person. Read still, for the rows there are.
    */
   if (status === "waiting") {
     return {

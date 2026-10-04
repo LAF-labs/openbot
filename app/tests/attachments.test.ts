@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
 import { ATTACHMENT_MAX_BYTES, type AttachmentPart } from "@shared/attachments";
 import { toVisibleChatItems } from "@/components/channels/chat-messages";
-import type { ComposerDraft } from "@/components/channels/composer/draft";
-import { reduceQueue } from "@/components/channels/composer/queue";
+import {
+  claimAutoSend,
+  forgetUnsent,
+  forgetUnsentCache,
+  keepUnsent,
+} from "@/components/channels/composer/outbox";
 import { contentOf } from "@/lib/attachments/message";
 import {
   refusalBeforeUpload,
@@ -66,34 +70,38 @@ describe("the message a file rides in", () => {
 });
 
 describe("files parked while the Bot works", () => {
-  const draft = (text: string, attachments: AttachmentPart[] = []) =>
-    ({
-      text,
-      commandIds: [],
-      isEmpty: text.length === 0,
-      ...(attachments.length ? { attachments } : {}),
-    }) satisfies ComposerDraft;
-
+  /*
+   * Parked in the outbox, where the conversation keeps what waits for the Bot (`outbox.ts`,
+   * `waiting`). It was a queue in the mount that joined what waited into one message, files and
+   * all; they go as the messages they were typed as now, so what has to hold is that each keeps
+   * its own files and the order is the order of typing.
+   */
   test("go with the words they were parked with, all of them, in order", () => {
-    const first = reduceQueue([], {
-      type: "submit",
-      id: "q1",
-      busy: true,
-      draft: draft("", [receipt]),
+    const channelId = "channel_parked-files";
+    const parked = (id: string, text: string, files: AttachmentPart[]) => ({
+      id,
+      text,
+      instructions: [],
+      at: `2026-10-05T01:00:0${id.slice(1)}.000Z`,
+      waiting: true as const,
+      attachments: files,
     });
-    const second = reduceQueue(first.queue, {
-      type: "submit",
-      id: "q2",
-      busy: true,
-      draft: draft("이것도 봐 줘", [sales]),
-    });
-    const settled = reduceQueue(second.queue, { type: "settle" });
-    expect(settled.run).toEqual({
-      attachments: [receipt, sales],
-      text: "이것도 봐 줘",
-      commandIds: [],
-      isEmpty: false,
-    });
+    try {
+      keepUnsent(channelId, parked("q1", "", [receipt]));
+      keepUnsent(channelId, parked("q2", "이것도 봐 줘", [sales]));
+      expect(
+        claimAutoSend(channelId).map(({ text, attachments }) => ({
+          text,
+          attachments,
+        })),
+      ).toEqual([
+        { text: "", attachments: [receipt] },
+        { text: "이것도 봐 줘", attachments: [sales] },
+      ]);
+    } finally {
+      forgetUnsent(channelId, ["q1", "q2"]);
+      forgetUnsentCache();
+    }
   });
 });
 

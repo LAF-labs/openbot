@@ -494,7 +494,7 @@ describe("a first thing pressed is a first thing sent", () => {
       "../src/components/channels/composer/prefill"
     );
     const sent: string[] = [];
-    // What `ChannelChat` does while this conversation is on screen.
+    // What the conversation's screen does while it is on screen.
     const stop = hearFirstMessages("ch-1", (text) => sent.push(text));
     try {
       const view = await day({ items: [], channels: [conversation(null)] });
@@ -593,6 +593,17 @@ describe("the day's words", () => {
       }
       expect(mark && ko[mark.text]).toBeTruthy();
     }
+  });
+
+  test("a turn whose step is waiting reads 사장님 차례 only while a question is open", async () => {
+    /*
+     * 0.5.4 final QA: with no question open, 사장님 차례 sent the owner looking for one that was not
+     * there. The ledger's `waiting` is still read: the rows exist, and the run door that writes it
+     * is still mounted (`server/src/runner/laf-runner.ts`).
+     */
+    const { dayMark } = await import("../src/lib/agents/day");
+    expect(dayMark("waiting", null, true)?.text).toBe("Your turn");
+    expect(dayMark("waiting", null, false)?.text).toBe("Working on it");
   });
 
   test("the clock is the day's zone's, not the machine's", async () => {

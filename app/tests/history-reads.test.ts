@@ -3,14 +3,12 @@
  *
  * Words kept for a card are settled against the record, and read for again only once a read has
  * come back without it — the page a time, back to their question (`readRecord` in
- * `server-channel-chat.tsx`), or the whole conversation on the screen that drives its own turns
- * (`readRecordAgain` in `channel-chat.tsx`). A request the server accepted and never answered came
- * back with nothing at all: the loop never reached its next try, nor saw that the screen had gone,
- * and the words stayed hidden or under their card for as long as the page was open (review, ninth
- * round). Each read has its own wait now (`deadline`).
+ * `server-channel-chat.tsx`). A request the server accepted and never answered came back with
+ * nothing at all: the loop never reached its next try, nor saw that the screen had gone, and the
+ * words stayed hidden or under their card for as long as the page was open (review, ninth round).
+ * Each read has its own wait now (`deadline`).
  */
 import { afterEach, describe, expect, jest, test } from "bun:test";
-import { loadThreadHistory } from "@/lib/channels/thread-history";
 import { readHistory } from "@/lib/turns/client";
 
 const fetched = globalThis.fetch;
@@ -48,22 +46,6 @@ describe("a read of the record that is never answered", () => {
     await settle();
     expect(called).toEqual(["/api/turns/thread-1/history?before=470"]);
     jest.advanceTimersByTime(29_999);
-    await settle();
-    expect(read).toBe("out");
-    jest.advanceTimersByTime(1);
-    await settle();
-    expect(read).toBeNull();
-  });
-
-  test("and after a minute, the whole of it, on the screen that drives its own turns", async () => {
-    jest.useFakeTimers();
-    neverAnswers();
-    let read: unknown = "out";
-    void loadThreadHistory("thread-1", "agent-1").then((messages) => {
-      read = messages;
-    });
-    await settle();
-    jest.advanceTimersByTime(59_999);
     await settle();
     expect(read).toBe("out");
     jest.advanceTimersByTime(1);

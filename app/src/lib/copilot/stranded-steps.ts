@@ -1,33 +1,23 @@
 import type { Message } from "@ag-ui/core";
 
 /**
- * A BOT'S STEP THAT OUTLIVED ITS WINDOW, found in the thread a window opened (UX review 0.5.4,
- * candidate 1, audit item 16 from 0.5.3).
+ * A TASK THAT ENDED IN THE MIDDLE OF THE BOT'S WORK, found in the conversation as it stands (UX
+ * review 0.5.4, candidate 1, audit item 16 from 0.5.3).
  *
- * Every computer tool runs in the window: the Bot asks for a click, its run ENDS, and the window
- * makes the click and starts the next run with the result. So the window was the only thing
- * holding a task together, and closing or reloading it mid-step — worst of all while it waited on
- * the owner's 허용 — left a tool call with no result that nothing would ever answer. A second
- * window showed the task stopped and no card, and the ledger wrote the turn `done`.
+ * The Bot's last message asked for steps and nothing was said after them: a step with no result,
+ * one the person stopped, or a turn cut off between two steps. What cannot be carried on by itself
+ * is said as stopped, with a way to continue (`carry-on-notice.tsx`).
  *
- * The server now keeps the question with its step on it (`server/src/computer/approvals.ts`), and a
- * window that opens the conversation finds the call here, draws the card on it, and — when no other
- * live window holds it — carries the step on once it is answered. What cannot be carried on (a
- * click whose window closed with no question open) is said as stopped, with a way to continue.
+ * A step with no result at all is rare now, and this still reads it. It was the ordinary way a task
+ * died while every computer tool ran in the window — the Bot asked for a click, its run ended, the
+ * window made the click and started the next run — and closing the window mid-step left a call
+ * nothing would ever answer. The server runs the steps since v0.5.7 and files a result for every
+ * call of a turn that stops or fails (`server/src/turns/engine.ts`), and the window-driven path,
+ * with the watcher that carried such a step on from another window, was removed 2026-10-05. What
+ * is left without a result is a conversation from before, or a turn its process died under.
  *
- * Pure: the thread in, facts out, so the rules can be checked without a browser. The watching is
- * `step-watcher.ts`.
+ * Pure: the thread in, facts out, so the rules can be checked without a browser.
  */
-
-/**
- * Said by a call whose step another window took over while this one was asleep. Thrown, not
- * returned: a handler that throws gets no follow-up run from the core, and a follow-up would carry
- * the same step on a second time.
- */
-export const STEP_HANDED_OVER = "laf:step_handed_over";
-
-/** The window event that says so, for the conversation to fetch the thread as it now stands. */
-export const STEP_HANDED_OVER_EVENT = "laf-step-handed-over";
 
 type ToolCall = {
   id: string;
@@ -58,33 +48,11 @@ function resultOf(
   );
 }
 
-/** A call the thread holds with no result yet, and the message it is on. */
-export type UnansweredCall = { messageId: string; call: ToolCall };
-
-/**
- * The call with this id, if the thread holds it and nothing has answered it — the only kind a
- * window may carry on. A call with a result has been carried on already, by whichever window.
- */
-export function unansweredCall(
-  messages: readonly Message[],
-  toolCallId: string,
-): UnansweredCall | undefined {
-  for (const message of messages) {
-    if (!hasCalls(message)) continue;
-    const call = message.toolCalls.find((one) => one.id === toolCallId);
-    if (!call) continue;
-    return resultOf(messages, toolCallId)
-      ? undefined
-      : { messageId: message.id, call };
-  }
-  return undefined;
-}
-
 /**
  * How the conversation's last task ended, when it ended in the middle of the Bot's work.
  *
  * `window_closed`: the Bot's last message asked for steps and at least one never got a result —
- * its window went away with it. `stopped`: every step answered, and one of them says the person
+ * named for the window that went away with it, when a window made the steps. `stopped`: every step answered, and one of them says the person
  * stopped it (`laf:stopped`). Null when the Bot said something after its last step, when the person
  * spoke since, or when nothing was stopped: those are ordinary endings, or somebody else's line.
  */
@@ -93,26 +61,6 @@ export type TaskStop = {
   /** The calls with no result, which a question may still be open on. */
   unanswered: string[];
 };
-
-/**
- * Whether any of these calls is the Bot asking for a person at its computer (`computer_request_help`):
- * a step out with a window for as long as the person takes — a login, a verification code — which
- * another window must not read as one that went quiet.
- */
-export function asksForPerson(
-  messages: readonly Message[],
-  toolCallIds: readonly string[],
-): boolean {
-  const ids = new Set(toolCallIds);
-  return messages.some(
-    (message) =>
-      hasCalls(message) &&
-      message.toolCalls.some(
-        (call) =>
-          ids.has(call.id) && call.function.name === "computer_request_help",
-      ),
-  );
-}
 
 export function taskStopOf(
   messages: readonly Message[],
@@ -146,7 +94,7 @@ export function taskStopOf(
     : null;
 }
 
-/** A step's result that says the person stopped it, as `computer-tools.tsx` hands it back. */
+/** A step's result that says the person stopped it, as the turn files one (`STOPPED_RESULT`). */
 function isStoppedResult(message: Message | undefined): boolean {
   const content = (message as { content?: unknown } | undefined)?.content;
   if (typeof content !== "string") return false;
@@ -156,40 +104,4 @@ function isStoppedResult(message: Message | undefined): boolean {
   } catch {
     return false;
   }
-}
-
-/** A handler's result as the core writes it into the thread: a string as it is, else JSON. */
-export function resultContent(result: unknown): string {
-  if (result === undefined || result === null) return "";
-  return typeof result === "string" ? result : JSON.stringify(result);
-}
-
-/**
- * The thread with a step's result in place: right after the message that asked for it and after
- * any results already there, where the core itself puts one (providers want results to follow
- * their calls). The same array when the message is not in it.
- */
-export function withStepResult(
-  messages: readonly Message[],
-  answered: {
-    messageId: string;
-    toolCallId: string;
-    content: string;
-    id: string;
-  },
-): Message[] {
-  const at = messages.findIndex((message) => message.id === answered.messageId);
-  if (at === -1) return [...messages];
-  let insertAt = at + 1;
-  while (messages[insertAt]?.role === "tool") insertAt += 1;
-  return [
-    ...messages.slice(0, insertAt),
-    {
-      id: answered.id,
-      role: "tool",
-      toolCallId: answered.toolCallId,
-      content: answered.content,
-    } as Message,
-    ...messages.slice(insertAt),
-  ];
 }

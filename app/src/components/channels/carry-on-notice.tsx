@@ -12,7 +12,8 @@ import { t } from "@/lib/i18n";
  * A task stopped partway used to leave nothing but a card reading 멈춤, and after a reload not even
  * a reason — the owner had to guess that typing "계속해" would do anything. The press sends that
  * sentence as the owner's own message, in the thread where they can see it; the Bot reads the step
- * that never finished as unfinished (`repair-history.ts`) and carries on from where it was.
+ * that never finished as unfinished (the result the server filed for it, `UNANSWERED_RESULT`) and
+ * carries on from where it was.
  *
  * Drawn only once the conversation has looked for open questions (`checked`), and never while one
  * is open on the stopped step: a step still waiting on the owner's answer is not stopped, and the
@@ -22,18 +23,11 @@ export function CarryOnNotice({
   stop,
   checked,
   busy,
-  elsewhere = false,
   onCarryOn,
 }: {
   stop: TaskStop | null;
   checked: boolean;
   busy: boolean;
-  /**
-   * The step is still listed as out with another window, far longer than a step takes, and no
-   * question is open on it — most likely a window that crashed, which the server keeps listing for
-   * ten minutes. Said as that, with the same press, rather than drawn as a turn going on here.
-   */
-  elsewhere?: boolean;
   onCarryOn: () => void;
 }) {
   const unanswered = stop?.unanswered.join(",") ?? "";
@@ -50,11 +44,9 @@ export function CarryOnNotice({
       role="status"
     >
       <span className="min-w-0 flex-1">
-        {elsewhere && stop.reason === "window_closed"
-          ? t("This task was going on in another window.")
-          : stop.reason === "stopped"
-            ? t("You stopped this task partway.")
-            : t("This task stopped before its last step finished.")}
+        {stop.reason === "stopped"
+          ? t("You stopped this task partway.")
+          : t("This task stopped before its last step finished.")}
       </span>
       <Button
         className="shrink-0"
