@@ -849,9 +849,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * thirteen to `agent-computer` (the reader's string answer, two; a page that replaced `Map` as
  * 고용24 does, one that makes the reader throw, one that takes `innerText` itself and frames that do
  * either, four in a page and two through `/navigate`; and the extract declined for a short page, a
- * footer outside the page's own `<article>`, a wall of links and a story outside it, with a story
- * inside it still the article, five), two to `root` (a navigation's notes reaching a chat's model,
- * and only when there are some).
+ * footer outside the `<article>` that is all the page calls one and a wall of links, with a story
+ * inside the element and one beside it still the article, five), two to `root` (a navigation's
+ * notes reaching a chat's model, and only when there are some). And four more to `agent-computer`
+ * from its review: a throw inside the page said by a name from our own list, a renderer that
+ * crashed still the browser's failure under both of its names, and the one line a fallback leaves.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -860,7 +862,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3447, roots: ["server"] },
   { name: "app", floor: 2081, roots: ["app"] },
-  { name: "agent-computer", floor: 440, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
   { name: "root", floor: 613, roots: ["tests", "agent-bot"] },
 ] as const;
 

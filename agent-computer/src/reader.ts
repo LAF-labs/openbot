@@ -69,13 +69,24 @@ type ArticleLimits = {
    */
   maxLinkShare: number;
   /**
-   * On a page that marks its articles with `<article>`, the extract must come from inside them.
+   * On a page whose only claim to an article is an `<article>` element, the extract must come from
+   * inside one.
    *
    * A shop puts each product card in an `<article>`, so the element says there is an article somewhere
-   * on the page, not that Readability's pick is it. Measured on the set: 무신사's home and 컬리's
-   * goods page came back as their legal footers (0 % of it inside any `<article>`), Spiegel's and
-   * 삼성's homes as a teaser block (3–4 %); every real article that had the element was 89–100 %
-   * inside it (네이버 뉴스, 연합뉴스, Cloudflare, Google's documentation).
+   * on the page, not that Readability's pick is it. Measured on the set: 무신사's and Zillow's homes
+   * and 컬리's goods page came back as their legal footers (0 % of it inside any `<article>`),
+   * Spiegel's and 삼성's homes as a teaser block (3–5 %); every real article whose page had the
+   * element was 89–100 % inside it (네이버 뉴스, 연합뉴스, Cloudflare, Google's documentation).
+   *
+   * ONLY WHERE THE ELEMENT IS ALL THE PAGE SAYS. A news page that calls itself an article
+   * (`og:type`, JSON-LD) and keeps its story in a `<div>`, with `<article>` for the related-story
+   * cards beside it, is not held to this: its story would be read whole — the menus first, cut at
+   * the cap, the problem the reader exists for. Every page above that only this rule declined says
+   * nothing of itself but the element (`og:type` "website" or none, no JSON-LD article); on a page
+   * that does say so the rule never decided anything in the set (연합뉴스's missing article is 97 %
+   * links). What the extract looks like could not stand in for that: Zillow's footer is 1,249
+   * characters, 80 % of them in long lines, in paragraphs, with no heading — longer and more like a
+   * story than four of the set's twelve real articles (433 to 619 characters).
    */
   minInsideShare: number;
 };
@@ -129,14 +140,16 @@ function readInPage(
     document
       .querySelector('meta[property="og:type"]')
       ?.getAttribute("content") ?? "";
-  const declared =
+  // What the document says of itself, apart from what one of its elements is called.
+  const saysSo =
     /article/i.test(ogType) ||
-    document.querySelector("article") !== null ||
     Array.from(
       document.querySelectorAll('script[type="application/ld+json"]'),
     ).some((script) =>
       /"@type"\s*:\s*"(\w*Article|BlogPosting)"/.test(script.textContent ?? ""),
     );
+  const marked = Array.from(document.querySelectorAll("article"));
+  const declared = saysSo || marked.length > 0;
   /*
    * HALF THE PARAGRAPH, IN HANGUL. The check counts a paragraph of 140 characters or more, a length
    * tuned on Latin text; a Korean sentence says in 60 characters what an English one says in 140,
@@ -201,14 +214,13 @@ function readInPage(
     return plainly;
   }
   /*
-   * Not from the page's own `<article>` (`minInsideShare`). Compared line by line, by text: the
-   * extract is a clone's, re-parented by Readability, so where it sat in the page is gone and what
-   * it says is all there is to compare. `textContent` rather than `innerText` on the page's side,
-   * because the clone keeps text a style sheet hides and the comparison must not count that against
-   * a real article.
+   * Not from the `<article>` that is all the page calls an article (`minInsideShare`). Compared line
+   * by line, by text: the extract is a clone's, re-parented by Readability, so where it sat in the
+   * page is gone and what it says is all there is to compare. `textContent` rather than `innerText`
+   * on the page's side, because the clone keeps text a style sheet hides and the comparison must not
+   * count that against a real article.
    */
-  const marked = Array.from(document.querySelectorAll("article"));
-  if (marked.length > 0) {
+  if (!saysSo) {
     const inside = squeeze(
       marked.map((element) => element.textContent ?? "").join(""),
     );
@@ -229,8 +241,9 @@ function readInPage(
 /**
  * What {@link readerScript} answered, or nothing when it is not an answer the reader gives.
  *
- * Nothing is what a page that breaks `evaluate` itself produces, and the caller reads the page
- * plainly then (`page-text.ts`) rather than taking a missing answer for an empty page.
+ * Nothing is what a page that breaks `evaluate` itself produces, or one whose own JavaScript threw
+ * inside the reader ({@link thrownInPage}), and the caller reads the page plainly then
+ * (`page-text.ts`) rather than taking a missing answer for an empty page.
  */
 export function parseFrameRead(value: unknown): FrameRead | undefined {
   if (typeof value !== "string") return undefined;
@@ -240,24 +253,67 @@ export function parseFrameRead(value: unknown): FrameRead | undefined {
 }
 
 /**
+ * How a script says the page's own JavaScript threw inside it: `!`, then the error's name.
+ *
+ * CAUGHT IN THE PAGE, SO THAT NOTHING ELSE CAN PASS FOR IT. The first version let `evaluate` reject
+ * and took every rejection that was not a navigation, a detached frame or a closed tab for the
+ * page's doing — and a renderer that crashed is none of the three (`Target crashed`, with the page
+ * not closed and the frame not detached), so a crashed tab was answered 200, empty, "this page's
+ * scripts kept it from being read". Naming what is NOT the page's doing can never be complete. A
+ * throw inside the page is caught there and comes back as an answer; a rejection is then always the
+ * browser's — a crash, a closed target, a protocol error, a page that left — and is thrown on as it
+ * was before there was a fallback.
+ */
+const CAUGHT_IN_PAGE =
+  'catch (error) { var name = ""; try { name = "" + error.name; } catch (unnamed) {} return "!" + name; }';
+
+/** The names an error is logged by. Anything else a page throws is `other`: its name is its own text. */
+const ERROR_NAMES = new Set([
+  "Error",
+  "EvalError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "TypeError",
+  "URIError",
+  "AggregateError",
+  "InternalError",
+  "DOMException",
+  "SecurityError",
+  "NotSupportedError",
+  "InvalidStateError",
+]);
+
+/**
+ * The name of what the page's own JavaScript threw inside a script of ours, or nothing when the
+ * answer does not say it threw. One of {@link ERROR_NAMES} or `other`, never the page's own string:
+ * a page chooses what it throws, and a name is as free a place to put a person's text as a message.
+ */
+export function thrownInPage(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.charAt(0) !== "!") return undefined;
+  const name = value.slice(1);
+  return ERROR_NAMES.has(name) ? name : "other";
+}
+
+/**
  * The expression `frame.evaluate` runs: the two published files inside a closure, then the reader.
  *
  * `module` is shadowed so the files' CommonJS tail (`if (typeof module === "object")`) does nothing,
  * and nothing they declare outlives the call. The limits are written into the source rather than
  * passed as an argument, which Playwright would carry in with the same `Map` it carries answers out
- * with (`readInPage`).
+ * with (`readInPage`). The closure sits inside the `try`, as a function of its own, so the files
+ * stay at the top of a function body as they were written to be.
  */
 export function readerScript(whole: boolean): string {
-  return `(() => { var module = undefined;\n${READABILITY_SOURCE}\n${READERABLE_SOURCE}\nreturn (${readInPage.toString()})(Readability, isProbablyReaderable, ${whole ? "true" : "false"}, ${JSON.stringify(ARTICLE_LIMITS)}); })()`;
+  return `(() => { try { return (() => { var module = undefined;\n${READABILITY_SOURCE}\n${READERABLE_SOURCE}\nreturn (${readInPage.toString()})(Readability, isProbablyReaderable, ${whole ? "true" : "false"}, ${JSON.stringify(ARTICLE_LIMITS)}); })(); } ${CAUGHT_IN_PAGE} })()`;
 }
 
 /**
  * The page's visible text and nothing else, for a page whose scripts stopped the reader
- * (`page-text.ts`). As small as a question to a page can be, so that whatever broke the reader has
- * as little as possible left to break.
+ * (`page-text.ts`): the reader's own `0`, then the text. As small as a question to a page can be, so
+ * that whatever broke the reader has as little as possible left to break.
  */
-export const PLAIN_TEXT_SCRIPT =
-  '(() => { var body = document.body; return body ? body.innerText : ""; })()';
+export const PLAIN_TEXT_SCRIPT = `(() => { try { var body = document.body; return "0" + (body ? body.innerText : ""); } ${CAUGHT_IN_PAGE} })()`;
 
 /** A line this short is a fragment of the one around it — a label, a unit, a menu item. */
 const SHORT_LINE = 24;

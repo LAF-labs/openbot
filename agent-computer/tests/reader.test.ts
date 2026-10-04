@@ -1,12 +1,22 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  spyOn,
+  test,
+} from "bun:test";
 import { existsSync } from "node:fs";
-import { type Browser, chromium } from "playwright";
+import { type Browser, chromium, type Page } from "playwright";
 import { readSettledPageText } from "../src/page-text";
 import {
   compactText,
   type FrameRead,
   parseFrameRead,
   readerScript,
+  thrownInPage,
 } from "../src/reader";
 import {
   READER_BROKEN_TEXT,
@@ -65,6 +75,112 @@ describe("parseFrameRead", () => {
     expect(parseFrameRead({ text: "x", reader: false })).toBeUndefined();
     expect(parseFrameRead("")).toBeUndefined();
     expect(parseFrameRead("x")).toBeUndefined();
+  });
+
+  test("a throw inside the page is said by a name from our list, never by the page's", () => {
+    expect(thrownInPage("!TypeError")).toBe("TypeError");
+    expect(thrownInPage("!")).toBe("other");
+    // A page chooses what it throws: a name is as free a place for a person's text as a message.
+    expect(thrownInPage("!홍길동 010-1234-5678")).toBe("other");
+    // And it is not an answer, so the page is read plainly.
+    expect(parseFrameRead("!TypeError")).toBeUndefined();
+    expect(thrownInPage("0본문")).toBeUndefined();
+    expect(thrownInPage(undefined)).toBeUndefined();
+  });
+});
+
+/** What the reader wrote to the log while a test ran, each line as its fields. */
+let warned: ReturnType<typeof spyOn<Console, "warn">>;
+beforeEach(() => {
+  warned = spyOn(console, "warn").mockImplementation(() => undefined);
+});
+afterEach(() => {
+  warned.mockRestore();
+});
+const fellBack = () =>
+  warned.mock.calls
+    .map(([line]) => String(line))
+    .filter((line) => line.includes("reader_fell_back"));
+
+/**
+ * A tab that is not a browser's: each `evaluate` asked of its document answers with the next of
+ * `answers`, a string or nothing as the answer and an `Error` as the rejection. For what a real
+ * Chromium cannot be made to do on request — a renderer that crashes mid-read.
+ */
+function tabAnswering(
+  url: string,
+  answers: readonly (string | undefined | Error)[],
+): Page {
+  const left = [...answers];
+  const frame = {
+    url: () => url,
+    parentFrame: () => null,
+    isDetached: () => false,
+    evaluate: async () => {
+      const next = left.shift();
+      if (next instanceof Error) throw next;
+      return next;
+    },
+  };
+  return {
+    // The one question asked of the page itself: whether it has finished loading.
+    evaluate: async () => "complete",
+    isClosed: () => false,
+    mainFrame: () => frame,
+    frames: () => [frame],
+  } as unknown as Page;
+}
+
+describe("what counts as the page's doing", () => {
+  /*
+   * A renderer that crashed is not closed and its frame is not detached, so a fallback that only
+   * knew what a navigation, a detached frame and a closed tab look like answered it 200, empty,
+   * "this page's scripts kept it from being read". It is the browser that failed.
+   */
+  for (const said of ["Page crashed", "Target crashed"]) {
+    test(`"${said}" is the browser's failure, whichever question it lands on`, async () => {
+      const crash = () => new Error(`frame.evaluate: ${said}`);
+      await expect(
+        readSettledPageText(tabAnswering("https://example.com/", [crash()])),
+      ).rejects.toThrow(said);
+      // And when the reader had already come back with nothing, and the plain read is what crashes.
+      await expect(
+        readSettledPageText(
+          tabAnswering("https://example.com/", [undefined, crash()]),
+        ),
+      ).rejects.toThrow(said);
+    });
+  }
+
+  test("a fallback leaves one line: the origin and a name, and nothing of the page", async () => {
+    const read = await readSettledPageText(
+      tabAnswering("https://www.work24.go.kr/cm/main.do?seq=12345#top", [
+        "!홍길동 010-1234-5678",
+        "0본문 바로가기",
+      ]),
+    );
+    expect(read).toMatchObject({ text: "본문 바로가기", plain: true });
+    const lines = fellBack();
+    expect(lines.length).toBe(1);
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      level: "warn",
+      event: "reader_fell_back",
+      origin: "https://www.work24.go.kr",
+      frame: "main",
+      reason: "threw",
+      error: "other",
+    });
+    for (const kept of ["홍길동", "010", "main.do", "12345", "본문"]) {
+      expect(lines[0]).not.toContain(kept);
+    }
+
+    warned.mockClear();
+    await readSettledPageText(
+      tabAnswering("https://www.work24.go.kr/", [undefined, "0본문"]),
+    );
+    const silent = JSON.parse(fellBack()[0] as string);
+    expect(silent.reason).toBe("no_answer");
+    expect(silent).not.toHaveProperty("error");
   });
 });
 
@@ -222,9 +338,9 @@ describe.skipIf(!HAS_BROWSER)("the reader, in a page", () => {
     expect(result.text).toContain(MISSING);
   });
 
-  test("a story the page's own <article> does not hold is read whole", async () => {
-    // The price of trusting the element: a site that marks only its cards loses the abridging, and
-    // keeps every word — the failure is the page read as it was before there was a reader.
+  test("a story in a <div> beside <article> teaser cards is still the article", async () => {
+    // A news page that says it is an article, keeps the story in a `<div>` and uses `<article>` for
+    // the related stories. Held to the element, it was read whole: menus first, the cap after.
     const related = Array.from(
       { length: 6 },
       (_, i) => `<article><a href="/r${i}">함께 볼만한 뉴스 ${i}</a></article>`,
@@ -232,8 +348,10 @@ describe.skipIf(!HAS_BROWSER)("the reader, in a page", () => {
     const result = await read(
       `<!doctype html><html><head>${OG_ARTICLE}<title>t</title></head><body>${chrome(80)}<div id="story"><h2>가을 매출</h2>${paragraphs(6)}</div><aside>${related}</aside>${chrome(80)}</body></html>`,
     );
-    expect(result.reader).toBe(false);
+    expect(result.reader).toBe(true);
     expect(result.text).toContain("나들이 손님");
+    expect(result.text).not.toContain("메뉴항목");
+    expect(result.text).not.toContain("함께 볼만한 뉴스");
   });
 });
 
@@ -266,12 +384,22 @@ describe.skipIf(!HAS_BROWSER)("a page that breaks the reader", () => {
 
   test("a reader that throws: the page's text, read plainly, and the fact", async () => {
     const page = await opened(
-      `<!doctype html><html><head><script>document.querySelector = function () { throw new Error("no"); };</script></head><body><h1>${READER_BROKEN_TEXT}</h1>${paragraphs(14)}</body></html>`,
+      `<!doctype html><html><head><script>document.querySelector = function () { throw new TypeError("주민번호 900101-1234567"); };</script></head><body><h1>${READER_BROKEN_TEXT}</h1>${paragraphs(14)}</body></html>`,
     );
     const read = await readSettledPageText(page);
     expect(read.plain).toBe(true);
     expect(read.reader).toBeUndefined();
     expect(read.text).toContain(READER_BROKEN_TEXT);
+    // Caught in the page and said as an answer: the name, and none of what the page threw with it.
+    const lines = fellBack();
+    expect(lines.length).toBe(1);
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      reason: "threw",
+      error: "TypeError",
+      frame: "main",
+    });
+    expect(lines[0]).not.toContain("900101");
+    expect(lines[0]).not.toContain(READER_BROKEN_TEXT);
     await page.close();
   });
 

@@ -8,6 +8,8 @@
  */
 import type { Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
+import { log } from "./log";
+import { originOf } from "./navigation-guard";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
 import {
   compactText,
@@ -15,6 +17,7 @@ import {
   PLAIN_TEXT_SCRIPT,
   parseFrameRead,
   readerScript,
+  thrownInPage,
 } from "./reader";
 import { within } from "./within";
 import { cutAtCodeUnits } from "../../shared/sound-text";
@@ -211,36 +214,39 @@ export const PAGE_TEXT_PLAIN: NoteCode = "laf:page_text_plain";
  * A PAGE CAN BREAK THE READER, AND IS THEN READ PLAINLY. 고용24 replaced the global `Map`, and the
  * reader's answer arrived as `undefined` — read as `main.read.text`, which threw, and `/navigate`
  * failed on a page a person sees in full. The reader answers with a string now, which that page
- * leaves alone; this is for the next page that breaks something else. A page that leaves for
- * another while it is read is not one of these: that error goes up, and the read starts again on the
- * page it went to (`readSettledPageText`).
+ * leaves alone; this is for the next page that breaks something else.
+ *
+ * TWO THINGS ARE THE PAGE'S DOING, AND NOTHING ELSE IS: the reader's script gave no answer it gives,
+ * or the page's own JavaScript threw inside it — which the script catches in the page and says
+ * (`thrownInPage`). An `evaluate` that rejects is neither: a renderer that crashed, a tab that
+ * closed, a protocol error, a page that left for another. Those go up as they always did — to
+ * `laf:browser_failed`, or to a second read of the page it went to (`readSettledPageText`) — and
+ * are never answered as a page whose scripts kept it from being read.
  */
 async function frameText(frame: Frame, whole: boolean): Promise<FrameText> {
-  // The page's doing only while there is still a page: a tab that closed is the browser's answer.
-  const gone = (error: unknown) =>
-    isNavigatingAway(error) || frame.isDetached() || frame.page().isClosed();
-  try {
-    const read = parseFrameRead(await frame.evaluate(readerScript(whole)));
-    if (read) return read;
-  } catch (error) {
-    if (gone(error)) throw error;
-  }
+  const answer = await frame.evaluate(readerScript(whole));
+  const read = parseFrameRead(answer);
+  if (read) return read;
+  const thrown = thrownInPage(answer);
+  /*
+   * One line, so a page the reader cannot read is found in the log and not only by the Bot. Where,
+   * as an origin, and what kind of error, by a name from our own list: the address past the origin
+   * and an error's message can both carry what was on the page, and this is the process that holds
+   * somebody's logins.
+   */
+  log.warn("reader_fell_back", {
+    origin: originOf(frame.url()),
+    frame: frame.parentFrame() ? "inner" : "main",
+    reason: thrown ? "threw" : "no_answer",
+    ...(thrown ? { error: thrown } : {}),
+  });
   /*
    * Even this can fail on a page that takes `innerText` itself, and that is still an answer: empty,
    * with the fact that says it could not be read, which the Bot hears instead of a 502 over a page a
    * person can see.
    */
-  const plain = await frame
-    .evaluate(PLAIN_TEXT_SCRIPT)
-    .catch((error: unknown) => {
-      if (gone(error)) throw error;
-      return undefined;
-    });
-  return {
-    text: typeof plain === "string" ? plain : "",
-    reader: false,
-    plain: true,
-  };
+  const plain = parseFrameRead(await frame.evaluate(PLAIN_TEXT_SCRIPT));
+  return { text: plain?.text ?? "", reader: false, plain: true };
 }
 
 export type PageText = {
