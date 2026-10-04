@@ -1,5 +1,4 @@
 import { queryOptions } from "@tanstack/react-query";
-import { toolResultText } from "@shared/prompt/tool-results.ko";
 import { t } from "@/lib/i18n";
 import { polled } from "@/lib/polling";
 
@@ -226,19 +225,6 @@ export function refusalSaid(reason: string | undefined): string {
 }
 
 /**
- * The same refusal, in the words the MODEL reads.
- *
- * A separate function and not a second argument, because the two readers are answered in two
- * different places and one of them has to be able to change without the other. The model is told
- * what to do next — stop, answer in prose, do not call this again — which is not what belongs on a
- * card in front of a person.
- */
-export function refusalTold(reason: string | undefined): string {
-  if (reason?.startsWith("laf:")) return toolResultText(reason);
-  return reason ?? t("This cannot be shown here.");
-}
-
-/**
  * A component reading real data for itself.
  *
  * Data is fetched from the deployment after the server checks this component's data-function grant.
@@ -277,46 +263,6 @@ export async function callComponentFunction(
     return {
       allowed: false,
       reason: t("This deployment could not be reached to read that data."),
-    };
-  }
-}
-
-/**
- * Ask the server whether this Bot may use this component right now; failures fail closed.
- *
- * `functions` are the data functions the component will read with these arguments. Naming them here
- * makes the verdict cover what the component will do rather than only its name.
- */
-export async function decideComponent(
-  name: string,
-  agentId: string,
-  functions: readonly string[] = [],
-): Promise<{ allowed: boolean; reason?: string }> {
-  try {
-    const response = await fetch(
-      `/api/components/${encodeURIComponent(name)}/decision`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId, functions }),
-      },
-    );
-    if (!response.ok) {
-      return {
-        allowed: false,
-        reason: t(
-          "This deployment could not be asked whether that card is allowed, so it was not shown.",
-        ),
-      };
-    }
-    return await response.json();
-  } catch {
-    return {
-      allowed: false,
-      reason: t(
-        "This deployment could not be reached to check whether that card is allowed, so it was not shown.",
-      ),
     };
   }
 }

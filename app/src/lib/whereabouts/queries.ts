@@ -97,17 +97,6 @@ export async function clearPlace(
   return wordsOf(await send("DELETE", undefined, queryClient));
 }
 
-/**
- * The same save, answered as a code rather than thrown in words — for the Bot's `remember`, whose
- * caller is a model reading `shared/prompt/tool-results.ko.ts`, not a person reading a toast.
- */
-export function keepPlace(
-  answer: { place: string | null; coordinates: Coordinates | null },
-  queryClient: QueryClient,
-): Promise<PlaceResult> {
-  return send("PUT", answer, queryClient);
-}
-
 type PlaceResult =
   | { ok: true; whereabouts: Whereabouts }
   | { ok: false; code: "laf:place_invalid" | "laf:place_unsaved" };

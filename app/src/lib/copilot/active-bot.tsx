@@ -10,67 +10,56 @@ import {
 } from "react";
 
 /**
- * Which Bot the surface in front of you is driving.
+ * Which Bot the surface in front of you is for.
  *
- * The computer tools are registered once for each screen that runs a Bot (`provider.tsx`, which
- * the conversation, the compose screen and the playground each mount), but a call acts for one
- * Bot. The deployment has one browser and one profile, which every Bot the person has shares; what
- * is a Bot's own in it is its tabs (`agent-computer/src/profiles.ts`). The server picks the Bot by
- * the id in the URL and names it to the computer in `x-openbot-bot-id`.
+ * The Bot's tools are registered once for each screen that runs a Bot (`provider.tsx`, which the
+ * conversation, the compose screen and the playground each mount), but a grant, a card and a
+ * request are one Bot's. The surface says which (`useActiveBot`), and what is drawn under it reads
+ * the answer as state (`useDeclaredBotId`), so it is drawn again when the Bot is declared or
+ * changes.
  *
- * Tool handlers read the ref because a handler outlives the render that registered it. Components
- * read state because grants and renderers must re-render when the active Bot changes.
+ * THERE WAS A SECOND ANSWER, FOR HANDLERS, AND IT IS GONE. While a window carried the Bot's calls
+ * out, a tool's handler outlived the render that registered it and read the Bot from a ref that
+ * always held a string (`useActiveBotHolder`) — the sentinel below until a surface declared. The
+ * server carries the calls out and takes the Bot from the turn (`server/src/turns/engine.ts`); the
+ * handlers went with the window-driven path (2026-10-05), and the holder with them.
  *
- * DECLARED AND HELD ARE TWO DIFFERENT ANSWERS. `useActiveBotHolder` always has a string, and until
- * a surface declares, that string is the sentinel below — which is NOT a Bot, and nothing stands in
- * for it any more. `agent-computer` used to answer a call that named no Bot from a default profile
- * of its own; it refuses one now (`laf:bot_header_missing`, `agent-computer/src/routes.ts`), and
- * the server answers an id this deployment has no Bot for 404 `laf:bot_not_found` before the
- * computer is asked at all (`requireBotAccess`). So a request keyed on the sentinel is a request
- * for nothing. `useDeclaredBotId` is `undefined` until a surface actually says which Bot it drives,
- * because a per-Bot grant query keyed on the sentinel is a request for the grants of a Bot nobody
- * has — measured, when these tools were still mounted on every screen: on Settings, on the admin
- * screens and on the roster with nothing open, the components poll asked
+ * UNDECLARED IS NOBODY, NOT A DEFAULT. `useDeclaredBotId` is `undefined` until a surface actually
+ * says which Bot it is for, because a per-Bot request keyed on a stand-in is a request for a Bot
+ * nobody has: the server answers an id this deployment has no Bot for 404 `laf:bot_not_found`
+ * (`requireBotAccess`), and `agent-computer` refuses a call that names no Bot
+ * (`laf:bot_header_missing`). Measured, when these tools were still mounted on every screen: on
+ * Settings, on the admin screens and on the roster with nothing open, the components poll asked
  * `/api/components/for-agent/default` every five seconds and the plugin poll every fifteen, for
  * the life of the tab.
  *
- * AND THE HOLDER IS THE SENTINEL FOR A SURFACE'S WHOLE FIRST COMMIT. `useActiveBot` declares in an
- * effect, and a child's effects run before its parent's, so whatever is drawn under a surface as
- * it mounts renders, and runs its first effects, before the Bot is declared.
+ * AND IT IS UNDECLARED FOR A SURFACE'S WHOLE FIRST COMMIT. `useActiveBot` declares in an effect,
+ * and a child's effects run before its parent's, so whatever is drawn under a surface as it mounts
+ * renders, and runs its first effects, before the Bot is declared.
  *
- * SO A RENDERER NEVER HANDS THE HOLDER'S STRING DOWN AS A PROP. `computer-tools.tsx` did, to the
- * help and the secret card (`botId={bot.current}`). A renderer is registered once and CopilotKit
- * draws it through a memo that compares the call and nothing else, so the string was read when
- * the card was first drawn and never again. Measured 2026-10-05 through the real route
- * (`conversation-return.test.tsx`): a conversation drawn again under a screen that had stayed —
- * its channel could not be read for a moment, then could — had its kept cards (`kept-threads.ts`)
- * in that first commit, and the card asked `/api/computers/default/control`, was told there is no
- * such Bot, and stood with no buttons until the Bot's wait ran out. Coming back from another
- * screen did not do it, and was measured too: the tools are mounted with the screen, so they are
- * registered again in the effects of coming back, by which time the Bot is declared. What needs
- * the Bot while it is drawn reads `useDeclaredBotId` itself and waits for it, as `HelpCard` and
- * `ActivityReportCard` do: that is state, and declaring it draws them again.
+ * SO A RENDERER NEVER HANDS A BOT DOWN AS A PROP. `computer-tools.tsx` did, to the help and the
+ * secret card. A renderer is registered once and CopilotKit draws it through a memo that compares
+ * the call and nothing else, so the string was read when the card was first drawn and never again.
+ * Measured 2026-10-05 through the real route (`conversation-return.test.tsx`): a conversation drawn
+ * again under a screen that had stayed — its channel could not be read for a moment, then could —
+ * had its kept cards (`kept-threads.ts`) in that first commit, and the card asked
+ * `/api/computers/default/control`, was told there is no such Bot, and stood with no buttons until
+ * the Bot's wait ran out. Coming back from another screen did not do it, and was measured too: the
+ * tools are mounted with the screen, so they are registered again in the effects of coming back, by
+ * which time the Bot is declared. What needs the Bot while it is drawn reads `useDeclaredBotId`
+ * itself and waits for it, as `HelpCard` and `ActivityReportCard` do: that is state, and declaring
+ * it draws them again.
  */
 
 const DEFAULT_BOT_ID = "default";
 
-type BotHolder = { current: string };
-
-const ActiveBotContext = createContext<BotHolder | null>(null);
 const ActiveBotValueContext = createContext<{
   declared: string | undefined;
-  /** Point the holder at a Bot and announce it; what it returns puts back what it found. */
+  /** Say which Bot the surface is for; what it returns puts back what it found. */
   declare: (botId: string | undefined) => () => void;
 } | null>(null);
 
 export function ActiveBotProvider({ children }: { children: ReactNode }) {
-  /*
-   * The holder IS the ref, handed down as it is. It used to be an object kept inside a ref and read
-   * out of it while rendering, and the declared value was rebuilt into a ref on every render — reads
-   * and writes of `.current` during render, which the React Compiler refuses to compile. The ref
-   * object is the same object for the provider's whole life, so passing it on reads nothing.
-   */
-  const holder = useRef(DEFAULT_BOT_ID);
   /** The declared id as a ref, so unmount restores what it found rather than what it rendered with. */
   const held = useRef<string | undefined>(undefined);
   const [declared, setDeclared] = useState<string | undefined>(undefined);
@@ -78,16 +67,13 @@ export function ActiveBotProvider({ children }: { children: ReactNode }) {
   /*
    * The writes happen here, in the provider, rather than in `useActiveBot` reaching into a context
    * value to change it: what a context hands out is treated as read-only by the compiler, and the
-   * provider is the one place that owns these refs.
+   * provider is the one place that owns the ref.
    */
   const declare = useCallback((botId: string | undefined) => {
-    const previousHeld = holder.current;
     const previousDeclared = held.current;
-    holder.current = botId ?? DEFAULT_BOT_ID;
     held.current = botId;
     setDeclared(botId);
     return () => {
-      holder.current = previousHeld;
       held.current = previousDeclared;
       setDeclared(previousDeclared);
     };
@@ -95,11 +81,9 @@ export function ActiveBotProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ declared, declare }), [declared, declare]);
 
   return (
-    <ActiveBotContext.Provider value={holder}>
-      <ActiveBotValueContext.Provider value={value}>
-        {children}
-      </ActiveBotValueContext.Provider>
-    </ActiveBotContext.Provider>
+    <ActiveBotValueContext.Provider value={value}>
+      {children}
+    </ActiveBotValueContext.Provider>
   );
 }
 
@@ -114,12 +98,10 @@ export function useActiveBot(botId: string | undefined): void {
   useEffect(() => declare?.(botId), [declare, botId]);
 }
 
-/** The holder itself, to be read inside a handler at the moment it runs. */
-export function useActiveBotHolder(): BotHolder {
-  return useContext(ActiveBotContext) ?? { current: DEFAULT_BOT_ID };
-}
-
-/** The active Bot as a value, for anything that has to re-render when it changes. */
+/**
+ * The active Bot as a string that is never empty: the declared Bot, or the stand-in while there is
+ * none. Not for a request — see above; `useDeclaredBotId` is what a request waits for.
+ */
 export function useActiveBotId(): string {
   return useContext(ActiveBotValueContext)?.declared ?? DEFAULT_BOT_ID;
 }
@@ -127,8 +109,8 @@ export function useActiveBotId(): string {
 /**
  * The active Bot, or nothing when no surface has declared one.
  *
- * What a query keys on. `useActiveBotId` answers "which computer does this act on", which always
- * has an answer; this answers "is there a Bot in front of the person", which often does not.
+ * What a query keys on, and what a card waits for: "is there a Bot in front of the person", which
+ * often there is not.
  */
 export function useDeclaredBotId(): string | undefined {
   return useContext(ActiveBotValueContext)?.declared;
@@ -137,14 +119,18 @@ export function useDeclaredBotId(): string | undefined {
 /**
  * Which conversation the surface in front of you is in, for the acting calls to name.
  *
- * A module-level holder rather than a context, because the two readers are `fetch` wrappers —
- * the computer's and the plugin call's — that run inside tool handlers with no render to read a
- * context from. The same reason the Bot is a ref: a handler outlives the render that registered
- * it. What it buys is the middle answer on the approval card: the server binds "for this
- * conversation" to the thread named here, and offers it only when one was.
+ * A module-level holder rather than a context, because its readers were `fetch` wrappers — the
+ * computer's and the plugin call's — that ran inside tool handlers with no render to read a
+ * context from. What it bought is the middle answer on the approval card: the server binds "for
+ * this conversation" to the thread named here, and offers it only when one was.
  *
  * Undefined when no channel is open — the roster, Settings — and then no header is sent and every
  * question is asked in the standing terms alone, which is what every question was before.
+ *
+ * ONE READER IS LEFT, AND NOTHING IN THE APP CALLS IT: `callPluginTool` (`lib/plugins/queries.ts`),
+ * which the plugin tools' handler called until the window-driven path was removed (2026-10-05) and
+ * which its own tests still do. A turn names its conversation on the server now
+ * (`server/src/turns/chat-tools.ts`, `actorFor`). This goes when that function does.
  */
 const conversation: { current: string | undefined } = { current: undefined };
 
@@ -166,11 +152,6 @@ export function useActiveConversation(threadId: string | undefined): void {
  * `server/src/computer/gateway/caller.ts`.
  */
 const THREAD_HEADER = "x-openbot-thread-id";
-
-/** The conversation the surface in front of you is in, or undefined outside one. */
-export function activeConversationId(): string | undefined {
-  return conversation.current;
-}
 
 /** The header naming the conversation, or nothing when no surface has declared one. */
 export function activeConversationHeaders(): Record<string, string> {

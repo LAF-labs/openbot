@@ -24,7 +24,6 @@ export const ko: Record<string, string> = {
   "A person took the wheel": "사람이 제어를 가져감",
   "A reason, if you want to give one": "이유 (선택)",
   "A rule refused it": "규칙이 막았음",
-  "A secret was not written down.": "비밀값이라 적지 않았어요.",
   "A routine ran": "루틴이 실행됨",
   "A routine's window was skipped": "루틴 실행 시각을 건너뜀",
   "Not run: its account can no longer use this place":
@@ -245,20 +244,12 @@ export const ko: Record<string, string> = {
   "Updating its own profile": "자기 프로필을 바꾸는 중",
   "Saving a routine": "루틴을 저장하는 중",
   "Saved a routine": "루틴을 저장했어요",
-  "Could not save a routine": "루틴을 저장하지 못했어요",
   "Changing a routine": "루틴을 바꾸는 중",
   "Changed a routine": "루틴을 바꿨어요",
-  "Could not change a routine": "루틴을 바꾸지 못했어요",
   "Deleting a routine": "루틴을 지우는 중",
   "Deleted a routine": "루틴을 지웠어요",
-  "Could not delete a routine": "루틴을 지우지 못했어요",
-  "Pausing a routine": "루틴을 멈추는 중",
-  "Paused a routine": "루틴을 멈췄어요",
-  "Resuming a routine": "루틴을 다시 켜는 중",
-  "Resumed a routine": "루틴을 다시 켰어요",
   "Looking at its routines": "루틴 목록을 보는 중",
   "Looked at its routines": "루틴 목록을 봤어요",
-  "Could not look at its routines": "루틴 목록을 보지 못했어요",
   "Updated its own profile": "자기 프로필을 바꿨어요",
   "Write what this Bot may get on with. It is asked about everything else.":
     "그냥 진행해도 되는 일을 적어 주세요. 나머지는 모두 물어봐요.",
@@ -829,7 +820,6 @@ export const ko: Record<string, string> = {
   "The wheel was handed back": "제어를 돌려줌",
   "These tools are still granted to Bots, but this server no longer offers them:":
     "봇에 아직 권한이 남아 있지만, 이 서버가 더 이상 제공하지 않는 툴이에요:",
-  "There is no Bot to remember this.": "이걸 기억할 봇이 없어요.",
   "What it remembers": "기억하고 있는 것",
   "What this Bot has learned, kept between conversations.":
     "봇이 알게 된 것들이에요. 대화가 끝나도 남아요.",
@@ -1181,7 +1171,6 @@ export const ko: Record<string, string> = {
   Thorough: "꼼꼼하게",
   "Ask every time": "매번 묻기",
   "Suspended — it asks about these again": "중지됨 — 이 항목들은 다시 물어요",
-  "how hard it thinks ({level})": "생각 깊이 ({level})",
   "Do not ask me about": "이건 묻지 마세요",
   "Reading anything on our own site is fine.":
     "우리 사이트에서 읽기만 하는 건 괜찮아요.",
@@ -1575,10 +1564,6 @@ export const ko: Record<string, string> = {
     "이 서버에 그 자료를 물어보지 못했어요.",
   "This deployment could not be reached to read that data.":
     "자료를 읽으려 했지만 이 서버에 닿지 못했어요.",
-  "This deployment could not be asked whether that card is allowed, so it was not shown.":
-    "이 카드를 보여줘도 되는지 서버에 물어보지 못해 표시하지 않았어요.",
-  "This deployment could not be reached to check whether that card is allowed, so it was not shown.":
-    "이 카드를 보여줘도 되는지 확인하려 했지만 서버에 닿지 못해 표시하지 않았어요.",
   "The audit trail could not be loaded. Refresh to try again.":
     "감사 기록을 불러오지 못했어요. 새로고침해 주세요.",
   "The connection could not be started.": "연결을 시작하지 못했어요.",

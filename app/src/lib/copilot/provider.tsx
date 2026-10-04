@@ -1,6 +1,5 @@
 import { CopilotKitProvider } from "@copilotkit/react-core/v2";
-import { type ReactNode, useState } from "react";
-import { deviceClock } from "@/lib/whereabouts/queries";
+import type { ReactNode } from "react";
 import { ActiveBotProvider } from "./active-bot";
 import { ComputerTools } from "./computer-tools";
 import { GalleryTools } from "./gallery-tools";
@@ -11,13 +10,21 @@ import { NowToolLine } from "./now-tool-line";
 import { SkillTools } from "./skill-tools";
 
 /**
- * The CopilotKit client, wrapped once for the whole authenticated app.
+ * The CopilotKit client, on the screens that draw a Bot's conversation.
  *
- * `credentials: "include"` is the load-bearing part. LAF Agent authenticates with a Better Auth
- * session cookie, and the runtime endpoint sits behind the same guard as every other API route, so
- * without it every run is rejected as anonymous while the rest of the app looks signed in.
+ * WHAT IT IS FOR NOW: the registry of the Bot's tools and their renderers. A conversation asks it
+ * which tools this window offers, so the turn can offer the same (`buildFrontendTools`,
+ * `server-channel-chat.tsx`), and the transcript draws every tool line and card through the
+ * renderers registered here (`useRenderToolCall`). It runs nothing: a turn is the server's
+ * (`server/src/turns/engine.ts`), and the window that ran one through this client — `runAgent`,
+ * with each tool's handler carried out in the page — was removed 2026-10-05. So there is no
+ * `properties` either: they were what CopilotKit forwarded with every run it started, and the
+ * conversation sends the device's clock with its own hand-over.
  *
- * The URL is relative, like every other call in the app, so the Vite dev proxy and a single-origin
+ * `runtimeUrl` and `credentials: "include"` are still load-bearing. The client asks the runtime
+ * what it serves before it settles (`/api/copilotkit/info`), that route sits behind the same
+ * session guard as every other, and without the cookie the answer is a 401 on every mount. The URL
+ * is relative, like every other call in the app, so the Vite dev proxy and a single-origin
  * deployment both work without a build-time base URL to get wrong.
  *
  * There is no `publicApiKey`. The Intelligence key and licence token are deployment secrets held by
@@ -25,27 +32,15 @@ import { SkillTools } from "./skill-tools";
  * runtime rather than returning it).
  */
 export function CopilotProvider({ children }: { children: ReactNode }) {
-  /*
-   * THIS DEVICE'S CLOCK, ON EVERY RUN. `properties` is what CopilotKit forwards as every run's
-   * `forwardedProps`, and the server's middleware reads `device` off it to tell the Bot the time where
-   * the person is (`server/src/copilot.ts`) — not the VM's, and not the deployment's default. Read
-   * once per mount, in state, so a re-render does not hand CopilotKit a new object each time. The
-   * account keeps a copy for the runs with no device (`_authed.tsx`, `reportDevice`).
-   */
-  const [properties] = useState(() => ({ device: deviceClock() }));
   return (
-    <CopilotKitProvider
-      credentials="include"
-      properties={properties}
-      runtimeUrl="/api/copilotkit"
-    >
-      {/* Computer tools target the Bot declared by the mounted surface. */}
+    <CopilotKitProvider credentials="include" runtimeUrl="/api/copilotkit">
+      {/* The tools and their cards are for the Bot the mounted surface declares. */}
       <ActiveBotProvider>
         <ComputerTools />
         <SelfTools />
-        {/* Gallery tools are registered once; their handlers re-read the active Bot to avoid shadowing renderers. */}
+        {/* Gallery cards are registered once per name, and offered by this Bot's grants. */}
         <GalleryTools />
-        {/* MCP tools share the same active-Bot context and server-side grant checks. */}
+        {/* MCP tools: the same declared Bot, and the server's own grant check on every call. */}
         <PluginTools />
         {/* The Bot reading its own skills; always registered, so the tool list never moves. */}
         <SkillTools />

@@ -38,8 +38,8 @@ export function ServerAnswersProvider({
 }
 
 /**
- * The `respond` for this card when a server-owned turn is waiting on it, and undefined otherwise —
- * in a conversation the window drives, and once the card has its answer.
+ * The `respond` for this card when the turn is waiting on it, and undefined otherwise — outside a
+ * conversation, and once the card has its answer.
  */
 export function useServerRespond(
   toolCallId: string | undefined,
@@ -69,10 +69,11 @@ export function useAnswerOnItsWay(
 }
 
 /**
- * A decision card, answerable wherever its call is waiting: in this window while CopilotKit carries
- * the call out here, or on the server while a turn the server owns waits for it there — which
- * hands the card the `respond` CopilotKit never will. And where the person's own words are on
- * their way to it, the card shows them and takes no press meanwhile (`useAnswerOnItsWay`).
+ * A decision card, answerable while the turn waits on its call: the server holds the wait
+ * (`server/src/turns/people.ts`) and this hands the card the `respond` CopilotKit never will —
+ * CopilotKit gives one only to a call it is carrying out in this window, which it no longer does.
+ * And where the person's own words are on their way to it, the card shows them and takes no press
+ * meanwhile (`useAnswerOnItsWay`).
  *
  * Here rather than beside the gallery (`lib/copilot/gallery-tools.tsx`), which is found through
  * Vite and cannot be drawn under `bun test`: what a card is handed is tested by drawing this.
@@ -106,9 +107,10 @@ export function DecisionCard({
 }
 
 /**
- * Whether this conversation's turns are the server's (inside `ServerChannelChat`). What a card asks
- * before telling the server anything: in a conversation the window drives there is nobody there to
- * tell, and the door does not exist (review L8).
+ * Whether this card is drawn inside a conversation (`ServerChannelChat`), where a turn of the
+ * server's may be waiting on it. What a card asks before telling the server anything: drawn
+ * anywhere else — the compose screen, a test that draws the card alone — there is no turn to tell
+ * (review L8, from when a conversation the window drove was the other place).
  */
 export function useServerOwnsTurn(): boolean {
   return useContext(Answers) !== null;

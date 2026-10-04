@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
 import { outcomeOf } from "@/lib/computer/browsing";
-import { skipHelp } from "@/lib/computer/help-skips";
 import {
   setScreenOpen,
   useScreenPanelViewport,
@@ -19,6 +18,7 @@ import {
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { useServerOwnsTurn } from "@/lib/turns/answers";
+import { skipOnServer } from "@/lib/turns/client";
 import { cn } from "@/lib/utils";
 import { pokeControl } from "./control-poll";
 import {
@@ -121,11 +121,18 @@ export function HelpCard({
     pokeControl(botId);
   };
 
+  /*
+   * 건너뛰기, TOLD TO THE CALL THAT IS WAITING FOR THE ANSWER. The computer has two answers to a
+   * request: the wheel comes back (`/control/release`), or a person types the secret in. Neither
+   * says "skip this". Handing back is how a skip clears the request on the computer — the next
+   * request has to find it clear — but the call waiting on it would read that as "done", and tell
+   * the model a login it never got had happened. So the skip is sent to the turn first, by the
+   * call's id, and its wait reads it before the release that follows (`server/src/turns/people.ts`).
+   * Only inside a conversation: drawn anywhere else there is no turn waiting to be told.
+   */
   const handleSkip = async () => {
-    // The skip first: the release below is read by the waiting call as "done" unless it knows.
-    // Told to the turn only where the server owns it; the window's own wait reads the skip here.
     if (!botId) return;
-    await skipHelp(toolCallId, serverOwned ? botId : undefined);
+    if (serverOwned) await skipOnServer(botId, toolCallId);
     await handleDone();
   };
 
