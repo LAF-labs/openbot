@@ -2208,6 +2208,8 @@ export const ko: Record<string, string> = {
   "This app's own address was not opened": "이 앱 자신의 주소라 열지 않음",
   "The screen had changed": "화면이 바뀌어 있었음",
   "The control had been renamed": "누르려던 요소의 이름이 바뀌었음",
+  "Skipped: the step before it stopped or changed the page":
+    "앞 행동이 멈추거나 페이지를 바꿔서 건너뜀",
   "That element could not be used": "그 요소에 할 수 없었음",
   "There is no such tab": "그런 탭이 없음",
   "Nothing is at that path": "그 경로에 아무것도 없음",

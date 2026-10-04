@@ -14,6 +14,8 @@ import type { AbstractAgent, BaseEvent, Message, Tool } from "@ag-ui/client";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { soundText } from "../../../shared/sound-text";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
+import { STEP_NOT_REACHED } from "../../../shared/task-ending";
+import { ACTING_COMPUTER_TOOLS, roundEndsAfter } from "./round-stop";
 
 /** What a tool hands back to the model. The same envelope the browser's handlers return. */
 export type ToolOutcome = Record<string, unknown> & { ok: boolean };
@@ -195,8 +197,16 @@ function answeredOk(content: unknown): boolean {
  * The preview is the call's own arguments — a recipient, a mail body — cut for a card. The model
  * wrote them; echoed back into its context they are up to a thousand characters on every later
  * turn of the run, for nothing it can act on.
+ *
+ * Nor the codes of the browser's notes: they ride beside the notes' Korean only so this loop can
+ * stop a round on an alert (`round-stop.ts`). The model has the same facts in words already, and
+ * what it reads stays byte for byte what it read before the codes were kept.
  */
-function forTheModel({ preview: _forThePerson, ...said }: ToolOutcome) {
+function forTheModel({
+  preview: _forThePerson,
+  noteCodes: _forTheLoop,
+  ...said
+}: ToolOutcome) {
   return said;
 }
 
@@ -460,6 +470,11 @@ export async function runTurnLoop(
      * provider rejects on the NEXT run, which would break the Bot's conversation, not just this one.
      */
     const outOfSteps = step === maxSteps;
+    /**
+     * A browser step in this round did not go through, or moved the page (`round-stop.ts`). The
+     * acting steps after it were written for a page that is gone, so they are answered, not run.
+     */
+    let roundEnded = false;
 
     for (const [index, call] of pending.entries()) {
       let outcome: LoopOutcome;
@@ -469,6 +484,17 @@ export async function runTurnLoop(
           ok: false,
           code: "laf:tool_budget_spent",
           reason: toolResultText("laf:tool_budget_spent"),
+        };
+      } else if (roundEnded && ACTING_COMPUTER_TOOLS.has(call.name)) {
+        /*
+         * Not started, so nothing about it is announced (`onToolStart`) and the gateway never sees
+         * it: no verdict was rendered, and a `computer.action_*` row would claim one. The answer
+         * and `steps[].calls[].ok = false` below are the whole of its record.
+         */
+        outcome = {
+          ok: false,
+          code: STEP_NOT_REACHED,
+          reason: toolResultText(STEP_NOT_REACHED),
         };
       } else if (args === null) {
         outcome = {
@@ -498,6 +524,12 @@ export async function runTurnLoop(
         );
       }
       record(index, typeof outcome === "string" ? true : outcome.ok);
+      /*
+       * After EVERY outcome of an acting step, the broken-arguments answer included: a
+       * `computer_type` whose arguments did not parse left its field empty, and the press after it
+       * must not land on the form as though it had been filled.
+       */
+      roundEnded ||= roundEndsAfter(call.name, outcome);
       if (
         typeof outcome !== "string" &&
         outcome.awaitingApproval === true &&

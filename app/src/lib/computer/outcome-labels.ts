@@ -40,6 +40,12 @@ export const OUTCOME_LABELS: Record<string, string> = {
     "The secret was aimed at something that is not a field",
   "laf:tool_arguments_invalid": "The Bot's request was incomplete",
   /*
+   * Not the computer's and not the boundary's: the server's turn loop skipped a step asked for in
+   * the same reply as one that stopped or moved the page (`server/src/runner/round-stop.ts`).
+   */
+  "laf:step_not_reached":
+    "Skipped: the step before it stopped or changed the page",
+  /*
    * What the server's client says itself, where the computer's answer could not: nothing answered,
    * too late, no code at all, an address the floor refused before anything was sent, a redirect
    * chain the gateway would not follow round.

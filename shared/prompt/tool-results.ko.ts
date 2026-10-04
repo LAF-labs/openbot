@@ -231,6 +231,15 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "이 사람이 지금 답하지 않아 요청이 대기 중이고, 그래서 이 행동은 일어나지 않았다. 무엇을 기다리고 있었는지 말하고 멈춰라. 다른 길로 돌아가지 마라.",
 
   /*
+   * A browser step asked for in the same reply as one that did not go through, or that moved the
+   * page — and so never tried (`server/src/runner/round-stop.ts`). Before the rule, a routine whose
+   * field-filling was held for an approval nobody gave pressed 검색 anyway, over the empty field.
+   * Not `laf:step_not_returned`, which is a run's ending in the ledger, not a call's answer.
+   */
+  "laf:step_not_reached":
+    "같은 응답에서 앞의 행동이 멈췄거나(거절·대기·실패) 그 뒤에 페이지가 바뀌거나 알림창이 떠서, 뒤에 있던 이 행동은 하지 않았다. 앞 결과를 읽고, 페이지가 바뀌었으면 computer_snapshot을 다시 찍은 뒤 필요한 것만 다시 불러라.",
+
+  /*
    * THE REASON IS SAID, NOT LEFT TO BE GUESSED. "사람이 그것을 거절했다." was the whole sentence, and
    * measured on glm-5.3-flash (0.5.3 audit, item 3): after the owner pressed 거부 on a toss.im menu
    * the Bot said it had stopped because it "was not sure which of these the 고객센터 belonged to";
@@ -1086,4 +1095,22 @@ export function noteTexts(notes: unknown): string[] | undefined {
       return detail ? `${text} (${detail})` : text;
     });
   return said.length ? said : undefined;
+}
+
+/**
+ * The codes of the facts the browser sent, for the loop rather than the model.
+ *
+ * `noteTexts` puts them into words, and the words are all the outcome kept — so by the time the turn
+ * loop read an outcome, "an alert went up" was a Korean sentence it could only have matched by text.
+ * The loop needs the fact to stop the rest of a round (`server/src/runner/round-stop.ts`). Anything
+ * that is not an array of notes — a chat handover's `notes` is one sentence — has none.
+ */
+export function noteCodesOf(notes: unknown): string[] {
+  if (!Array.isArray(notes)) return [];
+  return notes
+    .filter(
+      (note): note is ToolNote =>
+        !!note && typeof note === "object" && typeof note.code === "string",
+    )
+    .map((note) => note.code);
 }

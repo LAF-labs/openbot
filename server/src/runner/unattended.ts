@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import type { BaseEvent, Tool } from "@ag-ui/client";
 import type { PromptMode, RoutineNote } from "../../../shared/prompt";
 import {
+  noteCodesOf,
   noteTexts,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
@@ -315,10 +316,15 @@ const unknownTool = (): ToolOutcome => ({
  * The container ships `{code, message}` and knows no locale; the Korean a Bot reads is looked up
  * here, the same way a refusal's is. Without this a routine reads `laf:dialog` — a string it has
  * never seen — and goes on believing its click worked.
+ *
+ * The codes stay beside the words, as `computerReplyOutcome` keeps them for chat: the loop ends a
+ * round of browser steps on an alert (`round-stop.ts`), and a routine must stop where chat stops.
  */
 const withNotes = <T extends Record<string, unknown>>(result: T) => {
   const said = noteTexts(result.notes);
-  return said ? { ...result, notes: said } : result;
+  return said
+    ? { ...result, notes: said, noteCodes: noteCodesOf(result.notes) }
+    : result;
 };
 
 export type UnattendedToolsOptions = {

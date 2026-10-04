@@ -43,6 +43,13 @@ export const BROWSING_TOOL_NAMES: ReadonlySet<string> = new Set([
 /** The page a navigate landed on was an HTTP error: the site served a refusal, not the page. */
 export const SITE_REFUSED = "laf:site_refused";
 
+/**
+ * A browser step the server's turn loop never tried, because a step asked for in the same reply
+ * before it stopped or moved the page (`server/src/runner/round-stop.ts`). Named here, in the one
+ * pure file both sides read, because an ending must look past it.
+ */
+export const STEP_NOT_REACHED = "laf:step_not_reached";
+
 /** A result, reduced to the facts an ending is decided from. */
 export type ResultFacts = {
   ok?: boolean;
@@ -97,7 +104,12 @@ export function factsOfObject(value: Record<string, unknown>): ResultFacts {
  * another navigate lands somewhere that served a page, whatever the Bot read on the refusal after.
  */
 export function endingOfSteps(steps: readonly EndingStep[]): TaskEnding {
-  const last = steps.at(-1);
+  /*
+   * THE LAST STEP THAT WAS TRIED. Skipped steps trail the one that stopped the round, and read as
+   * the ending the card said "skipped" where the reason was the person's no — and offered 다시 해
+   * 보기 after it, which `NO_RETRY` exists to refuse (`app/src/lib/computer/task-state.ts`).
+   */
+  const last = steps.findLast((step) => step.facts?.code !== STEP_NOT_REACHED);
   if (!last || last.facts === null) return { kind: "stopped" };
   const facts = last.facts;
   if (facts.unanswered === true || facts.stopped === true) {
