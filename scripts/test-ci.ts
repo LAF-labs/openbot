@@ -845,6 +845,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * their place, four against a real Chromium holding each shape to the role engine and keeping a
  * field's contents out, and the button around a search box through the routes).
  *
+ * RAISED 2026-10-04 with the reader keeping a page's notice, each by exactly what was added:
+ * thirteen to `agent-computer` (the reader's string answer, two; a page that replaced `Map` as
+ * 고용24 does, one that makes the reader throw, one that takes `innerText` itself and frames that do
+ * either, four in a page and two through `/navigate`; and the extract declined for a short page, a
+ * footer outside the page's own `<article>`, a wall of links and a story outside it, with a story
+ * inside it still the article, five), two to `root` (a navigation's notes reaching a chat's model,
+ * and only when there are some).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -852,8 +860,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3447, roots: ["server"] },
   { name: "app", floor: 2081, roots: ["app"] },
-  { name: "agent-computer", floor: 427, roots: ["agent-computer"] },
-  { name: "root", floor: 611, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 440, roots: ["agent-computer"] },
+  { name: "root", floor: 613, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

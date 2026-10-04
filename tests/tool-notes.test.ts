@@ -6,6 +6,10 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../shared/prompt/tool-results.ko";
+import {
+  computerReplyOutcome,
+  navigationOutcome,
+} from "../shared/tools/computer-reply";
 
 /**
  * The facts the Bot's browser sends, and the Korean they turn into.
@@ -99,6 +103,41 @@ describe("putting a fact into words", () => {
 
   test("something that is not a fact is dropped rather than passed on", () => {
     expect(noteTexts([{ message: "no code here" }, null, 7])).toBe(undefined);
+  });
+});
+
+describe("a navigation's facts reach the model in a chat", () => {
+  /*
+   * `navigationOutcome` cut `notes` with the rest of what the gateway knew about the trip, so the
+   * fact that a page could not be read — and every alert a page raised while it opened — reached a
+   * routine's Bot and never a chat's. Both callers go through these two functions.
+   */
+  const reply = {
+    url: "https://www.work24.go.kr/cm/main.do",
+    title: "고용24",
+    text: "본문 바로가기",
+    truncated: false,
+    elapsedMs: 900,
+    frames: [{ url: "https://example.com/ad", chars: 12 }],
+    notes: [{ code: "laf:page_text_plain" }],
+  };
+
+  test("the sentence rides with the page", () => {
+    const shown = navigationOutcome(computerReplyOutcome(200, reply));
+    expect(shown.notes).toEqual([toolResultText("laf:page_text_plain")]);
+    expect(shown.text).toBe("본문 바로가기");
+    // Still the page and not the trip: what the gateway knew about getting there stays out.
+    expect(shown).not.toHaveProperty("elapsedMs");
+    expect(shown).not.toHaveProperty("frames");
+  });
+
+  test("and a page with nothing to say carries no notes at all", () => {
+    const quiet = Object.fromEntries(
+      Object.entries(reply).filter(([key]) => key !== "notes"),
+    );
+    expect(
+      navigationOutcome(computerReplyOutcome(200, quiet)),
+    ).not.toHaveProperty("notes");
   });
 });
 

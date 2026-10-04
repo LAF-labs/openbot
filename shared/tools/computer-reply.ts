@@ -60,6 +60,13 @@ export function computerReplyOutcome(
 /**
  * The navigation result as the model is shown it: the page, not everything the gateway knew about
  * the trip there. The window's handler has always cut it to these fields.
+ *
+ * AND THE FACTS ABOUT THE PAGE, ALREADY IN WORDS. `notes` was cut with the rest until 2026-10-04,
+ * so a chat's Bot never heard what the browser said on a `/navigate` — a page the reader could not
+ * read (`laf:page_text_plain`), an alert the page raised while it opened, a page already leaving for
+ * another (`laf:page_loading`, which `/navigate` adds for exactly this reader) — while a routine,
+ * which takes the whole result, heard all of it. The notes are drained into the reply that carries
+ * them, so a fact cut here was never said at all.
  */
 export function navigationOutcome(result: ComputerOutcome): ComputerOutcome {
   if (!result.ok) return result;
@@ -72,6 +79,9 @@ export function navigationOutcome(result: ComputerOutcome): ComputerOutcome {
     // The site refused ("Access Denied"): the card ends the task on it (`task-ending.ts`).
     ...(typeof result.httpStatus === "number"
       ? { httpStatus: result.httpStatus }
+      : {}),
+    ...(Array.isArray(result.notes) && result.notes.length
+      ? { notes: result.notes }
       : {}),
   };
 }

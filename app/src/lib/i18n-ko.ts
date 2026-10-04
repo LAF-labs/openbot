@@ -2363,6 +2363,8 @@ export const ko: Record<string, string> = {
   "A request for a secret was lost when the computer restarted":
     "컴퓨터가 다시 시작되면서 비밀값 요청이 사라짐",
   "A frame on the page could not be read": "페이지 안의 문서 하나를 읽지 못함",
+  "The page's own scripts stopped the reader, so its text was read plainly":
+    "페이지의 스크립트가 본문 읽기를 막아서 화면 글자를 그대로 읽음",
   "The page was still loading, so nothing on it could be read":
     "페이지가 아직 열리는 중이라 내용을 읽지 못함",
   "The Bots now share one browser, which took over the profile last used":

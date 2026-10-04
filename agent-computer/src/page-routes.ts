@@ -9,7 +9,7 @@
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
-import { readSettledPageText, titleOf } from "./page-text";
+import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
 import { bodyOf, browserFailed, fact, invalid, json } from "./respond";
 import { note, withNotes } from "./sessions";
 import { snapshotPage } from "./snapshot";
@@ -38,6 +38,7 @@ export const readPage: BotRoute = async (
       ...(from ? { from } : {}),
     });
     if (extract.arriving) note(session, arrivalNote(extract.arriving));
+    if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
     return json(
       withNotes(session, {
         url: target.url(),

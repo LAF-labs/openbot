@@ -13,7 +13,7 @@ import { log } from "./log";
 import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json, RequestInvalidError } from "./respond";
 import { arrivalNote } from "./page-arrival";
-import { readSettledPageText, titleOf } from "./page-text";
+import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
 import { type BotSession, note, withNotes } from "./sessions";
 import { digestOf, keepOwn } from "./typed-values";
 
@@ -205,6 +205,7 @@ async function pageArrivedAt(
       note(session, arrivalNote(extract.arriving));
       return { page: { url: now.url(), title: "", text: "" } };
     }
+    if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
     return {
       page: {
         url: now.url(),

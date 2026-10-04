@@ -22,6 +22,8 @@ import {
   FRAME_CLICKED,
   FRAME_TEXT,
   HIDDEN_MENU_TEXT,
+  READER_BROKEN_TEXT,
+  REPLACED_BUILTINS_TEXT,
   serveFixture,
   VISIBLE_TEXT,
 } from "./fixture-site";
@@ -269,6 +271,33 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
   test("a page that is not an article is read whole, as before", async () => {
     const opened = await post("/navigate", { url: fixture?.url });
     expect(opened.body.reader).toBeUndefined();
+  }, 30_000);
+
+  test("a page that replaced Map, as 고용24 does, still opens with its words", async () => {
+    // Before: 502, `undefined is not an object (evaluating 'main.read.text')`.
+    const opened = await post("/navigate", {
+      url: new URL("/replaced-builtins", fixture?.url).href,
+    });
+    expect(opened.status).toBe(200);
+    expect(String(opened.body.text)).toContain(REPLACED_BUILTINS_TEXT);
+    // Read by the reader itself, not by the fallback: nothing about it is degraded.
+    expect(
+      notesOf(opened.body).some((note) => note.code === "laf:page_text_plain"),
+    ).toBe(false);
+    expect(String((await call("/read")).body.text)).toContain(
+      REPLACED_BUILTINS_TEXT,
+    );
+  }, 30_000);
+
+  test("a page that makes the reader throw is read plainly, and says so", async () => {
+    const opened = await post("/navigate", {
+      url: new URL("/reader-broken", fixture?.url).href,
+    });
+    expect(opened.status).toBe(200);
+    expect(String(opened.body.text)).toContain(READER_BROKEN_TEXT);
+    expect(notesOf(opened.body).map((note) => note.code)).toContain(
+      "laf:page_text_plain",
+    );
   }, 30_000);
 
   test("a thumbnail is a small JPEG, the picture a PNG", async () => {
