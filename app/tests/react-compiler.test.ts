@@ -67,7 +67,7 @@ import {
  * same function as a hook, is what the compiler takes as settled.
  *
  * LOWERED TO 0 on 2026-10-05: `ChannelChat` was deleted with the window-driven chat path, and its
- * opt-out with it. 482 of 482 compile. The screen that replaced it (`ServerChannelChat`) reads its
+ * opt-out with it. 480 of 480 compile. The screen that replaced it (`ServerChannelChat`) reads its
  * conversation from a store that hands out a new snapshot when something changed, not from an array
  * CopilotKit grows in place — so the reason for the opt-out went with the component.
  */
