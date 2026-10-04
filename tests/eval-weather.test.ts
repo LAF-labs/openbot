@@ -70,6 +70,10 @@ describe("an answer under the weather card", () => {
       "오늘은 맑아요.내일은 흐려요.",
       "오늘은 맑아요!내일은 비가 와요",
       "비는 안 와요?네, 안 와요.",
+      // The closing quote or bracket ends the first sentence with its mark (review, round 5).
+      "“오늘은 맑아요.” 내일은 흐려요.",
+      "(오늘은 맑아요.) 내일은 흐려요",
+      '"맑음"이에요."내일"은 흐려요.',
     ]) {
       expect([answer, leavesItToTheCard(answer)]).toEqual([answer, false]);
     }
