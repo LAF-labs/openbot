@@ -88,6 +88,19 @@ const isTimeout = (error: unknown): boolean =>
   error instanceof Error && error.name === "TimeoutError";
 
 /**
+ * Whether the tab's renderer died under a `goto`.
+ *
+ * The browser's own `crash` event is the fact, and the tab's bookkeeping heard it (`heard`, from
+ * tabs.ts) — Playwright 1.62.1 sends the event before it fails the call the crash interrupted. Its
+ * words are asked second, for the day that order changes: a crash has no class of its own, only
+ * `Page crashed` from the page and `Target crashed` from a frame, the two names `reader.test.ts`
+ * holds a crashed renderer to. A site's failure is neither, whatever else it says.
+ */
+export const diedUnder = (heard: boolean, error: unknown): boolean =>
+  heard ||
+  (error instanceof Error && /\b(?:Page|Target) crashed\b/.test(error.message));
+
+/**
  * A hop the floor refused, reported where it will be read.
  *
  * The tab `/navigate` is driving gets its answer from that call, directly. Anything else — a click
@@ -450,6 +463,23 @@ export const navigate: BotRoute = async (
         "laf:page_timeout",
         withNotes(session, { recycled, elapsedMs: Date.now() - startedAt }),
       );
+    }
+    /*
+     * A RENDERER THAT DIED WHILE THE PAGE WAS OPENING IS THE BROWSER'S FAILURE, NOT THE SITE'S.
+     *
+     * It was answered `laf:navigation_failed` — "that site does not take the connection, do not
+     * open it again" — about a site that had answered and a browser whose renderer died on it
+     * (measured 2026-10-05: 502 in 81 ms, the tab dead). `laf:browser_failed` says the true thing
+     * and the useful one: try once more. The tab is already let go of (tabs.ts, `dropCrashed`), so
+     * that one more try opens in a tab that works.
+     *
+     * NOT TRIED AGAIN HERE. The page a renderer died on is the likeliest to end the next one too,
+     * and a second try inside this call would spend a second renderer on it unseen, behind one
+     * answer that took twice as long. The Bot is told, and the second try is its own — once, as
+     * the sentence for this code says, with the first in the trail.
+     */
+    if (opening && target && diedUnder(profiles.hasCrashed(target), error)) {
+      return browserFailed(error);
     }
     // The page is the Bot's working surface, so a failed navigation is reported rather than
     // thrown: the transcript needs to say what happened, and the browser stays usable.

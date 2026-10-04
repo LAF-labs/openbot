@@ -26,6 +26,17 @@ export function watchPage(
   // Whether its next document is on its way, which is the one thing a look at it cannot ask it.
   followArrivals(page);
 
+  /*
+   * A RENDERER THAT DIED TOOK ITS DOCUMENT WITH IT, and the Bot's next call lands on another tab
+   * (tabs.ts, `dropCrashed`). A tab opened for it bumps the generation as every new tab does — but
+   * when a tab a site opened is the one that died, the Bot is back on the tab it came from, which
+   * is not new: a ref from the dead tab's snapshot would pass the generation check there and name
+   * whatever that page calls `e5`. Retired here, so the answer is "take a new snapshot".
+   */
+  page.once("crash", () => {
+    session.snapshotId += 1;
+  });
+
   page.on("dialog", (dialog) => {
     const kind = dialog.type();
     /*

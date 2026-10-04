@@ -2,6 +2,8 @@
  * A Bot's tabs in the deployment's one browser, and how long they may sit unused.
  */
 import type { Page } from "playwright";
+import { log } from "./log";
+import { originOf } from "./navigation-guard";
 import { titleOf } from "./page-text";
 
 /** One tab in a Bot's browser, as the snapshot lists them. */
@@ -65,18 +67,66 @@ export function createTabs(browser: TabsBrowser) {
   /** Each Bot's current tab, and when it last did anything. See IDLE_CLOSE_MS. */
   const live = new Map<string, { page: Page; usedAt: number; since: string }>();
 
+  /**
+   * The tabs whose renderer died, for as long as the browser still lists them.
+   *
+   * A crashed tab is let go of at once and closed a moment later, and in that moment — or for
+   * ever, when the close never comes back — it is open and nobody's: exactly what a Bot with no tab
+   * is handed as the spare (`profiles.page`). Asked there, so no Bot is handed a dead tab, and by
+   * `/navigate`, to tell a renderer that died from a site that would not answer.
+   */
+  const crashed = new WeakSet<Page>();
+
   /** This Bot's open tabs, in the browser's own order. */
   const pagesOf = (botId: string): Page[] =>
     browser
       .pages()
       .filter((page) => !page.isClosed() && owners.get(page) === botId);
 
-  /** Mark a tab as this Bot's, and stop saying so once it is closed. */
+  /*
+   * A TAB WHOSE RENDERER DIED IS NOBODY'S TAB.
+   *
+   * Measured 2026-10-05: one Bot, 57 browsing tasks on heavy Korean pages, and then every
+   * `/navigate` answered `laf:navigation_failed` — nineteen in a row, still ten minutes later —
+   * while the container stayed healthy, logged nothing and a Bot with another name worked at
+   * once. A renderer that dies — ended by DevTools, or by the system as one that runs out of
+   * memory is — leaves its tab neither closed nor detached (`isClosed()` false). So the tab stayed
+   * in this Bot's list, Playwright refused every `goto` on it in a millisecond (`Page crashed`),
+   * and the idle close never came because the Bot kept asking. Reproduced in
+   * `tests/crashed-tab.test.ts`: 502 in 0–4 ms, for as long as it was asked. That it was memory on
+   * the day was not reproduced; that a dead renderer leaves exactly the day's shape was.
+   *
+   * So the browser's own `crash` event ends the tab's time as this Bot's. `live` is left as it is,
+   * the way it is when a site closes a tab: `profiles.page` sees its tab is no longer the Bot's and
+   * falls back to another the Bot has, or opens one — on the next call, not here, because a tab
+   * opened the moment a renderer died for want of memory is one more renderer. One line says it
+   * happened, by the site's origin only: a path, a query and a title are the page's.
+   *
+   * THE CLOSE IS ASKED FOR, NEVER WAITED FOR. A browser that has just lost a renderer may not
+   * answer it, and nothing is listening for the answer: the tab is already out of every list.
+   */
+  const dropCrashed = (botId: string, page: Page): void => {
+    crashed.add(page);
+    // Already let go of — stopped, recycled, or the browser closed — and being closed by that.
+    if (owners.get(page) !== botId) return;
+    // Counted with the dead one still in it: how many tabs the Bot was holding when it died.
+    const had = pagesOf(botId).length;
+    owners.delete(page);
+    log.warn("tab_crashed", {
+      bot: botId,
+      origin: originOf(page.url()),
+      tabs: had,
+    });
+    void page.close().catch(() => undefined);
+  };
+
+  /** Mark a tab as this Bot's, and stop saying so once it is closed or its renderer has died. */
   const own = (botId: string, page: Page): void => {
     owners.set(page, botId);
     page.once("close", () => {
       if (owners.get(page) === botId) owners.delete(page);
     });
+    page.once("crash", () => dropCrashed(botId, page));
   };
 
   /** Note that this Bot has a tab, without moving `since` if it already had one. */
@@ -175,6 +225,8 @@ export function createTabs(browser: TabsBrowser) {
   return {
     owners,
     live,
+    /** Whether this tab's renderer died. See `crashed`. */
+    hasCrashed: (page: Page): boolean => crashed.has(page),
     pagesOf,
     own,
     touch,

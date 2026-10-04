@@ -220,6 +220,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
   const {
     owners,
     live,
+    hasCrashed,
     pagesOf,
     own,
     touch,
@@ -384,15 +385,24 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
       const context = await browserFor(botId);
 
       const existing = live.get(botId);
-      if (existing && !existing.page.isClosed()) {
+      /*
+       * Still open AND still this Bot's. A tab whose renderer died is open as far as the browser
+       * says and is no longer anybody's (tabs.ts, `dropCrashed`); handing it back is how one crash
+       * became a Bot that could open no address at all (measured 2026-10-05).
+       */
+      if (
+        existing &&
+        !existing.page.isClosed() &&
+        owners.get(existing.page) === botId
+      ) {
         existing.usedAt = now();
         return existing.page;
       }
       /*
-       * A closed tab is not a dead Bot. Somebody's `_blank` window being closed used to take the
-       * whole context down with it and start a cold Chromium, because the only page this map held
-       * was the closed one. Falling back to whatever else this Bot still has open is what a person
-       * does when they close a tab.
+       * A closed tab is not a dead Bot, and neither is a crashed one. Somebody's `_blank` window
+       * being closed used to take the whole context down with it and start a cold Chromium, because
+       * the only page this map held was the closed one. Falling back to whatever else this Bot still
+       * has open is what a person does when they close a tab.
        */
       const open = pagesOf(botId);
       const last = open[open.length - 1];
@@ -400,11 +410,14 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
 
       /*
        * A persistent context opens with a page already. The first Bot to ask takes it rather than
-       * leaving a blank tab behind that belongs to nobody and shows up in nobody's list.
+       * leaving a blank tab behind that belongs to nobody and shows up in nobody's list. Never a
+       * crashed one, which is nobody's too until its close lands.
        */
       const spare = context
         .pages()
-        .find((page) => !page.isClosed() && !owners.has(page));
+        .find(
+          (page) => !page.isClosed() && !owners.has(page) && !hasCrashed(page),
+        );
       const page = spare ?? (await context.newPage());
       own(botId, page);
       touch(botId, page);
@@ -424,6 +437,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     /** Every tab this Bot has open, and moving it to one of them. See tabs.ts. */
     tabs,
     switchTab,
+
+    /** Whether this tab's renderer died, which ended its time as a Bot's tab. See tabs.ts. */
+    hasCrashed,
 
     /**
      * Close the tabs nobody has used for a while, and the browser once nobody has any.
