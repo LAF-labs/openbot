@@ -195,8 +195,8 @@ export const RAW_RESPONSE_CAP_CHARS = 1_000_000;
 /** data.go.kr's code for "nothing there", which here is "not issued yet". */
 const NO_DATA = "03";
 /**
- * How many answers are kept. A deployment asks about a handful of cells, four entries each; this
- * is a bound on a Bot walking the map. A 단기예보 entry is its five hundred read values, some tens
+ * How many answers are kept. A deployment asks about a handful of cells, four entries each and two
+ * more for 중기예보's regions; this is a bound on a Bot walking the map. A 단기예보 entry is its five hundred read values, some tens
  * of kilobytes, so a full table is a few megabytes.
  */
 const MAX_KEPT = 64;
@@ -225,9 +225,11 @@ const TOOL = "get_weather";
 export function kmaWeatherTools(
   withPlaceNames: boolean,
   /**
-   * Whether this deployment carries the key the days past the 단기예보 are asked with. How far the
-   * forecast reaches is said as far as it can reach here, and no further: a Bot told "열흘" on a
-   * deployment that can only ever answer four days would promise a week it cannot have.
+   * Whether this deployment carries the key the days past the 단기예보 are asked with. A Bot told
+   * "열흘" on a deployment with no such key would promise a week it can never have, so without the
+   * key it is told three or four days. Carrying the key is all that can be known at boot: whether
+   * the service accepts it is known when it is asked, and a key it refuses is an answer that names
+   * the days it lacks (`unavailable`) — which is how a VM planted before the key was replaced reads.
    */
   withLaterDays = false,
 ): readonly PartnerToolSpec[] {
@@ -614,6 +616,27 @@ function laterRows(later: KmaMidDay[], short: DayRow[], at: Date): DayRow[] {
     }));
 }
 
+/**
+ * The days neither forecast has, between the last of one and the first of the other, each named.
+ *
+ * THE TWO NORMALLY MEET (`kma-mid-forecast.ts` says why). They do not when the evening's 단기예보 is
+ * more than an hour late: the answer then holds the afternoon's, which ends a day sooner, beside an
+ * evening 중기예보 that begins a day later. A day left out between two rows reads as a week with no
+ * hole in it, so it is said: "10월 8일 예보".
+ */
+function daysBetween(short: DayRow[], beyond: DayRow[]): string[] {
+  const last = short[short.length - 1]?.date.replaceAll("-", "");
+  const first = beyond[0]?.date.replaceAll("-", "");
+  if (!last || !first) return [];
+  const missing: string[] = [];
+  for (let date = dayAfter(last, 1); date < first; date = dayAfter(date, 1)) {
+    missing.push(
+      `${Number(date.slice(4, 6))}월 ${Number(date.slice(6, 8))}일 예보`,
+    );
+  }
+  return missing;
+}
+
 /** What each part of the answer is called when it could not be had. */
 const PART_NAMES: Record<KmaOperation | "later", string> = {
   now: "현재 관측",
@@ -665,6 +688,7 @@ function summariseWeather(input: {
     ...(hours.length > 0 ? [] : [PART_NAMES.hours]),
     ...(short.length > 0 ? [] : [PART_NAMES.days]),
     ...(input.later && beyond.length === 0 ? [PART_NAMES.later] : []),
+    ...daysBetween(short, beyond),
   ];
   return JSON.stringify({
     source: "기상청",

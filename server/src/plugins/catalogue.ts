@@ -885,6 +885,11 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
    *
    * It only reads. What it sends out is that cell and the hour — never who asked
    * (`kma-weather-rest.ts`).
+   *
+   * THE HOST BELOW IS WHERE THE TOOL LIVES, AND NOT THE ONLY ONE IT ASKS. On a deployment that also
+   * carries the public data portal's key, the days past the 단기예보 are 기상청's 중기예보 from
+   * `apis.data.go.kr` — the host the public-data entry above pins — and what goes there is which
+   * 시·군 and which broad region, and the issuance time (`kma-mid-forecast.ts`).
    */
   {
     key: "kma-weather",

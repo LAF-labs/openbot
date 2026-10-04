@@ -12,7 +12,10 @@
  * IT IS NEVER THE ANSWER FAILING. A deployment without the portal key asks nothing here. One whose
  * key the service does not know — every VM planted before the key was replaced holds one that
  * answers 나라장터 and not this — gets its three or four days as before, with the days after named
- * as not had (`kma-weather-rest.ts`, `unavailable`), and is not asked again for ten minutes.
+ * as not had (`kma-weather-rest.ts`, `unavailable`), and the portal is not asked again for ten
+ * minutes; one that did not answer at all, for two. THE REST IS ON ASKING, NOT ON ANSWERING: an
+ * issuance already kept still answers while the portal rests, so one bad reply about one place
+ * does not take the week away from every place already read.
  *
  * WHAT WAS MEASURED on the portal with that key, 2026-10-04 between 22:00 and 24:00 KST:
  *
@@ -78,6 +81,20 @@ const ISSUED_AFTER_MS = 10 * MINUTE;
 const MID_RESPONSE_CAP_CHARS = 100_000;
 /** How long a key the service refused is not tried again. */
 const CLOSED_FOR_MS = 10 * MINUTE;
+/**
+ * How long a portal that did not answer is not tried again. Short: it may be back in a moment. But
+ * not nothing — while it hangs, every weather answer would wait out the whole bound for a part that
+ * "지금 몇 도야" never needed.
+ */
+const UNREACHABLE_FOR_MS = 2 * MINUTE;
+/** A request not made because the portal is resting. Never logged: what it rests for already was. */
+const RESTING = "resting";
+/**
+ * The service's own result codes for "this key may not ask this": access denied, the day's quota
+ * spent, a key not registered, a key expired, an address not registered. The gateway's envelope
+ * says the same in words; the measured refusal was the gateway's, and these are the documented ones.
+ */
+const KEY_REFUSED = new Set(["20", "22", "30", "31", "32"]);
 const NO_DATA = "03";
 /** The numbers a day's fields can carry: the service has started at 3, 4 and 5 over the years. */
 const DAY_NUMBERS = [3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -259,7 +276,7 @@ export type KmaMidAnswer = {
   days: KmaMidDay[];
   /** `tmFc` of the temperatures' issuance, or the land forecast's when there are no temperatures. */
   issued: string | null;
-  /** The codes of this call's own failures, for the operator's log. Empty while a refused key rests. */
+  /** The codes of this call's own failures, for the operator's log. Empty while the portal rests. */
   failed: string[];
 };
 
@@ -275,8 +292,11 @@ export function createKmaMidForecast(input: {
     fetchIt: () => Promise<T | null>,
   ) => Promise<T | null>;
 }) {
-  /** Until when the service is not asked: it refused the key, and will the next time too. */
+  /** Until when the portal is not asked: it refused the key, or did not answer. */
   let closedUntil = 0;
+  const restFor = (ms: number) => {
+    closedUntil = Math.max(closedUntil, input.now().getTime() + ms);
+  };
 
   /** One request: the one row of a region's issuance, or null for "not issued". */
   async function ask(
@@ -291,6 +311,9 @@ export function createKmaMidForecast(input: {
       regId,
       tmFc: issuance.tmFc,
     });
+    if (input.now().getTime() < closedUntil) {
+      throw new KmaMidUnavailable(RESTING);
+    }
     let response: Response;
     try {
       response = await input.fetchImpl(
@@ -304,6 +327,7 @@ export function createKmaMidForecast(input: {
         },
       );
     } catch {
+      restFor(UNREACHABLE_FOR_MS);
       throw new KmaMidUnavailable("laf:weather_unreachable");
     }
     const raw = await response.text().catch(() => "");
@@ -326,7 +350,7 @@ export function createKmaMidForecast(input: {
       if (
         /SERVICE_KEY_IS_NOT_REGISTERED|SERVICE[ _]ACCESS[ _]DENIED/.test(raw)
       ) {
-        closedUntil = input.now().getTime() + CLOSED_FOR_MS;
+        restFor(CLOSED_FOR_MS);
         throw new KmaMidUnavailable("laf:weather_not_open");
       }
       throw new KmaMidUnavailable(
@@ -335,6 +359,10 @@ export function createKmaMidForecast(input: {
     }
     const resultCode = String(header.resultCode);
     if (resultCode === NO_DATA) return null;
+    if (KEY_REFUSED.has(resultCode)) {
+      restFor(CLOSED_FOR_MS);
+      throw new KmaMidUnavailable("laf:weather_not_open");
+    }
     if (resultCode !== "00") throw new KmaMidUnavailable("laf:weather_refused");
     const body = (
       parsed as { response?: { body?: Parameters<typeof rowsOf>[0] } }
@@ -364,22 +392,21 @@ export function createKmaMidForecast(input: {
   return {
     /** The days past the 단기예보 for one place's two regions. Never throws. */
     async daysFor(region: KmaMidRegion, at: Date): Promise<KmaMidAnswer> {
-      if (input.now().getTime() < closedUntil) {
-        return { days: [], issued: null, failed: [] };
-      }
       const [temperature, land] = await Promise.allSettled([
         latest("temperature", region.temperature, at),
         latest("land", region.land, at),
       ]);
-      const failed = [temperature, land].flatMap((answer) =>
-        answer.status === "rejected"
-          ? [
-              answer.reason instanceof KmaMidUnavailable
-                ? answer.reason.code
-                : "error",
-            ]
-          : [],
-      );
+      const failed = [temperature, land]
+        .flatMap((answer) =>
+          answer.status === "rejected"
+            ? [
+                answer.reason instanceof KmaMidUnavailable
+                  ? answer.reason.code
+                  : "error",
+              ]
+            : [],
+        )
+        .filter((code) => code !== RESTING);
       const had = (answer: PromiseSettledResult<KmaMidIssued | null>) =>
         answer.status === "fulfilled" ? answer.value : null;
       const days = midDaysOf(had(temperature), had(land));
