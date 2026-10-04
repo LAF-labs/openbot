@@ -89,19 +89,6 @@ import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS } from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
 
-/*
- * Names that moved out of this file with the split and are still read from here, so that what
- * reads them — `snapshot.ts` (TabSummary, VIEWPORT) and the tests — did not change with it.
- */
-export { botTimeZone, botUserAgent, VIEWPORT } from "./browser-identity";
-export {
-  CLOSE_GRACE_MS,
-  type ClosableContext,
-  closeAndWait,
-} from "./browser-close";
-export { resolveProfile } from "./profile-dir";
-export type { TabSummary } from "./tabs";
-
 export type ProfileSummary = {
   botId: string;
   /** Whether this Bot has a tab open in the deployment's browser right now. */
