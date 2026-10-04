@@ -28,8 +28,7 @@ import {
   type ServerRecord,
   toolNameFor,
 } from "../src/plugins/store";
-import { stubFetch } from "./support/fetch";
-import { NO_DATA_BODY, SEOUL_MIDNIGHT } from "./support/kma-fixtures";
+import { fakeKma, MIDNIGHT, unsaid } from "./support/kma-hub";
 
 /**
  * The weather as an entry the fleet's key opens: what stands between the transport
@@ -46,30 +45,14 @@ import { NO_DATA_BODY, SEOUL_MIDNIGHT } from "./support/kma-fixtures";
 
 const KEY = "kma-test-key-0123456789";
 const REF = `${KMA_WEATHER_KEY}/get_weather`;
-const connection = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
+/** Who the calls are for. Where an answer is drawn is the transport's own tests' business. */
+const connection = unsaid;
 
 /** 00:45 KST on 2 October: the minute the three midnight bodies were the newest issuances. */
 const AT = new Date("2026-10-02T00:45:00+09:00");
-const SERVED: Record<string, string> = {
-  [`${KMA_OPERATIONS.now} 20261002/0000`]: SEOUL_MIDNIGHT.now,
-  [`${KMA_OPERATIONS.hours} 20261002/0030`]: SEOUL_MIDNIGHT.hours,
-  [`${KMA_OPERATIONS.days} 20261001/2300`]: SEOUL_MIDNIGHT.days,
-};
 
 /** A hub that answers the midnight bodies for their own issuances, whatever cell is asked. */
-function fakeHub() {
-  const cells: string[] = [];
-  const fetchImpl = stubFetch(async (address) => {
-    const url = new URL(String(address));
-    cells.push(`${url.searchParams.get("nx")},${url.searchParams.get("ny")}`);
-    const body =
-      SERVED[
-        `${url.origin}${url.pathname} ${url.searchParams.get("base_date")}/${url.searchParams.get("base_time")}`
-      ];
-    return new Response(body ?? NO_DATA_BODY, { status: 200 });
-  });
-  return { cells, fetchImpl };
-}
+const fakeHub = () => fakeKma(MIDNIGHT);
 
 function runtimeWith(whereabouts?: {
   place: string | null;
