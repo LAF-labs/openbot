@@ -10,7 +10,6 @@ import {
   parseKmaPlaces,
 } from "../src/plugins/kma-places";
 import {
-  createKmaWeatherTransport,
   issuanceAt,
   KMA_HOST,
   KMA_OPERATIONS,
@@ -21,22 +20,33 @@ import {
   RAW_RESPONSE_CAP_CHARS,
 } from "../src/plugins/kma-weather-rest";
 import { PluginRefusedError } from "../src/plugins/store";
-import { stubFetch } from "./support/fetch";
 import {
   BAD_KEY_BODY,
-  NO_DATA_BODY,
   NOT_ALLOWED_BODY,
   NOT_APPLIED_BODY,
   OPEN_SEA,
   SEOUL_AFTERNOON,
   SEOUL_DAWN,
-  SEOUL_EVENING,
   SEOUL_MIDNIGHT,
   SEOUL_SMALL_HOURS,
   shortForecast,
   TOO_OLD_BODY,
   veryShortForecast,
 } from "./support/kma-fixtures";
+import {
+  AFTERNOON,
+  type Asked,
+  answerOf,
+  connection,
+  EVENING,
+  kst,
+  MIDNIGHT,
+  noData,
+  SEOUL,
+  type Served,
+  unsaid,
+  weatherOver,
+} from "./support/kma-hub";
 
 /**
  * The weather tool, against what 기상청's API hub actually answers.
@@ -47,8 +57,9 @@ import {
  * so the summary is held to 기상청's own rows, the refusals to its own envelopes, and the base
  * times to the issuances that were really being served at those minutes.
  *
- * The fake hub below answers a body only for the issuance that body is, and NO_DATA for any other,
- * which is what the real one does. So a test that passes has asked for the right base time.
+ * The fake hub (`support/kma-hub.ts`) answers a body only for the issuance that body is, and NO_DATA
+ * for any other, which is what the real one does. So a test that passes has asked for the right
+ * base time.
  *
  * Where a test needs weather that did not happen on those two days — snow, a shower, the
  * "30.0~50.0mm" wording — the rows are written by hand, in the vendor's shape, and the test says so.
@@ -58,99 +69,24 @@ import {
 const KEY = "Canary+Key/0123456789==";
 const KEY_AS_SENT = new URLSearchParams({ k: KEY }).toString().slice(2);
 
-const SEOUL = { latitude: 37.5665, longitude: 126.978 };
 const BUSAN = { latitude: 35.1796, longitude: 129.0756 };
 
-/** A KST wall-clock time as the instant it is. */
-const kst = (text: string) => new Date(`${text}+09:00`);
-
-type Asked = {
-  operation: KmaOperation;
-  issuance: string;
-  rows: number;
-  cell: string;
-  url: string;
-  init: RequestInit | undefined;
-};
-
-function operationOf(url: string): KmaOperation {
-  for (const [operation, address] of Object.entries(KMA_OPERATIONS)) {
-    if (url.startsWith(`${address}?`)) return operation as KmaOperation;
-  }
-  throw new Error(`not one of the three operations: ${url.split("?")[0]}`);
-}
-
-/** Bodies by the issuance each one is: `"now 20261002/0000"`. Anything else is not issued yet. */
-type Served = Record<string, string>;
-
-const noData = () => new Response(NO_DATA_BODY, { status: 200 });
-
-/** No rows: what a transport has before the table is generated, and what most tests here want. */
-const NO_PLACES = createKmaPlaces([]);
-
 /**
- * A transport over a fake hub, the clock it reads, and what the hub was asked.
- *
- * WITH NO TABLE OF NAMES unless a test hands one in. The table this repository ships has four
- * thousand rows and names every cell it is asked about, and a test about the forecast should not
- * change when 기상청 re-issues its spreadsheet. The tests about names say which table they mean.
+ * A transport over the fake hub with this file's key, the clock it reads, and what the hub was
+ * asked (`weatherOver`, which says why it has no table of names unless a test hands one in).
  */
 function hub(
   reply: Served | ((asked: Asked) => Response | Promise<Response>),
-  options: Partial<Parameters<typeof createKmaWeatherTransport>[0]> & {
-    at?: Date;
-  } = {},
+  // Everything the transport takes but its clock and its `fetch`, which are the fake's, and `at`.
+  options: Partial<Parameters<typeof weatherOver>[1]> = {},
 ) {
-  const asked: Asked[] = [];
-  const clock = { at: options.at ?? kst("2026-10-02T00:45:00") };
-  const { at: _at, ...rest } = options;
-  const transport = createKmaWeatherTransport({
-    authKey: KEY,
-    places: NO_PLACES,
-    now: () => clock.at,
-    fetchImpl: stubFetch(async (address, init) => {
-      const url = new URL(String(address));
-      const record: Asked = {
-        operation: operationOf(url.href),
-        issuance: `${url.searchParams.get("base_date")}/${url.searchParams.get("base_time")}`,
-        rows: Number(url.searchParams.get("numOfRows")),
-        cell: `${url.searchParams.get("nx")},${url.searchParams.get("ny")}`,
-        url: url.href,
-        init,
-      };
-      asked.push(record);
-      if (typeof reply === "function") return await reply(record);
-      const body = reply[`${record.operation} ${record.issuance}`];
-      return body === undefined
-        ? noData()
-        : new Response(body, { status: 200 });
-    }),
-    ...rest,
-  });
-  return { transport, asked, clock };
+  return weatherOver({ hub: reply }, { authKey: KEY, ...options });
 }
 
-const MIDNIGHT: Served = {
-  "now 20261002/0000": SEOUL_MIDNIGHT.now,
-  "hours 20261002/0030": SEOUL_MIDNIGHT.hours,
-  "days 20261001/2300": SEOUL_MIDNIGHT.days,
-};
-const AFTERNOON: Served = {
-  "now 20261001/1400": SEOUL_AFTERNOON.now,
-  "hours 20261001/1430": SEOUL_AFTERNOON.hours,
-  "days 20261001/1400": SEOUL_AFTERNOON.days,
-  "days 20261001/0200": SEOUL_AFTERNOON.morning,
-};
 const DAWN: Served = {
   "now 20261001/0500": SEOUL_DAWN.now,
   "hours 20261001/0530": SEOUL_DAWN.hours,
   "days 20261001/0500": SEOUL_DAWN.days,
-  "days 20261001/0200": SEOUL_AFTERNOON.morning,
-};
-const EVENING: Served = {
-  "now 20261001/1700": SEOUL_EVENING.now,
-  "hours 20261001/1730": SEOUL_EVENING.hours,
-  "days 20261001/1700": SEOUL_EVENING.days,
   "days 20261001/0200": SEOUL_AFTERNOON.morning,
 };
 const SMALL_HOURS: Served = {
@@ -164,17 +100,8 @@ const SEA: Served = {
   "days 20261001/2300": OPEN_SEA.days,
 };
 
-/** A call made in a conversation: its row is drawn there, and the forecast as a card on it. */
-const connection = {
-  url: KMA_HOST,
-  actorId: "person-1",
-  botId: "bot-1",
-  drawnOn: "conversation" as const,
-};
 /** The same call from a routine: nothing of it is drawn, and the answer reaches the person as words. */
 const fromARoutine = { ...connection, drawnOn: "nowhere" as const };
-/** A connection that does not say where the answer goes: drawn nowhere. */
-const unsaid = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 
 type Facts = {
   source: string;
@@ -202,14 +129,14 @@ type Facts = {
   unavailable?: string[];
 };
 
+/** The answer as this file reads it, and whole: nothing asked here is long enough to be cut. */
 async function weatherOf(
   made: ReturnType<typeof hub>,
   args: Record<string, unknown> = SEOUL,
 ): Promise<{ facts: Facts; text: string }> {
-  const result = await made.transport.callTool(connection, "get_weather", args);
-  expect(result.isError).toBe(false);
-  expect(result.truncated).toBe(false);
-  return { facts: JSON.parse(result.text) as Facts, text: result.text };
+  const { facts, text, truncated } = await answerOf<Facts>(made, args);
+  expect(truncated).toBe(false);
+  return { facts, text };
 }
 
 async function refusalOf(

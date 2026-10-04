@@ -1,30 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { weatherOf as readForTheCard } from "../../shared/weather";
-import {
-  KMA_MID_OPERATIONS,
-  type KmaMidOperation,
-  midDaysOf,
-  midIssuanceAt,
-} from "../src/plugins/kma-mid-forecast";
+import { midDaysOf, midIssuanceAt } from "../src/plugins/kma-mid-forecast";
 import type { KmaMidRegions } from "../src/plugins/kma-mid-regions";
-import { createKmaPlaces } from "../src/plugins/kma-places";
 import {
-  createKmaWeatherTransport,
-  KMA_HOST,
-  KMA_OPERATIONS,
-} from "../src/plugins/kma-weather-rest";
-import { stubFetch } from "./support/fetch";
-import {
-  NO_DATA_BODY,
-  SEOUL_AFTERNOON,
-  SEOUL_EVENING,
-  SEOUL_MIDNIGHT,
-} from "./support/kma-fixtures";
+  AFTERNOON,
+  answerOf,
+  connection,
+  EVENING,
+  kst,
+  MIDNIGHT,
+  type Portal,
+  SEOUL,
+  type Served,
+  weatherOver,
+} from "./support/kma-hub";
 import {
   MID_KEY_NOT_REGISTERED,
   MID_LAND_0600,
   MID_LAND_1800,
-  MID_NO_DATA,
   MID_TEMPERATURE_0600,
   MID_TEMPERATURE_1800,
 } from "./support/kma-mid-fixtures";
@@ -47,46 +40,11 @@ import {
 const HUB_KEY = "HubKey0123456789";
 const PORTAL_KEY = "Portal%2BKey%2F0123456789%3D%3D";
 
-const SEOUL = { latitude: 37.5665, longitude: 126.978 };
-const kst = (text: string) => new Date(`${text}+09:00`);
-
 /** The two regions every place in these tests is in. The table that decides it has its own tests. */
 const SEOUL_REGIONS: KmaMidRegions = {
   size: 1,
   of: () => ({ temperature: "11B10101", land: "11B00000", name: "서울" }),
 };
-
-/** The hub's bodies by the issuance each one is, as `kma-weather-rest.test.ts` serves them. */
-const MIDNIGHT: Record<string, string> = {
-  "now 20261002/0000": SEOUL_MIDNIGHT.now,
-  "hours 20261002/0030": SEOUL_MIDNIGHT.hours,
-  "days 20261001/2300": SEOUL_MIDNIGHT.days,
-};
-const AFTERNOON: Record<string, string> = {
-  "now 20261001/1400": SEOUL_AFTERNOON.now,
-  "hours 20261001/1430": SEOUL_AFTERNOON.hours,
-  "days 20261001/1400": SEOUL_AFTERNOON.days,
-  "days 20261001/0200": SEOUL_AFTERNOON.morning,
-};
-const EVENING: Record<string, string> = {
-  "now 20261001/1700": SEOUL_EVENING.now,
-  "hours 20261001/1730": SEOUL_EVENING.hours,
-  "days 20261001/1700": SEOUL_EVENING.days,
-  "days 20261001/0200": SEOUL_AFTERNOON.morning,
-};
-
-type AskedOfPortal = {
-  operation: KmaMidOperation;
-  regId: string | null;
-  tmFc: string | null;
-  url: string;
-  init: RequestInit | undefined;
-};
-
-/** What the portal serves: a body by `"temperature 202610011800"`, or whatever a function answers. */
-type Portal =
-  | Record<string, string>
-  | ((asked: AskedOfPortal) => Response | Promise<Response>);
 
 /** Both of an issuance's real bodies, under the issuance a test's clock asks for. */
 const evening = (tmFc: string): Record<string, string> => ({
@@ -99,13 +57,14 @@ const morning = (tmFc: string): Record<string, string> => ({
 });
 
 /**
- * A transport over a fake hub and a fake portal, the clock it reads, and what the portal was asked.
+ * A transport over the fake hub and the fake portal (`support/kma-hub.ts`), the clock it reads, and
+ * what the PORTAL was asked — the hub's side of it has its own file.
  *
  * With no table of names (the forecast should not change when 기상청 re-issues its spreadsheet) and
  * one fixed pair of regions.
  */
 function stack(
-  hub: Record<string, string>,
+  hub: Served,
   portal: Portal | null,
   options: {
     at?: Date;
@@ -113,48 +72,24 @@ function stack(
     regions?: KmaMidRegions;
   } = {},
 ) {
-  const asked: AskedOfPortal[] = [];
-  const clock = { at: options.at ?? kst("2026-10-02T00:45:00") };
   const serviceKey =
     options.serviceKey === null
       ? undefined
       : (options.serviceKey ?? PORTAL_KEY);
-  const transport = createKmaWeatherTransport({
-    authKey: HUB_KEY,
-    ...(serviceKey ? { serviceKey } : {}),
-    places: createKmaPlaces([]),
-    midRegions: options.regions ?? SEOUL_REGIONS,
-    now: () => clock.at,
-    fetchImpl: stubFetch(async (address, init) => {
-      const href = String(address);
-      const url = new URL(href);
-      for (const [operation, base] of Object.entries(KMA_MID_OPERATIONS)) {
-        if (!href.startsWith(`${base}?`)) continue;
-        const record: AskedOfPortal = {
-          operation: operation as KmaMidOperation,
-          regId: url.searchParams.get("regId"),
-          tmFc: url.searchParams.get("tmFc"),
-          url: href,
-          init,
-        };
-        asked.push(record);
-        if (portal === null) throw new Error("the portal was asked");
-        if (typeof portal === "function") return await portal(record);
-        const body = portal[`${record.operation} ${record.tmFc}`];
-        return new Response(body ?? MID_NO_DATA, { status: 200 });
-      }
-      for (const [operation, base] of Object.entries(KMA_OPERATIONS)) {
-        if (!href.startsWith(`${base}?`)) continue;
-        const body =
-          hub[
-            `${operation} ${url.searchParams.get("base_date")}/${url.searchParams.get("base_time")}`
-          ];
-        return new Response(body ?? NO_DATA_BODY, { status: 200 });
-      }
-      throw new Error(`neither the hub nor the portal: ${href.split("?")[0]}`);
-    }),
-  });
-  return { transport, asked, clock };
+  const made = weatherOver(
+    { hub, portal },
+    {
+      authKey: HUB_KEY,
+      ...(serviceKey ? { serviceKey } : {}),
+      midRegions: options.regions ?? SEOUL_REGIONS,
+      ...(options.at ? { at: options.at } : {}),
+    },
+  );
+  return {
+    transport: made.transport,
+    asked: made.askedOfPortal,
+    clock: made.clock,
+  };
 }
 
 type Day = {
@@ -174,24 +109,13 @@ type Facts = {
   unavailable?: string[];
 };
 
-const connection = {
-  url: KMA_HOST,
-  actorId: "person-1",
-  botId: "bot-1",
-  drawnOn: "conversation" as const,
-};
-
+/** The answer as this file reads it: the days, and which issuance each came from. */
 async function weatherOf(
   made: ReturnType<typeof stack>,
   where: { latitude: number; longitude: number } = SEOUL,
 ) {
-  const result = await made.transport.callTool(
-    connection,
-    "get_weather",
-    where,
-  );
-  expect(result.isError).toBe(false);
-  return { facts: JSON.parse(result.text) as Facts, text: result.text };
+  const { facts, text } = await answerOf<Facts>(made, where);
+  return { facts, text };
 }
 
 const datesOf = (facts: Facts) => (facts.days ?? []).map((day) => day.date);
