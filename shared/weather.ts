@@ -36,6 +36,11 @@ export const WEATHER_DATA_HEAD = '{"source":"기상청"';
  *    An instruction in a tool's answer is read as something the tool said, which it is.
  *  - THIS: the fact where the model reads it last, the rule where rules are read. A fact that is
  *    repeated to the person ("위에 카드로 보여 드렸어요") is true, and reads as the Bot speaking.
+ *
+ * AND IT IS A FACT ONLY WHERE A CARD IS DRAWN: the server writes it exactly when the answer holds
+ * what `weatherOf` reads — a temperature now, or a day. An answer with the next hours and nothing
+ * else (the observation and the daily forecast both missing, late in the evening) has no card, so
+ * it is not told it has one, and the rule in the description hangs on this field being there.
  */
 export const WEATHER_SHOWN = "사용자 화면에 날씨 카드로 이미 표시됨";
 
@@ -109,11 +114,26 @@ function halfOf(said: unknown): { sky: SkyKind | null; chance: number | null } {
   return { sky, chance: percent ? Number(percent.slice(0, -1)) : null };
 }
 
-/** "비 19~24시(1mm 미만)" → rain; "없음" → nothing. */
+/**
+ * "비 19~24시(1mm 미만)" → rain; "없음" → nothing.
+ *
+ * A DAY CAN HAVE SEVERAL KINDS, joined by a middle dot: "눈·비/눈·소나기 9~13시(…)" is the server's
+ * own fixture for a day that turned. Read as one word it matched nothing, and a wet day was drawn
+ * with the sky's picture (Codex on pull request 62). Rain and snow on one day are drawn as the
+ * picture for either; a kind this table has no word for is still something falling.
+ */
 function fallOf(said: unknown): FallKind | null {
-  if (typeof said !== "string" || said === NOTHING_FALLS) return null;
-  const word = said.trim().split(/[\s(]/)[0] ?? "";
-  return (FALL_WORDS as Record<string, FallKind>)[word] ?? null;
+  if (typeof said !== "string" || said.trim() === NOTHING_FALLS) return null;
+  const words = (said.trim().split(/[\s(]/)[0] ?? "").split("·");
+  const kinds = new Set(
+    words.map(
+      (word): FallKind =>
+        (FALL_WORDS as Record<string, FallKind>)[word] ?? "rain",
+    ),
+  );
+  if (kinds.size === 0) return null;
+  if (kinds.size > 1 || kinds.has("sleet")) return "sleet";
+  return kinds.has("snow") ? "snow" : "rain";
 }
 
 /**
