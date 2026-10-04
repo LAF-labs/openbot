@@ -329,7 +329,7 @@ export function highRiskSignals(facts: HighRiskFacts): Signals {
   if (
     facts.intent === "activate" &&
     MONEY_HOST.test(facts.host) &&
-    (CONFIRMING.test(label) || MONEY_PATH.test(facts.path))
+    (says(CONFIRMING) || MONEY_PATH.test(facts.path))
   ) {
     hard.push("money_site_confirm");
     kinds.add("payment");
