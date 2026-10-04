@@ -105,7 +105,7 @@ import {
   HAEUNDAE,
   MAPO,
   saysDegrees,
-  saysNow,
+  leavesItToTheCard,
   weatherAnswer,
   weatherBackend,
   weatherPlacesAsked,
@@ -1637,12 +1637,15 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
           [
-            `기상청이 준 지금 기온(${GANGNAM.now}도)이 답에 없음`,
-            saysNow(turn.text, GANGNAM),
+            // The card is drawn from this call's answer: it has to be the saved place's.
+            "카드에 그려질 날씨가 저장된 곳(강남)의 것이 아님",
+            weatherPlacesAsked(turn.calls).every(
+              (place) => place === "" || place.includes("강남"),
+            ),
           ],
           [
-            "답에 어느 곳 기준인지(강남) 말하지 않음",
-            turn.text.includes("강남"),
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(turn.text),
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
@@ -1728,12 +1731,15 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
           [
-            `기상청이 준 마포의 지금 기온(${MAPO.now}도)이 답에 없음`,
-            saysNow(turn.text, MAPO),
+            // The card is drawn from this call's answer: it has to be for the place just said.
+            "카드에 그려질 날씨가 방금 들은 곳(마포)의 것이 아님",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("마포"),
+            ),
           ],
           [
-            "답에 어느 곳 기준인지(마포) 말하지 않음",
-            turn.text.includes("마포"),
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(turn.text),
           ],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
         ]);
@@ -1817,13 +1823,10 @@ function firstMoveThreads(): Scenario[] {
             !called(turn, NAVIGATE.name) && !called(turn, WEB_SEARCH_TOOL_NAME),
           ],
           [
-            `받은 결과의 지금 기온(${GANGNAM.now}도)이 답에 없음`,
-            saysNow(turn.text, GANGNAM),
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(turn.text),
           ],
-          [
-            "답에 어느 곳 기준인지(강남) 말하지 않음",
-            turn.text.includes("강남"),
-          ],
+          ["답을 하지 않음", turn.text.trim().length > 0],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
         ]),
     },

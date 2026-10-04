@@ -2637,6 +2637,17 @@ export const ko: Record<string, string> = {
   "Toss Securities": "토스증권",
   Toss: "토스",
   "Korea Meteorological Administration": "기상청",
+  // The weather card (`weather-card.tsx`). The source's wording is 기상청's own: 출처: 기상청.
+  "Source: {names}": "출처: {names}",
+  "Weather for {place}": "{place} 날씨",
+  Weather: "날씨",
+  "High {max} · Low {min}": "최고 {max} · 최저 {min}",
+  "Clear sky": "맑음",
+  "Mostly cloudy": "구름많음",
+  Overcast: "흐림",
+  Rain: "비",
+  Snow: "눈",
+  "Rain or snow": "비 또는 눈",
   Government24: "정부24",
   Korail: "코레일",
   "The Bot stopped partway through. Try again and it answers from the start.":
