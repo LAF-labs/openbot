@@ -914,7 +914,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * about the tab that took its place, a crash while a page is opening answered as the browser's, the
  * one line in the log with the origin and nothing else of the page, another Bot's tab untouched, a
  * popup dropped and its refs retired, a tab that will not close handed to nobody, the live screen
- * moved to the new tab, and a renderer the system killed heard the same way).
+ * moved to the new tab, and every renderer ended at once with each Bot left a tab of its own).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
