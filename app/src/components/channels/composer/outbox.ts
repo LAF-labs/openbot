@@ -12,17 +12,17 @@ import { useSyncExternalStore } from "react";
  * The server keeps a person's words the moment a run begins, so the one message it can lose is the
  * one whose run never reached it. That one is kept here — per conversation, in `localStorage` — and
  * drawn in the conversation as not sent, with a way to send it again, until the server has it. When
- * the connection comes back it is sent once by itself (`ChannelChat`), under the same id, which the
- * server's store treats as that one message however many times it arrives.
+ * the connection comes back it is sent once by itself (`ServerChannelChat`), under the same id,
+ * which the server's store treats as that one message however many times it arrives.
  *
- * AND WHAT WAS TYPED WHILE THE BOT WORKED, WHERE THE SERVER OWNS THE TURN (`waiting`, below). It used
- * to be a rule that a queued message is never here: the queue (`queue.ts`) was React state in one
- * mount, on the reasoning that words waiting for a turn mean nothing once the window that drove the
- * turn is gone. With the turn on the server that reasoning is gone too — reloading, or closing the
- * laptop, is what a server-owned turn is for — and the correction somebody had watched land was
- * lost by it, with nothing saying so (review, 2026-10-02). So there it is kept here, marked as
- * waiting for the Bot, and the send that already takes what this device kept takes it when the turn
- * is over. One outbox; the window-driven conversation (`ChannelChat`) still queues in its mount.
+ * AND WHAT WAS TYPED WHILE THE BOT WORKED (`waiting`, below). It used to be a rule that a queued
+ * message is never here: the queue was React state in one mount, on the reasoning that words
+ * waiting for a turn mean nothing once the window that drove the turn is gone. With the turn on the
+ * server that reasoning is gone too — reloading, or closing the laptop, is what a server-owned turn
+ * is for — and the correction somebody had watched land was lost by it, with nothing saying so
+ * (review, 2026-10-02). So it is kept here, marked as waiting for the Bot, and the send that already
+ * takes what this device kept takes it when the turn is over. One outbox, and no other queue: the
+ * one in the mount went with the window-driven conversation (2026-10-05, `queue.ts`).
  *
  * Only the words and the skill instructions that went in front of them — what the person typed and
  * the instructions they asked for, nothing the Bot or the server said.
@@ -246,43 +246,6 @@ export function handToPerson(channelId: string, message: UnsentMessage): void {
   if (!isKeptForCard(message)) return;
   const { waiting: _waiting, ...theirs } = message;
   keepUnsent(channelId, { ...theirs, autoTried: true });
-}
-
-/**
- * SETTLE WORDS KEPT FOR A CARD (`answerTo`) WHERE NO CARD CAN TAKE THEM ANY MORE: forgotten where
- * the conversation shows their card answered with those very words; words like any other the
- * device kept where it shows the question over some other way; and the person's to send where it
- * shows nothing of what became of it (`handToPerson`).
- *
- * For the screen that drives its own turns. A deployment can be switched to it (`SERVER_TURNS=off`)
- * with such words still on the device: the card's wait died with the server that held it, and
- * left out of every hand-over as they are, they could neither go nor be taken away there (review,
- * third round). The screen that can still ask the card settles them itself, from its stream.
- * `answeredWith` is what the conversation says a call was answered with, where that is words;
- * `isOver`, whether it holds a result for the call at all — each for the call the asking message
- * made (`askedBy`), where the words were kept with it.
- */
-export function settleAnswers(
-  channelId: string,
-  conversation: {
-    answeredWith: (toolCallId: string, askedBy?: string) => string | undefined;
-    isOver: (toolCallId: string, askedBy?: string) => boolean;
-  },
-): void {
-  for (const message of readUnsent(channelId)) {
-    const { answerTo, askedBy } = message;
-    if (answerTo === undefined) continue;
-    if (conversation.answeredWith(answerTo, askedBy) === message.text) {
-      forgetUnsent(channelId, [message.id]);
-      continue;
-    }
-    if (conversation.isOver(answerTo, askedBy)) {
-      const { answerTo: _answerTo, askedBy: _askedBy, ...plain } = message;
-      keepUnsent(channelId, plain);
-      continue;
-    }
-    handToPerson(channelId, message);
-  }
 }
 
 /**

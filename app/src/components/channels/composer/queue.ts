@@ -1,5 +1,4 @@
 import type { AttachmentPart } from "@shared/attachments";
-import type { ComposerDraft } from "./draft";
 
 /**
  * What happens to a message typed while the Bot already has the turn.
@@ -9,167 +8,31 @@ import type { ComposerDraft } from "./draft";
  * again, losing whatever it had already done, or wait for it to finish being wrong. Neither is the
  * thing they wanted, which was to say "no, the other one" while it was working and have that land.
  *
- * So a message typed mid-turn is parked rather than dropped, and everything parked runs as ONE
+ * So a message typed mid-turn is parked rather than dropped, and everything parked goes in ONE
  * follow-up turn when the current one settles. One turn and not one per message, because three
  * quick corrections are usually one correction typed in three breaths: replaying them separately
- * makes the Bot answer the first, act on it, and only then read the sentence saying not to.
+ * makes the Bot answer the first, act on it, and only then read the sentence saying not to. They go
+ * as the separate messages they were typed as, in the order they were typed, under the ids they
+ * were kept with — a send that may be repeated has to be the same message each time.
  *
- * Settling is not the same as succeeding. The drain is keyed on the turn ENDING and never asks how
+ * Settling is not the same as succeeding. What is parked goes on the turn ENDING and never asks how
  * it ended, which is what makes Stop a way of steering rather than a way of giving up: park a
- * correction, press Stop, and the correction is what runs next. Nothing here special-cases the stop
+ * correction, press Stop, and the correction is what runs next. Nothing special-cases the stop
  * button, and that is the point — a path with its own branch is a path that can be forgotten.
  *
- * THE QUEUE IN THIS FILE IS MEMORY IN ONE MOUNT AND NOTHING HERE PRETENDS OTHERWISE — WHERE THE
- * WINDOW DRIVES THE TURN (`ChannelChat`, `SERVER_TURNS=off`). There the browser is the only place
- * that knows a turn is in flight, and this state lives and dies with the component holding it. A
- * reload loses the intent to run these words later, and so does walking to another channel: the
- * channel view is keyed on the channel, so switching unmounts the conversation and takes anything
- * parked in it with it, after the person has watched their words land on screen. Neither is worth a
- * persistence layer for words that only mean anything inside a turn that is already over by the
- * time you come back — the window that drove the turn is gone, and the turn went with it.
- *
- * WHERE THE SERVER OWNS THE TURN, THAT ARGUMENT DOES NOT HOLD, AND THIS QUEUE IS NOT USED. The turn
- * goes on with the laptop closed, which is the point of it, so a correction parked in a mount was
- * lost by the very thing the design invites (review, 2026-10-02). `ServerChannelChat` keeps what is
- * parked in the outbox instead (`outbox.ts`, `waiting`) and hands `ConversationView` the list to
- * draw. What this file says about WHEN parked words go and in what order still holds there, with
- * one difference in shape: they go as the separate messages they were typed as, in one turn, under
- * the ids they were kept with — not joined into one — because a send that may be repeated has to be
- * the same message each time.
+ * WHERE IT IS KEPT: the outbox (`outbox.ts`, `waiting`), on the device, by `ServerChannelChat`,
+ * which hands `ConversationView` the list to draw. The turn goes on with the laptop closed, which
+ * is the point of it, so what is parked has to outlive a reload too. Until 2026-10-05 this file
+ * also held a queue that was React state in one mount (`reduceQueue`), for the screen whose window
+ * drove the turn: there the turn died with the window and its queue could die with it. That screen
+ * was removed, and the queue with it; `queued-message-kept.test.tsx` holds the rules above.
  */
 
-/** One message waiting for the Bot to finish, in the words the person typed. */
-export type QueuedMessage = {
-  /**
-   * Minted by the caller, because taking one back needs a handle that survives the list changing
-   * around it and the text will not do: two identical corrections are two entries.
-   */
+/** A message waiting for the Bot to finish, as it is drawn: the words and the files with them. */
+export type ParkedMessage = {
+  /** What taking one back is done by: two identical corrections are two entries. */
   id: string;
   text: string;
-  /**
-   * The `/` chips that were in it, so a skill invoked mid-turn still applies when the message
-   * eventually runs rather than being silently dropped on the way through the queue.
-   */
-  commandIds: string[];
   /** Files parked with the words, sent with them. */
   attachments?: AttachmentPart[];
 };
-
-/**
- * What a waiting message is drawn from, wherever it is kept: this mount's queue, or the outbox of a
- * conversation whose turns the server owns (which has resolved the `/` chips already).
- */
-export type ParkedMessage = Pick<QueuedMessage, "id" | "text" | "attachments">;
-
-export type QueueAction =
-  /**
-   * Somebody pressed send.
-   *
-   * `busy` is supplied rather than worked out here. The composer is the only thing holding both
-   * halves of that answer — the parent's `pending` and its own send that has not resolved — and a
-   * second opinion computed somewhere else would disagree with it exactly during the moment between
-   * a send starting and the agent reporting itself as running, which is precisely when somebody
-   * typing fast needs the answer to be right.
-   */
-  | { type: "submit"; id: string; draft: ComposerDraft; busy: boolean }
-  /** The turn is over, however it ended: finished, failed, or stopped. */
-  | { type: "settle" }
-  /** Second thoughts, before it has run. */
-  | { type: "remove"; id: string };
-
-export type QueueTransition = {
-  /** The queue afterwards. The same array when nothing moved, so a render can be skipped. */
-  queue: readonly QueuedMessage[];
-  /** A turn to start now, or null when there is nothing to run. */
-  run: ComposerDraft | null;
-};
-
-/**
- * The whole rule, as one pure function, so the interesting cases can be checked without a browser
- * and a live model between the test and the behaviour.
- */
-export function reduceQueue(
-  queue: readonly QueuedMessage[],
-  action: QueueAction,
-): QueueTransition {
-  switch (action.type) {
-    case "submit": {
-      /*
-       * An idle send is not a queue of one. There is nothing to wait behind, so it goes straight
-       * out exactly as it did before any of this existed.
-       *
-       * WITH SOMETHING ALREADY WAITING IT TAKES THAT WITH IT rather than going first. The two
-       * disagreeing is not supposed to be reachable — the drain empties the queue on the same edge
-       * that frees the composer — but "not supposed to be reachable" is an argument about two
-       * components' timing, and this file is meant to hold the rule on its own. Jumping the line
-       * would run a correction after the sentence correcting it, which is the exact reordering the
-       * whole queue exists to prevent, so the safe reading of an impossible state is the one that
-       * keeps what the person typed in the order they typed it.
-       */
-      if (!action.busy) {
-        if (queue.length === 0) {
-          return { queue, run: action.draft };
-        }
-        return {
-          queue: [],
-          run: joinQueued([...queue, queuedOf(action.id, action.draft)]),
-        };
-      }
-      return {
-        queue: [...queue, queuedOf(action.id, action.draft)],
-        run: null,
-      };
-    }
-
-    case "settle": {
-      if (queue.length === 0) {
-        return { queue, run: null };
-      }
-      return { queue: [], run: joinQueued(queue) };
-    }
-
-    case "remove": {
-      const kept = queue.filter((message) => message.id !== action.id);
-      return {
-        queue: kept.length === queue.length ? queue : kept,
-        run: null,
-      };
-    }
-  }
-}
-
-/**
- * Everything waiting, as the one turn it is about to become.
- *
- * Newlines rather than spaces. What the person typed were separate messages, and running them
- * together into a paragraph invents a sentence nobody wrote; keeping the line breaks keeps them as
- * lines of a single instruction, which is how a burst of corrections reads out loud anyway.
- *
- * Never empty. The composer refuses an empty draft before it reaches the queue, so a drained turn
- * always has something in it to send.
- */
-function queuedOf(id: string, draft: ComposerDraft): QueuedMessage {
-  return {
-    id,
-    text: draft.text,
-    commandIds: [...draft.commandIds],
-    ...(draft.attachments?.length
-      ? { attachments: [...draft.attachments] }
-      : {}),
-  };
-}
-
-function joinQueued(queue: readonly QueuedMessage[]): ComposerDraft {
-  const attachments = queue.flatMap((message) => message.attachments ?? []);
-  return {
-    ...(attachments.length ? { attachments } : {}),
-    text: queue
-      .map((message) => message.text)
-      .filter((text) => text.length > 0)
-      .join("\n"),
-    // The same skill queued twice is still one instruction. Sending it twice would put the same
-    // paragraph in front of the Bot two times and say nothing new by doing it.
-    commandIds: [...new Set(queue.flatMap((message) => message.commandIds))],
-    isEmpty: false,
-  };
-}

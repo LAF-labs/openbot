@@ -1,15 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import {
-  resultContent,
-  taskStopOf,
-  unansweredCall,
-  withStepResult,
-} from "../src/lib/copilot/stranded-steps";
+import { taskStopOf } from "../src/lib/copilot/stranded-steps";
 
 /**
- * A BOT'S STEP THAT OUTLIVED ITS WINDOW (UX review 0.5.4, candidate 1): which calls a window may
- * carry on, where their results go, and when the last task is said to have stopped.
+ * A TASK THAT ENDED IN THE MIDDLE OF THE BOT'S WORK (UX review 0.5.4, candidate 1): when the last
+ * task is said to have stopped. Which calls a window may carry on, and where their results go, were
+ * here too until the window-driven path was removed (2026-10-05).
  */
 
 const user: Message = {
@@ -39,54 +35,6 @@ const result = (toolCallId: string, content: unknown, id = `r-${toolCallId}`) =>
     toolCallId,
     content: typeof content === "string" ? content : JSON.stringify(content),
   }) as Message;
-
-describe("a call a window may carry on", () => {
-  test("is in the thread and has no result", () => {
-    const thread = [user, asked("c1")];
-    expect(unansweredCall(thread, "c1")).toEqual({
-      messageId: "a1",
-      call: click("c1"),
-    });
-  });
-
-  test("is not one that already has a result, whichever window gave it", () => {
-    expect(
-      unansweredCall([user, asked("c1"), result("c1", { ok: true })], "c1"),
-    ).toBeUndefined();
-  });
-
-  test("is not one the thread does not hold", () => {
-    expect(unansweredCall([user, asked("c1")], "c2")).toBeUndefined();
-  });
-});
-
-describe("the result goes where the core would put it", () => {
-  test("right after the call's message, after results already there", () => {
-    const thread = [user, asked("c1", "c2"), result("c1", { ok: true })];
-    const next = withStepResult(thread, {
-      messageId: "a1",
-      toolCallId: "c2",
-      content: resultContent({ ok: true, url: "https://toss.im/app" }),
-      id: "r2",
-    });
-    expect(next.map((message) => message.id)).toEqual([
-      "u1",
-      "a1",
-      "r-c1",
-      "r2",
-    ]);
-    expect((next[3] as { content: string }).content).toBe(
-      '{"ok":true,"url":"https://toss.im/app"}',
-    );
-  });
-
-  test("a string result is kept as it is, as the core writes it", () => {
-    expect(resultContent("Error: laf:tool_unknown")).toBe(
-      "Error: laf:tool_unknown",
-    );
-    expect(resultContent(undefined)).toBe("");
-  });
-});
 
 describe("how the last task ended", () => {
   test("a step with no result: its window went away with it", () => {

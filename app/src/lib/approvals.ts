@@ -1192,11 +1192,6 @@ export async function waitForApproval(
  */
 const heldHere = new Map<string, string>();
 
-/** Whether this window is the one waiting on this question and will carry its step on. */
-export function isHeldHere(approvalId: string): boolean {
-  return heldHere.has(approvalId);
-}
-
 /**
  * This window's name for itself, as the server tells holders apart. Made up per page load: a
  * reloaded window is a new window, and it is the reload that let the old one go.
@@ -1273,24 +1268,6 @@ function listenForLeaving(): void {
       ).catch(() => {});
     }
   });
-}
-
-/**
- * The turn that raised this question was stopped: close it, so no window goes on offering buttons
- * for an answer nobody is waiting for. Not a No — nothing is refused and the next attempt asks.
- */
-export async function withdrawApproval(
-  botId: string,
-  approvalId: string,
-): Promise<void> {
-  try {
-    await fetch(
-      `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/withdraw`,
-      { method: "POST", credentials: "include" },
-    );
-  } catch {
-    // Unreachable: it runs out on its own in ten minutes, as every question did before this.
-  }
 }
 
 /**

@@ -15,7 +15,6 @@ import {
   keepUnsent,
   readSendable,
   readUnsent,
-  settleAnswers,
   type UnsentMessage,
 } from "@/components/channels/composer/outbox";
 import {
@@ -331,74 +330,5 @@ describe("words kept for a card, among what the device kept", () => {
     const before = readUnsent(CHANNEL);
     handToPerson(CHANNEL, held("a") as UnsentMessage);
     expect(readUnsent(CHANNEL)).toBe(before);
-  });
-
-  describe("settled where no card can take them any more", () => {
-    const conversation = (results: Record<string, string | null>) => ({
-      answeredWith: (toolCallId: string) => results[toolCallId] ?? undefined,
-      isOver: (toolCallId: string) => toolCallId in results,
-    });
-
-    test("are forgotten where the conversation shows their card answered with them", () => {
-      keepUnsent(CHANNEL, forCard("a"));
-      settleAnswers(CHANNEL, conversation({ "c-1": "a" }));
-      expect(readUnsent(CHANNEL)).toEqual([]);
-    });
-
-    test("are words like any other where it shows the question over some other way", () => {
-      keepUnsent(CHANNEL, forCard("a"));
-      settleAnswers(CHANNEL, conversation({ "c-1": null }));
-      expect(held("a")?.answerTo).toBeUndefined();
-      expect(claimAutoSend(CHANNEL).map((message) => message.id)).toEqual([
-        "a",
-      ]);
-    });
-
-    test("are the person's to send where it shows nothing of what became of it", () => {
-      keepUnsent(CHANNEL, forCard("a"));
-      settleAnswers(CHANNEL, conversation({}));
-      expect(held("a")).toMatchObject({ answerTo: "c-1", autoTried: true });
-      expect(claimAutoSend(CHANNEL)).toEqual([]);
-      expect(readSendable(CHANNEL).map((message) => message.id)).toEqual(["a"]);
-    });
-
-    /*
-     * The record holds two questions under one id: the earlier never answered, the later answered
-     * with the very words kept for the earlier one. By the id alone they were forgotten as sent.
-     */
-    test("by the question their own message asked, not a later one that carried its id", () => {
-      const earlier = asking("m-1", call("c-1", "askChoice", CHOICE));
-      const later = asking("m-2", call("c-1", "askChoice", CHOICE));
-      const record = [
-        earlier,
-        later,
-        {
-          id: "r-1",
-          role: "tool",
-          toolCallId: "c-1",
-          content: '{"answer":"a"}',
-        } as Message,
-      ];
-      const read = {
-        answeredWith: (toolCallId: string, askedBy?: string) =>
-          answeredInWords(record, toolCallId, askedBy),
-        isOver: (toolCallId: string, askedBy?: string) =>
-          hasResult(record, toolCallId, askedBy),
-      };
-      keepUnsent(CHANNEL, { ...forCard("a"), askedBy: "m-1" });
-      settleAnswers(CHANNEL, read);
-      // Not forgotten, and not taken for words whose question ended: the person's.
-      expect(held("a")).toMatchObject({
-        answerTo: "c-1",
-        askedBy: "m-1",
-        autoTried: true,
-      });
-      expect(held("a")?.waiting).toBeUndefined();
-
-      // Kept for the later one, the same words are its answer.
-      keepUnsent(CHANNEL, { ...forCard("bb"), text: "a", askedBy: "m-2" });
-      settleAnswers(CHANNEL, read);
-      expect(held("bb")).toBeUndefined();
-    });
   });
 });
