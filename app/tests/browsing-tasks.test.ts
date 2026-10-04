@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/core";
-import { SITE_REFUSED, UNANSWERED_RESULT } from "@shared/task-ending";
+import {
+  SITE_REFUSED,
+  STEP_NOT_REACHED,
+  UNANSWERED_RESULT,
+} from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import {
@@ -550,6 +554,41 @@ describe("what the card and the banner say", () => {
     expect(endingOf([step("computer_click")], false)).toEqual({
       kind: "stopped",
     });
+  });
+
+  test("steps a stopped round never tried are not where the task ended", () => {
+    // Asked for in the same reply as the field the person said no to (`round-stop.ts`). Read as the
+    // ending, the card said "skipped" for the person's own no, and offered to try it again.
+    const skipped = {
+      ok: false,
+      code: STEP_NOT_REACHED,
+      reason: "not reached",
+    };
+    expect(
+      endingOf(
+        [
+          step("computer_type", {}, { ok: true }),
+          step(
+            "computer_type",
+            {},
+            { ok: false, refused: true, code: "laf:person_declined" },
+          ),
+          step("computer_type", {}, skipped),
+          step("computer_click", {}, skipped),
+        ],
+        false,
+      ),
+    ).toEqual({ kind: "failed", code: "laf:person_declined" });
+    // A press that moved the page and the field the round then skipped: the task got where it went.
+    expect(
+      endingOf(
+        [
+          step("computer_click", {}, { ok: true, page: { url: "https://a" } }),
+          step("computer_type", {}, skipped),
+        ],
+        false,
+      ),
+    ).toEqual({ kind: "done" });
   });
 
   test("a reload cannot turn 멈춤 into 끝남: the placeholder answer is the same stop", () => {

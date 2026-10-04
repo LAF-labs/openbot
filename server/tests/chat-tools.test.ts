@@ -7,7 +7,7 @@
  * close.
  */
 import { describe, expect, test } from "bun:test";
-import type { Tool } from "@ag-ui/client";
+import type { Message, Tool } from "@ag-ui/client";
 import { createControl } from "../../agent-computer/src/control";
 import { PERSON_WAIT_MS } from "../../shared/person-wait";
 import {
@@ -16,7 +16,9 @@ import {
 } from "../../shared/prompt/tool-results.ko";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createApprovalRegistry } from "../src/computer/approvals";
+import type { AuditEventInput } from "../src/audit";
 import {
+  type ComputerClient,
   ComputerUnavailableError,
   WorkspaceRefusedError,
   WorkspaceRequestError,
@@ -25,7 +27,10 @@ import {
   ActionNeedsApprovalError,
   ActionRefusedError,
   type ComputerGateway,
+  createComputerGateway,
 } from "../src/computer/gateway";
+import type { ActionPolicy } from "../src/computer/policy";
+import { type LoopAgent, runTurnLoop } from "../src/runner/turn-loop";
 import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
@@ -1623,5 +1628,202 @@ describe("a tool whose own handler throws", () => {
     expect(JSON.stringify(outcome)).not.toContain("owner-1");
     // And the sentence is one the table has, in the words a Bot reads.
     expect(toolResultText("laf:tool_failed")).toContain("실패");
+  });
+});
+
+/*
+ * SEVERAL BROWSER STEPS IN ONE REPLY, THROUGH THE REAL GATEWAY (`runner/round-stop.ts`). Three
+ * fields and the press under them, asked for at once: when the boundary stops one, the steps after
+ * it reach neither the computer nor the boundary — no verdict was rendered on them, so no
+ * `computer.action_*` row may claim one. A question the person says yes to lets the round go on.
+ */
+describe("a reply's later browser steps, after one the boundary stopped", () => {
+  const form = {
+    snapshotId: 1,
+    url: "https://shop.example/apply",
+    title: "신청",
+    truncated: false,
+    elements: [
+      { ref: "e1", role: "textbox", name: "이름" },
+      { ref: "e2", role: "textbox", name: "전화번호" },
+      { ref: "e3", role: "textbox", name: "주소" },
+      { ref: "e9", role: "button", name: "신청" },
+    ],
+  };
+
+  /** The gateway exactly as a deployment builds it, over a computer that records what reached it. */
+  async function boundary(policy: ActionPolicy) {
+    const reached: string[] = [];
+    const client = {
+      snapshot: async () => form,
+      type: async (input: { ref: string }) => {
+        reached.push(`type:${input.ref}`);
+        return { action: "type", url: form.url, characters: 2 };
+      },
+      click: async (input: { ref: string }) => {
+        reached.push(`click:${input.ref}`);
+        return { action: "click", url: form.url };
+      },
+      forBot: () => client,
+    } as unknown as ComputerClient;
+    const rows: AuditEventInput[] = [];
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: { insert: async (event) => void rows.push(event) },
+      policy: () => policy,
+      approvals,
+    });
+    await gateway.snapshot("bot-1");
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+    })(context, [tool("computer_type"), tool("computer_click")]);
+    /** The action rows the trail holds for a ref: a verdict, carried out or not. */
+    const rowsFor = (ref: string) =>
+      rows.filter(
+        (row) =>
+          row.eventType.startsWith("computer.action_") &&
+          (row.payload as { ref?: unknown }).ref === ref,
+      );
+    return { toolkit, approvals, reached, rowsFor };
+  }
+
+  /** One reply asking for all four, then a last word. */
+  function asking(): LoopAgent {
+    const turns: Message[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          ["t1", "computer_type", { ref: "e1", snapshotId: 1, text: "김" }],
+          ["t2", "computer_type", { ref: "e2", snapshotId: 1, text: "010" }],
+          ["t3", "computer_type", { ref: "e3", snapshotId: 1, text: "서울" }],
+          ["c4", "computer_click", { ref: "e9", snapshotId: 1 }],
+        ].map(([id, name, args]) => ({
+          id: id as string,
+          type: "function" as const,
+          function: { name: name as string, arguments: JSON.stringify(args) },
+        })),
+      },
+      { id: "a2", role: "assistant", content: "여기까지 했어요." },
+    ];
+    let runs = 0;
+    const agent = {
+      messages: [] as Message[],
+      setMessages(messages: Message[]) {
+        agent.messages = [...messages];
+      },
+      addMessage(message: Message) {
+        agent.messages.push(message);
+      },
+      async runAgent(
+        _parameters?: unknown,
+        subscriber?: { onRunFinishedEvent?: () => unknown },
+      ) {
+        const turn = turns[runs];
+        runs += 1;
+        if (turn) agent.messages.push(turn);
+        subscriber?.onRunFinishedEvent?.();
+        return { result: undefined, newMessages: turn ? [turn] : [] };
+      },
+    };
+    return agent as unknown as LoopAgent;
+  }
+
+  async function turnOf(
+    toolkit: Awaited<ReturnType<typeof boundary>>["toolkit"],
+  ) {
+    const agent = asking();
+    await runTurnLoop(agent, {
+      tools: toolkit.tools,
+      execute: toolkit.execute,
+      timeoutMs: 10_000,
+      maxSteps: 4,
+      forwardedProps: {},
+    });
+    return new Map(
+      agent.messages
+        .filter((message) => message.role === "tool")
+        .map((message) => [
+          (message as { toolCallId: string }).toolCallId,
+          JSON.parse(String(message.content)) as { ok: boolean; code?: string },
+        ]),
+    );
+  }
+
+  /** Answer the one question the turn is waiting on, once it is open. */
+  async function answer(
+    approvals: ReturnType<typeof createApprovalRegistry>,
+    granted: boolean,
+  ) {
+    for (let tries = 0; tries < 100; tries += 1) {
+      const [open] = await approvals.pending("bot-1");
+      if (open) {
+        await approvals.answer(open.id, "bot-1", owner.id, granted);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("no question was asked");
+  }
+
+  const PERMISSIVE = { deny: [], ask: [], allow: ["true"] };
+
+  test("a rule refuses the second field: the third and the press leave no row and reach nothing", async () => {
+    const { toolkit, reached, rowsFor } = await boundary({
+      ...PERMISSIVE,
+      deny: ['contains(element.name, "전화")'],
+    });
+    const filed = await turnOf(toolkit);
+    expect([...filed.values()].map((said) => said.code ?? "ok")).toEqual([
+      "ok",
+      "laf:policy_denied",
+      "laf:step_not_reached",
+      "laf:step_not_reached",
+    ]);
+    expect(reached).toEqual(["type:e1"]);
+    expect(rowsFor("e1").map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+    ]);
+    expect(rowsFor("e2").map((row) => row.eventType)).toEqual([
+      "computer.action_refused",
+    ]);
+    // Nothing was decided about them, so the trail says nothing about them.
+    expect(rowsFor("e3")).toEqual([]);
+    expect(rowsFor("e9")).toEqual([]);
+  });
+
+  test("the person says no to the second field: the rest is not reached", async () => {
+    const { toolkit, approvals, reached, rowsFor } = await boundary({
+      ...PERMISSIVE,
+      ask: ['contains(element.name, "전화")'],
+    });
+    const turn = turnOf(toolkit);
+    await answer(approvals, false);
+    const filed = await turn;
+    expect([...filed.values()].map((said) => said.code ?? "ok")).toEqual([
+      "ok",
+      "laf:person_declined",
+      "laf:step_not_reached",
+      "laf:step_not_reached",
+    ]);
+    expect(reached).toEqual(["type:e1"]);
+    expect(rowsFor("e3")).toEqual([]);
+    expect(rowsFor("e9")).toEqual([]);
+  });
+
+  test("the person says yes: the field is sent again with the answer, and the round goes on", async () => {
+    const { toolkit, approvals, reached } = await boundary({
+      ...PERMISSIVE,
+      ask: ['contains(element.name, "전화")'],
+    });
+    const turn = turnOf(toolkit);
+    await answer(approvals, true);
+    const filed = await turn;
+    expect([...filed.values()].every((said) => said.ok)).toBe(true);
+    expect(reached).toEqual(["type:e1", "type:e2", "type:e3", "click:e9"]);
   });
 });
