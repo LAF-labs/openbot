@@ -1,5 +1,5 @@
 /**
- * The pure half of `eval:browse`: the prompt of its second arm, what a run's thread says about how
+ * The pure half of `eval:browse`: the prompt of its other arm, what a run's thread says about how
  * the model asked for its steps, and what a site's echo says about a form it was sent.
  *
  * Kept free of the model, the browser and the clock so the judges are judged in the ordinary suite
@@ -7,59 +7,88 @@
  * and a judge that could not fail would pass every arm for ever.
  */
 import { ACTING_COMPUTER_TOOLS } from "../server/src/runner/round-stop";
-import { BASE_KO } from "../shared/prompt";
+import { BASE_KO, SEVERAL_STEPS_KO } from "../shared/prompt";
 import { STEP_NOT_REACHED } from "../shared/task-ending";
 
 /* ------------------------------------------------------------------------------------------ */
-/* Arm B: the prompt as it would ship.                                                          */
+/* Arm A: the prompt without the paragraph about several steps in one reply.                    */
 /* ------------------------------------------------------------------------------------------ */
 
 /**
- * The sentence of arm B, word for word as the plan wrote it
- * (`~/laf/docs/plan-steps-per-round-2026-10-04.md` §6). Held here and not in
- * `shared/prompt/base.ko.ts`: whether it ships is decided on what the two arms measure.
+ * A composed system message as it read before `BASE_KO` carried the paragraph inviting several
+ * steps in one reply (`SEVERAL_STEPS_KO`, `shared/prompt/base.ko.ts`) — every other byte where it is.
+ *
+ * THE ARMS, AND WHICH ONE IS THE PRODUCT. The paragraph shipped on 2026-10-05 on what two arms
+ * measured: the prompt without it, and the prompt with it spliced into the base at the very place
+ * it now stands. So the product's prompt is the arm that was "B", and this function makes the
+ * other one, for the day somebody asks whether the paragraph still pays — on a new model, or a
+ * new wording. It was a splice in the other direction until then (`withInvitation`), and before
+ * that an append at the END of the whole message, past the context layer: the most salient place a
+ * prompt has, and one that left the cached static prefix as it was. That first arm measured an
+ * upper bound and not the product, and its numbers were set aside.
+ *
+ * Throws when the message does not begin with today's base or the base does not hold the
+ * paragraph exactly once: an arm A that silently ran the product's prompt would be a measurement
+ * of nothing.
  */
-export const INVITATION =
-  "다음 행동이 앞 결과를 볼 필요가 없을 때는 여러 행동을 한 번에, 순서대로 불러라. 페이지를 바꾸는 행동(검색·확인 누르기, Enter)은 마지막에만 둔다.";
-
-/** How the paragraph of `BASE_KO` begins that the sentence is put in front of. */
-const INVITATION_GOES_BEFORE = "사람이 컴퓨터를 잡고 있다는 결과가 오면";
-
-/**
- * A composed system message with the sentence where a product edit would put it — the same bytes
- * `systemPromptText` would return the day `BASE_KO` carried it.
- *
- * WHERE, AND WHY THERE. The static layer is `BASE_KO`, the context rules, then the mode's
- * paragraphs (`staticPrompt`), and the context layer follows. The sentence is about how to act on
- * a page, true in a chat and in a routine alike, so it is the base's and not a mode's; and the
- * base has no browsing section — how to use a tool lives in that tool's description, which this
- * change is not allowed to touch (the tools are the head of every request). What the base does
- * have is two paragraphs about the computer, near its end: what a held computer means, and what a
- * refusal by the policy means. The sentence stands as a paragraph of its own directly before those
- * two — how to act, then what coming back held or refused means — and the base still ends on
- * "짧게 답한다".
- *
- * It was appended to the END of the whole message once, past the context layer: the last
- * paragraph before the person's ask, the most salient place a prompt has, and one that left the
- * cached static prefix as it was. A shipped sentence gets neither, so that arm measured an upper
- * bound and not the product.
- *
- * Throws when the message does not begin with today's base or the base has lost the paragraph:
- * an arm B that silently ran arm A's prompt would be a measurement of nothing.
- */
-export function withInvitation(system: string): string {
-  const marker = `\n\n${INVITATION_GOES_BEFORE}`;
-  const at = BASE_KO.indexOf(marker);
+export function withoutInvitation(system: string): string {
+  const paragraph = `\n\n${SEVERAL_STEPS_KO}`;
+  const at = BASE_KO.indexOf(paragraph);
   if (
     !system.startsWith(BASE_KO) ||
     at < 0 ||
-    BASE_KO.indexOf(marker, at + 1) >= 0
+    BASE_KO.indexOf(paragraph, at + 1) >= 0
   ) {
     throw new Error(
-      "The invitation has no place: the prompt does not begin with BASE_KO, or BASE_KO no longer holds the paragraph it goes in front of exactly once.",
+      "The paragraph cannot be taken out: the prompt does not begin with BASE_KO, or BASE_KO does not hold it exactly once.",
     );
   }
-  return `${BASE_KO.slice(0, at)}\n\n${INVITATION}${BASE_KO.slice(at)}${system.slice(BASE_KO.length)}`;
+  return `${BASE_KO.slice(0, at)}${BASE_KO.slice(at + paragraph.length)}${system.slice(BASE_KO.length)}`;
+}
+
+/* ------------------------------------------------------------------------------------------ */
+/* The answer: did the Bot get the thing.                                                       */
+/* ------------------------------------------------------------------------------------------ */
+
+/**
+ * Phrases a Bot uses when it did not get the thing. A pass on a `strict` task needs none of them.
+ *
+ * "열지 못하" and "응답하지 않아" were added on 2026-10-05: an answer that said the article "could
+ * not be opened … did not respond" passed the news task as a summary (measured in the stored
+ * answers of that day's runs).
+ */
+export const GAVE_UP =
+  /(확인하지 못|찾지 못|열리지 않|열 수 없|열지 못하|응답하지 않아|막혀|접근이 제한|차단|보이지 않았|가져오지 못|읽지 못|실패했)/;
+
+/**
+ * Korean prose of at least `words` words of two syllables or more, wherever they stand.
+ *
+ * THE WORDS ARE COUNTED, NOT REQUIRED IN A ROW. The floor used to be `([가-힣]{2,}[^가-힣]+){12,}` —
+ * twelve such words one after another — and Korean is full of words of one syllable (수, 등, 및,
+ * 이, 그): "늘릴 수 있다" ends a run. Measured 2026-10-05 on 16 stored answers to the news task: five
+ * complete three-line summaries failed at ten or eleven in a row, in both arms alike, and the
+ * comparison of the arms turned on which arm had drawn more of them. A floor is there to tell
+ * prose from an apology or an empty answer, and a count does that.
+ */
+export const koreanProse = (words: number): RegExp =>
+  new RegExp(`(?:[가-힣]{2,}[\\s\\S]*?){${words},}`);
+
+/** What a right answer to each ordinary task has to contain, and whether an apology fails it. */
+export const ANSWER_JUDGES = {
+  "naver-weather": { expects: /-?\d+(\.\d+)?\s*°|\d+\s*도/ },
+  "naver-search": { expects: /[가-힣A-Za-z]{2,}/, strict: true },
+  "naver-shopping": { expects: /\d{1,3}(,\d{3})+\s*원|\d{4,}\s*원/ },
+  coupang: { expects: /\d{1,3}(,\d{3})+\s*원|\d{4,}\s*원/ },
+  news: { expects: koreanProse(20), strict: true },
+  blog: { expects: koreanProse(8), strict: true },
+} as const satisfies Record<string, { expects: RegExp; strict?: true }>;
+
+/** Whether an answer passes a task's judge: the pattern is there, and on a strict task no apology is. */
+export function answerPasses(
+  judge: { expects: RegExp; strict?: true },
+  answer: string,
+): boolean {
+  return judge.expects.test(answer) && !(judge.strict && GAVE_UP.test(answer));
 }
 
 /* ------------------------------------------------------------------------------------------ */

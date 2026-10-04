@@ -873,6 +873,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * that went through before the rest, five; and a form judged by what the site says it received —
  * its sends counted, and passed only when sent once from a clean tab exactly as asked, six).
  *
+ * RAISED 2026-10-05 with the paragraph about several steps in one reply, by exactly what was added:
+ * four to `root` (the paragraph held to the bytes that were measured, the other arm made by taking
+ * it out — three where two were; and the answer judges on two stored answers and a short one,
+ * three).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -881,7 +886,7 @@ const GROUPS = [
   { name: "server", floor: 3492, roots: ["server"] },
   { name: "app", floor: 2085, roots: ["app"] },
   { name: "agent-computer", floor: 444, roots: ["agent-computer"] },
-  { name: "root", floor: 626, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 630, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
