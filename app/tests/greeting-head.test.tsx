@@ -7,6 +7,7 @@ import {
   setDefaultTimeout,
   test,
 } from "bun:test";
+import type { Message } from "@ag-ui/core";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -20,7 +21,13 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { BOT_ID, channelServer, THREAD_ID } from "./support/channel-server";
+import {
+  BOT_ID,
+  installTurnStreams,
+  removeTurnStreams,
+  THREAD_ID,
+  turnServer,
+} from "./support/turn-server";
 
 /**
  * THE BOT SPEAKS FIRST, AND IT COSTS NOTHING (2026-09-27, `components/agents/greeting.tsx`).
@@ -38,10 +45,14 @@ import { BOT_ID, channelServer, THREAD_ID } from "./support/channel-server";
  * are on the page with no plate, and what a person presses or types is an object under them.
  */
 
-beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
+beforeAll(async () => {
+  await installAppDom();
+  installTurnStreams();
+}, APP_DOM_TIMEOUT_MS);
 afterEach(unmountApps);
 setDefaultTimeout(20_000);
 afterAll(async () => {
+  removeTurnStreams();
   await removeAppDom();
 });
 
@@ -315,14 +326,14 @@ describe("the empty conversation", () => {
 });
 
 describe("the head of a conversation", () => {
-  const history = [
+  const history: Message[] = [
     { id: "m-1", role: "user", content: "안녕" },
     { id: "m-2", role: "assistant", content: "안녕하세요!" },
   ];
 
   async function conversation(persona: string | null) {
     const channelId = "channel_greeting";
-    const server = channelServer({ channelId, history });
+    const server = turnServer({ channelId, history });
     const view = await mountApp({
       path: `/channel/${channelId}`,
       api: (request) => {

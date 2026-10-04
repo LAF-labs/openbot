@@ -31,8 +31,9 @@ import {
  * Nor does a count see a component that compiled and is now wrong. The compiler keeps work whose
  * inputs are the same objects as last time, and assumes rendering is pure; an input mutated in place
  * or a clock read while rendering breaks both. The two found when it was turned on were found by
- * reading the compiled output, not by this number: CopilotKit's message array, grown in place (see
- * `ChannelChat`), and labels computed from `new Date()` (see `lib/use-now.ts`).
+ * reading the compiled output, not by this number: CopilotKit's message array, grown in place (the
+ * window-driven chat screen, `ChannelChat`, which opted out for it until it was removed), and
+ * labels computed from `new Date()` (see `lib/use-now.ts`).
  */
 
 /**
@@ -64,8 +65,13 @@ import {
  * with five "existing memoization could not be preserved": a reading made by a plain function and
  * then handed on counts as still changing under a `useMemo`. `useReading` (`lib/reading.ts`), the
  * same function as a hook, is what the compiler takes as settled.
+ *
+ * LOWERED TO 0 on 2026-10-05: `ChannelChat` was deleted with the window-driven chat path, and its
+ * opt-out with it. 482 of 482 compile. The screen that replaced it (`ServerChannelChat`) reads its
+ * conversation from a store that hands out a new snapshot when something changed, not from an array
+ * CopilotKit grows in place — so the reason for the opt-out went with the component.
  */
-const SKIPPED_CEILING = 1;
+const SKIPPED_CEILING = 0;
 
 const APP = join(import.meta.dir, "..");
 

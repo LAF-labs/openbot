@@ -20,8 +20,8 @@ export function useSkillCommands(agentId: string): CommandOption[] {
          * box, which meant a person watched a paragraph they did not write appear over the message
          * they were typing, and had to scroll past it to reach their own words.
          *
-         * The chip stays, one token wide, and `channel-chat` reads `draft.commandIds` on send and
-         * puts the instruction in front of the run. Nothing is hidden by this that was not already:
+         * The chip stays, one token wide, and `server-channel-chat` reads `draft.commandIds` on send
+         * and puts the instruction in front of the run. Nothing is hidden by this that was not already:
          * the instruction is the skill's own text, visible on the skills page, and a skill is an
          * instruction rather than a capability — it can only ask for tools the Bot already holds.
          */

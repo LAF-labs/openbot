@@ -16,7 +16,12 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { BOT_ID, channelServer } from "./support/channel-server";
+import {
+  BOT_ID,
+  installTurnStreams,
+  removeTurnStreams,
+  turnServer,
+} from "./support/turn-server";
 
 /**
  * AN OPEN CONVERSATION IS NOT A LOAD TEST, A HIDDEN WINDOW ASKS FOR NOTHING, AND AN OUTAGE IS WAITED
@@ -36,7 +41,10 @@ import { BOT_ID, channelServer } from "./support/channel-server";
 
 const SPEED = 100;
 
-beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
+beforeAll(async () => {
+  await installAppDom();
+  installTurnStreams();
+}, APP_DOM_TIMEOUT_MS);
 // A test that timed out never reached its own unmount; nothing it mounted outlives it.
 afterEach(unmountApps);
 /** What TanStack believed before this file told it otherwise, so the files after it are not changed. */
@@ -65,6 +73,7 @@ beforeAll(() => {
 });
 afterAll(async () => {
   environmentManager.setIsServer(() => wasServer);
+  removeTurnStreams();
   await removeAppDom();
 });
 
@@ -147,7 +156,7 @@ function setVisible(visible: boolean) {
 describe("one idle conversation left open", () => {
   test("asks at most ten times a minute, nothing while hidden, and backs off to a minute in an outage", async () => {
     const channelId = "channel_polling";
-    const server = channelServer({ channelId, computer: true });
+    const server = turnServer({ channelId, computer: true });
     let down = false;
     const asked: { path: string; at: number }[] = [];
     const clock = fastClock();

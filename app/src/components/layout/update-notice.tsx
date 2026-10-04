@@ -16,10 +16,12 @@ import {
  * and this card appears, once per version, in the corner — no sound, no dialog, nothing that
  * takes the screen. The corner is `ShellSync`'s: it stacks this card with the shell's other one.
  *
- * NEVER A RESTART IN THE MIDDLE OF SOMETHING. The window drives the Bot's turn, so restarting it
- * ends whatever the Bot was doing. 지금 다시 시작 is withheld while the Bot is working or waiting
- * on the person, and the card says why; 나중에 puts the card away until the next launch. The
- * shell itself refuses a restart it has no update for.
+ * NEVER A RESTART IN THE MIDDLE OF SOMETHING. 지금 다시 시작 is withheld while the Bot is working or
+ * waiting on the person, and the card says why; 나중에 puts the card away until the next launch.
+ * The shell itself refuses a restart it has no update for. Decided while the window drove the
+ * Bot's turn, when restarting it ended whatever the Bot was doing; the server runs the turn now
+ * and it goes on through a restart, and the rule was left as it was — a restart still takes the
+ * answer off the screen somebody is watching it arrive on.
  *
  * The version is a fact the shell reports; every word around it is the page's.
  */

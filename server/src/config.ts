@@ -106,7 +106,7 @@ export const ENVIRONMENT = {
   COMPACTION: "compose",
   COMPACTION_THRESHOLD_TOKENS: "compose",
   DAY_EPOCHS: "compose",
-  // Whether a chat turn runs on the server, with windows only watching (`turns/engine.ts`).
+  // Once the switch back to turns the window drove. Read only to refuse `off` (`harnessConfig`).
   SERVER_TURNS: "compose",
   // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). Off unless set.
   FIRST_MOVE: "compose",
@@ -253,13 +253,6 @@ export type DeploymentConfig = {
      * message starts a new epoch on a summary of the days before (`context/day-close.ts`).
      */
     dayEpochs: boolean;
-    /**
-     * `SERVER_TURNS` (on unless it says `off`): a chat turn runs on the server and every window of
-     * the conversation only watches it (`turns/engine.ts`), so a task goes on with the laptop shut.
-     * `off` is the path before it — the window drives the turn through CopilotKit — kept until the
-     * new one has been proven on real deployments.
-     */
-    serverTurns: boolean;
     /**
      * `FIRST_MOVE` (OFF unless it names a move; `weather` is the only one): the server makes a
      * turn's first read-only call itself when a decisions model is sure what it is, so the Bot's
@@ -1157,9 +1150,29 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
   if (days !== undefined && days !== "on" && days !== "off") {
     throw new Error("DAY_EPOCHS must be on or off (unset is on)");
   }
+  /*
+   * `SERVER_TURNS` NAMES NOTHING ANY MORE, AND `off` IS REFUSED RATHER THAN IGNORED.
+   *
+   * A chat turn runs on the server and every window of the conversation only watches it
+   * (`turns/engine.ts`), so a task goes on with the laptop shut. From v0.5.7 (2026-09-27) this
+   * switch chose that, and `off` was the path before it — the window drove the turn through
+   * CopilotKit, carrying out every tool call in the page — "kept until the new one has been proven
+   * on real deployments". It has been: the provisioner never wrote the line, and both trial VMs ran
+   * server turns through two releases. A rollback nobody exercised against the current server was a
+   * second implementation of every tool result and a place where fixes were forgotten, so the
+   * window-driven path was deleted (2026-10-05) and there is nothing for `off` to choose.
+   *
+   * So a deployment that still says `off` does not start: carrying on would be answering "off" with
+   * turns the server owns, and a setting this repository cannot honour is refused, not ignored.
+   * `on` and unset are accepted — they say what is true.
+   */
   const turns = optional(environment, "SERVER_TURNS")?.toLowerCase();
-  if (turns !== undefined && turns !== "on" && turns !== "off") {
-    throw new Error("SERVER_TURNS must be on or off (unset is on)");
+  if (turns !== undefined && turns !== "on") {
+    throw new Error(
+      turns === "off"
+        ? "SERVER_TURNS=off is refused: the window-driven chat path was removed and every turn runs on the server — delete the SERVER_TURNS line."
+        : "SERVER_TURNS must be on or unset (the server runs every chat turn) — delete the SERVER_TURNS line.",
+    );
   }
   const moves = (optional(environment, "FIRST_MOVE") ?? "off").toLowerCase();
   if (moves !== "off" && moves !== "weather") {
@@ -1183,7 +1196,6 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
     compaction: mode,
     compactionThresholdTokens: threshold,
     dayEpochs: days !== "off",
-    serverTurns: turns !== "off",
     firstMoves: moves === "weather" ? ["weather"] : [],
     clockOffsetMs,
   };

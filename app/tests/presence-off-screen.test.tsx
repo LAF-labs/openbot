@@ -17,11 +17,12 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { BOT_ID, THREAD_ID } from "./support/channel-server";
 import {
   acted,
+  BOT_ID,
   installTurnStreams,
   removeTurnStreams,
+  THREAD_ID,
   turnServer,
 } from "./support/turn-server";
 

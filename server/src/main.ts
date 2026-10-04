@@ -853,8 +853,8 @@ void reportInterruptedRuns({
 /*
  * THE SERVER OWNS THE TURN (`turns/engine.ts`). A chat turn runs here, on the loop and the Bot lane
  * a routine runs on, with the Bot's tools carried out here; a window hands over what the person
- * said and then only watches. `SERVER_TURNS=off` leaves all of it unbuilt and the doors unmounted,
- * and the app drives turns from the window as it did before (`deployment.serverTurns`).
+ * said and then only watches. Always: the window-driven path this was once a switch away from was
+ * removed 2026-10-05 (`config.ts`, `SERVER_TURNS`).
  */
 const turnHub = createTurnHub();
 /*
@@ -896,43 +896,41 @@ const chatTools = createChatTools({
     readConnectionSwitches(connectionSwitchSources, userId),
 });
 sayFirstMove({
-  moves: config.harness.serverTurns ? config.harness.firstMoves : [],
+  moves: config.harness.firstMoves,
   canDecide: modelCalls.firstMoveAsk !== null,
   weather: deploymentKeyRuntime.has(KMA_WEATHER_KEY),
 });
-const turnEngine = config.harness.serverTurns
-  ? createTurnEngine({
-      database,
-      ledger: runLedger,
-      hub: turnHub,
-      lane: botLane,
-      work: workInFlight,
-      resolveAgents: resolveAgentsFor,
-      tools: (context, declared) =>
-        chatTools(context, declared, {
-          effort: tenantPackage.model.supportsEffort,
-        }),
-      // An account the list no longer admits acts on nothing, a turn nobody watches included.
-      admits: (userId) => admission.admitsPerson(userId),
-      // Off unless `FIRST_MOVE` names a move and Jev may be asked; then it is the weather's alone.
-      firstMove: firstMoveForTurns({
-        decide: createFirstMove({
-          moves: config.harness.firstMoves,
-          ask: modelCalls.firstMoveAsk,
-          budgetSpent: modelCalls.budgetSpent,
-        }),
-        whereaboutsOf: whereaboutsStore.read,
-        auditStore: bootAuditStore,
-      }),
-      // The Bot's answer on the roster, every open tab, and a notice for a person with no tab.
-      announce: ({ owner, channelId, agentId, text }) =>
-        recordActivity(database, announceFinished, owner, channelId, {
-          agentId,
-          text,
-          at: new Date(),
-        }),
-    })
-  : undefined;
+const turnEngine = createTurnEngine({
+  database,
+  ledger: runLedger,
+  hub: turnHub,
+  lane: botLane,
+  work: workInFlight,
+  resolveAgents: resolveAgentsFor,
+  tools: (context, declared) =>
+    chatTools(context, declared, {
+      effort: tenantPackage.model.supportsEffort,
+    }),
+  // An account the list no longer admits acts on nothing, a turn nobody watches included.
+  admits: (userId) => admission.admitsPerson(userId),
+  // Off unless `FIRST_MOVE` names a move and Jev may be asked; then it is the weather's alone.
+  firstMove: firstMoveForTurns({
+    decide: createFirstMove({
+      moves: config.harness.firstMoves,
+      ask: modelCalls.firstMoveAsk,
+      budgetSpent: modelCalls.budgetSpent,
+    }),
+    whereaboutsOf: whereaboutsStore.read,
+    auditStore: bootAuditStore,
+  }),
+  // The Bot's answer on the roster, every open tab, and a notice for a person with no tab.
+  announce: ({ owner, channelId, agentId, text }) =>
+    recordActivity(database, announceFinished, owner, channelId, {
+      agentId,
+      text,
+      at: new Date(),
+    }),
+});
 
 /** The runtime's thread routes, each reading the thread it answers for first. See thread-priming.ts. */
 const copilotEndpoint = primeThreadRoutes({
@@ -1001,7 +999,7 @@ const app = createApp(
   createMessageTimeReader(database),
   // What is running for a person right now, from the same ledger chat and routines both write.
   // With the turns this process is running, which the ledger's ten minutes cannot see past.
-  createWorkingReader(database, (userId) => turnEngine?.working(userId) ?? []),
+  createWorkingReader(database, (userId) => turnEngine.working(userId)),
   standingApprovals,
   tenantPackage.model.supportsEffort,
   demonstrations,
@@ -1052,7 +1050,7 @@ const app = createApp(
           .of(userId)
           .filter((work) => work.kind === "routine");
         await Promise.all([
-          turnEngine?.stopFor(userId),
+          turnEngine.stopFor(userId),
           ...routines.map((work) => work.stop().catch(() => false)),
         ]);
       },
@@ -1124,17 +1122,15 @@ const app = createApp(
   builtInSkills,
   // Files the owner hands their Bot: the composer's two doors, and whether photos are offered.
   attachmentService,
-  // A turn the server owns: its doors, and `deployment.serverTurns` for the app to choose by.
-  turnEngine
-    ? (requireUser) =>
-        createTurnRoutes({
-          database,
-          engine: turnEngine,
-          hub: turnHub,
-          people: personAnswers,
-          requireUser,
-        })
-    : undefined,
+  // A turn the server owns: its doors.
+  (requireUser) =>
+    createTurnRoutes({
+      database,
+      engine: turnEngine,
+      hub: turnHub,
+      people: personAnswers,
+      requireUser,
+    }),
   // 만든 것: the cards and tables a Bot made, read out of its conversation.
   createMadeReader({ database }),
   // 소식: the posts a feed routine wrote, and the person's presses on them.

@@ -18,7 +18,13 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
-import { BOT_ID, channelServer, THREAD_ID } from "./support/channel-server";
+import {
+  BOT_ID,
+  installTurnStreams,
+  removeTurnStreams,
+  THREAD_ID,
+  turnServer,
+} from "./support/turn-server";
 
 /**
  * THE FIRST SCREENS OF ONE BOT (2026-09-24).
@@ -37,12 +43,16 @@ import { BOT_ID, channelServer, THREAD_ID } from "./support/channel-server";
  * a conversation still ask nothing of it.
  */
 
-beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
+beforeAll(async () => {
+  await installAppDom();
+  installTurnStreams();
+}, APP_DOM_TIMEOUT_MS);
 // A test that timed out never reached its own unmount; nothing it mounted outlives it.
 afterEach(unmountApps);
 // The whole route tree renders here; under a loaded machine that is more than the runner's five seconds.
 setDefaultTimeout(20_000);
 afterAll(async () => {
+  removeTurnStreams();
   await removeAppDom();
 });
 
@@ -232,7 +242,7 @@ describe("the first run", () => {
 describe("home", () => {
   test("is the conversation with the Bot, which is where the runtime starts", async () => {
     const channelId = "channel_first-screen";
-    const server = channelServer({ channelId });
+    const server = turnServer({ channelId });
     const view = await mountApp({
       path: "/",
       api: (request) =>

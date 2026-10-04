@@ -54,11 +54,12 @@ function useSettled<T>(value: T): T {
 /**
  * A file from the Bot's folder, handed to the person: its name, its size, and 내려받기.
  *
- * THE CARD ASKS FOR ITSELF. A turn the server runs looks for the file before it tells the Bot the
- * card is on screen, but the card cannot lean on that: a window-driven turn (`SERVER_TURNS=off`)
- * confirms without looking, and a file that was there on Tuesday can be gone on Friday — written
- * over, or emptied with the account. So what is drawn is what the folder says now, and a file that
- * is not there gets a sentence and no button: a control that does nothing is not drawn.
+ * THE CARD ASKS FOR ITSELF. The turn looks for the file before it tells the Bot the card is on
+ * screen (`server/src/turns/chat-tools.ts`), but the card cannot lean on that: a file that was
+ * there on Tuesday can be gone on Friday — written over, or emptied with the account — and a card
+ * drawn by a turn from before 2026-10-05 may be one a window confirmed without looking. So what is
+ * drawn is what the folder says now, and a file that is not there gets a sentence and no button: a
+ * control that does nothing is not drawn.
  *
  * THE BUTTON IS A PLAIN LINK to the server's download route, which answers every file as an
  * attachment whatever asks — a press saves the file and never opens it. Not `_blank`: inside the

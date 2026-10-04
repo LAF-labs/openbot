@@ -17,7 +17,7 @@ import { json, mount, unmountAll } from "./support/mount";
  * MEASURED 2026-09-25, request bodies through a logging proxy: the first message sent from the
  * compose screen carried 18 surface tools and the next 31. The conversation had just opened, its
  * Bot's card grants were still on their way, and the cards were offered only once they arrived —
- * one turn late. `ChannelChat` now holds every turn until `useToolsSettled` says yes.
+ * one turn late. The conversation now holds every hand-over until `useToolsSettled` says yes.
  */
 
 beforeAll(() => {
@@ -121,18 +121,29 @@ describe("useToolsSettled", () => {
   });
 });
 
-describe("ChannelChat waits for it", () => {
+describe("the conversation waits for it", () => {
   test("every way a turn goes out passes the gate", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const source = readFileSync(
-      join(import.meta.dir, "../src/components/channels/channel-chat.tsx"),
+      join(
+        import.meta.dir,
+        "../src/components/channels/server-channel-chat.tsx",
+      ),
       "utf8",
     );
-    const untilReady = source.slice(source.indexOf("const untilReady"));
-    expect(untilReady.slice(0, 400)).toContain("toolsGatePromise");
-    // `deliver`, `retry` and `resend` are every turn this screen sends, and each waits here first.
-    expect(source.match(/await untilReady\(\);/g)?.length).toBe(3);
+    // What the turn is told this window offers is read only once the grants are in, or the
+    // backstop has run out.
+    const declaredTools = source.slice(source.indexOf("const declaredTools"));
+    expect(declaredTools.slice(0, 400)).toContain("!settled.current");
+    // A send, a retry and a send of what was kept all hand over through one function, which asks
+    // for the tools before it sends — and nothing else in the file reaches the door.
+    expect(source.match(/await declaredTools\(\)/g)?.length).toBe(1);
+    expect(source.match(/\bsendTurn\(/g)?.length).toBe(1);
+    const handOver = source.slice(source.indexOf("const handOver"));
+    expect(handOver.indexOf("await declaredTools()")).toBeLessThan(
+      handOver.indexOf("sendTurn("),
+    );
   });
 });
 

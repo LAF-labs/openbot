@@ -1,5 +1,6 @@
 import type { Message } from "@ag-ui/core";
 import { UNANSWERED_RESULT } from "@shared/task-ending";
+import type { StoredFailure } from "../../src/lib/channels/retry";
 import type { HistoryPage } from "../../src/lib/turns/client";
 import type { TurnFrame, TurnState } from "../../src/lib/turns/frames";
 import {
@@ -8,16 +9,14 @@ import {
   CURRENT_USER,
   json,
 } from "./app-router";
-import { BOT_ID, channelServer, THREAD_ID } from "./channel-server";
 
 /**
- * THE SERVER FOR ONE CONVERSATION WHOSE TURNS IT OWNS, AT THE NETWORK EDGE.
+ * THE SERVER FOR ONE CONVERSATION WITH ONE BOT, AT THE NETWORK EDGE.
  *
- * `channel-server.ts` answers as CopilotKit's runtime does, which is the window driving the turn
- * (`ChannelChat`, `SERVER_TURNS=off`). Until 2026-10-02 nothing mounted the surface people actually
- * use: `/api/me` in the test shell never says `serverTurns`, so every mounted conversation test ran
- * the old one. This says it, and answers the doors of a server-owned turn the way
- * `server/src/turns/routes.ts`, `engine.ts` and `hub.ts` do — read from them, not from the client:
+ * For `mountApp`'s `api`: everything the channel route asks for on the way to a transcript — the
+ * channel, the roster, stamps, failures, the read mark — and the doors of a turn the server owns,
+ * answered the way `server/src/turns/routes.ts`, `engine.ts` and `hub.ts` do — read from them, not
+ * from the client:
  *
  *   GET  /api/turns/:thread/history   a page of what the store holds, newest first
  *   GET  /api/turns/:thread/stream    a snapshot to a window with no cursor, then numbered frames
@@ -27,7 +26,23 @@ import { BOT_ID, channelServer, THREAD_ID } from "./channel-server";
  * The stream is an `EventSource`, which neither bun nor happy-dom has. `installTurnStreams` puts a
  * stand-in on the globals; a window that opens one is answered in the next microtask, as a server
  * that is up answers — unless the test holds the streams or has taken them down.
+ *
+ * THE ONLY DOUBLE THERE IS. Until 2026-10-05 a second one (`channel-server.ts`) answered as
+ * CopilotKit's runtime does, for the window that drove its own turns, and every conversation test
+ * written before 2026-10-02 mounted that one: the surface people use was the one nothing mounted.
+ * The window-driven path was removed and its double with it; what that file answered for the
+ * channel itself is below.
  */
+
+export const BOT_ID = "agent_edge-bot";
+export const THREAD_ID = "thread-edge";
+
+/** The control state a Bot at work holds: its own wheel, nobody asked for. */
+const BOT_AT_THE_WHEEL = {
+  holder: "bot",
+  since: "2026-09-10T00:00:00Z",
+  requested: false,
+};
 
 type StreamHandler = ((event: { data: string }) => void) | null;
 
@@ -111,8 +126,16 @@ export function turnServer(options: {
   active?: boolean;
   /** Windows that open a stream are left unanswered until `answerStreams`. */
   holdStreams?: boolean;
+  /** The turns that got no answer, as the server's run ledger holds them. Read again as a turn ends. */
+  failures?: StoredFailure[];
+  /**
+   * Whether this deployment has a computer. With one, the control route answers a state every time,
+   * which is what the polls were measured against; without one it is a 404 learned once.
+   */
+  computer?: boolean;
 }) {
-  const channel = channelServer({ channelId: options.channelId });
+  /** Every time the page marked the room read, in order: on opening, and when a turn ends. */
+  const reads: string[] = [];
   const stored: Message[] = [...(options.history ?? [])];
   const sends: TurnSend[] = [];
   const hub = {
@@ -309,7 +332,10 @@ export function turnServer(options: {
     // The person's side is filed, the turn is announced `queued`, and its question goes to every
     // window before any of the answer.
     const asked = body.messages.filter((message) => message.role === "user");
-    stored.push(...asked);
+    // The store keys a message by its id (`appendMessages`): one it already holds is that row
+    // arriving again — a question asked again in place — and not a second row.
+    const held = new Set(stored.map((message) => message.id));
+    stored.push(...asked.filter((message) => !held.has(message.id)));
     turns += 1;
     const turn: TurnState = {
       id: `turn-${turns}`,
@@ -335,7 +361,11 @@ export function turnServer(options: {
     if (pathname === `/api/agents/${BOT_ID}`) {
       return json({ agent: agentFixture({ id: BOT_ID, name: "닻" }) });
     }
-    if (pathname === `/api/channels/${options.channelId}`) {
+    if (pathname === "/api/agents") {
+      return json({ agents: [agentFixture({ id: BOT_ID, name: "닻" })] });
+    }
+    const base = `/api/channels/${options.channelId}`;
+    if (pathname === base) {
       return json({
         channel: {
           id: options.channelId,
@@ -344,6 +374,37 @@ export function turnServer(options: {
           threadId: THREAD_ID,
           active: options.active !== false,
         },
+      });
+    }
+    if (pathname === `${base}/message-times`) {
+      return json({ times: {}, speakers: {} });
+    }
+    if (pathname === `${base}/failures`) {
+      return json({ failures: options.failures ?? [] });
+    }
+    if (pathname === `${base}/read`) {
+      reads.push(new Date().toISOString());
+      return json({ previousReadAt: null, readAt: new Date().toISOString() });
+    }
+    if (pathname === `${base}/activity`) {
+      return new Response(null, { status: 204 });
+    }
+    if (pathname === `/api/computers/${BOT_ID}/control`) {
+      return options.computer
+        ? json(BOT_AT_THE_WHEEL)
+        : json({ error: "Not found." }, 404);
+    }
+    if (pathname === "/api/sandboxed/published") {
+      return json({ components: [] });
+    }
+    // What the provider asks before it settles: the runtime's roster, as a running server answers it.
+    if (pathname === "/api/copilotkit/info") {
+      return json({
+        version: "1.67.1",
+        agents: {
+          [BOT_ID]: { name: BOT_ID, description: "", className: "Fe" },
+        },
+        mode: "sse",
       });
     }
     if (pathname === `${door}/history`) {
@@ -416,13 +477,15 @@ export function turnServer(options: {
             : takeTurn(body);
       return doorHold ? doorHold.then(answerIt) : answerIt();
     }
-    return channel.api(request);
+    return undefined;
   };
 
   return {
     api,
     /** Every hand-over the door was sent, refused ones included, in order. */
     sends,
+    /** Every time the page marked the room read, in order: on opening, and when a turn ends. */
+    reads,
     stops: () => stops,
     historyReads: () => historyReads,
     /** Where each read of the history asked from, in order: null for the newest page. */
@@ -530,6 +593,19 @@ export function turnServer(options: {
      */
     deliver: (messages: Message[]) => {
       stored.push(...messages);
+    },
+    /**
+     * A CUSTOM event on the turn's own stream, as the hub hands one on (`hub.event`): agent-bot
+     * says a cut-off or an empty answer this way, beside the token counts it reports the same way.
+     */
+    custom: (name: string, value: unknown = {}) => {
+      const turn = hub.turn;
+      if (!turn) throw new Error("no turn to say it in");
+      publish({
+        kind: "event",
+        turn: turn.id,
+        event: { type: "CUSTOM", name, value } as { type: string } & object,
+      });
     },
     /** The turn stops on cards and waits for a person: every window is told which. */
     waitOn: (toolCallIds: string[]) => {

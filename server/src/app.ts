@@ -432,8 +432,8 @@ export function createApp(
   /**
    * The doors of a turn the server owns (`turns/routes.ts`). Last, like everything new here.
    *
-   * Absent — `SERVER_TURNS=off` — leaves them unmounted and `deployment.serverTurns` false, and the
-   * app drives each turn from the window the way it did before.
+   * `main.ts` always hands them over. Absent — an app a test built without them — leaves them
+   * unmounted, and nothing else runs a chat turn: the window that once did was removed 2026-10-05.
    */
   turnRoutes?: (
     requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
@@ -518,8 +518,16 @@ export function createApp(
     // Whether the composer offers to take a file at all, and whether a photo is among what it takes.
     attachments: attachments !== undefined,
     images: attachments?.imagesAccepted === true,
-    // Whether a chat turn runs on the server and the window only watches it (`turns/engine.ts`).
-    serverTurns: turnRoutes !== undefined,
+    /*
+     * ALWAYS TRUE, AND STILL SAID. It was the fact an app chose its conversation screen by: the
+     * server runs the turn and the window watches (`turns/engine.ts`), or — false, or absent — the
+     * window drives it. The second screen was removed 2026-10-05 and this build's app no longer
+     * reads the field, but two readers do: an app build from before that day still open in a
+     * window (a cached shell), which without it would mount the screen that runs each tool in the
+     * page; and `scripts/upgrade-e2e.ts`, which checks the upgraded build owns its turns. It can go
+     * once no deployment can be upgraded from a build that reads it.
+     */
+    serverTurns: true,
     /*
      * NO `seats` ANY MORE. It told the roster how many Bots fit so it could say "3/5"; since
      * 2026-09-24 a person has one Bot, the number is not a setting, and nothing on the surface
