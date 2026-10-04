@@ -332,8 +332,11 @@ export function turnServer(options: {
     // The person's side is filed, the turn is announced `queued`, and its question goes to every
     // window before any of the answer.
     const asked = body.messages.filter((message) => message.role === "user");
-    // The store keys a message by its id (`appendMessages`): one it already holds is that row
-    // arriving again — a question asked again in place — and not a second row.
+    // The store keys a message by its id: `engine.send` files the hand-over through
+    // `appendMessages` (`server/src/runner/thread-store.ts`), and "a message the thread already
+    // holds is NOT appended again" — it keeps its `seq`. So one it holds is that row arriving
+    // again — a question asked again in place — and not a second row. This pushed blindly until a
+    // test pressed 다시 시도 here: a store that grew a second copy of every retried question.
     const held = new Set(stored.map((message) => message.id));
     stored.push(...asked.filter((message) => !held.has(message.id)));
     turns += 1;
