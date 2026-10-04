@@ -21,14 +21,30 @@
  *
  * `BROWSE_TASKS=naver-weather,news` picks tasks; `BROWSE_RUNS=2` repeats each; `BROWSE_SKILLS=off`
  * leaves the built-in skills out of the prompt and the executor, for a before/after on them.
- * `BROWSE_INVITE=on` adds one sentence to the prompt inviting several steps in one reply — the
- * second arm of that comparison, here and nowhere in the product. `BROWSE_BOT` names the Bot whose
- * browser is driven (its tab is its own), and `BROWSE_REPORT_DIR` where the report is written.
+ * `BROWSE_INVITE=on` puts one sentence inviting several steps in one reply into the prompt, at the
+ * place a product edit would put it — inside the static layer, in front of the base's two
+ * paragraphs about the computer (`withInvitation`, `browse-measure.ts`). It is the second arm of
+ * that comparison, here and nowhere in the product. `BROWSE_BOT` names the Bot whose browser is
+ * driven (its tab is its own), and `BROWSE_REPORT_DIR` where the report is written.
  *
  * Success is judged by a pattern on the final answer plus the absence of a give-up, and every answer
  * is printed so a person reads them too: a pattern is a floor, not a verdict. A form is judged by
- * what the SITE says it received, read off the page after the run. Reports land in evals/reports/
- * (local only). Real sites change daily; compare arms run minutes apart, not days.
+ * what the SITE says it received: sent once, every asked field as asked, nothing else filled.
+ * Reports land in evals/reports/ (local only). Real sites change daily; compare arms run minutes
+ * apart, not days.
+ *
+ * WHAT THIS DOES NOT MEASURE.
+ *
+ * - No high-risk reviewer. Production's gateway is handed one (`highRisk` in `server/src/main.ts`,
+ *   `computer/high-risk.ts`): once a name, a telephone or an e-mail has been typed, a press is put
+ *   to a judge that may stop to ask the person — on a radio or a checkbox too. The gateway here has
+ *   the default policy and nothing else, so a form raises fewer questions than it would deployed.
+ * - A chat's prompt and tool list over a routine's executor. The model is told it is in a
+ *   conversation and offered the chat surface's tools, and `createUnattendedTools` carries them out:
+ *   `computer_request_help`, `computer_request_secret` and the self tools answer `laf:tool_unknown`.
+ * - The person. A form task's one question — the press on its send button — is answered yes by the
+ *   eval, at once (`execute` in `runTask`). A person takes seconds or minutes; a routine has nobody,
+ *   reads `laf:nobody_answered`, and its form is not sent.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -58,10 +74,11 @@ import { createRunMeter } from "../server/src/telemetry/run-meter";
 import { modelUsageOf } from "../server/src/usage/model-usage";
 import {
   echoedForm,
+  echoedSends,
+  judgeForm,
   roundStats,
   roundsOf,
-  unaskedFields,
-  wrongFields,
+  withInvitation,
 } from "./browse-measure";
 import { clientMessagesOf, eventsOfSse } from "./lib";
 import { EVAL_TIME_ZONE, systemMessageFor } from "./prompt";
@@ -79,14 +96,17 @@ type Task = { id: string; ask: string } & (
     }
   | {
       /**
-       * A form the task fills and sends, on a site that answers with what it received. Each name is
-       * a field of the form and each value what the ask says to put there; the run passes when the
-       * site's echo holds exactly these (`browse-measure.ts`).
+       * A form the task fills and sends, on a site that answers with what it received.
        *
-       * A person asked for this form to be sent, so the eval answers the boundary's question about
-       * the send as that person would — see `execute` in `runTask`.
+       * `asked`: each name is a field of the form and each value what the ask says to put there.
+       * The run passes when the form was sent once and the site's echo holds exactly these
+       * (`judgeForm`, `browse-measure.ts`).
+       *
+       * `send`: the name on the button that sends it. A person asked for this form to be sent, so
+       * the eval answers the boundary's question about THAT press as the person would, and no
+       * other question — see `execute` in `runTask`.
        */
-      form: Readonly<Record<string, string>>;
+      form: { asked: Readonly<Record<string, string>>; send: string };
     }
 );
 
@@ -141,12 +161,15 @@ export const TASKS: readonly Task[] = [
     id: "httpbin-form",
     ask: "https://httpbin.org/forms/post 는 연습용 피자 주문 양식이야. 이렇게 채워서 제출해 줘. 이름(Customer name): 홍길동 / 전화(Telephone): 010-0000-0000 / 이메일(E-mail address): gildong@example.com / 크기(Pizza Size): Medium / 토핑(Pizza Toppings): Mushroom 하나만 / 배달 요청(Delivery instructions): 문 앞에 놓아 주세요 / 배달 시간(Preferred delivery time)은 비워 둬. 제출하면 사이트가 받은 값을 그대로 보여 주니까, 뭐라고 받았는지 알려 줘.",
     form: {
-      custname: "홍길동",
-      custtel: "010-0000-0000",
-      custemail: "gildong@example.com",
-      size: "medium",
-      topping: "mushroom",
-      comments: "문 앞에 놓아 주세요",
+      asked: {
+        custname: "홍길동",
+        custtel: "010-0000-0000",
+        custemail: "gildong@example.com",
+        size: "medium",
+        topping: "mushroom",
+        comments: "문 앞에 놓아 주세요",
+      },
+      send: "Submit order",
     },
   },
 ];
@@ -172,15 +195,6 @@ const PERSON = { id: "eval-person" };
  * the echo is read off the tab afterwards, and the last run's echo would still be sitting there.
  */
 const NEUTRAL_PAGE = "https://example.com/";
-
-/**
- * The sentence of arm B, word for word as the plan wrote it for the prompt's browsing section
- * (`~/laf/docs/plan-steps-per-round-2026-10-04.md` §6). Appended here, to the prompt this eval
- * composes, and not written into `shared/prompt/base.ko.ts`: whether it ships is decided on what
- * the two arms measure.
- */
-const INVITATION =
-  "다음 행동이 앞 결과를 볼 필요가 없을 때는 여러 행동을 한 번에, 순서대로 불러라. 페이지를 바꾸는 행동(검색·확인 누르기, Enter)은 마지막에만 둔다.";
 
 const wanted = new Set(
   (process.env.BROWSE_TASKS ?? "")
@@ -239,8 +253,12 @@ const tools = [
 const composed = SKILLS
   ? systemMessageFor("chat", undefined, undefined, BUILT_IN_SKILLS)
   : systemMessageFor("chat");
+/*
+ * Arm B reads the prompt it would read the day the sentence shipped: the same composed message,
+ * with the sentence inside the static layer and not after everything (`withInvitation`).
+ */
 const SYSTEM = INVITE
-  ? { ...composed, content: `${composed.content}\n\n${INVITATION}` }
+  ? { ...composed, content: withInvitation(composed.content) }
   : composed;
 
 type Messages = LoopAgent["messages"];
@@ -376,16 +394,22 @@ async function runTask(task: Task) {
 
   /** The questions the boundary raised, by the rule that raised each. */
   const asks: Record<string, number> = {};
+  /** Of those, the ones the eval answered yes: the press on a form task's send button. */
+  let asksAnswered = 0;
   /**
-   * The routine executor, with the person a form task has.
+   * The routine executor, with the person a form task has — for one question.
    *
    * Nobody answers a routine's question, so a held step comes back `laf:nobody_answered` and the
    * run goes on without it — which the tasks judged by their answer keep, as they always ran. A
    * form task is somebody asking for this form to be SENT, and the default policy stops at its
    * button; in the product that is a card, and the person who asked says yes. So the yes is given
    * here, through the same registry the gateway asked in, and the call is sent again carrying it —
-   * what chat's `governed` does after a person's answer (`turns/chat-tools.ts`). Every question is
-   * counted either way: a run that needed three of them is not the run that needed one.
+   * what chat's `governed` does after a person's answer (`turns/chat-tools.ts`).
+   *
+   * ONLY THAT QUESTION: the money-word rule, about the button the task names. It answered every
+   * question once, and a Bot going round in a form — the repeat rule asking whether it is stuck —
+   * would have been waved on by the eval and the run counted as clean. Any other question stays
+   * unanswered, as a routine's does. Every question is counted either way.
    */
   const execute: LoopExecutor = async (name, args, call) => {
     const outcome = await toolkit.execute(name, args, call);
@@ -395,9 +419,18 @@ async function runTask(task: Task) {
         typeof outcome.rule === "string" ? outcome.rule : null,
       ) ?? "other";
     asks[rule] = (asks[rule] ?? 0) + 1;
-    if (!("form" in task) || typeof outcome.approvalId !== "string") {
+    const pressed = (outcome.subject as { element?: { name?: unknown } })
+      ?.element?.name;
+    if (
+      !("form" in task) ||
+      rule !== "money_word" ||
+      typeof pressed !== "string" ||
+      pressed.trim().toLowerCase() !== task.form.send.toLowerCase() ||
+      typeof outcome.approvalId !== "string"
+    ) {
       return outcome;
     }
+    asksAnswered += 1;
     const answered = await approvals.answer(
       outcome.approvalId,
       BOT_ID,
@@ -411,13 +444,20 @@ async function runTask(task: Task) {
     });
   };
 
-  if ("form" in task) {
-    await toolkit.execute(
-      "computer_navigate",
-      { url: NEUTRAL_PAGE },
-      { id: "browse_before" },
-    );
-  }
+  /*
+   * Kept, and part of the verdict: a form run whose tab could not be put on the neutral page may
+   * still be standing on the run before's echo, and what is read off it afterwards proves nothing.
+   */
+  const startedClean =
+    "form" in task
+      ? (
+          await toolkit.execute(
+            "computer_navigate",
+            { url: NEUTRAL_PAGE },
+            { id: "browse_before" },
+          )
+        ).ok
+      : true;
 
   const started = performance.now();
   const agent = inProcessAgent(`thread_browse_${task.id}_${started}`);
@@ -536,7 +576,10 @@ async function runTask(task: Task) {
      */
     unansweredCalls: unanswered(agent.messages).length,
     asks,
+    asksAnswered,
     providers,
+    /** The answer says it could not — counted on every task, a failure only on a `strict` one. */
+    gaveUp: GAVE_UP.test(answer),
   };
 
   if (!("form" in task)) {
@@ -548,30 +591,26 @@ async function runTask(task: Task) {
   }
 
   /*
-   * WHAT THE SITE RECEIVED. Read off the tab once the run is over, through the same executor; and
-   * where the Bot went somewhere else after sending, off the last echo its own thread holds (a
-   * press that sends a form brings the next page back with it).
+   * WHAT THE SITE RECEIVED. Read off the tab once the run is over, through the same executor, and
+   * judged with every send this run's own thread holds (`judgeForm`): one send, on a tab that
+   * started clean, with every asked field as asked and no other field filled.
    */
   const page = await toolkit.execute(
     "computer_read",
     { whole: true },
     { id: "browse_echo" },
   );
-  const echo =
-    echoedForm(page) ??
-    agent.messages
-      .filter((message) => message.role === "tool")
-      .map((message) => echoedForm(message.content))
-      .findLast((found) => found !== null) ??
-    null;
-  const wrong = wrongFields(echo, task.form);
+  const verdict = judgeForm({
+    startedClean,
+    sends: echoedSends(agent.messages),
+    page: echoedForm(page),
+    asked: task.form.asked,
+  });
   return {
     ...base,
-    passed: failure === null && wrong.length === 0,
-    /** Whether the site answered with an echo at all: without one, the form was never sent. */
-    echoed: echo !== null,
-    wrongFields: wrong,
-    unaskedFields: unaskedFields(echo, task.form),
+    ...verdict,
+    passed: failure === null && verdict.passed,
+    startedClean,
   };
 }
 
@@ -601,11 +640,11 @@ for (const task of selected) {
       .map(([rule, count]) => `${rule} ${count}`)
       .join(", ");
     console.log(
-      `     requests ${result.modelRequests} · calls/round ${result.callsPerRound.join(",") || "-"} · batched rounds ${result.batchedRounds} · not reached ${result.notReached} · clicks before fields ${result.clicksBeforeFields}${result.unansweredCalls ? ` · UNANSWERED ${result.unansweredCalls}` : ""} · asks ${asked || "none"} · ${Object.keys(result.providers).join(", ") || "no provider named"}`,
+      `     requests ${result.modelRequests} · calls/round ${result.callsPerRound.join(",") || "-"} · batched rounds ${result.batchedRounds} · not reached ${result.notReached} · early presses ${result.earlyPresses}${result.unansweredCalls ? ` · UNANSWERED ${result.unansweredCalls}` : ""} · asks ${asked || "none"}${result.asksAnswered ? ` (answered ${result.asksAnswered})` : ""} · ${Object.keys(result.providers).join(", ") || "no provider named"}`,
     );
     if ("wrongFields" in result) {
       console.log(
-        `     ${result.echoed ? "echo" : "NO ECHO"} · wrong fields ${result.wrongFields.length}${result.wrongFields.length ? ` (${result.wrongFields.join(", ")})` : ""}${result.unaskedFields.length ? ` · unasked ${result.unaskedFields.join(", ")}` : ""}`,
+        `     ${result.startedClean ? "" : "TAB NOT CLEAN · "}${result.echoed ? "echo" : "NO ECHO"} · sends ${result.sends} · wrong fields ${result.wrongFields.length}${result.wrongFields.length ? ` (${result.wrongFields.join(", ")})` : ""}${result.unaskedFields.length ? ` · unasked ${result.unaskedFields.join(", ")}` : ""}`,
       );
     }
     console.log(`     ${result.answer.replace(/\s+/g, " ").slice(0, 280)}\n`);
