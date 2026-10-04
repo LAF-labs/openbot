@@ -895,11 +895,46 @@ describe("the names the page gives in place of the tree's", () => {
     expect(named).toEqual([
       { ref: "e1", role: "link", name: "Headline" },
       { ref: "e3", role: "button", name: "가".repeat(199) },
-      // The page did not answer for this one: the words from inside stand.
+      // Not among the refs the page was asked about: the words from inside stand (a test's map).
       { ref: "e4", role: "link", name: "그대로" },
     ]);
-    // Nothing the page had no answer for is touched, and the list it was given is not changed.
+    // The list it was given is not changed.
     expect(read.elements[0]?.name).toBe("★ Headline");
+  });
+
+  /*
+   * A CONTROL THE PAGE WAS ASKED ABOUT AND DID NOT ANSWER FOR IS LEFT NAMELESS. The tree's words
+   * cannot tell an editable region from text — a plain `contenteditable` prints as `generic` — so
+   * keeping them would carry whatever was typed into one as a link's name (review of pull request
+   * 69). Nameless, the hold refuses the click as renamed: a refusal, never a secret on the trail.
+   */
+  test("a control the page did not answer for loses the tree's words, so a typed secret cannot ride out as a name", () => {
+    const secret = "hunter2!SuperSecret";
+    const read = readAriaSnapshot(`- link [ref=e1]:
+  - generic [ref=e2]: ${secret}
+  - text: 열기
+- link [ref=e3]:
+  - text: 그대로`);
+    // The tree alone: the words from inside, secret included — which is why the page is asked.
+    expect(read.elements.map((element) => element.name)).toEqual([
+      `${secret} 열기`,
+      "그대로",
+    ]);
+    expect(read.unnamed).toEqual(["e1", "e3"]);
+    // The page answered for e3 and not for e1 (out of time, or the ref did not resolve).
+    const named = withNames(
+      read.elements,
+      new Map([["e3", "그대로"]]),
+      new Set(read.unnamed),
+    );
+    expect(named.map((element) => element.name)).toEqual(["", "그대로"]);
+    expect(JSON.stringify(named)).not.toContain(secret);
+    // And when the page answered nothing at all, every asked control is nameless.
+    expect(
+      withNames(read.elements, new Map(), new Set(read.unnamed)).map(
+        (element) => element.name,
+      ),
+    ).toEqual(["", ""]);
   });
 
   test("an empty name from the page is a name: the browser calls that control nothing", () => {
