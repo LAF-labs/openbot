@@ -1361,6 +1361,100 @@ nothing lost; how often real conversations open with a message this applies to. 
 trials and a handful of turns, and the control plane does not read what people say, so the count
 will come from the switch's own trail (`turn.first_move` rows against turns) once it is on somewhere.
 
+## Page facts — whether a page is what its address was opened for (2026-10-04)
+
+A Bot opens an address, the site answers 200 with "페이지를 찾을 수 없습니다", and the Bot answers from
+it. Phase 1 of the Jev browsing research (`~/laf/docs/jev-browser-use-2026-10-04.md` §6, private)
+proposes a fact in the page-reading tools' result — `laf:page_unusable`, `laf:sign_in_wall`,
+`laf:captcha` — that decides nothing and is only read: a status of 400 or more is unusable, a
+password field is a sign-in wall, and otherwise, on pages of 1,500 characters or less, one Jev
+request about the address (no query), the title and the first 600 characters asks `unusable` and
+`captcha`. **Nothing is built.** `bun run eval:page-facts` is the gate before it may be:
+`evals/page-facts.ts` holds the questions, the order and the scoring (and
+`tests/eval-page-facts.test.ts` holds those without a network); `evals/page-facts-run.ts` asks. The
+questions are the research's, word for word — written on its own 45 pages before this set existed.
+
+**The set** (`evals/page-facts/pages.jsonl`: 289 pages captured the way `/navigate` reads them and
+labelled by a separate agent that never saw the questions; its README says how). 131 usable, 47 of
+them "hard good" (an article about 404s, a search with no results, a login page that was asked for);
+158 unusable — 78 served with 400 or more, 17 sign-in walls, 4 CAPTCHAs below 400, and **59 "soft"**:
+served below 400 and neither. 25 pages cannot be decided from text at all (the fact is in an alert,
+only on the screen, or there is nothing): 13 of the 59 soft ones. The product would send 81 pages.
+
+**Measured** (`typesafe/jev-1.13-20260917`, three runs, four in flight; Jev asked about every page in
+every run and each arm scored only where it would ask; rates pooled over the runs, as
+`eval:first-move` pools). At **0.75**, the bar this eval recommends:
+
+| | Rules (status, password field) | + the research's word lists | **+ Jev, ≤ 1,500 characters** |
+|---|---|---|---|
+| False `page_unusable` on a usable page (≤ 1%) | 0 | 1.5% (`ko-kakaomap-home`, `en-wiki-search-none`) | **0.8%** (3/393: `en-wiki-search-none`, every run) |
+| Soft unusable told `page_unusable` (≥ 70%) | 0 | 47.5% (28 pages) | **57.1%** (101/177, 34 pages) |
+| … of the 46 decidable from text | 0 | 60.9% | 73.2% (101/138) |
+| Soft unusable told anything | 3 pages (`sign_in_wall`) | 32 pages | 38 pages (63.8%) |
+| Sign-in walls told `sign_in_wall` | 17/17 | 17/17 | 17/17 |
+| Not a wall, told `sign_in_wall` | 13 pages, 10 of them usable | the same | the same |
+| CAPTCHAs told `captcha` | 0/7 | 4/7 | 3/7 |
+| Not a CAPTCHA, told `captcha` | 0 | 4 pages, three of them articles about CAPTCHA | 1 (`en-medium-user-bogus`, a missing profile) |
+| Same fact in all three runs (≥ 98%), the 81 pages Jev decides | — | — | 98.8% (80/81; `ko-scourt-badpath` at 0.73–0.76) |
+| Per request, from this Mac (p95 ≤ 400 ms) | — | — | p50 208 ms, p95 299 ms, max 438 ms; none over 1,200 ms; no answer 0 of 867 |
+
+The bar, swept (+ Jev, pooled; soft over all 59 and over the 46 with text to read):
+
+| Bar | False unusable | Soft caught | Soft, from text | Same in 3 runs |
+|---|---|---|---|---|
+| 0.50–0.60 | 1.5% (2 pages) | 67.8% | 87.0% | 98.8–100% |
+| 0.70 | 1.3% | 61.0% | 78.3% | 93.8% |
+| **0.75** | **0.8%** (1 page) | **57.1%** | **73.2%** | **98.8%** |
+| 0.80 | 0.8% | 54.2% | 69.6% | 97.5% |
+| 0.85 (§6's provisional) | 0.3% | 45.2% | 58.0% | 93.8% |
+| 0.90 | 0 | 36.2% | 46.4% | 97.5% |
+| 0.95 | 0 | 4.5% | 5.8% | 98.8% |
+
+**Verdict: FAIL on one bar, not dropped.** Soft pages caught is 57.1% against 70%; every other bar
+holds at 0.75, and neither of §6's drop rules fires (false unusable is ≤ 2% at bars that catch half;
+plain rules trail Jev by 9.6 points and miss their own 1%). `eval:page-facts` exits 1 while it fails,
+as `eval:first-move` does.
+
+- **70% is out of reach from text at any bar** — the most is 67.8%, at 0.50–0.60. Thirteen of the 59
+  soft pages carry nothing a text question can see: six say so only in an alert (four then leave the
+  tab on `about:blank`), seven only on the screen. On the 46 that can be read it is 73.2% at 0.75.
+  **The six alerts' words are already in the result**, as `laf:dialog` notes beside the text; the
+  questions were not shown them, because the design does not. That is the next measurement, not a
+  change made here.
+- **The recommended bar passes two bars by one page each.** 3 of 393 against a limit of 3.93, and 80
+  of 81 against 98%. Jev's `unusable` for one page moves between runs by 0.01 at the median and up
+  to 0.09 (0.03 at p90), so a bar is stable when no page's answers straddle it: 0.80 is 97.5% and 0.85 is 93.8%, though both are stricter. And the
+  bar was chosen on the set it is scored on — as §6 intends ("the eval sets the real bar"), which is
+  why the sweep is printed.
+- **The hard good pages alone miss the 1% bar** at 0.75: 2.1% (3/141), all of it `en-wiki-search-none`,
+  Wikipedia's "no results" page, at 0.83–0.85. 0.90 clears it and catches 36% of soft pages.
+- **`sign_in_wall` needs a meaning before it needs a rule.** §3.4's 44/44 was against a label that
+  called a sign-in page a sign-in page whatever was asked; this set's labeller asks whether the form
+  stands between the person and what they asked for. Of the 30 pages the password rule reaches
+  (SoundCloud's missing profile also has a field, and its 404 speaks first), 17 are walls in that
+  sense; 8 are the login page that was asked for — right as "a login form is here", wrong as "you are
+  kept from what you asked for"; and 5 show a login box beside something else (홈택스's main page, a
+  문체부 notice, and three missing pages that are told `sign_in_wall` instead of `page_unusable`). As
+  the rules stand, 7.6% of usable pages are told something negative before Jev says a word. Which of
+  the two sentences `laf:sign_in_wall` says is the product's to decide.
+- **The 1,500-character limit buys no precision.** Jev reads the same 600 characters either way, and
+  without the limit false unusable is identical from 0.55 up; it costs one catch (`ko-yna-art-bogus`,
+  5,034 characters, 0.92). The limit is a choice about what leaves the deployment, and that is reason
+  enough — but it is the only one.
+- **A CAPTCHA answer winning costs a catch at 0.75**: `en-medium-user-bogus` is told `captcha` (0.76–0.79)
+  where `unusable` said 0.94. At 0.80 it is `page_unusable`.
+- **The plain rules** catch 47.5% at 1.5% false, and tell three articles *about* CAPTCHAs (Wikipedia
+  twice, Cloudflare) that they are one; Jev read all three right. On the 251 pages the questions and
+  the word lists never met, Jev's numbers move by about a point (0.9% false, 55.8% soft caught) and
+  the word lists' by four (1.9% false, 43.6% caught).
+- **Cost:** input p50 691 tokens (max 1,080), output p50 38, US$0.000032 a request; the product would
+  ask on 81 of 289 pages read, about US$0.00001 a page. The whole run — 868 requests with one warm-up
+  (583 ms, counted in what was spent and not in the times) — cost **US$0.028**.
+
+**Not measured:** any of this from a VM (the times are this Mac's, in Korea); what the Bot does with
+the fact — §6's second step, two scenarios in `eval:model`; the questions with the dialog words;
+anything signed in.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는

@@ -553,6 +553,7 @@
   "tests/eval-lib.test.ts",
   "tests/eval-morning-briefing.test.ts",
   "tests/eval-owner-words.test.ts",
+  "tests/eval-page-facts.test.ts",
   "tests/eval-report-hashes.test.ts",
   "tests/eval-support-programs.test.ts",
   "tests/eval-weather.test.ts",
