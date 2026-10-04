@@ -244,8 +244,8 @@ function computerReply(result: unknown): ComputerOutcome {
    * THE NOTES' CODES, KEPT FOR THE TURN LOOP. The shared mapping puts the notes into words and keeps
    * nothing else, so "an alert went up" reached the loop as a Korean sentence — and an alert ends
    * the rest of a round of browser steps (`runner/round-stop.ts`). Added here, on the server, not in
-   * the shared mapping: what the window and the eval hand a model straight from that mapping must
-   * not grow a field. The loop takes them off again before it files the result (`turn-loop.ts`).
+   * the shared mapping: what the eval hands a model straight from that mapping must not grow a
+   * field. The loop takes them off again before it files the result (`turn-loop.ts`).
    */
   const codes = noteCodesOf(body.notes);
   return codes.length > 0 ? { ...outcome, noteCodes: codes } : outcome;

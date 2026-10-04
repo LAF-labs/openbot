@@ -6,11 +6,13 @@ import { SLOT_WORDS } from "../src/components/notebook/notebook";
 import { ko } from "../src/lib/i18n-ko";
 
 /**
- * 수첩 IS THE OWNER'S PEN, and a line's source is the route it came through: `/memories` is the
- * Bot's `remember`, `/notebook` is the owner. That holds only while no tool a Bot can call reaches
- * `/notebook` — the Bot's tools run in the owner's browser with the owner's session, so the route
- * needing a session proves nothing. A Bot that could write through it could mark its own lines as
- * the owner's, and the prompt draws those under "사장님이 적었거나 확인한 것" (the same shape as
+ * 수첩 IS THE OWNER'S PEN, and a line's source is the door it came through: `/memories` — and
+ * `rememberFact` behind it — is the Bot's `remember`, `/notebook` is the owner. That holds only
+ * while no tool a Bot can call reaches the owner's door. The Bot's tools are carried out as the
+ * owner — on the server, with the owner as the actor (`server/src/turns/chat-tools.ts`), as they
+ * were in the owner's browser with the owner's session — so a door that needs the owner proves
+ * nothing. A Bot that could write through it could mark its own lines as the owner's, and the
+ * prompt draws those under "사장님이 적었거나 확인한 것" (the same shape as
  * `server/tests/shop-boundary.test.ts`).
  */
 
@@ -39,6 +41,9 @@ describe("who writes on 수첩", () => {
       ...sources(join(root, "server/src/runner")),
       ...sources(join(root, "server/src/routines")),
       ...sources(join(root, "server/src/computer")),
+      // Where a chat turn's calls are carried out. Not walked until the window that carried them
+      // out was removed (2026-10-05), though the server had run every turn since v0.5.7.
+      ...sources(join(root, "server/src/turns")),
     ];
     expect(handlers.length).toBeGreaterThan(40);
     const reaching = handlers
@@ -54,13 +59,24 @@ describe("who writes on 수첩", () => {
     expect(reaching).toEqual([]);
   });
 
-  test("the Bot's own tool still posts to /memories, which marks its lines as the Bot's", () => {
+  test("the Bot's own tool still writes through the Bot's door, which marks its lines as the Bot's", () => {
+    // `remember`, as the turn carries it out: the one function the `/memories` route runs too.
     const tools = readFileSync(
-      join(root, "app/src/lib/copilot/self-tools.tsx"),
+      join(root, "server/src/turns/chat-tools.ts"),
       "utf8",
     );
-    expect(tools).toContain("/memories`");
+    expect(tools).toContain("await rememberFact(");
     expect(tools).not.toContain("source");
+    const routes = readFileSync(
+      join(root, "server/src/agents/routes.ts"),
+      "utf8",
+    );
+    const posting = routes.slice(
+      routes.indexOf('routes.post("/:agentId/memories"'),
+    );
+    expect(posting.slice(0, posting.indexOf("\n  });"))).toContain(
+      "await rememberFact(",
+    );
   });
 });
 
