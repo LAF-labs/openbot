@@ -554,6 +554,7 @@
   "tests/eval-owner-words.test.ts",
   "tests/eval-report-hashes.test.ts",
   "tests/eval-support-programs.test.ts",
+  "tests/eval-weather.test.ts",
   "tests/file-handoff.test.ts",
   "tests/knip.test.ts",
   "tests/laf-package.test.ts",
