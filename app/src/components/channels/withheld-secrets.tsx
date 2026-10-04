@@ -7,6 +7,7 @@ import {
 import { IconKey } from "@tabler/icons-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 
 /**
@@ -21,14 +22,18 @@ import { t } from "@/lib/i18n";
  *
  * A mark with no reference is a routine's: nobody was watching, so the value was kept nowhere, and
  * the row says so rather than offering a button that would find nothing.
+ *
+ * WHOSE CODE, READ HERE AND NOT HANDED DOWN. The server answers only for the Bot the call was made
+ * for, so the row has to ask as that Bot. It was told which by the renderer that draws it
+ * (`plugin-tools.tsx`), and a renderer is registered when its tool is first offered and not again:
+ * the Bot it named was the one whose conversation was open then. On an account from before
+ * 2026-09-24 with several Bots holding one connected tool, the second Bot's conversation drew its
+ * rows asking the first Bot's door (measured 2026-10-05, `withheld-secrets.test.tsx`). So the row
+ * reads the declared Bot itself, which is state — it is drawn again when the conversation names
+ * its Bot — and until one is named there is nobody to ask as: 보기 waits.
  */
-export function WithheldSecrets({
-  botId,
-  text,
-}: {
-  botId: string;
-  text: string;
-}) {
+export function WithheldSecrets({ text }: { text: string }) {
+  const botId = useDeclaredBotId();
   const marks = withheldMarksIn(text);
   if (marks.length === 0) return null;
   return (
@@ -44,13 +49,20 @@ export function WithheldSecrets({
   );
 }
 
-function WithheldRow({ botId, mark }: { botId: string; mark: WithheldMark }) {
+function WithheldRow({
+  botId,
+  mark,
+}: {
+  /** The Bot the conversation is with, or undefined before it has said. */
+  botId: string | undefined;
+  mark: WithheldMark;
+}) {
   const [value, setValue] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleShow = async () => {
-    if (!mark.id) return;
+    if (!mark.id || !botId) return;
     setIsLoading(true);
     setProblem(null);
     const response = await fetch(
@@ -85,7 +97,7 @@ function WithheldRow({ botId, mark }: { botId: string; mark: WithheldMark }) {
       ) : mark.id ? (
         <Button
           className="h-6 px-2 text-xs"
-          disabled={isLoading}
+          disabled={isLoading || !botId}
           onClick={() => void handleShow()}
           size="sm"
           variant="outline"

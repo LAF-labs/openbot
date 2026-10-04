@@ -10,7 +10,7 @@ import {
   withheldForDisplay,
 } from "@/components/channels/withheld-secrets";
 import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
-import { useActiveBotId, useDeclaredBotId } from "@/lib/copilot/active-bot";
+import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { stepLineOf } from "@/lib/copilot/step-labels";
 import { t } from "@/lib/i18n";
 import { LazyMarkdown } from "@/lib/markdown";
@@ -42,7 +42,6 @@ function withTools(
  * (`server/src/turns/chat-tools.ts`).
  */
 export function PluginTools() {
-  const botId = useActiveBotId();
   // The registration stays; the fifteen-second grant poll only runs once a surface names a Bot.
   const declared = useDeclaredBotId();
   const { data } = useQuery(agentPluginsQueryOptions(declared));
@@ -67,7 +66,6 @@ export function PluginTools() {
     <>
       {offered.map((tool) => (
         <PluginTool
-          botId={botId}
           description={tool.description}
           inputSchema={tool.inputSchema}
           key={tool.ref}
@@ -140,13 +138,11 @@ function PluginTool({
   toolRef,
   description,
   inputSchema,
-  botId,
 }: {
   name: string;
   toolRef: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  botId: string;
 }) {
   const [serverId, ...rest] = toolRef.split("/");
   const bareName = rest.join("/");
@@ -221,16 +217,15 @@ function PluginTool({
           </ToolLine>
           {/* What a mail held that the Bot was not given — outside the folded detail, because the
               owner who asked for a code is waiting on it, not on the mail around it. Read from the
-              kept result; the answer itself stays folded away.
+              kept result; the answer itself stays folded away. Not told whose Bot: this closure
+              is made once, so the row reads the declared Bot itself (`withheld-secrets.tsx`).
 
               AN ERROR CAN HOLD ONE TOO. A mail tool that fails part-way has still read what it
               read, and the server takes a code out and keeps it before it looks at whether the
               call failed (`server/src/plugins/call.ts`). The row was left out for every failure,
               and the error's words were drawn as they came: the person saw the mark that stands
               for the code and nothing to press (Codex on pull request 52). */}
-          {kept !== undefined ? (
-            <WithheldSecrets botId={botId} text={kept} />
-          ) : null}
+          {kept !== undefined ? <WithheldSecrets text={kept} /> : null}
         </>
       );
     },

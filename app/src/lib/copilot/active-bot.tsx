@@ -20,9 +20,10 @@ import {
  *
  * THERE WAS A SECOND ANSWER, FOR HANDLERS, AND IT IS GONE. While a window carried the Bot's calls
  * out, a tool's handler outlived the render that registered it and read the Bot from a ref that
- * always held a string (`useActiveBotHolder`) — the sentinel below until a surface declared. The
- * server carries the calls out and takes the Bot from the turn (`server/src/turns/engine.ts`); the
- * handlers went with the window-driven path (2026-10-05), and the holder with them.
+ * always held a string (`useActiveBotHolder`) — the sentinel `default` until a surface declared.
+ * The server carries the calls out and takes the Bot from the turn (`server/src/turns/engine.ts`);
+ * the handlers went with the window-driven path (2026-10-05), the holder with them, and the
+ * sentinel with its last reader (`useActiveBotId`, which handed it to the row for a mail's code).
  *
  * UNDECLARED IS NOBODY, NOT A DEFAULT. `useDeclaredBotId` is `undefined` until a surface actually
  * says which Bot it is for, because a per-Bot request keyed on a stand-in is a request for a Bot
@@ -47,11 +48,9 @@ import {
  * the Bot's wait ran out. Coming back from another screen did not do it, and was measured too: the
  * tools are mounted with the screen, so they are registered again in the effects of coming back, by
  * which time the Bot is declared. What needs the Bot while it is drawn reads `useDeclaredBotId`
- * itself and waits for it, as `HelpCard` and `ActivityReportCard` do: that is state, and declaring
- * it draws them again.
+ * itself and waits for it, as `HelpCard`, `ActivityReportCard` and `WithheldSecrets` do: that is
+ * state, and declaring it draws them again.
  */
-
-const DEFAULT_BOT_ID = "default";
 
 const ActiveBotValueContext = createContext<{
   declared: string | undefined;
@@ -96,14 +95,6 @@ export function ActiveBotProvider({ children }: { children: ReactNode }) {
 export function useActiveBot(botId: string | undefined): void {
   const declare = useContext(ActiveBotValueContext)?.declare;
   useEffect(() => declare?.(botId), [declare, botId]);
-}
-
-/**
- * The active Bot as a string that is never empty: the declared Bot, or the stand-in while there is
- * none. Not for a request — see above; `useDeclaredBotId` is what a request waits for.
- */
-export function useActiveBotId(): string {
-  return useContext(ActiveBotValueContext)?.declared ?? DEFAULT_BOT_ID;
 }
 
 /**
