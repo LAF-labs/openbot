@@ -60,6 +60,8 @@ export type LabelledPage = {
   kind: string;
   /** Where the deciding fact is: only `text` and `title` are anything a text question can see. */
   decidingIn: "text" | "title" | "dialog" | "screen" | "empty";
+  /** Alerts and confirms the page raised at `/navigate` time; the product reports them as `laf:dialog`. */
+  dialogs: ReadonlyArray<{ kind: string; message: string }>;
   note?: string;
 };
 
@@ -78,13 +80,28 @@ export type JevAnswer = { unusable: number; captcha: number } | null;
  *   `jev-any-length` — the same with no length limit, to see what the limit buys: Jev reads the same
  *                  title and 600 characters either way, so the limit is a choice about what leaves
  *                  the deployment, and this says whether it is also one about being right.
+ *   `rules+jev+dialog` — POST-HOC, WRITTEN AFTER SEEING RUN 1 (2026-10-04). `rules+jev` with the
+ *                  page's alert and confirm words added to what Jev is shown
+ *                  (`pageFactsStateWithDialogsOf`). Run 1 showed that six of the 59 soft pages say
+ *                  they are gone only in an alert, which the product already hands the Bot's model
+ *                  as `laf:dialog` notes and the design does not show Jev. Same gate, same order, same
+ *                  questions; only the state differs, and only on a page that raised a dialog. It
+ *                  is scored beside the others and decides nothing in the verdict, which stays the
+ *                  proposal's. On this set every page with a dialog is unusable, so what an alert
+ *                  costs a GOOD page is not measured here at all.
  */
-export type Arm = "rules" | "rules+words" | "rules+jev" | "jev-any-length";
+export type Arm =
+  | "rules"
+  | "rules+words"
+  | "rules+jev"
+  | "jev-any-length"
+  | "rules+jev+dialog";
 export const ARMS: readonly Arm[] = [
   "rules",
   "rules+words",
   "rules+jev",
   "jev-any-length",
+  "rules+jev+dialog",
 ];
 
 /** Pages with more text than this are never sent (§6: "only when the text is under about 1,500"). */
@@ -139,6 +156,32 @@ export function pageFactsStateOf(
       text: redactText(page.head600.slice(0, PAGE_FACTS_HEAD_CHARS)),
     },
   };
+}
+
+/** At most this much of a page's dialog words is shown (post-hoc arm). */
+export const PAGE_FACTS_DIALOG_CHARS = 300;
+
+/** A page's alert and confirm words, one per line, redacted and cut to 300 characters. */
+export function dialogTextOf(page: Pick<LabelledPage, "dialogs">): string {
+  return redactText(
+    page.dialogs
+      .map((dialog) => dialog.message.trim())
+      .filter(Boolean)
+      .join("\n"),
+  ).slice(0, PAGE_FACTS_DIALOG_CHARS);
+}
+
+/**
+ * POST-HOC, written after seeing run 1: what the `rules+jev+dialog` arm shows Jev. The same state,
+ * with `dialog` beside the text when the page raised one — so a page that raised none is sent
+ * exactly what `rules+jev` sends, and is answered once for both.
+ */
+export function pageFactsStateWithDialogsOf(
+  page: Pick<LabelledPage, "finalUrl" | "title" | "head600" | "dialogs">,
+) {
+  const state = pageFactsStateOf(page);
+  const dialog = dialogTextOf(page);
+  return dialog ? { page: { ...state.page, dialog } } : state;
 }
 
 /*
@@ -205,6 +248,11 @@ export function decidableFromText(page: LabelledPage): boolean {
   return page.decidingIn === "text" || page.decidingIn === "title";
 }
 
+/** The same, once the dialog words are shown too (post-hoc arm): the readable denominator grows. */
+export function decidableWithDialogs(page: LabelledPage): boolean {
+  return decidableFromText(page) || page.decidingIn === "dialog";
+}
+
 /** One page's fact in one run. */
 export type Observation = { page: LabelledPage; fact: PageFact | null };
 
@@ -254,6 +302,8 @@ export type Score = {
   softAny: Tally;
   /** The same, only the soft pages whose deciding fact is in the text or title. */
   softFromText: Tally;
+  /** The same over the soft pages decidable once dialogs are read too (added with the post-hoc arm). */
+  softWithDialogs: Tally;
   walls: Tally;
   falseWalls: Tally;
   captchas: Tally;
@@ -275,6 +325,11 @@ export function scoreOf(observations: readonly Observation[]): Score {
       (page) => isSoftUnusable(page) && decidableFromText(page),
       told("page_unusable"),
     ),
+    softWithDialogs: tally(
+      observations,
+      (page) => isSoftUnusable(page) && decidableWithDialogs(page),
+      told("page_unusable"),
+    ),
     walls: tally(observations, (page) => page.signInWall, told("sign_in_wall")),
     falseWalls: tally(
       observations,
@@ -286,6 +341,41 @@ export function scoreOf(observations: readonly Observation[]): Score {
       observations,
       (page) => !page.captcha,
       told("captcha"),
+    ),
+  };
+}
+
+/**
+ * POST-HOC, written after seeing run 1: the password rule read as two different facts. Nothing in
+ * the order changes; this only says which pages each reading tells something, and whether that is
+ * true.
+ *
+ *   `sign_in_wall` — "you are kept from what you asked for". The labeller's meaning, and what the
+ *     rule says today. Wrong on a login page that was asked for, and on a page that has a login box
+ *     beside its content.
+ *   `has_sign_in_form` — "a login form is here". True on every page with a password field, so never
+ *     wrong; it is simply not a warning, and the Bot is left to judge whether the form is in its way.
+ *
+ * `reached` are the pages the password rule speaks for: a password field and a status under 400 (at
+ * 400 or more the status speaks first).
+ */
+export function signInReadingsOf(pages: readonly LabelledPage[]) {
+  const withForm = pages.filter((page) => page.passwordFields > 0);
+  const reached = withForm.filter((page) => page.status < 400);
+  const ids = (list: readonly LabelledPage[]) => list.map((page) => page.id);
+  const notWalls = reached.filter((page) => !page.signInWall);
+  return {
+    withForm: ids(withForm),
+    usableWithForm: ids(withForm.filter((page) => !page.unusable)),
+    reached: ids(reached),
+    walls: ids(reached.filter((page) => page.signInWall)),
+    /** The login page that was asked for: usable, and itself a sign-in page. */
+    askedFor: ids(
+      notWalls.filter((page) => !page.unusable && page.kind === "sign-in"),
+    ),
+    /** A login box beside something else: content, or a page that is unusable for another reason. */
+    besideOther: ids(
+      notWalls.filter((page) => page.unusable || page.kind !== "sign-in"),
     ),
   };
 }

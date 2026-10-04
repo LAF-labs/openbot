@@ -10,6 +10,12 @@
  * only way to say whether the length limit is also keeping it right. Each arm is scored only on what
  * it would have asked.
  *
+ * POST-HOC, ADDED AFTER RUN 1 (2026-10-04): each run also asks, once more, about every page that
+ * raised an alert or a confirm, with the dialog's words beside the text — the `rules+jev+dialog` arm
+ * (`page-facts.ts`). A page that raised none would be sent the same state twice, so its one answer
+ * serves both arms. The same run prints the password rule read as two different facts. Neither
+ * changes the proposal's scoring, its bar or its verdict.
+ *
  * `EVAL_RUNS` (default 3: §6's stability bar is over three) asks every page that many times;
  * `EVAL_WIDTH` (default 4, as `eval:first-move`) is how many are in flight; `EVAL_SHOW=1` prints
  * every page with its answers; `EVAL_FROM=<report>` scores a saved report again without asking
@@ -26,6 +32,8 @@ import {
   type Arm,
   asksJev,
   decidableFromText,
+  decidableWithDialogs,
+  dialogTextOf,
   dropReasons,
   factOf,
   isSoftUnusable,
@@ -36,12 +44,14 @@ import {
   PAGE_FACTS_MAX_CHARS,
   PAGE_FACTS_QUESTIONS,
   pageFactsStateOf,
+  pageFactsStateWithDialogsOf,
   quantile,
   recommendedBar,
   type Score,
   SWEEP_BARS,
   scoreOf,
   shareOf,
+  signInReadingsOf,
   stabilityOf,
   type Tally,
   verdictOf,
@@ -51,6 +61,8 @@ import {
 type Ask = {
   run: number;
   id: string;
+  /** The post-hoc ask with the dialog's words; absent on the plain one (and in run 1's report). */
+  variant?: "dialog";
   unusable: number | null;
   captcha: number | null;
   ms: number;
@@ -101,7 +113,12 @@ function quietly<T>(work: () => Promise<T>): Promise<T> {
   );
 }
 
-async function ask(call: DecisionCall, page: LabelledPage, run: number) {
+async function ask(
+  call: DecisionCall,
+  page: LabelledPage,
+  run: number,
+  variant?: "dialog",
+) {
   let usage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
   const decided = await askDecision(
     {
@@ -116,7 +133,10 @@ async function ask(call: DecisionCall, page: LabelledPage, run: number) {
     },
     {
       purpose: "eval-page-facts",
-      state: pageFactsStateOf(page),
+      state:
+        variant === "dialog"
+          ? pageFactsStateWithDialogsOf(page)
+          : pageFactsStateOf(page),
       questions: PAGE_FACTS_QUESTIONS,
       timeoutMs: EVAL_TIMEOUT_MS,
     },
@@ -129,6 +149,7 @@ async function ask(call: DecisionCall, page: LabelledPage, run: number) {
   return {
     run,
     id: page.id,
+    ...(variant ? { variant } : {}),
     unusable: p("unusable"),
     captcha: p("captcha"),
     ms: decided.ms,
@@ -180,29 +201,55 @@ async function asked(): Promise<{ asks: Ask[]; warmUp: Ask | null }> {
     // Asked about the first page, counted in what was spent, and not in how long a request takes.
     const warmUp = await ask(call, pages[0] as LabelledPage, 0);
     const out: Ask[] = [];
+    const raisedDialogs = pages.filter((page) => dialogTextOf(page) !== "");
     for (let run = 1; run <= RUNS; run += 1) {
       out.push(...(await all(pages, WIDTH, (page) => ask(call, page, run))));
+      out.push(
+        ...(await all(raisedDialogs, WIDTH, (page) =>
+          ask(call, page, run, "dialog"),
+        )),
+      );
     }
     return { asks: out, warmUp };
   });
 }
 const { asks, warmUp } = await asked();
 
+const plainAsks = asks.filter((item) => item.variant !== "dialog");
+const dialogAsks = asks.filter((item) => item.variant === "dialog");
 const runCount = Math.max(0, ...asks.map((item) => item.run));
+const answerOf = (item: Ask): JevAnswer =>
+  item.unusable === null || item.captcha === null
+    ? null
+    : { unusable: item.unusable, captcha: item.captcha };
 const runs: Map<string, JevAnswer>[] = Array.from(
   { length: runCount },
   (_, index) =>
     new Map(
-      asks
+      plainAsks
         .filter((item) => item.run === index + 1)
-        .map((item) => [
-          item.id,
-          item.unusable === null || item.captcha === null
-            ? null
-            : { unusable: item.unusable, captcha: item.captcha },
-        ]),
+        .map((item) => [item.id, answerOf(item)]),
     ),
 );
+/*
+ * The post-hoc arm's answers: the dialog ask where the page raised a dialog, the plain one where it
+ * did not (the same state, so the same request). A report without dialog asks — run 1's — leaves
+ * those pages unanswered rather than borrowing the answer to a different question.
+ */
+const raisedDialog = new Set(
+  pages.filter((page) => dialogTextOf(page) !== "").map((page) => page.id),
+);
+const dialogRuns: Map<string, JevAnswer>[] = runs.map((answers, index) => {
+  const withDialogs = new Map(answers);
+  for (const id of raisedDialog) {
+    const item = dialogAsks.find(
+      (candidate) => candidate.run === index + 1 && candidate.id === id,
+    );
+    withDialogs.set(id, item ? answerOf(item) : null);
+  }
+  return withDialogs;
+});
+const runsFor = (arm: Arm) => (arm === "rules+jev+dialog" ? dialogRuns : runs);
 
 /* ── formatting ────────────────────────────────────────────────────────────────────────────── */
 const pct = (share: number) => `${(100 * share).toFixed(1)}%`;
@@ -214,6 +261,7 @@ const ARM_NAMES: Record<Arm, string> = {
   "rules+words": "+words",
   "rules+jev": "+Jev ≤1,500",
   "jev-any-length": "+Jev any length",
+  "rules+jev+dialog": "+dialog (post-hoc)",
 };
 const answersOf = (id: string) =>
   runs
@@ -291,12 +339,13 @@ console.log(
 
 /* ── the arms at that bar ──────────────────────────────────────────────────────────────────── */
 const scores = Object.fromEntries(
-  ARMS.map((arm) => [arm, scoreOf(observe(pages, arm, runs, bar))]),
+  ARMS.map((arm) => [arm, scoreOf(observe(pages, arm, runsFor(arm), bar))]),
 ) as Record<Arm, Score>;
 const ROWS: Array<[string, keyof Score]> = [
   ['false "unusable" on a usable page (≤ 1%)', "falseUnusable"],
   ["soft unusable caught (≥ 70%)", "soft"],
   ["  of them decidable from text", "softFromText"],
+  ["  of them decidable from text or dialog", "softWithDialogs"],
   ["soft unusable told anything", "softAny"],
   ["sign-in walls told sign_in_wall", "walls"],
   ["not a wall, told sign_in_wall", "falseWalls"],
@@ -311,7 +360,7 @@ const armTable = (title: string, among: (page: LabelledPage) => boolean) => {
     `  ${pad("", 44)}${ARMS.map((arm) => pad(ARM_NAMES[arm], 22)).join("")}`,
   );
   const subsetScores = ARMS.map((arm) =>
-    scoreOf(observe(subset, arm, runs, bar)),
+    scoreOf(observe(subset, arm, runsFor(arm), bar)),
   );
   for (const [label, key] of ROWS) {
     if (subsetScores.every((score) => score[key].n === 0)) continue;
@@ -335,7 +384,7 @@ armTable(
 const at = (arm: Arm, page: LabelledPage) =>
   [
     ...new Set(
-      runs.map((answers) =>
+      runsFor(arm).map((answers) =>
         factOf(page, arm, answers.get(page.id) ?? null, bar),
       ),
     ),
@@ -408,9 +457,111 @@ for (const id of unstable.unstable) {
   console.log(`    ${line(page)}  → ${at("rules+jev", page)}`);
 }
 
+/* ── POST-HOC: the dialog's words shown too ─────────────────────────────────────────────────── */
+const dialogSweep = SWEEP_BARS.map((step) => {
+  const score = scoreOf(observe(pages, "rules+jev+dialog", dialogRuns, step));
+  return {
+    bar: step,
+    score,
+    stable: stabilityOf(productAsks, "rules+jev+dialog", dialogRuns, step),
+    falseUnusable: shareOf(score.falseUnusable),
+    softCaught: shareOf(score.soft),
+  };
+});
+const dialogBar = recommendedBar(dialogSweep);
+const bothHold = dialogSweep.filter(
+  (step) =>
+    step.softCaught >= PAGE_FACTS_BARS.softCaught &&
+    step.falseUnusable <= PAGE_FACTS_BARS.falseUnusable,
+);
+console.log(
+  `\nPOST-HOC, written after run 1 — +dialog: +Jev ≤1,500 with the alert and confirm words beside the text (${raisedDialog.size} pages raised one, ${dialogAsks.length} dialog asks)`,
+);
+if (dialogAsks.length === 0) {
+  console.log(
+    "  this report has no dialog asks: the arm is unmeasured, and its pages count as unanswered",
+  );
+}
+console.log(
+  `  usable pages that raised a dialog: ${usable.filter((page) => raisedDialog.has(page.id)).length} — what an alert costs a good page is not measured by this set`,
+);
+console.log(
+  `  ${pad("bar", 6)}${pad("false unusable", 22)}${pad("soft caught (59)", 22)}${pad("from text (46)", 22)}${pad(`text or dialog (${soft.filter(decidableWithDialogs).length})`, 24)}same 3 runs`,
+);
+for (const step of dialogSweep) {
+  console.log(
+    `  ${pad(step.bar.toFixed(2), 6)}${pad(of(step.score.falseUnusable), 22)}${pad(of(step.score.soft), 22)}${pad(of(step.score.softFromText), 22)}${pad(of(step.score.softWithDialogs), 24)}${pct(step.stable.stable / Math.max(1, step.stable.n))} ${step.stable.stable}/${step.stable.n}`,
+  );
+}
+console.log(
+  `  its own bar, by the same rule: ${dialogBar === null ? "none" : dialogBar.toFixed(2)} · bars catching ≥ 70% with false unusable ≤ 1%: ${bothHold.length ? bothHold.map((step) => step.bar.toFixed(2)).join(", ") : "none"}`,
+);
+for (const page of pages.filter((item) => raisedDialog.has(item.id))) {
+  const dialogAnswers = dialogRuns
+    .map((answers) => {
+      const answer = answers.get(page.id);
+      return answer
+        ? `${answer.unusable.toFixed(2)}/${answer.captcha.toFixed(2)}`
+        : "—";
+    })
+    .join(" ");
+  console.log(
+    `    ${line(page)}  with dialog ${dialogAnswers}  → +Jev ${at("rules+jev", page)} · +dialog ${at("rules+jev+dialog", page)}`,
+  );
+}
+const dialogInputs = dialogAsks.map((item) => item.inputTokens);
+const samePlainInputs = plainAsks
+  .filter((item) => raisedDialog.has(item.id))
+  .map((item) => item.inputTokens);
+console.log(
+  `  tokens on those pages: input p50 ${quantile(dialogInputs, 0.5)} with the dialog, ${quantile(samePlainInputs, 0.5)} without · US$${dialogAsks.reduce((sum, item) => sum + item.costUsd, 0).toFixed(5)} for the dialog asks`,
+);
+
+/* ── POST-HOC: the password rule read as two facts ─────────────────────────────────────────── */
+const readings = signInReadingsOf(pages);
+const pageById = new Map(pages.map((page) => [page.id, page]));
+const notWalls = [...readings.askedFor, ...readings.besideOther];
+console.log(
+  "\nPOST-HOC, written after run 1 — the password rule as two facts (the order is unchanged)",
+);
+console.log(
+  `  a password field on ${readings.withForm.length} pages; the rule speaks for ${readings.reached.length} (status < 400)`,
+);
+console.log(
+  `  as sign_in_wall ("kept from what was asked"): right on ${readings.walls.length}, wrong on ${notWalls.length} — ${readings.askedFor.length} login pages that were asked for, ${readings.besideOther.length} with a login box beside something else (${readings.besideOther.join(", ")})`,
+);
+console.log(
+  `  as has_sign_in_form ("a login form is here"): true on all ${readings.withForm.length}; ${readings.usableWithForm.length} usable pages carry it, which is no error for a fact that is true — and no usable page is told anything negative by the rule`,
+);
+const jevSays = (id: string) =>
+  runs.map((answers) => (answers.get(id)?.unusable ?? 0) >= bar);
+const agreeing = notWalls.flatMap((id) => {
+  const page = pageById.get(id) as LabelledPage;
+  return jevSays(id).map((said) => said === page.unusable);
+});
+console.log(
+  `  Jev's unusable at ${bar.toFixed(2)} on those ${notWalls.length} (asked here, never by the product): agrees with the labeller ${agreeing.filter(Boolean).length}/${agreeing.length}`,
+);
+for (const id of notWalls) {
+  const page = pageById.get(id) as LabelledPage;
+  console.log(
+    `    ${line(page)}  ${page.unusable ? "unusable" : "usable  "} · Jev says ${jevSays(
+      id,
+    )
+      .map((said) => (said ? "unusable" : "usable"))
+      .join("/")}`,
+  );
+}
+const wallsSaidUnusable = readings.walls.flatMap((id) =>
+  jevSays(id).filter(Boolean),
+);
+console.log(
+  `  on the ${readings.walls.length} walls, Jev said unusable in ${wallsSaidUnusable.length} of ${readings.walls.length * runCount} answers (its question says a sign-in form alone is not unusable)`,
+);
+
 /* ── time, tokens, money ───────────────────────────────────────────────────────────────────── */
 const askedIds = new Set(productAsks.map((page) => page.id));
-const productTimes = asks
+const productTimes = plainAsks
   .filter((item) => askedIds.has(item.id))
   .map((item) => item.ms);
 const allTimes = asks.map((item) => item.ms);
@@ -421,14 +572,15 @@ console.log(
   `  the product's asks: ${productTimes.length} · p50 ${quantile(productTimes, 0.5)} ms · p95 ${p95} ms · max ${Math.max(0, ...productTimes)} ms · over 400 ms ${productTimes.filter((ms) => ms > 400).length} · over 1,200 ms ${productTimes.filter((ms) => ms > 1_200).length}`,
 );
 console.log(
-  `  every ask:          ${allTimes.length} · p50 ${quantile(allTimes, 0.5)} ms · p95 ${quantile(allTimes, 0.95)} ms · max ${Math.max(0, ...allTimes)} ms · no answer ${noAnswer.length}${noAnswer.length ? ` (${count(noAnswer, (item) => item.because ?? "")})` : ""}`,
+  `  every ask, dialog asks included: ${allTimes.length} · p50 ${quantile(allTimes, 0.5)} ms · p95 ${quantile(allTimes, 0.95)} ms · max ${Math.max(0, ...allTimes)} ms · no answer ${noAnswer.length}${noAnswer.length ? ` (${count(noAnswer, (item) => item.because ?? "")})` : ""}`,
 );
 const spentOn = [...asks, ...(warmUp ? [warmUp] : [])];
 const spent = spentOn.reduce((sum, item) => sum + item.costUsd, 0);
-const inputs = asks.map((item) => item.inputTokens);
-const outputs = asks.map((item) => item.outputTokens);
+const inputs = plainAsks.map((item) => item.inputTokens);
+const outputs = plainAsks.map((item) => item.outputTokens);
 const meanCost =
-  asks.reduce((sum, item) => sum + item.costUsd, 0) / Math.max(1, asks.length);
+  plainAsks.reduce((sum, item) => sum + item.costUsd, 0) /
+  Math.max(1, plainAsks.length);
 console.log("tokens and money");
 console.log(
   `  per request: input p50 ${quantile(inputs, 0.5)}, max ${Math.max(0, ...inputs)} · output p50 ${quantile(outputs, 0.5)} · US$${meanCost.toFixed(6)} on average`,
@@ -507,6 +659,7 @@ await Bun.write(
       width: WIDTH,
       bar,
       recommended,
+      dialogBar,
       failed,
       drop,
       spentUsd: spent,
