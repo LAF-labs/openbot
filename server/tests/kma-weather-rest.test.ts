@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  WEATHER_DATA_HEAD,
+  WEATHER_SHOWN,
+  weatherOf as readForTheCard,
+} from "../../shared/weather";
+import {
   createKmaPlaces,
   KMA_PLACES,
   parseKmaPlaces,
@@ -164,6 +169,8 @@ const connection = { url: KMA_HOST, actorId: "person-1", botId: "bot-1" };
 type Facts = {
   source: string;
   place: string;
+  /** That the forecast is drawn as a card: the model's, and the answer's last field. */
+  shown?: string;
   basis?: string;
   issued: { now?: string; hours?: string; days?: string };
   units: string;
@@ -264,6 +271,21 @@ describe("the weather tool", () => {
       "검색하거나 브라우저로 찾지 말고 이것으로 답한다",
     );
     expect(tool?.description).toContain("한국 안만");
+  });
+
+  /*
+   * THE ANSWER IS DRAWN AS A CARD (the owner, 2026-10-04), and the rule that follows from it is
+   * here: one sentence about what was asked, the forecast and its source not written out again.
+   * The fact itself is the answer's last field (`WEATHER_SHOWN`); the rule was tried there too,
+   * and a Bot told its person about it.
+   */
+  test("says the answer is shown as a card, and asks for one sentence that does not repeat it", () => {
+    for (const [tool] of [kmaWeatherTools(false), kmaWeatherTools(true)]) {
+      expect(tool?.description).toContain("날씨 카드로 표시되니");
+      expect(tool?.description).toContain(
+        "예보와 출처를 다시 적지 말고 물은 것에만 한 문장으로 답한다",
+      );
+    }
   });
 
   test("offers a place in words exactly when there is a table to look it up in", () => {
@@ -505,9 +527,57 @@ describe("what a Bot is handed", () => {
           precip: "비 0~6시(0.4mm·2mm)",
         },
       ],
+      // The last thing the model reads: the forecast is on the screen already. A fact, no rule.
+      shown: "사용자 화면에 날씨 카드로 이미 표시됨",
     });
+    expect(Object.keys(facts).at(-1)).toBe("shown");
+    expect(facts.shown).toBe(WEATHER_SHOWN);
     // It rides in the model's context on every later turn. The three raw answers were 140 KB.
     expect(Buffer.byteLength(text)).toBeLessThan(1_500);
+
+    /*
+     * AND THE APP'S CARD IS DRAWN FROM THIS VERY TEXT (`shared/weather.ts`): it is known as data
+     * by how it begins, and every day's sky is one of the words the card can read back.
+     */
+    expect(text.startsWith(WEATHER_DATA_HEAD)).toBe(true);
+    expect(readForTheCard(text)).toEqual({
+      place: "위도 37.57, 경도 126.98",
+      temp: 15.2,
+      days: [
+        {
+          date: "2026-10-02",
+          min: 12,
+          max: 21,
+          sky: "clear",
+          chance: 0,
+          falls: null,
+        },
+        {
+          date: "2026-10-03",
+          min: 11,
+          max: 22,
+          sky: "overcast",
+          chance: 30,
+          falls: null,
+        },
+        {
+          date: "2026-10-04",
+          min: 14,
+          max: 23,
+          sky: "overcast",
+          chance: 30,
+          falls: null,
+        },
+        {
+          date: "2026-10-05",
+          min: 15,
+          max: 21,
+          sky: "clear",
+          chance: 70,
+          falls: "rain",
+        },
+      ],
+    });
   });
 
   test("no raw row and no code reaches the model", async () => {

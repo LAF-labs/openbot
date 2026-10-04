@@ -1,13 +1,19 @@
 import type { Message, ToolCall } from "@ag-ui/core";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
-import { serverKeyOf, TOOL_CALL, TOOL_SEARCH } from "@shared/tools/bridge";
+import {
+  serverKeyOf,
+  TOOL_CALL,
+  TOOL_SEARCH,
+  WEATHER_TOOL_NAME,
+} from "@shared/tools/bridge";
 import {
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
 } from "@shared/tools/gallery";
 import { stepDidNotWork } from "@shared/tools/step-result";
 import { withheldMarksIn } from "@shared/tools/withheld";
+import { WEATHER_DATA_HEAD } from "@shared/weather";
 import {
   BROWSING_TOOLS,
   type BrowsingStep,
@@ -161,6 +167,21 @@ export function isFoldableStep(name: string): boolean {
 }
 
 /**
+ * Whether a weather call's answer is drawn as a card (`WeatherCard`): it came back with data.
+ *
+ * A CARD IS A THING THE BOT MADE, NOT A STEP ON THE WAY — the same line `isFoldableStep` draws by
+ * name. The weather tool is a connected service's by its name, so its row would be put away with
+ * the steps; with data in it, it is the card the owner asked for (2026-10-04) and stays in the
+ * conversation. Without — refused, failed, a place the forecast does not reach — it is the step it
+ * always was: put away, and counted as one that did not work.
+ *
+ * By how the answer begins, not by reading it: this is asked of every step on every chunk.
+ */
+export function isWeatherCard(result: string): boolean {
+  return result.startsWith(WEATHER_DATA_HEAD);
+}
+
+/**
  * Whether a step has something on it for the person — a line that is drawn whether or not anybody
  * opened the record it belongs to.
  *
@@ -241,7 +262,13 @@ export function stepRunsOf(
   const places = new Map<number, StepRunPlace>();
   let runId: string | null = null;
   items.forEach((item, index) => {
-    if (item.kind !== "tool" || !isFoldableStep(item.toolCall.function.name)) {
+    if (
+      item.kind !== "tool" ||
+      !isFoldableStep(item.toolCall.function.name) ||
+      (item.toolCall.function.name === WEATHER_TOOL_NAME &&
+        item.result !== undefined &&
+        isWeatherCard(item.result))
+    ) {
       runId = null;
       return;
     }
