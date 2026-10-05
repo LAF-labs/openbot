@@ -885,12 +885,12 @@ export const TOOL_RESULT_KO: Record<string, string> = {
     "오늘 쓸 수 있는 웹 검색을 다 썼다. 꼭 필요한 것은 브라우저로 찾고, 나머지는 내일 다시 할 수 있다고 말해라.",
 
   /*
-   * ── 툴 호출 문(`POST /api/plugins/call`)이 스스로 답하는 것들 ─────────────────────────────────
+   * ── 툴 호출(`server/src/plugins/call.ts`)이 스스로 답하는 것들 ────────────────────────────────
    *
-   * 2026-09-14까지 이 문은 영어 문장을 보냈다 — 서버가 사라진 툴은 "notion is not a server this
+   * 2026-09-14까지 이 답들은 영어 문장이었다 — 서버가 사라진 툴은 "notion is not a server this
    * deployment will connect to.", 정의가 바뀐 툴은 "'search' changed its definition since it was
-   * approved…", 공급자의 실패는 공급자가 쓴 영어 문단 그대로. 이제 코드만 오고, 브라우저의 툴
-   * 처리기와 무인 실행이 둘 다 이 표로 읽는다. 로그인이 끝난 사람과 권한이 회수된 사람은 모든 문이
+   * approved…", 공급자의 실패는 공급자가 쓴 영어 문단 그대로. 이제 코드만 오고, 턴과 무인 실행이
+   * 둘 다 이 표로 읽는다. 로그인이 끝난 사람과 권한이 회수된 사람은 모든 문이
    * 먼저 답하는 사실이라 여기에 같이 둔다.
    */
   "laf:server_unknown":
@@ -900,8 +900,6 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   // 거절이 아니라 실패다 — 배포가 막은 것이 아니라 상대 서버가 제대로 답하지 못했다.
   "laf:tool_server_failed":
     "그 서비스 쪽에서 호출이 실패했다. 이 배포가 막은 것이 아니라 상대 서버가 제대로 답하지 못한 것이다. 같은 호출을 곧바로 되풀이하지 말고, 실패했다고 말한 뒤 조금 뒤에 다시 해 보자고 해라. 결과를 지어내지 마라.",
-  "laf:call_incomplete":
-    "이 호출에 툴이나 봇이 빠져 있어서 보내지 않았다. 네가 고칠 수 있는 것이 아니니 다시 시도하지 말고 그대로 알려라.",
   "laf:unauthenticated":
     "이 사람의 로그인이 끝나서 이 호출을 할 수 없었다. 다시 시도하지 말고, 다시 로그인한 뒤 요청해 달라고 말해라.",
   "laf:no_access":

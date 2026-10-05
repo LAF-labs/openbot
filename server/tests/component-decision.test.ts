@@ -1,23 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { FUNCTION_NOT_GRANTED } from "../src/audit";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createComponentRoutes } from "../src/components/routes";
 import type { ComponentStore } from "../src/components/store";
 
 /**
- * What one decision covers.
+ * The doors a component's data comes through, and whose Bot they answer for.
  *
  * A component is allowed by two grants: the Bot may use it, and it may read the data it draws. Both
- * are enforced when the data is fetched, which happens while the component renders. The decision is
- * asked before that, and answers whoever asked for the component, so it has to speak for the data
- * as well when the caller says which data that is.
+ * are enforced when the data is fetched, which happens while the component renders. Whether a card
+ * is drawn at all is decided before that, in the Bot's turn, and what that verdict covers is held
+ * there (`chat-tools.test.ts`, "a card that reads data") — it was asked of a door of its own, and
+ * held here, until that door went with the window that asked it (2026-10-06).
  */
 
 const GRANTED = "recentRefusals";
-const WITHHELD = "botActivity";
 
 const store = {
   decide: async () => ({ allowed: true as const, description: "Published." }),
@@ -27,7 +26,7 @@ const store = {
 
 /**
  * The guard as `createRequireUser` ships it: the actor, and beside it whose Bots they may drive.
- * `risk-analyst` is theirs; every other Bot is somebody else's, which the last test presses on.
+ * `risk-analyst` is theirs; every other Bot is somebody else's, which the test below presses on.
  */
 const asSignedIn: MiddlewareHandler<{ Variables: AppVariables }> = async (
   context,
@@ -45,66 +44,11 @@ function app() {
   );
 }
 
-async function decide(body: Record<string, unknown>) {
-  const response = await app().request(
-    "http://laf.local/components/showActivityReport/decision",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
-  return (await response.json()) as {
-    allowed: boolean;
-    reason?: string;
-    function?: string;
-  };
-}
-
-describe("deciding a component", () => {
-  test("allows one whose Bot holds it and which names no data", async () => {
-    expect(await decide({ agentId: "risk-analyst" })).toEqual({
-      allowed: true,
-    });
-  });
-
-  test("allows one whose data it may also read", async () => {
-    expect(
-      await decide({ agentId: "risk-analyst", functions: [GRANTED] }),
-    ).toEqual({ allowed: true });
-  });
-
-  test("refuses one that would be drawn empty, and says which grant is missing", async () => {
-    const decision = await decide({
-      agentId: "risk-analyst",
-      functions: [WITHHELD],
-    });
-    expect(decision.allowed).toBe(false);
-    // The code says WHICH refusal; the field beside it says which grant. They used to be one
-    // English sentence, which is exactly why the name is a field now — the surface says the words
-    // and cannot say them without the fact.
-    expect(decision.reason).toBe(FUNCTION_NOT_GRANTED);
-    expect(decision.function).toBe(WITHHELD);
-  });
-
-  test("refuses when any one of the functions is withheld", async () => {
-    const decision = await decide({
-      agentId: "risk-analyst",
-      functions: [GRANTED, WITHHELD],
-    });
-    expect(decision.allowed).toBe(false);
-  });
-
-  test("ignores anything in the list that is not a name", async () => {
-    expect(
-      await decide({ agentId: "risk-analyst", functions: [1, null, {}] }),
-    ).toEqual({ allowed: true });
-  });
-
+describe("a component's doors", () => {
   /*
    * THE BOT IN THE BODY IS SOMEBODY'S.
    *
-   * Measured 2026-09-10 (audit A8): `decision`, `call` and `for-agent` took the Bot on trust, so a
+   * Measured 2026-09-10 (audit A8): `call` and `for-agent` took the Bot on trust, so a
    * colleague could name the owner's Bot and read through a grant given to it and not to theirs.
    * 404 with the code, never 403 or a 200 saying `allowed: false`: the refusal must not confirm
    * that the Bot exists, and it must not be recorded as a component refusal, which is a fact about
@@ -121,7 +65,6 @@ describe("deciding a component", () => {
       });
 
     for (const response of [
-      await post("showActivityReport/decision", elsewhere),
       await post("showActivityReport/call", {
         ...elsewhere,
         function: GRANTED,

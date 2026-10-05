@@ -1,9 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
-import { Hono, type MiddlewareHandler } from "hono";
 import { createAuditStore } from "../src/audit";
-import type { AppVariables } from "../src/auth/guards";
 import {
   type CallPreview,
   createApprovalRegistry,
@@ -21,7 +19,6 @@ import {
 import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import { createAlimtalkTools } from "../src/plugins/alimtalk/tools";
 import { createPartnerConnections } from "../src/plugins/partner-connections";
-import { createPluginRoutes } from "../src/plugins/routes";
 import {
   createPluginStore,
   PluginNeedsApprovalError,
@@ -329,52 +326,6 @@ describe("the question for an outward send", () => {
       field: "recipients",
       values: ["friend@example.com"],
     });
-  });
-});
-
-describe("the pause reply the chat surface reads", () => {
-  test("carries the preview beside the question, as facts", async () => {
-    // The real routes over the real store, as one signed-in person: the body the browser's
-    // `pauseFrom` reads is the only way the preview reaches a chat card.
-    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
-      context,
-      next,
-    ) => {
-      context.set("actor", {
-        id: actorId,
-        email: `${actorId}@laf.test`,
-        role: "user",
-      });
-      await next();
-    };
-    const app = new Hono().route(
-      "/api/plugins",
-      createPluginRoutes(store, requireUser),
-    );
-
-    const response = await app.request("http://t/api/plugins/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: REFS.reply,
-        args: {
-          review: "accounts/1/locations/2/reviews/xyz",
-          comment: "다음에 또 오세요.",
-        },
-        agentId: botId,
-      }),
-    });
-
-    expect(response.status).toBe(409);
-    const body = (await response.json()) as Record<string, unknown>;
-    expect(body.awaitingApproval).toBe(true);
-    expect(body.preview).toEqual([
-      { field: "review", values: ["accounts/1/locations/2/reviews/xyz"] },
-      { field: "text", values: ["다음에 또 오세요."] },
-    ]);
-    // Facts only: nothing on the reply is a sentence the server wrote for a person.
-    expect(body.code).toBe("laf:awaiting_approval");
-    expect(wentOut).toEqual([]);
   });
 });
 

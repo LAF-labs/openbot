@@ -8,7 +8,11 @@ import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import { agentProfiles, agents, skills, users } from "../src/db/schema";
 import { createPluginRoutes } from "../src/plugins/routes";
-import { BotNotDrivableError, createPluginStore } from "../src/plugins/store";
+import {
+  BotNotDrivableError,
+  createPluginStore,
+  PluginRefusedError,
+} from "../src/plugins/store";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 
@@ -358,8 +362,10 @@ describe("what a person may do over HTTP", () => {
    * `GET /for/:agentId` answered a colleague with every tool the owner's Bot held, by name, and
    * the view route beside it would hand over a skill's instructions to anybody who could guess
    * its slug; `POST /grants` took the Bot from the body and told a colleague, in two different
-   * sentences, whether the owner's Bot id was real. All four now answer a Bot that is not yours
-   * the way every other door does — 404, with the code, the same for one that is not there.
+   * sentences, whether the owner's Bot id was real. All four answered a Bot that is not yours the
+   * way every other door does — 404, with the code, the same for one that is not there — and the
+   * three that are left still do: the view route went with the window that called it (2026-10-06),
+   * and a Bot reads a skill in its own turn (`skill-view.integration.test.ts`).
    */
   test("cannot read what somebody else's Bot holds", async () => {
     const asBob = routesAs({
@@ -385,38 +391,6 @@ describe("what a person may do over HTTP", () => {
     expect(response.status).toBe(200);
     const held = (await response.json()) as { skills: { slug: string }[] };
     expect(held.skills.map((skill) => skill.slug)).toContain(aliceSkill);
-  });
-
-  test("cannot view a skill through somebody else's Bot, even one that Bot holds", async () => {
-    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
-    const asBob = routesAs({
-      id: bob,
-      email: "bob@example.test",
-      role: "user",
-    });
-
-    const response = await asBob.request(
-      `/for/${aliceBot}/skills/${aliceSkill}/view`,
-      { method: "POST" },
-    );
-
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({
-      error: "laf:bot_not_found",
-      code: "laf:bot_not_found",
-    });
-  });
-
-  test("the owner's Bot views the skill it holds", async () => {
-    await asAlice().request("/grants", grantBody(aliceSkill, aliceBot));
-
-    const response = await asAlice().request(
-      `/for/${aliceBot}/skills/${aliceSkill}/view`,
-      { method: "POST" },
-    );
-
-    expect(response.status).toBe(200);
-    expect(((await response.json()) as { slug: string }).slug).toBe(aliceSkill);
   });
 
   test("cannot put a skill on somebody else's Bot, and is not told the Bot exists", async () => {
@@ -470,52 +444,50 @@ describe("what a person may do over HTTP", () => {
   /*
    * ACTING THROUGH SOMEBODY ELSE'S BOT, WHICH NOTHING WAS WATCHING.
    *
-   * `POST /call` takes the Bot from the request body and used to ask only whether that BOT held a
+   * `POST /call` took the Bot from the request body and asked only whether that BOT held a
    * grant. A Bot id is not a secret — `GET /` hands out `grantedTo` — so on a deployment an owner
    * shares with their staff, naming the owner's Bot was enough to spend what it holds: the
    * deployment's own credential on a custom MCP server, the owner's shop on a partner one.
    *
-   * The two requests below are the same request with a different person behind it, and the answers
-   * have to differ on the PERSON: 404 for the Bot that is not theirs, and — for the owner — the
-   * ordinary grant refusal, which is the proof that the check is about whose Bot it is rather than
-   * about the tool.
+   * The two calls below are the same call with a different person behind it, and the answers
+   * have to differ on the PERSON: the Bot that is not theirs is not there, and — for the owner —
+   * the ordinary grant refusal, which is the proof that the check is about whose Bot it is rather
+   * than about the tool.
+   *
+   * ASKED OF THE STORE, where the rule is and every caller shares it: a chat turn and the
+   * unattended runner both reach `callTool` with the run's own owner. These went through
+   * `POST /call` until that door went with the window that called it (2026-10-06).
    */
-  test("cannot call a tool through a Bot that is not theirs", async () => {
-    const asBob = routesAs({
-      id: bob,
-      email: "bob@example.test",
-      role: "user",
-    });
-
-    const response = await asBob.request("/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+  const callAs = (
+    person: string,
+    bot: string,
+    options: { admin?: boolean } = {},
+  ) =>
+    store
+      .callTool({
         ref: `${suite}-server/a_tool`,
-        agentId: aliceBot,
-      }),
-    });
+        args: {},
+        botId: bot,
+        actorId: person,
+        actorIsAdmin: options.admin === true,
+      })
+      .catch((error: unknown) => error);
 
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({
-      error: "laf:bot_not_found",
-      code: "laf:bot_not_found",
-    });
+  test("cannot call a tool through a Bot that is not theirs", async () => {
+    const refused = await callAs(bob, aliceBot);
+
+    expect(refused).toBeInstanceOf(BotNotDrivableError);
+    expect((refused as BotNotDrivableError).code).toBe("laf:bot_not_found");
   });
 
   test("the owner of the same Bot gets as far as the grant", async () => {
-    const response = await asAlice().request("/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: `${suite}-server/a_tool`,
-        agentId: aliceBot,
-      }),
-    });
+    const refused = await callAs(alice, aliceBot);
 
-    // 403 rather than 404: this Bot IS hers, and what stopped the call is the tool it was never
-    // given. A 404 here would mean the refusal above was about the tool rather than about her.
-    expect(response.status).toBe(403);
+    // The grant's refusal rather than the Bot's: this Bot IS hers, and what stopped the call is the
+    // tool it was never given. `laf:bot_not_found` here would mean the refusal above was about the
+    // tool rather than about her.
+    expect(refused).toBeInstanceOf(PluginRefusedError);
+    expect((refused as PluginRefusedError).code).toBe("laf:tool_not_granted");
   });
 
   test("an administrator may not drive a Bot somebody else made either", async () => {
@@ -525,27 +497,12 @@ describe("what a person may do over HTTP", () => {
      * on a custom MCP server, that person's shop on a partner one. A Bot belongs to the account
      * that made it, and a role is not a way into one.
      */
-    const asAdmin = routesAs({
-      id: bob,
-      email: "bob@example.test",
-      role: "admin",
-    });
+    const refused = await callAs(bob, aliceBot, { admin: true });
 
-    const response = await asAdmin.request("/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: `${suite}-server/a_tool`,
-        agentId: aliceBot,
-      }),
-    });
-
-    // 404 and not the 403 above: the refusal is now about the Bot, before the tool is looked at,
-    // and it is the same answer an ordinary colleague gets.
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "laf:bot_not_found",
-    });
+    // The Bot's refusal and not the grant's above: it is about the Bot, before the tool is looked
+    // at, and it is the same answer an ordinary colleague gets.
+    expect(refused).toBeInstanceOf(BotNotDrivableError);
+    expect((refused as BotNotDrivableError).code).toBe("laf:bot_not_found");
   });
 
   /*
@@ -554,50 +511,19 @@ describe("what a person may do over HTTP", () => {
    * somebody ELSE'S", not "only mine".
    */
   test("a Bot nobody owns is everybody's to drive", async () => {
-    const asBob = routesAs({
-      id: bob,
-      email: "bob@example.test",
-      role: "user",
-    });
+    const refused = await callAs(bob, sharedBot);
 
-    const response = await asBob.request("/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: `${suite}-server/a_tool`,
-        agentId: sharedBot,
-      }),
-    });
-
-    expect(response.status).toBe(403);
+    expect(refused).toBeInstanceOf(PluginRefusedError);
+    expect((refused as PluginRefusedError).code).toBe("laf:tool_not_granted");
   });
 
   test("a Bot with no profile row has nobody to refuse on behalf of", async () => {
     // The fixture Bots of six other suites, and any Bot an upstream path minted without a
-    // profile: not somebody else's, so the grant is what decides — 403 for a tool never given.
-    const response = await asAlice().request("/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: `${suite}-server/a_tool`,
-        agentId: `agent_nobody_${suite}`,
-      }),
-    });
+    // profile: not somebody else's, so the grant is what decides — refused for a tool never given.
+    const refused = await callAs(alice, `agent_nobody_${suite}`);
 
-    expect(response.status).toBe(403);
-  });
-
-  test("the store refuses the same call, so the route is not the only guard", async () => {
-    // The route is one caller. The unattended runner reaches `callTool` directly with the run's own
-    // owner, so a check that lived only in the route would leave rooms and routines unguarded.
-    await expect(
-      store.callTool({
-        ref: `${suite}-server/a_tool`,
-        args: {},
-        botId: aliceBot,
-        actorId: bob,
-      }),
-    ).rejects.toBeInstanceOf(BotNotDrivableError);
+    expect(refused).toBeInstanceOf(PluginRefusedError);
+    expect((refused as PluginRefusedError).code).toBe("laf:tool_not_granted");
   });
 
   test("sees the deployment's skills and their own, and not somebody else's", async () => {

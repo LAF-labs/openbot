@@ -1,7 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../src/auth/guards";
-import { createPluginRoutes } from "../src/plugins/routes";
 import type { PluginStore } from "../src/plugins/store";
 import { createUnattendedTools } from "../src/runner/unattended";
 import { createChatTools } from "../src/turns/chat-tools";
@@ -14,7 +11,7 @@ import { createPersonAnswers } from "../src/turns/people";
  * Two things hang on it inside the store: whether a code withheld from a mail is kept to be shown
  * on the call's row (`plugin-mail-secrets.integration.test.ts`), and whether the weather tool says
  * its forecast is on the screen as a card (`kma-weather-rest.test.ts`). Those hold what each value
- * does; these hold that each of the three doors hands the value it should — a routine's call most of
+ * does; these hold that each of the two doors hands the value it should — a routine's call most of
  * all, since nothing of it is drawn and a routine told otherwise would say one vague sentence about
  * a card nobody has.
  */
@@ -84,32 +81,5 @@ describe("where a call's answer is drawn", () => {
     );
     await toolkit.execute(TOOL_NAME, {});
     expect(calls.map((call) => call.drawnOn)).toEqual(["nowhere"]);
-  });
-
-  test("the app's own call is a line of the conversation it was made from", async () => {
-    const { store, calls } = recordingStore();
-    const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
-      context,
-      next,
-    ) => {
-      context.set("actor", {
-        id: "person-1",
-        email: "person-1@laf.test",
-        role: "user",
-      });
-      context.set("mayDriveBot", async () => true);
-      await next();
-    };
-    const app = new Hono().route(
-      "/api/plugins",
-      createPluginRoutes(store as unknown as PluginStore, requireUser),
-    );
-    const response = await app.request("http://t/api/plugins/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref: REF, args: {}, agentId: "bot-1" }),
-    });
-    expect(response.status).toBe(200);
-    expect(calls.map((call) => call.drawnOn)).toEqual(["conversation"]);
   });
 });

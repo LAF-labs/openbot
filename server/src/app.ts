@@ -853,10 +853,6 @@ export function createApp({
     if (onboarding) await onboarding.markOnboarded(context.var.actor.id);
     return context.body(null, 204);
   });
-  app.get("/api/admin/status", requireUser, (context) => {
-    const denied = requireAdmin(context);
-    return denied ?? context.json({ status: "ok" });
-  });
   app.get("/api/admin/audit-events", requireUser, async (context) => {
     const denied = requireAdmin(context);
     if (denied) {
@@ -913,38 +909,6 @@ export function createApp({
       201,
     );
   });
-  app.post(
-    "/api/admin/credentials/:credentialId/rotate",
-    requireUser,
-    async (context) => {
-      const denied = requireAdmin(context);
-      if (denied) {
-        return denied;
-      }
-      if (!credentialService) {
-        return context.json(
-          { error: CREDENTIALS_UNAVAILABLE, code: CREDENTIALS_UNAVAILABLE },
-          503,
-        );
-      }
-
-      const body = await context.req.json().catch(() => null);
-      const input = credentialInput(body, context.var.actor.id);
-      if (!input) {
-        return context.json(
-          { error: CREDENTIAL_INPUT_INVALID, code: CREDENTIAL_INPUT_INVALID },
-          400,
-        );
-      }
-
-      return context.json({
-        credential: await credentialService.rotate({
-          ...input,
-          previousCredentialId: context.req.param("credentialId"),
-        }),
-      });
-    },
-  );
   app.post(
     "/api/admin/credentials/:credentialId/revoke",
     requireUser,

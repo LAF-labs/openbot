@@ -239,32 +239,6 @@ describe("a body has a ceiling", () => {
     expect(response.status).toBe(204);
   });
 
-  test("a Bot's file write is allowed the workspace's own cap, escaped — but only for a declared length", async () => {
-    const declared = await app().request(
-      `${ORIGIN}/api/computers/bot-1/files/write`,
-      {
-        method: "POST",
-        ...declaring(
-          JSON.stringify({ path: "notes.md", contents: "w".repeat(1_500_000) }),
-          { origin: ORIGIN, "content-type": "application/json" },
-        ),
-      },
-    );
-    // Not 413. (404: no computer is mounted in this app, which is the router saying so.)
-    expect(declared.status).not.toBe(413);
-
-    const undeclared = await app().request(
-      `${ORIGIN}/api/computers/bot-1/files/write`,
-      {
-        method: "POST",
-        headers: { origin: ORIGIN },
-        body: chunked(1_500_000),
-        duplex: "half",
-      } as RequestInit,
-    );
-    expect(undeclared.status).toBe(413);
-  });
-
   test("a conversation turn carries its thread, so it is allowed more — and an anonymous one is still refused unread", async () => {
     // The shape app.ts has: this middleware, then the session guard on the runtime, then the runtime.
     const door = new Hono();

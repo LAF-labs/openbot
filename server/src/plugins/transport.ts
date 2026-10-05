@@ -34,10 +34,10 @@ import * as mcp from "./mcp";
 
 /**
  * WHERE WHAT A CALL ANSWERS WILL BE DRAWN: the surface its result lands on, said by the door the
- * call came in through (`call.ts` lists the three).
+ * call came in through (`call.ts` lists the two).
  *
  * - `conversation`: the call is a line of a conversation — a window of it now, or the transcript
- *   later — so what it answers is drawn there, on its own row. A chat turn's calls, and the app's own.
+ *   later — so what it answers is drawn there, on its own row. A chat turn's calls.
  * - `nowhere`: nothing of the call is drawn. A routine's answer reaches the person as the Bot's
  *   words alone, with no row under them.
  *

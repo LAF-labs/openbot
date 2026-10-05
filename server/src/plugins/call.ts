@@ -353,7 +353,7 @@ export function createCallPath(
      *
      * WHOSE BOT IT IS, BEFORE ANY OF THAT. The grant is about the Bot and says nothing about who is
      * driving it, so until 2026-09 a person could name somebody else's Bot id — handed out by the
-     * Plugins listing — and spend what it holds. Asked here rather than in the route so that every
+     * Plugins listing — and spend what it holds. Asked here rather than by a caller so that every
      * caller shares it: the unattended runner reaches this same function with the run's own owner.
      */
     async callTool(input: {
@@ -382,8 +382,8 @@ export function createCallPath(
       approvalId?: string | undefined;
       /**
        * Where what this call answers will be drawn (`DrawnOn`, `transport.ts`), said by the door it
-       * came through: `conversation` from a chat turn (`turns/chat-tools.ts`) and from the app's own
-       * call (`routes.ts`), `nowhere` from a routine (`runner/unattended.ts`). Absent is `nowhere`:
+       * came through: `conversation` from a chat turn (`turns/chat-tools.ts`), `nowhere` from a
+       * routine (`runner/unattended.ts`). Absent is `nowhere`:
        * a caller that does not say where the answer goes has drawn it nowhere.
        *
        * It decides two things. Whether a code or link withheld from a mail (`mail-secrets.ts`) is
@@ -594,7 +594,7 @@ export function createCallPath(
             },
           });
         }
-        // Unchanged, so the route and the runner map it as they map every other refusal; anything
+        // Unchanged, so the turn and the runner map it as they map every other refusal; anything
         // that is not a refusal is a transport that threw, and hiding that would hide the next one.
         throw error;
       }

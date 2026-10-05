@@ -110,11 +110,8 @@ describe("the refusal copy", () => {
     expect(addressRefusals.length).toBeGreaterThan(6);
 
     const codes = [
-      // The two the Bot's own tool call answers, in the model's words (below), never on this page.
-      ...codesOf(await constants("plugins/routes.ts"), [
-        "CALL_INCOMPLETE",
-        "TOOL_SERVER_FAILED",
-      ]),
+      // The one the Bot's own tool call answers, in the model's words (below), never on this page.
+      ...codesOf(await constants("plugins/routes.ts"), ["TOOL_SERVER_FAILED"]),
       ...codesOf(await constants("plugins/servers.ts")),
       ...codesOf(await constants("plugins/oauth-client.ts")),
       ...codesOf(await constants("plugins/store.ts"), ["TOOL_NEEDS_REVIEW"]),
@@ -148,12 +145,11 @@ describe("the refusal copy", () => {
     expect(missingFrom(COMPONENT_ADMIN_REFUSALS, codes)).toEqual([]);
   });
 
-  test("every code the tool-call door answers has words for the model", async () => {
+  test("every code a tool call answers has words for the model", async () => {
     const routes = await constants("plugins/routes.ts");
     const store = await constants("plugins/store.ts");
     const guards = await constants("auth/guards.ts");
     const codes = [
-      routes.get("CALL_INCOMPLETE"),
       routes.get("TOOL_SERVER_FAILED"),
       store.get("SERVER_UNKNOWN"),
       store.get("TOOL_UNKNOWN"),

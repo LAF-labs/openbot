@@ -47,7 +47,6 @@ export type AgentProfileStore = {
     id: string,
     input: CreateAgentInput,
   ): Promise<AgentProfile>;
-  setHidden(actor: AgentActor, id: string, hidden: boolean): Promise<void>;
   /**
    * Change any of this person's preferences for a Bot, leaving the ones not named alone.
    *
@@ -498,10 +497,6 @@ export function createAgentProfileStore(
         },
         { isolationLevel: "read committed" },
       );
-    },
-
-    setHidden(actor, id, hidden) {
-      return this.setPreferences(actor, id, { hidden });
     },
 
     setPreferences(actor, id, patch) {

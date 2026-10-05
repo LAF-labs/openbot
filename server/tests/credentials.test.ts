@@ -569,7 +569,7 @@ describe("admin credential API", () => {
     ]);
   });
 
-  test("rotates and revokes through write-only administrator operations", async () => {
+  test("revokes through a write-only administrator operation", async () => {
     const calls: string[] = [];
     const app = createApp({
       config,
@@ -587,17 +587,6 @@ describe("admin credential API", () => {
         create: async () => {
           throw new Error("not used");
         },
-        rotate: async (input) => {
-          calls.push(`rotate:${input.previousCredentialId}`);
-          return {
-            id: "credential-new",
-            kind: input.kind,
-            provider: input.provider,
-            keyId: input.keyId,
-            metadata: input.metadata,
-            revokedAt: null,
-          };
-        },
         revoke: async (id) => {
           calls.push(`revoke:${id}`);
           return { id, revokedAt: new Date("2026-08-13T12:00:00.000Z") };
@@ -605,28 +594,12 @@ describe("admin credential API", () => {
       },
     });
 
-    const rotate = await app.request(
-      "http://laf.local/api/admin/credentials/credential-old/rotate",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "model",
-          provider: "openai",
-          keyId: "secondary",
-          metadata: {},
-          plaintext: "rotated-secret",
-        }),
-      },
-    );
     const revoke = await app.request(
       "http://laf.local/api/admin/credentials/credential-new/revoke",
       { method: "POST" },
     );
 
-    expect(rotate.status).toBe(200);
     expect(revoke.status).toBe(200);
-    expect(calls).toEqual(["rotate:credential-old", "revoke:credential-new"]);
-    expect(await rotate.text()).not.toContain("rotated-secret");
+    expect(calls).toEqual(["revoke:credential-new"]);
   });
 });

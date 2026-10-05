@@ -954,37 +954,11 @@ export function createAgentRoutes(
     },
   );
 
-  routes.post("/:agentId/hide", requireUser, async (context) => {
-    try {
-      await store.setHidden(
-        context.var.actor,
-        context.req.param("agentId"),
-        true,
-      );
-      return context.body(null, 204);
-    } catch (error) {
-      return mapStoreError(context, error);
-    }
-  });
-
-  routes.post("/:agentId/unhide", requireUser, async (context) => {
-    try {
-      await store.setHidden(
-        context.var.actor,
-        context.req.param("agentId"),
-        false,
-      );
-      return context.body(null, 204);
-    } catch (error) {
-      return mapStoreError(context, error);
-    }
-  });
-
   /*
    * ONE ROUTE FOR EVERY PER-PERSON PREFERENCE, not one verb per flag.
    *
-   * `/hide` and `/unhide` stay because they are already in the wire and under test, but a pair of
-   * verb endpoints per flag does not scale past the first one — the pin and the notification
+   * `/hide` and `/unhide` were the first flag's, and went when nothing called them (2026-10-06): a
+   * pair of verb endpoints per flag does not scale past the first one — the pin and the notification
    * toggle would have been four more. This takes a patch: the keys present are the ones changed.
    *
    * Deliberately NOT gated on `canManage`. A preference is about the reader, not about the Bot:

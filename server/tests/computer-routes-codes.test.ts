@@ -28,8 +28,6 @@ import {
   STALE_REFS,
   StaleSnapshotError,
   URL_INVALID,
-  WorkspaceRefusedError,
-  WorkspaceRequestError,
 } from "../src/computer/client";
 import type { DemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
@@ -373,12 +371,6 @@ function acting(
     snapshot: async () => SNAPSHOT,
     navigate: fail,
     click: fail,
-    type: fail,
-    key: fail,
-    readFile: fail,
-    writeFile: fail,
-    listFiles: fail,
-    uploadFile: fail,
     supplySecret: fail,
     forBot() {
       return client;
@@ -433,20 +425,6 @@ async function send(
 describe("an acting route that the computer refused", () => {
   const CASES: Array<[string, unknown, Error, number, string]> = [
     [
-      "/bot-1/files/read",
-      { path: "notes.md" },
-      new WorkspaceRequestError("laf:file_not_found"),
-      400,
-      "laf:file_not_found",
-    ],
-    [
-      "/bot-1/files/write",
-      { path: "../secrets", contents: "x" },
-      new WorkspaceRefusedError("laf:file_path_refused"),
-      403,
-      "laf:file_path_refused",
-    ],
-    [
       "/bot-1/click",
       { ref: "e9", snapshotId: 7 },
       new StaleSnapshotError("laf:label_changed"),
@@ -487,12 +465,6 @@ describe("a request missing what its tool needs", () => {
   const MISSING: Array<[string, unknown]> = [
     ["/bot-1/navigate", {}],
     ["/bot-1/click", { ref: "e9" }],
-    ["/bot-1/type", { ref: "e4", snapshotId: 7 }],
-    ["/bot-1/key", {}],
-    ["/bot-1/tabs/switch", { index: "second" }],
-    ["/bot-1/upload", { ref: "e4", snapshotId: 7 }],
-    ["/bot-1/files/read", {}],
-    ["/bot-1/files/write", { path: "notes.md" }],
     ["/bot-1/control/secret", { ref: "e4" }],
   ];
 
