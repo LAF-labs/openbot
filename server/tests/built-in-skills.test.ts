@@ -42,6 +42,28 @@ describe("the package's skills", () => {
     expect(index.length).toBeLessThan(560);
   });
 
+  test("아침 브리핑 looks at the weather for a person whose place is not known — Seoul's, and says so", async () => {
+    /*
+     * The skill told the routine not to look ("위치를 모르면 찾지 않고 '위치를 몰라 날씨는 못
+     * 봤어요'라고만 쓴다") while the routine's own place line, since 2026-10-05, says Seoul's basis
+     * (the owner: "fallback은 서울"): two instructions in one run, and the skill's is the one read
+     * last (review of pull request 91). It agrees with the place line now, and tells a run that is
+     * handed yesterday's "못 봤어요" not to repeat it.
+     */
+    const briefing = (await readBuiltInSkills(PACKAGE)).find(
+      (skill) => skill.slug === "아침브리핑",
+    );
+    if (!briefing) throw new Error("the package ships no 아침브리핑");
+    expect(briefing.instructions).not.toContain("위치를 모르면 찾지 않고");
+    expect(briefing.instructions).not.toContain("라고만 쓴다");
+    expect(briefing.instructions).toContain(
+      "위치를 모르는 사람은 서울 기준으로 온다",
+    );
+    expect(briefing.instructions).toContain(
+      '위치를 몰라서 서울이면 "서울 기준"',
+    );
+  });
+
   test("a file without front matter, or without a body, is refused by name", () => {
     expect(() => parseSkillFile("bare.md", "본문만")).toThrow("bare.md");
     expect(() =>
