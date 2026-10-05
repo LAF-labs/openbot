@@ -62,6 +62,7 @@ import {
   answeredAtOnce,
   asksThePerson,
   claimsNothingThere,
+  connectsAtTheCard,
   DEADLINE_LOOKUP,
   everythingConnected,
   judgeCardOffered,
@@ -3038,6 +3039,12 @@ function aServiceNobodyConnected(): Scenario[] {
         "알겠어요. 캘린더가 연결돼 있지 않아서 오늘 일정은 볼 수 없어요.",
     },
   ];
+  /** 지메일 connected at the card: its tools land in the turn's list when the first card is raised. */
+  const mailLands = connectsAtTheCard(
+    nothing,
+    "gmail",
+    everything.filter((tool) => serverKeyOf(tool.name) === "gmail"),
+  );
   const forecast = weatherBackend({ at: EVAL_NOW, saved: GANGNAM });
   const kakaoOn = accountsWith(["kakao-playmcp"]);
   const kakaoEmpty = nothingConnected(
@@ -3091,6 +3098,53 @@ function aServiceNobodyConnected(): Scenario[] {
       "이번 주 매출이야. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만. 이거 구글 시트에 정리해줘",
       [NOTION_SEARCH],
     ),
+    {
+      ...base,
+      /*
+       * PAST THE CARD (review, 2026-10-06, on the real path). Nothing connected; the card for
+       * 지메일; the person turns the switch on; the card answers "connected — look its tools up".
+       * The lookup that follows used to end "아직 연결하지 않은 계정: 지메일(gmail) … 연결 카드를
+       * 띄운다" — the turn's read of the accounts is from before the switch. Now the list holding
+       * 지메일's tools is the newer fact: the Bot looks, uses the tool and answers, and is not
+       * asked to connect what it just connected.
+       */
+      id: "connected-at-the-card-then-used",
+      messages: [user("새 메일 왔어?")],
+      tools: mailLands.tools,
+      maxTurns: 8,
+      prepare: async () => {
+        mailLands.reset();
+        return {};
+      },
+      stub: (call) =>
+        mailLands.answer(call) ??
+        (call.name === MAIL_TOOL_NAME
+          ? [
+              `[검색어 "is:unread in:inbox" · 2통]`,
+              `- 10월 전기요금 청구서 · 한국전력 <bill@kepco.example> · ${today} 08:12 · id: m_unread_1`,
+              `- 주문하신 포장재 견적 드립니다 · 박성민 <park@pojang.example> · ${today} 11:05 · id: m_unread_2`,
+            ].join("\n")
+          : call.name === "mcp__gmail__read_message"
+            ? "보낸 사람: 한국전력 <bill@kepco.example> · 제목: 10월 전기요금 청구서 · 본문: 10월분 전기요금은 84,200원이고 납기일은 10월 25일입니다."
+            : nothingToRead(call)),
+      waitsOn: mailLands.waitsOn,
+      check: (turn) => {
+        const cards = turn.calls.filter(
+          (call) => call.name === "showConnection",
+        );
+        return verdict([
+          [
+            `연결 카드를 ${cards.length}번 띄움 (한 번이어야)`,
+            cards.length === 1,
+          ],
+          ["켜진 지메일의 도구를 쓰지 않음", called(turn, MAIL_TOOL_NAME)],
+          [
+            "안 읽은 메일(전기요금, 견적)을 말하지 않음",
+            turn.text.includes("전기요금") && turn.text.includes("견적"),
+          ],
+        ]);
+      },
+    },
     {
       ...held,
       id: "calendar-connected-is-read-not-offered",
