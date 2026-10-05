@@ -6,7 +6,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
-import { RequestRefusedError } from "@/lib/refusals";
+import { RequestRefusedError, requestOrRefusal } from "@/lib/refusals";
 import { routineKeys, routineRequest } from "@/lib/routines/queries";
 
 /**
@@ -63,27 +63,8 @@ export const FEED_REFUSALS: Readonly<Record<string, string>> = {
   "laf:feed_post_not_found": "That post is no longer there.",
 };
 
-async function feedRequest(path: string, init?: RequestInit) {
-  const response = await fetch(path, {
-    credentials: "include",
-    headers: init?.body ? { "content-type": "application/json" } : {},
-    ...init,
-  });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    const code = typeof body?.code === "string" ? body.code : "";
-    const known = FEED_REFUSALS[code];
-    throw new RequestRefusedError(
-      known ? t(known) : t("That did not go through. Try again."),
-      response.status,
-      code || null,
-    );
-  }
-  return body;
-}
+const feedRequest = (path: string, init?: RequestInit) =>
+  requestOrRefusal(path, init, FEED_REFUSALS);
 
 export function feedQueryOptions() {
   return infiniteQueryOptions({

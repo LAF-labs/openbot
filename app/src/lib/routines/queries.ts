@@ -1,7 +1,7 @@
 import type { RoutineNote } from "@shared/prompt/notepad.ko";
 import { queryOptions } from "@tanstack/react-query";
 import { activeLocale, t } from "@/lib/i18n";
-import { RequestRefusedError } from "@/lib/refusals";
+import { requestOrRefusal } from "@/lib/refusals";
 
 /** A standing instruction a Bot runs on a clock. */
 export type Routine = {
@@ -157,30 +157,8 @@ export const ROUTINE_REFUSALS: Record<string, string> = {
     "This routine was made by an account that can no longer use this place, so it does not run. Make it again yourself if you still need it.",
 };
 
-export async function routineRequest(path: string, init?: RequestInit) {
-  const response = await fetch(path, {
-    credentials: "include",
-    headers: init?.body ? { "content-type": "application/json" } : {},
-    ...init,
-  });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    const code = typeof body?.code === "string" ? body.code : null;
-    const known = code ? ROUTINE_REFUSALS[code] : undefined;
-    // The code, and never the server's `error`, which is the code itself now — read as a fallback
-    // it would print `laf:…`. `statusText` is "Internal Server Error", which says nothing either.
-    // The code also travels on the error, for a read that has to tell "not here" from "not now".
-    throw new RequestRefusedError(
-      known ? t(known) : t("That did not go through. Try again."),
-      response.status,
-      code,
-    );
-  }
-  return body;
-}
+export const routineRequest = (path: string, init?: RequestInit) =>
+  requestOrRefusal(path, init, ROUTINE_REFUSALS);
 
 /**
  * Every routine this person owns.

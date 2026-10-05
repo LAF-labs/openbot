@@ -82,6 +82,52 @@ export async function refusedRequest(
   );
 }
 
+/**
+ * A request to one of this app's own doors: its JSON body, or — refused — a `RequestRefusedError`
+ * that says so in this surface's words.
+ *
+ * The words are looked up by the body's code in the caller's own tables, the first that has it, and
+ * are the one general sentence where none does. The code, and never the server's `error`, which is
+ * the code itself — read as a fallback it would print `laf:…` — nor `statusText`, which is
+ * "Internal Server Error" and says nothing either. The code travels on the error too, for a read
+ * that has to tell "not here" from "not now".
+ *
+ * ONE FUNCTION BECAUSE IT WAS FOUR. The goals, 소식, the routines and their suggestions each wrote
+ * this body out, and the copies agreed everywhere but one place: a code that is the empty string
+ * was kept as "" by one of them and read as no code by three. No route sends one
+ * (`server/tests/error-codes.test.ts`) and every reader of `code` asks for a `laf:` fact, so here
+ * it is no code. `ACCESS_REFUSALS` is not read, as it was by none of the four: only the tables
+ * handed in.
+ */
+export async function requestOrRefusal(
+  path: string,
+  init: RequestInit | undefined,
+  ...tables: readonly Readonly<Record<string, string>>[]
+) {
+  const response = await fetch(path, {
+    credentials: "include",
+    headers: init?.body ? { "content-type": "application/json" } : {},
+    ...init,
+  });
+  const body = (await response.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  if (!response.ok) {
+    const code = typeof body?.code === "string" ? body.code : "";
+    let known: string | undefined;
+    for (const table of tables) {
+      known ??= table[code];
+    }
+    throw new RequestRefusedError(
+      known ? t(known) : t("That did not go through. Try again."),
+      response.status,
+      code || null,
+    );
+  }
+  return body;
+}
+
 /** The same, read off a refused response's body. A body that is not JSON is the fallback. */
 export async function refusalFrom(
   response: Response,
