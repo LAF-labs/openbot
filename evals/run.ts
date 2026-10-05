@@ -285,7 +285,14 @@ async function runOnce(
   }
 
   const latencyMs = performance.now() - started;
-  return { events: allEvents, latencyMs, totalTokens, promptTokens };
+  return {
+    events: allEvents,
+    latencyMs,
+    totalTokens,
+    promptTokens,
+    // How many times the model was asked: the number a first move exists to lower.
+    requests: usagesOf(allEvents).requests,
+  };
 }
 
 const outcomes: ScenarioOutcome[] = [];
@@ -305,14 +312,16 @@ for (const scenario of SCENARIOS) {
   const notes = new Set<string>();
   const latencies: number[] = [];
   const tokens: number[] = [];
+  const asked: number[] = [];
 
   for (let attempt = 1; attempt <= RUNS; attempt++) {
     try {
-      const { events, latencyMs, totalTokens } = await runOnce(
+      const { events, latencyMs, totalTokens, requests } = await runOnce(
         scenario,
         attempt,
       );
       latencies.push(latencyMs);
+      asked.push(requests);
       if (totalTokens !== null) tokens.push(totalTokens);
 
       const wire = streamProblems(events);
@@ -366,6 +375,9 @@ for (const scenario of SCENARIOS) {
     `${mark} ${scenario.id.padEnd(32)} ${String(passes)}/${RUNS}` +
       `  ${String(outcome.averageLatencyMs).padStart(6)}ms` +
       `  ${outcome.averageTotalTokens ?? "—"} tok` +
+      (asked.length > 0
+        ? `  ${asked.join("/")} req  ${latencies.map((ms) => (ms / 1000).toFixed(1)).join("/")} s`
+        : "") +
       (outcome.notes.length ? `\n    · ${outcome.notes.join("\n    · ")}` : ""),
   );
 }

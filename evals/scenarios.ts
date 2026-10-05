@@ -26,6 +26,11 @@
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
+import {
+  CALENDAR_TOOL_NAME,
+  FIRST_MOVE_SPECS,
+  MAIL_TOOL_NAME,
+} from "../server/src/turns/first-move";
 import { carriedInstruction } from "../server/src/routines/run";
 import {
   reminderBlock,
@@ -782,6 +787,7 @@ export const SCENARIOS: Scenario[] = [
   fileHandedOverAfterSayingItCouldNot(),
   ...weatherFromTheAgency(),
   ...firstMoveThreads(),
+  ...firstMovesBehindTheBridge(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
   feedPostsOnlyFromTools(),
@@ -1922,6 +1928,238 @@ function firstMoveThreads(): Scenario[] {
  * first three runs of this scenario wrote none while getting the figure right (see the tool's
  * description in `web-search-rest.ts`).
  */
+
+/**
+ * THE CALENDAR'S AND THE MAIL'S FIRST MOVES (2026-10-05), AND WHAT EACH IS MEASURED AGAINST.
+ *
+ * These two tools are behind the bridge, so without a move "오늘 일정 뭐 있어?" is a lookup
+ * (`tool_search`), the call, and the answer. Three scenarios a kind, run side by side for the
+ * rounds, the seconds and the tokens (`docs/laf/eval-pack.md` "The first move"):
+ *
+ *   `…-through-the-bridge`   the thread as it is today: the question, and the Bot finds the tool.
+ *   `…-is-answered-from`     the thread a move opens: the call and its result already filed. Held
+ *                            to answering from them — a second call is the saving spent.
+ *   `…-is-put-right`         a WRONG move: today's list under a question about tomorrow, the
+ *                            unread list under a question about one sender. Held to not answering
+ *                            from the list in hand, which is the one way a wrong move would be
+ *                            worse than a lookup nobody asked for.
+ *
+ * The answers are fixtures in the shape the two transports write (`google-calendar-rest.ts`,
+ * `gmail-rest.ts`); no Google account is asked anything.
+ */
+function firstMovesBehindTheBridge(): Scenario[] {
+  const zone = "Asia/Seoul";
+  const today = zonedParts(EVAL_NOW, zone).date;
+  const tomorrow = dayAfter(today, 1);
+  const person = { timeZone: zone, locale: "ko-KR" };
+  const event = (day: string, from: string, to: string, title: string) =>
+    `- ${day}T${from}:00+09:00 ~ ${day}T${to}:00+09:00 · ${title}`;
+  const TODAYS = [
+    `${event(today, "21:00", "21:30", "치과 정기검진")} · 장소: 연세미소치과 · id: ev_today_1`,
+    `${event(today, "22:30", "23:00", "주간 매출 정리")} · id: ev_today_2`,
+  ].join("\n");
+  const TOMORROWS = `${event(tomorrow, "23:00", "23:30", "한빛상사 납품 미팅")} · 장소: 성수동 사무실 · id: ev_tomorrow_1`;
+  const UNREAD = [
+    `- 10월 전기요금 청구서 · 한국전력 <bill@kepco.example> · ${today} 08:12 · id: m_unread_1`,
+    `- [네이버페이] 정산 완료 안내 · 네이버페이 <pay@naver.example> · ${today} 09:40 · id: m_unread_2`,
+    `- 주문하신 포장재 견적 드립니다 · 박성민 <park@pojang.example> · ${today} 11:05 · id: m_unread_3`,
+  ].join("\n");
+  const FROM_THE_ACCOUNTANT = `- 3분기 부가세 신고 자료 요청 · 이정훈 세무사 <lee@semu.example> · ${dayAfter(today, -1)} 17:20 · id: m_read_9`;
+  /** The two services, answered the way the transports would for these fixtures. */
+  const backend = (call: ObservedCall): string | undefined => {
+    if (call.name === CALENDAR_TOOL_NAME) {
+      const days = Number(call.arguments?.days ?? 7);
+      return days > 1 ? `${TODAYS}\n${TOMORROWS}` : TODAYS;
+    }
+    if (call.name === MAIL_TOOL_NAME) {
+      const query = String(call.arguments?.query ?? "");
+      if (/세무|semu|이정훈|lee@/i.test(query)) return FROM_THE_ACCOUNTANT;
+      return /is:unread/.test(query) || query.trim() === ""
+        ? UNREAD
+        : `${UNREAD}\n${FROM_THE_ACCOUNTANT}`;
+    }
+    if (call.name === toolNameFor("gmail/read_message")) {
+      return call.arguments?.messageId === "m_read_9"
+        ? "제목: 3분기 부가세 신고 자료 요청\n보낸사람: 이정훈 세무사 <lee@semu.example>\n\n안녕하세요, 3분기 부가세 신고에 필요한 매입·매출 자료를 15일까지 보내 주세요."
+        : "제목: 안내\n\n자세한 내용은 첨부를 확인해 주세요.";
+    }
+    return undefined;
+  };
+  const moved = (
+    kind: "calendar" | "mail",
+    question: string,
+    answer: string,
+  ): unknown[] => {
+    const callId = `call_${"1".repeat(32)}`;
+    const spec = FIRST_MOVE_SPECS[kind];
+    return [
+      user(question),
+      {
+        id: "a_first_move",
+        role: "assistant",
+        content: "",
+        lafFirstMove: true,
+        toolCalls: [
+          {
+            id: callId,
+            type: "function",
+            function: {
+              name: spec.tool,
+              arguments: JSON.stringify(spec.args),
+            },
+          },
+        ],
+      },
+      { id: "t_first_move", role: "tool", toolCallId: callId, content: answer },
+    ];
+  };
+  const answered = (turn: Turn): [string, boolean] => [
+    "답을 하지 않음",
+    turn.text.trim().length > 0,
+  ];
+  const korean = (turn: Turn): [string, boolean] => [
+    "답이 한국어가 아님",
+    hangulShare(turn.text) > 0.4,
+  ];
+  const says = (turn: Turn, ...words: string[]) =>
+    words.every((word) => turn.text.includes(word));
+  const base = {
+    dimension: "tool-calls" as const,
+    person,
+    tools: [...REALISTIC_TOOLSET],
+    maxTurns: 6,
+    stub: backend,
+  };
+  return [
+    {
+      ...base,
+      id: "todays-schedule-through-the-bridge",
+      messages: [user("오늘 일정 뭐 있어?")],
+      check: (turn) =>
+        verdict([
+          ["캘린더를 부르지 않음", called(turn, CALENDAR_TOOL_NAME)],
+          ["오늘의 두 일정을 말하지 않음", says(turn, "치과", "매출")],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      id: "first-move-calendar-is-answered-from",
+      messages: moved("calendar", "오늘 일정 뭐 있어?", TODAYS),
+      check: (turn) =>
+        verdict([
+          [
+            "이미 받은 일정을 다시 부르거나 도구를 찾음 — 첫 수가 아낀 바퀴를 도로 씀",
+            !called(turn, CALENDAR_TOOL_NAME) && !called(turn, "tool_search"),
+          ],
+          ["오늘의 두 일정을 말하지 않음", says(turn, "치과", "매출")],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      id: "first-move-calendar-for-tomorrow-is-put-right",
+      // The move was wrong: the question is about tomorrow and the list in hand is today's.
+      messages: moved("calendar", "내일 일정 뭐 있어?", TODAYS),
+      check: (turn) =>
+        verdict([
+          [
+            "내일까지 보도록 캘린더를 다시 부르지 않음",
+            turn.calls.some(
+              (call) =>
+                call.name === CALENDAR_TOOL_NAME &&
+                Number(call.arguments?.days ?? 7) > 1,
+            ),
+          ],
+          ["내일 일정(한빛상사 납품 미팅)이 답에 없음", says(turn, "한빛상사")],
+          [
+            "손에 쥔 오늘 일정(치과)을 내일 일정으로 말함",
+            !turn.text.includes("치과"),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      id: "unread-mail-through-the-bridge",
+      messages: [user("새 메일 왔어?")],
+      check: (turn) =>
+        verdict([
+          ["지메일을 부르지 않음", called(turn, MAIL_TOOL_NAME)],
+          [
+            "안 읽은 세 통을 말하지 않음",
+            says(turn, "전기요금", "정산", "견적"),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      id: "first-move-mail-is-answered-from",
+      messages: moved("mail", "새 메일 왔어?", UNREAD),
+      check: (turn) =>
+        verdict([
+          [
+            // Opening one of the listed mails is not asking for the list again; it is held to the list.
+            "이미 받은 목록을 다시 부름 — 첫 수가 아낀 바퀴를 도로 씀",
+            !called(turn, MAIL_TOOL_NAME),
+          ],
+          [
+            "안 읽은 세 통을 말하지 않음",
+            says(turn, "전기요금", "정산", "견적"),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      // What the wrong move below is measured against: the same question, and no move.
+      id: "a-senders-mail-through-the-bridge",
+      messages: [user("이정훈 세무사님한테 메일 왔어?")],
+      check: (turn) =>
+        verdict([
+          ["지메일을 부르지 않음", called(turn, MAIL_TOOL_NAME)],
+          [
+            "세무사의 메일(부가세 신고 자료 요청)이 답에 없음",
+            says(turn, "부가세"),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      id: "first-move-mail-for-a-sender-is-put-right",
+      // The move was wrong: the question is about one sender, whose mail was read yesterday.
+      messages: moved("mail", "이정훈 세무사님한테 메일 왔어?", UNREAD),
+      check: (turn) =>
+        verdict([
+          [
+            "세무사의 메일을 찾도록 지메일을 다시 부르지 않음",
+            turn.calls.some(
+              (call) =>
+                call.name === MAIL_TOOL_NAME &&
+                !/^\s*is:unread in:inbox\s*$/.test(
+                  String(call.arguments?.query ?? ""),
+                ),
+            ),
+          ],
+          [
+            "세무사의 메일(부가세 신고 자료 요청)이 답에 없음",
+            says(turn, "부가세"),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+  ];
+}
+
 /**
  * A TOOL'S ANSWER THAT ENDS IN HALF AN EMOJI IS STILL ANSWERED FROM (2026-10-02).
  *

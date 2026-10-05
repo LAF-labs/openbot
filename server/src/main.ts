@@ -911,8 +911,8 @@ sayFirstMove({
   named: config.harness.firstMovesNamed,
 });
 // Not awaited: the first decision's slow start is paid here, before anybody is waiting on one.
-if (deploymentKeyRuntime.has(KMA_WEATHER_KEY))
-  void warmFirstMove(firstMoveDeps);
+// Whatever keys the deployment holds: a person's calendar or mailbox needs none of them.
+void warmFirstMove(firstMoveDeps);
 const turnEngine = createTurnEngine({
   database,
   ledger: runLedger,
@@ -926,10 +926,12 @@ const turnEngine = createTurnEngine({
     }),
   // An account the list no longer admits acts on nothing, a turn nobody watches included.
   admits: (userId) => admission.admitsPerson(userId),
-  // On unless `FIRST_MOVE` says off, and only where Jev may be asked; it is the weather's alone.
+  // On unless `FIRST_MOVE` says off, and only where Jev may be asked: the weather for a saved
+  // place, today's calendar and the unread mail of a person who has connected them.
   firstMove: firstMoveForTurns({
     decide: createFirstMove(firstMoveDeps),
     whereaboutsOf: whereaboutsStore.read,
+    connectionsOf: pluginStore.connectionsFor,
     auditStore: bootAuditStore,
   }),
   // The Bot's answer on the roster, every open tab, and a notice for a person with no tab.

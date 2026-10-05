@@ -1,0 +1,1700 @@
+[
+  {
+    "text": "고마워",
+    "schedule": false,
+    "today": false,
+    "note": "thanks"
+  },
+  {
+    "text": "시험 공부 계획표 짜줘",
+    "schedule": false,
+    "today": false,
+    "note": "study plan"
+  },
+  {
+    "text": "오늘 빨래 널어도 될까",
+    "schedule": false,
+    "today": true,
+    "note": "weather-dependent"
+  },
+  {
+    "text": "Show me today's events",
+    "schedule": true,
+    "today": true,
+    "note": "English"
+  },
+  {
+    "text": "건강검진 예약 날짜 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "one event by name"
+  },
+  {
+    "text": "약속 시간에 늦을 것 같은데 뭐라고 말하지",
+    "schedule": false,
+    "today": false,
+    "note": "wording help"
+  },
+  {
+    "text": "Schedule a meeting with Kim tomorrow at 2pm",
+    "schedule": false,
+    "today": false,
+    "note": "English, create"
+  },
+  {
+    "text": "어제 온 견적서 메일 찾아줘",
+    "schedule": false,
+    "today": false,
+    "note": "mail search"
+  },
+  {
+    "text": "Do I have any meetings today?",
+    "schedule": true,
+    "today": true,
+    "note": "English, meetings today"
+  },
+  {
+    "text": "캘린더에 엄마 생신 추가해줘",
+    "schedule": false,
+    "today": false,
+    "note": "create"
+  },
+  {
+    "text": "모레 일정 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "day after tomorrow"
+  },
+  {
+    "text": "약속 없는 주말이 제일 좋아",
+    "schedule": false,
+    "today": false,
+    "note": "small talk"
+  },
+  {
+    "text": "이번 주말 날씨 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "weather"
+  },
+  {
+    "text": "today 일정 좀 보여줘",
+    "schedule": true,
+    "today": true,
+    "note": "mixed"
+  },
+  {
+    "text": "내일 3시에 회의 일정 잡아줘",
+    "schedule": false,
+    "today": false,
+    "note": "create"
+  },
+  {
+    "text": "오늘 애 학원 몇 시였더라",
+    "schedule": true,
+    "today": true,
+    "note": "parent, child's class today"
+  },
+  {
+    "text": "whats my day look like",
+    "schedule": true,
+    "today": true,
+    "note": "English, my day"
+  },
+  {
+    "text": "오늘 일정이랑 새 메일 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: today's calendar plus new mail"
+  },
+  {
+    "text": "오늘 할 일 뭐 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true, to-dos read as today's calendar; a task list is a different thing"
+  },
+  {
+    "text": "오늘 내일 일정 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "borderline: false, two days; today's list is only half the answer"
+  },
+  {
+    "text": "오늘 일정에 메모 추가해줘: 견적서 챙기기",
+    "schedule": false,
+    "today": true,
+    "note": "edit, today"
+  },
+  {
+    "text": "내일 일정 전부 모레로 옮겨줘",
+    "schedule": false,
+    "today": false,
+    "note": "move"
+  },
+  {
+    "text": "오늘 일정 하나도 없는 거 맞아?",
+    "schedule": true,
+    "today": true,
+    "note": "confirm nothing today"
+  },
+  {
+    "text": "Add dentist on Friday at 10",
+    "schedule": false,
+    "today": false,
+    "note": "English, create"
+  },
+  {
+    "text": "내일 우산 챙겨야 돼?",
+    "schedule": false,
+    "today": false,
+    "note": "weather"
+  },
+  {
+    "text": "Move today's standup to 4",
+    "schedule": false,
+    "today": true,
+    "note": "English, move"
+  },
+  {
+    "text": "오후에 비 온대?",
+    "schedule": false,
+    "today": true,
+    "note": "weather"
+  },
+  {
+    "text": "이번 주 수업 일정 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "student, this week"
+  },
+  {
+    "text": "오늘 오전에 뭐 있었지?",
+    "schedule": true,
+    "today": true,
+    "note": "this morning, still today"
+  },
+  {
+    "text": "What's on my calendar today?",
+    "schedule": true,
+    "today": true,
+    "note": "English"
+  },
+  {
+    "text": "오늘 무슨 요일이야?",
+    "schedule": false,
+    "today": true,
+    "note": "weekday question"
+  },
+  {
+    "text": "오늘 일정 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "today's schedule"
+  },
+  {
+    "text": "Any meetings this afternoon?",
+    "schedule": true,
+    "today": true,
+    "note": "English, this afternoon"
+  },
+  {
+    "text": "오늘 병원 문 열어?",
+    "schedule": false,
+    "today": true,
+    "note": "opening hours"
+  },
+  {
+    "text": "이번 주말 스케줄 비었나",
+    "schedule": true,
+    "today": false,
+    "note": "weekend"
+  },
+  {
+    "text": "지금부터 뭐 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "from now on, today"
+  },
+  {
+    "text": "받은편지함 확인해줘",
+    "schedule": false,
+    "today": false,
+    "note": "mail"
+  },
+  {
+    "text": "다음 일정 뭐야?",
+    "schedule": true,
+    "today": false,
+    "note": "borderline: false per the next-event rule, though it is probably later today"
+  },
+  {
+    "text": "넌 뭐 할 수 있어?",
+    "schedule": false,
+    "today": false,
+    "note": "about the Bot"
+  },
+  {
+    "text": "메일 온 거 있나 봐줘",
+    "schedule": false,
+    "today": false,
+    "note": "mail"
+  },
+  {
+    "text": "낼 뭐 있지",
+    "schedule": true,
+    "today": false,
+    "note": "slang tomorrow"
+  },
+  {
+    "text": "구글 캘린더 공유하는 법 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "how-to"
+  },
+  {
+    "text": "내일 김포 제주 비행기 시간표 좀",
+    "schedule": false,
+    "today": false,
+    "note": "flight timetable"
+  },
+  {
+    "text": "미팅 초대장 보내줘",
+    "schedule": false,
+    "today": false,
+    "note": "send invite"
+  },
+  {
+    "text": "오늘 일쩡 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "typo"
+  },
+  {
+    "text": "오늘 일정 브리핑 해줘",
+    "schedule": true,
+    "today": true,
+    "note": "briefing of today"
+  },
+  {
+    "text": "집 앞 버스 시간표 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "bus timetable"
+  },
+  {
+    "text": "이번주 일정머잇어",
+    "schedule": true,
+    "today": false,
+    "note": "typos, this week"
+  },
+  {
+    "text": "오늘 일정 시간순으로 정리해서 보여줘",
+    "schedule": true,
+    "today": true,
+    "note": "show today in time order, a read"
+  },
+  {
+    "text": "캘린더 색깔 어떻게 바꿔?",
+    "schedule": false,
+    "today": false,
+    "note": "how-to"
+  },
+  {
+    "text": "오늘 일정 좀요",
+    "schedule": true,
+    "today": true,
+    "note": "terse polite"
+  },
+  {
+    "text": "How do I share my Google Calendar?",
+    "schedule": false,
+    "today": false,
+    "note": "English, how-to"
+  },
+  {
+    "text": "내일 회의 몇 시야?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow's meeting"
+  },
+  {
+    "text": "내일 스케쥴 알려주세요",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow, misspelling"
+  },
+  {
+    "text": "오늘 미팅 몇 개야?",
+    "schedule": true,
+    "today": true,
+    "note": "count of today's meetings"
+  },
+  {
+    "text": "오늘 공휴일이야?",
+    "schedule": false,
+    "today": true,
+    "note": "holiday question"
+  },
+  {
+    "text": "학교 축제 일정 언제야",
+    "schedule": false,
+    "today": false,
+    "note": "school event date, public"
+  },
+  {
+    "text": "오늘 나 바빠?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true, asks the Bot how full today is"
+  },
+  {
+    "text": "다음 주 수요일 2시에 단골 손님 예약 추가",
+    "schedule": false,
+    "today": false,
+    "note": "create"
+  },
+  {
+    "text": "What's on my calendar tomorrow?",
+    "schedule": true,
+    "today": false,
+    "note": "English, tomorrow"
+  },
+  {
+    "text": "오늘 예약 몇 건 있어요?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: shop bookings, true if kept on the calendar rather than a booking app"
+  },
+  {
+    "text": "김치찌개 레시피 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "recipe"
+  },
+  {
+    "text": "what do i have today",
+    "schedule": true,
+    "today": true,
+    "note": "English, lowercase"
+  },
+  {
+    "text": "일정이 자꾸 겹쳐서 스트레스야",
+    "schedule": false,
+    "today": false,
+    "note": "venting"
+  },
+  {
+    "text": "중간고사 캘린더에 적어놨는데 언제부터지?",
+    "schedule": true,
+    "today": false,
+    "note": "student, one event by name"
+  },
+  {
+    "text": "What does my week look like?",
+    "schedule": true,
+    "today": false,
+    "note": "English, week"
+  },
+  {
+    "text": "오늘 스케줄 보고 비는 시간에 치과 예약 넣어줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: read today then create"
+  },
+  {
+    "text": "회의 안건 정리해줘",
+    "schedule": false,
+    "today": false,
+    "note": "writing help"
+  },
+  {
+    "text": "새 메일 왔어?",
+    "schedule": false,
+    "today": true,
+    "note": "mail"
+  },
+  {
+    "text": "Any new emails?",
+    "schedule": false,
+    "today": false,
+    "note": "English, mail"
+  },
+  {
+    "text": "Do I have anything on tonight?",
+    "schedule": true,
+    "today": true,
+    "note": "English, tonight"
+  },
+  {
+    "text": "오늘 3시에 미용실 예약 넣어줘",
+    "schedule": false,
+    "today": true,
+    "note": "create, today"
+  },
+  {
+    "text": "금일 회의 일정 알려주세요",
+    "schedule": true,
+    "today": true,
+    "note": "formal, today's meetings"
+  },
+  {
+    "text": "이번 주에 비는 날 언제야?",
+    "schedule": true,
+    "today": false,
+    "note": "free day this week"
+  },
+  {
+    "text": "today's schedule please",
+    "schedule": true,
+    "today": true,
+    "note": "English"
+  },
+  {
+    "text": "잔잔한 노래 추천해줘",
+    "schedule": false,
+    "today": false,
+    "note": "music"
+  },
+  {
+    "text": "비타민 D 하루 권장량",
+    "schedule": false,
+    "today": false,
+    "note": "health fact"
+  },
+  {
+    "text": "오늘 내 일정 읊어봐",
+    "schedule": true,
+    "today": true,
+    "note": "banmal, read out today"
+  },
+  {
+    "text": "나 오늘 저녁에 시간 되나?",
+    "schedule": true,
+    "today": true,
+    "note": "own availability tonight"
+  },
+  {
+    "text": "오늘 일정 끝나면 내일 첫 일정은 뭐야?",
+    "schedule": true,
+    "today": false,
+    "note": "mentions today, asks tomorrow's first"
+  },
+  {
+    "text": "월요일 주간회의 몇 시로 옮겨졌지?",
+    "schedule": true,
+    "today": false,
+    "note": "weekday, one event"
+  },
+  {
+    "text": "이번 주랑 다음 주에 저녁 약속 잡힌 날이 며칠이나 되는지 한번 세어봐 줘, 요새 너무 많이 잡은 것 같아서 좀 줄여야 하나 걱정이야",
+    "schedule": true,
+    "today": false,
+    "note": "long, two weeks"
+  },
+  {
+    "text": "오늘 일정 하나 추가할게, 4시 거래처 방문",
+    "schedule": false,
+    "today": true,
+    "note": "create, today"
+  },
+  {
+    "text": "오늘부터 금요일까지 일정을 요일별로 정리해서 보여줘, 팀장님이 이번 주 계획 공유하라고 하셔서 그대로 옮겨 적으려고",
+    "schedule": true,
+    "today": false,
+    "note": "range starting today"
+  },
+  {
+    "text": "회의 좀 그만했으면 좋겠다",
+    "schedule": false,
+    "today": false,
+    "note": "venting"
+  },
+  {
+    "text": "일정 알림이 안 와",
+    "schedule": false,
+    "today": false,
+    "note": "notification problem"
+  },
+  {
+    "text": "이번 주 남은 일정 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "rest of the week"
+  },
+  {
+    "text": "안읽은멜 몇개야",
+    "schedule": false,
+    "today": false,
+    "note": "mail, typos"
+  },
+  {
+    "text": "새 메일 확인하고 내일 일정도 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "both: mail plus tomorrow's calendar"
+  },
+  {
+    "text": "토요일 결혼식 몇 시였지?",
+    "schedule": true,
+    "today": false,
+    "note": "weekday, one event"
+  },
+  {
+    "text": "10월 12일에 일정 있나 봐줘",
+    "schedule": true,
+    "today": false,
+    "note": "named date"
+  },
+  {
+    "text": "Anything on my schedule for the rest of today?",
+    "schedule": true,
+    "today": true,
+    "note": "English, rest of today"
+  },
+  {
+    "text": "안 읽은 메일 있어?",
+    "schedule": false,
+    "today": false,
+    "note": "mail"
+  },
+  {
+    "text": "When is my next dentist appointment?",
+    "schedule": true,
+    "today": false,
+    "note": "English, one event"
+  },
+  {
+    "text": "오늘 손흥민 경기 몇 시야?",
+    "schedule": false,
+    "today": true,
+    "note": "public match time"
+  },
+  {
+    "text": "Am I free on Friday afternoon?",
+    "schedule": true,
+    "today": false,
+    "note": "English, weekday"
+  },
+  {
+    "text": "어제 일정 뭐 있었지?",
+    "schedule": true,
+    "today": false,
+    "note": "yesterday"
+  },
+  {
+    "text": "오늘 뭐 있노",
+    "schedule": true,
+    "today": true,
+    "note": "dialect"
+  },
+  {
+    "text": "스팸 메일 차단해줘",
+    "schedule": false,
+    "today": false,
+    "note": "mail setting"
+  },
+  {
+    "text": "가게 인스타 홍보 문구 써줘",
+    "schedule": false,
+    "today": false,
+    "note": "marketing copy"
+  },
+  {
+    "text": "이 문장 영어로 번역해줘: 내일 뵙겠습니다",
+    "schedule": false,
+    "today": false,
+    "note": "translation"
+  },
+  {
+    "text": "내일 일정 때문에 일찍 자야겠다",
+    "schedule": false,
+    "today": false,
+    "note": "statement"
+  },
+  {
+    "text": "오늘 뉴스 요약해줘",
+    "schedule": false,
+    "today": true,
+    "note": "news"
+  },
+  {
+    "text": "오늘 미세먼지 어때",
+    "schedule": false,
+    "today": true,
+    "note": "air quality"
+  },
+  {
+    "text": "지금 회의 있는 거 아니지?",
+    "schedule": true,
+    "today": true,
+    "note": "right now"
+  },
+  {
+    "text": "오늘 뭐 있지",
+    "schedule": true,
+    "today": true,
+    "note": "casual, today"
+  },
+  {
+    "text": "치과 예약 언제였지?",
+    "schedule": true,
+    "today": false,
+    "note": "one event by name"
+  },
+  {
+    "text": "내일모레 뭐 있어",
+    "schedule": true,
+    "today": false,
+    "note": "day after tomorrow"
+  },
+  {
+    "text": "오늘 저녁 약속 취소해줘",
+    "schedule": false,
+    "today": true,
+    "note": "cancel, today"
+  },
+  {
+    "text": "What time is the Dodgers game today?",
+    "schedule": false,
+    "today": true,
+    "note": "English, public match"
+  },
+  {
+    "text": "오늘 일정 정리해줘",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true, read as show it tidily; could mean reorganise"
+  },
+  {
+    "text": "오늘 회의 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "office worker, meetings today"
+  },
+  {
+    "text": "회의 일정 금요일로 미뤄줘",
+    "schedule": false,
+    "today": false,
+    "note": "move"
+  },
+  {
+    "text": "약속 장소 근처 맛집 찾아줘",
+    "schedule": false,
+    "today": false,
+    "note": "restaurant search"
+  },
+  {
+    "text": "오늘 일정 확인하고 3시 회의는 취소해줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: read today then cancel one"
+  },
+  {
+    "text": "병원 예약하려면 어떻게 해야 돼?",
+    "schedule": false,
+    "today": false,
+    "note": "how-to"
+  },
+  {
+    "text": "오늘 코스피 어땠어",
+    "schedule": false,
+    "today": true,
+    "note": "market"
+  },
+  {
+    "text": "지금 버스 타고 출근 중인데 오늘 회의가 몇 시에 뭐뭐 있는지, 그리고 회의실이 어디인지까지 같이 좀 알려줘요",
+    "schedule": true,
+    "today": true,
+    "note": "commuting, today's meetings"
+  },
+  {
+    "text": "오늘 낮 기온 몇 도야",
+    "schedule": false,
+    "today": true,
+    "note": "weather"
+  },
+  {
+    "text": "오늘 저녁 비어 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "free this evening"
+  },
+  {
+    "text": "내일 치과 예약 좀 잡아줘",
+    "schedule": false,
+    "today": false,
+    "note": "make a booking"
+  },
+  {
+    "text": "오늘 온 메일 요약해줘",
+    "schedule": false,
+    "today": true,
+    "note": "mail, today"
+  },
+  {
+    "text": "요즘 일정 많아?",
+    "schedule": true,
+    "today": false,
+    "note": "borderline: a read of the coming days, not today alone; could be small talk"
+  },
+  {
+    "text": "이번 주 금요일 저녁 약속 있었나",
+    "schedule": true,
+    "today": false,
+    "note": "this Friday"
+  },
+  {
+    "text": "오늘 몇 시에 뭐 있는지 쭉 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "times of today's events"
+  },
+  {
+    "text": "매주 월요일 9시 주간회의 반복 일정으로 등록해줘",
+    "schedule": false,
+    "today": false,
+    "note": "create recurring"
+  },
+  {
+    "text": "이따 뭐 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "later today"
+  },
+  {
+    "text": "내일 일정 뭐 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow"
+  },
+  {
+    "text": "내일 예약 손님 몇 팀이야?",
+    "schedule": true,
+    "today": false,
+    "note": "shop owner, tomorrow"
+  },
+  {
+    "text": "김 대리랑 미팅 언제야?",
+    "schedule": true,
+    "today": false,
+    "note": "search for one event by person"
+  },
+  {
+    "text": "오늘 일저 뭐 있어",
+    "schedule": true,
+    "today": true,
+    "note": "dropped letter"
+  },
+  {
+    "text": "KTX 서울 부산 시간표 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "train timetable"
+  },
+  {
+    "text": "오늘 회의 줌 링크 만들어줘",
+    "schedule": false,
+    "today": true,
+    "note": "create a link"
+  },
+  {
+    "text": "오늘 meeting 몇 시야?",
+    "schedule": true,
+    "today": true,
+    "note": "mixed, today's meeting time"
+  },
+  {
+    "text": "오늘 오후 2시에 잡혀 있는 거래처 미팅을 내일 같은 시간으로 옮기고 참석자들한테도 시간이 변경됐다고 한 명씩 다 알려줘",
+    "schedule": false,
+    "today": true,
+    "note": "long, move and notify"
+  },
+  {
+    "text": "다음 주에 부산 출장 가는 날이 정확히 며칠이었는지 캘린더에서 좀 찾아봐 줄래? 기차표 끊어야 하는데 자꾸 헷갈려서 그래",
+    "schedule": true,
+    "today": false,
+    "note": "long, one event next week"
+  },
+  {
+    "text": "김 대리한테 미팅 가능한 시간 물어보는 메일 써줘",
+    "schedule": false,
+    "today": false,
+    "note": "draft a mail about a meeting"
+  },
+  {
+    "text": "Cancel my 3pm today",
+    "schedule": false,
+    "today": true,
+    "note": "English, cancel"
+  },
+  {
+    "text": "일정 겹치면 어떻게 돼?",
+    "schedule": false,
+    "today": false,
+    "note": "how calendars work"
+  },
+  {
+    "text": "오늘 외근 있나?",
+    "schedule": true,
+    "today": true,
+    "note": "off-site today"
+  },
+  {
+    "text": "내일 일정 없지?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow, confirm empty"
+  },
+  {
+    "text": "박 사장님 미팅 몇 시로 잡혀 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "one event by person, no day"
+  },
+  {
+    "text": "담주 일정 좀",
+    "schedule": true,
+    "today": false,
+    "note": "slang next week"
+  },
+  {
+    "text": "근처 약국 어디 있어",
+    "schedule": false,
+    "today": false,
+    "note": "local search"
+  },
+  {
+    "text": "오늘 회의 준비 뭐 해야 돼?",
+    "schedule": false,
+    "today": true,
+    "note": "borderline: false, wants preparation advice; might need to see the meeting first"
+  },
+  {
+    "text": "오늘 회의에서 할 발표 대본 써줘",
+    "schedule": false,
+    "today": true,
+    "note": "writing help"
+  },
+  {
+    "text": "오늘 TV 편성표 알려줘",
+    "schedule": false,
+    "today": true,
+    "note": "TV schedule"
+  },
+  {
+    "text": "오늘 남은 일정 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "rest of today"
+  },
+  {
+    "text": "오늘 일정 있나?",
+    "schedule": true,
+    "today": true,
+    "note": "any events today"
+  },
+  {
+    "text": "오늘 미팅 회의록 양식 만들어줘",
+    "schedule": false,
+    "today": true,
+    "note": "template"
+  },
+  {
+    "text": "수요일 납품 일정 몇 시야?",
+    "schedule": true,
+    "today": false,
+    "note": "shop owner, weekday"
+  },
+  {
+    "text": "다음 달에 친구 둘이랑 오사카 3일 가는데 일정을 어떻게 짜면 좋을까? 먹는 거 위주로 다니고 싶고 많이 걷는 건 싫어",
+    "schedule": false,
+    "today": false,
+    "note": "trip planning"
+  },
+  {
+    "text": "오늘 날씨랑 일정 한 번에 브리핑해줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: weather and today's calendar"
+  },
+  {
+    "text": "회식 날짜 언제였지",
+    "schedule": true,
+    "today": false,
+    "note": "one event by name"
+  },
+  {
+    "text": "Do I have anything this weekend?",
+    "schedule": true,
+    "today": false,
+    "note": "English, weekend"
+  },
+  {
+    "text": "수능 일정 언제야?",
+    "schedule": false,
+    "today": false,
+    "note": "public exam date"
+  },
+  {
+    "text": "태풍 오고 있어?",
+    "schedule": false,
+    "today": false,
+    "note": "weather"
+  },
+  {
+    "text": "금일 일정 확인 부탁드립니다",
+    "schedule": true,
+    "today": true,
+    "note": "formal office register"
+  },
+  {
+    "text": "나 오늘 뭐 해야 돼?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true, most likely the calendar, could be to-dos or advice"
+  },
+  {
+    "text": "스케줄러 앱 추천해줘",
+    "schedule": false,
+    "today": false,
+    "note": "app recommendation"
+  },
+  {
+    "text": "주말에 약속 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "weekend"
+  },
+  {
+    "text": "이따 저녁에 뭐 있었지",
+    "schedule": true,
+    "today": true,
+    "note": "later this evening"
+  },
+  {
+    "text": "오늘 일정 다시 한번 말해줘",
+    "schedule": true,
+    "today": true,
+    "note": "repeat today"
+  },
+  {
+    "text": "오늘 뭐 있더라",
+    "schedule": true,
+    "today": true,
+    "note": "trying to remember today"
+  },
+  {
+    "text": "매일 아침 8시에 그날 일정을 정리해서 알려주는 걸 자동으로 해줄 수 있어? 가능하면 내일부터 바로 되게 설정해줘",
+    "schedule": false,
+    "today": false,
+    "note": "long, set up a routine"
+  },
+  {
+    "text": "What's next on my calendar today?",
+    "schedule": true,
+    "today": true,
+    "note": "English, next event today"
+  },
+  {
+    "text": "부가세 신고 일정 언제까지야?",
+    "schedule": false,
+    "today": false,
+    "note": "public tax deadline"
+  },
+  {
+    "text": "오늘 CGV 상영 시간표 봐줘",
+    "schedule": false,
+    "today": true,
+    "note": "cinema timetable"
+  },
+  {
+    "text": "오늘 비 와?",
+    "schedule": false,
+    "today": true,
+    "note": "weather"
+  },
+  {
+    "text": "신혼여행 일정 추천해줘",
+    "schedule": false,
+    "today": false,
+    "note": "trip ideas"
+  },
+  {
+    "text": "심심해",
+    "schedule": false,
+    "today": false,
+    "note": "small talk"
+  },
+  {
+    "text": "이번 달 일정 쭉 보여줘",
+    "schedule": true,
+    "today": false,
+    "note": "this month"
+  },
+  {
+    "text": "오늘 약속 늦는다고 문자 뭐라고 보낼까",
+    "schedule": false,
+    "today": true,
+    "note": "wording help, today"
+  },
+  {
+    "text": "오늘 일정 다 취소해줘",
+    "schedule": false,
+    "today": true,
+    "note": "cancel all today"
+  },
+  {
+    "text": "연말정산 일정 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "public tax schedule"
+  },
+  {
+    "text": "이번 주 프리미어리그 일정",
+    "schedule": false,
+    "today": false,
+    "note": "league fixtures"
+  },
+  {
+    "text": "이번 학기 수강신청 일정 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "academic calendar"
+  },
+  {
+    "text": "다음 회의 언제야?",
+    "schedule": true,
+    "today": false,
+    "note": "next meeting whenever it is"
+  },
+  {
+    "text": "오늘 거래처 미팅 있죠?",
+    "schedule": true,
+    "today": true,
+    "note": "client meeting today"
+  },
+  {
+    "text": "오늘 점심 약속 있었나 확인 좀",
+    "schedule": true,
+    "today": true,
+    "note": "lunch appointment today"
+  },
+  {
+    "text": "오늘 시험 몇 시야?",
+    "schedule": true,
+    "today": true,
+    "note": "student, exam today"
+  },
+  {
+    "text": "다음 주 시험 일정 뭐뭐 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "student, next week"
+  },
+  {
+    "text": "오늘 손님 예약 몇 시 몇 시 있어요?",
+    "schedule": true,
+    "today": true,
+    "note": "shop owner, today's bookings by time"
+  },
+  {
+    "text": "오후에 회의 있나?",
+    "schedule": true,
+    "today": true,
+    "note": "this afternoon, no day named means today"
+  },
+  {
+    "text": "내일 오전 비어 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow morning"
+  },
+  {
+    "text": "오늘 회의 참석 못 한다고 전해줘",
+    "schedule": false,
+    "today": true,
+    "note": "send a message"
+  },
+  {
+    "text": "오늘 일정 끝! 수고했다 나 자신",
+    "schedule": false,
+    "today": true,
+    "note": "self-talk"
+  },
+  {
+    "text": "메일 보내줘",
+    "schedule": false,
+    "today": false,
+    "note": "send"
+  },
+  {
+    "text": "오늘 약속 있는데 뭐 입고 가지",
+    "schedule": false,
+    "today": true,
+    "note": "outfit advice"
+  },
+  {
+    "text": "오늘 일정 알려주고 저녁 약속 장소 근처 주차장도 찾아줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: read today plus a search"
+  },
+  {
+    "text": "일정 뭐 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true, no day named, read as today"
+  },
+  {
+    "text": "오늘 약속 있었나?",
+    "schedule": true,
+    "today": true,
+    "note": "any appointment today"
+  },
+  {
+    "text": "자기소개서 첫 문단 봐줘",
+    "schedule": false,
+    "today": false,
+    "note": "writing help"
+  },
+  {
+    "text": "오늘 일정 뭐꼬",
+    "schedule": true,
+    "today": true,
+    "note": "dialect"
+  },
+  {
+    "text": "수학 숙제 좀 도와줘, 이차방정식",
+    "schedule": false,
+    "today": false,
+    "note": "homework"
+  },
+  {
+    "text": "세무사님 메일 왔어?",
+    "schedule": false,
+    "today": false,
+    "note": "mail by sender"
+  },
+  {
+    "text": "오늘 하루 일정 요약해줘",
+    "schedule": true,
+    "today": true,
+    "note": "summary of today"
+  },
+  {
+    "text": "면접 일정 메일 온 거 있어?",
+    "schedule": false,
+    "today": false,
+    "note": "mail search with schedule word"
+  },
+  {
+    "text": "오늘 뭐 하지",
+    "schedule": false,
+    "today": true,
+    "note": "borderline: false, wants ideas for the day; could be asking what is planned"
+  },
+  {
+    "text": "다음 주 스케줄 좀 보여줘",
+    "schedule": true,
+    "today": false,
+    "note": "next week"
+  },
+  {
+    "text": "What's the weather today?",
+    "schedule": false,
+    "today": true,
+    "note": "English, weather"
+  },
+  {
+    "text": "제주도 2박 3일 여행 일정 짜줘",
+    "schedule": false,
+    "today": false,
+    "note": "trip itinerary"
+  },
+  {
+    "text": "다음 달에 부모님 모시고 가족 여행을 가려고 하는데 3박 4일 일정으로 어디가 좋을지 추천하고 대략적인 일정표도 짜줘",
+    "schedule": false,
+    "today": false,
+    "note": "long, trip planning"
+  },
+  {
+    "text": "오늘 일정 뭐 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "plain ask for today's events"
+  },
+  {
+    "text": "쿠팡에서 무선 이어폰 싼 거 찾아줘",
+    "schedule": false,
+    "today": false,
+    "note": "shopping"
+  },
+  {
+    "text": "오늘 약속잇엇나",
+    "schedule": true,
+    "today": true,
+    "note": "typos, appointment today"
+  },
+  {
+    "text": "알바 근무 스케줄표 짜줘",
+    "schedule": false,
+    "today": false,
+    "note": "make a rota"
+  },
+  {
+    "text": "Check my calendar for today and any unread email",
+    "schedule": true,
+    "today": true,
+    "note": "both: English, calendar and mail"
+  },
+  {
+    "text": "구글 캘린더 말고 네이버 캘린더도 연결돼?",
+    "schedule": false,
+    "today": false,
+    "note": "product question"
+  },
+  {
+    "text": "회의 초대 메일 왔는지 봐줘",
+    "schedule": false,
+    "today": false,
+    "note": "mail about a meeting"
+  },
+  {
+    "text": "김 대리한테 답장 써줘",
+    "schedule": false,
+    "today": false,
+    "note": "reply"
+  },
+  {
+    "text": "안녕",
+    "schedule": false,
+    "today": false,
+    "note": "greeting"
+  },
+  {
+    "text": "Tell me a joke",
+    "schedule": false,
+    "today": false,
+    "note": "English, chat"
+  },
+  {
+    "text": "올해 공휴일 일정 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "public holidays"
+  },
+  {
+    "text": "오늘 저녁에 약속 있나",
+    "schedule": true,
+    "today": true,
+    "note": "this evening"
+  },
+  {
+    "text": "엄마 생신 언제로 적어놨지?",
+    "schedule": true,
+    "today": false,
+    "note": "one event by name"
+  },
+  {
+    "text": "예약 확인 문자 템플릿 만들어줘",
+    "schedule": false,
+    "today": false,
+    "note": "template"
+  },
+  {
+    "text": "회의가 너무 길어져서 지친다",
+    "schedule": false,
+    "today": false,
+    "note": "venting"
+  },
+  {
+    "text": "오늘 병원 몇 시 예약이었지?",
+    "schedule": true,
+    "today": true,
+    "note": "one event but it is today, today's list answers it"
+  },
+  {
+    "text": "캘린더에 오늘 뭐 있어",
+    "schedule": true,
+    "today": true,
+    "note": "names the calendar, today"
+  },
+  {
+    "text": "다음 달 일정 미리 좀 보여줘",
+    "schedule": true,
+    "today": false,
+    "note": "next month"
+  },
+  {
+    "text": "오늘 납품 일정 있나 확인해줘",
+    "schedule": true,
+    "today": true,
+    "note": "delivery due today, today's list answers it"
+  },
+  {
+    "text": "오늘 일정 너무 많아서 죽겠다",
+    "schedule": false,
+    "today": true,
+    "note": "complaint, already knows"
+  },
+  {
+    "text": "오늘 스케쥴 뭐야",
+    "schedule": true,
+    "today": true,
+    "note": "common misspelling of schedule"
+  },
+  {
+    "text": "오늘 회의 30분 뒤로 옮겨줘",
+    "schedule": false,
+    "today": true,
+    "note": "move, today"
+  },
+  {
+    "text": "오늘 캘린더 좀 봐줘",
+    "schedule": true,
+    "today": true,
+    "note": "look at calendar today"
+  },
+  {
+    "text": "오늘 날씨 어때?",
+    "schedule": false,
+    "today": true,
+    "note": "weather"
+  },
+  {
+    "text": "오늘 과제 마감 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true if deadlines are on the calendar; may be in a school system"
+  },
+  {
+    "text": "다음 주 화요일 오후에 시간 돼?",
+    "schedule": true,
+    "today": false,
+    "note": "named weekday next week"
+  },
+  {
+    "text": "금요일에 뭐 있지",
+    "schedule": true,
+    "today": false,
+    "note": "named weekday"
+  },
+  {
+    "text": "엑셀 vlookup 어떻게 써",
+    "schedule": false,
+    "today": false,
+    "note": "how-to"
+  },
+  {
+    "text": "이번 주 경제 일정 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "public economic calendar"
+  },
+  {
+    "text": "지난주에 미팅 몇 번 했지?",
+    "schedule": true,
+    "today": false,
+    "note": "last week"
+  },
+  {
+    "text": "오늘 calendar 확인 부탁",
+    "schedule": true,
+    "today": true,
+    "note": "mixed"
+  },
+  {
+    "text": "일정 알림 10분 전으로 바꿔줘",
+    "schedule": false,
+    "today": false,
+    "note": "reminder setting"
+  },
+  {
+    "text": "내일도 회의 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow"
+  },
+  {
+    "text": "지금 밖에 추워?",
+    "schedule": false,
+    "today": true,
+    "note": "weather"
+  },
+  {
+    "text": "오늘 일정 머 있는겨",
+    "schedule": true,
+    "today": true,
+    "note": "dialect"
+  },
+  {
+    "text": "점심 약속 12시 반으로 수정해줘",
+    "schedule": false,
+    "today": false,
+    "note": "edit"
+  },
+  {
+    "text": "일정 관리 잘하는 법 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "advice"
+  },
+  {
+    "text": "오늘 스케줄 좀 알려주세요",
+    "schedule": true,
+    "today": true,
+    "note": "polite, today's schedule"
+  },
+  {
+    "text": "오늘 6시 이후에 일정 있어?",
+    "schedule": true,
+    "today": true,
+    "note": "after six today"
+  },
+  {
+    "text": "오늘 말고 내일 일정 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "says today but wants tomorrow"
+  },
+  {
+    "text": "오늘 롯데 경기 있어?",
+    "schedule": false,
+    "today": true,
+    "note": "team's match"
+  },
+  {
+    "text": "교수님께 보낼 메일 초안 써줘",
+    "schedule": false,
+    "today": false,
+    "note": "draft"
+  },
+  {
+    "text": "오늘 일정 보고 날씨도 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: today's calendar plus weather"
+  },
+  {
+    "text": "오늘 뮤직뱅크 출연 스케줄 알려줘",
+    "schedule": false,
+    "today": true,
+    "note": "TV show line-up"
+  },
+  {
+    "text": "다이어트 식단 일정표 만들어줘",
+    "schedule": false,
+    "today": false,
+    "note": "diet plan"
+  },
+  {
+    "text": "내일 미팅 장소 강남역으로 바꿔줘",
+    "schedule": false,
+    "today": false,
+    "note": "edit"
+  },
+  {
+    "text": "110만원에 부가세 얼마야",
+    "schedule": false,
+    "today": false,
+    "note": "calculation"
+  },
+  {
+    "text": "일어났다 오늘 뭐 있냐",
+    "schedule": true,
+    "today": true,
+    "note": "just woke up, banmal"
+  },
+  {
+    "text": "메일함 정리해줘",
+    "schedule": false,
+    "today": false,
+    "note": "organise mail"
+  },
+  {
+    "text": "오늘 스케줄 어떻게 돼?",
+    "schedule": true,
+    "today": true,
+    "note": "today's schedule"
+  },
+  {
+    "text": "지금 달러 환율 얼마야",
+    "schedule": false,
+    "today": true,
+    "note": "exchange rate"
+  },
+  {
+    "text": "Check my inbox",
+    "schedule": false,
+    "today": false,
+    "note": "English, mail"
+  },
+  {
+    "text": "추석 연휴에 잡힌 일정 있어?",
+    "schedule": true,
+    "today": false,
+    "note": "named holiday period"
+  },
+  {
+    "text": "Am I free tonight?",
+    "schedule": true,
+    "today": true,
+    "note": "English, tonight's availability is a read of today"
+  },
+  {
+    "text": "방금 일어났는데 오늘 몇 시에 어디 가야 하는지 하나도 기억이 안 나, 오늘 일정 처음부터 끝까지 시간이랑 같이 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "long, whole of today"
+  },
+  {
+    "text": "택배 조회해줘",
+    "schedule": false,
+    "today": false,
+    "note": "parcel"
+  },
+  {
+    "text": "아침 브리핑 해줘: 일정, 메일, 날씨",
+    "schedule": true,
+    "today": true,
+    "note": "both: morning briefing, no day named means today"
+  },
+  {
+    "text": "이번 주 회의 다 취소한다고 공지 써줘",
+    "schedule": false,
+    "today": false,
+    "note": "write a notice"
+  },
+  {
+    "text": "오늘 야구 일정 있어?",
+    "schedule": false,
+    "today": true,
+    "note": "public sports schedule"
+  },
+  {
+    "text": "방금 넣은 일정 지워줘",
+    "schedule": false,
+    "today": false,
+    "note": "delete"
+  },
+  {
+    "text": "박 사장님이랑 다음 주에 미팅 잡게 빈 시간 제안해줘",
+    "schedule": false,
+    "today": false,
+    "note": "borderline: false, the aim is to create; it does need a read of next week first"
+  },
+  {
+    "text": "금요일 저녁 7시에 동창 모임 넣어줘",
+    "schedule": false,
+    "today": false,
+    "note": "create"
+  },
+  {
+    "text": "아침부터 정신이 없네, 오늘 내가 뭐뭐 해야 되는지 캘린더 보고 순서대로 좀 알려줄래? 어제 적어둔 게 하나도 기억이 안 나",
+    "schedule": true,
+    "today": true,
+    "note": "long, today from the calendar"
+  },
+  {
+    "text": "오늘일정머잇어",
+    "schedule": true,
+    "today": true,
+    "note": "no spaces, phone typos"
+  },
+  {
+    "text": "내일 아침 첫 일정 몇 시야?",
+    "schedule": true,
+    "today": false,
+    "note": "tomorrow's first event"
+  },
+  {
+    "text": "캘린더 연동이 안 되는 것 같아",
+    "schedule": false,
+    "today": false,
+    "note": "connection problem"
+  },
+  {
+    "text": "오늘 미팅 잘 끝났어",
+    "schedule": false,
+    "today": true,
+    "note": "report, nothing to look up"
+  },
+  {
+    "text": "오늘 수업 휴강이야?",
+    "schedule": false,
+    "today": true,
+    "note": "borderline: false, a school notice not the person's calendar; a careful reader might still check"
+  },
+  {
+    "text": "일주일 일정표 만들어줘",
+    "schedule": false,
+    "today": false,
+    "note": "make a timetable document"
+  },
+  {
+    "text": "오늘 뭐 먹지",
+    "schedule": false,
+    "today": true,
+    "note": "food idea"
+  },
+  {
+    "text": "오늘 회의 몇 시부터 몇 시까지야?",
+    "schedule": true,
+    "today": true,
+    "note": "today's meeting times"
+  },
+  {
+    "text": "오늘스케줄알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "no spaces"
+  },
+  {
+    "text": "오늘 수업 몇 시부터지",
+    "schedule": true,
+    "today": true,
+    "note": "borderline: true if classes are on the calendar; a timetable may live elsewhere"
+  },
+  {
+    "text": "오늘의 운세 알려줘",
+    "schedule": false,
+    "today": true,
+    "note": "horoscope"
+  },
+  {
+    "text": "오늘 일정 뭐있엉",
+    "schedule": true,
+    "today": true,
+    "note": "cute banmal"
+  },
+  {
+    "text": "이번 주 일정 알려줘",
+    "schedule": true,
+    "today": false,
+    "note": "this week"
+  },
+  {
+    "text": "워크숍 일정표 엑셀로 만들어줘",
+    "schedule": false,
+    "today": false,
+    "note": "make a document"
+  },
+  {
+    "text": "우리 학교 학사일정 알려줘",
+    "schedule": false,
+    "today": false,
+    "note": "school academic calendar"
+  },
+  {
+    "text": "영어 단어 10개 퀴즈 내줘",
+    "schedule": false,
+    "today": false,
+    "note": "study"
+  },
+  {
+    "text": "지금 출근길 지하철인데 오늘 회의 뭐 있는지랑 밤사이 온 메일 중에 급한 거 있는지 같이 정리해서 한 번에 알려줘",
+    "schedule": true,
+    "today": true,
+    "note": "both: long, today's meetings plus overnight mail"
+  }
+]

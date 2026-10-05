@@ -924,7 +924,7 @@ describe("the agent harness's switches", () => {
      * whether the environment named the move, so the default does not warn like a setting.
      */
     const unset = loadConfig(baseEnvironment).harness;
-    expect(unset.firstMoves).toEqual(["weather"]);
+    expect(unset.firstMoves).toEqual(["weather", "calendar", "mail"]);
     expect(unset.firstMovesNamed).toBe(false);
     const off = loadConfig({ ...baseEnvironment, FIRST_MOVE: "off" }).harness;
     expect(off.firstMoves).toEqual([]);
@@ -941,5 +941,41 @@ describe("the agent harness's switches", () => {
     expect(() =>
       loadConfig({ ...baseEnvironment, FIRST_MOVE: "search" }),
     ).toThrow("FIRST_MOVE");
+  });
+
+  test("FIRST_MOVE takes a comma list of kinds, so one can be taken out without a release", () => {
+    const moves = (line: string) =>
+      loadConfig({ ...baseEnvironment, FIRST_MOVE: line }).harness;
+    // In the list's own order and once each, however the line spelled them.
+    expect(moves(" Mail , weather,mail ").firstMoves).toEqual([
+      "weather",
+      "mail",
+    ]);
+    expect(moves("weather,calendar").firstMoves).toEqual([
+      "weather",
+      "calendar",
+    ]);
+    expect(moves("calendar").firstMovesNamed).toBe(true);
+    // A blank line is no line, as compose hands it on.
+    expect(moves("  ").firstMoves).toEqual(["weather", "calendar", "mail"]);
+    expect(moves("  ").firstMovesNamed).toBe(false);
+  });
+
+  test("FIRST_MOVE refuses a word that is not a kind rather than dropping it", () => {
+    // `mial` read as "no mail move" would be a switch somebody believes they set.
+    for (const line of [
+      "weather,mial",
+      "weather,off",
+      "weather,",
+      ",",
+      "all",
+      "weather calendar",
+    ]) {
+      expect(() =>
+        loadConfig({ ...baseEnvironment, FIRST_MOVE: line }),
+      ).toThrow(
+        "FIRST_MOVE must be off or a comma list of weather, calendar, mail",
+      );
+    }
   });
 });
