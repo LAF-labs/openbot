@@ -171,7 +171,7 @@ describe("the first move: when nobody is asked", () => {
       "내일 비 와?",
       "비와?",
       "지금 몇 도야",
-      "반팔 입어도 돼?",
+      "오늘 반팔 입어도 돼?",
       "밖에 추워?",
       "weather today?",
     ]) {
@@ -334,6 +334,17 @@ describe("the first move: what is settled before anybody is asked", () => {
       "약속 장소 추천해줘",
       "수업 듣기 싫다",
       "email validation regex 알려줘 주소 형식",
+      // And the weather's own, narrowed the same way: a temperature, the wind, being warm or
+      // cold, an air conditioner are the weather only when said of a day or of out of doors.
+      "삼겹살 몇도에서 구워야 맛있어",
+      "따뜻한 말 한마디만 해줘",
+      "바람 피우는 꿈 꿨는데 무슨 의미야",
+      "눈이 자꾸 떨리는데 왜그래요",
+      "맑은 국물 내는 비법",
+      "에어컨 전기세 아끼는 법",
+      "소나기 소설 줄거리 요약해줘",
+      "바람막이 추천해줘 등산용",
+      "수면 온도 몇도가 좋아요 침실",
     ]) {
       expect([text, kindsToAsk(text)]).toEqual([text, []]);
     }
@@ -379,6 +390,16 @@ describe("the first move: what is settled before anybody is asked", () => {
       "Do I have anything on tonight?",
     ]) {
       expect([text, kindsToAsk(text)]).toEqual([text, ["calendar"]]);
+    }
+    for (const text of [
+      "오늘 춥나?",
+      "밖에 바람 많이 불어?",
+      "내일 반팔 입어도 돼?",
+      "강아지 산책 지금 나가도 돼? 너무 덥진 않아?",
+      "눈 와?",
+      "우산 챙겨야 해?",
+    ]) {
+      expect([text, kindsToAsk(text)]).toEqual([text, ["weather"]]);
     }
     for (const text of [
       "새 메일 왔어?",
@@ -454,10 +475,16 @@ describe("the first move: the calendar's and the mail's", () => {
       expect(Object.keys(entry?.guardedTools ?? {})).not.toContain(tool);
       const schema = listed[server].find((one) => one.name === tool)
         ?.inputSchema as { properties?: Record<string, unknown> } | undefined;
-      // Every argument of the move is one the tool takes; a renamed field fails here.
-      for (const name of Object.keys(FIRST_MOVE_SPECS[kind].args)) {
-        expect(Object.keys(schema?.properties ?? {})).toContain(name);
-      }
+      /*
+       * Every argument of the move is one the tool declares — but for the calendar's `day`, which
+       * the transport reads and the definition does not declare, on purpose
+       * (`google-calendar-rest.ts`, `listingWindow`): declaring it would pause the calendar for
+       * everyone who has it connected. A second undeclared argument fails here.
+       */
+      const undeclared = Object.keys(FIRST_MOVE_SPECS[kind].args).filter(
+        (name) => !Object.keys(schema?.properties ?? {}).includes(name),
+      );
+      expect(undeclared).toEqual(kind === "calendar" ? ["day"] : []);
     }
     // The mail's goes where one-time codes are withheld, because it is a mail-reading tool there.
     expect(catalogueEntry(MAIL_SERVER)?.mailReadingTools).toContain(

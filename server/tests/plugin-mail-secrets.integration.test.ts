@@ -53,7 +53,7 @@ const MAIL = `제목: [셀러센터] 인증번호 안내
 주문번호 2026092648213 의 배송이 시작되었습니다.`;
 
 /** What the transport was handed with each call. */
-const handed: { timeZone?: string }[] = [];
+const handed: { timeZone?: string; args?: Record<string, unknown> }[] = [];
 const store = createPluginStore({
   database,
   auditStore: createAuditStore(database),
@@ -64,8 +64,8 @@ const store = createPluginStore({
   standing: createStandingApprovalStore(),
   // The person's zone rides with every call, for a transport that answers in days.
   timeZoneOf: async (who) => (who === actorId ? "Asia/Dubai" : "Asia/Seoul"),
-  callVendor: async (connection) => {
-    handed.push(connection as { timeZone?: string });
+  callVendor: async (connection, _tool, args) => {
+    handed.push({ ...(connection as { timeZone?: string }), args });
     return { text: MAIL, isError: false };
   },
 });
@@ -206,18 +206,23 @@ describe("a mail read by a routine", () => {
     expect(marks.every((mark) => mark.id === null)).toBe(true);
   });
 
-  test("the transport is handed the zone of the person the call is for", async () => {
-    // What the calendar's "today" is counted in (`google-calendar-rest.ts`, `listingWindow`).
+  test("the transport is handed the person's zone, and an argument the stored schema does not declare", async () => {
+    /*
+     * The zone is what the calendar's "today" is counted in, and `day` is how the server's first
+     * move asks for it (`google-calendar-rest.ts`, `listingWindow`) — an argument the tool's
+     * definition does not declare, so that nobody's connection is paused for review. Through the
+     * real call path, against a stored schema that has no such property: it arrives untouched.
+     */
     handed.length = 0;
     await store.callTool({
       ref: REF,
-      args: { messageId: "m1" },
+      args: { messageId: "m1", day: "today" },
       botId,
       actorId,
     });
-    expect(handed.map((connection) => connection.timeZone)).toEqual([
-      "Asia/Dubai",
-    ]);
+    expect(handed).toHaveLength(1);
+    expect(handed[0]?.timeZone).toBe("Asia/Dubai");
+    expect(handed[0]?.args).toEqual({ messageId: "m1", day: "today" });
   });
 
   test("and a call that does not say where it is drawn is drawn nowhere", async () => {

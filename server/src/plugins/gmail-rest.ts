@@ -69,7 +69,7 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   {
     name: "search_messages",
     description:
-      "지메일에서 메일을 찾는다. query는 지메일 검색창과 같은 문법이다. 예: 'from:kim@shop.kr newer_than:7d'. 제목·보낸사람·날짜가 돌아온다. 답의 첫 줄이 찾은 검색어다.",
+      "지메일에서 메일을 찾는다. query는 지메일 검색창과 같은 문법이다. 예: 'from:kim@shop.kr newer_than:7d'. 제목·보낸사람·날짜가 돌아온다.",
     inputSchema: {
       type: "object",
       properties: {

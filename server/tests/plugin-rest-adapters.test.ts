@@ -5,6 +5,7 @@ import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
 import * as gmail from "../src/plugins/gmail-rest";
 import * as business from "../src/plugins/google-business-rest";
 import * as calendar from "../src/plugins/google-calendar-rest";
+import { definitionHashOf } from "../src/plugins/laf-contract";
 import * as drive from "../src/plugins/google-drive-rest";
 import * as sheets from "../src/plugins/google-sheets-rest";
 import { transportFor } from "../src/plugins/transport";
@@ -994,44 +995,35 @@ describe("Google Calendar", () => {
     );
   });
 
-  test("the day is the person's zone's, tomorrow and a date are days too, and a day that is none is refused", async () => {
+  test("the day is the person's zone's, a clock change is still one day, and only today is a day", async () => {
     reply = () => json({ items: [] });
-    const window = (args: Record<string, unknown>, timeZone?: string) =>
-      calendar.listingWindow(args, NINE_PM_SEOUL(), timeZone ?? "Asia/Seoul");
-    const iso = (args: Record<string, unknown>, timeZone?: string) => {
-      const found = window(args, timeZone);
-      return found && [found.from.toISOString(), found.until.toISOString()];
+    const iso = (
+      args: Record<string, unknown>,
+      timeZone = "Asia/Seoul",
+      now = NINE_PM_SEOUL(),
+    ) => {
+      const found = calendar.listingWindow(args, now, timeZone);
+      return [found.from.toISOString(), found.until.toISOString()];
     };
     // 12:00 UTC is 16:00 in Dubai, the same calendar day, four hours from UTC.
     expect(iso({ day: "today" }, "Asia/Dubai")).toEqual([
       "2026-10-04T20:00:00.000Z",
       "2026-10-05T20:00:00.000Z",
     ]);
-    // And 05:00 the next morning in Los Angeles is still the 5th there.
+    // And 05:00 that morning in Los Angeles is still the 5th there.
     expect(iso({ day: "today" }, "America/Los_Angeles")).toEqual([
       "2026-10-05T07:00:00.000Z",
       "2026-10-06T07:00:00.000Z",
     ]);
-    expect(iso({ day: "tomorrow" })).toEqual([
-      "2026-10-05T15:00:00.000Z",
-      "2026-10-06T15:00:00.000Z",
-    ]);
-    expect(iso({ day: "2026-10-09", days: 3 })).toEqual([
-      "2026-10-08T15:00:00.000Z",
-      "2026-10-11T15:00:00.000Z",
-    ]);
     // A day a clock change made 23 hours long is one day: Berlin, the last Sunday of March.
-    expect(iso({ day: "2026-03-29" }, "Europe/Berlin")).toEqual([
-      "2026-03-28T23:00:00.000Z",
-      "2026-03-29T22:00:00.000Z",
-    ]);
-    for (const day of ["내일", "2026-02-31", "10/05", "next week"]) {
-      expect(window({ day })).toBeNull();
-      const refused = await calendar.callTool(seoul, "list_events", { day });
-      expect(refused.isError).toBe(true);
+    expect(
+      iso({ day: "today" }, "Europe/Berlin", new Date("2026-03-29T10:00:00Z")),
+    ).toEqual(["2026-03-28T23:00:00.000Z", "2026-03-29T22:00:00.000Z"]);
+    // `day` is declared nowhere and reads one word. Anything else is `days`, as before it existed.
+    const fromNow = ["2026-10-05T12:00:00.000Z", "2026-10-12T12:00:00.000Z"];
+    for (const day of ["tomorrow", "2026-10-09", "내일", 5]) {
+      expect(iso({ day })).toEqual(fromNow);
     }
-    // Nothing was asked of Google for a day that is none.
-    expect(asked).toEqual([]);
     // No zone handed over is the product's default, never the machine's own.
     const unzoned = await calendar.callTool(
       connection,
@@ -1040,6 +1032,47 @@ describe("Google Calendar", () => {
       NINE_PM_SEOUL,
     );
     expect(unzoned.text).toContain("Asia/Seoul(KST)");
+  });
+
+  /*
+   * A DEFINITION THAT CHANGES IS PAUSED FOR EVERYONE WHO HAS IT CONNECTED. `servers.ts` hashes each
+   * tool's name, description, schema and annotations (`definitionHashOf`), and on the next refresh
+   * of a server's tools a hash that differs from the stored one sets `needsReview` — the call is
+   * refused (`laf:tool_needs_review`) until somebody reviews it. That is right for a vendor's
+   * server and it applies to these too. So a change to any byte of a description or a schema here
+   * is an act with a cost on every deployment where the calendar or the mail is connected, and it
+   * is made by changing the hash below in the same commit, on purpose — which is why the calendar's
+   * `day` is read and not declared (`listingWindow`). A result's text is not part of a definition.
+   */
+  test("the calendar's and the mail's definitions are the ones people consented to", async () => {
+    const hashes: Record<string, string> = {};
+    for (const [key, module] of [
+      ["google-calendar", calendar],
+      ["gmail", gmail],
+    ] as const) {
+      for (const tool of await module.listTools({ url: "" })) {
+        hashes[`${key}/${tool.name}`] = await definitionHashOf({
+          name: tool.name,
+          description: tool.description ?? "",
+          inputSchema: tool.inputSchema as Record<string, unknown>,
+          annotations: tool.annotations as never,
+        });
+      }
+    }
+    expect(hashes).toEqual({
+      "google-calendar/list_events":
+        "a63a32392b8f10b35a605bd3399d86db949a1a5b6b3a555d6656675489d1306e",
+      "google-calendar/create_event":
+        "83f9ad0e3ea8f80c12b5fc57a22e90f846a6e405928a5ffdb3f29cfa6aa44330",
+      "gmail/search_messages":
+        "5b8a68a161545d4886b629220ad9ccbfce5feed499054e45207eb54c063f1d22",
+      "gmail/read_message":
+        "6f993826c5aeb064508b5f688c8165624d58c2a2b99b80a58ae8c9d92aa23db7",
+      "gmail/create_draft":
+        "e7c035f7b5330885460d9a67998bad62b35f6f2037bdfa38ae321d7d07053239",
+      "gmail/send_message":
+        "96b5621f295d5ef3655b93e427cf27046ee9267ad4d89e0ec9339c8909a0ae56",
+    });
   });
 
   test("a refusal comes back as one", async () => {

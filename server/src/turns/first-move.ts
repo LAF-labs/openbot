@@ -128,6 +128,21 @@ type KindSpec = {
 };
 
 /**
+ * NARROWED 2026-10-05, in one pass, as the calendar's and the mail's were. The weather's list had
+ * stood since 2026-10-02 with every word enough alone, and of 347 ordinary messages that want none
+ * of this it sent 18: "삼겹살 몇도에서 구워야 맛있어", "따뜻한 말 한마디만 해줘", "바람막이
+ * 추천해줘", "에어컨 전기세 아끼는 법". Those are the words below — a temperature, the wind, being
+ * hot or cold, clothes, laundry, a boiler — which are the weather only when said of a day or of
+ * out of doors. So each needs one of {@link WEATHER_WHEN} beside it: "오늘 춥나?", "밖에 바람 많이
+ * 불어?", "내일 반팔 입어도 돼?". The figures, and the wanted messages this leaves, are in
+ * `docs/laf/eval-pack.md` "The first move".
+ */
+const WEATHER_WEAK =
+  "온도|몇\\s*도|바람|장화|덥|더워|더울|더운|춥|추워|추울|추운|쌀쌀|따뜻|선선|맑|흐리|흐림|화창|반팔|긴팔|패딩|외투|겉옷|뭐\\s*입|빨래|널어|세차|보일러|에어컨|날이";
+const WEATHER_WHEN =
+  "오늘|내일|모레|글피|지금|이따|주말|이번\\s*주|아침|점심|저녁|밤|낮|오전|오후|새벽|밖|바깥|나가|나갈|외출|요즘";
+
+/**
  * The words that make a message worth asking about, per kind.
  *
  * Checked before anything is sent: a message with none of these is never shown to the decisions
@@ -144,17 +159,32 @@ type KindSpec = {
  */
 const WEATHER_WORDS = new RegExp(
   [
-    "날씨|날시|기온|온도|몇\\s*도|습도|일교차|체감|불쾌지수|영하|폭염|한파|강수|소나기|장마|우박|안개",
-    // 비 and 눈 as words of their own: 비용, 준비, 눈치 and 눈물 are not the weather.
+    // The weather by its own words: enough alone.
+    "날씨|날시|기온|습도|일교차|체감|불쾌지수|영하|폭염|한파|강수|소나기|장마|우박|안개|우산|우비",
+    // 비 and 눈 as words of their own: 비용, 준비, 눈치 and 눈물 are not the weather — and 눈 only
+    // where it falls, since "눈이 자꾸 떨리는데" is an eye.
     "(?:^|[\\s,.?!])비(?:\\s|[가는도야]|와|오|온|올|옴|왔|맞|바람|소식)",
-    "(?:^|[\\s,.?!])눈(?:\\s|[이은도]|와|오|온|올|옴|왔|쌓)",
-    "비와|비오|눈와|눈오|바람",
-    "우산|장화|우비|덥|더워|더울|더운|춥|추워|추울|추운|쌀쌀|따뜻|선선|맑|흐리|흐림|화창",
-    "반팔|긴팔|패딩|외투|겉옷|뭐\\s*입|빨래|널어|세차|보일러|에어컨|날이",
-    "weather|rain|umbrella|snow|forecast",
+    "(?:^|[\\s,.?!])눈(?:이|은|도)?\\s*(?:와|오|온|올|옴|왔|내리|내려|쌓)",
+    "비와|비오|눈와|눈오",
+    // Words that are the weather only on a day or out of doors: see WEATHER_WHEN.
+    // Anywhere in the message: it is sixty characters at most, and people ask in two breaths.
+    `(?:${WEATHER_WHEN})[\\s\\S]*?(?:${WEATHER_WEAK})|(?:${WEATHER_WEAK})[\\s\\S]*?(?:${WEATHER_WHEN})`,
+    "\\b(?:weather|rain(?:ing|y)?|umbrella|snow(?:ing|y)?|forecast)\\b",
   ].join("|"),
   "i",
 );
+
+/**
+ * What a weather word is said for when it is not the forecast: a story, a film, a dream, something
+ * to buy or to fix. Decided here and never sent, as a write is for the calendar and the mail.
+ *
+ * The last four — 바꿔, 변경, 설정, 저장 — were added after the first three runs with this list:
+ * "내 날씨 지역을 집 주소로 바꿔줘" is a change to a setting, was answered 0.70 on `forecast` once
+ * in three, exactly the bar, and moved. A change is not a look, here as for the other two kinds;
+ * but it was written after seeing that run, and the doc says so.
+ */
+const WEATHER_NEVER =
+  /줄거리|소설|동화|영화|노래|가사|꿈|추천|브랜드|전기세|요금|고장|수리|써\s*줘|써줘|만들어|바꿔|변경|설정|저장/;
 
 /**
  * CALENDAR — a schedule by its own name, or a day's word beside what a day holds.
@@ -302,6 +332,7 @@ const MESSAGE_IS =
 export const FIRST_MOVE_SPECS: Readonly<Record<FirstMoveKind, KindSpec>> = {
   weather: {
     words: WEATHER_WORDS,
+    never: WEATHER_NEVER,
     tool: WEATHER_TOOL_NAME,
     args: Object.freeze({}),
     needs: { place: true },
