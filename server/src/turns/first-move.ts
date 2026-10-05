@@ -131,6 +131,7 @@ export type FirstMoveVerdict =
   | "no_tool"
   | "no_place"
   | "budget_spent"
+  | "no_credential"
   | "no_answer"
   | "below_bar";
 
@@ -235,6 +236,11 @@ export function createFirstMove(deps: FirstMoveDeps) {
         timeoutMs: FIRST_MOVE_TIMEOUT_MS,
       })
       .catch(() => null);
+    if (decided && !decided.ok && decided.because === "no credential") {
+      // Nothing was sent: there was no key to send it with. Not a decision asked for, so it is
+      // kept out of the count of them.
+      return { move: null, verdict: say("no_credential") };
+    }
     if (!decided?.ok) return { move: null, verdict: say("no_answer") };
     const forecast = noulOf(decided.answers.forecast);
     const ownPlace = noulOf(decided.answers.ownPlace);

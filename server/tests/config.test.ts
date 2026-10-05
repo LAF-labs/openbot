@@ -916,7 +916,7 @@ describe("the agent harness's switches", () => {
     );
   });
 
-  test("the first move is off unless it names a move, and a typo does not boot as either", () => {
+  test("the first move is on unless it says off, and a typo does not boot as either", () => {
     /*
      * On unless it says `off`, since the owner said yes to it for customers (2026-10-05); before
      * that unset was off. A word that is neither is still refused — a switch that decides what is

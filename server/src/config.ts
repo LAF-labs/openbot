@@ -110,7 +110,7 @@ export const ENVIRONMENT = {
   DAY_EPOCHS: "compose",
   // Once the switch back to turns the window drove. Read only to refuse `off` (`harnessConfig`).
   SERVER_TURNS: "retired",
-  // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). Off unless set.
+  // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). On unless `off`.
   FIRST_MOVE: "compose",
   // A laptop's way to turn the owner's day without waiting for midnight; refused in production.
   LAF_CLOCK_OFFSET_MS: "development",
