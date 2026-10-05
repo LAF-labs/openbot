@@ -27,8 +27,8 @@ import { cn } from "@/lib/utils";
  * The phone's third tab, and what the sheet it replaces used to hold: the Bot's face and name (to
  * its profile), then 수첩 · 루틴 · 스킬 · 연결 · 도움말 · 설정, then 모두 멈추기 and 로그아웃, and 관리
  * for an administrator. The links are the PC sidebar's own list (`app-sidebar/places.ts`), so the
- * two cannot offer different places. On the PC app this is the sidebar's footer and account menu;
- * nothing links here from there.
+ * two cannot offer different places. On the PC app this is the list under the one button at the
+ * sidebar's foot; nothing links here from there.
  */
 export const Route = createFileRoute("/_authed/_app/menu")({
   component: MenuPage,
