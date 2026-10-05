@@ -375,6 +375,65 @@ describe("a conversation with a weather call in it", () => {
     await view.unmount();
   });
 
+  test("on a forecast that is nobody's own, the note is the way to where a place is given", async () => {
+    /*
+     * "위치를 아직 몰라요" WAS PLAIN TEXT. Somebody whose device is allowed but placed only by its
+     * address — a desktop on a cable, whose fix is too vague to keep — is told nothing else, and
+     * was told here with nowhere to go. The note is a link to 설정 → 내 정보 → 위치, the section
+     * itself and not merely the page it is on.
+     */
+    const channelId = "channel_weather-nobodys";
+    const nobodys = JSON.stringify({
+      ...(JSON.parse(DATA) as Record<string, unknown>),
+      place: "서울특별시",
+      placeName: "서울특별시",
+      placeSource: "fallback",
+    });
+    const server = turnServer({
+      channelId,
+      history: [
+        ASKED,
+        called("w", WEATHER_TOOL_NAME),
+        answered("w", nobodys),
+        said("a-answer", "서울 기준으로 알려드려요."),
+      ],
+    });
+    const view = await mountApp({
+      path: `/channel/${channelId}`,
+      api: server.api,
+    });
+    await view.waitFor(
+      () =>
+        log(view.host)?.querySelector("[data-weather-place] a") !== null &&
+        log(view.host)?.textContent?.includes("서울 기준으로") === true,
+      "the card with its note",
+      8000,
+    );
+    const way = log(view.host)?.querySelector<HTMLAnchorElement>(
+      "[data-weather-place] a",
+    );
+    expect(way?.textContent).toBe("your place isn't known yet");
+    if (!way) throw new Error("no link on the note");
+
+    await view.click(way);
+    await view.waitFor(
+      () => view.router.state.location.pathname === "/settings/shop",
+      "설정 → 내 정보",
+    );
+    // To the section, by the id the section itself carries.
+    expect(view.router.state.location.hash).toBe("location");
+    await view.waitFor(
+      () => view.host.querySelector("section#location") !== null,
+      "the 위치 section",
+    );
+    expect(view.host.querySelector("section#location")?.textContent).toContain(
+      "Shop location",
+    );
+
+    server.close();
+    await view.unmount();
+  });
+
   test("draws no card for a call that came back with nothing: it is put away like any step", async () => {
     const channelId = "channel_weather-refused";
     const server = turnServer({

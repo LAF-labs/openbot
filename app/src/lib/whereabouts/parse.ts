@@ -17,10 +17,18 @@ export function parseWhereabouts(value: unknown): Whereabouts {
   const said = value as Record<string, unknown>;
   const place =
     typeof said.place === "string" && said.place.trim() ? said.place : null;
+  const coordinates = coarseCoordinates(said.coordinates);
+  // The server's name for where the coordinates fall. Only beside coordinates: a name with no
+  // place under it would be drawn as one.
+  const near =
+    coordinates && typeof said.near === "string" && said.near.trim()
+      ? said.near.trim()
+      : null;
   return {
     timeZone: isUsableTimeZone(said.timeZone) ? said.timeZone : null,
     locale: canonicalLocale(said.locale),
     place,
-    coordinates: coarseCoordinates(said.coordinates),
+    coordinates,
+    ...(near ? { near } : {}),
   };
 }

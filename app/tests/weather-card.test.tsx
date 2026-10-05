@@ -255,11 +255,28 @@ describe("the weather tool's answer, read for the card", () => {
 });
 
 describe("the weather card", () => {
+  /*
+   * INSIDE A ROUTER, as it always is in the app: the note on a forecast that is nobody's own is a
+   * link to where a place is given, and a link has to know where it is.
+   */
   async function card(result: string) {
     const { WeatherCard } = await import(
       "../src/components/weather/weather-card"
     );
-    const view = await mount(createElement(WeatherCard, { result }));
+    const {
+      createMemoryHistory,
+      createRootRoute,
+      createRouter,
+      RouterProvider,
+    } = await import("@tanstack/react-router");
+    const router = createRouter({
+      routeTree: createRootRoute({
+        component: () => createElement(WeatherCard, { result }),
+      }),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    const view = await mount(createElement(RouterProvider, { router }));
+    await view.settle();
     return view.host.querySelector<HTMLElement>('[data-slot="weather-card"]');
   }
 
@@ -388,23 +405,35 @@ describe("the weather card", () => {
     expect(fallback?.querySelector("[data-weather-place]")?.textContent).toBe(
       "서울특별시 · your place isn't known yet",
     );
-    expect(ko["{place} · your place isn't known yet"]).toBe(
-      "{place} · 위치를 아직 몰라요",
-    );
+    expect(ko["your place isn't known yet"]).toBe("위치를 아직 몰라요");
     // What is read aloud is still the place the forecast is for.
     expect(fallback?.getAttribute("aria-label")).toBe("Weather for 서울특별시");
+    /*
+     * THE NOTE IS THE WAY TO FIX IT. It was plain text: somebody whose device is allowed but too
+     * vaguely placed to keep — a desktop on a cable — is told by nothing else that their place is
+     * not known, and was told here with nowhere to go. The words are a link to 설정 → 내 정보 →
+     * 위치; the place's own name is not.
+     */
+    const way = fallback?.querySelector<HTMLAnchorElement>(
+      "[data-weather-place] a",
+    );
+    expect(way?.textContent).toBe("your place isn't known yet");
+    expect(way?.getAttribute("href")).toBe("/settings/shop#location");
 
     for (const placeSource of ["named", "saved", "device", "sideways"]) {
       const chosen = await card(JSON.stringify({ ...seoul, placeSource }));
       expect(chosen?.querySelector("[data-weather-place]")?.textContent).toBe(
         "서울특별시",
       );
+      // A place somebody chose is not a thing to fix: nothing to press.
+      expect(chosen?.querySelector("[data-weather-place] a")).toBeNull();
     }
     // And an answer from before the fact was written.
     const older = await card(JSON.stringify(seoul));
     expect(older?.querySelector("[data-weather-place]")?.textContent).toBe(
       "서울특별시",
     );
+    expect(older?.querySelector("[data-weather-place] a")).toBeNull();
   });
 
   test("names the place from the facts, in its own words — and from the model's line only when there are none", async () => {

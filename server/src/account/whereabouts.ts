@@ -38,6 +38,7 @@ import {
   looksLikeAnInstruction,
   looksLikeASecret,
 } from "../agents/memory-store";
+import { nameNear } from "../agents/person-context";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
@@ -136,6 +137,35 @@ export function createWhereaboutsStore(
 }
 
 /**
+ * What the person's own screen is told: the kept facts, and what the place the device's
+ * coordinates fall in is called.
+ *
+ * THE SURFACE CANNOT WORK A NAME OUT, AND MUST NOT DRAW THE NUMBERS. 내 정보 drew a latitude and a
+ * longitude under a box that still held the place the person had typed before; the owner, whose
+ * device had just been allowed, could not tell that it had worked and asked whether the place in
+ * the box was the server's location (2026-10-06). So every answer about a person's whereabouts
+ * — `/api/me`, and the three doors below — carries the name beside the coordinates.
+ *
+ * THE SAME NAME THE PROMPT'S PLACE LINE USES, UNDER THE SAME RULE (`nameNear`, `promptPersonOf`):
+ * the districts of the forecast cell the coordinates fall in, read from 기상청's table, with "부근"
+ * once where the nearest name is a neighbour's. A district, never a street. And only where the
+ * device IS the place — coordinates, and no words: what a person said is the place, and is not
+ * annotated with where their device happens to be. ABSENT otherwise, and where the table names
+ * nothing: no name is made up.
+ *
+ * NOT KEPT AND NOT TAKEN: it is read from the table on the way out, and `placeAnswerOf` reads no
+ * such key on the way in.
+ */
+export function withName(
+  kept: Whereabouts,
+  nameOf: (coordinates: Coordinates) => string | null = nameNear,
+): Whereabouts {
+  const near =
+    kept.coordinates && !kept.place ? nameOf(kept.coordinates) : null;
+  return near ? { ...kept, near } : kept;
+}
+
+/**
  * A place as a request offered it, or the refusal.
  *
  * THE WORDS ARE READ INTO EVERY RUN'S PROMPT, so they pass the memory store's two scans as well as
@@ -194,7 +224,7 @@ export function createWhereaboutsRoutes(
       locale: canonicalLocale(body?.locale),
     });
     return context.json({
-      whereabouts: await store.read(context.var.actor.id),
+      whereabouts: withName(await store.read(context.var.actor.id)),
     });
   });
 
@@ -212,7 +242,7 @@ export function createWhereaboutsRoutes(
       words: typeof parsed.value.place === "string",
       coordinates: parsed.value.coordinates !== null,
     });
-    return context.json({ whereabouts });
+    return context.json({ whereabouts: withName(whereabouts) });
   });
 
   routes.delete("/me/place", requireUser, async (context) => {
@@ -221,7 +251,7 @@ export function createWhereaboutsRoutes(
       coordinates: null,
     });
     log.info("place_cleared", {});
-    return context.json({ whereabouts });
+    return context.json({ whereabouts: withName(whereabouts) });
   });
 
   return routes;

@@ -11,11 +11,13 @@ import {
   IconCloudSnow,
   IconSun,
 } from "@tabler/icons-react";
+import { Link } from "@tanstack/react-router";
 import {
   chatCard,
   chatCardMeta,
   chatCardPadding,
 } from "@/components/ui/card-surface";
+import { focusRing } from "@/components/ui/focus";
 import { activeLocale, t } from "@/lib/i18n";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -161,11 +163,14 @@ export function WeatherCard({ result }: { result: string }) {
    * as a fact (`placeSource`). Unsaid, the card reads as the person's own weather — to somebody in
    * 부산, a wrong forecast drawn with every sign of being theirs. A few words after the name, not a
    * line of their own: the reason, which is also what to fix. The label read aloud stays the place.
+   *
+   * AND THE WORDS ARE THE WAY THERE. They were plain text: somebody whose device is allowed but
+   * placed only by its address — a desktop on a cable, whose fix is too vague to keep — is told by
+   * nothing else that their place is not known, and was told here with nowhere to go. The note is
+   * a link to where a place is given: 설정 → 내 정보 → 위치 (`shop-location.tsx`, the section whose
+   * id the hash names).
    */
-  const placeLine =
-    place && weather.placeSource === "fallback"
-      ? t("{place} · your place isn't known yet", { place })
-      : place;
+  const isNobodysPlace = Boolean(place) && weather.placeSource === "fallback";
 
   return (
     <section
@@ -177,7 +182,19 @@ export function WeatherCard({ result }: { result: string }) {
         <div className="flex min-w-0 flex-col gap-1">
           {place ? (
             <p className={cn(chatCardMeta, "truncate")} data-weather-place>
-              {placeLine}
+              {place}
+              {isNobodysPlace ? (
+                <>
+                  {" · "}
+                  <Link
+                    className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+                    hash="location"
+                    to="/settings/shop"
+                  >
+                    {t("your place isn't known yet")}
+                  </Link>
+                </>
+              ) : null}
             </p>
           ) : null}
           <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">

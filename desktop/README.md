@@ -322,20 +322,43 @@ Running and started with `open -g`, **no dialog shown and none answered**:
 - The half that every other platform compiles was compiled once on this Mac
   with its condition flipped: no error and no warning. Not built on Windows.
 
-**Not measured, because each needs a person at the screen:** the system's
-question itself and its wording; a fix arriving, rounded, with its accuracy; a
-refusal; both bounds; that a second question within the hour is answered from
-`CLLocationManager.location` (read from Apple's documentation); anything at all
-under the hardened runtime, which no build has; and **that bringing the window
-back from the tray with the screen unlocked tells the page so**. That last is
-read, not measured: the page listens for `visibilitychange` and the window's
-`focus`, the same two the socket has listened to for "looked at again" since
-before this (`app/src/lib/channels/use-channel-events.ts`); and a notice about
-the conversation on screen is withheld wherever the page says it is visible
+**Measured 2026-10-06 with the owner at the screen**, on a debug bundle of
+this shell — its code has not changed since — with the page served at
+`localhost:3010`:
+
+- The press of 이 기기 위치 쓰기 put the system's question up, and it was
+  allowed. The log read `the page asked where this device is:
+  permission=Prompt prompt=true`, `asking the person whether this device may be
+  read`, and two seconds later `this device answered: place`.
+- With the words taken off the account and the app opened again, the device
+  was read by itself with nothing shown (`permission=Granted`) and its place
+  was saved — so the fix said it was good to three kilometres — and the place
+  was the right one.
+- **And the person could not tell that any of it had worked.** The form drew
+  the answer as two numbers under a box that still held the place typed
+  before, and saved nothing until a second button was pressed; they pressed
+  seven more times and asked whether the place in the box was the server's.
+  That was the page's to fix and is fixed there, not here: one press reads
+  and saves, the device's place is drawn by a name the server reads from
+  기상청's table and never by a number, and one sentence says which of the
+  words, the device or Seoul is in use
+  (`app/src/components/shop/shop-location.tsx`). The shell's answer is what it
+  was.
+
+**Still not measured, because each needs a person at the screen:** the
+question's wording as the system draws it; a refusal; both bounds; that a
+second question within the hour is answered from `CLLocationManager.location`
+(read from Apple's documentation); anything at all under the hardened runtime,
+which no build has; and **that bringing the window back from the tray with the
+screen unlocked tells the page so**. That last is read, not measured: the page
+listens for `visibilitychange` and the window's `focus`, the same two the
+socket has listened to for "looked at again" since before this
+(`app/src/lib/channels/use-channel-events.ts`); and a notice about the
+conversation on screen is withheld wherever the page says it is visible
 (`decideNotice`), while this shell was measured posting notices with its
 window in the tray (2026-09-26, above) — which is the page saying, there, that
 it was not. Whoever next has the development app open with this change served
-at `localhost:3010`:
+at `localhost:3010` (1 to 3, allowed, are what was measured above):
 
 1. An account with no place at all is asked when the window is first looked
    at; one that holds words, or coordinates, is not — by the table — and is
@@ -345,11 +368,13 @@ at `localhost:3010`:
 2. The system's question appears with the sentence above under it. The log
    reads `the page asked where this device is: permission=Prompt prompt=true`
    and `asking the person whether this device may be read`.
-3. Allowed: `this device answered: place`, and the screen says 이 기기 위치:
-   위도 …, 경도 … 부근 with two decimals. Refused: `this device answered:
-   denied`, and the screen says so in words. Left alone for a minute: `this
-   device answered: unanswered`, the button comes back with a sentence saying
-   the question was not answered, and pressing again asks again.
+3. Allowed: `this device answered: place`, and the press has saved it — the
+   box is empty, the screen says 이 기기 위치: with the place's name and 부근
+   and no number anywhere, and 저장됨. Refused: `this device answered: denied`,
+   and the screen says so in words with nothing changed. Left alone for a
+   minute: `this device answered: unanswered`, the button comes back with a
+   sentence saying the question was not answered, and pressing again asks
+   again.
 4. With coordinates saved and no words, close the window to the tray and
    bring it back: the first time, `permission=Granted prompt=false` and `this
    device answered: place`, and no write unless the device is two hundredths

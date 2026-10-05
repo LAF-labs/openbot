@@ -1222,13 +1222,30 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * button gave does) — and one to `root`, in `desktop-shell.test.ts` (each thing the shell asks of
  * the system has a bound, and a bound that passes with nobody having decided is not a refusal).
  *
+ * RAISED AGAIN 2026-10-06 after the owner pressed the button and could not tell that it had
+ * worked, by exactly what was added: three to `server`, all in `whereabouts-routes.test.ts` (every
+ * answer about a person's whereabouts names where the device's coordinates fall, from the table;
+ * no name without coordinates, beside words, abroad or after a clear; a name in a request is not
+ * kept) — and seven to `app`: four more in `settings-shop-location.test.tsx`, which holds
+ * seventeen (with nothing kept the sentence says Seoul; one press of the device's button reads,
+ * saves and names the place, with no number drawn; over words on the account that one press sends
+ * the device and takes the words away; a press refused, unanswered or not taken by the server
+ * changes nothing and says why; typed words take the device's place and its line goes; the place
+ * is said to be around its name, once; words are the one source wherever coordinates are held
+ * beside them — where the tests of the form that waited for a second press stood), one more in
+ * `device-place.test.ts`, which holds thirty-one, and one more in `device-place-gate.test.tsx`,
+ * which holds twenty-two (in a browser tab the once is spent when the question is put, so an
+ * ignored prompt is not shown again at the next load; only the installed app's unanswered
+ * question spends nothing), and one in `weather-card-transcript.test.tsx` (the card's note that
+ * the place is nobody's own is the way to where a place is given).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3624, roots: ["server"] },
-  { name: "app", floor: 2090, roots: ["app"] },
+  { name: "server", floor: 3627, roots: ["server"] },
+  { name: "app", floor: 2097, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
 ] as const;

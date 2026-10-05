@@ -26,9 +26,9 @@ import {
  * nothing for nearly everybody. It is asked now — in a browser tab and, through its shell, in the
  * installed app — and these hold the whole of when it may be: never before the person has agreed
  * to anything, never while the person has said where they are, never a dialog over coordinates
- * already held, never again once its person has decided, never blind where the device cannot say
- * whether a prompt would appear, and never again by itself on a device whose place the person
- * cleared there.
+ * already held, never again once the device's once is spent — in a tab when the question is put,
+ * in the installed app when it is answered — never blind where the device cannot say whether a
+ * prompt would appear, and never again by itself on a device whose place the person cleared there.
  *
  * And what it does once it may: a device that already said yes is read again with nothing shown,
  * at most once an hour, and the answer kept only when it is good enough and has really moved —
@@ -263,6 +263,8 @@ describe("the move, carried out", () => {
       accuracy?: number | null;
       allowed?: DevicePermission;
       answers?: "yes" | "no" | "nothing";
+      /** A browser tab, or the installed app — which differ in whether an unanswered ask is told. */
+      surface?: "tab" | "app";
     } = {},
   ) {
     const did: string[] = [];
@@ -289,6 +291,7 @@ describe("the move, carried out", () => {
       canAsk: () => true,
       held: () => ({ place: world.place, coordinates: world.coordinates }),
       mark: () => world.mark,
+      tellsWhenUnanswered: () => over.surface === "app",
       canMark: () => {
         did.push("can mark");
         return true;
@@ -312,6 +315,8 @@ describe("the move, carried out", () => {
         if (world.permission === "prompt") {
           // Only the ask may put the question up; what comes of it is the person's.
           if (!mayPrompt || world.answers === "nothing") {
+            // The shell says so after a minute. A browser says nothing, ever: its prompt stays.
+            if (over.surface !== "app") return new Promise(() => {});
             return { coordinates: null, refusal: "unanswered" };
           }
           world.permission = world.answers === "yes" ? "granted" : "denied";
@@ -331,12 +336,22 @@ describe("the move, carried out", () => {
     return { made, did, saved, world };
   }
 
-  test("a device that has not decided is asked, and the once is spent when its person answers — not when the question is put", async () => {
-    const first = doors();
-    expect(await offerDevicePlace(first.made)).toBe("ask");
-    // Whether a mark can be kept is found out BEFORE the question; the mark is written AFTER the
-    // answer. And this read is the only one told it may show the person anything.
-    expect(first.did).toEqual([
+  test("a device that has not decided is asked: marked before the question in a tab, and after the answer in the installed app", async () => {
+    // A BROWSER shows its prompt the moment it is asked: the once is spent before the question.
+    const tab = doors({ surface: "tab" });
+    expect(await offerDevicePlace(tab.made)).toBe("ask");
+    expect(tab.did).toEqual([
+      "permission",
+      "marked",
+      "read, may prompt",
+      "noted",
+      "saved",
+    ]);
+    // THE INSTALLED APP's may never appear: whether a mark can be kept is found out before the
+    // question, and the mark is written after the answer.
+    const app = doors({ surface: "app" });
+    expect(await offerDevicePlace(app.made)).toBe("ask");
+    expect(app.did).toEqual([
       "permission",
       "can mark",
       "read, may prompt",
@@ -344,33 +359,36 @@ describe("the move, carried out", () => {
       "noted",
       "saved",
     ]);
-    // The coordinates and nothing else: the door is handed no word about the place.
-    expect(first.saved).toEqual([HERE]);
-    // Looked at again within the hour: the device is not even asked what it would say.
-    first.did.length = 0;
-    expect(await offerDevicePlace(first.made)).toBe("nothing");
-    expect(first.did).toEqual([]);
-    // And an hour on: allowed now, so it is read with nothing shown — and it has not moved, so
-    // nothing is written.
-    first.world.isRecent = false;
-    expect(await offerDevicePlace(first.made)).toBe("same");
-    expect(first.did).toEqual([
-      "permission",
-      "marked",
-      "noted",
-      "read, silently",
-    ]);
-    expect(first.saved).toHaveLength(1);
+    for (const first of [tab, app]) {
+      // The coordinates and nothing else: the door is handed no word about the place. And that
+      // read was the only one told it may show the person anything.
+      expect(first.saved).toEqual([HERE]);
+      // Looked at again within the hour: the device is not even asked what it would say.
+      first.did.length = 0;
+      expect(await offerDevicePlace(first.made)).toBe("nothing");
+      expect(first.did).toEqual([]);
+      // And an hour on: allowed now, so it is read with nothing shown — and it has not moved, so
+      // nothing is written.
+      first.world.isRecent = false;
+      expect(await offerDevicePlace(first.made)).toBe("same");
+      expect(first.did).toEqual([
+        "permission",
+        "marked",
+        "noted",
+        "read, silently",
+      ]);
+      expect(first.saved).toHaveLength(1);
+    }
   });
 
-  test("a question nobody answered spends nothing: the device is asked again at the next look", async () => {
+  test("in the installed app a question nobody answered spends nothing: the device is asked again at the next look", async () => {
     /*
      * THE ONE ASK WAS SPENT ON A DIALOG NOBODY SAW (review of pull request 94). The installed app's
      * question goes through the system, which shows nothing where the app is not in use and then
      * says nothing either: the ask never came back, and it had been marked the moment it was put.
      * The shell answers `unanswered` after a minute now, and that is not a decision.
      */
-    const ignored = doors({ answers: "nothing" });
+    const ignored = doors({ surface: "app", answers: "nothing" });
     expect(await offerDevicePlace(ignored.made)).toBe("unanswered");
     expect(ignored.did).toEqual(["permission", "can mark", "read, may prompt"]);
     expect(ignored.world.mark).toBe("none");
@@ -382,6 +400,26 @@ describe("the move, carried out", () => {
     expect(await offerDevicePlace(ignored.made)).toBe("ask");
     expect(ignored.world.mark).toBe("asked");
     expect(ignored.saved).toEqual([HERE]);
+  });
+
+  test("in a browser tab the once is spent when the question is put: an ignored prompt is never shown again", async () => {
+    /*
+     * A browser's prompt is on screen the moment it is asked, and an ignored one says nothing
+     * back, ever. Spending the once only on an answer meant every load of the page asked again —
+     * a prompt on every open is how a product gets its location blocked for good.
+     */
+    const ignored = doors({ surface: "tab", answers: "nothing" });
+    // The prompt is up and stays up: the offer does not come back.
+    void offerDevicePlace(ignored.made);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ignored.did).toEqual(["permission", "marked", "read, may prompt"]);
+    expect(ignored.world.mark).toBe("asked");
+
+    // The page is loaded again, the prompt still unanswered as far as the browser says.
+    ignored.did.length = 0;
+    expect(await offerDevicePlace(ignored.made)).toBe("nothing");
+    expect(ignored.did.join()).not.toContain("read");
+    expect(ignored.saved).toEqual([]);
   });
 
   test("a no — or a prompt closed without a yes — is the person's answer: never asked again", async () => {
@@ -605,10 +643,16 @@ describe("the move, carried out", () => {
   });
 
   test("storage that cannot keep a mark means the device is neither asked nor read", async () => {
-    // To be asked: found out before the question is put, since the mark comes after the answer.
-    const forgetful = doors({ canMark: () => false });
-    expect(await offerDevicePlace(forgetful.made)).toBe("nothing");
-    expect(forgetful.did.join()).not.toContain("read");
+    // To be asked in the installed app: found out before the question is put, since there the
+    // mark comes after the answer. In a tab the mark itself comes first.
+    for (const over of [
+      { surface: "app" as const, canMark: () => false },
+      { surface: "tab" as const, markAsked: () => false },
+    ]) {
+      const forgetful = doors(over);
+      expect(await offerDevicePlace(forgetful.made)).toBe("nothing");
+      expect(forgetful.did.join()).not.toContain("read");
+    }
     // Already allowed, over a place held or over none.
     for (const coordinates of [null, THERE]) {
       const silent = doors({

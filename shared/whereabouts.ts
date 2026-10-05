@@ -28,6 +28,19 @@ export type Whereabouts = {
   place: string | null;
   /** From the device, with the person's permission, rounded to two decimals. */
   coordinates: Coordinates | null;
+  /**
+   * What the place those coordinates fall in is called — "서울특별시 강남구·서초구", or "… 부근"
+   * where the nearest name is a neighbour's — where the server's table has a name for it.
+   *
+   * A FACT THE SERVER ADDS FOR THE PERSON'S OWN SCREEN, never kept and never taken from a request:
+   * it is read from 기상청's table each time (`withName`, server), the same name the prompt's place
+   * line uses and under the same rule — only where the device is the place, with no words said.
+   * Absent otherwise, and where the table names nothing — abroad, at sea — because a name that is
+   * made up is worse than none. A person reads a place, not two numbers: shown a latitude and a
+   * longitude under a box that still held the place typed before, the owner asked whether the
+   * place in the box was the server's location (2026-10-06).
+   */
+  near?: string;
 };
 
 export const NO_WHEREABOUTS: Whereabouts = {

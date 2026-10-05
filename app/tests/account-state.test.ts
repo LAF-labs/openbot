@@ -127,12 +127,12 @@ const DEVICE_SCOPED = [
   "lib/build-reload.ts",
   /*
    * What this device knows about being asked where it is (`lib/whereabouts/device-place.ts`,
-   * 2026-10-05): that its person has decided, that they cleared its place here, and when it was
+   * 2026-10-05): that its once is spent, that they cleared its place here, and when it was
    * last read by itself.
    *
    * A DECISION, and the argument is that all three are facts about the DEVICE and not the account.
    * The permission prompt is this browser's, a refusal is this browser's, and "never ask again
-   * once they have decided" has to hold here whatever another device did. 지우기 is final on the
+   * once it has been asked" has to hold here whatever another device did. 지우기 is final on the
    * device it was pressed on — the place follows a device that said yes, so the account cannot say
    * which of a person's devices is to stop being read; only the device can. And "once an hour" is
    * about how often THIS device is read, which is nothing the account could count. The answer

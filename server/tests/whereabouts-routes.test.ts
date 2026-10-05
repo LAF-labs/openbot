@@ -102,6 +102,126 @@ describe("what /api/me says about where the person is", () => {
   });
 });
 
+describe("the name beside the coordinates", () => {
+  /*
+   * 내 정보 DREW TWO NUMBERS. The owner allowed their device and was shown a latitude and a
+   * longitude under a box that still held the place typed before; they could not tell that it had
+   * worked, pressed seven more times, and asked whether the place in the box was the server's
+   * location (2026-10-06). A person reads a place. The surface cannot work one out from
+   * coordinates, and the server already does for the prompt's place line — so every answer about
+   * whereabouts carries that same name, read from the shipped table, as a fact.
+   */
+  const named = async (response: Response) =>
+    ((await response.json()) as { whereabouts: Whereabouts }).whereabouts;
+  const me = async (app: ReturnType<typeof createApp>) =>
+    (
+      (await (await app.request("http://laf.local/api/me")).json()) as {
+        user: { whereabouts: Whereabouts };
+      }
+    ).user.whereabouts;
+
+  test("every answer names where the device's coordinates fall — the district, never the numbers' own guess", async () => {
+    const { store } = whereaboutsStore();
+    const app = surface(store);
+    const here = { latitude: 37.5, longitude: 127.03 };
+    // The device's own answer, and the one a press on 내 정보 sends: the words cleared with it.
+    for (const body of [
+      { coordinates: here },
+      { place: null, coordinates: here },
+    ]) {
+      const kept = await named(await send(app, "/api/me/place", "PUT", body));
+      expect(kept.coordinates).toEqual(here);
+      expect(kept.near).toBe("서울특별시 강남구·서초구");
+    }
+    // The same name wherever the person's screen reads it from.
+    expect((await me(app)).near).toBe("서울특별시 강남구·서초구");
+    expect(
+      (
+        await named(
+          await send(app, "/api/me/device", "PUT", {
+            timeZone: "Asia/Seoul",
+            locale: "ko-KR",
+          }),
+        )
+      ).near,
+    ).toBe("서울특별시 강남구·서초구");
+
+    // The other cell the surface's own tests stand in (`app/tests/settings-shop-location.test.tsx`):
+    // its fake server answers with these two names, and they are the table's.
+    expect(
+      (
+        await named(
+          await send(app, "/api/me/place", "PUT", {
+            coordinates: { latitude: 35.16, longitude: 129.16 },
+          }),
+        )
+      ).near,
+    ).toBe("부산광역시 수영구·해운대구");
+
+    // A cell the table has no row in is named by its neighbour, and says 부근 once.
+    const offTheCoast = { latitude: 33.2, longitude: 126.28 };
+    const near = (
+      await named(
+        await send(app, "/api/me/place", "PUT", { coordinates: offTheCoast }),
+      )
+    ).near;
+    expect(near).toBe("제주특별자치도 서귀포시 부근");
+    expect(near?.match(/부근/g)).toHaveLength(1);
+  });
+
+  test("no name where there are no coordinates, and none made up where the table has none", async () => {
+    const { store } = whereaboutsStore();
+    const app = surface(store);
+    // Nothing kept.
+    expect("near" in (await me(app))).toBe(false);
+    // Words alone: what a person typed is the place, and is not given another name.
+    const said = await named(
+      await send(app, "/api/me/place", "PUT", {
+        place: "강원 춘천시",
+        coordinates: null,
+      }),
+    );
+    expect(said.place).toBe("강원 춘천시");
+    expect("near" in said).toBe(false);
+    // Words AND coordinates: the words are the place, as they are in the prompt's place line, and
+    // are not annotated with where a device happens to be.
+    const both = await named(
+      await send(app, "/api/me/place", "PUT", {
+        place: "강원 춘천시",
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+      }),
+    );
+    expect(both.coordinates).toEqual({ latitude: 37.5, longitude: 127.03 });
+    expect("near" in both).toBe(false);
+    await send(app, "/api/me/place", "DELETE");
+    // Abroad: coordinates are kept, and nothing is said about what they are called.
+    const tokyo = { latitude: 35.68, longitude: 139.65 };
+    const abroad = await named(
+      await send(app, "/api/me/place", "PUT", { coordinates: tokyo }),
+    );
+    expect(abroad.coordinates).toEqual(tokyo);
+    expect("near" in abroad).toBe(false);
+    expect("near" in (await me(app))).toBe(false);
+    // Cleared: gone with the coordinates.
+    const cleared = await named(await send(app, "/api/me/place", "DELETE"));
+    expect(cleared.coordinates).toBeNull();
+    expect("near" in cleared).toBe(false);
+  });
+
+  test("a name in a request is not kept: the table is the only thing that names a place", async () => {
+    const { store, places } = whereaboutsStore();
+    const app = surface(store);
+    const kept = await named(
+      await send(app, "/api/me/place", "PUT", {
+        coordinates: { latitude: 35.68, longitude: 139.65 },
+        near: "서울특별시 종로구",
+      }),
+    );
+    expect("near" in kept).toBe(false);
+    expect(places.every((answer) => !("near" in answer))).toBe(true);
+  });
+});
+
 describe("PUT /api/me/device", () => {
   test("keeps the zone and the language the device reported", async () => {
     const { store, devices } = whereaboutsStore();
