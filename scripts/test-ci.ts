@@ -1239,13 +1239,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * question spends nothing), and one in `weather-card-transcript.test.tsx` (the card's note that
  * the place is nobody's own is the way to where a place is given).
  *
+ * RAISED AGAIN 2026-10-06 with the reason a connection did not finish, by exactly what was added:
+ * ten to `app`, all in the new `connect-outcome-screen.test.tsx`, mounted through the real route
+ * and looked at once the address has lost what the redirect carried (each of the callback's five
+ * reasons is told in its own words and they stay; a reason this build does not know, no reason at
+ * all — which is all the installed app's link back carries — and a reason that is a number or is
+ * given twice are each told as the general sentence, with the word drawn nowhere; a consent that
+ * finished is told by the vendor's name, and that stays too).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3627, roots: ["server"] },
-  { name: "app", floor: 2097, roots: ["app"] },
+  { name: "app", floor: 2107, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
 ] as const;
