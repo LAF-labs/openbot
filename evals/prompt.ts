@@ -136,6 +136,16 @@ export function systemMessageFor(
    * tool, so naming it alone draws nothing.
    */
   holdsWeatherTool?: boolean,
+  /**
+   * The names of every tool the run is handed, as the server's middleware passes them
+   * (`server/src/copilot.ts`), for a scenario that is ABOUT what stands behind the bridge
+   * (`listed`): those are drawn in the context layer. Given, they are what the layer is drawn
+   * from — the weather tool among them where it is held — and `holdsWeatherTool` is not read.
+   * Absent is a layer that names none, which is what every other scenario has always been sent.
+   */
+  toolNames?: readonly string[],
+  /** The accounts still open to connect, as the middleware reads them off the connect card. */
+  openAccounts?: readonly string[],
 ) {
   const role = who ? who.standingRole : EVAL_STANDING_ROLE;
   const composed = composePrompt({
@@ -149,9 +159,12 @@ export function systemMessageFor(
     ...(person ? { person } : {}),
     ...(skills ? { skills } : {}),
     ...(notepad ? { notepad } : {}),
-    ...(holdsWeatherTool === undefined
-      ? {}
-      : { toolNames: holdsWeatherTool ? [WEATHER_TOOL_NAME] : [] }),
+    ...(toolNames
+      ? { toolNames }
+      : holdsWeatherTool === undefined
+        ? {}
+        : { toolNames: holdsWeatherTool ? [WEATHER_TOOL_NAME] : [] }),
+    ...(openAccounts ? { openAccounts } : {}),
   });
   const earlier = summary
     ? earlierSummaryText(summary, factsFor(mode, person, frozenAt).day)
