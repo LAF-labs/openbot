@@ -253,7 +253,33 @@ describe("Gmail", () => {
     // An empty string reads to a model as "the tool had nothing to say" and gets filled in from
     // memory, which for a mailbox search is the exact failure this connector exists to prevent.
     expect(result.isError).toBe(false);
-    expect(result.text).toContain("Nothing was found");
+    // And it says what was searched for: nothing for this search is not an empty mailbox.
+    expect(result.text).toBe(
+      '[검색어 "무언가" · 0통]\n이 검색에 맞는 메일이 없습니다.',
+    );
+  });
+
+  test("a search's first line says what was searched for, so a list nobody chose the query of can be read", async () => {
+    // A turn's first step calls this with a query of its own (`turns/first-move.ts`): the Bot's
+    // model is handed the list without having written "unread, in the inbox".
+    globalThis.fetch = stubFetch(async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/messages")) return json({ messages: [{ id: "m1" }] });
+      return json({
+        id: "m1",
+        payload: { headers: [{ name: "Subject", value: "견적서" }] },
+      });
+    });
+    const unread = await gmail.callTool(connection, "search_messages", {
+      query: "is:unread in:inbox",
+    });
+    expect(unread.text.split("\n")[0]).toBe(
+      '[검색어 "is:unread in:inbox" · 1통]',
+    );
+    const recent = await gmail.callTool(connection, "search_messages", {});
+    expect(recent.text.split("\n")[0]).toBe(
+      "[검색어 없이 최근 메일부터 · 1통]",
+    );
   });
 
   test("a refusal is a refusal, and it names the status", async () => {
@@ -300,7 +326,9 @@ describe("Gmail", () => {
 
     const elapsed = Date.now() - started;
     expect(result.isError).toBe(false);
-    const lines = result.text.split("\n");
+    // The first line is what was searched for; the fifty are under it.
+    const [said, ...lines] = result.text.split("\n");
+    expect(said).toBe("[검색어 없이 최근 메일부터 · 50통]");
     expect(lines).toHaveLength(50);
     // Gmail's order, not the order the reads happened to finish in.
     expect(lines[0]).toContain("제목 m0");
@@ -866,6 +894,152 @@ describe("Google Calendar", () => {
     // order by start time unless it is expanding them.
     expect(asked[0]?.url.searchParams.get("singleEvents")).toBe("true");
     expect(asked[0]?.url.searchParams.get("orderBy")).toBe("startTime");
+  });
+
+  /*
+   * "TODAY" IS THE PERSON'S DAY (2026-10-05). `days: 1` was the only way to ask and it means this
+   * minute to the same minute tomorrow: at nine in the evening the day's earlier events were not
+   * in it and tomorrow morning's were, and an empty evening read as a day with nothing on it.
+   */
+  const NINE_PM_SEOUL = () => new Date("2026-10-05T12:00:00Z");
+  const seoul = { ...connection, timeZone: "Asia/Seoul" };
+
+  test("day: today at nine in the evening is the whole local day — the morning in, tomorrow out", async () => {
+    reply = () =>
+      json({
+        items: [
+          {
+            id: "e1",
+            summary: "치과",
+            start: { dateTime: "2026-10-05T09:30:00+09:00" },
+            end: { dateTime: "2026-10-05T10:00:00+09:00" },
+          },
+          {
+            id: "e2",
+            summary: "창립기념일",
+            start: { date: "2026-10-05" },
+            end: { date: "2026-10-06" },
+          },
+        ],
+      });
+
+    const result = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+
+    // Midnight to midnight on the person's clock, which is 15:00 UTC the day before.
+    expect(asked[0]?.url.searchParams.get("timeMin")).toBe(
+      "2026-10-04T15:00:00.000Z",
+    );
+    expect(asked[0]?.url.searchParams.get("timeMax")).toBe(
+      "2026-10-05T15:00:00.000Z",
+    );
+    expect(result.text.split("\n")).toEqual([
+      "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 2건]",
+      "- 2026-10-05 09:30 ~ 2026-10-05 10:00 · 치과 · id: e1",
+      // An all-day event is its date: converted, it would move a day in half the world's zones.
+      "- 2026-10-05 (종일) ~ 2026-10-06 (종일) · 창립기념일 · id: e2",
+    ]);
+  });
+
+  test("the same minute without `day` is still from now on, and says so — tomorrow morning is in it", async () => {
+    reply = () =>
+      json({
+        items: [
+          {
+            id: "e3",
+            summary: "납품 미팅",
+            // Whatever offset Google answers in, the line is on the person's clock.
+            start: { dateTime: "2026-10-05T23:00:00Z" },
+            end: { dateTime: "2026-10-05T23:30:00Z" },
+          },
+        ],
+      });
+
+    const result = await calendar.callTool(
+      seoul,
+      "list_events",
+      { days: 1 },
+      NINE_PM_SEOUL,
+    );
+
+    expect(asked[0]?.url.searchParams.get("timeMin")).toBe(
+      "2026-10-05T12:00:00.000Z",
+    );
+    expect(asked[0]?.url.searchParams.get("timeMax")).toBe(
+      "2026-10-06T12:00:00.000Z",
+    );
+    expect(result.text.split("\n")).toEqual([
+      "[본 기간: 2026-10-05 21:00 ~ 2026-10-06 21:00 Asia/Seoul(KST) · 일정 1건]",
+      "- 2026-10-06 08:00 ~ 2026-10-06 08:30 · 납품 미팅 · id: e3",
+    ]);
+  });
+
+  test("a day with nothing on it says which day had nothing, not that nothing was found", async () => {
+    reply = () => json({ items: [] });
+
+    const result = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toBe(
+      "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 0건]\n이 기간에 캘린더에 잡힌 일정이 없습니다.",
+    );
+  });
+
+  test("the day is the person's zone's, tomorrow and a date are days too, and a day that is none is refused", async () => {
+    reply = () => json({ items: [] });
+    const window = (args: Record<string, unknown>, timeZone?: string) =>
+      calendar.listingWindow(args, NINE_PM_SEOUL(), timeZone ?? "Asia/Seoul");
+    const iso = (args: Record<string, unknown>, timeZone?: string) => {
+      const found = window(args, timeZone);
+      return found && [found.from.toISOString(), found.until.toISOString()];
+    };
+    // 12:00 UTC is 16:00 in Dubai, the same calendar day, four hours from UTC.
+    expect(iso({ day: "today" }, "Asia/Dubai")).toEqual([
+      "2026-10-04T20:00:00.000Z",
+      "2026-10-05T20:00:00.000Z",
+    ]);
+    // And 05:00 the next morning in Los Angeles is still the 5th there.
+    expect(iso({ day: "today" }, "America/Los_Angeles")).toEqual([
+      "2026-10-05T07:00:00.000Z",
+      "2026-10-06T07:00:00.000Z",
+    ]);
+    expect(iso({ day: "tomorrow" })).toEqual([
+      "2026-10-05T15:00:00.000Z",
+      "2026-10-06T15:00:00.000Z",
+    ]);
+    expect(iso({ day: "2026-10-09", days: 3 })).toEqual([
+      "2026-10-08T15:00:00.000Z",
+      "2026-10-11T15:00:00.000Z",
+    ]);
+    // A day a clock change made 23 hours long is one day: Berlin, the last Sunday of March.
+    expect(iso({ day: "2026-03-29" }, "Europe/Berlin")).toEqual([
+      "2026-03-28T23:00:00.000Z",
+      "2026-03-29T22:00:00.000Z",
+    ]);
+    for (const day of ["내일", "2026-02-31", "10/05", "next week"]) {
+      expect(window({ day })).toBeNull();
+      const refused = await calendar.callTool(seoul, "list_events", { day });
+      expect(refused.isError).toBe(true);
+    }
+    // Nothing was asked of Google for a day that is none.
+    expect(asked).toEqual([]);
+    // No zone handed over is the product's default, never the machine's own.
+    const unzoned = await calendar.callTool(
+      connection,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+    expect(unzoned.text).toContain("Asia/Seoul(KST)");
   });
 
   test("a refusal comes back as one", async () => {

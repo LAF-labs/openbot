@@ -82,6 +82,8 @@ export type VendorTransport = {
       botId?: string;
       /** Where what this call answers will be drawn (`DrawnOn`). Absent is `nowhere`. */
       drawnOn?: DrawnOn;
+      /** The zone the person's days are counted in. Read by the calendar alone. */
+      timeZone?: string;
     },
     toolName: string,
     args: Record<string, unknown>,

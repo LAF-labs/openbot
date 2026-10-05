@@ -115,6 +115,8 @@ type Needs = { place: true } | { connection: string };
 type KindSpec = {
   /** The words that make a message worth asking about this kind. */
   words: RegExp;
+  /** The words that settle, with nobody asked, that the message is not this kind's read. */
+  never?: RegExp;
   tool: string;
   /** The call's arguments. A constant: nothing read from the message or from an answer. */
   args: Readonly<Record<string, unknown>>;
@@ -155,40 +157,133 @@ const WEATHER_WORDS = new RegExp(
 );
 
 /**
- * CALENDAR — the words of a schedule, and "what is there" for the people who ask "오늘 뭐 있지".
+ * CALENDAR — a schedule by its own name, or a day's word beside what a day holds.
  *
- * MEASURED as the weather's was (`evals/first-move-calendar.json`, 75 short messages that want
- * today's calendar): the first list, written from the head — the first and third lines below
- * without their last few words — let 61 through. This one is that list widened by what it had
- * missed: being busy or free, a typo of 일정, the places a day's events are (외근, 시험, 학원), and
- * the English for a day's events. Two it still leaves, both marked borderline by their labeller as
- * to-dos rather than events ("나 오늘 뭐 해야 돼?", "오늘 과제 마감 있어?"). The widened number is
- * how it does on the messages it was fitted to.
+ * NARROWED 2026-10-05, after a review of the first lists. They were wide the way the weather's is
+ * — 약속, 회의, 시험, 바빠, 뭐 있, "free", each enough alone — and asked the decisions model about
+ * 199 of the 283 messages in the calendar's set, 78 of which wanted it: "회의록 요약해줘", "시험
+ * 공부 도와줘", "냉장고에 뭐 있지", "일정한 속도로 걸어". Each is a message that leaves the
+ * deployment, a fifth of a second before the Bot's model starts and a row in the trail, for nothing
+ * — and the owner's condition for this feature is that it cost nothing where it does nothing.
+ *
+ * So a word qualifies in one of two ways. A SCHEDULE NOUN alone: 일정 (not 일정한, 일정 기간),
+ * 스케줄, 캘린더, "schedule", "calendar", "agenda" as whole words. Or a WORD FOR TODAY and, close
+ * after it, something a day holds — 약속, 회의, 미팅, 예약, 수업, 시험, being busy or free, "뭐
+ * 있" — which is how people ask without the noun ("오늘 뭐 있지", "이따 회의 있나?"). And nothing
+ * that marks a change to the calendar ({@link CALENDAR_WRITES}): that is decided here, by rule, and
+ * never sent.
+ *
+ * Measured in `docs/laf/eval-pack.md` "The first move": what each list sends of the messages that
+ * do not want it, and of ordinary chat, before and after — and the wanted messages it now leaves.
  */
+const TODAY_WORDS = "오늘|지금|이따|오전|오후|아침|점심|저녁|밤에|낮에";
 const CALENDAR_WORDS = new RegExp(
   [
-    "일정|일쩡|스케줄|스케쥴|약속|미팅|회의|예약|수업|캘린더|달력",
-    "뭐\\s*있|뭐\\s*잇|머\\s*있|머\\s*잇",
-    "바빠|바쁘|시간\\s*(?:되|돼|있)|비어|외근|출장|시험|학원",
-    "calendar|schedule|meeting|appointment|agenda|event|my day|free",
-    "have\\b.*\\b(?:today|tonight)|anything on",
+    // 일정한 속도, 일정 기간, 일정량 are "constant" and "a certain", not a schedule.
+    "일정(?![한하량액]|\\s*(?:기간|부분|금액|수준|비율|간격|속도))|일쩡|스케줄|스케쥴|캘린더",
+    // 회의록 and 회의실 are a document and a room; 시험지, 시험관, 시험 삼아 are not an exam today.
+    `(?:${TODAY_WORDS})[^.?!]{0,14}?(?:뭐\\s*[있잇]|머\\s*[있잇]|약속|미팅|회의(?![록실])|예약|수업|시험(?![지관]|\\s*삼아)|바빠|바쁘|시간\\s*(?:되|돼)|비어|외근|출장|학원\\s*몇|meeting)`,
+    "\\b(?:calendar|schedule|agenda)\\b",
+    "\\b(?:what|anything|events?|meetings?|free|have)\\b[^.?!]{0,24}\\b(?:today|tonight|this (?:morning|afternoon|evening))\\b",
+    "\\btoday'?s (?:events?|meetings?|appointments?)\\b",
+    "\\bmy day\\b",
   ].join("|"),
   "i",
 );
 
 /**
- * MAIL — the mailbox by any of its names (`evals/first-move-mail.json`, 74 short messages that
- * want the unread mail). The first list — 메일, 편지함, 지메일, mail, inbox — let 66 through;
- * widened by 멜 and 수신함 it lets 71. What it leaves is a message that names no service ("뭐 온 거
- * 없어?", "연락 온 거 있어?", both borderline to their labeller) and "새 매일 왔어?": 매일 is a typo
- * of 메일 there and "every day" everywhere else, and a list with it in would send most messages
- * about a routine.
+ * A change to the calendar, by its verb. A message with one is not a read of today, and is left to
+ * the Bot's model without anybody being asked: 잡아줘, 넣어줘, 취소해줘, 미뤄줘, 바꿔줘, 만들어줘.
+ */
+const CALENDAR_WRITES =
+  /잡아|넣어|추가|등록|취소|미뤄|미루|옮겨|바꿔|변경|삭제|지워|만들|짜\s*줘|짜줘|써\s*줘|써줘|작성|보내|추천|\b(?:add|create|book|cancel|move|reschedule|delete|set up|write|schedule an?)\b/i;
+
+/**
+ * MAIL — the mailbox by its name, as a word: 메일 (이메일, 지메일), 편지함, 수신함, "mail",
+ * "email", "gmail", "inbox", and 멜 only where it stands alone ("멜 온 거 있어?", not 카멜레온,
+ * 멜버른, 스멜). Narrowed with the calendar's, for the same reason. What it leaves is a message that
+ * names no service ("뭐 온 거 없어?"), "새 매일 왔어?" — 매일 is "every day" everywhere else — and
+ * 멜 glued to a verb ("새멜왔나").
  */
 const MAIL_WORDS = new RegExp(
-  // 멜론 and 멜로 are not the mail.
-  ["메일|멜(?![론로])|편지함|수신함|지메일", "mail|inbox"].join("|"),
+  [
+    "메일|편지함|수신함",
+    "(?:^|\\s)(?:새\\s?|안\\s?읽은\\s?)?멜(?=$|[\\s?!.,~]|[은는이가도을를]|확인)",
+    "\\b(?:e-?mails?|gmail|inbox|mail)\\b",
+  ].join("|"),
   "i",
 );
+
+/**
+ * Something done with mail rather than a look at it, by its verb or its object: 보내줘, 써줘, 답장,
+ * 초안, 주소, 삭제, 차단. Decided here and never sent — "메일 주소 알려줘" and "메일로 보내줘" are
+ * most of what the word 메일 is said for.
+ *
+ * ONE PASS OVER ORDINARY CHAT, and no more (`evals/first-move-ordinary.json`, 347 messages that
+ * want none of this, written by somebody who had not seen these lists): it sent five for the mail
+ * and two for the calendar, and 써, 아이디, 계정, 머지 here and 추천 in the calendar's came of
+ * reading them. The number in the doc after that pass is the number on the messages it was fitted
+ * to; the lists were not gone over again.
+ */
+const MAIL_WRITES =
+  /보내|보낼|써|쓸|작성|답장|회신|전달|초안|주소|아이디|계정|머지|삭제|지워|차단|서명|구독|만들|읽음\s*처리|오면|\b(?:send|write|reply|draft|forward|address|delete|unsubscribe|compose)\b/i;
+
+/**
+ * A MESSAGE THAT LEANS ON THE ONE BEFORE IT IS NOT ASKED ABOUT, for any kind.
+ *
+ * The decisions model is shown one message and nothing of the conversation. "그럼 일정은?" after a
+ * turn about tomorrow reads, alone, as today's schedule — every question answers yes, and the move
+ * is today's list under a question about tomorrow. What the message refers to is in the thread the
+ * Bot's model has and this does not, so a message that opens on a connective, or points back with
+ * an anaphor, is left to it before anything is sent, and leaves no row.
+ *
+ * A short list, on purpose: each word here costs the moves of people who simply talk this way ("또
+ * 메일 왔어?"). `first-move.test.ts` walks it.
+ */
+export const FOLLOW_UP_OPENERS = [
+  "그럼",
+  "그러면",
+  "그리고",
+  "그런데",
+  "근데",
+  "그래서",
+  "그건",
+  "그거",
+  "그게",
+  "또",
+  "then",
+  "and",
+  "also",
+  "so",
+  "what about",
+  "how about",
+] as const;
+export const FOLLOW_UP_ANAPHORS = [
+  "그날",
+  "그때",
+  "거기",
+  "아까",
+  "그 일정",
+  "그 메일",
+  "that day",
+  "that one",
+] as const;
+const escaped = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const FOLLOW_UP = new RegExp(
+  [
+    // An opener is the message's first word; `또` must not be 또래, nor "so" be "sofa".
+    `^\\s*(?:${FOLLOW_UP_OPENERS.map(escaped).join("|")})(?=$|[\\s,.?!~])`,
+    FOLLOW_UP_ANAPHORS.map(escaped).join("|"),
+    // "일정은?", "메일은요?" — a topic and nothing else is a question about something already said.
+    "^\\s*[가-힣A-Za-z]{1,8}[은는](?:요)?\\s*[?？]*\\s*$",
+  ].join("|"),
+  "i",
+);
+
+/** Whether a message leans on the conversation before it. See {@link FOLLOW_UP_OPENERS}. */
+export function isFollowUp(text: string): boolean {
+  return FOLLOW_UP.test(text);
+}
 
 /** The opening every kind's first question shares: what `message` is. */
 const MESSAGE_IS =
@@ -225,14 +320,16 @@ export const FIRST_MOVE_SPECS: Readonly<Record<FirstMoveKind, KindSpec>> = {
   },
   calendar: {
     words: CALENDAR_WORDS,
+    never: CALENDAR_WRITES,
     tool: CALENDAR_TOOL_NAME,
     /*
-     * `days: 1` and nothing else: the tool's own word for "오늘부터 며칠까지 볼지". It reads from
-     * this minute to the same minute tomorrow (`google-calendar-rest.ts`), so what has already
-     * happened today is not in it and, late in the evening, tomorrow morning is — each event comes
-     * back with its date and time, and the Bot's model reads "오늘" against them.
+     * `day: "today"` and nothing else: the tool's own word for the person's whole local day,
+     * midnight to midnight in their zone, what has already happened included
+     * (`google-calendar-rest.ts`, `listingWindow`). It was `days: 1` for an afternoon, which is
+     * this minute to the same minute tomorrow: asked at nine in the evening it left out the day
+     * and brought tomorrow morning. The result's first line says the stretch it covers.
      */
-    args: Object.freeze({ days: 1 }),
+    args: Object.freeze({ day: "today" }),
     needs: { connection: CALENDAR_SERVER },
     questions: {
       schedule: {
@@ -255,6 +352,7 @@ export const FIRST_MOVE_SPECS: Readonly<Record<FirstMoveKind, KindSpec>> = {
   },
   mail: {
     words: MAIL_WORDS,
+    never: MAIL_WRITES,
     tool: MAIL_TOOL_NAME,
     /*
      * ONE FIXED QUERY, in the grammar the tool's own description names ("query는 지메일 검색창과
@@ -298,9 +396,25 @@ export function kindsMentioned(
   text: string,
   among: readonly FirstMoveKind[] = FIRST_MOVES,
 ): FirstMoveKind[] {
-  return FIRST_MOVES.filter(
-    (kind) => among.includes(kind) && FIRST_MOVE_SPECS[kind].words.test(text),
-  );
+  return FIRST_MOVES.filter((kind) => {
+    if (!among.includes(kind)) return false;
+    const spec = FIRST_MOVE_SPECS[kind];
+    return spec.words.test(text) && !spec.never?.test(text);
+  });
+}
+
+/**
+ * The kinds a message would be asked about, by everything decided before anybody is: its length,
+ * whether it leans on the conversation before it, and the words in it. Empty is never sent. One
+ * function, so the eval sends exactly what the product would.
+ */
+export function kindsToAsk(
+  text: string,
+  among: readonly FirstMoveKind[] = FIRST_MOVES,
+): FirstMoveKind[] {
+  const said = text.trim();
+  if (said.length === 0 || said.length > FIRST_MOVE_MAX_CHARS) return [];
+  return isFollowUp(said) ? [] : kindsMentioned(said, among);
 }
 
 /** The questions of several kinds as the one request carries them. */
@@ -352,6 +466,7 @@ export type FirstMoveVerdict =
   | "moved"
   | "not_one_message"
   | "too_long"
+  | "follow_up"
   | "no_word"
   | "no_tool"
   | "no_place"
@@ -402,9 +517,9 @@ type NotReady = "no_tool" | "no_place" | "no_connection";
  * Whether this turn opens with a move, and which.
  *
  * The cheap refusals first, in the order that sends the least: the switch, the shape of what was
- * asked, its length, the words in it, whether the Bot holds a tool for them, whether there is a
- * place or a connection to answer from — and only then the question to somebody else, once, about
- * the kinds that are left.
+ * asked, its length, whether it leans on the message before it, the words in it, whether the Bot
+ * holds a tool for them, whether there is a place or a connection to answer from — and only then
+ * the question to somebody else, once, about the kinds that are left.
  */
 export function createFirstMove(deps: FirstMoveDeps) {
   const on = deps.moves.length > 0 && deps.ask !== null;
@@ -450,6 +565,8 @@ export function createFirstMove(deps: FirstMoveDeps) {
     if (text.length === 0 || text.length > FIRST_MOVE_MAX_CHARS) {
       return none("too_long");
     }
+    // What it refers to is in the thread, which the decisions model is not shown.
+    if (isFollowUp(text)) return none("follow_up");
     const mentioned = kindsMentioned(text, deps.moves);
     if (mentioned.length === 0) return none("no_word");
 

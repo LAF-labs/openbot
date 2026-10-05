@@ -1959,30 +1959,66 @@ function firstMovesBehindTheBridge(): Scenario[] {
   const tomorrow = dayAfter(today, 1);
   const person = { timeZone: zone, locale: "ko-KR" };
   const event = (day: string, from: string, to: string, title: string) =>
-    `- ${day}T${from}:00+09:00 ~ ${day}T${to}:00+09:00 · ${title}`;
-  const TODAYS = [
+    `- ${day} ${from} ~ ${day} ${to} · ${title}`;
+  /** A listing as `google-calendar-rest.ts` writes it: the stretch it covers, then the events. */
+  const listing = (from: string, until: string, events: readonly string[]) =>
+    [
+      `[본 기간: ${from} 00:00 ~ ${until} 00:00 Asia/Seoul(KST) · 일정 ${events.length}건]`,
+      ...(events.length > 0
+        ? events
+        : ["이 기간에 캘린더에 잡힌 일정이 없습니다."]),
+    ].join("\n");
+  const dayAfterTomorrow = dayAfter(today, 2);
+  const TODAYS_EVENTS = [
     `${event(today, "21:00", "21:30", "치과 정기검진")} · 장소: 연세미소치과 · id: ev_today_1`,
     `${event(today, "22:30", "23:00", "주간 매출 정리")} · id: ev_today_2`,
-  ].join("\n");
-  const TOMORROWS = `${event(tomorrow, "23:00", "23:30", "한빛상사 납품 미팅")} · 장소: 성수동 사무실 · id: ev_tomorrow_1`;
-  const UNREAD = [
+  ];
+  const TOMORROWS_EVENTS = [
+    `${event(tomorrow, "23:00", "23:30", "한빛상사 납품 미팅")} · 장소: 성수동 사무실 · id: ev_tomorrow_1`,
+  ];
+  const TODAYS = listing(today, tomorrow, TODAYS_EVENTS);
+  // Asked late: everything the day held is behind the person, and the whole day is still the answer.
+  const ALREADY_PAST = listing(today, tomorrow, [
+    `${event(today, "00:10", "00:40", "새벽 배송 확인")} · id: ev_past_1`,
+    `${event(today, "00:50", "01:20", "원두 발주 마감")} · id: ev_past_2`,
+  ]);
+  const NOTHING_TODAY = listing(today, tomorrow, []);
+  /** A search as `gmail-rest.ts` writes it: what was searched for, then the mails. */
+  const found = (query: string, mails: readonly string[]) =>
+    [
+      `[${query ? `검색어 "${query}"` : "검색어 없이 최근 메일부터"} · ${mails.length}통]`,
+      ...(mails.length > 0 ? mails : ["이 검색에 맞는 메일이 없습니다."]),
+    ].join("\n");
+  const UNREAD_MAILS = [
     `- 10월 전기요금 청구서 · 한국전력 <bill@kepco.example> · ${today} 08:12 · id: m_unread_1`,
     `- [네이버페이] 정산 완료 안내 · 네이버페이 <pay@naver.example> · ${today} 09:40 · id: m_unread_2`,
     `- 주문하신 포장재 견적 드립니다 · 박성민 <park@pojang.example> · ${today} 11:05 · id: m_unread_3`,
-  ].join("\n");
+  ];
   const FROM_THE_ACCOUNTANT = `- 3분기 부가세 신고 자료 요청 · 이정훈 세무사 <lee@semu.example> · ${dayAfter(today, -1)} 17:20 · id: m_read_9`;
+  const UNREAD = found(String(FIRST_MOVE_SPECS.mail.args.query), UNREAD_MAILS);
   /** The two services, answered the way the transports would for these fixtures. */
   const backend = (call: ObservedCall): string | undefined => {
     if (call.name === CALENDAR_TOOL_NAME) {
-      const days = Number(call.arguments?.days ?? 7);
-      return days > 1 ? `${TODAYS}\n${TOMORROWS}` : TODAYS;
+      const day = String(call.arguments?.day ?? "");
+      if (day === "today") return TODAYS;
+      if (day === "tomorrow" || day === tomorrow) {
+        return listing(tomorrow, dayAfterTomorrow, TOMORROWS_EVENTS);
+      }
+      return Number(call.arguments?.days ?? 7) > 1
+        ? listing(today, dayAfterTomorrow, [
+            ...TODAYS_EVENTS,
+            ...TOMORROWS_EVENTS,
+          ])
+        : TODAYS;
     }
     if (call.name === MAIL_TOOL_NAME) {
       const query = String(call.arguments?.query ?? "");
-      if (/세무|semu|이정훈|lee@/i.test(query)) return FROM_THE_ACCOUNTANT;
+      if (/세무|semu|이정훈|lee@/i.test(query)) {
+        return found(query, [FROM_THE_ACCOUNTANT]);
+      }
       return /is:unread/.test(query) || query.trim() === ""
-        ? UNREAD
-        : `${UNREAD}\n${FROM_THE_ACCOUNTANT}`;
+        ? found(query, UNREAD_MAILS)
+        : found(query, [...UNREAD_MAILS, FROM_THE_ACCOUNTANT]);
     }
     if (call.name === toolNameFor("gmail/read_message")) {
       return call.arguments?.messageId === "m_read_9"
@@ -2031,7 +2067,7 @@ function firstMovesBehindTheBridge(): Scenario[] {
     words.every((word) => turn.text.includes(word));
   const base = {
     /*
-     * MEASURED, NOT PART OF A VERDICT. These seven count rounds beside each other. What a
+     * MEASURED, NOT PART OF A VERDICT. These nine count rounds beside each other. What a
      * candidate must do with a thread a move opened is held by the weather's two above, which
      * are; and the calendar's "is answered from" passes five runs of six on the fleet's model (it
      * looks the tool up and calls it again once in six), which in a verdict of "every scenario,
@@ -2075,17 +2111,65 @@ function firstMovesBehindTheBridge(): Scenario[] {
     },
     {
       ...base,
+      /*
+       * ASKED LATE IN THE DAY. With `days: 1` this thread held tomorrow morning and none of
+       * today; with the whole local day it holds what has already happened, and the first line
+       * says which day that is. Held to answering with the day — not to "nothing left today".
+       */
+      id: "first-move-calendar-late-in-the-day",
+      messages: moved("calendar", "오늘 일정 뭐 있어?", ALREADY_PAST),
+      // Asked again, the calendar says again what it said.
+      stub: (call) =>
+        call.name === CALENDAR_TOOL_NAME ? ALREADY_PAST : backend(call),
+      check: (turn) =>
+        verdict([
+          ["캘린더를 다시 부름", !called(turn, CALENDAR_TOOL_NAME)],
+          ["오늘 있었던 두 일정을 말하지 않음", says(turn, "배송", "발주")],
+          /*
+           * "남은 일정은 없어요" after naming the two is the right answer, and a first version of
+           * this check failed three runs of six for saying it. What fails is a day called empty.
+           */
+          [
+            "오늘 일정이 없다고만 말함",
+            !/오늘(은)?\s*(잡힌\s*)?일정(이|은)?\s*없/.test(turn.text),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      // A day with nothing on it: the result says which day had nothing, and so must the answer.
+      id: "first-move-calendar-empty-day",
+      messages: moved("calendar", "오늘 일정 뭐 있어?", NOTHING_TODAY),
+      // Asked again, the calendar says again what it said: nothing that day.
+      stub: (call) =>
+        call.name === CALENDAR_TOOL_NAME ? NOTHING_TODAY : backend(call),
+      check: (turn) =>
+        verdict([
+          [
+            "빈 답을 믿지 않고 캘린더를 다시 부름 — 첫 수가 아낀 바퀴를 도로 씀",
+            !called(turn, CALENDAR_TOOL_NAME),
+          ],
+          ["오늘 일정이 없다고 말하지 않음", /없/.test(turn.text)],
+          ["없는 일정을 지어냄", !/치과|미팅|회의|\d{1,2}시/.test(turn.text)],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
       id: "first-move-calendar-for-tomorrow-is-put-right",
       // The move was wrong: the question is about tomorrow and the list in hand is today's.
       messages: moved("calendar", "내일 일정 뭐 있어?", TODAYS),
       check: (turn) =>
         verdict([
           [
-            "내일까지 보도록 캘린더를 다시 부르지 않음",
+            "내일을 보도록 캘린더를 다시 부르지 않음",
             turn.calls.some(
               (call) =>
                 call.name === CALENDAR_TOOL_NAME &&
-                Number(call.arguments?.days ?? 7) > 1,
+                call.arguments?.day !== "today",
             ),
           ],
           ["내일 일정(한빛상사 납품 미팅)이 답에 없음", says(turn, "한빛상사")],

@@ -602,6 +602,13 @@ export type PluginStoreOptions = {
    */
   mailSecretJudge?: JevAsker;
   /**
+   * The zone a person's days are counted in — their device's, or the deployment's where they have
+   * none (`account/whereabouts.ts`, `BOT_TIME_ZONE`). Handed to a transport with the call, so that
+   * the calendar's "today" is the person's day. Absent, a transport falls back on the product's
+   * default zone.
+   */
+  timeZoneOf?: (actorId: string) => Promise<string>;
+  /**
    * Where a withheld code or link waits for the owner to press 보기. Defaults to one made here, which
    * is what a deployment runs: the store that withholds is the store the reveal route asks.
    */
@@ -652,6 +659,8 @@ export type PluginContext = {
   readonly transportFor: (entry: CatalogueEntry | null) => VendorTransport;
   /** Where a withheld code or link waits for its owner. See {@link PluginStoreOptions.withheld}. */
   readonly withheld: WithheldSecrets;
+  /** See {@link PluginStoreOptions.timeZoneOf}. */
+  readonly timeZoneOf: PluginStoreOptions["timeZoneOf"];
 };
 
 /**
@@ -713,6 +722,7 @@ export function createPluginStore(options: PluginStoreOptions) {
             KEY_UNAVAILABLE)
           : transportFor(entry),
     withheld: options.withheld ?? createWithheldSecrets(),
+    timeZoneOf: options.timeZoneOf,
   };
 
   const grants = createSkillsAndGrants(context);

@@ -1,0 +1,763 @@
+[
+  { "text": "안녕 ㅎㅎ 좀 심심하다", "note": "greeting, small talk" },
+  { "text": "회의록 요약해줘", "note": "near: meeting minutes, summarise" },
+  { "text": "김치찌개 맛있게 끓이는법", "note": "recipe" },
+  {
+    "text": "일정한 속도로 걷는 게 좋아?",
+    "note": "near: iljeong meaning constant, walking pace"
+  },
+  { "text": "이 문장 영어로 번역해줘: 수고하셨습니다", "note": "translation" },
+  {
+    "text": "근로장려금 신청 자격이 어떻게 돼요",
+    "note": "tax benefit eligibility"
+  },
+  {
+    "text": "how do I say 'cheers' in Korean?",
+    "note": "English, translation"
+  },
+  {
+    "text": "이메일 아이디 뭘로 지을지 추천좀",
+    "note": "near: email username ideas"
+  },
+  { "text": "아이가 밤에 자꾸 깨는데 어떡하죠", "note": "parenting, sleep" },
+  { "text": "엑셀에서 중복값 지우는법", "note": "spreadsheet help" },
+  {
+    "text": "비빔밥 영어로 뭐라고 설명하면 좋을까",
+    "note": "near: bi syllable inside bibimbap, translation"
+  },
+  {
+    "text": "알바생한테 보낼 근무표 변경 안내문 써줘",
+    "note": "near: staff rota change notice to send"
+  },
+  { "text": "중2 수학 일차함수 쉽게 설명해줘", "note": "math homework" },
+  { "text": "요즘 삼성전자 주가 왜 떨어져?", "note": "stock question" },
+  {
+    "text": "기말고사 시험범위 너무 많은데 공부 순서 짜줘",
+    "note": "near: exam range, study order"
+  },
+  { "text": "나 요즘 너무 우울해", "note": "feelings" },
+  { "text": "에어프라이어 추천해줘 10만원 이하로", "note": "shopping" },
+  {
+    "text": "바람 피우는 꿈 꿨는데 무슨 의미야",
+    "note": "near: baram meaning cheating, dream meaning"
+  },
+  {
+    "text": "Can you proofread this sentence for me?",
+    "note": "English, proofreading"
+  },
+  {
+    "text": "부가세 신고 언제까지 해야돼요?",
+    "note": "near: deadline date, VAT filing"
+  },
+  { "text": "재밌는 아재개그 하나만", "note": "joke" },
+  {
+    "text": "편지 쓰는 법 좀 알려줘 군대 간 친구한테",
+    "note": "near: letter writing to a friend in the army"
+  },
+  {
+    "text": "허리가 자꾸 아픈데 스트레칭 뭐가 좋아",
+    "note": "health, back pain"
+  },
+  {
+    "text": "제주도 2박3일 일정 짜줘 맛집 위주로",
+    "note": "near: creating a travel itinerary"
+  },
+  { "text": "'ubiquitous' 뜻이 뭐야", "note": "word meaning" },
+  {
+    "text": "손님 리뷰에 답글 달아줘 별점 1개짜리야",
+    "note": "shop review reply"
+  },
+  { "text": "와이파이가 자꾸 끊겨요", "note": "tech help" },
+  {
+    "text": "달력 만들기 좋은 무료 앱 있어?",
+    "note": "near: calendar-making app recommendation"
+  },
+  { "text": "저녁 뭐 먹지", "note": "what to eat" },
+  { "text": "연말정산 월세 공제 받을 수 있나요", "note": "tax deduction" },
+  {
+    "text": "What's a good gift for my mom's 60th birthday?",
+    "note": "English, gift idea"
+  },
+  { "text": "시원한 국물요리 추천", "note": "near: cool as food temperature" },
+  {
+    "text": "자소서 첫문장 어떻게 시작해야 할지 모르겠어",
+    "note": "job application writing"
+  },
+  { "text": "세상에서 제일 긴 강은?", "note": "trivia" },
+  {
+    "text": "날씨의 아이 줄거리 알려줘",
+    "note": "near: weather word inside a film title, plot summary"
+  },
+  {
+    "text": "팀장님께 보낼 휴가 신청 메일 써줘",
+    "note": "near: writing an email, leave request"
+  },
+  { "text": "고양이가 밥을 안먹어 ㅠㅠ", "note": "pet care" },
+  {
+    "text": "이번주 너무 바빠서 죽겠다 진짜",
+    "note": "near: busy this week, venting"
+  },
+  { "text": "영어 단어 외우는 꿀팁", "note": "study tips" },
+  { "text": "아이폰 사진 컴퓨터로 옮기는 법", "note": "tech help" },
+  {
+    "text": "빈속에 커피 마시면 안좋아?",
+    "note": "near: empty as in empty stomach, health"
+  },
+  {
+    "text": "가게 신메뉴 이름 좀 지어줘 딸기라떼임",
+    "note": "shop menu naming"
+  },
+  { "text": "ㅋㅋㅋ 넌 이름이 뭐야", "note": "small talk" },
+  {
+    "text": "수업시간에 졸지 않는 방법",
+    "note": "near: class time, staying awake"
+  },
+  {
+    "text": "비트코인 지금 사도 됨?",
+    "note": "near: bi syllable inside bitcoin, investing"
+  },
+  { "text": "표로 정리해줘: 사과 3개 배 2개 귤 10개", "note": "make a table" },
+  {
+    "text": "Explain photosynthesis like I'm 10",
+    "note": "English, science homework"
+  },
+  {
+    "text": "냉장고에 두부랑 계란 있는데 뭐 해먹을까",
+    "note": "near: cold syllable inside fridge, what to cook"
+  },
+  {
+    "text": "결혼식 축사 써줘 친구 결혼이야",
+    "note": "near: wedding event, speech writing"
+  },
+  { "text": "맞춤법 검사해줘: 안되요 vs 안돼요", "note": "proofreading" },
+  {
+    "text": "소개팅 약속 장소 추천해줘 강남",
+    "note": "near: appointment place for a blind date"
+  },
+  { "text": "감기 걸렸을때 먹으면 좋은 음식", "note": "health, food" },
+  { "text": "중고차 살때 주의할점", "note": "shopping, used car" },
+  {
+    "text": "따뜻한 말 한마디만 해줘",
+    "note": "near: warm as kind words, feelings"
+  },
+  {
+    "text": "회의 때 아이스브레이킹 뭐 하면 좋을까",
+    "note": "near: meeting icebreaker ideas"
+  },
+  { "text": "pdf를 워드로 바꾸는 방법", "note": "tech help" },
+  { "text": "전세 계약할때 확인할거", "note": "housing contract" },
+  {
+    "text": "우리 애 받아쓰기 연습 문장 10개 만들어줘",
+    "note": "parenting, dictation practice"
+  },
+  {
+    "text": "I'm so tired today, cheer me up",
+    "note": "near: English, today in a mood message"
+  },
+  {
+    "text": "택배 주소 영어로 어떻게 써?",
+    "note": "near: address written in English"
+  },
+  {
+    "text": "삼겹살 몇도에서 구워야 맛있어",
+    "note": "near: cooking temperature"
+  },
+  { "text": "MBTI INFP 특징 알려줘", "note": "personality trivia" },
+  { "text": "인스타 가게 홍보글 써줘", "note": "shop marketing copy" },
+  { "text": "치킨이랑 피자 중에 뭐 시킬까", "note": "what to eat" },
+  {
+    "text": "다음주 발표인데 떨려서 미치겠음",
+    "note": "near: next week presentation, nerves"
+  },
+  { "text": "토익 800 넘으려면 어떻게 공부해", "note": "study plan" },
+  {
+    "text": "구름빵 같은 그림책 추천해주세요",
+    "note": "near: cloud inside a book title, picture books"
+  },
+  { "text": "사직서 양식 좀 만들어줘", "note": "work document" },
+  { "text": "엔화 환전 지금 하는게 나아?", "note": "money, exchange" },
+  { "text": "썸녀한테 뭐라고 답장하지", "note": "near: reply wording, dating" },
+  {
+    "text": "Is it okay to drink coffee every day?",
+    "note": "English, health"
+  },
+  {
+    "text": "예약 손님 노쇼 방지 문자 문구 써줘",
+    "note": "near: booking no-show text wording"
+  },
+  { "text": "블로그 제목 좀 뽑아줘 다이어트 후기", "note": "writing titles" },
+  {
+    "text": "눈이 자꾸 떨리는데 왜그래요",
+    "note": "near: nun meaning eye not snow, health"
+  },
+  { "text": "파이썬 for문 예제 보여줘", "note": "coding" },
+  {
+    "text": "겨울왕국 엘사 대사 영어로",
+    "note": "near: winter inside a film title"
+  },
+  {
+    "text": "돌잔치 초대 문구 써주세요",
+    "note": "near: event invitation wording"
+  },
+  { "text": "걍 심심해서 말걸어봄", "note": "small talk" },
+  {
+    "text": "직원 스케줄표 엑셀 양식 만들어줘",
+    "note": "near: creating a staff schedule template"
+  },
+  { "text": "다이어트 식단 일주일치 짜줘", "note": "meal plan" },
+  { "text": "한국사 삼국시대 연표 정리", "note": "history study" },
+  {
+    "text": "비타민D 하루 권장량",
+    "note": "near: bi syllable inside vitamin, health"
+  },
+  { "text": "요새 볼만한 넷플 드라마 뭐있음", "note": "show recommendation" },
+  { "text": "What does 'break a leg' mean?", "note": "English, idiom" },
+  {
+    "text": "재고 관리 엑셀로 어떻게 하는게 편해요?",
+    "note": "shop inventory"
+  },
+  { "text": "편의점 택배 보내는 방법", "note": "near: sending a parcel" },
+  {
+    "text": "층간소음 항의 쪽지 정중하게 써줘",
+    "note": "writing a note to neighbours"
+  },
+  {
+    "text": "열이 38도인데 병원 가야돼?",
+    "note": "near: degrees as fever, health"
+  },
+  {
+    "text": "주말에 애들이랑 갈만한 실내 놀이터 추천",
+    "note": "near: weekend outing idea"
+  },
+  { "text": "이 영수증 합계 계산해줘 4500 3200 12000", "note": "arithmetic" },
+  { "text": "맑은 국물 내는 비법", "note": "near: clear as broth, cooking" },
+  { "text": "면접에서 1분 자기소개 어떻게 해", "note": "job interview" },
+  { "text": "강아지 산책 하루 몇번이 적당해", "note": "pet care" },
+  {
+    "text": "수요일 영어 스펠링 뭐였지",
+    "note": "near: weekday name, spelling"
+  },
+  {
+    "text": "부모님 결혼기념일 선물 뭐가 좋을까요",
+    "note": "near: anniversary date, gift idea"
+  },
+  { "text": "카톡 프사 문구 추천", "note": "profile caption" },
+  {
+    "text": "Help me write a thank-you note to my teacher",
+    "note": "near: English, writing a note or letter"
+  },
+  {
+    "text": "햇빛 알레르기 증상이 뭐야",
+    "note": "near: sunlight word, health"
+  },
+  { "text": "월급 300이면 적금 얼마 넣어야돼", "note": "money, savings" },
+  { "text": "보고서 서론 좀 다듬어줘", "note": "work, editing" },
+  {
+    "text": "캘린더 앱 뭐가 제일 좋아요? 추천좀",
+    "note": "near: calendar app recommendation"
+  },
+  { "text": "양파 오래 보관하는법", "note": "cooking, storage" },
+  { "text": "오늘의 운세 봐줘 ㅋㅋ", "note": "near: today's fortune, fun" },
+  {
+    "text": "영어 이메일 끝인사 뭐라고 써?",
+    "note": "near: email sign-off wording"
+  },
+  { "text": "아 배고파", "note": "small talk" },
+  { "text": "초등학생 용돈 얼마가 적당해요", "note": "parenting, allowance" },
+  {
+    "text": "소나기 소설 줄거리 요약해줘",
+    "note": "near: rain shower as a novel title, homework"
+  },
+  {
+    "text": "노트북 발열 심한데 어떡함",
+    "note": "near: heat as laptop overheating"
+  },
+  {
+    "text": "Recommend a book for a long flight",
+    "note": "English, book recommendation"
+  },
+  {
+    "text": "단골손님한테 보낼 명절 인사 문자",
+    "note": "near: holiday greeting text to send"
+  },
+  { "text": "종합소득세 간편장부가 뭐에요", "note": "tax" },
+  { "text": "우리집 강아지 이름 지어줘 흰색 말티즈", "note": "pet naming" },
+  {
+    "text": "비밀번호 자꾸 까먹는데 관리 어떻게해",
+    "note": "near: bi syllable inside password, tech"
+  },
+  { "text": "스터디 모임 이름 추천해줘", "note": "near: study meetup naming" },
+  { "text": "속이 더부룩할때 좋은 차", "note": "health" },
+  {
+    "text": "피피티 목차 잡아줘 주제는 탄소중립",
+    "note": "presentation outline"
+  },
+  {
+    "text": "뜨거운 물에 데였는데 응급처치",
+    "note": "near: hot water burn, first aid"
+  },
+  { "text": "로또 번호 추천 ㅋㅋ", "note": "fun" },
+  { "text": "독후감 쓰는법 어린왕자", "note": "homework, book report" },
+  {
+    "text": "가게 휴무 안내문 써줘 추석 연휴",
+    "note": "near: closure notice for holiday dates"
+  },
+  { "text": "What's the capital of Australia?", "note": "English, trivia" },
+  { "text": "헬스 초보 루틴 알려줘", "note": "fitness" },
+  {
+    "text": "공부 시간표 짜는 요령 알려줘",
+    "note": "near: timetable planning tips"
+  },
+  { "text": "남친이랑 싸웠어 어떡하지", "note": "relationship" },
+  { "text": "계란말이 안찢어지게 하는법", "note": "cooking" },
+  {
+    "text": "'눈치'를 영어로 뭐라고 해?",
+    "note": "near: nun syllable inside nunchi, translation"
+  },
+  { "text": "전기요금 누진세 계산법", "note": "money, bills" },
+  {
+    "text": "회식 장소 추천좀 10명 고기집",
+    "note": "near: company dinner venue"
+  },
+  { "text": "넌 뭐 할 수 있어?", "note": "asking the assistant" },
+  { "text": "수능 국어 비문학 푸는 팁", "note": "near: exam, study tips" },
+  {
+    "text": "흐린 눈으로 넘어간다는 말 무슨 뜻이야",
+    "note": "near: cloudy as slang, word meaning"
+  },
+  { "text": "무릎에서 소리나요 괜찮은건가요", "note": "health" },
+  { "text": "thx! 근데 이거 formal하게 바꿔줘", "note": "mixed, rewrite tone" },
+  {
+    "text": "아이패드 에어랑 프로 차이",
+    "note": "shopping, product difference"
+  },
+  {
+    "text": "친구 생일 축하 메세지 웃기게",
+    "note": "near: birthday message to send"
+  },
+  {
+    "text": "커피 원두 보관 온도 어느정도가 좋아요",
+    "note": "near: storage temperature, coffee"
+  },
+  { "text": "주식 배당금 세금 얼마 떼요", "note": "money, tax" },
+  {
+    "text": "Write a short poem about autumn leaves",
+    "note": "near: English, season word, poem"
+  },
+  { "text": "잠이 안와", "note": "feelings" },
+  {
+    "text": "우리 팀 주간회의 안건 양식 만들어줘",
+    "note": "near: weekly meeting agenda template"
+  },
+  { "text": "라면 물 몇ml가 정석이야", "note": "cooking" },
+  { "text": "유튜브 채널 이름 추천해줘 요리채널", "note": "hobby, naming" },
+  {
+    "text": "빈칸 채우기 문제 5개 만들어줘 영어",
+    "note": "near: blank as fill-in quiz, study"
+  },
+  { "text": "카드값 연체되면 어떻게 돼", "note": "money" },
+  {
+    "text": "눈물 젖은 빵이 무슨 뜻이에요",
+    "note": "near: nun syllable inside tears, idiom"
+  },
+  { "text": "사장님 저 그만두고 싶다고 어떻게 말해", "note": "work, quitting" },
+  { "text": "발표 대본 3분짜리로 줄여줘", "note": "work, shorten script" },
+  { "text": "봄나물 종류 알려줘", "note": "near: season word, food" },
+  {
+    "text": "My laptop won't turn on, what should I check?",
+    "note": "English, tech help"
+  },
+  {
+    "text": "예약제 미용실 운영 팁 있을까요",
+    "note": "near: reservation-based shop operations"
+  },
+  { "text": "인터넷 해지 위약금 얼마 나와", "note": "money, contract" },
+  { "text": "독일어로 감사합니다", "note": "translation" },
+  {
+    "text": "부장님이 자꾸 주말에 카톡해 짜증나",
+    "note": "near: weekend, work venting"
+  },
+  { "text": "숙취해소에 좋은거", "note": "health" },
+  { "text": "아기 이유식 시작 시기", "note": "parenting" },
+  {
+    "text": "바람막이 추천해줘 등산용",
+    "note": "near: wind inside windbreaker, shopping"
+  },
+  { "text": "근의 공식 유도해줘", "note": "math" },
+  { "text": "공지사항 써줘: 엘리베이터 점검", "note": "notice writing" },
+  { "text": "연봉 4천 실수령 얼마야", "note": "money, salary" },
+  { "text": "ㅎㅇ", "note": "greeting" },
+  {
+    "text": "일정 금액 이상 사면 무료배송 문구 써줘",
+    "note": "near: iljeong meaning a certain amount, shop copy"
+  },
+  { "text": "고구마 에어프라이어 몇분 돌려", "note": "cooking" },
+  {
+    "text": "Translate to Korean: see you soon",
+    "note": "English, translation"
+  },
+  {
+    "text": "안읽은 카톡 999+인데 정리하는 팁",
+    "note": "near: unread messages, tidying tips"
+  },
+  { "text": "수채화 처음인데 뭐부터 사야돼", "note": "hobby" },
+  {
+    "text": "오늘 점심 메뉴 골라줘 한식으로",
+    "note": "near: today, lunch pick"
+  },
+  { "text": "이력서 사진 꼭 넣어야 하나요", "note": "job application" },
+  {
+    "text": "쌀쌀맞은 친구 어떻게 대해야 할까",
+    "note": "near: chilly as a cold attitude, relationship"
+  },
+  { "text": "구글 시트 합계 함수", "note": "spreadsheet help" },
+  { "text": "아들이 게임만 해요", "note": "parenting" },
+  { "text": "햄버거 프차 가성비 순위", "note": "food, value ranking" },
+  {
+    "text": "주소록 엑셀로 정리하는 법",
+    "note": "near: address book in a spreadsheet"
+  },
+  { "text": "뉴스 요약: 금리 인하 무슨 영향있어", "note": "news, economy" },
+  { "text": "다이소에서 사면 좋은 꿀템", "note": "shopping" },
+  {
+    "text": "I need a caption for my cafe's Instagram post",
+    "note": "English, shop marketing"
+  },
+  { "text": "등산 초보 코스 서울 근교", "note": "hobby, hiking" },
+  {
+    "text": "약속에 늦을 때 보낼 사과 문자",
+    "note": "near: appointment, apology text to send"
+  },
+  { "text": "블랙프라이데이 언제야?", "note": "near: date of a sale event" },
+  {
+    "text": "'이슬비' 같은 예쁜 순우리말 알려줘",
+    "note": "near: drizzle as a pretty word, vocabulary"
+  },
+  { "text": "치아 미백 효과 있어?", "note": "health" },
+  { "text": "명함 문구 추천 플로리스트", "note": "shop, business card" },
+  { "text": "엄마한테 미안하다고 어떻게 말하지", "note": "feelings, family" },
+  { "text": "초딩 과학 숙제 화산 실험 방법", "note": "homework" },
+  {
+    "text": "메일 제목 뭐라고 써야 교수님이 읽으실까",
+    "note": "near: email subject wording"
+  },
+  { "text": "에어컨 전기세 아끼는 법", "note": "near: air conditioner, bills" },
+  { "text": "넷플릭스 요금제 뭐가 제일 쌈", "note": "price question" },
+  {
+    "text": "can u make this sound more polite: 빨리 보내주세요",
+    "note": "near: mixed, send wording, politeness"
+  },
+  { "text": "운동 후 근육통 푸는 법", "note": "health" },
+  { "text": "마감세일 안내 문구 써줘 빵집이야", "note": "shop copy" },
+  { "text": "무지개 색 순서 영어로", "note": "near: rainbow word, trivia" },
+  { "text": "휴대폰 약정 끝났는데 뭐가 유리해", "note": "money, phone plan" },
+  { "text": "동아리 행사 포스터 문구", "note": "near: club event poster copy" },
+  { "text": "뭐하고 놀까 집에서", "note": "small talk" },
+  { "text": "고3인데 수시 정시 고민돼", "note": "school, admissions" },
+  {
+    "text": "차가운 도시남자 줄임말이 뭐였지 ㅋㅋ",
+    "note": "near: cold as slang, trivia"
+  },
+  { "text": "요가랑 필라테스 차이", "note": "fitness" },
+  {
+    "text": "청첩장 모바일로 보내도 실례 아닐까요",
+    "note": "near: sending a wedding invitation, etiquette"
+  },
+  {
+    "text": "주말 알바 구하는 공고 써줘",
+    "note": "near: weekend part-timer job post"
+  },
+  { "text": "Tell me a joke about cats", "note": "English, joke" },
+  {
+    "text": "발목 삐었을 때 냉찜질 온찜질?",
+    "note": "near: cold or warm compress, health"
+  },
+  { "text": "한글 파일 표 테두리 없애는 법", "note": "tech help" },
+  { "text": "국민연금 얼마 받는지 계산법", "note": "money, pension" },
+  { "text": "오늘따라 왜케 외롭지", "note": "near: today in a mood, feelings" },
+  { "text": "가습기 추천 원룸용", "note": "near: humidifier, shopping" },
+  { "text": "삼행시 지어줘 김민수", "note": "fun, wordplay" },
+  { "text": "이사 체크리스트 만들어줘", "note": "chores, checklist" },
+  { "text": "영어 회화 매일 10분 루틴", "note": "study" },
+  {
+    "text": "바쁜 직장인 아침 메뉴 추천",
+    "note": "near: busy, breakfast idea"
+  },
+  { "text": "왜 하늘은 파란색이야?", "note": "near: sky word, science trivia" },
+  { "text": "탕비실 간식 뭐 사둘까", "note": "office chore" },
+  {
+    "text": "Summarize this in one line: sales rose 12% in Q3",
+    "note": "English, work summary"
+  },
+  { "text": "딸이 사춘기라 말을 안해요", "note": "parenting" },
+  { "text": "빈 방 인테리어 아이디어", "note": "near: empty room, interior" },
+  { "text": "휴대폰 배터리 빨리 닳는 이유", "note": "tech help" },
+  {
+    "text": "공연 예매 꿀팁 알려줘 티켓팅 맨날 실패함",
+    "note": "near: booking tickets tips"
+  },
+  { "text": "물가 왜 이렇게 올랐어", "note": "news, economy" },
+  { "text": "냉면 육수 만드는 법", "note": "near: cold noodles, recipe" },
+  { "text": "술자리 건배사 추천", "note": "fun, toast" },
+  { "text": "친구가 돈 빌려달래 거절하는 법", "note": "relationship, money" },
+  {
+    "text": "받는사람 주소 틀리면 택배 어떻게 돼요",
+    "note": "near: recipient address, parcel"
+  },
+  { "text": "한자 '時' 무슨 뜻?", "note": "word meaning" },
+  { "text": "쿠팡이랑 네이버 중 어디가 더 싸", "note": "price question" },
+  { "text": "시간 관리 잘하는 법", "note": "near: time management tips" },
+  { "text": "Is 'data' singular or plural?", "note": "English, grammar" },
+  {
+    "text": "눈썹 문신 아픈가요",
+    "note": "near: nun syllable inside eyebrow, beauty"
+  },
+  { "text": "가계부 양식 만들어줘", "note": "money, template" },
+  { "text": "삼계탕 끓일 때 닭 몇분 삶아", "note": "cooking" },
+  { "text": "고객 불만 응대 멘트 정리해줘", "note": "shop, customer service" },
+  { "text": "선풍기 날개 청소 방법", "note": "household" },
+  {
+    "text": "수업 필기 정리 잘하는 방법 알려줘요",
+    "note": "near: class notes, study"
+  },
+  { "text": "스트레스 풀고싶다", "note": "feelings" },
+  { "text": "대출 금리 고정 변동 뭐가 나아", "note": "money, loan" },
+  {
+    "text": "'우천 시 취소'를 영어로 번역",
+    "note": "near: rain wording inside a translation request"
+  },
+  { "text": "냄비 탄 자국 지우는 법", "note": "household" },
+  { "text": "대학교 수강신청 꿀팁", "note": "near: course registration" },
+  { "text": "좋은 아침이에요~", "note": "greeting" },
+  {
+    "text": "문자로 보낼 부고 답장 예의있게",
+    "note": "near: reply to send, condolence"
+  },
+  { "text": "양배추 다이어트 효과있나", "note": "health" },
+  { "text": "Why do onions make you cry?", "note": "English, trivia" },
+  {
+    "text": "송년회 사회 멘트 써줘",
+    "note": "near: year-end party event, MC script"
+  },
+  { "text": "마우스 더블클릭 고장 고치는법", "note": "tech help" },
+  { "text": "일본 여행 가면 꼭 사야하는거", "note": "travel shopping" },
+  {
+    "text": "온도차 때문에 유리컵 깨질 수 있어?",
+    "note": "near: temperature difference, glass physics"
+  },
+  { "text": "요즘 애들 유행어 알려줘", "note": "slang trivia" },
+  {
+    "text": "우리 가게 영업시간 안내문 예쁘게",
+    "note": "near: opening hours notice"
+  },
+  { "text": "통장 쪼개기 어떻게 해", "note": "money" },
+  { "text": "썰렁한 개그 해줘", "note": "near: chilly as lame joke" },
+  { "text": "기획안 피드백 좀 해줘", "note": "work, feedback" },
+  { "text": "중간고사 망했어 ㅠㅠㅠ", "note": "near: exam, feelings" },
+  {
+    "text": "다음 달 가족여행 어디가 좋을까 부모님 모시고",
+    "note": "near: next month, trip idea"
+  },
+  {
+    "text": "What should I cook with chicken and rice?",
+    "note": "English, recipe"
+  },
+  { "text": "신발 사이즈 미국이랑 한국 변환", "note": "shopping, sizes" },
+  {
+    "text": "구름 영어 스펠링이 cloud 맞지?",
+    "note": "near: mixed, cloud word spelling"
+  },
+  { "text": "임신 초기 조심해야 할 음식", "note": "health" },
+  { "text": "자동차 보험 갱신 싸게 하는 법", "note": "money, insurance" },
+  { "text": "메일머지 하는 법 워드에서", "note": "near: mail merge, tech" },
+  { "text": "물 하루에 얼마나 마셔야돼", "note": "health" },
+  {
+    "text": "아르바이트 주휴수당 계산해줘 주 20시간",
+    "note": "shop, staff pay"
+  },
+  {
+    "text": "요약해줘: 회의가 길어져서 결론이 안났음",
+    "note": "near: meeting word in text to summarise"
+  },
+  { "text": "김영란법 선물 한도", "note": "law" },
+  {
+    "text": "선생님께 드릴 스승의날 편지 써줘",
+    "note": "near: letter to a teacher"
+  },
+  { "text": "수면 시간 몇시간이 적당해", "note": "health" },
+  { "text": "헷갈리는 맞춤법 되/돼 구분", "note": "grammar" },
+  { "text": "맥북 화면 캡쳐 단축키", "note": "tech help" },
+  {
+    "text": "비어있는 상가 임대 알아볼 때 팁",
+    "note": "near: empty meaning vacant store, renting"
+  },
+  {
+    "text": "I have a job interview tomorrow, any tips?",
+    "note": "near: English, tomorrow, interview tips"
+  },
+  {
+    "text": "애기 열날때 해열제 간격",
+    "note": "near: heat as fever, parenting"
+  },
+  { "text": "가을 타나봐 괜히 센치해", "note": "near: season word, mood" },
+  {
+    "text": "쿠폰 이벤트 문구 짧게 써줘",
+    "note": "near: promotion event copy"
+  },
+  { "text": "탈모 샴푸 효과 있음?", "note": "health" },
+  { "text": "여권 재발급 얼마나 걸려", "note": "admin" },
+  {
+    "text": "약속 없는 주말에 혼자 할만한 취미",
+    "note": "near: no plans, weekend, hobby"
+  },
+  {
+    "text": "이 문장 자연스러워? 'I am boring'",
+    "note": "mixed, English check"
+  },
+  { "text": "설거지 하기 싫다", "note": "small talk" },
+  { "text": "반찬가게 인기메뉴 뭐가 잘팔려요", "note": "shop menu" },
+  {
+    "text": "햇살 좋은 날 어울리는 노래 추천",
+    "note": "near: sunny day as a mood, song recommendation"
+  },
+  { "text": "스팸문자 차단하는 법", "note": "near: spam texts, tech" },
+  {
+    "text": "엄마 환갑 잔치 식당 예약 문의 문자 써줘",
+    "note": "near: booking inquiry text to write"
+  },
+  { "text": "원룸 곰팡이 제거", "note": "household" },
+  { "text": "How many calories are in a banana?", "note": "English, food" },
+  {
+    "text": "지구 온난화 원인 간단히",
+    "note": "near: warming, science homework"
+  },
+  { "text": "고등학교 내신 등급 계산", "note": "school grades" },
+  { "text": "사업자등록 간이 일반 차이", "note": "tax, business" },
+  { "text": "나 칭찬 좀 해줘", "note": "feelings" },
+  { "text": "프린터 인쇄가 안돼요", "note": "tech help" },
+  {
+    "text": "눈 오는 날 배경으로 짧은 동화 써줘",
+    "note": "near: snowy day as a story setting"
+  },
+  { "text": "무료 폰트 추천 상업용", "note": "work, design" },
+  { "text": "매출 줄었는데 원인 분석 어떻게 해요", "note": "shop operations" },
+  {
+    "text": "요일별 운동 루틴 짜줘",
+    "note": "near: per-weekday routine, fitness"
+  },
+  { "text": "초보 기타 연습곡", "note": "hobby" },
+  { "text": "thank you 대신 쓸 표현", "note": "mixed, English expressions" },
+  { "text": "장례식장 가면 뭐라고 인사해요", "note": "etiquette" },
+  { "text": "빨래 냄새 안나게 말리는 법", "note": "household" },
+  {
+    "text": "여름방학 숙제 계획표 만들어줘 초3",
+    "note": "near: summer vacation plan table, homework"
+  },
+  { "text": "스벅 신메뉴 맛있어?", "note": "food" },
+  { "text": "상사한테 보고할 때 두괄식이 뭐야", "note": "work" },
+  { "text": "주소창에 자물쇠 표시 무슨 뜻", "note": "near: address bar, tech" },
+  { "text": "소상공인 정책자금 어디서 신청해요", "note": "shop finance" },
+  {
+    "text": "Give me three names for a bakery",
+    "note": "English, shop naming"
+  },
+  { "text": "이별했어.. 위로해줘", "note": "feelings" },
+  { "text": "마라탕 칼로리", "note": "food" },
+  {
+    "text": "시험기간 집중 안될 때 어떡해",
+    "note": "near: exam period, focus"
+  },
+  { "text": "건조기 쓰면 옷 줄어들어?", "note": "household" },
+  {
+    "text": "공문 형식으로 바꿔줘: 내일까지 자료 제출 바람",
+    "note": "near: tomorrow and baram as a request ending, memo rewrite"
+  },
+  { "text": "엑셀 vlookup 쉽게", "note": "spreadsheet help" },
+  { "text": "방탈출 카페 추천 홍대", "note": "fun" },
+  {
+    "text": "미팅 때 입을 옷 추천 소개팅 말고 과팅",
+    "note": "near: meeting meaning a group date, outfit"
+  },
+  { "text": "부동산 복비 계산", "note": "money" },
+  { "text": "소풍 도시락 메뉴 추천", "note": "parenting, food" },
+  {
+    "text": "영작 봐주세요 I go to school yesterday",
+    "note": "mixed, English homework"
+  },
+  { "text": "뭐든 귀찮아", "note": "feelings" },
+  {
+    "text": "단체 문자 보내는 법 아이폰",
+    "note": "near: sending a group text, tech"
+  },
+  {
+    "text": "포인트 적립 제도 만들고 싶은데 어떻게 해",
+    "note": "shop operations"
+  },
+  {
+    "text": "빈혈에 좋은 음식",
+    "note": "near: bin syllable inside anemia, health"
+  },
+  { "text": "Who wrote Pride and Prejudice?", "note": "English, trivia" },
+  { "text": "우리 애 영어이름 지어줘 여자아이", "note": "parenting, naming" },
+  {
+    "text": "안전문자 알림 끄는 법",
+    "note": "near: alert texts, phone settings how-to"
+  },
+  { "text": "자취생 일주일 장보기 리스트", "note": "shopping list" },
+  {
+    "text": "덥다 더워 아이스크림 뭐가 맛있지",
+    "note": "near: hot, ice cream pick"
+  },
+  { "text": "연차 사유 뭐라고 쓰지", "note": "near: leave day reason wording" },
+  { "text": "프리랜서 3.3% 환급 받는 법", "note": "tax refund" },
+  {
+    "text": "달력에 음력 생일 계산 어떻게 해",
+    "note": "near: calendar, lunar birthday calculation"
+  },
+  { "text": "포토샵 누끼 따는 법", "note": "tech help" },
+  { "text": "카페 알바 면접 질문 뭐 나와", "note": "job interview" },
+  {
+    "text": "쌀쌀할 때 입기 좋은 가디건 브랜드",
+    "note": "near: chilly, clothes shopping"
+  },
+  { "text": "주식 처음인데 ETF가 뭐야", "note": "stock basics" },
+  { "text": "ㅋㅋㅋㅋ 심심한데 끝말잇기 하자", "note": "game" },
+  { "text": "Fix my grammar: he don't like it", "note": "English, grammar" },
+  {
+    "text": "이 공지 좀 부드럽게: 지각하면 벌금입니다",
+    "note": "rewrite a notice"
+  },
+  {
+    "text": "손편지 예쁘게 꾸미는 법",
+    "note": "near: handwritten letter, craft"
+  },
+  { "text": "초등 구구단 쉽게 외우는 법", "note": "parenting, study" },
+  { "text": "당근 거래 사기 안당하는 법", "note": "shopping safety" },
+  {
+    "text": "수면 온도 몇도가 좋아요 침실",
+    "note": "near: bedroom temperature for sleep"
+  },
+  { "text": "영화 추천 좀 울고싶음", "note": "feelings, film recommendation" },
+  { "text": "엄마표 영어 뭐부터 시작해", "note": "parenting, study" },
+  {
+    "text": "직원 생일 이벤트 아이디어",
+    "note": "near: staff birthday event idea"
+  },
+  { "text": "변비에 좋은 과일", "note": "health" },
+  { "text": "금값 왜 올라?", "note": "news, economy" },
+  { "text": "Any tips for learning Korean fast?", "note": "English, study" },
+  {
+    "text": "숙소 예약할 때 환불 규정 뭘 봐야돼",
+    "note": "near: booking refund policy, travel"
+  },
+  { "text": "회사 다니기 싫다 진짜", "note": "feelings, work" },
+  { "text": "인공지능이 뭐야 쉽게 설명", "note": "trivia" },
+  {
+    "text": "주간보고서 양식 심플하게 만들어줘",
+    "note": "near: weekly report template"
+  },
+  { "text": "떡볶이 황금레시피", "note": "recipe" },
+  { "text": "잘자 내일 또 얘기하자", "note": "near: tomorrow in a goodnight" },
+  { "text": "엽서에 쓸 짧은 문구 추천", "note": "near: postcard wording" },
+  { "text": "고마워 덕분에 살았다", "note": "thanks" }
+]

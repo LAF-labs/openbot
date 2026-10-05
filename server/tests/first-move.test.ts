@@ -16,9 +16,13 @@ import {
   FIRST_MOVE_TIMEOUT_MS,
   FIRST_MOVE_WARM_UP_TIMEOUT_MS,
   FIRST_MOVES,
+  FOLLOW_UP_ANAPHORS,
+  FOLLOW_UP_OPENERS,
   firstMoveForTurns,
   firstMoveStateOf,
+  isFollowUp,
   kindsMentioned,
+  kindsToAsk,
   MAIL_SERVER,
   MAIL_TOOL_NAME,
   mentionsWeather,
@@ -300,6 +304,134 @@ describe("the first move: when it moves", () => {
   });
 });
 
+describe("the first move: what is settled before anybody is asked", () => {
+  /*
+   * The owner's condition for this feature is that it cost nothing where it does nothing. A
+   * message sent to the decisions model is a message that left the deployment, a fifth of a second
+   * before the Bot's model starts, and a row in the trail — so the words are held to what they
+   * must NOT send as much as to what they must.
+   */
+  test("a word that is only near a schedule or the mail is not sent", () => {
+    for (const text of [
+      // The first lists sent every one of these (review of pull request 90).
+      "카멜레온 키우기 어려워?",
+      "멜버른 여행 코스 짜줘",
+      "스멜 뜻이 뭐야",
+      "이멜다 마르코스가 누구야",
+      "일정한 속도로 걸어야 살 빠져?",
+      "일정 기간 지나면 환불 안 돼?",
+      "냉장고에 뭐 있지",
+      "시험 공부 도와줘",
+      "학원비 계산해줘",
+      "회의록 요약해줘",
+      "바빠서 못 가겠다고 전해줘",
+      "시간 되면 알려줘",
+      "공기가 비어 있다는 게 무슨 말이야",
+      "free shipping 뜻",
+      "what is the event horizon",
+      "sk하이닉스 주가 뭐 있나",
+      "오늘 회의록 정리 좀",
+      "약속 장소 추천해줘",
+      "수업 듣기 싫다",
+      "email validation regex 알려줘 주소 형식",
+    ]) {
+      expect([text, kindsToAsk(text)]).toEqual([text, []]);
+    }
+  });
+
+  test("a change to the calendar, or something done with mail, is decided by rule and never sent", async () => {
+    const model = jev(SURE_OF_ALL);
+    const decide = createFirstMove({ moves: ALL, ask: model.ask });
+    for (const text of [
+      "일정 잡아줘",
+      "오늘 3시에 미용실 예약 넣어줘",
+      "오늘 회의 일정 미뤄줘",
+      "오늘 일정 다 취소해줘",
+      "여행 일정 짜줘",
+      "schedule a meeting today at 3",
+      "메일 보내줘",
+      "메일 주소 알려줘",
+      "이 내용 메일로 보내줘",
+      "김 대리 메일에 답장 써줘",
+      "안 읽은 메일 전부 삭제해줘",
+      "새 메일 오면 알려줘",
+      "write an email to my boss",
+    ]) {
+      expect([text, (await decide(turn(said(text)))).verdict]).toEqual([
+        text,
+        "no_word",
+      ]);
+    }
+    expect(model.asked).toEqual([]);
+  });
+
+  test("what people do say for today's calendar and the new mail is still sent", () => {
+    for (const text of [
+      "오늘 일정 뭐 있어?",
+      "오늘일정머잇어",
+      "오늘 뭐 있지",
+      "이따 회의 있나?",
+      "오후에 미팅 있어?",
+      "오늘 저녁 비어 있어?",
+      "나 오늘 바빠?",
+      "스케줄 좀 봐줘",
+      "What's on my calendar today?",
+      "Do I have anything on tonight?",
+    ]) {
+      expect([text, kindsToAsk(text)]).toEqual([text, ["calendar"]]);
+    }
+    for (const text of [
+      "새 메일 왔어?",
+      "안 읽은 메일 있어?",
+      "받은편지함 확인해줘",
+      "멜 온 거 있어?",
+      "안읽은멜 몇개야",
+      "Any new emails?",
+      "check my inbox",
+    ]) {
+      expect([text, kindsToAsk(text)]).toEqual([text, ["mail"]]);
+    }
+  });
+
+  test("a message that leans on the one before it is not asked about, for any kind", async () => {
+    // "그럼 일정은?" after a turn about tomorrow reads, alone, as today's schedule.
+    const model = jev(SURE_OF_ALL);
+    const decide = createFirstMove({ moves: ALL, ask: model.ask });
+    const about = ["일정 뭐 있어?", "메일 왔어?", "날씨 어때?"];
+    for (const opener of FOLLOW_UP_OPENERS) {
+      for (const rest of about) {
+        const text = `${opener} ${rest}`;
+        expect([text, (await decide(turn(said(text)))).verdict]).toEqual([
+          text,
+          "follow_up",
+        ]);
+      }
+    }
+    for (const anaphor of FOLLOW_UP_ANAPHORS) {
+      const text = `${anaphor} 일정 뭐 있어? 메일은?`;
+      expect([text, isFollowUp(text)]).toEqual([text, true]);
+    }
+    // A topic and nothing else is a question about something already said.
+    for (const text of ["일정은?", "메일은요?", "날씨는", "그럼 일정은?"]) {
+      expect([text, (await decide(turn(said(text)))).verdict]).toEqual([
+        text,
+        "follow_up",
+      ]);
+    }
+    expect(model.asked).toEqual([]);
+    // The list is of whole words: these open on none of them.
+    for (const text of [
+      "오늘 일정 뭐 있어?",
+      "또래 친구랑 오늘 약속 있나?",
+      "soon? any new emails?",
+      "andy한테 온 메일 있어?",
+      "오늘 날씨는 어때?",
+    ]) {
+      expect([text, isFollowUp(text)]).toEqual([text, false]);
+    }
+  });
+});
+
 describe("the first move: the calendar's and the mail's", () => {
   test("the two tools are the catalogue's own, read-only, unguarded, and take the constants as arguments", async () => {
     expect(CALENDAR_TOOL_NAME).toBe(
@@ -331,7 +463,7 @@ describe("the first move: the calendar's and the mail's", () => {
     expect(catalogueEntry(MAIL_SERVER)?.mailReadingTools).toContain(
       "search_messages",
     );
-    expect(FIRST_MOVE_SPECS.calendar.args).toEqual({ days: 1 });
+    expect(FIRST_MOVE_SPECS.calendar.args).toEqual({ day: "today" });
     expect(FIRST_MOVE_SPECS.mail.args).toEqual({ query: "is:unread in:inbox" });
     // No question's name is shared: they ride in one request, where a shared name would be one answer.
     const names = FIRST_MOVES.flatMap((kind) =>
@@ -387,12 +519,12 @@ describe("the first move: the calendar's and the mail's", () => {
         model: "m",
         ms: 1,
         answers: {
-          schedule: { noul: 0.99, days: 30, query: "from:boss@corp.kr" },
+          schedule: { noul: 0.99, day: "tomorrow", query: "from:boss@corp.kr" },
           today: { noul: 0.99, choice: "tomorrow" },
           mail: { noul: 0.99, query: "from:boss@corp.kr", max: 50 },
           unfiltered: { noul: 0.99 },
           query: "from:boss@corp.kr",
-          days: 30,
+          day: "2026-12-25",
         },
       }) as unknown as Decision;
     const decide = createFirstMove({ moves: ALL, ask: talkative });
@@ -400,7 +532,7 @@ describe("the first move: the calendar's and the mail's", () => {
     expect(calendar.move).toEqual({
       kind: "calendar",
       tool: CALENDAR_TOOL_NAME,
-      args: { days: 1 },
+      args: { day: "today" },
       asked: ["calendar"],
       decided: { schedule: 0.99, today: 0.99 },
     });
@@ -415,10 +547,10 @@ describe("the first move: the calendar's and the mail's", () => {
     // No word of the message is in the call either.
     expect(JSON.stringify(mail.move?.args)).not.toContain("부장");
     // The arguments handed out are a copy: a caller that changed them would not change the next move's.
-    (calendar.move?.args as Record<string, unknown>).days = 7;
+    (calendar.move?.args as Record<string, unknown>).day = "tomorrow";
     expect((await decide(turn(said("오늘 일정 뭐 있어?")))).move?.args).toEqual(
       {
-        days: 1,
+        day: "today",
       },
     );
   });
@@ -433,9 +565,9 @@ describe("the first move: the calendar's and the mail's", () => {
     expect((await at(turn(said("새 메일 왔어?")))).verdict).toBe("moved");
     for (const [text, name] of [
       ["내일 일정 뭐 있어?", "today"],
-      ["일정 잡아줘", "schedule"],
+      ["오늘 야구 일정 알려줘", "schedule"],
       ["세무사님 메일 왔어?", "unfiltered"],
-      ["메일 보내줘", "mail"],
+      ["메일함 용량 얼마나 남았어?", "mail"],
     ] as const) {
       const answers = { ...SURE_OF_ALL, [name]: (bars[name] ?? 1) - 0.01 };
       const under = createFirstMove({ moves: ALL, ask: jev(answers).ask });
@@ -706,7 +838,7 @@ describe("the first move, as a turn asks for it", () => {
     rows.length = 0;
     const text = "오늘 치과 예약이랑 세무사 메일 확인";
     const made = forTurns(HOME, { ...SURE_OF_ALL, unfiltered: 0.2 });
-    expect((await made.firstMove(input(text)))?.args).toEqual({ days: 1 });
+    expect((await made.firstMove(input(text)))?.args).toEqual({ day: "today" });
     const two = forTurns(HOME, SURE_OF_ALL);
     expect(await two.firstMove(input(text))).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -740,6 +872,37 @@ describe("the first move, as a turn asks for it", () => {
     for (const word of ["치과", "예약", "세무사", "확인", "춘천"]) {
       expect(serialised).not.toContain(word);
     }
+  });
+
+  test("the two rows have the shape the rate is counted from, and a follow-up leaves neither", async () => {
+    /*
+     * `docs/laf/eval-pack.md` "Counting moves from the trail" reads these fields by name: `asked`,
+     * an array of kinds, on both rows; `move`, one kind, on the row of a move made. Rows written
+     * before the calendar's and the mail's carry `move: "weather"` and no `asked`, and the SQL
+     * there reads both — a field renamed here would silently count nothing.
+     */
+    rows.length = 0;
+    await forTurns(HOME, SURE_OF_ALL).firstMove(input("오늘 일정 뭐 있어?"));
+    await forTurns(HOME, { ...SURE_OF_ALL, today: 0.1 }).firstMove(
+      input("오늘 일정 뭐 있어?"),
+    );
+    const followUp = forTurns(HOME, SURE_OF_ALL);
+    expect(await followUp.firstMove(input("그럼 일정은?"))).toBeNull();
+    expect(followUp.model.asked).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      rows.map((row) => [row.eventType, Object.keys(row.payload ?? {}).sort()]),
+    ).toEqual([
+      ["turn.first_move", ["asked", "bot", "decided", "move", "tool"]],
+      ["turn.first_move_left", ["asked", "bot", "decided", "verdict"]],
+    ]);
+    for (const row of rows) {
+      const payload = row.payload as { asked: unknown; move?: unknown };
+      expect(payload.asked).toEqual(["calendar"]);
+    }
+    expect((rows[0]?.payload as { move?: unknown } | undefined)?.move).toBe(
+      "calendar",
+    );
   });
 
   test("no log line holds a word of the message, whatever came of it", async () => {
@@ -897,8 +1060,9 @@ describe("the first move, said at boot", () => {
         ["calendar", "mail"],
         ["weather"],
       ],
+      // Not "it does nothing": the calendar's can still be made, and the line says so.
       [
-        "first_move_does_nothing",
+        "first_move_partly_unable",
         "warn",
         ["calendar"],
         ["calendar"],
@@ -913,6 +1077,21 @@ describe("the first move, said at boot", () => {
       ],
       ["first_move_idle", "info", [], [], [...ALL]],
     ]);
+  });
+
+  test("a named kind that cannot be made is said per kind: what cannot, why, and what still can", () => {
+    watching = spies();
+    sayFirstMove({ moves: ALL, canDecide: true, weather: false, named: true });
+    sayFirstMove({ moves: ALL, canDecide: false, weather: true, named: true });
+    const notes = said().map((line) => [line.event, String(line.note)]);
+    expect(notes[0]?.[0]).toBe("first_move_partly_unable");
+    expect(notes[0]?.[1]).toContain("the weather's cannot be made");
+    expect(notes[0]?.[1]).toContain("calendar and mail can still be made");
+    // The sentence that was true of the weather alone is not said while two kinds can move.
+    expect(notes[0]?.[1]).not.toContain("as they do with it off");
+    expect(notes[1]?.[0]).toBe("first_move_does_nothing");
+    expect(notes[1]?.[1]).toContain("no move can be made");
+    expect(notes[1]?.[1]).toContain("as they do with it off");
   });
 
   test("a boot warms the road for every kind that is on, with or without the weather's", async () => {

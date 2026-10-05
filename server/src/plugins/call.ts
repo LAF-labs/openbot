@@ -863,6 +863,10 @@ export function createCallPath(
         );
         const vendor =
           context.injectedVendor ?? context.transportFor(entry).callTool;
+        // A zone that would not read is no zone: the transport's default stands in.
+        const timeZone = await context
+          .timeZoneOf?.(input.actorId)
+          .catch(() => undefined);
         const answered = await vendor(
           {
             url: effectiveUrl(row, entry),
@@ -870,6 +874,7 @@ export function createCallPath(
             actorId: input.actorId,
             botId: input.botId,
             drawnOn,
+            ...(timeZone ? { timeZone } : {}),
           },
           toolName,
           args,

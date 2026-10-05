@@ -69,7 +69,7 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   {
     name: "search_messages",
     description:
-      "지메일에서 메일을 찾는다. query는 지메일 검색창과 같은 문법이다. 예: 'from:kim@shop.kr newer_than:7d'. 제목·보낸사람·날짜가 돌아온다.",
+      "지메일에서 메일을 찾는다. query는 지메일 검색창과 같은 문법이다. 예: 'from:kim@shop.kr newer_than:7d'. 제목·보낸사람·날짜가 돌아온다. 답의 첫 줄이 찾은 검색어다.",
     inputSchema: {
       type: "object",
       properties: {
@@ -363,7 +363,16 @@ export async function callTool(
     const ids = (body.messages ?? [])
       .map((message) => message.id)
       .filter((id): id is string => typeof id === "string" && id !== "");
-    if (ids.length === 0) return asResult("");
+    /*
+     * THE FIRST LINE SAYS WHAT WAS SEARCHED FOR. A turn's first step (`turns/first-move.ts`) hands
+     * the Bot's model a list it did not choose the query of; without this line "unread, in the
+     * inbox" reads as "all the mail there is", and an empty list as an empty mailbox.
+     */
+    const query = stringArg(args, "query");
+    const searched = query ? `검색어 "${query}"` : "검색어 없이 최근 메일부터";
+    if (ids.length === 0) {
+      return asResult(`[${searched} · 0통]\n이 검색에 맞는 메일이 없습니다.`);
+    }
 
     /*
      * One request per message, for the headers only — {@link DETAIL_CONCURRENCY} at a time, in
@@ -404,7 +413,9 @@ export async function callTool(
     const note = deadline.aborted
       ? `\n\n[${ids.length}통 중 ${shown.length}통만 읽었습니다. 시간이 다 돼 나머지는 건너뛰었습니다. 더 필요하면 개수를 줄이거나 검색어를 좁혀 다시 부르세요.]`
       : "";
-    return asResult(`${shown.join("\n")}${note}`);
+    return asResult(
+      `[${searched} · ${shown.length}통]\n${shown.join("\n")}${note}`,
+    );
   }
 
   if (toolName === "read_message") {

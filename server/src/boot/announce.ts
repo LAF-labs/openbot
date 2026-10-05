@@ -63,8 +63,9 @@ export function sayConnectors(input: {
 /**
  * Whether a turn's first step may be taken before the Bot's model is asked (`turns/first-move.ts`).
  *
- * Said only when a move is on, and said as a warning when the environment names one this process
- * cannot make: `FIRST_MOVE=weather` on a deployment where Jev may not be asked, or that holds no
+ * Said only when a move is on, and said as a warning (`first_move_does_nothing` when no named kind
+ * can be made, `first_move_partly_unable` when some can) when the environment names one this
+ * process cannot make: `FIRST_MOVE=weather` on a deployment where Jev may not be asked, or that holds no
  * weather key, is a switch that is on and does nothing — and an operator who set it would go on
  * believing turns are being answered in one round. The same on the default is not a warning,
  * since nobody set anything: it says which half is missing and that is all.
@@ -110,13 +111,31 @@ export function sayFirstMove(input: {
     });
     return;
   }
-  log.warn("first_move_does_nothing", {
-    ...said,
-    unable,
-    canDecide: input.canDecide,
-    weather: input.weather,
-    note: "FIRST_MOVE names a move this deployment cannot make: every move needs JEV_ENABLED on an OpenRouter endpoint, and the weather's needs the weather key. Turns run as they do with it off.",
-  });
+  /*
+   * SAID PER KIND. With several kinds named, one of them unable is not "it does nothing": told
+   * that turns run as they do with the switch off, an operator would go looking for why the
+   * calendar's move is being made. So the line says which kinds cannot be made here and why, and
+   * which still can; only when none can is it the old sentence.
+   */
+  const why = !input.canDecide
+    ? "no move can be made: every kind needs JEV_ENABLED on an OpenRouter endpoint"
+    : "the weather's cannot be made: this deployment holds no weather key";
+  const rest =
+    said.moves.length > 0
+      ? `${said.moves.join(" and ")} can still be made, for a person who has connected the service.`
+      : "Turns run as they do with it off.";
+  log.warn(
+    said.moves.length > 0
+      ? "first_move_partly_unable"
+      : "first_move_does_nothing",
+    {
+      ...said,
+      unable,
+      canDecide: input.canDecide,
+      weather: input.weather,
+      note: `FIRST_MOVE names a move this deployment cannot make — ${why}. ${rest}`,
+    },
+  );
 }
 
 /**
