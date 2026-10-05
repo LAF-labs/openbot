@@ -155,6 +155,17 @@ export function WeatherCard({ result }: { result: string }) {
           longitude: weather.coordinates.longitude.toFixed(2),
         })
       : weather.place);
+  /*
+   * SEOUL THAT NOBODY CHOSE SAYS SO, ON THE LINE THAT NAMES IT. Where nothing is known of where the
+   * person is, the answer is 서울특별시's (the owner, 2026-10-05: "fallback은 서울") and carries that
+   * as a fact (`placeSource`). Unsaid, the card reads as the person's own weather — to somebody in
+   * 부산, a wrong forecast drawn with every sign of being theirs. A few words after the name, not a
+   * line of their own: the reason, which is also what to fix. The label read aloud stays the place.
+   */
+  const placeLine =
+    place && weather.placeSource === "fallback"
+      ? t("{place} · your place isn't known yet", { place })
+      : place;
 
   return (
     <section
@@ -165,7 +176,9 @@ export function WeatherCard({ result }: { result: string }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           {place ? (
-            <p className={cn(chatCardMeta, "truncate")}>{place}</p>
+            <p className={cn(chatCardMeta, "truncate")} data-weather-place>
+              {placeLine}
+            </p>
           ) : null}
           <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             {weather.temp === null ? null : (

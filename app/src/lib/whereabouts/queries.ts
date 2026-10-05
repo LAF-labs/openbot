@@ -90,7 +90,7 @@ export async function savePlace(
   return wordsOf(await send("PUT", answer, queryClient));
 }
 
-/** Forget the place and the coordinates. The Bot asks again the next time it needs one. */
+/** Forget the place and the coordinates. The weather is Seoul's again until one is said or given. */
 export async function clearPlace(
   queryClient: QueryClient,
 ): Promise<Whereabouts> {

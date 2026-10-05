@@ -217,11 +217,11 @@ describe("the first-task chips", () => {
     expect(text).not.toContain("위의 첫 문장");
   });
 
-  test("without a place it says the weather needs one, and where to give it", async () => {
+  test("without a place it says the weather is Seoul's until there is one, and where to give it", async () => {
     const { t } = await import("../src/lib/i18n");
     const unknown = await mounted({ onAsk: () => {}, placeKnown: false });
     expect(unknown.host.textContent).toContain(
-      t("Weather needs your shop's location."),
+      t("The weather is Seoul's until you add your place."),
     );
     const shop = unknown
       .links()
@@ -230,7 +230,7 @@ describe("the first-task chips", () => {
 
     const known = await mounted({ onAsk: () => {} });
     expect(known.host.textContent).not.toContain(
-      t("Weather needs your shop's location."),
+      t("The weather is Seoul's until you add your place."),
     );
   });
 
@@ -238,7 +238,7 @@ describe("the first-task chips", () => {
    * The first-hour walk, 2026-09-27: pressing the chip took the place line away with it, and the
    * first run a minute later said it could not see the weather — the one thing the line had warned.
    */
-  test("a briefing made without a place still says the weather needs one", async () => {
+  test("a briefing made without a place still says whose weather it will be", async () => {
     const { t } = await import("../src/lib/i18n");
     const view = await mounted({
       briefingMade: true,
@@ -247,7 +247,9 @@ describe("the first-task chips", () => {
     });
     const text = view.host.textContent ?? "";
     expect(text).toContain(t("The routine is made."));
-    expect(text).toContain(t("Weather needs your shop's location."));
+    expect(text).toContain(
+      t("The weather is Seoul's until you add your place."),
+    );
     expect(
       view
         .links()
@@ -256,7 +258,7 @@ describe("the first-task chips", () => {
 
     const placed = await mounted({ briefingMade: true, onAsk: () => {} });
     expect(placed.host.textContent).not.toContain(
-      t("Weather needs your shop's location."),
+      t("The weather is Seoul's until you add your place."),
     );
   });
 

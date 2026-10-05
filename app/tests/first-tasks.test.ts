@@ -587,7 +587,7 @@ describe("the words", () => {
       "Connect a site",
       "Get a briefing every morning at 7:30",
       "What it will have: {contents}. It comes to this conversation, and you can change it on Routines.",
-      "Weather needs your shop's location.",
+      "The weather is Seoul's until you add your place.",
       "Add it on My shop",
       "Morning briefing",
       "Making the routine…",

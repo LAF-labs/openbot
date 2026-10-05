@@ -104,6 +104,8 @@ describe("the weather tool's answer, read for the card", () => {
       place: "인천광역시",
       placeName: null,
       coordinates: null,
+      // An answer from before the source was written: nothing is claimed about it.
+      placeSource: null,
       temp: 11.6,
       // The row the answer itself calls 오늘 — here the first, and not because it is first.
       today,
@@ -180,6 +182,7 @@ describe("the weather tool's answer, read for the card", () => {
       place: "제주",
       placeName: null,
       coordinates: null,
+      placeSource: null,
       temp: null,
       // No row says which day it is, so none is taken for today.
       today: null,
@@ -371,6 +374,39 @@ describe("the weather card", () => {
    * facts in its own language, and the model's line only for an answer from before the facts were
    * written.
    */
+  test("Seoul that nobody chose says so on the line that names it; a place somebody said, or a device gave, says nothing more", async () => {
+    /*
+     * The owner, 2026-10-05: "fallback은 서울". Where nothing is known of where the person is the
+     * answer is 서울특별시's, with the fact that it is nobody's place — and a card that drew it as
+     * it draws a saved place would be a wrong forecast with every sign of being the reader's own.
+     */
+    const base = JSON.parse(ANSWER) as Record<string, unknown>;
+    const seoul = { ...base, place: "서울특별시", placeName: "서울특별시" };
+    const fallback = await card(
+      JSON.stringify({ ...seoul, placeSource: "fallback" }),
+    );
+    expect(fallback?.querySelector("[data-weather-place]")?.textContent).toBe(
+      "서울특별시 · your place isn't known yet",
+    );
+    expect(ko["{place} · your place isn't known yet"]).toBe(
+      "{place} · 위치를 아직 몰라요",
+    );
+    // What is read aloud is still the place the forecast is for.
+    expect(fallback?.getAttribute("aria-label")).toBe("Weather for 서울특별시");
+
+    for (const placeSource of ["named", "saved", "device", "sideways"]) {
+      const chosen = await card(JSON.stringify({ ...seoul, placeSource }));
+      expect(chosen?.querySelector("[data-weather-place]")?.textContent).toBe(
+        "서울특별시",
+      );
+    }
+    // And an answer from before the fact was written.
+    const older = await card(JSON.stringify(seoul));
+    expect(older?.querySelector("[data-weather-place]")?.textContent).toBe(
+      "서울특별시",
+    );
+  });
+
   test("names the place from the facts, in its own words — and from the model's line only when there are none", async () => {
     const base = JSON.parse(ANSWER) as Record<string, unknown>;
     const named = await card(
