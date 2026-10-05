@@ -5,6 +5,7 @@ import {
   promptPersonOf,
   withPersonContext,
 } from "../src/agents/person-context";
+import { WEATHER_TOOL_NAME } from "../../shared/tools/bridge";
 import { buildAgents, type RegisteredAgent } from "../src/copilot";
 
 /**
@@ -73,6 +74,8 @@ async function systemMessageOf(
   endpoint: ReturnType<typeof fakeAgUiEndpoint>,
   registered: RegisteredAgent[],
   forwardedProps?: Record<string, unknown>,
+  /** The names of the tools the run is handed. Absent is a run with none. */
+  toolNames?: readonly string[],
 ) {
   const agent = buildAgents(
     registered,
@@ -81,9 +84,18 @@ async function systemMessageOf(
     "Asia/Seoul",
   ).bot_miso;
   agent?.setMessages([{ id: "u1", role: "user", content: "지금 몇 시야?" }]);
-  await agent?.runAgent(
-    (forwardedProps ? { forwardedProps } : undefined) as never,
-  );
+  await agent?.runAgent({
+    ...(forwardedProps ? { forwardedProps } : {}),
+    ...(toolNames
+      ? {
+          tools: toolNames.map((name) => ({
+            name,
+            description: name,
+            parameters: { type: "object", properties: {} },
+          })),
+        }
+      : {}),
+  } as never);
   const messages = (endpoint.requests.at(-1)?.messages ?? []) as Array<{
     role: string;
     content: string;
@@ -192,6 +204,28 @@ describe("the place a run is told", () => {
     expect(prompt).not.toContain("여쭤보고");
   });
 
+  test("a run that holds the weather tool is not told what to do without it; a run that does not is", async () => {
+    /*
+     * "그 도구가 없으면 검색어에 서울을 넣는다" rode in front of every turn of everybody whose
+     * place is not known, on deployments where the tool is always there. The middleware knows the
+     * run's tools, and the place line is built from them (`contextFactsFor`).
+     */
+    const road =
+      "그 도구가 없으면 검색어에 서울을 넣는다(예: 네이버 검색 '서울 날씨').";
+    await using endpoint = fakeAgUiEndpoint();
+    const registered = await loadedFor(endpoint.url, NO_WHEREABOUTS);
+    const holding = await systemMessageOf(endpoint, registered, undefined, [
+      WEATHER_TOOL_NAME,
+      "computer_navigate",
+    ]);
+    expect(holding).toContain("이 사람의 위치는 아직 모른다");
+    expect(holding).not.toContain(road);
+    const without = await systemMessageOf(endpoint, registered, undefined, [
+      "computer_navigate",
+    ]);
+    expect(without).toContain(road);
+  });
+
   test("a read that fails leaves the run on the deployment's clock, with the place unknown", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const load = withPersonContext(
@@ -234,6 +268,26 @@ describe("the kept facts as the prompt takes them", () => {
     expect(promptPersonOf({ ...NO_WHEREABOUTS, coordinates: tokyo })).toEqual({
       coordinates: tokyo,
     });
+  });
+
+  test("a cell with no row of its own is named by its neighbour, and the line a run is told says 부근 once", async () => {
+    /*
+     * South of 서귀포 the forecast grid goes on and the table's rows do not: the cell is named by
+     * the nearest row, as "… 부근" (`kma-places.ts`, `nameOf`). The place line added its own after
+     * it — "제주특별자치도 서귀포시 부근 부근" (review of pull request 91).
+     */
+    const offTheCoast = { latitude: 33.2, longitude: 126.28 };
+    expect(nameNear(offTheCoast)).toBe("제주특별자치도 서귀포시 부근");
+    await using endpoint = fakeAgUiEndpoint();
+    const registered = await loadedFor(endpoint.url, {
+      ...NO_WHEREABOUTS,
+      coordinates: offTheCoast,
+    });
+    const prompt = await systemMessageOf(endpoint, registered);
+    expect(prompt).toContain(
+      "이 사람의 위치: 제주특별자치도 서귀포시 부근(위도 33.20, 경도 126.28, 이 사람 기기에서 받은 대략적인 값).",
+    );
+    expect(prompt).not.toContain("부근 부근");
   });
 
   test("the name reaches the place line a run is told, so nearby is looked for and not asked about", async () => {

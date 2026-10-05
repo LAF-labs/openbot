@@ -39,7 +39,7 @@ import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
 import { type PromptPerson, placeText } from "./person.ko";
 import { aboutText } from "./shop.ko";
-import { deferredToolsText } from "../tools/bridge";
+import { deferredToolsText, WEATHER_TOOL_NAME } from "../tools/bridge";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO, SEVERAL_STEPS_KO } from "./base.ko";
@@ -202,7 +202,17 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
     name: input.bot.name,
     role: role || unassignedRoleText(input.mode),
     shop: aboutText(input.about, input.shop),
-    place: placeText(input.person, input.mode),
+    /*
+     * Whether this run holds the weather tool, where the run's tools are known: the place line
+     * leaves out its "if there is no such tool" road for a run that has it (`placeText`).
+     */
+    place: placeText(
+      input.person,
+      input.mode,
+      input.toolNames
+        ? { weatherTool: input.toolNames.includes(WEATHER_TOOL_NAME) }
+        : {},
+    ),
     ...(input.memories ? { memories: input.memories } : {}),
     ...(input.confirmedMemories
       ? { confirmedMemories: input.confirmedMemories }

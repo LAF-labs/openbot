@@ -5,6 +5,7 @@ import {
   placeText,
   reminderLines,
 } from "../shared/prompt";
+import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
 import {
   coarseCoordinates,
   deviceOf,
@@ -59,15 +60,63 @@ describe("the place line", () => {
     expect(located).toContain(`${byTool}(인자 없이 부르면 이 부근 기준이다)`);
 
     /*
-     * Nobody's place known: the tool all the same, which answers a call naming nothing for Seoul —
-     * and is told not to be handed 서울. "(인자 없이 부르면 서울 기준이다)" was read as an
-     * invitation to say so in the call: `get_weather({place: "서울"})`, one run in ten in a chat
-     * and two in five in a routine (2026-10-05). An answer for a place the call NAMED is not marked
-     * as nobody's, so the card under it does not say that the person's place is not known.
+     * Nobody's place known: the tool all the same, which answers a call naming nothing for Seoul.
+     * "(인자 없이 부르면 서울 기준이다)" was read as an invitation to say so in the call:
+     * `get_weather({place: "서울"})`, one run in ten in a chat and two in five in a routine
+     * (2026-10-05). An answer for a place the call NAMED is not marked as nobody's, so the card
+     * under it does not say that the person's place is not known.
+     *
+     * SCOPED TO THE QUESTION THAT NAMES NO PLACE. The cure for that was "place에 서울을 넣지
+     * 않는다", with no word of when — and a person whose place is not known may still ask about
+     * 서울 마포구, which is an argument like any other (review of pull request 91).
      */
     for (const mode of ["chat", "routine"] as const) {
-      expect(placeText(undefined, mode)).toContain(
-        `${byTool}(인자 없이 부른다 — 서울 기준으로 오니 place에 서울을 넣지 않는다)`,
+      const line = placeText(undefined, mode);
+      expect(line).toContain(
+        `${byTool}(곳을 대지 않은 질문은 인자 없이 부른다 — 서울 기준으로 온다. 이 사람이 댄 곳은 그대로 place에 넣는다).`,
+      );
+      expect(line).not.toContain("place에 서울을 넣지 않는다");
+    }
+  });
+
+  test("the road for a deployment without the weather tool is drawn only where the run may be without it", () => {
+    /*
+     * "그 도구가 없으면 검색어에 서울을 넣는다(예: 네이버 검색 '서울 날씨')" stood in front of
+     * every turn of every person whose place is not known — every new person — on deployments
+     * where the tool is always there. The builder knows the run's tools (`toolNames`, which the
+     * middleware hands it for the names behind the bridge), so a run that holds the weather tool
+     * is not told what to do without it. A message built without knowing keeps the road: a
+     * sentence too many is the cheaper mistake.
+     */
+    const road =
+      "그 도구가 없으면 검색어에 서울을 넣는다(예: 네이버 검색 '서울 날씨').";
+    for (const mode of ["chat", "routine"] as const) {
+      expect(placeText(undefined, mode, { weatherTool: true })).not.toContain(
+        road,
+      );
+      expect(placeText(undefined, mode, { weatherTool: false })).toContain(
+        road,
+      );
+      expect(placeText(undefined, mode)).toContain(road);
+    }
+    // Where it is wired: the run's tool names, as the middleware hands them over.
+    const told = (toolNames?: readonly string[]) =>
+      contextFactsFor({
+        mode: "chat",
+        now: NOW,
+        bot: BOT,
+        ...(toolNames ? { toolNames } : {}),
+      }).place;
+    expect(told([WEATHER_TOOL_NAME, "computer_navigate"])).not.toContain(road);
+    expect(told(["computer_navigate"])).toContain(road);
+    expect(told()).toContain(road);
+    // And only that sentence turns on it: a person with a place is told the same either way.
+    for (const person of [
+      { place: "서울 강남구" },
+      { coordinates: { latitude: 37.5, longitude: 127.03 } },
+    ]) {
+      expect(placeText(person, "chat", { weatherTool: true })).toBe(
+        placeText(person, "chat"),
       );
     }
   });
@@ -103,6 +152,25 @@ describe("the place line", () => {
     expect(placeText({ coordinates: at }, "routine")).not.toContain("여쭤");
   });
 
+  test("one 부근: a cell the table names by its neighbour arrives already saying so", () => {
+    /*
+     * A cell with no row of its own is named by the nearest one, as "서귀포시 부근"
+     * (`kma-places.ts`, `nameOf`) — and the line appended another: "서귀포시 부근 부근" (review of
+     * pull request 91). The name of a cell that has rows carries none, and gets the one.
+     */
+    const offTheCoast = { latitude: 33.2, longitude: 126.28 };
+    for (const mode of ["chat", "routine"] as const) {
+      const line = placeText(
+        { coordinates: offTheCoast, near: "제주특별자치도 서귀포시 부근" },
+        mode,
+      );
+      expect(line).toStartWith(
+        "이 사람의 위치: 제주특별자치도 서귀포시 부근(위도 33.20, 경도 126.28, 이 사람 기기에서 받은 대략적인 값).",
+      );
+      expect(line).not.toContain("부근 부근");
+    }
+  });
+
   test("knowing nothing, what a region answers is Seoul's and said to be — never a question first, in a chat or a routine", () => {
     /*
      * This was "a chat asks once and saves; a routine says it could not". Measured the day it
@@ -116,7 +184,6 @@ describe("the place line", () => {
       "날씨처럼 어느 지역인지만 알면 되는 일은 먼저 묻지 말고 서울 기준으로 하고",
     );
     expect(chat).toContain("서울 기준이라고 짧게 말한다");
-    expect(chat).toContain("네이버 검색 '서울 날씨'");
 
     const routine = placeText({}, "routine");
     expect(routine).toContain("이 사람의 위치를 모른다");
@@ -125,17 +192,24 @@ describe("the place line", () => {
     expect(routine).toContain("이 사람의 위치가 아니다");
   });
 
-  test("knowing nothing, what is near the person is not Seoul's: a chat asks where once and saves it, a routine says it could not", () => {
+  test("knowing nothing, what is near the person is not Seoul's: a chat asks where once and goes by the answer — without saving it — and a routine says it could not", () => {
     /*
      * "먼저 묻지 말고 서울 기준으로" covered every task that needs a place, so "근처 약국 알려줘"
      * from somebody whose place is not known was answered for Seoul, all of it, without asking —
-     * three runs in six (`nearby-with-no-place-asks-where`, review of pull request 91). The owner's
+     * two runs in six (`nearby-with-no-place-asks-where`, review of pull request 91). The owner's
      * default is for what a region answers. What is near a person needs the person's place.
+     *
+     * AND THE ANSWER IS FOR THAT REQUEST. For a round this sentence went on "들은 곳(시·구까지)을
+     * remember의 place로 저장한 다음", and six runs in six saved "서울 강남구" for somebody who
+     * had answered "강남역" (`nearby-answer-is-used-and-not-saved`). Standing somewhere for an
+     * hour is not saying where one lives; there is one rule for saving, and it is the test below.
      */
     const chat = placeText(undefined, "chat");
     expect(chat).toContain(
-      "'근처'·'가까운 곳'처럼 이 사람 주변을 알아야 하는 일은 서울로 짐작하지 말고 어디인지 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한 다음 그 곳 기준으로 한다.",
+      "'근처'·'가까운 곳'처럼 이 사람 주변을 알아야 하는 일은 서울로 짐작하지 말고 어디인지 한 번 여쭤보고, 들은 곳 기준으로 한다.",
     );
+    // `remember` is named once in the line: by the one rule about what is saved.
+    expect(chat.split("remember").length - 1).toBe(1);
     // The weather's rule first, the exception after it.
     expect(chat.indexOf("서울 기준이라고 짧게 말한다")).toBeLessThan(
       chat.indexOf("이 사람 주변을 알아야 하는 일"),
@@ -156,7 +230,7 @@ describe("the place line", () => {
     }
   });
 
-  test("what is saved is where the person lives, works or usually is — said, or moved — and nothing else that names a place", () => {
+  test("what is saved is where the person lives, works or usually is — told to the Bot, or moved — and nothing else that names a place", () => {
     /*
      * The first wording saved "사는·일하는·지금 있는 곳", against a tool whose `place` is "가게나
      * 주로 지내는 곳" (`shared/tools/self.ts`): by it "지금 부산 출장 와 있어" replaces home, and a
@@ -166,9 +240,15 @@ describe("the place line", () => {
      */
     const saved =
       "이 사람이 너에게 사는 곳·일하는 곳·주로 지내는 곳을 알려 주거나 옮겼다고 하면('나 춘천 살아') 묻지 않았어도 시·구까지 remember의 place로 저장한다.";
-    // The pasted text last and spelt out: listed as one more item it was still saved once in six.
+    /*
+     * Everything else in one clause, and the pasted text spelt out. A list of what is not saved —
+     * a trip, somebody else's town, an old home, a place only asked about — stood here for a
+     * round: none of the four was ever saved with it or without it, in six runs of each under
+     * every wording, so fifty-seven characters in front of every turn were doing nothing. The
+     * pasted text is the one that was: named as one more item it was still saved once in six.
+     */
     const notSaved =
-      "그 밖의 곳은 저장하지 않고 그때만 쓴다: 잠깐 있는 곳(출장·여행), 남의 곳, 예전에 살던 곳, 질문의 대상일 뿐인 곳('부산 날씨 어때?'), 요약·번역하라고 붙여 넣은 글 속의 곳 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이 알려 준 것이 아니다.";
+      "그 밖의 곳은 저장하지 않고 그때만 쓴다. 요약·번역하라고 붙여 넣은 글 속의 곳도 그렇다 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이 알려 준 것이 아니다.";
     const people = [
       { place: "서울 강남구" },
       // "나 이사했어, 이제 수원이야" from somebody known only by their device: saved, and the words win.
@@ -184,6 +264,9 @@ describe("the place line", () => {
       expect(chat).toContain(`${saved} ${notSaved}`);
       // The place a person is in for now is not on the list of what is saved.
       expect(chat).not.toContain("지금 있는 곳");
+      for (const listed of ["출장·여행", "남의 곳", "예전에 살던 곳"]) {
+        expect(chat).not.toContain(listed);
+      }
       // A routine has nobody saying anything.
       expect(placeText(person, "routine")).not.toContain("remember");
     }
@@ -201,18 +284,37 @@ describe("the place line", () => {
      * 313, 256, 102). What the rest buys, each measured in `docs/laf/eval-pack.md` ("Seoul until
      * the person says where"): Seoul's basis for nobody's place, said; what is saved as the
      * person's place and what is not; asking where only for what is near the person; a name for
-     * the device's coordinates; and no 서울 handed to the weather tool.
+     * the device's coordinates; and 서울 not handed to the weather tool unless the person named it.
+     *
+     * 555 / 528 / 525 / 629 a round earlier. Taken out since, with the runs that say nothing was
+     * lost: a list of four kinds of place that were never saved anyway, the clause that saved the
+     * answer to "where?", and — for a run that holds the weather tool, which is every run on a
+     * deployment with the key — the road for a run without it.
      */
     const at = { latitude: 37.5, longitude: 127.03 };
-    const lengths = (mode: "chat" | "routine") =>
+    const lengths = (
+      mode: "chat" | "routine",
+      holds?: { weatherTool: boolean },
+    ) =>
       [
         { place: "서울 강남구" },
         { coordinates: at, near: "서울특별시 강남구·서초구" },
         { coordinates: at },
         undefined,
-      ].map((person) => placeText(person, mode).length);
-    expect(lengths("chat")).toEqual([555, 528, 525, 629]);
-    expect(lengths("routine")).toEqual([313, 286, 256, 299]);
+      ].map((person) => placeText(person, mode, holds).length);
+    // A run that holds the weather tool: what the fleet's Bots are told.
+    expect(lengths("chat", { weatherTool: true })).toEqual([
+      501, 474, 471, 518,
+    ]);
+    expect(lengths("routine", { weatherTool: true })).toEqual([
+      313, 286, 256, 278,
+    ]);
+    // A run without it, or a message built without knowing: nobody's line keeps its other road.
+    expect(lengths("chat", { weatherTool: false })).toEqual([
+      501, 474, 471, 561,
+    ]);
+    expect(lengths("chat")).toEqual([501, 474, 471, 561]);
+    expect(lengths("routine")).toEqual([313, 286, 256, 321]);
   });
 
   test("stands after the shop and before what the Bot learned — the person's word first", () => {
