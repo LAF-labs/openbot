@@ -115,19 +115,6 @@ export function accountStatesIn(parameters: unknown): AccountState[] | null {
   return Array.isArray(written) ? written.filter(isAccountState) : null;
 }
 
-/**
- * The accounts still open to connect, by key, read off the connect card among a run's tools. Empty
- * where the run has no card or no turn wrote on it.
- */
-export function openAccountsIn(
-  tools: readonly { name: string; parameters?: unknown }[],
-): string[] {
-  const card = tools.find((tool) => tool.name === CONNECT_CARD);
-  return (accountStatesIn(card?.parameters) ?? [])
-    .filter((account) => !account.connected)
-    .map((account) => account.key);
-}
-
 /** The card's parameters as the window declared them: what a Bot is shown as its schema. */
 export function withoutAccountStates(parameters: unknown): unknown {
   if (!parameters || typeof parameters !== "object") return parameters;

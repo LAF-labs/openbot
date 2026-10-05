@@ -1670,6 +1670,66 @@ describe("a connect card the turn waits on", () => {
         );
       });
 
+      /*
+       * THE LOOKUP THE CARD'S ANSWER SENDS THE BOT TO (review, 2026-10-06, on the real path). The
+       * accounts on the card are this turn's read from before the switch was pressed. Once 지메일
+       * is on and its tools have landed in the turn's list, the card says "connected — look its
+       * tools up"; the lookup that follows must not end by offering 지메일 again.
+       */
+      test("once connected at the card, the lookup that follows does not offer that account again", async () => {
+        const lastLineOf = (text: string) => text.split("\n").at(-1) ?? "";
+        for (const [others, said] of [
+          // 지메일 was the last account open: nothing is said of connecting any more.
+          [[], null],
+          // 노션 is still open: the line names it, and not 지메일.
+          [[{ key: "notion", connected: false }], "노션(notion)"],
+        ] as const) {
+          const board = switchboard({ gmail: false, notion: false });
+          const toolkit = await createChatTools({
+            people: createPersonAnswers(),
+            components: connectCards,
+            pluginStore: pluginStoreOver(board.state),
+            connections: board.read,
+            connectionPollMs: 5,
+            accounts: async () => [
+              { key: "gmail", connected: false },
+              ...others,
+            ],
+          })(context, [declaredCard()]);
+          // Before the card: 지메일 is what could be connected.
+          expect(
+            lastLineOf(searchResultText(behind(toolkit.tools), "메일 확인")),
+          ).toContain("지메일(gmail)");
+
+          const pending = toolkit.execute(
+            "showConnection",
+            { services: ["gmail"] },
+            call(`c-then-looks-${others.length}`),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          board.state.gmail = true;
+          expect(await answerOf(pending)).toMatchObject({
+            code: "laf:connection_on",
+            tools: ["mcp__gmail__search_messages"],
+          });
+
+          const lookup = searchResultText(
+            behind(toolkit.tools),
+            "select:mcp__gmail__search_messages",
+          );
+          expect(lookup).toContain('"name":"mcp__gmail__search_messages"');
+          expect(lookup).not.toContain("지메일(gmail)");
+          if (said === null) {
+            expect(lookup).not.toContain(OPEN_ACCOUNTS_HEAD);
+          } else {
+            expect(lastLineOf(lookup).startsWith(OPEN_ACCOUNTS_HEAD)).toBe(
+              true,
+            );
+            expect(lastLineOf(lookup)).toContain(said);
+          }
+        }
+      });
+
       test("is not what an account with its tools in the list is, nor a site", async () => {
         const mail = await createChatTools({
           people: createPersonAnswers(),

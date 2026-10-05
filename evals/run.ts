@@ -29,8 +29,7 @@ import {
   liveProvider,
 } from "../agent-bot/src/provider";
 import { resolveTimeZone } from "../shared/prompt";
-import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
-import { openAccountsIn } from "../shared/tools/gallery";
+import { openAccountsIn, WEATHER_TOOL_NAME } from "../shared/tools/bridge";
 import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
