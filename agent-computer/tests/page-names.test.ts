@@ -272,6 +272,7 @@ describe.skipIf(!HAS_BROWSER)(
 <label for="labelled">라벨칸 <span contenteditable="true" class="typed">${TYPED}</span></label><input id="labelled">
 <div contenteditable="true" class="typed">앞 <a href="#inside">안쪽링크${TYPED}</a> 뒤</div>
 <div role="button" tabindex="0" aria-label="이름있는버튼"><span contenteditable="true" class="typed">${TYPED}</span></div>
+<div role="button" tabindex="0" aria-label="가진버튼" aria-owns="owned">가진 것: </div><span id="owned" contenteditable="true" class="typed">${TYPED}</span>
 <a href="#plain">그냥링크</a>
 <button aria-labelledby="bots-own">봇칸버튼</button><input id="bots-own" aria-label="봇칸" value="봇이 쓴 값">
 <a href="#bots-region">봇영역링크 <span contenteditable="true">봇이 쓴 글</span></a>`;
@@ -305,6 +306,7 @@ describe.skipIf(!HAS_BROWSER)(
         role: element.role,
         page: answer.names.get(element.ref),
         drawn: answer.drawn.has(element.ref),
+        holds: answer.holds.has(element.ref),
       }));
     }
     const called = (
@@ -364,6 +366,15 @@ describe.skipIf(!HAS_BROWSER)(
           page: "이름있는버튼",
           drawn: true,
         });
+        /*
+         * HOLDING the node is more than being named out of it: what the tree prints as such a
+         * control's contents is the node's too, so its value goes whatever it is called. A control
+         * with a name of its own that owns the node by id (`aria-owns`) holds it; one that is only
+         * labelled by it does not.
+         */
+        expect(
+          asked.filter((each) => each.holds).map((each) => each.page),
+        ).toEqual(["둘레링크", "둘레탭", "", "이름있는버튼", "가진버튼"]);
         // The box they typed into is not drawn from itself: a box's name is never its contents.
         expect(called(asked, "이름주는칸").drawn).toBe(false);
         // Nor is anything that takes nothing from them — the Bot's own box and region included.

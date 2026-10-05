@@ -11,6 +11,8 @@ import {
   EDITABLE_SHAPES,
   type EditableShape,
   GET_FORM_BOX,
+  KEEP_ALIVE_CLOSE,
+  KEEP_ALIVE_OPEN,
   LANDED_TEXT,
   SLOW_NO_CONTENT_MS,
   serveFixture,
@@ -19,6 +21,12 @@ import {
   TAKEOVER_BUTTON,
   TAKEOVER_RENAMED,
   TAKEOVER_SLOW_LINK,
+  TYPED_ARTICLE_NOTE,
+  TYPED_BOT_BOX,
+  TYPED_BOX,
+  TYPED_FAR_BUTTON,
+  TYPED_NEAR_LINK,
+  TYPED_PLACE,
 } from "./fixture-site";
 
 /**
@@ -692,6 +700,268 @@ describe.skipIf(!HAS_BROWSER)(
         ]),
       ).toEqual([]);
       expect(leaks(seen, [SECRET])).toEqual([]);
+    }, 60_000);
+  },
+);
+
+/**
+ * WHAT KEEPING A PERSON'S TYPING OUT COSTS EVERYTHING ELSE ON THE PAGE, which has to be nothing.
+ *
+ * The first version of the rule above asked the page about every control of a tab a person had
+ * typed into, called a page typed into blind after one second without an answer, and let a node
+ * go the moment a page took it out of its document. Each of those is a way for the hand-off every
+ * sign-in uses to leave a Bot with a page it cannot act on, or to hand a person's typing back.
+ * Each page below has one place a person types (`TYPED_PLACE`, inside a link), one box they type
+ * into, and a box and a button that are nobody's but the Bot's.
+ */
+describe.skipIf(!HAS_BROWSER)(
+  "around a node a person typed into, during a takeover",
+  () => {
+    /** Nothing the Bot was handed, and nothing this process wrote, says any of these. */
+    const nowhere = async (seen: Seen, typed: string[]) => {
+      expect(leaks(seen, typed)).toEqual([]);
+      expect(
+        leaks(
+          [
+            { path: "the computer's log", text: logged },
+            {
+              path: "the Bot's saved state",
+              text: await everyFile(join(profilesDir, "bot.state")),
+            },
+          ],
+          typed,
+        ),
+      ).toEqual([]);
+    };
+    /** The page's own word for where typing landed: that place, holding that many characters. */
+    const landedIn = async (places: Record<string, string | undefined>) => {
+      await until(() =>
+        Object.entries(places).every(
+          ([place, text]) => fixture?.typedInto()[place] === text?.length,
+        ),
+      );
+      expect(fixture?.typedInto()).toMatchObject(
+        Object.fromEntries(
+          Object.entries(places).map(([place, text]) => [place, text?.length]),
+        ),
+      );
+    };
+    /** The Bot writes in its own box, and is shown what it wrote: the page is not one typed into blind. */
+    const botSeesItsOwn = async (bot: ReturnType<typeof asBot>) => {
+      const now = await bot.snapshot();
+      expect(
+        (
+          await bot.post("/type", {
+            ref: named(now.elements, TYPED_BOT_BOX).ref,
+            snapshotId: now.snapshotId,
+            text: "봇이 쓴 메모",
+          })
+        ).status,
+      ).toBe(200);
+      const own = named((await bot.snapshot()).elements, TYPED_BOT_BOX);
+      expect(own).toMatchObject({ value: "봇이 쓴 메모" });
+      expect(own).not.toHaveProperty("type");
+    };
+
+    /*
+     * BLIND IS FOR A PAGE THAT CANNOT SAY WHAT HAS FOCUS, AND A SLOW PAGE CAN. One second of silence
+     * under one key used to be enough, and the document then showed the Bot no box's contents — its
+     * own included — for as long as it lived. This page is busy for a second and a half.
+     */
+    test("a page that is slow to answer under a key is not typed into blind: the box they typed into is hushed, and nothing else", async () => {
+      const bot = asBot("slow-page-bot");
+      const { post, get, snapshot, seen } = bot;
+      const SECRET = "CANARY-slow-page-7391";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-slow` }))
+          .status,
+      ).toBe(200);
+      await snapshot();
+      expect((await post("/control/take")).status).toBe(200);
+      // The box takes focus, and a tenth of a second later the page is busy.
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_BOX);
+      await Bun.sleep(300);
+      expect((await post("/human/type", { text: SECRET })).status).toBe(200);
+      await landedIn({ box: SECRET });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const after = await snapshot();
+      // Followed by what the page said had focus, once it said: marked, and blank.
+      expect(named(after.elements, TYPED_BOX.name)).toMatchObject({
+        type: "password",
+        value: "",
+      });
+      await botSeesItsOwn(bot);
+      await get("/read");
+      await nowhere(seen, [SECRET]);
+    }, 60_000);
+
+    /*
+     * ONLY THE CONTROLS THAT COULD BE NAMED OUT OF WHAT WAS TYPED ARE ASKED ABOUT. On this page the
+     * names step gets no answer for any control it asks about. Asked about every control, that
+     * was every control nameless and every click refused as renamed.
+     */
+    test("a page that gives the names step no answer costs the control around what was typed its name, and no other control anything", async () => {
+      const { post, get, snapshot, seen } = asBot("silent-names-bot");
+      const SECRET = "CANARY-silent-names-7391";
+      expect(
+        (
+          await post("/navigate", {
+            url: `${fixture?.url}takeover-silent-names`,
+          })
+        ).status,
+      ).toBe(200);
+      await snapshot();
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_PLACE);
+      expect((await post("/human/type", { text: SECRET })).status).toBe(200);
+      await landedIn({ near: SECRET });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const after = await snapshot();
+      // The link around the region: asked about, not answered for, and so not named.
+      expect(
+        after.elements
+          .filter((element) => element.role === "link")
+          .map((element) => element.name),
+      ).toEqual([""]);
+      // Everything else is listed as it would be on a page nobody typed into.
+      expect(
+        after.elements
+          .filter((element) => element.role !== "link")
+          .map((element) => element.name),
+      ).toEqual([TYPED_BOX.name, TYPED_BOT_BOX, TYPED_FAR_BUTTON]);
+      // And can be acted on: held to its name, the button is pressed.
+      const pressed = await post("/click", {
+        ref: named(after.elements, TYPED_FAR_BUTTON).ref,
+        snapshotId: after.snapshotId,
+        element: { role: "button", name: TYPED_FAR_BUTTON },
+      });
+      expect(pressed.status).toBe(200);
+      expect((await post("/snapshot")).body.title).toBe("눌림");
+      await get("/read");
+      await nowhere(seen, [SECRET]);
+    }, 60_000);
+
+    /*
+     * THE SAME NODE, PUT BACK. A look while the node was out of its document used to let it go, and
+     * the node came back with what was typed in it and nobody following it.
+     */
+    test("a node the page takes out of its document and puts back is still theirs: a look in between drops nothing", async () => {
+      const { post, get, snapshot, seen } = asBot("keep-alive-bot");
+      const typed = ["CANARY-kept-region-7391", "CANARY-kept-box-7391"];
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-keep-alive` }))
+          .status,
+      ).toBe(200);
+      await snapshot();
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_PLACE);
+      await post("/human/type", { text: typed[0] });
+      await post("/human/click", TYPED_BOX);
+      await post("/human/type", { text: typed[1] });
+      await landedIn({ near: typed[0], box: typed[1] });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const press = async (name: string) => {
+        const now = await snapshot();
+        expect(
+          (
+            await post("/click", {
+              ref: named(now.elements, name).ref,
+              snapshotId: now.snapshotId,
+            })
+          ).status,
+        ).toBe(200);
+      };
+      await press(KEEP_ALIVE_CLOSE);
+      // A look and a read while the panel is out: neither the box nor the link is on the page.
+      const out = await snapshot();
+      expect(out.elements.map((element) => element.name)).toEqual([
+        KEEP_ALIVE_CLOSE,
+        KEEP_ALIVE_OPEN,
+      ]);
+      await get("/read");
+      await press(KEEP_ALIVE_OPEN);
+
+      const back = await snapshot();
+      expect(named(back.elements, TYPED_BOX.name)).toMatchObject({
+        type: "password",
+        value: "",
+      });
+      expect(
+        back.elements
+          .filter((element) => element.role === "link")
+          .map((element) => element.name),
+      ).toEqual([TYPED_NEAR_LINK]);
+      await get("/read");
+      await get("/read?whole=1");
+      await nowhere(seen, typed);
+    }, 60_000);
+
+    test("typed into a page read as its article, is not in the article", async () => {
+      const { post, get, snapshot, seen } = asBot("article-bot");
+      const SECRET = "CANARY-article-7391";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-article` }))
+          .status,
+      ).toBe(200);
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_PLACE);
+      expect((await post("/human/type", { text: SECRET })).status).toBe(200);
+      await landedIn({ note: SECRET });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const read = await get("/read");
+      // Read as the article Reader View takes out, with the words beside what was typed in it.
+      expect(read.body.reader).toBe(true);
+      expect(String(read.body.text)).toContain(TYPED_ARTICLE_NOTE);
+      await get("/read?whole=1");
+      await snapshot();
+      await nowhere(seen, [SECRET]);
+    }, 60_000);
+
+    /*
+     * 고용24 REPLACES `Map`, and an object does not cross out of such a page: asked what had focus,
+     * it answered nothing, so every key a person pressed there was a key typed blind.
+     */
+    test("on a page that replaces Map, a person's typing is followed to its box and its region, and only those are hushed", async () => {
+      const bot = asBot("replaced-map-bot");
+      const { post, get, snapshot, seen } = bot;
+      const typed = ["CANARY-map-box-7391", "CANARY-map-region-7391"];
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-map` }))
+          .status,
+      ).toBe(200);
+      await snapshot();
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_BOX);
+      await post("/human/type", { text: typed[0] });
+      await post("/human/click", TYPED_PLACE);
+      await post("/human/type", { text: typed[1] });
+      await landedIn({ box: typed[0], near: typed[1] });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const after = await snapshot();
+      expect(named(after.elements, TYPED_BOX.name)).toMatchObject({
+        type: "password",
+        value: "",
+      });
+      // The link around the region is named by its own words, on a page that used to get no names.
+      expect(
+        after.elements
+          .filter((element) => element.role === "link")
+          .map((element) => element.name),
+      ).toEqual([TYPED_NEAR_LINK]);
+      await botSeesItsOwn(bot);
+      await get("/read");
+      await get("/read?whole=1");
+      await nowhere(seen, typed);
     }, 60_000);
   },
 );

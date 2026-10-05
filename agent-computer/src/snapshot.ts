@@ -26,7 +26,7 @@ import {
   arrivalOf,
   WHILE_ARRIVING_MS,
 } from "./page-arrival";
-import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
+import { namesFromThePage, nearRefs, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
 import {
@@ -290,13 +290,22 @@ export async function snapshotPage(
    * in time leaves that control nameless (`withNames` says why nothing stands in for it).
    */
   /*
-   * AND ON A TAB A PERSON TYPED INTO, EVERY NAME IS ASKED ABOUT. The tree names a control by what is
-   * inside it and by what labels it, and it does not know that some of that was typed by a person:
-   * measured 2026-10-05, the link around an editable region, the button a box labels and the box
-   * beside a `<label>` each came back named by a canary a person had typed (`person-typing.ts`).
-   * The page says which names were drawn from the nodes they typed into, and those are listed
-   * under the name it computes without them; every other control keeps the tree's (`namesToList`).
-   * Only then: a tab nobody typed into is asked about its nameless controls and nothing else.
+   * AND ON A TAB A PERSON TYPED INTO, THE CONTROLS THAT COULD BE NAMED OUT OF IT ARE ASKED ABOUT TOO.
+   * The tree names a control by what is inside it and by what labels it, and it does not know that
+   * some of that was typed by a person: measured 2026-10-05, the link around an editable region,
+   * the button a box labels and the box beside a `<label>` each came back named by a canary a
+   * person had typed (`person-typing.ts`). The page says which elements are near a node they typed
+   * into (`quietOn`), the controls of the list among those are found (`nearRefs`), and each is
+   * listed under the name the page computes without that node if its name was drawn from it
+   * (`namesToList`).
+   *
+   * ONLY THOSE. Every other control is listed exactly as on a tab nobody typed into, whether or not
+   * the page answers: the first version asked about every control the list keeps, and a page that
+   * said nothing for a second cost a Bot every name on it — every click refused as renamed — on a
+   * tab that stays "typed into" for as long as a single-page app keeps its search box. A page
+   * where nothing takes a name from what was typed is asked nothing more than it ever was.
+   *
+   * Every control is asked about only where which node cannot be said at all (`every`): typed blind.
    */
   const typed = await quietOn(
     session,
@@ -304,9 +313,24 @@ export async function snapshotPage(
     typedIntoBlind(session, target),
     deadline - Date.now(),
   );
-  const askedAbout = typed.names
-    ? read.elements.map((element) => element.ref)
-    : read.unnamed;
+  const near =
+    typed.names && !typed.names.every && typed.names.near
+      ? await nearRefs(
+          target,
+          read.elements.map(({ ref }) => {
+            const box = read.boxes.get(ref);
+            return box ? { ref, box } : { ref };
+          }),
+          typed.names.near,
+          Math.min(PAGE_NAMES_MS, deadline - Date.now()),
+        )
+      : undefined;
+  const nameless = new Set(read.unnamed);
+  const askedAbout = read.elements
+    .map((element) => element.ref)
+    .filter((ref) =>
+      typed.names?.every ? true : nameless.has(ref) || near?.has(ref) === true,
+    );
   const listed = namesToList(
     read.unnamed,
     askedAbout,
@@ -321,7 +345,12 @@ export async function snapshotPage(
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    elements: withNames(read.elements, listed.names, listed.asked),
+    elements: withNames(
+      read.elements,
+      listed.names,
+      listed.asked,
+      listed.valueless,
+    ),
     truncated: read.truncated,
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.

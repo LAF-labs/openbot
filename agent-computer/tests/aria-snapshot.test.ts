@@ -1057,8 +1057,9 @@ describe("the names the page gives the controls the tree left nameless", () => {
    * THE TREE NAMES A CONTROL OUT OF WHAT A PERSON TYPED, and prints that name itself: the link
    * around an editable region, the box whose `<label>` holds one, the button with one inside it
    * (measured 2026-10-05, `person-typing.ts`). On a tab a person typed into, the page is asked
-   * about every control and says which names were drawn from the nodes they typed into. The tree
-   * below is that tab's: `TYPED` is what the person typed.
+   * about the controls that could be, and says which names were drawn from the nodes they typed
+   * into and which controls hold one. The tree below is that tab's: `TYPED` is what the person
+   * typed.
    */
   const TYPED = "CANARY-typed-7391";
   const TYPED_INTO = `- link "링크 속 ${TYPED}" [ref=e1]:
@@ -1068,9 +1069,11 @@ describe("the names the page gives the controls the tree left nameless", () => {
 - textbox "라벨 속 ${TYPED}" [ref=e4]: 봇이 쓴 값
 - link [ref=e5]:
   - text: 그대로
-- button "답 없는 버튼" [ref=e6]: ${TYPED}`;
+- button "답 없는 버튼" [ref=e6]: ${TYPED}
+- combobox "검색" [ref=e7]: "검색: ${TYPED}"
+- combobox "답 없는 검색" [ref=e8]: "검색: ${TYPED}"`;
 
-  test("on a tab a person typed into: a name drawn from what they typed is the page's, any other the tree gave stands, and one the page did not answer for has none", () => {
+  test("a name drawn from what a person typed is the page's, a control that holds it says none of its contents, any other the tree gave stands, and one the page did not answer for has neither", () => {
     const read = readAriaSnapshot(TYPED_INTO);
     const asked = read.elements.map((element) => element.ref);
     const listed = namesToList(read.unnamed, asked, {
@@ -1080,32 +1083,84 @@ describe("the names the page gives the controls the tree left nameless", () => {
         ["e3", "이름 있는 버튼"],
         ["e4", "라벨 속"],
         ["e5", "그대로"],
+        ["e7", "검색"],
       ]),
-      drawn: new Set(["e1", "e3", "e4"]),
+      drawn: new Set(["e1", "e3", "e4", "e7"]),
+      holds: new Set(["e1", "e3", "e7"]),
     });
-    const list = withNames(read.elements, listed.names, listed.asked);
+    const list = withNames(
+      read.elements,
+      listed.names,
+      listed.asked,
+      listed.valueless,
+    );
     expect(list).toEqual([
       { ref: "e1", role: "link", name: "링크 속" },
       // Not drawn from what they typed: the tree's name, whatever the page would call it.
       { ref: "e2", role: "button", name: "보내기" },
-      // Drawn: the page's name, and what is inside it is not handed on as a value.
+      // It holds the node they typed into: what is inside it is not handed on as a value.
       { ref: "e3", role: "button", name: "이름 있는 버튼" },
-      // A box's value is its own, and is blanked by the box, not by its name.
+      // Named out of it by a `<label>`, and holding none of it: a box's own value is its own.
       { ref: "e4", role: "textbox", name: "라벨 속", value: "봇이 쓴 값" },
       // Left nameless by the tree: the page's name, as on any tab.
       { ref: "e5", role: "link", name: "그대로" },
       // Asked about and not answered for: no name, and nothing of what is inside it.
       { ref: "e6", role: "button", name: "" },
+      // A box that is a wrapper around the node they typed into: it holds something, not shown.
+      { ref: "e7", role: "combobox", name: "검색", value: "" },
+      { ref: "e8", role: "combobox", name: "", value: "" },
     ]);
     expect(JSON.stringify(list)).not.toContain(TYPED);
-    // The page silent altogether: every control it was asked about is nameless, and none says it.
+    // The page silent altogether: every control it was asked about has no name and no contents.
     const silent = namesToList(read.unnamed, asked, {
       names: new Map(),
       drawn: new Set(),
+      holds: new Set(),
     });
-    const blank = withNames(read.elements, silent.names, silent.asked);
-    expect(blank.map((element) => element.name)).toEqual(Array(6).fill(""));
+    const blank = withNames(
+      read.elements,
+      silent.names,
+      silent.asked,
+      silent.valueless,
+    );
+    expect(blank.map((element) => element.name)).toEqual(Array(8).fill(""));
     expect(JSON.stringify(blank)).not.toContain(TYPED);
+  });
+
+  /*
+   * ONLY THE CONTROLS THAT COULD BE NAMED OUT OF IT ARE ASKED ABOUT (`nearRefs`), so a page that
+   * does not answer costs those their names and nothing else. Until 2026-10-05 every control of a
+   * typed-into tab was asked, and a silent page left the whole list nameless: every click refused
+   * as renamed, on a tab that stays typed-into for as long as its document lives.
+   */
+  test("a control that was not asked about is untouched, whether or not the page answers: only what could be drawn from what was typed is asked", () => {
+    const read = readAriaSnapshot(TYPED_INTO);
+    // Near the node a person typed into: the link, the two buttons that hold it, the two boxes.
+    const asked = ["e1", "e3", "e5", "e6", "e7", "e8"];
+    const silent = namesToList(read.unnamed, asked, {
+      names: new Map(),
+      drawn: new Set(),
+      holds: new Set(),
+    });
+    const list = withNames(
+      read.elements,
+      silent.names,
+      silent.asked,
+      silent.valueless,
+    );
+    // The same objects, name and value: nothing about them was asked, so nothing about them changed.
+    expect(list[1]).toBe(read.elements[1] as (typeof list)[number]);
+    expect(list[3]).toBe(read.elements[3] as (typeof list)[number]);
+    expect(list[1]).toMatchObject({ name: "보내기" });
+    // And the ones that were asked about, with no answer, say nothing a person typed.
+    expect(list.filter((_, index) => index !== 1 && index !== 3)).toEqual([
+      { ref: "e1", role: "link", name: "" },
+      { ref: "e3", role: "button", name: "" },
+      { ref: "e5", role: "link", name: "" },
+      { ref: "e6", role: "button", name: "" },
+      { ref: "e7", role: "combobox", name: "", value: "" },
+      { ref: "e8", role: "combobox", name: "", value: "" },
+    ]);
   });
 
   test("on a tab nobody typed into, only the nameless are asked about and a control the tree named is untouched", () => {
@@ -1113,14 +1168,39 @@ describe("the names the page gives the controls the tree left nameless", () => {
     const listed = namesToList(read.unnamed, read.unnamed, {
       names: new Map([["e5", "그대로"]]),
       drawn: new Set(),
+      holds: new Set(),
     });
     expect([...listed.asked]).toEqual(["e5"]);
-    const list = withNames(read.elements, listed.names, listed.asked);
+    expect([...listed.valueless]).toEqual([]);
+    const list = withNames(
+      read.elements,
+      listed.names,
+      listed.asked,
+      listed.valueless,
+    );
     // The same objects, name and value: nothing about them was asked.
-    for (const index of [0, 1, 2, 3, 5]) {
+    for (const index of [0, 1, 2, 3, 5, 6, 7]) {
       expect(list[index]).toBe(read.elements[index] as (typeof list)[number]);
     }
     expect(list[4]).toEqual({ ref: "e5", role: "link", name: "그대로" });
+  });
+
+  test("the tree's boxes come out with the list, each control's as it was written", () => {
+    const read = readAriaSnapshot(
+      [
+        '- link "가" [ref=e1] [cursor=pointer] [box=20,269,600,31]',
+        '- button "나" [ref=e2]',
+        "- iframe [ref=e3] [box=660,300,600,110]:",
+        '  - link "틀 속" [ref=f1e2] [box=10,62,560,30]',
+      ].join("\n"),
+      {},
+      VIEWPORT,
+    );
+    expect([...read.boxes]).toEqual([
+      ["e1", "20,269,600,31"],
+      // In its own document's coordinates, which is where the page measures it too.
+      ["f1e2", "10,62,560,30"],
+    ]);
   });
 });
 

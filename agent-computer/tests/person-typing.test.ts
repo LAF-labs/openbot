@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inTurn, TURN_WAIT_MS } from "../src/person-typing";
+import { inFocus, inTurn, TURN_WAIT_MS } from "../src/person-typing";
 import { createSessions } from "../src/sessions";
 
 /**
@@ -53,4 +53,28 @@ describe("a person's input", () => {
     expect(waited).toBeGreaterThanOrEqual(TURN_WAIT_MS - 50);
     expect(waited).toBeLessThan(TURN_WAIT_MS + 2_000);
   }, 15_000);
+});
+
+/**
+ * WHAT HAS FOCUS IS ANSWERED WITH A STRING. An object does not come back from a page that replaces
+ * `Map` (고용24): it arrived as nothing, which was read as a page that would not say, and every key
+ * a person pressed there was a key typed blind. Through the door on such a page in
+ * `takeover-secret.test.ts`; here, what each answer means and that anything else means none.
+ */
+describe("what the page says has focus", () => {
+  test("is read from a string: nothing to follow, a frame to enter, the same box with what it holds, another box or region", () => {
+    expect(inFocus("n")).toEqual({ kind: "none" });
+    expect(inFocus("f")).toEqual({ kind: "frame" });
+    expect(inFocus("o0")).toEqual({ kind: "other", region: false });
+    expect(inFocus("o1")).toEqual({ kind: "other", region: true });
+    expect(inFocus("s")).toEqual({ kind: "same", value: "" });
+    // What the box holds is everything after the first character, whatever it is.
+    expect(inFocus("so1 | n")).toEqual({ kind: "same", value: "o1 | n" });
+  });
+
+  test("and anything that is not one of those answers is no answer, not an empty focus", () => {
+    for (const said of [undefined, null, {}, { kind: "none" }, "", "x", 0]) {
+      expect(inFocus(said)).toBeUndefined();
+    }
+  });
 });
