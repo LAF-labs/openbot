@@ -50,6 +50,7 @@ afterEach(async () => {
   localStorage.removeItem(DEVICE_ASKED);
   localStorage.removeItem(DEVICE_CLEARED);
   delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
+  delete (navigator as unknown as Record<string, unknown>).permissions;
   Object.defineProperty(navigator, "geolocation", {
     configurable: true,
     value: undefined,
@@ -250,6 +251,59 @@ describe("Settings → 내 가게 → 가게 위치", () => {
     expect(reads).toBe(1);
     expect(writes).toHaveLength(2);
     expect(placeField(again)?.value).toBe("");
+  });
+
+  test("a device that answers by itself while this screen is open is what the screen shows, and what a typed save sends", async () => {
+    /*
+     * The form copied the account's coordinates when it mounted. The device answers by itself at
+     * every open now, so the copy went stale in front of the person: the line named where the
+     * device HAD been, the save button lit with nothing changed, and saving a typed place sent the
+     * older coordinates back over the ones the device had just given. (Left as known in pull
+     * request 91, when the device answered once and the form's copy was a blank.)
+     */
+    localStorage.removeItem(DEVICE_ASKED);
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "granted" }) },
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (resolve: (position: unknown) => void) =>
+          resolve({ coords: { latitude: 37.498_095, longitude: 127.027_61 } }),
+      },
+    });
+    // The account holds where the device was the last time; the device has moved since.
+    const { api, writes } = server({
+      place: null,
+      coordinates: { latitude: 35.16, longitude: 129.16 },
+    });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => writes.length === 1, "the device's own answer");
+    expect(writes[0]?.body).toEqual({
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+    await view.waitFor(
+      () => view.host.textContent?.includes("37.50, 127.03") === true,
+      "the place the device just gave",
+    );
+    expect(view.host.textContent).not.toContain("35.16");
+    // The person changed nothing: there is nothing to save.
+    expect(view.buttonNamed("Save the location")?.disabled).toBe(true);
+
+    // They type where the shop is and save: the coordinates that go are the account's own.
+    const field = placeField(view);
+    if (!field) throw new Error("no place field");
+    await view.type(field, "부산 해운대구");
+    await press(view, "Save the location");
+    await view.waitFor(() => writes.length === 2, "the save");
+    expect(writes[1]).toEqual({
+      method: "PUT",
+      body: {
+        place: "부산 해운대구",
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+      },
+    });
   });
 
   test("pressing the device's button again is how a cleared place is taken back", async () => {

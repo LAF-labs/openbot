@@ -1175,7 +1175,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * front of each could have been deleted unnoticed.
  *
  * RAISED 2026-10-05 with the device's place in the installed app, and a place that follows its
- * device, by exactly what was added: twenty-five to `app` — fourteen in `device-place.test.ts`,
+ * device, by exactly what was added: twenty-six to `app` — fourteen in `device-place.test.ts`,
  * which holds twenty-five where it held eleven (the table reads a mark of four kinds rather than a
  * yes or a no; the place follows a device that already said yes and no other; a place cleared on
  * this device is never read by itself; a mark from before "cleared" existed is read by what the
@@ -1192,8 +1192,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * quiet over nothing and follows over coordinates; the installed app asks its shell once and
  * follows it after; a shell that cannot read the device is left alone — and the test over
  * coordinates held is now a browser that has NOT said yes, which is the only one still left
- * unread), three in `settings-shop-location.test.tsx` (the device's button
- * takes a cleared place back; the installed app offers the device through its shell; a device that
+ * unread), four in `settings-shop-location.test.tsx` (a device that answers by itself while the
+ * screen is open is what the screen shows and what a typed save sends; the device's button takes
+ * a cleared place back; the installed app offers the device through its shell; a device that
  * said no there answers the press in words — and the test that the shell draws no button now
  * holds only the shells that cannot read the device) and one in `shell-bridge.test.ts` (the two
  * commands, and only their own words heard) — and two to `root`, both in `desktop-shell.test.ts`
@@ -1207,7 +1208,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3624, roots: ["server"] },
-  { name: "app", floor: 2075, roots: ["app"] },
+  { name: "app", floor: 2076, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 717, roots: ["tests", "agent-bot"] },
 ] as const;

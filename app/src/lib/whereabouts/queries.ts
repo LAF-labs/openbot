@@ -166,8 +166,8 @@ async function send(
  * A browser tab asks `navigator.geolocation`. THE INSTALLED APP ASKS ITS SHELL: its webview
  * (WKWebView, through wry) answers no geolocation request, so until 2026-10-05 the surface this
  * product leads with was the one where a person's place fell straight to Seoul. The shell reads
- * the device itself now (`desktop/src-tauri/src/location.rs`) and these three go through it there
- * and through the browser's own API in a tab — the same three questions, so everything that
+ * the device itself now (`desktop/src-tauri/src/location.rs`) and what follows goes through it
+ * there and through the browser's own API in a tab — the same questions, so everything that
  * decides what to do with the answers is written once (`device-place.ts`).
  */
 
