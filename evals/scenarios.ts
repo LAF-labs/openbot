@@ -121,10 +121,12 @@ import {
 } from "./tools";
 import {
   agreesWithTheCard,
+  BUSAN,
   GANGNAM,
   HAEUNDAE,
   leavesItToTheCard,
   MAPO,
+  SEOUL,
   saysDegrees,
   weatherAnswer,
   weatherBackend,
@@ -1008,7 +1010,13 @@ export const SCENARIOS: Scenario[] = [
       ]),
   },
   {
-    id: "weather-asks-for-the-place-once",
+    /*
+     * WITHOUT THE TOOL, AND WITH NOBODY'S PLACE KNOWN: SEOUL'S, BY NAME. This was
+     * `weather-asks-for-the-place-once` — a Bot asked where before it looked. The owner's word of
+     * 2026-10-05 is that it answers for Seoul and says so; on a deployment without 기상청's key
+     * that is a search with 서울 in it, and the page's own guess (제주) is still not an answer.
+     */
+    id: "weather-without-the-tool-is-seouls",
     dimension: "whereabouts",
     person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
     messages: [user("오늘 날씨 알려줘")],
@@ -1017,12 +1025,10 @@ export const SCENARIOS: Scenario[] = [
     check: (turn) =>
       verdict([
         [
-          "위치를 묻지 않음",
-          // A question mark is not the only way to ask: "시·구까지 알려 주시면 찾아볼게요" asks too
-          // (measured: two of three replies on glm-5.3-flash asked that way).
-          /(어디|어느|위치|지역|동네)/.test(turn.text) &&
-            /[?？]|알려\s?주|말씀해\s?주/.test(turn.text),
+          "검색에 서울을 넣지 않음 — 먼저 물었거나 곳 없이 검색함",
+          navigatedTo(turn).some((url) => url.includes("서울")),
         ],
+        ["서울 기준이라고 말하지 않음", turn.text.includes("서울")],
         ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
         ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
       ]),
@@ -1600,7 +1606,8 @@ function supportProgramsFromThePortal(): Scenario {
  * the person's saved place. The owner's word was that a Bot asked for the weather should not browse
  * at all. So a candidate is held to four things a Bot with a browser AND a search beside the tool
  * can get wrong: reaching for either of those first; answering for a place the person did not mean;
- * asking nothing when nobody's place is known; and losing the place the person then says.
+ * asking where first when nobody's place is known, where the tool answers for Seoul (2026-10-05);
+ * losing the place the person says is theirs; and keeping one that was only asked about.
  *
  * Behind the realistic toolset, like the search's scenario: whether the tool sits in the schema or
  * behind the bridge is the product's decision (`shared/tools/bridge.ts`), and these pass either
@@ -1625,9 +1632,12 @@ function weatherFromTheAgency(): Scenario[] {
     const site = weatherSite();
     return (call: ObservedCall) => weather(call) ?? site(call);
   };
-  const asksWhere = (text: string) =>
-    /(어디|어느|위치|지역|동네)/.test(text) &&
-    /[?？]|알려\s?주|말씀해\s?주/.test(text);
+  /** Every place a turn saved through `remember`. */
+  const placesSaved = (turn: Turn) =>
+    turn.calls
+      .filter((call) => call.name === "remember")
+      .map((call) => String(call.arguments?.place ?? "").trim())
+      .filter(Boolean);
 
   return [
     {
@@ -1712,22 +1722,121 @@ function weatherFromTheAgency(): Scenario[] {
         ]),
     },
     {
-      id: "weather-with-no-place-asks-once",
+      /*
+       * NOBODY'S PLACE KNOWN: SEOUL'S, SAID, AND NOT A QUESTION FIRST (the owner, 2026-10-05:
+       * "fallback은 서울"). This was `weather-with-no-place-asks-once`, which held a Bot to asking
+       * where before it looked; the product it is measured against answered for Seoul. The tool
+       * now answers a call with no argument for Seoul and marks it (`placeSource: "fallback"`), so
+       * what is held is that the Bot makes that call, does not invent a place for it, and says
+       * whose weather it is — the one thing that lets the person correct it.
+       */
+      id: "weather-with-no-place-is-seouls",
       dimension: "whereabouts",
       person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
-      messages: [user("오늘 날씨 알려줘")],
+      messages: [user("오늘 날씨 어때?")],
       tools: [...REALISTIC_TOOLSET],
       maxTurns: 6,
       stub: backed(),
       check: (turn) =>
         verdict([
-          ["위치를 묻지 않음", asksWhere(turn.text)],
-          ["위치도 모르는 채 검색하거나 브라우저로 찾음", !browsed(turn)],
-          ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
-          ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
+          [
+            "날씨 도구(get_weather)를 부르지 않음 — 먼저 물었거나 다른 길로 감",
+            called(turn, WEATHER_TOOL_NAME),
+          ],
           [
             "짐작한 곳을 날씨 도구에 넣음",
             weatherPlacesAsked(turn.calls).every((place) => place === ""),
+          ],
+          ["서울 기준이라고 말하지 않음", turn.text.includes("서울")],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+          ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
+          ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
+          [
+            "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(SEOUL, EVAL_NOW, "fallback"),
+            ),
+          ],
+        ]),
+    },
+    {
+      /*
+       * A PLACE THE PERSON SAYS IS THEIRS IS SAVED, UNASKED ("유저가 특정 위치를 말해주면 저장").
+       * Nobody asked the Bot to remember anything and nobody asked about the weather: the sentence
+       * is about where the person lives, and that is what the place line is for.
+       */
+      id: "place-said-in-passing-is-saved",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: [user("나 춘천 살아")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          [
+            "말한 위치(춘천)를 remember의 place로 저장하지 않음",
+            placesSaved(turn).some((place) => place.includes("춘천")),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        ]),
+    },
+    {
+      /*
+       * AND IT REPLACES WHAT THE DEVICE SAID. A person whose place is their device's coordinates
+       * says they moved: the words are saved, and the words win from then on (`whereOf`,
+       * `placeText`) — the device goes on reporting wherever the laptop is that day.
+       */
+      id: "moved-place-is-saved-over-the-devices",
+      dimension: "whereabouts",
+      person: {
+        timeZone: "Asia/Seoul",
+        locale: "ko-KR",
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+      },
+      messages: [user("나 이사했어, 이제 수원이야")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(GANGNAM),
+      check: (turn) =>
+        verdict([
+          [
+            "말한 위치(수원)를 remember의 place로 저장하지 않음",
+            placesSaved(turn).some((place) => place.includes("수원")),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        ]),
+    },
+    {
+      /*
+       * A PLACE THAT IS ONLY WHAT THE QUESTION IS ABOUT IS NOT THE PERSON'S. "부산 날씨 어때?" from
+       * somebody whose place is not known is a question about 부산 — a trip, a parent, the news —
+       * and saving it would make every later "오늘 날씨 어때?" 부산's.
+       */
+      id: "weather-elsewhere-is-not-saved",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: [user("부산 날씨 어때?")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          [
+            "날씨 도구에 물은 곳(부산)을 넣지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("부산"),
+            ),
+          ],
+          [
+            "질문의 대상일 뿐인 곳(부산)을 이 사람의 것으로 저장함",
+            !called(turn, "remember"),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
+            agreesWithTheCard(turn.text, weatherAnswer(BUSAN, EVAL_NOW, false)),
           ],
         ]),
     },
@@ -3178,6 +3287,8 @@ function weatherSite(): (call: ObservedCall) => string | undefined {
   const PLACES: Array<[string, string, string]> = [
     ["강남", "서울특별시 강남구 역삼동", "21.4° 흐림"],
     ["마포", "서울특별시 마포구 서교동", "20.8° 흐림"],
+    // After the districts: "서울 강남구 날씨" is 강남's page.
+    ["서울", "서울특별시 종로구 청운효자동", "19.7° 맑음"],
   ];
   let page = PLACES.length;
   return (call) => {

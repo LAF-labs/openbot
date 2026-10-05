@@ -1038,15 +1038,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * told what was decided as well as the move) — and one to `root`, in `eval-from-failures.test.ts`
  * (the week's lines say the wait and the moves where the answer measured them, and nowhere else).
  *
+ * RAISED 2026-10-05 with Seoul until the person says where, by exactly what was added: two to
+ * `server`, both in `kma-weather-rest.test.ts` (the fallback is the shipped table's own row for
+ * 서울특별시 and has a 중기예보 region; what the person said outranks where their device is, words the
+ * table cannot read fall to the device, and alone are refused rather than answered for Seoul) —
+ * seven to `app`: one in `weather-card.test.tsx` (Seoul that nobody chose says so on the line that
+ * names it) and the six of the new `device-place.test.ts` (the decision table for asking a browser
+ * where it is, once per device; marked before it is asked and saved with the words the account
+ * holds; a browser that already said yes is read once too; refused, unknowable, held or in the
+ * shell is left alone; storage that cannot keep the once; a dismissed prompt, a failed save and a
+ * race) — and two to `root`, in `person-prompt.test.ts` (a place the person says is theirs is
+ * saved unasked in every chat and one only asked about is not; the place line is held to a length).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3573, roots: ["server"] },
-  { name: "app", floor: 2028, roots: ["app"] },
+  { name: "server", floor: 3575, roots: ["server"] },
+  { name: "app", floor: 2035, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 643, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 645, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
