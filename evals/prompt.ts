@@ -32,6 +32,7 @@ import {
   BRIDGE_TOOLS,
   CORE_TOOL_NAMES,
   DEFERRED_TOOL_PREFIX,
+  WEATHER_TOOL_NAME,
 } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { NOW_TOOL } from "../shared/tools/now";
@@ -124,6 +125,17 @@ export function systemMessageFor(
    * the 호칭 line is theirs. Absent is the owner every other scenario is about.
    */
   who?: EvalWho,
+  /**
+   * Whether the scenario's Bot holds the weather tool, as the server's middleware knows from the
+   * run's tools (`contextFactsFor`): the place line leaves out its "if there is no such tool" road
+   * for a run that has it. Absent is a message built without knowing, which keeps the road.
+   *
+   * ONLY THAT ONE FACT, not the run's tool names: the names behind the bridge are drawn in the
+   * context layer by the server and have never been drawn here, and handing them all over would
+   * change every scenario's prompt for a reason that is not this one's. The weather tool is a core
+   * tool, so naming it alone draws nothing.
+   */
+  holdsWeatherTool?: boolean,
 ) {
   const role = who ? who.standingRole : EVAL_STANDING_ROLE;
   const composed = composePrompt({
@@ -137,6 +149,9 @@ export function systemMessageFor(
     ...(person ? { person } : {}),
     ...(skills ? { skills } : {}),
     ...(notepad ? { notepad } : {}),
+    ...(holdsWeatherTool === undefined
+      ? {}
+      : { toolNames: holdsWeatherTool ? [WEATHER_TOOL_NAME] : [] }),
   });
   const earlier = summary
     ? earlierSummaryText(summary, factsFor(mode, person, frozenAt).day)
@@ -243,8 +258,8 @@ const sha256 = (text: string) =>
  * enforceable because these two numbers are in the report.
  */
 /**
- * What the context layer says about a person's place, for the four people there are and both
- * modes. Fixed inputs, so these are the WORDS and move only when the words do.
+ * What the context layer says about a person's place, for the four people there are — nobody's
+ * twice, with and without the weather tool held — and both modes. Fixed inputs, so these are the WORDS and move only when the words do.
  *
  * In the hash since 2026-10-02, the night both hashes sat still through a batch that changed what
  * a Bot reads: the place line stopped sending the weather to 네이버 and two connected tools went on
@@ -262,6 +277,8 @@ export const PLACE_LINES = (["chat", "routine"] as const).flatMap((mode) => [
     mode,
   ),
   placeText(undefined, mode),
+  // Nobody's place, for a run known to hold the weather tool: the line without its other road.
+  placeText(undefined, mode, { weatherTool: true }),
 ]);
 
 export const PROMPT_HASH = sha256(
