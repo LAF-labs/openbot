@@ -66,7 +66,7 @@ import {
   socketState,
 } from "@/lib/channels/use-channel-events";
 import { useBrowsingTasks } from "@/lib/computer/use-browsing-tasks";
-import { useActiveBot, useActiveConversation } from "@/lib/copilot/active-bot";
+import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { holdChat } from "@/lib/copilot/held-chats";
 import { taskStopOf } from "@/lib/copilot/stranded-steps";
@@ -341,9 +341,8 @@ export function ServerChannelChat({
     forgetFirstMessage(channel.id);
   }, [channel.id]);
 
-  // Tool calls act on this Bot's computer and say which conversation they came from.
+  // Tool calls act on this Bot's computer.
   useActiveBot(runtimeAgentId);
-  useActiveConversation(channel.threadId);
   const skillCommands = useSkillCommands(runtimeAgentId);
   const toolsSettled = useToolsSettled(runtimeAgentId);
 

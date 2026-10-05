@@ -18,6 +18,10 @@ import {
 import * as approvals from "../src/lib/approvals";
 import { ko } from "../src/lib/i18n-ko";
 import {
+  forgetWatchedQuestions,
+  watchShellQuestions,
+} from "../src/lib/turns/questions";
+import {
   APP_DOM_TIMEOUT_MS,
   installAppDom,
   json,
@@ -472,6 +476,39 @@ describe("the card", () => {
 });
 
 describe("an answer given somewhere else", () => {
+  /*
+   * The server holds the question and waits for its answer (`server/src/turns/people.ts`); what a
+   * window learns of an answer given in another one comes off the server's record, on the next
+   * look of the watch every signed-in screen keeps (`lib/turns/questions.ts`).
+   */
+  async function readOffTheRecord(
+    toolCallId: string,
+    answered: Pick<approvals.PendingApproval, "id" | "tier">,
+  ) {
+    const watch = watchShellQuestions({
+      botId: BOT,
+      read: async () => [
+        {
+          ...answered,
+          botId: BOT,
+          rule: MONEY_HOST_RULE,
+          subject: PRESSING_ON_TOSS,
+          step: { threadId: "thread-elsewhere", toolCallId },
+          requestedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          granted: true,
+          answeredBy: "owner-1",
+        },
+      ],
+    });
+    const deadline = Date.now() + 2_000;
+    while (!approvals.decisionOn(toolCallId) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    watch.dispose();
+    forgetWatchedQuestions();
+  }
+
   test("still leaves the line, saying allowed and nothing wider", async () => {
     approvals.openQuestion("call-elsewhere", {
       approvalId: "approval-elsewhere",
@@ -480,31 +517,7 @@ describe("an answer given somewhere else", () => {
       rule: MONEY_HOST_RULE,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     });
-    // The waiting window holds the question (0.5.4 A): what it learns comes back on the hold.
-    const held: string[] = [];
-    globalThis.fetch = stubFetch(async (input) => {
-      held.push(String(input));
-      return json({
-        holding: true,
-        approval: {
-          id: "approval-elsewhere",
-          botId: BOT,
-          rule: MONEY_HOST_RULE,
-          subject: PRESSING_ON_TOSS,
-          requestedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 600_000).toISOString(),
-          granted: true,
-          answeredBy: "owner-1",
-        },
-      });
-    });
-    const answer = await approvals.waitForApproval(
-      BOT,
-      "approval-elsewhere",
-      undefined,
-    );
-    expect(answer).toBe("granted");
-    expect(held).toEqual([`/api/approvals/${BOT}/approval-elsewhere/hold`]);
+    await readOffTheRecord("call-elsewhere", { id: "approval-elsewhere" });
     expect(approvals.questionOn("call-elsewhere")).toBeUndefined();
     expect(approvals.decisionOn("call-elsewhere")).toEqual({
       outcome: "allowed",
@@ -520,29 +533,10 @@ describe("an answer given somewhere else", () => {
       rule: MONEY_HOST_RULE,
       expiresAt: new Date(Date.now() + 600_000).toISOString(),
     });
-    globalThis.fetch = stubFetch(async () =>
-      json({
-        holding: true,
-        approval: {
-          id: "approval-wide-elsewhere",
-          botId: BOT,
-          rule: MONEY_HOST_RULE,
-          subject: PRESSING_ON_TOSS,
-          requestedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 600_000).toISOString(),
-          granted: true,
-          tier: "always",
-          answeredBy: "owner-1",
-        },
-      }),
-    );
-    expect(
-      await approvals.waitForApproval(
-        BOT,
-        "approval-wide-elsewhere",
-        undefined,
-      ),
-    ).toBe("granted");
+    await readOffTheRecord("call-wide-elsewhere", {
+      id: "approval-wide-elsewhere",
+      tier: "always",
+    });
     expect(approvals.decisionOn("call-wide-elsewhere")?.tier).toBe("always");
   });
 
@@ -589,29 +583,5 @@ describe("an answer given somewhere else", () => {
       tier: "always",
     });
     expect(approvals.decisionOn("call-thread")?.tier).toBe("thread");
-  });
-
-  test("an answer nobody gave is said as that", async () => {
-    approvals.openQuestion("call-nobody", {
-      approvalId: "approval-nobody",
-      botId: BOT,
-      subject: PRESSING_ON_TOSS,
-      rule: MONEY_HOST_RULE,
-      expiresAt: new Date(Date.now() + 600_000).toISOString(),
-    });
-    // Swept on the server: it expired, and holding it answers that nothing is open.
-    globalThis.fetch = stubFetch(async () =>
-      json(
-        { error: "laf:approval_not_waiting", code: "laf:approval_not_waiting" },
-        409,
-      ),
-    );
-    expect(
-      await approvals.waitForApproval(BOT, "approval-nobody", undefined),
-    ).toBe("gave up");
-    const decision = approvals.decisionOn("call-nobody");
-    expect(decision?.outcome).toBe("unanswered");
-    const line = decision ? approvals.decisionPhrase(decision) : undefined;
-    expect(line?.key).toBe("No answer came, so it did not go ahead · {action}");
   });
 });

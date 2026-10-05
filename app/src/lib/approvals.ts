@@ -26,15 +26,6 @@ import { serviceLabel, toolLabel } from "@/lib/plugins/tool-labels";
 import { refusalText } from "@/lib/refusals";
 
 /**
- * How long the surface holds a tool call open for an answer, and how often it looks.
- *
- * Ten minutes matches the server's own window, so the wait ends because the question expired rather
- * than because the two sides disagreed about when it had.
- */
-const WAIT_FOR_ANSWER_MS = 10 * 60_000;
-const WAIT_POLL_MS = 1_000;
-
-/**
  * How wide "always allow" would be, decided by the server from the action itself.
  *
  * `host` covers every action on one site, `file` one path, `tool` one tool by name. It is here so
@@ -827,46 +818,6 @@ export async function reconsiderDecline(
   };
 }
 
-/**
- * A pause reply, read once, in one place.
- *
- * Two callers meet this shape — an acting call on the computer and a call to somebody else's server
- * — and until this existed they each unpicked it field by field, in their own file, into their own
- * object. Which meant that adding a field to the reply and forwarding it in one of them left the
- * other silently dropping it, with both sides' tests green: measured, the "always allow" button
- * simply never appeared, because one of the two hops had not been told the scope existed.
- *
- * Null for anything that is not a pause, so a caller can ask this question and the "is it one"
- * question at the same time.
- */
-export function pauseFrom(
-  body: Record<string, unknown> | null,
-): Omit<OpenQuestion, "botId"> | null {
-  if (body?.awaitingApproval !== true) return null;
-  // What an outward call will send, checked entry by entry. Absent leaves the card as it was.
-  const preview = callPreviewOf(body.preview);
-  return {
-    approvalId: typeof body.approvalId === "string" ? body.approvalId : "",
-    // Undefined where the reply carried no subject or one this build does not recognise. The card
-    // then says it is being asked about something it cannot name, which is the honest failure: the
-    // alternative is a sentence somebody consents to that describes an action nobody sent.
-    subject: askSubjectOf(body.subject),
-    ...(preview ? { preview } : {}),
-    rule: typeof body.rule === "string" ? body.rule : null,
-    scope: allowanceScopeOf(body.scope),
-    // The conversation the question came from, when the server said so. The third button is drawn
-    // off this and nothing else: a card that offered "for this conversation" for a question raised
-    // from nowhere would be a button the answering route silently ignores.
-    ...(typeof body.threadId === "string" && body.threadId
-      ? { threadId: body.threadId }
-      : {}),
-    ...(typeof body.taskId === "string" && body.taskId
-      ? { taskId: body.taskId }
-      : {}),
-    expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : "",
-  };
-}
-
 /** A question one tool call is waiting on, as its own line in the transcript needs to draw it. */
 export type OpenQuestion = {
   approvalId: string;
@@ -897,13 +848,6 @@ export type OpenQuestion = {
 
 const open = new Map<string, OpenQuestion>();
 const watchers = new Set<() => void>();
-/**
- * Every line an approval was ever drawn on in this tab, and what it was about — kept after the card
- * closes. A card closes on a 409 the moment another window has answered, before this tab's wait has
- * read that answer; the wait still has to find the line to leave the answer on. More than one line
- * when the page a notice opens draws the same question beside the conversation's own card.
- */
-const raised = new Map<string, Map<string, AskSubject | undefined>>();
 
 /**
  * Say that this tool call is waiting on an answer, so its line can draw the card.
@@ -915,9 +859,6 @@ const raised = new Map<string, Map<string, AskSubject | undefined>>();
 export function openQuestion(toolCallId: string, question: OpenQuestion): void {
   if (!toolCallId) return;
   open.set(toolCallId, question);
-  const asking = raised.get(question.approvalId) ?? new Map();
-  asking.set(toolCallId, question.subject);
-  raised.set(question.approvalId, asking);
   for (const watcher of watchers) watcher();
 }
 
@@ -1135,142 +1076,6 @@ export function answerProblem(
 }
 
 /**
- * Hold a tool call open until somebody answers its question.
- *
- * Polled rather than pushed. The answer arrives on a server this tab has no other channel to, and it
- * may well be given in a different tab or by a different person, so the only honest way to learn it
- * is to keep asking. A second between looks costs one request while a Bot is stopped and nothing at
- * all the rest of the time.
- */
-export async function waitForApproval(
-  botId: string,
-  approvalId: string,
-  signal: AbortSignal | undefined,
-): Promise<"granted" | "declined" | "gave up" | "cancelled" | "handed over"> {
-  const deadline = Date.now() + WAIT_FOR_ANSWER_MS;
-  heldHere.set(approvalId, botId);
-  listenForLeaving();
-  try {
-    while (Date.now() < deadline) {
-      // Stop must work out of this wait as well, or pressing it leaves a Bot parked on a question
-      // nobody is going to answer.
-      if (signal?.aborted) return "cancelled";
-      /*
-       * HELD, NOT MERELY READ. Asking after the question by holding it is what tells every other
-       * window of this conversation that this one is alive and will carry the step on, so none of
-       * them does it a second time (`server/src/computer/approvals.ts`, `hold`).
-       */
-      const held = await holdApproval(botId, approvalId);
-      // Gone from a server we did reach means it expired and was swept, which is the same outcome
-      // as running out of patience here. A server we could NOT reach says nothing, so it is not read
-      // as an answer.
-      if (held.state === "gone") {
-        return settled(approvalId, "unanswered", "gave up");
-      }
-      // Another window took the step while this one was asleep — a hidden tab is throttled to a
-      // timer a minute, and one frozen for longer counts as gone. That window carries it on now.
-      if (held.state === "elsewhere") return "handed over";
-      const mine = held.state === "holding" ? held.approval : undefined;
-      if (mine?.granted === true) {
-        return settled(approvalId, "allowed", "granted", mine.tier);
-      }
-      if (mine?.granted === false) {
-        return settled(approvalId, "declined", "declined");
-      }
-      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
-    }
-    return settled(approvalId, "unanswered", "gave up");
-  } finally {
-    heldHere.delete(approvalId);
-  }
-}
-
-/**
- * The questions this window is holding the step of, by approval, with their Bot: what it lets go
- * of when the page goes away, and what tells this window's own conversation that a question on
- * its screen is already being waited on here.
- */
-const heldHere = new Map<string, string>();
-
-/**
- * This window's name for itself, as the server tells holders apart. Made up per page load: a
- * reloaded window is a new window, and it is the reload that let the old one go.
- */
-let windowId: string | undefined;
-function thisWindow(): string {
-  windowId ??= crypto.randomUUID();
-  return windowId;
-}
-
-/** What holding a question's step came to. */
-export type HoldResult =
-  | { state: "holding"; approval: PendingApproval }
-  /** Another window holds it and is alive; this one draws the card and leaves the rest to that. */
-  | { state: "elsewhere"; approval: PendingApproval }
-  /** Not open any more: answered and spent, withdrawn, or run out. */
-  | { state: "gone" }
-  /** The server could not be asked. Says nothing about the question. */
-  | { state: "unknown" };
-
-export async function holdApproval(
-  botId: string,
-  approvalId: string,
-): Promise<HoldResult> {
-  let response: Response;
-  try {
-    response = await fetch(
-      `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/hold`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ holder: thisWindow() }),
-      },
-    );
-  } catch {
-    return { state: "unknown" };
-  }
-  if (response.status === 409) return { state: "gone" };
-  if (!response.ok) return { state: "unknown" };
-  const body = (await response.json().catch(() => null)) as {
-    approval?: PendingApproval;
-    holding?: boolean;
-  } | null;
-  if (!body?.approval) return { state: "unknown" };
-  return body.holding === true
-    ? { state: "holding", approval: body.approval }
-    : { state: "elsewhere", approval: body.approval };
-}
-
-/**
- * THE PAGE IS GOING AWAY: let go of every step it holds, so the next window to open the
- * conversation carries them on at once rather than after the quiet the server allows a window that
- * could not say so. `pagehide` rather than `beforeunload`, which a phone does not fire when the tab
- * is swiped away; `keepalive` so the request outlives the page that sent it.
- */
-let listening = false;
-function listenForLeaving(): void {
-  if (listening || typeof window === "undefined") return;
-  listening = true;
-  window.addEventListener("pagehide", (event) => {
-    // Kept in the back/forward cache, the page is not gone: it comes back holding what it held.
-    if (event.persisted) return;
-    for (const [approvalId, botId] of heldHere) {
-      void fetch(
-        `/api/approvals/${encodeURIComponent(botId)}/${encodeURIComponent(approvalId)}/release`,
-        {
-          method: "POST",
-          credentials: "include",
-          keepalive: true,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ holder: thisWindow() }),
-        },
-      ).catch(() => {});
-    }
-  });
-}
-
-/**
  * The card for a question this window learned about from the server rather than from its own tool
  * call — raised in another window, or by this conversation before a reload. The same fields the
  * pause reply carries, off the server's record.
@@ -1288,27 +1093,4 @@ export function questionFromRecord(approval: PendingApproval): OpenQuestion {
     ...(approval.taskId ? { taskId: approval.taskId } : {}),
     expiresAt: approval.expiresAt,
   };
-}
-
-/**
- * What the wait learned, left on the card's line before the wait hands its answer back.
- *
- * Here because this is where a question answered in ANOTHER window is first known about in this
- * one — that card's press recorded nothing here, and without this the line would vanish as it used
- * to. The tier is the server's, so a yes this wait reads first is recorded as wide as it was given.
- */
-function settled<Answer>(
-  approvalId: string,
-  outcome: ApprovalDecision["outcome"],
-  answer: Answer,
-  tier?: ApprovalTier,
-): Answer {
-  for (const [toolCallId, subject] of raised.get(approvalId) ?? []) {
-    decideQuestion(toolCallId, {
-      outcome,
-      ...(tier ? { tier } : {}),
-      ...(subject ? { subject } : {}),
-    });
-  }
-  return answer;
 }

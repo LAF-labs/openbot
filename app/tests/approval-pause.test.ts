@@ -3,10 +3,11 @@ import {
   type AskSubject,
   allowanceScopeOf,
   askSubjectOf,
-  pauseFrom,
+  type PendingApproval,
+  questionFromRecord,
 } from "../src/lib/approvals";
 
-/** What the server sends about a navigation it stopped, in the shape the reply carries. */
+/** What the server sends about a navigation it stopped, in the shape the record carries. */
 const OPENING: AskSubject = {
   kind: "browser",
   intent: "navigate",
@@ -14,31 +15,41 @@ const OPENING: AskSubject = {
   reason: "policy_ask",
 };
 
+/** The server's record of that question, with nothing on it a question need not have. */
+const RECORD: PendingApproval = {
+  id: "a-1",
+  botId: "bot-1",
+  rule: "",
+  subject: OPENING,
+  requestedAt: "2026-09-03T09:00:00.000Z",
+  expiresAt: "2026-09-03T09:10:00.000Z",
+};
+
 /**
- * The hop between the server's pause reply and the card that draws it.
+ * The hop between the server's record of a question and the card that draws it.
  *
- * This is here because it broke. The scope a person is asked to consent to was added on the server,
- * carried out through the pause reply, read by the card and translated — and dropped in the middle,
- * by a function that assembled its result field by field and had never been told the field existed.
- * Every test on both sides passed. The button simply was not there.
+ * This is here because it broke, when the hop was a pause reply read by the window that had made
+ * the call. The scope a person is asked to consent to was added on the server, carried out through
+ * the pause reply, read by the card and translated — and dropped in the middle, by a function that
+ * assembled its result field by field and had never been told the field existed. Every test on both
+ * sides passed. The button simply was not there.
  *
- * So the reading is one function now, and this is what it must keep doing: carry everything the
- * reply has, and answer null for anything that is not a pause at all.
+ * The server carries the calls out now and a window reads the question off the server's record
+ * (`questionFromRecord`), which is the same assembly, field by field. So this is what that one
+ * function must keep doing: carry everything the record has.
  */
 
-describe("reading a pause reply", () => {
-  test("carries everything the reply said", () => {
+describe("reading a question off the server's record", () => {
+  test("carries everything the record said", () => {
     expect(
-      pauseFrom({
-        awaitingApproval: true,
-        approvalId: "a-1",
-        subject: OPENING,
+      questionFromRecord({
+        ...RECORD,
         rule: 'intent == "navigate"',
         scope: { kind: "host", value: "wttr.in" },
-        expiresAt: "2026-09-03T09:10:00.000Z",
       }),
     ).toEqual({
       approvalId: "a-1",
+      botId: "bot-1",
       subject: OPENING,
       rule: 'intent == "navigate"',
       scope: { kind: "host", value: "wttr.in" },
@@ -46,52 +57,35 @@ describe("reading a pause reply", () => {
     });
   });
 
-  test("a reply with no scope leaves the card offering this once alone", () => {
-    const pause = pauseFrom({
-      awaitingApproval: true,
-      approvalId: "a-1",
-      subject: OPENING,
-      rule: null,
-    });
-    expect(pause?.scope).toBeUndefined();
+  test("a record with no scope leaves the card offering this once alone", () => {
+    expect(questionFromRecord(RECORD).scope).toBeUndefined();
   });
 
   test("the conversation the question came from is carried, and only when it said one", () => {
     // The middle button — "for this conversation" — is drawn off this field and nothing else, so
-    // a reply that names the thread has to reach the card with it, and one that does not must not
+    // a record that names the thread has to reach the card with it, and one that does not must not
     // arrive with an empty string the card would read as a conversation.
     expect(
-      pauseFrom({
-        awaitingApproval: true,
-        approvalId: "a-1",
-        subject: OPENING,
-        rule: null,
+      questionFromRecord({
+        ...RECORD,
         scope: { kind: "host", value: "wttr.in" },
         threadId: "thread-7",
-        expiresAt: "",
-      })?.threadId,
+      }).threadId,
     ).toBe("thread-7");
-    expect(
-      pauseFrom({ awaitingApproval: true, approvalId: "a-1", threadId: "" }),
-    ).not.toHaveProperty("threadId");
-    expect(
-      pauseFrom({ awaitingApproval: true, approvalId: "a-1" }),
-    ).not.toHaveProperty("threadId");
+    expect(questionFromRecord({ ...RECORD, threadId: "" })).not.toHaveProperty(
+      "threadId",
+    );
+    expect(questionFromRecord(RECORD)).not.toHaveProperty("threadId");
   });
 
   test("a subject it cannot read is no subject at all", () => {
-    /*
-     * The card says it cannot name what is being asked about rather than composing a sentence out of
-     * a shape nobody sent. This used to read the reply's `error` as the question, which worked while
-     * the error WAS the question in English; it is a fact code now, and "laf:awaiting_approval" is
-     * not a thing to put in front of somebody with two buttons under it.
-     */
+    // The card says it cannot name what is being asked about rather than composing a sentence out of
+    // a shape nobody sent.
     expect(
-      pauseFrom({
-        awaitingApproval: true,
-        approvalId: "a",
-        error: "laf:awaiting_approval",
-      })?.subject,
+      questionFromRecord({
+        ...RECORD,
+        subject: { kind: "browser" } as unknown as AskSubject,
+      }).subject,
     ).toBeUndefined();
     expect(askSubjectOf({ kind: "browser" })).toBeUndefined();
     expect(
@@ -109,15 +103,6 @@ describe("reading a pause reply", () => {
       }),
     ).toBeUndefined();
     expect(askSubjectOf(OPENING)).toEqual(OPENING);
-  });
-
-  test("anything that is not a pause is not one", () => {
-    expect(pauseFrom(null)).toBeNull();
-    expect(pauseFrom({})).toBeNull();
-    // The flag is checked for `true`, not for truthiness: a body that merely mentions it is not a
-    // question anybody was asked, and reading one as a pause would hold a turn open forever.
-    expect(pauseFrom({ awaitingApproval: "yes" })).toBeNull();
-    expect(pauseFrom({ awaitingApproval: false, approvalId: "a" })).toBeNull();
   });
 });
 
