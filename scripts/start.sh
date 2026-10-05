@@ -125,7 +125,7 @@ fi
 wait_for "http://localhost:$SERVER_PORT/api/capabilities" "server"
 
 info "3/4  Runtime health"
-# /api/copilotkit has no GET surface (the routes are agent/{id}/run and threads/*), so the server is
+# /api/copilotkit answers one door, `info`, and only to a session, so the server is
 # asked through /api/capabilities, which is the one endpoint that answers without a session.
 CAPS="$(curl -fsS --max-time 8 "http://localhost:$SERVER_PORT/api/capabilities")"
 python3 - "$CAPS" <<'PY'

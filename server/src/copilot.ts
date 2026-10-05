@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import type { AgentRunner } from "@copilotkit/runtime/v2";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { textOf } from "../../shared/message-content";
@@ -32,6 +31,7 @@ import type { AttachmentService } from "./attachments/service";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
 import type { ConversationStore } from "./context/conversations";
+import { NOT_FOUND } from "./failure-text";
 import { log } from "./log";
 import { type DailyBudget, withDailyBudget } from "./usage/daily-budget";
 import {
@@ -56,9 +56,9 @@ import {
  * shape that hides a setting going nowhere. Git has it.
  *
  * Upstream had no SSE branch: Intelligence owned durable threads, and a deployment without it
- * silently forgot every conversation. This fork runs the SSE branch on a runner that does not
- * forget — LafPostgresRunner keeps every thread in our own Postgres — and there is no second
- * branch to choose between.
+ * silently forgot every conversation. This fork keeps every thread in our own Postgres
+ * (`runner/thread-store.ts`), written by the turn that ran it (`turns/engine.ts`), and there is no
+ * second branch to choose between.
  */
 
 type RegisteredRemoteAgent = {
@@ -837,6 +837,19 @@ export function createRequestAgents(
  * `agents` is a factory rather than a fixed map so a Bot registered while the server is running is
  * reachable on the next request. Resolving once at boot would mean every new Bot needed a restart,
  * which is not a property you can explain to somebody who just created one.
+ *
+ * ONE DOOR OF IT IS OPEN: `info`, which the app's CopilotKit client asks before it settles, for the
+ * roster its tool registry is built on (`app/src/lib/copilot/provider.tsx`). Every other route the
+ * runtime knows — a run, a connect, a stop, its thread routes, the rest of its router
+ * (`fetch-router.mjs`) — is answered as a path nothing is mounted on. They were how a window drove a
+ * chat turn, and nothing has opened them since the server took the turn (`turns/engine.ts`) and the
+ * window-driven path left the app (2026-10-05). Closed in the runtime's own hook, on the route its
+ * own router resolved, rather than by a pattern in front of it: that router reads a route off a
+ * path's last segments (`/api/copilotkit//x/agent/bot/run` is a run), and a pattern stricter than
+ * the router it guards is a door with a second entrance.
+ *
+ * So the runtime is given no runner of ours: nothing runs through it, and the one it makes for
+ * itself is never asked to.
  */
 export function mountCopilotRuntime(
   model: RuntimeModel,
@@ -848,8 +861,6 @@ export function mountCopilotRuntime(
    * there is no reason for a caller to have to say `undefined` here to reach `basePath`.
    */
   stallGuard: StallGuard,
-  /** The durable runner every turn goes through. */
-  localRunner: AgentRunner,
   /** The clock every Bot is told about: `config.botTimeZone`. */
   timeZone: string,
   basePath = "/api/copilotkit",
@@ -868,9 +879,16 @@ export function mountCopilotRuntime(
     meter,
   );
 
-  const runtime = new CopilotRuntime({
-    runner: localRunner,
-    agents,
+  const runtime = new CopilotRuntime({ agents });
+  return createCopilotHonoHandler({
+    runtime,
+    basePath,
+    hooks: {
+      onBeforeHandler: ({ route }) => {
+        if (route.method === "info") return;
+        // Thrown, which is how the runtime's handler is told to answer with this instead.
+        throw Response.json({ code: NOT_FOUND }, { status: 404 });
+      },
+    },
   });
-  return createCopilotHonoHandler({ runtime, basePath });
 }

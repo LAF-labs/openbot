@@ -16,8 +16,8 @@
  * Why a run that handed a step to a window was recorded `stopped` without anybody pressing Stop:
  * the step never came back — its window closed, or the person said something new instead.
  *
- * Defined here, where its ending is decided, and re-exported by `runner/laf-runner.ts`, which writes
- * it: the ledger reads this module, and the runner reads the ledger.
+ * Defined here, where its ending is decided. Nothing writes it since the window's runner went with
+ * the run door (2026-10-06); the rows from before still carry it, and are read by it.
  */
 export const STEP_NOT_RETURNED = "laf:step_not_returned";
 
@@ -93,9 +93,9 @@ export type EndingFacts = {
 /**
  * The ending, or null for a run whose step is still with a window.
  *
- * A `waiting` run's code is provisional — whose the step is — because the ending that settles it
- * later is written with nothing but a status (`laf-runner.ts` `endStepWait`), and by then the only
- * place left to know that the step was the person's is this row.
+ * A `waiting` run's code is provisional — whose the step is — because the ending that settled it
+ * later was written with nothing but a status (the window's runner, gone 2026-10-06), and by then
+ * the only place left to know that the step was the person's is this row.
  */
 export function endingOf(facts: EndingFacts): {
   ending: RunEnding | null;

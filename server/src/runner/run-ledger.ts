@@ -40,8 +40,9 @@ import type { RunMeasure } from "../telemetry/run-meter";
 /**
  * What starts a run, of what the enum column accepts.
  *
- * Exported as a value because one of the writers takes the origin off the wire and has to check it
- * against something (`laf-runner.ts`); a pg enum turns an unchecked string into a failed insert.
+ * Exported as a value because a reader has to check a stored origin against what is written now
+ * (`laf-runner.ts`, telling people about the runs boot found open) — as the window's runner
+ * checked one it took off the wire, where a pg enum turns an unchecked string into a failed insert.
  *
  * The same three the enum holds. It held `handoff` and `room` too, until rooms and one Bot asking
  * another were removed (2026-09-24); migration 0047 deleted their runs and rebuilt the type.
@@ -76,7 +77,7 @@ export type RunStart = {
   continues?: boolean;
 };
 
-/** How a run ended, as the events reported it. See `runOutcome` in `laf-runner.ts`. */
+/** How a run ended, as the path that ran it reports it. */
 export type RunOutcome = {
   /** `waiting`: its step is with a window. See `runStatus` in `db/schema/laf.ts`. */
   status: "done" | "error" | "stopped" | "waiting";
@@ -142,8 +143,8 @@ export function headOf(text: string, limit: number): string | null {
  * The column always said "in the person's own words where there are any", and a chat run is the one
  * run that has some; only routines ever wrote it. 오늘 (the Bot's day, on 소식 and in the header's
  * drawer) reads it to name a turn. Only when the newest message IS the person's: a browser step
- * coming back to the Bot is also a chat run, and its newest message is a tool's result — that run
- * carries the turn on, and has no words of its own (`runner/laf-runner.ts`, `carriesAStepOn`).
+ * coming back to the Bot was also a chat run, and its newest message was a tool's result — that run
+ * carried the turn on, and had no words of its own (the window's runner, gone 2026-10-06).
  *
  * Written when the run opens, after nothing the model reads: the label is never read into a prompt.
  */

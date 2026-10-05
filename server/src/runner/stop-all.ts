@@ -4,8 +4,8 @@
  * Somebody whose Bot was working in a conversation and on a routine at once had no single way to
  * make it all stop when something looked wrong: Stop lived inside one conversation, and a routine
  * at seven in the morning had none at all. This reads what every run path has listed as going on
- * (`in-flight.ts`) and asks each piece to stop in its own way — a chat's stream aborted and its next
- * browser step not carried on (`laf-runner.ts`), a routine aborted or never started if it was still
+ * (`in-flight.ts`) and asks each piece to stop in its own way — a chat turn stopped where it runs
+ * (`turns/engine.ts`), a routine aborted or never started if it was still
  * queued (`routines/run.ts`).
  *
  * WHAT IT DOES NOT DO, ON PURPOSE:

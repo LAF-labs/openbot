@@ -10,7 +10,7 @@
  *
  * There is one runtime and no switch for it. Upstream reads its durable threads and memory out of
  * CopilotKit Intelligence; this fork's rule is that the only external dependencies are the model
- * API and the machines it runs on, so conversations live in our own Postgres (runner/laf-runner.ts)
+ * API and the machines it runs on, so conversations live in our own Postgres (runner/thread-store.ts)
  * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
  * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */

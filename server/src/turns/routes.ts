@@ -11,7 +11,8 @@
  *   POST /api/turns/skips                      건너뛰기 on a help request
  *
  * Every one of them is the conversation's owner's alone, read from `channel_threads` — the same
- * fact the thread routes and the runner's roster ask — and the Bot has to be one they may drive.
+ * fact the runtime's thread routes and the runner's roster asked — and the Bot has to be one they
+ * may drive.
  */
 import type { Message, Tool } from "@ag-ui/client";
 import { and, eq } from "drizzle-orm";

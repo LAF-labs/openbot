@@ -1,17 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import type { BaseEvent, Message } from "@ag-ui/client";
-import { count, eq, inArray } from "drizzle-orm";
+import type { Message } from "@ag-ui/client";
+import { eq } from "drizzle-orm";
 import { SECRET_FIELD_RULE } from "../src/computer/default-policy";
 import { createDatabase } from "../src/db/client";
-import { agents, lafThreadMessages, lafThreadRuns } from "../src/db/schema";
-import { LafPostgresRunner } from "../src/runner/laf-runner";
-// Every `create` here used to be given a database and nothing else. `ledger` is a required argument
-// and `server/tsconfig.json` includes only `src`, so nothing said so: every run in this file threw
-// `this.ledger.begin is not an object` into the console, was swallowed by the persist path's catch,
-// and left the `laf_thread_runs` rows that `afterAll` deletes never written in the first place.
-import { createRunLedger } from "../src/runner/run-ledger";
+import { lafThreadMessages } from "../src/db/schema";
 import { SECRET_REDACTION } from "../src/runner/secret-redaction";
+import { appendMessages, messagesFor } from "../src/runner/thread-store";
+import { HISTORY_PAGE, historyPage } from "../src/turns/history";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -27,9 +23,11 @@ import { TEST_POOL } from "./support/database";
  * model cannot see. So the correct answer here is that the transcript holds the request and not the
  * value, and this file is what says so out loud.
  *
- * Read back through `getThreadMessages`, which is the runner's public read path and what
- * CopilotKit's thread-messages route calls. Deliberately not through the snapshot table, so the
- * test survives that table being replaced.
+ * Written as a turn writes it (`appendMessages`, the one writer, called by `turns/engine.ts`) and
+ * read back the two ways a conversation is read: what the next turn hands the model
+ * (`messagesFor`) and the page a window is served (`historyPage`, behind
+ * `GET /api/turns/:threadId/history`). It drove the window's runner and read that runner's own
+ * thread route until both went with the run door (2026-10-06); the store was always this one.
  */
 
 const database = createDatabase(
@@ -51,119 +49,50 @@ const SECRET = "hunter2-Zx9-BANKPASS";
 const CARD = "4111-1111-1111-9613";
 
 const threadIds: string[] = [];
-const agentIds: string[] = [];
-
-/**
- * A Bot row, because the run ledger's `agent_id` is a foreign key into `agents`.
- *
- * Every run in this file used to invent an id and the insert failed on the constraint, silently:
- * the persist path catches, the messages still land, and the `laf_thread_runs` rows this file's
- * cleanup deletes were never written at all. Four columns is the whole of what a Bot needs to
- * exist, so the run being recorded costs one insert and one delete.
- */
-async function aBot(prefix: string): Promise<string> {
-  const agentId = `${prefix}-${randomUUID().slice(0, 8)}`;
-  await database.insert(agents).values({
-    id: agentId,
-    name: agentId,
-    // Everything anybody makes is remote. See CLAUDE.md.
-    type: "remote_ag_ui",
-    configuration: {},
-  });
-  agentIds.push(agentId);
-  return agentId;
-}
 
 afterAll(async () => {
+  // Scoped to the threads this file made, never the table.
   for (const threadId of threadIds) {
-    await database
-      .delete(lafThreadRuns)
-      .where(eq(lafThreadRuns.threadId, threadId));
     await database
       .delete(lafThreadMessages)
       .where(eq(lafThreadMessages.threadId, threadId));
   }
-  // After the runs, which point at them. Scoped to the ids this file made, never the table.
-  if (agentIds.length > 0) {
-    await database.delete(agents).where(inArray(agents.id, agentIds));
-  }
   await database.$client.close();
 });
 
-const event = (type: string, extra: Record<string, unknown> = {}) =>
-  ({ type, ...extra }) as unknown as BaseEvent;
-
 /**
- * A Bot that says one thing and stops, as AG-UI delivers it.
- *
- * Cast rather than constructed: `AbstractAgent` is a class with a transport behind it, and what the
- * runner actually uses of it is `agentId`, `messages`, `runAgent` and `abortRun` — the same
- * arrangement `unattended-run.test.ts` drives its loop with.
+ * One turn, as the engine files it: what the turn was handed first — a crash mid-turn keeps the
+ * person's side — and then the same history with what the Bot said at its end.
  */
-function fakeAgent(agentId: string, answer: string, messages: Message[]) {
-  return {
-    agentId,
-    messages,
-    abortRun() {},
-    async runAgent(
-      _input: unknown,
-      subscriber?: { onEvent?: (payload: { event: BaseEvent }) => unknown },
-    ) {
-      const messageId = `assistant-${randomUUID().slice(0, 8)}`;
-      for (const one of [
-        event("RUN_STARTED"),
-        event("TEXT_MESSAGE_START", { messageId, role: "assistant" }),
-        event("TEXT_MESSAGE_CONTENT", { messageId, delta: answer }),
-        event("TEXT_MESSAGE_END", { messageId }),
-        event("RUN_FINISHED"),
-      ]) {
-        subscriber?.onEvent?.({ event: one });
-      }
-      return { result: undefined, newMessages: [] };
-    },
-  } as never;
-}
-
-/** One turn, driven through the runner exactly as the endpoint drives it. */
-async function runTurn(
-  runner: LafPostgresRunner,
+async function aTurn(
   threadId: string,
-  agentId: string,
   messages: Message[],
   answer: string,
 ): Promise<void> {
-  const events = runner.run({
-    threadId,
-    agent: fakeAgent(agentId, answer, messages),
-    input: {
-      threadId,
-      runId: randomUUID(),
-      messages,
-      tools: [],
-      context: [],
-      state: {},
-      forwardedProps: {},
-    } as never,
+  threadIds.push(threadId);
+  await appendMessages(database, threadId, messages);
+  await appendMessages(database, threadId, [
+    ...messages,
+    said(`assistant-${randomUUID().slice(0, 8)}`, "assistant", answer),
+  ]);
+}
+
+/**
+ * The thread as Postgres holds it, read both ways: for the next turn's model, and for a window.
+ *
+ * From the rows, always. The runner this file used to drive kept a live copy in memory beside
+ * them, and a test had to reopen it to be sure it was reading the durable one; a turn keeps none.
+ */
+async function kept(threadId: string) {
+  const forTheModel = await messagesFor(database, threadId);
+  const forAWindow = await historyPage(database, threadId, {
+    before: null,
+    limit: HISTORY_PAGE,
   });
-  await new Promise<void>((resolve) => {
-    events.subscribe({ complete: resolve, error: () => resolve() });
-  });
-  /*
-   * The tee writes on the stream completing, and it is fire-and-forget by design: persistence must
-   * never be able to hold up or break a turn. So the row is waited for rather than assumed — a fixed
-   * sleep here is the kind of wall-clock assertion that passes on the author's machine and fails in
-   * CI, which §3.7 counts among the things wrong with this suite.
-   */
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const [row] = await database
-      .select({ stored: count() })
-      .from(lafThreadMessages)
-      .where(eq(lafThreadMessages.threadId, threadId));
-    if ((row?.stored ?? 0) > messages.length) return;
-    await Bun.sleep(25);
-  }
-  throw new Error(`The turn on ${threadId} was never written to the store.`);
+  return {
+    messages: forTheModel,
+    serialised: JSON.stringify([forTheModel, forAWindow.messages]),
+  };
 }
 
 const call = (id: string, name: string, args: object): Message =>
@@ -191,114 +120,46 @@ const answered = (id: string, result: object): Message =>
 const said = (id: string, role: string, content: string): Message =>
   ({ id, role, content }) as Message;
 
-/**
- * Longer than bun's five seconds, because each of these drives a run and then waits for a row.
- *
- * The wait is bounded and the bound is a real one — a turn that never reaches the store fails with
- * a sentence saying so. Five seconds was enough alone and not enough in a full run against a
- * database sixty other files are also using, which is the only kind of flake worth predicting.
- */
-const RUN_TIMEOUT_MS = 30_000;
-
 describe("a conversation in which a person entered a secret", () => {
-  test(
-    "keeps the request and not the value",
-    async () => {
-      const threadId = `thread-secret-${randomUUID()}`;
-      threadIds.push(threadId);
-      const agentId = await aBot("agent-secret");
-      const runner = await LafPostgresRunner.create(
-        database,
-        createRunLedger(database),
-      );
+  test("keeps the request and not the value", async () => {
+    const threadId = `thread-secret-${randomUUID()}`;
 
-      /*
-       * The history a real secret entry leaves on the model's side.
-       *
-       * The Bot asks for a value by naming the field it goes in; the tool answers with who holds the
-       * wheel. Then a person types it on `/human/secret`, which is not a message and never becomes
-       * one — that is the whole design, and this test is what proves the design survived contact with
-       * a store that writes the input back verbatim.
-       */
-      const history: Message[] = [
-        said("u1", "user", "은행 사이트에 로그인해줘"),
-        call("t1", "computer_request_secret", {
-          label: "은행 비밀번호",
-          ref: "e4",
-          snapshotId: 3,
-        }),
-        answered("t1", { holder: "human", url: "https://bank.example/login" }),
-      ];
+    /*
+     * The history a real secret entry leaves on the model's side.
+     *
+     * The Bot asks for a value by naming the field it goes in; the tool answers with who holds the
+     * wheel. Then a person types it on `/human/secret`, which is not a message and never becomes
+     * one — that is the whole design, and this test is what proves the design survived contact with
+     * a store that writes the history back verbatim.
+     */
+    const history: Message[] = [
+      said("u1", "user", "은행 사이트에 로그인해줘"),
+      call("t1", "computer_request_secret", {
+        label: "은행 비밀번호",
+        ref: "e4",
+        snapshotId: 3,
+      }),
+      answered("t1", { holder: "human", url: "https://bank.example/login" }),
+    ];
 
-      await runTurn(
-        runner,
-        threadId,
-        agentId,
-        history,
-        "비밀번호를 입력해 주세요. 입력하시면 이어서 진행할게요.",
-      );
+    await aTurn(
+      threadId,
+      history,
+      "비밀번호를 입력해 주세요. 입력하시면 이어서 진행할게요.",
+    );
 
-      const kept = runner.getThreadMessages(threadId);
-      const serialised = JSON.stringify(kept);
+    const { messages, serialised } = await kept(threadId);
 
-      // The positive control first. Without it, an empty thread would pass every assertion below by
-      // holding nothing at all.
-      expect(serialised).toContain("computer_request_secret");
-      expect(serialised).toContain("은행 비밀번호");
-      expect(kept.length).toBeGreaterThanOrEqual(history.length);
+    // The positive control first. Without it, an empty thread would pass every assertion below by
+    // holding nothing at all.
+    expect(serialised).toContain("computer_request_secret");
+    expect(serialised).toContain("은행 비밀번호");
+    expect(messages.length).toBeGreaterThanOrEqual(history.length);
 
-      // And the value, which was never on this path: not in the request, not in the tool's answer,
-      // not in the reply the Bot streamed.
-      expect(serialised).not.toContain(SECRET);
-    },
-    RUN_TIMEOUT_MS,
-  );
-
-  test(
-    "still holds none of it after a restart reads the thread back",
-    async () => {
-      const threadId = `thread-secret-restart-${randomUUID()}`;
-      threadIds.push(threadId);
-      const agentId = await aBot("agent-secret");
-
-      await runTurn(
-        await LafPostgresRunner.create(database, createRunLedger(database)),
-        threadId,
-        agentId,
-        [
-          said("u1", "user", "로그인 좀"),
-          call("t1", "computer_request_secret", {
-            label: "은행 비밀번호",
-            ref: "e4",
-            snapshotId: 3,
-          }),
-          answered("t1", {
-            holder: "human",
-            url: "https://bank.example/login",
-          }),
-        ],
-        "입력해 주세요.",
-      );
-
-      /*
-       * A SECOND PROCESS, which is where the durable copy is the only copy.
-       *
-       * `getThreadMessages` prefers the live in-memory thread when it is newer, so reading it on the
-       * runner that just ran the turn can be answered without Postgres ever being consulted. A fresh
-       * runner has no live copy and can only answer from the row — which is the copy that outlives
-       * everything and the one §3.5 is about.
-       */
-      const reopened = await LafPostgresRunner.create(
-        database,
-        createRunLedger(database),
-      );
-      const serialised = JSON.stringify(reopened.getThreadMessages(threadId));
-
-      expect(serialised).toContain("computer_request_secret");
-      expect(serialised).not.toContain(SECRET);
-    },
-    RUN_TIMEOUT_MS,
-  );
+    // And the value, which was never on this path: not in the request, not in the tool's answer,
+    // not in the reply the Bot gave.
+    expect(serialised).not.toContain(SECRET);
+  });
 
   /**
    * WHAT THE TRANSCRIPT DOES KEEP, MEASURED.
@@ -311,45 +172,29 @@ describe("a conversation in which a person entered a secret", () => {
    * This is the half of §3.5 that must NOT change, and it is asserted first so that neither test
    * below can be satisfied by a redactor that simply eats everything.
    */
-  test(
-    "keeps what the Bot typed into an ordinary field",
-    async () => {
-      const threadId = `thread-typed-${randomUUID()}`;
-      threadIds.push(threadId);
-      const agentId = await aBot("agent-typed");
-      const runner = await LafPostgresRunner.create(
-        database,
-        createRunLedger(database),
-      );
+  test("keeps what the Bot typed into an ordinary field", async () => {
+    const threadId = `thread-typed-${randomUUID()}`;
 
-      await runTurn(
-        runner,
-        threadId,
-        agentId,
-        [
-          said("u1", "user", "이름 칸에 김기범 이라고 넣어줘"),
-          call("t1", "computer_type", {
-            ref: "e4",
-            snapshotId: 3,
-            text: "김기범",
-          }),
-          answered("t1", { action: "type", url: "https://shop.example/order" }),
-        ],
-        "넣었습니다.",
-      );
+    await aTurn(
+      threadId,
+      [
+        said("u1", "user", "이름 칸에 김기범 이라고 넣어줘"),
+        call("t1", "computer_type", {
+          ref: "e4",
+          snapshotId: 3,
+          text: "김기범",
+        }),
+        answered("t1", { action: "type", url: "https://shop.example/order" }),
+      ],
+      "넣었습니다.",
+    );
 
-      const kept = JSON.stringify(
-        (
-          await LafPostgresRunner.create(database, createRunLedger(database))
-        ).getThreadMessages(threadId),
-      );
+    const { serialised } = await kept(threadId);
 
-      // Verbatim, and durably: this is read from a second runner, so it came out of Postgres.
-      expect(kept).toContain("김기범");
-      expect(kept).toContain("computer_type");
-    },
-    RUN_TIMEOUT_MS,
-  );
+    // Verbatim, and durably: it came out of Postgres.
+    expect(serialised).toContain("김기범");
+    expect(serialised).toContain("computer_type");
+  });
 
   /**
    * THE OTHER HALF OF §3.5, NOW THE OTHER WAY ROUND.
@@ -362,61 +207,44 @@ describe("a conversation in which a person entered a secret", () => {
    *
    * The refusal now reaches the record too. What survives is the call, the field and the tool's
    * name — enough to read the turn — and not the value.
-   *
-   * Read from a SECOND runner for the reason the restart test above gives: the runner that ran the
-   * turn still holds an unredacted live copy in memory, and the durable row is the one that
-   * outlives the process and answers every later reader.
    */
-  test(
-    "takes the value out when the boundary refused the typing as a secret",
-    async () => {
-      const threadId = `thread-refused-${randomUUID()}`;
-      threadIds.push(threadId);
-      const agentId = await aBot("agent-refused");
+  test("takes the value out when the boundary refused the typing as a secret", async () => {
+    const threadId = `thread-refused-${randomUUID()}`;
 
-      await runTurn(
-        await LafPostgresRunner.create(database, createRunLedger(database)),
-        threadId,
-        agentId,
-        [
-          said("u1", "user", "로그인 해줘"),
-          call("t1", "computer_type", {
-            ref: "e4",
-            snapshotId: 3,
-            text: SECRET,
-          }),
-          /*
-           * The tool result as the attended path builds it out of the gateway's 403
-           * (`computer-tools.tsx`): the rule that refused, the reason, and no code — that path reads
-           * `code` off `body.error` rather than off `body.code`, so a policy refusal reaches the
-           * model with the rule and nothing else.
-           */
-          answered("t1", {
-            ok: false,
-            refused: true,
-            reason: "A rule refused typing into that field.",
-            rule: SECRET_FIELD_RULE,
-          }),
-        ],
-        "비밀번호는 직접 입력해 주세요.",
-      );
+    await aTurn(
+      threadId,
+      [
+        said("u1", "user", "로그인 해줘"),
+        call("t1", "computer_type", {
+          ref: "e4",
+          snapshotId: 3,
+          text: SECRET,
+        }),
+        /*
+         * The tool result of a refusal that carries its rule and no code: what a routine's tool
+         * answers with (`runner/unattended.ts`, `outcomeOfError`), and what the window's did. It
+         * is the shape the redaction cannot read a code off, which is why the rule is read too.
+         */
+        answered("t1", {
+          ok: false,
+          refused: true,
+          reason: "A rule refused typing into that field.",
+          rule: SECRET_FIELD_RULE,
+        }),
+      ],
+      "비밀번호는 직접 입력해 주세요.",
+    );
 
-      const kept = JSON.stringify(
-        (
-          await LafPostgresRunner.create(database, createRunLedger(database))
-        ).getThreadMessages(threadId),
-      );
+    const { serialised } = await kept(threadId);
 
-      // The positive controls: an empty thread would pass the assertion that matters by holding
-      // nothing at all, and so would a redactor that deleted the call outright.
-      expect(kept).toContain("computer_type");
-      expect(kept).toContain("e4");
-      expect(kept).toContain(SECRET_REDACTION);
+    // The positive controls: an empty thread would pass the assertion that matters by holding
+    // nothing at all, and so would a redactor that deleted the call outright.
+    expect(serialised).toContain("computer_type");
+    expect(serialised).toContain("e4");
+    expect(serialised).toContain(SECRET_REDACTION);
 
-      expect(kept).not.toContain(SECRET);
-    },
-    RUN_TIMEOUT_MS,
-  );
+    expect(serialised).not.toContain(SECRET);
+  });
 
   /**
    * AND WHEN NOBODY EVER ANSWERED.
@@ -430,40 +258,28 @@ describe("a conversation in which a person entered a secret", () => {
    * secret word around it does not match it, which is why this is the floor under the refusal and
    * not a replacement for it.
    */
-  test(
-    "takes it out when the run ended before the result arrived",
-    async () => {
-      const threadId = `thread-crashed-${randomUUID()}`;
-      threadIds.push(threadId);
-      const agentId = await aBot("agent-crashed");
+  test("takes it out when the run ended before the result arrived", async () => {
+    const threadId = `thread-crashed-${randomUUID()}`;
 
-      await runTurn(
-        await LafPostgresRunner.create(database, createRunLedger(database)),
-        threadId,
-        agentId,
-        [
-          said("u1", "user", "카드번호 넣어줘"),
-          // No `tool` message follows it: this is the history a crash between the call and its
-          // answer leaves behind, and the next run hands it back exactly like this.
-          call("t1", "computer_type", {
-            ref: "e9",
-            snapshotId: 4,
-            text: CARD,
-          }),
-        ],
-        "확인했습니다.",
-      );
+    await aTurn(
+      threadId,
+      [
+        said("u1", "user", "카드번호 넣어줘"),
+        // No `tool` message follows it: this is the history a crash between the call and its
+        // answer leaves behind, and the next turn is handed it back exactly like this.
+        call("t1", "computer_type", {
+          ref: "e9",
+          snapshotId: 4,
+          text: CARD,
+        }),
+      ],
+      "확인했습니다.",
+    );
 
-      const kept = JSON.stringify(
-        (
-          await LafPostgresRunner.create(database, createRunLedger(database))
-        ).getThreadMessages(threadId),
-      );
+    const { serialised } = await kept(threadId);
 
-      expect(kept).toContain("computer_type");
-      expect(kept).toContain(SECRET_REDACTION);
-      expect(kept).not.toContain(CARD);
-    },
-    RUN_TIMEOUT_MS,
-  );
+    expect(serialised).toContain("computer_type");
+    expect(serialised).toContain(SECRET_REDACTION);
+    expect(serialised).not.toContain(CARD);
+  });
 });

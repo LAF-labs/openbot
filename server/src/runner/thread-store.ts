@@ -25,7 +25,7 @@ import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
 import type { Database } from "../db/client";
-import { channelThreads, lafThreadMessages } from "../db/schema";
+import { lafThreadMessages } from "../db/schema";
 import { storable } from "../db/schema/json";
 import { redactSecretTyping } from "./secret-redaction";
 
@@ -184,8 +184,8 @@ export function firstMovesOf(messages: readonly Message[]): Set<string> {
  *
  * The mark is written once, by the turn that made the move (`turns/engine.ts`), and every copy that
  * turn writes after carries it. A copy that comes back without it is an edit to the append, and the
- * mark would go with it: a deployment that turns server-owned turns off goes back to the window's
- * run (`laf-runner.ts`), which hands the whole history back through CopilotKit's message schemas,
+ * mark would go with it: a deployment that turned server-owned turns off went back to the window's
+ * run (gone 2026-10-06), which handed the whole history back through CopilotKit's message schemas,
  * and they strip every key they do not know. The move would then read as a call the Bot made, and
  * a move put right as two places asked about — two cards. Nothing takes a mark off.
  */
@@ -519,81 +519,4 @@ export function createMessageMarkReader(database: Database) {
     }
     return { times, speakers };
   };
-}
-
-/** What `listThreads` needs, without reading a single message body. */
-export type ThreadSummary = {
-  threadId: string;
-  /** The Bot the last attributed message in the thread belongs to, or null when none is. */
-  agentId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-/**
- * One person's threads, as summaries.
- *
- * One aggregate over the row times — no message bodies cross the wire. This is what replaced boot
- * reading every thread's full history into memory, and it is read for the one route that asks for
- * a thread list rather than at startup.
- *
- * SCOPED, AND IT WAS NOT. This read had no predicate at all: it answered with every thread the
- * DEPLOYMENT holds, and the runtime's `/threads` route served that to whoever asked. One VM belongs
- * to one person, but their staff sign in to the same one, and a Bot's conversation is where somebody
- * pastes an invoice. `channel_threads` is where the server itself wrote down whose thread this is
- * (`laf-runner.ts` already reads it to decide whose run a run is), and every conversation this
- * product makes is a channel — the direct chat with one Bot included — so the inner join is the
- * whole rule and not an approximation of it.
- *
- * OWNER ONLY: `user_id`, with no admin case. An administrator administers a deployment; they do not
- * own the conversations of the people on it.
- */
-export async function threadSummaries(
-  executor: Executor,
-  userId: string,
-): Promise<ThreadSummary[]> {
-  const rows = await executor
-    .select({
-      threadId: lafThreadMessages.threadId,
-      createdAt: sql<Date>`min(${lafThreadMessages.at})`,
-      updatedAt: sql<Date>`max(${lafThreadMessages.at})`,
-      agentId: sql<
-        string | null
-      >`(array_agg(${lafThreadMessages.message} ->> 'lafAgentId' order by ${lafThreadMessages.seq} desc) filter (where ${lafThreadMessages.message} ->> 'lafAgentId' is not null))[1]`,
-    })
-    .from(lafThreadMessages)
-    .innerJoin(
-      channelThreads,
-      eq(channelThreads.threadId, lafThreadMessages.threadId),
-    )
-    .where(eq(channelThreads.userId, userId))
-    .groupBy(lafThreadMessages.threadId);
-  return rows.map((row) => ({
-    threadId: row.threadId,
-    agentId: row.agentId,
-    createdAt: new Date(row.createdAt),
-    updatedAt: new Date(row.updatedAt),
-  }));
-}
-
-/**
- * Whether this thread is this person's, from the row the server wrote when the thread was made.
- *
- * The same fact `threadSummaries` joins on, asked about one thread, because the read that answers
- * `/threads/:id/messages` names a thread rather than listing them. A thread with no
- * `channel_threads` row belongs to nobody and is refused: every conversation this product creates
- * writes one in the same transaction as the channel (`channels/routes.ts`), so the absence is not a
- * conversation whose owner we merely failed to record.
- */
-export async function isThreadOwnedBy(
-  executor: Executor,
-  threadId: string,
-  userId: string,
-): Promise<boolean> {
-  const [owner] = await executor
-    .select({ userId: channelThreads.userId })
-    .from(channelThreads)
-    .where(eq(channelThreads.threadId, threadId))
-    .limit(1);
-  return owner?.userId === userId;
 }
