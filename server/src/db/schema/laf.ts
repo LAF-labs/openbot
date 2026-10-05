@@ -13,8 +13,8 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-// The entry's shape is the prompt's: one definition, so what is stored is what the next run reads.
 import type { FeedSource } from "../../../../shared/feed";
+// The entry's shape is the prompt's: one definition, so what is stored is what the next run reads.
 import type { RoutineNote } from "../../../../shared/prompt/notepad.ko";
 import { agents, channels, users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
