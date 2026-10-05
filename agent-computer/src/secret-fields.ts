@@ -7,12 +7,14 @@
  * type into one nor read what is in it. The parsing half of the join lives in `aria-snapshot.ts`
  * (`SecretSignals`), which has no Playwright in it; this is the half that asks the page.
  */
+import { randomBytes } from "node:crypto";
 import type { ElementHandle, Frame, Page } from "playwright";
 import {
   isTextEntryRole,
   parseAriaSnapshot,
   type Viewport,
 } from "./aria-snapshot";
+import type { Hush } from "./reader";
 import type { BotSession, SecretField } from "./sessions";
 import { digestOf, keepTyped } from "./typed-values";
 import { within } from "./within";
@@ -128,13 +130,24 @@ async function refsOfMarkedInputs(
   });
 }
 
-/** The value in a field a person typed a secret into, or null once its node or document is gone. */
+/**
+ * What a followed node holds now, or null once it has left its document. Runs in the page.
+ *
+ * A box holds its value. An editable region holds its text, read only as far as a digest reads
+ * (`comparableValue` keeps 64 characters): a document a person is writing is not carried out of
+ * the page at every look.
+ */
+export function heldBy(node: Element): string | null {
+  if (!node.isConnected) return null;
+  const tag = node.localName;
+  return tag === "input" || tag === "textarea"
+    ? String((node as HTMLInputElement).value ?? "")
+    : (node.textContent ?? "").slice(0, 512);
+}
+
+/** What a field a person typed into holds, or null once its node or document is gone. */
 function readTypedField(field: SecretField): Promise<string | null> {
-  return field.handle
-    .evaluate((node) =>
-      node.isConnected ? String((node as HTMLInputElement).value ?? "") : null,
-    )
-    .catch(() => null);
+  return field.handle.evaluate(heldBy).catch(() => null);
 }
 
 /** Labels, values and refs, in the shape `parseAriaSnapshot` joins them. */
@@ -312,6 +325,8 @@ export async function typedIntoRefs(
   const refs: string[] = [];
   let candidates: string[] | undefined;
   for (const field of session.secretFields) {
+    // A region that is not a text box is on no list of boxes: there is nothing to find it among.
+    if (field.region) continue;
     if (
       (await refNamesNode(target, field.ref, field.handle, deadline)) === true
     ) {
@@ -386,7 +401,11 @@ export function rememberSecretField(
   session: BotSession,
   handle: ElementHandle | null,
   ref: string,
-  known: { frame?: Frame; digest?: string | undefined } = {},
+  known: {
+    frame?: Frame;
+    digest?: string | undefined;
+    region?: boolean;
+  } = {},
 ): SecretField | null {
   if (!handle) {
     keepTyped(session, known.digest);
@@ -397,6 +416,7 @@ export function rememberSecretField(
     ref,
     ...(known.frame ? { frame: known.frame } : {}),
     ...(known.digest ? { digest: known.digest } : {}),
+    ...(known.region ? { region: true as const } : {}),
   };
   session.secretFields.push(field);
   while (session.secretFields.length > SECRET_FIELD_LIMIT) {
@@ -404,6 +424,90 @@ export function rememberSecretField(
     if (oldest) letGo(session, oldest);
   }
   return field;
+}
+
+/**
+ * The name of the mark a followed node carries in its page, so that names and text can be made
+ * without it there (`page-names.ts`, `reader.ts`): a property under `Symbol.for` of this, drawn
+ * when this process starts.
+ *
+ * A MARK ON THE NODE, NOT AN ARGUMENT TO THE QUESTION. The reader is sent to the page as source and
+ * takes no argument, because a page that replaces `Map` breaks the passing of one (`reader.ts`,
+ * 고용24) — and a question that has to leave a node out has to be told which. A property under a
+ * symbol is not an attribute: no observer of the page's hears it, no style sheet matches it, it
+ * goes where the node goes, and it is the same in every frame, so no node has to be matched to the
+ * document it is in. A page that looks for it can find it, and learns that somebody typed into a
+ * node it has been sending that typing's events to all along.
+ */
+const QUIET_MARK = `laf.quiet.${randomBytes(9).toString("base64url")}`;
+
+/** Mark a node, and say whether it is still in its document and what kind it is. */
+function markQuiet(node: Element, mark: string): "region" | "box" | null {
+  if (!node.isConnected) return null;
+  (node as unknown as Record<symbol, boolean>)[Symbol.for(mark)] = true;
+  return (node as HTMLElement).isContentEditable ? "region" : "box";
+}
+
+/** What a tab's names and its text are to be made without, or nothing where there is nothing. */
+export type TypedInto = {
+  /** For the names a look lists: a person typed into a node of this tab, of any kind. */
+  names: Hush | undefined;
+  /** For the page's text: one of those nodes is an editable region, whose text is the page's. */
+  text: Hush | undefined;
+};
+
+/**
+ * What a person typed into this tab, for everything that must not draw on it: the names a look
+ * lists (`page-names.ts`) and the page's text (`page-text.ts`).
+ *
+ * WHAT A LOOK BLANKS BY REF IS THE BOX ITSELF, AND THE BOX IS NOT THE ONLY PLACE ITS CONTENTS ARE
+ * SAID. The browser names the link around an editable region by the region's words, the button a
+ * box labels by the box's value and the box beside a `<label>` by whatever the label holds; and an
+ * editable region's text is the page's text. Measured 2026-10-05 (`person-typing.ts`): each of those
+ * handed a person's typing to the Bot from a node this session was already following, or from one
+ * it had chosen not to follow.
+ *
+ * Each followed node of the tab is asked whether it is still in its document — one that is not is
+ * let go, as a look lets it go — and is marked there (`QUIET_MARK`). `every` is the answer when the
+ * question cannot be settled: a person typed where the page would not say (`blind`), or a followed
+ * node did not answer in time. Then every box and editable region of the tab is taken for one.
+ *
+ * A box holds nothing the page's text says — `innerText` does not read an `<input>` — so a tab
+ * where a person typed only into boxes is read as it always was.
+ */
+export async function quietOn(
+  session: BotSession,
+  target: Page,
+  blind: boolean,
+  ms: number = SECRET_JOIN_TIMEOUT_MS,
+): Promise<TypedInto> {
+  const wait = Math.max(1, Math.min(ms, SECRET_JOIN_TIMEOUT_MS));
+  const kinds = await Promise.all(
+    session.secretFields.map(async (field) => {
+      const frame =
+        field.frame ??
+        (await within(
+          wait,
+          field.handle.ownerFrame().catch(() => null),
+        ));
+      if (frame === undefined) return undefined;
+      // A node with no frame is in no document any more; one in another tab is not this tab's.
+      if (frame === null || frame.page() !== target) return null;
+      field.frame = frame;
+      const kind = await within(
+        wait,
+        field.handle.evaluate(markQuiet, QUIET_MARK).catch(() => null),
+      );
+      if (kind === null) letGo(session, field);
+      return kind;
+    }),
+  );
+  const every = blind || kinds.includes(undefined);
+  const hush = { mark: QUIET_MARK, every };
+  return {
+    names: every || kinds.some((kind) => kind) ? hush : undefined,
+    text: every || kinds.includes("region") ? hush : undefined,
+  };
 }
 
 /**

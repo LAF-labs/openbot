@@ -421,6 +421,128 @@ const TAKEOVER_FRAME_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * The places on `/takeover-editable` a person can type that are not a form's box: an editable region
+ * (`contenteditable`), on its own and inside a control the browser names by what is inside it.
+ *
+ * A LOOK NEVER LISTS AN EDITABLE REGION, AND STILL SAYS WHAT IS IN IT. The tree prints a plain one as
+ * `generic`, which the list leaves out — and prints the link, the button or the tab around it named
+ * by its words, the button another one labels by them, and the box whose `<label>` holds it. The
+ * page's text has every one of them in it. Each entry is where that shape is drawn: a point a
+ * person's click lands on, and the frame it is in when it is in the other origin's.
+ *
+ * `baseline` rows are a form's own boxes, which were followed before any of this.
+ */
+export const EDITABLE_SHAPES = {
+  /** A form's box and its larger sibling: what was already followed. */
+  input: { x: 440, y: 55 },
+  textarea: { x: 440, y: 101 },
+  /** Every rich editor and chat composer: an editable region that says it is a text box. */
+  richTextbox: { x: 440, y: 147 },
+  /** The same, holding paragraphs, as an editor keeps its text. */
+  richParagraphs: { x: 440, y: 193 },
+  /** An editable region that says nothing of itself. */
+  bare: { x: 440, y: 239 },
+  /** Inside a control named by what is inside it. */
+  inLink: { x: 440, y: 285 },
+  inButton: { x: 440, y: 331 },
+  inRoleButton: { x: 440, y: 377 },
+  inTab: { x: 440, y: 423 },
+  inOption: { x: 440, y: 469 },
+  /** Inside the `<label>` of a box, which is that box's name. */
+  inLabel: { x: 440, y: 515 },
+  /** Inside a heading: nothing a look lists, and words on the page. */
+  inHeading: { x: 440, y: 561 },
+  /** A region a button elsewhere is labelled by (`aria-labelledby`). */
+  labelledBy: { x: 1080, y: 55 },
+  /**
+   * Inside a control with a name of its own, in the line of its text: the tree writes one run of
+   * text beneath a control after its colon, so what is inside is then that control's value.
+   */
+  inNamedButton: { x: 1080, y: 101 },
+  /** A link inside the region, typed into: a control of its own, made of what was typed. */
+  aroundLink: { x: 960, y: 147 },
+  /** A form's box whose value names another control: by `aria-labelledby`, and through a `<label>`. */
+  inputLabelling: { x: 1080, y: 193 },
+  inputInLabel: { x: 1080, y: 239 },
+  /** In the other origin's frame, the way a payment window or an embedded composer is. */
+  framedRich: { x: 960, y: 331 },
+  framedBare: { x: 960, y: 377 },
+} as const satisfies Record<string, { x: number; y: number }>;
+
+export type EditableShape = keyof typeof EDITABLE_SHAPES;
+
+/** The two places on `/takeover-editable` only the Bot types: a box, and a region that is a text box. */
+export const EDITABLE_BOT_BOX = "봇이 쓰는 칸";
+export const EDITABLE_BOT_EDITOR = "봇이 쓰는 편집기";
+/** And a region that is a text box, which the Bot asks a person to fill through the masked card. */
+export const EDITABLE_CARD_EDITOR = "카드로 받는 편집기";
+
+/** A row of the page: `left`/`top` of its container, 600 wide, the region drawn 260 in. */
+const editableRow = (column: 0 | 1, row: number) =>
+  `position:absolute;left:${20 + column * 640}px;top:${40 + row * 46}px;width:600px;height:30px;margin:0;padding:0;border:0;font-size:13px;line-height:30px;text-align:left;background:none`;
+/** Where a region is drawn inside its row: block, so an empty one can still be clicked. */
+const REGION_STYLE =
+  "position:absolute;left:260px;top:0;width:320px;height:28px;outline:1px solid #888;font-size:13px;line-height:28px;overflow:hidden;white-space:nowrap";
+const region = (shape: string, extra = "") =>
+  `<span contenteditable="true" data-shape="${shape}" ${extra} style="${REGION_STYLE}"></span>`;
+
+/**
+ * Says where typing landed and how much, never what: `/typed-into?shape=…&chars=…`, which the fixture
+ * keeps (`typedInto`). A test that types at a point has to know the point was the region — an empty
+ * region nobody could click took nine of seventeen canaries somewhere else the first time this was
+ * measured (2026-10-05).
+ */
+const REPORT_TYPING = `<script>
+document.addEventListener("input", (event) => {
+  const host = event.target.closest ? event.target.closest("[data-shape]") : null;
+  if (!host) return;
+  const held = "value" in host ? host.value : host.textContent;
+  fetch("/typed-into?shape=" + host.dataset.shape + "&chars=" + held.length, { keepalive: true });
+}, true);
+</script>`;
+
+const takeoverEditableHtml = (frameOrigin: string) => `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>글 쓰는 화면</title></head>
+<body style="margin:0">
+  <h1 style="position:absolute;left:20px;top:0;margin:0;font-size:18px">글 쓰는 화면</h1>
+
+  <div style="${editableRow(0, 0)}">기준 칸 <input type="text" aria-label="기준 칸" data-shape="input" style="${REGION_STYLE}"></div>
+  <div style="${editableRow(0, 1)}">기준 글상자 <textarea aria-label="기준 글상자" data-shape="textarea" style="${REGION_STYLE};resize:none"></textarea></div>
+  <div style="${editableRow(0, 2)}">편집기 ${region("richTextbox", 'role="textbox" aria-label="본문 편집기"')}</div>
+  <div style="${editableRow(0, 3)}">문단 편집기 <div contenteditable="true" role="textbox" aria-multiline="true" aria-label="문단 편집기" data-shape="richParagraphs" style="${REGION_STYLE}"><p style="margin:0"><br></p></div></div>
+  <div style="${editableRow(0, 4)}">이름 없는 영역 ${region("bare")}</div>
+  <a href="#in-link" style="${editableRow(0, 5)};display:block">링크 속 ${region("inLink")}</a>
+  <button type="button" style="${editableRow(0, 6)}">버튼 속 ${region("inButton")}</button>
+  <div role="button" tabindex="0" style="${editableRow(0, 7)}">역할 버튼 속 ${region("inRoleButton")}</div>
+  <div role="tablist"><div role="tab" tabindex="0" aria-selected="true" style="${editableRow(0, 8)}">탭 속 ${region("inTab")}</div></div>
+  <div role="listbox" aria-label="고르는 목록"><div role="option" aria-selected="false" style="${editableRow(0, 9)}">항목 속 ${region("inOption")}</div></div>
+  <label for="labelled" style="${editableRow(0, 10)};display:block">라벨 속 ${region("inLabel", 'onclick="event.preventDefault()"')}</label>
+  <input id="labelled" type="text" style="position:absolute;left:20px;top:632px;width:120px;height:20px">
+  <h2 style="${editableRow(0, 11)};font-weight:normal">제목 속 ${region("inHeading")}</h2>
+
+  <div style="${editableRow(1, 0)}"><button type="button" aria-labelledby="labelling" style="width:40px;height:26px">x</button> <span id="labelling" contenteditable="true" data-shape="labelledBy" style="${REGION_STYLE}"></span></div>
+  <div role="button" tabindex="0" aria-label="이름 있는 버튼" style="${editableRow(1, 1)}"><span contenteditable="true" data-shape="inNamedButton" style="display:inline;margin-left:260px;padding:4px 150px;outline:1px solid #888;font-size:13px"></span></div>
+  <div style="${editableRow(1, 2)}">링크 든 영역 <div contenteditable="true" data-shape="aroundLink" style="${REGION_STYLE}"><a href="#inside">안쪽링크안쪽링크안쪽링크안쪽링크</a></div></div>
+  <div style="${editableRow(1, 3)}"><button type="button" aria-labelledby="names-it" style="width:40px;height:26px">y</button> <input id="names-it" type="text" aria-label="이름 주는 칸" data-shape="inputLabelling" style="${REGION_STYLE}"></div>
+  <label for="summed" style="${editableRow(1, 4)};display:block">합계 <input type="text" aria-label="안쪽 칸" data-shape="inputInLabel" style="${REGION_STYLE}"></label>
+  <input id="summed" type="text" style="position:absolute;left:660px;top:264px;width:120px;height:20px">
+  <iframe src="${frameOrigin}/takeover-editable-frame" title="바깥 편집기" style="position:absolute;left:660px;top:300px;width:600px;height:110px;border:0"></iframe>
+  <div style="${editableRow(1, 9)}">봇 칸 <input type="text" aria-label="${EDITABLE_BOT_BOX}" style="${REGION_STYLE}"></div>
+  <div style="${editableRow(1, 10)}">봇 편집기 <div contenteditable="true" role="textbox" aria-label="${EDITABLE_BOT_EDITOR}" style="${REGION_STYLE}"></div></div>
+  <div style="${editableRow(1, 11)}">카드 편집기 <div contenteditable="true" role="textbox" aria-label="${EDITABLE_CARD_EDITOR}" style="${REGION_STYLE}"></div></div>
+  ${REPORT_TYPING}
+</body></html>`;
+
+/** The other origin's frame on `/takeover-editable`: a region that is a text box, and a plain one. */
+const TAKEOVER_EDITABLE_FRAME_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>바깥 편집기</title></head>
+<body style="margin:0;font-size:13px">
+  <div style="position:absolute;left:10px;top:16px;width:560px;height:30px;line-height:30px">틀 속 편집기 <span contenteditable="true" role="textbox" aria-label="틀 속 편집기" data-shape="framedRich" style="${REGION_STYLE}"></span></div>
+  <a href="#framed" style="position:absolute;left:10px;top:62px;width:560px;height:30px;line-height:30px;display:block">틀 속 링크 <span contenteditable="true" data-shape="framedBare" style="${REGION_STYLE}"></span></a>
+  ${REPORT_TYPING}
+</body></html>`;
+
+/**
  * The box on `/get-form` (`fixtures/get-form.html`), and where it is drawn.
  *
  * THE BOX'S VALUE LEAVES IN THE ADDRESS. A GET form puts every field in the query, so the page it
@@ -501,6 +623,8 @@ export function serveFixture(port = 0) {
   const hanging = new Set<(response: Response) => void>();
   /** Every `/late-frame` request, held until `releaseLateFrames`. */
   const late = new Set<(response: Response) => void>();
+  /** How many characters each place on `/takeover-editable` held when it was last typed into. */
+  const typedInto = new Map<string, number>();
 
   const server = Bun.serve({
     port,
@@ -643,6 +767,22 @@ export function serveFixture(port = 0) {
       if (path === "/takeover-frame") {
         return new Response(TAKEOVER_FRAME_HTML, { headers: html });
       }
+      if (path === "/takeover-editable") {
+        return new Response(
+          takeoverEditableHtml(`http://localhost:${url.port}`),
+          { headers: html },
+        );
+      }
+      if (path === "/takeover-editable-frame") {
+        return new Response(TAKEOVER_EDITABLE_FRAME_HTML, { headers: html });
+      }
+      if (path === "/typed-into") {
+        typedInto.set(
+          url.searchParams.get("shape") ?? "",
+          Number(url.searchParams.get("chars")),
+        );
+        return new Response(null, { status: 204 });
+      }
       // Files rather than strings, like the job pages, but not on that list: nobody's job opens them.
       if (path === "/get-form" || path === "/landed") {
         return new Response(
@@ -704,6 +844,8 @@ export function serveFixture(port = 0) {
     setQuiet: (on: boolean) => {
       quiet = on;
     },
+    /** Where typing on `/takeover-editable` landed, and how many characters that place then held. */
+    typedInto: () => Object.fromEntries(typedInto),
     /** Every job page is present on disk, or the name of the one that is not. */
     missingPages: () =>
       JOB_PAGES.filter(

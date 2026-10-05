@@ -4,6 +4,7 @@ import { type Browser, chromium, type Page } from "playwright";
 import { readAriaSnapshot } from "../src/aria-snapshot";
 import { holdToLabel } from "../src/label-hold";
 import { namesFromThePage } from "../src/page-names";
+import { REPLACED_BUILTINS_SCRIPT } from "./fixture-site";
 
 /**
  * The name the page gives a control the tree left nameless, against the role engine the hold asks.
@@ -128,7 +129,7 @@ async function pageWith(body: string): Promise<Page> {
 async function namesOn(page: Page) {
   const yaml = await page.ariaSnapshot({ mode: "ai" });
   const read = readAriaSnapshot(yaml);
-  const names = await namesFromThePage(page, read.unnamed, 2_000);
+  const { names } = await namesFromThePage(page, read.unnamed, 2_000);
   return read.elements
     .filter((element) => read.unnamed.includes(element.ref))
     .map((element) => ({ ...element, name: names.get(element.ref) }));
@@ -144,7 +145,7 @@ describe.skipIf(!HAS_BROWSER)(
       try {
         const yaml = await page.ariaSnapshot({ mode: "ai" });
         const read = readAriaSnapshot(yaml);
-        const names = await namesFromThePage(page, read.unnamed, 2_000);
+        const { names } = await namesFromThePage(page, read.unnamed, 2_000);
         const outcomes: string[] = [];
         for (const element of read.elements) {
           if (!read.unnamed.includes(element.ref)) continue;
@@ -236,7 +237,7 @@ describe.skipIf(!HAS_BROWSER)(
         const yaml = await page.ariaSnapshot({ mode: "ai" });
         const read = readAriaSnapshot(yaml);
         const started = Date.now();
-        const names = await namesFromThePage(
+        const { names } = await namesFromThePage(
           page,
           [...read.unnamed, "e9999"],
           300,
@@ -244,6 +245,234 @@ describe.skipIf(!HAS_BROWSER)(
         expect(Date.now() - started).toBeLessThan(1_500);
         expect([...names.values()]).toEqual(["있음"]);
         expect(names.has("e9999")).toBe(false);
+      } finally {
+        await page.close();
+      }
+    });
+  },
+);
+
+/**
+ * A node a person typed into, and the names that are drawn from it (`Hush`).
+ *
+ * The tree prints these controls WITH a name — the typed text is in it — so nothing above ever
+ * asked about them. Asked about on a tab a person typed into, the page says which of them take
+ * their name from such a node, and what they are called without it.
+ */
+describe.skipIf(!HAS_BROWSER)(
+  "the names drawn from a node a person typed into",
+  () => {
+    const TYPED = "CANARY-typed-7391";
+    /** Each control by a word of its own, so a ref is found whatever else its name holds. */
+    const BODY = `
+<a href="#around">둘레링크 <span contenteditable="true" class="typed">${TYPED}</span></a>
+<div role="tab" tabindex="0">둘레탭 <span contenteditable="true" class="typed">${TYPED}</span></div>
+<span id="names-button" contenteditable="true" class="typed">${TYPED}</span><button aria-labelledby="names-button">라벨버튼</button>
+<input id="names-other" class="typed" aria-label="이름주는칸" value="${TYPED}"><button aria-labelledby="names-other">칸라벨버튼</button>
+<label for="labelled">라벨칸 <span contenteditable="true" class="typed">${TYPED}</span></label><input id="labelled">
+<div contenteditable="true" class="typed">앞 <a href="#inside">안쪽링크${TYPED}</a> 뒤</div>
+<div role="button" tabindex="0" aria-label="이름있는버튼"><span contenteditable="true" class="typed">${TYPED}</span></div>
+<a href="#plain">그냥링크</a>
+<button aria-labelledby="bots-own">봇칸버튼</button><input id="bots-own" aria-label="봇칸" value="봇이 쓴 값">
+<a href="#bots-region">봇영역링크 <span contenteditable="true">봇이 쓴 글</span></a>`;
+
+    const MARK = "laf.quiet.names-test";
+
+    /**
+     * The page asked about every control, its `.typed` nodes marked as the ones a person typed into
+     * — which is what `quietOn` does to a node this service follows.
+     */
+    async function askedOn(page: Page, every: boolean) {
+      await page.evaluate((mark) => {
+        for (const node of Array.from(
+          document.getElementsByClassName("typed"),
+        )) {
+          (node as unknown as Record<symbol, boolean>)[Symbol.for(mark)] = true;
+        }
+      }, MARK);
+      const yaml = await page.ariaSnapshot({ mode: "ai" });
+      const read = readAriaSnapshot(yaml);
+      const answer = await namesFromThePage(
+        page,
+        read.elements.map((element) => element.ref),
+        2_000,
+        // With nothing known about which node, there is no mark to go by either.
+        { mark: every ? "" : MARK, every },
+      );
+      // By what the TREE called each: the typed text is in those names, which is the point.
+      return read.elements.map((element) => ({
+        tree: element.name,
+        role: element.role,
+        page: answer.names.get(element.ref),
+        drawn: answer.drawn.has(element.ref),
+      }));
+    }
+    const called = (
+      asked: Awaited<ReturnType<typeof askedOn>>,
+      word: string,
+    ) => {
+      const found = asked.find((each) => each.tree.includes(word));
+      if (!found) {
+        throw new Error(
+          `the tree has nothing called ${word}: ${asked.map((each) => each.tree).join(" | ")}`,
+        );
+      }
+      return found;
+    };
+
+    test("each is said to be drawn from it, and named without it; a control that is not keeps out of it", async () => {
+      const page = await pageWith(BODY);
+      try {
+        const asked = await askedOn(page, false);
+        // The tree did print the typed text in these names: what is being kept out is really there.
+        for (const word of ["둘레링크", "둘레탭", "안쪽링크", "라벨칸"]) {
+          expect([word, called(asked, word).tree.includes(TYPED)]).toEqual([
+            word,
+            true,
+          ]);
+        }
+        expect(asked.filter((each) => each.tree === TYPED).length).toBe(2);
+        // Drawn, and named by the words that are the page's own.
+        expect(called(asked, "둘레링크")).toMatchObject({
+          page: "둘레링크",
+          drawn: true,
+        });
+        expect(called(asked, "둘레탭")).toMatchObject({
+          page: "둘레탭",
+          drawn: true,
+        });
+        expect(called(asked, "라벨칸")).toMatchObject({
+          role: "textbox",
+          page: "라벨칸",
+          drawn: true,
+        });
+        // The two buttons a typed-into node labels: what is inside each is all that is left.
+        expect(
+          asked
+            .filter((each) => each.tree === TYPED)
+            .map((each) => [each.page, each.drawn]),
+        ).toEqual([
+          ["라벨버튼", true],
+          ["칸라벨버튼", true],
+        ]);
+        // A control INSIDE a region a person typed into says none of the region's words.
+        expect(called(asked, "안쪽링크")).toMatchObject({
+          page: "",
+          drawn: true,
+        });
+        expect(called(asked, "이름있는버튼")).toMatchObject({
+          page: "이름있는버튼",
+          drawn: true,
+        });
+        // The box they typed into is not drawn from itself: a box's name is never its contents.
+        expect(called(asked, "이름주는칸").drawn).toBe(false);
+        // Nor is anything that takes nothing from them — the Bot's own box and region included.
+        for (const word of ["그냥링크", "봇이 쓴 값", "봇영역링크"]) {
+          expect([word, called(asked, word).drawn]).toEqual([word, false]);
+        }
+        expect(JSON.stringify(asked.map((each) => each.page))).not.toContain(
+          TYPED,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("when which node cannot be said, every name is the page's and no editable region or box says anything", async () => {
+      const page = await pageWith(BODY);
+      try {
+        const asked = await askedOn(page, true);
+        expect(asked.every((each) => each.drawn)).toBe(true);
+        const names = JSON.stringify(asked.map((each) => each.page));
+        expect(names).not.toContain(TYPED);
+        // Nobody can say the Bot's own were not the ones: they say nothing either.
+        expect(names).not.toContain("봇이 쓴");
+        expect(called(asked, "봇영역링크").page).toBe("봇영역링크");
+        expect(called(asked, "그냥링크").page).toBe("그냥링크");
+      } finally {
+        await page.close();
+      }
+    });
+
+    /*
+     * A PAGE THAT REPLACES `Map` (고용24) BREAKS THE QUESTION ASKED OF ALL AT ONCE, since a list of
+     * elements is carried into the page with the page's own `Map`. Until 2026-10-05 no name came
+     * back from such a page at all; asked about every control after a person typed, that would
+     * have been every control on it nameless. Each element is asked on its own then.
+     */
+    test("on a page that replaces Map, the names still come, and still without what was typed", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.setContent(
+        `<!doctype html><html lang="ko"><head><meta charset="utf-8"><script>${REPLACED_BUILTINS_SCRIPT}</script></head><body>${BODY}</body></html>`,
+      );
+      try {
+        // The page does to a list what work24.go.kr did.
+        expect(
+          await page
+            .evaluate((list) => list.length, [1, 2])
+            .catch((error: Error) => error.message.split("\n")[0]),
+        ).toContain("refs.set is not a function");
+        const asked = await askedOn(page, false);
+        expect(asked.every((each) => typeof each.page === "string")).toBe(true);
+        expect(called(asked, "둘레링크")).toMatchObject({
+          page: "둘레링크",
+          drawn: true,
+        });
+        expect(called(asked, "그냥링크")).toMatchObject({
+          page: "그냥링크",
+          drawn: false,
+        });
+        expect(JSON.stringify(asked.map((each) => each.page))).not.toContain(
+          TYPED,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+
+    /*
+     * A box is asked about for the first time here: one whose `<label>` holds what a person typed
+     * is listed under the page's name for it. So a box is named as the role engine names one — by
+     * its label, by its title, by its placeholder where it has no title — and held to it.
+     */
+    test("a box is called what the role engine calls it: by its label, its title, its placeholder", async () => {
+      const page = await pageWith(`
+<label for="by-label">라벨로</label><input id="by-label">
+<input placeholder="자리표시로">
+<input title="제목으로" placeholder="자리표시 아님">
+<textarea placeholder="글상자 자리표시"></textarea>
+<label>감싼 라벨 <textarea></textarea></label>
+<input type="search" aria-label="에이리어 라벨로" placeholder="아님">
+<label for="chosen">고르는 칸</label><select id="chosen"><option>서울</option></select>`);
+      try {
+        const yaml = await page.ariaSnapshot({ mode: "ai" });
+        const read = readAriaSnapshot(yaml);
+        const boxes = read.elements.filter((element) =>
+          ["textbox", "searchbox", "combobox"].includes(element.role),
+        );
+        const { names } = await namesFromThePage(
+          page,
+          boxes.map((element) => element.ref),
+          2_000,
+        );
+        const outcomes: string[] = [];
+        for (const box of boxes) {
+          const name = names.get(box.ref) ?? "(none)";
+          const held = await holdToLabel(page.locator(`aria-ref=${box.ref}`), {
+            role: box.role,
+            name,
+          }).catch((error: Error) => error.message);
+          outcomes.push(`${box.role} ${name} -> ${held}`);
+        }
+        expect(outcomes).toEqual([
+          "textbox 라벨로 -> same",
+          "textbox 자리표시로 -> same",
+          "textbox 제목으로 -> same",
+          "textbox 글상자 자리표시 -> same",
+          "textbox 감싼 라벨 -> same",
+          "searchbox 에이리어 라벨로 -> same",
+          "combobox 고르는 칸 -> same",
+        ]);
       } finally {
         await page.close();
       }

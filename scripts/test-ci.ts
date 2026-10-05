@@ -979,6 +979,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * that opens when every other is held at the ceiling not taken; and a tab the browser never
  * answered about asked about again, and not kept past the ceiling).
  *
+ * RAISED 2026-10-05 with what a person typed kept out of every place a page says it again, by
+ * exactly what was added: twelve to `agent-computer` (two on the list without a browser — on a tab
+ * a person typed into, a name drawn from what they typed is the page's, any other stands and one
+ * the page did not answer for has none, and a tab nobody typed into is asked only about its
+ * nameless controls; and ten against a real Chromium — which controls take their name from a
+ * typed-into node and what each is called without it, every name the page's when which node cannot
+ * be said, the names still coming from a page that replaces `Map`, a box called what the role
+ * engine calls it, a typed-into node saying nothing in the page's text, in the article taken out
+ * of it, in every editable region when which cannot be said and in the plain read, and, through
+ * the real door, a canary a person typed into each of nineteen places on a page and one supplied
+ * through the masked card, in nothing the Bot is handed).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -986,7 +998,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 507, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

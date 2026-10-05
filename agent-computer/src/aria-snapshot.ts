@@ -683,8 +683,8 @@ export function readAriaSnapshot(
 }
 
 /**
- * The list with the page's own names on the controls the tree left nameless (`namesFromThePage`),
- * cut where every name is cut.
+ * The list with the page's own names on the controls whose name is the page's to give
+ * (`namesFromThePage`), cut where every name is cut.
  *
  * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, and nothing stands in for it. The
  * words the tree printed beneath the control once did (`readAriaSnapshot` says what became of
@@ -695,14 +695,18 @@ export function readAriaSnapshot(
  * editable regions out on every path (`page-names.ts`); when it does not come in time, or the ref
  * did not resolve, the honest list has no name for that control — the hold then compares the
  * empty name with the browser's, which is a refusal and never a secret on the trail. A control
- * the tree itself named is untouched: the page was never asked about it.
+ * the tree itself named, and that is not in `asked`, is untouched.
  *
- * `asked` is the look's own statement of that rule, and holds whatever list it is handed. The
- * tree's list already has no name for these controls, so on it this blanks nothing; it is kept so
- * that the rule does not rest on what the parser happens to do.
+ * `asked` is every control whose name is not the tree's to give: the ones it left nameless, and —
+ * on a tab a person typed into — the ones it named out of what they typed, or might have
+ * (`namesToList`). It is the look's own statement of the rule and holds whatever list it is
+ * handed: a name already on one of these does not go on unless `names` gives it.
  *
- * No value goes with a name given here: a control the tree left nameless never has one
- * (`toElement`).
+ * AND NO VALUE GOES WITH A NAME THAT IS NOT THE TREE'S, unless the control is a box. What the tree
+ * writes after the colon of a link or a button is what is inside it (`toElement`), and a control
+ * whose name had to be asked for because of what is inside it is one whose insides are not the
+ * Bot's to read: `- button "보내기" [ref=e9]: <what a person typed in the region inside it>`. A
+ * box's value is its own, and is blanked by the box (`readAriaSnapshot`), not by its name.
  */
 export function withNames(
   elements: SnapshotElement[],
@@ -711,11 +715,51 @@ export function withNames(
 ): SnapshotElement[] {
   return elements.map((element) => {
     const name = names.get(element.ref);
-    if (name !== undefined) {
-      return { ...element, name: cutAtCodeUnits(name, 200) };
-    }
-    return asked.has(element.ref) ? { ...element, name: "" } : element;
+    if (name === undefined && !asked.has(element.ref)) return element;
+    const { value: _contents, ...rest } = element;
+    return {
+      ...(TEXT_ENTRY_ROLES.has(element.role) ? element : rest),
+      name: name === undefined ? "" : cutAtCodeUnits(name, 200),
+    };
   });
+}
+
+/**
+ * What the page said of the controls it was asked about, as {@link withNames} takes it: the names
+ * that go on the list, and every control whose tree name does not stand.
+ *
+ * A control the tree left nameless takes the page's name, as it always did. A control the tree
+ * NAMED is asked about only on a tab a person typed into (`snapshotPage`), and then:
+ *
+ * - drawn from what they typed (`drawn`): the page's name, which leaves that out — the link around
+ *   an editable region, the button a box labels, the box whose `<label>` holds a region, the link
+ *   inside a region (`page-names.ts`);
+ * - not drawn from it: the tree's own name, untouched — the page's answer for it is not used, so
+ *   nothing about an ordinary control changes because somebody typed elsewhere on the page;
+ * - not answered for: no name. Whether it was drawn from what they typed is exactly what is not
+ *   known, and this is the side to be wrong on: it costs the Bot one look's name for that control.
+ */
+export function namesToList(
+  unnamed: readonly string[],
+  asked: readonly string[],
+  answers: {
+    names: ReadonlyMap<string, string>;
+    drawn: ReadonlySet<string>;
+  },
+): { names: Map<string, string>; asked: Set<string> } {
+  const nameless = new Set(unnamed);
+  const names = new Map<string, string>();
+  const notTheTrees = new Set(unnamed);
+  for (const ref of asked) {
+    const name = answers.names.get(ref);
+    if (name === undefined) {
+      notTheTrees.add(ref);
+    } else if (nameless.has(ref) || answers.drawn.has(ref)) {
+      names.set(ref, name);
+      notTheTrees.add(ref);
+    }
+  }
+  return { names, asked: notTheTrees };
 }
 
 /**

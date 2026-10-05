@@ -13,6 +13,7 @@
  */
 import type { Page } from "playwright";
 import {
+  namesToList,
   opaqueFramesIn,
   readAriaSnapshot,
   type SnapshotElement,
@@ -31,6 +32,7 @@ import { typedIntoBlind } from "./person-typing";
 import {
   SECRET_JOIN_TIMEOUT_MS,
   type SecretMarks,
+  quietOn,
   secretSignals,
   typedIntoRefs,
 } from "./secret-fields";
@@ -287,16 +289,39 @@ export async function snapshotPage(
    * the controls the list keeps, and within what is left of the look — a name that does not come
    * in time leaves that control nameless (`withNames` says why nothing stands in for it).
    */
-  const names = await namesFromThePage(
+  /*
+   * AND ON A TAB A PERSON TYPED INTO, EVERY NAME IS ASKED ABOUT. The tree names a control by what is
+   * inside it and by what labels it, and it does not know that some of that was typed by a person:
+   * measured 2026-10-05, the link around an editable region, the button a box labels and the box
+   * beside a `<label>` each came back named by a canary a person had typed (`person-typing.ts`).
+   * The page says which names were drawn from the nodes they typed into, and those are listed
+   * under the name it computes without them; every other control keeps the tree's (`namesToList`).
+   * Only then: a tab nobody typed into is asked about its nameless controls and nothing else.
+   */
+  const typed = await quietOn(
+    session,
     target,
+    typedIntoBlind(session, target),
+    deadline - Date.now(),
+  );
+  const askedAbout = typed.names
+    ? read.elements.map((element) => element.ref)
+    : read.unnamed;
+  const listed = namesToList(
     read.unnamed,
-    Math.min(PAGE_NAMES_MS, deadline - Date.now()),
+    askedAbout,
+    await namesFromThePage(
+      target,
+      askedAbout,
+      Math.min(PAGE_NAMES_MS, deadline - Date.now()),
+      typed.names,
+    ),
   );
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    elements: withNames(read.elements, names, new Set(read.unnamed)),
+    elements: withNames(read.elements, listed.names, listed.asked),
     truncated: read.truncated,
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.
