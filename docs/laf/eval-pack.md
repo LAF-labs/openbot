@@ -1279,6 +1279,41 @@ of the time, and pays for it in the kind of call a person has to be able to trus
 The arms ran one after the other, not interleaved, so an endpoint that got faster in the second
 half-hour would flatter `quick`; the reasoning tokens are not subject to that, and they halved.
 
+### Seoul until the person says where (2026-10-05)
+
+The owner: "지역과 날짜는 기본값 실제 위치 데이터, fallback은 서울, 유저가 특정 위치를 말해주면
+저장." A person's place is what they said, else their device's, else **Seoul without asking first**
+— the product this is held against answers "오늘 날씨 어때?" for Seoul, and ours asked where. So a
+call that names no place is answered for 서울특별시 where nothing is known
+(`kma-weather-rest.ts`, `FALLBACK_PLACE`; it refused `laf:weather_place_unknown`), every answer says
+where its place came from (`placeSource`: `named`, `saved`, `device`, `fallback`), the card writes
+"위치를 아직 몰라요" after the name for the last, and the place line stopped saying "먼저 한 번
+여쭤보고". The tool reads the saved words before the device now, as the place line always did.
+
+Six runs each, Muse Spark 1.3 Contributor, `EVAL_ONLY`, the same stub for both columns (it answers
+a call with no argument for Seoul, marked `fallback`):
+
+| Scenario | The place line as it was | Rewritten |
+|---|---|---|
+| `weather-with-no-place-is-seouls` — "오늘 날씨 어때?", nothing known | 0/6: six questions ("어느 동네 기준으로 알려드릴까요?"), no call | 9/10 over two batches (3 of 4, then 6/6; two runs of the first batch were the provider's `laf:model_unavailable`). The miss called `get_weather({"place":"서울"})` — Seoul's weather, said as Seoul's, without the `fallback` mark |
+| `place-said-in-passing-is-saved` — "나 춘천 살아" | 6/6 | 11/11 (one run lost to the provider) |
+| `moved-place-is-saved-over-the-devices` — device coordinates, "나 이사했어, 이제 수원이야" | 4/6: "수원이세요. 축하드려요!" and "수원의 어느 구쯤이세요?", nothing saved | 6/6 |
+| `weather-elsewhere-is-not-saved` — "부산 날씨 어때?", nothing known | 6/6, no `remember` | 6/6, no `remember` |
+| `weather-without-the-tool-is-seouls` — no weather tool, nothing known | 0/6 (asked where) | 6/6: 네이버 "서울 날씨", "서울 기준으로" |
+| `weather-from-the-agency` — a saved place | the saved place's in every run; 0/6 on the one-sentence check | the same: `get_weather({})`, 강남's, and 0/6 on the one-sentence check |
+
+- **The last row is not this change.** Every run calls the tool with no argument and answers for
+  강남; what fails is `leavesItToTheCard`, because the words the model says before the call
+  ("오늘 날씨 확인해 볼게요.") are part of the turn's text and make two sentences. It failed the
+  same way before the place line was touched, and `weather-for-the-place-just-said` with it (0/6
+  both times, the place saved and asked for in every run).
+- **What the rule about saving costs.** One sentence, in chats only: the place line is 428, 398 and
+  361 characters for a saved place, a device's and nobody's (313, 314, 225 before), and a routine's
+  is unchanged but for nobody's (102 → 225, which now sends it to the tool). It is in the context
+  layer, so the first turn of each conversation after the upgrade reads its prefix uncached once.
+- **The transport, called with the fleet's key and nothing saved**: 서울특별시, `placeSource:
+  "fallback"`, no `basis`, no coordinates, now 18.7℃ and five days, 1,082 characters in 1.45 s.
+
 ## The first move — a turn's first step, decided before the Bot's model is asked (2026-10-02)
 
 Asked "오늘 날씨 어때?", a Bot's model is asked twice: to decide to call the weather tool, then to

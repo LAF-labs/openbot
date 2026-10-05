@@ -21,7 +21,7 @@
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { zonedParts } from "../shared/prompt/zone";
 import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
-import { WEATHER_SHOWN } from "../shared/weather";
+import { WEATHER_SHOWN, type WeatherPlaceSource } from "../shared/weather";
 import { calendarDayAfter, weekdayOf } from "./grounded";
 import type { ObservedCall } from "./lib";
 
@@ -56,15 +56,49 @@ export const HAEUNDAE: EvalWeatherPlace = {
   tomorrowMax: 31,
 };
 
-const PLACES = [GANGNAM, MAPO, HAEUNDAE];
+const CHUNCHEON: EvalWeatherPlace = {
+  said: "춘천",
+  name: "강원특별자치도 춘천시",
+  now: 13.9,
+  tomorrowMax: 19,
+};
+const SUWON: EvalWeatherPlace = {
+  said: "수원",
+  name: "경기도 수원시",
+  now: 16.1,
+  tomorrowMax: 24,
+};
+export const BUSAN: EvalWeatherPlace = {
+  said: "부산",
+  name: "부산광역시",
+  now: 19.2,
+  tomorrowMax: 28,
+};
+/**
+ * Where the tool answers for when nobody's place is known (the owner, 2026-10-05: "fallback은 서울"):
+ * the row the transport's own fallback is (`FALLBACK_PLACE`, `kma-weather-rest.ts`).
+ */
+export const SEOUL: EvalWeatherPlace = {
+  said: "서울",
+  name: "서울특별시",
+  now: 15.4,
+  tomorrowMax: 26,
+};
+
+// The narrower name first: "서울 강남구" is 강남 and "부산 해운대" is 해운대.
+const PLACES = [GANGNAM, MAPO, HAEUNDAE, CHUNCHEON, SUWON, BUSAN, SEOUL];
 const DAYS_AHEAD = ["오늘", "내일", "모레", "글피"] as const;
 
 /** The transport's answer for one place at `at`: now, six hours, four days. */
 export function weatherAnswer(
   place: EvalWeatherPlace,
   at: Date,
-  saved: boolean,
+  /** Where the place came from, as the transport says it. `true` and `false` are "saved" and "named". */
+  from: boolean | WeatherPlaceSource,
 ): string {
+  const source: WeatherPlaceSource =
+    from === true ? "saved" : from === false ? "named" : from;
+  const saved = source === "saved" || source === "device";
   const { date: today, time } = zonedParts(at, "Asia/Seoul");
   const hour = Number(time.slice(0, 2));
   const stamp = (h: number) =>
@@ -75,6 +109,7 @@ export function weatherAnswer(
     // The name alone beside the words, as the transport writes it for the card.
     placeName: place.name,
     ...(saved ? { basis: "저장된 위치" } : {}),
+    placeSource: source,
     issued: { now: stamp(hour), hours: stamp(hour), days: stamp(2) },
     units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
     now: { temp: place.now, humidity: 41, precip: "없음", wind: 1.8 },
@@ -108,7 +143,8 @@ export function weatherAnswer(
 
 /**
  * The tool, answering as the product's does: a place named in the call, or else the saved one —
- * and with neither, the sentence a Bot is told when nobody's place is known.
+ * and with neither, Seoul's, marked as the fallback (it refused `laf:weather_place_unknown` until
+ * 2026-10-05, and a Bot then asked where before it said anything).
  *
  * `remember` with a place saves it, as the server's does in the same turn: a Bot that saves
  * "서울 마포구" and then asks with no argument is asking about 마포.
@@ -134,8 +170,8 @@ export function weatherBackend(input: {
         : toolResultText("laf:weather_place_not_found");
     }
     return saved
-      ? weatherAnswer(saved, input.at, true)
-      : toolResultText("laf:weather_place_unknown");
+      ? weatherAnswer(saved, input.at, "saved")
+      : weatherAnswer(SEOUL, input.at, "fallback");
   };
 }
 
