@@ -374,8 +374,12 @@ describe("사장님's neighbourhood question, and a place that arrives by itself
     });
     await view.settle(40);
 
-    // The same field, with what was typed still in it.
-    expect(placeField(view)).toBe(field);
+    /*
+     * The same field, with what was typed still in it. A BOOLEAN, NEVER THE NODES: handed two DOM
+     * nodes, the matcher prints both trees when they differ — which is exactly when this fails, and
+     * was 225 MB of output before somebody stopped it (review of pull request 91).
+     */
+    expect(placeField(view)?.isSameNode(field) ?? false).toBe(true);
     expect(placeField(view)?.value).toBe("서울 마");
   });
 
