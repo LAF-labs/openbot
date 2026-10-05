@@ -17,7 +17,8 @@
  * MESSAGE WOULD HAVE TO SUPPLY. The decisions model answers yes or no and nothing it says becomes
  * an argument; every argument below is a constant of this file. Three kinds pass it:
  *
- *   weather   the forecast for the person's saved place. A message that names another place is left
+ *   weather   the forecast for the person's own place — Seoul's, where none is known
+ *             (`kma-weather-rest.ts`). A message that names another place is left
  *             to the Bot's model, which reads a place out of a sentence well and a deterministic
  *             rule badly ("우산" is 광주 북구 우산동).
  *   calendar  today's events on the person's own Google Calendar. Tomorrow, this week, a named date
@@ -33,8 +34,8 @@
  * WHAT LEAVES THE MACHINE, AND WHEN. Nothing unless the switch is on and Jev may be asked at all
  * (`JEV_ENABLED`, an OpenRouter endpoint). Then only a message that is short, is the person's one
  * message of the turn, and has a word of a kind in it — the weather's, a schedule's or the mail's,
- * the lists below, checked here first — from a person who could be answered (a saved place, a
- * connected calendar, a connected mailbox), and that message goes redacted
+ * the lists below, checked here first — from a person who could be answered (anybody, for the
+ * weather; a connected calendar, a connected mailbox), and that message goes redacted
  * (`context/judge-redaction.ts`). The owner's yes to building this is recorded with the plan
  * (`~/laf/docs/jev-adoption-review-2026-10-02.md` §3, §6), and the yes to turning it on for
  * customers came on 2026-10-05, with a condition: a move that turns out to be made seldom comes out
@@ -61,7 +62,6 @@ import {
   DEFERRED_TOOL_PREFIX,
   WEATHER_TOOL_NAME,
 } from "../../../shared/tools/bridge";
-import type { Whereabouts } from "../../../shared/whereabouts";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { Decision, DecisionQuestion } from "../computer/decision-call";
 import { redactText } from "../context/judge-redaction";
@@ -105,14 +105,21 @@ export const CALENDAR_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}${CALENDAR_SERVER}__li
 export const MAIL_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}${MAIL_SERVER}__search_messages`;
 
 /**
- * What a kind has to find before anybody is asked: somewhere to answer for.
+ * What a kind has to find before anybody is asked: a connection to answer from, or nothing.
  *
  * The Bot holding the tool is the grant, and is not the connection: a grant outlives a person's
  * disconnecting, and a connection the vendor withdrew is still a row. A move made without one is a
  * refusal filed in the conversation under a question the Bot would have answered by offering to
- * connect — so the connection is read first, as the saved place is for the weather.
+ * connect — so the connection is read first.
+ *
+ * THE WEATHER NEEDS NOTHING (2026-10-05). It needed a saved place — words or the device's — and a
+ * person with neither got no move (`no_place`): a call with no place was refused, and the Bot asked
+ * where. The owner's word that day: "기본값 실제 위치 데이터, fallback은 서울". The tool now answers
+ * a call that names nothing for the person's place, and for Seoul where nobody's is known
+ * (`kma-weather-rest.ts`, `FALLBACK_PLACE`), so there is always somewhere to answer for and
+ * "오늘 날씨 어때?" moves for the person who has told us nothing as well.
  */
-type Needs = { place: true } | { connection: string };
+type Needs = { connection: string } | null;
 
 type KindSpec = {
   /** The words that make a message worth asking about this kind. */
@@ -337,7 +344,7 @@ export const FIRST_MOVE_SPECS: Readonly<Record<FirstMoveKind, KindSpec>> = {
     never: WEATHER_NEVER,
     tool: WEATHER_TOOL_NAME,
     args: Object.freeze({}),
-    needs: { place: true },
+    needs: null,
     questions: {
       forecast: {
         type: "noul",
@@ -505,7 +512,6 @@ export type FirstMoveVerdict =
   | "follow_up"
   | "no_word"
   | "no_tool"
-  | "no_place"
   | "no_connection"
   | "budget_spent"
   | "no_credential";
@@ -515,8 +521,6 @@ export type FirstMoveInput = {
   asked: readonly { role: string; content?: unknown }[];
   /** The names of the tools this turn offers the Bot. */
   toolNames: ReadonlySet<string>;
-  /** Whether the person has a saved place — coordinates or words. */
-  hasPlace: () => Promise<boolean>;
   /** Whether the person has this service connected, and the connection still works. */
   hasConnection: (serverId: string) => Promise<boolean>;
 };
@@ -544,14 +548,14 @@ export function firstMoveStateOf(text: string): { message: string } {
   return { message: redactText(text).slice(0, FIRST_MOVE_MAX_CHARS * 2) };
 }
 
-type NotReady = "no_tool" | "no_place" | "no_connection";
+type NotReady = "no_tool" | "no_connection";
 
 /**
  * Whether this turn opens with a move, and which.
  *
  * The cheap refusals first, in the order that sends the least: the switch, the shape of what was
  * asked, its length, whether it leans on the message before it, the words in it, whether the Bot
- * holds a tool for them, whether there is a place or a connection to answer from — and only then
+ * holds a tool for them, whether there is a connection to answer from — and only then
  * the question to somebody else, once, about the kinds that are left.
  */
 export function createFirstMove(deps: FirstMoveDeps) {
@@ -609,16 +613,12 @@ export function createFirstMove(deps: FirstMoveDeps) {
       const spec = FIRST_MOVE_SPECS[kind];
       const lacks: NotReady | null = !input.toolNames.has(spec.tool)
         ? "no_tool"
-        : "place" in spec.needs
-          ? // The Bot asks where, as it does today; a call with no place would only be refused.
-            (await input.hasPlace().catch(() => false))
-            ? null
-            : "no_place"
-          : (await input
-                .hasConnection(spec.needs.connection)
-                .catch(() => false))
-            ? null
-            : "no_connection";
+        : spec.needs === null ||
+            (await input
+              .hasConnection(spec.needs.connection)
+              .catch(() => false))
+          ? null
+          : "no_connection";
       if (lacks === null) ready.push(kind);
       else short ??= lacks;
     }
@@ -692,9 +692,6 @@ export type FirstMoveFor = ReturnType<typeof createFirstMove>;
  */
 export function firstMoveForTurns(deps: {
   decide: FirstMoveFor;
-  whereaboutsOf: (
-    userId: string,
-  ) => Promise<Pick<Whereabouts, "place" | "coordinates">>;
   /**
    * The services this person has connected, with whether each still works
    * (`plugins/connections.ts`, `connectionsFor` — what the settings page is drawn from).
@@ -715,10 +712,6 @@ export function firstMoveForTurns(deps: {
     const { move, verdict, asked, decided } = await deps.decide({
       asked: input.asked,
       toolNames: new Set(input.tools.map((tool) => tool.name)),
-      hasPlace: async () => {
-        const at = await deps.whereaboutsOf(input.owner.id);
-        return Boolean(at.place?.trim()) || at.coordinates !== null;
-      },
       hasConnection: async (serverId) => {
         connections ??= deps.connectionsOf(input.owner.id);
         return (await connections).some(

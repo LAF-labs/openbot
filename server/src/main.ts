@@ -929,11 +929,11 @@ const turnEngine = createTurnEngine({
     }),
   // An account the list no longer admits acts on nothing, a turn nobody watches included.
   admits: (userId) => admission.admitsPerson(userId),
-  // On unless `FIRST_MOVE` says off, and only where Jev may be asked: the weather for a saved
-  // place, today's calendar and the unread mail of a person who has connected them.
+  // On unless `FIRST_MOVE` says off, and only where Jev may be asked: the weather for the
+  // person's place (Seoul's where none is known), today's calendar and the unread mail of a
+  // person who has connected them.
   firstMove: firstMoveForTurns({
     decide: createFirstMove(firstMoveDeps),
-    whereaboutsOf: whereaboutsStore.read,
     connectionsOf: pluginStore.connectionsFor,
     auditStore: bootAuditStore,
   }),

@@ -107,13 +107,11 @@ const turn = (
   asked: readonly { role: string; content?: unknown }[],
   over: {
     toolNames?: ReadonlySet<string>;
-    hasPlace?: boolean;
     connected?: readonly string[];
   } = {},
 ) => ({
   asked,
   toolNames: over.toolNames ?? withTool,
-  hasPlace: async () => over.hasPlace ?? true,
   hasConnection: async (serverId: string) =>
     (over.connected ?? [CALENDAR_SERVER, MAIL_SERVER]).includes(serverId),
 });
@@ -189,7 +187,7 @@ describe("the first move: when nobody is asked", () => {
     }
   });
 
-  test("no tool to call, no place to answer for, or a spent day: nobody is asked", async () => {
+  test("no tool to call, or a spent day: nobody is asked", async () => {
     const model = jev(SURE);
     const decide = createFirstMove({ moves: ["weather"], ask: model.ask });
     expect(
@@ -201,11 +199,6 @@ describe("the first move: when nobody is asked", () => {
         )
       ).verdict,
     ).toBe("no_tool");
-    // The Bot asks where, as it does today; a call with no place would only be refused.
-    expect(
-      (await decide(turn(said("오늘 날씨 어때?"), { hasPlace: false })))
-        .verdict,
-    ).toBe("no_place");
     const spent = createFirstMove({
       moves: ["weather"],
       ask: model.ask,
@@ -703,10 +696,6 @@ describe("the first move, as a turn asks for it", () => {
     },
   };
   const forTurns = (
-    whereabouts: {
-      place: string | null;
-      coordinates: { latitude: number; longitude: number } | null;
-    },
     answers: Parameters<typeof jev>[0] = SURE,
     connections: readonly {
       serverId: string;
@@ -717,18 +706,12 @@ describe("the first move, as a turn asks for it", () => {
     ],
   ) => {
     const model = jev(answers);
-    const read: string[] = [];
     const looked: string[] = [];
     return {
       model,
-      read,
       looked,
       firstMove: firstMoveForTurns({
         decide: createFirstMove({ moves: ALL, ask: model.ask }),
-        whereaboutsOf: async (userId) => {
-          read.push(userId);
-          return whereabouts;
-        },
         connectionsOf: async (userId) => {
           looked.push(userId);
           return connections;
@@ -737,7 +720,6 @@ describe("the first move, as a turn asks for it", () => {
       }),
     };
   };
-  const HOME = { place: "강원 춘천시", coordinates: null };
   const input = (text: string, tools = [...withTool]) => ({
     owner: { id: "person-1" },
     botId: "bot-1",
@@ -745,36 +727,30 @@ describe("the first move, as a turn asks for it", () => {
     tools: tools.map((name) => ({ name })),
   });
 
-  test("a saved place in words or from the device is a place; neither is none", async () => {
-    const words = forTurns({ place: "강원 춘천시", coordinates: null });
-    expect((await words.firstMove(input("오늘 날씨 어때?")))?.tool).toBe(
-      WEATHER_TOOL_NAME,
-    );
-    expect(words.read).toEqual(["person-1"]);
-
-    const device = forTurns({
-      place: null,
-      coordinates: { latitude: 37.88, longitude: 127.73 },
-    });
-    expect(await device.firstMove(input("오늘 날씨 어때?"))).not.toBeNull();
-
-    const nowhere = forTurns({ place: "  ", coordinates: null });
-    expect(await nowhere.firstMove(input("오늘 날씨 어때?"))).toBeNull();
-    expect(nowhere.model.asked).toEqual([]);
+  test("the weather moves for a person of whom nothing is known: the tool answers for Seoul, so nobody's place is read", async () => {
+    /*
+     * This was "a saved place in words or from the device is a place; neither is none": a person
+     * with neither got no move, because a call that named no place was refused and the Bot asked
+     * where. The owner, 2026-10-05: "기본값 실제 위치 데이터, fallback은 서울". The tool resolves
+     * the place itself now — the person's words, their device, or Seoul — so the decision needs no
+     * fact about the person at all, and is handed none (`firstMoveForTurns` takes no reader).
+     */
+    const anybody = forTurns();
+    const move = await anybody.firstMove(input("오늘 날씨 어때?"));
+    expect(move?.tool).toBe(WEATHER_TOOL_NAME);
+    // Still a constant with nothing in it: where the weather is for is the tool's to settle.
+    expect(move?.args).toEqual({});
+    // And still only the person's own weather: a named town is the Bot's model's to read.
+    const elsewhere = forTurns({ forecast: 0.95, ownPlace: 0.1 });
+    expect(await elsewhere.firstMove(input("부산 날씨 어때?"))).toBeNull();
   });
 
   test("a decision that left the step to the Bot leaves a row too — why, how sure, never the message; a message never asked about leaves none", async () => {
     rows.length = 0;
-    const unsure = forTurns(
-      { place: "강원 춘천시", coordinates: null },
-      { forecast: 0.4, ownPlace: 0.9 },
-    );
+    const unsure = forTurns({ forecast: 0.4, ownPlace: 0.9 });
     const text = "우산 챙길까 말까 고민이네";
     expect(await unsure.firstMove(input(text))).toBeNull();
-    const silent = forTurns(
-      { place: "강원 춘천시", coordinates: null },
-      "down",
-    );
+    const silent = forTurns("down");
     expect(await silent.firstMove(input(text))).toBeNull();
     // No key to ask with: nothing was sent, so it is not a decision asked for either.
     const keyless = firstMoveForTurns({
@@ -782,13 +758,12 @@ describe("the first move, as a turn asks for it", () => {
         moves: ["weather"],
         ask: async () => ({ ok: false, because: "no credential", ms: 0 }),
       }),
-      whereaboutsOf: async () => ({ place: "강원 춘천시", coordinates: null }),
       connectionsOf: async () => [],
       auditStore,
     });
     expect(await keyless(input(text))).toBeNull();
     // No weather word: nobody was asked, so there is nothing to count.
-    const unasked = forTurns({ place: "강원 춘천시", coordinates: null });
+    const unasked = forTurns();
     expect(await unasked.firstMove(input("안녕, 잘 지냈어?"))).toBeNull();
     expect(unasked.model.asked).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -821,7 +796,7 @@ describe("the first move, as a turn asks for it", () => {
 
   test("a move leaves a row saying who decided — names and probabilities, never the message", async () => {
     rows.length = 0;
-    const made = forTurns({ place: "강원 춘천시", coordinates: null });
+    const made = forTurns();
     const text = "오늘 우리 동네 날씨 어때? 우산 챙길까";
     await made.firstMove(input(text));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -848,21 +823,21 @@ describe("the first move, as a turn asks for it", () => {
 
   test("a connection that stopped working is no connection; a weather question never reads them", async () => {
     rows.length = 0;
-    const stale = forTurns(HOME, SURE_OF_ALL, [
+    const stale = forTurns(SURE_OF_ALL, [
       { serverId: CALENDAR_SERVER, health: { status: "needs_reconnect" } },
     ]);
     expect(await stale.firstMove(input("오늘 일정 뭐 있어?"))).toBeNull();
     expect(await stale.firstMove(input("새 메일 왔어?"))).toBeNull();
     expect(stale.model.asked).toEqual([]);
-    const both = forTurns(HOME, SURE_OF_ALL);
+    const both = forTurns(SURE_OF_ALL);
     await both.firstMove(input("오늘 일정이랑 새 메일 알려줘"));
     // Two kinds, one reading of the person's connections.
     expect(both.looked).toEqual(["person-1"]);
-    const weather = forTurns(HOME);
+    const weather = forTurns();
     await weather.firstMove(input("오늘 날씨 어때?"));
     expect(weather.looked).toEqual([]);
     // Connected, but this Bot holds neither tool: not asked, and nothing read.
-    const ungranted = forTurns(HOME, SURE_OF_ALL);
+    const ungranted = forTurns(SURE_OF_ALL);
     expect(
       await ungranted.firstMove(
         input("오늘 일정 뭐 있어?", [WEATHER_TOOL_NAME]),
@@ -874,9 +849,9 @@ describe("the first move, as a turn asks for it", () => {
   test("the calendar's and the mail's rows say which kinds were asked about, and never the message", async () => {
     rows.length = 0;
     const text = "오늘 치과 예약이랑 세무사 메일 확인";
-    const made = forTurns(HOME, { ...SURE_OF_ALL, unfiltered: 0.2 });
+    const made = forTurns({ ...SURE_OF_ALL, unfiltered: 0.2 });
     expect((await made.firstMove(input(text)))?.args).toEqual({ day: "today" });
-    const two = forTurns(HOME, SURE_OF_ALL);
+    const two = forTurns(SURE_OF_ALL);
     expect(await two.firstMove(input(text))).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rows.map((row) => [row.eventType, row.payload])).toEqual([
@@ -919,11 +894,11 @@ describe("the first move, as a turn asks for it", () => {
      * there reads both — a field renamed here would silently count nothing.
      */
     rows.length = 0;
-    await forTurns(HOME, SURE_OF_ALL).firstMove(input("오늘 일정 뭐 있어?"));
-    await forTurns(HOME, { ...SURE_OF_ALL, today: 0.1 }).firstMove(
+    await forTurns(SURE_OF_ALL).firstMove(input("오늘 일정 뭐 있어?"));
+    await forTurns({ ...SURE_OF_ALL, today: 0.1 }).firstMove(
       input("오늘 일정 뭐 있어?"),
     );
-    const followUp = forTurns(HOME, SURE_OF_ALL);
+    const followUp = forTurns(SURE_OF_ALL);
     expect(await followUp.firstMove(input("그럼 일정은?"))).toBeNull();
     expect(followUp.model.asked).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -953,10 +928,10 @@ describe("the first move, as a turn asks for it", () => {
       spyOn(console, "warn").mockImplementation(keep),
     ];
     const text = "오늘 치과 예약이랑 세무사 메일 확인";
-    await forTurns(HOME, SURE_OF_ALL).firstMove(input(text));
-    await forTurns(HOME, { ...SURE_OF_ALL, mail: 0 }).firstMove(input(text));
-    await forTurns(HOME, "down").firstMove(input(text));
-    await forTurns(HOME, SURE_OF_ALL, []).firstMove(input(text));
+    await forTurns(SURE_OF_ALL).firstMove(input(text));
+    await forTurns({ ...SURE_OF_ALL, mail: 0 }).firstMove(input(text));
+    await forTurns("down").firstMove(input(text));
+    await forTurns(SURE_OF_ALL, []).firstMove(input(text));
     for (const spy of spies) spy.mockRestore();
     const logged = lines.filter((line) => line.includes("first_move"));
     expect(logged.length).toBeGreaterThanOrEqual(4);
