@@ -958,8 +958,8 @@ describe("the first move, as a turn asks for it", () => {
      * same decisions: an answer that names kinds is an answer that left a row.
      */
     const trail: AuditEventInput[] = [];
+    // Nothing of where the person is: the weather's move needs no place (`needs: null`).
     const person = {
-      whereaboutsOf: async () => ({ place: "강원 춘천시", coordinates: null }),
       connectionsOf: async () => [
         { serverId: CALENDAR_SERVER, health: { status: "ok" } },
         { serverId: MAIL_SERVER, health: { status: "ok" } },
