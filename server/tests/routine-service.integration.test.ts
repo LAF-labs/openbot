@@ -26,13 +26,13 @@ import {
 } from "../src/db/schema";
 import { createRoutineRoutes } from "../src/routines/routes";
 import { createBotLane } from "../src/runner/bot-lane";
+import { nextRunAt } from "../src/routines/schedule";
 import {
   createRoutineService,
-  MAX_ROUTINES,
-  nextRunAt,
   RoutineError,
   type RoutineServiceOptions,
 } from "../src/routines/service";
+import { MAX_ROUTINES } from "../src/routines/store";
 import { TEST_POOL } from "./support/database";
 
 /**

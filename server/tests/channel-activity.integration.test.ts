@@ -6,10 +6,8 @@ import {
   createAgentProfileStore,
 } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
-import {
-  ChannelNotFoundError,
-  createChannelStore,
-} from "../src/channels/routes";
+import { ChannelNotFoundError } from "../src/channels/errors";
+import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
 import {

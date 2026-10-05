@@ -55,17 +55,9 @@ export {
   routineRunLine,
   withReminder,
 } from "./context.ko";
-export {
-  NOTEPAD_MAX_BYTES,
-  NOTEPAD_MAX_KEYS,
-  notepadBytes,
-  notepadOf,
-  notepadText,
-  type RoutineNote,
-} from "./notepad.ko";
+export { notepadOf, type RoutineNote } from "./notepad.ko";
 export { type PromptPerson, placeText } from "./person.ko";
 export type { PromptSkill } from "./skill-index";
-export { TOOL_RESULT_KO } from "./tool-results.ko";
 export { DEFAULT_TIME_ZONE, resolveTimeZone } from "./zone";
 
 /**

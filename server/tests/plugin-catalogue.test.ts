@@ -9,7 +9,7 @@ import {
   resolveServerUrl,
   serverCredentialKind,
 } from "../src/plugins/catalogue";
-import { unlistedAdvertisedTools } from "../src/plugins/store";
+import { unlistedAdvertisedTools } from "../src/plugins/servers";
 
 /**
  * The catalogue decides two things that are worth being sure about: which addresses this deployment

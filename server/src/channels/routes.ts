@@ -19,10 +19,8 @@ import { createRosterRoutes } from "./roster-routes";
 import { createTranscriptRoutes } from "./transcript-routes";
 import type { ChannelStore, ReadMessageTimes } from "./types";
 
-export { ChannelNotFoundError } from "./errors";
-export { parseChannelInput } from "./input";
 export { createChannelStore } from "./store";
-export type { AgentChannel, ChannelStore } from "./types";
+export type { ChannelStore } from "./types";
 
 /**
  * The refusals a channel route answers with, as facts.

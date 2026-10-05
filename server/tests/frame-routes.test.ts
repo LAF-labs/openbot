@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
 import { FRAME_MAX_BASE64, isKeepableFrame } from "../src/channels/frames";
-import type { AgentChannel, ChannelStore } from "../src/channels/routes";
+import type { ChannelStore } from "../src/channels/routes";
 import { createChannelRoutes } from "../src/channels/routes";
+import type { AgentChannel } from "../src/channels/types";
 
 /**
  * THE LAST PICTURE OF A BROWSING TASK, AT THE DOOR.

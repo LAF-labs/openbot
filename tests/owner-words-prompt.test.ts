@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { BASE_KO, TOOL_RESULT_KO } from "../shared/prompt";
+import { BASE_KO } from "../shared/prompt";
+import { TOOL_RESULT_KO } from "../shared/prompt/tool-results.ko";
 
 /**
  * THE BOT'S WORDS TO A SHOP OWNER — what the prompt says about them.

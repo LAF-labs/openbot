@@ -20,7 +20,8 @@ import {
   users,
 } from "../src/db/schema";
 import { CATALOGUE } from "../src/plugins/catalogue";
-import { createRoutineService, nextRunAt } from "../src/routines/service";
+import { nextRunAt } from "../src/routines/schedule";
+import { createRoutineService } from "../src/routines/service";
 import { ROUTINE_SUGGESTIONS } from "../src/routines/suggestion-catalog";
 import {
   createRoutineSuggestionService,

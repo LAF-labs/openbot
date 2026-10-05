@@ -11,15 +11,15 @@ import {
 import type { AgentActor } from "../src/agents/profile-types";
 import { createApp } from "../src/app";
 import type { AppVariables } from "../src/auth/guards";
+import { ChannelNotFoundError } from "../src/channels/errors";
+import { parseChannelInput } from "../src/channels/input";
 import {
-  type AgentChannel,
-  ChannelNotFoundError,
   type ChannelStore,
   createChannelRoutes,
   createChannelStore,
-  parseChannelInput,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
+import type { AgentChannel } from "../src/channels/types";
 import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import {
