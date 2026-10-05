@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { TypeSafeClient } from "@typesafe-ai/sdk";
 import type { AuditEventInput } from "../src/audit";
 import type { DeploymentConfig } from "../src/config";
 import type { Database } from "../src/db/client";
@@ -50,7 +51,7 @@ type Left = {
 let left: Left[] = [];
 /** The bounds `askModel` armed (`AbortSignal.timeout`), in the order they were armed. */
 let modelBounds: number[] = [];
-/** The bounds the decisions SDK armed: it holds a request to its time with `setTimeout`. */
+/** The bound each question to Jev was put with: the `timeout` of the client it went through. */
 let jevBounds: number[] = [];
 let usageSources: unknown[] = [];
 let logged: Record<string, unknown>[] = [];
@@ -69,31 +70,36 @@ beforeEach(() => {
   jevStatus = 200;
 
   /*
-   * BY WHO ARMED IT, NOT ONLY BY WHEN. The two clocks are the process's own, and every test file
-   * of this workspace runs in one process: a timer or a request another file left running would
-   * land in these lists as surely as this file's own. So each is kept only when the code that
-   * armed it is the one being measured — `askModel`, and the decisions SDK.
+   * BY WHO ARMED IT, NOT ONLY BY WHEN. `AbortSignal.timeout` is the process's own, and every test
+   * file of this workspace runs in one process: a bound another file's call armed would land in
+   * this list as surely as this file's own. So one is kept only when the code that armed it is
+   * the one being measured, `askModel`.
    */
-  const armedBy = (file: string) => (new Error().stack ?? "").includes(file);
   const realTimeout = AbortSignal.timeout.bind(AbortSignal);
   spies.push(
     spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
-      if (armedBy("computer/model-call")) modelBounds.push(ms);
+      if ((new Error().stack ?? "").includes("computer/model-call")) {
+        modelBounds.push(ms);
+      }
       return realTimeout(ms);
     }),
   );
-  const realSetTimeout = globalThis.setTimeout;
+  /*
+   * JEV'S BOUND, OFF THE CLIENT THE QUESTION WENT THROUGH. `timeout` is the SDK's own public word
+   * for how long an attempt may take and `systemOne` is its one door, so the bound is read where
+   * the SDK promises it, and the call goes on as it was. It was read off the SDK's timer once, by
+   * the stack that armed it: true, and one SDK release away from failing on an empty list, which
+   * says nothing about this server.
+   */
+  const realSystemOne = TypeSafeClient.prototype.systemOne;
   spies.push(
-    spyOn(globalThis, "setTimeout").mockImplementation(((
-      handler: () => void,
-      ms?: number,
-      ...rest: unknown[]
-    ) => {
-      if (typeof ms === "number" && armedBy("@typesafe-ai/sdk")) {
-        jevBounds.push(ms);
-      }
-      return realSetTimeout(handler, ms, ...rest);
-    }) as never),
+    spyOn(TypeSafeClient.prototype, "systemOne").mockImplementation(function (
+      this: TypeSafeClient,
+      ...asked: Parameters<typeof realSystemOne>
+    ) {
+      jevBounds.push(this.timeout);
+      return realSystemOne.apply(this, asked);
+    } as typeof realSystemOne),
   );
   // The log is one JSON line a call, on the console: read, and kept off the test's own output.
   for (const level of ["log", "warn", "error"] as const) {
@@ -179,7 +185,13 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
-function calls(options: { jev: boolean; effort?: boolean }) {
+function calls(options: {
+  /** The switch. Left out, the deployment has no harness block at all, which is the switch off. */
+  jev?: boolean;
+  effort?: boolean;
+  /** Where the model is served, when it is not where the switch alone would put it. */
+  baseUrl?: string;
+}) {
   return createServerModelCalls({
     // Only `autoReviewFor` reads the database, and no judge here is the auto-review.
     database: {} as Database,
@@ -191,7 +203,7 @@ function calls(options: { jev: boolean; effort?: boolean }) {
     credentials: { readModelSecret: async () => null },
     encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     endpoint: {
-      baseUrl: options.jev ? OPENROUTER : PROVIDER,
+      baseUrl: options.baseUrl ?? (options.jev ? OPENROUTER : PROVIDER),
       apiKey: "sk-test",
     },
     model: {
@@ -204,10 +216,13 @@ function calls(options: { jev: boolean; effort?: boolean }) {
       reviewModel: "laf-review",
       decisionModel: DECISION_MODEL,
     },
-    harness: {
-      jevEnabled: options.jev,
-      compaction: "decisions",
-    } as DeploymentConfig["harness"],
+    harness:
+      options.jev === undefined
+        ? undefined
+        : ({
+            jevEnabled: options.jev,
+            compaction: "decisions",
+          } as DeploymentConfig["harness"]),
   });
 }
 
@@ -315,24 +330,8 @@ describe("a judge with Jev off", () => {
   });
 
   test("is not Jev's even where the endpoint could serve it", async () => {
-    // OpenRouter, and the switch off: the address alone never turns Jev on.
-    const made = createServerModelCalls({
-      database: {} as Database,
-      auditStore: { insert: async () => undefined },
-      credentials: { readModelSecret: async () => null },
-      encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-      endpoint: { baseUrl: OPENROUTER, apiKey: "sk-test" },
-      model: {
-        provider: "openai",
-        credentialSecretRef: "model:openai",
-        defaultModel: "laf-1",
-        supportsEffort: false,
-        serverModel: SERVER_MODEL,
-        serverModelSupportsEffort: true,
-        reviewModel: "laf-review",
-        decisionModel: DECISION_MODEL,
-      },
-    });
+    // OpenRouter, and no switch set at all: the address alone never turns Jev on.
+    const made = calls({ baseUrl: OPENROUTER });
     await made.memoryAsker.ask({ fact: "월요일은 쉰다" }, QUESTIONS);
     expect(left.map((sent) => sent.door)).toEqual(["server-model"]);
     expect(made.highRiskModel).toBe(SERVER_MODEL);
