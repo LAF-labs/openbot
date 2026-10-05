@@ -172,9 +172,17 @@ describe("the run meter", () => {
  * the model's first output, whatever that was — and it goes on meaning that.
  */
 describe("the run meter: the first sign and the first word", () => {
-  test("the first word is the first text with something in it, counted from acceptance", () => {
+  test("the first word is the first text with something in it, counted from acceptance — and nothing else is", () => {
     const time = clock();
-    const meter = createRunMeter(time.now);
+    let reads = 0;
+    const now = () => {
+      reads += 1;
+      return time.now();
+    };
+    // Accepted, and eighty milliseconds later the run begins: a meter is made, told when that was.
+    const acceptedAt = time.now();
+    time.pass(80);
+    const meter = createRunMeter(now, acceptedAt);
     time.pass(120);
     meter.observe(event("RUN_STARTED"));
     time.pass(2_300);
@@ -186,15 +194,26 @@ describe("the run meter: the first sign and the first word", () => {
     meter.observe(event("TEXT_MESSAGE_CHUNK"));
     time.pass(20);
     meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: " 안" }));
+    // The meter's start, the Bot's start, the first output and the first word: four readings.
+    expect(reads).toBe(4);
     time.pass(900);
-    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "녕하세요" }));
+    // The rest of the answer, and a step after it: nothing left to stamp, so the clock is not read.
+    for (let delta = 0; delta < 500; delta += 1) {
+      meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "녕하세요" }));
+    }
+    meter.observe(event("TOOL_CALL_START", { toolCallName: "computer_read" }));
+    expect(reads).toBe(4);
     meter.end();
     expect(meter.read()).toMatchObject({
+      // What was measured before the two firsts existed starts where it did: at the meter.
       queuedMs: 120,
       // The blank line is the model's first output, as it always was.
       firstTokenMs: 2_300,
-      firstSignMs: 2_500,
-      firstWordMs: 2_500,
+      totalMs: 3_400,
+      // The two firsts start at acceptance, eighty milliseconds before it.
+      firstSignMs: 2_580,
+      firstWordMs: 2_580,
+      toolCalls: 1,
       firstMove: null,
     });
   });
@@ -216,17 +235,12 @@ describe("the run meter: the first sign and the first word", () => {
     time.pass(1_100);
     meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "찾았어요." }));
     meter.end();
-    const read = meter.read();
-    expect(read).toMatchObject({
+    expect(meter.read()).toMatchObject({
       queuedMs: 150,
       firstTokenMs: 700,
       firstSignMs: 850,
       firstWordMs: 5_950,
     });
-    // No first move, and the model's first output was a step to draw: the sum, to the millisecond.
-    expect(read.firstSignMs).toBe(
-      (read.queuedMs ?? 0) + (read.firstTokenMs ?? 0),
-    );
   });
 
   test("a first move's step is the first sign, and the model's first output is still counted from the Bot's start", () => {

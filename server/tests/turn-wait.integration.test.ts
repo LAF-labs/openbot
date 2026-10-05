@@ -11,22 +11,19 @@
  *
  * The rows are the ledger's own (`begin`, then `settle` with a measure), moved into 2003 so the
  * section's window holds this file's turns and nothing else. No other file writes that year; the
- * two that keep an era of their own purge what is before 1998 and before 2000.
+ * two that keep an era of their own purge what is before 1998 and before 2000. The trail is
+ * append-only, so the two questions planted in it are 2003's too and leave by `audit_purge_before`.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
-import { FIRST_MOVE_KINDS } from "../../shared/first-move";
+import { FIRST_MOVE_ENDINGS, FIRST_MOVE_KINDS } from "../../shared/first-move";
 import { createDatabase } from "../src/db/client";
-import { agents, lafThreadRuns } from "../src/db/schema";
+import { agents, auditEvents, lafThreadRuns } from "../src/db/schema";
 import type { TurnsInsight } from "../src/insights/report";
 import { summariseTurns, turnsStatement } from "../src/insights/turns";
 import { createRunLedger, type RunStart } from "../src/runner/run-ledger";
-import {
-  FIRST_MOVE_ENDINGS,
-  type FirstMoveMeasure,
-  type RunMeasure,
-} from "../src/telemetry/run-meter";
+import type { FirstMoveMeasure, RunMeasure } from "../src/telemetry/run-meter";
 import { TEST_POOL } from "./support/database";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -37,6 +34,7 @@ const PLANTED = "사장님 통장 비밀번호 7731 김영희 010-4455-6677";
 const ZONE = "Asia/Seoul";
 /** 2003-03-03 00:00 UTC, 09:00 in Seoul. */
 const ERA = Date.UTC(2003, 2, 3, 0, 0, 0);
+const ERA_ENDS = new Date(Date.UTC(2004, 0, 1));
 const at = (minutes: number) => new Date(ERA + minutes * 60_000);
 
 const measure = (over: Partial<RunMeasure> = {}): RunMeasure => ({
@@ -132,7 +130,24 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
     return found;
   };
 
+  /** A question about an action of this Bot's, as the gateway files one, at `minutes` into the era. */
+  const ask = (minutes: number) =>
+    database.insert(auditEvents).values({
+      eventType: "approval.requested",
+      targetType: "computer",
+      targetId: "computer-1",
+      payload: {
+        bot: botId,
+        approval: `turn-wait-${suite}-${minutes}`,
+        rule: "payment",
+        subject: { kind: "click", label: PLANTED },
+      },
+      createdAt: at(minutes),
+    });
+
   beforeAll(async () => {
+    // An earlier run of this file that died before its `afterAll` left its questions behind.
+    await database.execute(sql`SELECT audit_purge_before(${ERA_ENDS})`);
     await database.insert(agents).values({
       id: botId,
       name: botId,
@@ -260,6 +275,35 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
       }),
     });
 
+    /*
+     * LAST, because a question is paired to a turn by its Bot and its time and by nothing else
+     * (`run-ledger.ts`, `approvalsSince`): every turn above is settled before a question exists.
+     *
+     * A turn whose first step stopped for the person's yes — the step on the window at 0.8 s, ten
+     * minutes of the person's own, and the first word after them. Then one that said its first
+     * word at once and was asked about a step it took later.
+     */
+    ids.askedFirst = await open(50);
+    await ask(51);
+    await ledger.settle(ids.askedFirst, {
+      status: "done",
+      measure: measure({
+        firstSignMs: 800,
+        firstWordMs: 600_000,
+        toolCalls: 1,
+      }),
+    });
+    ids.askedLater = await open(52);
+    await ask(53);
+    await ledger.settle(ids.askedLater, {
+      status: "done",
+      measure: measure({
+        firstSignMs: 1_300,
+        firstWordMs: 1_300,
+        toolCalls: 1,
+      }),
+    });
+
     const rows = await database.execute<{ value: string | null }>(
       turnsStatement({ since: at(-60), to: at(12 * 60), timeZone: ZONE }),
     );
@@ -274,6 +318,7 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
         .where(inArray(lafThreadRuns.runId, made));
     }
     await database.delete(agents).where(eq(agents.id, botId));
+    await database.execute(sql`SELECT audit_purge_before(${ERA_ENDS})`);
     await database.$client.close();
   });
 
@@ -372,7 +417,8 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
   test("the section counts the wait to the first word in tenths of a second, conversations only", () => {
     expect(section?.firstWord).toEqual([
       [12, 1],
-      [13, 1],
+      // 1,260 ms, and the turn that was asked about a step after its first word at 1,300.
+      [13, 2],
       [20, 2],
       [21, 1],
       [34, 2],
@@ -380,8 +426,37 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
       [83, 1],
       [110, 1],
     ]);
-    // The ten, the one that said nothing, the unmeasured one, the one at work and the four planted.
-    expect(section?.chatTurns).toBe(17);
+    // The ten, the one that said nothing, the unmeasured one, the one at work, the four planted
+    // and the two a question was asked in.
+    expect(section?.chatTurns).toBe(19);
+  });
+
+  test("a turn that asked its person about an action before its first word is not read as a slow Bot", async () => {
+    /*
+     * `first_word_ms` is what the person sat through, their own ten minutes included, and the row
+     * keeps it whole. Read as the Bot's speed it is wrong: one such turn in twelve and the
+     * ninetieth percentile is eleven seconds instead of 8.3. So the cells leave out a turn a
+     * question was asked in — unless its first word was the first thing drawn, since a question
+     * is asked by a step and no step came before that word.
+     */
+    expect(await row(ids.askedFirst)).toMatchObject({
+      approvalsAsked: 1,
+      firstSignMs: 800,
+      firstWordMs: 600_000,
+    });
+    expect(await row(ids.askedLater)).toMatchObject({
+      approvalsAsked: 1,
+      firstSignMs: 1_300,
+      firstWordMs: 1_300,
+    });
+    // Nobody above was asked anything: the two questions are these two turns', one each.
+    expect((await row(ids.said9)).approvalsAsked).toBe(0);
+    const cells = new Map(section?.firstWord);
+    // Ten minutes is 6,000 tenths of a second, and no cell has it.
+    expect(Math.max(...cells.keys())).toBe(110);
+    expect(cells.get(13)).toBe(2);
+    if (!section) throw new Error("the section did not read");
+    expect(summariseTurns(section, 1).firstWordP90).toBe(8.3);
   });
 
   test("the section counts, per kind of first move, the turns asked about it and the turns it moved", () => {
@@ -402,33 +477,69 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
   test("the median and the ninetieth percentile are nearest rank: a wait somebody had, and the one the database gives", async () => {
     if (!section) throw new Error("the section did not read");
     const day = summariseTurns(section, 1);
-    // Ten turns: the fifth and the ninth, in the order of their waits.
-    expect(day.firstWordTurns).toBe(10);
+    // Eleven turns: the sixth and the tenth, in the order of their waits.
+    expect(day.firstWordTurns).toBe(11);
     expect(day.firstWordP50).toBe(2.1);
     expect(day.firstWordP90).toBe(8.3);
-    // The same two read straight off the rows, by the statement handed to whoever asks by hand.
+    /*
+     * The same read straight off the rows, by the statements `docs/laf/eval-pack.md` hands to
+     * whoever asks by hand ("Counting the wait, and the moves, from the turns") — which are also
+     * where the first sign and a move's two times are read at all.
+     */
     const [read] = [
-      ...(await database.execute<{
-        turns: number | string;
-        p50: number | string | null;
-        p90: number | string | null;
-      }>(sql`
+      ...(await database.execute<Record<string, number | string | null>>(sql`
         SELECT count(*) AS turns,
-               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_word_ms) AS p50,
-               percentile_disc(0.9) WITHIN GROUP (ORDER BY first_word_ms) AS p90
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_sign_ms) AS sign_p50_ms,
+               count(first_word_ms) FILTER (WHERE approvals_asked = 0 OR first_sign_ms = first_word_ms) AS said,
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_word_ms)
+                 FILTER (WHERE approvals_asked = 0 OR first_sign_ms = first_word_ms) AS word_p50_ms,
+               percentile_disc(0.9) WITHIN GROUP (ORDER BY first_word_ms)
+                 FILTER (WHERE approvals_asked = 0 OR first_sign_ms = first_word_ms) AS word_p90_ms
           FROM laf_thread_runs
-         WHERE origin = 'chat' AND turn_id = run_id AND first_word_ms IS NOT NULL
+         WHERE origin = 'chat' AND turn_id = run_id
            AND started_at >= ${at(-60)} AND started_at < ${at(12 * 60)}`)),
     ];
-    expect(Number(read?.turns)).toBe(10);
-    expect(Number(read?.p50)).toBe(2_050);
-    expect(Number(read?.p90)).toBe(8_300);
-    expect(Math.round(Number(read?.p50) / 100) / 10).toBe(
+    expect({
+      turns: Number(read?.turns),
+      said: Number(read?.said),
+      word50: Number(read?.word_p50_ms),
+      word90: Number(read?.word_p90_ms),
+      // Thirteen turns drew something; the seventh was the first word of the turn asked later.
+      sign50: Number(read?.sign_p50_ms),
+    }).toEqual({
+      turns: 19,
+      said: 11,
+      word50: 2_050,
+      word90: 8_300,
+      sign50: 1_300,
+    });
+    expect(Math.round(Number(read?.word_p50_ms) / 100) / 10).toBe(
       day.firstWordP50 ?? 0,
     );
-    expect(Math.round(Number(read?.p90) / 100) / 10).toBe(
+    expect(Math.round(Number(read?.word_p90_ms) / 100) / 10).toBe(
       day.firstWordP90 ?? 0,
     );
+    // What a move costs, per kind: deciding, and the call.
+    const moves = [
+      ...(await database.execute<Record<string, number | string | null>>(sql`
+        SELECT first_move_kind AS kind, count(*) AS moved,
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_move_decision_ms) AS decision_p50_ms,
+               percentile_disc(0.5) WITHIN GROUP (ORDER BY first_move_call_ms)
+                 FILTER (WHERE approvals_asked = 0) AS call_p50_ms
+          FROM laf_thread_runs
+         WHERE origin = 'chat' AND turn_id = run_id AND first_move_kind IS NOT NULL
+           AND started_at >= ${at(-60)} AND started_at < ${at(12 * 60)}
+         GROUP BY 1 ORDER BY 1`)),
+    ].map((kind) => [
+      kind.kind,
+      Number(kind.moved),
+      Number(kind.decision_p50_ms),
+      Number(kind.call_p50_ms),
+    ]);
+    expect(moves).toEqual([
+      ["mail", 1, 240, 1_100],
+      ["weather", 3, 240, 1_100],
+    ]);
     // What the report already said is untouched: it stops at the model's first output.
     expect(day.firstAnswerP50).toBe(0.9);
   });

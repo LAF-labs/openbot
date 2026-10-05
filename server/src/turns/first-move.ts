@@ -53,7 +53,9 @@
  */
 import {
   FIRST_MOVE_KINDS,
+  type FirstMoveEnding,
   type FirstMoveKind,
+  isFirstMoveEnding,
 } from "../../../shared/first-move";
 import {
   DEFERRED_TOOL_PREFIX,
@@ -492,9 +494,12 @@ export function settleDecision(
 /** How long the decision may take. Past it there is no move: the wait would be the saving. */
 export const FIRST_MOVE_TIMEOUT_MS = 1_200;
 
-/** Why no move was made, or that one was — closed words, for a counter. */
+/**
+ * Why no move was made, or that one was — closed words, for a counter. The first member is the
+ * four that mean the decisions model was asked (`shared/first-move.ts`); the rest, nobody was.
+ */
 export type FirstMoveVerdict =
-  | "moved"
+  | FirstMoveEnding
   | "not_one_message"
   | "too_long"
   | "follow_up"
@@ -503,10 +508,7 @@ export type FirstMoveVerdict =
   | "no_place"
   | "no_connection"
   | "budget_spent"
-  | "no_credential"
-  | "no_answer"
-  | "below_bar"
-  | "ambiguous";
+  | "no_credential";
 
 export type FirstMoveInput = {
   /** What the person sent this turn: their messages and any skill instruction put before them. */
@@ -681,21 +683,10 @@ export function createFirstMove(deps: FirstMoveDeps) {
 export type FirstMoveFor = ReturnType<typeof createFirstMove>;
 
 /**
- * What a turn is told of its first move (`engine.ts`): the call to make, when the decision came to
- * one, and — for the turn's own measure (`telemetry/run-meter.ts`) — which kinds the decisions
- * model was asked about and how that ended. Words from closed lists, and nothing of the message.
- */
-export type FirstMoveDecision = {
-  move: FirstMove | null;
-  verdict: FirstMoveVerdict | "off";
-  /** The kinds the decisions model was asked about. Empty when nobody was asked. */
-  asked: readonly FirstMoveKind[];
-};
-
-/**
  * The first move as the turn engine asks for it (`engine.ts`, `firstMove`): the decision, fed the
  * facts it needs about this turn and this person, and a row in the trail for what came of asking.
- * The turn is handed what was decided as well as the move, so its own row says so too.
+ * The turn is handed what was decided as well as the move, so its own row says the same
+ * (`telemetry/run-meter.ts`): which kinds were asked about and how that ended, never the message.
  *
  * Beside the decision rather than in `main.ts`, which only hands these things to each other.
  */
@@ -718,7 +709,7 @@ export function firstMoveForTurns(deps: {
     botId: string;
     asked: readonly { role: string; content?: unknown }[];
     tools: readonly { name: string }[];
-  }): Promise<FirstMoveDecision> => {
+  }): ReturnType<FirstMoveFor> => {
     // Read once a turn at most, and only when a kind that needs it got as far as asking.
     let connections: ReturnType<typeof deps.connectionsOf> | null = null;
     const { move, verdict, asked, decided } = await deps.decide({
@@ -750,11 +741,7 @@ export function firstMoveForTurns(deps: {
           decided: move.decided,
         },
       }).catch(auditRowLost("turn.first_move"));
-    } else if (
-      verdict === "below_bar" ||
-      verdict === "no_answer" ||
-      verdict === "ambiguous"
-    ) {
+    } else if (isFirstMoveEnding(verdict)) {
       // The decisions model was asked and the Bot's model went first anyway. Counted beside the
       // moves, so the trail says how often asking paid: not awaited, and never a word.
       void recordAuditEvent(deps.auditStore, {

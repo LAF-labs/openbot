@@ -48,3 +48,26 @@ export type FirstMoveKind = (typeof FIRST_MOVE_KINDS)[number];
 export function isFirstMoveKind(word: string): word is FirstMoveKind {
   return (FIRST_MOVE_KINDS as readonly string[]).includes(word);
 }
+
+/**
+ * How a decision about a first move ended WHEN THE DECISIONS MODEL WAS ASKED: a move, or one of the
+ * three ways the step was left to the Bot's model. Every other verdict of the decision
+ * (`FirstMoveVerdict`, `server/src/turns/first-move.ts`) is a message nobody was asked about.
+ *
+ * ONE LIST, because two records are kept of exactly these and must be of the same decisions: the
+ * trail's rows (`turn.first_move` for the first, `turn.first_move_left` for the rest) and the
+ * turn's own measure (`laf_thread_runs.first_move_verdict`, `server/src/runner/run-ledger.ts`).
+ * Here beside the kinds, the other closed list a column may hold a word of.
+ */
+export const FIRST_MOVE_ENDINGS = [
+  "moved",
+  "no_answer",
+  "below_bar",
+  "ambiguous",
+] as const;
+export type FirstMoveEnding = (typeof FIRST_MOVE_ENDINGS)[number];
+
+/** Whether a verdict is one of a decision the decisions model was asked for. */
+export function isFirstMoveEnding(word: string): word is FirstMoveEnding {
+  return (FIRST_MOVE_ENDINGS as readonly string[]).includes(word);
+}

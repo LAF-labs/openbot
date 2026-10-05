@@ -1019,31 +1019,31 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * changes is paused for review for everyone who has it connected, so changing one is a line here.
  *
  * RAISED 2026-10-05 with the wait measured as the person has it, by exactly what was added:
- * twenty-one to `server` — five in `run-meter.test.ts` (the first word is the first text with
- * something in it, counted from acceptance; a call before the words is the first sign; a first
- * move's step is the first sign, and the model's first output is still counted from the Bot's
- * start; a run that only acted has a sign and no word; a decision left to the Bot is kept without
- * a kind or a call), seven in `turn-engine.integration.test.ts` (words only; a call first; opened
- * by a first move; a decision that left the step to the Bot, and a message nobody was asked about;
+ * twenty-four to `server` — five in `run-meter.test.ts` (the first word is the first text with
+ * something in it, counted from acceptance when nothing else is, and the clock is not read once
+ * it is stamped; a call before the words is the first sign; a first move's step is the first
+ * sign, and the model's first output is still counted from the Bot's start; a run that only acted
+ * has a sign and no word; a decision left to the Bot is kept without a kind or a call), nine in
+ * `turn-engine.integration.test.ts` (words only; what the engine does with a message before its
+ * run starts is in the two new waits and in none of the numbers that were there before; a call
+ * first; opened by a first move; a move's call has a time whatever came back, and none only when
+ * it never left; a decision that left the step to the Bot, and a message nobody was asked about;
  * a turn that said nothing; a turn the person stopped; nothing the row measured holds a word of
- * the message), the eight of the new `turn-wait.integration.test.ts` (the row holds what the meter
+ * the message), the nine of the new `turn-wait.integration.test.ts` (the row holds what the meter
  * read; an ending written after the fact keeps it; a first move is written from the two closed
- * lists or not at all; the section's cells; its counts per kind; the median and the ninetieth
+ * lists or not at all; the section's cells; a turn that asked its person about an action before
+ * its first word is not read as a slow Bot; the counts per kind; the median and the ninetieth
  * percentile by nearest rank, held to the database's own; a section from before reads as not
  * measured; no word reaches a column or the section) and one in `first-move.test.ts` (the turn is
  * told what was decided as well as the move) — and one to `root`, in `eval-from-failures.test.ts`
  * (the week's lines say the wait and the moves where the answer measured them, and nowhere else).
- *
- * RAISED AGAIN 2026-10-05 after that change's review, by exactly what was added: one to `server`,
- * in `turn-engine.integration.test.ts` (a decision nobody could read is a first move not measured,
- * and the turn answers all the same).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3571, roots: ["server"] },
+  { name: "server", floor: 3573, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 643, roots: ["tests", "agent-bot"] },

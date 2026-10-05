@@ -17,32 +17,12 @@
  * lists — so the columns it lands in cannot hold what anybody typed.
  */
 import type { BaseEvent } from "@ag-ui/client";
-import type { FirstMoveKind } from "../../../shared/first-move";
+import type {
+  FirstMoveEnding,
+  FirstMoveKind,
+} from "../../../shared/first-move";
 import { COMPUTER_TOOLS } from "../../../shared/tools/computer";
-import type { FirstMoveVerdict } from "../turns/first-move";
 import { modelUsageOf } from "../usage/model-usage";
-
-/**
- * How a first move ended once the decisions model had been asked about it: the four of
- * `FirstMoveVerdict` (`turns/first-move.ts`) that leave a row in the trail — `turn.first_move` for
- * the first, `turn.first_move_left` for the rest. Every other verdict is a turn nobody was asked
- * about, and its measure says nothing of a first move.
- *
- * A closed list and not only a type, because the word is written to a column: the ledger writes one
- * of these or nothing (`run-ledger.ts`).
- */
-export const FIRST_MOVE_ENDINGS = [
-  "moved",
-  "no_answer",
-  "below_bar",
-  "ambiguous",
-] as const satisfies readonly FirstMoveVerdict[];
-export type FirstMoveEnding = (typeof FIRST_MOVE_ENDINGS)[number];
-
-/** Whether a verdict is one a measure keeps. */
-export function isFirstMoveEnding(word: string): word is FirstMoveEnding {
-  return (FIRST_MOVE_ENDINGS as readonly string[]).includes(word);
-}
 
 /**
  * A turn's first move (`turns/first-move.ts`), as its own measure keeps it: which kinds the
@@ -51,7 +31,7 @@ export function isFirstMoveEnding(word: string): word is FirstMoveEnding {
  * made was only in the trail.
  */
 export type FirstMoveMeasure = {
-  /** The kinds the decisions model was asked about in its one request. Never empty. */
+  /** The kinds the decisions model was asked about in its one request. */
   asked: readonly FirstMoveKind[];
   verdict: FirstMoveEnding;
   /** The kind whose call the server made. Null unless the verdict is `moved`. */
@@ -62,7 +42,13 @@ export type FirstMoveMeasure = {
    * all of it, since all of it is before the Bot's model is asked.
    */
   decisionMs: number;
-  /** The move's call, from leaving to coming back. Null when no call was made. */
+  /**
+   * The move's call, from leaving to whatever came back: an answer, a refusal, a stop that landed
+   * while it was out, a throw. Null on every other verdict, and on a `moved` whose call NEVER
+   * LEFT — the person stopped the turn while the decision was out. The verdict is `moved` there
+   * all the same: the trail's `turn.first_move` row is written when the decision is made, before
+   * the turn has looked at the stop, and the row says what the trail says.
+   */
   callMs: number | null;
 };
 
@@ -82,17 +68,27 @@ export type RunMeasure = {
    *                 `firstAnswer` adds `queuedMs` to it.
    *   firstSignMs   accepted → the first thing a window can DRAW for the run at all: a step's
    *                 line — a call the model made, or the first move the server made for it — or a
-   *                 word. `queuedMs + firstTokenMs` exactly when no move was made and the model's
-   *                 first output was something to draw; with a move it is earlier, since the
-   *                 move's step goes out before the model is asked.
+   *                 word. With a move it is early: the step goes out before the model is asked.
    *   firstWordMs   accepted → the first WORD of the answer: a text delta with something in it.
-   *                 What somebody holding a stopwatch to the window reads. Later than
-   *                 `firstSignMs` by every step taken before the answer began.
+   *                 What somebody holding a stopwatch to the window reads — ALL of it, the
+   *                 person's own time included. A turn that asks them something before it has
+   *                 said a word (an approval, a take-over, a value to type, a card) has the
+   *                 minutes they took to answer in this number; whoever reads it as the Bot's
+   *                 speed leaves such turns out, as far as the row can tell them
+   *                 (`insights/turns.ts`).
    *
-   * ACCEPTED is where the meter was made: the engine being handed what the person said
-   * (`turns/engine.ts`, `send`), the runner taking a run, a routine being claimed. Nobody waits on
-   * a routine's first word; its row carries these because they cost nothing to read off the same
-   * events, and the report reads conversations only.
+   * TWO ORIGINS, ON PURPOSE. The two new firsts start when the run was ACCEPTED: for a
+   * conversation, the engine being handed what the person said (`turns/engine.ts`, `send`),
+   * before the message is checked or written. Everything measured before they existed —
+   * `queuedMs`, `totalMs`, and through `queuedMs` the fleet's `firstAnswer` — starts where it
+   * always did, when the meter is made: for a conversation that is the turn's run beginning,
+   * after the message is written, and it is what those fields' own lines call "accepted". A
+   * series somebody compares across releases must not move because a column was added beside it.
+   * So `firstSignMs` is NOT `queuedMs + firstTokenMs`, even with no first move: it is longer by
+   * what the engine did before the run began. The runner's meter and a routine's are made at
+   * acceptance and have the one origin. Nobody waits on a routine's first word; its row carries
+   * these because they cost nothing to read off the same events, and the report reads
+   * conversations only.
    */
   /** Accepted → the first step's line or the first word. Null when the run drew neither. */
   firstSignMs: number | null;
@@ -167,12 +163,20 @@ const elapsed = (from: number | null, to: number | null) =>
   from === null || to === null ? null : Math.max(0, Math.round(to - from));
 
 /**
- * A meter started now — the moment the run was accepted, which is what "queued" means.
+ * A meter started now — the moment the run begins to be measured, which is where "queued" starts.
+ *
+ * `acceptedAt` is when the run was accepted, for a caller that was handed it before the meter
+ * could be made: the first sign and the first word are counted from it, and nothing else is (see
+ * `RunMeasure`, "two origins"). Left out, the run was accepted now.
  *
  * `now` is injectable so a test can say how long each part took without waiting for it.
  */
-export function createRunMeter(now: () => number = Date.now): RunMeter {
+export function createRunMeter(
+  now: () => number = Date.now,
+  acceptedAt?: number,
+): RunMeter {
   const queuedAt = now();
+  const accepted = acceptedAt ?? queuedAt;
   let startedAt: number | null = null;
   let firstOutputAt: number | null = null;
   let firstSignAt: number | null = null;
@@ -197,18 +201,26 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
         return;
       }
       if (OUTPUT_EVENTS.has(type)) {
-        // One reading of the clock for the event, so the firsts it sets agree to the millisecond.
-        const at = now();
-        firstOutputAt ??= at;
-        if (type === "TOOL_CALL_START" || type === "TOOL_CALL_CHUNK") {
-          // A call's line is drawn from its start, before any of its arguments have arrived.
-          firstSignAt ??= at;
-        } else if (
-          firstWordAt === null &&
-          draws((event as { delta?: unknown }).delta)
-        ) {
-          firstWordAt = at;
-          firstSignAt ??= at;
+        /*
+         * THE CLOCK IS READ ONLY FOR AN EVENT THAT STAMPS SOMETHING, and once for it, so the
+         * firsts one event sets agree to the millisecond. An answer is thousands of deltas: after
+         * its first word each of them costs the comparison below and nothing more — no clock, and
+         * no look at the delta.
+         */
+        if (firstWordAt === null) {
+          const call = type === "TOOL_CALL_START" || type === "TOOL_CALL_CHUNK";
+          const word = !call && draws((event as { delta?: unknown }).delta);
+          if (
+            firstOutputAt === null ||
+            word ||
+            (call && firstSignAt === null)
+          ) {
+            const at = now();
+            firstOutputAt ??= at;
+            // A call's line is drawn from its start, before any of its arguments have arrived.
+            if (call || word) firstSignAt ??= at;
+            if (word) firstWordAt = at;
+          }
         }
         if (type === "TOOL_CALL_START") {
           toolCalls += 1;
@@ -257,8 +269,8 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
       return {
         queuedMs: elapsed(queuedAt, startedAt),
         firstTokenMs: elapsed(startedAt ?? queuedAt, firstOutputAt),
-        firstSignMs: elapsed(queuedAt, firstSignAt),
-        firstWordMs: elapsed(queuedAt, firstWordAt),
+        firstSignMs: elapsed(accepted, firstSignAt),
+        firstWordMs: elapsed(accepted, firstWordAt),
         streamMs: elapsed(firstOutputAt, ended),
         totalMs: elapsed(queuedAt, ended) ?? 0,
         modelRequests,

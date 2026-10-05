@@ -18,6 +18,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
+import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
@@ -46,13 +47,9 @@ import {
   runTurnLoop,
 } from "../runner/turn-loop";
 import type { WorkingRun } from "../runner/working";
-import {
-  createRunMeter,
-  isFirstMoveEnding,
-  type RunMeter,
-} from "../telemetry/run-meter";
+import { createRunMeter } from "../telemetry/run-meter";
 import type { ChatToolkit, ChatTurnContext } from "./chat-tools";
-import type { FirstMoveDecision } from "./first-move";
+import type { FirstMoveFor } from "./first-move";
 import type { TurnHub, TurnState, TurnStatus } from "./hub";
 
 /** How many times one turn may come back asking for tools: CopilotKit's own follow-up bound. */
@@ -134,7 +131,7 @@ export type TurnEngineOptions = {
     botId: string;
     asked: readonly Message[];
     tools: readonly Tool[];
-  }) => Promise<FirstMoveDecision>;
+  }) => ReturnType<FirstMoveFor>;
   maxSteps?: number;
   timeoutMs?: number;
   /** How long to wait before each further try at a turn's last write. A test's are shorter. */
@@ -352,10 +349,12 @@ export function createTurnEngine(options: TurnEngineOptions) {
   const run = async (
     turn: LiveTurn,
     input: SendInput,
-    /** Started when the engine was handed what the person said. See `send`. */
-    meter: RunMeter,
+    /** When the engine was handed what the person said. See `send`. */
+    acceptedAt: number,
   ): Promise<void> => {
     const { threadId, owner, botId } = input;
+    // Made here, where it always was: what was measured before the two new firsts starts here.
+    const meter = createRunMeter(now, acceptedAt);
     const signal = turn.stop.signal;
     /** When each assistant message began streaming: the stamp the transcript's separators read. */
     const startedAt = new Map<string, string>();
@@ -532,25 +531,17 @@ export function createTurnEngine(options: TurnEngineOptions) {
        * for itself; a decision that left the step to the Bot's model says which kinds it was
        * about and why. A message nobody was asked about is no first move, and measures none.
        *
-       * AND NEVER WHAT FAILS THE TURN. The rule above holds for the measuring as it does for the
-       * move: a decision this cannot read — one with no list of the kinds it was about, which
-       * nothing typed hands over — is a first move not measured, said once in the log, and the
-       * turn goes on as the turn it would have been.
+       * BY THE LIST THE TRAIL GOES BY (`isFirstMoveEnding`, `shared/first-move.ts`): a row of
+       * the trail and a first move on this turn's row are of the same decisions, because one
+       * list says which they are.
        */
-      try {
-        const considered = move
-          ? { asked: move.asked, verdict: "moved" as const, kind: move.kind }
-          : decision &&
-              decision.asked.length > 0 &&
-              decision.verdict !== "moved" &&
-              isFirstMoveEnding(decision.verdict)
-            ? { asked: decision.asked, verdict: decision.verdict, kind: null }
-            : null;
-        if (considered) {
-          meter.firstMove({ ...considered, decisionMs: now() - decidingAt });
-        }
-      } catch (error) {
-        log.warn("first_move_unmeasured", { reason: describeFailure(error) });
+      if (decision && isFirstMoveEnding(decision.verdict)) {
+        meter.firstMove({
+          asked: decision.asked,
+          verdict: decision.verdict,
+          kind: move?.kind ?? null,
+          decisionMs: now() - decidingAt,
+        });
       }
       if (move && !signal.aborted) {
         const callId = `call_${randomUUID().replaceAll("-", "")}`;
@@ -586,11 +577,10 @@ export function createTurnEngine(options: TurnEngineOptions) {
         // And so no event for the meter to see it by: the step every window draws from here.
         meter.stepSent();
         const callingAt = now();
-        const outcome = await toolkit.execute(move.tool, move.args, {
-          id: callId,
-          signal,
-        });
-        meter.firstMoveCalled(now() - callingAt);
+        // Timed whatever comes back, a throw included: only a call that never left has no time.
+        const outcome = await toolkit
+          .execute(move.tool, move.args, { id: callId, signal })
+          .finally(() => meter.firstMoveCalled(now() - callingAt));
         const answer = {
           id: randomUUID(),
           role: "tool" as const,
@@ -810,16 +800,17 @@ export function createTurnEngine(options: TurnEngineOptions) {
       { ok: true; turnId: string } | { ok: false; code: SendRefusal }
     > {
       /*
-       * THE TURN'S MEASURE STARTS HERE, with the engine being handed what the person said — not in
-       * `run`, where it started until 2026-10-05. By then the message had been checked and written
-       * and the turn's ledger row opened: time the person had already waited, which `queuedMs` —
-       * "accepted → the Bot's service said it started" — said nothing of, and which the runner's
-       * meter and a routine's had always counted. Every time a chat turn's measure reads is from
-       * this moment (`telemetry/run-meter.ts`). What is still before it is not the engine's to
-       * see: the request's own journey, and the route's reads of whose conversation and whose Bot
-       * this is (`routes.ts`).
+       * ACCEPTED NOW: the moment the wait to the first sign and to the first word is counted from
+       * (`telemetry/run-meter.ts`). The engine has been handed what the person said, and nothing
+       * has been checked or written yet — the admission asked about, the ledger row opened, the
+       * message filed are all time the person is already waiting. ONLY THOSE TWO start here. What
+       * was measured before they existed (`queuedMs`, `totalMs`) starts where it always did, with
+       * the meter `run` makes: a number somebody compares from one release to the next does not
+       * move because another was added beside it. What is still before this is not the engine's
+       * to see: the request's own journey, and the route's reads of whose conversation and whose
+       * Bot this is (`routes.ts`).
        */
-      const meter = createRunMeter(now);
+      const acceptedAt = now();
       if (!acceptable(input.messages)) {
         return { ok: false, code: "laf:turn_message_invalid" };
       }
@@ -927,7 +918,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         done?.();
         if (live.get(input.threadId) === turn) live.delete(input.threadId);
       };
-      void run(turn, input, meter)
+      void run(turn, input, acceptedAt)
         .catch((error: unknown) => {
           log.error("turn_crashed", { reason: describeFailure(error) });
         })

@@ -11,6 +11,17 @@
  * move's kinds the same way: the answer is keyed by this build's own list, and a row's column is
  * only ever compared with it.
  *
+ * THE WAIT TO THE FIRST WORD IS THE BOT'S, AS FAR AS THE ROW CAN SAY (`firstWord`). The column
+ * holds everything the person sat through, their own time included: a turn that stopped to ask
+ * them about an action before it had said a word waited up to ten minutes for the answer, and
+ * counted, that reads as a slow Bot at the ninetieth percentile. So a turn is left out of the
+ * cells when a question was asked in it (`approvals_asked`) — unless its first word was also the
+ * first thing drawn, since a question is asked by a step and no step came before that word. That
+ * is as narrow as the row proves: it also leaves out a turn whose question came after the word
+ * but behind an earlier step, which loses a cell and falsifies none. WHAT THE ROW CANNOT SAY is
+ * still counted: a take-over, a value to type, or a card the Bot drew and waited on leaves no
+ * `approval.requested`, so no fact here.
+ *
  * It is written to be pasted into laf-control's `core/insights-sql.ts` with the two bound instants
  * swapped for `now() - interval 'N days'` and `now()`, the way the other nine travel.
  */
@@ -33,7 +44,8 @@ export function turnsStatement(options: {
   return sql`
     WITH turns AS (
       SELECT o.run_id, o.origin::text AS origin, o.user_id, o.started_at, o.queued_ms, o.first_token_ms,
-             o.first_word_ms, o.first_move_asked, o.first_move_verdict, o.first_move_kind,
+             o.first_sign_ms, o.first_word_ms,
+             o.first_move_asked, o.first_move_verdict, o.first_move_kind,
              agg.model_requests, agg.tool_calls, agg.retries, agg.asked, agg.granted,
              agg.cost, agg.prompt, agg.cached, agg.finished_at,
              last.status::text AS last_status, last.ending::text AS last_ending, last.ending_code AS last_code
@@ -120,6 +132,7 @@ export function turnsStatement(options: {
           FROM (SELECT round(first_word_ms / 100.0)::int AS tenths, count(*) AS n
                   FROM placed
                  WHERE origin = 'chat' AND first_word_ms IS NOT NULL
+                   AND (coalesce(asked, 0) = 0 OR first_sign_ms = first_word_ms)
                  GROUP BY 1) worded
       ), '[]'::jsonb),
       'chatTurns', (SELECT count(*) FROM placed WHERE origin = 'chat'),
