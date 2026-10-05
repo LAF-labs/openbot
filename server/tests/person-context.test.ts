@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { NO_WHEREABOUTS, type Whereabouts } from "../../shared/whereabouts";
 import {
+  nameNear,
   promptPersonOf,
   withPersonContext,
 } from "../src/agents/person-context";
@@ -207,6 +208,47 @@ describe("the place a run is told", () => {
 });
 
 describe("the kept facts as the prompt takes them", () => {
+  test("coordinates with no words are given the name 기상청's table has for where they fall; words are left as said", () => {
+    /*
+     * A Bot holding only "위도 37.50, 경도 127.03" and asked for a pharmacy nearby named a landmark
+     * itself from the numbers or asked which neighbourhood (2026-10-05). The name is read from the
+     * shipped table — the one the weather tool answers coordinates with — never worked out.
+     */
+    const here = { latitude: 37.5, longitude: 127.03 };
+    expect(nameNear(here)).toBe("서울특별시 강남구·서초구");
+    expect(promptPersonOf({ ...NO_WHEREABOUTS, coordinates: here })).toEqual({
+      coordinates: here,
+      near: "서울특별시 강남구·서초구",
+    });
+    // What the person said is the place: it is not annotated with where a device happens to be.
+    expect(
+      promptPersonOf({
+        ...NO_WHEREABOUTS,
+        place: "강원 춘천시",
+        coordinates: here,
+      }),
+    ).toEqual({ place: "강원 춘천시", coordinates: here });
+    // Abroad, or a cell the table has no row in: no name, and none is made up.
+    const tokyo = { latitude: 35.68, longitude: 139.65 };
+    expect(nameNear(tokyo)).toBeNull();
+    expect(promptPersonOf({ ...NO_WHEREABOUTS, coordinates: tokyo })).toEqual({
+      coordinates: tokyo,
+    });
+  });
+
+  test("the name reaches the place line a run is told, so nearby is looked for and not asked about", async () => {
+    await using endpoint = fakeAgUiEndpoint();
+    const registered = await loadedFor(endpoint.url, {
+      ...NO_WHEREABOUTS,
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+    const prompt = await systemMessageOf(endpoint, registered);
+    expect(prompt).toContain(
+      "이 사람의 위치: 서울특별시 강남구·서초구 부근(위도 37.50, 경도 127.03, 이 사람 기기에서 받은 대략적인 값).",
+    );
+    expect(prompt).toContain("먼저 묻지 말고 이 곳 이름을 검색어에 넣어 찾고");
+  });
+
   test("a missing fact is absent, never an empty string", () => {
     expect(promptPersonOf(NO_WHEREABOUTS)).toEqual({});
     expect(

@@ -58,24 +58,52 @@ describe("the place line", () => {
     );
     expect(located).toContain(`${byTool}(인자 없이 부르면 이 부근 기준이다)`);
 
-    // Nobody's place known: the tool all the same, which answers a call naming nothing for Seoul.
+    /*
+     * Nobody's place known: the tool all the same, which answers a call naming nothing for Seoul —
+     * and is told not to be handed 서울. "(인자 없이 부르면 서울 기준이다)" was read as an
+     * invitation to say so in the call: `get_weather({place: "서울"})`, one run in ten in a chat
+     * and two in five in a routine (2026-10-05). An answer for a place the call NAMED is not marked
+     * as nobody's, so the card under it does not say that the person's place is not known.
+     */
     for (const mode of ["chat", "routine"] as const) {
       expect(placeText(undefined, mode)).toContain(
-        `${byTool}(인자 없이 부르면 서울 기준이다)`,
+        `${byTool}(인자 없이 부른다 — 서울 기준으로 오니 place에 서울을 넣지 않는다)`,
       );
     }
   });
 
-  test("with only the device's coordinates, says them coarse, and asks for a name only where one is needed", () => {
-    const line = placeText(
-      { coordinates: { latitude: 37.5, longitude: 127.03 } },
+  test("the device's coordinates are said coarse — with the name the server read for them, which is what a search can use", () => {
+    /*
+     * A Bot holding only the numbers and asked for a pharmacy nearby named a landmark itself from
+     * them ("강남역 근처로 보여서", three runs in five) or asked which neighbourhood (two) — of
+     * somebody whose device had just said where it is (2026-10-05). With the table's name for the
+     * cell it looks without asking; without one, the numbers are still not a search, and it asks.
+     */
+    const at = { latitude: 37.5, longitude: 127.03 };
+    const named = placeText(
+      { coordinates: at, near: "서울특별시 강남구·서초구" },
       "chat",
     );
-    expect(line).toContain("위도 37.50, 경도 127.03 부근");
-    expect(line).toContain("동네 이름이 꼭 필요한 일이면 한 번 여쭤본다");
+    expect(named).toStartWith(
+      "이 사람의 위치: 서울특별시 강남구·서초구 부근(위도 37.50, 경도 127.03, 이 사람 기기에서 받은 대략적인 값).",
+    );
+    expect(named).toContain(
+      "가까운 곳처럼 위치가 필요한 다른 일은 먼저 묻지 말고 이 곳 이름을 검색어에 넣어 찾고",
+    );
+    expect(named).not.toContain("여쭤본다");
+
+    const numbersOnly = placeText({ coordinates: at }, "chat");
+    expect(numbersOnly).toStartWith(
+      "이 사람의 위치: 위도 37.50, 경도 127.03 부근(이 사람 기기에서 받은 대략적인 값).",
+    );
+    expect(numbersOnly).toContain(
+      "동네 이름이 꼭 필요한 일이면 한 번 여쭤본다",
+    );
+    // A routine has nobody to ask, with a name or without.
+    expect(placeText({ coordinates: at }, "routine")).not.toContain("여쭤");
   });
 
-  test("knowing nothing, it is Seoul's and said to be — never a question first, in a chat or a routine", () => {
+  test("knowing nothing, what a region answers is Seoul's and said to be — never a question first, in a chat or a routine", () => {
     /*
      * This was "a chat asks once and saves; a routine says it could not". Measured the day it
      * changed (2026-10-05, `weather-with-no-place-is-seouls`): six answers in six to "오늘 날씨
@@ -84,47 +112,107 @@ describe("the place line", () => {
      */
     const chat = placeText(undefined, "chat");
     expect(chat).toContain("아직 모른다");
-    expect(chat).toContain("먼저 묻지 말고 서울 기준으로");
+    expect(chat).toContain(
+      "날씨처럼 어느 지역인지만 알면 되는 일은 먼저 묻지 말고 서울 기준으로 하고",
+    );
     expect(chat).toContain("서울 기준이라고 짧게 말한다");
     expect(chat).toContain("네이버 검색 '서울 날씨'");
-    expect(chat).not.toContain("여쭤");
 
     const routine = placeText({}, "routine");
     expect(routine).toContain("이 사람의 위치를 모른다");
     expect(routine).toContain("결과에 서울 기준이라고 적는다");
-    expect(routine).not.toContain("하지 못했다");
     expect(routine).not.toContain("여쭤");
     expect(routine).toContain("이 사람의 위치가 아니다");
   });
 
-  test("a place the person says is theirs is saved unasked, in every chat; one that is only asked about is not; a routine has nobody saying anything", () => {
-    const rule =
-      "묻지 않았어도 시·구까지 remember의 place로 저장하고, 질문의 대상일 뿐인 곳('부산 날씨 어때?')은 저장하지 않는다";
+  test("knowing nothing, what is near the person is not Seoul's: a chat asks where once and saves it, a routine says it could not", () => {
+    /*
+     * "먼저 묻지 말고 서울 기준으로" covered every task that needs a place, so "근처 약국 알려줘"
+     * from somebody whose place is not known was answered for Seoul, all of it, without asking —
+     * three runs in six (`nearby-with-no-place-asks-where`, review of pull request 91). The owner's
+     * default is for what a region answers. What is near a person needs the person's place.
+     */
+    const chat = placeText(undefined, "chat");
+    expect(chat).toContain(
+      "'근처'·'가까운 곳'처럼 이 사람 주변을 알아야 하는 일은 서울로 짐작하지 말고 어디인지 한 번 여쭤보고, 들은 곳(시·구까지)을 remember의 place로 저장한 다음 그 곳 기준으로 한다.",
+    );
+    // The weather's rule first, the exception after it.
+    expect(chat.indexOf("서울 기준이라고 짧게 말한다")).toBeLessThan(
+      chat.indexOf("이 사람 주변을 알아야 하는 일"),
+    );
+    const routine = placeText({}, "routine");
+    expect(routine).toContain(
+      "이 사람 주변을 알아야 하는 일은 위치를 몰라 하지 못했다고 적는다.",
+    );
+    // Somebody with a place — said, or the device's with its name — is never told to ask where.
+    for (const person of [
+      { place: "서울 강남구" },
+      {
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+        near: "서울특별시 강남구·서초구",
+      },
+    ]) {
+      expect(placeText(person, "chat")).not.toContain("여쭤");
+    }
+  });
+
+  test("what is saved is where the person lives, works or usually is — said, or moved — and nothing else that names a place", () => {
+    /*
+     * The first wording saved "사는·일하는·지금 있는 곳", against a tool whose `place` is "가게나
+     * 주로 지내는 곳" (`shared/tools/self.ts`): by it "지금 부산 출장 와 있어" replaces home, and a
+     * saved place replaces the whole answer, so the device's coordinates go with it (review of
+     * pull request 91). And a paragraph the person pasted — "저는 대전에 살고…" — was saved as
+     * theirs three runs in six (`a-place-in-pasted-text-is-not-saved`).
+     */
+    const saved =
+      "이 사람이 너에게 사는 곳·일하는 곳·주로 지내는 곳을 알려 주거나 옮겼다고 하면('나 춘천 살아') 묻지 않았어도 시·구까지 remember의 place로 저장한다.";
+    // The pasted text last and spelt out: listed as one more item it was still saved once in six.
+    const notSaved =
+      "그 밖의 곳은 저장하지 않고 그때만 쓴다: 잠깐 있는 곳(출장·여행), 남의 곳, 예전에 살던 곳, 질문의 대상일 뿐인 곳('부산 날씨 어때?'), 요약·번역하라고 붙여 넣은 글 속의 곳 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이 알려 준 것이 아니다.";
     const people = [
       { place: "서울 강남구" },
       // "나 이사했어, 이제 수원이야" from somebody known only by their device: saved, and the words win.
       { coordinates: { latitude: 37.5, longitude: 127.03 } },
+      {
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+        near: "서울특별시 강남구·서초구",
+      },
       undefined,
     ];
     for (const person of people) {
-      expect(placeText(person, "chat")).toContain(rule);
+      const chat = placeText(person, "chat");
+      expect(chat).toContain(`${saved} ${notSaved}`);
+      // The place a person is in for now is not on the list of what is saved.
+      expect(chat).not.toContain("지금 있는 곳");
+      // A routine has nobody saying anything.
       expect(placeText(person, "routine")).not.toContain("remember");
     }
   });
 
-  test("what it costs: the line stands in front of every turn, and is held to a length", () => {
+  test("what it costs: the line stands in front of every turn, and is exactly as long as it is", () => {
     /*
-     * 313, 314 and 225 characters before the rule about saving went in (2026-10-05). The ceiling is
-     * not a target — it is what makes the next sentence added here a decision somebody notices.
+     * EXACT, NOT A CEILING. A ceiling with slack is a budget somebody spends without noticing: the
+     * first one here allowed 430 characters against lines of 361 to 428, and a whole sentence would
+     * have fitted under it unseen (review of pull request 91). Every character of this line is
+     * read in front of every turn a Bot takes, so a word added is a number changed here, by hand,
+     * with the reason.
+     *
+     * 313, 314 and 225 characters on main for a said place, a device's and nobody's (a routine's:
+     * 313, 256, 102). What the rest buys, each measured in `docs/laf/eval-pack.md` ("Seoul until
+     * the person says where"): Seoul's basis for nobody's place, said; what is saved as the
+     * person's place and what is not; asking where only for what is near the person; a name for
+     * the device's coordinates; and no 서울 handed to the weather tool.
      */
-    for (const person of [
-      { place: "서울 강남구" },
-      { coordinates: { latitude: 37.5, longitude: 127.03 } },
-      undefined,
-    ]) {
-      expect(placeText(person, "chat").length).toBeLessThanOrEqual(430);
-      expect(placeText(person, "routine").length).toBeLessThanOrEqual(315);
-    }
+    const at = { latitude: 37.5, longitude: 127.03 };
+    const lengths = (mode: "chat" | "routine") =>
+      [
+        { place: "서울 강남구" },
+        { coordinates: at, near: "서울특별시 강남구·서초구" },
+        { coordinates: at },
+        undefined,
+      ].map((person) => placeText(person, mode).length);
+    expect(lengths("chat")).toEqual([555, 528, 525, 629]);
+    expect(lengths("routine")).toEqual([313, 286, 256, 299]);
   });
 
   test("stands after the shop and before what the Bot learned — the person's word first", () => {
