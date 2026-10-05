@@ -29,6 +29,7 @@ import {
 } from "../shared/tools/bridge";
 import {
   type AccountState,
+  accountStatesIn,
   CONNECT_CARD,
   connectionAnswer,
   GALLERY_DECISIONS,
@@ -159,10 +160,10 @@ export function answeredAtOnce(
  *
  * The first connect card raised for `key` is answered as the server answers one whose switch
  * turned on during the wait (`connectCard`, `server/src/turns/chat-tools.ts`): the account's tools
- * land in the SAME turn's list, added and never removed (`offerLandedTools`), and the answer is
- * `laf:connection_on` naming them. What is written on the card stays the turn's read from before
- * the switch was pressed — as it does in the product — so a lookup after it is answered from a
- * list that holds the tools and a card that still says "not connected".
+ * land in the SAME turn's list, added and never removed (`offerLandedTools`); the card on that
+ * list is handed on again with the account written as on (`noteConnected`); and the answer is
+ * `laf:connection_on` naming the tools — or, where the connection brought none (`landing` empty:
+ * 카카오's toolbox is the person's own), `laf:connection_unusable`.
  *
  * `tools` is the one array the run is handed on every round; `reset` puts it back for the next
  * attempt. A card after the first is not answered — it would be the Bot asking again — and
@@ -187,12 +188,27 @@ export function connectsAtTheCard(
       const offered = servicesOf(call);
       if (!offered.includes(key)) return undefined;
       isOn = true;
+      const at = tools.findIndex((tool) => tool.name === CONNECT_CARD);
+      const card = tools[at];
+      const written = card ? accountStatesIn(card.parameters) : null;
+      if (card && written) {
+        tools[at] = {
+          ...card,
+          parameters: withAccountStates(
+            card.parameters,
+            written.map((account) =>
+              account.key === key ? { ...account, connected: true } : account,
+            ),
+          ),
+        };
+      }
       tools.push(...landing);
       return JSON.stringify(
         connectionAnswer({
           offered,
           connected: [key],
           tools: landing.map((tool) => tool.name),
+          isUsable: landing.length > 0,
         }),
       );
     },

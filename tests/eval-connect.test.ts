@@ -556,9 +556,10 @@ describe("what the scenarios hand the Bot", () => {
 
   /*
    * `connected-at-the-card-then-used` goes past the card: the fixture answers the first card for
-   * 지메일 as the server answers one whose switch turned on, and lands its tools in the same list.
-   * The card on that list still carries the turn's read — 지메일 not connected — which is the
-   * state the lookup after it has to see through.
+   * 지메일 as the server answers one whose switch turned on — its tools land in the same list, and
+   * the card on that list is handed on again with 지메일 written as on. The lookup after it is the
+   * same bytes whether or not the card was written again: the tools being in the list is enough
+   * for the bridge (`openAccountsIn`), which is what the scenario was first measured against.
    */
   test("a person who connects at the card: answered as on, the tools land in the same list, and the next lookup does not offer it again", () => {
     const gmail = REALISTIC_TOOLSET.filter(
@@ -589,6 +590,22 @@ describe("what the scenarios hand the Bot", () => {
     expect(after).toContain('"name":"mcp__gmail__search_messages"');
     expect(lineOf(after).startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
     expect(lineOf(after)).not.toContain("지메일(gmail)");
+    // The card says so too, as the turn writes it at the card's answer — and with the card left as
+    // the turn first wrote it, the tools in the list alone give the same answer.
+    const cardOf = (tools: readonly WireTool[]) =>
+      tools.find((tool) => tool.name === "showConnection");
+    expect(
+      accountStatesIn(cardOf(landing.tools)?.parameters)?.filter(
+        (account) => account.connected,
+      ),
+    ).toEqual([{ key: "gmail", connected: true }]);
+    const stale = landing.tools.map((tool) =>
+      tool.name === "showConnection" ? (cardOf(nothing) ?? tool) : tool,
+    );
+    const { deferred, offered } = exposeTools(stale, true);
+    expect(
+      searchResultText(deferred, "select:mcp__gmail__search_messages", offered),
+    ).toBe(after);
 
     // A second card is the Bot asking again: waited on, and never answered here.
     expect(landing.waitsOn(raised(["gmail"]))).toBe(true);
@@ -598,6 +615,44 @@ describe("what the scenarios hand the Bot", () => {
     expect(landing.tools).toEqual(nothing);
     expect(landing.answer(raised(["notion"]))).toBeUndefined();
     expect(landing.waitsOn(raised(["notion"]))).toBe(true);
+  });
+
+  /*
+   * ITS TWIN, `connected-at-the-card-with-nothing-to-use`: the switch turns on and nothing lands.
+   * No tool is there for a lookup to read "connected" from, so here the card written again is the
+   * whole of it: on with no tools, and never something to connect.
+   */
+  test("a person who connects at the card and brings no tools: on with nothing to use, and the next lookup says that — not to connect it", () => {
+    const landing = connectsAtTheCard(nothing, "kakao-playmcp", []);
+    const lookup = (query: string) => {
+      const { deferred, offered } = exposeTools(landing.tools, true);
+      return searchResultText(deferred, query, offered).split("\n");
+    };
+    expect(lookup("카톡 나에게 보내기").at(-1)).toContain(
+      "카카오(kakao-playmcp)",
+    );
+    expect(
+      JSON.parse(landing.answer(raised(["kakao-playmcp"])) ?? "null"),
+    ).toEqual({
+      code: "laf:connection_unusable",
+      connected: ["kakao-playmcp"],
+      notConnected: [],
+      reason: toolResultText("laf:connection_unusable"),
+    });
+    expect(landing.tools).toHaveLength(nothing.length);
+
+    const after = lookup("카톡 나에게 보내기");
+    expect(
+      after.find((line) => line.startsWith("연결돼 있지만 그 연결이 가져온")),
+    ).toContain("카카오(kakao-playmcp).");
+    expect(after.at(-1)?.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+    expect(after.at(-1)).not.toContain("kakao-playmcp");
+    // A second card is the Bot asking again: waited on, never answered — and reset starts over.
+    expect(landing.waitsOn(raised(["kakao-playmcp"]))).toBe(true);
+    landing.reset();
+    expect(lookup("카톡 나에게 보내기").at(-1)).toContain(
+      "카카오(kakao-playmcp)",
+    );
   });
 
   test("a routine's list has no card, so nothing is said of connecting", () => {

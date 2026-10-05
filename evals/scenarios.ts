@@ -3045,6 +3045,19 @@ function aServiceNobodyConnected(): Scenario[] {
     "gmail",
     everything.filter((tool) => serverKeyOf(tool.name) === "gmail"),
   );
+  /**
+   * One of that turn's two unread mails, by id, as the adapter reads one (`gmail-rest.ts`) — and
+   * its own words for a call that names none. One body for every id had the Bot open the second
+   * mail again and again (seen: five to twelve requests a run, six runs).
+   */
+  const unreadMail = (id: unknown): string =>
+    id === "m_unread_1"
+      ? "제목: 10월 전기요금 청구서\n보낸사람: 한국전력 <bill@kepco.example>\n\n10월분 전기요금은 84,200원이고 납기일은 10월 25일입니다."
+      : id === "m_unread_2"
+        ? "제목: 주문하신 포장재 견적 드립니다\n보낸사람: 박성민 <park@pojang.example>\n\n포장재 500매 견적은 132,000원(부가세 포함)입니다. 10월 8일까지 회신 주시면 그 주에 출고됩니다."
+        : "어느 메일인지 id가 필요합니다.";
+  /** 카카오 connected at the card, its toolbox empty: on, and nothing lands. */
+  const kakaoLandsEmpty = connectsAtTheCard(nothing, "kakao-playmcp", []);
   const forecast = weatherBackend({ at: EVAL_NOW, saved: GANGNAM });
   const kakaoOn = accountsWith(["kakao-playmcp"]);
   const kakaoEmpty = nothingConnected(
@@ -3125,7 +3138,7 @@ function aServiceNobodyConnected(): Scenario[] {
               `- 주문하신 포장재 견적 드립니다 · 박성민 <park@pojang.example> · ${today} 11:05 · id: m_unread_2`,
             ].join("\n")
           : call.name === "mcp__gmail__read_message"
-            ? "보낸 사람: 한국전력 <bill@kepco.example> · 제목: 10월 전기요금 청구서 · 본문: 10월분 전기요금은 84,200원이고 납기일은 10월 25일입니다."
+            ? unreadMail(call.arguments?.messageId)
             : nothingToRead(call)),
       waitsOn: mailLands.waitsOn,
       check: (turn) => {
@@ -3141,6 +3154,52 @@ function aServiceNobodyConnected(): Scenario[] {
           [
             "안 읽은 메일(전기요금, 견적)을 말하지 않음",
             turn.text.includes("전기요금") && turn.text.includes("견적"),
+          ],
+        ]);
+      },
+    },
+    {
+      ...base,
+      /*
+       * ITS TWIN: TURNED ON AT THE CARD, AND NOTHING TO USE. 카카오's switch turns on and its
+       * toolbox is empty, so the card answers `laf:connection_unusable` and no tool lands for a
+       * lookup to read "connected" from. The card is handed on again with 카카오 written as on
+       * (`noteConnected`), so a lookup after it says "on, with no tools" — it used to name 카카오
+       * as not connected and say to raise the card, to a Bot just told it is on. One card, and
+       * the person told what is true: connected, and nothing here to send with.
+       */
+      id: "connected-at-the-card-with-nothing-to-use",
+      messages: [user("카톡 나에게 보내기로 '우유 사기' 메모 남겨줘")],
+      tools: kakaoLandsEmpty.tools,
+      maxTurns: 8,
+      prepare: async () => {
+        kakaoLandsEmpty.reset();
+        return {};
+      },
+      stub: (call) => kakaoLandsEmpty.answer(call) ?? nothingToRead(call),
+      waitsOn: kakaoLandsEmpty.waitsOn,
+      check: (turn) => {
+        const said = lastAnswerOf(turn.events);
+        const cards = turn.calls.filter(
+          (call) => call.name === "showConnection",
+        );
+        return verdict([
+          [
+            `연결 카드를 ${cards.length}번 띄움 (한 번이어야)`,
+            cards.length === 1,
+          ],
+          [
+            "카카오 말고 다른 것의 카드를 띄움",
+            cards.every((call) =>
+              JSON.stringify(call.arguments ?? {}).includes("kakao-playmcp"),
+            ),
+          ],
+          ["하지 못했다는 말이 없음", saysItCouldNot(said)],
+          [
+            "연결돼 있는데 연결돼 있지 않다고 함",
+            !/연결(이|은|도)?\s?(없|안\s?돼|안\s?되|(돼|되어)\s?있지\s?않)/.test(
+              said,
+            ),
           ],
         ]);
       },
