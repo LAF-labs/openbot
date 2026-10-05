@@ -550,6 +550,7 @@
   "tests/eval-calendar.test.ts",
   "tests/eval-deferral.test.ts",
   "tests/eval-feed.test.ts",
+  "tests/eval-first-move.test.ts",
   "tests/eval-from-failures.test.ts",
   "tests/eval-grounded.test.ts",
   "tests/eval-lib.test.ts",
