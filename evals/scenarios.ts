@@ -47,6 +47,7 @@ import { zonedParts } from "../shared/prompt/zone";
 import type { WireTool } from "../shared/tools/bridge";
 import {
   searchResultText,
+  serverKeyOf,
   WEATHER_TOOL_NAME,
   WEB_SEARCH_TOOL_NAME,
 } from "../shared/tools/bridge";
@@ -66,8 +67,10 @@ import {
   judgeCardOffered,
   judgeNoCard,
   judgeSaysItCouldNot,
+  NOTION_SEARCH,
   nothingConnected,
   nothingToRead,
+  onlyConnected,
   saysItCouldNot,
   supportNotices,
   TALK_CALENDAR,
@@ -2931,6 +2934,35 @@ function aServiceNobodyConnected(): Scenario[] {
     tools: nothing,
     check: (turn) => verdict(judgeCardOffered(turn, service, about)),
   });
+  /** One service connected that is not the one asked for: the card all the same. */
+  const withAStranger = (
+    id: string,
+    connected: string,
+    service: string,
+    about: RegExp,
+    asked: string,
+    more: readonly WireTool[] = [],
+  ): Scenario => ({
+    ...base,
+    id,
+    messages: [user(asked)],
+    tools: [
+      ...onlyConnected(
+        everything,
+        withTheConnectCard(screenCards(), accountsWith([connected])),
+        [connected],
+      ),
+      ...more,
+    ],
+    check: (turn) =>
+      verdict([
+        ...judgeCardOffered(turn, service, about),
+        [
+          `연결돼 있는 ${connected}의 도구를 부름`,
+          !turn.calls.some((call) => serverKeyOf(call.name) === connected),
+        ],
+      ]),
+  });
   /**
    * No connect card: for what needs nothing connected. Held to that alone — what else the Bot
    * looks up or asks on the way (which shop's delivery?) is its own business here.
@@ -2984,6 +3016,28 @@ function aServiceNobodyConnected(): Scenario[] {
       searchResultText(deferred, query, offered),
     );
   };
+  /** A conversation in which the calendar's card was raised and put off with 다음에. */
+  const putOff = [
+    user("오늘 일정 뭐 있어?"),
+    ...lookedUp("캘린더 일정 확인", nothing),
+    ...filed(
+      "card",
+      "showConnection",
+      { services: ["google-calendar"], reason: "오늘 일정을 보려면" },
+      JSON.stringify({
+        code: "laf:connection_off",
+        connected: [],
+        notConnected: ["google-calendar"],
+        reason: toolResultText("laf:connection_off"),
+      }),
+    ),
+    {
+      id: "a_after",
+      role: "assistant",
+      content:
+        "알겠어요. 캘린더가 연결돼 있지 않아서 오늘 일정은 볼 수 없어요.",
+    },
+  ];
   const forecast = weatherBackend({ at: EVAL_NOW, saved: GANGNAM });
   const kakaoOn = accountsWith(["kakao-playmcp"]);
   const kakaoEmpty = nothingConnected(
@@ -3009,13 +3063,50 @@ function aServiceNobodyConnected(): Scenario[] {
       SHEET,
       "이번 주 매출이야. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만. 이거 구글 시트에 정리해줘",
     ),
+    /*
+     * ONE SERVICE CONNECTED, AND IT IS NOT THE ONE ASKED FOR (review, 2026-10-05) — the common
+     * person. The model's own lookup for a calendar reaches 지메일's draft tool on the word 확인,
+     * and while "a connected service's tool was found" silenced the offer, no card came. The line
+     * is on every lookup now: these must reach the card, and leave the stranger's tools alone.
+     */
+    withAStranger(
+      "calendar-with-mail-connected-offers-the-card",
+      "gmail",
+      "google-calendar",
+      CALENDAR,
+      "오늘 일정 뭐 있어?",
+    ),
+    withAStranger(
+      "mail-with-calendar-connected-offers-the-card",
+      "google-calendar",
+      "gmail",
+      MAIL,
+      "새 메일 왔어?",
+    ),
+    withAStranger(
+      "sheet-with-notion-connected-offers-the-card",
+      "notion",
+      "google-sheets",
+      SHEET,
+      "이번 주 매출이야. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만. 이거 구글 시트에 정리해줘",
+      [NOTION_SEARCH],
+    ),
     {
       ...held,
       id: "calendar-connected-is-read-not-offered",
       messages: [user("오늘 일정 뭐 있어?")],
+      // Every account this repository has an adapter for is on; the three it has none for
+      // (노션, 캔바, 카카오 — their tools come from their own servers) are still open.
       tools: everythingConnected(
         everything,
-        withTheConnectCard(screenCards(), accountsWith(ACCOUNTS)),
+        withTheConnectCard(
+          screenCards(),
+          accountsWith(
+            ACCOUNTS.filter((key) =>
+              everything.some((tool) => serverKeyOf(tool.name) === key),
+            ),
+          ),
+        ),
       ),
       maxTurns: 6,
       stub: (call) =>
@@ -3090,6 +3181,21 @@ function aServiceNobodyConnected(): Scenario[] {
         ["날씨 도구를 부르지 않음", called(turn, WEATHER_TOOL_NAME)],
         ["목록에 있는 날씨 도구를 찾음", !called(turn, "tool_search")],
       ],
+    ),
+    /*
+     * LOOKUPS THAT HAVE NOTHING TO DO WITH A SERVICE. The line about what could be connected ends
+     * every lookup's answer for a person with an account open — a chart card's, a goal's — so
+     * these count the card that must not follow it. (A routine is a core tool and is not looked
+     * up at all; it is here to say so.)
+     */
+    noCard(
+      "chart-lookup-raises-no-card",
+      "이번 주 매출 막대 차트로 보여줘. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만",
+    ),
+    noCard("goal-lookup-raises-no-card", "매일 30분 걷기를 목표로 저장해줘"),
+    noCard(
+      "new-routine-raises-no-card",
+      "매일 아침 8시에 새 주문 확인하는 루틴 만들어줘",
     ),
     /*
      * THE WORDS A TABLE TOOK FOR A SERVICE (review, 2026-10-05): 일정 is a delivery's and a
@@ -3249,28 +3355,7 @@ function aServiceNobodyConnected(): Scenario[] {
        * instruction): no card unless they ask to connect — one sentence that it needs connecting.
        */
       id: "declined-then-asked-again",
-      messages: [
-        user("오늘 일정 뭐 있어?"),
-        ...lookedUp("캘린더 일정 확인", nothing),
-        ...filed(
-          "card",
-          "showConnection",
-          { services: ["google-calendar"], reason: "오늘 일정을 보려면" },
-          JSON.stringify({
-            code: "laf:connection_off",
-            connected: [],
-            notConnected: ["google-calendar"],
-            reason: toolResultText("laf:connection_off"),
-          }),
-        ),
-        {
-          id: "a_after",
-          role: "assistant",
-          content:
-            "알겠어요. 캘린더가 연결돼 있지 않아서 오늘 일정은 볼 수 없어요.",
-        },
-        user("그럼 내일 일정은 어때?"),
-      ],
+      messages: [...putOff, user("그럼 내일 일정은 어때?")],
       tools: nothing,
       maxTurns: 6,
       check: (turn) => {
@@ -3281,6 +3366,20 @@ function aServiceNobodyConnected(): Scenario[] {
           ["보지 못한 것을 없다고 말함", !claimsNothingThere(said)],
         ]);
       },
+    },
+    {
+      ...base,
+      /*
+       * THE OTHER HALF OF THAT RULE: put off, and then the person says they will connect. That is
+       * also what becomes of "네, 연결할게요" typed under a waiting card — the words tell the card
+       * "not now" and go as the next turn (`app/src/lib/turns/typed-answer.ts`), and in that turn
+       * the card has to come back.
+       */
+      id: "declined-then-asks-to-connect",
+      messages: [...putOff, user("네, 연결할게요")],
+      tools: nothing,
+      check: (turn) =>
+        verdict(judgeCardOffered(turn, "google-calendar", CALENDAR)),
     },
     {
       ...base,

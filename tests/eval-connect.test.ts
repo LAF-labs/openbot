@@ -14,8 +14,10 @@ import {
   judgeCardOffered,
   judgeNoCard,
   judgeSaysItCouldNot,
+  NOTION_SEARCH,
   nothingConnected,
   nothingToRead,
+  onlyConnected,
   saysItCouldNot,
   supportNotices,
   TALK_CALENDAR,
@@ -27,7 +29,9 @@ import { CATALOGUE } from "../server/src/plugins/catalogue";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { BUSINESS_SITES } from "../shared/sites/catalogue";
 import {
+  describedToolNames,
   FAMILY_LABELS_KO,
+  OPEN_ACCOUNTS_HEAD,
   searchResultText,
   serverKeyOf,
   type WireTool,
@@ -291,6 +295,8 @@ describe("an answer that says what could not be done", () => {
   test("an answer that owns up with the word 없 in it is not such a claim", () => {
     for (const said of [
       "구글 캘린더가 연결되어 있지 않아 일정을 조회할 수 없었습니다.",
+      "오늘 일정 확인해 드리려고 했는데 확인할 방법이 없네요.",
+      "오늘 일정을 확인하려 했는데 확인할 곳이 없었습니다.",
       "제 컴퓨터에 저장된 일정 파일이 없고, 연결된 일정도 없어서 볼 방법이 없습니다.",
       "저장된 루틴도 없고, 캘린더가 연결돼 있지 않아서 캘린더 일정은 확인하지 못했어요.",
     ]) {
@@ -399,9 +405,9 @@ describe("what the scenarios hand the Bot", () => {
   /*
    * The scenarios are about what the bridge answers these lookups with, so the lookups the fleet's
    * model made are answered here from the scenarios' own lists — no model, no network. Whatever
-   * the words, the same facts: the bridge picks no service.
+   * the words, the answer ends on the same line: the bridge picks no service.
    */
-  test("the lookups the fleet's model made are answered with what could be connected, and the card last", () => {
+  test("the lookups the fleet's model made end on what could be connected, and the card is callable from there", () => {
     const { deferred, offered } = exposeTools(nothing, true);
     for (const query of [
       "캘린더 일정 확인",
@@ -409,24 +415,27 @@ describe("what the scenarios hand the Bot", () => {
       "메일 확인하기",
       "구글 시트에 행 추가, 시트 만들기",
       "슬랙 메시지 보내기",
+      "select:showBarChart",
+      "목표 저장",
     ]) {
-      const lines = searchResultText(deferred, query, offered).split("\n");
-      expect(lines).toContain(
-        `다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: ${EVERY_ACCOUNT}.`,
+      const text = searchResultText(deferred, query, offered);
+      const line = text.split("\n").at(-1) ?? "";
+      expect(line.startsWith(`${OPEN_ACCOUNTS_HEAD}${EVERY_ACCOUNT}. `)).toBe(
+        true,
       );
-      expect(JSON.parse(lines.at(-1) ?? "null")).toEqual({
-        name: CONNECT_CARD,
-        description: connectCard().description,
-        parameters: connectCard().parameters,
-      });
+      expect(line).toContain(`name은 "${CONNECT_CARD}"`);
+      // The call's shape is in the line; the card's schema is not pasted behind it.
+      expect(describedToolNames([text]).has(CONNECT_CARD)).toBe(true);
+      if (!query.includes("select:")) {
+        expect(text).not.toContain(`{"name":"${CONNECT_CARD}"`);
+      }
     }
   });
 
   /*
    * `deadline-is-not-the-calendar` starts from this lookup, already made and answered. It counts
    * whether a Bot takes a deadline for the calendar only for as long as the answer carries both:
-   * 기업마당's search, and — nothing of a connected service having been found — what could be
-   * connected, with the card.
+   * 기업마당's search, and the line saying what could be connected.
    */
   test("the deadline lookup is answered with 기업마당's search, and then what could be connected", () => {
     const { deferred, offered } = exposeTools(nothing, true);
@@ -436,12 +445,9 @@ describe("what the scenarios hand the Bot", () => {
     const search = lines.findIndex((line) =>
       line.startsWith('{"name":"mcp__public-data__search_support_programs"'),
     );
-    const list = lines.findIndex((line) =>
-      line.startsWith("다만 이 사람이 연결하면"),
-    );
     expect(search).toBeGreaterThan(0);
-    expect(list).toBeGreaterThan(search);
-    expect(lines.at(-1)).toContain(`{"name":"${CONNECT_CARD}"`);
+    expect(lines.at(-1)?.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+    expect(lines.length - 1).toBeGreaterThan(search);
     // What the search is then answered with: this month's two notices, in the transport's shape.
     const answer = JSON.parse(supportNotices("2026-10-05")) as {
       shown: number;
@@ -455,7 +461,7 @@ describe("what the scenarios hand the Bot", () => {
     expect(answer.rows[0]?.title).toContain("스마트상점");
   });
 
-  test("with 톡캘린더 connected, a lookup for a calendar is answered with it and nothing about connecting", () => {
+  test("with 톡캘린더 connected, a lookup for a calendar is answered with it, and the line does not name 카카오", () => {
     const { deferred, offered } = exposeTools(
       [
         ...nothingConnected(
@@ -469,8 +475,40 @@ describe("what the scenarios hand the Bot", () => {
     for (const query of ["캘린더 일정 확인", "오늘 일정 보기"]) {
       const text = searchResultText(deferred, query, offered);
       expect(text).toContain(`{"name":"${TALK_CALENDAR.name}"`);
-      expect(text).not.toContain("연결하면");
-      expect(text).not.toContain(CONNECT_CARD);
+      const line = text.split("\n").at(-1) ?? "";
+      expect(line.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+      expect(line).not.toContain("kakao-playmcp");
+    }
+  });
+
+  /*
+   * ONE SERVICE CONNECTED, AND SOMETHING ELSE ASKED — the three `…-with-…-connected-…` scenarios.
+   * Each list holds the stranger's real tools and none of the service asked for, and the line on
+   * a lookup for that service names it and leaves the stranger out.
+   */
+  test("with one unrelated service connected, the list has its tools and the line names the one asked for", () => {
+    for (const [connected, more, query, asked] of [
+      ["gmail", [], "캘린더 일정 확인", "google-calendar"],
+      ["google-calendar", [], "메일 확인하기", "gmail"],
+      ["notion", [NOTION_SEARCH], "구글 시트에 행 추가", "google-sheets"],
+    ] as const) {
+      const list = [
+        ...onlyConnected(
+          REALISTIC_TOOLSET,
+          withTheConnectCard(cards, accountsWith([connected])),
+          [connected],
+        ),
+        ...more,
+      ];
+      const families = new Set(list.map((tool) => serverKeyOf(tool.name)));
+      expect(families.has(connected)).toBe(true);
+      expect(families.has(asked)).toBe(false);
+      const { deferred, offered } = exposeTools(list, true);
+      const line =
+        searchResultText(deferred, query, offered).split("\n").at(-1) ?? "";
+      expect(line.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+      expect(line).toContain(`(${asked})`);
+      expect(line).not.toContain(`(${connected})`);
     }
   });
 
@@ -481,16 +519,17 @@ describe("what the scenarios hand the Bot", () => {
       withTheConnectCard(cards, on),
     );
     const { deferred, offered } = exposeTools(empty, true);
-    const text = searchResultText(deferred, "카카오톡 나에게 보내기", offered);
-    expect(text).toContain(
-      "연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: 카카오(kakao-playmcp).",
+    const lines = searchResultText(
+      deferred,
+      "카카오톡 나에게 보내기",
+      offered,
+    ).split("\n");
+    expect(lines.at(-2)).toContain(
+      "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp).",
     );
     // Among what could be connected, 카카오 is not.
-    expect(
-      text
-        .split("\n")
-        .find((line) => line.startsWith("다만 이 사람이 연결하면")),
-    ).not.toContain("kakao-playmcp");
+    expect(lines.at(-1)?.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+    expect(lines.at(-1)).not.toContain("kakao-playmcp");
     // The card, as the server answers it: on, and nothing usable — never "look its tools up".
     const answer = answeredAtOnce(on, empty);
     expect(JSON.parse(answer(raised(["kakao-playmcp"])) ?? "null")).toEqual({
