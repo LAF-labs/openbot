@@ -1158,13 +1158,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * model is named as the high-risk check's; the day's summary waits two minutes under its own name;
  * the dream is handed the server model, its effort and its own name).
  *
+ * RAISED AGAIN 2026-10-06 with one way of asking for four doors, by exactly what was added: six to
+ * `app`, the new `request-refusals.test.ts`, written while the goals, 소식, the routines and their
+ * suggestions each had a copy of the request and passing unchanged once they shared one (every
+ * request carries the session, and a content type only with a body; an answer is the body as it
+ * came; a refusal is the door's own table's sentence with the status and the code beside it; a
+ * code no table has is the general sentence, and still travels; a body with no code is the general
+ * sentence and none; a suggestion is refused in a routine's words where the refusal is a
+ * routine's, and no other door borrows a table).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3622, roots: ["server"] },
-  { name: "app", floor: 2044, roots: ["app"] },
+  { name: "app", floor: 2050, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 715, roots: ["tests", "agent-bot"] },
 ] as const;
