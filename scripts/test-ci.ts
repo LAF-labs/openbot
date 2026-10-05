@@ -1290,12 +1290,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the request never arriving, are each told in the app's own sentence, with no status and none of
  * the thrown English on the page, and nobody is sent to the door as though it had worked).
  *
+ * RAISED 2026-10-06 ahead of the run door closing, `server` from 3618 to 3621, by exactly the three
+ * of the new `turn-doors-scope.integration.test.ts`: on every door a window uses on a turn,
+ * somebody else's conversation is not there and nothing of it is reached; a person's own is read
+ * and holds nothing of anybody else's; a thread with no owner row is refused rather than read.
+ * The facts were held for the runtime's thread routes, which are about to go; the doors a turn has
+ * now had no test of whose conversation they open.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3618, roots: ["server"] },
+  { name: "server", floor: 3621, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
