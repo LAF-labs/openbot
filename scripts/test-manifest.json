@@ -488,6 +488,7 @@
   "server/tests/screen-view.test.ts",
   "server/tests/secret-redaction.test.ts",
   "server/tests/security-middleware.test.ts",
+  "server/tests/server-model-calls.test.ts",
   "server/tests/session-revocation.integration.test.ts",
   "server/tests/settle-widths.test.ts",
   "server/tests/settle.test.ts",

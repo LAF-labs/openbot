@@ -1148,12 +1148,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * makes the next call the card, with no schema handed over; with no line given the card is answered
  * with its schema like any tool nobody described; a provider is never sent anybody's accounts).
  *
+ * RAISED 2026-10-06 with the server's judges said once, by exactly what was added: eight to
+ * `server`, the new `server-model-calls.test.ts`, written before the arrangement changed and
+ * passing on both sides of it (with Jev off each of the four judges asks the server model alone,
+ * inside its own bound, and files the tokens under its own name; a server model that takes no
+ * effort is sent none; an address that could serve Jev does not turn it on; with Jev on each asks
+ * Jev first, inside its own bound and under its own purpose, and nobody else when Jev answers; each
+ * falls to the server model, inside the stand-in's bound, when Jev cannot answer; the decisions
+ * model is named as the high-risk check's; the day's summary waits two minutes under its own name;
+ * the dream is handed the server model, its effort and its own name).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3614, roots: ["server"] },
+  { name: "server", floor: 3622, roots: ["server"] },
   { name: "app", floor: 2044, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 715, roots: ["tests", "agent-bot"] },
