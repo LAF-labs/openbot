@@ -234,6 +234,26 @@ describe("the weather tool", () => {
     }
   });
 
+  test("says what a call with no argument is for: the person's place — said, else the device's, else Seoul", () => {
+    /*
+     * It said "이 사람의 저장된 위치 기준", which was the whole of it until nobody's place became
+     * Seoul (2026-10-05). Told only that, a Bot named 서울 itself one run in ten — and an answer for
+     * a place the call named is not marked as nobody's, so the card did not say so either.
+     */
+    const [withNames] = kmaWeatherTools(true);
+    expect(withNames?.description).toContain(
+      "인자 없이 부르면 이 사람의 위치 기준이다: 말한 곳, 없으면 기기 위치, 둘 다 없으면 서울.",
+    );
+    // Without the table no saved words can be read, so it does not promise them.
+    const [without] = kmaWeatherTools(false);
+    expect(without?.description).toContain(
+      "인자 없이 부르면 이 사람의 위치 기준이다: 기기에서 받은 위치, 없으면 서울.",
+    );
+    for (const tool of [withNames, without]) {
+      expect(tool?.description).not.toContain("저장된 위치 기준");
+    }
+  });
+
   test("offers a place in words exactly when there is a table to look it up in", () => {
     const [without] = kmaWeatherTools(false);
     const [withNames] = kmaWeatherTools(true);
@@ -243,9 +263,9 @@ describe("the weather tool", () => {
     expect(properties(without)).toEqual(["latitude", "longitude"]);
     expect(without?.description).not.toContain("place");
     expect(without?.description).not.toContain("지명");
-    expect(without?.description).toContain("위도·경도를 준다");
+    expect(without?.description).toContain("다른 곳만 위도·경도를 준다");
     expect(properties(withNames)).toEqual(["place", "latitude", "longitude"]);
-    expect(withNames?.description).toContain("place에 지명을 적는다");
+    expect(withNames?.description).toContain("다른 곳만 place에 지명을 적는다");
     // And what the deployment offers follows the table it shipped with, not a flag.
     expect(KMA_WEATHER_TOOLS).toEqual(kmaWeatherTools(KMA_PLACES.size > 0));
   });
@@ -1445,7 +1465,7 @@ describe("where the question is about", () => {
     expect(made.asked).toEqual([]);
   });
 
-  test("with nothing named, it is the person's saved coordinates, and the answer says so", async () => {
+  test("with nothing named, it is the person's device's coordinates, and the answer says whose", async () => {
     const whose: string[] = [];
     const made = hub(MIDNIGHT, {
       coordinatesOf: async (actorId) => {
@@ -1456,7 +1476,8 @@ describe("where the question is about", () => {
     const { facts } = await weatherOf(made, {});
     expect(whose).toEqual(["person-1"]);
     expect(made.asked[0]?.cell).toBe("60,127");
-    expect(facts.basis).toBe("저장된 위치");
+    // The device's, in the model's words and as the fact: "저장된 위치" is what the person SAID.
+    expect(facts.basis).toBe("기기 위치");
     expect(facts.placeSource).toBe("device");
     expect(facts.place).toBe("위도 37.57, 경도 126.98");
   });
@@ -1472,7 +1493,7 @@ describe("where the question is about", () => {
       place: " ",
     });
     expect(made.asked[0]?.cell).toBe("60,127");
-    expect(facts.basis).toBe("저장된 위치");
+    expect(facts.placeSource).toBe("device");
   });
 
   test("nobody's place known is Seoul's weather, said to be nobody's — and a run that belongs to nobody is still refused", async () => {
@@ -1528,7 +1549,7 @@ describe("where the question is about", () => {
     ).not.toBeNull();
   });
 
-  test("what the person said outranks where their device is; words the table cannot read fall to the device, and alone are refused — never Seoul", async () => {
+  test("what the person said outranks where their device is", async () => {
     /*
      * It was the device first. `placeText` has always named the words first, so a person holding
      * both — which a browser's own report now makes ordinary — read "춘천" in the prompt over a
@@ -1544,16 +1565,58 @@ describe("where the question is about", () => {
     expect(said.placeName).toBe("강원특별자치도 춘천시");
     expect(said.placeSource).toBe("saved");
     expect(said.basis).toBe("저장된 위치");
+  });
 
-    const unreadable = hub(MIDNIGHT, {
+  /*
+   * SAVED WORDS THE TABLE CANNOT SETTLE (review of pull request 91). While the device was read
+   * first, a person with "중구" or "판교" saved and a laptop in 서울 was answered for the laptop.
+   * The first cut of the words-first order refused the shared name before the device was looked at
+   * — `laf:weather_place_ambiguous` on every "오늘 날씨 어때?" for somebody who had been getting an
+   * answer. Each kind of unsettled name, with a device to fall to and without.
+   */
+  const SEOUL_DEVICE = { latitude: 37.57, longitude: 126.98 };
+
+  test("a saved name two places share falls to the device, and says it is the device's; with no device it is refused, so the Bot asks which", async () => {
+    const withDevice = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      placeOf: async () => "고성",
+      coordinatesOf: async () => SEOUL_DEVICE,
+    });
+    const { facts } = await weatherOf(withDevice, {});
+    expect(withDevice.asked[0]?.cell).toBe("60,127");
+    expect(facts.placeSource).toBe("device");
+    // Never "저장된 위치": the answer is not for the words that were saved.
+    expect(facts.basis).toBe("기기 위치");
+    expect(facts.coordinates).toEqual(SEOUL_DEVICE);
+
+    const alone = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      placeOf: async () => "고성",
+      coordinatesOf: async () => null,
+    });
+    const refused = await refusalOf(() =>
+      alone.transport.callTool(connection, "get_weather", {}),
+    );
+    expect(refused.code).toBe("laf:weather_place_ambiguous");
+    // How many and whose, never which: a place name in an audit row is somebody's whereabouts.
+    expect(refused.message).toBe(
+      "laf:weather_place_ambiguous: 2 candidates, saved",
+    );
+    expect(alone.asked).toEqual([]);
+  });
+
+  test("a saved name the table has no row for falls to the device the same way; with no device it is not found — never Seoul", async () => {
+    const withDevice = hub(MIDNIGHT, {
       places: FIXTURE_PLACES,
       placeOf: async () => "우리 동네",
-      coordinatesOf: async () => ({ latitude: 37.57, longitude: 126.98 }),
+      coordinatesOf: async () => SEOUL_DEVICE,
     });
-    expect((await weatherOf(unreadable, {})).facts.placeSource).toBe("device");
-    expect(unreadable.asked[0]?.cell).toBe("60,127");
+    const { facts } = await weatherOf(withDevice, {});
+    expect(withDevice.asked[0]?.cell).toBe("60,127");
+    expect(facts.placeSource).toBe("device");
+    expect(facts.basis).toBe("기기 위치");
 
-    const wordsOnly = hub(MIDNIGHT, {
+    const alone = hub(MIDNIGHT, {
       places: FIXTURE_PLACES,
       placeOf: async () => "우리 동네",
       coordinatesOf: async () => null,
@@ -1561,11 +1624,31 @@ describe("where the question is about", () => {
     expect(
       (
         await refusalOf(() =>
-          wordsOnly.transport.callTool(connection, "get_weather", {}),
+          alone.transport.callTool(connection, "get_weather", {}),
         )
       ).code,
     ).toBe("laf:weather_place_not_found");
-    expect(wordsOnly.asked).toEqual([]);
+    expect(alone.asked).toEqual([]);
+  });
+
+  test("a name the CALL gave is refused at once, whatever the device holds: the device is not what was asked about", async () => {
+    const made = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      coordinatesOf: async () => SEOUL_DEVICE,
+    });
+    for (const [place, code] of [
+      ["고성", "laf:weather_place_ambiguous"],
+      ["우리 동네", "laf:weather_place_not_found"],
+    ] as const) {
+      expect(
+        (
+          await refusalOf(() =>
+            made.transport.callTool(connection, "get_weather", { place }),
+          )
+        ).code,
+      ).toBe(code);
+    }
+    expect(made.asked).toEqual([]);
   });
 
   test("saved coordinates abroad are outside, not unknown", async () => {

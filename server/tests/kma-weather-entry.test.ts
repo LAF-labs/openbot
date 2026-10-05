@@ -35,8 +35,8 @@ import { fakeKma, MIDNIGHT, unsaid } from "./support/kma-hub";
  * 날씨" — the key family, the catalogue entry, and the one reader the runtime threads through.
  *
  * THE READER IS THE PART WORTH A FILE. The tool's own description says "인자 없이 부르면 이 사람의
- * 저장된 위치 기준", and the transport does that for whoever hands it `coordinatesOf` and
- * `placeOf`. Nothing here did until the runtime was given a reader to hand on: assembled without
+ * 위치 기준이다: 말한 곳, 없으면 기기 위치, 둘 다 없으면 서울", and the transport does that for
+ * whoever hands it `coordinatesOf` and `placeOf`. Nothing here did until the runtime was given a reader to hand on: assembled without
  * one, every call that named no place was refused `laf:weather_place_unknown` — and since
  * 2026-10-05, when "nothing known" became Seoul, would be answered for Seoul: for a person whose
  * place is on file, the wrong town.
@@ -259,12 +259,28 @@ describe("the weather, as an entry the fleet's key opens", () => {
     expect(new Set(cells)).toEqual(new Set(["60,127"]));
   });
 
-  test("a runtime handed no reader knows nothing of anybody, and answers the same way", async () => {
-    const { transport, cells } = runtimeWith();
+  test("a runtime handed no reader can know nobody's place, and its answer says so: marked nobody's, never as a saved place", async () => {
+    /*
+     * A runtime assembled without the reader used to refuse every call that named no place, which
+     * was loud. It answers for Seoul now, for everybody, the people with a place on file included
+     * — so what must hold is the FACT the answer carries: `placeSource: "fallback"`, with no
+     * `basis` claiming it is theirs. That is what the card writes "위치를 아직 몰라요" from, and
+     * what keeps a wiring fault from reading as somebody's own weather.
+     */
+    const { transport, cells, asked } = runtimeWith();
     const result = await transport.callTool(connection, "get_weather", {});
-    expect(
-      (JSON.parse(result.text) as { placeSource?: string }).placeSource,
-    ).toBe("fallback");
+    const facts = JSON.parse(result.text) as {
+      placeName?: string;
+      placeSource?: string;
+      basis?: string;
+      coordinates?: unknown;
+    };
+    expect(facts.placeSource).toBe("fallback");
+    expect(facts.basis).toBeUndefined();
+    expect(facts.coordinates).toBeUndefined();
+    expect(facts.placeName).toBe("서울특별시");
+    // Nobody was asked about, because there was nobody to ask.
+    expect(asked).toEqual([]);
     expect(new Set(cells)).toEqual(new Set(["60,127"]));
   });
 });
