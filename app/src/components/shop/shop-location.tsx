@@ -50,9 +50,16 @@ export function ShopLocation() {
       ? (user.whereabouts ?? NO_WHEREABOUTS)
       : NO_WHEREABOUTS;
   const [place, setPlace] = useState(saved.place ?? "");
-  const [coordinates, setCoordinates] = useState<Coordinates | null>(
-    saved.coordinates,
-  );
+  /*
+   * THE COORDINATES ARE THE ACCOUNT'S UNTIL THE PERSON PICKS SOME HERE. They used to be copied into
+   * the form when it mounted. The device answers by itself at every open now, so a copy went stale
+   * in front of the person: the line named where the device HAD been, the save button lit with
+   * nothing changed, and saving a typed place sent the older coordinates back over the ones the
+   * device had just given. So only a press of the device's button is held here, until it is saved;
+   * otherwise what is drawn and what is sent is whatever the account holds at that moment.
+   */
+  const [picked, setPicked] = useState<Coordinates | null>(null);
+  const coordinates = picked ?? saved.coordinates;
   const [busy, setBusy] = useState<"saving" | "locating" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isSaved, flashSaved] = useSavedFlash();
@@ -91,7 +98,7 @@ export function ShopLocation() {
         queryClient,
       );
       setPlace(held.place ?? "");
-      setCoordinates(held.coordinates);
+      setPicked(null);
       flashSaved();
     }, "saving");
 
@@ -100,13 +107,13 @@ export function ShopLocation() {
       // Cleared for good on this device: its coordinates are not read back at the next open.
       await clearPlaceOnThisDevice(queryClient);
       setPlace("");
-      setCoordinates(null);
+      setPicked(null);
       flashSaved();
     }, "saving");
 
   const handleUseDevice = () =>
     run(async () => {
-      setCoordinates(await readThisDeviceOnAPress());
+      setPicked(await readThisDeviceOnAPress());
     }, "locating");
 
   return (
