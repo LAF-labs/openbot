@@ -4,7 +4,7 @@ import { type Browser, chromium, type Page } from "playwright";
 import { readAriaSnapshot } from "../src/aria-snapshot";
 import { holdToLabel } from "../src/label-hold";
 import { nearRefs, typedRefs } from "../src/marked-refs";
-import { namesFromThePage } from "../src/page-names";
+import { ARIA_ROLES, namesFromThePage, namesOf } from "../src/page-names";
 import { REPLACED_BUILTINS_SCRIPT } from "./fixture-site";
 
 /**
@@ -260,6 +260,17 @@ describe.skipIf(!HAS_BROWSER)(
  * asked about them. Asked about on a tab a person typed into, the page says which of them take
  * their name from such a node, and what they are called without it.
  */
+/*
+ * TWO THINGS SENT TO A PAGE AS SOURCE RESOLVE A ROLE, AND NEITHER CAN REACH THE OTHER'S LIST: the
+ * names question carries the roles inside itself, and the scan for what is near a typed-into node
+ * is handed them (`ARIA_ROLES`). A role is the first of an element's `role` words that is on the
+ * list, so two lists that differ are two answers to "is this a box".
+ */
+test("the roles a scan resolves a box by are the ones the names question carries", () => {
+  expect(ARIA_ROLES.split(" ").length).toBe(83);
+  expect(namesOf.toString()).toContain(`"${ARIA_ROLES}"`);
+});
+
 describe.skipIf(!HAS_BROWSER)(
   "the names drawn from a node a person typed into",
   () => {
@@ -289,14 +300,25 @@ describe.skipIf(!HAS_BROWSER)(
       every: boolean,
       // With nothing known about which node, there is no mark to go by either — unless told.
       mark = every ? "" : MARK,
+      // The document carries a mark of its own from the first node's on (`markTyped`).
+      onDocument = true,
     ) {
-      await page.evaluate((mark) => {
-        for (const node of Array.from(
-          document.getElementsByClassName("typed"),
-        )) {
-          (node as unknown as Record<symbol, boolean>)[Symbol.for(mark)] = true;
-        }
-      }, MARK);
+      await page.evaluate(
+        (packed) => {
+          const [mark = "", onDocument] = packed.split("|");
+          type Marked = Record<symbol, unknown>;
+          for (const node of Array.from(
+            document.getElementsByClassName("typed"),
+          )) {
+            (node as unknown as Marked)[Symbol.for(mark)] = true;
+          }
+          if (onDocument) {
+            (document as unknown as Marked)[Symbol.for(`${mark}.document`)] =
+              "names-test";
+          }
+        },
+        `${MARK}|${onDocument ? "1" : ""}`,
+      );
       const yaml = await page.ariaSnapshot({ mode: "ai" });
       const read = readAriaSnapshot(yaml);
       const answer = await namesFromThePage(
@@ -405,6 +427,30 @@ describe.skipIf(!HAS_BROWSER)(
         expect(names).not.toContain("봇이 쓴");
         expect(called(asked, "봇영역링크").page).toBe("봇영역링크");
         expect(called(asked, "그냥링크").page).toBe("그냥링크");
+      } finally {
+        await page.close();
+      }
+    });
+
+    /*
+     * THE DOCUMENT IS ASKED FIRST, AND ONCE. A node is marked and its document with it, in one
+     * moment; so a document without the mark holds no such node, and no control's tree is walked
+     * to find that out. That walk is what a tab nobody typed on paid for one commit, on every
+     * control asked about (measured in `page-names.ts`). The nodes here carry the mark and the
+     * document does not — a state the service never leaves — to show which of the two is asked.
+     */
+    test("a document that does not carry the mark is one nobody typed in, and nothing in it is looked for", async () => {
+      const page = await pageWith(BODY);
+      try {
+        const asked = await askedOn(page, false, MARK, false);
+        expect(asked.filter((each) => each.drawn || each.holds)).toEqual([]);
+        expect(called(asked, "그냥링크").page).toBe("그냥링크");
+        // And with the document's mark, the same nodes are found.
+        const marked = await askedOn(page, false);
+        expect(called(marked, "둘레링크")).toMatchObject({
+          page: "둘레링크",
+          drawn: true,
+        });
       } finally {
         await page.close();
       }

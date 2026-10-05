@@ -20,13 +20,13 @@ import {
   withNames,
 } from "./aria-snapshot";
 import { VIEWPORT } from "./browser-identity";
+import { nearRefs } from "./marked-refs";
 import {
   type Arrival,
   arrivalNote,
   arrivalOf,
   WHILE_ARRIVING_MS,
 } from "./page-arrival";
-import { nearRefs } from "./marked-refs";
 import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
@@ -37,7 +37,9 @@ import {
   type SecretMarks,
   scanToken,
   secretSignals,
+  type TypedInto,
   typedIntoRefs,
+  typingsOn,
 } from "./secret-fields";
 import { type BotSession, note } from "./sessions";
 import type { TabSummary } from "./tabs";
@@ -218,7 +220,16 @@ export async function snapshotPage(
    * AND WHAT IS NEAR A NODE A PERSON TYPED INTO, ASKED BEFORE THE TREE AS WELL AS AFTER IT
    * (`bothScans`): the tree's names are this moment's, and a region that is gone by the time the
    * page is asked again was still in the name the tree read.
+   *
+   * AND THE COUNT OF A PERSON'S TYPINGS, READ BEFORE BOTH. What the two scans say is the record's
+   * word now, and the record forgets: a person who types into a frame while the tree is taken,
+   * and whose frame is gone when the look asks again, is in the name the tree read and in no
+   * scan — measured through this look, `link "틀 속 링크 CANARY-…"`. The count only grows
+   * (`typingsOn`), so a look it moved under is one where which node cannot be said: every box
+   * shows nothing and every control is asked about, as on a tab typed into blind. A person
+   * begins typing somewhere new a few times a minute; this is that one look.
    */
+  const typings = typingsOn(session, target);
   const before = await quietOn(
     session,
     target,
@@ -271,7 +282,7 @@ export async function snapshotPage(
    * typed into while it would not say where (`person-typing.ts`): the box is somewhere on it,
    * unfollowed, until the document is gone.
    */
-  const typed = bothScans(
+  const scanned = bothScans(
     before,
     await quietOn(
       session,
@@ -281,6 +292,11 @@ export async function snapshotPage(
       { token: scanToken(), also: before.near.tokens[0] ?? "" },
     ),
   );
+  const scannedAt = typingsOn(session, target);
+  const typed: TypedInto =
+    scannedAt === typings
+      ? scanned
+      : { ...scanned, present: true, every: true };
   // One viewport for the list's cut and for where a typed-into box is looked for, so the boxes
   // looked through are the boxes listed (`listedTextEntryRefs`).
   const viewport = target.viewportSize() ?? VIEWPORT;
@@ -329,12 +345,6 @@ export async function snapshotPage(
    * where nothing takes a name from what was typed is asked nothing more than it ever was.
    *
    * Every control is asked about only where which node cannot be said at all (`every`): typed blind.
-   *
-   * THE MARK GOES WITH THE QUESTION ON EVERY TAB, typed into or not as far as the last scan knew.
-   * A person may type their first key here after that scan and before the names are asked, and
-   * a node is marked before its key is sent: so the question that computes a name is the one
-   * that finds the mark, in the same moment, and a control that is itself the region they have
-   * just typed into — the only one whose words the page would say — is named without them.
    */
   const hush = typed.present
     ? { mark: typed.mark, every: typed.every }
@@ -361,15 +371,28 @@ export async function snapshotPage(
         near?.before.has(ref) === true ||
         near?.after.has(ref) === true,
     );
+  const answered = await namesFromThePage(
+    target,
+    askedAbout,
+    Math.min(PAGE_NAMES_MS, deadline - Date.now()),
+    hush,
+  );
+  /*
+   * AND THE COUNT ONCE MORE, AFTER THE NAMES. A person's first key on this tab may land after the
+   * scan above and before the page is asked for these, in a link that is itself the place to type
+   * and that the tree — taken while it was empty — left nameless: the page would call it what
+   * was just typed (measured, `link "CANARY-first-key-7391"`). For one commit the mark was sent
+   * with this question on every tab so that the question would find it; a key typed blind has
+   * no mark to find, and every tab paid for the looking (`typedHere` in page-names.ts). So names
+   * the count moved under are not used at all: the controls asked about have none for this one
+   * look, as when the page does not answer.
+   */
   const listed = namesToList(
     read.unnamed,
     askedAbout,
-    await namesFromThePage(
-      target,
-      askedAbout,
-      Math.min(PAGE_NAMES_MS, deadline - Date.now()),
-      { mark: typed.mark, every: typed.every },
-    ),
+    typingsOn(session, target) === scannedAt
+      ? answered
+      : { names: new Map(), drawn: new Set(), holds: new Set() },
     near?.before,
   );
   return {

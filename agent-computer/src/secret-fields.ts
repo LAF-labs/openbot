@@ -15,6 +15,7 @@ import {
   type Viewport,
 } from "./aria-snapshot";
 import { type Control, typedRefs } from "./marked-refs";
+import { ARIA_ROLES } from "./page-names";
 import type { BotSession, SecretField } from "./sessions";
 import { digestOf, keepTyped } from "./typed-values";
 import { within } from "./within";
@@ -434,6 +435,27 @@ function markTyped(node: Element, marks: string): string {
 }
 
 /**
+ * How many times a person has begun typing somewhere new on this tab, so far.
+ *
+ * WHAT A READ AND A LOOK COMPARE, BEFORE AND AFTER. Each asks the page what a person typed into,
+ * and takes some time over what it does with the answer; a person may begin typing in that time,
+ * and the place they typed may be gone again before it ends — a widget's frame closing, a form
+ * posting. `typedFrames` and `typedBlind` have forgotten it by then, and a read that asked them
+ * a second time (for one commit, 2026-10-05) was told nothing and handed on the text it had made
+ * with their typing in it. The count is written BEFORE the key is sent, beside both of those
+ * records ({@link countTyping}), and nothing takes it back: a count that has not moved means no
+ * key of theirs has landed anywhere new since it was read.
+ */
+export function typingsOn(session: BotSession, page: Page): number {
+  return session.typings.get(page) ?? 0;
+}
+
+/** A person is about to type somewhere new on this tab — a node just marked, or blind. */
+export function countTyping(session: BotSession, page: Page): void {
+  session.typings.set(page, typingsOn(session, page) + 1);
+}
+
+/**
  * Mark a field this session has just begun to follow, in its page, and remember the frame it is in.
  * False when that could not be done in time — the caller then knows nothing about where the typing
  * went that a later look could use, which is what typing blind is (`person-typing.ts`).
@@ -464,6 +486,7 @@ export async function markTypedInto(
   if (!named) return false;
   field.document = named;
   session.typedFrames.add(frame);
+  countTyping(session, frame.page());
   return true;
 }
 
@@ -509,6 +532,7 @@ function scanTyped(packed: string): string {
     nearName = "",
     token = "",
     also = "",
+    ariaRoles = "",
   ] = packed.split("|");
   const typed = Symbol.for(typedName);
   const near = Symbol.for(nearName);
@@ -561,13 +585,26 @@ function scanTyped(packed: string): string {
     return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
   };
 
-  /** A box a look lists as one that holds text. */
+  /**
+   * A box a look lists as one that holds text — BY THE ROLE THE TREE GIVES IT, which is the first
+   * of its `role` words that is a role at all (`ARIA_ROLES`), and its tag where it says none. Any
+   * of its words used to do: `role="tab textbox"` is a tab, was taken for a box, and so for a
+   * node "never named by its contents" — renamed by a person and plain again, it was not near
+   * itself and kept the name the tree gave it.
+   */
+  const valid = ` ${ariaRoles} `;
   const isBox = (node: Element): boolean => {
+    const role = (node.getAttribute("role") ?? "")
+      .split(" ")
+      .map((word) => word.trim())
+      .find((word) => word !== "" && valid.includes(` ${word} `));
+    if (role && role !== "none" && role !== "presentation") {
+      return textEntry.test(role);
+    }
     const tag = node.localName;
     return (
       tag === "textarea" ||
-      (tag === "input" && (node as HTMLInputElement).type !== "hidden") ||
-      roles(node).some((role) => textEntry.test(role))
+      (tag === "input" && (node as HTMLInputElement).type !== "hidden")
     );
   };
   /** The marked nodes that are such boxes: asked for by this mark, not by a token. */
@@ -716,7 +753,8 @@ export async function quietOn(
   look: { token: string; also?: string } = { token: "" },
 ): Promise<TypedInto> {
   const wait = Math.max(1, Math.min(ms, SECRET_JOIN_TIMEOUT_MS));
-  const source = `(() => { try { return (${scanTyped.toString()})(${JSON.stringify(`${TYPED_MARK}|${DOCUMENT_MARK}|${NEAR_MARK}|${look.token}|${look.also ?? ""}`)}); } catch (error) { return ${JSON.stringify(SCAN_THREW)}; } })()`;
+  const source = `(() => { try { return (${scanTyped.toString()})(${JSON.stringify(`${TYPED_MARK}|${DOCUMENT_MARK}|${NEAR_MARK}|${look.token}|${look.also ?? ""}|${ARIA_ROLES}`)}); } catch (error) { return ${JSON.stringify(SCAN_THREW)}; } })()`;
+  const asked = typingsOn(session, target);
   const frames = [...session.typedFrames].filter((frame) => {
     if (!frame.isDetached()) return frame.page() === target;
     forgetFrame(session, frame);
@@ -730,9 +768,20 @@ export async function quietOn(
       ),
     ),
   );
+  /*
+   * AN ANSWER A PERSON'S TYPING OVERTOOK IS NOT BELIEVED, AND FORGETS NOTHING. Every frame's answer
+   * is waited for, a second at most, and a person may begin typing in that time — in a document
+   * that has already answered, or in a frame this scan never asked. `gone` from a document they
+   * typed into a moment later used to forget its frame, and with it everything a later read was
+   * to leave out (`late-frame-secret.test.ts`). So when the count of their typings has moved
+   * since the frames were asked, where the typing is has not been said: every box and region is
+   * taken for one, and no frame and no field is let go on what was heard. The scan after settles
+   * it.
+   */
+  const overtaken = typingsOn(session, target) !== asked;
   const said: TypedInto = {
-    every: blind,
-    present: blind,
+    every: blind || overtaken,
+    present: blind || overtaken,
     mark: TYPED_MARK,
     near: {
       mark: NEAR_MARK,
@@ -745,7 +794,7 @@ export async function quietOn(
   answers.forEach((answer, index) => {
     const frame = frames[index] as Frame;
     if (answer === "gone") {
-      forgetFrame(session, frame);
+      if (!overtaken) forgetFrame(session, frame);
       return;
     }
     const [named, fresh, nearAt, boxes, boxesAt] =
@@ -757,7 +806,7 @@ export async function quietOn(
       return;
     }
     // A field of an earlier document of this frame went with that document.
-    forgetFrame(session, frame, named);
+    if (!overtaken) forgetFrame(session, frame, named);
     said.near.expected += Number(fresh);
     for (const box of (nearAt ?? "").split(";")) {
       if (box) said.near.boxes.add(box);
@@ -828,4 +877,5 @@ export function forgetSecretFields(session: BotSession): void {
   session.ownDigests = [];
   session.typedBlind = new WeakMap();
   session.typedFrames = new Set();
+  // `typings` stays: it is a count of what happened, and nothing that goes takes any of it back.
 }

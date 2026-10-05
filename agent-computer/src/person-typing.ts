@@ -33,6 +33,7 @@
 import type { ElementHandle, Frame, JSHandle, Page } from "playwright";
 import { arrivalOf, documentOf } from "./page-arrival";
 import {
+  countTyping,
   heldBy,
   markTypedInto,
   rememberSecretField,
@@ -137,6 +138,7 @@ function hear<T>(ms: number, work: Promise<T>): Promise<Heard<T>> {
  */
 export function typedBlind(session: BotSession, target: Page): void {
   session.typedBlind.set(target, documentOf(target));
+  countTyping(session, target);
 }
 
 /**
