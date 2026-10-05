@@ -1018,6 +1018,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * browser: a focus question that fails is typed into blind, and a control near before the tree
  * loses its contents with its name.
  *
+ * RAISED AGAIN 2026-10-05 with a read and a look held to a count of a person's typings that only
+ * grows, by exactly what was added: six to `agent-computer`. Five against a real Chromium — at the
+ * seams, a frame typed into while the page was being read and gone before the read looks again, the
+ * same under a look's tree, a frame that said nobody had typed in it heard after somebody did, and
+ * a renamed control whose first role is not a box's; and the names asked of a document that does
+ * not carry the mark. One without a browser: the roles a scan resolves a box by are the ones the
+ * names question carries.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1025,7 +1033,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 531, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 537, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

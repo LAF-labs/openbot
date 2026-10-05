@@ -53,6 +53,17 @@ import type { Hush } from "./reader";
 export const PAGE_NAMES_MS = 1_000;
 
 /**
+ * Every role ARIA has, as the role engine lists them. An element's role is the FIRST of its `role`
+ * words that is one of these (`explicitRole` in {@link namesOf}), which is not the same as any of
+ * them: `role="tab textbox"` is a tab. Here for what is sent to a page as source and has to
+ * resolve a role the way the list does without the rest of this module (`scanTyped` in
+ * secret-fields.ts); `namesOf` carries the same words inside itself for the same reason, and
+ * `page-names.test.ts` holds the two to each other.
+ */
+export const ARIA_ROLES =
+  "alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading img insertion link list listbox listitem log main mark marquee math meter menu menubar menuitem menuitemcheckbox menuitemradio navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status strong subscript superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem";
+
+/**
  * Each element's accessible name, or null where it could not be computed. Runs in the page, called
  * on the first of them (`ElementHandle.evaluate` runs on one element and hands the rest over).
  *
@@ -415,15 +426,30 @@ export function namesOf(
 
   /** A node a person typed into: it carries the mark (`quietOn` in secret-fields.ts). */
   const mark = Symbol.for(markName);
-  const isTypedInto = (node: Node): boolean =>
+  /*
+   * AND ITS DOCUMENT CARRIES ONE TOO, which is asked first and once: a document without it holds no
+   * marked node, and nothing below walks anywhere to find that out. For one commit (2026-10-05)
+   * the mark came with this question on every tab and there was no such check: every control
+   * asked about had the tree beneath it walked, and again beneath each element on the way to its
+   * name, on tabs nobody had typed on — measured on 199 nameless links around cards of 325 nodes,
+   * 432 ms where `main` took 348, of the one second all the names have. The mark comes now only
+   * for a tab a person typed on (`snapshot.ts`), and a document of that tab they did not type in —
+   * every frame but one, usually — still costs what it did. The document's mark is the node's
+   * with `.document` after it (`Hush` in reader.ts), set in the same moment as the first node's.
+   */
+  const typedHere =
     markName !== "" &&
-    (node as unknown as Record<symbol, unknown>)[mark] === true;
+    typeof (first.ownerDocument as unknown as Record<symbol, unknown>)[
+      Symbol.for(`${markName}.document`)
+    ] === "string";
+  const isTypedInto = (node: Node): boolean =>
+    typedHere && (node as unknown as Record<symbol, unknown>)[mark] === true;
   /** One step up, out of a shadow tree by its host. */
   const above = (node: Node): Node | null =>
     node.parentNode ?? (node as ShadowRoot).host ?? null;
   /** A typed-into node, or anything inside one. */
   const insideTyped = (node: Node | null): boolean => {
-    if (markName === "") return false;
+    if (!typedHere) return false;
     for (let at = node; at; at = above(at)) if (isTypedInto(at)) return true;
     return false;
   };
@@ -432,7 +458,7 @@ export function namesOf(
    * in something it or one of those owns by id — which the tree prints as its contents too.
    */
   const holdsTyped = (element: Element, seen: Element[] = []): boolean => {
-    if (markName === "" || seen.includes(element)) return false;
+    if (!typedHere || seen.includes(element)) return false;
     seen.push(element);
     /*
      * What an element owns is looked for in two places, because the browser looks in two: in its

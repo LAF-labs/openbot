@@ -110,6 +110,10 @@ const ARTICLE_LIMITS: ArticleLimits = {
  * origin's frame each came back in the page's text, the region this service was following and had
  * blanked in the list included. So the node is left out where the text is made, by identity: not
  * taken out of the text afterwards, which would have to guess which of the page's words were typed.
+ *
+ * `mark` is the property a typed-into node carries, under a symbol of that name; the node's
+ * document carries one named the same with `.document` after it, set in the same moment as its
+ * first node's (`markTyped` in secret-fields.ts), so a document that lacks it holds no such node.
  */
 export type Hush = { mark: string; every: boolean };
 

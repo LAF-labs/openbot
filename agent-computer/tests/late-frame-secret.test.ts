@@ -255,12 +255,13 @@ describe.skipIf(!HAS_BROWSER)(
     }, 30_000);
 
     /*
-     * AND A LOOK'S LAST QUESTION FINDS THE MARK ITSELF. Nobody had typed on this tab when the look
-     * asked, before its tree and after it; the first key lands before the names are asked, in a
-     * link that is itself the place to type and that the tree — taken while it was empty — left
-     * nameless. The page is asked what to call it, and would say what was just typed.
+     * AND A LOOK IS HELD TO THE COUNT AFTER ITS LAST QUESTION AS WELL. Nobody had typed on this tab
+     * when the look asked, before its tree and after it; the first key lands before the names are
+     * asked, in a link that is itself the place to type and that the tree — taken while it was
+     * empty — left nameless. The page is asked what to call it, and says what was just typed.
+     * Names the count moved under are not used.
      */
-    test("a first key that lands between a look's last scan and its names is in no name: the question that names finds the mark", async () => {
+    test("a first key that lands between a look's last scan and its names is in no name: names the count moved under are not used", async () => {
       const page = await (browser as Browser).newPage();
       await page.setContent(
         `<!doctype html><html lang="ko"><body><a href="#renamed" contenteditable="true" style="display:block;width:300px;height:30px"></a><button type="button">곁의 버튼</button></body></html>`,
@@ -384,6 +385,174 @@ describe.skipIf(!HAS_BROWSER)(
       expect(reads.asked).toBe(4);
       await page.close();
     }, 60_000);
+
+    /*
+     * THE RECORD OF WHERE A PERSON TYPED FORGETS, AND WHAT A READ IS HELD TO DOES NOT. A frame is
+     * forgotten when it goes, and a tab typed into blind when its document does; so a read that
+     * looked at the record again after its text was made found nothing to say of a frame a person
+     * had typed into while it was being read and whose widget had closed since — and handed on
+     * the text it had made of that frame, their typing in it. What it looks at now is a count of
+     * the times a person began typing on the tab, which only ever grows.
+     */
+    test("a frame a person typed into while the page was being read, gone before the read looks again, leaves nothing of theirs in the text", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-editable`);
+      const session = sessionFor("typed-frame-gone-bot");
+      const FRAMED = "CANARY-frame-gone-7391";
+      const framed = page
+        .frameLocator("iframe")
+        .locator('[data-shape="framedBare"]');
+      await framed.waitFor();
+      const inner = page
+        .frames()
+        .find((frame) => frame !== page.mainFrame()) as Frame;
+
+      // The main frame is read first, and the person types into the frame while it is.
+      const reads = inFrontOf(
+        page.mainFrame(),
+        THE_READER,
+        async (ask, nth) => {
+          if (nth === 1) await personTypes(session, page, framed, FRAMED);
+          return ask();
+        },
+      );
+      // The frame is read next, their typing in it — and its widget closes as it answers.
+      let framedText = "";
+      inFrontOf(inner, THE_READER, async (ask) => {
+        const answer = await ask();
+        framedText = String(answer);
+        await page.evaluate(() => document.querySelector("iframe")?.remove());
+        return answer;
+      });
+      const read = await readSettledPageText(page, { session });
+
+      // The text made of the frame did hold it, and the frame is gone: nothing can be asked of it.
+      expect(framedText).toContain(FRAMED);
+      expect(await page.locator("iframe").count()).toBe(0);
+      expect(read.text).toContain("이름 없는 영역");
+      expect(JSON.stringify(read)).not.toContain("CANARY");
+      // Not handed on, and made again.
+      expect(reads.asked).toBe(2);
+      await page.close();
+    }, 60_000);
+
+    /*
+     * A LOOK IS HELD TO THE SAME COUNT. Its tree is one moment's; a person types into a frame just
+     * before it, the tree reads the link around their typing, and the frame is gone when the look
+     * asks the page a second time — which then has nothing near anything, in a frame that is not
+     * there. The tree's name stood. A look a person's first key overtook is one where which node
+     * cannot be said: every control is asked about, and one that cannot answer has no name.
+     */
+    test("a frame a person typed into while a look took its tree, gone before the look asks again, leaves nothing of theirs in the list", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-editable`);
+      const session = sessionFor("looked-frame-gone-bot");
+      const FRAMED = "CANARY-looked-frame-gone-7391";
+      const framed = page
+        .frameLocator("iframe")
+        .locator('[data-shape="framedBare"]');
+      await framed.waitFor();
+      const tree = page.ariaSnapshot.bind(page);
+      let read = "";
+      page.ariaSnapshot = async (options) => {
+        if (read) return tree(options);
+        await personTypes(session, page, framed, FRAMED);
+        read = await tree(options);
+        await page.evaluate(() => document.querySelector("iframe")?.remove());
+        return read;
+      };
+      const shot = await snapshotPage(session, page, async () => []);
+
+      expect(read).toContain(`틀 속 링크 ${FRAMED}`);
+      expect(JSON.stringify(shot)).not.toContain("CANARY");
+      // What the tree read inside the frame is in the list, and called nothing.
+      const inFrame = shot.elements.filter(({ ref }) => /^f\d+e/.test(ref));
+      expect(inFrame.length).toBeGreaterThan(0);
+      expect(inFrame.map(({ name }) => name).join("")).toBe("");
+      // And the page around it is called what the page calls it.
+      expect(
+        shot.elements.some(
+          ({ role, name }) => role === "textbox" && name === "기준 칸",
+        ),
+      ).toBe(true);
+      await page.close();
+    }, 60_000);
+
+    /*
+     * AND AN ANSWER A PERSON'S TYPING OVERTOOK FORGETS NOTHING. A frame's document says `gone` when
+     * it is not one a person typed into, and the frame is forgotten on that word. The word is
+     * heard some time after it was said — every frame's answer is waited for — and a person who
+     * types into that document in between was forgotten with it: nothing they typed there was
+     * left out of any read from then on.
+     */
+    test("a frame that said nobody had typed in it, heard after somebody did, is not forgotten", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-editable`);
+      const session = sessionFor("stale-gone-bot");
+      const TYPED = "CANARY-stale-gone-7391";
+      const framed = page
+        .frameLocator("iframe")
+        .locator('[data-shape="framedBare"]');
+      await framed.waitFor();
+      const inner = page
+        .frames()
+        .find((frame) => frame !== page.mainFrame()) as Frame;
+      // They typed in the frame once, and the frame went on to another document: the record still
+      // names the frame, until that document is asked and says it is not the one.
+      await personTypes(session, page, framed, "CANARY-earlier-document-7391");
+      await inner.goto(`${inner.url().split("#")[0]}?again=1`);
+      await framed.waitFor();
+      expect(await framed.textContent()).toBe("");
+      const scans = inFrontOf(inner, THE_SCAN, async (ask, nth) => {
+        const answer = await ask();
+        if (nth === 1) {
+          expect(answer).toBe("gone");
+          await personTypes(session, page, framed, TYPED);
+        }
+        return answer;
+      });
+
+      const first = await readSettledPageText(page, { session });
+      const second = await readSettledPageText(page, { session });
+      expect(await framed.textContent()).toBe(TYPED);
+      expect(JSON.stringify([first, second])).not.toContain("CANARY");
+      expect(first.text).toContain("틀 속 링크");
+      // Still asked at every read after: the frame is one a person typed in.
+      expect(session.typedFrames.has(inner)).toBe(true);
+      expect(scans.asked).toBeGreaterThan(1);
+      await page.close();
+    }, 60_000);
+
+    /*
+     * A BOX IS WHAT THE TREE CALLS A BOX: by the first of its `role` words that is a role at all.
+     * A marked node was taken for a box if ANY of them was a text box's — so a tab that also says
+     * `textbox`, plain again after a rename, was "a box, never named by its contents", was not
+     * near itself, and kept the name the tree gave it.
+     */
+    test("a renamed control whose first role is not a box's is near itself, whatever its other roles say", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.setContent(
+        `<!doctype html><html lang="ko"><body><div role="tablist"><div role="tab textbox" tabindex="0" contenteditable="true" style="width:300px;height:30px"></div></div><button type="button">곁의 버튼</button></body></html>`,
+      );
+      const session = sessionFor("two-roles-bot");
+      const TYPED = "CANARY-two-roles-7391";
+      await personTypes(session, page, '[role~="tab"]', TYPED);
+      await page.evaluate(() =>
+        document
+          .querySelector('[role~="tab"]')
+          ?.removeAttribute("contenteditable"),
+      );
+      const tree = await page.ariaSnapshot({ mode: "ai" });
+      expect(tree).toContain(`tab "${TYPED}"`);
+      const shot = await snapshotPage(session, page, async () => []);
+
+      expect(JSON.stringify(shot)).not.toContain(TYPED);
+      expect(shot.elements.map(({ role, name }) => ({ role, name }))).toEqual([
+        { role: "tab", name: "" },
+        { role: "button", name: "곁의 버튼" },
+      ]);
+      await page.close();
+    }, 30_000);
 
     /*
      * A BOX THAT IS OUT OF ITS DOCUMENT STAYS FOLLOWED — a page can put it back — AND IS IN NO TREE.

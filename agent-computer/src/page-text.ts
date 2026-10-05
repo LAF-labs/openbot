@@ -22,7 +22,7 @@ import {
   readerScript,
   thrownInPage,
 } from "./reader";
-import { quietOn } from "./secret-fields";
+import { quietOn, typingsOn } from "./secret-fields";
 import type { BotSession } from "./sessions";
 import { within } from "./within";
 import { cutAtCodeUnits } from "../../shared/sound-text";
@@ -294,22 +294,6 @@ function stillArriving(arrival: Arrival): PageText {
   return { text: "", truncated: false, arriving: arrival };
 }
 
-/**
- * Whether this service's record of the tab says more than a read was made with: a person typed
- * into it blind, or — when the read was told of nothing — into one of its frames.
- */
-function typedSince(
-  session: BotSession,
-  target: Page,
-  hush: Hush | undefined,
-): boolean {
-  if (typedIntoBlind(session, target)) return true;
-  if (hush) return false;
-  return [...session.typedFrames].some(
-    (frame) => !frame.isDetached() && frame.page() === target,
-  );
-}
-
 /** Every frame's text, the main frame's first: one making of what {@link readablePageText} hands on. */
 async function framesText(
   target: Page,
@@ -377,42 +361,52 @@ async function readablePageText(
    * for every frame — a frame with no marked node in it finds none. No token: a read marks nothing
    * near, so it cannot disturb a look of the same tab that is under way.
    */
-  const asked = async (): Promise<Hush | undefined> => {
-    if (!session) return undefined;
-    const typed = await quietOn(
-      session,
+  const typedInto = (inSession: BotSession) =>
+    quietOn(
+      inSession,
       target,
-      typedIntoBlind(session, target),
+      typedIntoBlind(inSession, target),
       deadline - Date.now(),
     );
-    return typed.present ? { mark: typed.mark, every: typed.every } : undefined;
-  };
-  const hush = await asked();
-  const first = await framesText(target, deadline, whole, hush);
+  let typings = session ? typingsOn(session, target) : 0;
+  const told = session ? await typedInto(session) : undefined;
+  let made = await framesText(
+    target,
+    deadline,
+    whole,
+    told?.present ? { mark: told.mark, every: told.every } : undefined,
+  );
   /*
-   * AND A PERSON MAY START TYPING WHILE THE TEXT IS BEING MADE: a read is not refused while they
+   * AND A PERSON MAY BEGIN TYPING WHILE THE TEXT IS BEING MADE: a read is not refused while they
    * hold the wheel. Asked once, before the main frame, a tab nobody had typed on was read with
    * nothing left out — its frames one after another, a paste into a region of one of them landing
-   * in between. So what was asked before the text is asked again after it, of this service's own
-   * record and of no page: a node is marked and its frame remembered — or the tab is known to be
-   * typed into blind — BEFORE the key is sent (`person-typing.ts`), so a record that says the same
-   * as before means no text made so far holds a key of theirs. One that says more means the text
-   * is made again, leaving out what the record now says: once, since the reader finds the marked
-   * nodes of each frame in the same question that reads it. The first text is not handed on
-   * then, whatever becomes of the second: with the read's time spent, the second making fails as
-   * a silent document does.
+   * in between.
    *
-   * Left, and said in docs/laf/browser-limits.md: a tab that goes blind during that second making;
-   * and the masked card, which marks its field after the value has landed (`control-routes.ts`).
+   * WHAT SAYS SO IS A COUNT THAT ONLY GROWS, NOT THE RECORD OF WHERE. For one commit the record was
+   * asked again after the text, and the record forgets: the frame they typed in had closed by
+   * then, or the tab typed into blind had moved to its next document, the record said nothing,
+   * and the text made with their typing in it was handed on. The count of their typings on this
+   * tab is written before a key is sent and never taken back (`typingsOn`), so one that has not
+   * moved since before the page was asked means no text made here holds a key of theirs; one that
+   * has means THIS TEXT IS NOT HANDED ON, whatever the record says now. It is made again with the
+   * reader told to look — which it does frame by frame, in the question that reads each — until
+   * one making goes by with the count still, or the read's time is spent and it fails as a
+   * silent document does. A person begins typing somewhere NEW a few times a minute at most:
+   * that is what the count counts, not their keys.
+   *
+   * Left, and said in docs/laf/browser-limits.md: the masked card, which marks its field after
+   * the value has landed (`control-routes.ts`).
    */
-  const since =
-    session && !hush?.every && typedSince(session, target, hush)
-      ? await asked()
-      : undefined;
-  const { main, others, texts } =
-    since && (!hush || since.every)
-      ? await framesText(target, deadline, whole, since)
-      : first;
+  while (session && typingsOn(session, target) !== typings) {
+    if (Date.now() >= deadline) throw new DocumentSilentError();
+    typings = typingsOn(session, target);
+    const now = await typedInto(session);
+    made = await framesText(target, deadline, whole, {
+      mark: now.mark,
+      every: now.every,
+    });
+  }
+  const { main, others, texts } = made;
 
   const pieces = [main.text];
   let reader = main.reader;

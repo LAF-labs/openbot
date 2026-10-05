@@ -130,6 +130,14 @@ export type BotSession = {
    */
   typedFrames: Set<Frame>;
   /**
+   * How many times a person has begun typing somewhere new on each tab: a node marked, or the tab
+   * typed into blind. IT ONLY EVER GROWS. The two records above forget — a frame when it goes, a
+   * tab typed into blind when its document does — so "what does the record say now" cannot tell
+   * a read or a look whether a person began typing while it was under way. This can
+   * (`typingsOn` in secret-fields.ts).
+   */
+  typings: WeakMap<Page, number>;
+  /**
    * A person's input, applied one piece at a time in the order it arrived. Finding the box a
    * keystroke lands in is a question to the page, and two keystrokes whose questions answered out of
    * order would reach the page out of order.
@@ -262,6 +270,7 @@ export function createSessions(directories: {
         ownDigests: [],
         typedBlind: new WeakMap(),
         typedFrames: new Set(),
+        typings: new WeakMap(),
         personInput: Promise.resolve(),
       };
       sessions.set(botId, created);
