@@ -421,245 +421,6 @@ const TAKEOVER_FRAME_HTML = `<!doctype html>
 </body></html>`;
 
 /**
- * The places on `/takeover-editable` a person can type that are not a form's box: an editable region
- * (`contenteditable`), on its own and inside a control the browser names by what is inside it.
- *
- * A LOOK NEVER LISTS AN EDITABLE REGION, AND STILL SAYS WHAT IS IN IT. The tree prints a plain one as
- * `generic`, which the list leaves out — and prints the link, the button or the tab around it named
- * by its words, the button another one labels by them, and the box whose `<label>` holds it. The
- * page's text has every one of them in it. Each entry is where that shape is drawn: a point a
- * person's click lands on, and the frame it is in when it is in the other origin's.
- *
- * `baseline` rows are a form's own boxes, which were followed before any of this.
- */
-export const EDITABLE_SHAPES = {
-  /** A form's box and its larger sibling: what was already followed. */
-  input: { x: 440, y: 55 },
-  textarea: { x: 440, y: 101 },
-  /** Every rich editor and chat composer: an editable region that says it is a text box. */
-  richTextbox: { x: 440, y: 147 },
-  /** The same, holding paragraphs, as an editor keeps its text. */
-  richParagraphs: { x: 440, y: 193 },
-  /** An editable region that says nothing of itself. */
-  bare: { x: 440, y: 239 },
-  /** Inside a control named by what is inside it. */
-  inLink: { x: 440, y: 285 },
-  inButton: { x: 440, y: 331 },
-  inRoleButton: { x: 440, y: 377 },
-  inTab: { x: 440, y: 423 },
-  inOption: { x: 440, y: 469 },
-  /** Inside the `<label>` of a box, which is that box's name. */
-  inLabel: { x: 440, y: 515 },
-  /** Inside a heading: nothing a look lists, and words on the page. */
-  inHeading: { x: 440, y: 561 },
-  /** A region a button elsewhere is labelled by (`aria-labelledby`). */
-  labelledBy: { x: 1080, y: 55 },
-  /**
-   * Inside a control with a name of its own, in the line of its text: the tree writes one run of
-   * text beneath a control after its colon, so what is inside is then that control's value.
-   */
-  inNamedButton: { x: 1080, y: 101 },
-  /** A link inside the region, typed into: a control of its own, made of what was typed. */
-  aroundLink: { x: 960, y: 147 },
-  /** A form's box whose value names another control: by `aria-labelledby`, and through a `<label>`. */
-  inputLabelling: { x: 1080, y: 193 },
-  inputInLabel: { x: 1080, y: 239 },
-  /** In the other origin's frame, the way a payment window or an embedded composer is. */
-  framedRich: { x: 960, y: 331 },
-  framedBare: { x: 960, y: 377 },
-  /**
-   * Inside a control that says it is a box, in the line of its text: a search field built as a
-   * wrapper around an editable region. The tree prints the wrapper as the box, with the region's
-   * text as its value — and the region is what has focus, so the wrapper is a box nobody followed.
-   */
-  inCombobox: { x: 1080, y: 607 },
-  inSearchbox: { x: 1080, y: 653 },
-  /** Inside an open shadow tree, under a link in the page's own tree. */
-  inShadow: { x: 440, y: 607 },
-} as const satisfies Record<string, { x: number; y: number }>;
-
-export type EditableShape = keyof typeof EDITABLE_SHAPES;
-
-/** The two places on `/takeover-editable` only the Bot types: a box, and a region that is a text box. */
-export const EDITABLE_BOT_BOX = "봇이 쓰는 칸";
-export const EDITABLE_BOT_EDITOR = "봇이 쓰는 편집기";
-/** And a region that is a text box, which the Bot asks a person to fill through the masked card. */
-export const EDITABLE_CARD_EDITOR = "카드로 받는 편집기";
-
-/** A row of the page: `left`/`top` of its container, 600 wide, the region drawn 260 in. */
-const editableRow = (column: 0 | 1, row: number) =>
-  `position:absolute;left:${20 + column * 640}px;top:${40 + row * 46}px;width:600px;height:30px;margin:0;padding:0;border:0;font-size:13px;line-height:30px;text-align:left;background:none`;
-/** Where a region is drawn inside its row: block, so an empty one can still be clicked. */
-const REGION_STYLE =
-  "position:absolute;left:260px;top:0;width:320px;height:28px;outline:1px solid #888;font-size:13px;line-height:28px;overflow:hidden;white-space:nowrap";
-/**
- * A region in the line of its parent's text, which is what makes the tree write it as that parent's
- * own text: padded out, since an empty one in a line has no width for a click to land on.
- */
-const INLINE_REGION_STYLE =
-  "display:inline;margin-left:200px;padding:4px 150px;outline:1px solid #888;font-size:13px";
-const region = (shape: string, extra = "") =>
-  `<span contenteditable="true" data-shape="${shape}" ${extra} style="${REGION_STYLE}"></span>`;
-
-/**
- * Says where typing landed and how much, never what: `/typed-into?shape=…&chars=…`, which the fixture
- * keeps (`typedInto`). A test that types at a point has to know the point was the region — an empty
- * region nobody could click took nine of seventeen canaries somewhere else the first time this was
- * measured (2026-10-05).
- */
-const REPORT_TYPING = `<script>
-document.addEventListener("input", (event) => {
-  // Through a shadow tree's boundary, where the event's own target is the tree's host.
-  const typedIn = event.composedPath()[0];
-  const host = typedIn && typedIn.closest ? typedIn.closest("[data-shape]") : null;
-  if (!host) return;
-  const held = "value" in host ? host.value : host.textContent;
-  fetch("/typed-into?shape=" + host.dataset.shape + "&chars=" + held.length, { keepalive: true });
-}, true);
-</script>`;
-
-const takeoverEditableHtml = (frameOrigin: string) => `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>글 쓰는 화면</title></head>
-<body style="margin:0">
-  <h1 style="position:absolute;left:20px;top:0;margin:0;font-size:18px">글 쓰는 화면</h1>
-
-  <div style="${editableRow(0, 0)}">기준 칸 <input type="text" aria-label="기준 칸" data-shape="input" style="${REGION_STYLE}"></div>
-  <div style="${editableRow(0, 1)}">기준 글상자 <textarea aria-label="기준 글상자" data-shape="textarea" style="${REGION_STYLE};resize:none"></textarea></div>
-  <div style="${editableRow(0, 2)}">편집기 ${region("richTextbox", 'role="textbox" aria-label="본문 편집기"')}</div>
-  <div style="${editableRow(0, 3)}">문단 편집기 <div contenteditable="true" role="textbox" aria-multiline="true" aria-label="문단 편집기" data-shape="richParagraphs" style="${REGION_STYLE}"><p style="margin:0"><br></p></div></div>
-  <div style="${editableRow(0, 4)}">이름 없는 영역 ${region("bare")}</div>
-  <a href="#in-link" style="${editableRow(0, 5)};display:block">링크 속 ${region("inLink")}</a>
-  <button type="button" style="${editableRow(0, 6)}">버튼 속 ${region("inButton")}</button>
-  <div role="button" tabindex="0" style="${editableRow(0, 7)}">역할 버튼 속 ${region("inRoleButton")}</div>
-  <div role="tablist"><div role="tab" tabindex="0" aria-selected="true" style="${editableRow(0, 8)}">탭 속 ${region("inTab")}</div></div>
-  <div role="listbox" aria-label="고르는 목록"><div role="option" aria-selected="false" style="${editableRow(0, 9)}">항목 속 ${region("inOption")}</div></div>
-  <label for="labelled" style="${editableRow(0, 10)};display:block">라벨 속 ${region("inLabel", 'onclick="event.preventDefault()"')}</label>
-  <input id="labelled" type="text" style="position:absolute;left:20px;top:632px;width:120px;height:20px">
-  <h2 style="${editableRow(0, 11)};font-weight:normal">제목 속 ${region("inHeading")}</h2>
-
-  <div style="${editableRow(1, 0)}"><button type="button" aria-labelledby="labelling" style="width:40px;height:26px">x</button> <span id="labelling" contenteditable="true" data-shape="labelledBy" style="${REGION_STYLE}"></span></div>
-  <div role="button" tabindex="0" aria-label="이름 있는 버튼" style="${editableRow(1, 1)}"><span contenteditable="true" data-shape="inNamedButton" style="${INLINE_REGION_STYLE}"></span></div>
-  <div style="${editableRow(1, 2)}">링크 든 영역 <div contenteditable="true" data-shape="aroundLink" style="${REGION_STYLE}"><a href="#inside">안쪽링크안쪽링크안쪽링크안쪽링크</a></div></div>
-  <div style="${editableRow(1, 3)}"><button type="button" aria-labelledby="names-it" style="width:40px;height:26px">y</button> <input id="names-it" type="text" aria-label="이름 주는 칸" data-shape="inputLabelling" style="${REGION_STYLE}"></div>
-  <label for="summed" style="${editableRow(1, 4)};display:block">합계 <input type="text" aria-label="안쪽 칸" data-shape="inputInLabel" style="${REGION_STYLE}"></label>
-  <input id="summed" type="text" style="position:absolute;left:660px;top:264px;width:120px;height:20px">
-  <iframe src="${frameOrigin}/takeover-editable-frame" title="바깥 편집기" style="position:absolute;left:660px;top:300px;width:600px;height:110px;border:0"></iframe>
-  <div style="${editableRow(1, 9)}">봇 칸 <input type="text" aria-label="${EDITABLE_BOT_BOX}" style="${REGION_STYLE}"></div>
-  <div style="${editableRow(1, 10)}">봇 편집기 <div contenteditable="true" role="textbox" aria-label="${EDITABLE_BOT_EDITOR}" style="${REGION_STYLE}"></div></div>
-  <div style="${editableRow(1, 11)}">카드 편집기 <div contenteditable="true" role="textbox" aria-label="${EDITABLE_CARD_EDITOR}" style="${REGION_STYLE}"></div></div>
-  <div role="combobox" aria-label="감싼 고르는 칸" aria-expanded="false" style="${editableRow(1, 12)}"><span>고르기: </span><span contenteditable="true" data-shape="inCombobox" style="${INLINE_REGION_STYLE}"></span></div>
-  <div role="searchbox" aria-label="감싼 찾는 칸" style="${editableRow(1, 13)}"><span>찾기: </span><span contenteditable="true" data-shape="inSearchbox" style="${INLINE_REGION_STYLE}"></span></div>
-  <a href="#in-shadow" style="${editableRow(0, 12)};display:block">그림자 속 <span id="shadow-host" style="${REGION_STYLE}"></span></a>
-  <script>
-    document.getElementById("shadow-host").attachShadow({ mode: "open" }).innerHTML =
-      '<span contenteditable="true" data-shape="inShadow" style="display:block;width:320px;height:28px"></span>';
-  </script>
-  ${REPORT_TYPING}
-</body></html>`;
-
-/** The other origin's frame on `/takeover-editable`: a region that is a text box, and a plain one. */
-const TAKEOVER_EDITABLE_FRAME_HTML = `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>바깥 편집기</title></head>
-<body style="margin:0;font-size:13px">
-  <div style="position:absolute;left:10px;top:16px;width:560px;height:30px;line-height:30px">틀 속 편집기 <span contenteditable="true" role="textbox" aria-label="틀 속 편집기" data-shape="framedRich" style="${REGION_STYLE}"></span></div>
-  <a href="#framed" style="position:absolute;left:10px;top:62px;width:560px;height:30px;line-height:30px;display:block">틀 속 링크 <span contenteditable="true" data-shape="framedBare" style="${REGION_STYLE}"></span></a>
-  ${REPORT_TYPING}
-</body></html>`;
-
-/** The one place a person types on each of the pages below, and the box only the Bot types into. */
-export const TYPED_PLACE = { x: 440, y: 55 } as const;
-export const TYPED_BOX = { name: "사람이 쓰는 칸", x: 170, y: 115 } as const;
-export const TYPED_BOT_BOX = "봇 메모";
-/** A button on those pages that takes nothing from what a person typed. */
-export const TYPED_FAR_BUTTON = "멀리 있는 버튼";
-/** And the link around the place a person types, by the words that are the page's own. */
-export const TYPED_NEAR_LINK = "가까운 링크";
-const TYPED_ROWS = `
-  <a href="#near" style="${editableRow(0, 0)};display:block">${TYPED_NEAR_LINK} ${region("near")}</a>
-  ${drawnBox(TYPED_BOX.name, TYPED_BOX.y, 'data-shape="box"')}
-  ${drawnBox(TYPED_BOT_BOX, 165)}
-  <button type="button" style="position:absolute;left:20px;top:200px" onclick="document.title = '눌림'">${TYPED_FAR_BUTTON}</button>`;
-const typedPage = (title: string, head: string, body = "") =>
-  `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>${head}</head><body style="margin:0">${TYPED_ROWS}${body}${REPORT_TYPING}</body></html>`;
-
-/** `/takeover-typed`: those places and nothing else. */
-const TAKEOVER_TYPED_HTML = typedPage("사람이 친 화면", "");
-
-/**
- * `/takeover-left`: two places whose typing is still on the page after what made them a place to
- * type has gone, or was never in the page's own tree.
- *
- * - A title a person renames in place: editable while it has focus, and plain text again the
- *   moment it loses it — the page takes the attribute off on blur.
- * - A tab renamed the same way: once it is plain again, the browser names it by what was typed.
- * - A note inside an open shadow tree, owned by the button beside it (`aria-owns`, both in that
- *   tree): the browser names the button by its own word and the note's.
- */
-export const LEFT_TITLE = { x: 300, y: 265 } as const;
-export const LEFT_TAB = { x: 440, y: 365 } as const;
-export const LEFT_OWNED_NOTE = { x: 440, y: 315 } as const;
-export const LEFT_OWNER_BUTTON = "메모";
-const TAKEOVER_LEFT_HTML = typedPage(
-  "쓰고 난 화면",
-  "",
-  `<h1 contenteditable="true" data-shape="title" style="${editableRow(0, 0)};top:250px;outline:1px solid #888;font-weight:normal"></h1>
-  <div id="owner-host" style="position:absolute;left:20px;top:300px;width:600px;height:30px"></div>
-  <div role="tablist"><div role="tab" tabindex="0" aria-selected="true" contenteditable="true" data-shape="tab" style="position:absolute;left:280px;top:350px;width:320px;height:28px;outline:1px solid #888"></div></div>
-  <script>
-    ["title", "tab"].forEach(function (shape) {
-      var renamed = document.querySelector('[data-shape="' + shape + '"]');
-      renamed.addEventListener("blur", function () { renamed.removeAttribute("contenteditable"); });
-    });
-    document.getElementById("owner-host").attachShadow({ mode: "open" }).innerHTML =
-      '<button type="button" aria-owns="note" style="position:absolute;left:0;top:0;width:100px;height:28px">${LEFT_OWNER_BUTTON}</button>' +
-      '<div id="note" contenteditable="true" data-shape="owned" style="position:absolute;left:260px;top:0;width:320px;height:28px;outline:1px solid #888"></div>';
-  </script>`,
-);
-
-/**
- * `/takeover-slow`: a page that is busy for a second and a half, starting a moment after its box
- * takes focus — a single-page app rendering under the first key. It answers nothing while it is
- * busy and everything afterwards, which is a slow page and not one that cannot say what has focus.
- */
-export const SLOW_PAGE_BUSY_MS = 1_600;
-const TAKEOVER_SLOW_HTML = typedPage(
-  "느린 화면",
-  "",
-  `<script>
-  var spun = false;
-  document.querySelector('[data-shape="box"]').addEventListener("focus", function () {
-    if (spun) return;
-    spun = true;
-    setTimeout(function () { var until = Date.now() + ${SLOW_PAGE_BUSY_MS}; while (Date.now() < until) {} }, 100);
-  });
-  </script>`,
-);
-
-/**
- * `/takeover-silent-names`: a page on which the names step gets no answer for any control — its
- * `getComputedStyle` throws, and a name cannot be computed without asking how an element is drawn.
- * The tree and the hold are Playwright's and ask in a world of their own, which the page's does
- * not reach.
- */
-const TAKEOVER_SILENT_NAMES_HTML = typedPage(
-  "이름을 말하지 않는 화면",
-  `<script>window.getComputedStyle = function () { throw new Error("no"); };</script>`,
-);
-
-/**
- * `/takeover-keep-alive`: a panel the page takes out of its document and puts back as the same
- * nodes — a tab kept alive behind another, a dialog closed and reopened.
- */
-export const KEEP_ALIVE_CLOSE = "닫기";
-export const KEEP_ALIVE_OPEN = "열기";
-const TAKEOVER_KEEP_ALIVE_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>넣었다 뺐다 하는 화면</title></head><body style="margin:0">
-  <div id="panel">${TYPED_ROWS}</div>
-  <button type="button" style="position:absolute;left:20px;top:260px" onclick="window.kept = document.getElementById('panel'); window.kept.remove();">${KEEP_ALIVE_CLOSE}</button>
-  <button type="button" style="position:absolute;left:120px;top:260px" onclick="document.body.insertBefore(window.kept, document.body.firstChild);">${KEEP_ALIVE_OPEN}</button>
-  ${REPORT_TYPING}
-</body></html>`;
-
-/**
  * The box on `/get-form` (`fixtures/get-form.html`), and where it is drawn.
  *
  * THE BOX'S VALUE LEAVES IN THE ADDRESS. A GET form puts every field in the query, so the page it
@@ -727,30 +488,6 @@ const READER_BROKEN_HTML = `<!doctype html><html lang="ko"><head><meta charset="
 <h1>${READER_BROKEN_TEXT}</h1>${Array.from({ length: 8 }, () => `<p>${ARTICLE_PARAGRAPH}</p>`).join("")}</body></html>`;
 
 /**
- * `/takeover-map`: 고용24's page — the global `Map` replaced by one with `put` and no `set` — with
- * places to type on it. An object does not cross out of such a page, and a list does not cross in.
- */
-const TAKEOVER_MAP_HTML = typedPage(
-  "Map을 바꾼 화면",
-  `<script>${REPLACED_BUILTINS_SCRIPT}</script>`,
-);
-
-/**
- * `/takeover-article`: a page that says it is an article, long enough to be read as one, with a
- * place to type inside the story — a comment box under it, a note beside it.
- */
-export const TYPED_ARTICLE_NOTE = "기사에 붙인 메모";
-const TAKEOVER_ARTICLE_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta property="og:type" content="article"><title>가을 매출 기사</title></head><body style="margin:0;padding-top:90px">
-<nav><ul>${Array.from({ length: 40 }, (_, i) => `<li><a href="/n${i}">${ARTICLE_MENU} ${i}</a></li>`).join("")}</ul></nav>
-<article><h2>${ARTICLE_STORY}</h2>${Array.from({ length: 3 }, () => `<p>${ARTICLE_PARAGRAPH}</p>`).join("")}
-<p style="${editableRow(0, 0)}">${TYPED_ARTICLE_NOTE} ${region("note")}</p>
-${Array.from({ length: 3 }, () => `<p>${ARTICLE_PARAGRAPH}</p>`).join("")}</article>
-<aside><ol>${Array.from({ length: 40 }, (_, i) => `<li><a href="/r${i}">많이 본 뉴스 제목 ${i} 번째 기사입니다</a></li>`).join("")}</ol></aside>
-${REPORT_TYPING}
-</body></html>`;
-
-/**
  * Serve it, and say where.
  *
  * Port 0, so two of these can run at once — the gate is run concurrently from more than one
@@ -764,8 +501,6 @@ export function serveFixture(port = 0) {
   const hanging = new Set<(response: Response) => void>();
   /** Every `/late-frame` request, held until `releaseLateFrames`. */
   const late = new Set<(response: Response) => void>();
-  /** How many characters each place on a page that reports its typing held when last typed into. */
-  const typedInto = new Map<string, number>();
 
   const server = Bun.serve({
     port,
@@ -908,43 +643,6 @@ export function serveFixture(port = 0) {
       if (path === "/takeover-frame") {
         return new Response(TAKEOVER_FRAME_HTML, { headers: html });
       }
-      if (path === "/takeover-editable") {
-        return new Response(
-          takeoverEditableHtml(`http://localhost:${url.port}`),
-          { headers: html },
-        );
-      }
-      if (path === "/takeover-editable-frame") {
-        return new Response(TAKEOVER_EDITABLE_FRAME_HTML, { headers: html });
-      }
-      if (path === "/takeover-typed") {
-        return new Response(TAKEOVER_TYPED_HTML, { headers: html });
-      }
-      if (path === "/takeover-left") {
-        return new Response(TAKEOVER_LEFT_HTML, { headers: html });
-      }
-      if (path === "/takeover-slow") {
-        return new Response(TAKEOVER_SLOW_HTML, { headers: html });
-      }
-      if (path === "/takeover-silent-names") {
-        return new Response(TAKEOVER_SILENT_NAMES_HTML, { headers: html });
-      }
-      if (path === "/takeover-map") {
-        return new Response(TAKEOVER_MAP_HTML, { headers: html });
-      }
-      if (path === "/takeover-keep-alive") {
-        return new Response(TAKEOVER_KEEP_ALIVE_HTML, { headers: html });
-      }
-      if (path === "/takeover-article") {
-        return new Response(TAKEOVER_ARTICLE_HTML, { headers: html });
-      }
-      if (path === "/typed-into") {
-        typedInto.set(
-          url.searchParams.get("shape") ?? "",
-          Number(url.searchParams.get("chars")),
-        );
-        return new Response(null, { status: 204 });
-      }
       // Files rather than strings, like the job pages, but not on that list: nobody's job opens them.
       if (path === "/get-form" || path === "/landed") {
         return new Response(
@@ -1006,10 +704,6 @@ export function serveFixture(port = 0) {
     setQuiet: (on: boolean) => {
       quiet = on;
     },
-    /** Where typing on a page that reports it landed, and how many characters that place then held. */
-    typedInto: () => Object.fromEntries(typedInto),
-    /** Forget every report so far: the pages share the names of their places. */
-    forgetTyping: () => typedInto.clear(),
     /** Every job page is present on disk, or the name of the one that is not. */
     missingPages: () =>
       JOB_PAGES.filter(

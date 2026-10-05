@@ -565,12 +565,6 @@ export function readAriaSnapshot(
   elements: SnapshotElement[];
   truncated: boolean;
   unnamed: string[];
-  /**
-   * Where each kept control is drawn in its own document, as the tree wrote it (`[box=…]`), for a
-   * tree taken with boxes: how a control is matched to an element the page counted
-   * (`marked-refs.ts`).
-   */
-  boxes: Map<string, string>;
 } {
   const secretLabels = new Set(
     [...(secrets.labels ?? [])]
@@ -588,7 +582,6 @@ export function readAriaSnapshot(
     element: SnapshotElement,
     seen: boolean,
     unnamed: boolean,
-    box: string | undefined,
   ): void => {
     if (TEXT_ENTRY_ROLES.has(element.role)) {
       const label = element.name.replace(/\s+/g, " ").trim();
@@ -615,7 +608,7 @@ export function readAriaSnapshot(
         if (element.value !== undefined) element.value = "";
       }
     }
-    found.push({ element, seen, unnamed, ...(box ? { box } : {}) });
+    found.push({ element, seen, unnamed });
   };
 
   let tree: unknown;
@@ -624,7 +617,7 @@ export function readAriaSnapshot(
   } catch {
     // A snapshot that will not parse yields no elements rather than throwing. The caller's next move is
     // to take another one, and an exception here would reach the Bot as a broken computer.
-    return { elements: [], truncated: false, unnamed: [], boxes: new Map() };
+    return { elements: [], truncated: false, unnamed: [] };
   }
 
   /** One entry: an element if it is one, and then whatever is beneath it. */
@@ -637,7 +630,6 @@ export function readAriaSnapshot(
         element,
         Boolean(box && view && overlap(box, view.clip)),
         leftNameless(descriptor),
-        descriptor.flags.get("box"),
       );
     }
     // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
@@ -687,15 +679,12 @@ export function readAriaSnapshot(
     unnamed: kept.flatMap(({ element, unnamed }) =>
       unnamed ? [element.ref] : [],
     ),
-    boxes: new Map(
-      kept.flatMap(({ element, box }) => (box ? [[element.ref, box]] : [])),
-    ),
   };
 }
 
 /**
- * The list with the page's own names on the controls whose name is the page's to give
- * (`namesFromThePage`), cut where every name is cut.
+ * The list with the page's own names on the controls the tree left nameless (`namesFromThePage`),
+ * cut where every name is cut.
  *
  * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, and nothing stands in for it. The
  * words the tree printed beneath the control once did (`readAriaSnapshot` says what became of
@@ -706,117 +695,34 @@ export function readAriaSnapshot(
  * editable regions out on every path (`page-names.ts`); when it does not come in time, or the ref
  * did not resolve, the honest list has no name for that control — the hold then compares the
  * empty name with the browser's, which is a refusal and never a secret on the trail. A control
- * the tree itself named, and that is not in `asked`, is untouched.
+ * the tree itself named is untouched: the page was never asked about it.
  *
- * `asked` is every control whose name is not the tree's to give: the ones it left nameless, and —
- * on a tab a person typed into — the ones it named out of what they typed, or might have
- * (`namesToList`). It is the look's own statement of the rule and holds whatever list it is
- * handed: a name already on one of these does not go on unless `names` gives it.
+ * `asked` is the look's own statement of that rule, and holds whatever list it is handed. The
+ * tree's list already has no name for these controls, so on it this blanks nothing; it is kept so
+ * that the rule does not rest on what the parser happens to do.
  *
- * `valueless` is every control whose contents are not the Bot's to read: one that holds a node a
- * person typed into — is one, is inside one, has one inside it — or that could not be asked. What
- * the tree writes after such a control's colon is what is inside it (`toElement`):
- * `- button "보내기" [ref=e9]: <what a person typed in the region inside it>`, and just as much
- * `- combobox "검색" [ref=e4]: 검색: <what they typed>` for a box that is a wrapper around the
- * region. So it goes whatever the control's role, where until 2026-10-05 a box kept it: the box a
- * person typed into is blanked by ref, and the box AROUND it was not a box anybody followed. A box
- * is left saying that it holds something (`""`), as a secret field is; anything else says nothing.
+ * No value goes with a name given here: a control the tree left nameless never has one
+ * (`toElement`).
  */
 export function withNames(
   elements: SnapshotElement[],
   names: ReadonlyMap<string, string>,
   asked: ReadonlySet<string> = new Set(names.keys()),
-  valueless: ReadonlySet<string> = new Set(),
 ): SnapshotElement[] {
   return elements.map((element) => {
     const name = names.get(element.ref);
-    const renamed = name !== undefined || asked.has(element.ref);
-    const emptied = valueless.has(element.ref) && element.value !== undefined;
-    if (!renamed && !emptied) return element;
-    const { value, ...rest } = element;
-    return {
-      ...rest,
-      ...(renamed
-        ? { name: name === undefined ? "" : cutAtCodeUnits(name, 200) }
-        : {}),
-      ...(!emptied
-        ? value === undefined
-          ? {}
-          : { value }
-        : TEXT_ENTRY_ROLES.has(element.role)
-          ? { value: "" }
-          : {}),
-    };
+    if (name !== undefined) {
+      return { ...element, name: cutAtCodeUnits(name, 200) };
+    }
+    return asked.has(element.ref) ? { ...element, name: "" } : element;
   });
-}
-
-/**
- * What the page said of the controls it was asked about, as {@link withNames} takes it: the names
- * that go on the list, every control whose tree name does not stand, and every control whose
- * contents do not go on.
- *
- * A control the tree left nameless takes the page's name, as it always did. A control the tree
- * NAMED is asked about only where it could be named out of what a person typed (`snapshotPage`),
- * and then:
- *
- * - drawn from what they typed (`drawn`): the page's name, which leaves that out — the link around
- *   an editable region, the button a box labels, the box whose `<label>` holds a region, the link
- *   inside a region (`page-names.ts`);
- * - holding what they typed (`holds`): no contents either;
- * - not drawn from it: the tree's own name, untouched — the page's answer for it is not used, so
- *   nothing about an ordinary control changes because somebody typed elsewhere on the page;
- * - not answered for: no name and no contents. Whether it was drawn from what they typed is
- *   exactly what is not known, and this is the side to be wrong on: it costs the Bot one look's
- *   name for that control.
- *
- * `nearBefore` is the controls that were near a node a person typed into BEFORE the tree was taken
- * (`nearRefs`). The tree read their names a moment later, and the page is asked a moment after
- * that: a region that left in between is in the tree's name and in nothing the page can say now.
- * So such a control never keeps the tree's name or its contents, whatever the page answers: it is
- * listed under what the page calls it now, which the region is no part of.
- */
-export function namesToList(
-  unnamed: readonly string[],
-  asked: readonly string[],
-  answers: {
-    names: ReadonlyMap<string, string>;
-    drawn: ReadonlySet<string>;
-    holds: ReadonlySet<string>;
-  },
-  nearBefore: ReadonlySet<string> = new Set(),
-): { names: Map<string, string>; asked: Set<string>; valueless: Set<string> } {
-  const nameless = new Set(unnamed);
-  const names = new Map<string, string>();
-  const notTheTrees = new Set(unnamed);
-  const valueless = new Set<string>();
-  for (const ref of asked) {
-    const name = answers.names.get(ref);
-    if (name === undefined) {
-      notTheTrees.add(ref);
-      valueless.add(ref);
-      continue;
-    }
-    const distrusted = nearBefore.has(ref);
-    if (answers.holds.has(ref) || distrusted) valueless.add(ref);
-    if (nameless.has(ref) || answers.drawn.has(ref) || distrusted) {
-      names.set(ref, name);
-      notTheTrees.add(ref);
-    }
-  }
-  return { names, asked: notTheTrees, valueless };
 }
 
 /**
  * An element, whether any of it was inside the viewport when the tree was taken, and whether the
  * tree printed it without a name.
  */
-type Found = {
-  element: SnapshotElement;
-  seen: boolean;
-  unnamed: boolean;
-  /** Its `[box=…]` as written, in its own document's coordinates. */
-  box?: string;
-};
+type Found = { element: SnapshotElement; seen: boolean; unnamed: boolean };
 
 /**
  * The elements the list keeps: all of them, or — past the limit — every one a person could see,

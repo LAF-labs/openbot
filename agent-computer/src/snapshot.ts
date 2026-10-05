@@ -13,14 +13,12 @@
  */
 import type { Page } from "playwright";
 import {
-  namesToList,
   opaqueFramesIn,
   readAriaSnapshot,
   type SnapshotElement,
   withNames,
 } from "./aria-snapshot";
 import { VIEWPORT } from "./browser-identity";
-import { nearRefs } from "./marked-refs";
 import {
   type Arrival,
   arrivalNote,
@@ -31,15 +29,10 @@ import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
 import { typedIntoBlind } from "./person-typing";
 import {
-  bothScans,
-  quietOn,
   SECRET_JOIN_TIMEOUT_MS,
   type SecretMarks,
-  scanToken,
   secretSignals,
-  type TypedInto,
   typedIntoRefs,
-  typingsOn,
 } from "./secret-fields";
 import { type BotSession, note } from "./sessions";
 import type { TabSummary } from "./tabs";
@@ -216,27 +209,6 @@ export async function snapshotPage(
    * the box the Bot had just named, 502 after the action timeout). The page's has to be the one
    * standing when the Bot acts.
    */
-  /*
-   * AND WHAT IS NEAR A NODE A PERSON TYPED INTO, ASKED BEFORE THE TREE AS WELL AS AFTER IT
-   * (`bothScans`): the tree's names are this moment's, and a region that is gone by the time the
-   * page is asked again was still in the name the tree read.
-   *
-   * AND THE COUNT OF A PERSON'S TYPINGS, READ BEFORE BOTH. What the two scans say is the record's
-   * word now, and the record forgets: a person who types into a frame while the tree is taken,
-   * and whose frame is gone when the look asks again, is in the name the tree read and in no
-   * scan — measured through this look, `link "틀 속 링크 CANARY-…"`. The count only grows
-   * (`typingsOn`), so a look it moved under is one where which node cannot be said: every box
-   * shows nothing and every control is asked about, as on a tab typed into blind. A person
-   * begins typing somewhere new a few times a minute; this is that one look.
-   */
-  const typings = typingsOn(session, target);
-  const before = await quietOn(
-    session,
-    target,
-    typedIntoBlind(session, target),
-    deadline - Date.now(),
-    { token: scanToken() },
-  );
   const joined = await secretSignals(session, target);
   let yaml = await treeOrArrival();
   if (typeof yaml !== "string") {
@@ -269,41 +241,24 @@ export async function snapshotPage(
     yaml = retaken;
   }
   /*
-   * After the page's snapshot as well as before it: where the marked nodes are drawn is matched
-   * against the tree standing now, and a node renamed since the last one has only just been handed
-   * its ref.
+   * After the page's snapshot, not before: whether a ref still names a node is asked of the
+   * snapshot standing now, and a node renamed since the last one has only just been handed its ref.
    *
-   * AND WHEN THAT QUESTION CANNOT BE ANSWERED, NO BOX KEEPS ITS VALUE. A box a person typed into is
-   * found in the tree by asking the page, and a page that stops answering — its next document on
-   * its way, a frame they typed in silent, or the look's deadline come — leaves the box unfound.
-   * A tab that is leaving is answered as leaving; any other page with the question left unanswered
-   * shows the contents of no box (`unverified`), which costs a Bot the sight of what is in the
-   * boxes for one look and never costs anybody the secret. The same answer for a document a person
-   * typed into while it would not say where (`person-typing.ts`): the box is somewhere on it,
-   * unfollowed, until the document is gone.
+   * AND WHEN THAT QUESTION CANNOT BE ANSWERED, NO BOX KEEPS ITS VALUE. A field a person typed a secret
+   * into is found in the tree by asking the page, and a page that stops answering part of the way —
+   * its next document on its way, or the look's deadline come — leaves the field unfound: its ref
+   * unmarked, and its value marked only if the join read it. A tab that is leaving is answered as
+   * leaving; any other page with a question left unanswered shows the contents of no box
+   * (`unverified`), which costs a Bot the sight of what is in the boxes for one look and never costs
+   * anybody the secret.
    */
-  const scanned = bothScans(
-    before,
-    await quietOn(
-      session,
-      target,
-      typedIntoBlind(session, target),
-      deadline - Date.now(),
-      { token: scanToken(), also: before.near.tokens[0] ?? "" },
-    ),
-  );
-  const scannedAt = typingsOn(session, target);
-  const typed: TypedInto =
-    scannedAt === typings
-      ? scanned
-      : { ...scanned, present: true, every: true };
   // One viewport for the list's cut and for where a typed-into box is looked for, so the boxes
   // looked through are the boxes listed (`listedTextEntryRefs`).
   const viewport = target.viewportSize() ?? VIEWPORT;
   const typedInto = await typedIntoRefs(
+    session,
     target,
     yaml,
-    typed.boxes,
     deadline,
     viewport,
   );
@@ -311,7 +266,11 @@ export async function snapshotPage(
     const arrival = arrivalOf(target);
     if (arrival) return stillArriving(session, target, tabs, arrival);
   }
-  const unverified = !typedInto.complete || typed.every;
+  /*
+   * The same answer for a document a person typed into while it would not say where
+   * (`person-typing.ts`): the box is somewhere on it, unfollowed, until the document is gone.
+   */
+  const unverified = !typedInto.complete || typedIntoBlind(session, target);
   const read = readAriaSnapshot(
     yaml,
     {
@@ -328,83 +287,16 @@ export async function snapshotPage(
    * the controls the list keeps, and within what is left of the look — a name that does not come
    * in time leaves that control nameless (`withNames` says why nothing stands in for it).
    */
-  /*
-   * AND ON A TAB A PERSON TYPED INTO, THE CONTROLS THAT COULD BE NAMED OUT OF IT ARE ASKED ABOUT TOO.
-   * The tree names a control by what is inside it and by what labels it, and it does not know that
-   * some of that was typed by a person: measured 2026-10-05, the link around an editable region,
-   * the button a box labels and the box beside a `<label>` each came back named by a canary a
-   * person had typed (`person-typing.ts`). The page says which elements are near a node they typed
-   * into (`quietOn`), the controls of the list among those are found (`nearRefs`), and each is
-   * listed under the name the page computes without that node if its name was drawn from it — or
-   * whatever the page says of it, if it was near one before the tree was taken (`namesToList`).
-   *
-   * ONLY THOSE. Every other control is listed exactly as on a tab nobody typed into, whether or not
-   * the page answers: the first version asked about every control the list keeps, and a page that
-   * said nothing for a second cost a Bot every name on it — every click refused as renamed — on a
-   * tab that stays "typed into" for as long as a single-page app keeps its search box. A page
-   * where nothing takes a name from what was typed is asked nothing more than it ever was.
-   *
-   * Every control is asked about only where which node cannot be said at all (`every`): typed blind.
-   */
-  const hush = typed.present
-    ? { mark: typed.mark, every: typed.every }
-    : undefined;
-  const near =
-    hush && !typed.every
-      ? await nearRefs(
-          target,
-          read.elements.map(({ ref }) => {
-            const box = read.boxes.get(ref);
-            return box ? { ref, box } : { ref };
-          }),
-          typed.near,
-          Math.min(PAGE_NAMES_MS, deadline - Date.now()),
-        )
-      : undefined;
-  const nameless = new Set(read.unnamed);
-  const askedAbout = read.elements
-    .map((element) => element.ref)
-    .filter(
-      (ref) =>
-        hush?.every === true ||
-        nameless.has(ref) ||
-        near?.before.has(ref) === true ||
-        near?.after.has(ref) === true,
-    );
-  const answered = await namesFromThePage(
+  const names = await namesFromThePage(
     target,
-    askedAbout,
-    Math.min(PAGE_NAMES_MS, deadline - Date.now()),
-    hush,
-  );
-  /*
-   * AND THE COUNT ONCE MORE, AFTER THE NAMES. A person's first key on this tab may land after the
-   * scan above and before the page is asked for these, in a link that is itself the place to type
-   * and that the tree — taken while it was empty — left nameless: the page would call it what
-   * was just typed (measured, `link "CANARY-first-key-7391"`). For one commit the mark was sent
-   * with this question on every tab so that the question would find it; a key typed blind has
-   * no mark to find, and every tab paid for the looking (`typedHere` in page-names.ts). So names
-   * the count moved under are not used at all: the controls asked about have none for this one
-   * look, as when the page does not answer.
-   */
-  const listed = namesToList(
     read.unnamed,
-    askedAbout,
-    typingsOn(session, target) === scannedAt
-      ? answered
-      : { names: new Map(), drawn: new Set(), holds: new Set() },
-    near?.before,
+    Math.min(PAGE_NAMES_MS, deadline - Date.now()),
   );
   return {
     snapshotId: session.snapshotId,
     url: target.url(),
     title: await titleOf(target),
-    elements: withNames(
-      read.elements,
-      listed.names,
-      listed.asked,
-      listed.valueless,
-    ),
+    elements: withNames(read.elements, names, new Set(read.unnamed)),
     truncated: read.truncated,
     /*
      * The other tabs, listed with the elements rather than behind a tool of their own.

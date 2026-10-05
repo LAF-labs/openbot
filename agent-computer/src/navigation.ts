@@ -410,7 +410,6 @@ export const navigate: BotRoute = async (
     if (!navigating.refused && !navigating.held) {
       const extract = await readSettledPageText(target, {
         settleFirst: true,
-        session,
       });
       // A page's own script can leave for another host while it settles; the guard stopped that
       // too, and what was read is the error page it left behind, not an answer.

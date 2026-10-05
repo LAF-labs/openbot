@@ -43,6 +43,8 @@ const MAX_NOTES = 8;
 /** A field a person typed into. See `BotSession.secretFields`. */
 export type SecretField = {
   handle: ElementHandle;
+  /** The ref it was last known by, or empty until a look finds it (`typedIntoRefs`). */
+  ref: string;
   /**
    * The frame it is in, where that is known, so a person's next keystroke can ask that frame alone
    * whether it is landing in the same box.
@@ -50,11 +52,6 @@ export type SecretField = {
   frame?: Frame;
   /** A keyed digest of what it held when last read, never what it held (`typed-values.ts`). */
   digest?: string;
-  /**
-   * The name its document was given in the page when the node was marked there
-   * (`markTypedInto`): the field is let go when its frame holds another document, and not before.
-   */
-  document?: string;
 };
 
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
@@ -95,13 +92,12 @@ export type BotSession = {
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**
-   * The fields a person typed into: the node itself.
+   * The fields a person typed into: the node itself, and the ref it was last known by.
    *
    * Identity, not description: whatever the page calls the box and whatever its markup says, the
    * value in THIS node is one the model was promised it would never see — typed through
-   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Its value is
-   * read at every look, and it is let go when its document is gone (`quietOn`) — not when the node
-   * is merely out of the document, which a page can put back.
+   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Followed at
+   * every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
    */
   secretFields: SecretField[];
   /**
@@ -123,20 +119,6 @@ export type BotSession = {
    * gone (`person-typing.ts`).
    */
   typedBlind: WeakMap<Page, number | undefined>;
-  /**
-   * The frames a person typed in, each of which carries the document mark in its page
-   * (`secret-fields.ts`). Asked at every look and read where their marked nodes are now, and
-   * forgotten when the document that carried the mark is gone.
-   */
-  typedFrames: Set<Frame>;
-  /**
-   * How many times a person has begun typing somewhere new on each tab: a node marked, or the tab
-   * typed into blind. IT ONLY EVER GROWS. The two records above forget — a frame when it goes, a
-   * tab typed into blind when its document does — so "what does the record say now" cannot tell
-   * a read or a look whether a person began typing while it was under way. This can
-   * (`typingsOn` in secret-fields.ts).
-   */
-  typings: WeakMap<Page, number>;
   /**
    * A person's input, applied one piece at a time in the order it arrived. Finding the box a
    * keystroke lands in is a question to the page, and two keystrokes whose questions answered out of
@@ -269,8 +251,6 @@ export function createSessions(directories: {
         typedDigests: [],
         ownDigests: [],
         typedBlind: new WeakMap(),
-        typedFrames: new Set(),
-        typings: new WeakMap(),
         personInput: Promise.resolve(),
       };
       sessions.set(botId, created);

@@ -201,7 +201,7 @@ async function pageArrivedAt(
         : undefined;
     const now = tab ?? target;
     if (now === target && now.url() === before) return undefined;
-    const extract = await readSettledPageText(now, { session });
+    const extract = await readSettledPageText(now);
     if (extract.arriving) {
       note(session, arrivalNote(extract.arriving));
       return { page: { url: now.url(), title: "", text: "" } };

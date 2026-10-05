@@ -979,52 +979,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * that opens when every other is held at the ceiling not taken; and a tab the browser never
  * answered about asked about again, and not kept past the ceiling).
  *
- * RAISED 2026-10-05 with what a person typed kept out of every place a page says it again, by
- * exactly what was added: twelve to `agent-computer` (two on the list without a browser — on a tab
- * a person typed into, a name drawn from what they typed is the page's, any other stands and one
- * the page did not answer for has none, and a tab nobody typed into is asked only about its
- * nameless controls; and ten against a real Chromium — which controls take their name from a
- * typed-into node and what each is called without it, every name the page's when which node cannot
- * be said, the names still coming from a page that replaces `Map`, a box called what the role
- * engine calls it, a typed-into node saying nothing in the page's text, in the article taken out
- * of it, in every editable region when which cannot be said and in the plain read, and, through
- * the real door, a canary a person typed into each of nineteen places on a page and one supplied
- * through the masked card, in nothing the Bot is handed).
- *
- * RAISED AGAIN 2026-10-05 with only the controls near what a person typed asked about, by exactly
- * what was added: nine to `agent-computer` (four without a browser — a control that was not asked
- * about untouched whether or not the page answers, the tree's boxes coming out with the list, what
- * the page says has focus read from a string, and anything else being no answer; and five through
- * the real door against a real Chromium — a page slow under a key not typed into blind, a page
- * that gives the names step no answer costing only the control around what was typed its name, a
- * node taken out of its document and put back still a person's, a canary typed into a page read as
- * its article, and a page that replaces `Map` followed to the box and the region typed into).
- *
- * RAISED AGAIN 2026-10-05 with two looks at one tab no longer undoing each other, by exactly what
- * was added: five to `agent-computer`, all against a real Chromium (the controls near a typed-into
- * node told apart by one look's own tokens, and every default of that question closed — a control
- * that does not answer, a ref that names nothing, a look with no time left; a look and reads of
- * the same tab at once, through the real door, twenty-five times; a region that leaves between
- * the tree and the question about it; and followed boxes that are out of the document costing a
- * look no question, counted).
- *
- * RAISED AGAIN 2026-10-05 with a marked node staying a person's whatever it is now, by exactly what
- * was added: ten to `agent-computer`. Eight against a real Chromium — through the real door, a
- * title and a tab that stop being editable when they lose focus, and a note a button owns inside
- * a shadow tree; at the seams of a look and a read, a page silent before the tree, a region out of
- * the document when a read asks and back while it reads, a person who starts typing while a page
- * is being read, and a first key between a look's last scan and its names; the reader and the
- * names each asked about a marked node that is no longer editable, blind or not. Two without a
- * browser: a focus question that fails is typed into blind, and a control near before the tree
- * loses its contents with its name.
- *
- * RAISED AGAIN 2026-10-05 with a read and a look held to a count of a person's typings that only
- * grows, by exactly what was added: six to `agent-computer`. Five against a real Chromium — at the
- * seams, a frame typed into while the page was being read and gone before the read looks again, the
- * same under a look's tree, a frame that said nobody had typed in it heard after somebody did, and
- * a renamed control whose first role is not a box's; and the names asked of a document that does
- * not carry the mark. One without a browser: the roles a scan resolves a box by are the ones the
- * names question carries.
+ * LOWERED 2026-10-05, `agent-computer` from 537 to 495, by exactly the forty-two tests that held a
+ * person's typing in an editable region out of what the Bot reads: the owner chose the same day to
+ * take that back (a person and the Bot write one page together, and the Bot has to read what is
+ * there), so the tests went with the code they described. A value typed into an ordinary field is
+ * still kept from the Bot, and the tests that hold that are all still counted.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -1033,7 +992,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 537, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

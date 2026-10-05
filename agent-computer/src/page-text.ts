@@ -11,19 +11,14 @@ import type { NoteCode } from "./codes";
 import { log } from "./log";
 import { originOf } from "./navigation-guard";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
-import { typedIntoBlind } from "./person-typing";
 import {
   compactText,
   type FrameRead,
-  type Hush,
   PLAIN_TEXT_SCRIPT,
   parseFrameRead,
-  plainTextScript,
   readerScript,
   thrownInPage,
 } from "./reader";
-import { quietOn, typingsOn } from "./secret-fields";
-import type { BotSession } from "./sessions";
 import { within } from "./within";
 import { cutAtCodeUnits } from "../../shared/sound-text";
 
@@ -227,16 +222,9 @@ export const PAGE_TEXT_PLAIN: NoteCode = "laf:page_text_plain";
  * closed, a protocol error, a page that left for another. Those go up as they always did — to
  * `laf:browser_failed`, or to a second read of the page it went to (`readSettledPageText`) — and
  * are never answered as a page whose scripts kept it from being read.
- *
- * `hush` is what the text is made without (`reader.ts`), on the plain read too: a page that breaks
- * the reader is not read with a person's typing put back in.
  */
-async function frameText(
-  frame: Frame,
-  whole: boolean,
-  hush: Hush | undefined,
-): Promise<FrameText> {
-  const answer = await frame.evaluate(readerScript(whole, hush));
+async function frameText(frame: Frame, whole: boolean): Promise<FrameText> {
+  const answer = await frame.evaluate(readerScript(whole));
   const read = parseFrameRead(answer);
   if (read) return read;
   const thrown = thrownInPage(answer);
@@ -257,9 +245,7 @@ async function frameText(
    * with the fact that says it could not be read, which the Bot hears instead of a 502 over a page a
    * person can see.
    */
-  const plain = parseFrameRead(
-    await frame.evaluate(hush ? plainTextScript(hush) : PLAIN_TEXT_SCRIPT),
-  );
+  const plain = parseFrameRead(await frame.evaluate(PLAIN_TEXT_SCRIPT));
   return { text: plain?.text ?? "", reader: false, plain: true };
 }
 
@@ -294,41 +280,6 @@ function stillArriving(arrival: Arrival): PageText {
   return { text: "", truncated: false, arriving: arrival };
 }
 
-/** Every frame's text, the main frame's first: one making of what {@link readablePageText} hands on. */
-async function framesText(
-  target: Page,
-  deadline: number,
-  whole: boolean,
-  hush: Hush | undefined,
-): Promise<{
-  main: FrameText;
-  others: { frame: Frame; url: string }[];
-  texts: (FrameText | undefined)[];
-}> {
-  // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
-  const main = await fromDocument(
-    target,
-    deadline - Date.now(),
-    frameText(target.mainFrame(), whole, hush).then(
-      (read) => ({ read }),
-      (error: unknown) => ({ error }),
-    ),
-  );
-  if (!main) throw new DocumentSilentError();
-  if ("error" in main) throw main.error;
-
-  const others = target
-    .frames()
-    .filter((frame) => frame !== target.mainFrame())
-    .map((frame) => ({ frame, url: frame.url() }))
-    .filter(({ url }) => url && url !== "about:blank");
-  const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
-  const texts = await Promise.all(
-    others.map(({ frame }) => within(wait, frameText(frame, whole, hush))),
-  );
-  return { main: main.read, others, texts };
-}
-
 /**
  * The page as text, the way a reader sees it.
  *
@@ -350,73 +301,38 @@ async function readablePageText(
   deadline: number,
   whole: boolean,
   from: string | undefined,
-  session: BotSession | undefined,
 ): Promise<PageText> {
-  /*
-   * WHAT A PERSON TYPED INTO THIS TAB IS NOT READ OUT OF IT. The reader is told to leave marked
-   * nodes out whenever one of this tab's documents is one a person typed into (`quietOn`) —
-   * whether or not such a node is in the document at the moment it is asked, since the reader
-   * finds the marked nodes itself, in the same question that makes the text, and one put back a
-   * moment later is then left out too. A tab nobody typed on is read exactly as before. One mark
-   * for every frame — a frame with no marked node in it finds none. No token: a read marks nothing
-   * near, so it cannot disturb a look of the same tab that is under way.
-   */
-  const typedInto = (inSession: BotSession) =>
-    quietOn(
-      inSession,
-      target,
-      typedIntoBlind(inSession, target),
-      deadline - Date.now(),
-    );
-  let typings = session ? typingsOn(session, target) : 0;
-  const told = session ? await typedInto(session) : undefined;
-  let made = await framesText(
+  // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
+  const main = await fromDocument(
     target,
-    deadline,
-    whole,
-    told?.present ? { mark: told.mark, every: told.every } : undefined,
+    deadline - Date.now(),
+    frameText(target.mainFrame(), whole).then(
+      (read) => ({ read }),
+      (error: unknown) => ({ error }),
+    ),
   );
-  /*
-   * AND A PERSON MAY BEGIN TYPING WHILE THE TEXT IS BEING MADE: a read is not refused while they
-   * hold the wheel. Asked once, before the main frame, a tab nobody had typed on was read with
-   * nothing left out — its frames one after another, a paste into a region of one of them landing
-   * in between.
-   *
-   * WHAT SAYS SO IS A COUNT THAT ONLY GROWS, NOT THE RECORD OF WHERE. For one commit the record was
-   * asked again after the text, and the record forgets: the frame they typed in had closed by
-   * then, or the tab typed into blind had moved to its next document, the record said nothing,
-   * and the text made with their typing in it was handed on. The count of their typings on this
-   * tab is written before a key is sent and never taken back (`typingsOn`), so one that has not
-   * moved since before the page was asked means no text made here holds a key of theirs; one that
-   * has means THIS TEXT IS NOT HANDED ON, whatever the record says now. It is made again with the
-   * reader told to look — which it does frame by frame, in the question that reads each — until
-   * one making goes by with the count still, or the read's time is spent and it fails as a
-   * silent document does. A person begins typing somewhere NEW a few times a minute at most:
-   * that is what the count counts, not their keys.
-   *
-   * Left, and said in docs/laf/browser-limits.md: the masked card, which marks its field after
-   * the value has landed (`control-routes.ts`).
-   */
-  while (session && typingsOn(session, target) !== typings) {
-    if (Date.now() >= deadline) throw new DocumentSilentError();
-    typings = typingsOn(session, target);
-    const now = await typedInto(session);
-    made = await framesText(target, deadline, whole, {
-      mark: now.mark,
-      every: now.every,
-    });
-  }
-  const { main, others, texts } = made;
+  if (!main) throw new DocumentSilentError();
+  if ("error" in main) throw main.error;
 
-  const pieces = [main.text];
-  let reader = main.reader;
+  const others = target
+    .frames()
+    .filter((frame) => frame !== target.mainFrame())
+    .map((frame) => ({ frame, url: frame.url() }))
+    .filter(({ url }) => url && url !== "about:blank");
+  const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
+  const texts = await Promise.all(
+    others.map(({ frame }) => within(wait, frameText(frame, whole))),
+  );
+
+  const pieces = [main.read.text];
+  let reader = main.read.reader;
   /*
    * The page's own read only. An advertiser's frame that broke the reader is read plainly and merged
    * like any other frame — a frame is read whole unless it is an article anyway — and saying the
    * page could not be read because one of forty ad frames could not is a fact about nothing the
    * Bot asked for. A frame that could not be read even plainly is what it always was: opaque.
    */
-  const plain = main.plain === true;
+  const plain = main.read.plain === true;
   const frames: NonNullable<PageText["frames"]> = [];
   others.forEach(({ url }, index) => {
     const read = texts[index];
@@ -454,18 +370,10 @@ async function readablePageText(
 /**
  * The same, once the page has stopped moving, and once more if it moved while being read — or, when
  * the page's document does not answer because the next one is on its way, nothing but that fact.
- *
- * `session` is whose read it is. Every route that hands a page's text to a Bot passes it: it is
- * how the text is made without what a person typed into the page (`readablePageText`).
  */
 export async function readSettledPageText(
   target: Page,
-  options: {
-    settleFirst?: boolean;
-    whole?: boolean;
-    from?: string;
-    session?: BotSession;
-  } = {},
+  options: { settleFirst?: boolean; whole?: boolean; from?: string } = {},
 ): Promise<PageText> {
   const deadline = Date.now() + READ_DEADLINE_MS;
   if (options.settleFirst) await settle(target);
@@ -480,7 +388,6 @@ export async function readSettledPageText(
         deadline,
         options.whole === true,
         options.from,
-        options.session,
       );
     } catch (error) {
       const arrival =
