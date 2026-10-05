@@ -452,6 +452,33 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     expect({ queried, read }).toEqual({ queried: 0, read: 0 });
   });
 
+  test("the first-run screen and the screen that asks again for the agreement ask the shell nothing either", async () => {
+    /*
+     * The gate is the hook's, not the browser's: the system's own location question in front of
+     * somebody who has not yet read what continuing means is the same mistake in an installed app
+     * as in a tab, and a shell that already said yes would be read with nothing shown at all. So
+     * the worst case again — a shell that would answer everything.
+     */
+    for (const [path, me] of [
+      ["/welcome", { onboarded: false, consent: OWED }],
+      ["/welcome", { onboarded: false }],
+      ["/settings/shop", { onboarded: true, consent: OWED }],
+    ] as const) {
+      const asked = shell({
+        permission: "granted",
+        place: { kind: "place", ...DEVICE },
+      });
+      const { api, writes } = server(me);
+      const view = await mountApp({ path, api });
+      await view.settle(60);
+      // Not even what it would say.
+      expect(asked).toEqual({ looks: [], reads: [] });
+      expect(writes).toEqual([]);
+      expect(localStorage.getItem(MARK)).toBeNull();
+      await view.unmount();
+    }
+  });
+
   test("a shell that cannot read the device — from before it could, or on Windows — is asked and left alone", async () => {
     for (const permission of [undefined, "unsupported", "denied"]) {
       localStorage.removeItem(MARK);
