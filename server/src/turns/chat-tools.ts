@@ -39,6 +39,7 @@ import {
 } from "../../../shared/tools/computer-reply";
 import {
   type AccountState,
+  accountStatesIn,
   CARD_NOT_ASKED,
   CONNECT_CARD,
   connectionAnswer,
@@ -1049,6 +1050,37 @@ export function createChatTools(deps: ChatToolsDeps) {
     };
 
     /**
+     * What the card just said is on, written on the card for the rest of this turn.
+     *
+     * The accounts on the card are this turn's read from BEFORE anybody pressed a switch, and every
+     * lookup after the card's answer still reads them (`searchResultText`). An account that turned
+     * on with its tools is left out of what could be connected by the tools being in the list
+     * (`openAccountsIn`). One that turned on and brought none was still named "아직 연결하지 않은
+     * 계정 … 연결 카드를 띄운다" — to a Bot this card had just told it is on, with nothing to use.
+     * So the card is handed on again saying what its own answer says, and the lookup's line for
+     * that account becomes the one for on-with-no-tools. Behind the bridge, like the first writing:
+     * nothing at the head of the prompt moves.
+     */
+    const noteConnected = (connected: readonly string[]) => {
+      const at = tools.findIndex((tool) => tool.name === CONNECT_CARD);
+      const card = tools[at];
+      const written = card ? accountStatesIn(card.parameters) : null;
+      if (!card || !written) return;
+      const isNews = (account: AccountState) =>
+        !account.connected && connected.includes(account.key);
+      if (!written.some(isNews)) return;
+      tools[at] = {
+        ...card,
+        parameters: withAccountStates(
+          card.parameters,
+          written.map((account) =>
+            isNews(account) ? { ...account, connected: true } : account,
+          ),
+        ),
+      };
+    };
+
+    /**
      * 연결's switches, put in the conversation — and waited on.
      *
      * THE CALL ENDS WHEN A SWITCH IS ON, OR THE PERSON SAYS NOT NOW. Two things end the wait: the
@@ -1106,6 +1138,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       const before = onIn(first);
       if (before.length === here.length) {
         // Every switch it would draw is already on: the Bot is told so and goes on.
+        noteConnected(before);
         return JSON.stringify(
           connectionAnswer({
             offered,
@@ -1184,6 +1217,7 @@ export function createChatTools(deps: ChatToolsDeps) {
         landedTools.push(...(await offerLandedTools()));
       }
       if (call.signal.aborted) return toolResultText("laf:stopped");
+      noteConnected(now);
       return JSON.stringify(
         connectionAnswer({
           offered,

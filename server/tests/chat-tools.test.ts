@@ -1730,6 +1730,80 @@ describe("a connect card the turn waits on", () => {
         }
       });
 
+      /*
+       * AND THE ONE THAT TURNED ON WITH NOTHING TO USE. No tool of it lands, so the list cannot
+       * say it is connected: the lookup after `laf:connection_unusable` still named 카카오 "아직
+       * 연결하지 않은 계정" and said to raise the card — to a Bot the card had just told it is on.
+       * The card is handed on again with what its answer said, so the line for that account is the
+       * one for on-with-no-tools, and the card is not offered for it a second time.
+       */
+      test("turned on at the card with nothing to use, the lookup that follows says on with no tools — not something to connect", async () => {
+        const EMPTY = "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: ";
+        for (const [others, said] of [
+          // 카카오 was the last account open: no line about connecting is left.
+          [[], null],
+          // 노션 is still open: the line names it, and not 카카오.
+          [[{ key: "notion", connected: false }], "노션(notion)"],
+        ] as const) {
+          const board = switchboard({ "kakao-playmcp": false, notion: false });
+          const toolkit = await createChatTools({
+            people: createPersonAnswers(),
+            components: connectCards,
+            connections: board.read,
+            connectionPollMs: 5,
+            listingWaitMs: 30,
+            accounts: async () => [
+              { key: "kakao-playmcp", connected: false },
+              ...others,
+            ],
+          })(context, [declaredCard()]);
+          const linesOf = (query: string) =>
+            searchResultText(behind(toolkit.tools), query).split("\n");
+          // Before the card: 카카오 is what could be connected, and nothing is on with no tools.
+          expect(linesOf("카톡 나에게 보내기").at(-1)).toContain(
+            "카카오(kakao-playmcp)",
+          );
+          expect(
+            linesOf("카톡 나에게 보내기").some((line) =>
+              line.startsWith(EMPTY),
+            ),
+          ).toBe(false);
+
+          const pending = toolkit.execute(
+            "showConnection",
+            { services: ["kakao-playmcp"] },
+            call(`c-on-with-nothing-${others.length}`),
+          );
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          board.state["kakao-playmcp"] = true;
+          expect((await answerOf(pending)).code).toBe(
+            "laf:connection_unusable",
+          );
+
+          const after = linesOf("카톡 나에게 보내기");
+          expect(after.find((line) => line.startsWith(EMPTY))).toContain(
+            "카카오(kakao-playmcp).",
+          );
+          const open = after.find((line) =>
+            line.startsWith(OPEN_ACCOUNTS_HEAD),
+          );
+          if (said === null) {
+            expect(open).toBeUndefined();
+            expect(
+              describedToolNames([after.join("\n")]).has("showConnection"),
+            ).toBe(false);
+          } else {
+            expect(open).toContain(said);
+            expect(open).not.toContain("kakao-playmcp");
+          }
+          // What the turn read of the others is as it was; only what the card said is on moved.
+          expect(accountStatesIn(cardOf(toolkit.tools)?.parameters)).toEqual([
+            { key: "kakao-playmcp", connected: true },
+            ...others,
+          ]);
+        }
+      });
+
       test("is not what an account with its tools in the list is, nor a site", async () => {
         const mail = await createChatTools({
           people: createPersonAnswers(),
