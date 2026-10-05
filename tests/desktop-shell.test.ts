@@ -300,6 +300,126 @@ test("the shell builds the one window its config describes, and hears its downlo
 });
 
 /**
+ * THE SHELL MAY READ WHERE THE DEVICE IS ONLY IF THE BUNDLE SAYS WHY, AND A SIGNED ONE ONLY IF IT IS
+ * ENTITLED TO.
+ *
+ * A webview answers no geolocation request, so the shell reads the device itself (`location.rs`,
+ * CoreLocation). Two declarations outside the code decide whether that works, and each fails
+ * without a word:
+ *
+ *  - the usage string. macOS shows it under its own question; with none in the bundle the system
+ *    refuses the request and asks nobody. `NSLocationWhenInUseUsageDescription` is the key the
+ *    systems this bundle opens on read (12.3 and later); `NSLocationUsageDescription` is the older
+ *    name, kept beside it with the same sentence.
+ *  - the entitlement. Under the hardened runtime — which a Developer ID build has, and
+ *    notarization requires — CoreLocation is refused to a process without
+ *    `com.apple.security.personal-information.location`. Today's builds are not signed by the
+ *    bundler at all (release.yml: no Apple secrets, so no identity, so `codesign` is never run and
+ *    the file is not read); the day the secrets are set, the same commit must still be able to
+ *    read the device. The bundler hands `bundle.macOS.entitlements` to `codesign` only when it
+ *    signs (tauri-bundler 2.11.4, `bundle/macos/sign.rs`).
+ *
+ * The sentence says what is read, how coarsely and what for, and it is for everybody: a student
+ * and an office worker read it too, so it names no 사장님 and no 가게.
+ */
+test("the bundle says why it reads the device's location, and a signed build is entitled to", () => {
+  const plist = read("desktop/src-tauri/Info.plist");
+  const said = (key: string) =>
+    new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`).exec(
+      plist,
+    )?.[1];
+  const sentence = said("NSLocationWhenInUseUsageDescription");
+  // Asserted rather than assumed: two absent strings would equal each other.
+  expect(sentence).toBeTruthy();
+  expect(said("NSLocationUsageDescription")).toBe(sentence);
+  // What is read, how coarsely, and that it is kept — in Korean, in one sentence.
+  expect(sentence).toContain("이 기기의 위치");
+  expect(sentence).toContain("약 1km");
+  expect(sentence).toContain("저장");
+  expect(sentence?.match(/[.!?]/g)).toEqual(["."]);
+  expect(sentence).not.toMatch(/사장님|가게/);
+
+  const entitlements = read("desktop/src-tauri/Entitlements.plist");
+  expect(entitlements).toMatch(
+    /<key>com\.apple\.security\.personal-information\.location<\/key>\s*<true\/>/,
+  );
+  // That one and nothing else: not the sandbox, which this shell does not run in, and nothing a
+  // page could use. A comment is left out as well — the file is read by `codesign`, not by people.
+  expect(entitlements.match(/<key>/g)).toHaveLength(1);
+  expect(entitlements).not.toContain("<!--");
+
+  type Bundle = { bundle?: { macOS?: { entitlements?: string } } };
+  expect(json<Bundle>(RELEASE_CONFIG).bundle?.macOS?.entitlements).toBe(
+    "Entitlements.plist",
+  );
+  // The development config merges over the deployed one and must not take the bundle's away.
+  expect(json<Bundle>(DEV_CONFIG).bundle).toBeUndefined();
+});
+
+/**
+ * THE SHELL AND THE PAGE SAY THE SAME WORDS ABOUT THE DEVICE.
+ *
+ * The shell answers "may this device be asked?" with one of five words and "where is it?" with a
+ * place or one of six reasons (`location.rs`); the page hears only the words on its own two lists
+ * (`app/src/lib/notifications/shell.ts`) and reads anything else as nothing. Nothing ties a Rust
+ * enum to a TypeScript array, so a reason added on one side alone would be a device that silently
+ * cannot be read — or a new permission word the page drops, which is a button that is never
+ * drawn. Read here from both files.
+ *
+ * And the two halves of the rule that keeps a place coarse are each where they must be: rounded in
+ * the shell's own callback, before the value can be handed to anything, and never printed.
+ */
+test("the shell's words about the device's place are the page's own lists", () => {
+  const shell = read("desktop/src-tauri/src/location.rs");
+  const page = read("app/src/lib/notifications/shell.ts");
+  const listed = (name: string) =>
+    [
+      ...(new RegExp(`const ${name}: readonly \\w+\\[\\] = \\[([^\\]]*)\\]`)
+        .exec(page)?.[1]
+        ?.matchAll(/"([a-z_]+)"/g) ?? []),
+    ].map((match) => match[1] ?? "");
+
+  // What the shell serialises a place or a reason as: `kind()` is held to serde's own answer by
+  // the shell's tests, so its arms are the list.
+  const kinds = [
+    ...between(shell, "fn kind(self)", "impl std::fmt::Debug").matchAll(
+      /Self::\w+(?: \{ \.\. \})? => "([a-z_]+)"/g,
+    ),
+  ].map((match) => match[1] ?? "");
+  expect(kinds).toHaveLength(7);
+  expect(kinds[0]).toBe("place");
+  expect(listed("DEVICE_REFUSALS")).toEqual(kinds.slice(1));
+  expect(page).toContain('if (kind === "place")');
+
+  // The permission's words are its variants in snake_case (`rename_all`), which for one-word
+  // names is lower case.
+  const permission = withoutComments(
+    between(
+      shell,
+      "pub(crate) enum DevicePermission {",
+      "impl DevicePermission",
+    ),
+  );
+  const words = [...permission.matchAll(/^\s+([A-Z][a-z]+),$/gm)].map((match) =>
+    (match[1] ?? "").toLowerCase(),
+  );
+  expect(words).toHaveLength(5);
+  expect(listed("DEVICE_PERMISSIONS")).toEqual(words);
+
+  // Rounded where the fix arrives, and a place prints as its kind alone.
+  const code = withoutComments(shell);
+  expect(code).toMatch(
+    /fn located\([^)]*\) \{\s*finish\(\s*locations\s*\.lastObject\(\)\s*\.map_or\(DevicePlace::Unavailable, \|fix\| place_of\(&fix\)\),?\s*\);/,
+  );
+  expect(code).toMatch(
+    /impl std::fmt::Debug for DevicePlace \{[^}]*formatter\.write_str\(self\.kind\(\)\)/,
+  );
+  expect(code).not.toMatch(
+    /derive\([^)]*Debug[^)]*\)\]\s*(#\[[^\]]*\]\s*)*pub\(crate\) enum DevicePlace\b/,
+  );
+});
+
+/**
  * A FILE DROPPED ON THE WINDOW IS THE PAGE'S.
  *
  * Tauri's own file-drop handler is on unless a config turns it off, and where it is on the page

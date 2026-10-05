@@ -25,6 +25,8 @@
     "allow-summon-shortcut",
     "allow-set-summon-shortcut",
     "allow-update-ready",
-    "allow-restart-to-update"
+    "allow-restart-to-update",
+    "allow-device-place-permission",
+    "allow-device-place"
   ]
 }

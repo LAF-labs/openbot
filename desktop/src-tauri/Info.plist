@@ -4,5 +4,9 @@
 <dict>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>봇이 만든 파일과 내 데이터 사본을 다운로드 폴더에 저장합니다.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>봇이 날씨나 가까운 곳을 찾을 때 기준으로 삼도록, 이 기기의 위치를 약 1km 단위로만 읽어 저장합니다.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>봇이 날씨나 가까운 곳을 찾을 때 기준으로 삼도록, 이 기기의 위치를 약 1km 단위로만 읽어 저장합니다.</string>
 </dict>
 </plist>

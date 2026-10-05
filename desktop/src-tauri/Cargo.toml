@@ -51,3 +51,20 @@ tauri-plugin-single-instance = { version = "2.4.4", features = ["deep-link"] }
 # The summon shortcut. Registered from Rust and never granted to the page: a web page that could
 # register a system-wide shortcut could take a key combination away from every other program.
 tauri-plugin-global-shortcut = "2"
+
+# The device's place, on macOS (src/location.rs): CoreLocation, through the objc2 crates tao and
+# wry already build this shell on. `objc2` and `objc2-foundation` are named only so this crate may
+# use them by name — both were compiled already, with more features than are asked for here.
+# `objc2-core-location` was in the lockfile before this too (for iOS, by way of objc2-ui-kit) and is
+# the one crate that is newly compiled: four of its features, and not its defaults, which would
+# bring objc2-contacts into the lockfile for a postal address nothing here reads.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-location = { version = "0.3", default-features = false, features = [
+    "std",
+    "CLError",
+    "CLLocation",
+    "CLLocationManager",
+    "CLLocationManagerDelegate",
+] }
