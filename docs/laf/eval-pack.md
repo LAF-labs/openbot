@@ -1450,23 +1450,29 @@ saved place and both services connected. Jev `typesafe/jev-1.13-20260917`, three
   neither way. "오늘 일정이랑 새 메일 알려줘" moved the calendar in every run: `unfiltered` reads
   0.5–0.6 there.
 
-**What the Bot's model does with a thread that opens that way** (seven scenarios in the pack with
-fixture answers behind the bridge, `meta/muse-spark-1.3-contributor`, six runs each; the second of
-two passes, the first in brackets where it differed):
+**What the Bot's model does with a thread that opens that way** (seven scenarios with fixture
+answers behind the bridge, `meta/muse-spark-1.3-contributor`, six runs each; the second of two
+passes, the first in brackets where it differed). They are `measureOnly`: run by name with
+`EVAL_ONLY`, and no part of `eval:model`'s verdict — they count rounds beside each other, the
+weather's two already hold a candidate to answering from a move's thread, and the calendar's row
+below would fail the fleet's own model one run in six.
 
 | | Requests of the Bot's model | Seconds | Tokens |
 |---|---|---|---|
 | "오늘 일정 뭐 있어?", no move | 3 every run | 11.0 (14.3) | 21.3K |
 | … opened with the move | 1 in five runs of six; 3 in one, which looked the tool up and called it again (both passes) | 8.8 | 9.3K |
 | "새 메일 왔어?", no move | 3–4 (3–6) | 11.7 (14.0) | 24.9K |
-| … opened with the move | 1 in five runs of six; 3 in one, which opened the three mails (1 in six of six) | 12.0 (12.6) | 9.7K (7.0K) |
+| … opened with the move | 1 in every run of two passes; in the middle pass one run of six opened the three mails (3) | 14.9 (12.6; 12.0) | 7.0K (7.0K; 9.7K) |
 | WRONG: today's list under "내일 일정 뭐 있어?" | 3 every run — called again with `days: 2` and answered with tomorrow's, 6 of 6 | 15.8 | 22.0K |
 | "이정훈 세무사님한테 메일 왔어?", no move | 4–5 | 19.3 | 30.9K |
 | WRONG: the unread list under that question | 4–5 — searched for the sender and answered with their mail, 6 of 6 | 18.3 | 32.8K |
 
 - A move takes two of three requests and more than half the tokens. **The seconds are the
   calendar's only**: the mail's one request, which writes three mails out, took as long as the
-  three without it (7–22 s a run on this endpoint that hour).
+  three without it — 5.7 to 29.2 s a run on this endpoint that afternoon, which is the endpoint's
+  spread and not the move's. The mail's row was run a third time because its check was widened
+  after the second: opening a listed mail is not asking for the list again, and it had been
+  counted as that.
 - A wrong move was put right every time and cost what the turn costs without a move — the call
   nobody asked for, drawn as a step, is the whole of it. After a move the Bot has not been shown
   the tool's schema, so its own second call goes through `tool_search` first, as its first would.

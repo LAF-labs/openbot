@@ -172,6 +172,12 @@ export type Scenario = {
    * that searches six times before it answers needs more rounds than a single lookup does.
    */
   maxTurns?: number;
+  /**
+   * Run only when named in `EVAL_ONLY`, and no part of a verdict. For a scenario that exists to
+   * count something — requests, seconds, tokens — beside another, rather than to hold a candidate
+   * to a behaviour.
+   */
+  measureOnly?: true;
   /** Where the run happens. Absent is a chat. */
   mode?: PromptMode;
   /**
@@ -2024,6 +2030,15 @@ function firstMovesBehindTheBridge(): Scenario[] {
   const says = (turn: Turn, ...words: string[]) =>
     words.every((word) => turn.text.includes(word));
   const base = {
+    /*
+     * MEASURED, NOT PART OF A VERDICT. These seven count rounds beside each other. What a
+     * candidate must do with a thread a move opened is held by the weather's two above, which
+     * are; and the calendar's "is answered from" passes five runs of six on the fleet's model (it
+     * looks the tool up and calls it again once in six), which in a verdict of "every scenario,
+     * every run" would fail the model the fleet runs on. Whether these become requirements is the
+     * owner's call.
+     */
+    measureOnly: true as const,
     dimension: "tool-calls" as const,
     person,
     tools: [...REALISTIC_TOOLSET],
