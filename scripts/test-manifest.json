@@ -101,6 +101,7 @@
   "app/tests/confirm-dialog.test.tsx",
   "app/tests/connect-card.test.ts",
   "app/tests/connect-outcome.test.ts",
+  "app/tests/connect-typed.test.tsx",
   "app/tests/connection-card.test.tsx",
   "app/tests/connection-check-render.test.ts",
   "app/tests/connection-check.test.ts",

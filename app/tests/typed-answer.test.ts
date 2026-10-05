@@ -24,7 +24,9 @@ import {
   holdsCall,
   isSavedByPress,
   isShownOnCard,
+  NOT_NOW,
   openChoiceCall,
+  openConnectCall,
   restAfter,
   setFirstRest,
   typedAnswer,
@@ -123,6 +125,43 @@ describe("the question words can answer", () => {
       ],
     } as Message;
     expect(openChoiceCall([broken], ["c-1"])).toBeNull();
+  });
+});
+
+/*
+ * WHAT IS TYPED UNDER A CONNECT CARD MEANS "NOT NOW" (2026-10-05). The card is not answered in
+ * words — a switch is not — so it is found apart from the choice, and told what 다음에 tells it.
+ */
+describe("the connect card words are typed under", () => {
+  const CONNECT = { services: ["google-calendar"] };
+
+  test("is the connect card the turn is stopped on, and only while it waits", () => {
+    const messages = [asking("m-1", call("c-1", "showConnection", CONNECT))];
+    expect(openConnectCall(messages, ["c-1"])).toBe("c-1");
+    expect(openConnectCall(messages, [])).toBeNull();
+    expect(openConnectCall(messages, ["c-other"])).toBeNull();
+  });
+
+  test("is no other card: a choice takes the words, and a yes-or-no card takes a press", () => {
+    const messages = [
+      asking("m-1", call("c-1", "askChoice", CHOICE)),
+      asking("m-2", call("c-2", "askApproval", { title: "메일 보내기" })),
+    ];
+    expect(openConnectCall(messages, ["c-1", "c-2"])).toBeNull();
+  });
+
+  test("is decided by the newest call under a waiting id, as the choice is", () => {
+    const messages = [
+      asking("m-1", call("c-1", "showConnection", CONNECT)),
+      asking("m-2", call("c-1", "askApproval", { title: "메일 보내기" })),
+    ];
+    expect(openConnectCall(messages, ["c-1"])).toBeNull();
+    expect(openConnectCall([...messages].reverse(), ["c-1"])).toBe("c-1");
+  });
+
+  test("is told what 다음에 tells it: a fact the server reads past, never words", () => {
+    expect(NOT_NOW).toEqual({ code: "laf:connection_off" });
+    expect(Object.isFrozen(NOT_NOW)).toBe(true);
   });
 });
 

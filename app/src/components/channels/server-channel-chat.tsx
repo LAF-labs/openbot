@@ -93,8 +93,10 @@ import {
   hasResult,
   holdsCall,
   isShownOnCard,
+  NOT_NOW,
   type Offer,
   openChoiceCall,
+  openConnectCall,
   restAfter,
   typedAnswer,
 } from "@/lib/turns/typed-answer";
@@ -596,6 +598,8 @@ export function ServerChannelChat({
    * read found a reader each time.
    */
   const openChoice = openChoiceCall(thread.messages, thread.waiting);
+  /** The connect card the turn is stopped on: what is typed under it means "not now". */
+  const openConnect = openConnectCall(thread.messages, thread.waiting);
   /**
    * WHERE EACH OFFER TO A CARD STANDS, by the id of the words kept for it (`Offer`). Nothing here
    * for words not offered since this screen opened.
@@ -751,6 +755,15 @@ export function ServerChannelChat({
       !draft.attachments?.length;
     if (!openChoice || !isWordsAlone || draft.isOffered) {
       park(draft);
+      /*
+       * TYPED UNDER A CONNECT CARD: the card is told "not now", once, through the door 다음에 goes
+       * through — and the words wait for the turn like any typed mid-turn, which now ends. Not
+       * offered again where the door did not take it: the words then wait as they always did, and
+       * the card's own button is still there (`lib/turns/typed-answer.ts`, `openConnectCall`).
+       */
+      if (!openChoice && openConnect) {
+        void answerCard(channel.threadId, openConnect, NOT_NOW);
+      }
       return;
     }
     // Which question: the message that asked, since an id can be another question's later.
