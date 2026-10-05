@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   BRIDGE_TOOLS,
   DEFERRED_TOOL_PREFIX,
+  DEPLOYMENT_FAMILIES,
   deferredToolsText,
+  describedToolNames,
   exposureOf,
   familiesOf,
   isBridgeToolName,
@@ -18,7 +20,17 @@ import {
   type WireTool,
 } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
-import { FILE_CARD } from "../shared/tools/gallery";
+import {
+  ACCOUNT_STATES,
+  type AccountState,
+  accountStatesIn,
+  CONNECT_CARD,
+  FILE_CARD,
+  openAccountsIn,
+  withAccountStates,
+  withoutAccountStates,
+} from "../shared/tools/gallery";
+import { GOALS_FAMILY } from "../shared/tools/goals";
 import { SELF_TOOLS } from "../shared/tools/self";
 
 /**
@@ -606,5 +618,379 @@ describe("a tool already in the schema, asked for through the bridge", () => {
     expect(
       unwrapToolCall(CONNECTED, { name: "mcp__slack__post" }, OFFERED).ok,
     ).toBe(false);
+  });
+});
+
+/*
+ * WHAT COULD BE CONNECTED IS SAID AS A FACT, AND THE MODEL CHOOSES.
+ *
+ * Measured 2026-10-05 on the fleet's model, a person with nothing connected, six runs a question:
+ * "오늘 일정 뭐 있어?" was two to six requests of the model and then prose saying it could see no
+ * schedule — the connect card never raised. The bridge had answered "맞는 도구가 없다 … 다른 말로
+ * 다시 찾아 본다": it took 목표 and 나라장터 for connected services, and said nothing of what could
+ * be connected.
+ *
+ * For a day it then guessed, from a table of words, which service a lookup meant. Probed by a
+ * reviewer: "배송 일정 조회" and "루틴 스케줄" were offered Google Calendar, "카페 24시간" Cafe24,
+ * "카카오 주가" 카카오, "balance sheet" Google Sheets — and a person who had connected 톡캘린더 was
+ * handed Google Calendar's card ahead of the tool they had. So the bridge picks nothing. It says
+ * what this person's accounts are — written on the connect card by the turn, from the connections
+ * themselves — and the model that read the request decides whether one of them is needed.
+ */
+describe("a lookup that finds nothing of a connected service", () => {
+  const DECLARED = {
+    type: "object",
+    properties: {
+      services: {
+        type: "array",
+        minItems: 1,
+        maxItems: 3,
+        items: {
+          type: "string",
+          enum: ["google-calendar", "gmail", "google-sheets", "notion"],
+        },
+        description: "The connections to offer, most useful first",
+      },
+      reason: { type: "string" },
+    },
+    required: ["services"],
+  };
+  /** The connect card as a turn hands it on: the window's schema, the person's accounts on it. */
+  const card = (accounts?: readonly AccountState[]): WireTool => ({
+    name: CONNECT_CARD,
+    description:
+      "Put connection switches on screen and WAIT until the person turns one on, or says not now.",
+    parameters: accounts ? withAccountStates(DECLARED, accounts) : DECLARED,
+  });
+  const off = (...keys: string[]): AccountState[] =>
+    keys.map((key) => ({ key, connected: false }));
+  const on = (...keys: string[]): AccountState[] =>
+    keys.map((key) => ({ key, connected: true }));
+  const OPEN = off("notion", "google-sheets", "google-calendar", "gmail");
+  /* What stands behind the bridge of a person who has connected nothing, on a fleet deployment. */
+  const NOBODYS: WireTool[] = [
+    wire(
+      "mcp__goals__list_goals",
+      "이 사람의 진행 중인 목표를 id·제목·달성 기준·마감·최근 흐름과 함께 본다.",
+    ),
+    wire(
+      "mcp__goals__log_progress",
+      "목표에 진행을 한 줄 적는다: 사람이 말한 진행이나 점검 루틴이 확인한 것.",
+    ),
+    wire(
+      "mcp__public-data__search_bids",
+      "나라장터(조달청) 용역 입찰공고를 찾는다. (public-data)",
+    ),
+    wire("showBarChart", "Show values as a bar chart."),
+  ];
+  const NOTHING = [...NOBODYS, card(OPEN)];
+  const linesOf = (text: string) => text.split("\n");
+  const LIST =
+    "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail), 구글 캘린더(google-calendar), 구글 시트(google-sheets), 노션(notion).";
+  const CARD_LINE = JSON.stringify({
+    name: CONNECT_CARD,
+    description: card().description,
+    parameters: DECLARED,
+  });
+  /** What a lookup says about connecting: from the list's line to the end. */
+  const connecting = (text: string) => {
+    const lines = linesOf(text);
+    const at = lines.findIndex((line) => line.startsWith("다만 이 사람이"));
+    return at < 0 ? [] : lines.slice(at);
+  };
+
+  test("a miss says what this person could connect — by name and key, in key order — then how, then the card", () => {
+    const text = searchResultText(NOTHING, "캘린더 일정 조회");
+    const lines = linesOf(text);
+    expect(lines.slice(0, 4)).toEqual([
+      "'캘린더 일정 조회'에 맞는 도구가 없다.",
+      "지금 연결된 서비스는 없다.",
+      "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+      LIST,
+    ]);
+    // The one instruction: the card when one of them is needed, and the rule for after 다음에.
+    expect(lines[4]).toContain(`${CONNECT_CARD}을 tool_call로 불러`);
+    expect(lines[4]).toContain("말로만 답하지 말고");
+    expect(lines[4]).toContain("괄호 안의 키");
+    expect(lines[4]).toContain(
+      "이미 다음으로 미뤘으면 카드를 다시 띄우지 말고",
+    );
+    expect(lines[4]).toContain("필요한 것이 없으면 연결을 권하지 않는다");
+    // The card as the window declared it: what the turn wrote on it is the bridge's to read.
+    expect(lines[5]).toBe(CARD_LINE);
+    expect(lines).toHaveLength(6);
+    expect(text).not.toContain(ACCOUNT_STATES);
+    // Its schema has now been handed over, so the Bot's next call may be the card.
+    expect(describedToolNames([text]).has(CONNECT_CARD)).toBe(true);
+  });
+
+  test("the same accounts are the same bytes, in whatever order the turn or the list came", () => {
+    const again = [card([...OPEN].reverse()), ...[...NOBODYS].reverse()];
+    for (const query of ["캘린더 일정 조회", "메일 확인"]) {
+      expect(searchResultText(again, query)).toBe(
+        searchResultText(NOTHING, query),
+      );
+    }
+  });
+
+  /*
+   * THE BRIDGE PICKS NO SERVICE. Whatever the words, the facts are the same facts: the reviewer's
+   * probes of the table are answered with the same lines as a lookup for the calendar.
+   */
+  test("what is said of connecting does not depend on the words looked with", () => {
+    const said = connecting(searchResultText(NOTHING, "캘린더 일정 조회"));
+    expect(said).toEqual([LIST, expect.any(String), CARD_LINE]);
+    for (const query of [
+      "배송 일정 조회",
+      "루틴 스케줄",
+      "카페 24시간",
+      "카카오 주가",
+      "balance sheet",
+      "네이버 메일 확인",
+      "슬랙 메시지 보내기",
+    ]) {
+      expect(connecting(searchResultText(NOTHING, query))).toEqual(said);
+    }
+  });
+
+  test("noise is not an answer: a hit on 목표's tool still says what could be connected, after it", () => {
+    // "확인" reaches 목표's log_progress, as it did in fifteen of seventeen lookups on 2026-10-05.
+    const lines = linesOf(searchResultText(NOTHING, "일정 확인"));
+    expect(lines[0]).toBe(
+      "'일정 확인'에 맞는 도구 1개, 스키마 전부. 이 스키마대로 tool_call로 부른다.",
+    );
+    expect(JSON.parse(lines[1] ?? "null").name).toBe(
+      "mcp__goals__log_progress",
+    );
+    expect(lines.slice(2)).toEqual([LIST, expect.any(String), CARD_LINE]);
+  });
+
+  test("a hit on a tool of a service this person connected says nothing of connecting", () => {
+    // 톡캘린더 connected, Google's not: the calendar that is there is the answer.
+    const talk = wire(
+      "mcp__kakao-playmcp__list_events",
+      "톡캘린더의 일정을 기간으로 본다.",
+    );
+    const list = [...NOBODYS, talk, card([...OPEN, ...on("kakao-playmcp")])];
+    const text = searchResultText(list, "캘린더 일정 확인");
+    expect(linesOf(text)[1]).toBe(
+      JSON.stringify({
+        name: talk.name,
+        description: talk.description,
+        parameters: talk.parameters,
+      }),
+    );
+    expect(text).not.toContain("연결하면");
+    expect(text).not.toContain(CONNECT_CARD);
+  });
+
+  test("a tool asked for by name and found is handed over with nothing more; one that is not there is a miss", () => {
+    const found = searchResultText(
+      NOTHING,
+      "select:mcp__public-data__search_bids",
+    );
+    expect(linesOf(found)).toHaveLength(2);
+    expect(found).not.toContain("연결하면");
+    // A name out of an older conversation, from before the account was disconnected.
+    const gone = linesOf(
+      searchResultText(NOTHING, "select:mcp__gmail__list_messages"),
+    );
+    expect(gone[0]).toContain("맞는 도구가 없다");
+    expect(gone.slice(3)).toEqual([LIST, expect.any(String), CARD_LINE]);
+  });
+
+  test("found by the word 연결, the card is handed over once, and the list with it", () => {
+    const text = searchResultText(NOTHING, "연결");
+    expect(text.split(`"name":"${CONNECT_CARD}"`)).toHaveLength(2);
+    expect(linesOf(text)).toContain(LIST);
+    expect(text).not.toContain(ACCOUNT_STATES);
+  });
+
+  /*
+   * ON, AND NOTHING TO WORK THROUGH. 카카오's toolbox is the person's own and may be empty; a
+   * listing can fail at connect. Read as "not connected" — none of its tools are in the list — it
+   * was offered the card, the card said "already on, look its tools up", and the lookup offered
+   * the card again (review, 2026-10-05). The state is the connection's, so it is said as it is.
+   */
+  test("an account that is on and brought no tools is said as that, and never as something to connect", () => {
+    const list = [...NOBODYS, card([...on("kakao-playmcp"), ...off("gmail")])];
+    const lines = linesOf(searchResultText(list, "카카오톡 나에게 보내기"));
+    expect(lines[3]).toBe(
+      "연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: 카카오(kakao-playmcp). 이미 연결돼 있으니 연결 카드를 띄우지 않는다. 이것이 필요한 일이면, 연결은 돼 있는데 지금 쓸 수 있는 도구가 없다고 사람에게 말한다.",
+    );
+    expect(lines[4]).toBe(
+      "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail).",
+    );
+    // With nothing else left to connect there is no list, and no card is handed over at all.
+    const only = searchResultText(
+      [...NOBODYS, card(on("kakao-playmcp"))],
+      "카카오톡 나에게 보내기",
+    );
+    expect(linesOf(only)).toHaveLength(4);
+    expect(only).not.toContain(CONNECT_CARD);
+    expect(only).not.toContain("아직 연결하지 않은");
+  });
+
+  test("nothing left to connect, nothing written on the card, or no card at all: the miss it always was", () => {
+    const mail = wire("mcp__gmail__search_messages", "받은편지함을 찾는다.");
+    const MISS = [
+      "'노션 페이지 만들기'에 맞는 도구가 없다.",
+      "지금 연결된 서비스는 없다.",
+      "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+    ];
+    for (const list of [
+      // A window's card no turn wrote on, and a routine's list, which has no card.
+      [...NOBODYS, card()],
+      NOBODYS,
+    ]) {
+      expect(linesOf(searchResultText(list, "노션 페이지 만들기"))).toEqual(
+        MISS,
+      );
+    }
+    // Everything this deployment can connect is on, with its tools: look again, connect nothing.
+    expect(
+      linesOf(
+        searchResultText(
+          [...NOBODYS, mail, card(on("gmail"))],
+          "노션 페이지 만들기",
+        ),
+      ),
+    ).toEqual([
+      MISS[0],
+      "지금 연결된 서비스: 지메일.",
+      "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+    ]);
+  });
+
+  test("an account the bridge has no name for is said by its key, not by a name made up", () => {
+    const text = searchResultText(
+      [...NOBODYS, card(off("gmail", "acme-crm"))],
+      "고객 목록",
+    );
+    expect(text).toContain("서비스가 있다: acme-crm, 지메일(gmail).");
+  });
+
+  test("목표 and the fleet's keys are nobody's connection: a miss names none and is not looked for again", () => {
+    expect([...DEPLOYMENT_FAMILIES]).toContain(GOALS_FAMILY);
+    const lines = linesOf(searchResultText(NOBODYS, "노션 페이지 만들기"));
+    expect(lines[1]).toBe("지금 연결된 서비스는 없다.");
+    expect(lines[2]).toContain("다시 찾지 않는다");
+    expect(familiesOf(NOBODYS.map((tool) => tool.name))).toEqual([
+      "목표",
+      "나라장터·기업마당",
+    ]);
+  });
+});
+
+/*
+ * ONE SENTENCE IN THE CONTEXT LAYER, AND ONLY WHILE AN ACCOUNT IS LEFT TO CONNECT.
+ *
+ * A lookup's answer reaches only a Bot that looks, and the paragraph naming what is behind the
+ * bridge says not to look for what it does not name. Taken at its word, the fleet's model answered
+ * "오늘 일정 뭐 있어?" from its routines — "제가 챙기고 있는 일정은 없어요", of a calendar it never
+ * read. Three ways of telling it were measured (2026-10-05, `docs/laf/eval-pack.md`): this sentence
+ * (the card in 18 runs of 18), nothing (15), and a line naming the open accounts (11 — three of
+ * them said "연결이 필요해요" and raised no card).
+ */
+describe("the names behind the bridge, while an account is left to connect", () => {
+  const NAMES = [
+    "mcp__goals__list_goals",
+    "showBarChart",
+    CONNECT_CARD,
+    "computer_navigate",
+  ];
+  const SENTENCE =
+    "다만 이 사람의 메일·캘린더 일정·시트처럼 계정을 연결해야 볼 수 있는 것은, 위에 그 도구가 없어도 못 본다고 답하기 전에 tool_search로 한 번 찾는다 — 연결을 권할 길이 답에 온다.";
+
+  test("end on the one exception: look once for what needs an account before saying it cannot be seen", () => {
+    expect(deferredToolsText(NAMES, ["gmail"]).split("\n").at(-1)).toBe(
+      SENTENCE,
+    );
+  });
+
+  test("the paragraph above it is the one every Bot has read, byte for byte, and the sentence names no account", () => {
+    const without = deferredToolsText(NAMES);
+    const withIt = deferredToolsText(NAMES, ["gmail", "notion"]);
+    expect(withIt).toBe(`${without}\n${SENTENCE}`);
+    // The same bytes whichever accounts are open: connecting one of several changes nothing here.
+    expect(deferredToolsText(NAMES, ["cafe24"])).toBe(withIt);
+  });
+
+  test("with nothing left to connect there is no such sentence — nor in a routine, whose list has no card", () => {
+    for (const open of [undefined, []]) {
+      const text = deferredToolsText(NAMES, open);
+      expect(text).not.toContain("다만");
+      expect(text.split("\n").at(-1)?.startsWith("- ")).toBe(true);
+    }
+    // Nothing behind the bridge at all: no paragraph, whatever is open.
+    expect(deferredToolsText(["computer_navigate"], ["gmail"])).toBe("");
+  });
+});
+
+/*
+ * THE ACCOUNTS A TURN WRITES ON THE CONNECT CARD (`shared/tools/gallery.ts`): the one carrier of
+ * what a person could connect, from the server that read the connections to the bridge that
+ * answers a lookup.
+ */
+describe("the accounts a turn writes on the connect card", () => {
+  const declared = {
+    type: "object",
+    properties: { services: { type: "array", items: { type: "string" } } },
+    required: ["services"],
+  };
+  const accounts: AccountState[] = [
+    { key: "gmail", connected: false },
+    { key: "notion", connected: true },
+  ];
+
+  test("are read back as written, beside a schema that is otherwise the window's", () => {
+    const written = withAccountStates(declared, accounts);
+    expect(accountStatesIn(written)).toEqual(accounts);
+    expect(withoutAccountStates(written)).toEqual(declared);
+    // The window's own object is not written to.
+    expect(accountStatesIn(declared)).toBeNull();
+    expect(Object.keys(declared)).not.toContain(ACCOUNT_STATES);
+  });
+
+  test("nothing written reads as null, and what is not a schema is left alone", () => {
+    for (const none of [undefined, null, "services", 3]) {
+      expect(accountStatesIn(none)).toBeNull();
+      expect(withAccountStates(none, accounts)).toBe(none);
+      expect(withoutAccountStates(none)).toBe(none);
+    }
+    // Rows that are not an account's state are not read as one.
+    expect(
+      accountStatesIn({
+        [ACCOUNT_STATES]: [
+          { key: "gmail", connected: false },
+          { key: "notion" },
+          "canva",
+          null,
+        ],
+      }),
+    ).toEqual([{ key: "gmail", connected: false }]);
+  });
+
+  test("the ones still open are read off a run's tools, for the context layer's one sentence", () => {
+    const card = {
+      name: CONNECT_CARD,
+      parameters: withAccountStates(declared, accounts),
+    };
+    expect(openAccountsIn([{ name: "remember" }, card])).toEqual(["gmail"]);
+    // A window's card no turn wrote on, a run with no card, and everything connected: none.
+    expect(
+      openAccountsIn([{ name: CONNECT_CARD, parameters: declared }]),
+    ).toEqual([]);
+    expect(openAccountsIn([{ name: "remember" }])).toEqual([]);
+    expect(
+      openAccountsIn([
+        {
+          name: CONNECT_CARD,
+          parameters: withAccountStates(declared, [
+            { key: "gmail", connected: true },
+          ]),
+        },
+      ]),
+    ).toEqual([]);
   });
 });

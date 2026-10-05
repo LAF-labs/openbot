@@ -61,6 +61,83 @@ export const GALLERY_DECISIONS: ReadonlySet<string> = new Set([
 /** The connect card, by the name its call is made under. */
 export const CONNECT_CARD = "showConnection";
 
+/**
+ * WHAT THIS PERSON'S ACCOUNTS ARE, WRITTEN ON THE CONNECT CARD A TURN HANDS ON.
+ *
+ * Each account this deployment can connect, by its catalogue key, with whether 연결 says it is on —
+ * read from the connection's own row for every message (`readAccountStates`,
+ * `server/src/plugins/overview-routes.ts`) and written here by the turn
+ * (`server/src/turns/chat-tools.ts`). A keyword of this product's own, in JSON Schema's place for
+ * those (`x-…`), at the top of the card's parameters.
+ *
+ * WHY ON THE CARD. A lookup that finds nothing has to say what could be connected, and it is
+ * answered where only the run's tool list is known (`searchResultText`, `bridge.ts`): three fields
+ * a tool, nothing else on the wire. The card is the tool that connecting is done with, it stands
+ * behind the bridge — so nothing at the head of the prompt moves when somebody connects an account
+ * (`toolsFingerprint` counts core tools only) — and a run that has no card, a routine's, has nobody
+ * to connect anything and is told nothing about it.
+ *
+ * STATE, NOT A GUESS FROM WHAT IS MISSING. "No tool of that service in the list" was read as "not
+ * connected" for a day (2026-10-05). An account can be on and have brought nothing — 카카오's
+ * toolbox is the person's own and may be empty, a listing can fail at connect — and a Bot told
+ * "not connected" raised the card, was told "already on, look the tools up", looked, and was told
+ * "not connected" again, for thirty steps.
+ */
+export const ACCOUNT_STATES = "x-accounts";
+
+export type AccountState = { key: string; connected: boolean };
+
+const isAccountState = (value: unknown): value is AccountState =>
+  value !== null &&
+  typeof value === "object" &&
+  typeof (value as AccountState).key === "string" &&
+  typeof (value as AccountState).connected === "boolean";
+
+/** The card's parameters with the accounts written on them. Anything not an object is left alone. */
+export function withAccountStates(
+  parameters: unknown,
+  accounts: readonly AccountState[],
+): unknown {
+  if (!parameters || typeof parameters !== "object") return parameters;
+  return {
+    ...parameters,
+    [ACCOUNT_STATES]: accounts.map(({ key, connected }) => ({
+      key,
+      connected,
+    })),
+  };
+}
+
+/** What a turn wrote there, or null where none did. */
+export function accountStatesIn(parameters: unknown): AccountState[] | null {
+  if (!parameters || typeof parameters !== "object") return null;
+  const written = (parameters as Record<string, unknown>)[ACCOUNT_STATES];
+  return Array.isArray(written) ? written.filter(isAccountState) : null;
+}
+
+/**
+ * The accounts still open to connect, by key, read off the connect card among a run's tools. Empty
+ * where the run has no card or no turn wrote on it.
+ */
+export function openAccountsIn(
+  tools: readonly { name: string; parameters?: unknown }[],
+): string[] {
+  const card = tools.find((tool) => tool.name === CONNECT_CARD);
+  return (accountStatesIn(card?.parameters) ?? [])
+    .filter((account) => !account.connected)
+    .map((account) => account.key);
+}
+
+/** The card's parameters as the window declared them: what a Bot is shown as its schema. */
+export function withoutAccountStates(parameters: unknown): unknown {
+  if (!parameters || typeof parameters !== "object") return parameters;
+  const { [ACCOUNT_STATES]: _states, ...declared } = parameters as Record<
+    string,
+    unknown
+  >;
+  return declared;
+}
+
 const isSaid = (value: unknown): boolean =>
   typeof value === "string" && value.trim() !== "";
 
@@ -113,6 +190,11 @@ export function isAskable(
 export type ConnectionOutcome =
   /** At least one of what was offered is connected now. */
   | "laf:connection_on"
+  /**
+   * What was offered is connected, and it brought nothing a Bot can use: an account with no tool
+   * in this turn's list. Not `laf:connection_on`, which sends the Bot to look the tools up.
+   */
+  | "laf:connection_unusable"
   /** None is: the person said not now, or left the switches alone. */
   | "laf:connection_off"
   /** Nothing that was offered exists on this deployment, so no switch was drawn. */
@@ -150,15 +232,22 @@ export function connectionAnswer(input: {
   connected: readonly string[];
   /** False when this deployment has none of the offered services at all. */
   isOffered?: boolean;
+  /**
+   * False when nothing that is connected can be worked through: every connected one is an account
+   * and none of them has a tool in this turn's list. Only the turn knows, so only the turn says.
+   */
+  isUsable?: boolean;
   tools?: readonly string[];
 }): ConnectionAnswer {
   const connected = input.offered.filter((id) => input.connected.includes(id));
   const code: ConnectionOutcome =
     input.isOffered === false
       ? "laf:connection_not_offered"
-      : connected.length > 0
-        ? "laf:connection_on"
-        : "laf:connection_off";
+      : connected.length === 0
+        ? "laf:connection_off"
+        : input.isUsable === false
+          ? "laf:connection_unusable"
+          : "laf:connection_on";
   return {
     code,
     connected,
@@ -172,6 +261,7 @@ export function connectionAnswer(input: {
 
 const CONNECTION_OUTCOMES: readonly string[] = [
   "laf:connection_on",
+  "laf:connection_unusable",
   "laf:connection_off",
   "laf:connection_not_offered",
 ];

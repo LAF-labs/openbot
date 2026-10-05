@@ -22,6 +22,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { BUSINESS_SITES } from "../../../shared/sites/catalogue";
+import type { AccountState } from "../../../shared/tools/gallery";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { AppVariables } from "../auth/guards";
 import type { SiteConnectionStore } from "../computer/site-connections";
@@ -142,6 +143,20 @@ const ISO = (value: unknown): string | null =>
   typeof value === "string" && value ? value : null;
 
 /**
+ * An account's status, from the row its connection is — or from there being none. One function,
+ * because two readers say it: the screen ({@link readConnectionsOverview}) and a turn
+ * ({@link readAccountStates}), and "connected" has to be the same word in both.
+ */
+function accountStatusOf(
+  connection: HeldConnection | undefined,
+): "not_connected" | "connected" | "needs_reconnect" {
+  if (!connection) return "not_connected";
+  return healthFrom(connection.health).status === "needs_reconnect"
+    ? "needs_reconnect"
+    : "connected";
+}
+
+/**
  * The composition itself, apart from the route, because a second reader needs the same facts.
  *
  * The routine suggestions (`routines/suggestions.ts`) decide what to offer from what a person has
@@ -167,11 +182,7 @@ export async function readConnectionsOverview(
       serverId: row?.id ?? null,
       title: entry.title,
       vendor: entry.vendor,
-      status: connection
-        ? health.status === "needs_reconnect"
-          ? "needs_reconnect"
-          : "connected"
-        : "not_connected",
+      status: accountStatusOf(connection),
       connectedAt: connection ? ISO(connection.connectedAt) : null,
       account: instanceNameOf(entry, row?.url),
       needsInstanceName: entry.host === null,
@@ -260,6 +271,32 @@ export async function readConnectionSwitches(
       connected: site.status === "connected",
     })),
   ];
+}
+
+/**
+ * THE ACCOUNTS' HALF OF {@link readConnectionSwitches}, IN ONE QUERY: every account this
+ * deployment can connect, by key and in key order, with whether it is on for this person.
+ *
+ * A turn reads this for every message and writes it on the connect card it hands the Bot
+ * (`turns/chat-tools.ts`), so that a lookup which finds nothing can say what could be connected —
+ * from the connection's own row, not from a service's tools being absent. The overview's five
+ * reads are too much to spend there, and one of them asks a partner; this is the one read of the
+ * person's connections a turn's first step already makes (`turns/first-move.ts`).
+ * `connections-overview.test.ts` holds this and the screen's reading to the same answer.
+ */
+export async function readAccountStates(
+  sources: Pick<ConnectionsOverviewSources, "catalogue" | "store">,
+  userId: string,
+): Promise<AccountState[]> {
+  const held: HeldConnection[] = await sources.store.connectionsFor(userId);
+  const byServerId = new Map(held.map((row) => [row.serverId, row]));
+  return sources
+    .catalogue()
+    .map((entry) => ({
+      key: entry.key,
+      connected: accountStatusOf(byServerId.get(entry.key)) === "connected",
+    }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
 export function createConnectionsOverviewRoutes(

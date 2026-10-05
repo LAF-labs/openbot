@@ -38,7 +38,12 @@
  */
 import { COMPUTER_TOOLS } from "./computer";
 import { FEED_POST } from "./feed-post";
-import { FILE_CARD } from "./gallery";
+import {
+  accountStatesIn,
+  CONNECT_CARD,
+  FILE_CARD,
+  withoutAccountStates,
+} from "./gallery";
 import { NOW_TOOL_NAME } from "./now";
 import { ROUTINE_NOTE } from "./routine-note";
 import { SELF_TOOLS } from "./self";
@@ -236,9 +241,37 @@ export function familiesOf(names: readonly string[]): string[] {
   return labels;
 }
 
+/**
+ * 다리 뒤나 스키마에 서 있지만 누가 연결한 것이 아닌 무리: 이 배포의 서버가 실행하는 목표, 그리고
+ * 플릿의 키로 도는 것들. 부팅 때부터 있고, 사람이 무엇을 연결했는지와는 무관하다.
+ *
+ * 이름으로 가려 두는 까닭(2026-10-05 실측). 빈손인 검색의 답은 연결된 서비스가 있을 때만 "다른
+ * 말로 다시 찾아 본다"고 하는데, 그 판단이 무리의 수를 셌다 — 목표는 모든 대화에, 나라장터·기업마당은
+ * 플릿의 키가 있는 모든 배포에 있으니, 아무것도 연결하지 않은 사람의 봇도 늘 "지금 연결된 서비스:
+ * 목표, 나라장터·기업마당. 다른 말로 다시 찾아 본다"를 읽었고, 그 말대로 다시 찾았다(메일을 물은
+ * 여섯 번은 여섯 번 다, 시트는 네 번, 일정은 두 번). `server/tests/tool-exposure.test.ts`가
+ * 카탈로그의 `deployment-key` 항목을 걸어 이 목록과 맞춘다.
+ */
+export const DEPLOYMENT_FAMILIES: ReadonlySet<string> = new Set([
+  "goals",
+  "public-data",
+  "web-search",
+  "kma-weather",
+]);
+
+/** 사람이 연결한 서비스들, 처음 나온 순서로, 한국어로. 이 배포의 것은 세지 않는다. */
+function connectedFamiliesOf(names: readonly string[]): string[] {
+  return familiesOf(
+    names.filter((name) => {
+      const key = serverKeyOf(name);
+      return key !== null && !DEPLOYMENT_FAMILIES.has(key);
+    }),
+  );
+}
+
 /** 이번 실행에 실제로 연결된 서비스들을 말하는 한 줄. 검색이 빈손일 때의 답에 쓴다. */
 export function deferredFamiliesLine(names: readonly string[]): string {
-  const families = familiesOf(names);
+  const families = connectedFamiliesOf(names);
   if (families.length === 0) return "지금 연결된 서비스는 없다.";
   return `지금 연결된 서비스: ${families.join(", ")}.`;
 }
@@ -252,7 +285,11 @@ export function deferredFamiliesLine(names: readonly string[]): string {
  * 사장님의 새 메시지 끝에 알림으로 간다(`reminderLines`). 이름순인 것은 표면이 등록한 순서가 같은
  * 목록을 다른 글로 만들지 않게 하려는 것이다. 없으면 빈 글 — 층에 줄을 세우지 않는다.
  */
-export function deferredToolsText(names: readonly string[]): string {
+export function deferredToolsText(
+  names: readonly string[],
+  /** 이 사람이 연결할 수 있는데 아직 연결하지 않은 계정의 키들. 하나라도 있으면 문단 끝에 한 문장이 선다. */
+  open: readonly string[] = [],
+): string {
   const deferred = [...new Set(names.filter(isDeferredToolName))].sort();
   if (deferred.length === 0) return "";
   const groups = new Map<string, string[]>();
@@ -272,6 +309,32 @@ export function deferredToolsText(names: readonly string[]): string {
     ...[...groups.entries()]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([family, members]) => `- ${family}: ${members.join(", ")}`),
+    /*
+     * 연결할 수 있는 계정이 남아 있을 때만 서는 한 문장 — 위의 "여기 없는 일을 하려고 찾지 말고"에
+     * 다는 단서다.
+     *
+     * 왜. 찾으면 다리가 무엇을 연결할 수 있는지와 연결 카드를 건넨다(`searchResultText`) — 그런데
+     * 위 문장을 그대로 따른 봇은 찾지 않는다. "오늘 일정 뭐 있어?"에 제 루틴만 보고 "제가 챙기고
+     * 있는 일정은 없어요" — 읽지도 않은 캘린더가 비었다는 말이다.
+     *
+     * 세 가지를 재서 골랐다(2026-10-05, 플릿의 모델, 연결한 것이 없는 사람, 일정·메일·시트를 여섯
+     * 번씩 — `docs/laf/eval-pack.md` "A service that is not connected"):
+     *   이 문장            열여덟 번 중 열여덟 번, 한 번 찾고 두 번째 요청에서 카드. 요청마다 55토큰.
+     *   아무것도 없이       열다섯 번. 일정을 물은 여섯 번 중 두 번은 끝내 찾지 않았다.
+     *   계정 이름을 적은 줄  열한 번(다리 그대로) — 세 번은 "연결이 필요해요"라고 말만 하고 카드를
+     *                     띄우지 않았다. 그 줄만 보고 카드를 바로 부르게 다리를 고쳐도 열여섯 번이고
+     *                     (메일·시트는 한 번의 요청에 카드), 요청마다 144토큰이다.
+     *
+     * 값. 툴 목록도 정적 층도 아니다 — 맥락 층의 이 문단 끝에 서므로 프롬프트의 머리는 그대로다.
+     * 남은 계정이 없으면(다 연결했거나, 루틴처럼 카드가 없으면) 이 문장도 없다. 이미 열린 대화는
+     * 얼린 층을 그대로 쓰고, 바뀐 이 문단을 사람의 다음 메시지에 알림으로 한 번 받는다
+     * (`reminderLines`).
+     */
+    ...(open.length > 0
+      ? [
+          `다만 이 사람의 메일·캘린더 일정·시트처럼 계정을 연결해야 볼 수 있는 것은, 위에 그 도구가 없어도 못 본다고 답하기 전에 ${TOOL_SEARCH}로 한 번 찾는다 — 연결을 권할 길이 답에 온다.`,
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -664,7 +727,10 @@ function schemaLine(tool: WireTool): string {
   return JSON.stringify({
     name: tool.name,
     description: tool.description,
-    parameters: tool.parameters ?? { type: "object", properties: {} },
+    // 연결 카드에 턴이 적어 둔 계정의 상태는 다리가 읽는 것이고, 봇이 읽는 스키마에는 없다.
+    parameters: withoutAccountStates(
+      tool.parameters ?? { type: "object", properties: {} },
+    ),
   });
 }
 
@@ -743,10 +809,82 @@ function offeredLines(listed: readonly WireTool[]): string[] {
   ];
 }
 
+/** 서비스 키들을 사람이 부르는 이름과 함께, 키 순으로: `구글 캘린더(google-calendar), 지메일(gmail)`. */
+function namedByKey(keys: readonly string[]): string {
+  return [...keys]
+    .sort()
+    .map((key) =>
+      FAMILY_LABELS_KO[key] ? `${FAMILY_LABELS_KO[key]}(${key})` : key,
+    )
+    .join(", ");
+}
+
+/**
+ * 연결된 서비스의 도구를 찾지 못한 검색의 답 끝에 서는 줄들 — 무엇을 연결할 수 있는지, 사실로.
+ *
+ * 어느 서비스가 필요한 일인지는 다리가 고르지 않는다. 낱말 표로 골랐던 하루가 있었다(2026-10-05,
+ * 지금은 지운 표): "배송 일정 조회"와 "루틴 스케줄"에 구글 캘린더를, "카페 24시간"에 카페24를,
+ * "balance sheet"에 구글 시트를 권했고, 톡캘린더를 연결한 사람의 "캘린더 일정 확인"에는 연결된
+ * 도구보다 구글 캘린더의 카드를 먼저 내밀었다. 그래서 다리는 사실만 말한다 — 이 사람이 연결할 수
+ * 있는데 아직 연결하지 않은 계정들, 키와 이름으로 — 그리고 고르는 것은 부탁을 읽은 모델이다.
+ *
+ * 사실은 서버가 연결의 상태에서 읽어 연결 카드에 적어 넘긴 것이다(`accountStatesIn`,
+ * `./gallery.ts`): 목록에 그 서비스의 도구가 없다는 것으로 짐작하지 않는다. 연결돼 있는데 도구가
+ * 하나도 오지 않은 계정은 그렇게 따로 말한다 — 그것을 "연결돼 있지 않다"고 하면 봇은 카드를
+ * 띄우고, 카드는 이미 켜져 있다고 답하고, 봇은 다시 찾는다.
+ *
+ * 이름은 `FAMILY_LABELS_KO` 하나에서 온다. 사이트(배민, 스마트스토어…)는 여기 없다: 연결해도 도구가
+ * 생기지 않고 봇은 브라우저로 그 일을 하며, 카드의 스키마에는 그대로 실려 있다.
+ *
+ * 카드가 목록에 없거나(루틴에는 화면이 없다) 적힌 것이 없으면 빈 배열 — 연결할 사람이 없는
+ * 자리에서는 연결 이야기를 하지 않는다. 같은 목록에는 글자 하나까지 같은 줄들이다.
+ */
+function connectingLines(
+  deferred: readonly WireTool[],
+  shown: readonly WireTool[],
+): string[] {
+  const card = deferred.find((tool) => tool.name === CONNECT_CARD);
+  const accounts = card ? accountStatesIn(card.parameters) : null;
+  if (!card || !accounts) return [];
+  const held = new Set(deferred.map((tool) => serverKeyOf(tool.name)));
+  const open = accounts.filter((account) => !account.connected);
+  const empty = accounts.filter(
+    (account) => account.connected && !held.has(account.key),
+  );
+  return [
+    ...(empty.length > 0
+      ? [
+          `연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: ${namedByKey(empty.map((account) => account.key))}. 이미 연결돼 있으니 연결 카드를 띄우지 않는다. 이것이 필요한 일이면, 연결은 돼 있는데 지금 쓸 수 있는 도구가 없다고 사람에게 말한다.`,
+        ]
+      : []),
+    ...(open.length > 0
+      ? [
+          `다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: ${namedByKey(open.map((account) => account.key))}.`,
+          `부탁받은 일에 이 가운데 하나가 꼭 필요하면, 못 한다거나 연결이 필요하다고 말로만 답하지 말고 ${CONNECT_CARD}을 ${TOOL_CALL}로 불러 그 서비스의 연결 카드를 띄운다 — services에 괄호 안의 키를 넣고, 카드 앞에는 연결이 필요하다는 한 문장만 둔다. 이 대화에서 이 사람이 그 연결을 이미 다음으로 미뤘으면 카드를 다시 띄우지 말고, 연결하면 할 수 있다는 것과 연결하겠다고 말하면 카드를 띄우겠다는 것을 한 문장으로 말한다. 이 가운데 필요한 것이 없으면 연결을 권하지 않는다.`,
+          // 위에서 이미 스키마를 실은 카드("연결"로 찾아 걸린 것)는 다시 싣지 않는다.
+          ...(shown.includes(card) ? [] : [schemaLine(card)]),
+        ]
+      : []),
+  ];
+}
+
+const foundLine = (query: string, count: number) =>
+  `'${query}'에 맞는 도구 ${count}개, 스키마 전부. 이 스키마대로 tool_call로 부른다.`;
+
 /**
  * `tool_search`의 답: 맞는 툴의 스키마 전부 — Claude Code의 ToolSearch가 `<functions>`를 돌려주듯.
  * 이 답은 툴 결과로 대화에 남으니, 같은 대화에서 다시 찾을 필요가 없다. 못 찾았을 때는 무엇이
  * 연결돼 있는지를 말한다 — 지어내지 말라고.
+ *
+ * 찾은 것 가운데 사람이 연결한 서비스의 도구가 없으면, 답의 끝에 무엇을 연결할 수 있는지가 사실로
+ * 선다(`connectingLines`) — 찾은 것이 있어도 선다. 다리는 낱말로 찾을 뿐이라 "일정 확인"에 목표의
+ * 도구가 걸리는데(2026-10-05의 열일곱 답 중 열다섯), 그것이 찾던 것인지 캘린더가 필요한 것인지는
+ * 부탁을 읽은 모델이 안다. 연결된 서비스의 도구를 찾았으면 연결 이야기는 하지 않는다: 톡캘린더를
+ * 연결한 사람의 "캘린더 일정 확인"은 그 도구만 받는다. 이름으로 고른 것(`select:`)이 다 있었을
+ * 때도 하지 않는다 — 고른 것을 받았다.
+ *
+ * 같은 목록과 같은 검색어에는 글자 하나까지 같은 답이다. 답은 만들어질 때 한 번 정해져 대화에
+ * 남는다.
  */
 export function searchResultText(
   deferred: readonly WireTool[],
@@ -762,25 +900,41 @@ export function searchResultText(
         .map((hit) => deferred.find((tool) => tool.name === hit.name))
         .filter((tool): tool is WireTool => tool !== undefined);
   const listed = alreadyOffered(deferred, offered, query, selected);
+  const isSettled =
+    connectedFamiliesOf(found.map((tool) => tool.name)).length > 0 ||
+    (selected !== null &&
+      selected.length > 0 &&
+      selected.every(
+        (name) =>
+          resolveDeferred(deferred, name) !== null ||
+          resolveOffered(offered, name) !== null,
+      ));
+  const connecting = isSettled ? [] : connectingLines(deferred, found);
   if (found.length > 0) {
     return [
-      `'${query}'에 맞는 도구 ${found.length}개, 스키마 전부. 이 스키마대로 tool_call로 부른다.`,
+      foundLine(query, found.length),
       ...found.map(schemaLine),
       ...offeredLines(listed),
+      ...connecting,
     ].join("\n");
   }
-  if (listed.length > 0) return offeredLines(listed).join("\n");
+  if (listed.length > 0) {
+    return [...offeredLines(listed), ...connecting].join("\n");
+  }
   /*
-   * 다시 찾으라는 말은 연결된 서비스가 있을 때만 한다. 서비스가 없으면 다리 뒤에는 맥락에 이름이
-   * 다 적힌 화면 카드뿐이라, 다른 말로 찾아도 같은 빈손이고 한 라운드만 더 든다.
+   * 다시 찾으라는 말은 사람이 연결한 서비스가 있을 때만 한다. 연결한 것이 없으면 다리 뒤에는 맥락에
+   * 이름이 다 적힌 것(화면 카드, 목표, 플릿의 키로 도는 것)뿐이라, 다른 말로 찾아도 같은 빈손이고
+   * 한 라운드만 더 든다.
    */
-  const services = familiesOf(deferred.map((tool) => tool.name)).length > 0;
+  const names = deferred.map((tool) => tool.name);
+  const again = connectedFamiliesOf(names).length > 0;
   return [
     `'${query}'에 맞는 도구가 없다.`,
-    deferredFamiliesLine(deferred.map((tool) => tool.name)),
-    services
+    deferredFamiliesLine(names),
+    again
       ? "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다."
       : "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+    ...connecting,
   ].join("\n");
 }
 

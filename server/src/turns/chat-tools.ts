@@ -30,7 +30,7 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
-import { CORE_TOOL_NAMES } from "../../../shared/tools/bridge";
+import { CORE_TOOL_NAMES, serverKeyOf } from "../../../shared/tools/bridge";
 import { COMPUTER_TOOLS, computerTool } from "../../../shared/tools/computer";
 import {
   type ComputerOutcome,
@@ -38,6 +38,7 @@ import {
   navigationOutcome,
 } from "../../../shared/tools/computer-reply";
 import {
+  type AccountState,
   CARD_NOT_ASKED,
   CONNECT_CARD,
   connectionAnswer,
@@ -47,6 +48,7 @@ import {
   galleryReads,
   isAskable,
   ON_SCREEN,
+  withAccountStates,
 } from "../../../shared/tools/gallery";
 import { isGoalToolName } from "../../../shared/tools/goals";
 import {
@@ -142,6 +144,13 @@ export type ChatToolsDeps = {
    * off. Absent without a plugin store, and a connect card then draws nothing and waits for nothing.
    */
   connections?: (userId: string) => Promise<ConnectionSwitch[]>;
+  /**
+   * This person's accounts — every one this deployment can connect, with whether it is on
+   * (`readAccountStates`, `plugins/overview-routes.ts`; one query). Written on the connect card a
+   * turn hands on: see the turn's tool list below. Absent, the card goes on as the window
+   * declared it and a lookup says nothing about connecting.
+   */
+  accounts?: (userId: string) => Promise<readonly AccountState[]>;
   /** How often a waiting connect card looks at 연결 for itself. */
   connectionPollMs?: number;
   /** How long a person may take over a help request. The window's own ten minutes by default. */
@@ -428,14 +437,33 @@ export function createChatTools(deps: ChatToolsDeps) {
           ...pluginTools.filter((tool) => isCorePlugin(tool.name)),
         ]
       : serverTools(deps, pluginTools, options.effort !== false);
-    const tools = goals
-      ? [
-          ...listed,
-          ...goals.tools.filter(
-            (tool) => !listed.some((one) => one.name === tool.name),
-          ),
-        ]
-      : listed;
+    /*
+     * THE CONNECT CARD IS HANDED ON WITH THIS PERSON'S ACCOUNTS WRITTEN ON IT: which this
+     * deployment can connect, and whether each is on. A lookup that finds nothing of a connected
+     * service reads them to say what could be connected (`searchResultText`,
+     * `shared/tools/bridge.ts`), and it is answered where only the run's tool list is known — so
+     * the facts ride on the tool connecting is done with. From the connection's own row, read for
+     * this message: an account that is on and brought no tools is on. The card is behind the
+     * bridge, so nothing at the head of the prompt moves when somebody connects one. A read that
+     * fails writes nothing, and the lookup then says nothing about connecting.
+     */
+    const accounts = deps.accounts
+      ? await deps.accounts(owner.id).catch(() => null)
+      : null;
+    const told = (tool: Tool): Tool =>
+      accounts && tool.name === CONNECT_CARD
+        ? { ...tool, parameters: withAccountStates(tool.parameters, accounts) }
+        : tool;
+    const tools = (
+      goals
+        ? [
+            ...listed,
+            ...goals.tools.filter(
+              (tool) => !listed.some((one) => one.name === tool.name),
+            ),
+          ]
+        : listed
+    ).map(told);
     if (declared) {
       const dropped = declared
         .filter((tool) => !names.has(tool.name))
@@ -1052,10 +1080,33 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
       const onIn = (rows: readonly ConnectionSwitch[]) =>
         here.filter((id) => rows.some((row) => row.id === id && row.connected));
+      /*
+       * CONNECTED, AND WHETHER ANYTHING CAN BE DONE WITH IT. A site that is on is worked through
+       * the browser. An account that is on is worked through its tools, and it can be on with none
+       * in this turn's list: 카카오's toolbox is the person's own and may be empty, a listing can
+       * fail at connect (`plugins/servers.ts`, `offerToolsTo`), a grant can be taken away. Told
+       * `laf:connection_on` for that — "its tools are there, look them up" — a Bot looked, found
+       * nothing, and raised the card again, for as many steps as a question is allowed (review,
+       * 2026-10-05). So where nothing that is connected has anything to work through, the fact is
+       * a different one. An account is what this turn read as one (`accounts`); where that was not
+       * read, nothing is known to be unusable.
+       */
+      const isUsable = (connected: readonly string[]) =>
+        connected.some(
+          (id) =>
+            !accounts?.some((account) => account.key === id) ||
+            [...names].some((name) => serverKeyOf(name) === id),
+        );
       const before = onIn(first);
       if (before.length === here.length) {
         // Every switch it would draw is already on: the Bot is told so and goes on.
-        return JSON.stringify(connectionAnswer({ offered, connected: before }));
+        return JSON.stringify(
+          connectionAnswer({
+            offered,
+            connected: before,
+            isUsable: isUsable(before),
+          }),
+        );
       }
 
       const settled = new AbortController();
@@ -1100,7 +1151,13 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
       const landedTools = fresh.length > 0 ? await offerLandedTools() : [];
       return JSON.stringify(
-        connectionAnswer({ offered, connected: now, tools: landedTools }),
+        connectionAnswer({
+          offered,
+          connected: now,
+          tools: landedTools,
+          // Read after the landed tools were offered: a connection that brought none is said so.
+          isUsable: isUsable(now),
+        }),
       );
     };
 

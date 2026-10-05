@@ -264,6 +264,26 @@ describe("a connect card that has its answer", () => {
     await view.unmount();
   });
 
+  test("shows 연결됨 for an account that is on and brought the Bot nothing to use: the switch is on", async () => {
+    const view = await mount(
+      { canva: "connected", gmail: "not_connected" },
+      {
+        status: "complete",
+        args: { services: OFFERED },
+        result: JSON.stringify(
+          connectionAnswer({
+            offered: OFFERED,
+            connected: ["canva"],
+            isUsable: false,
+          }),
+        ),
+      },
+    );
+    expect(view.host.textContent).toContain("Connected");
+    expect(view.button("Not now")).toBeUndefined();
+    await view.unmount();
+  });
+
   test("shows 다음에 when that was the answer, with the switches still there to turn on later", async () => {
     const view = await mount(
       { canva: "not_connected", gmail: "not_connected" },
