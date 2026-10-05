@@ -568,7 +568,7 @@ export function readAriaSnapshot(
   /**
    * Where each kept control is drawn in its own document, as the tree wrote it (`[box=…]`), for a
    * tree taken with boxes: how a control is matched to an element the page counted
-   * (`nearRefs` in page-names.ts).
+   * (`marked-refs.ts`).
    */
   boxes: Map<string, string>;
 } {
@@ -768,6 +768,12 @@ export function withNames(
  * - not answered for: no name and no contents. Whether it was drawn from what they typed is
  *   exactly what is not known, and this is the side to be wrong on: it costs the Bot one look's
  *   name for that control.
+ *
+ * `nearBefore` is the controls that were near a node a person typed into BEFORE the tree was taken
+ * (`nearRefs`). The tree read their names a moment later, and the page is asked a moment after
+ * that: a region that left in between is in the tree's name and in nothing the page can say now.
+ * So such a control never keeps the tree's name or its contents, whatever the page answers: it is
+ * listed under what the page calls it now, which the region is no part of.
  */
 export function namesToList(
   unnamed: readonly string[],
@@ -777,6 +783,7 @@ export function namesToList(
     drawn: ReadonlySet<string>;
     holds: ReadonlySet<string>;
   },
+  nearBefore: ReadonlySet<string> = new Set(),
 ): { names: Map<string, string>; asked: Set<string>; valueless: Set<string> } {
   const nameless = new Set(unnamed);
   const names = new Map<string, string>();
@@ -789,8 +796,9 @@ export function namesToList(
       valueless.add(ref);
       continue;
     }
-    if (answers.holds.has(ref)) valueless.add(ref);
-    if (nameless.has(ref) || answers.drawn.has(ref)) {
+    const distrusted = nearBefore.has(ref);
+    if (answers.holds.has(ref) || distrusted) valueless.add(ref);
+    if (nameless.has(ref) || answers.drawn.has(ref) || distrusted) {
       names.set(ref, name);
       notTheTrees.add(ref);
     }

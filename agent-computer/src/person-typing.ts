@@ -45,12 +45,12 @@ import { within } from "./within";
 /** How deep a focused frame is followed. A payment window inside a checkout inside a portal is three. */
 const FRAME_DEPTH_LIMIT = 5;
 
-/** What the page says about the element that has focus. `region`: see `SecretField.region`. */
+/** What the page says about the element that has focus. */
 type InFocus =
   | { kind: "none" }
   | { kind: "frame" }
   | { kind: "same"; value: string }
-  | { kind: "other"; region: boolean };
+  | { kind: "other" };
 
 /** The element with focus in one frame, through open shadow roots. */
 function deepFocus(): Element | null {
@@ -65,10 +65,9 @@ function deepFocus(): Element | null {
  *
  * TYPED TEXT IS AN INPUT THAT TAKES TEXT, A TEXTAREA, A TEXT-ENTRY ROLE, OR AN EDITABLE REGION. An
  * `<input type="password">` is in: its markup already blanks it, and following it is what keeps its
- * value out of an address. A region that is not a text box is in too, and said to be one (`region`):
- * the tree names it `generic`, which a look never lists (measured 2026-09-16), so no look searches
- * its boxes for it — which is why it used to be left out, and is not the same as nothing showing
- * what was typed there (the top of this file).
+ * value out of an address. A region that is not a text box is in too: the tree names it `generic`,
+ * which a look never lists (measured 2026-09-16) — which is why it used to be left out, and is not
+ * the same as nothing showing what was typed there (the top of this file).
  *
  * What a region holds is read as far as a digest reads (`comparableValue` keeps 64 characters): a
  * document a person is writing is not carried out of the page on every keystroke.
@@ -100,7 +99,7 @@ function saidOf(node: Element, last: Node | null): string {
     ["textbox", "searchbox", "combobox", "spinbutton"].includes(role);
   const editable = (node as HTMLElement).isContentEditable === true;
   if (!isBox && !editable) return "n";
-  if (node !== last) return isBox ? "o0" : "o1";
+  if (node !== last) return "o";
   return `s${
     tag === "input" || tag === "textarea"
       ? String((node as HTMLInputElement).value ?? "")
@@ -113,29 +112,11 @@ export function inFocus(said: unknown): InFocus | undefined {
   if (typeof said !== "string") return undefined;
   if (said === "n") return { kind: "none" };
   if (said === "f") return { kind: "frame" };
-  if (said === "o0" || said === "o1") {
-    return { kind: "other", region: said === "o1" };
-  }
+  if (said === "o") return { kind: "other" };
   return said.startsWith("s")
     ? { kind: "same", value: said.slice(1) }
     : undefined;
 }
-
-/**
- * The same focused box, as a locator — which is what can be asked for the ref a look names it by. The
- * role engine's `:focus` pierces open shadow roots and answers in a background tab (measured
- * 2026-09-16). Asked for the ref and nothing else: which element it is was already answered, by the
- * element.
- */
-const FOCUSED_BOX = [
-  "input:focus",
-  "textarea:focus",
-  '[role="textbox"]:focus',
-  '[role="searchbox"]:focus',
-  '[role="combobox"]:focus',
-  '[role="spinbutton"]:focus',
-  "[contenteditable]:focus",
-].join(", ");
 
 /** Settled or not, kept apart from silence: `within` alone would read a failure as no answer. */
 type Heard<T> = { value: T } | { error: unknown } | undefined;
@@ -196,9 +177,13 @@ async function askFrame(
   wait: () => number,
 ): Promise<Focused | undefined> {
   const found = await hear(wait(), asked);
-  if (!found) return undefined;
-  // A frame that detached under the question has no box anybody can type into.
-  const element = "value" in found ? found.value.asElement() : null;
+  /*
+   * A QUESTION THAT FAILED IS NOT AN ANSWER THAT NOTHING HAS FOCUS. It fails when the document is
+   * replaced under it, or the frame goes: the key is then on its way into a document nobody has
+   * asked anything, which is not known, and is blind. It used to be read as no box at all.
+   */
+  if (!found || !("value" in found)) return undefined;
+  const element = found.value.asElement();
   if (!element) return { element: null, focus: { kind: "none" } };
   const last = session.lastTyped;
   const lastHere = last?.frame === frame ? last.handle : null;
@@ -207,15 +192,12 @@ async function askFrame(
     const focus = inFocus(said.value);
     return focus ? { element, focus } : undefined;
   }
-  if (said && lastHere) {
-    // The last box's document is gone, so its handle cannot be compared: ask without it.
-    session.lastTyped = undefined;
-    const again = await hear(wait(), element.evaluate(saidOf, null));
-    if (!again) return undefined;
-    const focus = "value" in again ? inFocus(again.value) : undefined;
-    return { element, focus: focus ?? { kind: "none" } };
-  }
-  return said ? { element, focus: { kind: "none" } } : undefined;
+  if (!said || !lastHere) return undefined;
+  // The last box's document is gone, so its handle cannot be compared: ask without it.
+  session.lastTyped = undefined;
+  const again = await hear(wait(), element.evaluate(saidOf, null));
+  const focus = again && "value" in again ? inFocus(again.value) : undefined;
+  return focus ? { element, focus } : undefined;
 }
 
 /** Whether a new handle is a box already followed in this frame, and which. */
@@ -256,42 +238,20 @@ async function alreadyFollowed(
 /**
  * Follow the element a keystroke is about to land in, and mark it in its page. Undefined when it
  * could not be marked there: followed here and unknown to every later question, which is blind.
+ *
+ * Nothing is asked about its ref. A look finds the box by the mark (`typedIntoRefs`), so a
+ * keystroke no longer waits on a snapshot of the box — which was also the one thing here that
+ * changed what `aria-ref=` resolves against while a person held the wheel.
  */
 async function followFocused(
   session: BotSession,
   frame: Frame,
   element: ElementHandle,
   wait: () => number,
-  region: boolean,
 ): Promise<SecretField | undefined> {
-  const [known, line] = await Promise.all([
-    alreadyFollowed(session, frame, element, wait),
-    /*
-     * For the ref a look names it by, where it has one. NOT READ-ONLY: a snapshot of one box becomes
-     * the one `aria-ref=` resolves this frame's refs against (see `refsOfMarkedInputs`). Harmless
-     * here — a person holds the wheel, so the Bot has no action to take with the refs it had, and
-     * its next look takes the page's tree again. A page whose focus the locator does not find — a
-     * document edited whole has no attribute to find it by — is followed by its element all the
-     * same, and looked for at the next look.
-     */
-    hear(
-      SECRET_JOIN_TIMEOUT_MS,
-      frame
-        .locator(FOCUSED_BOX)
-        .last()
-        .ariaSnapshot({ mode: "ai", timeout: SECRET_JOIN_TIMEOUT_MS }),
-    ),
-  ]);
   const field =
-    known ??
-    rememberSecretField(
-      session,
-      element,
-      line && "value" in line
-        ? (/\[ref=([^\]\s]+)\]/.exec(line.value)?.[1] ?? "")
-        : "",
-      { frame, region },
-    );
+    (await alreadyFollowed(session, frame, element, wait)) ??
+    rememberSecretField(session, element, { frame });
   if (!field) return undefined;
   if (!field.document && !(await markTypedInto(session, field))) {
     return undefined;
@@ -384,13 +344,7 @@ export async function followTyping(
       frame = child.value;
       continue;
     }
-    const followed = await followFocused(
-      session,
-      frame,
-      element,
-      wait,
-      focus.region,
-    );
+    const followed = await followFocused(session, frame, element, wait);
     if (!followed) break;
     // Moving to another box is when the box before it is finished with, for now: read it once more.
     const before = session.lastTyped;

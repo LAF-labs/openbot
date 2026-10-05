@@ -1000,6 +1000,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * node taken out of its document and put back still a person's, a canary typed into a page read as
  * its article, and a page that replaces `Map` followed to the box and the region typed into).
  *
+ * RAISED AGAIN 2026-10-05 with two looks at one tab no longer undoing each other, by exactly what
+ * was added: five to `agent-computer`, all against a real Chromium (the controls near a typed-into
+ * node told apart by one look's own tokens, and every default of that question closed — a control
+ * that does not answer, a ref that names nothing, a look with no time left; a look and reads of
+ * the same tab at once, through the real door, twenty-five times; a region that leaves between
+ * the tree and the question about it; and followed boxes that are out of the document costing a
+ * look no question, counted).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1007,7 +1015,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 516, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 521, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

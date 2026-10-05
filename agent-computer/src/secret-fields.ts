@@ -11,10 +11,10 @@ import { randomBytes } from "node:crypto";
 import type { ElementHandle, Frame, Page } from "playwright";
 import {
   isTextEntryRole,
-  parseAriaSnapshot,
+  readAriaSnapshot,
   type Viewport,
 } from "./aria-snapshot";
-import type { Hush } from "./reader";
+import { type Control, typedRefs } from "./marked-refs";
 import type { BotSession, SecretField } from "./sessions";
 import { digestOf, keepTyped } from "./typed-values";
 import { within } from "./within";
@@ -291,105 +291,70 @@ export async function secretSignals(
 }
 
 /**
- * The text-entry controls the look will list: where a field a person typed a secret into is looked
- * for once its old ref no longer names it.
+ * The text-entry controls the look will list, each with where the tree says it is drawn: the ones a
+ * typed-into box is looked for among.
  *
  * BY THE LIST'S OWN CUT, from the same call with the same viewport. Past 200 controls the list keeps
  * what is on the screen first (`keptOf` in aria-snapshot.ts); asked of the first 200 in page order,
  * as this used to be, a box on the screen past that point would be listed with its contents and
  * never looked for here — a renamed box holding a secret, shown.
  */
+function listedTextEntry(yaml: string, viewport?: Viewport): Control[] {
+  const read = readAriaSnapshot(yaml, {}, viewport);
+  return read.elements
+    .filter((element) => isTextEntryRole(element.role))
+    .map(({ ref }) => {
+      const box = read.boxes.get(ref);
+      return box ? { ref, box } : { ref };
+    });
+}
+
+/** The refs of {@link listedTextEntry}. */
 export function listedTextEntryRefs(
   yaml: string,
   viewport?: Viewport,
 ): string[] {
-  return parseAriaSnapshot(yaml, {}, viewport)
-    .elements.filter((element) => isTextEntryRole(element.role))
-    .map((element) => element.ref);
+  return listedTextEntry(yaml, viewport).map(({ ref }) => ref);
 }
 
 /**
- * The refs, in the snapshot just taken, of the fields a person typed a secret into — and whether
- * every one of them was looked for to the end.
+ * The refs, in the snapshot just taken, of the boxes a person typed into — and whether the page
+ * could be asked at all.
  *
- * BY NODE, WHATEVER THE PAGE HAS DONE TO IT SINCE. A ref outlives a snapshot only while the node
- * keeps its role and name: rename the box — a validation message added to its label is enough —
- * and Playwright mints it a new ref (measured: `e1` became `e5`, value and all). So the ref kept
- * from the last time is asked first, and when it no longer names this node the page's text-entry
- * controls are asked in turn until one does. Asked of the node itself, through `aria-ref=`, which
- * resolves against the snapshot standing now; nothing about the label or the value is trusted.
+ * BY THE MARK ON THE NODE, WHATEVER THE PAGE HAS DONE TO IT SINCE. A ref outlives a snapshot only
+ * while the node keeps its role and name: rename the box — a validation message added to its label
+ * is enough — and Playwright mints it a new ref (measured: `e1` became `e5`, value and all). So a
+ * box is never looked for by its ref or its label. Its node carries the mark from the keystroke on
+ * (`markTypedInto`); the page says where its marked boxes are drawn and how many there are
+ * (`scanTyped`), the controls drawn there are asked whether they carry it, and every listed box is
+ * asked only when that finds fewer than the page counted.
  *
- * NOT COMPLETE is the page going silent under the question, or the look's deadline coming, while a
- * control of the tree was still to be asked: then a field this did not find may be in the tree after
- * all, and the caller must not show a box's contents as though it had been ruled out. A kept ref that
- * does not answer is only a ref that no longer names the node — a frame that lost its document takes
- * its refs with it — and the tree's own controls are asked next, as they always were.
+ * ONE QUESTION TO A FRAME, NOT ONE TO EVERY BOX ABOUT EVERY BOX. Until 2026-10-05 each followed box
+ * was asked against each listed text-entry control in turn, two round trips a pair — and once a
+ * box stayed followed while it was out of its document, a closed step of nine boxes beside a form
+ * of twelve was over two hundred sequential round trips at every look, for the life of the
+ * document. A box that is out of its document is in no tree and is asked against nothing; a box
+ * this session no longer follows is still found, since the mark is on the node.
+ *
+ * A control that does not answer is taken to be one. NOT COMPLETE is the look's deadline come
+ * before the question could be put: the caller then shows no box's contents (`unverified`).
  */
 export async function typedIntoRefs(
-  session: BotSession,
   target: Page,
   yaml: string,
+  typed: TypedInto["boxes"],
   deadline: number,
   viewport?: Viewport,
 ): Promise<{ refs: string[]; complete: boolean }> {
-  const refs: string[] = [];
-  let candidates: string[] | undefined;
-  for (const field of session.secretFields) {
-    // A region that is not a text box is on no list of boxes: there is nothing to find it among.
-    if (field.region) continue;
-    if (
-      (await refNamesNode(target, field.ref, field.handle, deadline)) === true
-    ) {
-      refs.push(field.ref);
-      continue;
-    }
-    candidates ??= listedTextEntryRefs(yaml, viewport);
-    for (const ref of candidates) {
-      const named = await refNamesNode(target, ref, field.handle, deadline);
-      if (named === undefined) return { refs, complete: false };
-      if (named) {
-        field.ref = ref;
-        refs.push(ref);
-        break;
-      }
-    }
-  }
-  return { refs, complete: true };
-}
-
-/**
- * Whether `ref`, in the current snapshot, is this very node: false when it is not, or cannot be (a
- * node in another frame's document), and undefined when the page did not answer the question in time
- * or the look has no time left to ask it.
- *
- * Every wait is bounded, and by the look's deadline too: `count` on a ref into a frame with no document
- * has no timeout and waits for ever (measured 2026-09-14), and `evaluate`'s own timeout is the wait for
- * the locator, not for the answer.
- */
-async function refNamesNode(
-  target: Page,
-  ref: string,
-  handle: ElementHandle,
-  deadline: number,
-): Promise<boolean | undefined> {
-  const wait = () => Math.min(SECRET_JOIN_TIMEOUT_MS, deadline - Date.now());
-  if (wait() <= 0) return undefined;
-  const located = target.locator(`aria-ref=${ref}`);
-  const count = await within(
-    wait(),
-    located.count().catch(() => 0),
-  );
-  if (count === undefined) return undefined;
-  if (count !== 1) return false;
-  if (wait() <= 0) return undefined;
-  return within(
-    wait(),
-    located
-      .evaluate((node, other) => node === other, handle, {
-        timeout: SECRET_JOIN_TIMEOUT_MS,
-      })
-      .catch(() => false),
-  );
+  if (typed.expected === 0) return { refs: [], complete: true };
+  const ms = Math.min(SECRET_JOIN_TIMEOUT_MS, deadline - Date.now());
+  if (ms <= 0) return { refs: [], complete: false };
+  return {
+    refs: [
+      ...(await typedRefs(target, listedTextEntry(yaml, viewport), typed, ms)),
+    ],
+    complete: true,
+  };
 }
 
 /** Stop following one field, keeping the digest of what it held. */
@@ -410,12 +375,7 @@ function letGo(session: BotSession, field: SecretField): void {
 export function rememberSecretField(
   session: BotSession,
   handle: ElementHandle | null,
-  ref: string,
-  known: {
-    frame?: Frame;
-    digest?: string | undefined;
-    region?: boolean;
-  } = {},
+  known: { frame?: Frame; digest?: string | undefined } = {},
 ): SecretField | null {
   if (!handle) {
     keepTyped(session, known.digest);
@@ -423,10 +383,8 @@ export function rememberSecretField(
   }
   const field: SecretField = {
     handle,
-    ref,
     ...(known.frame ? { frame: known.frame } : {}),
     ...(known.digest ? { digest: known.digest } : {}),
-    ...(known.region ? { region: true as const } : {}),
   };
   session.secretFields.push(field);
   while (session.secretFields.length > SECRET_FIELD_LIMIT) {
@@ -514,25 +472,43 @@ export async function markTypedInto(
  * take its name from one.
  *
  * `gone` when the document carries no mark: it is not the one a person typed into. Otherwise the
- * document's own name, three numbers and a list — how many marked nodes are in the document,
- * whether one of them is an editable region, how many controls a look could list that are NEAR
- * one, and where each of those is drawn.
+ * document's own name and, apart by `|`: how many marked nodes are in the document; whether one of
+ * them is an editable region; how many controls a look could list are NEAR one that the scan before
+ * this one (`also`) had not found; where each near control is drawn; how many marked nodes are
+ * boxes a look could list; and where each of those is drawn.
  *
  * NEAR IS EVERYTHING A NAME COULD REACH A MARKED NODE THROUGH, followed the other way: from the node,
  * and from everything inside it, up to each element above (a parent, a shadow tree's host, the slot
- * it is assigned to), across to whatever is labelled by one of those or owns it by id
- * (`aria-labelledby`, `aria-owns`), and from a `<label>` to the control it is for — and on from
- * each of those, until nothing is added. Those are the paths the role engine computes a name along
- * (`page-names.ts` follows the same ones forward), so a control that is not near cannot be named
- * out of what a person typed, and is not asked about. Each near element carries the look's own
- * token under the near mark, which is how a control of the list is asked whether it is one.
+ * it is assigned to), across to whatever is labelled by one of those (`aria-labelledby`, in the
+ * same tree) or owns it by id (`aria-owns`, from any tree, as the browser's own tree resolves it),
+ * and from a `<label>` to the control it is for — and on from each of those, until nothing is
+ * added. Those are the paths the role engine computes a name along (`page-names.ts` follows the
+ * same ones forward), so a control that is not near cannot be named out of what a person typed,
+ * and is not asked about.
  *
- * Its box is said as Playwright says a box in the tree (`getBoundingClientRect`, rounded), so the
+ * EACH LOOK'S NEAR MARKS ARE ITS OWN. A near element carries, under the near mark, the token of
+ * every scan that found it near, and a control of the list is asked whether it carries THIS look's
+ * (`marked-refs.ts`). It carried only the latest scan's until 2026-10-05, so a read of the same tab
+ * that overlapped a look — a routine running while a person chats — wrote over the look's token
+ * between its scan and its question, the look found nothing near, and the link around what a
+ * person had typed was listed under the tree's name. A token is taken off only by a scan whose
+ * own token was made more than a minute after it (a token begins with the moment it was made, by
+ * this service's clock), which is four times as long as any look may take: nothing a look in
+ * progress wrote can be removed, by anybody, and nothing waits on anything — so there is nothing
+ * to starve or to deadlock. With no token, nothing is marked near at all: a read needs only to
+ * know what is there.
+ *
+ * A box is said as Playwright says a box in the tree (`getBoundingClientRect`, rounded), so the
  * look can try the controls drawn at those places first.
  */
 function scanTyped(packed: string): string {
-  const [typedName = "", holderName = "", nearName = "", token = ""] =
-    packed.split("|");
+  const [
+    typedName = "",
+    holderName = "",
+    nearName = "",
+    token = "",
+    also = "",
+  ] = packed.split("|");
   const typed = Symbol.for(typedName);
   const near = Symbol.for(nearName);
   type Marked = Record<symbol, unknown>;
@@ -559,15 +535,73 @@ function scanTyped(packed: string): string {
       referring.push(element);
     }
   });
-  if (marked.length === 0) return `${named}|0|0|0|`;
 
+  /** The roles a look lists, and the elements that have one of them without saying so. */
+  const listed =
+    /^(button|checkbox|combobox|link|listbox|menuitem|menuitemcheckbox|menuitemradio|option|radio|searchbox|slider|spinbutton|switch|tab|textbox)$/;
+  const textEntry = /^(textbox|searchbox|combobox|spinbutton)$/;
+  const roles = (element: Element): string[] =>
+    (element.getAttribute("role") ?? "").split(/\s+/);
+  const listable = (element: Element): boolean => {
+    const tag = element.localName;
+    return (
+      roles(element).some((role) => listed.test(role)) ||
+      tag === "button" ||
+      tag === "select" ||
+      tag === "textarea" ||
+      tag === "option" ||
+      tag === "datalist" ||
+      (tag === "input" && (element as HTMLInputElement).type !== "hidden") ||
+      ((tag === "a" || tag === "area") && element.hasAttribute("href"))
+    );
+  };
+  const drawnAt = (element: Element): string => {
+    const box = element.getBoundingClientRect();
+    return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
+  };
+
+  /** The marked nodes that are boxes a look lists: asked for by this mark, not by a token. */
+  const boxes = marked.filter((node) => {
+    const tag = node.localName;
+    return (
+      tag === "textarea" ||
+      tag === "select" ||
+      (tag === "input" && (node as HTMLInputElement).type !== "hidden") ||
+      roles(node).some((role) => textEntry.test(role))
+    );
+  });
+  const typedPart = `${boxes.length}|${boxes.map(drawnAt).join(";")}`;
+  let region = 0;
+  for (const node of marked) {
+    if ((node as HTMLElement).isContentEditable) region = 1;
+  }
+  if (!token || marked.length === 0) {
+    return `${named}|${marked.length}|${region}|0||${typedPart}`;
+  }
+
+  /**
+   * The tokens an element carries, with the ones too old to be any look's taken off. By the moment
+   * this scan's own token was made, which is this service's clock: the page's is the page's to set.
+   */
+  const now = Number.parseInt(token, 10);
+  const carried = (element: Element): string[] => {
+    const held = (element as unknown as Marked)[near];
+    return typeof held === "string"
+      ? held
+          .split(" ")
+          .filter((each) => each && now - Number.parseInt(each, 10) < 60_000)
+      : [];
+  };
   const reached: Element[] = [];
+  let fresh = 0;
   const reach = (node: Node | null | undefined): void => {
     if (node?.nodeType !== 1) return;
     const element = node as Element;
-    if ((element as unknown as Marked)[near] === token) return;
-    (element as unknown as Marked)[near] = token;
+    const tokens = carried(element);
+    if (tokens.includes(token)) return;
+    (element as unknown as Marked)[near] = [...tokens, token].join(" ");
     reached.push(element);
+    if (listable(element) && !(also && tokens.includes(also))) fresh += 1;
   };
   /** Reach everything a name could come through to `element`: what is above it, labelled by it, owning it. */
   const spread = (element: Element): void => {
@@ -581,84 +615,73 @@ function scanTyped(packed: string): string {
     if (!id) return;
     const root = element.getRootNode();
     for (const other of referring) {
-      if (other.getRootNode() !== root) continue;
-      const ids = `${other.getAttribute("aria-labelledby") ?? ""} ${other.getAttribute("aria-owns") ?? ""}`;
-      if (ids.split(/\s+/).includes(id)) reach(other);
+      // A label is looked for in the labelled element's own tree; what is owned, in the document.
+      const labels =
+        other.getRootNode() === root
+          ? (other.getAttribute("aria-labelledby") ?? "")
+          : "";
+      const owns =
+        root === document ? (other.getAttribute("aria-owns") ?? "") : "";
+      if (`${labels} ${owns}`.split(/\s+/).includes(id)) reach(other);
     }
   };
-  let region = 0;
   for (const node of marked) {
     /*
      * A box is not near itself: its name is never its own contents, so it is asked about only if
      * something else it is near says so — and keeps the name the tree gave it when the page says
      * nothing. An editable region is: its own name can be the words inside it.
      */
-    if ((node as HTMLElement).isContentEditable) {
-      region = 1;
-      reach(node);
-    } else {
-      spread(node);
-    }
+    if ((node as HTMLElement).isContentEditable) reach(node);
+    else spread(node);
     everyElement(node, reach);
     if (node.shadowRoot) everyElement(node.shadowRoot, reach);
   }
   for (let at = 0; at < reached.length; at += 1) {
     spread(reached[at] as Element);
   }
-
-  /** The roles a look lists, and the elements that have one of them without saying so. */
-  const listed =
-    /^(button|checkbox|combobox|link|listbox|menuitem|menuitemcheckbox|menuitemradio|option|radio|searchbox|slider|spinbutton|switch|tab|textbox)$/;
-  const boxes: string[] = [];
-  for (const element of reached) {
-    const tag = element.localName;
-    const byRole = (element.getAttribute("role") ?? "")
-      .split(/\s+/)
-      .some((role) => listed.test(role));
-    const byTag =
-      tag === "button" ||
-      tag === "select" ||
-      tag === "textarea" ||
-      tag === "option" ||
-      tag === "datalist" ||
-      (tag === "input" && (element as HTMLInputElement).type !== "hidden") ||
-      ((tag === "a" || tag === "area") && element.hasAttribute("href"));
-    if (!byRole && !byTag) continue;
-    const box = element.getBoundingClientRect();
-    boxes.push([box.x, box.y, box.width, box.height].map(Math.round).join(","));
-  }
-  return `${named}|${marked.length}|${region}|${boxes.length}|${boxes.join(";")}`;
+  return `${named}|${marked.length}|${region}|${fresh}|${reached
+    .filter(listable)
+    .map(drawnAt)
+    .join(";")}|${typedPart}`;
 }
 
 /** How a page says its own JavaScript threw inside {@link scanTyped}: nothing after it is said. */
 const SCAN_THREW = "!";
 
-/** The controls of one look that could take their name from a node a person typed into. */
-export type Near = {
-  /** The mark they carry, and the token it holds for this look. */
-  mark: string;
-  token: string;
-  /** Where each is drawn, as the tree writes a box, and how many there are. */
-  boxes: ReadonlySet<string>;
-  expected: number;
-};
-
-/** What a tab's names and its text are to be made without, or nothing where there is nothing. */
+/** What the page said, in one scan, about what a person typed into a tab. */
 export type TypedInto = {
   /**
-   * For the names a look lists: a node a person typed into is in one of this tab's documents.
-   * `near` says which controls could be named out of it, where that is known (not `every`).
+   * Where the typing is could not be said: a person typed blind (`person-typing.ts`), or a frame
+   * they typed in did not answer. Every box and editable region of the tab is taken for one.
    */
-  names: (Hush & { near?: Near }) | undefined;
-  /** For the page's text: one of those nodes is an editable region, whose text is the page's. */
-  text: Hush | undefined;
+  every: boolean;
+  /** A document of this tab is one a person typed into, whether or not its nodes are in it now. */
+  present: boolean;
+  /** The mark a typed-into node carries, for everything that leaves such nodes out. */
+  mark: string;
+  /** The controls that could take a name from one, as this scan marked them. */
+  near: {
+    mark: string;
+    tokens: string[];
+    boxes: Set<string>;
+    expected: number;
+  };
+  /** The boxes of the list that are such nodes: where each is drawn, and how many. */
+  boxes: { mark: string; boxes: Set<string>; expected: number };
 };
 
-let looks = 0;
+let scans = 0;
+
+/** A token for one scan: the moment it is made, which is how its age is told in the page. */
+export function scanToken(): string {
+  scans += 1;
+  return `${Date.now()}.${scans}`;
+}
 
 /**
  * What a person typed into this tab, for everything that must not draw on it: the names a look
- * lists (`page-names.ts`) and the page's text (`page-text.ts`).
+ * lists (`page-names.ts`), the boxes it blanks (`typedIntoRefs`) and the page's text
+ * (`page-text.ts`).
  *
  * WHAT A LOOK BLANKS BY REF IS THE BOX ITSELF, AND THE BOX IS NOT THE ONLY PLACE ITS CONTENTS ARE
  * SAID. The browser names the link around an editable region by the region's words, the button a
@@ -673,23 +696,22 @@ let looks = 0;
  * its name. A frame whose document is gone answers that, and its fields are let go then: the only
  * time one is, apart from the limit.
  *
+ * `token` is given by a look, which then asks the controls of its list whether they carry it; a
+ * read gives none. `also` is the token of the same look's scan before this one ({@link bothScans}).
+ *
  * `every` is the answer when the question cannot be settled: a person typed where the page would
  * not say (`blind`), or a frame they typed in did not answer in time. Then every box and editable
  * region of the tab is taken for one, and every name is the page's — which is what blind costs.
- *
- * A box holds nothing the page's text says — `innerText` does not read an `<input>` — so a tab
- * where a person typed only into boxes is read as it always was.
  */
 export async function quietOn(
   session: BotSession,
   target: Page,
   blind: boolean,
   ms: number = SECRET_JOIN_TIMEOUT_MS,
+  look: { token: string; also?: string } = { token: "" },
 ): Promise<TypedInto> {
   const wait = Math.max(1, Math.min(ms, SECRET_JOIN_TIMEOUT_MS));
-  looks += 1;
-  const token = `${Date.now().toString(36)}.${looks}`;
-  const source = `(() => { try { return (${scanTyped.toString()})(${JSON.stringify(`${TYPED_MARK}|${DOCUMENT_MARK}|${NEAR_MARK}|${token}`)}); } catch (error) { return ${JSON.stringify(SCAN_THREW)}; } })()`;
+  const source = `(() => { try { return (${scanTyped.toString()})(${JSON.stringify(`${TYPED_MARK}|${DOCUMENT_MARK}|${NEAR_MARK}|${look.token}|${look.also ?? ""}`)}); } catch (error) { return ${JSON.stringify(SCAN_THREW)}; } })()`;
   const frames = [...session.typedFrames].filter((frame) => {
     if (!frame.isDetached()) return frame.page() === target;
     forgetFrame(session, frame);
@@ -703,39 +725,72 @@ export async function quietOn(
       ),
     ),
   );
-  let every = blind;
-  let marked = 0;
-  let region = false;
-  let expected = 0;
-  const boxes = new Set<string>();
+  const said: TypedInto = {
+    every: blind,
+    present: blind,
+    mark: TYPED_MARK,
+    near: {
+      mark: NEAR_MARK,
+      tokens: look.token ? [look.token] : [],
+      boxes: new Set(),
+      expected: 0,
+    },
+    boxes: { mark: TYPED_MARK, boxes: new Set(), expected: 0 },
+  };
   answers.forEach((answer, index) => {
     const frame = frames[index] as Frame;
     if (answer === "gone") {
       forgetFrame(session, frame);
       return;
     }
-    const [named, count, regions, controls, drawnAt] =
+    const [named, , , fresh, nearAt, boxes, boxesAt] =
       typeof answer === "string" ? answer.split("|") : [];
-    if (drawnAt === undefined) {
+    said.present = true;
+    if (boxesAt === undefined) {
       // Silent, failed, or thrown inside the page: where the typing is in this frame is not known.
-      every = true;
+      said.every = true;
       return;
     }
     // A field of an earlier document of this frame went with that document.
     forgetFrame(session, frame, named);
-    marked += Number(count);
-    region ||= regions === "1";
-    expected += Number(controls);
-    for (const box of drawnAt.split(";")) if (box) boxes.add(box);
+    said.near.expected += Number(fresh);
+    for (const box of (nearAt ?? "").split(";")) {
+      if (box) said.near.boxes.add(box);
+    }
+    said.boxes.expected += Number(boxes);
+    for (const box of boxesAt.split(";")) if (box) said.boxes.boxes.add(box);
   });
-  const hush = { mark: TYPED_MARK, every };
+  return said;
+}
+
+/**
+ * One look's two scans as one answer: before its tree was taken, and after.
+ *
+ * THE TREE'S NAMES ARE A MOMENT'S, AND THE PAGE IS ASKED AT ANOTHER. Asked only afterwards — after
+ * the late join and the search for typed-into boxes, a second or more on — a region a dialog took
+ * with it as it closed, or a re-render moved, answered that nothing was near, and the name the tree
+ * had read a moment earlier stood: `link "… <what a person typed>"`. So what is near is asked on
+ * both sides of the tree and both answers count. A control that was near BEFORE the tree is one
+ * whose tree name is not to be trusted whatever the page says of it afterwards (`before` in
+ * `nearRefs`); the count of near controls is the first scan's and whatever the second found that
+ * the first had not; and a box that was a typed-into box on either side is looked for.
+ */
+export function bothScans(before: TypedInto, after: TypedInto): TypedInto {
   return {
-    names: every
-      ? hush
-      : marked > 0
-        ? { ...hush, near: { mark: NEAR_MARK, token, boxes, expected } }
-        : undefined,
-    text: every || region ? hush : undefined,
+    every: before.every || after.every,
+    present: before.present || after.present,
+    mark: after.mark,
+    near: {
+      mark: after.near.mark,
+      tokens: [...before.near.tokens, ...after.near.tokens],
+      boxes: new Set([...before.near.boxes, ...after.near.boxes]),
+      expected: before.near.expected + after.near.expected,
+    },
+    boxes: {
+      mark: after.boxes.mark,
+      boxes: new Set([...before.boxes.boxes, ...after.boxes.boxes]),
+      expected: Math.max(before.boxes.expected, after.boxes.expected),
+    },
   };
 }
 
