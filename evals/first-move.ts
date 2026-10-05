@@ -233,6 +233,33 @@ export function verdictOf(
   return { failed: why.length > 0, precision, why };
 }
 
+/**
+ * WHAT THE WORD LISTS COST WHERE THEY PAY NOTHING: of messages that want none of the three
+ * lookups, how many would be sent to the decisions model — each a message that leaves the
+ * deployment, a fifth of a second before the Bot's model starts, and a row in the trail.
+ *
+ * `first-move-ordinary.json` is 347 short messages of ordinary chat — homework, shopping,
+ * translation, small talk, work chores — written by a separate agent that had not seen the lists
+ * and was asked to let words near schedules, mail and the weather fall where they naturally do
+ * ("일정한 속도", "회의록", "메일 주소"). The lists were gone over once after reading what it sent
+ * (`first-move.ts`, `MAIL_WRITES`), so the calendar's and the mail's numbers are fitted to it.
+ */
+export const ORDINARY_FILE = "first-move-ordinary.json";
+
+export function sentRates(
+  texts: readonly string[],
+  kindsOf: (text: string) => readonly FirstMoveKind[],
+): { any: number; byKind: Record<FirstMoveKind, number>; of: number } {
+  const byKind = { weather: 0, calendar: 0, mail: 0 };
+  let any = 0;
+  for (const text of texts) {
+    const kinds = kindsOf(text);
+    if (kinds.length > 0) any += 1;
+    for (const kind of kinds) byKind[kind] += 1;
+  }
+  return { any, byKind, of: texts.length };
+}
+
 export const pct = (n: number, d: number) =>
   d === 0 ? "—" : `${((100 * n) / d).toFixed(1)}%`;
 

@@ -1387,7 +1387,7 @@ each only for a person who has that service connected and a Bot that holds the t
 
 | Kind | The call, and its arguments — constants of `first-move.ts` | Not a move |
 |---|---|---|
-| `calendar` | `mcp__google-calendar__list_events` `{"days":1}` | tomorrow, this week, a date, one meeting by name |
+| `calendar` | `mcp__google-calendar__list_events` `{"day":"today"}` | tomorrow, this week, a date, one meeting by name |
 | `mail` | `mcp__gmail__search_messages` `{"query":"is:unread in:inbox"}` | a sender, a subject, a period, mail already read |
 
 The query is in the grammar the tool's own description names ("지메일 검색창과 같은 문법"): unread
@@ -1411,93 +1411,176 @@ disconnect — so the person's connection, and that it still works, is read befo
 its own two questions; a kind the person cannot be answered for is left out of it; two kinds
 clearing their bars is no move (`ambiguous`).
 
+**What is settled before anybody is asked, and what that costs** (narrowed after the review of pull
+request 90). The first lists for these two were wide the way the weather's is — 약속, 회의, 시험,
+바빠, "뭐 있", "free", 멜, each enough alone — and every message they pass is a message that leaves
+the deployment, a fifth of a second before the Bot's model starts, and a row in the trail. So:
+
+- **Calendar:** a schedule noun alone (일정 but not 일정한 or 일정 기간, 스케줄, 캘린더, "calendar",
+  "schedule", "agenda" as whole words), or a word for today with something a day holds close after
+  it ("오늘 뭐 있지", "이따 회의 있나?"). **Mail:** 메일, 편지함, 수신함, "mail", "email", "inbox" as
+  words, and 멜 only where it stands alone.
+- **A write is decided by rule and never sent:** 잡아줘, 넣어줘, 취소, 미뤄 for the calendar; 보내줘,
+  써줘, 답장, 주소, 삭제, "오면" for the mail.
+- **A follow-up is never sent, for any kind** (`follow_up`, no row). The decisions model sees one
+  message and none of the conversation: "그럼 일정은?" after a turn about tomorrow reads, alone, as
+  today's. A message that opens on a connective (그럼, 그러면, 그리고, 근데, 그건, 또, "then", "and",
+  "what about" …), points back (그날, 그때, 거기, 아까 …) or is a topic and nothing else ("일정은?")
+  is the Bot's model's. On the three labelled sets this costs **no wanted move**: none of the 231
+  wanted messages is one.
+
+Messages SENT to the decisions model, of messages that do not want the lookup (no network; the
+eval prints it and `tests/eval-first-move.test.ts` holds it):
+
+| | Weather (unchanged) | Calendar, first lists → narrowed | Mail, first lists → narrowed |
+|---|---|---|---|
+| The kind's own labelled set, "does not want it" | 83 → 81 of 134 | 72 → **30** of 141 | 59 → **26** of 140 |
+| The kind's own labelled set, every message | 196 → 192 of 254 | 199 → **139** of 283 | 188 → **149** of 284 |
+| Ordinary chat (`evals/first-move-ordinary.json`, 347) | 18 (5.2%) | 26 (7.5%) → 1 (0.3%) → **0** | 5 (1.4%) → 4 (1.2%) → **0** |
+| … for any kind | | 49 (14.1%) → 23 (6.6%) → **18 (5.2%)** | |
+
+- The ordinary set is 347 short messages that want none of the three — homework, shopping,
+  translation, small talk, work chores — written by a separate agent that had not seen the lists and
+  was asked to let nearby words fall where they do ("일정한 속도", "회의록", "메일 주소"); 140 of them
+  carry one. The middle figure is the narrowed lists as first written; **the last is after one pass
+  over this set and no more** (써, 아이디, 계정, 머지 for the mail and 추천 for the calendar), so it is
+  the number on the messages the lists were fitted to. The honest one is the middle.
+- **The three together are 5.2%, over the 5% aimed for, and all of it is the weather's** — 18
+  messages such as "삼겹살 몇도에서 구워야 맛있어", "따뜻한 말 한마디만 해줘", "바람막이 추천해줘".
+  Its list was left as it has been since 2026-10-02; narrowing it the same way is a change of its
+  own, with its own measurement.
+- What is still sent of the labelled negatives is what the rule cannot tell from a read: "오늘 야구
+  일정", "KTX 시간표 일정", a sender's mail.
+
 **The decision** (`evals/first-move-calendar.json`, `evals/first-move-mail.json`: written and
 labelled by a separate agent that saw neither the questions nor the word lists, and marked its
 borderline rows before anything ran). Every set is asked as the product would ask a person with a
-saved place and both services connected. Jev `typesafe/jev-1.13-20260917`, three runs:
+saved place and both services connected. Jev `typesafe/jev-1.13-20260917`, three runs, with the
+narrowed lists (the first lists' figures in brackets):
 
 | | Calendar | Mail | Weather, asked the same way |
 |---|---|---|---|
 | The set | 283: 78 want it, 54 want another day or one event, 141 do not, 10 ask for more, 15 borderline | 284: 77 / 57 a sender, subject or period / 140 / 10 / 16 | 254, as above |
-| Asked about the kind (sent for any kind) | 199 (223) | 188 (217) | 196 (205) |
+| Wanted messages asked about | 73 of 78 (73) | 70 of 77 (71) | 72 of 76 |
 | Bars | `schedule` 0.6, `today` 0.8 | `mail` 0.6, `unfiltered` 0.6 | 0.7, 0.7 (unchanged) |
-| Moved | 182 | 166 | 182 |
-| Right | 181 (precision 99.5%) | 163 (98.2%) | 176 (96.7%) |
+| Moved | 182 (182) | 158 (166) | 181 (182) |
+| Right | 181, precision 99.5% | 158, precision 100% (163, 98.2%) | 175, 96.7% |
 | Wrong, the service wanted with an argument | 1 — "다음 일정 뭐야?", once in three, marked borderline | **0** | **0** |
 | Wrong, on a message that clearly did not want it | **0** | **0** | **0** |
-| Wrong, on a message marked borderline | the one above | 3 — "새 메일 오면 알려줘", three runs | 6 — the same two as before |
-| Should have moved; missed | 234; 53 (recall 77.4%) | 231; 68 (recall 70.6%) | 228; 52 (77.2%) |
+| Wrong, on a message marked borderline | the one above | 0 (3 — "새 메일 오면 알려줘", now decided by rule) | 6 — the same two as before |
+| Should have moved; missed | 234; 53 — recall 77.4% (77.4%) | 231; 73 — recall 68.4% (70.6%) | 228; 53 — 76.8% (77.2%) |
 | Two kinds cleared, so no move | 9 — three messages that ask for the schedule and the weather | 0 | 0 |
-| How long | p50 212 ms, p90 287 ms, max 651 ms | p50 216, p90 293, max 560 | p50 218, p90 301, max 561 |
+| How long | p50 221 ms, p90 305 ms, max 597 ms | p50 229, p90 317, max 524 | p50 209, p90 286, max 655 |
 
+- **Narrowing cost the mail 2.2 points of recall and the calendar none**: one wanted mail message
+  is no longer asked about ("새멜왔나"), and requests fell from 1,320 to 990 for the two sets.
 - **The bars were moved once, and this is how.** Both kinds started at 0.7 and 0.7. Three runs
   there: the mail made no wrong move on a message its labeller was sure of at any bar from 0.5 to
   0.9; the calendar made one — "낼 뭐 있지", tomorrow in a contraction, `today` 0.71, once in three —
   and failed. With `today` at 0.8 it made none, down to `schedule` 0.5. So `today` is 0.8, and the
-  other three stand one step above the lowest bar that was clean (0.6). The table is three further
-  runs at those bars. The bars are fitted to these sets; `today` at 0.8 has no step of margin under
-  it (0.7 is where the wrong one was), and what stands behind it is the third table below.
-- **The questions were not changed after the sets were seen.** `schedule` said yes 355 times and
-  was right 355 times; `today` is the one that errs (84%), which is why it carries the higher bar.
+  other three stand one step above the lowest bar that was clean (0.6). The bars are fitted to
+  these sets; `today` at 0.8 has no step of margin under it.
+- **The questions were not changed after the sets were seen.** `schedule` said yes 316 times and
+  was right 316 times; `today` is the one that errs, which is why it carries the higher bar.
 - **The mail's misses are mostly English.** "Any new emails?" is answered 0.52 on `mail`, "Check my
   inbox" 0.61. A miss is today's turn.
-- **The word lists' numbers are not clean**, as the weather's is not. Written from the head they let
-  61 of the 75 short calendar messages through and 66 of the 74 mail ones; widened by what they had
-  missed on these same sets, 73 and 71.
-- **The weather was not disturbed**: 182 moved and 176 right against 186 and 180 when it was asked
-  alone. Requests that carried two or three kinds were no slower (p50 206–252 ms).
+- **The word lists' numbers on wanted messages are not clean**, as the weather's is not: each list
+  was widened, then narrowed, by what it did on these same sets.
 - Messages that ask for the lookup and something else (`both:` in the note) are shown and scored
   neither way. "오늘 일정이랑 새 메일 알려줘" moved the calendar in every run: `unfiltered` reads
   0.5–0.6 there.
 
-**What the Bot's model does with a thread that opens that way** (seven scenarios with fixture
-answers behind the bridge, `meta/muse-spark-1.3-contributor`, six runs each; the second of two
-passes, the first in brackets where it differed). They are `measureOnly`: run by name with
-`EVAL_ONLY`, and no part of `eval:model`'s verdict — they count rounds beside each other, the
-weather's two already hold a candidate to answering from a move's thread, and the calendar's row
-below would fail the fleet's own model one run in six.
+**"Today" is the person's day, and a result says what it covers.** The move was `days: 1` for an
+afternoon, which is this minute to the same minute tomorrow: at nine in the evening it left out the
+day and brought tomorrow morning as bare ISO strings, and an empty evening read as an empty day. So
+`list_events` — for every caller, not the move alone — takes `day` (`today`, `tomorrow`,
+`YYYY-MM-DD`): the whole local day, midnight to midnight, what has already happened included;
+`days` alone is still "from now on". The zone is the person's device's (kept by
+`account/whereabouts.ts`), else the deployment's `BOT_TIME_ZONE`, handed to the transport with the
+call (`timeZoneOf`, `call.ts`). Every listing begins with the stretch it covers on that clock —
+`[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 0건]` — event times are
+local, and an empty stretch says "이 기간에 캘린더에 잡힌 일정이 없습니다". A mail search likewise
+begins with what was searched for (`[검색어 "is:unread in:inbox" · 3통]`), since the Bot's model
+did not choose the query.
+
+**What the Bot's model does with a thread that opens that way** (nine scenarios with fixture
+answers in the tools' new shape behind the bridge, `meta/muse-spark-1.3-contributor`, six runs
+each). They are `measureOnly`: run by name with `EVAL_ONLY`, and no part of `eval:model`'s verdict
+— they count rounds beside each other, and the weather's two already hold a candidate to answering
+from a move's thread.
 
 | | Requests of the Bot's model | Seconds | Tokens |
 |---|---|---|---|
-| "오늘 일정 뭐 있어?", no move | 3 every run | 11.0 (14.3) | 21.3K |
-| … opened with the move | 1 in five runs of six; 3 in one, which looked the tool up and called it again (both passes) | 8.8 | 9.3K |
-| "새 메일 왔어?", no move | 3–4 (3–6) | 11.7 (14.0) | 24.9K |
-| … opened with the move | 1 in every run of two passes; in the middle pass one run of six opened the three mails (3) | 14.9 (12.6; 12.0) | 7.0K (7.0K; 9.7K) |
-| WRONG: today's list under "내일 일정 뭐 있어?" | 3 every run — called again with `days: 2` and answered with tomorrow's, 6 of 6 | 15.8 | 22.0K |
-| "이정훈 세무사님한테 메일 왔어?", no move | 4–5 | 19.3 | 30.9K |
-| WRONG: the unread list under that question | 4–5 — searched for the sender and answered with their mail, 6 of 6 | 18.3 | 32.8K |
+| "오늘 일정 뭐 있어?", no move | 3 every run | 15.0 | 21.5K |
+| … opened with the move | 1 every run (with the old result shape: 1 in five of six, twice) | 5.9 | 6.7K |
+| … the move's list is all behind the person (asked late) | 1–2: it named both events in 11 runs of 12 and said none are left, reading the clock (`now`) in 8; 1 run looked the calendar up again | 13.6, 14.1 | 11.7K, 14.0K |
+| … the move's list is empty | **1 in 6 runs of 12; 3–5 in the other 6, which did not take the empty list and asked the calendar again** — every run of the second pass then said the day had nothing | 10.0, 12.1 | 16.8K, 17.4K |
+| WRONG: today's list under "내일 일정 뭐 있어?" | 3–5 — asked again for tomorrow and answered with it, 6 of 6 | 21.0 | 30.3K |
+| "새 메일 왔어?", no move | 3–4 | 15.2 | 23.8K |
+| … opened with the move | 1 in 10 runs of 12; 3 in two, which ran the same search again | 11.9, 17.1 | 12.1K, 7.0K |
+| "이정훈 세무사님한테 메일 왔어?", no move | 4–5 | 18.8 | 30.9K |
+| WRONG: the unread list under that question | 4–5 — searched for the sender and answered with their mail, 6 of 6 | 23.3 | 31.4K |
 
-- A move takes two of three requests and more than half the tokens. **The seconds are the
-  calendar's only**: the mail's one request, which writes three mails out, took as long as the
-  three without it — 5.7 to 29.2 s a run on this endpoint that afternoon, which is the endpoint's
-  spread and not the move's. The mail's row was run a third time because its check was widened
-  after the second: opening a listed mail is not asking for the list again, and it had been
-  counted as that.
+- A move takes two of three requests and more than half the tokens where the list has something in
+  it. **The seconds are the calendar's only**: the mail's one request took as long as the three
+  without it on this endpoint (6–29 s a run), which is the endpoint's spread and not the move's.
+- **An empty day is where the move pays least.** Half the runs did not believe a list with nothing
+  in it and looked again, which is the three requests the turn takes without a move, or five. The
+  answer was right every time; the saving was not had. Nothing was changed for it — the fix would
+  be words in the prompt, which is a rung this change does not take — and for a person whose
+  calendar is mostly empty this is most of their days.
 - A wrong move was put right every time and cost what the turn costs without a move — the call
   nobody asked for, drawn as a step, is the whole of it. After a move the Bot has not been shown
   the tool's schema, so its own second call goes through `tool_search` first, as its first would.
-- Without a move the Bot's own search for "새 메일" was `newer_than:1d` or no query at all, never
-  unread: the move's list is the narrower one.
+- Two checks were wrong when first run and were corrected, with the rows above from after: the
+  mail's counted opening a listed mail as asking for the list again; the late-day one failed "남은
+  일정은 없어요" said after both events were named. In the first pass of the late and empty threads
+  the fixture answered a second call with a different day's list; that pass is counted for
+  requests only.
 
 **Verdict: both wired.** Each is above 95% with no wrong move on a message its labeller was sure
-of, in the three runs that chose the bars' direction and the three after.
+of, in the three runs that chose the bars' direction, the three after, and the three with the
+narrowed lists.
 
 **Not measured:** anything on the real stack. No Google account is connected on the machine this
 was built on, so there is no row for how long Google takes, when the first call is filed or when
-the answer begins — the table above is the Bot's model against fixtures. Also not measured: the
-first chunk of the answer, which is what a person waits for; how often real conversations open
-this way (the trail will say: `turn.first_move` and `turn.first_move_left` carry `asked`, the
-kinds); and **what "today" is**. `list_events` with `days: 1` reads from this minute to the same
-minute tomorrow, so it leaves out what has already happened today and, in the evening, includes
-tomorrow morning. The events come back with their dates and the Bot's model reads "오늘" against
-them; a call that takes the person's own day would be a change to the tool, and was not made here.
+the answer begins — the table above is the Bot's model against fixtures, and the calendar's window
+and the zone are held by tests against a stubbed Google. Also not measured: the first chunk of the
+answer, which is what a person waits for; how often real conversations open this way; and what an
+upgrade does to a connection made before it — the two tools' descriptions changed, and a tool whose
+definition changes is paused for review when its server's tools are next re-read (`servers.ts`,
+"definition changed"), which for these happens on a reconnect.
+
+**Counting moves from the trail.** `turn.first_move` carries `move` (the kind made) and `asked`
+(the kinds in the request); `turn.first_move_left` carries `asked` and `verdict`. Rows written
+between `80d423b0` and this change have no `asked` and carry `move: "weather"` on both. Moved and
+asked per kind, across both shapes (run against a scratch database holding two rows of each shape:
+calendar 1/2, mail 0/2, weather 1/2; `first-move.test.ts` holds the field names):
+
+```sql
+with rows as (
+  select event_type,
+         case when payload ? 'asked' then payload->'asked'
+              else jsonb_build_array(payload->>'move') end as asked,
+         payload->>'move' as move
+  from audit_events
+  where event_type in ('turn.first_move', 'turn.first_move_left')
+)
+select kind,
+       count(*) filter (where event_type = 'turn.first_move' and move = kind) as moved,
+       count(*) as asked
+from rows, jsonb_array_elements_text(asked) as kind
+group by kind;
+```
 
 **The switch.** `FIRST_MOVE` unset is every kind; `off` is none; a comma list (`weather,calendar`)
 keeps only what it names, so one kind can be taken out on a deployment without a release; any other
 word refuses to boot. A boot says which kinds are on and that the calendar's and the mail's are
 `perPerson` — it knows whether Jev may be asked and whether there is a weather key, not who has
-connected what. What newly leaves the deployment is short messages with a schedule or a mail word
-in them, redacted, as they are sent, and only from a person who has that service connected.
+connected what — and when a named kind cannot be made it says which, why, and which still can
+(`first_move_partly_unable`; `first_move_does_nothing` only when none can). What newly leaves the
+deployment is short messages with a schedule or a mail word in them, redacted, as they are sent,
+and only from a person who has that service connected.
 
 ## Page facts — whether a page is what its address was opened for (2026-10-04)
 

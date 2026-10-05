@@ -52,6 +52,8 @@ const MAIL = `제목: [셀러센터] 인증번호 안내
 비밀번호를 잊으셨다면 비밀번호 재설정: ${RESET}
 주문번호 2026092648213 의 배송이 시작되었습니다.`;
 
+/** What the transport was handed with each call. */
+const handed: { timeZone?: string }[] = [];
 const store = createPluginStore({
   database,
   auditStore: createAuditStore(database),
@@ -60,7 +62,12 @@ const store = createPluginStore({
   policy: () => ({ deny: [], ask: [], allow: ["true"] }),
   approvals: createApprovalRegistry(),
   standing: createStandingApprovalStore(),
-  callVendor: async () => ({ text: MAIL, isError: false }),
+  // The person's zone rides with every call, for a transport that answers in days.
+  timeZoneOf: async (who) => (who === actorId ? "Asia/Dubai" : "Asia/Seoul"),
+  callVendor: async (connection) => {
+    handed.push(connection as { timeZone?: string });
+    return { text: MAIL, isError: false };
+  },
 });
 
 beforeAll(async () => {
@@ -197,6 +204,20 @@ describe("a mail read by a routine", () => {
     const marks = withheldMarksIn(result.text);
     expect(marks.length).toBeGreaterThan(0);
     expect(marks.every((mark) => mark.id === null)).toBe(true);
+  });
+
+  test("the transport is handed the zone of the person the call is for", async () => {
+    // What the calendar's "today" is counted in (`google-calendar-rest.ts`, `listingWindow`).
+    handed.length = 0;
+    await store.callTool({
+      ref: REF,
+      args: { messageId: "m1" },
+      botId,
+      actorId,
+    });
+    expect(handed.map((connection) => connection.timeZone)).toEqual([
+      "Asia/Dubai",
+    ]);
   });
 
   test("and a call that does not say where it is drawn is drawn nowhere", async () => {

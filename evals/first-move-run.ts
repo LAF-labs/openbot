@@ -18,10 +18,11 @@ import {
 import {
   FIRST_MOVE_MAX_CHARS,
   FIRST_MOVE_SPECS,
+  FIRST_MOVES,
   FIRST_MOVE_TIMEOUT_MS,
   type FirstMoveKind,
   firstMoveStateOf,
-  kindsMentioned,
+  kindsToAsk,
   questionsFor,
   settleDecision,
 } from "../server/src/turns/first-move";
@@ -32,11 +33,13 @@ import {
   isBorderline,
   type Labelled,
   moveOf,
+  ORDINARY_FILE,
   PRECISION_FLOOR,
   pct,
   quantile,
   type Row,
   SETS,
+  sentRates,
   tallyOf,
   verdictOf,
 } from "./first-move";
@@ -71,7 +74,7 @@ let requests = 0;
 
 async function judge(item: Labelled): Promise<Row> {
   const text = item.text.trim();
-  const asked = text.length <= FIRST_MOVE_MAX_CHARS ? kindsMentioned(text) : [];
+  const asked = kindsToAsk(text);
   if (asked.length === 0) {
     return { ...item, asked, decided: null, ms: null, noAnswer: false };
   }
@@ -152,12 +155,17 @@ async function measure(set: EvalSet) {
   const sentWanted = wanted.filter(asksThis);
   const sentThis = first.filter(asksThis);
   const sentAny = first.filter((row) => row.asked.length > 0);
+  const unwanted = first.filter((row) => categoryOf(set, row) === "unwanted");
+  const unwantedAsked = unwanted.filter(asksThis);
   console.log("\nthe words checked before anything is sent");
   console.log(
     `  wanted the move: ${wanted.length} · of those asked about it: ${sentWanted.length} (${pct(sentWanted.length, wanted.length)})`,
   );
   console.log(
     `  asked about ${set.kind}: ${sentThis.length} of ${first.length} (${pct(sentThis.length, first.length)}) · sent for any kind: ${sentAny.length} — the rest never leave`,
+  );
+  console.log(
+    `  did not want it: ${unwanted.length} · of those asked about it anyway: ${unwantedAsked.length} (${pct(unwantedAsked.length, unwanted.length)})`,
   );
   for (const row of wanted.filter((row) => !asksThis(row))) {
     console.log(
@@ -317,6 +325,17 @@ async function measure(set: EvalSet) {
 }
 
 console.log(`\nfirst move · ${MODEL}`);
+
+/* ── what the words cost where they pay nothing: no network ───────────────────────────────── */
+const ordinary = (
+  JSON.parse(
+    await Bun.file(new URL(`./${ORDINARY_FILE}`, import.meta.url)).text(),
+  ) as Labelled[]
+).map((row) => row.text);
+const cost = sentRates(ordinary, kindsToAsk);
+console.log(
+  `\nordinary chat that wants none of it (${ORDINARY_FILE}, ${cost.of} messages): sent for any kind ${cost.any} (${pct(cost.any, cost.of)}) · ${FIRST_MOVES.map((kind) => `${kind} ${cost.byKind[kind]} (${pct(cost.byKind[kind], cost.of)})`).join(" · ")}`,
+);
 const measured = [];
 for (const set of SETS) {
   if (ONLY.length > 0 && !ONLY.includes(set.kind)) continue;

@@ -28,7 +28,15 @@ import { cutAtCodeUnits } from "../../../shared/sound-text";
  * documentation.
  */
 
-export type RestConnection = { url: string; token?: string };
+export type RestConnection = {
+  url: string;
+  token?: string;
+  /**
+   * The zone the person's days are counted in, where the call path knows it (`call.ts`). Only an
+   * adapter that answers in days reads it — the calendar's "today" is the person's, not the VM's.
+   */
+  timeZone?: string;
+};
 
 /**
  * What a result ends with when only the opening of its body is in it. See {@link asResult}.

@@ -5,15 +5,17 @@ import {
   isBorderline,
   type Labelled,
   moveOf,
+  ORDINARY_FILE,
   type Row,
   SETS,
+  sentRates,
   tallyOf,
   verdictOf,
 } from "../evals/first-move";
 import {
   FIRST_MOVE_MAX_CHARS,
   FIRST_MOVES,
-  kindsMentioned,
+  kindsToAsk,
 } from "../server/src/turns/first-move";
 
 /**
@@ -191,15 +193,52 @@ describe("the first move's eval: the labelled sets", () => {
       expect(count("unwanted")).toBeGreaterThanOrEqual(100);
       // Borderline is marked before anything is run, or the verdict's one exception is empty.
       expect(rows.filter(isBorderline).length).toBeGreaterThanOrEqual(10);
-      // The negatives are not easy ones: fifty at least carry the kind's own words and would be
-      // asked about (59, 83 and 82 when this was written).
+      // The negatives are not easy ones: twenty at least carry words that get them asked about
+      // (81, 31 and 26 with the lists as narrowed on 2026-10-05; 83, 72 and 59 before).
       const unwantedAsked = rows.filter(
         (one) =>
           categoryOf(set, one) === "unwanted" &&
           one.text.trim().length <= FIRST_MOVE_MAX_CHARS &&
-          kindsMentioned(one.text).includes(set.kind),
+          kindsToAsk(one.text).includes(set.kind),
       ).length;
-      expect(unwantedAsked).toBeGreaterThanOrEqual(50);
+      expect(unwantedAsked).toBeGreaterThanOrEqual(20);
     }
+  });
+});
+
+describe("the first move's eval: what the words cost where they pay nothing", () => {
+  test("of ordinary chat that wants none of it, the calendar's and the mail's words send under 3% each", async () => {
+    const ordinary = (
+      JSON.parse(
+        await Bun.file(
+          new URL(`../evals/${ORDINARY_FILE}`, import.meta.url),
+        ).text(),
+      ) as Labelled[]
+    ).map((one) => one.text);
+    expect(ordinary.length).toBeGreaterThanOrEqual(300);
+    expect(new Set(ordinary).size).toBe(ordinary.length);
+    const cost = sentRates(ordinary, kindsToAsk);
+    /*
+     * 26 and 5 of 347 with the first lists; 1 and 4 as narrowed; 0 and 0 after the one pass over
+     * this set the lists were allowed. The weather's 18 (5.2%) is its list as it has been since
+     * 2026-10-02, held here so that it is not widened unnoticed: with it, the three together are
+     * over the 5% that was aimed for, and that is the weather's alone.
+     */
+    expect(cost.byKind.calendar / cost.of).toBeLessThan(0.03);
+    expect(cost.byKind.mail / cost.of).toBeLessThan(0.03);
+    expect(cost.byKind.weather).toBeLessThanOrEqual(18);
+    expect(cost.any).toBeLessThanOrEqual(18);
+  });
+
+  test("a rate is counted per kind and once for a message sent for two", () => {
+    expect(
+      sentRates(["a", "b", "c", "d"], (text) =>
+        text === "a" ? ["calendar", "mail"] : text === "b" ? ["mail"] : [],
+      ),
+    ).toEqual({
+      any: 2,
+      byKind: { weather: 0, calendar: 1, mail: 2 },
+      of: 4,
+    });
   });
 });

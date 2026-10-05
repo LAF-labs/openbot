@@ -1002,15 +1002,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * is not a kind refused) — and seven to `root`, the eval's own rules held without a network
  * (`tests/eval-first-move.test.ts`).
  *
+ * RAISED AGAIN 2026-10-05 after that change's review, by exactly what was added: twelve to `server`
+ * — six in `first-move.test.ts` (a word only near a schedule or the mail is not sent; a change to
+ * the calendar or something done with mail is decided by rule; what people do say is still sent; a
+ * message that leans on the one before it is not asked about; the two rows have the shape the rate
+ * is counted from; a named kind that cannot be made is said per kind), five in
+ * `plugin-rest-adapters.test.ts` (a mail search's first line says what was searched for; the
+ * calendar's `day: today` at nine in the evening is the whole local day; without `day` it is still
+ * from now on and says so; an empty day says which day; the day is the person's zone's and a day
+ * that is none is refused) and one in `plugin-mail-secrets.integration.test.ts` (the transport is
+ * handed the person's zone) — and two to `root` (ordinary chat that wants none of it is sent under
+ * 3% for the calendar and the mail; a rate is counted per kind).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3536, roots: ["server"] },
+  { name: "server", floor: 3548, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 640, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 642, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

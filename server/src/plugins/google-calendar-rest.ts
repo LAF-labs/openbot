@@ -1,4 +1,6 @@
+import { resolveTimeZone, zoneLabel } from "../../../shared/prompt/zone";
 import type { CallPreview } from "../computer/approvals";
+import { dayAfter, instantOf, wallClockAt } from "../routines/zoned-clock";
 import {
   previewList,
   previewOf,
@@ -39,13 +41,19 @@ const TOOLS: readonly McpTool[] = Object.freeze([
   {
     name: "list_events",
     description:
-      "구글 캘린더에서 앞으로의 일정을 시간 순으로 가져온다. days를 주면 그 기간까지만 본다.",
+      "구글 캘린더에서 일정을 시간 순으로 가져온다. day를 주면 그 날 하루(0시~24시) 전부를, 안 주면 지금부터 days일 뒤까지를 본다. 답의 첫 줄이 본 기간이다.",
     inputSchema: {
       type: "object",
       properties: {
+        day: {
+          type: "string",
+          description:
+            "하루를 통째로 볼 날: 'today', 'tomorrow' 또는 'YYYY-MM-DD'. 사람의 시간대 기준이고, 이미 지난 일정도 나온다",
+        },
         days: {
           type: "number",
-          description: "오늘부터 며칠까지 볼지. 기본 7",
+          description:
+            "며칠을 볼지. day가 없으면 지금부터(기본 7), 있으면 그 날부터(기본 1)",
         },
         max: {
           type: "number",
@@ -110,6 +118,86 @@ type CalendarEvent = {
 const whenOf = (edge: CalendarEvent["start"]): string =>
   edge?.dateTime ?? edge?.date ?? "?";
 
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** An instant as the person's own clock reads it: `2026-10-05 21:00`. */
+function localStamp(at: Date, timeZone: string): string {
+  const clock = wallClockAt(at, timeZone);
+  return `${clock.year}-${two(clock.month)}-${two(clock.day)} ${two(clock.hour)}:${two(clock.minute)}`;
+}
+
+/**
+ * One edge of an event in a listing, on the person's clock. An all-day event carries a date and no
+ * time, and is left as its date: converting it would move it a day in half the world's zones.
+ */
+function localEdge(edge: CalendarEvent["start"], timeZone: string): string {
+  if (edge?.dateTime) {
+    const at = new Date(edge.dateTime);
+    return Number.isNaN(at.getTime())
+      ? edge.dateTime
+      : localStamp(at, timeZone);
+  }
+  return edge?.date ? `${edge.date} (종일)` : "?";
+}
+
+/** The fact a `day` that names no day is refused with. */
+const DAY_INVALID =
+  "day는 'today', 'tomorrow' 또는 'YYYY-MM-DD' 형식의 날짜여야 합니다.";
+
+/**
+ * The stretch of time a listing covers.
+ *
+ * TWO WAYS TO ASK, AND THEY ARE NOT THE SAME QUESTION. `days` alone is "what is coming": from this
+ * minute on. `day` is "what is on that day": the whole local day, midnight to midnight in the
+ * person's zone, what has already happened included. Until 2026-10-05 there was only the first,
+ * and "오늘 일정" asked at nine in the evening came back without the morning and with tomorrow's
+ * morning in it — and an empty stretch of evening read as a day with nothing on it.
+ *
+ * Null for a `day` that is not one, so the call is refused rather than answered for another day.
+ */
+export function listingWindow(
+  args: Record<string, unknown>,
+  now: Date,
+  timeZone: string,
+): { from: Date; until: Date } | null {
+  const named = stringArg(args, "day");
+  if (!named) {
+    const days = countArg(args, "days", 7, 365);
+    return { from: now, until: new Date(now.getTime() + days * 86_400_000) };
+  }
+  const word = named.toLowerCase();
+  let first: { year: number; month: number; day: number };
+  if (word === "today" || word === "tomorrow") {
+    first = dayAfter(now, word === "today" ? 0 : 1, timeZone);
+  } else {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(named);
+    if (!match) return null;
+    first = {
+      year: Number(match[1]),
+      month: Number(match[2]),
+      day: Number(match[3]),
+    };
+    const real = new Date(Date.UTC(first.year, first.month - 1, first.day));
+    // 2026-02-31 is not a day; `Date` would quietly answer for the third of March.
+    if (
+      real.getUTCFullYear() !== first.year ||
+      real.getUTCMonth() !== first.month - 1 ||
+      real.getUTCDate() !== first.day
+    ) {
+      return null;
+    }
+  }
+  const days = countArg(args, "days", 1, 365);
+  const from = instantOf(first, 0, 0, timeZone);
+  // The day after the last one, at its own midnight: a day a clock change made 23 hours is one day.
+  const last = dayAfter(
+    new Date(from.getTime() + 12 * 3_600_000),
+    days,
+    timeZone,
+  );
+  return { from, until: instantOf(last, 0, 0, timeZone) };
+}
+
 /**
  * An invitation's arguments, read once for both the request and the card that asks about it.
  *
@@ -153,18 +241,21 @@ export async function callTool(
   connection: RestConnection,
   toolName: string,
   args: Record<string, unknown>,
+  /** The clock, for a test that needs it to be nine in the evening. */
+  clock: () => Date = () => new Date(),
 ): Promise<McpCallResult> {
   const events = `${connection.url.replace(/\/+$/, "")}/calendars/primary/events`;
 
   if (toolName === "list_events") {
-    const days = countArg(args, "days", 7, 365);
-    const now = new Date();
-    const until = new Date(now.getTime() + days * 24 * 60 * 60_000);
+    const timeZone = resolveTimeZone(connection.timeZone);
+    const window = listingWindow(args, clock(), timeZone);
+    if (!window) return failure(DAY_INVALID);
+    const { from, until } = window;
 
     const result = await vendorRequest("Google Calendar", connection, {
       url: events,
       query: {
-        timeMin: now.toISOString(),
+        timeMin: from.toISOString(),
         timeMax: until.toISOString(),
         maxResults: String(countArg(args, "max", DEFAULT_EVENTS, MAX_EVENTS)),
         // Both are needed together: without `singleEvents` a repeating meeting comes back as one
@@ -180,19 +271,32 @@ export async function callTool(
     const body = await readJson<{ items?: CalendarEvent[] }>(result.response);
     if (!body) return failure("구글 캘린더가 읽을 수 없는 답을 보냈습니다.");
 
+    const items = body.items ?? [];
+    /*
+     * THE FIRST LINE SAYS WHAT WAS LOOKED AT, on the person's clock. A list is only an answer to
+     * "오늘 일정" if the reader knows it is today's: a call the server made as a turn's first step
+     * (`turns/first-move.ts`) hands the Bot's model a result it did not choose the arguments of,
+     * and a listing with nothing in it must read as "nothing between these two times", which is a
+     * different sentence from "nothing was found". Times are local for the same reader.
+     */
+    const covered = `[본 기간: ${localStamp(from, timeZone)} ~ ${localStamp(until, timeZone)} ${zoneLabel(timeZone)} · 일정 ${items.length}건]`;
+    if (items.length === 0) {
+      return asResult(`${covered}\n이 기간에 캘린더에 잡힌 일정이 없습니다.`);
+    }
     return asResult(
-      (body.items ?? [])
-        .map((event) =>
+      [
+        covered,
+        ...items.map((event) =>
           [
-            `- ${whenOf(event.start)} ~ ${whenOf(event.end)}`,
+            `- ${localEdge(event.start, timeZone)} ~ ${localEdge(event.end, timeZone)}`,
             event.summary ?? "(제목 없음)",
             event.location ? `장소: ${event.location}` : null,
             event.id ? `id: ${event.id}` : null,
           ]
             .filter(Boolean)
             .join(" · "),
-        )
-        .join("\n"),
+        ),
+      ].join("\n"),
     );
   }
 

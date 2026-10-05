@@ -673,6 +673,9 @@ const pluginStore = createPluginStore({
   repeat: repeatDetector,
   // The second look at a number or link in a mail the rules could not settle. See mail-secrets.ts.
   mailSecretJudge: modelCalls.mailSecretJudge,
+  // The person's own zone, for a calendar's "today": the device's, else the deployment's.
+  timeZoneOf: async (userId) =>
+    (await whereaboutsStore.read(userId)).timeZone ?? config.botTimeZone,
   /*
    * Needed to (re)register a dynamic OAuth client (RFC 7591). Absent when the deployment has no
    * public URL, and self-registration then simply does not happen — registering a redirect URI
