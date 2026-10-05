@@ -210,6 +210,30 @@ export function nothingConnected(
   ];
 }
 
+/**
+ * The same turn for a person who has connected ONLY `keys`: those accounts' tools out of
+ * `everything`, beside what nobody connects. The common person — one service connected, and
+ * something asked that needs another (review, 2026-10-05: no scenario had one).
+ */
+export function onlyConnected(
+  everything: readonly WireTool[],
+  cards: readonly WireTool[],
+  keys: readonly string[],
+): WireTool[] {
+  return [
+    ...everything.filter((tool) => {
+      const key = serverKeyOf(tool.name);
+      return isNobodysConnection(tool) || (key !== null && keys.includes(key));
+    }),
+    ...GOAL_TOOLS.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    })),
+    ...cards,
+  ];
+}
+
 /** The same turn for a person who has connected every account. */
 export function everythingConnected(
   everything: readonly WireTool[],
@@ -250,6 +274,23 @@ export function nothingToRead(call: ObservedCall): string | undefined {
     truncated: false,
   });
 }
+
+/**
+ * 노션, as a person who connected it would have it behind the bridge.
+ *
+ * INVENTED, like {@link TALK_CALENDAR}: 노션's tools are listed by its own server at connect and
+ * this repository holds no copy of their words. It stands for a connected service that has nothing
+ * to do with what is asked.
+ */
+export const NOTION_SEARCH: WireTool = {
+  name: "mcp__notion__notion-search",
+  description: "노션 워크스페이스에서 페이지와 데이터베이스를 찾는다.",
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string", description: "찾을 말" } },
+    required: ["query"],
+  },
+};
 
 /**
  * A lookup for a 지원사업's deadline, in words that also name the calendar: what
@@ -426,7 +467,7 @@ export function judgeCardOffered(
 
 /** What an answer that owns up says: it could not, or something is not connected or signed in. */
 const OWNS_UP =
-  /(못\s?[하했해합드봤봐]|지\s?못|수\s?(가|는)?\s?없|어려[워우]|어렵|불가|안\s?[돼되]|연결|로그인|권한)/;
+  /(못\s?[하했해합드봤봐]|지\s?못|수\s?(가|는)?\s?없|(방법|길|수단|곳|데)(이|은|도|가)?\s?없|어려[워우]|어렵|불가|안\s?[돼되]|연결|로그인|권한)/;
 
 /**
  * A sentence that says there is none of the thing — no schedule, no mail — and gives no reason it
