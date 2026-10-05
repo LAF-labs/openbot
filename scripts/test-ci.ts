@@ -1034,12 +1034,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * told what was decided as well as the move) — and one to `root`, in `eval-from-failures.test.ts`
  * (the week's lines say the wait and the moves where the answer measured them, and nowhere else).
  *
+ * RAISED AGAIN 2026-10-05 after that change's review, by exactly what was added: one to `server`,
+ * in `turn-engine.integration.test.ts` (a decision nobody could read is a first move not measured,
+ * and the turn answers all the same).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3570, roots: ["server"] },
+  { name: "server", floor: 3571, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 643, roots: ["tests", "agent-bot"] },
