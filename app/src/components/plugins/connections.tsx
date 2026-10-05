@@ -9,6 +9,7 @@ import { openExternal } from "@/lib/notifications/shell";
 import {
   beginConnect,
   ConnectRefusedError,
+  connectFailureText,
   connectionsQueryOptions,
   disconnectServer,
   pluginKeys,
@@ -489,11 +490,20 @@ export const ConnectionStrip = ({
  */
 export const ConnectOutcome = ({
   connected,
+  reason,
   onClear,
   titleFor,
   onConnected,
 }: {
   connected: string | undefined;
+  /**
+   * Why, beside `failed`: the word the callback chose. Matched and never drawn — the list is closed
+   * in `connectFailureText`, which says the general sentence for anything it does not know.
+   *
+   * The sentence was one for all five until 2026-10-06, though the server had been sending the word
+   * and the mapping had been written for a month: no screen read the parameter.
+   */
+  reason?: string;
   onClear: () => void;
   /** The server's title, so the notice names what was connected rather than its slug. */
   titleFor: (serverId: string) => string;
@@ -509,6 +519,8 @@ export const ConnectOutcome = ({
   onConnected?: (serverId: string) => void;
 }) => {
   const [outcome, setOutcome] = useState<string | null>(null);
+  // Latched with the outcome and for the same reason: the address is about to lose both.
+  const [why, setWhy] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     // `outcome !== null` and not just the parameter: clearing takes a navigation, and without this
@@ -517,9 +529,10 @@ export const ConnectOutcome = ({
     // the latch is rebuilt and the effect genuinely does run twice there and once in a build.
     if (!connected || outcome !== null) return;
     setOutcome(connected);
+    setWhy(reason);
     onClear();
     if (connected !== "failed") onConnected?.(connected);
-  }, [connected, outcome, onClear, onConnected]);
+  }, [connected, reason, outcome, onClear, onConnected]);
 
   /*
    * Both lines mounted before the outcome is known (`LiveRegion`). The outcome is set by the effect
@@ -529,11 +542,7 @@ export const ConnectOutcome = ({
   return (
     <>
       <LiveRegion as="p" className="mt-4 text-destructive text-sm" tone="alert">
-        {outcome === "failed"
-          ? t(
-              "The connection did not finish, and nothing was saved. Please try again.",
-            )
-          : null}
+        {outcome === "failed" ? connectFailureText(why) : null}
       </LiveRegion>
       <LiveRegion as="p" className="mt-4 text-muted-foreground text-sm">
         {outcome !== null && outcome !== "failed"

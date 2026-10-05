@@ -40,13 +40,31 @@ import { settledOf, useReading } from "@/lib/reading";
  */
 export const ConnectionsScreen = ({
   connected,
+  reason,
   onClearConnected,
 }: {
   /** `failed`, or the id of the account a vendor just sent this person back from. */
   connected: string | undefined;
+  /** Why, beside `failed`: the word the callback chose, for `ConnectOutcome` to phrase. */
+  reason: string | undefined;
   onClearConnected: () => void;
 }) => {
   const queryClient = useQueryClient();
+  /**
+   * The notice has read what the vendor's redirect said, and is saying it.
+   *
+   * MEASURED 2026-10-06, through the real route: the sentence was drawn 88 ms after the page
+   * opened and was gone before the page had settled. `ConnectOutcome` latches the outcome so it
+   * outlives the parameter, and clears the parameter the moment it has — and this screen drew the
+   * notice only while the parameter was there, so the latch left the screen with it. Since
+   * 2026-09-06 somebody back from a consent, finished or not, was left with nothing said here.
+   * The clearing is the one moment this screen hears of an outcome, so that is where it is kept.
+   */
+  const [hasOutcome, setHasOutcome] = useState(false);
+  const handleOutcomeRead = useCallback(() => {
+    setHasOutcome(true);
+    onClearConnected();
+  }, [onClearConnected]);
   /**
    * When each consent that went to another window stops being worth re-asking about.
    *
@@ -165,13 +183,17 @@ export const ConnectionsScreen = ({
        * every ordinary visit opened on a hundred pixels of nothing between the description and 계정,
        * twice the gap every other screen in the app has. Measured: 100px here against 52px on
        * `/settings` and `/admin`.
+       *
+       * AND FOR AS LONG AS IT IS BEING SAID: `hasOutcome`, above, is what keeps the section once the
+       * address has lost the parameter.
        */}
-      {connected ? (
+      {connected || hasOutcome ? (
         <PageSection>
           <ConnectOutcome
             connected={connected}
-            onClear={onClearConnected}
+            onClear={handleOutcomeRead}
             onConnected={handleConnected}
+            reason={reason}
             titleFor={(serverId) => {
               // The vendor's own title, so the notice names what was connected rather than its slug.
               const found = accounts.find((account) => account.id === serverId);

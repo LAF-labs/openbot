@@ -346,6 +346,11 @@ export async function beginConnect(
  * reason — an older server, a hand-typed URL — falls back to the sentence that is true of all of
  * them rather than to nothing.
  *
+ * THE FALLBACK IS ALSO ALL THE INSTALLED APP SAYS. A consent that began in the shell ends in the
+ * person's own browser, on the server's page, which says the reason there; the link back into the
+ * app carries `failed` and no reason (`link_target` in the shell). So it is the one sentence here
+ * with the whole of what somebody needs once they are back: nothing was saved, and try again.
+ *
  * Exported because the connected-accounts screen is the caller, and it is a pure mapping: a test
  * can walk the table without a browser.
  */
@@ -362,7 +367,9 @@ export function connectFailureText(reason: string | null | undefined): string {
     case "mismatch":
       return t("This connection could not be completed.");
     default:
-      return t("That account could not be connected.");
+      return t(
+        "The connection did not finish, and nothing was saved. Please try again.",
+      );
   }
 }
 

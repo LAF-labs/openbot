@@ -783,7 +783,6 @@ export const ko: Record<string, string> = {
     "서비스 쪽에서 연결을 마치지 못했어요. 다시 시도해 주세요.",
   "This connection could not be completed.":
     "이 연결을 완료할 수 없어요. 다시 시도해 주세요.",
-  "That account could not be connected.": "계정을 연결하지 못했어요.",
   "The connection did not finish, and nothing was saved. Please try again.":
     "연결에 실패했어요. 저장된 것은 없어요. 다시 시도해 주세요.",
   "The draft description is what the model reads when deciding to call this. It changes nothing until it is published.":

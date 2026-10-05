@@ -15,21 +15,34 @@ import { ConnectionsScreen } from "@/components/connections/connections-screen";
  * carries, and clearing it the moment it has been read.
  */
 
-/** `failed`, or the id of the server that was connected. See the same schema on the Plugins page. */
+/**
+ * `failed`, or the id of the server that was connected. See the same schema on the Plugins page.
+ *
+ * `reason` rides beside `failed`: one of five words the callback chooses
+ * (`connectedAccountsUrlFor` on the server). Any string is let through, because the list is closed
+ * where the word is turned into a sentence (`connectFailureText`) and nowhere draws the word itself.
+ */
 const connectedSearchSchema = z
-  .object({ connected: z.string().optional() })
+  .object({
+    connected: z.string().optional(),
+    reason: z.string().optional(),
+  })
   .catch({});
 
 const ConnectedAccountsPage = () => {
-  const { connected } = Route.useSearch();
+  const { connected, reason } = Route.useSearch();
   const navigate = Route.useNavigate();
 
   // Replaced rather than pushed: the URL a vendor sent somebody back to is not a step anybody
-  // should be able to walk back into.
+  // should be able to walk back into. The reason goes with the outcome it explains.
   const handleClearConnected = useCallback(() => {
     void navigate({
       replace: true,
-      search: (previous) => ({ ...previous, connected: undefined }),
+      search: (previous) => ({
+        ...previous,
+        connected: undefined,
+        reason: undefined,
+      }),
     });
   }, [navigate]);
 
@@ -37,6 +50,7 @@ const ConnectedAccountsPage = () => {
     <ConnectionsScreen
       connected={connected}
       onClearConnected={handleClearConnected}
+      reason={reason}
     />
   );
 };
