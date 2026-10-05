@@ -18,7 +18,6 @@ import {
   stepFailureOf,
   TOOL_NOT_ALLOWED,
   toolErrorText,
-  toolFailureText,
 } from "@shared/tools/step-result";
 import { withheldMark } from "@shared/tools/withheld";
 import { ko } from "../src/lib/i18n-ko";
@@ -176,24 +175,17 @@ describe("how a failed step ended, read back from its result", () => {
         code,
         { kind: "failed", code },
       ]);
-      /*
-       * AND THE SAME WHILE THE WINDOW THAT RAN THE CALL IS STILL OPEN. The handler's own outcome
-       * said `refused` for every 403, so a line read 차단됨 until the page was reloaded and 실패
-       * after it. The line is drawn from the text the handler answered with — the text the
-       * conversation keeps — so there is one reading of it.
-       */
-      expect([
-        code,
-        stepFailureOf(
-          toolFailureText({ refused: true, reason: sentence as string }),
-        ),
-      ]).toEqual([code, { kind: "failed", code }]);
     }
-    // A reason with no fact in it says what the route said it was: a refusal, or not.
+    // A reason with no fact in it says what the route said it was: a refusal, or not. In the
+    // wrapper the window's own handler wrote, which a conversation from before 2026-10-05 holds.
     for (const refused of [true, false]) {
       expect(
         stepFailureOf(
-          toolFailureText({ refused, reason: "Something a route wrote." }),
+          JSON.stringify({
+            ok: false,
+            refused,
+            reason: "Something a route wrote.",
+          }),
         ),
       ).toEqual({ kind: refused ? "refused" : "failed", code: null });
     }

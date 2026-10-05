@@ -123,7 +123,7 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
     "The Bot stopped partway through. Try again and it answers from the start.",
   /*
    * A free trial's day is spent, so the server refused the run before it left (self-serve contract
-   * §4.6). The same words `stopped-turn.ts` uses, one Korean entry for both.
+   * §4.6). The same words `stopped-turn.ts` used, one Korean entry for both.
    */
   "laf:turn_daily_budget_reached":
     "Today's free trial allowance is used up. It opens again at midnight, Korean time.",

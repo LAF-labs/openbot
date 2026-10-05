@@ -31,8 +31,8 @@
  *
  * On a stall it writes one RUN_ERROR event into the same stream and closes it. RUN_ERROR is the
  * event both surfaces already subscribe to, so nothing downstream had to learn a new one. The event
- * carries the fact `laf:agent_stalled`; the surfaces own the sentence (`stopped-turn.ts`,
- * `turn-failure.ts`), and `turn-failures.ts` files it as `laf:turn_stalled`. The packaged chat draws
+ * carries the fact `laf:agent_stalled`; the surface owns the sentence (`turn-failure.ts`), and
+ * `turn-failures.ts` files it as `laf:turn_stalled`. The packaged chat draws
  * nothing of its own for a failed run — the banner that would have done it belongs to the v1
  * provider this app does not mount, and is suppressed even there unless the dev console is switched
  * on. AG-UI permits RUN_ERROR at any point in a stream, including as the very first event, which is
@@ -358,8 +358,8 @@ function turnOf(
  * THE MESSAGE IS A FACT, NOT A SENTENCE. It used to be "<Bot> stopped responding. Nothing arrived
  * from it for a minute, so this turn was ended. Ask again, or check that the Bot is running." —
  * English, composed here, reaching a Korean screen and the ledger's `error` column verbatim, which
- * `turn-failures.ts` then recognised by substring. The surface owns the words (`stopped-turn.ts`,
- * `turn-failure.ts`) and the server sends which fact applies, as everywhere else. `code` stays for
+ * `turn-failures.ts` then recognised by substring. The surface owns the words (`turn-failure.ts`)
+ * and the server sends which fact applies, as everywhere else. `code` stays for
  * whatever already reads it.
  */
 function stalledEvent(): Uint8Array {

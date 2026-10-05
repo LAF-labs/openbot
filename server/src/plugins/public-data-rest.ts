@@ -26,13 +26,7 @@
  * `nkoneps.com.response.ResponseError` shape `vendorHeaderOf` reads. `type=json` is 나라장터's word
  * for the format and `dataType=json` is 기업마당's — the other spelling answers XML.
  */
-import type { DeploymentKeyFamily } from "./catalogue";
-import {
-  createDeploymentKeyRuntime,
-  type DeploymentKeyRuntime,
-  type DeploymentKeyService,
-  type DeploymentKeyStore,
-} from "./deployment-key-runtime";
+import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { kstStamp } from "./kst";
 import { type McpCallResult, withoutCredential } from "./mcp";
 import type { PartnerToolSpec } from "./partner-tools";
@@ -522,45 +516,3 @@ export const PUBLIC_DATA_SERVICE: DeploymentKeyService = {
       ...(now ? { now } : {}),
     }),
 };
-
-/** The slice of the store the reconciliation needs. */
-export type PublicDataStore = DeploymentKeyStore;
-
-export type PublicDataRuntime = Pick<
-  DeploymentKeyRuntime,
-  "keys" | "transports" | "reconcile" | "offerTo"
-> & {
-  /** Whether this VM was given the key. False draws no entry and offers no tool. */
-  configured: boolean;
-};
-
-/**
- * This entry alone, reconciled.
- *
- * The process assembles every deployment-key entry at once (`main.ts`, `createDeploymentKeyRuntime`);
- * this is the same runtime with only 나라장터·기업마당 in it, which is how the entry's own tests have
- * always asked for it.
- */
-export function createPublicDataRuntime(input: {
-  keys: Partial<Record<DeploymentKeyFamily, string>>;
-  /** Every live Bot on this deployment, whoever owns it: the set the tools are offered to. */
-  listBots: () => Promise<string[]>;
-  fetchImpl?: typeof fetch;
-  now?: () => Date;
-}): PublicDataRuntime {
-  const runtime = createDeploymentKeyRuntime({
-    ...input,
-    // Only this entry's key: another vendor's is not this runtime's to hold.
-    keys: input.keys["data-go-kr"]
-      ? { "data-go-kr": input.keys["data-go-kr"] }
-      : {},
-    services: [PUBLIC_DATA_SERVICE],
-  });
-  return {
-    configured: runtime.has(PUBLIC_DATA_KEY),
-    keys: runtime.keys,
-    transports: runtime.transports,
-    reconcile: runtime.reconcile,
-    offerTo: runtime.offerTo,
-  };
-}

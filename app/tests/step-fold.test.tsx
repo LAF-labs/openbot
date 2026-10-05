@@ -16,7 +16,6 @@ import {
   stepDidNotWork,
   TOOL_NOT_ALLOWED,
   toolErrorText,
-  toolFailureText,
 } from "@shared/tools/step-result";
 import {
   openStepRuns,
@@ -102,6 +101,17 @@ const takenBy = (messages: Message[]) => {
   const items = itemsOf(messages);
   return Object.fromEntries(stepsByAnswer(items, stepRunsOf(items)));
 };
+
+/**
+ * A call that was not carried out, as the window's own handler wrote it while a window carried the
+ * calls out: `ok`, `refused`, `reason`, in that order — the head `stepFailureOf` knows it by.
+ */
+const windowWrapped = (failure: { refused: boolean; reason: string }) =>
+  JSON.stringify({
+    ok: false,
+    refused: failure.refused,
+    reason: failure.reason,
+  });
 
 describe("which rows are steps of work", () => {
   test("a connected service's tool and the Bot's two ways to a tool; nothing that draws a card", () => {
@@ -386,7 +396,7 @@ describe("what an answer opens", () => {
       TOOL_RESULT_KO["laf:stopped"] as string,
       JSON.stringify({ ok: false, code: "laf:tool_unknown", reason: "…" }),
       // The window's own wrapper, and the server's "an approval is being asked".
-      toolFailureText({ refused: true, reason: "A route's own sentence." }),
+      windowWrapped({ refused: true, reason: "A route's own sentence." }),
       JSON.stringify({ ok: false, awaitingApproval: true, approvalId: "a1" }),
       "Error: the handler threw",
     ];
@@ -484,14 +494,12 @@ describe("what an answer opens", () => {
    * AND EVERY WAY A CALL IS NOT CARRIED OUT IS WRITTEN IN ONE OF THOSE FORMS (review of pull
    * request 44, round 3). The window's own handler answered with the reason as it came: a 403 that
    * carries no fact is whatever sentence the route wrote, or this app's own fallback in the
-   * reader's language — a refusal that read back as the service's answer.
+   * reader's language — a refusal that read back as the service's answer. So a reason that did
+   * not say so itself was wrapped in `{ ok: false, refused, reason }`. The server carries the
+   * calls out now and nothing writes that wrapper (2026-10-05); a conversation from before then
+   * still holds it, and it is still read.
    */
-  test("a reason that does not say so itself is wrapped in a form that does, and one that does is left alone", () => {
-    const sentence = TOOL_RESULT_KO["laf:policy_denied"] as string;
-    expect(toolFailureText({ refused: true, reason: sentence })).toBe(sentence);
-    expect(toolFailureText({ refused: true, reason: TOOL_NOT_ALLOWED })).toBe(
-      TOOL_NOT_ALLOWED,
-    );
+  test("a reason wrapped in the window's own form is read as a step that did not work, whatever it says and however long", () => {
     for (const failure of [
       {
         refused: true,
@@ -503,13 +511,11 @@ describe("what an answer opens", () => {
       // A reason that is somebody else's object says nothing by itself: it is wrapped like prose.
       { refused: false, reason: JSON.stringify({ ok: false, error: "x" }) },
     ]) {
-      const written = toolFailureText(failure);
+      const written = windowWrapped(failure);
       expect([failure.reason, stepDidNotWork(written)]).toEqual([
         failure.reason,
         true,
       ]);
-      // The model is told the same reason, and whether it was a refusal.
-      expect(JSON.parse(written)).toEqual({ ok: false, ...failure });
       // And read back, it is a step that did not work: counted for the answer that opens it.
       expect(
         takenBy([
@@ -529,7 +535,7 @@ describe("what an answer opens", () => {
       });
     }
     // However long the reason: a wrapper too long to be parsed is known by how it begins (round 5).
-    const long = toolFailureText({ refused: true, reason: "가".repeat(5000) });
+    const long = windowWrapped({ refused: true, reason: "가".repeat(5000) });
     expect(long.length).toBeGreaterThan(4096);
     expect(stepDidNotWork(long)).toBe(true);
     expect(stepDidNotWork(`Error: ${"x".repeat(5000)}`)).toBe(true);

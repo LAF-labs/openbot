@@ -2,17 +2,25 @@ import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../src/auth/guards";
-import { catalogueEntry, classifyTool } from "../src/plugins/catalogue";
+import {
+  catalogueEntry,
+  classifyTool,
+  type DeploymentKeyFamily,
+} from "../src/plugins/catalogue";
+import {
+  createDeploymentKeyRuntime,
+  type DeploymentKeyRuntime,
+  type DeploymentKeyStore,
+} from "../src/plugins/deployment-key-runtime";
 import { kstStamp } from "../src/plugins/kst";
 import {
   BIDS_URL,
-  createPublicDataRuntime,
   createPublicDataTransport,
   plainText,
   PROGRAMS_URL,
   PUBLIC_DATA_KEY,
+  PUBLIC_DATA_SERVICE,
   PUBLIC_DATA_TOOLS,
-  type PublicDataStore,
   RAW_RESPONSE_CAP_CHARS,
 } from "../src/plugins/public-data-rest";
 import { createPluginRoutes } from "../src/plugins/routes";
@@ -544,6 +552,45 @@ describe("the small parts", () => {
 
 /* ── the runtime: boot, and a Bot that arrives later ─────────────────────────────────────────── */
 
+type PublicDataRuntime = Pick<
+  DeploymentKeyRuntime,
+  "keys" | "transports" | "reconcile" | "offerTo"
+> & {
+  /** Whether this VM was given the key. False draws no entry and offers no tool. */
+  configured: boolean;
+};
+
+/**
+ * This entry alone, reconciled.
+ *
+ * The process assembles every deployment-key entry at once (`main.ts`, `createDeploymentKeyRuntime`);
+ * this is the same runtime with only 나라장터·기업마당 in it, which is how the entry's own tests have
+ * always asked for it.
+ */
+function createPublicDataRuntime(input: {
+  keys: Partial<Record<DeploymentKeyFamily, string>>;
+  /** Every live Bot on this deployment, whoever owns it: the set the tools are offered to. */
+  listBots: () => Promise<string[]>;
+  fetchImpl?: typeof fetch;
+  now?: () => Date;
+}): PublicDataRuntime {
+  const runtime = createDeploymentKeyRuntime({
+    ...input,
+    // Only this entry's key: another vendor's is not this runtime's to hold.
+    keys: input.keys["data-go-kr"]
+      ? { "data-go-kr": input.keys["data-go-kr"] }
+      : {},
+    services: [PUBLIC_DATA_SERVICE],
+  });
+  return {
+    configured: runtime.has(PUBLIC_DATA_KEY),
+    keys: runtime.keys,
+    transports: runtime.transports,
+    reconcile: runtime.reconcile,
+    offerTo: runtime.offerTo,
+  };
+}
+
 type StoreCalls = {
   ensured: string[];
   refreshed: string[];
@@ -570,7 +617,7 @@ function fakeStore(input: {
   rows?: string[];
   holding?: Record<string, string[]>;
   paused?: number;
-}): PublicDataStore {
+}): DeploymentKeyStore {
   const granted = (botId: string): GrantedPlugins => ({
     tools: (input.holding?.[botId] ?? []).map((ref) => ({
       ref,

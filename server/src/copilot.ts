@@ -6,7 +6,6 @@ import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { textOf } from "../../shared/message-content";
 import {
   type ComposePromptInput,
-  composePrompt,
   contextFactsFor,
   contextLayerText,
   DEFAULT_TIME_ZONE,
@@ -192,39 +191,8 @@ function isSupersededPrompt(id: unknown, agentId: string): boolean {
   return id === promptMessageId(agentId) || id === `standing-role:${agentId}`;
 }
 
-/**
- * Everything the Bot reads before the first word of the conversation, as one system message.
- *
- * An ordinary AG-UI system message rather than `forwardedProps` or framework-specific state,
- * because the endpoint on the other side may be LangGraph, Mastra, ADK or a hand-written server
- * and a system message is the only thing all of them already understand.
- *
- * IT IS THE WHOLE PROMPT. `agent-bot` used to prepend a system prompt of its own — upstream's
- * English original — and this message was the second one after it. Two authors for one prompt is
- * how a rule gets contradicted by a rule nobody remembered writing, so the service now sends
- * nothing of its own and this is all there is.
- */
-export function botPromptMessage(
-  profile: AgentStandingProfile,
-  options: {
-    mode: PromptMode;
-    now: Date;
-    timeZone: string;
-    /** A routine's notepad, as the run forwarded it. The composer draws it in routine mode only. */
-    notepad?: readonly RoutineNote[];
-    /** The person as this run knows them: the profile's, with the device's clock over it. */
-    person?: PromptPerson;
-  },
-): StandingRoleMessage {
-  return {
-    id: promptMessageId(profile.id),
-    role: "system",
-    content: composePrompt(composeInputOf(profile, options)),
-  };
-}
-
 /** What the composer is given for this profile and this run. */
-function composeInputOf(
+export function composeInputOf(
   profile: AgentStandingProfile,
   options: {
     mode: PromptMode;

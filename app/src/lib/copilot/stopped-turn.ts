@@ -1,73 +1,6 @@
 import { t } from "@/lib/i18n";
 
 /**
- * Why the last turn ended without an answer, for a surface that has to say so itself.
- *
- * A run can end three ways. It finishes, which needs no explanation. It fails in the browser, which
- * arrives as an error. Or the Bot's own stream stops producing anything and this deployment ends the
- * turn for it, which arrives as a RUN_ERROR carrying the sentence the server wrote (see
- * server/src/channels/stall-guard.ts). The last two both leave the same hole on screen: the composer
- * unlocks, the spinner disappears, and nothing says what happened.
- *
- * The reason is kept as a sentence rather than a flag because the reasons are not interchangeable. A
- * Bot that refused, a Bot whose endpoint is down and a Bot that simply stopped talking are three
- * different things to be told, and only the thing that ended the turn knows which one it was.
- */
-
-/**
- * The sentence to show, in the words of whatever ended the turn.
- *
- * Falls back only when there is genuinely nothing to pass on. Saying "the Bot stopped without saying
- * why" is honest about that; inventing a cause would not be, and this is the one moment a person has
- * no other way to find out what went wrong.
- */
-/**
- * The three ways the model service itself can fail, translated here because the code is a fact and
- * this surface owns the words (agent-bot emits the code, logs the vendor's sentence for operators,
- * and a customer never reads either vendor prose or English). Three, not one: a rate limit wants
- * waiting and says so, where "try again" in front of a refusal makes a working product look broken.
- */
-export const MODEL_FAILURES: Record<string, string> = {
-  "laf:model_rate_limited":
-    "Answers are coming faster than the model can take right now. Give it a moment and ask again.",
-  "laf:model_unavailable":
-    "The Bot's model did not accept the request. If this keeps happening, the deployment needs a look.",
-  "laf:model_failed": "The Bot could not reach its model. Ask again.",
-  "laf:model_timed_out":
-    "The model took too long and the turn was ended. Ask again, or ask for less at once.",
-  /*
-   * The codes a run ends on for reasons of its own rather than the provider's: `agent-bot` when a
-   * stream was cut or a guard had the last word (audit A2), and the server's stall watchdog, which
-   * used to send an English sentence here. The same words `turn-failure.ts` gives the same facts, so
-   * a failure reads the same live and after a reload.
-   */
-  "laf:provider_stream_cut":
-    "The connection to the model dropped partway through the answer. What arrived is above; ask again for the rest.",
-  "laf:tool_unknown":
-    "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
-  "laf:tool_arguments_invalid":
-    "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
-  "laf:tool_loop":
-    "The Bot could not use its tools properly, so the turn was ended. Ask again, or put it differently.",
-  "laf:tool_budget_spent":
-    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
-  // The question's two bounds that replaced it (agent-bot's `guards.ts`): the same sentence.
-  "laf:question_max_steps":
-    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
-  "laf:question_max_cost":
-    "This question used up what one question may cost, so the Bot stopped. Ask it to carry on, or ask for less at once.",
-  "laf:agent_stalled":
-    "The Bot went quiet, so the turn was ended. Ask again, or check that the Bot is running.",
-  /*
-   * The one a run ends on before it started: a free trial's day was spent, and the server refused
-   * the run without sending it (`server/src/usage/daily-budget.ts`). Not "ask again" — the day opens
-   * at midnight in Seoul, and that is the sentence. `turn-failure.ts`, which the chat reads, says it too.
-   */
-  "laf:daily_budget_reached":
-    "Today's free trial allowance is used up. It opens again at midnight, Korean time.",
-};
-
-/**
  * A turn that ARRIVED and is still not the whole answer.
  *
  * Not failures — a RUN_ERROR would throw away the half that came — so `agent-bot` says them as
@@ -85,18 +18,6 @@ export const TURN_NOTICES: Record<string, string> = {
   "laf.empty_answer":
     "The Bot thought about it and answered with nothing. Ask again.",
 };
-
-export function stoppedReason(reported: unknown): string {
-  const said =
-    reported instanceof Error
-      ? reported.message
-      : typeof reported === "string"
-        ? reported
-        : "";
-  const known = MODEL_FAILURES[said.trim()];
-  if (known) return t(known);
-  return said.trim() || t("The Bot stopped without saying why.");
-}
 
 /**
  * The sentence for a CUSTOM event the Bot's own stream carries, or null for one this ignores.

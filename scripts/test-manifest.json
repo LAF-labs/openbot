@@ -244,7 +244,6 @@
   "app/tests/step-fold.test.tsx",
   "app/tests/step-labels.test.ts",
   "app/tests/stop-all.test.ts",
-  "app/tests/stopped-turn.test.ts",
   "app/tests/stranded-steps.test.ts",
   "app/tests/suggested-connections.test.ts",
   "app/tests/take-the-wheel.test.ts",

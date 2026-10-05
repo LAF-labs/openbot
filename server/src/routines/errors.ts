@@ -3,8 +3,9 @@
  *
  * The code is the part a surface may read. English prose from the server reaching a Korean screen
  * is the thing this deployment does not do — the server sends facts and the surface owns the words
- * (see `MODEL_FAILURES` in app/src/lib/copilot/stopped-turn.ts for the same shape) — so the two
- * refusals a person can actually provoke carry one. The sentence stays for operators and for logs.
+ * (see `TURN_FAILURE_SENTENCES` in app/src/lib/channels/turn-failure.ts for the same shape) — so
+ * the two refusals a person can actually provoke carry one. The sentence stays for operators and
+ * for logs.
  */
 export class RoutineError extends Error {
   constructor(

@@ -15,7 +15,6 @@ import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
 import type { StampedMessage } from "../src/context/day-close";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
-import { botPromptMessage } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import {
   agentGuidance,
@@ -28,6 +27,7 @@ import {
   users,
 } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
+import { botPromptMessage } from "./support/prompt";
 
 /**
  * Memory that can be trusted, against the database: where a line was learned, the deletion on
