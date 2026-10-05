@@ -972,6 +972,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the switch and the key after it in the same reply, a look saying neither ending nothing, and the
  * rule read on its own).
  *
+ * RAISED AGAIN 2026-10-05 with a ceiling over the cap, by exactly what was added: four to
+ * `agent-computer` (a chain of windows each opened by the last stopping at twice the cap, on the
+ * bookkeeping and against a real Chromium, where it had gone 2 to 19 in eighteen windows; a tab
+ * that opens when every other is held at the ceiling not taken; and a tab the browser never
+ * answered about asked about again, and not kept past the ceiling).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -979,7 +985,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 491, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 
