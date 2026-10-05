@@ -33,6 +33,8 @@ fn main() {
             "set_summon_shortcut",
             "update_ready",
             "restart_to_update",
+            "device_place_permission",
+            "device_place",
         ]),
     ))
     .expect("the shell's own commands could not be declared");

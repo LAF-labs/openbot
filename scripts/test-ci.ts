@@ -1174,15 +1174,42 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * room left each is asked). No test asked either judge on a day that had a budget, so the guard in
  * front of each could have been deleted unnoticed.
  *
+ * RAISED 2026-10-05 with the device's place in the installed app, and a place that follows its
+ * device, by exactly what was added: twenty-five to `app` — fourteen in `device-place.test.ts`,
+ * which holds twenty-five where it held eleven (the table reads a mark of four kinds rather than a
+ * yes or a no; the place follows a device that already said yes and no other; a place cleared on
+ * this device is never read by itself; a mark from before "cleared" existed is read by what the
+ * account holds; only the one ask shows anybody anything; allowed, held and moved is saved, and
+ * the same writes nothing; a said place is not followed; a device that has not said yes is shown
+ * nothing over a place held; a first answer that was lost is read at the next open; 지우기 or
+ * words said while a following device was answering stand; and the shell's rows — its word on
+ * being asked is one of the table's four answers, a shell that cannot read the device cannot be
+ * asked and draws no control, its place is rounded again here and told whether it may show
+ * anything, and every reason it has no place is said in the surface's words), seven in
+ * `device-place-gate.test.tsx` (on the mounted routes: a browser that already said yes is read
+ * again and the place moves; one that has not moved writes nothing; a said place is not followed;
+ * a place cleared here is not read back even after another device gives one; an old mark stays
+ * quiet over nothing and follows over coordinates; the installed app asks its shell once and
+ * follows it after; a shell that cannot read the device is left alone — and the test over
+ * coordinates held is now a browser that has NOT said yes, which is the only one still left
+ * unread), three in `settings-shop-location.test.tsx` (the device's button
+ * takes a cleared place back; the installed app offers the device through its shell; a device that
+ * said no there answers the press in words — and the test that the shell draws no button now
+ * holds only the shells that cannot read the device) and one in `shell-bridge.test.ts` (the two
+ * commands, and only their own words heard) — and two to `root`, both in `desktop-shell.test.ts`
+ * (the bundle says why it reads the device's location and a signed build is entitled to; the
+ * shell's words about the device's place are the page's own lists, rounded where the fix arrives
+ * and never printed).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3624, roots: ["server"] },
-  { name: "app", floor: 2050, roots: ["app"] },
+  { name: "app", floor: 2075, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 715, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 717, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

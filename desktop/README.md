@@ -98,8 +98,13 @@ combination), and **`update_ready`** and **`restart_to_update`** (the update
 notice — the second refuses unless the shell is holding an update it fetched
 and verified itself).
 
+Since 2026-10-05, two that READ the machine rather than draw on it:
+**`device_place_permission`** and **`device_place`** — whether the device may
+be asked where it is, and where it is to two decimals of a degree. They have a
+section of their own below ("The device's place").
+
 **The shell's own commands — `set_badge`, `open_external`, `post_notice` and
-the five above — are declared twice, and both declarations are
+the seven above — are declared twice, and both declarations are
 load-bearing.** The notification plugin, which the page still asks for
 permission, is a plugin and is granted by `notification:default` alone.
 `build.rs` names them in the app manifest, and `capabilities/default.json`
@@ -176,6 +181,158 @@ it from the config with the call Tauri would have made. No command and no
 capability were added: the page only listens, which `core:default` already
 allows. Unmeasured on Windows, where WebView2 hands the handler the finished
 path itself.
+
+### The device's place
+
+The owner's order (2026-10-05): the place a person said, else where their
+device really is, else Seoul. A browser tab reads the device through
+`navigator.geolocation`. This window cannot — its webview answers no
+geolocation request, and Tauri's own geolocation plugin is for phones — so the
+surface this product leads with was the one that fell straight to Seoul. The
+shell reads the device itself now, on macOS, through CoreLocation
+(`src-tauri/src/location.rs`), and offers the page two commands:
+
+- **`device_place_permission`** → `"granted" | "prompt" | "denied" |
+  "restricted" | "unsupported"`. Reads one property. Shows nothing and reads no
+  location. `prompt` is "not decided": asking would put the system's question
+  up. `restricted` is a machine whose person may not decide; `unsupported` is a
+  platform that is not read — Windows.
+- **`device_place({ prompt })`** → `{ kind: "place", latitude, longitude }`, or
+  `{ kind }` with one of `denied`, `restricted`, `undetermined_no_prompt`,
+  `unavailable`, `timeout`, `unsupported`. With `prompt: true` a device that
+  has not decided shows the system's own question and the call waits for the
+  answer; with `prompt: false` nothing is ever shown — allowed is read, and
+  not-decided answers `undetermined_no_prompt`.
+
+Both are read-only and take nothing a page could choose but that one boolean.
+What crosses is a kind and two numbers, never words: the page owns the
+sentences.
+
+**Still no product logic.** The shell reads and rounds. Whether to ask, when,
+how often and what the answer is for are the page's, in the same table a
+browser tab goes through (`app/src/lib/whereabouts/device-place.ts`): asked
+once per device after the person has agreed to the terms, read silently at
+every open after that so the place follows the device, never while the person
+has said where they are, never again by itself once they cleared it there.
+
+What the shell does hold to, because only it can:
+
+- **Two decimals, rounded before the value exists.** A fix is rounded in the
+  delegate callback that receives it, so there is no finer value in this
+  process for a later mistake to hand over; the page rounds again on its side.
+  `DevicePlace` prints as its kind alone — a derived `Debug` would have put
+  coordinates in the first log line anybody wrote with `{:?}`, and the log is
+  a file on somebody's disk.
+- **Nothing stored.** Not on disk and not in memory. A second question within
+  the hour is answered from the fix CoreLocation itself still holds
+  (`CLLocationManager.location`, by its timestamp) — the browser's
+  `maximumAge` — so within one run of the app the device is asked for a new fix
+  at most once an hour however often the page asks. The manager is this
+  process's, so each launch may cost one fix of its own.
+- **A kilometre.** `desiredAccuracy` is `kCLLocationAccuracyKilometer`: the
+  coarsest fix that still names the town, and the cheapest to find.
+- **Ten seconds, counted from the device and not from the person.** The bound
+  starts when the fix is asked for. While the system's question is up the call
+  simply waits — somebody reading a dialog has not made their device slow, and
+  a bound that ran out under their eyes would spend the one ask on nothing.
+- **Never on the window's thread, always on the main one.** CoreLocation's
+  manager calls back on the run loop of the thread that made it, so the one
+  manager this process makes lives on the main thread and is never let go of —
+  a manager per question would have to be freed inside its own callback. The
+  commands are `async`: they hop there with `run_on_main_thread`, and wait for
+  the answer on the runtime's threads. Everybody who asks while a question is
+  open joins it and is given the one answer.
+
+**Two declarations outside the code decide whether any of it works, and both
+fail without a word.** `Info.plist` carries the reason macOS shows under its
+question — `NSLocationWhenInUseUsageDescription`, the key the systems this
+bundle opens on read, and the older `NSLocationUsageDescription` with the same
+sentence. With no string the system refuses the request and asks nobody. The
+sentence says what is read, how coarsely and what for, and names no 사장님 and
+no 가게: 봇이 날씨나 가까운 곳을 찾을 때 기준으로 삼도록, 이 기기의 위치를 약
+1km 단위로만 읽어 저장합니다. And `Entitlements.plist` carries
+`com.apple.security.personal-information.location`, named in
+`bundle.macOS.entitlements`: under the hardened runtime CoreLocation is refused
+to a process without it. **That file is not read by any build today** — see
+Releasing: with no Apple secrets the bundler never runs `codesign`, so there is
+no hardened runtime and nothing to be entitled to. It is there so that the day
+Developer ID signing is switched on, the same commit can still read the
+device. `tests/desktop-shell.test.ts` holds all three.
+
+**Measured 2026-10-05**, macOS 26.6.2, a debug bundle built as under Running
+with a temporary line at launch that called both commands (removed before the
+change was pushed), started with `open -g`, **no dialog shown and none
+answered**:
+
+- `device_place_permission` → `prompt`; `device_place({ prompt: false })` →
+  `undetermined_no_prompt`; the permission again → `prompt`. The shell's log
+  held no warning and no error.
+- The system log, for the same second: `setDesiredAccuracy: 1000.000000`,
+  `setDelegate:`, `CLInternalGetAuthorizationStatus`, and CoreLocation
+  `invoking #delegate … locationManagerDidChangeAuthorization:` with
+  `authorizationStatus: NotDetermined` — the callback that comes with setting
+  a delegate, which the shell must not read as an answer and does not.
+  `locationd` keyed the client by its bundle identifier
+  (`icom.lafco.lafagent.dev`) and logged `Client will now show up in
+  settings`: making the manager is enough to put the app on the Location
+  Services list, before anybody has been asked. Nothing asked for
+  authorization or for a fix.
+- The bundle: both usage strings in `Contents/Info.plist`; CoreLocation linked;
+  `codesign -dvvv` → `flags=0x20002(adhoc,linker-signed)`, `Info.plist=not
+  bound`, `Sealed Resources=none`, no entitlements — the bundler signed
+  nothing, as its source says.
+- The half that every other platform compiles was compiled once on this Mac
+  with its condition flipped: no error and no warning. Not built on Windows.
+
+**Not measured, because each needs a person at the dialog:** the system's
+question itself and its wording; a fix arriving, rounded; a refusal; the
+ten-second bound; that a second question within the hour is answered from
+`CLLocationManager.location` (read from Apple's documentation); and anything
+at all under the hardened runtime, which no build has. Whoever next has the
+development app open with this change served at `localhost:3010`:
+
+1. An account with no place at all is asked by the open itself; one that
+   holds words, or coordinates, is not — by the table — and is asked by the
+   press of 설정 → 내 정보 → 위치 → 이 기기 위치 쓰기. That the button is drawn
+   at all is the first proof: it is drawn only when the shell has answered
+   `device_place_permission`.
+2. The system's question appears with the sentence above under it. The log
+   reads `the page asked where this device is: permission=Prompt prompt=true`
+   and `asking the person whether this device may be read`.
+3. Allowed: `this device answered: place`, and the screen says 이 기기 위치:
+   위도 …, 경도 … 부근 with two decimals. Refused: `this device answered:
+   denied`, and the screen says so in words.
+4. With coordinates saved and no words, the NEXT launch follows: `permission=
+   Granted prompt=false`, `this device answered: place`, and no write unless
+   the rounded value moved.
+
+If no question appears at 2, read what `locationd` said about the app
+(`log show --last 2m --predicate 'process == "locationd" AND eventMessage
+CONTAINS "lafagent"'`): at the dry run it logged that Launch Services knew the
+client "as a plugin or app" under neither name, and then that it "will now
+show up in settings" — for a bundle run from under `target/`. A bundle the
+system cannot name may not be asked about; `lsregister -f` on the bundle, or a
+copy in `~/Applications`, is the thing to try.
+
+**Windows answers `unsupported`**, and the page there is what it was: Seoul,
+or the place the person says. Reading it would be WinRT's
+`Windows.Devices.Geolocation.Geolocator` — `RequestAccessAsync`, then
+`GetGeopositionAsync` with a coarse `DesiredAccuracyInMeters` — through the
+`windows` crate that is already in the tree for WebView2, with its
+`Devices_Geolocation` feature turned on; the same closed result, rounded the
+same way. It is not written because nothing here can run it: an unpackaged
+desktop app is asked about differently from a packaged one, and differently
+again from Windows 11 24H2, and code that reads somebody's location is not
+code to ship unmeasured.
+
+**What it cost.** One crate newly compiled, `objc2-core-location` 0.3.2 with
+four of its features — already in the lockfile for iOS by way of
+`objc2-ui-kit`, so the lockfile gained three lines and no package. `objc2` and
+`objc2-foundation` are named as direct dependencies and were compiled already.
+Measured: the first `cargo check` after the change took 6.7 s, and the debug
+binary is 0.56 MB larger than the last one built on this Mac from main, two
+days earlier (37.26 → 37.83 MB, unstripped, and not all of the difference is
+this change). A release binary was not built.
 
 ### A file dropped on the window is the page's
 
@@ -470,3 +627,16 @@ door's own `DESKTOP_DOOR_SSH_KEY`, `DESKTOP_DOOR_KNOWN_HOSTS` and the variable
 hand. Apple Developer ID secrets are optional; without them the dmg is
 ad-hoc signed, which Gatekeeper accepts only on the Mac that built it. Windows
 code signing is not set up; SmartScreen will warn until it is.
+
+**What "ad-hoc signed" is, exactly** (read in tauri-bundler 2.11.4 and measured
+on a bundle, 2026-10-05): with no `APPLE_CERTIFICATE` and no signing identity
+the bundler does not run `codesign` at all. What the binary carries is the
+linker's own ad-hoc signature — `flags=0x20002(adhoc,linker-signed)`,
+`Info.plist=not bound`, no sealed resources, no entitlements, and no hardened
+runtime. The day the six Apple secrets are set, the bundler signs with
+`--options runtime` (`bundle.macOS.hardenedRuntime` defaults to true) and hands
+`codesign` the file `bundle.macOS.entitlements` names. That file exists for
+that day: under the hardened runtime the shell cannot read the device's
+location without the entitlement in it ("The device's place"). Nobody has run
+that build; the first one should be opened and asked where it is before it is
+called a release.

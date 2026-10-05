@@ -34,6 +34,13 @@
 //! below exist for the other moment. They are still not product logic: every one of them resolves
 //! to *a path on the origin*, focus, or process lifetime, and the allowlist in `link_target` is the
 //! whole of what this process knows about what the product's paths mean.
+//!
+//! AND IT SAYS WHERE THE DEVICE IS, WHEN THE PAGE ASKS (`location.rs`, 2026-10-05). The one thing
+//! here that reads the machine rather than drawing on it: a webview answers no geolocation request,
+//! so a person in the installed app was in Seoul whatever their device knew. Reading and rounding
+//! are this process's; whether to ask, and what the answer is for, stay the page's.
+
+mod location;
 
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
@@ -1064,6 +1071,63 @@ fn restart_to_update(app: tauri::AppHandle) -> Result<(), String> {
     app.restart()
 }
 
+/// Whether this device may be asked where it is, as the system holds it: `granted`, `prompt` (not
+/// decided), `denied`, `restricted`, or `unsupported` on a platform that is not read.
+///
+/// READ, NEVER ASKED FOR. This shows nothing and reads no location: it is how the page keeps "once
+/// per device" — a device that already said yes is read with nothing shown, one that has not
+/// decided is asked once, and one that said no is left alone — and how the button on 내 정보 knows
+/// whether to be drawn at all. A shell from before this command rejects the call, which the page
+/// reads as "cannot be asked", the same as `unsupported`.
+///
+/// `async`, AND THE WORK IS ON THE MAIN THREAD. CoreLocation's manager lives on the thread it was
+/// made on and calls back on that thread's run loop, so both of these hop there and wait for the
+/// answer on the runtime's own threads — the window is never the thing that waits.
+#[tauri::command]
+async fn device_place_permission(app: tauri::AppHandle) -> location::DevicePermission {
+    let (answer, mut answered) = tauri::async_runtime::channel(1);
+    let handle = app.clone();
+    // An event loop that is gone has no device to read. "No" is the answer that asks nothing.
+    if app
+        .run_on_main_thread(move || location::permission(&handle, answer))
+        .is_err()
+    {
+        return location::DevicePermission::Denied;
+    }
+    answered
+        .recv()
+        .await
+        .unwrap_or(location::DevicePermission::Denied)
+}
+
+/// Where this device is, to two decimals of a degree, or the one reason it cannot be said.
+///
+/// `prompt` IS THE PAGE'S WORD ON WHETHER A PERSON MAY BE SHOWN ANYTHING. With it, a device that
+/// has not decided puts the system's own question up and the call waits for the answer. Without
+/// it nothing is ever shown: allowed is read, and not-decided answers `undetermined_no_prompt`.
+/// The page passes it for the one ask per device and for the press of a button, and never for the
+/// read that keeps a place following its device.
+///
+/// ROUNDED BEFORE IT IS A VALUE (`location.rs`), so there is no finer one to hand over, and never
+/// logged. Read-only like the command above: neither writes anything anywhere. A page running
+/// somebody else's script can show nothing with them but the system's own question, and learns
+/// nothing finer than the two decimals the account already keeps and `/api/me` already answers.
+#[tauri::command]
+async fn device_place(app: tauri::AppHandle, prompt: bool) -> location::DevicePlace {
+    let (answer, mut answered) = tauri::async_runtime::channel(1);
+    let handle = app.clone();
+    if app
+        .run_on_main_thread(move || location::place(&handle, prompt, answer))
+        .is_err()
+    {
+        return location::DevicePlace::Unavailable;
+    }
+    answered
+        .recv()
+        .await
+        .unwrap_or(location::DevicePlace::Unavailable)
+}
+
 /// A development build never asks the updater anything (see `install_updates`), so without this the
 /// notice and its restart could only ever be seen in a release. `LAF_SHELL_PRETEND_UPDATE=<version>`
 /// holds a pretend update after a few seconds — late enough that the page is already listening.
@@ -1321,7 +1385,9 @@ pub fn run() {
             summon_shortcut,
             set_summon_shortcut,
             update_ready,
-            restart_to_update
+            restart_to_update,
+            device_place_permission,
+            device_place
         ])
         /*
          * A PAGE THAT IS LOADING IS NOT A BOT THAT IS WORKING. The tray's status is whatever the page
