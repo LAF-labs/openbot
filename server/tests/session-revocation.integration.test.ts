@@ -80,16 +80,17 @@ function deploymentWith(admitted: Person[]) {
     allowlist: createSignInAllowlist(config.auth),
   });
   const roles = createRoleRepository(database);
-  const args: Parameters<typeof createApp> = [config, auth, roles];
-  // `accountService` and, last, `sessionAdmission` — by position; the compiler holds each index to
-  // its type, so a wrong one does not build.
-  args[31] = {
-    exporter: createAccountExport(database),
-    deletion: createAccountDeletion({ database, sessions: revocation }),
-    auditStore: createAuditStore(database),
-  };
-  args[41] = revocation;
-  const app = createApp(...args);
+  const app = createApp({
+    config,
+    auth,
+    roleRepository: roles,
+    accountService: {
+      exporter: createAccountExport(database),
+      deletion: createAccountDeletion({ database, sessions: revocation }),
+      auditStore: createAuditStore(database),
+    },
+    sessionAdmission: revocation,
+  });
   const actors = createRequestActors({
     devNoAuth: false,
     auth,

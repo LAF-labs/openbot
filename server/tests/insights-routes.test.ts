@@ -159,10 +159,7 @@ describe("the door", () => {
   });
 });
 
-/**
- * Where `createApp` puts it. `insights` is the last positional collaborator; the tuple is typed from
- * the function, and a wrong index shows up here as a 404 where a 200 was expected.
- */
+/** Where `createApp` puts it. */
 describe("the mount", () => {
   const signedInAdmin = {
     handler: () => new Response(null, { status: 204 }),
@@ -180,13 +177,12 @@ describe("the mount", () => {
         options.token ? { LAF_FLEET_METRICS_TOKEN: options.token } : {},
       ),
     );
-    const args: Parameters<typeof createApp> = [
+    return createApp({
       config,
-      signedInAdmin,
-      adminRoles,
-    ];
-    if (options.reader !== false) args[40] = async () => REPORT;
-    return createApp(...args);
+      auth: signedInAdmin,
+      roleRepository: adminRoles,
+      ...(options.reader !== false ? { insights: async () => REPORT } : {}),
+    });
   }
 
   test("is not there on a VM the fleet gave no token: the same 404 as a path that does not exist", async () => {

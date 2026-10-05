@@ -351,27 +351,15 @@ describe("channel route composition", () => {
     let session: {
       user: { id: string; email: string; name: string; image: string };
     } | null = null;
-    const app = createApp(
-      loadConfig(testEnvironment()),
-      {
+    const app = createApp({
+      config: loadConfig(testEnvironment()),
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: { getSession: async () => session },
       },
-      { rolesForUser: async () => ["user"] },
-      // Positions 4-12, ending at agentProfileStore. Every service added ahead of the channel store
-      // lengthens this run — the computer gateway and policy store did, and so did onboarding — and
-      // deleting one shortens it, which the connector admin service just did.
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      store,
-    );
+      roleRepository: { rolesForUser: async () => ["user"] },
+      channelStore: store,
+    });
 
     const unauthenticated = await app.request(
       "http://laf.test/api/channels/channel-1",
@@ -406,7 +394,7 @@ describe("channel route composition", () => {
   });
 
   test("leaves channel routes unmounted when createApp has no store", async () => {
-    const app = createApp(loadConfig(testEnvironment()));
+    const app = createApp({ config: loadConfig(testEnvironment()) });
 
     const response = await app.request(
       "http://laf.test/api/channels/channel-1",

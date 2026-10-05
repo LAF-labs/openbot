@@ -43,16 +43,12 @@ const appWith = (
   auth: ReturnType<typeof sessionFor> | typeof noSession,
   roles: string[],
 ) =>
-  createApp(
+  createApp({
     config,
     auth,
-    { rolesForUser: async () => roles as never },
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    copilotHandler(),
-  );
+    roleRepository: { rolesForUser: async () => roles as never },
+    copilotHandler: copilotHandler(),
+  });
 
 /** Every route family the runtime serves, so a guard cannot cover one and miss the rest. */
 const RUNTIME_PATHS = [

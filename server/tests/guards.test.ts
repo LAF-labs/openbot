@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createApp } from "../src/app";
+import { type CreateAppOptions, createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
 
@@ -30,8 +30,12 @@ function authenticatedAs(
 
 describe("server authorization", () => {
   test("returns 401 when a protected route has no session", async () => {
-    const app = createApp(config, noSessionAuth, {
-      rolesForUser: async () => [],
+    const app = createApp({
+      config,
+      auth: noSessionAuth,
+      roleRepository: {
+        rolesForUser: async () => [],
+      },
     });
 
     const response = await app.request("http://laf.local/api/me");
@@ -44,8 +48,12 @@ describe("server authorization", () => {
   });
 
   test("denies a signed-in user from an administrator route", async () => {
-    const app = createApp(config, authenticatedAs("member"), {
-      rolesForUser: async () => ["user"],
+    const app = createApp({
+      config,
+      auth: authenticatedAs("member"),
+      roleRepository: {
+        rolesForUser: async () => ["user"],
+      },
     });
 
     const response = await app.request("http://laf.local/api/admin/status");
@@ -68,8 +76,12 @@ describe("server authorization", () => {
    * access away" ships, this branch is the boundary, and it has to be one that a test can see fall.
    */
   test("refuses a session that holds no role, on an ordinary route", async () => {
-    const app = createApp(config, authenticatedAs("member"), {
-      rolesForUser: async () => [],
+    const app = createApp({
+      config,
+      auth: authenticatedAs("member"),
+      roleRepository: {
+        rolesForUser: async () => [],
+      },
     });
 
     const response = await app.request("http://laf.local/api/me");
@@ -82,8 +94,12 @@ describe("server authorization", () => {
   });
 
   test("refuses a session that holds no role before the administrator guard is reached", async () => {
-    const app = createApp(config, authenticatedAs("member"), {
-      rolesForUser: async () => [],
+    const app = createApp({
+      config,
+      auth: authenticatedAs("member"),
+      roleRepository: {
+        rolesForUser: async () => [],
+      },
     });
 
     const response = await app.request("http://laf.local/api/admin/status");
@@ -97,8 +113,12 @@ describe("server authorization", () => {
   });
 
   test("returns the authenticated user actor", async () => {
-    const app = createApp(config, authenticatedAs("member"), {
-      rolesForUser: async () => ["user"],
+    const app = createApp({
+      config,
+      auth: authenticatedAs("member"),
+      roleRepository: {
+        rolesForUser: async () => ["user"],
+      },
     });
 
     const response = await app.request("http://laf.local/api/me");
@@ -135,8 +155,12 @@ describe("server authorization", () => {
   });
 
   test("allows an administrator to reach an administrator route", async () => {
-    const app = createApp(config, authenticatedAs("admin"), {
-      rolesForUser: async () => ["admin"],
+    const app = createApp({
+      config,
+      auth: authenticatedAs("admin"),
+      roleRepository: {
+        rolesForUser: async () => ["admin"],
+      },
     });
 
     const response = await app.request("http://laf.local/api/admin/status");
@@ -169,14 +193,16 @@ describe("a session whose person the deployment no longer admits", () => {
   }
 
   const appWith = (
-    auth: Parameters<typeof createApp>[1],
-    roles: Parameters<typeof createApp>[2],
+    auth: CreateAppOptions["auth"],
+    roles: CreateAppOptions["roleRepository"],
     sessions: ReturnType<typeof admission>["admission"],
-  ) => {
-    const args: Parameters<typeof createApp> = [config, auth, roles];
-    args[41] = sessions;
-    return createApp(...args);
-  };
+  ) =>
+    createApp({
+      config,
+      auth,
+      roleRepository: roles,
+      sessionAdmission: sessions,
+    });
 
   test("is revoked and refused with its own code, before any role is read — an administrator's too", async () => {
     const { admission: struckOff, revoked } = admission({ admits: false });

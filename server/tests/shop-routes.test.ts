@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import type { ShopStore } from "../src/account/shop";
-import { createApp } from "../src/app";
+import { type CreateAppOptions, createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
 
@@ -60,18 +60,16 @@ function shopStore(
   return { store, saved, personas, followUps };
 }
 
-/**
- * `createApp` takes its collaborators by position, and the shop store is the last of them. A tuple
- * typed from the function keeps the compiler on the shape; a wrong index shows up here as a 404
- * where the route should be, which every test below would read.
- */
 function surface(
   store?: ShopStore,
-  session: Parameters<typeof createApp>[1] = signedIn,
+  session: CreateAppOptions["auth"] = signedIn,
 ) {
-  const args: Parameters<typeof createApp> = [config, session, roles];
-  args[44] = store;
-  return createApp(...args);
+  return createApp({
+    config,
+    auth: session,
+    roleRepository: roles,
+    ...(store ? { shop: store } : {}),
+  });
 }
 
 const put = (app: ReturnType<typeof createApp>, body: unknown) =>

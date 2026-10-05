@@ -41,7 +41,11 @@ const signedIn: AuthService = {
 };
 
 const app = () =>
-  createApp(config, signedIn, { rolesForUser: async () => ["user"] });
+  createApp({
+    config,
+    auth: signedIn,
+    roleRepository: { rolesForUser: async () => ["user"] },
+  });
 
 const from = (address: string, extra: Record<string, string> = {}) => ({
   origin: ORIGIN,

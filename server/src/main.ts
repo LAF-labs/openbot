@@ -975,28 +975,28 @@ const screenViews = createScreenViewAudit({
   ownerOf: botOwnerLookup(database),
 });
 
-const app = createApp(
+const app = createApp({
   config,
   auth,
   roleRepository,
-  createAuditReader(database),
-  createCredentialAdminService(
+  auditReader: createAuditReader(database),
+  credentialService: createCredentialAdminService(
     config.keyEncryptionKey,
     credentialStore,
     createAuditStore(database),
   ),
-  createPackageStatusReader(database),
-  createOnboardingStore(database),
-  copilotEndpoint,
+  packageStatusReader: createPackageStatusReader(database),
+  onboarding: createOnboardingStore(database),
+  copilotHandler: copilotEndpoint,
   computerClient,
   computerGateway,
-  policyStore,
+  computerPolicy: policyStore,
   // Bots as durable objects, and the channels they run in.
   agentProfileStore,
   channelStore,
   channelEvents,
   // The same store the boot row uses, so a Bot's own refusal lands in the trail beside its actions.
-  bootAuditStore,
+  auditStore: bootAuditStore,
   componentStore,
   // MCP servers and packaged skills. Judged by the same policy the computer actions are, read
   // fresh on every call for the same reason: a rule added a moment ago applies to the next call.
@@ -1010,22 +1010,28 @@ const app = createApp(
   approvals,
   routineService,
   // When each message was first seen. Read from the snapshot column directly — see message-times.
-  createMessageTimeReader(database),
+  messageTimeReader: createMessageTimeReader(database),
   // What is running for a person right now, from the same ledger chat and routines both write.
   // With the turns this process is running, which the ledger's ten minutes cannot see past.
-  createWorkingReader(database, (userId) => turnEngine.working(userId)),
+  readWorking: createWorkingReader(database, (userId) =>
+    turnEngine.working(userId),
+  ),
   standingApprovals,
-  tenantPackage.model.supportsEffort,
+  deploymentEffort: tenantPackage.model.supportsEffort,
   demonstrations,
-  modelCalls.writeUp,
+  writeUp: modelCalls.writeUp,
   agentMemoryStore,
   // The OAuth connect flow: where vendors send people back, and who still has access. See the module.
-  connectConfigFor({ config, database, sharedClient: sharedOAuthClients }),
+  pluginConnect: connectConfigFor({
+    config,
+    database,
+    sharedClient: sharedOAuthClients,
+  }),
   // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's
   // own review model; see the probe above.
-  modelCalls.autoReviewCapable,
+  autoReviewCapable: modelCalls.autoReviewCapable,
   // What `/health` asks: the database, `agent-bot`, and the computer when there is one.
-  deploymentHealthProbes({
+  healthProbes: deploymentHealthProbes({
     database,
     agentBotUrl: config.managedAgentAgUiUrl,
     computer: computerClient,
@@ -1043,7 +1049,7 @@ const app = createApp(
    * And the fleet, because leaving has one consequence this process cannot carry out: the machine
    * itself. Absent, the withdrawal is complete here and nowhere else — see the boot line above.
    */
-  {
+  accountService: {
     exporter: createAccountExport(database),
     deletion: createAccountDeletion({
       database,
@@ -1079,7 +1085,7 @@ const app = createApp(
    * measures. The Bot's own clock decides what "night" is — the VM may be anywhere and the person
    * is in Korea.
    */
-  {
+  notifications: {
     outbox: notificationOutbox,
     approvalMetrics: (days: number) =>
       readApprovalMetrics(database, { days, timeZone: config.botTimeZone }),
@@ -1089,19 +1095,19 @@ const app = createApp(
   siteConnections,
   // 알림톡: the vendor LAF holds the account at. The same runtime the outbox's AlimTalk door and
   // the plugin store's transports were built from, so one connect is one fact.
-  partnerRuntime,
+  partners: partnerRuntime,
   // The 다음에 latch behind the routine suggestion cards. See routines/suggestions.ts.
-  createSuggestionDismissalStore(database),
+  routineSuggestionDismissals: createSuggestionDismissalStore(database),
   // The deployment-key entries: each hidden from the catalogue without its key, and handed to a
   // Bot the moment it is made with it. Built above, so the listing and the boot reconciliation agree.
-  deploymentKeyRuntime,
+  publicData: deploymentKeyRuntime,
   // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
-  createConsentStore(database),
+  consent: createConsentStore(database),
   screenViews,
   // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator —
   // and what its diagnostic details are read from: this process's log tail and the run ledger. And
   // 좋아요·아쉬워요 under an answer, which leaves by the same door when somebody writes why.
-  {
+  support: {
     feedback: createFeedbackStore(database),
     auditStore: bootAuditStore,
     outbox: notificationOutbox,
@@ -1113,21 +1119,21 @@ const app = createApp(
   },
   // The fleet's counts, read per request over the window it asks for, in the Bot's own clock — the
   // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.
-  (days: number) =>
+  insights: (days: number) =>
     readInsights(database, { days, timeZone: config.botTimeZone }),
   // Whether the person behind each session is still let in, asked by `requireUser` on every request.
-  sessionRevocation,
+  sessionAdmission: sessionRevocation,
   // A free trial's day, for `/api/me` to say whether it is spent — the judge the runs are refused by.
   dailyBudget,
   // `모두 멈추기`: the list every run path writes, and the trail the press is recorded on.
-  createStopAll({ work: workInFlight, auditStore: bootAuditStore }),
+  stopAll: createStopAll({ work: workInFlight, auditStore: bootAuditStore }),
   // The shop answers: `/api/me` carries them and `PUT /api/me/shop` is their one door. The same
   // store every run reads through `loadAgentsForActor` above.
-  shopStore,
+  shop: shopStore,
   // The person's clock and place: `/api/me` carries them and three doors change them.
-  whereaboutsStore,
+  whereabouts: whereaboutsStore,
   // 오늘: the Bot's day, from the ledgers, in the person's own day.
-  createDayReader({
+  readDay: createDayReader({
     database,
     zoneOf: async (userId) => (await whereaboutsStore.read(userId)).timeZone,
     fallbackZone: config.botTimeZone,
@@ -1135,9 +1141,9 @@ const app = createApp(
   // The package's skills, handed to a Bot the moment it is made (built-in-skill-sync.ts).
   builtInSkills,
   // Files the owner hands their Bot: the composer's two doors, and whether photos are offered.
-  attachmentService,
+  attachments: attachmentService,
   // A turn the server owns: its doors.
-  (requireUser) =>
+  turnRoutes: (requireUser) =>
     createTurnRoutes({
       database,
       engine: turnEngine,
@@ -1146,12 +1152,12 @@ const app = createApp(
       requireUser,
     }),
   // 만든 것: the cards and tables a Bot made, read out of its conversation.
-  createMadeReader({ database }),
+  readMade: createMadeReader({ database }),
   // 소식: the posts a feed routine wrote, and the person's presses on them.
-  feedStore,
+  feed: feedStore,
   // 목표: the goals the person set, and their timelines.
-  goalStore,
-);
+  goals: goalStore,
+});
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
 const liveScreen = createLiveScreen({

@@ -65,35 +65,19 @@ function appWith(role: "admin" | "user", routineDatabase: Database = database) {
     resolveAgents: async () => ({}),
   });
   const auditStore = createAuditStore(database);
-  // Positional, so every slot up to the routines is named; see the warning on `createApp`.
-  return createApp(
+  return createApp({
     config,
     auth,
-    roles,
-    undefined, // auditReader
-    createCredentialAdminService(
+    roleRepository: roles,
+    credentialService: createCredentialAdminService(
       config.keyEncryptionKey,
       createCredentialStore(database),
       auditStore,
     ),
-    undefined, // packageStatusReader
-    undefined, // onboarding
-    undefined, // copilotHandler
-    undefined, // computerClient
-    undefined, // computerGateway
-    undefined, // computerPolicy
-    undefined, // agentProfileStore
-    undefined, // channelStore
-    undefined, // channelEvents
-    undefined, // auditStore
-    undefined, // componentStore
-    undefined, // pluginStore
-    undefined, // sandboxedStore
     // The routine routes are mounted beside the thread routes, so this is what mounts them.
-    createThreadIdentity(`boundary-${run}`),
-    undefined, // approvals
+    threadIdentity: createThreadIdentity(`boundary-${run}`),
     routineService,
-  );
+  });
 }
 
 /** Every line anything printed while `act` ran, from every console method a logger could use. */

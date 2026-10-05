@@ -38,15 +38,13 @@ function consentStore(version: string | null) {
   return { store, recorded };
 }
 
-/**
- * `createApp` takes its collaborators by position, and consent is deep in the list. A tuple typed
- * from the function itself keeps the compiler on the shape; the index is the one thing it cannot
- * check, and a wrong one shows up here as a 503 from the route, which is loud enough.
- */
 function surface(store?: ConsentStore) {
-  const args: Parameters<typeof createApp> = [config, signedIn, roles];
-  args[37] = store;
-  return createApp(...args);
+  return createApp({
+    config,
+    auth: signedIn,
+    roleRepository: roles,
+    ...(store ? { consent: store } : {}),
+  });
 }
 
 describe("what /api/me says about consent", () => {
@@ -120,13 +118,12 @@ describe("POST /api/me/consent", () => {
       handler: () => new Response(null, { status: 204 }),
       api: { getSession: async () => null },
     };
-    const args: Parameters<typeof createApp> = [config, noSession, roles];
-    args[37] = consentStore(null).store;
-
-    const response = await createApp(...args).request(
-      "http://laf.local/api/me/consent",
-      { method: "POST" },
-    );
+    const response = await createApp({
+      config,
+      auth: noSession,
+      roleRepository: roles,
+      consent: consentStore(null).store,
+    }).request("http://laf.local/api/me/consent", { method: "POST" });
 
     expect(response.status).toBe(401);
   });

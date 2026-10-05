@@ -167,38 +167,26 @@ function deployment() {
     },
     registerClient: async () => null,
   });
-  const app = createApp(
-    loadConfig(testEnvironment()),
-    {
+  const app = createApp({
+    config: loadConfig(testEnvironment()),
+    auth: {
       handler: () => new Response(null, { status: 204 }),
       api: { getSession: async () => session },
     },
-    {
+    roleRepository: {
       rolesForUser: async () => ["user"],
       // Whose Bot is whose, from the real tables: `GET /api/plugins/for/:id` is behind the
       // ownership guard, and a repository without this lookup admits nobody to any Bot.
       botOwner: (botId) => lookupBotOwner(database, botId),
     },
-    // Positions 4-11: auditReader, credentialService, packageStatusReader, onboarding,
-    // copilotHandler, computerClient, computerGateway, computerPolicy.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 12: the Bots, real, so a create reserves a seat and writes a profile the grant can name.
-    createAgentProfileStore(database, new URL("http://agent-bot.test/ag-ui")),
-    // 13-16: channelStore, channelEvents, auditStore, componentStore.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 17: the plugin store, which mounts `/api/plugins` and is what the create hook offers from.
-    store,
-  );
+    // The Bots, real, so a create reserves a seat and writes a profile the grant can name.
+    agentProfileStore: createAgentProfileStore(
+      database,
+      new URL("http://agent-bot.test/ag-ui"),
+    ),
+    // The plugin store, which mounts `/api/plugins` and is what the create hook offers from.
+    pluginStore: store,
+  });
   return { app, store };
 }
 
