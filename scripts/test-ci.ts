@@ -1175,7 +1175,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * front of each could have been deleted unnoticed.
  *
  * RAISED 2026-10-05 with the device's place in the installed app, and a place that follows its
- * device, by exactly what was added: twenty-six to `app` — fourteen in `device-place.test.ts`,
+ * device, by exactly what was added: twenty-seven to `app` — fourteen in `device-place.test.ts`,
  * which holds twenty-five where it held eleven (the table reads a mark of four kinds rather than a
  * yes or a no; the place follows a device that already said yes and no other; a place cleared on
  * this device is never read by itself; a mark from before "cleared" existed is read by what the
@@ -1185,12 +1185,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * words said while a following device was answering stand; and the shell's rows — its word on
  * being asked is one of the table's four answers, a shell that cannot read the device cannot be
  * asked and draws no control, its place is rounded again here and told whether it may show
- * anything, and every reason it has no place is said in the surface's words), seven in
+ * anything, and every reason it has no place is said in the surface's words), eight in
  * `device-place-gate.test.tsx` (on the mounted routes: a browser that already said yes is read
  * again and the place moves; one that has not moved writes nothing; a said place is not followed;
  * a place cleared here is not read back even after another device gives one; an old mark stays
  * quiet over nothing and follows over coordinates; the installed app asks its shell once and
- * follows it after; a shell that cannot read the device is left alone — and the test over
+ * follows it after; the first-run screen and the screen that asks again for the agreement ask the
+ * shell nothing either; a shell that cannot read the device is left alone — and the test over
  * coordinates held is now a browser that has NOT said yes, which is the only one still left
  * unread), four in `settings-shop-location.test.tsx` (a device that answers by itself while the
  * screen is open is what the screen shows and what a typed save sends; the device's button takes
@@ -1208,7 +1209,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3624, roots: ["server"] },
-  { name: "app", floor: 2076, roots: ["app"] },
+  { name: "app", floor: 2077, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 717, roots: ["tests", "agent-bot"] },
 ] as const;
