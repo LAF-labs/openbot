@@ -12,6 +12,7 @@ import {
   isDeferredToolName,
   OPEN_ACCOUNTS_HEAD,
   oneLine,
+  openAccountsIn,
   resolveDeferred,
   resolveOffered,
   SEARCH_LIMIT,
@@ -28,7 +29,6 @@ import {
   accountStatesIn,
   CONNECT_CARD,
   FILE_CARD,
-  openAccountsIn,
   withAccountStates,
   withoutAccountStates,
 } from "../shared/tools/gallery";
@@ -796,6 +796,41 @@ describe("what a lookup says of connecting", () => {
     expect(miss.at(-1)).toBe(lines.at(-1));
   });
 
+  /*
+   * A CONNECTION THAT LANDED SINCE THE TURN READ THE ACCOUNTS (review, 2026-10-06, on the real
+   * path). What is written on the card is the turn's read from before the person pressed the
+   * switch; the tools that landed are added to the same turn's list. The card says "connected —
+   * look its tools up", the Bot looks, and the answer ended "아직 연결하지 않은 계정: 지메일(gmail)
+   * … 연결 카드를 띄운다": the account it had just connected. The tools being here is the newer
+   * fact.
+   */
+  test("an account whose tools the list now holds is not named, though the turn read it as not connected", () => {
+    const search = wire(
+      "mcp__gmail__search_messages",
+      "받은편지함을 찾는다. (gmail)",
+    );
+    const lines = linesOf(
+      searchResultText(
+        [...NOBODYS, search, card(off("gmail", "notion"))],
+        "메일 확인",
+      ),
+    );
+    expect(lines.some((line) => line.includes(`"name":"${search.name}"`))).toBe(
+      true,
+    );
+    expect(lines.at(-1)).toBe(lineFor("노션(notion)"));
+    // The last one open: no line at all, and the card is not callable from this answer.
+    const last = searchResultText(
+      [...NOBODYS, search, card(off("gmail"))],
+      "메일 확인",
+    );
+    expect(last).toContain(`"name":"${search.name}"`);
+    expect(last).not.toContain(OPEN_ACCOUNTS_HEAD);
+    expect(describedToolNames([last]).has(CONNECT_CARD)).toBe(false);
+    // Nor is it "on with nothing to use": its tools are what the lookup found.
+    expect(last).not.toContain("가져온 도구가 없는");
+  });
+
   test("with the right service connected its tool is handed over, and the line names only what is left", () => {
     // 톡캘린더 connected, Google's not: the calendar that is there is found, and nothing here
     // says to connect another — the line is the same fact as on any other lookup.
@@ -1019,6 +1054,10 @@ describe("the accounts a turn writes on the connect card", () => {
       parameters: withAccountStates(declared, accounts),
     };
     expect(openAccountsIn([{ name: "remember" }, card])).toEqual(["gmail"]);
+    // A connection that landed since the turn's read: its tools are in the list, so it is not open.
+    expect(
+      openAccountsIn([card, { name: "mcp__gmail__search_messages" }]),
+    ).toEqual([]);
     // A window's card no turn wrote on, a run with no card, and everything connected: none.
     expect(
       openAccountsIn([{ name: CONNECT_CARD, parameters: declared }]),

@@ -132,7 +132,7 @@ export type ComposePromptInput = {
   toolNames?: readonly string[];
   /**
    * 이 사람이 연결할 수 있는데 아직 연결하지 않은 계정의 키들 — 턴이 연결 카드에 적어 둔 상태에서
-   * 읽은 것(`shared/tools/gallery.ts`, `accountStatesIn`). 없으면 연결 이야기는 그려지지 않는다.
+   * 읽은 것(`shared/tools/bridge.ts`, `openAccountsIn`). 없으면 연결 이야기는 그려지지 않는다.
    */
   openAccounts?: readonly string[];
 };

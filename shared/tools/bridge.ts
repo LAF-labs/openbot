@@ -826,6 +826,30 @@ function namedByKey(keys: readonly string[]): string {
 export const OPEN_ACCOUNTS_HEAD = "이 사람이 아직 연결하지 않은 계정: ";
 
 /**
+ * 이 사람이 연결할 수 있는데 아직 연결하지 않은 계정의 키들 — 이 실행이 받은 목록에서 읽는다.
+ *
+ * 둘 다여야 열려 있는 것이다: 턴이 연결 카드에 적은 상태가 "연결 안 됨"이고, 그 서비스의 도구가
+ * 목록에 하나도 없다. 뒤의 조건은 턴 도중에 연결이 들어왔을 때를 위한 것이다(검토, 2026-10-06, 실제
+ * 경로에서). 카드에 적힌 상태는 턴이 시작될 때 한 번 읽은 것인데, 사람이 카드에서 지메일을 켜면
+ * 그 도구가 같은 턴의 목록에 더해진다(`offerLandedTools`, `server/src/turns/chat-tools.ts`). 카드의
+ * 답이 "연결됐다, tool_search로 스키마를 받아 쓰라"고 해서 봇이 찾으면, 그 답의 끝에 "아직 연결하지
+ * 않은 계정: 지메일(gmail)… 연결 카드를 띄운다"가 서 있었다 — 방금 연결한 계정이다. 도구가 여기
+ * 있다는 것이 적어 둔 상태보다 새 사실이다.
+ *
+ * 맥락 층의 한 문장도 이것으로 정한다(`server/src/copilot.ts`): 열린 계정의 뜻은 하나다. 카드가
+ * 없거나 적힌 것이 없으면 빈 배열.
+ */
+export function openAccountsIn(
+  tools: readonly { name: string; parameters?: unknown }[],
+): string[] {
+  const card = tools.find((tool) => tool.name === CONNECT_CARD);
+  const held = new Set(tools.map((tool) => serverKeyOf(tool.name)));
+  return (accountStatesIn(card?.parameters) ?? [])
+    .filter((account) => !account.connected && !held.has(account.key))
+    .map((account) => account.key);
+}
+
+/**
  * 모든 검색의 답 끝에 서는 줄 — 이 사람이 연결할 수 있는데 아직 연결하지 않은 계정들, 사실로.
  *
  * 어느 서비스가 필요한 일인지도, 이 줄이 지금 쓸모 있는지도 다리가 고르지 않는다. 두 번 골랐고 두
@@ -859,19 +883,19 @@ function connectingLines(deferred: readonly WireTool[]): string[] {
   const accounts = card ? accountStatesIn(card.parameters) : null;
   if (!card || !accounts) return [];
   const held = new Set(deferred.map((tool) => serverKeyOf(tool.name)));
-  const open = accounts.filter((account) => !account.connected);
-  const empty = accounts.filter(
-    (account) => account.connected && !held.has(account.key),
-  );
+  const open = openAccountsIn(deferred);
+  const empty = accounts
+    .filter((account) => account.connected && !held.has(account.key))
+    .map((account) => account.key);
   return [
     ...(empty.length > 0
       ? [
-          `연결돼 있지만 그 연결이 가져온 도구가 없는 계정: ${namedByKey(empty.map((account) => account.key))}. 연결 카드를 띄우지 않는다 — 이것이 필요한 일이면 연결은 돼 있는데 지금 쓸 도구가 없다고 사람에게 말한다.`,
+          `연결돼 있지만 그 연결이 가져온 도구가 없는 계정: ${namedByKey(empty)}. 연결 카드를 띄우지 않는다 — 이것이 필요한 일이면 연결은 돼 있는데 지금 쓸 도구가 없다고 사람에게 말한다.`,
         ]
       : []),
     ...(open.length > 0
       ? [
-          `${OPEN_ACCOUNTS_HEAD}${namedByKey(open.map((account) => account.key))}. 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 ${TOOL_SEARCH} 없이 바로 ${TOOL_CALL}로 연결 카드를 띄운다 — name은 "${CONNECT_CARD}", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.`,
+          `${OPEN_ACCOUNTS_HEAD}${namedByKey(open)}. 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 ${TOOL_SEARCH} 없이 바로 ${TOOL_CALL}로 연결 카드를 띄운다 — name은 "${CONNECT_CARD}", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.`,
         ]
       : []),
   ];

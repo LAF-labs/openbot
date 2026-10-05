@@ -21,8 +21,7 @@ import {
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
-import { isDeferredToolName } from "../../shared/tools/bridge";
-import { openAccountsIn } from "../../shared/tools/gallery";
+import { isDeferredToolName, openAccountsIn } from "../../shared/tools/bridge";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
