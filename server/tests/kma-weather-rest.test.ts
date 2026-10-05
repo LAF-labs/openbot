@@ -4,12 +4,14 @@ import {
   WEATHER_DATA_HEAD,
   WEATHER_SHOWN,
 } from "../../shared/weather";
+import { KMA_MID_REGIONS } from "../src/plugins/kma-mid-regions";
 import {
   createKmaPlaces,
   KMA_PLACES,
   parseKmaPlaces,
 } from "../src/plugins/kma-places";
 import {
+  FALLBACK_PLACE,
   issuanceAt,
   KMA_HOST,
   KMA_OPERATIONS,
@@ -108,6 +110,8 @@ type Facts = {
   place: string;
   placeName?: string;
   coordinates?: { latitude: number; longitude: number };
+  /** Where the place came from: the call, the person's words, their device, or nobody (Seoul). */
+  placeSource?: string;
   /** That the forecast is drawn as a card: the model's, and the answer's last field. */
   shown?: string;
   basis?: string;
@@ -418,6 +422,8 @@ describe("what a Bot is handed", () => {
       place: "위도 37.57, 경도 126.98",
       // The facts beside the words: coordinates alone here, since the table has no name for this cell.
       coordinates: { latitude: 37.57, longitude: 126.98 },
+      // The call said where.
+      placeSource: "named",
       issued: { now: "10-02 00:00", hours: "10-02 00:00", days: "10-01 23:00" },
       units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
       now: { temp: 15.2, humidity: 37, precip: "없음", wind: 3.7 },
@@ -515,6 +521,7 @@ describe("what a Bot is handed", () => {
       place: "위도 37.57, 경도 126.98",
       placeName: null,
       coordinates: { latitude: 37.57, longitude: 126.98 },
+      placeSource: "named",
       temp: 15.2,
       // The row this answer calls 오늘: what the card puts beside the temperature now.
       today,
@@ -1450,6 +1457,7 @@ describe("where the question is about", () => {
     expect(whose).toEqual(["person-1"]);
     expect(made.asked[0]?.cell).toBe("60,127");
     expect(facts.basis).toBe("저장된 위치");
+    expect(facts.placeSource).toBe("device");
     expect(facts.place).toBe("위도 37.57, 경도 126.98");
   });
 
@@ -1467,28 +1475,30 @@ describe("where the question is about", () => {
     expect(facts.basis).toBe("저장된 위치");
   });
 
-  test("nobody's place known is a refusal that asks for one, and the hub is not asked", async () => {
+  test("nobody's place known is Seoul's weather, said to be nobody's — and a run that belongs to nobody is still refused", async () => {
+    /*
+     * The owner, 2026-10-05: "기본값 실제 위치 데이터, fallback은 서울". This was a refusal
+     * (`laf:weather_place_unknown`) that told the Bot to ask where first; the answer is now
+     * 서울특별시's, with the one fact that lets the Bot and the card say it is not the person's own.
+     */
     const nothingSaved = hub(MIDNIGHT, {
       coordinatesOf: async () => null,
       placeOf: async () => null,
     });
-    expect(
-      (
-        await refusalOf(() =>
-          nothingSaved.transport.callTool(connection, "get_weather", {}),
-        )
-      ).code,
-    ).toBe("laf:weather_place_unknown");
-    expect(nothingSaved.asked).toEqual([]);
+    const { facts } = await weatherOf(nothingSaved, {});
+    expect(nothingSaved.asked[0]?.cell).toBe("60,127");
+    expect(facts.place).toBe("서울특별시");
+    expect(facts.placeName).toBe("서울특별시");
+    expect(facts.placeSource).toBe("fallback");
+    // Not the person's saved place, and no coordinates anybody gave.
+    expect(facts.basis).toBeUndefined();
+    expect(facts.coordinates).toBeUndefined();
 
-    // Nothing wired at all, and a run that belongs to nobody, are the same fact.
-    expect(
-      (
-        await refusalOf(() =>
-          hub(MIDNIGHT).transport.callTool(connection, "get_weather", {}),
-        )
-      ).code,
-    ).toBe("laf:weather_place_unknown");
+    // No reader wired at all is the same fact: nothing is known.
+    const unwired = hub(MIDNIGHT);
+    expect((await weatherOf(unwired, {})).facts.placeSource).toBe("fallback");
+
+    // A run with nobody attributed has no person whose "nothing known" it could be.
     const asksNobody = hub(MIDNIGHT, {
       coordinatesOf: async () => {
         throw new Error("must not be asked without an actor");
@@ -1501,6 +1511,61 @@ describe("where the question is about", () => {
         )
       ).code,
     ).toBe("laf:weather_place_unknown");
+    expect(asksNobody.asked).toEqual([]);
+  });
+
+  test("the fallback is the shipped table's own row for 서울특별시, and has a 중기예보 region", () => {
+    const row = KMA_PLACES.find(FALLBACK_PLACE.name);
+    if (row.kind !== "found") throw new Error("the table has no 서울특별시");
+    expect(row.name).toBe(FALLBACK_PLACE.name);
+    expect(row.cell).toEqual(FALLBACK_PLACE.cell);
+    expect([...row.levels]).toEqual([...FALLBACK_PLACE.levels]);
+    // What "서울" alone finds, too: the 시·도 before any district.
+    const short = KMA_PLACES.find("서울");
+    expect(short.kind === "found" && short.name).toBe(FALLBACK_PLACE.name);
+    expect(
+      KMA_MID_REGIONS.of(FALLBACK_PLACE.cell, FALLBACK_PLACE.levels),
+    ).not.toBeNull();
+  });
+
+  test("what the person said outranks where their device is; words the table cannot read fall to the device, and alone are refused — never Seoul", async () => {
+    /*
+     * It was the device first. `placeText` has always named the words first, so a person holding
+     * both — which a browser's own report now makes ordinary — read "춘천" in the prompt over a
+     * card for wherever the laptop was.
+     */
+    const both = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      placeOf: async () => "강원 춘천시",
+      coordinatesOf: async () => ({ latitude: 37.57, longitude: 126.98 }),
+    });
+    const said = (await weatherOf(both, {})).facts;
+    expect(both.asked[0]?.cell).toBe("73,134");
+    expect(said.placeName).toBe("강원특별자치도 춘천시");
+    expect(said.placeSource).toBe("saved");
+    expect(said.basis).toBe("저장된 위치");
+
+    const unreadable = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      placeOf: async () => "우리 동네",
+      coordinatesOf: async () => ({ latitude: 37.57, longitude: 126.98 }),
+    });
+    expect((await weatherOf(unreadable, {})).facts.placeSource).toBe("device");
+    expect(unreadable.asked[0]?.cell).toBe("60,127");
+
+    const wordsOnly = hub(MIDNIGHT, {
+      places: FIXTURE_PLACES,
+      placeOf: async () => "우리 동네",
+      coordinatesOf: async () => null,
+    });
+    expect(
+      (
+        await refusalOf(() =>
+          wordsOnly.transport.callTool(connection, "get_weather", {}),
+        )
+      ).code,
+    ).toBe("laf:weather_place_not_found");
+    expect(wordsOnly.asked).toEqual([]);
   });
 
   test("saved coordinates abroad are outside, not unknown", async () => {
@@ -1539,6 +1604,7 @@ describe("where the question is about", () => {
     expect(facts.placeName).toBe("서울특별시 종로구");
     expect(facts.coordinates).toBeUndefined();
     expect(facts.basis).toBeUndefined();
+    expect(facts.placeSource).toBe("named");
 
     await made.transport
       .callTool(connection, "get_weather", { place: "해운대" })

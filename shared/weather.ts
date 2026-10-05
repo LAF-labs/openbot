@@ -94,6 +94,26 @@ export type WeatherDay = {
   falls: FallKind | null;
 };
 
+/**
+ * Where the place of an answer came from — a fact, beside the place itself.
+ *
+ *   named     the call said which place (a name or coordinates)
+ *   saved     the person's own place, in the words they or their Bot saved
+ *   device    the person's device, coarse
+ *   fallback  nobody's: nothing is known of where the person is, and the answer is Seoul's
+ *
+ * The owner, 2026-10-05: "기본값 실제 위치 데이터, fallback은 서울, 유저가 특정 위치를 말해주면
+ * 저장." An answer for Seoul that nobody chose has to say so — to the Bot, which tells the person in
+ * a few words, and to the card, which writes it small — or it reads as the person's own weather.
+ */
+export const WEATHER_PLACE_SOURCES = [
+  "named",
+  "saved",
+  "device",
+  "fallback",
+] as const;
+export type WeatherPlaceSource = (typeof WEATHER_PLACE_SOURCES)[number];
+
 /** The answer, as the card draws it. */
 export type WeatherData = {
   /** The place in the server's words, for the model — drawn only where the two facts below are absent (answers from before they were written). */
@@ -102,6 +122,8 @@ export type WeatherData = {
   placeName: string | null;
   /** The coordinates alone, where the place was asked by them: the surface writes them in its own words. */
   coordinates: { latitude: number; longitude: number } | null;
+  /** Where the place came from; null on an answer from before that was written, or one this does not know. */
+  placeSource: WeatherPlaceSource | null;
   /** The temperature measured at the place, where the observation was had. */
   temp: number | null;
   /**
@@ -182,6 +204,9 @@ export function weatherOf(result: string): WeatherData | null {
   const longitude = at ? numberOf(at.longitude) : null;
   const coordinates =
     latitude !== null && longitude !== null ? { latitude, longitude } : null;
+  const placeSource =
+    WEATHER_PLACE_SOURCES.find((source) => source === answer.placeSource) ??
+    null;
   const now = answer.now as Record<string, unknown> | undefined;
   const rows = (Array.isArray(answer.days) ? answer.days : []).flatMap(
     (entry): { isToday: boolean; row: WeatherDay }[] => {
@@ -217,6 +242,7 @@ export function weatherOf(result: string): WeatherData | null {
     place,
     placeName,
     coordinates,
+    placeSource,
     temp,
     today: rows.find(({ isToday }) => isToday)?.row ?? null,
     days,

@@ -60,6 +60,7 @@ import {
   SKY_WORDS,
   TODAY,
   WEATHER_SHOWN,
+  type WeatherPlaceSource,
 } from "../../../shared/weather";
 import { log } from "../log";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
@@ -643,8 +644,8 @@ const PART_NAMES: Record<KmaOperation | "later", string> = {
 function summariseWeather(input: {
   at: Date;
   place: string;
-  /** Whether the place is the person's saved one rather than one the call named. */
-  saved: boolean;
+  /** Where the place came from (`WeatherPlaceSource`): the call, the person's words, their device, or nobody. */
+  source: WeatherPlaceSource;
   /**
    * The place as FACTS beside its words: the name alone, and the coordinates alone. The surface
    * draws these (review, round 9: the card drew "위도 37.57, 경도 126.98" — the server's own Korean —
@@ -683,7 +684,12 @@ function summariseWeather(input: {
     place: input.place,
     ...(input.placeName ? { placeName: input.placeName } : {}),
     ...(input.coordinates ? { coordinates: input.coordinates } : {}),
-    ...(input.saved ? { basis: "저장된 위치" } : {}),
+    // The model's word for "this is the person's own place", as it was before the source was a fact.
+    ...(input.source === "saved" || input.source === "device"
+      ? { basis: "저장된 위치" }
+      : {}),
+    // A FACT, for the card and for the Bot: whose place this is. `fallback` is nobody's — Seoul.
+    placeSource: input.source,
     issued: {
       ...(input.now && now ? { now: stampOf(input.now.base) } : {}),
       ...(input.hours && hours.length > 0
@@ -718,6 +724,28 @@ function summariseWeather(input: {
 }
 
 /* ── the transport ───────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Where the weather is for when nothing is known of where the person is: 서울특별시.
+ *
+ * THE 시·도's OWN ROW of 기상청's table (`서울특별시|||60|127`, `kma-places-table.ts`), not a
+ * district's: somebody of whom nothing is known is "in Seoul" at most, and a card headed 종로구
+ * would claim a district nobody said. The row's cell is 종로구's too (60,127 — where 기상청's Seoul
+ * station stands), and its one level is what `kma-mid-regions.ts` reads as the 중기예보 region 서울
+ * (`CITY_SIDO`), so days five to ten resolve without a district either.
+ *
+ * A CONSTANT, NOT A LOOKUP: a deployment without the table (`places.size === 0`) names nothing and
+ * still has to answer here. `kma-weather-rest.test.ts` holds it to the shipped table's row.
+ */
+export const FALLBACK_PLACE: {
+  name: string;
+  levels: readonly string[];
+  cell: KmaCell;
+} = Object.freeze({
+  name: "서울특별시",
+  levels: Object.freeze(["서울특별시"]),
+  cell: Object.freeze({ nx: 60, ny: 127 }),
+});
 
 /** A latitude or longitude the model sent: a number, a number written as text, or not one. */
 function degreesArg(
@@ -1015,7 +1043,7 @@ export function createKmaWeatherTransport(input: {
     coordinates?: { latitude: number; longitude: number };
     /** The names the place was found by, the 시·도 first — which 시·군 was meant (`kma-mid-regions.ts`). */
     levels?: readonly string[];
-    saved: boolean;
+    source: WeatherPlaceSource;
   }> {
     /*
      * Coordinates are answered with the name of what is there, when the table has one. A device's
@@ -1064,33 +1092,53 @@ export function createKmaWeatherTransport(input: {
       }
       const there = located(latitude, longitude);
       if (!there) refuse("laf:weather_place_outside", "argument");
-      return { ...there, saved: false };
+      return { ...there, source: "named" };
     }
 
     const asked = stringArg(args, "place");
     if (asked) {
       const there = named(asked);
       if (!there) refuse("laf:weather_place_not_found", "argument");
-      return { ...there, saved: false };
+      return { ...there, source: "named" };
     }
 
     /*
-     * Nothing named: the person's own place. Their device's coordinates first, then the words they
-     * or their Bot saved — both are one answer, kept together (`account/whereabouts.ts`). A run
-     * with nobody attributed has no place to read, and is the same refusal as a person with none.
+     * Nothing named: the person's own place, and where there is none, Seoul (the owner,
+     * 2026-10-05: "지역과 날짜는 기본값 실제 위치 데이터, fallback은 서울, 유저가 특정 위치를
+     * 말해주면 저장").
+     *
+     * THE WORDS FIRST, THEN THE DEVICE. It was the other way round, and harmless only by accident:
+     * the Bot's `remember` saved the words and cleared the coordinates with them
+     * (`chat-tools.ts`), so the two were rarely held together. A browser now reports the device's
+     * place by itself (`app/src/lib/whereabouts/device-place.ts`), so they are — and a person who said "이제 수원이야"
+     * and opened a laptop in 강남 would have been answered for 강남, under a prompt that names
+     * 수원 (`placeText` reads the words first, and always did). What a person said outranks where a
+     * device happens to be. Words the table cannot read fall through to the device rather than to
+     * a refusal: the device is still theirs.
+     *
+     * THE FALLBACK IS FOR "NOTHING KNOWN", NEVER FOR "KNOWN AND UNREADABLE". A saved place abroad,
+     * or one the table has no row for, is refused as it was: answering Seoul's weather to somebody
+     * who told us they are in 도쿄 is the wrong town said with confidence. And a run with nobody
+     * attributed is still refused — there is no person whose "nothing known" it could be.
      */
     if (!actorId) refuse("laf:weather_place_unknown", "no actor");
+    const words = (await input.placeOf?.(actorId)) ?? null;
+    const byWords = words ? named(words) : null;
+    if (byWords) return { ...byWords, source: "saved" };
     const coordinates = (await input.coordinatesOf?.(actorId)) ?? null;
     const byDevice = coordinates
       ? located(coordinates.latitude, coordinates.longitude)
       : null;
-    if (byDevice) return { ...byDevice, saved: true };
-    const words = (await input.placeOf?.(actorId)) ?? null;
-    const byWords = words ? named(words) : null;
-    if (byWords) return { ...byWords, saved: true };
-    if (coordinates) refuse("laf:weather_place_outside", "saved");
+    if (byDevice) return { ...byDevice, source: "device" };
     if (words) refuse("laf:weather_place_not_found", "saved");
-    return refuse("laf:weather_place_unknown", "nothing saved");
+    if (coordinates) refuse("laf:weather_place_outside", "saved");
+    return {
+      cell: FALLBACK_PLACE.cell,
+      place: FALLBACK_PLACE.name,
+      placeName: FALLBACK_PLACE.name,
+      levels: FALLBACK_PLACE.levels,
+      source: "fallback",
+    };
   }
 
   async function weather(
@@ -1158,7 +1206,7 @@ export function createKmaWeatherTransport(input: {
       place: where.place,
       placeName: where.placeName,
       coordinates: where.coordinates,
-      saved: where.saved,
+      source: where.source,
       drawnOn,
       now: had(0),
       hours: had(1),
@@ -1191,7 +1239,7 @@ export function createKmaWeatherTransport(input: {
  * This entry, as the deployment-key runtime takes it (`deployment-key-runtime.ts`).
  *
  * The person's place is read through the one reader the runtime hands over, once per call that
- * names no place: their device's coordinates first, then the words they saved. Both come from one
+ * names no place: the words they saved first, then their device's coordinates. Both come from one
  * row, so a place cleared between the two reads is two honest answers and not a torn one.
  */
 export const KMA_WEATHER_SERVICE: DeploymentKeyService = {
