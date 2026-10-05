@@ -1247,12 +1247,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * given twice are each told as the general sentence, with the word drawn nowhere; a consent that
  * finished is told by the vendor's name, and that stays too).
  *
+ * RAISED 2026-10-06 ahead of sixteen doors closing, `server` from 3627 to 3631, by exactly the four
+ * written where a Bot's turn carries out what four tests of those doors held, in
+ * `chat-tools.test.ts`, passing with the doors and without them: what a Bot was typing is not in
+ * the row its refusal leaves; a file write is governed, and its refusal names the file and never
+ * its contents; a card that reads data is drawn when its data may be read too; and it is refused,
+ * with the missing grant named in the row, when it may not.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3627, roots: ["server"] },
+  { name: "server", floor: 3631, roots: ["server"] },
   { name: "app", floor: 2107, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

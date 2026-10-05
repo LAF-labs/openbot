@@ -2795,3 +2795,229 @@ describe("a reply's later browser steps, after one the boundary stopped", () => 
     expect(reached).toEqual(["type:e1", "type:e2", "type:e3", "click:e9"]);
   });
 });
+
+/**
+ * THE BOUNDARY IN FRONT OF WHAT A BOT TYPES AND WRITES.
+ *
+ * Both were held at the HTTP doors a window pressed for the Bot (`/type`, `/files/write`) until
+ * those doors went with the window that called them (2026-10-06). A Bot types and writes through
+ * its turn, so they are held here: the gateway exactly as a deployment builds it, under the tools
+ * the turn carries out, over a computer that records what reached it.
+ */
+describe("a boundary decided in front of what a Bot types and writes", () => {
+  const PAGE = {
+    snapshotId: 1,
+    url: "https://shop.example/order",
+    title: "주문",
+    truncated: false,
+    elements: [{ ref: "e1", role: "textbox", name: "이름" }],
+  };
+
+  async function governedBy(policy: ActionPolicy) {
+    const reached: unknown[] = [];
+    const client = {
+      snapshot: async () => PAGE,
+      type: async (input: unknown) => {
+        reached.push(input);
+        return { action: "type", url: PAGE.url, characters: 1 };
+      },
+      writeFile: async (input: { path: string; contents: string }) => {
+        reached.push(input);
+        return { path: input.path, bytes: input.contents.length };
+      },
+      forBot: () => client,
+    } as unknown as ComputerClient;
+    const rows: AuditEventInput[] = [];
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: { insert: async (event) => void rows.push(event) },
+      policy: () => policy,
+      approvals,
+    });
+    await gateway.snapshot("bot-1");
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+    })(context, [tool("computer_type"), tool("computer_write_file")]);
+    return { toolkit, reached, rows };
+  }
+
+  test("what a Bot was typing is not in the row its refusal leaves", async () => {
+    /*
+     * Typing is the action the shipped policy denies outright — a Bot must not put a value into a
+     * password box — so the row recording that refusal is written about a field somebody was about
+     * to put a credential into, and this is where that matters most.
+     */
+    const TYPED = "hunter2-Zx9-NOT-TYPED";
+    const { toolkit, reached, rows } = await governedBy({
+      deny: ['intent == "type"'],
+      ask: [],
+      allow: ["true"],
+    });
+
+    expect(
+      await toolkit.execute(
+        "computer_type",
+        { ref: "e1", snapshotId: 1, text: TYPED },
+        call(),
+      ),
+    ).toEqual({
+      ok: false,
+      code: "laf:policy_denied",
+      reason: toolResultText("laf:policy_denied"),
+      refused: true,
+      rule: 'intent == "type"',
+    });
+    // Nothing reached the browser, which is the only guarantee a boundary makes.
+    expect(reached).toEqual([]);
+    expect(
+      rows.find((row) => row.eventType === "computer.action_refused")?.payload,
+    ).toMatchObject({
+      action: "computer_type",
+      bot: "bot-1",
+      decision: { allowed: false, source: "deny", rule: 'intent == "type"' },
+    });
+    expect(JSON.stringify(rows)).not.toContain(TYPED);
+  });
+
+  test("writing a file is governed the same way, and names the file it refused", async () => {
+    /*
+     * The workspace is the other thing a Bot can change that nobody is watching. It goes through the
+     * same gateway as a click, and the rule language reaches it through `file.*` — which is only
+     * true if the turn hands the path to the gateway rather than to the client.
+     */
+    const { toolkit, reached, rows } = await governedBy({
+      deny: ['file.name == ".env"'],
+      ask: [],
+      allow: ["true"],
+    });
+
+    expect(
+      await toolkit.execute(
+        "computer_write_file",
+        { path: "secrets/.env", contents: "TOKEN=1" },
+        call(),
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: "laf:policy_denied",
+      refused: true,
+      rule: 'file.name == ".env"',
+    });
+    expect(reached).toEqual([]);
+    expect(
+      rows.find((row) => row.eventType === "computer.action_refused")?.payload,
+    ).toMatchObject({
+      action: "computer_write_file",
+      file: "secrets/.env",
+      decision: { allowed: false, source: "deny" },
+    });
+    // The contents are not in the row either. A file a Bot writes is as likely to hold a credential
+    // as anything it types, and the row's job is to say which file, not what was in it.
+    expect(JSON.stringify(rows)).not.toContain("TOKEN=1");
+
+    // And a file the rule does not name goes through, so the assertion above is about the rule
+    // rather than about a turn that refuses everything.
+    expect(
+      await toolkit.execute(
+        "computer_write_file",
+        { path: "notes.md", contents: "hello" },
+        call("call-2"),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(reached).toEqual([
+      { path: "notes.md", contents: "hello", append: false },
+    ]);
+  });
+});
+
+/**
+ * WHAT ONE VERDICT COVERS, FOR A CARD THAT READS DATA.
+ *
+ * A card is allowed by two grants: the Bot may use it, and it may read the data it draws. Both are
+ * enforced when the data is fetched, which happens while the card renders — after the Bot has been
+ * answered. So the verdict that answers the Bot has to speak for the data as well, or the Bot is
+ * told a card is on screen that is drawn empty.
+ *
+ * Held at a door of their own (`POST /api/components/:name/decision`) until that door went with the
+ * window that asked it (2026-10-06). A card is decided in the Bot's turn, of the same store.
+ */
+describe("a card that reads data", () => {
+  // What each report reads is the catalogue's, not the model's (`ACTIVITY_REPORT_FUNCTIONS`).
+  const GRANTED = "recentRefusals";
+  const WITHHELD = "botActivity";
+
+  async function report() {
+    const rows: Record<string, unknown>[] = [];
+    const components = {
+      listForAgent: async () => [
+        {
+          name: "showActivityReport",
+          title: "Activity",
+          kind: "report",
+          description: "d",
+        },
+      ],
+      decide: async () => ({
+        allowed: true as const,
+        description: "Published.",
+      }),
+      mayCall: async (_name: string, functionName: string) =>
+        functionName === GRANTED,
+    };
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      components,
+      auditStore: {
+        insert: async (event) => {
+          rows.push(event as unknown as Record<string, unknown>);
+        },
+      },
+    })(context, [tool("showActivityReport")]);
+    return { toolkit, rows };
+  }
+
+  test("is drawn when its data may be read too", async () => {
+    const { toolkit, rows } = await report();
+
+    expect(
+      await toolkit.execute(
+        "showActivityReport",
+        { report: "refusals" },
+        call(),
+      ),
+    ).toBe(
+      "The report is on screen for the person, filled with figures read from this deployment. You were not given the figures.",
+    );
+    expect(rows).toEqual([]);
+  });
+
+  test("is refused when it would be drawn empty, and the row says which grant is missing", async () => {
+    const { toolkit, rows } = await report();
+
+    expect(
+      await toolkit.execute(
+        "showActivityReport",
+        { report: "activity" },
+        call(),
+      ),
+    ).toBe(toolResultText("laf:function_not_granted"));
+    // The code says WHICH refusal; the field beside it says which grant. They used to be one
+    // English sentence, which is exactly why the name is a field — whoever says the words cannot
+    // say them without the fact.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "component.function_refused",
+      targetType: "component",
+      targetId: "showActivityReport",
+      payload: {
+        actor: "owner-1",
+        bot: "bot-1",
+        reason: "laf:function_not_granted",
+        function: WITHHELD,
+      },
+    });
+  });
+});
