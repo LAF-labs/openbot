@@ -75,9 +75,14 @@ function watching(options: { driving?: boolean } = {}) {
       stop: async () => undefined,
       letGo: async () => undefined,
     },
-    // Asked which box has focus before a keystroke goes (`person-typing.ts`): none does.
+    // Asked which element has focus before a keystroke goes (`person-typing.ts`): none does.
     page: {
-      mainFrame: () => ({ evaluate: async () => ({ kind: "none" }) }),
+      mainFrame: () => ({
+        evaluateHandle: async () => ({
+          asElement: () => null,
+          dispose: async () => undefined,
+        }),
+      }),
     } as unknown as Page,
   };
   const handler = liveScreen({ sessions } as unknown as Computer);
