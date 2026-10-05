@@ -11,9 +11,9 @@ import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { useSavedFlash } from "@/lib/saved-flash";
+import { clearPlaceOnThisDevice } from "@/lib/whereabouts/device-place";
 import {
   canAskDeviceLocation,
-  clearPlace,
   readDeviceCoordinates,
   savePlace,
 } from "@/lib/whereabouts/queries";
@@ -91,7 +91,8 @@ export function ShopLocation() {
 
   const handleClear = () =>
     run(async () => {
-      await clearPlace(queryClient);
+      // Cleared for good on this device: its coordinates are not read back at the next open.
+      await clearPlaceOnThisDevice(queryClient);
       setPlace("");
       setCoordinates(null);
       flashSaved();

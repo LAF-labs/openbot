@@ -474,15 +474,33 @@ function OwnerFollowUp() {
   const { data: user } = useQuery(currentUserQueryOptions());
   const kindQuestionId = useId();
   const shop = user?.shop;
-  const placeKnown = Boolean(
-    user?.whereabouts?.place?.trim() || user?.whereabouts?.coordinates,
-  );
   // What was answered on this screen, so the step stays drawn — locked — after its answer lands.
   const [kindHere, setKindHere] = useState<BusinessKindId | null>(null);
   const [placeHere, setPlaceHere] = useState<string | null>(null);
   const [placeSkipped, setPlaceSkipped] = useState(false);
-  // Decided at mount, for the reason `NotebookFollowUp` gives: asked once, never re-asked.
-  const [isPlaceAsked] = useState(user?.personaFollowUp !== "owner");
+  /*
+   * WHETHER THE NEIGHBOURHOOD IS ASKED IS DECIDED ONCE, WHEN THIS MOUNTS — both halves of it.
+   *
+   * That it was already asked (`personaFollowUp`), for the reason `NotebookFollowUp` gives: asked
+   * once, never re-asked. And that a place is already known. That half was read on every render,
+   * which did no harm while a place only ever arrived by this field or by 내 정보; it arrives by
+   * itself now — a browser asked where it is answers while this screen is open
+   * (`lib/whereabouts/device-place.ts`), often while the person is still reading the browser's
+   * dialog beside it — and the moment the coordinates landed the question and its field were
+   * taken off the screen, with whatever had been typed in them (review of pull request 91). A
+   * question on the screen stays until the person answers it or skips it.
+   *
+   * A PERSON WHOSE DEVICE HAS ALREADY SAID WHERE IT IS, AND WHO HAS SAID NOTHING, IS NOT ASKED. The
+   * question exists to fill a blank ("the weather and places nearby are looked up there"), and the
+   * owner's default for that blank is the device's real place (2026-10-05). The shop being
+   * somewhere else is theirs to say — to the Bot or on 내 정보 — and what they say outranks the
+   * device from then on.
+   */
+  const [isPlaceAsked] = useState(
+    () =>
+      user?.personaFollowUp !== "owner" &&
+      !(user?.whereabouts?.place?.trim() || user?.whereabouts?.coordinates),
+  );
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -490,9 +508,7 @@ function OwnerFollowUp() {
   const kind = shop.kind;
   const showKind = kind === null || kindHere !== null;
   const showPlace =
-    kind !== null &&
-    !placeSkipped &&
-    (placeHere !== null || (!placeKnown && isPlaceAsked));
+    kind !== null && !placeSkipped && (placeHere !== null || isPlaceAsked);
 
   const handleKind = async (id: string) => {
     const picked = BUSINESS_KINDS.find((known) => known.id === id);

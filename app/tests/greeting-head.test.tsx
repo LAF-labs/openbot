@@ -58,10 +58,16 @@ afterAll(async () => {
 
 const BOT = "bot-1";
 
+type Held = {
+  place: string | null;
+  coordinates: { latitude: number; longitude: number } | null;
+};
+
 const me = (
   persona: string | null,
   shop = { kind: null, places: [] },
   personaFollowUp: string | null = null,
+  held: Held = { place: null, coordinates: null },
 ) =>
   json({
     user: {
@@ -71,12 +77,7 @@ const me = (
       persona,
       personaFollowUp,
       shop,
-      whereabouts: {
-        timeZone: null,
-        locale: null,
-        place: null,
-        coordinates: null,
-      },
+      whereabouts: { timeZone: null, locale: null, ...held },
     },
     deployment: { effort: true, autoReview: true },
   });
@@ -99,6 +100,8 @@ async function composeScreen(options: {
   shop?: { kind: string | null; places: string[] };
   followedUp?: string | null;
   overview?: unknown;
+  /** The place the account holds. Absent is nothing known. */
+  held?: Held;
 }) {
   let persona = options.persona;
   let followedUp = options.followedUp ?? null;
@@ -107,7 +110,12 @@ async function composeScreen(options: {
     path: `/channel/new?agent=${BOT}`,
     api: ({ pathname, method, body }) => {
       if (pathname === "/api/me") {
-        return me(persona, shop as { kind: null; places: never[] }, followedUp);
+        return me(
+          persona,
+          shop as { kind: null; places: never[] },
+          followedUp,
+          options.held,
+        );
       }
       if (pathname === "/api/agents") {
         return json({ agents: [agentFixture({ id: BOT, name: "초롱" })] });
@@ -322,6 +330,73 @@ describe("the empty conversation", () => {
       { kind: "food", places: ["gmail"] },
     ]);
     expect(beyondTheApp(view.requests)).toEqual([]);
+  });
+});
+
+describe("사장님's neighbourhood question, and a place that arrives by itself (2026-10-05)", () => {
+  const placeField = (view: { host: HTMLElement }) =>
+    view.host.querySelector<HTMLInputElement>(
+      '[data-greeting] input[placeholder="e.g. Mapo-gu, Seoul"]',
+    );
+  const SHOP = { kind: "food", places: [] };
+
+  test("the field stays under the person when their device answers: a question on the screen is theirs to answer or skip", async () => {
+    /*
+     * A browser asked where it is answers while this screen is open (`device-place.ts`). "Place
+     * known" was read on every render, so the moment the coordinates landed the question and its
+     * field were taken away — with whatever had been typed in them (review of pull request 91).
+     */
+    const view = await composeScreen({ persona: "owner", shop: SHOP });
+    await view.waitFor(() => placeField(view) !== null, "the neighbourhood");
+    const field = placeField(view);
+    if (!field) throw new Error("no neighbourhood field");
+    await view.type(field, "서울 마");
+
+    // The device's answer lands on the account, as `saveDeviceCoordinates` puts it there.
+    const { act } = await import("react");
+    const { authKeys } = await import("../src/lib/auth/queries");
+    await act(async () => {
+      view.queryClient.setQueryData(
+        authKeys.currentUser(),
+        (current: unknown) =>
+          current && typeof current === "object"
+            ? {
+                ...current,
+                whereabouts: {
+                  timeZone: null,
+                  locale: null,
+                  place: null,
+                  coordinates: { latitude: 37.5, longitude: 127.03 },
+                },
+              }
+            : current,
+      );
+    });
+    await view.settle(40);
+
+    // The same field, with what was typed still in it.
+    expect(placeField(view)).toBe(field);
+    expect(placeField(view)?.value).toBe("서울 마");
+  });
+
+  test("somebody whose device already said where it is, and who has said nothing, is not asked: the question fills a blank", async () => {
+    const located = await composeScreen({
+      persona: "owner",
+      shop: SHOP,
+      held: { place: null, coordinates: { latitude: 37.5, longitude: 127.03 } },
+    });
+    await located.settle(60);
+    expect(located.host.textContent).not.toContain("Which neighbourhood");
+    await located.unmount();
+
+    // And somebody who has said where they are is not asked either, as before.
+    const said = await composeScreen({
+      persona: "owner",
+      shop: SHOP,
+      held: { place: "서울 마포구", coordinates: null },
+    });
+    await said.settle(60);
+    expect(said.host.textContent).not.toContain("Which neighbourhood");
   });
 });
 
