@@ -34,8 +34,8 @@ import type { FootShown } from "./support/sidebar-foot-render";
  *
  * Popups — the context menu, the account menu, every tooltip — render nothing here (see
  * `confirm-dialog.test.tsx`), so nothing mounted below asserts on their contents. What the foot's
- * two buttons open is read from a process of its own (`support/sidebar-foot-render.tsx`), where the
- * menus are the real ones.
+ * button opens is read from a process of its own (`support/sidebar-foot-render.tsx`), where the
+ * list is the real one.
  */
 
 /**
@@ -498,7 +498,7 @@ describe("the roster's controls", () => {
     // with nothing on screen saying which one it was on.
     const view = await roster();
     const links = [...view.rows(), ...view.footerLinks()];
-    // The Bots' rows and the foot's two buttons.
+    // The Bots' rows and the foot's button.
     expect(links.length).toBeGreaterThanOrEqual(4);
     const bare = links
       .filter((link) =>
@@ -766,11 +766,11 @@ describe("on a phone there is no sheet", () => {
 });
 
 /**
- * WHAT THE FOOT'S TWO BUTTONS OPEN, read off menus that really opened.
+ * WHAT THE FOOT'S BUTTON OPENS, read off a list that really opened.
  *
- * In the full column neither button has a word beside it, so the menu is the whole of what it says
- * — and a popup renders nothing in this process (see the top of the file). The column is mounted
- * in a process of its own, in Korean, and both buttons are pressed there.
+ * The button has no word beside it, so the list is the whole of what it says — and a popup renders
+ * nothing in this process (see the top of the file). The column is mounted in a process of its
+ * own, in Korean, and the button is pressed there.
  */
 let footRendering: Promise<FootShown> | undefined;
 

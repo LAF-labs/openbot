@@ -122,7 +122,8 @@ import { cn } from "@/lib/utils";
  * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of faces and icons
  * with their names in tooltips, which the titlebar's toggle puts back to full for as long as
  * somebody wants — measured at an 800px window, a fixed 280 was 35% of everything the person could
- * see. The rail is drawn as it was before 2026-10-04: it had no words to lose.
+ * see. The rail had no words to lose on 2026-10-04; its foot is the one button too, the picture
+ * alone (2026-10-06).
  * And below `md`, NO COLUMN: at 375px the rail was 15% of the screen and five unlabelled icons
  * (UI/UX audit 0.5.3, item 20). There the phone's bottom bar is the way around — 대화 · 소식 · 메뉴
  * (`phone-tab-bar.tsx`) — and the sheet this column used to slide in as, from a menu button in each
@@ -686,6 +687,7 @@ export function BotSidebar() {
    * as rows the footer began at 420 and cut what stood under those rows, which ran to 426; folded
    * into one row it began at 534. What stood there (오늘) left the column on 2026-10-04 and the
    * places stayed folded: four rows of words back in sight is what the owner asked to have less of.
+   * The price is a second press for 수첩 and 루틴.
    *
    * THE ORDER. 모두 멈추기 first, because it is the one item here somebody reaches for in a hurry:
    * a conversation and a routine can both be running, and Stop lives inside one conversation at a
@@ -704,7 +706,7 @@ export function BotSidebar() {
                 : "h-10 w-full justify-between rounded-lg px-1 font-normal hover:bg-accent"
             }
             data-sidebar-menu
-            title={isRail ? undefined : menuName}
+            title={menuName}
             variant="ghost"
           />
         }
@@ -751,7 +753,7 @@ export function BotSidebar() {
             {t(name)}
           </DropdownMenuItem>
         ))}
-        {links.length > 0 ? <DropdownMenuSeparator /> : null}
+        <DropdownMenuSeparator />
         {currentUser?.role === "admin" ? (
           <DropdownMenuItem
             className="gap-2 px-2 py-1.5"
