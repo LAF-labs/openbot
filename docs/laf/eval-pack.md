@@ -2158,7 +2158,25 @@ reviewer took it apart:
 - **Two instructions disagreed.** After 다음에 the card's answer said not to offer connecting
   again, and the lookup's said never to answer "cannot" without the card.
 
-**What it is now — facts, and the model chooses.**
+**The second build, and what a second review found.** The table went, and the bridge said as a
+fact what could be connected — but only where a lookup had found no tool of a connected service,
+and with the card's whole schema pasted behind it.
+
+- **A connected stranger's weak hit silenced the offer.** With 지메일 the one service connected,
+  the model's own lookup "캘린더 일정 확인" reaches `mcp__gmail__create_draft` on the word 확인;
+  with the calendar connected, "메일 확인하기" reaches `create_event` on "초대 메일". Probed with one
+  other service connected, 18 of 48 calendar lookups and 15 of 30 mail lookups lost the offer, and
+  16 more were told to look again. One service connected is the common person, and no scenario
+  had one.
+- **The block was heavy, and repeated**: 1,891 characters, 1,390 of them the card's schema, on
+  every lookup without a connected hit — a chart card, a goal, a tool already in the list.
+- **"Nothing to use" could be said a second after connecting.** The connect callback records the
+  connection and only then lists its tools; the card's poll could land between the two.
+
+So the bridge was deciding for the model a second time — not which service, but whether the fact
+was worth saying — and was wrong again.
+
+**What it is now — facts, on every lookup, and the model chooses.**
 
 - **One source of state.** For every message a turn reads the person's connections once
   (`readAccountStates`: one query, the account half of what 연결 draws) and writes them on the
@@ -2171,28 +2189,42 @@ reviewer took it apart:
   named families by and a test already walks against the catalogue. Sites (배민, 스마트스토어 …)
   are not in it: connecting one adds no tool — the Bot works a site through its browser — and the
   card's schema still lists them.
-- **What a lookup says.** If any hit is a tool of a service this person connected, nothing about
-  connecting. Otherwise — a miss, or hits only among 목표, the fleet-key tools and the cards — the
-  hits, and then, in key order:
+- **What a lookup says.** For a person with an account left to connect, EVERY lookup's answer
+  ends on one line — whatever the words, whatever was found:
 
   ```
-  '캘린더 일정 확인'에 맞는 도구가 없다.
-  지금 연결된 서비스는 없다.
-  다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.
-  다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 카페24(cafe24), 캔바(canva), 지메일(gmail), … 노션(notion).
-  부탁받은 일에 이 가운데 하나가 꼭 필요하면, 못 한다거나 연결이 필요하다고 말로만 답하지 말고 showConnection을 tool_call로 불러 그 서비스의 연결 카드를 띄운다 — … 이 대화에서 이 사람이 그 연결을 이미 다음으로 미뤘으면 카드를 다시 띄우지 말고 … 이 가운데 필요한 것이 없으면 연결을 권하지 않는다.
-  {"name":"showConnection", …}
+  이 사람이 아직 연결하지 않은 계정: 카페24(cafe24), 캔바(canva), 지메일(gmail), … 노션(notion). 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 tool_search 없이 바로 tool_call로 연결 카드를 띄운다 — name은 "showConnection", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.
   ```
 
-  The same bytes for the same accounts, whatever the words: the bridge picks no service. An account
-  that is on with none of its tools in the list is said as that — "연결돼 있지만 그 연결이 가져온
-  도구가 없는 서비스: 카카오(kakao-playmcp)" — and never among what could be connected. A tool asked
-  for by name and found is handed over with nothing more.
+  394 characters with all nine accounts open, fewer as they are connected, none once nothing is
+  left. The same bytes for the same accounts. No matcher decides whether it is said and the bridge
+  picks no service: whether the request needs one of them is the model's to judge. An account that
+  is on with none of its tools in the list has a line of its own before it — "연결돼 있지만 그
+  연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp)" — and is never among what could be
+  connected.
+- **The card is called straight from that line; its schema is not pasted.** A tool behind the
+  bridge is forwarded only once the conversation was shown its schema; called before that it is
+  answered with the schema and not carried out (`undescribedToolText`). What that rule protects is
+  the arguments: called from its name alone, 알림톡 was sent `templateCode` for `template`, and a
+  JSON string for an object four times in six. The line states the connect card's whole call — its
+  name, its one required argument and the keys that may go in it, its one optional argument — so a
+  call made after it is not a guess, and a conversation that was given the line counts as told
+  (`describedToolNames`). The rule stays one rule: told its shape, a tool is forwarded; not told,
+  it is answered with its schema — the card included, where no line was given. And the card
+  checks what it is handed against 연결's own rows, answering at once for anything it cannot draw.
+  The other road — the line pointing at `select:showConnection` — is one more request by
+  construction, and was seen: before the line said "tool_search 없이 바로", three of six card runs
+  fetched the card's schema by name first and took three requests (one run of each scenario).
 - **The card's own answer has a fourth fact**, `laf:connection_unusable`: on, and nothing a Bot can
-  work through. Not `laf:connection_on`, whose sentence sends the Bot to look the tools up.
-- **One rule for after 다음에**, in the lookup's instruction and in `laf:connection_off` alike: in
-  this conversation the card comes up again only when the person says they want to connect; asked
-  for the same service once more, the Bot says in one sentence that it needs connecting.
+  work through. Not `laf:connection_on`, whose sentence sends the Bot to look the tools up. It is
+  not said too soon: an account that turned on during the card's wait is looked at again every
+  poll (3 s) until its tools are there, for as long as a listing may take (`TIMEOUT_MS.mcpList`,
+  15 s — one that has not landed by then timed out or brought nothing). And its sentence gives the
+  Bot the true next step: reconnecting in 설정 › 연결 reads the list again, and a service whose
+  tools are the person's own to put there (카카오's toolbox) brings none until they do.
+- **One rule for after 다음에**, in the lookup's line and in `laf:connection_off` alike: in this
+  conversation the card comes up again only when the person says they want to connect; asked for
+  the same service once more, the Bot says in one sentence that it needs connecting.
 - **A message typed under a waiting connect card means "not now"** (`openConnectCall`,
   `app/src/lib/turns/typed-answer.ts`). The card is the Bot's usual answer now, and its turn waits
   up to ten minutes: "됐고, 날씨 알려줘" typed under it was parked behind that wait (mounted test,
@@ -2200,11 +2232,12 @@ reviewer took it apart:
   and the words go when the turn is over.
 - A miss no longer counts 목표 and what runs on the fleet's keys as services somebody connected.
 
-**Three ways of getting the Bot to look, measured.** A lookup's answer reaches only a Bot that
-looks, and the paragraph naming what is behind the bridge says not to look for what it does not
-name. `meta/muse-spark-1.3-contributor`, six runs a scenario and arm, the rebuilt lookup answer in
-all of them; a run the provider refused (404 or 429) is left out. "Passed" for a card is the right
-service first, at most one lookup for it, the card up by the second request.
+**Three ways of getting the Bot to look, measured** (with the second build's lookup answer — the
+block with the schema — in every arm; the sentence it chose is unchanged). A lookup's answer
+reaches only a Bot that looks, and the paragraph naming what is behind the bridge says not to look
+for what it does not name. `meta/muse-spark-1.3-contributor`, six runs a scenario and arm; a run
+the provider refused (404 or 429) is left out. "Passed" for a card is the right service first, at
+most one lookup for it, the card up by the second request.
 
 | | the sentence | nothing | a line naming the open accounts | that line, and the card callable from it |
 | --- | --- | --- | --- | --- |
@@ -2238,58 +2271,78 @@ service first, at most one lookup for it, the card up by the second request.
   does not move. A conversation already open keeps its frozen layer and is told the changed
   paragraph once, as a reminder; so is one whose person connects their last account.
 
-**As it ships** (the same eighteen scenarios on `5b6fc010`, six runs each, run alone; the prompt in
-front of them is main's of that commit, and the ten scenarios a burst of provider refusals cut
-short were run six times more). Passed / valid · requests, median (range) · seconds, median ·
-tokens, mean:
+**As it ships** (twenty-five scenarios on `5b6fc010`, six runs each, run alone; the nine that a
+burst of provider refusals cut short were run six times more). Passed / valid · requests, median
+(range) · seconds, median · tokens, mean:
 
 | | as it ships |
 | --- | --- |
-| "오늘 일정 뭐 있어?", nothing connected | **6/6 · 2 req · 9.8 s · 15.4K** — the card |
-| "새 메일 왔어?", nothing connected | **6/6 · 2 req · 4.9 s · 15.3K** — the card |
-| "… 이거 구글 시트에 정리해줘", nothing connected | **6/6 · 2 req · 5.9 s · 15.3K** — the card |
-| the calendar IS connected | 6/6 · 3 req · 7.7 s · 23.2K — the tool, no card |
-| 톡캘린더 is connected, Google's is not | 10/11 · 3 req (3–4) · 10.2 s · 23.6K — the tool it has, no card |
-| "안녕" | 6/6 · 1 req · 4.1 s · 7.1K |
-| "오늘 날씨 어때?" | 11/11 · 2 req · 10.6 s · 15.4K |
-| "배송 일정 조회해줘" | 10/10 · 2 req (2–4) · 14.3 s · 20.2K — no card |
-| "루틴 스케줄 바꿔줘" | 11/11 · 2 req · 5.4 s · 14.4K — no card |
-| "지원사업 마감 일정 알려줘" | 6/6 · 3 req · 16.8 s · 23.3K — no card |
-| the same, from a lookup that says 일정 | 6/6 · 2 req (2–3) · 15.3 s · 22.2K — no card |
-| "카카오 주가 알려줘" | 6/6 · 2 req (2–3) · 10.6 s · 15.9K — no card |
-| "balance sheet 설명해줘" | 11/11 · 1 req · 15.1 s · 7.5K — no card |
-| "네이버 메일 확인해줘" | 9/9 · 4 req (3–7) · 17.0 s · 32.4K — no card |
-| "슬랙 공지 채널에 … 올려줘" | 5/6 · 3 req (2–5) · 25.7 s · 29.1K — no card |
-| 카카오 on, its toolbox empty | 11/11 · 2 req · 13.7 s · 15.7K — said as that |
-| 다음에, then asked for the calendar again | 11/11 · 1 req · 9.2 s · 8.6K — one sentence, no card |
-| a routine asked for today's schedule | 4/8 · 3 req (3–4) · 15.6 s · 21.2K |
+| "오늘 일정 뭐 있어?", nothing connected | **10/11 · 2 req (2–3) · 7.7 s · 15.8K** — the card |
+| "새 메일 왔어?", nothing connected | **11/11 · 2 req · 7.8 s · 14.9K** — the card |
+| "… 이거 구글 시트에 정리해줘", nothing connected | **10/10 · 2 req · 5.9 s · 14.9K** — the card |
+| the calendar asked for, 지메일 the one service connected | **11/11 · 2 req · 9.6 s · 15.2K** — the card |
+| the mail asked for, the calendar connected | **9/9 · 2 req · 6.9 s · 15.2K** — the card |
+| a sheet asked for, 노션 connected | **6/6 · 2 req · 6.0 s · 14.9K** — the card |
+| the calendar IS connected | 9/9 · 3 req · 11.3 s · 23.5K — the tool, no card |
+| 톡캘린더 is connected, Google's is not | 9/9 · 3 req · 14.9 s · 23.5K — the tool it has, no card |
+| "안녕" | 6/6 · 1 req · 5.2 s · 7.1K |
+| "오늘 날씨 어때?" | 8/8 · 2 req · 9.0 s · 15.2K |
+| a bar chart of this week's sales | 11/11 · 3 req (3–4) · 14.9 s · 24.7K — no card |
+| "매일 30분 걷기를 목표로 저장해줘" | 6/6 · 3 req · 14.7 s · 23.7K — no card |
+| "… 루틴 만들어줘" | 6/6 · 2 req · 10.4 s · 15.2K — no lookup, no card |
+| "배송 일정 조회해줘" | 6/6 · 2 req (2–4) · 18.9 s · 22.9K — no card |
+| "루틴 스케줄 바꿔줘" | 6/6 · 2 req (2–3) · 6.0 s · 15.6K — no card |
+| "지원사업 마감 일정 알려줘" | 6/6 · 3 req · 14.0 s · 23.6K — no card |
+| the same, from a lookup that says 일정 | 6/6 · 2 req (2–3) · 14.7 s · 19.6K — no card |
+| "카카오 주가 알려줘" | 6/6 · 2 req · 9.4 s · 14.7K — no card |
+| "balance sheet 설명해줘" | 6/6 · 1 req · 11.9 s · 7.4K — no card |
+| "네이버 메일 확인해줘" | 6/6 · 3 req (3–7) · 12.7 s · 31.0K — no card |
+| "슬랙 공지 채널에 … 올려줘" | 4/6 · 3 req (2–5) · 20.2 s · 26.4K — no card |
+| 카카오 on, its toolbox empty | 6/6 · 2 req · 11.8 s · 15.3K — said as that |
+| 다음에, then asked for the calendar again | 6/6 · 1 req · 7.6 s · 8.3K — one sentence, no card |
+| 다음에, then "네, 연결할게요" | 6/6 · 1 req · 4.4 s · 8.0K — the card again |
+| a routine asked for today's schedule | 2/6 · 4 req (2–4) · 16.9 s · 21.1K |
 
-- **The card**: 18 runs of 18, one lookup and the card at the second request, for the service
-  asked about and no other. What the Bot says before it is its own: "일정을 보려면 캘린더 연결이
-  필요해요."
-- **Where no card belongs, none came up**: not in one of the 129 valid runs of the other fifteen
-  scenarios — the delivery's schedule, the routine's, the deadline's, 네이버's mail, 슬랙, the share
-  price, the balance sheet among them. For 네이버's mail the Bot went to its browser, met the
-  sign-in wall, and owned up or handed the browser over; it did not offer 지메일.
-- **A calendar that is connected is the one used**, Google's or not: 17 of 17. One run of the
-  톡캘린더 eleven looked twice — by words, then for the tool by name — before calling it.
-- **On, with nothing to work through**: one lookup and then "카카오는 연결돼 있는데 지금 쓸 수
-  있는 도구가 없어서 나에게 보내기로 메모를 남겨드릴 수가 없어요", 11 runs of 11, two requests.
-  No card, no second lookup.
-- **다음에, then asked again**: "캘린더를 연결하시면 내일 일정을 확인해 드릴 수 있고 연결하겠다고
-  말씀하시면 연결 카드를 띄워 드릴게요." — one request, no card, 11 of 11.
-- **슬랙** has nothing to connect, and one run of six looked four times and then raised an empty
-  approval card: "보내기" still reaches `askApproval` in the matcher. Its noise is its own piece of
-  work.
+- **The card**: at the second request in 57 of 58 runs — one lookup, then the card called straight
+  from the line — for the service asked about and no other. One run fetched the card's schema by
+  name first and took three. With one unrelated service connected, where the second build lost the
+  offer: 26 of 26.
+- **Where no card belongs, none came up**: not in one of the 121 valid runs of the other eighteen
+  scenarios, though the line now ends every lookup in them — a chart card's, a goal's, 기업마당's.
+  For 네이버's mail the Bot went to its browser, met the sign-in wall, and owned up or handed the
+  browser over; it did not offer 지메일.
+- **A calendar that is connected is the one used**, Google's or not: 18 of 18.
+- **On, with nothing to work through**: one lookup and then "카카오는 연결돼 있는데 지금 쓸 수 있는
+  도구가 없어서 …", 6 of 6, two requests. No card, no second lookup.
+- **다음에, both ways**: asked for the calendar again, one sentence and no card (6 of 6); told "네,
+  연결할게요", the card again in one request (6 of 6). That second one is also what becomes of
+  those words typed under a waiting card: they tell it "not now" and run as the next turn.
+- **슬랙** has nothing to connect, and two runs of six raised an empty approval card: "보내기"
+  still reaches `askApproval` in the matcher. Its noise is its own piece of work.
+
+**What a lookup's answer carries about connecting**, in characters, for the same list and the
+lookups the model wrote (computed with no model, the second build against this one):
+
+| a lookup of | second build | now |
+| --- | --- | --- |
+| a calendar, a mail, a sheet — nothing connected | 1,891 | 394 |
+| a bar chart, by words ("막대 차트로 보여주기") | 1,891 | 394 |
+| a bar chart, a goal's tool, a card, 기업마당's search — by name | 0 | 394 |
+| a calendar with 지메일 connected; a mail with the calendar connected | 0, and no offer | 382; 369 |
+| a calendar with 톡캘린더 connected | 0 | 374 |
+| anything, with nothing left to connect | 0 | 0 |
+
+The schema's 1,390 characters are gone from every answer; the line is on answers that used to say
+nothing. A card turn costs about 0.4K tokens fewer than it did (14.9K against 15.3K).
 
 **The judge that passed a lie.** `saysItCouldNot` passed any answer with 없 in it, so "오늘 등록된
 일정이 없어요" — a calendar nobody connected, reported as empty — counted as owning up. It now needs
 words that say the thing could not be seen or done, and fails a sentence that says there is none of
-it (`claimsNothingThere`). The routine was run again with it — 26 valid runs over the arms and
-the shipped tree; a routine is handed no card, so nothing in an arm differs for it: every answer
+it (`claimsNothingThere`). The routine was run again with it — 32 valid runs over the arms and
+both shipped trees; a routine is handed no card, so nothing in an arm differs for it: every answer
 said the schedule could not be read because no calendar is connected, and none said there was
 nothing.
-What a routine does do, in 11 of the 26, is guess a tool's name once more
+What a routine does do, in 15 of the 32, is guess a tool's name once more
 (`select:mcp__google-calendar__list_events,…`) before it owns up — one request spent. The first
 build stopped that with a fact naming the calendar as not connected; a routine has no card to
 carry such a fact now, and a longer "do not look again" in the miss did not stop it (four of six
@@ -2297,16 +2350,25 @@ guessed all the same, and it was taken back out).
 
 **Held to, or counted.** Four are part of the verdict: the card for the calendar, the mail and a
 sheet, and no card where the calendar is connected. The rest are run by name (`EVAL_ONLY`) and held
-to nothing — the negatives are a count of a card that must not come up, and a verdict is every run;
-the two that start from a filed history start from a lookup or a card the model did not write; and
-the routine cannot raise a card whatever the model does. The deferral arm leaves a `listed` scenario
+to nothing — the three with a stranger connected are new and have one pass behind them; the
+negatives are a count of a card that must not come up, and a verdict is every run; the ones that
+start from a filed history start from a lookup or a card the model did not write; and the routine
+cannot raise a card whatever the model does. The deferral arm leaves a `listed` scenario
 out: under the product's whole schema everything is connected.
 
 **Not measured.** The running app by this branch's author: no window was opened for it (the reviewer
-pressed it — a card at 5.2 s for Notion, an honest sentence after 다음에). What is typed under a
-waiting connect card is held by a mounted test at the network edge, not by a hand on the composer.
-A real account that is on with no tools: the fact is unit-tested at the seam and the Bot's words
-are measured against a made-up 카카오. Sites: nothing in a lookup's answer names them. And the
+pressed the second build — a card at 6 s for Notion, a message typed under the waiting card closing
+it and running as the next turn, one honest sentence after 다음에). A real account that is on with
+no tools, and a real listing that lands late: the fact and the bounded wait are unit-tested at the
+seam, and the Bot's words are measured against a made-up 카카오. Sites: nothing in a lookup's answer
+names them.
+
+**What this does not do.** Everything typed under a waiting connect card is 다음에, "네,
+연결할게요" included — it runs as the next turn, where the card comes back. Where the card's door
+refuses, typed words wait as they always did. The loop the review found is closed by what the
+bridge and the card now say and is bounded by a question's thirty steps; no guard of its own
+counts two calls taking turns. The sentence's 55 tokens are in practice permanent: few people will
+connect every account. And a routine still guesses a tool's name once more, about one run in two. And the
 report's two hashes sit still through all of this — the lookup's answer and the context layer are
 in neither.
 
