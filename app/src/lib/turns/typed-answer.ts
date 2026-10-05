@@ -43,9 +43,10 @@ function savesByPress(argumentsJson: string): boolean {
  * The question the turn is stopped on that words can answer: the newest choice card it waits on.
  *
  * Not a yes-or-no card (`askApproval`), which has its own place for a reason and must never take
- * words for a yes; not a connect card; and not the choice that saves who the person is, where what
- * is saved is one of four presses (`saves: "persona"`). Typed under those, words wait for the turn
- * to end, as they always did.
+ * words for a yes; not a connect card, whose answer is a switch — typing under that one means "not
+ * now" ({@link openConnectCall}); and not the choice that saves who the person is, where what is
+ * saved is one of four presses (`saves: "persona"`). Typed under those, words wait for the turn to
+ * end, as they always did.
  *
  * AN ID IS DECIDED BY ITS NEWEST CALL, AND ONCE. The server keeps what waits by the call's id
  * alone, so what waits under an id is the newest call that carries it. A provider's ids are its
@@ -73,6 +74,43 @@ export function openChoiceCall(
   }
   return null;
 }
+
+/** 연결's switches, put in the conversation. Its tool is in `components/gallery/connect.tsx`. */
+const CONNECT = "showConnection";
+
+/**
+ * The connect card the turn is stopped on, where it is: the newest call it waits on, if that call
+ * is one. Decided by the newest call under each id, as {@link openChoiceCall} is.
+ *
+ * WHAT IS TYPED UNDER IT MEANS "NOT NOW". The card is the Bot's usual answer to a request that
+ * needs an account nobody connected, and its turn waits until a switch is on, 다음에 is pressed or
+ * ten minutes pass. Somebody who ignored it and typed "됐고, 날씨 알려줘" had those words parked
+ * behind that wait (mounted, 2026-10-05: nothing reached the card's door). So the card is told
+ * what 다음에 tells it ({@link NOT_NOW}), and the words go when the turn is over — which is then.
+ * They are never the card's answer: a switch is not answered in words.
+ */
+export function openConnectCall(
+  messages: readonly Message[],
+  waiting: readonly string[],
+): string | null {
+  if (waiting.length === 0) return null;
+  const undecided = new Set(waiting);
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "assistant") continue;
+    for (const call of [...(message.toolCalls ?? [])].reverse()) {
+      if (!undecided.delete(call.id)) continue;
+      if (call.function.name === CONNECT) return call.id;
+    }
+  }
+  return null;
+}
+
+/**
+ * What a connect card is told when the person typed instead of pressing: not connecting now. The
+ * server reads 연결 for itself once anything answers (`server/src/turns/chat-tools.ts`), so this
+ * ends the wait and decides nothing — a switch turned on in the same second is still on.
+ */
+export const NOT_NOW = Object.freeze({ code: "laf:connection_off" });
 
 /**
  * Where an offer of typed words to their card stands, on the screen that made it:
