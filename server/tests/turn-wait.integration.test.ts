@@ -244,6 +244,21 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
         } as unknown as FirstMoveMeasure,
       }),
     });
+    // No list of kinds at all, and a time that is no number: nothing there to read.
+    ids.shapeless = await open(43);
+    await ledger.settle(ids.shapeless, {
+      status: "done",
+      measure: measure({
+        firstWordMs: Number.NaN,
+        firstMove: {
+          asked: null,
+          verdict: "moved",
+          kind: "weather",
+          decisionMs: Number.NaN,
+          callMs: 300,
+        } as unknown as FirstMoveMeasure,
+      }),
+    });
 
     const rows = await database.execute<{ value: string | null }>(
       turnsStatement({ since: at(-60), to: at(12 * 60), timeZone: ZONE }),
@@ -326,7 +341,7 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
       firstMoveCallMs: 300,
     });
     // No kind of the list's was asked about, or the verdict is not one a measure keeps: nothing.
-    for (const id of [ids.unlisted, ids.unkept]) {
+    for (const id of [ids.unlisted, ids.unkept, ids.shapeless]) {
       expect(await row(id)).toMatchObject({
         firstMoveAsked: null,
         firstMoveVerdict: null,
@@ -335,6 +350,16 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
         firstMoveCallMs: null,
       });
     }
+    /*
+     * And a measure that is no measure never costs the run its ending: these columns are written
+     * in the statement that says the turn is over, and a turn left `running` over a number nobody
+     * could read is a Bot the roster calls busy.
+     */
+    expect(await row(ids.shapeless)).toMatchObject({
+      status: "done",
+      ending: "finished",
+      firstWordMs: null,
+    });
     // The lists themselves: what a column can say is these words and no others.
     expect([...FIRST_MOVE_ENDINGS]).toEqual([
       "moved",
@@ -355,8 +380,8 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
       [83, 1],
       [110, 1],
     ]);
-    // The ten, the one that said nothing, the unmeasured one, the one at work and the three planted.
-    expect(section?.chatTurns).toBe(16);
+    // The ten, the one that said nothing, the unmeasured one, the one at work and the four planted.
+    expect(section?.chatTurns).toBe(17);
   });
 
   test("the section counts, per kind of first move, the turns asked about it and the turns it moved", () => {
