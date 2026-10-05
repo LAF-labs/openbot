@@ -1105,6 +1105,7 @@ const aMove: FirstMove = {
   kind: "weather",
   tool: WEATHER,
   args: {},
+  asked: ["weather"],
   decided: { forecast: 0.93, ownPlace: 0.88 },
 };
 

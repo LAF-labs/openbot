@@ -31,3 +31,20 @@ export type FirstMoveMark = {
 export function isFirstMove(message: object): boolean {
   return (message as FirstMoveMark).lafFirstMove === true;
 }
+
+/**
+ * The moves there are, by kind. A closed list, kept here rather than beside the decision
+ * (`server/src/turns/first-move.ts`) because the configuration reads it to check `FIRST_MOVE`, and
+ * the configuration must not load the turn engine's half of the server to learn three words.
+ *
+ * ONE RULE ADMITS A KIND (the owner, 2026-10-05): its call takes no argument the person's message
+ * would have to supply. The weather for the saved place, today's calendar, the inbox's unread mail.
+ * A search, a named place, a sender — anything read out of the message — is the Bot's model's.
+ */
+export const FIRST_MOVE_KINDS = ["weather", "calendar", "mail"] as const;
+export type FirstMoveKind = (typeof FIRST_MOVE_KINDS)[number];
+
+/** Whether a word names a kind of first move. */
+export function isFirstMoveKind(word: string): word is FirstMoveKind {
+  return (FIRST_MOVE_KINDS as readonly string[]).includes(word);
+}

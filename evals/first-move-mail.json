@@ -1,0 +1,1706 @@
+[
+  {
+    "text": "내가 보낸 메일 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "sent"
+  },
+  {
+    "text": "9월에 받은 세금 관련 메일 다 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "month and topic"
+  },
+  {
+    "text": "근처 문 연 약국",
+    "mail": false,
+    "unread": false,
+    "note": "local search"
+  },
+  {
+    "text": "새 메일 왔는겨?",
+    "mail": true,
+    "unread": true,
+    "note": "dialect"
+  },
+  {
+    "text": "멜 온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "abbreviation"
+  },
+  {
+    "text": "문자 온 거 읽어줘",
+    "mail": false,
+    "unread": true,
+    "note": "text messages, asks what arrived"
+  },
+  {
+    "text": "휴지통에 있는 메일 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "trash"
+  },
+  {
+    "text": "내일 아침 9시에 메일 보내지게 예약해줘",
+    "mail": false,
+    "unread": false,
+    "note": "scheduled send"
+  },
+  {
+    "text": "새 메일 뭐뭐 왔어",
+    "mail": true,
+    "unread": true,
+    "note": "banmal"
+  },
+  {
+    "text": "새 문자 왔어?",
+    "mail": false,
+    "unread": true,
+    "note": "new text message"
+  },
+  {
+    "text": "이거 일본어로 번역해줘: 예약 확인 부탁드립니다",
+    "mail": false,
+    "unread": false,
+    "note": "translation"
+  },
+  {
+    "text": "안 읽은 메일 전부 삭제해줘",
+    "mail": false,
+    "unread": true,
+    "note": "delete unread"
+  },
+  {
+    "text": "오늘 스케줄 브리핑해줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "Do I have unread mail?",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "아까 읽은 메일 다시 읽어줘",
+    "mail": true,
+    "unread": false,
+    "note": "already read, specific"
+  },
+  {
+    "text": "읽지않은 메일 뭐있어요",
+    "mail": true,
+    "unread": true,
+    "note": "unread, no space"
+  },
+  {
+    "text": "새 매일 왔어?",
+    "mail": true,
+    "unread": true,
+    "note": "common typo for mail"
+  },
+  {
+    "text": "안 읽은 메일 전부 확인하고 답장이 필요한 것들은 초안까지 써줘, 보내는 건 내가 하나씩 읽어보고 직접 누를게",
+    "mail": true,
+    "unread": true,
+    "note": "both: read unread then draft replies"
+  },
+  {
+    "text": "메일 새로 온 거 있으면 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "tell me if there is new mail, now"
+  },
+  {
+    "text": "과제 제출 확인 메일 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "topic"
+  },
+  {
+    "text": "새 메일 중에 박 사장님 거 있나 봐줘",
+    "mail": true,
+    "unread": false,
+    "note": "new plus sender"
+  },
+  {
+    "text": "환율 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "exchange rate"
+  },
+  {
+    "text": "메일 체크",
+    "mail": true,
+    "unread": true,
+    "note": "terse"
+  },
+  {
+    "text": "아래 메일 영어로 번역해줘: 견적서 송부드립니다",
+    "mail": false,
+    "unread": false,
+    "note": "translate pasted text"
+  },
+  {
+    "text": "Read me my new emails",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "메일 주소 바꾸고 싶어",
+    "mail": false,
+    "unread": false,
+    "note": "account change"
+  },
+  {
+    "text": "이따 눈 온대?",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "회의록 첨부된 메일 어딨지",
+    "mail": true,
+    "unread": false,
+    "note": "attachment"
+  },
+  {
+    "text": "내가 안 읽은 메일 뭐야",
+    "mail": true,
+    "unread": true,
+    "note": "unread"
+  },
+  {
+    "text": "미확인 메일 있는지 확인 부탁드려요",
+    "mail": true,
+    "unread": true,
+    "note": "formal, unread"
+  },
+  {
+    "text": "지메일 비밀번호 바꾸는 법",
+    "mail": false,
+    "unread": false,
+    "note": "how-to"
+  },
+  {
+    "text": "메일 온 거 있나 봐줘",
+    "mail": true,
+    "unread": true,
+    "note": "anything arrived"
+  },
+  {
+    "text": "메일 왔나 함 봐바라",
+    "mail": true,
+    "unread": true,
+    "note": "dialect"
+  },
+  {
+    "text": "확인 안 한 메일 있어요?",
+    "mail": true,
+    "unread": true,
+    "note": "unchecked mail"
+  },
+  {
+    "text": "메일 예약 발송 어떻게 해?",
+    "mail": false,
+    "unread": false,
+    "note": "how-to"
+  },
+  {
+    "text": "메일 뭐 왔는지 알려주세요",
+    "mail": true,
+    "unread": true,
+    "note": "polite"
+  },
+  {
+    "text": "별표 다 해제해줘",
+    "mail": false,
+    "unread": false,
+    "note": "organise"
+  },
+  {
+    "text": "학교에서 온 공지 메일 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender"
+  },
+  {
+    "text": "너 이름이 뭐야?",
+    "mail": false,
+    "unread": false,
+    "note": "about the Bot"
+  },
+  {
+    "text": "출근하기 전에 밤새 새로 온 메일이 뭐가 있는지 한번 보고 오늘 회의 시간이랑 겹치는 요청이 있으면 그것만 따로 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "both: long, overnight mail checked against today's meetings"
+  },
+  {
+    "text": "최근 메일 5개만 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "borderline: false, recent includes read mail; overlaps with new mail"
+  },
+  {
+    "text": "영어 비즈니스 메일 인사말 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "writing help"
+  },
+  {
+    "text": "ㄱㅅ",
+    "mail": false,
+    "unread": false,
+    "note": "thanks, slang"
+  },
+  {
+    "text": "How do I set up an email signature?",
+    "mail": false,
+    "unread": false,
+    "note": "English, how-to"
+  },
+  {
+    "text": "오늘 온 메일 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, today's mail is roughly the new mail; strictly a date filter"
+  },
+  {
+    "text": "지메일 확인해줘",
+    "mail": true,
+    "unread": true,
+    "note": "names Gmail"
+  },
+  {
+    "text": "메일 잘 받았다고 답장해줘",
+    "mail": false,
+    "unread": false,
+    "note": "reply"
+  },
+  {
+    "text": "지메일에서 특정 주소로 오는 메일을 자동으로 라벨 붙여서 분류하는 필터를 만드는 방법 좀 처음 하는 사람도 알게 자세히 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "long, how-to"
+  },
+  {
+    "text": "새 메일 제목만 쭉 읽어줘",
+    "mail": true,
+    "unread": true,
+    "note": "subjects of new mail"
+  },
+  {
+    "text": "거래처에 견적 요청 메일 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "write"
+  },
+  {
+    "text": "Show me my unread messages in Gmail",
+    "mail": true,
+    "unread": true,
+    "note": "English, names Gmail"
+  },
+  {
+    "text": "사과 메일 정중하게 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "write"
+  },
+  {
+    "text": "별표 해둔 메일 뭐 있지",
+    "mail": true,
+    "unread": false,
+    "note": "starred"
+  },
+  {
+    "text": "구글에서 보안 알림 메일 왔다는데 진짜야?",
+    "mail": true,
+    "unread": false,
+    "note": "sender and topic"
+  },
+  {
+    "text": "새멜왔나",
+    "mail": true,
+    "unread": true,
+    "note": "abbreviation, no spaces"
+  },
+  {
+    "text": "김 대리한테 메일 보내줘",
+    "mail": false,
+    "unread": false,
+    "note": "send"
+  },
+  {
+    "text": "보낸편지함 확인해줘",
+    "mail": true,
+    "unread": false,
+    "note": "sent folder"
+  },
+  {
+    "text": "새 메일 왔는지 확인해줄래?",
+    "mail": true,
+    "unread": true,
+    "note": "polite banmal"
+  },
+  {
+    "text": "이 메일 주소로 온 건 앞으로 다 스팸 처리해줘",
+    "mail": false,
+    "unread": false,
+    "note": "filter rule"
+  },
+  {
+    "text": "지난주에 안 읽고 넘어간 메일 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "borderline: false, unread but within a date range"
+  },
+  {
+    "text": "안 읽은 메일 요약해줘",
+    "mail": true,
+    "unread": true,
+    "note": "summarise unread, still a read"
+  },
+  {
+    "text": "회사 메일이랑 개인 메일 합칠 수 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "product question"
+  },
+  {
+    "text": "안 읽은 메일 목록 보여줘",
+    "mail": true,
+    "unread": true,
+    "note": "list unread"
+  },
+  {
+    "text": "택배 어디쯤 왔어",
+    "mail": false,
+    "unread": false,
+    "note": "parcel tracking"
+  },
+  {
+    "text": "우편물 도착했나",
+    "mail": false,
+    "unread": false,
+    "note": "physical post"
+  },
+  {
+    "text": "인보이스 pdf 첨부된 메일 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "attachment"
+  },
+  {
+    "text": "오늘 일정 알려주고 김 대리 메일 왔는지도 봐줘",
+    "mail": true,
+    "unread": false,
+    "note": "both: calendar plus mail by sender"
+  },
+  {
+    "text": "쿠팡 주문 확인 메일 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "sender and topic"
+  },
+  {
+    "text": "내일 일정 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "네이버 메일도 연결할 수 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "product question"
+  },
+  {
+    "text": "안 읽은 메일 뭐 잇음",
+    "mail": true,
+    "unread": true,
+    "note": "typo, terse"
+  },
+  {
+    "text": "안 읽은 메일 중에 김 대리가 보낸 거 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "unread plus sender"
+  },
+  {
+    "text": "Anything new in Gmail?",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "오늘 회의 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "메일 온 거 있는가 봐주이소",
+    "mail": true,
+    "unread": true,
+    "note": "dialect"
+  },
+  {
+    "text": "어제 받은 메일 다시 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "date, already read"
+  },
+  {
+    "text": "납품 확인 메일 왔어요?",
+    "mail": true,
+    "unread": false,
+    "note": "shop owner, topic"
+  },
+  {
+    "text": "새 email 왔어?",
+    "mail": true,
+    "unread": true,
+    "note": "mixed"
+  },
+  {
+    "text": "어제 저녁부터 정신이 없어서 메일을 하나도 못 봤는데 지금 안 읽은 메일이 뭐가 있는지 처음부터 차례대로 좀 알려줄래?",
+    "mail": true,
+    "unread": true,
+    "note": "long, the time is a reason not a filter"
+  },
+  {
+    "text": "새로 나온 아이폰 얼마야",
+    "mail": false,
+    "unread": false,
+    "note": "product, new but not mail"
+  },
+  {
+    "text": "슬랙 메시지 온 거 있어?",
+    "mail": false,
+    "unread": true,
+    "note": "another messenger, asks what arrived"
+  },
+  {
+    "text": "보낸 메일 회수하는 방법",
+    "mail": false,
+    "unread": false,
+    "note": "how-to"
+  },
+  {
+    "text": "오늘 일정이랑 새 메일 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "both: new mail plus today's calendar"
+  },
+  {
+    "text": "메일 중에 줌 링크 있는 거 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "content search"
+  },
+  {
+    "text": "메일 답장 빨리 쓰는 요령 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "advice"
+  },
+  {
+    "text": "택배 송장번호로 조회해줘",
+    "mail": false,
+    "unread": false,
+    "note": "parcel tracking"
+  },
+  {
+    "text": "이력서 첨부해서 지원 메일 보내줘",
+    "mail": false,
+    "unread": false,
+    "note": "send"
+  },
+  {
+    "text": "비밀번호 재설정 메일 왔는지 봐줘",
+    "mail": true,
+    "unread": false,
+    "note": "topic"
+  },
+  {
+    "text": "오늘일정머잇어",
+    "mail": false,
+    "unread": false,
+    "note": "calendar, typos"
+  },
+  {
+    "text": "내일 3시에 회의 잡아줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar create"
+  },
+  {
+    "text": "예약 문의 메일 들어온 거 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "shop owner, topic"
+  },
+  {
+    "text": "스팸함에 뭐 들어 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "spam folder"
+  },
+  {
+    "text": "Any new emails?",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "오늘 코스닥 어때",
+    "mail": false,
+    "unread": false,
+    "note": "market"
+  },
+  {
+    "text": "이번 주에 온 메일 몇 통이야?",
+    "mail": true,
+    "unread": false,
+    "note": "date range count"
+  },
+  {
+    "text": "휴가 부재중 메일 설정",
+    "mail": false,
+    "unread": false,
+    "note": "auto-reply rule"
+  },
+  {
+    "text": "이 메일 박 사장님한테 전달해줘",
+    "mail": false,
+    "unread": false,
+    "note": "forward"
+  },
+  {
+    "text": "메일 계정 해킹당한 것 같아",
+    "mail": false,
+    "unread": false,
+    "note": "security worry"
+  },
+  {
+    "text": "inbox 좀 체크해줘",
+    "mail": true,
+    "unread": true,
+    "note": "mixed"
+  },
+  {
+    "text": "오늘 최고기온 몇 도",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "가게 전단지 문구 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "marketing copy"
+  },
+  {
+    "text": "세무사님 메일 찾아서 내일 일정에 넣어줘",
+    "mail": true,
+    "unread": false,
+    "note": "both: mail by sender then a calendar entry"
+  },
+  {
+    "text": "손편지 쓰는 법 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "paper letter"
+  },
+  {
+    "text": "오늘 뉴스 뭐 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "news"
+  },
+  {
+    "text": "자동 답장 설정해줘",
+    "mail": false,
+    "unread": false,
+    "note": "auto-reply rule"
+  },
+  {
+    "text": "Show me starred emails",
+    "mail": true,
+    "unread": false,
+    "note": "English, starred"
+  },
+  {
+    "text": "출근했다 메일 뭐 와 있어",
+    "mail": true,
+    "unread": true,
+    "note": "arrived at work"
+  },
+  {
+    "text": "안 읽은 메일 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "unread"
+  },
+  {
+    "text": "엄마가 보낸 메일 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender"
+  },
+  {
+    "text": "이미 읽은 메일 중에 계약서 온 거 있었지?",
+    "mail": true,
+    "unread": false,
+    "note": "read mail, topic"
+  },
+  {
+    "text": "광고 메일 다 지워줘",
+    "mail": false,
+    "unread": false,
+    "note": "delete"
+  },
+  {
+    "text": "오늘 메일 답장하느라 하루 다 갔네",
+    "mail": false,
+    "unread": false,
+    "note": "statement"
+  },
+  {
+    "text": "지메일 연동 다시 해줘",
+    "mail": false,
+    "unread": false,
+    "note": "connection"
+  },
+  {
+    "text": "읽지 않은 메일 확인",
+    "mail": true,
+    "unread": true,
+    "note": "unread, terse"
+  },
+  {
+    "text": "메일 왔어?",
+    "mail": true,
+    "unread": true,
+    "note": "mail arrived"
+  },
+  {
+    "text": "이메일 서명 만들어줘",
+    "mail": false,
+    "unread": false,
+    "note": "signature"
+  },
+  {
+    "text": "오늘 예약 몇 건이야",
+    "mail": false,
+    "unread": false,
+    "note": "calendar, bookings"
+  },
+  {
+    "text": "내일 아침 쌀쌀할까",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "된장찌개 끓이는 법",
+    "mail": false,
+    "unread": false,
+    "note": "recipe"
+  },
+  {
+    "text": "김 대리랑 미팅 언제야?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar search"
+  },
+  {
+    "text": "새 메일 있나 봐봐",
+    "mail": true,
+    "unread": true,
+    "note": "banmal"
+  },
+  {
+    "text": "새 메일 주소 만들고 싶어",
+    "mail": false,
+    "unread": false,
+    "note": "new address, not new mail"
+  },
+  {
+    "text": "회의 끝났다 그 사이에 메일 온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "office worker, since the meeting"
+  },
+  {
+    "text": "메일 제목 뭐라고 쓰면 좋을까",
+    "mail": false,
+    "unread": false,
+    "note": "writing advice"
+  },
+  {
+    "text": "저녁 약속 취소해줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar cancel"
+  },
+  {
+    "text": "지난달에 거래처에서 보내준 견적서 메일을 아무리 뒤져도 못 찾겠는데 첨부파일 있는 걸로 좀 찾아서 열어줄 수 있을까?",
+    "mail": true,
+    "unread": false,
+    "note": "long, date, sender, attachment"
+  },
+  {
+    "text": "지난달 관리비 고지서 메일 좀 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "date and topic"
+  },
+  {
+    "text": "미세먼지 심해?",
+    "mail": false,
+    "unread": false,
+    "note": "air quality"
+  },
+  {
+    "text": "마지막으로 온 메일 뭐야?",
+    "mail": true,
+    "unread": false,
+    "note": "borderline: false, the latest mail whether read or not; often it is the newest unread"
+  },
+  {
+    "text": "이번 주 스케줄 보여줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "어제 온 견적서 메일 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "date and subject"
+  },
+  {
+    "text": "Any emails from the bank this week?",
+    "mail": true,
+    "unread": false,
+    "note": "English, sender and range"
+  },
+  {
+    "text": "교수님 답장 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "student, sender"
+  },
+  {
+    "text": "급한 메일 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, unread plus a judgment of urgency"
+  },
+  {
+    "text": "스팸함 비워줘",
+    "mail": false,
+    "unread": false,
+    "note": "delete"
+  },
+  {
+    "text": "우체국 몇 시까지 해?",
+    "mail": false,
+    "unread": false,
+    "note": "post office hours"
+  },
+  {
+    "text": "Check my inbox",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "Draft a reply to the landlord",
+    "mail": false,
+    "unread": false,
+    "note": "English, draft"
+  },
+  {
+    "text": "안 읽은 메일 중에 첨부파일 있는 것만",
+    "mail": true,
+    "unread": false,
+    "note": "unread plus attachment"
+  },
+  {
+    "text": "메일 알림이 안 와",
+    "mail": false,
+    "unread": false,
+    "note": "notification problem"
+  },
+  {
+    "text": "안 읽은 메일 9999개인데 한 번에 지우는 법?",
+    "mail": false,
+    "unread": true,
+    "note": "how-to about unread"
+  },
+  {
+    "text": "매일 아침 출근 시간에 새로 온 메일을 요약해서 알려주는 걸 자동으로 돌리고 싶은데 어떻게 설정하면 되는지 알려줘",
+    "mail": false,
+    "unread": true,
+    "note": "long, set up a routine"
+  },
+  {
+    "text": "안 읽은 메일 하나씩 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "unread one by one"
+  },
+  {
+    "text": "'견적 요청' 제목으로 온 메일 찾아줘",
+    "mail": true,
+    "unread": false,
+    "note": "subject"
+  },
+  {
+    "text": "항공권 예약 확인 메일 어디 있지",
+    "mail": true,
+    "unread": false,
+    "note": "topic"
+  },
+  {
+    "text": "국세청에서 메일 온 거 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender"
+  },
+  {
+    "text": "카톡 온 거 있어?",
+    "mail": false,
+    "unread": true,
+    "note": "KakaoTalk, asks what arrived"
+  },
+  {
+    "text": "아까 거래처 담당자한테 메일을 보냈는데 주소를 찾을 수 없다면서 반송됐어, 이거 왜 그런 거고 어떻게 해야 돼?",
+    "mail": false,
+    "unread": false,
+    "note": "delivery problem"
+  },
+  {
+    "text": "새 메일 오면 알려줘",
+    "mail": false,
+    "unread": true,
+    "note": "borderline: false, a standing request for later; some would check now as well"
+  },
+  {
+    "text": "세무사님 메일은 별표 달아줘",
+    "mail": false,
+    "unread": false,
+    "note": "organise"
+  },
+  {
+    "text": "신규 메일 확인 부탁드립니다",
+    "mail": true,
+    "unread": true,
+    "note": "formal"
+  },
+  {
+    "text": "any unread emails?",
+    "mail": true,
+    "unread": true,
+    "note": "English, lowercase"
+  },
+  {
+    "text": "인스타 DM 확인해줘",
+    "mail": false,
+    "unread": false,
+    "note": "another messenger"
+  },
+  {
+    "text": "Find the email from my landlord",
+    "mail": true,
+    "unread": false,
+    "note": "English, sender"
+  },
+  {
+    "text": "Unsubscribe me from this newsletter",
+    "mail": false,
+    "unread": false,
+    "note": "English, unsubscribe"
+  },
+  {
+    "text": "안 읽은 메일 보고 광고는 다 지워줘",
+    "mail": true,
+    "unread": true,
+    "note": "both: read unread then delete some"
+  },
+  {
+    "text": "어제 김 대리가 보낸 메일에 뭐라고 써 있었지?",
+    "mail": true,
+    "unread": false,
+    "note": "sender and date"
+  },
+  {
+    "text": "답장 안 한 메일 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "borderline: false, unanswered is not unread; the lists overlap"
+  },
+  {
+    "text": "우체국 등기 왔어?",
+    "mail": false,
+    "unread": false,
+    "note": "physical post"
+  },
+  {
+    "text": "태풍 소식 새로 나온 거 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "weather news, new but not mail"
+  },
+  {
+    "text": "check my email pls",
+    "mail": true,
+    "unread": true,
+    "note": "English, casual"
+  },
+  {
+    "text": "새 메일 중에 광고 말고 사람이 보낸 것만 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, unread then the Bot sifts; could count as a category filter"
+  },
+  {
+    "text": "카톡 확인해줘",
+    "mail": false,
+    "unread": false,
+    "note": "KakaoTalk"
+  },
+  {
+    "text": "지금 밖에 많이 더워?",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "가게 문 열기 전에 메일 온 거 있나 한번 봐줘, 손님 받기 시작하면 저녁까지는 휴대폰 볼 틈이 하나도 없을 것 같아서",
+    "mail": true,
+    "unread": true,
+    "note": "shop owner, before opening"
+  },
+  {
+    "text": "수업 끝났는데 메일 온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "student, after class"
+  },
+  {
+    "text": "Did I get any mail?",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "오늘 뭐 있지",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "안 읽은 메일 잇어?",
+    "mail": true,
+    "unread": true,
+    "note": "typo"
+  },
+  {
+    "text": "받은편지함 0으로 만드는 팁 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "advice"
+  },
+  {
+    "text": "이메일 주소 형식이 틀렸대",
+    "mail": false,
+    "unread": false,
+    "note": "address format"
+  },
+  {
+    "text": "오늘 날씨 어때?",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "한국사 연표 외우는 팁",
+    "mail": false,
+    "unread": false,
+    "note": "study"
+  },
+  {
+    "text": "졸려",
+    "mail": false,
+    "unread": false,
+    "note": "small talk"
+  },
+  {
+    "text": "첨부파일 있는 메일만 보여줘",
+    "mail": true,
+    "unread": false,
+    "note": "attachment"
+  },
+  {
+    "text": "방금 보낸 메일 취소할 수 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "undo send"
+  },
+  {
+    "text": "뉴스레터 구독 취소해줘",
+    "mail": false,
+    "unread": false,
+    "note": "unsubscribe"
+  },
+  {
+    "text": "부재중 전화 있었어?",
+    "mail": false,
+    "unread": false,
+    "note": "calls"
+  },
+  {
+    "text": "메일에 파일 첨부해서 보내줘",
+    "mail": false,
+    "unread": false,
+    "note": "send"
+  },
+  {
+    "text": "email이랑 e-mail 뭐가 맞아?",
+    "mail": false,
+    "unread": false,
+    "note": "spelling question"
+  },
+  {
+    "text": "면접 결과 메일 왔나 봐줘",
+    "mail": true,
+    "unread": false,
+    "note": "topic"
+  },
+  {
+    "text": "받은 메일함 열어줘",
+    "mail": true,
+    "unread": true,
+    "note": "open inbox"
+  },
+  {
+    "text": "아직 안 본 메일 있나",
+    "mail": true,
+    "unread": true,
+    "note": "not yet seen"
+  },
+  {
+    "text": "방금 메일 알림 울렸는데 뭐야?",
+    "mail": true,
+    "unread": true,
+    "note": "just-arrived mail"
+  },
+  {
+    "text": "What did I send to the accountant yesterday?",
+    "mail": true,
+    "unread": false,
+    "note": "English, sent"
+  },
+  {
+    "text": "수신함에 새로 들어온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "inbox, new"
+  },
+  {
+    "text": "새로 온 메일 있나요?",
+    "mail": true,
+    "unread": true,
+    "note": "polite"
+  },
+  {
+    "text": "거래처에서 견적 메일 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender and topic"
+  },
+  {
+    "text": "Mark everything as read",
+    "mail": false,
+    "unread": true,
+    "note": "English, mark as read"
+  },
+  {
+    "text": "안 읽은 카톡 몇 개야",
+    "mail": false,
+    "unread": true,
+    "note": "unread KakaoTalk"
+  },
+  {
+    "text": "주말에 약속 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "거래처 박 사장님께 지난번 납품이 이틀 늦어진 것에 대해 정중하게 사과하고 다음 납품 일정을 안내하는 메일을 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "long, write"
+  },
+  {
+    "text": "Check unread mail and today's calendar",
+    "mail": true,
+    "unread": true,
+    "note": "both: English, mail and calendar"
+  },
+  {
+    "text": "새로 온 메일 간단히 정리해줘",
+    "mail": true,
+    "unread": true,
+    "note": "summarise new mail"
+  },
+  {
+    "text": "안읽은메일머잇어",
+    "mail": true,
+    "unread": true,
+    "note": "no spaces, typos"
+  },
+  {
+    "text": "하루 물 얼마나 마셔야 돼",
+    "mail": false,
+    "unread": false,
+    "note": "health fact"
+  },
+  {
+    "text": "unread 메일 몇 개야",
+    "mail": true,
+    "unread": true,
+    "note": "mixed"
+  },
+  {
+    "text": "영어 숙제 좀 봐줘",
+    "mail": false,
+    "unread": false,
+    "note": "homework"
+  },
+  {
+    "text": "오후에 미팅 있나?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "메일 온 거 없지?",
+    "mail": true,
+    "unread": true,
+    "note": "confirm nothing new"
+  },
+  {
+    "text": "내일 비 와?",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "내 메일 주소 뭐야",
+    "mail": false,
+    "unread": false,
+    "note": "own address"
+  },
+  {
+    "text": "오늘 김 과장님한테 메일 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender, today"
+  },
+  {
+    "text": "Is it going to rain today?",
+    "mail": false,
+    "unread": false,
+    "note": "English, weather"
+  },
+  {
+    "text": "교수님께 보낼 메일 초안 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "draft"
+  },
+  {
+    "text": "오늘 일정 뭐 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "새 메일 왔어?",
+    "mail": true,
+    "unread": true,
+    "note": "plain ask for new mail"
+  },
+  {
+    "text": "네이버쇼핑에서 가습기 최저가 찾아줘",
+    "mail": false,
+    "unread": false,
+    "note": "shopping"
+  },
+  {
+    "text": "메일 쌓인 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "piled-up mail"
+  },
+  {
+    "text": "메일 서버가 뭐야",
+    "mail": false,
+    "unread": false,
+    "note": "how e-mail works"
+  },
+  {
+    "text": "새 메일 확인하고 날씨도 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "both: new mail plus weather"
+  },
+  {
+    "text": "메일이 너무 많이 와서 미치겠어",
+    "mail": false,
+    "unread": false,
+    "note": "venting"
+  },
+  {
+    "text": "캘린더에 엄마 생신 추가해줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar create"
+  },
+  {
+    "text": "What's on my calendar today?",
+    "mail": false,
+    "unread": false,
+    "note": "English, calendar"
+  },
+  {
+    "text": "안녕하세요",
+    "mail": false,
+    "unread": false,
+    "note": "greeting"
+  },
+  {
+    "text": "Recommend a movie for tonight",
+    "mail": false,
+    "unread": false,
+    "note": "English, chat"
+  },
+  {
+    "text": "메일 필터 만들어줘",
+    "mail": false,
+    "unread": false,
+    "note": "filter rule"
+  },
+  {
+    "text": "연락 온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, could mean calls or messengers; mail is what the Bot can see"
+  },
+  {
+    "text": "네이버에서 온 인증 메일 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender and topic"
+  },
+  {
+    "text": "카톡으로 엄마한테 메시지 보내줘",
+    "mail": false,
+    "unread": false,
+    "note": "send KakaoTalk"
+  },
+  {
+    "text": "What's my email address?",
+    "mail": false,
+    "unread": false,
+    "note": "English, own address"
+  },
+  {
+    "text": "메일함 좀 봐줘",
+    "mail": true,
+    "unread": true,
+    "note": "look at mailbox"
+  },
+  {
+    "text": "뭐 온 거 없어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, service not named; mail is the likeliest thing to have arrived"
+  },
+  {
+    "text": "택배 발송 안내 메일 온 거 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "topic, parcel word but it is mail"
+  },
+  {
+    "text": "새 메일 좀 읽어줘",
+    "mail": true,
+    "unread": true,
+    "note": "read out new mail"
+  },
+  {
+    "text": "참조랑 숨은참조 차이가 뭐야",
+    "mail": false,
+    "unread": false,
+    "note": "how e-mail works"
+  },
+  {
+    "text": "안읽은멜",
+    "mail": true,
+    "unread": true,
+    "note": "terse, abbreviation, no spaces"
+  },
+  {
+    "text": "안 읽은 메일 다 읽음 처리해줘",
+    "mail": false,
+    "unread": true,
+    "note": "mark unread as read"
+  },
+  {
+    "text": "이메일 온 거 없어?",
+    "mail": true,
+    "unread": true,
+    "note": "anything arrived"
+  },
+  {
+    "text": "우산 챙겨야 되나",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "메일 왔다는데 확인 좀",
+    "mail": true,
+    "unread": true,
+    "note": "told mail came, no sender named"
+  },
+  {
+    "text": "박 사장님이 보낸 메일 내용 뭐야",
+    "mail": true,
+    "unread": false,
+    "note": "sender, specific mail"
+  },
+  {
+    "text": "새로 온 세금계산서 메일 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "new but with a subject"
+  },
+  {
+    "text": "엑셀에서 중복 제거 어떻게 해",
+    "mail": false,
+    "unread": false,
+    "note": "how-to"
+  },
+  {
+    "text": "프로모션 메일 전부 구독 해지해줘",
+    "mail": false,
+    "unread": false,
+    "note": "unsubscribe"
+  },
+  {
+    "text": "임시보관함에 뭐 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "drafts folder"
+  },
+  {
+    "text": "What's new in my inbox?",
+    "mail": true,
+    "unread": true,
+    "note": "English"
+  },
+  {
+    "text": "메일 용량이 꽉 찼대 어떡해",
+    "mail": false,
+    "unread": false,
+    "note": "storage problem"
+  },
+  {
+    "text": "합격 메일 왔어???",
+    "mail": true,
+    "unread": false,
+    "note": "topic"
+  },
+  {
+    "text": "주말 날씨 알려줘",
+    "mail": false,
+    "unread": false,
+    "note": "weather"
+  },
+  {
+    "text": "지금 안 읽은 메일 다 보여줘",
+    "mail": true,
+    "unread": true,
+    "note": "show all unread"
+  },
+  {
+    "text": "퇴사 인사 메일 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "write"
+  },
+  {
+    "text": "메일 글씨 크기 키우는 법",
+    "mail": false,
+    "unread": false,
+    "note": "how-to"
+  },
+  {
+    "text": "받은편지함 확인해줘",
+    "mail": true,
+    "unread": true,
+    "note": "check inbox"
+  },
+  {
+    "text": "점심 먹고 왔는데 메일 온 거 있나",
+    "mail": true,
+    "unread": true,
+    "note": "since lunch"
+  },
+  {
+    "text": "구독 중인 뉴스레터 온 거 있어?",
+    "mail": true,
+    "unread": false,
+    "note": "category"
+  },
+  {
+    "text": "세금계산서 메일로 보내달라고 해줘",
+    "mail": false,
+    "unread": false,
+    "note": "ask someone to send"
+  },
+  {
+    "text": "새 일정 하나 넣어줘",
+    "mail": false,
+    "unread": false,
+    "note": "calendar create, new event not new mail"
+  },
+  {
+    "text": "어제 오후에 학과 사무실에서 장학금 서류 관련해서 메일을 보냈다는데 그게 내 메일함에 제대로 들어와 있는지 확인해줘",
+    "mail": true,
+    "unread": false,
+    "note": "long, student, sender and topic"
+  },
+  {
+    "text": "새 메일 하나 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "compose, new means a new draft"
+  },
+  {
+    "text": "메일 알림 꺼줘",
+    "mail": false,
+    "unread": false,
+    "note": "notification setting"
+  },
+  {
+    "text": "메일함 정리해줘",
+    "mail": false,
+    "unread": false,
+    "note": "borderline: false, organise; could be heard as go through it and tell me"
+  },
+  {
+    "text": "알림 온 거 있어?",
+    "mail": false,
+    "unread": true,
+    "note": "borderline: false, notifications in general; mail is one thing it could mean"
+  },
+  {
+    "text": "멜 확인ㄱㄱ",
+    "mail": true,
+    "unread": true,
+    "note": "slang"
+  },
+  {
+    "text": "다음 주 화요일 비어 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "calendar"
+  },
+  {
+    "text": "카드 명세서 메일 열어줘",
+    "mail": true,
+    "unread": false,
+    "note": "specific mail"
+  },
+  {
+    "text": "Did Kim reply to my email?",
+    "mail": true,
+    "unread": false,
+    "note": "English, sender"
+  },
+  {
+    "text": "메일왔어??",
+    "mail": true,
+    "unread": true,
+    "note": "no space"
+  },
+  {
+    "text": "세무사님 메일 왔어?",
+    "mail": true,
+    "unread": false,
+    "note": "sender"
+  },
+  {
+    "text": "새 소식 있어?",
+    "mail": false,
+    "unread": true,
+    "note": "borderline: false, sounds like news in general; could be heard as anything new for me"
+  },
+  {
+    "text": "새 메일 요약하고 중요한 건 캘린더에 등록해줘",
+    "mail": true,
+    "unread": true,
+    "note": "both: new mail then create events"
+  },
+  {
+    "text": "지메일에 읽음 확인 기능 있어?",
+    "mail": false,
+    "unread": false,
+    "note": "how e-mail works"
+  },
+  {
+    "text": "택배 왔어?",
+    "mail": false,
+    "unread": false,
+    "note": "parcel"
+  },
+  {
+    "text": "피싱 메일 구별하는 법",
+    "mail": false,
+    "unread": false,
+    "note": "advice"
+  },
+  {
+    "text": "Delete all unread emails",
+    "mail": false,
+    "unread": true,
+    "note": "English, delete unread"
+  },
+  {
+    "text": "메일 보낼 때 존댓말 어떻게 써야 해",
+    "mail": false,
+    "unread": false,
+    "note": "writing advice"
+  },
+  {
+    "text": "일주일 휴가 다녀와서 메일함을 처음 여는 건데 새로 온 메일이 얼마나 쌓였는지, 그리고 뭐가 왔는지 보기 좋게 정리해줘",
+    "mail": true,
+    "unread": true,
+    "note": "long, back from holiday"
+  },
+  {
+    "text": "메일 확인 좀",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, check mail most likely means new mail"
+  },
+  {
+    "text": "Is there an email with the invoice attached?",
+    "mail": true,
+    "unread": false,
+    "note": "English, attachment"
+  },
+  {
+    "text": "안 읽은 메일 쌓인 거 보면 스트레스 받는다",
+    "mail": false,
+    "unread": true,
+    "note": "venting"
+  },
+  {
+    "text": "Did my package arrive?",
+    "mail": false,
+    "unread": false,
+    "note": "English, parcel"
+  },
+  {
+    "text": "읽을 만한 뉴스레터 추천해줘",
+    "mail": false,
+    "unread": false,
+    "note": "recommendation"
+  },
+  {
+    "text": "이 메일에 답장 써줘",
+    "mail": false,
+    "unread": false,
+    "note": "reply"
+  },
+  {
+    "text": "스팸 메일 차단해줘",
+    "mail": false,
+    "unread": false,
+    "note": "block"
+  },
+  {
+    "text": "안 읽은 메일 누가 보냈는지만 알려줘",
+    "mail": true,
+    "unread": true,
+    "note": "senders of unread, no filter"
+  },
+  {
+    "text": "밤사이 온 메일 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, overnight is a time range but means what is new since last look"
+  },
+  {
+    "text": "안 읽은 메일 몇 개야?",
+    "mail": true,
+    "unread": true,
+    "note": "count of unread"
+  },
+  {
+    "text": "이력서 문장 다듬어줘",
+    "mail": false,
+    "unread": false,
+    "note": "writing help"
+  },
+  {
+    "text": "중요한 메일 온 거 있어?",
+    "mail": true,
+    "unread": true,
+    "note": "borderline: true, unread plus a judgment the Bot makes, not a nameable filter"
+  },
+  {
+    "text": "지난주에 온 메일 요약해줘",
+    "mail": true,
+    "unread": false,
+    "note": "date range"
+  },
+  {
+    "text": "Send an email to my boss saying I'm sick",
+    "mail": false,
+    "unread": false,
+    "note": "English, send"
+  },
+  {
+    "text": "문자 왔어?",
+    "mail": false,
+    "unread": false,
+    "note": "text message"
+  },
+  {
+    "text": "월세 60에 관리비 8이면 일 년에 얼마야",
+    "mail": false,
+    "unread": false,
+    "note": "calculation"
+  },
+  {
+    "text": "아침 브리핑: 메일, 일정, 날씨 순서로",
+    "mail": true,
+    "unread": true,
+    "note": "both: morning briefing, mail means what is new"
+  }
+]

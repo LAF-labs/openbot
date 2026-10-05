@@ -991,15 +991,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and is not a warning; a boot asks once, of a sentence nobody sent; and it asks nothing with the
  * move off, nobody to ask or a spent day, and a failure is only said).
  *
+ * RAISED 2026-10-05 with the calendar's and the mail's first moves, by exactly what was added:
+ * thirteen to `server` — eleven in `first-move.test.ts` (the two tools are the catalogue's own,
+ * read-only and unguarded; one request a message with only the kinds whose words it has; a clear
+ * yes is a constant whatever the decisions model said; a hair under either bar is no move; without
+ * the connection or the grant nobody is asked; two kinds clearing is no move; a connection that
+ * stopped working is none and a weather question reads none; the rows say which kinds and never the
+ * message; no log line holds a word of it; what a boot can say of a person's kinds; a boot warms
+ * every kind that is on) and two in `config.test.ts` (`FIRST_MOVE` as a comma list, and a word that
+ * is not a kind refused) — and seven to `root`, the eval's own rules held without a network
+ * (`tests/eval-first-move.test.ts`).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3523, roots: ["server"] },
+  { name: "server", floor: 3536, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 640, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

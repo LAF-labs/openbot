@@ -68,6 +68,12 @@ export function sayConnectors(input: {
  * weather key, is a switch that is on and does nothing — and an operator who set it would go on
  * believing turns are being answered in one round. The same on the default is not a warning,
  * since nobody set anything: it says which half is missing and that is all.
+ *
+ * WHAT A BOOT CAN KNOW IS THE DEPLOYMENT'S HALF: whether Jev may be asked, and whether there is a
+ * weather key. Whether the calendar's move or the mail's can be made is a person's — a connected
+ * account, a Bot that holds the tool — and is read when their message arrives. So those two are
+ * listed as `perPerson` and never as able or unable: saying "on" for them here would be a boot
+ * claiming a connection it has not looked for.
  */
 export function sayFirstMove(input: {
   moves: readonly string[];
@@ -75,28 +81,41 @@ export function sayFirstMove(input: {
   canDecide: boolean;
   /** Whether this deployment holds the weather key, so there is a tool to call. */
   weather: boolean;
-  /** Whether the environment named the move, rather than the default being on. */
+  /** Whether the environment named the moves, rather than the default being on. */
   named: boolean;
 }): void {
   if (input.moves.length === 0) return;
-  const ready = input.canDecide && input.weather;
-  if (ready) {
-    log.info("first_move_on", { moves: [...input.moves] });
+  const perPerson = input.moves.filter((move) => move !== "weather");
+  const weatherOn = input.moves.includes("weather");
+  /** The moves this deployment can certainly not make: the weather's without its key, all without Jev. */
+  const unable = !input.canDecide
+    ? [...input.moves]
+    : weatherOn && !input.weather
+      ? ["weather"]
+      : [];
+  const said = {
+    moves: input.moves.filter((move) => !unable.includes(move)),
+    perPerson: input.canDecide ? perPerson : [],
+  };
+  if (unable.length === 0) {
+    log.info("first_move_on", said);
     return;
   }
   if (!input.named) {
-    log.info("first_move_idle", {
-      moves: [...input.moves],
+    log.info(said.moves.length > 0 ? "first_move_on" : "first_move_idle", {
+      ...said,
+      unable,
       canDecide: input.canDecide,
       weather: input.weather,
     });
     return;
   }
   log.warn("first_move_does_nothing", {
-    moves: [...input.moves],
+    ...said,
+    unable,
     canDecide: input.canDecide,
     weather: input.weather,
-    note: "FIRST_MOVE names a move this deployment cannot make: it needs JEV_ENABLED on an OpenRouter endpoint, and the weather key. Turns run as they do with it off.",
+    note: "FIRST_MOVE names a move this deployment cannot make: every move needs JEV_ENABLED on an OpenRouter endpoint, and the weather's needs the weather key. Turns run as they do with it off.",
   });
 }
 

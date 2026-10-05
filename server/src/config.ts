@@ -36,7 +36,11 @@ import {
   type SharedOAuthClient,
   sharedClientsFrom,
 } from "./plugins/shared-clients";
-import type { FirstMoveKind } from "./turns/first-move";
+import {
+  FIRST_MOVE_KINDS,
+  type FirstMoveKind,
+  isFirstMoveKind,
+} from "../../shared/first-move";
 
 /**
  * Where a deployment's value for a variable comes from — which is what the documents are held to.
@@ -110,7 +114,8 @@ export const ENVIRONMENT = {
   DAY_EPOCHS: "compose",
   // Once the switch back to turns the window drove. Read only to refuse `off` (`harnessConfig`).
   SERVER_TURNS: "retired",
-  // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). On unless `off`.
+  // A turn's first step taken before the Bot's model is asked (`turns/first-move.ts`). Every kind
+  // unless it says `off` or names the kinds to keep: `weather,calendar,mail`.
   FIRST_MOVE: "compose",
   // A laptop's way to turn the owner's day without waiting for midnight; refused in production.
   LAF_CLOCK_OFFSET_MS: "development",
@@ -256,16 +261,18 @@ export type DeploymentConfig = {
      */
     dayEpochs: boolean;
     /**
-     * `FIRST_MOVE` (ON unless it says `off`; `weather` is the only move): the server makes a
-     * turn's first read-only call itself when a decisions model is sure what it is, so the Bot's
-     * model is asked once instead of twice (`turns/first-move.ts`). On, short weather questions go
+     * `FIRST_MOVE` (unset is every move this build has; `off` is none; a comma list of kinds —
+     * `weather`, `calendar`, `mail` — is those alone, so one can be taken out on a deployment
+     * without a release): the server makes a turn's first read-only call itself when a decisions
+     * model is sure what it is, so the Bot's model is asked once instead of two or three times
+     * (`turns/first-move.ts`). On, short messages with a weather, schedule or mail word in them go
      * to the decisions model, redacted, at the moment they are sent — a different thing from the
      * excerpts every other judge is shown. It was off until the owner said yes to that for
      * customers (2026-10-05), as `JEV_ENABLED` was until 2026-09-25. It does nothing where Jev may
      * not be asked (`jevEnabled`), and a deployment that must send nothing says `off`.
      */
     firstMoves: readonly FirstMoveKind[];
-    /** Whether the environment named a move itself, so a boot can tell a setting from the default. */
+    /** Whether the environment named the moves itself, so a boot can tell a setting from the default. */
     firstMovesNamed: boolean;
     /**
      * `LAF_CLOCK_OFFSET_MS`: moves the clock the conversation store dates runs by, so a day can be
@@ -1130,6 +1137,36 @@ export const DEFAULT_COMPACTION = "decisions" as const;
 export const DEFAULT_COMPACTION_THRESHOLD_TOKENS = 30_000;
 
 /**
+ * `FIRST_MOVE` read: unset is every kind, `off` is none, and anything else is a comma list of
+ * kinds. A word that is not a kind refuses the boot rather than being dropped — `FIRST_MOVE=mial`
+ * read as "no mail move" would be a switch somebody believes they set. `off` beside a kind is
+ * refused for the same reason: it says two things.
+ */
+function firstMovesOf(raw: string | undefined): {
+  moves: readonly FirstMoveKind[];
+  named: boolean;
+} {
+  if (raw === undefined) return { moves: FIRST_MOVE_KINDS, named: false };
+  const words = raw
+    .toLowerCase()
+    .split(",")
+    .map((word) => word.trim());
+  if (words.length === 1 && words[0] === "off") {
+    return { moves: [], named: false };
+  }
+  if (!words.every(isFirstMoveKind)) {
+    throw new Error(
+      `FIRST_MOVE must be off or a comma list of ${FIRST_MOVE_KINDS.join(", ")} (unset is all of them)`,
+    );
+  }
+  // In the list's own order and once each, however the line spelled them.
+  return {
+    moves: FIRST_MOVE_KINDS.filter((kind) => words.includes(kind)),
+    named: true,
+  };
+}
+
+/**
  * The harness's switches, or a refusal to start. A value that is not one of the words is a typo,
  * and a typo in a privacy switch must not boot as whichever way the parser leaned.
  */
@@ -1179,11 +1216,7 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
         : "SERVER_TURNS must be on or unset (the server runs every chat turn) — delete the SERVER_TURNS line.",
     );
   }
-  const movesNamed = optional(environment, "FIRST_MOVE")?.toLowerCase();
-  const moves = movesNamed ?? "weather";
-  if (moves !== "off" && moves !== "weather") {
-    throw new Error("FIRST_MOVE must be weather or off (unset is weather)");
-  }
+  const firstMoves = firstMovesOf(optional(environment, "FIRST_MOVE"));
   const offsetRaw = optional(environment, "LAF_CLOCK_OFFSET_MS");
   const clockOffsetMs = offsetRaw ? Number(offsetRaw) : 0;
   if (!Number.isInteger(clockOffsetMs)) {
@@ -1202,8 +1235,8 @@ function harnessConfig(environment: Environment): DeploymentConfig["harness"] {
     compaction: mode,
     compactionThresholdTokens: threshold,
     dayEpochs: days !== "off",
-    firstMoves: moves === "weather" ? ["weather"] : [],
-    firstMovesNamed: movesNamed === "weather",
+    firstMoves: firstMoves.moves,
+    firstMovesNamed: firstMoves.named,
     clockOffsetMs,
   };
 }
