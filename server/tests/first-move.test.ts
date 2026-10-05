@@ -727,21 +727,32 @@ describe("the first move, as a turn asks for it", () => {
     tools: tools.map((name) => ({ name })),
   });
 
-  test("the weather moves for a person of whom nothing is known: the tool answers for Seoul, so nobody's place is read", async () => {
+  test("the weather's move asks nothing about the person before it is made: no place, and no connection", async () => {
     /*
      * This was "a saved place in words or from the device is a place; neither is none": a person
      * with neither got no move, because a call that named no place was refused and the Bot asked
-     * where. The owner, 2026-10-05: "기본값 실제 위치 데이터, fallback은 서울". The tool resolves
-     * the place itself now — the person's words, their device, or Seoul — so the decision needs no
-     * fact about the person at all, and is handed none (`firstMoveForTurns` takes no reader).
+     * where. The owner, 2026-10-05: "기본값 실제 위치 데이터, fallback은 서울". The tool settles the
+     * place itself now — the person's words, their device, or Seoul — so the kind needs nothing
+     * (`needs: null`), and what is held here is exactly that: the spec says so, and a turn that
+     * moves has looked nothing up about whoever sent it.
      */
-    const anybody = forTurns();
+    expect(FIRST_MOVE_SPECS.weather.needs).toBeNull();
+    // The other two still need their connection: the weather is the one that needs nothing.
+    expect(FIRST_MOVE_SPECS.calendar.needs).toEqual({
+      connection: CALENDAR_SERVER,
+    });
+    expect(FIRST_MOVE_SPECS.mail.needs).toEqual({ connection: MAIL_SERVER });
+
+    // Somebody with nothing connected and nothing known of them: it moves all the same.
+    const anybody = forTurns(SURE, []);
     const move = await anybody.firstMove(input("오늘 날씨 어때?"));
     expect(move?.tool).toBe(WEATHER_TOOL_NAME);
     // Still a constant with nothing in it: where the weather is for is the tool's to settle.
     expect(move?.args).toEqual({});
+    // Nothing was read about the person to get there.
+    expect(anybody.looked).toEqual([]);
     // And still only the person's own weather: a named town is the Bot's model's to read.
-    const elsewhere = forTurns({ forecast: 0.95, ownPlace: 0.1 });
+    const elsewhere = forTurns({ forecast: 0.95, ownPlace: 0.1 }, []);
     expect(await elsewhere.firstMove(input("부산 날씨 어때?"))).toBeNull();
   });
 
