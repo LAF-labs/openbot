@@ -1171,12 +1171,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in `request-refusals.test.ts` (a code that is the empty string is no code at every door — the one
  * place the copies disagreed, which is why it came with the one function and not before it).
  *
+ * RAISED AGAIN 2026-10-06 after that change's review, by exactly what was added: two to `server`,
+ * in `daily-budget-server-calls.test.ts`, written after the change and for a gap it did not make
+ * (on a trial's spent day the mail's second look is not asked and says so with the fact a run ends
+ * on; the high-risk check's judge is not asked and throws the word its miss is filed under; with
+ * room left each is asked). No test asked either judge on a day that had a budget, so the guard in
+ * front of each could have been deleted unnoticed.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3622, roots: ["server"] },
+  { name: "server", floor: 3624, roots: ["server"] },
   { name: "app", floor: 2051, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 715, roots: ["tests", "agent-bot"] },
