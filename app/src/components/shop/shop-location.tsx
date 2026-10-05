@@ -13,10 +13,10 @@ import { isImeKey } from "@/lib/ime";
 import { useSavedFlash } from "@/lib/saved-flash";
 import {
   clearPlaceOnThisDevice,
-  readThisDeviceOnAPress,
+  savePickedPlace,
   useCanUseDeviceLocation,
 } from "@/lib/whereabouts/device-place";
-import { savePlace } from "@/lib/whereabouts/queries";
+import { readDeviceCoordinates, savePlace } from "@/lib/whereabouts/queries";
 
 /**
  * 가게 위치 — where the shop is, as a city or district.
@@ -37,9 +37,10 @@ import { savePlace } from "@/lib/whereabouts/queries";
  * two decimals before anything keeps it. Anywhere else a button that asks and then says nothing is
  * worse than no button, and the words are the whole of it.
  *
- * AND THE PRESS IS HOW A 지우기 IS TAKEN BACK. Clearing a place that held this device's coordinates
- * stops the device being read by itself; pressing its button says it is wanted again
- * (`readThisDeviceOnAPress`).
+ * AND SAVING WHAT THE BUTTON GAVE IS HOW A 지우기 IS TAKEN BACK. Clearing a place that held this
+ * device's coordinates stops the device being read by itself. Pressing its button only shows where
+ * the device is; saving that is what says it is wanted again (`savePickedPlace`) — somebody who
+ * looks and leaves has given nothing back.
  */
 export function ShopLocation() {
   const queryClient = useQueryClient();
@@ -93,10 +94,13 @@ export function ShopLocation() {
 
   const handleSave = () =>
     run(async () => {
-      const held = await savePlace(
-        { place: place.trim() || null, coordinates },
-        queryClient,
-      );
+      const words = place.trim() || null;
+      const held = picked
+        ? await savePickedPlace(
+            { place: words, coordinates: picked },
+            queryClient,
+          )
+        : await savePlace({ place: words, coordinates }, queryClient);
       setPlace(held.place ?? "");
       setPicked(null);
       flashSaved();
@@ -113,7 +117,7 @@ export function ShopLocation() {
 
   const handleUseDevice = () =>
     run(async () => {
-      setPicked(await readThisDeviceOnAPress());
+      setPicked(await readDeviceCoordinates());
     }, "locating");
 
   return (

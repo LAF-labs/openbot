@@ -225,52 +225,130 @@ export async function devicePermission(): Promise<DevicePermission> {
 }
 
 /**
+ * Why a device gave no place. Three, because what the caller has to know is whether the PERSON
+ * DECIDED anything:
+ *
+ *   denied        they said no — at the prompt, in their settings, or the machine did for them
+ *   unavailable   they said yes, and the device could not say where it is, or not in time
+ *   unanswered    nobody decided: the question was not answered within the shell's minute, was
+ *                 never put, or cannot be put here at all
+ *
+ * The first two are answers to being asked. The third is not, and whoever keeps "once per device"
+ * must not count it.
+ */
+export type DeviceRefusal = "denied" | "unavailable" | "unanswered";
+
+/**
+ * What a device said when it was asked where it is: coarse coordinates and how far off it says
+ * they may be, in metres (null where it did not say) — or why there are none.
+ *
+ * A FACT EITHER WAY, NEVER THROWN. The caller that reads a device by itself decides differently
+ * about each refusal and about a fix too vague to keep, and a caught Error carries a sentence
+ * where it needs a kind.
+ */
+export type DeviceReading =
+  | { coordinates: Coordinates; accuracy: number | null }
+  | { coordinates: null; refusal: DeviceRefusal };
+
+/**
  * Ask the device where it is, once, coarsely: low accuracy, a cached answer up to an hour old, and
- * the result rounded to two decimals before anything holds it. Rejects with the surface's words.
+ * the result rounded to two decimals before anything holds it.
  *
  * `mayPrompt` IS FOR THE READ THAT MUST SHOW NOTHING. The shell is told, and answers without a
  * dialog whatever the system holds. A browser cannot be told: it decides for itself, so a tab is
  * read this way only when it has just said it is already allowed.
  */
-export function readDeviceCoordinates(mayPrompt = true): Promise<Coordinates> {
+export function readDevice(mayPrompt: boolean): Promise<DeviceReading> {
   return inShell() ? readThroughTheShell(mayPrompt) : readThroughTheBrowser();
+}
+
+/**
+ * The read a person asked for by pressing: whatever the device gives, however vague, since they
+ * are looking at it and decide whether to keep it. It may show the system's question. Rejects
+ * with the surface's words.
+ */
+export async function readDeviceCoordinates(): Promise<Coordinates> {
+  const reading = await readDevice(true);
+  if (reading.coordinates) return reading.coordinates;
+  throw new Error(wordsFor(reading.refusal));
+}
+
+function wordsFor(refusal: DeviceRefusal): string {
+  switch (refusal) {
+    case "denied":
+      return t("Location was not allowed on this device.");
+    case "unavailable":
+      return t("This device did not say where it is.");
+    case "unanswered":
+      return t(
+        "The question about this device's location has not been answered. If you do not see it, press again.",
+      );
+  }
+}
+
+/** Metres, as a device reports how far off a fix may be — or nothing where it reports none. */
+function metres(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
 }
 
 /**
  * The shell's answer, rounded again here although the shell already has: the rule is that nothing
  * holds a finer value, and a rule kept by one side only is kept until that side changes.
  */
-async function readThroughTheShell(mayPrompt: boolean): Promise<Coordinates> {
+async function readThroughTheShell(mayPrompt: boolean): Promise<DeviceReading> {
   const said = await shellDevicePlace({ prompt: mayPrompt });
-  const coordinates = said?.kind === "place" ? coarseCoordinates(said) : null;
-  if (coordinates) return coordinates;
-  throw new Error(
-    said?.kind === "denied" || said?.kind === "restricted"
-      ? t("Location was not allowed on this device.")
-      : t("This device did not say where it is."),
-  );
+  switch (said?.kind) {
+    case "place": {
+      const coordinates = coarseCoordinates(said);
+      return coordinates
+        ? { coordinates, accuracy: metres(said.accuracy) }
+        : { coordinates: null, refusal: "unavailable" };
+    }
+    case "denied":
+    case "restricted":
+      return { coordinates: null, refusal: "denied" };
+    case "unavailable":
+    case "timeout":
+      return { coordinates: null, refusal: "unavailable" };
+    default:
+      // Not answered within the minute, not to be asked, not read on this platform — or a shell
+      // that said nothing this page knows. Nobody decided anything.
+      return { coordinates: null, refusal: "unanswered" };
+  }
 }
 
-function readThroughTheBrowser(): Promise<Coordinates> {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const coordinates = coarseCoordinates({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        if (coordinates) resolve(coordinates);
-        else reject(new Error(t("This device did not say where it is.")));
-      },
-      (failure) =>
-        reject(
-          new Error(
-            failure.code === failure.PERMISSION_DENIED
-              ? t("Location was not allowed on this device.")
-              : t("This device did not say where it is."),
-          ),
-        ),
-      { enableHighAccuracy: false, maximumAge: 3_600_000, timeout: 10_000 },
-    );
+function readThroughTheBrowser(): Promise<DeviceReading> {
+  return new Promise((resolve) => {
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const coordinates = coarseCoordinates({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+          resolve(
+            coordinates
+              ? { coordinates, accuracy: metres(position.coords.accuracy) }
+              : { coordinates: null, refusal: "unavailable" },
+          );
+        },
+        (failure) =>
+          resolve({
+            coordinates: null,
+            // A browser says "denied" for a no and for a prompt closed without one alike, and
+            // every other failure comes only after a yes: its clock does not run while it asks.
+            refusal:
+              failure.code === failure.PERMISSION_DENIED
+                ? "denied"
+                : "unavailable",
+          }),
+        { enableHighAccuracy: false, maximumAge: 3_600_000, timeout: 10_000 },
+      );
+    } catch {
+      // The browser would not even take the question: nobody was asked.
+      resolve({ coordinates: null, refusal: "unanswered" });
+    }
   });
 }

@@ -203,7 +203,7 @@ describe("in the shell", () => {
   /**
    * Where the device is: two commands, two closed lists.
    *
-   * The shell says one of five words about being asked and one of seven kinds about the place
+   * The shell says one of five words about being asked and one of eight kinds about the place
    * (`desktop/src-tauri/src/location.rs`). Anything outside the lists is nothing — a word this
    * page does not know must not be read as a yes, and a place that is not two numbers is not a
    * place. So is a shell from before the commands, which rejects the call: that is most installed
@@ -242,12 +242,27 @@ describe("in the shell", () => {
     expect(calls.every(([, args]) => args === undefined)).toBe(true);
 
     calls.length = 0;
-    answer = { kind: "place", latitude: 37.5, longitude: 127.03 };
+    answer = { kind: "place", latitude: 37.5, longitude: 127.03, accuracy: 65 };
     expect(await shellDevicePlace({ prompt: false })).toEqual({
       kind: "place",
       latitude: 37.5,
       longitude: 127.03,
+      accuracy: 65,
     });
+    // How far off the fix may be is metres or it is nothing: a place is not refused for lacking
+    // it, and is not called good for it either.
+    for (const accuracy of [undefined, null, "65", -1, Number.NaN]) {
+      answer = { kind: "place", latitude: 37.5, longitude: 127.03, accuracy };
+      expect(await shellDevicePlace({ prompt: false })).toEqual({
+        kind: "place",
+        latitude: 37.5,
+        longitude: 127.03,
+        accuracy: null,
+      });
+    }
+    calls.length = 0;
+    answer = { kind: "place", latitude: 37.5, longitude: 127.03, accuracy: 65 };
+    expect(await shellDevicePlace({ prompt: false })).not.toBeNull();
     // Whether the person may be shown anything is the one thing the page says.
     expect(calls).toEqual([["device_place", { prompt: false }]]);
     expect(await shellDevicePlace({ prompt: true })).not.toBeNull();
@@ -257,6 +272,7 @@ describe("in the shell", () => {
       "denied",
       "restricted",
       "undetermined_no_prompt",
+      "unanswered",
       "unavailable",
       "timeout",
       "unsupported",

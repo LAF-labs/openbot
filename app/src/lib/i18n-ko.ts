@@ -2679,6 +2679,8 @@ export const ko: Record<string, string> = {
   "Location was not allowed on this device.":
     "이 기기에서 위치 사용을 허락하지 않았어요.",
   "This device did not say where it is.": "이 기기의 위치를 알 수 없었어요.",
+  "The question about this device's location has not been answered. If you do not see it, press again.":
+    "위치를 써도 되는지 묻는 창에 아직 답하지 않았어요. 창이 보이지 않으면 다시 눌러 주세요.",
   "That place was not saved. Only a city and district can be kept.":
     "위치를 저장하지 못했어요. 시·구까지만 적을 수 있어요.",
   "Saved the shop's location": "위치를 저장했어요",

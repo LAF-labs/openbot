@@ -30,25 +30,30 @@ import {
 
 /** This browser's mark that its device has had its once (`lib/whereabouts/device-place.ts`). */
 const DEVICE_ASKED = "laf.device-place-asked";
-/** And whether the person cleared this device's place here: `1`, or `0` when they have not. */
+/** And that the person cleared this device's place here: `1`. Absent, they have not. */
 const DEVICE_CLEARED = "laf.device-place-cleared";
+/** When this device was last read by itself. */
+const DEVICE_READ_AT = "laf.device-place-read-at";
 
 beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
 /*
- * A DEVICE THAT HAS HAD ITS ONCE, unless a test says otherwise. Every signed-in screen asks the
- * browser where it is the first time (`useDevicePlaceOnce`), and this DOM's browser says yes to
+ * A DEVICE WHOSE PERSON HAS DECIDED, unless a test says otherwise. Every signed-in screen asks the
+ * browser where it is when it is looked at (`useDevicePlace`), and this DOM's browser says yes to
  * everything: left unmarked, the first test to hand it a working `geolocation` would have its
  * coordinates saved at open, before the button this file is about was pressed. The tests passed
  * without this only in the order they were written in — whichever ran first spent the once for the
- * rest.
+ * rest. (Marked, with nothing held, the device is read by itself only where the browser also says
+ * it is already allowed — which is the two tests that say so.)
  */
 beforeEach(() => {
+  localStorage.removeItem(DEVICE_READ_AT);
   localStorage.setItem(DEVICE_ASKED, "1");
 });
 afterEach(async () => {
   await unmountApps();
-  localStorage.removeItem(DEVICE_ASKED);
-  localStorage.removeItem(DEVICE_CLEARED);
+  for (const key of [DEVICE_ASKED, DEVICE_CLEARED, DEVICE_READ_AT]) {
+    localStorage.removeItem(key);
+  }
   delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
   delete (navigator as unknown as Record<string, unknown>).permissions;
   Object.defineProperty(navigator, "geolocation", {
@@ -66,8 +71,13 @@ type Kept = {
   coordinates: { latitude: number; longitude: number } | null;
 };
 
-function server(kept: Kept, options: { refuse?: boolean } = {}) {
+function server(
+  kept: Kept,
+  options: { refuse?: boolean; failClear?: () => boolean } = {},
+) {
   const writes: Array<{ method: string; body: unknown }> = [];
+  /** What this device's "cleared" mark said at the moment each 지우기 reached the server. */
+  const clearedMarkAtClear: Array<string | null> = [];
   let held = { timeZone: "Asia/Seoul", locale: "ko-KR", ...kept };
   const api = (request: ApiRequest) => {
     const { pathname, method } = request;
@@ -91,6 +101,10 @@ function server(kept: Kept, options: { refuse?: boolean } = {}) {
           400,
         );
       }
+      if (method === "DELETE") {
+        clearedMarkAtClear.push(localStorage.getItem(DEVICE_CLEARED));
+        if (options.failClear?.()) return json({ error: "down" }, 503);
+      }
       held =
         method === "DELETE"
           ? { ...held, place: null, coordinates: null }
@@ -99,7 +113,7 @@ function server(kept: Kept, options: { refuse?: boolean } = {}) {
     }
     return undefined;
   };
-  return { api, writes };
+  return { api, writes, clearedMarkAtClear };
 }
 
 type View = Awaited<ReturnType<typeof mountApp>>;
@@ -270,7 +284,13 @@ describe("Settings → 내 가게 → 가게 위치", () => {
       configurable: true,
       value: {
         getCurrentPosition: (resolve: (position: unknown) => void) =>
-          resolve({ coords: { latitude: 37.498_095, longitude: 127.027_61 } }),
+          resolve({
+            coords: {
+              latitude: 37.498_095,
+              longitude: 127.027_61,
+              accuracy: 65,
+            },
+          }),
       },
     });
     // The account holds where the device was the last time; the device has moved since.
@@ -306,31 +326,112 @@ describe("Settings → 내 가게 → 가게 위치", () => {
     });
   });
 
-  test("pressing the device's button again is how a cleared place is taken back", async () => {
-    // 지우기 was pressed here once: this device is not read by itself.
+  test("a cleared place is taken back by SAVING what the device's button gave — looking is not giving", async () => {
+    /*
+     * THE PRESS UN-CLEARED BEFORE ANYTHING WAS SAVED (review of pull request 94). Somebody who had
+     * cleared this device's place pressed its button, looked at where it said they were, and left
+     * without saving: the mark was already lifted, so the next open read the device by itself and
+     * saved it — the place they had cleared, back without their having given it.
+     */
     localStorage.setItem(DEVICE_CLEARED, "1");
+    let reads = 0;
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: { query: async () => ({ state: "granted" }) },
+    });
     Object.defineProperty(navigator, "geolocation", {
       configurable: true,
       value: {
-        getCurrentPosition: (resolve: (position: unknown) => void) =>
-          resolve({ coords: { latitude: 37.498_095, longitude: 127.027_61 } }),
+        getCurrentPosition: (resolve: (position: unknown) => void) => {
+          reads += 1;
+          resolve({
+            coords: {
+              latitude: 37.498_095,
+              longitude: 127.027_61,
+              accuracy: 65,
+            },
+          });
+        },
       },
     });
     const { api, writes } = server({ place: null, coordinates: null });
     const view = await mountApp({ path: "/settings/shop", api });
     await view.waitFor(() => placeField(view) !== null, "the place field");
     await view.settle(60);
-    expect(writes).toEqual([]);
-    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("1");
+    // Cleared here: a browser that says yes is not read by itself.
+    expect(reads).toBe(0);
 
-    // The person asks for this device's place again, themselves.
+    // The person looks at where this device is — and leaves.
     await press(view, "Use this device's location");
     await view.waitFor(
       () => view.host.textContent?.includes("37.50, 127.03") === true,
       "the device's place, coarse",
     );
-    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("0");
+    expect(reads).toBe(1);
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("1");
+    await view.unmount();
+
+    // The next open: still cleared, so still nothing read and nothing saved by itself.
+    const again = await mountApp({ path: "/settings/shop", api });
+    await again.waitFor(() => placeField(again) !== null, "the place field");
+    await again.settle(60);
+    expect(reads).toBe(1);
+    expect(writes).toEqual([]);
+
+    // This time they save it: that is giving the place again, and the mark goes.
+    await press(again, "Use this device's location");
+    await again.waitFor(
+      () => again.host.textContent?.includes("37.50, 127.03") === true,
+      "the device's place, coarse",
+    );
+    await press(again, "Save the location");
+    await again.waitFor(() => writes.length === 1, "the save");
+    expect(writes[0]?.body).toEqual({
+      place: null,
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBeNull();
+    // And they decided about this device by pressing: nobody is to ask them again.
     expect(localStorage.getItem(DEVICE_ASKED)).toBe("1");
+  });
+
+  test("지우기 marks this device before its request goes, and takes the mark off again if the server does not take the clear", async () => {
+    /*
+     * The mark was written when the server's answer came back. A follow reading the device at that
+     * moment looks at the mark when the device answers — and between the request and its answer
+     * there was none, so it could save the place back (review of pull request 94).
+     */
+    let isDown = true;
+    const { api, writes, clearedMarkAtClear } = server(
+      { place: null, coordinates: { latitude: 37.5, longitude: 127.03 } },
+      { failClear: () => isDown },
+    );
+    const view = await mountApp({ path: "/settings/shop", api });
+
+    // The server is down: the place was not cleared, so no device is left silenced.
+    await press(view, "Clear the location");
+    await view.waitFor(() => writes.length === 1, "the clear that fails");
+    await view.waitFor(
+      () =>
+        view.host.textContent?.includes("That was not saved. Try again.") ===
+        true,
+      "the failure, in words",
+    );
+    // It was marked when the request arrived…
+    expect(clearedMarkAtClear).toEqual(["1"]);
+    // …and is not marked now.
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBeNull();
+
+    // Back up: cleared, and marked from before the request to after it.
+    isDown = false;
+    await press(view, "Clear the location");
+    await view.waitFor(() => writes.length === 2, "the clear");
+    await view.waitFor(
+      () => view.buttonNamed("Clear the location") === undefined,
+      "the clear button to go",
+    );
+    expect(clearedMarkAtClear).toEqual(["1", "1"]);
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("1");
   });
 
   test("clearing words alone spends nothing: the device was no part of that answer, and is the default again", async () => {
@@ -391,6 +492,60 @@ describe("Settings → 내 가게 → 가게 위치", () => {
       place: null,
       coordinates: { latitude: 37.5, longitude: 127.03 },
     });
+  });
+
+  test("a question nobody answers gives the button back and says so, and a second press asks again", async () => {
+    /*
+     * A PRESS JOINED A WAIT THAT NEVER ENDED (review of pull request 94). The system shows its
+     * question only for an app that is in use and says nothing when it does not; the shell waited
+     * on an answer that could not come, and this button sat at "찾는 중…" with every control on
+     * the section disabled until the app was quit. The shell answers `unanswered` after a minute.
+     */
+    const reads: unknown[] = [];
+    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args: unknown) => {
+          if (command === "device_place_permission") return "prompt";
+          if (command === "device_place") {
+            reads.push(args);
+            // The first time the question goes unanswered; the second, the person says yes.
+            return reads.length === 1
+              ? { kind: "unanswered" }
+              : {
+                  kind: "place",
+                  latitude: 37.498_095,
+                  longitude: 127.027_61,
+                  accuracy: 65,
+                };
+          }
+          return undefined;
+        },
+      },
+    };
+    const { api, writes } = server({ place: null, coordinates: null });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await press(view, "Use this device's location");
+    await view.waitFor(
+      () =>
+        view.host.textContent?.includes(
+          "The question about this device's location has not been answered. If you do not see it, press again.",
+        ) === true,
+      "what happened, in words",
+    );
+    // The section is the person's again: the button is back, and nothing was saved or decided.
+    expect(view.buttonNamed("Use this device's location")?.disabled).toBe(
+      false,
+    );
+    expect(placeField(view)?.disabled).toBe(false);
+    expect(writes).toEqual([]);
+
+    await press(view, "Use this device's location");
+    await view.waitFor(
+      () => view.host.textContent?.includes("37.50, 127.03") === true,
+      "the device's place, coarse",
+    );
+    expect(reads).toEqual([{ prompt: true }, { prompt: true }]);
+    expect(view.host.textContent).not.toContain("has not been answered");
   });
 
   test("a device that said no in the installed app answers the press in words", async () => {

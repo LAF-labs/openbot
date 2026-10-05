@@ -1203,15 +1203,34 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * shell's words about the device's place are the page's own lists, rounded where the fix arrives
  * and never printed).
  *
+ * RAISED AGAIN 2026-10-06 after that change's review, by exactly what was added: thirteen to
+ * `app` — five more in `device-place.test.ts`, which holds thirty (a device read within the hour
+ * is left alone; a question nobody answered spends nothing and is asked again; a no or a closed
+ * prompt is the person's answer; a fix too vague to name the town is not kept for somebody who
+ * pressed nothing; the one cell beside is not a move; a browser's fix carries how far off it is
+ * and its refusals are the person's answers — and the two tests about a mark from before
+ * "cleared" existed are gone with that mark, which no device ever held), six more in
+ * `device-place-gate.test.tsx`, which holds twenty-one (the page looked at again follows, and
+ * twice in an hour reads once; a page that is not being looked at asks nothing until it is; a
+ * vague fix is not kept by itself; a device whose person decided before and that says yes is
+ * read; in the installed app a question never answered spends nothing and the next look asks
+ * again, a second look during an open ask starts nothing, and bringing the window back is a look
+ * — where the old-mark test stood) and two more in `settings-shop-location.test.tsx`, which
+ * holds thirteen (지우기 marks before its request goes and takes the mark off if the server does
+ * not take the clear; a question nobody answers gives the button back and a second press asks
+ * again — and the test that a press takes a cleared place back is now that SAVING what the
+ * button gave does) — and one to `root`, in `desktop-shell.test.ts` (each thing the shell asks of
+ * the system has a bound, and a bound that passes with nobody having decided is not a refusal).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3624, roots: ["server"] },
-  { name: "app", floor: 2077, roots: ["app"] },
+  { name: "app", floor: 2090, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 717, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
