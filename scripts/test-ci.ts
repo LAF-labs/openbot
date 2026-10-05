@@ -1014,12 +1014,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * handed the person's zone) — and two to `root` (ordinary chat that wants none of it is sent under
  * 3% for the calendar and the mail; a rate is counted per kind).
  *
+ * RAISED AGAIN 2026-10-05, by exactly what was added: one to `server`, the hashes of the calendar's
+ * and the mail's tool definitions pinned (`plugin-rest-adapters.test.ts`) — a definition that
+ * changes is paused for review for everyone who has it connected, so changing one is a line here.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3548, roots: ["server"] },
+  { name: "server", floor: 3549, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 642, roots: ["tests", "agent-bot"] },
