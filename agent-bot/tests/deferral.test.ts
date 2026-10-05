@@ -761,16 +761,16 @@ describe("what the bridge leaves alone", () => {
 });
 
 /*
- * NOTHING OF A CONNECTED SERVICE WAS FOUND: THE LOOKUP'S ANSWER MAKES THE CONNECT CARD CALLABLE
- * (2026-10-05).
+ * A LOOKUP'S ANSWER MAKES THE CONNECT CARD CALLABLE, WITHOUT ITS SCHEMA (2026-10-05).
  *
- * The run that was measured looked two and three times and then answered in prose. Here the first
- * lookup is answered with what this person could connect and the card's schema
- * (`searchResultText`, read off the accounts the turn wrote on the card), so the card may be
- * called in the very next round — and it leaves the run as the real call, to the surface that
- * draws it and waits. Two requests of the model from the question to the card.
+ * The run that was measured looked two and three times and then answered in prose. Now, for a
+ * person with an account left to connect, every lookup's answer ends on one line: those accounts,
+ * and the card's whole call (`searchResultText`, read off the accounts the turn wrote on the
+ * card). A conversation that was given that line may call the card in the very next round — it
+ * leaves the run as the real call, to the surface that draws it and waits. Two requests of the
+ * model from the question to the card, and no 1,390 characters of schema on the way.
  */
-describe("a lookup that finds nothing of a connected service", () => {
+describe("a lookup's answer for a person with an account left to connect", () => {
   const DECLARED = {
     type: "object",
     properties: {
@@ -782,23 +782,39 @@ describe("a lookup that finds nothing of a connected service", () => {
     },
     required: ["services"],
   };
-  const CONNECT = {
+  const cardWith = (connected: readonly string[]) => ({
     name: "showConnection",
     description:
       "Put connection switches on screen and WAIT until the person turns one on.",
     // As a turn hands it on: this person's accounts written on it.
-    parameters: withAccountStates(DECLARED, [
-      { key: "gmail", connected: false },
-      { key: "google-calendar", connected: false },
-    ]),
-  };
+    parameters: withAccountStates(
+      DECLARED,
+      ["gmail", "google-calendar"].map((key) => ({
+        key,
+        connected: connected.includes(key),
+      })),
+    ),
+  });
+  const CONNECT = cardWith([]);
   const GOALS = tool(
     "mcp__goals__list_goals",
     "이 사람의 진행 중인 목표를 본다.",
   );
   const NOTHING_CONNECTED = [...CORE, GOALS, CONNECT];
+  const LINE =
+    '이 사람이 아직 연결하지 않은 계정: 지메일(gmail), 구글 캘린더(google-calendar). 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 tool_search 없이 바로 tool_call로 연결 카드를 띄운다 — name은 "showConnection", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.';
+  const raise = (id: string, services: string[]) => ({
+    id,
+    name: "tool_call",
+    args: { name: "showConnection", args: { services } },
+  });
+  const resultsOf = (events: readonly { type: string }[]) =>
+    events.filter((event) => event.type === "TOOL_CALL_RESULT") as {
+      toolCallId?: string;
+      content?: unknown;
+    }[];
 
-  test("is answered with what could be connected and the card, and the card is then the real call", async () => {
+  test("ends on the line, and the card is then the real call — two requests, no schema handed over", async () => {
     const card = { services: ["google-calendar"], reason: "일정을 보려면" };
     const { requests, events } = await runFor(NOTHING_CONNECTED, [
       calls(
@@ -825,23 +841,16 @@ describe("a lookup that finds nothing of a connected service", () => {
 
     // One lookup, then the card: two requests, and the run ends at the card for the surface.
     expect(requests).toHaveLength(2);
-    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
-    expect(result?.toolCallId).toBe("c1");
-    const answer = String(result?.content).split("\n");
-    expect(answer).toContain(
-      "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail), 구글 캘린더(google-calendar).",
-    );
-    // The card last, as the window declared it.
-    expect(JSON.parse(answer.at(-1) ?? "null")).toEqual({
-      name: "showConnection",
-      description: CONNECT.description,
-      parameters: DECLARED,
-    });
+    const [looked] = resultsOf(events);
+    expect(looked?.toolCallId).toBe("c1");
+    const answer = String(looked?.content);
+    expect(answer.split("\n").at(-1)).toBe(LINE);
+    expect(answer).not.toContain('"name":"showConnection"');
     // The second request read that answer, as the tool message of the lookup.
     const read = (requests[1]?.messages ?? []).find(
       (message) => message.role === "tool",
     );
-    expect(String(read?.content)).toBe(String(result?.content));
+    expect(String(read?.content)).toBe(answer);
 
     // The card went to the wire in its own name, with the Bot's arguments, and was not answered here.
     const starts = events.filter((event) => event.type === "TOOL_CALL_START");
@@ -853,10 +862,43 @@ describe("a lookup that finds nothing of a connected service", () => {
       (event) => event.type === "TOOL_CALL_ARGS" && event.toolCallId === "c2",
     );
     expect(JSON.parse(String(cardArgs?.delta))).toEqual(card);
-    expect(
-      events.filter((event) => event.type === "TOOL_CALL_RESULT"),
-    ).toHaveLength(1);
+    expect(resultsOf(events)).toHaveLength(1);
     expect(kinds(events).at(-1)).toBe("RUN_FINISHED");
+  });
+
+  /*
+   * THE RULE IS THE SAME RULE. A deferred tool is forwarded once the conversation was told its
+   * shape; called before that, the arguments are a guess and the call is answered with the schema
+   * (`undescribedToolText`). The line is how a conversation is told the connect card's shape, so
+   * with no line — nobody's accounts written on the card, or nothing left to connect — the card
+   * is answered like any other tool nobody described.
+   */
+  test("with no line given, the card called from its name alone is answered with its schema, not forwarded", async () => {
+    for (const card of [
+      { ...CONNECT, parameters: DECLARED },
+      cardWith(["gmail", "google-calendar"]),
+    ]) {
+      const { events } = await runFor(
+        [...CORE, GOALS, card],
+        [
+          calls([raise("c1", ["google-calendar"])]),
+          said("캘린더를 연결하면 볼 수 있어요."),
+        ],
+      );
+      const [answered] = resultsOf(events);
+      expect(String(answered?.content)).toContain(
+        "'showConnection'의 스키마를 이 대화에서 아직 받지 않아서 부르지 않았다",
+      );
+      // What it is answered with is the window's schema: nobody's accounts are in it.
+      expect(String(answered?.content)).not.toContain("x-accounts");
+      expect(
+        events.some(
+          (event) =>
+            event.type === "TOOL_CALL_START" &&
+            event.toolCallName === "showConnection",
+        ),
+      ).toBe(false);
+    }
   });
 
   test("the answer is the same bytes for the same list, lookup after lookup", async () => {
@@ -867,9 +909,7 @@ describe("a lookup that finds nothing of a connected service", () => {
       lookup("c2"),
       said("메일이 연결돼 있지 않아요."),
     ]);
-    const answers = events
-      .filter((event) => event.type === "TOOL_CALL_RESULT")
-      .map((event) => String(event.content));
+    const answers = resultsOf(events).map((event) => String(event.content));
     expect(answers).toHaveLength(2);
     expect(answers[1]).toBe(answers[0]);
     expect(answers[0]).toBe(
@@ -889,9 +929,9 @@ describe("a lookup that finds nothing of a connected service", () => {
     expect(JSON.stringify(requests[0]?.tools)).not.toContain("x-accounts");
   });
 
-  test("with the service connected its tool is the answer, and nothing is said of connecting", async () => {
+  test("with a service connected its tool is handed over, and the line names only what is left", async () => {
     const { events } = await runFor(
-      [...NOTHING_CONNECTED, GMAIL_SEARCH],
+      [...CORE, GOALS, cardWith(["gmail"]), GMAIL_SEARCH],
       [
         calls([
           { id: "c1", name: "tool_search", args: { query: "메일 확인하기" } },
@@ -899,11 +939,11 @@ describe("a lookup that finds nothing of a connected service", () => {
         said("찾았어요."),
       ],
     );
-    const answer = String(
-      events.find((event) => event.type === "TOOL_CALL_RESULT")?.content,
-    );
-    expect(answer).not.toContain("연결하면");
-    expect(answer).not.toContain('"name":"showConnection"');
+    const answer = String(resultsOf(events)[0]?.content);
     expect(answer).toContain('"name":"mcp__gmail__search_messages"');
+    const line = answer.split("\n").at(-1) ?? "";
+    expect(line).toContain("구글 캘린더(google-calendar)");
+    expect(line).not.toContain("gmail");
+    expect(answer).not.toContain('"name":"showConnection"');
   });
 });

@@ -6,9 +6,11 @@ import {
   deferredToolsText,
   describedToolNames,
   exposureOf,
+  FAMILY_LABELS_KO,
   familiesOf,
   isBridgeToolName,
   isDeferredToolName,
+  OPEN_ACCOUNTS_HEAD,
   oneLine,
   resolveDeferred,
   resolveOffered,
@@ -622,7 +624,7 @@ describe("a tool already in the schema, asked for through the bridge", () => {
 });
 
 /*
- * WHAT COULD BE CONNECTED IS SAID AS A FACT, AND THE MODEL CHOOSES.
+ * WHAT COULD BE CONNECTED IS SAID AS A FACT, ON EVERY LOOKUP, AND THE MODEL CHOOSES.
  *
  * Measured 2026-10-05 on the fleet's model, a person with nothing connected, six runs a question:
  * "오늘 일정 뭐 있어?" was two to six requests of the model and then prose saying it could see no
@@ -630,14 +632,16 @@ describe("a tool already in the schema, asked for through the bridge", () => {
  * 다시 찾아 본다": it took 목표 and 나라장터 for connected services, and said nothing of what could
  * be connected.
  *
- * For a day it then guessed, from a table of words, which service a lookup meant. Probed by a
- * reviewer: "배송 일정 조회" and "루틴 스케줄" were offered Google Calendar, "카페 24시간" Cafe24,
- * "카카오 주가" 카카오, "balance sheet" Google Sheets — and a person who had connected 톡캘린더 was
- * handed Google Calendar's card ahead of the tool they had. So the bridge picks nothing. It says
- * what this person's accounts are — written on the connect card by the turn, from the connections
- * themselves — and the model that read the request decides whether one of them is needed.
+ * Twice the bridge then decided for the model, and twice it was wrong. A table of words chose the
+ * service: "배송 일정 조회" was offered Google Calendar, "카페 24시간" Cafe24, "balance sheet" Google
+ * Sheets. Then "say nothing where a connected service's tool was found" chose when to speak: with
+ * only Gmail connected, "캘린더 일정 확인" reaches Gmail's draft tool on the one word 확인, and the
+ * offer was gone — 18 of 48 calendar lookups and 15 of 30 mail lookups, for a person with one
+ * service connected (review). So the bridge picks nothing: for anyone with an account left to
+ * connect, every lookup's answer ends on the same short line, and the model that read the request
+ * decides whether it matters.
  */
-describe("a lookup that finds nothing of a connected service", () => {
+describe("what a lookup says of connecting", () => {
   const DECLARED = {
     type: "object",
     properties: {
@@ -685,43 +689,37 @@ describe("a lookup that finds nothing of a connected service", () => {
   ];
   const NOTHING = [...NOBODYS, card(OPEN)];
   const linesOf = (text: string) => text.split("\n");
-  const LIST =
-    "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail), 구글 캘린더(google-calendar), 구글 시트(google-sheets), 노션(notion).";
-  const CARD_LINE = JSON.stringify({
-    name: CONNECT_CARD,
-    description: card().description,
-    parameters: DECLARED,
-  });
-  /** What a lookup says about connecting: from the list's line to the end. */
-  const connecting = (text: string) => {
-    const lines = linesOf(text);
-    const at = lines.findIndex((line) => line.startsWith("다만 이 사람이"));
-    return at < 0 ? [] : lines.slice(at);
-  };
+  const lastOf = (text: string) => linesOf(text).at(-1) ?? "";
+  /** The line for these open accounts: the whole of what is said, pinned once. */
+  const lineFor = (accounts: string) =>
+    `${OPEN_ACCOUNTS_HEAD}${accounts}. 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 tool_search 없이 바로 tool_call로 연결 카드를 띄운다 — name은 "showConnection", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.`;
+  const LINE = lineFor(
+    "지메일(gmail), 구글 캘린더(google-calendar), 구글 시트(google-sheets), 노션(notion)",
+  );
 
-  test("a miss says what this person could connect — by name and key, in key order — then how, then the card", () => {
+  test("a miss ends on one short line: the accounts still open, by name and key in key order, and the call's whole shape", () => {
     const text = searchResultText(NOTHING, "캘린더 일정 조회");
-    const lines = linesOf(text);
-    expect(lines.slice(0, 4)).toEqual([
+    expect(linesOf(text)).toEqual([
       "'캘린더 일정 조회'에 맞는 도구가 없다.",
       "지금 연결된 서비스는 없다.",
       "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
-      LIST,
+      LINE,
     ]);
-    // The one instruction: the card when one of them is needed, and the rule for after 다음에.
-    expect(lines[4]).toContain(`${CONNECT_CARD}을 tool_call로 불러`);
-    expect(lines[4]).toContain("말로만 답하지 말고");
-    expect(lines[4]).toContain("괄호 안의 키");
-    expect(lines[4]).toContain(
-      "이미 다음으로 미뤘으면 카드를 다시 띄우지 말고",
-    );
-    expect(lines[4]).toContain("필요한 것이 없으면 연결을 권하지 않는다");
-    // The card as the window declared it: what the turn wrote on it is the bridge's to read.
-    expect(lines[5]).toBe(CARD_LINE);
-    expect(lines).toHaveLength(6);
+    // No schema is pasted, and nothing of what the turn wrote on the card.
+    expect(text).not.toContain(`{"name":"${CONNECT_CARD}"`);
     expect(text).not.toContain(ACCOUNT_STATES);
-    // Its schema has now been handed over, so the Bot's next call may be the card.
-    expect(describedToolNames([text]).has(CONNECT_CARD)).toBe(true);
+  });
+
+  test("the line is short whoever reads it: under four hundred characters with every account open", () => {
+    const every = Object.keys(FAMILY_LABELS_KO).filter(
+      (key) => !DEPLOYMENT_FAMILIES.has(key) && key !== "kakao-alimtalk",
+    );
+    expect(every).toHaveLength(9);
+    const line = lastOf(
+      searchResultText([...NOBODYS, card(off(...every))], "막대 차트"),
+    );
+    expect(line.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+    expect(line.length).toBeLessThan(400);
   });
 
   test("the same accounts are the same bytes, in whatever order the turn or the list came", () => {
@@ -734,76 +732,120 @@ describe("a lookup that finds nothing of a connected service", () => {
   });
 
   /*
-   * THE BRIDGE PICKS NO SERVICE. Whatever the words, the facts are the same facts: the reviewer's
-   * probes of the table are answered with the same lines as a lookup for the calendar.
+   * NO MATCHER DECIDES WHETHER IT IS SAID. Whatever the words and whatever was found — nothing,
+   * 목표's tool on a stray word, a tool asked for by name, a card — the last line is the same line.
    */
-  test("what is said of connecting does not depend on the words looked with", () => {
-    const said = connecting(searchResultText(NOTHING, "캘린더 일정 조회"));
-    expect(said).toEqual([LIST, expect.any(String), CARD_LINE]);
+  test("every lookup ends on it, whatever the words and whatever was found", () => {
     for (const query of [
+      "캘린더 일정 조회",
       "배송 일정 조회",
-      "루틴 스케줄",
       "카페 24시간",
-      "카카오 주가",
       "balance sheet",
       "네이버 메일 확인",
-      "슬랙 메시지 보내기",
+      "일정 확인",
+      "막대 차트",
+      "select:mcp__public-data__search_bids",
+      "select:mcp__gmail__list_messages",
+      "연결",
     ]) {
-      expect(connecting(searchResultText(NOTHING, query))).toEqual(said);
+      expect({ query, last: lastOf(searchResultText(NOTHING, query)) }).toEqual(
+        {
+          query,
+          last: LINE,
+        },
+      );
     }
+    // Said once: found by the word 연결, the card's schema is the hit and the line follows it.
+    const found = searchResultText(NOTHING, "연결");
+    expect(found.split(OPEN_ACCOUNTS_HEAD)).toHaveLength(2);
+    expect(found.split(`"name":"${CONNECT_CARD}"`)).toHaveLength(2);
   });
 
-  test("noise is not an answer: a hit on 목표's tool still says what could be connected, after it", () => {
-    // "확인" reaches 목표's log_progress, as it did in fifteen of seventeen lookups on 2026-10-05.
-    const lines = linesOf(searchResultText(NOTHING, "일정 확인"));
-    expect(lines[0]).toBe(
-      "'일정 확인'에 맞는 도구 1개, 스키마 전부. 이 스키마대로 tool_call로 부른다.",
+  /*
+   * THE CASE THE SECOND BUILD LOST (review, 2026-10-05). Gmail is the one service this person
+   * connected. The model's own lookup for a calendar reaches Gmail's draft tool on 확인 — and the
+   * answer said nothing of the calendar that could be connected, because "a connected service's
+   * tool was found". Now the hit is handed over and the line still follows: Gmail is not on it,
+   * the calendar is.
+   */
+  test("a weak hit on a connected stranger's tool does not silence it", () => {
+    const draft = wire(
+      "mcp__gmail__create_draft",
+      "메일 초안을 만든다. 보내지 않는다 — 사람이 확인하고 보낸다. (gmail)",
     );
-    expect(JSON.parse(lines[1] ?? "null").name).toBe(
-      "mcp__goals__log_progress",
+    const list = [
+      ...NOBODYS,
+      draft,
+      card([
+        ...on("gmail"),
+        ...off("google-calendar", "google-sheets", "notion"),
+      ]),
+    ];
+    const lines = linesOf(searchResultText(list, "캘린더 일정 확인"));
+    expect(lines.some((line) => line.includes(`"name":"${draft.name}"`))).toBe(
+      true,
     );
-    expect(lines.slice(2)).toEqual([LIST, expect.any(String), CARD_LINE]);
+    expect(lines.at(-1)).toBe(
+      lineFor(
+        "구글 캘린더(google-calendar), 구글 시트(google-sheets), 노션(notion)",
+      ),
+    );
+    // And a miss there still says what IS connected, before what could be.
+    const miss = linesOf(searchResultText(list, "노션 페이지 만들기"));
+    expect(miss[1]).toBe("지금 연결된 서비스: 지메일.");
+    expect(miss.at(-1)).toBe(lines.at(-1));
   });
 
-  test("a hit on a tool of a service this person connected says nothing of connecting", () => {
-    // 톡캘린더 connected, Google's not: the calendar that is there is the answer.
+  test("with the right service connected its tool is handed over, and the line names only what is left", () => {
+    // 톡캘린더 connected, Google's not: the calendar that is there is found, and nothing here
+    // says to connect another — the line is the same fact as on any other lookup.
     const talk = wire(
       "mcp__kakao-playmcp__list_events",
       "톡캘린더의 일정을 기간으로 본다.",
     );
-    const list = [...NOBODYS, talk, card([...OPEN, ...on("kakao-playmcp")])];
-    const text = searchResultText(list, "캘린더 일정 확인");
-    expect(linesOf(text)[1]).toBe(
+    const lines = linesOf(
+      searchResultText(
+        [...NOBODYS, talk, card([...OPEN, ...on("kakao-playmcp")])],
+        "캘린더 일정 확인",
+      ),
+    );
+    expect(lines[1]).toBe(
       JSON.stringify({
         name: talk.name,
         description: talk.description,
         parameters: talk.parameters,
       }),
     );
-    expect(text).not.toContain("연결하면");
-    expect(text).not.toContain(CONNECT_CARD);
+    expect(lines.at(-1)).toBe(LINE);
+    expect(lines.at(-1)).not.toContain("kakao-playmcp");
   });
 
-  test("a tool asked for by name and found is handed over with nothing more; one that is not there is a miss", () => {
-    const found = searchResultText(
-      NOTHING,
-      "select:mcp__public-data__search_bids",
+  /*
+   * CALLABLE FROM THE LINE. A deferred tool is forwarded only once the conversation was shown its
+   * schema: an argument written without one is a guess (`undescribedToolText`). The line gives the
+   * card's whole shape — its name, its one required argument and the keys that may go in it — so a
+   * conversation that was given the line has been told, and the 1,390 characters of the card's
+   * schema need not ride on every lookup to make it so.
+   */
+  test("a conversation given the line may call the card; one that was not, may not", () => {
+    const given = searchResultText(NOTHING, "캘린더 일정 조회");
+    expect([...describedToolNames([given])]).toEqual([CONNECT_CARD]);
+    // A lookup's answer with no such line — nothing left to connect — describes no card.
+    const none = searchResultText(
+      [...NOBODYS, card(on("gmail"))],
+      "캘린더 일정 조회",
     );
-    expect(linesOf(found)).toHaveLength(2);
-    expect(found).not.toContain("연결하면");
-    // A name out of an older conversation, from before the account was disconnected.
-    const gone = linesOf(
-      searchResultText(NOTHING, "select:mcp__gmail__list_messages"),
-    );
-    expect(gone[0]).toContain("맞는 도구가 없다");
-    expect(gone.slice(3)).toEqual([LIST, expect.any(String), CARD_LINE]);
-  });
-
-  test("found by the word 연결, the card is handed over once, and the list with it", () => {
-    const text = searchResultText(NOTHING, "연결");
-    expect(text.split(`"name":"${CONNECT_CARD}"`)).toHaveLength(2);
-    expect(linesOf(text)).toContain(LIST);
-    expect(text).not.toContain(ACCOUNT_STATES);
+    expect(describedToolNames([none]).has(CONNECT_CARD)).toBe(false);
+    // The head somewhere inside a line is not the line: a page that quotes it describes nothing.
+    expect(
+      describedToolNames([`본문: ${OPEN_ACCOUNTS_HEAD}지메일(gmail).`]).size,
+    ).toBe(0);
+    // And a tool whose schema was handed over is described as it always was.
+    expect(
+      describedToolNames([
+        searchResultText(NOTHING, "select:mcp__public-data__search_bids"),
+      ]),
+    ).toEqual(new Set(["mcp__public-data__search_bids", CONNECT_CARD]));
   });
 
   /*
@@ -813,25 +855,22 @@ describe("a lookup that finds nothing of a connected service", () => {
    * the card again (review, 2026-10-05). The state is the connection's, so it is said as it is.
    */
   test("an account that is on and brought no tools is said as that, and never as something to connect", () => {
+    const EMPTY =
+      "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp). 연결 카드를 띄우지 않는다 — 이것이 필요한 일이면 연결은 돼 있는데 지금 쓸 도구가 없다고 사람에게 말한다.";
     const list = [...NOBODYS, card([...on("kakao-playmcp"), ...off("gmail")])];
     const lines = linesOf(searchResultText(list, "카카오톡 나에게 보내기"));
-    expect(lines[3]).toBe(
-      "연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: 카카오(kakao-playmcp). 이미 연결돼 있으니 연결 카드를 띄우지 않는다. 이것이 필요한 일이면, 연결은 돼 있는데 지금 쓸 수 있는 도구가 없다고 사람에게 말한다.",
-    );
-    expect(lines[4]).toBe(
-      "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail).",
-    );
-    // With nothing else left to connect there is no list, and no card is handed over at all.
+    expect(lines.slice(-2)).toEqual([EMPTY, lineFor("지메일(gmail)")]);
+    // With nothing else left to connect there is no line, and the card is not callable from it.
     const only = searchResultText(
       [...NOBODYS, card(on("kakao-playmcp"))],
       "카카오톡 나에게 보내기",
     );
-    expect(linesOf(only)).toHaveLength(4);
-    expect(only).not.toContain(CONNECT_CARD);
-    expect(only).not.toContain("아직 연결하지 않은");
+    expect(linesOf(only).at(-1)).toBe(EMPTY);
+    expect(only).not.toContain(OPEN_ACCOUNTS_HEAD);
+    expect(describedToolNames([only]).size).toBe(0);
   });
 
-  test("nothing left to connect, nothing written on the card, or no card at all: the miss it always was", () => {
+  test("nothing left to connect, nothing written on the card, or no card at all: the answer it always was", () => {
     const mail = wire("mcp__gmail__search_messages", "받은편지함을 찾는다.");
     const MISS = [
       "'노션 페이지 만들기'에 맞는 도구가 없다.",
@@ -863,11 +902,14 @@ describe("a lookup that finds nothing of a connected service", () => {
   });
 
   test("an account the bridge has no name for is said by its key, not by a name made up", () => {
-    const text = searchResultText(
-      [...NOBODYS, card(off("gmail", "acme-crm"))],
-      "고객 목록",
-    );
-    expect(text).toContain("서비스가 있다: acme-crm, 지메일(gmail).");
+    expect(
+      lastOf(
+        searchResultText(
+          [...NOBODYS, card(off("gmail", "acme-crm"))],
+          "고객 목록",
+        ),
+      ),
+    ).toBe(lineFor("acme-crm, 지메일(gmail)"));
   });
 
   test("목표 and the fleet's keys are nobody's connection: a miss names none and is not looked for again", () => {
