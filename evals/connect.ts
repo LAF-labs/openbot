@@ -155,6 +155,55 @@ export function answeredAtOnce(
 }
 
 /**
+ * A TURN IN WHICH THE PERSON CONNECTS AT THE CARD — what goes past the card, with fixtures.
+ *
+ * The first connect card raised for `key` is answered as the server answers one whose switch
+ * turned on during the wait (`connectCard`, `server/src/turns/chat-tools.ts`): the account's tools
+ * land in the SAME turn's list, added and never removed (`offerLandedTools`), and the answer is
+ * `laf:connection_on` naming them. What is written on the card stays the turn's read from before
+ * the switch was pressed — as it does in the product — so a lookup after it is answered from a
+ * list that holds the tools and a card that still says "not connected".
+ *
+ * `tools` is the one array the run is handed on every round; `reset` puts it back for the next
+ * attempt. A card after the first is not answered — it would be the Bot asking again — and
+ * neither is one for another service: the run ends on those (`waitsOn`).
+ */
+export function connectsAtTheCard(
+  before: readonly WireTool[],
+  key: string,
+  landing: readonly WireTool[],
+) {
+  const tools: WireTool[] = [...before];
+  let isOn = false;
+  return {
+    tools,
+    reset() {
+      isOn = false;
+      tools.length = 0;
+      tools.push(...before);
+    },
+    answer(call: ObservedCall): string | undefined {
+      if (call.name !== CONNECT_CARD || isOn) return undefined;
+      const offered = servicesOf(call);
+      if (!offered.includes(key)) return undefined;
+      isOn = true;
+      tools.push(...landing);
+      return JSON.stringify(
+        connectionAnswer({
+          offered,
+          connected: [key],
+          tools: landing.map((tool) => tool.name),
+        }),
+      );
+    },
+    // The one call that is answered rather than waited on: the first card that offers `key`.
+    waitsOn: (call: ObservedCall): boolean =>
+      asksThePerson(call) &&
+      !(call.name === CONNECT_CARD && !isOn && servicesOf(call).includes(key)),
+  };
+}
+
+/**
  * 톡캘린더, as a person who put it in their 카카오 toolbox would have it behind the bridge.
  *
  * INVENTED. 카카오's tool list is the person's own and this repository holds no adapter for it

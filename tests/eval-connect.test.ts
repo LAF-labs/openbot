@@ -9,6 +9,7 @@ import {
   claimsNothingThere,
   connectCard,
   connectFactsOf,
+  connectsAtTheCard,
   DEADLINE_LOOKUP,
   everythingConnected,
   judgeCardOffered,
@@ -551,6 +552,52 @@ describe("what the scenarios hand the Bot", () => {
     expect(
       answer({ ...raised(["kakao-playmcp"]), name: "askChoice" }),
     ).toBeUndefined();
+  });
+
+  /*
+   * `connected-at-the-card-then-used` goes past the card: the fixture answers the first card for
+   * 지메일 as the server answers one whose switch turned on, and lands its tools in the same list.
+   * The card on that list still carries the turn's read — 지메일 not connected — which is the
+   * state the lookup after it has to see through.
+   */
+  test("a person who connects at the card: answered as on, the tools land in the same list, and the next lookup does not offer it again", () => {
+    const gmail = REALISTIC_TOOLSET.filter(
+      (tool) => serverKeyOf(tool.name) === "gmail",
+    );
+    const landing = connectsAtTheCard(nothing, "gmail", gmail);
+    const lookup = (query: string) => {
+      const { deferred, offered } = exposeTools(landing.tools, true);
+      return searchResultText(deferred, query, offered);
+    };
+    const lineOf = (text: string) => text.split("\n").at(-1) ?? "";
+    expect(landing.tools).toEqual(nothing);
+    expect(lineOf(lookup("메일 확인하기"))).toContain("지메일(gmail)");
+
+    // The first card is answered, not waited on.
+    expect(landing.waitsOn(raised(["gmail"]))).toBe(false);
+    expect(JSON.parse(landing.answer(raised(["gmail"])) ?? "null")).toEqual({
+      code: "laf:connection_on",
+      connected: ["gmail"],
+      notConnected: [],
+      tools: gmail.map((tool) => tool.name),
+      reason: toolResultText("laf:connection_on"),
+    });
+    expect(landing.tools).toHaveLength(nothing.length + gmail.length);
+
+    // The lookup the card's answer sends the Bot to: the tool, and a line that leaves 지메일 out.
+    const after = lookup("select:mcp__gmail__search_messages");
+    expect(after).toContain('"name":"mcp__gmail__search_messages"');
+    expect(lineOf(after).startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+    expect(lineOf(after)).not.toContain("지메일(gmail)");
+
+    // A second card is the Bot asking again: waited on, and never answered here.
+    expect(landing.waitsOn(raised(["gmail"]))).toBe(true);
+    expect(landing.answer(raised(["gmail"]))).toBeUndefined();
+    // And the next attempt starts from nothing connected; a card for something else is not this one's.
+    landing.reset();
+    expect(landing.tools).toEqual(nothing);
+    expect(landing.answer(raised(["notion"]))).toBeUndefined();
+    expect(landing.waitsOn(raised(["notion"]))).toBe(true);
   });
 
   test("a routine's list has no card, so nothing is said of connecting", () => {
