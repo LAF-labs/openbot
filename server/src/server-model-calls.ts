@@ -146,6 +146,43 @@ export function createServerModelCalls(input: {
     onUsage: recordModelUsage("auto-review"),
   });
 
+  /**
+   * A call on the server model, its tokens counted under the caller's own name. Six stand on it:
+   * the four judges' stand-ins, the day's summary and the dream.
+   */
+  const serverModelCall = (source: Parameters<typeof recordModelUsage>[0]) => ({
+    baseUrl: endpoint.baseUrl,
+    model: model.serverModel,
+    apiKey,
+    supportsEffort: model.serverModelSupportsEffort,
+    onUsage: recordModelUsage(source),
+  });
+
+  /**
+   * ONE ARRANGEMENT, FOUR JUDGES: Jev when the switch is on, with the server model in Jev's shape
+   * behind it for when Jev cannot answer — and the server model alone when the switch is off.
+   *
+   * What is a judge's own is its name and its two bounds. The name is the purpose in Jev's log line
+   * and what the stand-in's tokens are counted under (`compaction` is also what `jevAsker` calls a
+   * question nobody named, which is how the compactor's was asked before it was named here). The
+   * bounds are each somebody's wait, so they are said where the judge is made and not defaulted;
+   * `server-model-calls.test.ts` holds all of it, per judge, to what leaves this process.
+   */
+  const judge = (
+    name: "compaction" | "memory" | "mail-secrets" | "high-risk",
+    bounds: { jevMs: number; standInMs: number },
+  ): JevAsker => {
+    const standIn = modelAsker(serverModelCall(name), {
+      timeoutMs: bounds.standInMs,
+    });
+    return decisionCall
+      ? withFallback(
+          jevAsker(decisionCall, { timeoutMs: bounds.jevMs, purpose: name }),
+          standIn,
+        )
+      : standIn;
+  };
+
   /*
    * THE COMPACTOR (`context/compaction.ts`). `decisions` asks Jev when the switch is on and the
    * deployment's model in Jev's shape when it is off or Jev cannot answer; any failure of both
@@ -154,21 +191,9 @@ export function createServerModelCalls(input: {
    * and on MiMo-V2.6-Pro it outlived its bound 2 times in 3 and the rule lost the detail
    * (docs/laf/eval-pack.md). A stand-in that times out is no stand-in.
    */
-  const standIn = modelAsker(
-    {
-      baseUrl: endpoint.baseUrl,
-      model: model.serverModel,
-      apiKey,
-      supportsEffort: model.serverModelSupportsEffort,
-      onUsage: recordModelUsage("compaction"),
-    },
-    { timeoutMs: 90_000 },
-  );
   const compactor = createCompactor({
     mode: input.harness?.compaction ?? "off",
-    asker: decisionCall
-      ? withFallback(jevAsker(decisionCall, { timeoutMs: 15_000 }), standIn)
-      : standIn,
+    asker: judge("compaction", { jevMs: 15_000, standInMs: 90_000 }),
     excerpts: true,
     onFallback: (reason) =>
       log.warn("compaction_fell_back", { reason: reason.split(":")[0] }),
@@ -180,16 +205,9 @@ export function createServerModelCalls(input: {
    * fork, but a close made hours after the last turn reads a cold cache either way, and the server
    * model is the one measured to answer inside its bound.
    */
-  const summarizeDay = createDaySummarizer(
-    {
-      baseUrl: endpoint.baseUrl,
-      model: model.serverModel,
-      apiKey,
-      supportsEffort: model.serverModelSupportsEffort,
-      onUsage: recordModelUsage("day-summary"),
-    },
-    { timeoutMs: 120_000 },
-  );
+  const summarizeDay = createDaySummarizer(serverModelCall("day-summary"), {
+    timeoutMs: 120_000,
+  });
 
   /*
    * THE MEMORY'S JUDGE — the hourly curation's keep-or-drop (`agents/memory-curation.ts`) and the
@@ -197,22 +215,7 @@ export function createServerModelCalls(input: {
    * compactor's arrangement: Jev when the switch is on, the server model in Jev's shape behind it or
    * alone. Shorter bounds than the compactor's, because an owner's 잊기 waits on the scrub.
    */
-  const memoryStandIn = modelAsker(
-    {
-      baseUrl: endpoint.baseUrl,
-      model: model.serverModel,
-      apiKey,
-      supportsEffort: model.serverModelSupportsEffort,
-      onUsage: recordModelUsage("memory"),
-    },
-    { timeoutMs: 30_000 },
-  );
-  const memoryAsker = decisionCall
-    ? withFallback(
-        jevAsker(decisionCall, { timeoutMs: 10_000, purpose: "memory" }),
-        memoryStandIn,
-      )
-    : memoryStandIn;
+  const memoryAsker = judge("memory", { jevMs: 10_000, standInMs: 30_000 });
 
   /*
    * THE MAIL'S SECOND LOOK (`plugins/mail-secrets.ts`): whether a number or a link the rules could
@@ -224,22 +227,10 @@ export function createServerModelCalls(input: {
    * A trial's spent day is not judged, like the auto-review: the rules' answer stands alone, which
    * withholds everything they are sure of and nothing more.
    */
-  const mailStandIn = modelAsker(
-    {
-      baseUrl: endpoint.baseUrl,
-      model: model.serverModel,
-      apiKey,
-      supportsEffort: model.serverModelSupportsEffort,
-      onUsage: recordModelUsage("mail-secrets"),
-    },
-    { timeoutMs: 10_000 },
-  );
-  const mailAsker = decisionCall
-    ? withFallback(
-        jevAsker(decisionCall, { timeoutMs: 3_000, purpose: "mail-secrets" }),
-        mailStandIn,
-      )
-    : mailStandIn;
+  const mailAsker = judge("mail-secrets", {
+    jevMs: 3_000,
+    standInMs: 10_000,
+  });
   const mailSecretJudge: JevAsker = {
     async ask(state, questions) {
       if (await dailyBudget?.reachedToday()) {
@@ -255,31 +246,13 @@ export function createServerModelCalls(input: {
    * (GLM on this deployment) in Jev's shape behind it or alone. It is asked only about a submission
    * the deterministic signals could not settle, and only ever to ask a person more, never less.
    */
-  const highRiskStandIn = modelAsker(
-    {
-      baseUrl: endpoint.baseUrl,
-      model: model.serverModel,
-      apiKey,
-      supportsEffort: model.serverModelSupportsEffort,
-      onUsage: recordModelUsage("high-risk"),
-    },
-    { timeoutMs: 10_000 },
-  );
-  const highRiskAsker = decisionCall
-    ? withFallback(
-        jevAsker(decisionCall, { timeoutMs: 2_000, purpose: "high-risk" }),
-        highRiskStandIn,
-      )
-    : highRiskStandIn;
+  const highRiskAsker = judge("high-risk", {
+    jevMs: 2_000,
+    standInMs: 10_000,
+  });
 
   /** The nightly dream's writer (`agents/dream.ts`): the server model, like the day's summary. */
-  const dreamCall = {
-    baseUrl: endpoint.baseUrl,
-    model: model.serverModel,
-    apiKey,
-    supportsEffort: model.serverModelSupportsEffort,
-    onUsage: recordModelUsage("dream"),
-  };
+  const dreamCall = serverModelCall("dream");
 
   const writeUp = createWriteUp({
     baseUrl: endpoint.baseUrl,
