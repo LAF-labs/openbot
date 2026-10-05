@@ -11,12 +11,12 @@ import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { useSavedFlash } from "@/lib/saved-flash";
-import { clearPlaceOnThisDevice } from "@/lib/whereabouts/device-place";
 import {
-  canAskDeviceLocation,
-  readDeviceCoordinates,
-  savePlace,
-} from "@/lib/whereabouts/queries";
+  clearPlaceOnThisDevice,
+  readThisDeviceOnAPress,
+  useCanUseDeviceLocation,
+} from "@/lib/whereabouts/device-place";
+import { savePlace } from "@/lib/whereabouts/queries";
 
 /**
  * 가게 위치 — where the shop is, as a city or district.
@@ -31,10 +31,15 @@ import {
  * shops nearby, is the shop's — and "내 위치" reads as a device being followed around, which nothing
  * here does. It sits on 내 가게 beside what the shop does and where it works.
  *
- * THE DEVICE'S LOCATION ONLY WHERE IT CAN BE ASKED FOR (`canAskDeviceLocation`): a browser tab, on a
- * press, with the browser's own permission prompt, rounded to two decimals before anything keeps it.
- * The desktop shell's webview answers no such request, and a button that asks and then says nothing
- * is worse than no button — there, the words are the whole of it.
+ * THE DEVICE'S LOCATION ONLY WHERE A PRESS REACHES THE DEVICE (`useCanUseDeviceLocation`): a browser
+ * tab, and the installed app once its shell has said it can read the device — on macOS, and not in
+ * a shell from before it could. On a press, with the system's own permission question, rounded to
+ * two decimals before anything keeps it. Anywhere else a button that asks and then says nothing is
+ * worse than no button, and the words are the whole of it.
+ *
+ * AND THE PRESS IS HOW A 지우기 IS TAKEN BACK. Clearing a place that held this device's coordinates
+ * stops the device being read by itself; pressing its button says it is wanted again
+ * (`readThisDeviceOnAPress`).
  */
 export function ShopLocation() {
   const queryClient = useQueryClient();
@@ -51,6 +56,7 @@ export function ShopLocation() {
   const [busy, setBusy] = useState<"saving" | "locating" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isSaved, flashSaved] = useSavedFlash();
+  const canUseDevice = useCanUseDeviceLocation();
 
   const isChanged =
     place.trim() !== (saved.place ?? "") ||
@@ -100,7 +106,7 @@ export function ShopLocation() {
 
   const handleUseDevice = () =>
     run(async () => {
-      setCoordinates(await readDeviceCoordinates());
+      setCoordinates(await readThisDeviceOnAPress());
     }, "locating");
 
   return (
@@ -146,7 +152,7 @@ export function ShopLocation() {
               on one screen is a guess about which one saves what. */}
           {busy === "saving" ? t("Saving…") : t("Save the location")}
         </Button>
-        {canAskDeviceLocation() ? (
+        {canUseDevice ? (
           <Button
             disabled={busy !== null}
             onClick={() => void handleUseDevice()}

@@ -94,7 +94,7 @@ function AuthedShell() {
   useEffect(() => {
     void reportDevice(queryClient);
   }, [queryClient]);
-  // And its place, asked of the browser once per device — never in the shell, which cannot be asked.
+  // And its place: asked of the device once, and followed after — in a tab and in the installed app.
   useDevicePlaceOnce();
   /*
    * A conversation is kept for a while after its screen leaves (`lib/turns/kept-threads.ts`) — for

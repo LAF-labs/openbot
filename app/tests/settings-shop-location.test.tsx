@@ -30,6 +30,8 @@ import {
 
 /** This browser's mark that its device has had its once (`lib/whereabouts/device-place.ts`). */
 const DEVICE_ASKED = "laf.device-place-asked";
+/** And whether the person cleared this device's place here: `1`, or `0` when they have not. */
+const DEVICE_CLEARED = "laf.device-place-cleared";
 
 beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);
 /*
@@ -46,6 +48,7 @@ beforeEach(() => {
 afterEach(async () => {
   await unmountApps();
   localStorage.removeItem(DEVICE_ASKED);
+  localStorage.removeItem(DEVICE_CLEARED);
   delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
   Object.defineProperty(navigator, "geolocation", {
     configurable: true,
@@ -235,7 +238,9 @@ describe("Settings → 내 가게 → 가게 위치", () => {
     await press(view, "Clear the location");
     await view.waitFor(() => writes.length === 2, "the clear");
     expect(writes[1]?.method).toBe("DELETE");
+    // Cleared, which is its own mark: "asked" is true of every device whose place follows it.
     expect(localStorage.getItem(DEVICE_ASKED)).toBe("1");
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("1");
     await view.unmount();
 
     // The next open: nothing held, and a browser that would say yes without showing anything.
@@ -245,6 +250,33 @@ describe("Settings → 내 가게 → 가게 위치", () => {
     expect(reads).toBe(1);
     expect(writes).toHaveLength(2);
     expect(placeField(again)?.value).toBe("");
+  });
+
+  test("pressing the device's button again is how a cleared place is taken back", async () => {
+    // 지우기 was pressed here once: this device is not read by itself.
+    localStorage.setItem(DEVICE_CLEARED, "1");
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (resolve: (position: unknown) => void) =>
+          resolve({ coords: { latitude: 37.498_095, longitude: 127.027_61 } }),
+      },
+    });
+    const { api, writes } = server({ place: null, coordinates: null });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => placeField(view) !== null, "the place field");
+    await view.settle(60);
+    expect(writes).toEqual([]);
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("1");
+
+    // The person asks for this device's place again, themselves.
+    await press(view, "Use this device's location");
+    await view.waitFor(
+      () => view.host.textContent?.includes("37.50, 127.03") === true,
+      "the device's place, coarse",
+    );
+    expect(localStorage.getItem(DEVICE_CLEARED)).toBe("0");
+    expect(localStorage.getItem(DEVICE_ASKED)).toBe("1");
   });
 
   test("clearing words alone spends nothing: the device was no part of that answer, and is the default again", async () => {
@@ -258,15 +290,118 @@ describe("Settings → 내 가게 → 가게 위치", () => {
     expect(localStorage.getItem(DEVICE_ASKED)).toBeNull();
   });
 
-  test("the desktop shell draws no device button — its webview answers no location request", async () => {
+  test("the installed app offers the device's location through its shell, and a press may show the system's question", async () => {
+    /*
+     * The shell's webview answers no geolocation request, so until the shell could read the device
+     * this button was not drawn in the installed app at all — the surface this product leads with.
+     */
+    const reads: unknown[] = [];
+    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args: unknown) => {
+          if (command === "device_place_permission") return "prompt";
+          if (command === "device_place") {
+            reads.push(args);
+            // Rounded by the shell in the real thing; rounded again here whatever it did.
+            return {
+              kind: "place",
+              latitude: 37.498_095,
+              longitude: 127.027_61,
+            };
+          }
+          return undefined;
+        },
+      },
+    };
+    // A browser API that must not be what answers: in the real webview it never would.
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: () => {
+          throw new Error("the webview's own geolocation was asked");
+        },
+      },
+    });
+    const { api, writes } = server({ place: null, coordinates: null });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await press(view, "Use this device's location");
+    await view.waitFor(
+      () => view.host.textContent?.includes("37.50, 127.03") === true,
+      "the device's place, coarse",
+    );
+    // The person pressed: this is the read that may put the system's question up.
+    expect(reads).toEqual([{ prompt: true }]);
+    await press(view, "Save the location");
+    await view.waitFor(() => writes.length === 1, "the save");
+    expect(writes[0]?.body).toEqual({
+      place: null,
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+  });
+
+  test("a device that said no in the installed app answers the press in words", async () => {
+    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+      core: {
+        invoke: async (command: string) => {
+          if (command === "device_place_permission") return "denied";
+          if (command === "device_place") return { kind: "denied" };
+          return undefined;
+        },
+      },
+    };
+    const { api, writes } = server({ place: null, coordinates: null });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await press(view, "Use this device's location");
+    await view.waitFor(
+      () =>
+        view.host.textContent?.includes(
+          "Location was not allowed on this device.",
+        ) === true,
+      "the refusal, in words",
+    );
+    expect(writes).toEqual([]);
+  });
+
+  test("an installed app whose shell cannot read the device draws no device button", async () => {
+    /*
+     * An installed app is not replaced when the deployment is, so for a while most shells that
+     * open this page are from before the command; and on Windows the shell does not read the
+     * device at all. A button there would ask and then say nothing.
+     */
     Object.defineProperty(navigator, "geolocation", {
       configurable: true,
       value: { getCurrentPosition: () => undefined },
     });
-    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {};
-    const { api } = server({ place: null, coordinates: null });
-    const view = await mountApp({ path: "/settings/shop", api });
-    await view.waitFor(() => placeField(view) !== null, "the place field");
-    expect(view.buttonNamed("Use this device's location")).toBeUndefined();
+    const shells: unknown[] = [
+      // No bridge at all.
+      {},
+      // A shell from before the command: the call is refused.
+      {
+        core: {
+          invoke: async (command: string) => {
+            if (command.startsWith("device_place")) {
+              throw new Error(`${command} not allowed`);
+            }
+            return undefined;
+          },
+        },
+      },
+      // Windows, today.
+      {
+        core: {
+          invoke: async (command: string) =>
+            command === "device_place_permission" ? "unsupported" : undefined,
+        },
+      },
+    ];
+    for (const shell of shells) {
+      (globalThis as { __TAURI__?: unknown }).__TAURI__ = shell;
+      const { api } = server({ place: null, coordinates: null });
+      const view = await mountApp({ path: "/settings/shop", api });
+      await view.waitFor(() => placeField(view) !== null, "the place field");
+      await view.settle(60);
+      expect(view.buttonNamed("Use this device's location")).toBeUndefined();
+      await view.unmount();
+    }
   });
 });

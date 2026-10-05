@@ -3,6 +3,8 @@ import {
   inShell,
   requestShellNoticePermission,
   setShellBadge,
+  shellDevicePermission,
+  shellDevicePlace,
   shellNoticePermission,
   shellVersion,
   showShellNotice,
@@ -31,6 +33,9 @@ describe("in a browser tab", () => {
     // Null rather than a permission word: the browser's own `Notification` is what answers there.
     expect(await shellNoticePermission()).toBeNull();
     expect(await requestShellNoticePermission()).toBeNull();
+    // And the device is the browser's own `geolocation` to ask, not a shell's.
+    expect(await shellDevicePermission()).toBeNull();
+    expect(await shellDevicePlace({ prompt: true })).toBeNull();
   });
 });
 
@@ -193,6 +198,96 @@ describe("in the shell", () => {
       },
     };
     expect(await requestShellNoticePermission()).toBe("denied");
+  });
+
+  /**
+   * Where the device is: two commands, two closed lists.
+   *
+   * The shell says one of five words about being asked and one of seven kinds about the place
+   * (`desktop/src-tauri/src/location.rs`). Anything outside the lists is nothing — a word this
+   * page does not know must not be read as a yes, and a place that is not two numbers is not a
+   * place. So is a shell from before the commands, which rejects the call: that is most installed
+   * shells for a while, and it has to look exactly like a device that cannot be asked.
+   */
+  test("the device's place is asked for through the shell's two commands, and only its own words are heard", async () => {
+    const calls: Array<[string, unknown]> = [];
+    let answer: unknown;
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args: unknown) => {
+          calls.push([command, args]);
+          return answer;
+        },
+      },
+    };
+
+    for (const word of [
+      "granted",
+      "prompt",
+      "denied",
+      "restricted",
+      "unsupported",
+    ] as const) {
+      answer = word;
+      expect(await shellDevicePermission()).toBe(word);
+    }
+    for (const unknown of ["Granted", "authorized", "", 3, true, null, {}]) {
+      answer = unknown;
+      expect(await shellDevicePermission()).toBeNull();
+    }
+    // Asked with nothing: there is nothing about this question a page could choose.
+    expect(new Set(calls.map(([command]) => command))).toEqual(
+      new Set(["device_place_permission"]),
+    );
+    expect(calls.every(([, args]) => args === undefined)).toBe(true);
+
+    calls.length = 0;
+    answer = { kind: "place", latitude: 37.5, longitude: 127.03 };
+    expect(await shellDevicePlace({ prompt: false })).toEqual({
+      kind: "place",
+      latitude: 37.5,
+      longitude: 127.03,
+    });
+    // Whether the person may be shown anything is the one thing the page says.
+    expect(calls).toEqual([["device_place", { prompt: false }]]);
+    expect(await shellDevicePlace({ prompt: true })).not.toBeNull();
+    expect(calls[1]).toEqual(["device_place", { prompt: true }]);
+
+    for (const kind of [
+      "denied",
+      "restricted",
+      "undetermined_no_prompt",
+      "unavailable",
+      "timeout",
+      "unsupported",
+    ] as const) {
+      // Extra fields on a refusal are dropped: a reason carries nothing but its kind.
+      answer = { kind, latitude: 37.5, longitude: 127.03 };
+      expect(await shellDevicePlace({ prompt: false })).toEqual({ kind });
+    }
+    for (const unknown of [
+      { kind: "place" },
+      { kind: "place", latitude: "37.5", longitude: "127.03" },
+      { kind: "place", latitude: 37.5 },
+      { kind: "elsewhere" },
+      { latitude: 37.5, longitude: 127.03 },
+      "place",
+      null,
+    ]) {
+      answer = unknown;
+      expect(await shellDevicePlace({ prompt: false })).toBeNull();
+    }
+
+    // A shell from before the commands refuses the call; that is "cannot be asked", not an error.
+    (globalThis as WindowWithTauri).__TAURI__ = {
+      core: {
+        invoke: async () => {
+          throw new Error("device_place not allowed");
+        },
+      },
+    };
+    expect(await shellDevicePermission()).toBeNull();
+    expect(await shellDevicePlace({ prompt: true })).toBeNull();
   });
 
   test("a shell whose command throws is reported as no badge, not as an error", async () => {
