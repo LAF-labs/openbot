@@ -34,7 +34,11 @@ const signedIn: AuthService = {
 };
 
 const app = () =>
-  createApp(config, signedIn, { rolesForUser: async () => ["user"] });
+  createApp({
+    config,
+    auth: signedIn,
+    roleRepository: { rolesForUser: async () => ["user"] },
+  });
 
 const refusal = { error: "laf:origin_refused", code: "laf:origin_refused" };
 

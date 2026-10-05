@@ -23,7 +23,7 @@ function bakedInto(
     if (environment[name] === undefined) delete process.env[name];
     else process.env[name] = environment[name];
   }
-  return createApp(loadConfig(testEnvironment()));
+  return createApp({ config: loadConfig(testEnvironment()) });
 }
 
 afterEach(() => {

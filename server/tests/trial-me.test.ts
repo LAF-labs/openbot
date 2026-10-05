@@ -47,19 +47,13 @@ function judge(reached: boolean, used: () => Promise<number> = async () => 0) {
   return { budget, asked };
 }
 
-/**
- * `createApp` takes its collaborators by position and the judge is the last of them. A tuple typed
- * from the function keeps the compiler on the shape; a wrong index shows up here as a trial that
- * never says its day is spent, which the second test reads.
- */
 function surface(environment: Record<string, string>, budget?: DailyBudget) {
-  const args: Parameters<typeof createApp> = [
-    loadConfig(testEnvironment(environment)),
-    signedIn,
-    roles,
-  ];
-  args[42] = budget;
-  return createApp(...args);
+  return createApp({
+    config: loadConfig(testEnvironment(environment)),
+    auth: signedIn,
+    roleRepository: roles,
+    ...(budget ? { dailyBudget: budget } : {}),
+  });
 }
 
 async function deployment(app: ReturnType<typeof createApp>) {

@@ -51,11 +51,13 @@ function whereaboutsStore(initial: Whereabouts = NO_WHEREABOUTS) {
   return { store, devices, places };
 }
 
-/** `createApp` takes its collaborators by position; the whereabouts store is the last of them. */
 function surface(store?: WhereaboutsStore) {
-  const args: Parameters<typeof createApp> = [config, signedIn, roles];
-  args[45] = store;
-  return createApp(...args);
+  return createApp({
+    config,
+    auth: signedIn,
+    roleRepository: roles,
+    ...(store ? { whereabouts: store } : {}),
+  });
 }
 
 const send = (

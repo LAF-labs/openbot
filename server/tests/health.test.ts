@@ -9,11 +9,11 @@ import {
 } from "../src/health";
 import { testEnvironment } from "./support/environment";
 
-const app = createApp(
-  loadConfig({
+const app = createApp({
+  config: loadConfig({
     ...testEnvironment(),
   }),
-);
+});
 
 /** The route as `createApp` mounts it, with the dependencies faked. */
 const mounted = (
@@ -235,19 +235,22 @@ describe("authentication availability", () => {
    * response below is the one `rateLimitResponse` in better-auth 1.6.27 builds, byte for byte.
    */
   test("better-auth's own 429 is answered with this deployment's fact, and its wait kept", async () => {
-    const limitedApp = createApp(loadConfig({ ...testEnvironment() }), {
-      handler: () =>
-        new Response(
-          JSON.stringify({
-            message: "Too many requests. Please try again later.",
-          }),
-          {
-            status: 429,
-            statusText: "Too Many Requests",
-            headers: { "X-Retry-After": "7" },
-          },
-        ),
-      api: { getSession: async () => null },
+    const limitedApp = createApp({
+      config: loadConfig({ ...testEnvironment() }),
+      auth: {
+        handler: () =>
+          new Response(
+            JSON.stringify({
+              message: "Too many requests. Please try again later.",
+            }),
+            {
+              status: 429,
+              statusText: "Too Many Requests",
+              headers: { "X-Retry-After": "7" },
+            },
+          ),
+        api: { getSession: async () => null },
+      },
     });
 
     const response = await limitedApp.request(
@@ -264,18 +267,18 @@ describe("authentication availability", () => {
   });
 
   test("forwards auth requests to the configured Better Auth handler", async () => {
-    const authenticatedApp = createApp(
-      loadConfig({
+    const authenticatedApp = createApp({
+      config: loadConfig({
         ...testEnvironment(),
       }),
-      {
+      auth: {
         handler: () => new Response("mounted", { status: 204 }),
         // Nobody is signed in on this request, and the seam says so rather than being absent.
         // Without it the stub was not an `AuthService` at all, and any guard reaching for a
         // session would have found `api` undefined.
         api: { getSession: async () => null },
       },
-    );
+    });
 
     const response = await authenticatedApp.request(
       "http://laf.local/api/auth/callback/google",
@@ -285,17 +288,17 @@ describe("authentication availability", () => {
   });
 
   test("forwards logout requests to Better Auth", async () => {
-    const authenticatedApp = createApp(
-      loadConfig({
+    const authenticatedApp = createApp({
+      config: loadConfig({
         ...testEnvironment(),
       }),
-      {
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => null,
         },
       },
-    );
+    });
 
     const response = await authenticatedApp.request(
       "http://laf.local/api/auth/sign-out",

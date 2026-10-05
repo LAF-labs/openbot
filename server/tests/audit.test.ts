@@ -101,11 +101,11 @@ describe("audit payload redaction", () => {
 describe("admin audit API", () => {
   test("returns a filtered audit page to an administrator", async () => {
     const queries: unknown[] = [];
-    const app = createApp(
+    const app = createApp({
       config,
-      adminAuth,
-      { rolesForUser: async () => ["admin"] },
-      {
+      auth: adminAuth,
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      auditReader: {
         list: async (query) => {
           queries.push(query);
           return {
@@ -124,7 +124,7 @@ describe("admin audit API", () => {
           };
         },
       },
-    );
+    });
 
     const response = await app.request(
       "http://laf.local/api/admin/audit-events?eventType=mcp.call_succeeded&limit=10",
@@ -159,17 +159,17 @@ describe("admin audit API", () => {
    */
   test("clamps the page size, whatever the caller asks for", async () => {
     const asked: number[] = [];
-    const app = createApp(
+    const app = createApp({
       config,
-      adminAuth,
-      { rolesForUser: async () => ["admin"] },
-      {
+      auth: adminAuth,
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      auditReader: {
         list: async (query) => {
           asked.push(query.limit);
           return { events: [] };
         },
       },
-    );
+    });
 
     for (const search of [
       "",
@@ -190,17 +190,17 @@ describe("admin audit API", () => {
 
   test("carries a cursor through to the reader", async () => {
     const asked: (string | undefined)[] = [];
-    const app = createApp(
+    const app = createApp({
       config,
-      adminAuth,
-      { rolesForUser: async () => ["admin"] },
-      {
+      auth: adminAuth,
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      auditReader: {
         list: async (query) => {
           asked.push(query.cursor);
           return { events: [], nextCursor: "page-2" };
         },
       },
-    );
+    });
 
     await app.request("http://laf.local/api/admin/audit-events");
     await app.request(
@@ -211,12 +211,12 @@ describe("admin audit API", () => {
   });
 
   test("denies a non-admin caller", async () => {
-    const app = createApp(
+    const app = createApp({
       config,
-      memberAuth,
-      { rolesForUser: async () => ["user"] },
-      { list: async () => ({ events: [] }) },
-    );
+      auth: memberAuth,
+      roleRepository: { rolesForUser: async () => ["user"] },
+      auditReader: { list: async () => ({ events: [] }) },
+    });
 
     const response = await app.request(
       "http://laf.local/api/admin/audit-events",

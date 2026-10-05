@@ -10,7 +10,7 @@ import { testEnvironment } from "./support/environment";
  * a callback the deployment had never registered.
  */
 const ask = async (environment: Record<string, string | undefined>) => {
-  const response = await createApp(loadConfig(environment)).request(
+  const response = await createApp({ config: loadConfig(environment) }).request(
     "http://laf.local/api/auth/providers",
   );
   return { status: response.status, body: await response.json() };

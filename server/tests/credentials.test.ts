@@ -458,9 +458,9 @@ describe("model credential store lookup", () => {
 
 describe("admin credential API", () => {
   test("returns only credential status and metadata", async () => {
-    const app = createApp(
+    const app = createApp({
       config,
-      {
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
@@ -468,9 +468,8 @@ describe("admin credential API", () => {
           }),
         },
       },
-      { rolesForUser: async () => ["admin"] },
-      undefined,
-      credentialAdminStub({
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      credentialService: credentialAdminStub({
         list: async () => [
           {
             id: "credential-1",
@@ -482,7 +481,7 @@ describe("admin credential API", () => {
           },
         ],
       }),
-    );
+    });
 
     const response = await app.request(
       "http://laf.local/api/admin/credentials",
@@ -505,9 +504,9 @@ describe("admin credential API", () => {
 
   test("accepts plaintext only on credential creation and returns safe status", async () => {
     const created: unknown[] = [];
-    const app = createApp(
+    const app = createApp({
       config,
-      {
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
@@ -515,9 +514,8 @@ describe("admin credential API", () => {
           }),
         },
       },
-      { rolesForUser: async () => ["admin"] },
-      undefined,
-      credentialAdminStub({
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      credentialService: credentialAdminStub({
         list: async () => [],
         create: async (input) => {
           created.push(input);
@@ -531,7 +529,7 @@ describe("admin credential API", () => {
           };
         },
       }),
-    );
+    });
 
     const response = await app.request(
       "http://laf.local/api/admin/credentials",
@@ -573,9 +571,9 @@ describe("admin credential API", () => {
 
   test("rotates and revokes through write-only administrator operations", async () => {
     const calls: string[] = [];
-    const app = createApp(
+    const app = createApp({
       config,
-      {
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: {
           getSession: async () => ({
@@ -583,9 +581,8 @@ describe("admin credential API", () => {
           }),
         },
       },
-      { rolesForUser: async () => ["admin"] },
-      undefined,
-      {
+      roleRepository: { rolesForUser: async () => ["admin"] },
+      credentialService: {
         list: async () => [],
         create: async () => {
           throw new Error("not used");
@@ -606,7 +603,7 @@ describe("admin credential API", () => {
           return { id, revokedAt: new Date("2026-08-13T12:00:00.000Z") };
         },
       },
-    );
+    });
 
     const rotate = await app.request(
       "http://laf.local/api/admin/credentials/credential-old/rotate",

@@ -41,13 +41,12 @@ const roles = {
 };
 
 function surface(stopAll: ReturnType<typeof createStopAll> | undefined) {
-  const args: Parameters<typeof createApp> = [
-    loadConfig(testEnvironment()),
-    signedIn,
-    roles,
-  ];
-  args[43] = stopAll;
-  return createApp(...args);
+  return createApp({
+    config: loadConfig(testEnvironment()),
+    auth: signedIn,
+    roleRepository: roles,
+    ...(stopAll ? { stopAll } : {}),
+  });
 }
 
 /** A piece of work that stops when asked, and says whether it was asked. */
@@ -270,16 +269,15 @@ describe("the door itself", () => {
 
   test("asks who is there before anything else", async () => {
     const work = createWorkInFlight();
-    const args: Parameters<typeof createApp> = [
-      loadConfig(testEnvironment()),
-      {
+    const app = createApp({
+      config: loadConfig(testEnvironment()),
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: { getSession: async () => null },
       },
-      roles,
-    ];
-    args[43] = createStopAll({ work });
-    const app = createApp(...args);
+      roleRepository: roles,
+      stopAll: createStopAll({ work }),
+    });
     const chat = going({ kind: "chat" });
     work.track(chat.work);
 

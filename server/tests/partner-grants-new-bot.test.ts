@@ -176,54 +176,23 @@ function deployment() {
     },
     partnerTransports: partners.transports,
   });
-  const app = createApp(
-    loadConfig(testEnvironment()),
-    {
+  const app = createApp({
+    config: loadConfig(testEnvironment()),
+    auth: {
       handler: () => new Response(null, { status: 204 }),
       api: { getSession: async () => session },
     },
-    { rolesForUser: async () => ["user"] },
-    // Positions 4-11: auditReader, credentialService, packageStatusReader, onboarding,
-    // copilotHandler, computerClient, computerGateway, computerPolicy.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 12: the Bots, real, so a create reserves a seat and writes a profile the grant can name.
-    createAgentProfileStore(database, new URL("http://agent-bot.test/ag-ui")),
-    // 13-16: channelStore, channelEvents, auditStore, componentStore.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 17: the plugin store, which mounts `/api/plugins` and, with the runtime below, `/api/partners`.
-    store,
-    // 18-34: everything between the plugin store and the partner runtime, none of it on this path.
-    // A miscount lands a store in a slot of another type and fails to typecheck, which is the check.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    // 35: the partner runtime.
+    roleRepository: { rolesForUser: async () => ["user"] },
+    // The Bots, real, so a create reserves a seat and writes a profile the grant can name.
+    agentProfileStore: createAgentProfileStore(
+      database,
+      new URL("http://agent-bot.test/ag-ui"),
+    ),
+    // The plugin store, which mounts `/api/plugins` and, with the runtime below, `/api/partners`.
+    pluginStore: store,
+    // The partner runtime.
     partners,
-  );
+  });
   return { app, store, partners };
 }
 

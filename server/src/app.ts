@@ -133,15 +133,29 @@ const CREDENTIAL_INPUT_INVALID = "laf:credential_input_invalid";
 /** No package reader was wired into this process. */
 const PACKAGE_UNAVAILABLE = "laf:package_unavailable";
 
-export function createApp(
-  config: DeploymentConfig,
-  auth?: AuthService,
-  roleRepository?: RoleRepository,
-  auditReader?: AuditReader,
-  credentialService?: CredentialAdminService,
-  packageStatusReader?: PackageStatusReader,
+/**
+ * What an app is put together from, BY NAME.
+ *
+ * `createApp` took these as fifty-three positional parameters until 2026-10-06. Everything was
+ * positional, so a parameter inserted anywhere but last shifted every argument after it — which
+ * broke composition tests that reached a late slot through a run of `undefined`, silently, because
+ * the types lined up — and every new one was added last for that reason and no other. A test that
+ * wanted one collaborator counted its way there in a comment ("Positions 4-11: …", "18-34:
+ * everything between the plugin store and the partner runtime").
+ *
+ * By name the order means nothing. A field left out is absent, which is all `undefined` in its
+ * slot ever meant: nothing here has a default, and where a field's absence does something worth
+ * knowing, it is said on the field.
+ */
+export type CreateAppOptions = {
+  config: DeploymentConfig;
+  auth?: AuthService;
+  roleRepository?: RoleRepository;
+  auditReader?: AuditReader;
+  credentialService?: CredentialAdminService;
+  packageStatusReader?: PackageStatusReader;
   /** Whether this person has made their first Bot yet. Absent means nobody is ever asked to. */
-  onboarding?: OnboardingStore,
+  onboarding?: OnboardingStore;
   /**
    * The CopilotKit endpoint, already built by the caller.
    *
@@ -149,26 +163,26 @@ export function createApp(
    * pulls in `eventsource`, which Bun cannot `require()` from a test, so importing it at module
    * scope broke every server test that touches createApp even though none of them use CopilotKit.
    */
-  copilotHandler?: HonoApp,
+  copilotHandler?: HonoApp;
   /** Absent when no computer is configured, and the routes are then not mounted at all. */
-  computerClient?: ComputerClient,
+  computerClient?: ComputerClient;
   /** The only path to an acting call: policy decision, then audit row, then the action. */
-  computerGateway?: ComputerGateway,
+  computerGateway?: ComputerGateway;
   /** What the gateway enforces, and what an administrator can change while running. */
-  computerPolicy?: PolicyStore,
+  computerPolicy?: PolicyStore;
   /** Bots as durable objects: profile, roster, whose they are. */
-  agentProfileStore?: AgentProfileStore,
+  agentProfileStore?: AgentProfileStore;
   /** The durable channels a Bot runs in. */
-  channelStore?: ChannelStore,
+  channelStore?: ChannelStore;
   /** Live channel activity. Absent leaves the routes working, just without the socket. */
-  channelEvents?: ChannelEventHub,
+  channelEvents?: ChannelEventHub;
   /**
    * Where a Bot's own refusal is written.
    *
    * Separate from `auditReader`, which only reads: this writes, and it is the one thing in the trail
    * that is not decided by the gateway, a model declining before it calls anything.
    */
-  auditStore?: AuditStore,
+  auditStore?: AuditStore;
   /**
    * Which components each Bot may answer with.
    *
@@ -176,7 +190,7 @@ export function createApp(
    * behaviour: a deployment that cannot reach its grant table must not fall back to granting
    * everything.
    */
-  componentStore?: ComponentStore,
+  componentStore?: ComponentStore;
   /**
    * The MCP servers and packaged skills this deployment has, and which Bots hold them.
    *
@@ -184,21 +198,21 @@ export function createApp(
    * behaviour: a deployment that cannot reach its grant table must offer nothing extra rather than
    * fall back to offering everything.
    */
-  pluginStore?: PluginStore,
+  pluginStore?: PluginStore;
   /**
    * Components authored in the browser rather than compiled into the build.
    *
    * Absent leaves the compiled gallery working exactly as before, which is the correct degraded
    * behaviour: the React path is the primary one and does not depend on this.
    */
-  sandboxedStore?: SandboxedStore,
+  sandboxedStore?: SandboxedStore;
   /**
    * How this deployment names the threads it mints.
    *
    * Absent leaves the direct Bot chat generating its own id in the browser, which works and simply
    * says nothing about which deployment the conversation belongs to.
    */
-  threadIdentity?: ThreadIdentity,
+  threadIdentity?: ThreadIdentity;
   /**
    * Where the questions an `ask` rule raised wait for a person.
    *
@@ -207,9 +221,9 @@ export function createApp(
    * a question nobody can be shown is worse than a rule that never fired: the Bot waits out the full
    * ten minutes and then reports that nobody answered.
    */
-  approvals?: ApprovalRegistry,
+  approvals?: ApprovalRegistry;
   /** Instructions on a clock. Absent leaves the routine surface unmounted. */
-  routineService?: RoutineService,
+  routineService?: RoutineService;
   /**
    * When each message in a thread was first seen and which Bot said it: the date separators, and
    * the name above a reply.
@@ -221,7 +235,7 @@ export function createApp(
   messageTimeReader?: (threadId: string) => Promise<{
     times: Record<string, string>;
     speakers: Record<string, string>;
-  }>,
+  }>;
   /** Which of a person's Bots are mid-run, for the roster. Absent answers "none". */
   readWorking?: (userId: string) => Promise<
     Array<{
@@ -230,19 +244,15 @@ export function createApp(
       label: string | null;
       startedAt: string;
     }>
-  >,
+  >;
   /**
    * The questions a person has decided not to be asked again.
-   *
-   * LAST, and new parameters belong here too. Everything above is positional, so a parameter
-   * inserted anywhere else shifts every argument after it — which has already broken composition
-   * tests that reach a late slot through a run of `undefined`, silently, because the types line up.
    *
    * Absent leaves the answering handler ignoring `always` and the two `/standing` handlers reporting
    * nothing, which is the honest degraded behaviour: a deployment with nowhere to record a widening
    * should keep asking rather than accept one it cannot show anybody.
    */
-  standingApprovals?: StandingApprovalStore,
+  standingApprovals?: StandingApprovalStore;
   /**
    * Whether this deployment's model takes an effort setting, for the surface to draw or not draw.
    *
@@ -250,31 +260,30 @@ export function createApp(
    * control appears exactly where the parameter is actually sent. Absent reads as yes, matching the
    * package's own default.
    */
-  deploymentEffort?: boolean,
+  deploymentEffort?: boolean;
   /**
-   * Where a demonstration is recorded while somebody teaches a Bot. Last, like everything new here.
+   * Where a demonstration is recorded while somebody teaches a Bot.
    *
    * Absent leaves taking the wheel exactly as it was — see the `teaching` note on `control/take`.
    */
-  demonstrations?: DemonstrationRecorder,
+  demonstrations?: DemonstrationRecorder;
   /** Turns a finished recording into a procedure. Absent leaves it readable and nothing more. */
-  writeUp?: WriteUp,
+  writeUp?: WriteUp;
   /**
-   * What each Bot has learned about each person. Last, like everything new here.
+   * What each Bot has learned about each person.
    *
    * Absent leaves the three memory endpoints unmounted, so a deployment without the store answers
    * 404 rather than drawing a list that is empty for a reason nobody can see.
    */
-  agentMemoryStore?: AgentMemoryStore,
+  agentMemoryStore?: AgentMemoryStore;
   /**
    * What the OAuth connect flow needs: the deployment's public URL, and whether the person a
-   * consent was started for still has access when the callback lands. Last, like everything new
-   * here.
+   * consent was started for still has access when the callback lands.
    *
    * Absent leaves the connect and callback routes answering that the deployment cannot complete a
    * consent flow, which is the honest degraded behaviour for a deployment with no public URL.
    */
-  pluginConnect?: ConnectConfig,
+  pluginConnect?: ConnectConfig;
   /**
    * Whether this deployment's model can actually judge a "do not ask me about" instruction.
    *
@@ -286,25 +295,25 @@ export function createApp(
    * Absent reads as capable, which is what a deployment with no probe wired up should look like:
    * the feature behaves as it did, and the surface draws the control it has always drawn.
    */
-  autoReviewCapable?: () => Promise<boolean>,
+  autoReviewCapable?: () => Promise<boolean>;
   /**
-   * What `/health` asks before it answers. Last, like everything new here.
+   * What `/health` asks before it answers.
    *
    * Absent, the endpoint reports no checks and stays 200 — an embedding that supplied no probes is
    * not a degraded deployment. The process that runs a deployment supplies all three; see
    * `health.ts` for why a constant was worse than nothing.
    */
-  healthProbes?: HealthProbes,
+  healthProbes?: HealthProbes;
   /**
-   * Taking your data with you, and leaving. Last, like everything new here.
+   * Taking your data with you, and leaving.
    *
    * Absent leaves the three routes unmounted, which is the honest degraded behaviour: a deployment
    * that cannot delete an account must answer 404 rather than draw a page whose button reports
    * success and removes nothing.
    */
-  accountService?: AccountService,
+  accountService?: AccountService;
   /**
-   * The notification outbox and the number it exists to make measurable. Last, like everything new.
+   * The notification outbox and the number it exists to make measurable.
    *
    * Absent leaves both routes unmounted and the answering handler telling nobody it was answered,
    * which is the honest degraded behaviour: a deployment with no outbox has nothing to list, and a
@@ -314,150 +323,205 @@ export function createApp(
     outbox: NotificationOutbox;
     /** How long answers take. Absent answers 503 on the metric and leaves the door working. */
     approvalMetrics?: (days: number) => Promise<ApprovalMetrics>;
-  },
+  };
   /**
-   * Which business sites this person has signed into on a Bot's browser. Last, like everything new.
+   * Which business sites this person has signed into on a Bot's browser.
    *
    * Absent leaves the 사이트 연결 routes unmounted, and the section then draws every card as "not
    * connected yet" — which is honest: a deployment that cannot remember a connection genuinely does
    * not know about one. Nothing else changes; the handoff itself is the ordinary navigate-and-take-
    * the-wheel path and works without any of this.
    */
-  siteConnections?: SiteConnectionStore,
+  siteConnections?: SiteConnectionStore;
   /**
-   * The partner vendor LAF holds the account at. Last, like everything new.
+   * The partner vendor LAF holds the account at.
    *
    * Absent leaves `/api/partners` unmounted and the 연결 screen draws no partner cards — which is
    * what a deployment with no key configured should show, and what the runtime itself reports. It is
    * passed BESIDE the plugin store rather than through it, because a connect writes a server row and
    * a grant as well as a registration: see `plugins/partner-routes.ts`.
    */
-  partners?: PartnerRuntime,
+  partners?: PartnerRuntime;
   /**
    * The 다음에 latch behind the routine suggestions. Absent leaves the cards unmounted, which is
    * the right degraded behaviour: a suggestion that could be declined and come back tomorrow is
    * the nag wall the feature exists not to be.
    */
-  routineSuggestionDismissals?: SuggestionDismissalStore,
+  routineSuggestionDismissals?: SuggestionDismissalStore;
   /**
-   * The public data the fleet holds one key for. Last, like everything new here.
+   * The public data the fleet holds one key for.
    *
    * Absent leaves nothing unmounted — there is no route of its own, since nobody connects anything —
    * and takes one thing away: a Bot made after boot is not handed the tools on the spot. The boot
    * reconciliation lives in the process (`index.ts`), beside the retention sweep, because it is a
    * fact about the whole machine and not about a request.
    */
-  publicData?: Pick<DeploymentKeyRuntime, "offerTo" | "keys">,
+  publicData?: Pick<DeploymentKeyRuntime, "offerTo" | "keys">;
   /**
    * What each person agreed to, and when. Absent means nobody is asked and `/api/me` says nothing
    * about it, the same shape as `onboarding`: a deployment that cannot record an agreement must not
    * stand a screen in front of people demanding one.
    */
-  consent?: ConsentStore,
+  consent?: ConsentStore;
   /**
    * The row a looked-at screen leaves. The live socket is terminated in `index.ts` and writes its
    * own; this one is for the demonstration read below, which is the other way a screen is seen.
    */
-  screenViews?: ScreenViewAudit,
+  screenViews?: ScreenViewAudit;
   /**
-   * The 문의·의견 box's other end. Last, like everything new.
+   * The 문의·의견 box's other end.
    *
    * Absent leaves the route unmounted and the box answering 404, which is the honest degraded
    * behaviour: a deployment that cannot keep a message must not draw a box that says 보냈습니다.
    */
-  support?: SupportService,
+  support?: SupportService;
   /**
-   * The fleet's read of this VM's counts (`insights/read.ts`). Last, like everything new.
+   * The fleet's read of this VM's counts (`insights/read.ts`).
    *
    * Mounted only with `config.fleetMetricsToken` as well: a reader with no token to guard it is not
    * a door this deployment opens, and a path nothing is mounted on answers 404 like any other.
    */
-  insights?: (days: number) => Promise<InsightsReport>,
+  insights?: (days: number) => Promise<InsightsReport>;
   /**
-   * Whether a session's person is still let in, asked by `requireUser` on every request. Last, like
-   * everything new here.
+   * Whether a session's person is still let in, asked by `requireUser` on every request.
    *
    * Absent, a removal decides who may sign in again and nothing about who is already inside — the
    * state measured on 2026-09-14 (`auth/session-revocation.ts`). `main.ts` always passes it; the
    * suites that stub a session without a sign-in list leave it out.
    */
-  sessionAdmission?: SessionAdmission,
+  sessionAdmission?: SessionAdmission;
   /**
-   * A free trial's day, for `/api/me` to say whether today's is spent. Last, like everything new.
+   * A free trial's day, for `/api/me` to say whether today's is spent.
    *
    * The same judge the runs are refused by (`usage/daily-budget.ts`), so this cannot say a day is
    * open while every question is being refused, or the other way round. Absent on a deployment that
    * is not a trial, which then says nothing about a trial at all.
    */
-  dailyBudget?: DailyBudget,
+  dailyBudget?: DailyBudget;
   /**
    * `모두 멈추기`: what a person has going on, and the one press that stops it all
-   * (`runner/stop-all.ts`). Last, like everything new here.
+   * (`runner/stop-all.ts`).
    *
    * Absent leaves both doors unmounted, which is the honest degraded behaviour: a deployment that
    * cannot reach its running work answers 404 rather than a count of nothing that reads as calm.
    */
-  stopAll?: StopAll,
+  stopAll?: StopAll;
   /**
-   * What kind of business the person runs and where they work every day. Last, like everything new.
+   * What kind of business the person runs and where they work every day.
    *
    * Absent, `/api/me` says nothing about a shop and `PUT /api/me/shop` is not mounted — a 404
    * rather than a save that kept nothing. See account/shop.ts.
    */
-  shop?: ShopStore,
+  shop?: ShopStore;
   /**
    * The person's clock and place (account/whereabouts.ts). Absent, `/api/me` says nothing about
    * them and none of their three doors is mounted.
    */
-  whereabouts?: WhereaboutsStore,
+  whereabouts?: WhereaboutsStore;
   /**
-   * 오늘: what a Bot did today, read from the ledgers (agents/day.ts). Last, like everything new.
+   * 오늘: what a Bot did today, read from the ledgers (agents/day.ts).
    *
    * Absent leaves `GET /api/agents/:agentId/day` unmounted — a 404 the app draws nothing for, on
    * 소식 and in the header's drawer, rather than an empty day that reads as a Bot that did nothing.
    */
-  readDay?: DayReader,
+  readDay?: DayReader;
   /**
    * The package's skills (plugins/built-in-skill-sync.ts), handed to a Bot the moment it is made.
    * Absent, a new Bot waits for nothing: it simply holds none.
    */
-  builtInSkills?: BuiltInSkillsRuntime,
+  builtInSkills?: BuiltInSkillsRuntime;
   /**
-   * Files the owner hands their Bot (attachments/). Last, like everything new here.
+   * Files the owner hands their Bot (attachments/).
    *
    * Absent leaves both doors unmounted and `deployment.attachments` false, so the composer draws no
    * attach button — a deployment that cannot keep a file must not offer to take one.
    */
-  attachments?: AttachmentService,
+  attachments?: AttachmentService;
   /**
-   * The doors of a turn the server owns (`turns/routes.ts`). Last, like everything new here.
+   * The doors of a turn the server owns (`turns/routes.ts`).
    *
    * `main.ts` always hands them over. Absent — an app a test built without them — leaves them
    * unmounted, and nothing else runs a chat turn: the window that once did was removed 2026-10-05.
    */
   turnRoutes?: (
     requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  ) => Hono<{ Variables: AppVariables }>,
+  ) => Hono<{ Variables: AppVariables }>;
   /**
-   * 만든 것: what a Bot made, read out of its conversation (agents/made.ts). Last, like everything new.
+   * 만든 것: what a Bot made, read out of its conversation (agents/made.ts).
    *
    * Absent leaves `GET /api/agents/:agentId/made` unmounted — a 404 the page says it could not read,
    * rather than an empty shelf that reads as a Bot that made nothing.
    */
-  readMade?: MadeReader,
+  readMade?: MadeReader;
   /**
-   * 소식: the posts a feed routine wrote (feed/). Last, like everything new.
+   * 소식: the posts a feed routine wrote (feed/).
    *
    * Absent leaves `/api/feed` unmounted — the page then says it could not read 소식, rather than
    * drawing an empty feed that reads as a Bot that found nothing.
    */
-  feed?: FeedStore,
+  feed?: FeedStore;
   /**
-   * 목표: the goals the person set in the conversation (goals/). Last, like everything new. Absent
-   * leaves `/api/goals` unmounted — the page then says it could not read them.
+   * 목표: the goals the person set in the conversation (goals/). Absent leaves `/api/goals`
+   * unmounted — the page then says it could not read them.
    */
-  goals?: GoalStore,
-) {
+  goals?: GoalStore;
+};
+
+export function createApp({
+  config,
+  auth,
+  roleRepository,
+  auditReader,
+  credentialService,
+  packageStatusReader,
+  onboarding,
+  copilotHandler,
+  computerClient,
+  computerGateway,
+  computerPolicy,
+  agentProfileStore,
+  channelStore,
+  channelEvents,
+  auditStore,
+  componentStore,
+  pluginStore,
+  sandboxedStore,
+  threadIdentity,
+  approvals,
+  routineService,
+  messageTimeReader,
+  readWorking,
+  standingApprovals,
+  deploymentEffort,
+  demonstrations,
+  writeUp,
+  agentMemoryStore,
+  pluginConnect,
+  autoReviewCapable,
+  healthProbes,
+  accountService,
+  notifications,
+  siteConnections,
+  partners,
+  routineSuggestionDismissals,
+  publicData,
+  consent,
+  screenViews,
+  support,
+  insights,
+  sessionAdmission,
+  dailyBudget,
+  stopAll,
+  shop,
+  whereabouts,
+  readDay,
+  builtInSkills,
+  attachments,
+  turnRoutes,
+  readMade,
+  feed,
+  goals,
+}: CreateAppOptions) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
 

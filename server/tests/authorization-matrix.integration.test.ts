@@ -306,63 +306,61 @@ function deployment() {
     resolveAgents: async () => ({ [BOT_A]: instantBot }),
   });
 
-  const app = createApp(
+  const app = createApp({
     config,
     auth,
-    createRoleRepository(database),
-    createAuditReader(database),
-    createCredentialAdminService(
+    roleRepository: createRoleRepository(database),
+    auditReader: createAuditReader(database),
+    credentialService: createCredentialAdminService(
       config.keyEncryptionKey,
       credentialStore,
       auditStore,
     ),
-    createPackageStatusReader(database),
-    createOnboardingStore(database),
-    // The CopilotKit runtime: not importable from a test. See the file comment.
-    undefined,
-    client,
-    gateway,
-    createPolicyStore(PERMISSIVE),
+    packageStatusReader: createPackageStatusReader(database),
+    onboarding: createOnboardingStore(database),
+    // No `copilotHandler`: the CopilotKit runtime is not importable from a test. See the file comment.
+    computerClient: client,
+    computerGateway: gateway,
+    computerPolicy: createPolicyStore(PERMISSIVE),
     agentProfileStore,
-    createChannelStore(database, agentProfileStore, threadIdentity),
-    createChannelEventHub(),
+    channelStore: createChannelStore(
+      database,
+      agentProfileStore,
+      threadIdentity,
+    ),
+    channelEvents: createChannelEventHub(),
     auditStore,
-    createComponentStore(database),
+    componentStore: createComponentStore(database),
     pluginStore,
-    createSandboxedStore(database, auditStore),
+    sandboxedStore: createSandboxedStore(database, auditStore),
     threadIdentity,
     approvals,
     routineService,
-    createMessageTimeReader(database),
-    createWorkingReader(database),
-    standing,
-    true,
-    createDemonstrationRecorder(),
-    undefined,
-    createAgentMemoryStore(database),
-    undefined,
-    undefined,
-    undefined,
-    {
+    messageTimeReader: createMessageTimeReader(database),
+    readWorking: createWorkingReader(database),
+    standingApprovals: standing,
+    deploymentEffort: true,
+    demonstrations: createDemonstrationRecorder(),
+    agentMemoryStore: createAgentMemoryStore(database),
+    accountService: {
       exporter: createAccountExport(database),
       deletion: createAccountDeletion({ database }),
       auditStore,
     },
-    {
+    notifications: {
       outbox,
       approvalMetrics: (days) =>
         readApprovalMetrics(database, { days, timeZone: "" }),
     },
-    createSiteConnectionStore(database),
+    siteConnections: createSiteConnectionStore(database),
     partners,
-    createSuggestionDismissalStore(database),
-    undefined,
-    createConsentStore(database),
-    createScreenViewAudit({
+    routineSuggestionDismissals: createSuggestionDismissalStore(database),
+    consent: createConsentStore(database),
+    screenViews: createScreenViewAudit({
       auditStore,
       ownerOf: async (botId) => (await lookupBotOwner(database, botId)) ?? null,
     }),
-    {
+    support: {
       feedback: createFeedbackStore(database),
       auditStore,
       outbox,
@@ -370,24 +368,17 @@ function deployment() {
       // Mounted as `main.ts` mounts it, so its two routes are pressed by every person below.
       ratings: createAnswerRatingStore(database),
     },
-    (days) => readInsights(database, { days, timeZone: "Asia/Seoul" }),
-    admission,
-    // dailyBudget … turnRoutes: not what this matrix is about, and absent leaves them unmounted.
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
+    insights: (days) =>
+      readInsights(database, { days, timeZone: "Asia/Seoul" }),
+    sessionAdmission: admission,
+    // No `dailyBudget` … `turnRoutes`: not what this matrix is about, and absent leaves them unmounted.
     // 만든 것: mounted, so its one door is pressed by every person below.
-    createMadeReader({ database }),
+    readMade: createMadeReader({ database }),
     // 소식: the posts and the person's three presses on them.
-    createFeedStore({ database }),
+    feed: createFeedStore({ database }),
     // 목표: the person's goals and their presses on them.
-    createGoalStore({ database }),
-  );
+    goals: createGoalStore({ database }),
+  });
   return { app, routineService, approvals };
 }
 

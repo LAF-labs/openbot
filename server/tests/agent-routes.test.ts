@@ -577,26 +577,15 @@ describe("agent route composition", () => {
     let session: {
       user: { id: string; email: string; name: string; image: string };
     } | null = null;
-    const app = createApp(
-      loadConfig(testEnvironment()),
-      {
+    const app = createApp({
+      config: loadConfig(testEnvironment()),
+      auth: {
         handler: () => new Response(null, { status: 204 }),
         api: { getSession: async () => session },
       },
-      { rolesForUser: async () => ["user"] },
-      // Positions 4-11: auditReader, credentialService, packageStatusReader, onboarding,
-      // copilotHandler, computerClient, computerGateway, computerPolicy. One shorter than it was —
-      // the connector admin service sat at 7 and is deleted.
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      store,
-    );
+      roleRepository: { rolesForUser: async () => ["user"] },
+      agentProfileStore: store,
+    });
 
     const unauthenticated = await app.request("http://laf.test/api/agents");
     expect(unauthenticated.status).toBe(401);
@@ -627,7 +616,7 @@ describe("agent route composition", () => {
   });
 
   test("leaves agent routes unmounted when createApp has no store", async () => {
-    const app = createApp(loadConfig(testEnvironment()));
+    const app = createApp({ config: loadConfig(testEnvironment()) });
 
     const response = await app.request("http://laf.test/api/agents");
 
