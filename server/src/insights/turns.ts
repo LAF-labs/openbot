@@ -7,12 +7,15 @@
  * already matched to their shape — plus the run's origin, its person's id (counted, never returned)
  * and its clock. No `label`, no `error`: those two columns of the same rows hold a person's words
  * and a failure's text, and neither is named here. A code is matched to its shape again on the way
- * out, so a row written by some other hand still cannot carry a sentence into the answer.
+ * out, so a row written by some other hand still cannot carry a sentence into the answer. A first
+ * move's kinds the same way: the answer is keyed by this build's own list, and a row's column is
+ * only ever compared with it.
  *
  * It is written to be pasted into laf-control's `core/insights-sql.ts` with the two bound instants
  * swapped for `now() - interval 'N days'` and `now()`, the way the other nine travel.
  */
 import { type SQL, sql } from "drizzle-orm";
+import { FIRST_MOVE_KINDS } from "../../../shared/first-move";
 import { ENDING_CODE_SOURCE } from "../telemetry/run-ending";
 import { MAX_UNFINISHED_TURNS, type TurnsInsight } from "./report";
 
@@ -22,9 +25,15 @@ export function turnsStatement(options: {
   timeZone: string;
 }): SQL {
   const { since, to, timeZone } = options;
+  /** The kinds of first move there are, as rows: bound, and the only keys `firstMoves` can have. */
+  const firstMoveKinds = sql.join(
+    FIRST_MOVE_KINDS.map((kind) => sql`(${kind}::text)`),
+    sql`, `,
+  );
   return sql`
     WITH turns AS (
       SELECT o.run_id, o.origin::text AS origin, o.user_id, o.started_at, o.queued_ms, o.first_token_ms,
+             o.first_word_ms, o.first_move_asked, o.first_move_verdict, o.first_move_kind,
              agg.model_requests, agg.tool_calls, agg.retries, agg.asked, agg.granted,
              agg.cost, agg.prompt, agg.cached, agg.finished_at,
              last.status::text AS last_status, last.ending::text AS last_ending, last.ending_code AS last_code
@@ -105,11 +114,32 @@ export function turnsStatement(options: {
                   FROM ended WHERE ending = 'unfinished'
                  ORDER BY started_at DESC
                  LIMIT ${MAX_UNFINISHED_TURNS}::int) listed
-      ), '[]'::jsonb)
+      ), '[]'::jsonb),
+      'firstWord', coalesce((
+        SELECT jsonb_agg(jsonb_build_array(tenths, n) ORDER BY tenths)
+          FROM (SELECT round(first_word_ms / 100.0)::int AS tenths, count(*) AS n
+                  FROM placed
+                 WHERE origin = 'chat' AND first_word_ms IS NOT NULL
+                 GROUP BY 1) worded
+      ), '[]'::jsonb),
+      'chatTurns', (SELECT count(*) FROM placed WHERE origin = 'chat'),
+      'firstMoves', (
+        SELECT jsonb_object_agg(kinds.kind, jsonb_build_array(
+                 (SELECT count(*) FROM placed
+                   WHERE origin = 'chat' AND kinds.kind = ANY (first_move_asked)),
+                 (SELECT count(*) FROM placed
+                   WHERE origin = 'chat' AND first_move_verdict = 'moved' AND first_move_kind = kinds.kind)))
+          FROM (VALUES ${firstMoveKinds}) AS kinds(kind)
+      )
     )::text AS value`;
 }
 
-/** Nearest rank over `(value, how many)` cells, the way the fleet's approval medians are read. */
+/**
+ * Nearest rank over `(value, how many)` cells, the way the fleet's approval medians are read: the
+ * smallest value that at least `fraction` of the turns are at or under. Always a wait somebody had
+ * — the median of four is the second of them, never a figure between two — and the same answer
+ * whether the cells came from one VM or were added up over many.
+ */
 export function percentileOf(
   cells: ReadonlyArray<readonly [number, number]>,
   fraction: number,
@@ -135,6 +165,14 @@ export type TurnsSummary = {
   /** Seconds, a conversation turn's first answer. */
   firstAnswerP50: number | null;
   firstAnswerP90: number | null;
+  /**
+   * Seconds, a conversation turn's message accepted → the first word of its answer: the wait as the
+   * person has it (`report.ts`, `firstWord`). Null where no turn said a word, or none was measured.
+   */
+  firstWordP50: number | null;
+  firstWordP90: number | null;
+  /** The conversation turns those two are over: the ones that said a word. */
+  firstWordTurns: number;
   approvalsPerTask: number | null;
   /** `(code, how many)` of 못 끝냄 and 사장님 차례, most first. */
   topReasons: Array<[string, number]>;
@@ -160,12 +198,19 @@ export function summariseTurns(
   }
   const p50 = percentileOf(turns.firstAnswer, 0.5);
   const p90 = percentileOf(turns.firstAnswer, 0.9);
+  // Absent in a section read from a release before the wait was measured.
+  const words = turns.firstWord ?? [];
+  const word50 = percentileOf(words, 0.5);
+  const word90 = percentileOf(words, 0.9);
   return {
     ended,
     inFlight: turns.inFlight,
     successRate: ratio(finished, ended),
     firstAnswerP50: p50 === null ? null : p50 / 10,
     firstAnswerP90: p90 === null ? null : p90 / 10,
+    firstWordP50: word50 === null ? null : word50 / 10,
+    firstWordP90: word90 === null ? null : word90 / 10,
+    firstWordTurns: words.reduce((sum, [, n]) => sum + n, 0),
     approvalsPerTask: ratio(turns.approvals[0], ended),
     topReasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
     costPerOwnerDay:

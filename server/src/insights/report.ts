@@ -197,6 +197,30 @@ export type TurnsInsight = {
   cache: [number, number];
   /** The window's 못 끝냄 turns, newest first, at most {@link MAX_UNFINISHED_TURNS}. */
   unfinished: UnfinishedTurnCell[];
+  /*
+   * THE WAIT AS THE PERSON HAS IT (2026-10-05). `firstAnswer` above stops at the model's first
+   * output, which may be a tool call and may come long after a first move's step was drawn: it is
+   * the wait neither to the first thing on the screen nor to the first word. The three below are
+   * read off columns the turn's own meter fills (`telemetry/run-meter.ts`), and they are extra
+   * fields inside the section — absent in an answer from a release before them, and ignored by a
+   * reader that does not name them, as `people.cache` is.
+   */
+  /**
+   * `(tenths of a second, how many)`: a conversation turn's message accepted → the first WORD of
+   * its answer going out to the windows, on the run that opened it. Only turns that said one.
+   */
+  firstWord?: Array<[number, number]>;
+  /**
+   * Conversation turns opened in the window: what `firstWord` could have had a cell for. The rest
+   * said no word — failed, stopped or still at work — or were written before this was measured.
+   */
+  chatTurns?: number;
+  /**
+   * `kind → (turns the decisions model was asked about it, turns it moved)`, for every kind of
+   * first move this build has, zeros included (`shared/first-move.ts`). A turn asked about two
+   * kinds counts under both; it moves for one at most.
+   */
+  firstMoves?: Record<string, [number, number]>;
 };
 
 /** Each section, or null where its statement could not answer. Null is not zero. */

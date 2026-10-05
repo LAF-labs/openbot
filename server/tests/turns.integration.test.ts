@@ -38,6 +38,9 @@ const at = (minutes: number) => new Date(ERA + minutes * 60_000);
 const measure = (over: Partial<RunMeasure> = {}): RunMeasure => ({
   queuedMs: 40,
   firstTokenMs: null,
+  firstSignMs: null,
+  firstWordMs: null,
+  firstMove: null,
   streamMs: null,
   totalMs: 1_000,
   modelRequests: 1,

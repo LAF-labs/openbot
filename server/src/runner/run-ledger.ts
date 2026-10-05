@@ -22,6 +22,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { desc, eq, sql } from "drizzle-orm";
+import { FIRST_MOVE_KINDS } from "../../../shared/first-move";
 import type { Database } from "../db/client";
 import { lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
@@ -31,7 +32,7 @@ import {
   endingOf,
   WITH_PERSON,
 } from "../telemetry/run-ending";
-import type { RunMeasure } from "../telemetry/run-meter";
+import { isFirstMoveEnding, type RunMeasure } from "../telemetry/run-meter";
 
 /**
  * What starts a run, of what the enum column accepts.
@@ -188,11 +189,48 @@ const whole = (value: number | null): number | null =>
     ? null
     : Math.min(2_147_483_647, Math.max(0, Math.round(value)));
 
-/** The measure as columns. Nothing but numbers leaves here. */
+/**
+ * A first move as columns: kinds and a verdict out of their closed lists, and two numbers.
+ *
+ * Checked here although the meter is typed, because this is the last hand before the row: a kind
+ * that is not one of the list's, or a verdict that is not one the measure keeps, was never a first
+ * move's, and then none of the five is written — the row says nothing rather than half of it. The
+ * kinds go down in the list's own order, each once, so the same decision is the same array.
+ */
+function firstMoveColumns(move: RunMeasure["firstMove"]) {
+  const asked = FIRST_MOVE_KINDS.filter((kind) => move?.asked.includes(kind));
+  if (!move || asked.length === 0 || !isFirstMoveEnding(move.verdict)) {
+    return {
+      firstMoveAsked: null,
+      firstMoveVerdict: null,
+      firstMoveKind: null,
+      firstMoveDecisionMs: null,
+      firstMoveCallMs: null,
+    };
+  }
+  return {
+    firstMoveAsked: asked,
+    firstMoveVerdict: move.verdict,
+    // A kind moved is one of the kinds asked about, and only a move made has one.
+    firstMoveKind:
+      move.verdict === "moved" &&
+      move.kind !== null &&
+      asked.includes(move.kind)
+        ? move.kind
+        : null,
+    firstMoveDecisionMs: whole(move.decisionMs),
+    firstMoveCallMs: whole(move.callMs),
+  };
+}
+
+/** The measure as columns. Nothing but numbers leaves here, and a first move's words from their lists. */
 function measureColumns(measure: RunMeasure) {
   return {
     queuedMs: whole(measure.queuedMs),
     firstTokenMs: whole(measure.firstTokenMs),
+    firstSignMs: whole(measure.firstSignMs),
+    firstWordMs: whole(measure.firstWordMs),
+    ...firstMoveColumns(measure.firstMove),
     streamMs: whole(measure.streamMs),
     totalMs: whole(measure.totalMs),
     modelRequests: whole(measure.modelRequests) ?? 0,

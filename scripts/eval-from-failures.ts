@@ -25,6 +25,7 @@ import type {
   UnfinishedTurnCell,
 } from "../server/src/insights/report";
 import { summariseTurns, turnsStatement } from "../server/src/insights/turns";
+import { FIRST_MOVE_KINDS } from "../shared/first-move";
 
 const DEFAULT_DAYS = 7;
 const DEFAULT_ZONE = "Asia/Seoul";
@@ -129,6 +130,16 @@ export function sectionOf(saved: unknown): TurnsInsight | null {
     Array.isArray(value) ? [count(value[0]), count(value[1])] : [0, 0];
   const list = (value: unknown): unknown[] =>
     Array.isArray(value) ? value : [];
+  // Dropped rather than zeroed: a cell counted at 0 s would pull the percentiles down.
+  const cells = (value: unknown): Array<[number, number]> =>
+    list(value).flatMap(
+      (cell): Array<[number, number]> =>
+        Array.isArray(cell) &&
+        cell.length === 2 &&
+        cell.every((part) => typeof part === "number" && part >= 0)
+          ? [[cell[0], cell[1]]]
+          : [],
+    );
   const endings = object(raw.endings);
   const work = object(raw.work);
   const cost = object(raw.cost);
@@ -145,15 +156,7 @@ export function sectionOf(saved: unknown): TurnsInsight | null {
         .filter(([origin]) => ORIGIN.test(origin))
         .map(([origin, cell]) => [origin, pair(cell)]),
     ),
-    // Dropped rather than zeroed: a cell counted at 0 s would pull the percentiles down.
-    firstAnswer: list(raw.firstAnswer).flatMap(
-      (cell): Array<[number, number]> =>
-        Array.isArray(cell) &&
-        cell.length === 2 &&
-        cell.every((value) => typeof value === "number" && value >= 0)
-          ? [[cell[0], cell[1]]]
-          : [],
-    ),
+    firstAnswer: cells(raw.firstAnswer),
     approvals: pair(raw.approvals),
     work: {
       modelRequests: count(work.modelRequests),
@@ -178,6 +181,27 @@ export function sectionOf(saved: unknown): TurnsInsight | null {
     },
     cache: pair(raw.cache),
     unfinished: raw.unfinished.filter(wellFormed),
+    /*
+     * The wait as the person has it, where the release that answered measured it (`report.ts`).
+     * Left absent where it did not, so the week's lines say nothing of it rather than "no wait" —
+     * and a first move's counts are read by this build's own kinds, never by the file's keys.
+     */
+    ...(Array.isArray(raw.firstWord)
+      ? {
+          firstWord: cells(raw.firstWord),
+          chatTurns: count(raw.chatTurns),
+        }
+      : {}),
+    ...(raw.firstMoves && typeof raw.firstMoves === "object"
+      ? {
+          firstMoves: Object.fromEntries(
+            FIRST_MOVE_KINDS.map((kind) => [
+              kind,
+              pair(object(raw.firstMoves)[kind]),
+            ]),
+          ),
+        }
+      : {}),
   };
 }
 
@@ -192,9 +216,21 @@ export function weekLines(section: TurnsInsight, days: number): string[] {
   const seconds = (value: number | null) =>
     value === null ? "—" : `${value.toFixed(1)} s`;
   const reasons = week.topReasons.map(([code, n]) => `${code} ×${n}`);
+  const moves = Object.entries(section.firstMoves ?? {}).map(
+    ([kind, [asked, moved]]) => `${kind} ${moved}/${asked}`,
+  );
   return [
     `// ${plural(week.ended, "turn", "turns")} ended, ${week.inFlight} still with a window. 끝남 ${share(week.successRate)}.`,
     `// First answer p50 ${seconds(week.firstAnswerP50)}, p90 ${seconds(week.firstAnswerP90)}. Approvals per turn ${week.approvalsPerTask === null ? "—" : week.approvalsPerTask.toFixed(2)}.`,
+    // The wait as the person has it, and only from a release that measured it (`report.ts`).
+    ...(section.firstWord === undefined
+      ? []
+      : [
+          `// First word p50 ${seconds(week.firstWordP50)}, p90 ${seconds(week.firstWordP90)}, over ${week.firstWordTurns} of ${plural(section.chatTurns ?? 0, "conversation turn", "conversation turns")}.`,
+        ]),
+    ...(moves.length === 0
+      ? []
+      : [`// First moves, made of asked: ${moves.join(", ")}.`]),
     `// Cost per owner per day ${week.costPerOwnerDay === null ? "—" : `$${week.costPerOwnerDay.toFixed(4)}`}. Prompt read from the cache ${share(week.cacheShare)}.`,
     `// Why not 끝남: ${reasons.length > 0 ? reasons.join(", ") : "nothing"}.`,
   ];

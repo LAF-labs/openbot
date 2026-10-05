@@ -523,6 +523,7 @@
   "server/tests/turn-failures.integration.test.ts",
   "server/tests/turn-hub.test.ts",
   "server/tests/turn-loop-round-stop.test.ts",
+  "server/tests/turn-wait.integration.test.ts",
   "server/tests/turn-watchdog.test.ts",
   "server/tests/turns.integration.test.ts",
   "server/tests/unattended-admission.integration.test.ts",
