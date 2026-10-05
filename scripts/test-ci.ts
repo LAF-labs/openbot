@@ -1075,15 +1075,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * answers is Seoul's; what is near the person is asked about; what is saved and what is not; the
  * line's exact lengths).
  *
+ * RAISED AGAIN 2026-10-05 after that review's second reading, by exactly what was added: two to
+ * `server`, both in `person-context.test.ts` (a cell with no row of its own is named by its
+ * neighbour and the line says 부근 once; a run that holds the weather tool is not told what to do
+ * without it) — and three to `root`: two in `person-prompt.test.ts` (the road for a deployment
+ * without the weather tool is drawn only where the run may be without it; one 부근) and one in
+ * `eval-report-hashes.test.ts` (the eval's prompt is told whether the scenario's Bot holds the
+ * weather tool, as the server's is).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3584, roots: ["server"] },
+  { name: "server", floor: 3586, roots: ["server"] },
   { name: "app", floor: 2051, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 652, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 655, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

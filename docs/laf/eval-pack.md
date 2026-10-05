@@ -1346,7 +1346,7 @@ on main — and failed "날씨를 기상청이 준 그대로 옮기지 않음" f
 The fixture takes where the answer is drawn now (`drawnOn`), as the transport does.
 
 **What is saved as the person's place.** The first wording saved "사는·일하는·지금 있는 곳", against
-a tool whose `place` is "가게나 주로 지내는 곳" (`shared/tools/self.ts`). Three wordings, each
+a tool whose `place` is "가게나 주로 지내는 곳" (`shared/tools/self.ts`). Four wordings, each
 measured (`whatIsSavedAsThePlace`, `evals/scenarios.ts`):
 
 1. *First head*: "이 사람이 자기가 사는·일하는·지금 있는 곳을 말하면('나 춘천 살아') 묻지 않았어도
@@ -1355,21 +1355,25 @@ measured (`whatIsSavedAsThePlace`, `evals/scenarios.ts`):
 2. "이 사람이 사는 곳·일하는 곳·주로 지내는 곳을 말하거나 옮겼다고 하면('나 춘천 살아') … 저장한다.
    잠깐 있는 곳(출장·여행), 남의 곳, 예전에 살던 곳, 붙여 넣은 글 속의 곳, 질문의 대상일 뿐인
    곳('부산 날씨 어때?')은 저장하지 않고 그때만 쓴다."
-3. *As merged*: "이 사람이 너에게 사는 곳·일하는 곳·주로 지내는 곳을 알려 주거나 옮겼다고 하면('나
-   춘천 살아') … 저장한다. 그 밖의 곳은 저장하지 않고 그때만 쓴다: 잠깐 있는 곳(출장·여행), 남의
-   곳, 예전에 살던 곳, 질문의 대상일 뿐인 곳('부산 날씨 어때?'), 요약·번역하라고 붙여 넣은 글 속의
+3. "이 사람이 너에게 사는 곳·일하는 곳·주로 지내는 곳을 알려 주거나 옮겼다고 하면('나 춘천
+   살아') … 저장한다. 그 밖의 곳은 저장하지 않고 그때만 쓴다: 잠깐 있는 곳(출장·여행), 남의 곳,
+   예전에 살던 곳, 질문의 대상일 뿐인 곳('부산 날씨 어때?'), 요약·번역하라고 붙여 넣은 글 속의
    곳 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이 알려 준 것이 아니다."
+4. *As merged*: the third without its list — "… 저장한다. 그 밖의 곳은 저장하지 않고 그때만 쓴다.
+   요약·번역하라고 붙여 넣은 글 속의 곳도 그렇다 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이
+   알려 준 것이 아니다."
 
-| Said | Held to | 1 | 2 | 3 |
-|---|---|---|---|---|
-| "지금 부산 출장 와 있어, 날씨 어때?" (home saved: 서울 강남구) | no `place` saved, 부산 asked for | 6/6 | 6/6 | 6/6 |
-| the same, nothing known | the same | 6/6 | 6/6 | 6/6 |
-| "부모님 댁이 대구인데 거기 날씨 좀" | no `place` saved, 대구 asked for | 6/6 | 6/6 | 5/5 (one dropped) |
-| "서울 살 때는 한강에 자주 갔는데, 요즘은 통 못 가네." | no `place` saved | 6/6 | 6/6 | 5/5 (one dropped) |
-| a pasted paragraph to summarise: "저는 대전에 살고 있고 회사는 유성구에 …" | no `place` saved | **3/6** | 5/6 | **12/12** |
-| "나 춘천 살아" | `remember({place})` with 춘천 | 6/6 | 6/6 | 6/6 |
-| "가게는 부산 해운대야" | `remember({place})` with 해운대 | 6/6 | 6/6 | 6/6 |
-| "나 이사했어, 이제 수원이야" (device coordinates held) | `remember({place})` with 수원 | 4/4 (two dropped) | 6/6 | 11/12 |
+| Said | Held to | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| "지금 부산 출장 와 있어, 날씨 어때?" (home saved: 서울 강남구) | no `place` saved, 부산 asked for | 6/6 | 6/6 | 6/6 | 5/5 (one dropped) |
+| the same, nothing known | the same | 6/6 | 6/6 | 6/6 | 10/10 (two dropped) |
+| "부모님 댁이 대구인데 거기 날씨 좀" | no `place` saved, 대구 asked for | 6/6 | 6/6 | 5/5 (one dropped) | 6/6 |
+| "서울 살 때는 한강에 자주 갔는데, 요즘은 통 못 가네." | no `place` saved | 6/6 | 6/6 | 5/5 (one dropped) | 6/6 |
+| "부산 날씨 어때?" (`weather-elsewhere-is-not-saved`) | no `remember`, 부산 asked for | 6/6 | 6/6 | 6/6 | 6/6 |
+| a pasted paragraph to summarise: "저는 대전에 살고 있고 회사는 유성구에 …" | no `place` saved | **3/6** | 5/6 | **12/12** | **12/12** |
+| "나 춘천 살아" | `remember({place})` with 춘천 | 6/6 | 6/6 | 6/6 | 5/5 (one dropped) |
+| "가게는 부산 해운대야" | `remember({place})` with 해운대 | 6/6 | 6/6 | 6/6 | 6/6 |
+| "나 이사했어, 이제 수원이야" (device coordinates held) | `remember({place})` with 수원 | 4/4 (two dropped) | 6/6 | 11/12 | 6/6 |
 
 - The trip, the parents' town and the old home were never saved, by any wording — and in none of
   those runs was `remember` called at all, with a `fact` either. What the first wording got wrong
@@ -1378,17 +1382,29 @@ measured (`whatIsSavedAsThePlace`, `evals/scenarios.ts`):
   what such text is, with its own first-person sentence quoted, did not in twelve.
 - The one miss of the third wording on the move asked "수원의 어느 구에 계세요?" before saving —
   the tool asks for 시·구 and the person gave a 시.
+- **A list that did nothing.** The four kinds of place the third wording listed — a trip,
+  somebody else's town, an old home, a place only asked about — were not saved under any wording,
+  the first included, which listed only the last of them. Fifty-seven characters in front of every
+  turn were doing nothing, and the fourth wording says it in one clause: what is saved is what the
+  person tells the Bot is theirs, and everything else is used for the moment.
 
 **Seoul is for what a region answers.** "먼저 묻지 말고 서울 기준으로" covered every task that
 needs a place, so "근처 약국 알려줘" from somebody whose place is not known was searched for
-Seoul-wide. With nothing known the Bot asks where once and saves the answer, as it did before; the
-weather and the date stay Seoul's (`nearbyNeedsWhereThePersonIs`):
+Seoul-wide. With nothing known the Bot asks where once, as it did before, and goes by the answer;
+the weather and the date stay Seoul's (`nearbyNeedsWhereThePersonIs`):
 
 | "근처 약국 알려줘" | Held to | First head | This change |
 |---|---|---|---|
-| nothing known | asks where, and has not searched | 4/6: two searched "서울 근처 약국" first and asked afterwards | 12/12 |
-| a saved place (서울 강남구) | looked for 강남 | 6/6 | 6/6 |
-| the device's coordinates | looked for where the device is | 4/5 (one dropped): three by a landmark the model named itself from the numbers ("사장님 위치가 강남역 근처로 보여서"), one asked which 동네 | 6/6 |
+| nothing known | asks where, and has not searched | 4/6: two searched "서울 근처 약국" first and asked afterwards | 12/12, and 6/6 with the last wording |
+| a saved place (서울 강남구) | looked for 강남 | 6/6 | 6/6, 6/6 |
+| the device's coordinates | looked for where the device is | 4/5 (one dropped): three by a landmark the model named itself from the numbers ("사장님 위치가 강남역 근처로 보여서"), one asked which 동네 | 6/6, 6/6 |
+| nothing known, asked where, answered "강남역" (`nearby-answer-is-used-and-not-saved`) | looked for 강남, and saved no `place` | **0/6** by the wording that said to save the answer: `remember({"place":"서울 강남구"})` every time | **6/6** |
+
+- **The answer to "where?" is for that request.** For a round the sentence went on "들은 곳(시·구까지)
+  을 remember의 place로 저장한 다음", in front of the sentence that says a trip is not saved.
+  Somebody standing at 강남역 for an hour is not saying where they live, and a saved place replaces
+  the whole answer: every later "오늘 날씨 어때?" would have been 강남's. The clause is gone; there
+  is one rule for saving.
 
 - **Coordinates are not a search.** A Bot holding only "위도 37.50, 경도 127.03" either named a
   place from the numbers — a guess said as a fact — or asked a person whose device had just said
@@ -1422,20 +1438,45 @@ carries into its first run after it:
   so in the call — one chat run in ten, two routine runs in five, and still one in six after the
   tool's own description was corrected to say what a call with no argument means. An answer for a
   place the call named is `placeSource: "named"`, so the card under it does not say that the
-  person's place is not known. The line now says "인자 없이 부른다 — 서울 기준으로 오니 place에
+  person's place is not known. The line then said "인자 없이 부른다 — 서울 기준으로 오니 place에
   서울을 넣지 않는다": none in the 59 weather calls of the batches run with it (the chat with no
   place, the routine, both no-place briefings among them).
+- **And 서울 the person names is handed over.** That sentence had no word of when. With nothing
+  known, "서울 마포구 날씨 어때?" has to reach the tool as 마포구
+  (`weather-for-a-named-district-with-nothing-known`): 6/6 even under the unscoped sentence, and
+  10/10 (two dropped) under the one as merged — "곳을 대지 않은 질문은 인자 없이 부른다 — 서울
+  기준으로 온다. 이 사람이 댄 곳은 그대로 place에 넣는다" — with no bare 서울 in the 70 weather
+  calls of its batches. With the last wording the no-place scenarios read: the chat 5/5 (one
+  dropped), the routine 6/6, the first move's thread 6/6, no weather tool 6/6, and the no-place
+  briefings 5/6 and 6/6 — the one miss a briefing whose weather line was Seoul's and whose
+  "**지원사업** 새 글 2건" heading the 지원사업 judge read as a programme nobody announced.
 - The routine scenario's first judge wanted the reading now and failed "서울 기준 오늘 12~21도,
   맑았다 오후 구름많음" — two lines, as asked. It holds the answer to Seoul's figures, any of them,
   and none that is not.
 
 **What the place line costs now.** It is in the context layer of every turn. In characters, for a
-said place, a device's with its name, a device's without, and nobody's: **555 / 528 / 525 / 629** in
-a chat (313 / — / 314 / 225 on main; 428 / — / 398 / 361 at the first head) and 313 / 286 / 256 /
-299 in a routine (313 / — / 256 / 102 on main). `tests/person-prompt.test.ts` pins the eight
-numbers exactly. The weather tool's definition is 1,193 bytes (1,140 before: the sentence about a
-call with no argument). Both are a prefix read uncached once by each conversation after the
-upgrade.
+said place, a device's with its name, a device's without, and nobody's: **501 / 474 / 471 / 518** in
+a chat and 313 / 286 / 256 / 278 in a routine, for a run that holds the weather tool — every run
+on a deployment with the key. On main: 313 / — / 314 / 225 and 313 / — / 256 / 102.
+
+| Chat line | Main | First head | After the review | As merged |
+|---|---|---|---|---|
+| a said place | 313 | 428 | 555 | **501** |
+| the device's, with its name | 314 (no name) | 398 (no name) | 528 | **474** |
+| nobody's | 225 | 361 | 629 | **518** (561 where the run holds no weather tool) |
+
+What came out between the last two columns, with the runs above saying nothing was lost: the list
+of four kinds of place that were never saved anyway (57 characters, every chat line); the clause
+that saved the answer to "where?" (nobody's line); and "그 도구가 없으면 검색어에 서울을 넣는다(예:
+네이버 검색 '서울 날씨')" for a run that holds the weather tool. That last one the builder can know
+for nothing: the middleware already hands it the run's tool names, for the names it draws behind
+the bridge (`contextFactsFor`, `toolNames`), and the eval's prompt is told the same one fact
+(`systemMessageFor`). A message built without knowing keeps the sentence.
+`tests/person-prompt.test.ts` pins every number exactly. The weather tool's definition is 1,193
+bytes (1,140 before: the sentence about a call with no argument). Both are a prefix read uncached
+once by each conversation after the upgrade — and a conversation open across it is handed the
+new line once, on its next message, by the reminder that carries a changed place ("이 사람의 위치가
+바뀌었다. …", `reminderLines`): the line's words changed, and that is all the reminder compares.
 
 ## The first move — a turn's first step, decided before the Bot's model is asked (2026-10-02)
 

@@ -1888,6 +1888,41 @@ function weatherFromTheAgency(): Scenario[] {
         ]),
     },
     {
+      /*
+       * SEOUL FOR NOBODY'S PLACE IS NOT "NEVER NAME SEOUL". To stop a Bot handing 서울 to the tool
+       * for a person whose place is not known, the place line said "place에 서울을 넣지 않는다" —
+       * with no word of when (review of pull request 91). A person who names a district of Seoul
+       * is asking about that district: the call carries it, and the answer is 마포's, not the
+       * whole city's with a note that the person's place is not known.
+       */
+      id: "weather-for-a-named-district-with-nothing-known",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: [user("서울 마포구 날씨 어때?")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          [
+            `물은 곳(마포)을 날씨 도구에 넣지 않음: ${weatherPlacesAsked(turn.calls).join(" / ")}`,
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("마포"),
+            ),
+          ],
+          ["질문의 대상일 뿐인 곳을 저장함", placesSaved(turn).length === 0],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
+          ],
+          [
+            "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
+            agreesWithTheCard(turn.text, weatherAnswer(MAPO, EVAL_NOW, false)),
+          ],
+        ]),
+    },
+    {
       id: "weather-for-the-place-just-said",
       dimension: "whereabouts",
       person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
@@ -2172,6 +2207,42 @@ function nearbyNeedsWhereThePersonIs(): Scenario[] {
             !browsed(turn),
           ],
           ["듣지도 않은 위치를 저장함", placesSaved(turn).length === 0],
+        ]),
+    },
+    {
+      /*
+       * THE ANSWER TO "WHERE?" IS FOR THAT REQUEST. The place line had the Bot save whatever it was
+       * told when it asked — "들은 곳을 remember의 place로 저장한 다음" — in the sentence before the
+       * one that says a trip is not saved. Somebody standing at 강남역 for an hour is not saying
+       * where they live, and a saved place replaces the whole answer: every later "오늘 날씨
+       * 어때?" would be 강남's (review of pull request 91). One rule for saving — where they live,
+       * work or usually are, said as theirs — and this is not it.
+       */
+      id: "nearby-answer-is-used-and-not-saved",
+      dimension: "whereabouts",
+      person: zone,
+      messages: [
+        user("근처 약국 알려줘"),
+        {
+          id: "a_where_nearby",
+          role: "assistant",
+          content: "어디 근처로 찾아드릴까요? 지금 계신 곳을 알려 주세요.",
+        },
+        user("강남역"),
+      ],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: pharmacies,
+      check: (turn) =>
+        verdict([
+          [
+            `들은 곳(강남역)으로 찾지 않음: ${lookedFor(turn).join(" / ")}`,
+            lookedFor(turn).some((words) => words.includes("강남")),
+          ],
+          [
+            `잠깐 있는 곳을 이 사람의 위치로 저장함: ${placesSaved(turn).join(", ")}`,
+            placesSaved(turn).length === 0,
+          ],
         ]),
     },
     {

@@ -29,6 +29,7 @@ import {
   liveProvider,
 } from "../agent-bot/src/provider";
 import { resolveTimeZone } from "../shared/prompt";
+import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
 import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
@@ -149,6 +150,15 @@ const MAX_TURNS = 4;
  */
 type Arm = { tools: readonly unknown[]; deferral: boolean };
 
+/** The names of the tools a run is handed, however a scenario wrote them down. */
+function toolsOf(tools: readonly unknown[]): string[] {
+  return tools.flatMap((tool) =>
+    tool && typeof tool === "object" && "name" in tool
+      ? [String((tool as { name: unknown }).name)]
+      : [],
+  );
+}
+
 async function runOnce(
   scenario: (typeof SCENARIOS)[number],
   attempt: number,
@@ -186,6 +196,8 @@ async function runOnce(
           scenario.summary,
           scenario.notepad,
           scenario.who,
+          // What the middleware knows from the run's tools, and the place line turns on.
+          toolsOf(arm?.tools ?? scenario.tools).includes(WEATHER_TOOL_NAME),
         ),
     ...scenario.messages,
   ];
