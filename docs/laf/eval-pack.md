@@ -1290,29 +1290,152 @@ where its place came from (`placeSource`: `named`, `saved`, `device`, `fallback`
 "위치를 아직 몰라요" after the name for the last, and the place line stopped saying "먼저 한 번
 여쭤보고". The tool reads the saved words before the device now, as the place line always did.
 
-Six runs each, Muse Spark 1.3 Contributor, `EVAL_ONLY`, the same stub for both columns (it answers
-a call with no argument for Seoul, marked `fallback`):
+Everything below is Muse Spark 1.3 Contributor, six runs a scenario, `EVAL_ONLY`. **A run the
+provider dropped (`laf:model_unavailable`, a 404 before any token) is not a run**: it is left out
+of both numbers and said beside them.
 
-| Scenario | The place line as it was | Rewritten |
+**The first measurement** (the same stub for both columns: it answers a call with no argument for
+Seoul, marked `fallback`):
+
+| Scenario | The place line as it was on main | Rewritten |
 |---|---|---|
-| `weather-with-no-place-is-seouls` — "오늘 날씨 어때?", nothing known | 0/6: six questions ("어느 동네 기준으로 알려드릴까요?"), no call | 9/10 over two batches (3 of 4, then 6/6; two runs of the first batch were the provider's `laf:model_unavailable`). The miss called `get_weather({"place":"서울"})` — Seoul's weather, said as Seoul's, without the `fallback` mark |
-| `place-said-in-passing-is-saved` — "나 춘천 살아" | 6/6 | 11/11 (one run lost to the provider) |
+| `weather-with-no-place-is-seouls` — "오늘 날씨 어때?", nothing known | 0/6: six questions ("어느 동네 기준으로 알려드릴까요?"), no call | 9/10 (two dropped). The miss called `get_weather({"place":"서울"})` — Seoul's weather, said as Seoul's, without the `fallback` mark |
+| `place-said-in-passing-is-saved` — "나 춘천 살아" | 6/6 | 11/11 (one dropped) |
 | `moved-place-is-saved-over-the-devices` — device coordinates, "나 이사했어, 이제 수원이야" | 4/6: "수원이세요. 축하드려요!" and "수원의 어느 구쯤이세요?", nothing saved | 6/6 |
 | `weather-elsewhere-is-not-saved` — "부산 날씨 어때?", nothing known | 6/6, no `remember` | 6/6, no `remember` |
 | `weather-without-the-tool-is-seouls` — no weather tool, nothing known | 0/6 (asked where) | 6/6: 네이버 "서울 날씨", "서울 기준으로" |
-| `weather-from-the-agency` — a saved place | the saved place's in every run; 0/6 on the one-sentence check | the same: `get_weather({})`, 강남's, and 0/6 on the one-sentence check |
 
-- **The last row is not this change.** Every run calls the tool with no argument and answers for
-  강남; what fails is `leavesItToTheCard`, because the words the model says before the call
-  ("오늘 날씨 확인해 볼게요.") are part of the turn's text and make two sentences. It failed the
-  same way before the place line was touched, and `weather-for-the-place-just-said` with it (0/6
-  both times, the place saved and asked for in every run).
-- **What the rule about saving costs.** One sentence, in chats only: the place line is 428, 398 and
-  361 characters for a saved place, a device's and nobody's (313, 314, 225 before), and a routine's
-  is unchanged but for nobody's (102 → 225, which now sends it to the tool). It is in the context
-  layer, so the first turn of each conversation after the upgrade reads its prefix uncached once.
-- **The transport, called with the fleet's key and nothing saved**: 서울특별시, `placeSource:
-  "fallback"`, no `basis`, no coordinates, now 18.7℃ and five days, 1,082 characters in 1.45 s.
+**The transport, called with the fleet's key and nothing saved**: 서울특별시, `placeSource:
+"fallback"`, no `basis`, no coordinates, now 18.7℃ and five days, 1,082 characters in 1.45 s.
+
+#### What the review of pull request 91 found, each measured
+
+"Before" is that pull request's first head (`ecdccd33`) with the scenarios, the criterion and the
+fixture below; it was run from a copy of that commit, so nothing written afterwards could reach it.
+
+**The criterion that had been reading a failure since 2026-10-04.** `leavesItToTheCard` holds an
+answer under the weather card to one sentence, and it was handed everything a turn said. From
+10-04 a Bot says a short sentence before it calls the tool — "오늘 날씨 확인해 볼게요." — which is
+wanted: it gives the wait a subject, and the product this is held against does the same. That
+sentence was counted as the answer's first, so `weather-from-the-agency` and
+`weather-for-the-place-just-said` read 0/6 on main and on every branch, with the right call and the
+right place in every run. The behaviour was right and the criterion was stale, so the criterion is
+what changed: it judges the text after the last tool call of the turn
+(`answerAfterTheLastCall`, `evals/lib.ts`; a second sentence after the call still fails it). It is
+on the scenarios added here too. With it:
+
+| Scenario | First head | This change |
+|---|---|---|
+| `weather-from-the-agency` | 6/6 | 6/6 |
+| `weather-somewhere-else-by-name` | 6/6 | 6/6 |
+| `weather-for-the-place-just-said` | 6/6 | 6/6 |
+| `weather-with-no-place-is-seouls` | 6/6 | 6/6 |
+| `weather-elsewhere-is-not-saved` | 6/6 | 6/6 |
+| `first-move-is-answered-from` | 4/4 (two dropped) | 6/6 |
+| `first-move-for-the-wrong-place-is-put-right` | 6/6 | 6/6 |
+| `first-move-for-nobodys-place-is-said-to-be-seouls` (new) | 6/6 | 6/6 |
+
+The last is the thread the product actually sends with the first move on: the server's own call
+with no argument, and the tool's `fallback` answer for Seoul, already filed. Held to no second call
+and to Seoul said in the one sentence; it passed before the wording below and after it.
+
+**A fixture that told a routine its forecast was on a card.** The transport says `shown` only where
+a card is drawn; `evals/weather.ts` said it in every answer. From 10-04 both morning briefings
+wrote "오늘 날씨는 화면의 날씨 카드에 표시되어 있어요" where the figure belongs — six runs in six,
+on main — and failed "날씨를 기상청이 준 그대로 옮기지 않음" for a reason that was the fixture's.
+The fixture takes where the answer is drawn now (`drawnOn`), as the transport does.
+
+**What is saved as the person's place.** The first wording saved "사는·일하는·지금 있는 곳", against
+a tool whose `place` is "가게나 주로 지내는 곳" (`shared/tools/self.ts`). Three wordings, each
+measured (`whatIsSavedAsThePlace`, `evals/scenarios.ts`):
+
+1. *First head*: "이 사람이 자기가 사는·일하는·지금 있는 곳을 말하면('나 춘천 살아') 묻지 않았어도
+   시·구까지 remember의 place로 저장하고, 질문의 대상일 뿐인 곳('부산 날씨 어때?')은 저장하지
+   않는다."
+2. "이 사람이 사는 곳·일하는 곳·주로 지내는 곳을 말하거나 옮겼다고 하면('나 춘천 살아') … 저장한다.
+   잠깐 있는 곳(출장·여행), 남의 곳, 예전에 살던 곳, 붙여 넣은 글 속의 곳, 질문의 대상일 뿐인
+   곳('부산 날씨 어때?')은 저장하지 않고 그때만 쓴다."
+3. *As merged*: "이 사람이 너에게 사는 곳·일하는 곳·주로 지내는 곳을 알려 주거나 옮겼다고 하면('나
+   춘천 살아') … 저장한다. 그 밖의 곳은 저장하지 않고 그때만 쓴다: 잠깐 있는 곳(출장·여행), 남의
+   곳, 예전에 살던 곳, 질문의 대상일 뿐인 곳('부산 날씨 어때?'), 요약·번역하라고 붙여 넣은 글 속의
+   곳 — 그 글이 '저는 대전에 살고'라고 해도 이 사람이 알려 준 것이 아니다."
+
+| Said | Held to | 1 | 2 | 3 |
+|---|---|---|---|---|
+| "지금 부산 출장 와 있어, 날씨 어때?" (home saved: 서울 강남구) | no `place` saved, 부산 asked for | 6/6 | 6/6 | 6/6 |
+| the same, nothing known | the same | 6/6 | 6/6 | 6/6 |
+| "부모님 댁이 대구인데 거기 날씨 좀" | no `place` saved, 대구 asked for | 6/6 | 6/6 | 5/5 (one dropped) |
+| "서울 살 때는 한강에 자주 갔는데, 요즘은 통 못 가네." | no `place` saved | 6/6 | 6/6 | 5/5 (one dropped) |
+| a pasted paragraph to summarise: "저는 대전에 살고 있고 회사는 유성구에 …" | no `place` saved | **3/6** | 5/6 | **12/12** |
+| "나 춘천 살아" | `remember({place})` with 춘천 | 6/6 | 6/6 | 6/6 |
+| "가게는 부산 해운대야" | `remember({place})` with 해운대 | 6/6 | 6/6 | 6/6 |
+| "나 이사했어, 이제 수원이야" (device coordinates held) | `remember({place})` with 수원 | 4/4 (two dropped) | 6/6 | 11/12 |
+
+- The trip, the parents' town and the old home were never saved, by any wording — and in none of
+  those runs was `remember` called at all, with a `fact` either. What the first wording got wrong
+  was the pasted text: three times in six it saved "대전 유성구" and addressed the person as living
+  there ("사장님은 대전에 살며 …"). Naming pasted text as one more item still saved it once; saying
+  what such text is, with its own first-person sentence quoted, did not in twelve.
+- The one miss of the third wording on the move asked "수원의 어느 구에 계세요?" before saving —
+  the tool asks for 시·구 and the person gave a 시.
+
+**Seoul is for what a region answers.** "먼저 묻지 말고 서울 기준으로" covered every task that
+needs a place, so "근처 약국 알려줘" from somebody whose place is not known was searched for
+Seoul-wide. With nothing known the Bot asks where once and saves the answer, as it did before; the
+weather and the date stay Seoul's (`nearbyNeedsWhereThePersonIs`):
+
+| "근처 약국 알려줘" | Held to | First head | This change |
+|---|---|---|---|
+| nothing known | asks where, and has not searched | 4/6: two searched "서울 근처 약국" first and asked afterwards | 12/12 |
+| a saved place (서울 강남구) | looked for 강남 | 6/6 | 6/6 |
+| the device's coordinates | looked for where the device is | 4/5 (one dropped): three by a landmark the model named itself from the numbers ("사장님 위치가 강남역 근처로 보여서"), one asked which 동네 | 6/6 |
+
+- **Coordinates are not a search.** A Bot holding only "위도 37.50, 경도 127.03" either named a
+  place from the numbers — a guess said as a fact — or asked a person whose device had just said
+  where it is. The server now reads the name 기상청's table has for the cell the coordinates fall
+  in ("서울특별시 강남구·서초구", `agents/person-context.ts`, `nameNear`: the name the weather tool
+  already answers coordinates with) and the place line carries it; with it every run searched
+  "강남구 약국" or the like and none asked first.
+- **Two judges were wrong before the model was.** "Does not ask" first failed any answer with a
+  question about a place in it, which is how a good one ends ("정확한 동 이름 알려주시면 더
+  좁혀드릴게요"): both scenarios that should not ask are held to having looked for the place they
+  hold. And `asksWhere` did not read "지금 계신 곳을 시·구까지만 알려주실 수 있을까요?" as asking.
+  The figures above are by the corrected judges, re-read over the same runs where the runs were
+  already made.
+
+**A routine with no place.** Nobody is at the screen; until 10-05 the place line had a routine
+write that it could not look. It goes by Seoul and says so. The 아침 브리핑 skill still said "위치를
+모르면 찾지 않고 '위치를 몰라 날씨는 못 봤어요'라고만 쓴다" — two instructions in one run — and now
+agrees with the place line. Each no-place briefing is handed yesterday's briefing as the old skill
+wrote it ("**날씨** 위치를 몰라 날씨는 못 봤어요"), which is what a routine made before the upgrade
+carries into its first run after it:
+
+| Scenario | First head | This change |
+|---|---|---|
+| `morning-briefing-monday` (a place saved) | 6/6 | 6/6 |
+| `morning-briefing-tuesday` (a place saved) | 6/6 | 6/6 |
+| `morning-briefing-monday-with-no-place` | 6/6 | 6/6, and 6/6 again with the last wording |
+| `morning-briefing-tuesday-with-no-place` | 3/4 (two dropped): one run wrote "**날씨** 위치를 몰라 날씨는 못 봤어요" and never called the tool | 6/6, and 6/6 again |
+| `routine-weather-with-no-place-is-seouls` (the place line alone, no skill) | 3/5 (one dropped): two called `get_weather({"place":"서울"})` | 10/10 (two dropped), none naming 서울 |
+
+- **서울 handed to the tool.** "(인자 없이 부르면 서울 기준이다)" was read as an invitation to say
+  so in the call — one chat run in ten, two routine runs in five, and still one in six after the
+  tool's own description was corrected to say what a call with no argument means. An answer for a
+  place the call named is `placeSource: "named"`, so the card under it does not say that the
+  person's place is not known. The line now says "인자 없이 부른다 — 서울 기준으로 오니 place에
+  서울을 넣지 않는다": none in the 59 weather calls of the batches run with it (the chat with no
+  place, the routine, both no-place briefings among them).
+- The routine scenario's first judge wanted the reading now and failed "서울 기준 오늘 12~21도,
+  맑았다 오후 구름많음" — two lines, as asked. It holds the answer to Seoul's figures, any of them,
+  and none that is not.
+
+**What the place line costs now.** It is in the context layer of every turn. In characters, for a
+said place, a device's with its name, a device's without, and nobody's: **555 / 528 / 525 / 629** in
+a chat (313 / — / 314 / 225 on main; 428 / — / 398 / 361 at the first head) and 313 / 286 / 256 /
+299 in a routine (313 / — / 256 / 102 on main). `tests/person-prompt.test.ts` pins the eight
+numbers exactly. The weather tool's definition is 1,193 bytes (1,140 before: the sentence about a
+call with no argument). Both are a prefix read uncached once by each conversation after the
+upgrade.
 
 ## The first move — a turn's first step, decided before the Bot's model is asked (2026-10-02)
 

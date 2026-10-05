@@ -243,7 +243,7 @@ const sha256 = (text: string) =>
  * enforceable because these two numbers are in the report.
  */
 /**
- * What the context layer says about a person's place, for the three people there are and both
+ * What the context layer says about a person's place, for the four people there are and both
  * modes. Fixed inputs, so these are the WORDS and move only when the words do.
  *
  * In the hash since 2026-10-02, the night both hashes sat still through a batch that changed what
@@ -256,6 +256,11 @@ const sha256 = (text: string) =>
 export const PLACE_LINES = (["chat", "routine"] as const).flatMap((mode) => [
   placeText({ place: "어느 곳" }, mode),
   placeText({ coordinates: { latitude: 0, longitude: 0 } }, mode),
+  // The device's coordinates with the name the server reads for them: its own wording since 2026-10-05.
+  placeText(
+    { coordinates: { latitude: 0, longitude: 0 }, near: "어느 곳" },
+    mode,
+  ),
   placeText(undefined, mode),
 ]);
 

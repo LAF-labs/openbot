@@ -202,6 +202,33 @@ export function textOf(events: StreamEvent[]): string {
     .join("");
 }
 
+/**
+ * What the Bot said after the last thing it called: the answer, without the words before it.
+ *
+ * `textOf` joins every round of a turn, which is right for "what reached the screen" and wrong for
+ * "what the answer was". A Bot says a short sentence before it calls a tool ("오늘 날씨 확인해
+ * 볼게요.") — it is what gives the wait a subject, and it is wanted — and a check held on the
+ * answer (one sentence under the weather card) counted that sentence as the answer's first: every
+ * run failed "one sentence" from 2026-10-04 on, on main and on every branch, with nothing wrong in
+ * what was said (`docs/laf/eval-pack.md`, "Seoul until the person says where").
+ *
+ * The text after the last tool-call event of the whole turn, whoever answered the call: one the
+ * Bot service settled in the run (a lookup) and one the surface carried out both end with their
+ * events before the answer. A turn that called nothing is all answer; a turn that ended on a call
+ * has none, and reads as the empty answer it is.
+ */
+export function answerAfterTheLastCall(events: readonly StreamEvent[]): string {
+  let last = -1;
+  events.forEach((event, index) => {
+    if (event.type.startsWith("TOOL_CALL_")) last = index;
+  });
+  return events
+    .slice(last + 1)
+    .filter((event) => event.type === "TEXT_MESSAGE_CONTENT")
+    .map((event) => event.delta ?? "")
+    .join("");
+}
+
 /** The usage event the Bot service emits, when the provider reported one. */
 export function usageOf(events: StreamEvent[]): {
   promptTokens: number;

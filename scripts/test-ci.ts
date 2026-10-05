@@ -1050,15 +1050,40 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * race) — and two to `root`, in `person-prompt.test.ts` (a place the person says is theirs is
  * saved unasked in every chat and one only asked about is not; the place line is held to a length).
  *
+ * RAISED AGAIN 2026-10-05 after that change's review, by exactly what was added: nine to `server`
+ * — four in `kma-weather-rest.test.ts` (what a call with no argument is for, in the tool's own
+ * words; a saved name two places share falls to the device and is refused only without one; a
+ * saved name the table has no row for does the same; a name the call gave is refused at once), two
+ * in `person-context.test.ts` (coordinates with no words are given the table's name for where they
+ * fall; the name reaches the place line a run is told), and one each in
+ * `whereabouts-routes.test.ts` (coordinates with no `place` key do not touch the words),
+ * `whereabouts.integration.test.ts` (the same, on the real row) and `built-in-skills.test.ts`
+ * (아침 브리핑 looks at Seoul's weather for a person whose place is not known) — sixteen to `app`:
+ * the seven of the new `device-place-gate.test.tsx` (on the mounted routes: the first-run screen
+ * and the screen that asks again for the agreement ask nothing of the browser; once agreed, the
+ * screen landed on asks once and sends coordinates alone; a said place is not asked about;
+ * coordinates held spend the once; a browser that has not decided and one that said no), five more
+ * in `device-place.test.ts` (who may be asked about; not before agreeing; a said place keeps the
+ * once; coordinates held spend it; words said meanwhile are not this door's to send), two in
+ * `settings-shop-location.test.tsx` (a cleared place does not come back at the next open;
+ * clearing words alone spends nothing) and two in `greeting-head.test.tsx` (the neighbourhood
+ * field stays under the person when their device answers; somebody the device already placed is
+ * not asked) — and seven to `root`: six in `eval-weather.test.ts` (the answer is what follows the
+ * last call, three ways; the fixture says nothing of a card to a routine and marks Seoul as
+ * nobody's; the scenario pack loads) and one in `person-prompt.test.ts`, where four tests were
+ * rewritten and five stand in their place (the device's coordinates with their name; what a region
+ * answers is Seoul's; what is near the person is asked about; what is saved and what is not; the
+ * line's exact lengths).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3575, roots: ["server"] },
-  { name: "app", floor: 2035, roots: ["app"] },
+  { name: "server", floor: 3584, roots: ["server"] },
+  { name: "app", floor: 2051, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 645, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 652, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

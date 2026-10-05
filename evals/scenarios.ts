@@ -69,6 +69,7 @@ import {
   plantedMinimumWage,
 } from "./grounded";
 import {
+  answerAfterTheLastCall,
   discipline,
   forwardedCallsOf,
   hangulShare,
@@ -122,6 +123,7 @@ import {
 import {
   agreesWithTheCard,
   BUSAN,
+  DAEGU,
   GANGNAM,
   HAEUNDAE,
   leavesItToTheCard,
@@ -794,10 +796,15 @@ export const SCENARIOS: Scenario[] = [
   fileMadeIsHandedOver(),
   fileHandedOverAfterSayingItCouldNot(),
   ...weatherFromTheAgency(),
+  ...whatIsSavedAsThePlace(),
+  ...nearbyNeedsWhereThePersonIs(),
   ...firstMoveThreads(),
   ...firstMovesBehindTheBridge(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
+  morningBriefing("monday", "nowhere"),
+  morningBriefing("tuesday", "nowhere"),
+  routineWeatherWithNoPlace(),
   feedPostsOnlyFromTools(),
   payrollFromTheOfficialPages(),
   minimumWageFromItsPage(),
@@ -1598,6 +1605,60 @@ function supportProgramsFromThePortal(): Scenario {
   };
 }
 
+/*
+ * FUNCTION DECLARATIONS, NOT CONSTS: the scenario list near the top of this file calls the groups
+ * below while the module is still being evaluated, and a `const` down here is not yet initialised
+ * then ("Cannot access 'backed' before initialization" — the first time these were lifted out of
+ * one group to be shared by three).
+ */
+
+/** Whether a turn went looking with the search or the browser. */
+function browsed(turn: Turn): boolean {
+  return called(turn, NAVIGATE.name) || called(turn, WEB_SEARCH_TOOL_NAME);
+}
+
+/** What a turn did, leaving out the clock and the bridge's own lookup. */
+function acted(turn: Turn): ObservedCall[] {
+  return turn.calls.filter(
+    (call) => call.name !== "now" && call.name !== "tool_search",
+  );
+}
+
+/** The weather tool for a person with that saved place (or none), and 네이버's page for a browser. */
+function backed(
+  saved?: typeof GANGNAM,
+): (call: ObservedCall) => string | undefined {
+  const weather = weatherBackend({
+    at: EVAL_NOW,
+    ...(saved ? { saved } : {}),
+  });
+  const site = weatherSite();
+  return (call) => weather(call) ?? site(call);
+}
+
+/** Every place a turn saved through `remember`. */
+function placesSaved(turn: Turn): string[] {
+  return turn.calls
+    .filter((call) => call.name === "remember")
+    .map((call) => String(call.arguments?.place ?? "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether an answer asks the person where they are. A question mark is not the only way to ask:
+ * "시·구까지 알려 주시면 찾아볼게요" asks too (measured: two of three replies on glm-5.3-flash
+ * asked that way). And "어디" is not the only word for the place: "지금 계신 곳을 시·구까지만
+ * 알려주실 수 있을까요?" and "지금 계신 동이나 구를 여쭤봐도 될까요?" were both read as not asking
+ * (2026-10-05, two runs of `nearby-with-no-place-asks-where` failed for it).
+ */
+function asksWhere(text: string): boolean {
+  return (
+    /(어디|어느|위치|지역|동네|계신\s?(곳|동)|있는\s?곳|사시는\s?곳|시·구|동이나 구)/.test(
+      text,
+    ) && /[?？]|알려\s?주|말씀해\s?주|여쭤/.test(text)
+  );
+}
+
 /**
  * THE WEATHER COMES FROM 기상청'S TOOL, NOT FROM A PAGE (2026-10-02).
  *
@@ -1617,28 +1678,6 @@ function supportProgramsFromThePortal(): Scenario {
  * the old failure — 제주 reported as the person's weather — is what browsing here would say.
  */
 function weatherFromTheAgency(): Scenario[] {
-  const browsed = (turn: Turn) =>
-    called(turn, NAVIGATE.name) || called(turn, WEB_SEARCH_TOOL_NAME);
-  /** What the turn did, leaving out the clock and the bridge's own lookup. */
-  const acted = (turn: Turn) =>
-    turn.calls.filter(
-      (call) => call.name !== "now" && call.name !== "tool_search",
-    );
-  const backed = (saved?: typeof GANGNAM) => {
-    const weather = weatherBackend({
-      at: EVAL_NOW,
-      ...(saved ? { saved } : {}),
-    });
-    const site = weatherSite();
-    return (call: ObservedCall) => weather(call) ?? site(call);
-  };
-  /** Every place a turn saved through `remember`. */
-  const placesSaved = (turn: Turn) =>
-    turn.calls
-      .filter((call) => call.name === "remember")
-      .map((call) => String(call.arguments?.place ?? "").trim())
-      .filter(Boolean);
-
   return [
     {
       id: "weather-from-the-agency",
@@ -1668,7 +1707,7 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           [
             "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
-            leavesItToTheCard(turn.text),
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
@@ -1710,7 +1749,7 @@ function weatherFromTheAgency(): Scenario[] {
           // The card draws 해운대's forecast too: the figure that was asked for, and one sentence.
           [
             "한 문장을 넘기거나 출처를 다시 적음 (카드가 보여 주는 것)",
-            leavesItToTheCard(turn.text),
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
@@ -1751,6 +1790,10 @@ function weatherFromTheAgency(): Scenario[] {
           ["검색하거나 브라우저로 찾음", !browsed(turn)],
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
           ["듣지도 않은 위치를 저장함", !called(turn, "remember")],
+          [
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
+          ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
             agreesWithTheCard(
@@ -1835,6 +1878,10 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           ["검색하거나 브라우저로 찾음", !browsed(turn)],
           [
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
+          ],
+          [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
             agreesWithTheCard(turn.text, weatherAnswer(BUSAN, EVAL_NOW, false)),
           ],
@@ -1880,7 +1927,7 @@ function weatherFromTheAgency(): Scenario[] {
           ],
           [
             "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
-            leavesItToTheCard(turn.text),
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
@@ -1889,6 +1936,284 @@ function weatherFromTheAgency(): Scenario[] {
           ["사이트가 짐작한 제주를 말함", !turn.text.includes("제주")],
         ]);
       },
+    },
+  ];
+}
+
+/**
+ * WHAT IS SAVED AS THE PERSON'S PLACE, AND WHAT IS ONLY SAID (2026-10-05).
+ *
+ * "유저가 특정 위치를 말해주면 저장" (the owner) — and the place that is saved is one thing: where
+ * the person lives, works or usually is (`shared/tools/self.ts`, `remember`'s `place`). It is read
+ * into every later turn and it is what "오늘 날씨 어때?" is answered for, so a place saved wrongly
+ * is every later answer for the wrong town, and — because a saved place replaces the whole answer
+ * (`account/whereabouts.ts`) — the device's own coordinates gone with it.
+ *
+ * So a candidate is held from both sides. SAVED, unasked: a home, a shop, a move. NOT SAVED: a trip
+ * ("지금 부산 출장 와 있어" is 부산 for this conversation and home again next week), somebody
+ * else's place, a place in the past tense, and a place inside text the person pasted — which is the
+ * hardest, because the pasted text may say "저는 대전에 살고" in the first person and is still not
+ * the person speaking.
+ *
+ * Judged on `remember`'s `place` alone. A `fact` kept beside it ("부모님 댁은 대구") is the
+ * notebook's business and is not counted either way.
+ */
+function whatIsSavedAsThePlace(): Scenario[] {
+  const nowhere = { timeZone: "Asia/Seoul", locale: "ko-KR" };
+  const notSaved = (label: string, turn: Turn): [string, boolean] => [
+    `${label} — 저장한 곳: ${placesSaved(turn).join(", ")}`,
+    placesSaved(turn).length === 0,
+  ];
+  return [
+    {
+      id: "trip-is-not-saved-over-home",
+      dimension: "whereabouts",
+      person: { ...nowhere, place: "서울 강남구" },
+      messages: [user("지금 부산 출장 와 있어, 날씨 어때?")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(GANGNAM),
+      check: (turn) =>
+        verdict([
+          notSaved(
+            "출장 간 곳(부산)을 이 사람의 위치로 저장해 집을 덮어씀",
+            turn,
+          ),
+          [
+            "지금 있는 곳(부산)의 날씨를 묻지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("부산"),
+            ),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        ]),
+    },
+    {
+      id: "trip-is-not-saved",
+      dimension: "whereabouts",
+      person: nowhere,
+      messages: [user("지금 부산 출장 와 있어, 날씨 어때?")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          notSaved("출장 간 곳(부산)을 이 사람의 위치로 저장함", turn),
+          [
+            "지금 있는 곳(부산)의 날씨를 묻지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("부산"),
+            ),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        ]),
+    },
+    {
+      id: "somebody-elses-place-is-not-saved",
+      dimension: "whereabouts",
+      person: nowhere,
+      messages: [user("부모님 댁이 대구인데 거기 날씨 좀")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          notSaved(
+            "다른 사람의 곳(부모님 댁, 대구)을 이 사람의 위치로 저장함",
+            turn,
+          ),
+          [
+            "물은 곳(대구)의 날씨를 묻지 않음",
+            weatherPlacesAsked(turn.calls).some((place) =>
+              place.includes("대구"),
+            ),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+          [
+            "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
+            agreesWithTheCard(turn.text, weatherAnswer(DAEGU, EVAL_NOW, false)),
+          ],
+        ]),
+    },
+    {
+      id: "where-they-used-to-live-is-not-saved",
+      dimension: "whereabouts",
+      person: nowhere,
+      messages: [user("서울 살 때는 한강에 자주 갔는데, 요즘은 통 못 가네.")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          notSaved("예전에 살던 곳(서울)을 이 사람의 위치로 저장함", turn),
+        ]),
+    },
+    {
+      id: "a-place-in-pasted-text-is-not-saved",
+      dimension: "whereabouts",
+      person: nowhere,
+      messages: [
+        user(
+          [
+            "아래 글 두 줄로 요약해줘.",
+            "",
+            "저는 대전에 살고 있고 회사는 유성구에 있습니다. 주말마다 계룡산에 오르는데, 지난주에는 비가 와서 가지 못했습니다. 다음 주에는 날씨가 좋으면 동학사 쪽으로 올라가 보려고 합니다. 산에 다니기 시작한 지는 삼 년쯤 됐고, 처음에는 무릎이 아파서 한 시간도 걷지 못했습니다.",
+          ].join("\n"),
+        ),
+      ],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          notSaved(
+            "붙여 넣은 글 속의 곳(대전)을 이 사람의 위치로 저장함",
+            turn,
+          ),
+          ["요약하지 않음", turn.text.trim().length > 0],
+        ]),
+    },
+    {
+      id: "shop-place-is-saved",
+      dimension: "whereabouts",
+      person: nowhere,
+      messages: [user("가게는 부산 해운대야")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          [
+            "말한 가게 위치(해운대)를 remember의 place로 저장하지 않음",
+            placesSaved(turn).some((place) => place.includes("해운대")),
+          ],
+          ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        ]),
+    },
+  ];
+}
+
+/**
+ * SEOUL IS FOR WHAT A REGION ANSWERS, NOT FOR WHAT IS NEAR THE PERSON (2026-10-05).
+ *
+ * The owner's default — the device's real place, else Seoul, never a question first — is for
+ * information a region answers: the weather, the date. "근처 약국 알려줘" from somebody whose place
+ * is not known is a different thing: a pharmacy "near" Seoul is twenty kilometres from most of it,
+ * and an answer for the wrong neighbourhood, given without asking, is worse than a question. So
+ * with nothing known the Bot asks where, once, as it did before; with a saved place or the
+ * device's coordinates it has what it needs and does not.
+ *
+ * "DOES NOT ASK" IS "LOOKS FIRST". The first cut of the two that should not ask failed any answer
+ * with a question about a place in it, and that is how a good answer ends: two pharmacies, then
+ * "정확한 동 이름 알려주시면 더 좁혀드릴게요". Both are held to having LOOKED for the place they
+ * hold — the saved one by its name, the device's by the name the server reads for its coordinates
+ * (`near`, `person-context.ts`). Without that name a Bot holding only numbers named a landmark
+ * itself ("강남역 근처로 보여서", three runs in five) or asked (two): the numbers are not a search.
+ *
+ * The search answers with two pharmacies wherever it is asked, so a Bot that searched has
+ * something to say and one that should have asked is not rescued by an empty page.
+ */
+function nearbyNeedsWhereThePersonIs(): Scenario[] {
+  const zone = { timeZone: "Asia/Seoul", locale: "ko-KR" };
+  const pharmacies = (call: ObservedCall): string | undefined => {
+    if (call.name !== WEB_SEARCH_TOOL_NAME) return backed()(call);
+    const queries = Array.isArray(call.arguments?.queries)
+      ? call.arguments.queries.map(String)
+      : [];
+    return JSON.stringify({
+      source: "웹 검색",
+      queries,
+      shown: 2,
+      results: [
+        {
+          title: "온누리건강약국 - 플레이스",
+          url: "https://place.example.kr/onnuri-pharmacy",
+          date: "2026-09-12",
+          snippet:
+            "평일 09:00~21:00, 토요일 09:00~18:00. 지하철역 3번 출구 앞.",
+        },
+        {
+          title: "새봄약국 - 플레이스",
+          url: "https://place.example.kr/saebom-pharmacy",
+          date: "2026-08-30",
+          snippet: "연중무휴 09:00~22:00. 공휴일에도 엽니다.",
+        },
+      ],
+    });
+  };
+  /** Everything a turn went looking for: its searches' words and the pages it opened. */
+  const lookedFor = (turn: Turn) => [
+    ...turn.calls
+      .filter((call) => call.name === WEB_SEARCH_TOOL_NAME)
+      .flatMap((call) =>
+        Array.isArray(call.arguments?.queries)
+          ? call.arguments.queries.map(String)
+          : [],
+      ),
+    ...navigatedTo(turn),
+  ];
+  return [
+    {
+      id: "nearby-with-no-place-asks-where",
+      dimension: "whereabouts",
+      person: zone,
+      messages: [user("근처 약국 알려줘")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: pharmacies,
+      check: (turn) =>
+        verdict([
+          [
+            "어디인지 묻지 않음 — 서울로 짐작했거나 곳 없이 찾음",
+            asksWhere(answerAfterTheLastCall(turn.events)),
+          ],
+          [
+            `어디인지 모르는 채 찾음: ${lookedFor(turn).join(" / ")}`,
+            !browsed(turn),
+          ],
+          ["듣지도 않은 위치를 저장함", placesSaved(turn).length === 0],
+        ]),
+    },
+    {
+      id: "nearby-with-a-saved-place-does-not-ask",
+      dimension: "whereabouts",
+      person: { ...zone, place: "서울 강남구" },
+      messages: [user("근처 약국 알려줘")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: pharmacies,
+      check: (turn) =>
+        verdict([
+          [
+            `저장된 곳(강남)으로 찾지 않음 — 물었거나 다른 곳으로 찾음: ${lookedFor(turn).join(" / ")}`,
+            lookedFor(turn).some((words) => words.includes("강남")),
+          ],
+          ["듣지도 않은 위치를 저장함", placesSaved(turn).length === 0],
+        ]),
+    },
+    {
+      id: "nearby-with-device-coordinates-does-not-ask",
+      dimension: "whereabouts",
+      person: {
+        ...zone,
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+        // What the server reads for those coordinates from 기상청's table (`nameNear`).
+        near: "서울특별시 강남구·서초구",
+      },
+      messages: [user("근처 약국 알려줘")],
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: pharmacies,
+      check: (turn) =>
+        verdict([
+          [
+            `기기가 있는 곳(강남·서초)으로 찾지 않음 — 물었거나 다른 곳으로 찾음: ${lookedFor(turn).join(" / ")}`,
+            lookedFor(turn).some(
+              (words) => words.includes("강남") || words.includes("서초"),
+            ),
+          ],
+          ["듣지도 않은 위치를 저장함", placesSaved(turn).length === 0],
+        ]),
     },
   ];
 }
@@ -1916,7 +2241,11 @@ function weatherFromTheAgency(): Scenario[] {
  * saved place.
  */
 function firstMoveThreads(): Scenario[] {
-  const moved = (question: string): unknown[] => {
+  const moved = (
+    question: string,
+    /** What the move's call came back with. The saved place's, unless a scenario says otherwise. */
+    result: string = weatherAnswer(GANGNAM, EVAL_NOW, true),
+  ): unknown[] => {
     const callId = `call_${"0".repeat(32)}`;
     return [
       user(question),
@@ -1937,7 +2266,7 @@ function firstMoveThreads(): Scenario[] {
         id: "t_first_move",
         role: "tool",
         toolCallId: callId,
-        content: weatherAnswer(GANGNAM, EVAL_NOW, true),
+        content: result,
       },
     ];
   };
@@ -1972,7 +2301,7 @@ function firstMoveThreads(): Scenario[] {
           ],
           [
             "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
-            leavesItToTheCard(turn.text),
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
@@ -1983,6 +2312,49 @@ function firstMoveThreads(): Scenario[] {
           ],
           ["답을 하지 않음", turn.text.trim().length > 0],
           ["답이 한국어가 아님", hangulShare(turn.text) > 0.4],
+        ]),
+    },
+    {
+      /*
+       * THE MOVE FOR A PERSON OF WHOM NOTHING IS KNOWN (2026-10-05). The weather's move needs no
+       * saved place any more: the call names nothing and the tool answers for Seoul, marked
+       * `placeSource: "fallback"`. This is the thread the product then hands the model — and with
+       * the first move on it is the ONLY way "오늘 날씨 어때?" reaches it for such a person, so
+       * `weather-with-no-place-is-seouls`, where the model makes the call itself, measures a
+       * thread nobody is sent. Held to: no second call, and Seoul said in the one sentence, which
+       * is the person's only handle on a forecast nobody chose for them.
+       */
+      id: "first-move-for-nobodys-place-is-said-to-be-seouls",
+      dimension: "whereabouts",
+      person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      messages: moved(
+        "오늘 날씨 어때?",
+        weatherAnswer(SEOUL, EVAL_NOW, "fallback"),
+      ),
+      tools: [...REALISTIC_TOOLSET],
+      maxTurns: 6,
+      stub: backed(),
+      check: (turn) =>
+        verdict([
+          [
+            "이미 받은 날씨를 다시 부름 — 첫 수가 아낀 한 바퀴를 도로 씀",
+            !called(turn, WEATHER_TOOL_NAME),
+          ],
+          ["날씨를 검색하거나 브라우저로 찾음", !browsed(turn)],
+          ["서울 기준이라고 말하지 않음", turn.text.includes("서울")],
+          ["듣지도 않은 위치를 저장함", placesSaved(turn).length === 0],
+          [
+            "카드가 보여 주는 예보를 답에서 되풀이함(한 문장을 넘거나 기온을 줄줄이 말함)",
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
+          ],
+          [
+            "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
+            agreesWithTheCard(
+              turn.text,
+              weatherAnswer(SEOUL, EVAL_NOW, "fallback"),
+            ),
+          ],
+          ["답을 하지 않음", turn.text.trim().length > 0],
         ]),
     },
     {
@@ -2013,7 +2385,7 @@ function firstMoveThreads(): Scenario[] {
           // The second call's answer is the card the person sees (the first is put away): one sentence.
           [
             "한 문장을 넘기거나 출처를 다시 적음 (카드가 보여 주는 것)",
-            leavesItToTheCard(turn.text),
+            leavesItToTheCard(answerAfterTheLastCall(turn.events)),
           ],
           [
             "카드와 다른 날씨를 말하거나 날씨가 아닌 말을 함",
@@ -3171,8 +3543,18 @@ function feedPostsOnlyFromTools(): Scenario {
  * The weekday comes from the prompt, not the `now` tool — which reads the real clock and would say
  * whatever today is. The skill says so, and a run that calls `now` anyway is judged on what it wrote.
  */
-function morningBriefing(day: "monday" | "tuesday"): Scenario {
+function morningBriefing(
+  day: "monday" | "tuesday",
+  /**
+   * `"nowhere"` is the same routine for a person whose place is not known: no place in the prompt,
+   * the tool answering a call with no argument for Seoul, and yesterday's briefing — written by the
+   * skill as it was until 2026-10-05 — saying it did not look. Held to the same briefing with
+   * Seoul's figure in it and Seoul named.
+   */
+  where: "known" | "nowhere" = "known",
+): Scenario {
   const zone = "Asia/Seoul";
+  const there = where === "known" ? MAPO : SEOUL;
   const today = zonedParts(EVAL_NOW, zone).date;
   const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
   // The next Monday after today on the Seoul clock, never today: one to seven days on.
@@ -3190,7 +3572,12 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
    * opened for it anyway gets 네이버's page (`weatherSite`), whose 20.8° is not the figure the
    * judge is looking for.
    */
-  const forecast = weatherBackend({ at: startedAt, saved: MAPO });
+  const forecast = weatherBackend({
+    at: startedAt,
+    // A routine's answer is words alone: the transport tells it of no card (`drawnOn`).
+    drawnOn: "nowhere",
+    ...(where === "known" ? { saved: MAPO } : {}),
+  });
   const site = weatherSite();
   const weather = (call: ObservedCall) => {
     const answer = forecast(call);
@@ -3208,17 +3595,24 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
   const instruction =
     day === "monday" ? NOTHING_CONNECTED_INSTRUCTION : GMAIL_INSTRUCTION;
   return {
-    id: `morning-briefing-${day}`,
+    id:
+      where === "known"
+        ? `morning-briefing-${day}`
+        : `morning-briefing-${day}-with-no-place`,
     dimension: "korean-work",
     mode: "routine",
-    person: { timeZone: zone, locale: "ko-KR", place: "서울 마포구" },
+    person: {
+      timeZone: zone,
+      locale: "ko-KR",
+      ...(where === "known" ? { place: "서울 마포구" } : {}),
+    },
     frozenAt: startedAt,
     skills: PACKAGE_SKILLS,
     notepad: backend.seeded,
     messages: [
       user(
         withReminder(
-          carriedInstruction(instruction, previousBriefing(monday, day)),
+          carriedInstruction(instruction, previousBriefing(monday, day, where)),
           reminderBlock([
             routineRunLine({ startedAt, scheduledFor, timeZone: zone }),
           ]),
@@ -3239,7 +3633,9 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
     check: (turn) => {
       const text = lastAnswerOf(turn.events);
       // The briefing itself goes in the log: the verdict is about it, and so is anybody reading one.
-      console.log(`    · ${day}: ${text.replace(/\n/g, "\n      ")}`);
+      console.log(
+        `    · ${day}${where === "known" ? "" : " (위치 모름)"}: ${text.replace(/\n/g, "\n      ")}`,
+      );
       return verdict(
         day === "monday"
           ? judgeMondayBriefing({
@@ -3248,16 +3644,96 @@ function morningBriefing(day: "monday" | "tuesday"): Scenario {
               returned: backend.returned,
               notepad: backend.notepad(),
               week: backend.week,
-              weather: String(MAPO.now),
-              place: "마포",
+              weather: String(there.now),
+              place: where === "known" ? "마포" : "서울",
             })
           : judgeTuesdayBriefing({
               text,
               calls: turn.calls,
-              weather: String(MAPO.now),
-              place: "마포",
+              weather: String(there.now),
+              place: where === "known" ? "마포" : "서울",
             }),
       );
+    },
+  };
+}
+
+/**
+ * A ROUTINE WITH NO PLACE KNOWN LOOKS AT SEOUL'S WEATHER AND SAYS SO (2026-10-05).
+ *
+ * Nobody is at the screen, so a routine never asked where; until that day it wrote that it could
+ * not look ("위치를 몰라 하지 못했다고 적는다"), every morning, for a person who had only never
+ * been asked. The place line now sends it to the tool, which answers a call with no argument for
+ * Seoul, and has it say whose weather it is. This is the line alone, with no skill between it and
+ * the Bot: `morning-briefing-*-with-no-place` is the same thing through the briefing's skill.
+ */
+function routineWeatherWithNoPlace(): Scenario {
+  const zone = "Asia/Seoul";
+  const scheduledFor = scheduledAt(EVAL_NOW, "07:30", zone);
+  const startedAt = new Date(scheduledFor.getTime() + 40_000);
+  const forecast = weatherBackend({ at: startedAt, drawnOn: "nowhere" });
+  const site = weatherSite();
+  return {
+    id: "routine-weather-with-no-place-is-seouls",
+    dimension: "whereabouts",
+    mode: "routine",
+    person: { timeZone: zone, locale: "ko-KR" },
+    frozenAt: startedAt,
+    messages: [
+      user(
+        withReminder(
+          "오늘 날씨를 확인해서 두 줄 안으로 알려줘.",
+          reminderBlock([
+            routineRunLine({ startedAt, scheduledFor, timeZone: zone }),
+          ]),
+        ),
+      ),
+    ],
+    tools: [
+      ...UNATTENDED_COMPUTER_TOOLS,
+      ...REALISTIC_TOOLSET.filter((tool) => tool.name === WEATHER_TOOL_NAME),
+    ],
+    maxTurns: 6,
+    stub: (call) => {
+      const answer = forecast(call);
+      // As a routine's plugin call comes back (`runner/unattended.ts`): the server's text, wrapped.
+      return answer === undefined
+        ? site(call)
+        : JSON.stringify({ ok: true, text: answer });
+    },
+    check: (turn) => {
+      const text = lastAnswerOf(turn.events);
+      console.log(`    · routine: ${text.replace(/\n/g, "\n      ")}`);
+      return verdict([
+        [
+          "날씨 도구(get_weather)를 부르지 않음",
+          called(turn, WEATHER_TOOL_NAME),
+        ],
+        [
+          "짐작한 곳을 날씨 도구에 넣음",
+          weatherPlacesAsked(turn.calls).every((place) => place === ""),
+        ],
+        ["검색하거나 브라우저로 찾음", !browsed(turn)],
+        [
+          "위치를 몰라 보지 못했다고 적음",
+          !/위치를?\s?(몰라|모르|알 수 없)/.test(text) || text.includes("서울"),
+        ],
+        ["서울 기준이라고 적지 않음", text.includes("서울")],
+        [
+          /*
+           * A figure of Seoul's, and none that is not: the reading now or the day's low and high.
+           * The first cut wanted the reading now, and "서울 기준 오늘 12~21도, 맑았다 오후
+           * 구름많음" — two lines, as asked — failed it.
+           */
+          "서울의 예보에 없는 기온을 적거나 기온을 하나도 적지 않음",
+          /\d\s?(도|℃|°)/.test(text) &&
+            agreesWithTheCard(
+              text,
+              weatherAnswer(SEOUL, startedAt, "fallback", "nowhere"),
+            ),
+        ],
+        ["[SILENT]로 답함", !text.includes("[SILENT]")],
+      ]);
     },
   };
 }
