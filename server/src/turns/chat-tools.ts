@@ -883,7 +883,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
     };
 
-    /** A call to somebody else's server, as `callPluginTool` in the app answered it: a sentence. */
+    /** A call to somebody else's server, as the window's own call answered it: a sentence. */
     const plugin = async (
       ref: string,
       args: Record<string, unknown>,
@@ -1263,7 +1263,7 @@ export function createChatTools(deps: ChatToolsDeps) {
 
     /**
      * A card the Bot put on screen: allowed for this Bot, reading only what it was granted.
-     * `decideComponent` in the app asked exactly this, of the same store.
+     * The window asked exactly this before it drew one, of the same store.
      */
     const component = async (
       name: string,
@@ -1417,7 +1417,7 @@ const noRegistry: Pick<ApprovalRegistry, "hold" | "withdraw"> = {
   withdraw: async () => undefined,
 };
 
-/** A plugin call's failure as the app's `sendCall` read the route's reply: a sentence. */
+/** A plugin call's failure as the window read the call door's reply to it: a sentence. */
 function pluginFailure(error: unknown, ref: string): string {
   if (
     error instanceof PluginRefusedError ||
