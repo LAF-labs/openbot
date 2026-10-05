@@ -141,7 +141,6 @@ import { LafPostgresRunner, reportInterruptedRuns } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
 import { createStopAll } from "./runner/stop-all";
-import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createChatTools } from "./turns/chat-tools";
 import { createTurnEngine } from "./turns/engine";
@@ -197,7 +196,7 @@ const fleetNotifier = config.fleet
   : undefined;
 if (!fleetNotifier) sayFleetIsUnconfigured();
 // One ledger for every run path — chat, routine, room, handoff — so the roster reads one table and
-// one module writes it. Built before the runner because the runner opens its rows through it.
+// one module writes it.
 const runLedger = createRunLedger(database);
 /**
  * What is going on for each person right now, with the way to stop each piece — the one list
@@ -205,13 +204,9 @@ const runLedger = createRunLedger(database);
  * the ledger says a run is happening, this is what can end one.
  */
 const workInFlight = createWorkInFlight();
-// The durable runner every turn goes through. Built before the app because construction adjudicates
-// the runs the last process left open; it reads no conversation until one is asked for.
-const lafRunner = await LafPostgresRunner.create(
-  database,
-  runLedger,
-  workInFlight,
-);
+// What is left of the runner every window-driven turn went through. Built before the app because
+// construction adjudicates the runs the last process left open; it reads no conversation.
+const lafRunner = await LafPostgresRunner.create(database);
 /**
  * What every run is metered by, and on a free trial judged against — one object, handed to every
  * path that builds agents (the chat endpoint below, and `resolveAgentsFor` for rooms, routines and
@@ -949,23 +944,16 @@ const turnEngine = createTurnEngine({
     }),
 });
 
-/** The runtime's thread routes, each reading the thread it answers for first. See thread-priming.ts. */
-const copilotEndpoint = primeThreadRoutes({
-  runner: lafRunner,
-  actorOf: actors.resolveOrNull,
-}).route(
-  "/",
-  mountCopilotRuntime(
-    tenantPackage.model,
-    loadAgentsForActor,
-    actors.identify,
-    stallGuard,
-    lafRunner,
-    config.botTimeZone,
-    "/api/copilotkit",
-    resultSpill,
-    runMeter,
-  ),
+/** The runtime, for the one door of it the app asks: which Bots it serves. See `mountCopilotRuntime`. */
+const copilotEndpoint = mountCopilotRuntime(
+  tenantPackage.model,
+  loadAgentsForActor,
+  actors.identify,
+  stallGuard,
+  config.botTimeZone,
+  "/api/copilotkit",
+  resultSpill,
+  runMeter,
 );
 
 /**

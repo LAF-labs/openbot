@@ -16,10 +16,11 @@
  * deployment's, on a VM that keeps UTC. At midnight the list empties, which is the point: yesterday's
  * work is in the conversation.
  *
- * A BROWSING TURN IS MANY RUNS. Every computer tool is carried out in the browser, which starts the
- * next run with the result (`runner/laf-runner.ts`, `handedToBrowser`), so one "예스24에서 찾아 줘" is
- * a dozen ledger rows. Only the first carries the person's words (`chatLabelOf`); the rest fold into
- * it here, so a person sees one row for one thing they asked.
+ * A BROWSING TURN WAS MANY RUNS, and a day that began under a window-driven build still holds them.
+ * Every computer tool was carried out in the browser, which started the next run with the result
+ * (the window's runner, gone 2026-10-06), so one "예스24에서 찾아 줘" was a dozen ledger rows. Only the
+ * first carries the person's words (`chatLabelOf`); the rest fold into it here, so a person sees
+ * one row for one thing they asked.
  *
  * HOW IT ENDED IS THE CARD'S DECISION, NOT THE LEDGER'S ALONE (2026-09-25, UX review 0.5.4 item 2).
  * The ledger says `done` for a run that ended on a site's "Access Denied", or on a click that was

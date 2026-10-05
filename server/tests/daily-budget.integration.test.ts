@@ -1,18 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
-import type { AuditEventInput } from "../src/audit";
 import { loadConfig } from "../src/config";
-import { buildAgents } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
-import {
-  agents,
-  auditEvents,
-  lafThreadMessages,
-  lafThreadRuns,
-} from "../src/db/schema";
-import { LafPostgresRunner } from "../src/runner/laf-runner";
-import { createRunLedger } from "../src/runner/run-ledger";
+import { auditEvents } from "../src/db/schema";
 import {
   createDailyBudget,
   dailyBudgetFor,
@@ -67,21 +57,7 @@ async function usageAt(
 const budgetAt = (wall: string, tokens = 1_000_000_000) =>
   createDailyBudget({ database, tokens, now: () => seoul(wall) });
 
-const agentIds: string[] = [];
-const threadIds: string[] = [];
-
 afterAll(async () => {
-  for (const threadId of threadIds) {
-    await database
-      .delete(lafThreadRuns)
-      .where(eq(lafThreadRuns.threadId, threadId));
-    await database
-      .delete(lafThreadMessages)
-      .where(eq(lafThreadMessages.threadId, threadId));
-  }
-  if (agentIds.length > 0) {
-    await database.delete(agents).where(inArray(agents.id, agentIds));
-  }
   await database.$client.end();
 });
 
@@ -185,152 +161,5 @@ describe("which deployments are judged at all", () => {
     expect(
       dailyBudgetFor(loadConfig(testEnvironment()).trial, database),
     ).toBeUndefined();
-  });
-});
-
-/**
- * A Bot endpoint that says one thing and reports what it cost, as `agent-bot` streams it.
- *
- * Reached through the agent's own fetch rather than a socket, the way `effort-on-the-wire` reaches
- * `agent-bot`: the request the endpoint receives is the assertion.
- */
-function endpoint() {
-  const received: Array<{ runId?: string; threadId?: string }> = [];
-  const fetch = async (_url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body ?? "{}")) as {
-      runId?: string;
-      threadId?: string;
-    };
-    received.push(body);
-    const messageId = `said-${body.runId}`;
-    const events = [
-      { type: "RUN_STARTED", threadId: body.threadId, runId: body.runId },
-      {
-        type: "CUSTOM",
-        name: "laf.model.usage",
-        value: {
-          model: "laf-1",
-          promptTokens: 900,
-          completionTokens: 34,
-          totalTokens: 934,
-        },
-      },
-      { type: "TEXT_MESSAGE_START", messageId, role: "assistant" },
-      { type: "TEXT_MESSAGE_CONTENT", messageId, delta: "주문은 3건이에요." },
-      { type: "TEXT_MESSAGE_END", messageId },
-      { type: "RUN_FINISHED", threadId: body.threadId, runId: body.runId },
-    ];
-    return new Response(
-      events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
-      { status: 200, headers: { "content-type": "text/event-stream" } },
-    );
-  };
-  return { received, fetch };
-}
-
-describe("what a chat turn costs, written once", () => {
-  /*
-   * The runtime drives a chat turn through `LafPostgresRunner`, which used to write the usage row
-   * itself — while a routine, a room and a coworker, which never pass through it, wrote none. The
-   * row is now written at the one seam every run shares, so this is the path that could count twice.
-   */
-  test("through the runner the endpoint is driven by, one model.usage row per usage event", async () => {
-    const agentId = `daily-budget-bot-${suite}`;
-    await database.insert(agents).values({
-      id: agentId,
-      name: agentId,
-      type: "remote_ag_ui",
-      configuration: {},
-    });
-    agentIds.push(agentId);
-    const threadId = `daily-budget-thread-${suite}`;
-    threadIds.push(threadId);
-    const runId = `daily-budget-run-${suite}`;
-
-    const rows: AuditEventInput[] = [];
-    const { received, fetch } = endpoint();
-    const built = buildAgents(
-      [
-        {
-          id: agentId,
-          name: "미소",
-          type: "remote_ag_ui",
-          endpoint: "http://agent-bot.internal/ag-ui",
-          profile: {
-            id: agentId,
-            name: "미소",
-            roleDescription: "",
-          },
-          effort: "balanced",
-        },
-      ],
-      { provider: "openai", defaultModel: "laf-1", supportsEffort: false },
-      { watch: () => fetch as never, stop: () => undefined },
-      "Asia/Seoul",
-      undefined,
-      { auditStore: { insert: async (event) => void rows.push(event) } },
-    );
-    const agent = built[agentId];
-    if (!agent) throw new Error("the agent was not built");
-    // What the runtime's handler does: run a copy of the registered agent.
-    const copy = agent.clone();
-    copy.threadId = threadId;
-
-    const runner = await LafPostgresRunner.create(
-      database,
-      createRunLedger(database),
-    );
-    const messages = [
-      { id: `ask-${suite}`, role: "user" as const, content: "주문 확인해줘" },
-    ];
-    copy.setMessages(messages);
-    const events = runner.run({
-      threadId,
-      agent: copy,
-      input: {
-        threadId,
-        runId,
-        messages,
-        tools: [],
-        context: [],
-        state: {},
-        forwardedProps: {},
-      },
-    });
-    await new Promise<void>((resolve) => {
-      events.subscribe({ complete: resolve, error: () => resolve() });
-    });
-
-    // The ledger settles after the stream completes; wait for it rather than for a clock.
-    const deadline = Date.now() + 15_000;
-    for (;;) {
-      const [run] = await database
-        .select({ status: lafThreadRuns.status })
-        .from(lafThreadRuns)
-        .where(eq(lafThreadRuns.runId, runId));
-      if (run?.status === "done") break;
-      if (Date.now() > deadline) throw new Error("the run never settled");
-      await Bun.sleep(25);
-    }
-
-    expect(received).toHaveLength(1);
-    const usage = rows.filter((row) => row.eventType === "model.usage");
-    expect(usage).toEqual([
-      {
-        eventType: "model.usage",
-        targetType: "agent",
-        targetId: agentId,
-        payload: {
-          runId,
-          threadId,
-          botId: agentId,
-          model: "laf-1",
-          promptTokens: 900,
-          completionTokens: 34,
-          totalTokens: 934,
-          source: "bot-turn",
-        },
-      },
-    ]);
   });
 });

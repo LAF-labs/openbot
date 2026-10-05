@@ -1,9 +1,13 @@
+// First, as in `main.ts`: the last describe below builds the runtime, which announces itself and
+// phones home unless it is told not to before it loads.
+import "../src/telemetry-off";
 import { describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
 import { BASE_KO, staticPrompt } from "../../shared/prompt";
 import {
   buildAgents,
   createRequestAgents,
+  mountCopilotRuntime,
   promptMessageId,
   registeredAgentFromRow,
   resolveRuntimeAgents,
@@ -820,5 +824,126 @@ describe("a remote Bot's run", () => {
     expect(forwarded.effort).toBeUndefined();
     // The Bot id still goes, because it is not a model setting — it is who this run belongs to.
     expect(forwarded.botId).toBe("agent_expense");
+  });
+});
+
+/**
+ * ONE DOOR OF THE RUNTIME IS OPEN.
+ *
+ * The app's CopilotKit client asks `info` before it settles, for the roster its tool registry is
+ * built on. Everything else the runtime's own router knows was how a window drove a chat turn; the
+ * server runs the turn (`turns/engine.ts`), nothing opens those doors, and since 2026-10-06 each is
+ * answered as a path nothing is mounted on.
+ *
+ * Asserted by NAME, and on the real handler, because the failure this guards against is a family of
+ * routes: a rule that closed `run` and left `connect` would look exactly as green. The spellings at
+ * the end are the router's own reading of a path — a route is its last segments — which is why the
+ * doors are closed on the route it resolved and not by a pattern in front of it.
+ */
+describe("the runtime's doors", () => {
+  function runtime() {
+    /** Every request a Bot's endpoint was sent. A closed door must reach none. */
+    const contacted: string[] = [];
+    const handler = mountCopilotRuntime(
+      model,
+      async () => [remoteAgent("http://coworker.internal/ag-ui")],
+      async () => ({ id: "user-7", role: "user" as const }),
+      {
+        watch: () => async (url) => {
+          contacted.push(url);
+          return new Response(null, { status: 500 });
+        },
+        stop: () => undefined,
+      },
+      "Asia/Seoul",
+    );
+    return { handler, contacted };
+  }
+
+  const ask = (
+    handler: ReturnType<typeof runtime>["handler"],
+    method: string,
+    path: string,
+  ) =>
+    handler.request(`http://laf.test${path}`, {
+      method,
+      ...(method === "GET" || method === "DELETE"
+        ? {}
+        : {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              threadId: "thread-1",
+              runId: "run-1",
+              messages: [],
+              tools: [],
+              context: [],
+              state: {},
+              forwardedProps: {},
+            }),
+          }),
+    });
+
+  const CLOSED: [string, string][] = [
+    ["POST", "/api/copilotkit/agent/agent_expense/run"],
+    ["POST", "/api/copilotkit/agent/agent_expense/connect"],
+    ["POST", "/api/copilotkit/agent/agent_expense/stop/thread-1"],
+    ["POST", "/api/copilotkit/agent/agent_expense/suggest"],
+    ["GET", "/api/copilotkit/threads"],
+    ["POST", "/api/copilotkit/threads/subscribe"],
+    ["POST", "/api/copilotkit/threads/clear"],
+    ["GET", "/api/copilotkit/threads/thread-1/messages"],
+    ["GET", "/api/copilotkit/threads/thread-1/events"],
+    ["GET", "/api/copilotkit/threads/thread-1/state"],
+    ["POST", "/api/copilotkit/threads/thread-1/archive"],
+    ["PATCH", "/api/copilotkit/threads/thread-1"],
+    ["DELETE", "/api/copilotkit/threads/thread-1"],
+    ["POST", "/api/copilotkit/transcribe"],
+    ["GET", "/api/copilotkit/inspector-metadata"],
+    ["GET", "/api/copilotkit/cpk-debug-events"],
+    ["POST", "/api/copilotkit/annotate"],
+    // The router reads a route off a path's last segments: these are a run and a thread list too.
+    ["POST", "/api/copilotkit//x/agent/agent_expense/run"],
+    ["GET", "/api/copilotkit/anything/threads"],
+  ];
+
+  test("info answers with the roster the app's tool registry is built on", async () => {
+    const { handler, contacted } = runtime();
+
+    const response = await ask(handler, "GET", "/api/copilotkit/info");
+
+    expect(response.status).toBe(200);
+    const info = (await response.json()) as {
+      agents: Record<string, { name: string }>;
+      mode: string;
+    };
+    expect(Object.keys(info.agents)).toEqual(["agent_expense"]);
+    expect(info.mode).toBe("sse");
+    // Asking who is there runs nobody.
+    expect(contacted).toEqual([]);
+  });
+
+  test("every other route the runtime knows is a path nothing is mounted on, and reaches no Bot", async () => {
+    const { handler, contacted } = runtime();
+
+    for (const [method, path] of CLOSED) {
+      const response = await ask(handler, method, path);
+      expect([method, path, response.status, await response.json()]).toEqual([
+        method,
+        path,
+        404,
+        { code: "laf:not_found" },
+      ]);
+    }
+    expect(contacted).toEqual([]);
+  });
+
+  test("a path that is nothing the runtime knows is still the runtime's own answer", async () => {
+    const { handler } = runtime();
+
+    // Its single-route envelope, which this deployment never mounted, and a wrong method on info.
+    expect((await ask(handler, "POST", "/api/copilotkit")).status).toBe(404);
+    expect((await ask(handler, "POST", "/api/copilotkit/info")).status).toBe(
+      405,
+    );
   });
 });

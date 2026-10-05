@@ -97,15 +97,18 @@ export const runOrigin = pgEnum("laf_run_origin", ["chat", "routine", "wake"]);
 /**
  * How a run ended, or that it has not.
  *
- * `unknown` is boot's verdict on a run whose process died mid-turn; `stopped` is a person pressing
- * Stop, which is not an error. Both existed as free text before this enum and both are written by
- * `runner/laf-runner.ts`; nothing writes any other value.
+ * `unknown` is boot's verdict on a run whose process died mid-turn (`runner/laf-runner.ts`);
+ * `stopped` is a person pressing Stop, which is not an error, written by the path that ran the run.
+ * Both existed as free text before this enum; nothing writes any other value.
  *
  * `waiting` is a run that ended by handing a step to a window — a click to make, a question for the
  * owner to answer — and whose step has not come back yet. It becomes `done` when the step's result
  * carries the turn on, and `stopped` when it never does. Until 0.5.4 such a run was written `done`
  * the moment it handed the step over, so a task that died with its window read as finished
- * (UX review 0.5.4, finding 1).
+ * (UX review 0.5.4, finding 1). NOTHING WRITES IT ANY MORE: a turn is the server's, no step is
+ * handed to a window, and the runner that wrote it went with the run door (2026-10-06). The value
+ * stays in the type for the rows a deployment may still hold when it is upgraded, which boot
+ * settles to `unknown`.
  */
 export const runStatus = pgEnum("laf_run_status", [
   "running",

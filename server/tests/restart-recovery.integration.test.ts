@@ -582,7 +582,7 @@ describe("a run the server restarted under", () => {
     if (!question) throw new Error("the question was not stored");
 
     // Boot.
-    const runner = await LafPostgresRunner.create(database, ledger);
+    const runner = await LafPostgresRunner.create(database);
     const found = runner
       .interruptedAtBoot()
       .filter((run) => runIds.includes(run.runId));

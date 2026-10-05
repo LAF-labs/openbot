@@ -598,8 +598,8 @@ describe("the day's words", () => {
   test("a turn whose step is waiting reads 사장님 차례 only while a question is open", async () => {
     /*
      * 0.5.4 final QA: with no question open, 사장님 차례 sent the owner looking for one that was not
-     * there. The ledger's `waiting` is still read: the rows exist, and the run door that writes it
-     * is still mounted (`server/src/runner/laf-runner.ts`).
+     * there. The ledger's `waiting` is still read: the rows exist, though the run door that wrote
+     * it is closed (2026-10-06).
      */
     const { dayMark } = await import("../src/lib/agents/day");
     expect(dayMark("waiting", null, true)?.text).toBe("Your turn");

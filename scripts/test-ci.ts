@@ -1297,12 +1297,40 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * The facts were held for the runtime's thread routes, which are about to go; the doors a turn has
  * now had no test of whose conversation they open.
  *
+ * LOWERED 2026-10-06, `server` from 3621 to 3586, by exactly the thirty-five tests that held the
+ * AG-UI run door and what was reached only through it. `POST /api/copilotkit/agent/:id/run` was
+ * how a window drove a chat turn; the server runs the turn (`turns/engine.ts`), the window-driven
+ * path left the app on 2026-10-05, and nothing opened the door. It is closed, with the runtime's
+ * other routes, and the runner behind it is reduced to what boot still needs of it. Gone with it:
+ * the six of `chat-stop.integration.test.ts` (a run on the wire stopped; a step handed to a
+ * browser listed, stopped and carried on; a run `waiting` on its window and each way that ended),
+ * the six of `thread-scope.integration.test.ts` (the runtime's thread list and the priming read,
+ * per person — the two facts of it a turn's doors still owe are the three above), the six of
+ * `thread-priming.test.ts` (the middleware in front of the runtime's thread routes, and a
+ * message's reasoning put back on the route that dropped it), the four of
+ * `runner-replay.test.ts` (a window joining a thread shown its past runs as closed), the six of
+ * `run-outcome.test.ts` (a run's ending read off the events the runner teed) and the five of
+ * `snapshot-merge.test.ts` (the runner's in-memory copy merged with the store's); one in
+ * `thread-secret-absence.integration.test.ts` (a restart told the runner's live copy from the row
+ * — a turn keeps no copy, and the four beside it now write as a turn writes and read as a turn and
+ * a window read) and one in `daily-budget.integration.test.ts` (one usage row for a turn driven
+ * through the runner, the path that could have counted twice; `daily-budget-seam.test.ts` holds
+ * one row for a turn, a routine and a toolless routine). What a stop, an ending and a restart are
+ * for a turn the server owns is held where it runs: `turn-engine.integration.test.ts`,
+ * `stop-all.test.ts`, `restart-recovery.integration.test.ts`.
+ *
+ * RAISED 2026-10-06 with that change, `server` from 3586 to 3589, by exactly the three written on
+ * the runtime's real handler, in `copilot.test.ts`: `info` answers with the roster and runs
+ * nobody; every other route the runtime's own router knows — nineteen spellings, a doubled slash
+ * among them — is a path nothing is mounted on and reaches no Bot; a path the runtime does not
+ * know is still its own answer.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3621, roots: ["server"] },
+  { name: "server", floor: 3589, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

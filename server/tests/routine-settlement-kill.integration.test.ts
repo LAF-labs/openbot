@@ -191,7 +191,7 @@ async function runAndKill(
 
 /** Boot, as `main.ts` does it: reconcile the ledger, then tell the people it concerns. */
 async function boot(botId: string) {
-  const runner = await LafPostgresRunner.create(database, ledger);
+  const runner = await LafPostgresRunner.create(database);
   const told: string[] = [];
   const outbox = createNotificationOutbox({
     database,

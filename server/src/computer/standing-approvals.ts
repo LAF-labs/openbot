@@ -543,7 +543,8 @@ async function withCurrentTasks(
  * start of the run whose input first carries it — so the person's message is in the table before
  * the Bot does anything about it, and a browser step carried on by a fresh run (`waiting`, then the
  * next run) adds no person's message and leaves the task where it was. Measured shape, not assumed:
- * `runner/laf-runner.ts` appends in `startRun` and again in `finishRun`, both idempotent by id.
+ * a turn appends when it is handed over and again as it ends (`turns/engine.ts`), both idempotent
+ * by id — as the window's runner did at each run's start and finish.
  */
 export async function currentTaskIn(
   database: Database,

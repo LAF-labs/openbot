@@ -213,8 +213,8 @@ export function dayMark(
    * to look for a question that was not there (0.5.4 final QA). It is still going on, as far as
    * anything here can know.
    *
-   * A ROW ONLY THE RUN DOOR WRITES (`server/src/runner/laf-runner.ts`), which the app stopped
-   * calling when the window-driven path was removed (2026-10-05): a turn the server owns is
+   * A ROW ONLY THE RUN DOOR WROTE, which the app stopped calling when the window-driven path was
+   * removed (2026-10-05) and the server closed a day later: a turn the server owns is
    * `running` while it waits on a person. Read still, for the rows there are.
    */
   if (status === "waiting") {
