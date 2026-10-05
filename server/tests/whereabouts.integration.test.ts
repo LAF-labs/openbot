@@ -136,6 +136,39 @@ describe("where the person's clock and place are kept", () => {
     expect(row).toEqual({ place: null, lat: null, lon: null });
   });
 
+  test("the device's answer — coordinates, and no word about the words — leaves the words on the row", async () => {
+    // The real statement, which a fake store's spread cannot stand in for: `place` is not named.
+    const owner = await person();
+    const store = createWhereaboutsStore(database);
+    await store.savePlace(owner.id, {
+      place: "강원 춘천시",
+      coordinates: null,
+    });
+    const held = await store.savePlace(owner.id, {
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+    expect(held.place).toBe("강원 춘천시");
+    expect(held.coordinates).toEqual({ latitude: 37.5, longitude: 127.03 });
+    const [row] = await database
+      .select({
+        place: users.place,
+        lat: users.placeLatitude,
+        lon: users.placeLongitude,
+      })
+      .from(users)
+      .where(eq(users.id, owner.id));
+    expect(row).toEqual({ place: "강원 춘천시", lat: 37.5, lon: 127.03 });
+    // Naming the words still replaces them, and null still clears them.
+    expect(
+      (
+        await store.savePlace(owner.id, {
+          place: null,
+          coordinates: { latitude: 37.5, longitude: 127.03 },
+        })
+      ).place,
+    ).toBeNull();
+  });
+
   test("a finer coordinate somebody wrote by hand is read back coarse", async () => {
     const owner = await person();
     await database
