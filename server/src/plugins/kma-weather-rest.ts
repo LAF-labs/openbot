@@ -239,9 +239,18 @@ export function kmaWeatherTools(
   return Object.freeze([
     {
       name: TOOL,
+      /*
+       * WHAT NO ARGUMENT MEANS, AS IT IS: this person's place — the one they said, else their
+       * device's, else Seoul (`whereOf`). It said "이 사람의 저장된 위치 기준" until 2026-10-05,
+       * which stopped being the whole of it the day nobody's place became Seoul: a Bot told only
+       * that reached for `place: "서울"` itself one run in ten, and an answer for a place the CALL
+       * named is not marked as nobody's (`placeSource`), so the card under it did not say that
+       * the person's place is not known. "다른 곳만" is the other half of the same sentence: an
+       * argument is for somewhere else, never for where the person is.
+       */
       description: withPlaceNames
-        ? `${what} 인자 없이 부르면 이 사람의 저장된 위치 기준이고, 다른 곳은 place에 지명을 적는다.`
-        : `${what} 인자 없이 부르면 이 사람 기기에서 받은 위치 기준이고, 그 값이 없거나 다른 곳을 물으면 위도·경도를 준다.`,
+        ? `${what} 인자 없이 부르면 이 사람의 위치 기준이다: 말한 곳, 없으면 기기 위치, 둘 다 없으면 서울. 다른 곳만 place에 지명을 적는다.`
+        : `${what} 인자 없이 부르면 이 사람의 위치 기준이다: 기기에서 받은 위치, 없으면 서울. 다른 곳만 위도·경도를 준다.`,
       inputSchema: {
         type: "object",
         properties: withPlaceNames
@@ -626,6 +635,12 @@ function daysBetween(short: DayRow[], beyond: DayRow[]): string[] {
   return missing;
 }
 
+/** Whose place an answer is for, in the model's words — only where it is the person's own. */
+const BASIS: Partial<Record<WeatherPlaceSource, string>> = {
+  saved: "저장된 위치",
+  device: "기기 위치",
+};
+
 /** What each part of the answer is called when it could not be had. */
 const PART_NAMES: Record<KmaOperation | "later", string> = {
   now: "현재 관측",
@@ -684,10 +699,13 @@ function summariseWeather(input: {
     place: input.place,
     ...(input.placeName ? { placeName: input.placeName } : {}),
     ...(input.coordinates ? { coordinates: input.coordinates } : {}),
-    // The model's word for "this is the person's own place", as it was before the source was a fact.
-    ...(input.source === "saved" || input.source === "device"
-      ? { basis: "저장된 위치" }
-      : {}),
+    /*
+     * The model's word for whose place this is, where it is the person's own: what they said, or
+     * where their device is. It said "저장된 위치" for both while the device was read first; a
+     * device's answer given because the saved words could not be read would then claim to be for
+     * the words. A place the call named has none, and neither has Seoul for nobody.
+     */
+    ...(BASIS[input.source] ? { basis: BASIS[input.source] } : {}),
     // A FACT, for the card and for the Bot: whose place this is. `fallback` is nobody's — Seoul.
     placeSource: input.source,
     issued: {
@@ -1065,23 +1083,41 @@ export function createKmaWeatherTransport(input: {
         },
       };
     };
-    const named = (words: string) => {
+    /*
+     * A name, read through the table: the row, or the way it could not be settled. Returned and not
+     * refused here, because who refuses depends on whose name it is — a name the CALL gave is
+     * refused at once, and a name the person SAVED falls to their device first (below).
+     */
+    const named = (
+      words: string,
+    ):
+      | {
+          kind: "found";
+          there: {
+            cell: KmaCell;
+            place: string;
+            placeName: string;
+            levels: readonly string[];
+          };
+        }
+      | { kind: "ambiguous"; candidates: number }
+      | { kind: "unknown" } => {
       const found = places.find(words);
-      if (found.kind === "ambiguous") {
-        // How many, never which: the names are somebody's whereabouts.
-        refuse(
-          "laf:weather_place_ambiguous",
-          `${found.candidates.length} candidates`,
-        );
-      }
-      return found.kind === "found"
-        ? {
+      if (found.kind === "found") {
+        return {
+          kind: "found",
+          there: {
             cell: found.cell,
             place: found.name,
             placeName: found.name,
             levels: found.levels,
-          }
-        : null;
+          },
+        };
+      }
+      return found.kind === "ambiguous"
+        ? // How many, never which: the names are somebody's whereabouts.
+          { kind: "ambiguous", candidates: found.candidates.length }
+        : { kind: "unknown" };
     };
 
     const latitude = degreesArg(args, "latitude");
@@ -1097,9 +1133,14 @@ export function createKmaWeatherTransport(input: {
 
     const asked = stringArg(args, "place");
     if (asked) {
-      const there = named(asked);
-      if (!there) refuse("laf:weather_place_not_found", "argument");
-      return { ...there, source: "named" };
+      const said = named(asked);
+      if (said.kind === "ambiguous") {
+        refuse("laf:weather_place_ambiguous", `${said.candidates} candidates`);
+      }
+      if (said.kind === "unknown") {
+        refuse("laf:weather_place_not_found", "argument");
+      }
+      return { ...said.there, source: "named" };
     }
 
     /*
@@ -1113,8 +1154,16 @@ export function createKmaWeatherTransport(input: {
      * place by itself (`app/src/lib/whereabouts/device-place.ts`), so they are — and a person who said "이제 수원이야"
      * and opened a laptop in 강남 would have been answered for 강남, under a prompt that names
      * 수원 (`placeText` reads the words first, and always did). What a person said outranks where a
-     * device happens to be. Words the table cannot read fall through to the device rather than to
-     * a refusal: the device is still theirs.
+     * device happens to be.
+     *
+     * WORDS THE TABLE CANNOT SETTLE FALL TO THE DEVICE — a name two places share as much as a name
+     * it has no row for. The first cut of the words-first order refused the shared name before the
+     * device was read: somebody with "중구" or "판교" saved and a laptop in 서울, who had been
+     * answered for the laptop's cell while the device was read first, was refused
+     * `laf:weather_place_ambiguous` on every "오늘 날씨 어때?" (review of pull request 91). The
+     * device is still theirs, and the answer says it is the device's (`placeSource: "device"`,
+     * `basis`). Only with no device to fall to is the refusal given — the one that says which way
+     * the words failed, so the Bot asks which 고성 and does not guess.
      *
      * THE FALLBACK IS FOR "NOTHING KNOWN", NEVER FOR "KNOWN AND UNREADABLE". A saved place abroad,
      * or one the table has no row for, is refused as it was: answering Seoul's weather to somebody
@@ -1124,13 +1173,19 @@ export function createKmaWeatherTransport(input: {
     if (!actorId) refuse("laf:weather_place_unknown", "no actor");
     const words = (await input.placeOf?.(actorId)) ?? null;
     const byWords = words ? named(words) : null;
-    if (byWords) return { ...byWords, source: "saved" };
+    if (byWords?.kind === "found") return { ...byWords.there, source: "saved" };
     const coordinates = (await input.coordinatesOf?.(actorId)) ?? null;
     const byDevice = coordinates
       ? located(coordinates.latitude, coordinates.longitude)
       : null;
     if (byDevice) return { ...byDevice, source: "device" };
-    if (words) refuse("laf:weather_place_not_found", "saved");
+    if (byWords?.kind === "ambiguous") {
+      refuse(
+        "laf:weather_place_ambiguous",
+        `${byWords.candidates} candidates, saved`,
+      );
+    }
+    if (byWords) refuse("laf:weather_place_not_found", "saved");
     if (coordinates) refuse("laf:weather_place_outside", "saved");
     return {
       cell: FALLBACK_PLACE.cell,
