@@ -483,6 +483,14 @@ export const auditEventTypes = [
    * it led to. Probabilities and names; never the message.
    */
   "turn.first_move",
+  /**
+   * The decisions model was asked about a turn's first step and the Bot's model went first anyway:
+   * the answer fell short of the bar, or did not come in time. Nothing was done, so this is not a
+   * record of an action — it is the other half of a rate. The owner turned first moves on for
+   * customers on the condition that one made seldom comes out again (2026-10-05), and "seldom" is
+   * moves over the times it was asked. Which move, why not, and the probabilities; never the message.
+   */
+  "turn.first_move_left",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

@@ -1361,6 +1361,23 @@ nothing lost; how often real conversations open with a message this applies to. 
 trials and a handful of turns, and the control plane does not read what people say, so the count
 will come from the switch's own trail (`turn.first_move` rows against turns) once it is on somewhere.
 
+**On unless a deployment says off (2026-10-05).** The owner said yes to this for customers, on the
+condition that a move made seldom comes out again. So `FIRST_MOVE` unset is `weather`, `off` is
+off, and three things were added for the condition and for the first decision after a boot:
+
+- a decision that left the step to the Bot's model leaves a row (`turn.first_move_left`: which
+  move, `below_bar` or `no_answer`, the probabilities, never a word) beside `turn.first_move`, so
+  moves over decisions asked for can be counted on a deployment;
+- one decision is asked at boot, of a sentence of the file's own, so the slow first one is not a
+  person's (`first_move_warmed` in the log);
+- the default on a deployment that cannot make the move (no weather key, Jev not to be asked) says
+  `first_move_idle` once, at `info`; the warning is kept for an environment that names the move.
+
+Measured on the local stack with no `FIRST_MOVE` line in `.env`: the boot said `first_move_on` and
+`first_move_warmed` (494 ms); the first message after it, 26 s later, "오늘 날씨 어때?", moved in
+207 ms (0.98 / 0.96); "내일 부산 날씨 어때?" was below the bar in 281 ms (0.98 / 0.03) and left the
+`turn.first_move_left` row. One boot, one message each — not a distribution.
+
 ## Page facts — whether a page is what its address was opened for (2026-10-04)
 
 A Bot opens an address, the site answers 200 with "페이지를 찾을 수 없습니다", and the Bot answers from

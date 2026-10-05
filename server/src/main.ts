@@ -144,7 +144,11 @@ import { primeThreadRoutes } from "./runner/thread-priming";
 import { createUnattendedTools } from "./runner/unattended";
 import { createChatTools } from "./turns/chat-tools";
 import { createTurnEngine } from "./turns/engine";
-import { createFirstMove, firstMoveForTurns } from "./turns/first-move";
+import {
+  createFirstMove,
+  firstMoveForTurns,
+  warmFirstMove,
+} from "./turns/first-move";
 import { createTurnHub } from "./turns/hub";
 import { createPersonAnswers } from "./turns/people";
 import { createTurnRoutes } from "./turns/routes";
@@ -895,11 +899,20 @@ const chatTools = createChatTools({
   connections: (userId) =>
     readConnectionSwitches(connectionSwitchSources, userId),
 });
+const firstMoveDeps = {
+  moves: config.harness.firstMoves,
+  ask: modelCalls.firstMoveAsk,
+  budgetSpent: modelCalls.budgetSpent,
+};
 sayFirstMove({
   moves: config.harness.firstMoves,
   canDecide: modelCalls.firstMoveAsk !== null,
   weather: deploymentKeyRuntime.has(KMA_WEATHER_KEY),
+  named: config.harness.firstMovesNamed,
 });
+// Not awaited: the first decision's slow start is paid here, before anybody is waiting on one.
+if (deploymentKeyRuntime.has(KMA_WEATHER_KEY))
+  void warmFirstMove(firstMoveDeps);
 const turnEngine = createTurnEngine({
   database,
   ledger: runLedger,
@@ -913,13 +926,9 @@ const turnEngine = createTurnEngine({
     }),
   // An account the list no longer admits acts on nothing, a turn nobody watches included.
   admits: (userId) => admission.admitsPerson(userId),
-  // Off unless `FIRST_MOVE` names a move and Jev may be asked; then it is the weather's alone.
+  // On unless `FIRST_MOVE` says off, and only where Jev may be asked; it is the weather's alone.
   firstMove: firstMoveForTurns({
-    decide: createFirstMove({
-      moves: config.harness.firstMoves,
-      ask: modelCalls.firstMoveAsk,
-      budgetSpent: modelCalls.budgetSpent,
-    }),
+    decide: createFirstMove(firstMoveDeps),
     whereaboutsOf: whereaboutsStore.read,
     auditStore: bootAuditStore,
   }),

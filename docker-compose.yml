@@ -222,9 +222,9 @@ services:
       # with the reason, instead of being dropped here and ignored.
       SERVER_TURNS: ${SERVER_TURNS:-}
       # A turn's first read-only call made by the server before the Bot's model is asked, when the
-      # decisions model is sure what it is. OFF unless it names a move (`weather`), and it needs
-      # JEV_ENABLED: on, short weather questions go to the decisions model, redacted, as they are
-      # sent. See server/src/turns/first-move.ts.
+      # decisions model is sure what it is. ON unless it says `off` (the owner's yes for customers,
+      # 2026-10-05), and it needs JEV_ENABLED: short weather questions go to the decisions model,
+      # redacted, as they are sent. See server/src/turns/first-move.ts.
       FIRST_MOVE: ${FIRST_MOVE:-}
       BOT_MODEL_EFFORT: ${BOT_MODEL_EFFORT:-}
       # Whether the model sees photos the owner attaches (tenant/laf/model.yaml `supports_images`).

@@ -702,6 +702,8 @@ export const DECISIONS: Record<string, string> = {
   // Not a permission: the server made a read-only call for the Bot before its model was asked,
   // because a decisions model was sure what the turn's first step was. The call has its own row.
   "turn.first_move": "The first step was taken before the Bot was asked",
+  // The other half of that: a decisions model was asked and was not sure, so the Bot went first.
+  "turn.first_move_left": "The first step was left to the Bot",
 };
 
 /**
@@ -1006,4 +1008,5 @@ export const EVENTS: Record<string, string> = {
   "support.help_opened": "The help page",
   "work.stopped_all": "Everything that was running",
   "turn.first_move": "A turn's first step",
+  "turn.first_move_left": "A turn's first step",
 };

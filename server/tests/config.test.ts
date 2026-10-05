@@ -918,19 +918,23 @@ describe("the agent harness's switches", () => {
 
   test("the first move is off unless it names a move, and a typo does not boot as either", () => {
     /*
-     * Off by default for a reason that is not technical: on, short weather questions go to the
-     * decisions model as they are sent (`turns/first-move.ts`). So unset is off, `off` is off, and
-     * a word that is neither is refused — a privacy switch must not boot whichever way a parser
-     * leaned.
+     * On unless it says `off`, since the owner said yes to it for customers (2026-10-05); before
+     * that unset was off. A word that is neither is still refused — a switch that decides what is
+     * sent to somebody else must not boot whichever way a parser leaned. And a boot is told
+     * whether the environment named the move, so the default does not warn like a setting.
      */
-    expect(loadConfig(baseEnvironment).harness.firstMoves).toEqual([]);
-    expect(
-      loadConfig({ ...baseEnvironment, FIRST_MOVE: "off" }).harness.firstMoves,
-    ).toEqual([]);
-    expect(
-      loadConfig({ ...baseEnvironment, FIRST_MOVE: "weather" }).harness
-        .firstMoves,
-    ).toEqual(["weather"]);
+    const unset = loadConfig(baseEnvironment).harness;
+    expect(unset.firstMoves).toEqual(["weather"]);
+    expect(unset.firstMovesNamed).toBe(false);
+    const off = loadConfig({ ...baseEnvironment, FIRST_MOVE: "off" }).harness;
+    expect(off.firstMoves).toEqual([]);
+    expect(off.firstMovesNamed).toBe(false);
+    const named = loadConfig({
+      ...baseEnvironment,
+      FIRST_MOVE: "weather",
+    }).harness;
+    expect(named.firstMoves).toEqual(["weather"]);
+    expect(named.firstMovesNamed).toBe(true);
     expect(() => loadConfig({ ...baseEnvironment, FIRST_MOVE: "on" })).toThrow(
       "FIRST_MOVE",
     );

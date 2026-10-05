@@ -985,12 +985,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * there), so the tests went with the code they described. A value typed into an ordinary field is
  * still kept from the Bot, and the tests that hold that are all still counted.
  *
+ * RAISED 2026-10-05 with the first move on unless a deployment says off, by exactly what was added:
+ * four to `server` (a decision that left the step to the Bot leaves a row saying why and how sure,
+ * and a message never asked about leaves none; the default on where it can do nothing is said once
+ * and is not a warning; a boot asks once, of a sentence nobody sent; and it asks nothing with the
+ * move off, nobody to ask or a spent day, and a failure is only said).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3519, roots: ["server"] },
+  { name: "server", floor: 3523, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
