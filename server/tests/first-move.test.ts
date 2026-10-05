@@ -9,6 +9,7 @@ import {
   FIRST_MOVE_MAX_CHARS,
   FIRST_MOVE_QUESTIONS,
   FIRST_MOVE_TIMEOUT_MS,
+  FIRST_MOVE_WARM_UP_TIMEOUT_MS,
   firstMoveForTurns,
   firstMoveStateOf,
   mentionsWeather,
@@ -324,6 +325,16 @@ describe("the first move, as a turn asks for it", () => {
       "down",
     );
     expect(await silent.firstMove(input(text))).toBeNull();
+    // No key to ask with: nothing was sent, so it is not a decision asked for either.
+    const keyless = firstMoveForTurns({
+      decide: createFirstMove({
+        moves: ["weather"],
+        ask: async () => ({ ok: false, because: "no credential", ms: 0 }),
+      }),
+      whereaboutsOf: async () => ({ place: "강원 춘천시", coordinates: null }),
+      auditStore,
+    });
+    expect(await keyless(input(text))).toBeNull();
     // No weather word: nobody was asked, so there is nothing to count.
     const unasked = forTurns({ place: "강원 춘천시", coordinates: null });
     expect(await unasked.firstMove(input("안녕, 잘 지냈어?"))).toBeNull();
@@ -458,6 +469,12 @@ describe("the first move, said at boot", () => {
       weather: false,
       named: false,
     });
+    sayFirstMove({
+      moves: ["weather"],
+      canDecide: false,
+      weather: true,
+      named: false,
+    });
     expect(
       said().map((line) => [
         line.event,
@@ -465,7 +482,10 @@ describe("the first move, said at boot", () => {
         line.canDecide,
         line.weather,
       ]),
-    ).toEqual([["first_move_idle", "info", true, false]]);
+    ).toEqual([
+      ["first_move_idle", "info", true, false],
+      ["first_move_idle", "info", false, true],
+    ]);
   });
 
   test("a boot asks once, of a sentence nobody sent, and says how long it took", async () => {
@@ -475,6 +495,11 @@ describe("the first move, said at boot", () => {
     expect(model.asked).toHaveLength(1);
     expect(model.asked[0]?.state).toEqual(firstMoveStateOf("오늘 날씨 어때?"));
     expect(model.asked[0]?.questions).toBe(FIRST_MOVE_QUESTIONS);
+    // Longer than a person's bound: a boot's first decision is the slow one, and nobody waits on it.
+    expect(model.asked[0]?.timeoutMs).toBe(FIRST_MOVE_WARM_UP_TIMEOUT_MS);
+    expect(FIRST_MOVE_WARM_UP_TIMEOUT_MS).toBeGreaterThan(
+      FIRST_MOVE_TIMEOUT_MS,
+    );
     expect(said().map((line) => [line.event, line.answered])).toEqual([
       ["first_move_warmed", true],
     ]);

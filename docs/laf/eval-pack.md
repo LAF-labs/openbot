@@ -1291,10 +1291,11 @@ and is it for the person's own place — and on a clear yes to both the server c
 `get_weather` with no argument itself, files the call and its result in the thread as the Bot's, and
 the Bot's model starts with the result in hand.
 
-**Off unless set, and for a reason that is not technical.** On, those messages go to TypeSafe at the
+**Off unless set until 2026-10-05, and for a reason that is not technical; on unless `off` since
+(see "On unless a deployment says off" below).** On, those messages go to TypeSafe at the
 moment they are sent — a different thing from the excerpts every other judge is shown — and who is
 sent what is in the privacy policy. The owner approved building it on 2026-10-02; turning it on for
-a customer is a separate yes. It needs `JEV_ENABLED` on an OpenRouter endpoint and the weather key,
+a customer was a separate yes, given on 2026-10-05. It needs `JEV_ENABLED` on an OpenRouter endpoint and the weather key,
 and says at boot when it is set and can do nothing.
 
 **The decision, on messages somebody else labelled** (`bun run eval:first-move`,
