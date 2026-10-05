@@ -1167,13 +1167,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sentence and none; a suggestion is refused in a routine's words where the refusal is a
  * routine's, and no other door borrows a table).
  *
+ * RAISED AGAIN 2026-10-06 with those four copies made one, by exactly what was added: one to `app`,
+ * in `request-refusals.test.ts` (a code that is the empty string is no code at every door — the one
+ * place the copies disagreed, which is why it came with the one function and not before it).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3622, roots: ["server"] },
-  { name: "app", floor: 2050, roots: ["app"] },
+  { name: "app", floor: 2051, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 715, roots: ["tests", "agent-bot"] },
 ] as const;

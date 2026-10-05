@@ -9,7 +9,7 @@ import { CATEGORIES, type Category } from "@shared/persona";
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
-import { RequestRefusedError } from "@/lib/refusals";
+import { requestOrRefusal } from "@/lib/refusals";
 
 /**
  * 목표 on the wire, and what the page says (muse-shape plan §3.4, phase 9).
@@ -79,27 +79,8 @@ export const STATUS_LABELS: Readonly<Record<GoalStatus, string>> = {
   dropped: "Gave up",
 };
 
-async function goalRequest(path: string, init?: RequestInit) {
-  const response = await fetch(path, {
-    credentials: "include",
-    headers: init?.body ? { "content-type": "application/json" } : {},
-    ...init,
-  });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    const code = typeof body?.code === "string" ? body.code : "";
-    const known = GOAL_REFUSALS[code];
-    throw new RequestRefusedError(
-      known ? t(known) : t("That did not go through. Try again."),
-      response.status,
-      code || null,
-    );
-  }
-  return body;
-}
+const goalRequest = (path: string, init?: RequestInit) =>
+  requestOrRefusal(path, init, GOAL_REFUSALS);
 
 /**
  * Every goal, and how many are active. Read again whenever the window comes forward: a goal is made

@@ -221,6 +221,25 @@ describe("what each door says when it is refused", () => {
   });
 
   /*
+   * THE ONE PLACE THE FOUR COPIES DISAGREED, and why this test came with the one function rather
+   * than before it: a code that is the empty string was kept as "" by the routines' copy and read
+   * as no code by the other three. No route sends one (`server/tests/error-codes.test.ts`), and
+   * nothing that reads `code` off what is thrown can tell "" from none — every reader asks for a
+   * `laf:` fact — so it is none at every door.
+   */
+  test("a code that is the empty string is no code, at every door", async () => {
+    for (const door of EVERY_DOOR) {
+      answering(400, { error: "", code: "" });
+      const refusal = (await thrownBy(DOORS[door].read)) as RequestRefusedError;
+      expect({ door, message: refusal.message, code: refusal.code }).toEqual({
+        door,
+        message: GENERAL,
+        code: null,
+      });
+    }
+  });
+
+  /*
    * Accepting a suggestion IS creating a routine, so every refusal a routine can meet can come back
    * from it — the cap, above all — and it is said in the routines' words. Its own table comes first.
    */
