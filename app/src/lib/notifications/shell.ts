@@ -26,7 +26,8 @@
  * And, since 2026-09-26, what keeps the installed app awake and reachable with its window put away:
  * the tray's status, the summon shortcut's setting and the update waiting for a restart — at the
  * end of this file. Since 2026-10-02 the shell also says when a download has ended, which a
- * webview draws nothing about (`onShellDownload`).
+ * webview draws nothing about (`onShellDownload`). And since 2026-10-05 it says where the device
+ * is, which its webview will not (`shellDevicePermission`, `shellDevicePlace`).
  */
 
 import type { PresenceKind } from "@/lib/agents/presence";
@@ -405,6 +406,106 @@ export function summonKeysOf(id: string, isMac: boolean): string | null {
   return isMac
     ? `${modifiers.map((name) => MAC_MODIFIERS[name]).join("")}${key}`
     : [...modifiers.map((name) => PC_MODIFIERS[name]), key].join("+");
+}
+
+/*
+ * —— Where the device is (2026-10-05) ————————————————————————————————————————————————————————————
+ *
+ * A browser tab asks `navigator.geolocation`. The installed app's webview answers no such request,
+ * so there the shell reads the device (`desktop/src-tauri/src/location.rs` — CoreLocation, on
+ * macOS) and the page asks through these two. They are the browser's two questions under other
+ * names — "may you be asked?" and "where are you?" — so one table decides for both surfaces
+ * (`lib/whereabouts/device-place.ts`).
+ *
+ * Both answer null where there is no shell, and where the shell is from before the commands: an
+ * installed app is not replaced when the deployment is, so most shells that open this page for a
+ * while will reject the call. Null is "this device cannot be asked", and the person is where they
+ * were before — Seoul, or the place they said.
+ */
+
+/**
+ * What the shell says about being asked where the device is. The browser's three words where they
+ * mean the same; `restricted` is a machine whose person may not decide (a profile, a parental
+ * control), and `unsupported` a platform the shell does not read — Windows, today.
+ */
+export type ShellDevicePermission =
+  | "granted"
+  | "prompt"
+  | "denied"
+  | "restricted"
+  | "unsupported";
+
+const DEVICE_PERMISSIONS: readonly ShellDevicePermission[] = [
+  "granted",
+  "prompt",
+  "denied",
+  "restricted",
+  "unsupported",
+];
+
+/** A word of that list, or nothing for anything else the shell might say. */
+function shellDevicePermissionOf(value: unknown): ShellDevicePermission | null {
+  return DEVICE_PERMISSIONS.find((known) => known === value) ?? null;
+}
+
+/** Read, never asked for: this shows the person nothing and reads no location. */
+export async function shellDevicePermission(): Promise<ShellDevicePermission | null> {
+  return shellDevicePermissionOf(await ask<unknown>("device_place_permission"));
+}
+
+/** Why the shell has no place to give. The words for each are this page's. */
+export type ShellDeviceRefusal =
+  | "denied"
+  | "restricted"
+  | "undetermined_no_prompt"
+  | "unavailable"
+  | "timeout"
+  | "unsupported";
+
+const DEVICE_REFUSALS: readonly ShellDeviceRefusal[] = [
+  "denied",
+  "restricted",
+  "undetermined_no_prompt",
+  "unavailable",
+  "timeout",
+  "unsupported",
+];
+
+/** Where the device is, already rounded by the shell to two decimals — or the one reason not. */
+export type ShellDevicePlace =
+  | { kind: "place"; latitude: number; longitude: number }
+  | { kind: ShellDeviceRefusal };
+
+/**
+ * What the shell said, or nothing when it is not that shape. A place without two numbers is no
+ * place: the caller rounds and range-checks again (`coarseCoordinates`), but only what is a number
+ * gets that far.
+ */
+function shellDevicePlaceOf(value: unknown): ShellDevicePlace | null {
+  if (!value || typeof value !== "object") return null;
+  const { kind, latitude, longitude } = value as Record<string, unknown>;
+  if (kind === "place") {
+    return typeof latitude === "number" && typeof longitude === "number"
+      ? { kind, latitude, longitude }
+      : null;
+  }
+  const refusal = DEVICE_REFUSALS.find((known) => known === kind);
+  return refusal ? { kind: refusal } : null;
+}
+
+/**
+ * Ask the shell where the device is.
+ *
+ * `prompt` IS WHETHER THE PERSON MAY BE SHOWN ANYTHING. True, a device that has not decided puts
+ * the system's own question up and this waits for the answer. False, nothing is ever shown: an
+ * allowed device is read and an undecided one answers `undetermined_no_prompt`.
+ */
+export async function shellDevicePlace(options: {
+  prompt: boolean;
+}): Promise<ShellDevicePlace | null> {
+  return shellDevicePlaceOf(
+    await ask<unknown>("device_place", { prompt: options.prompt }),
+  );
 }
 
 let isHoldingAwake = false;
