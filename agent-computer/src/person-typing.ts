@@ -328,8 +328,12 @@ const FOCUS_WAIT_MS = 3 * SECRET_JOIN_TIMEOUT_MS;
  * keystroke before; the last one is read at the next keystroke, the next press, the release or the
  * next look, whichever comes first (`settleTyping`).
  *
- * And answered before the key is sent, never after it: the page takes a key ahead of a question
- * that was put first, so an answer that came late would be the focus the key left behind.
+ * And answered before the key is sent, never after it. A busy page takes a key AHEAD of a question
+ * that was put to it first: measured 2026-10-05 on a page busy for 1.2 s whose box moves focus on
+ * when it is typed into, the question sent before the key was answered after it ten times of ten
+ * (`insertText` and a key press alike) — with the box the focus had moved to, and the key already
+ * taken. So an answer that comes late is the focus the key left behind, and it is not waited for
+ * with the key already gone: the key waits, or the document is typed into blind.
  *
  * BLIND IS FOR WHAT COULD NOT BE KNOWN, and that is four things: the tab's next document was already
  * on its way, so no question could reach the page ahead of the key; the page said nothing about
