@@ -34,7 +34,7 @@ const roles = { rolesForUser: async () => ["user" as const] };
 function whereaboutsStore(initial: Whereabouts = NO_WHEREABOUTS) {
   let held: Whereabouts = initial;
   const devices: Array<{ timeZone: string; locale: string | null }> = [];
-  const places: Array<{ place: string | null; coordinates: unknown }> = [];
+  const places: Array<{ place?: string | null; coordinates: unknown }> = [];
   const store: WhereaboutsStore = {
     read: async () => held,
     saveDevice: async (_userId, device) => {
@@ -165,6 +165,49 @@ describe("PUT /api/me/place", () => {
     expect(places).toEqual([]);
   });
 
+  test("coordinates with no `place` key are the device's answer: the words the account holds are not touched", async () => {
+    /*
+     * A browser asked where it is answers minutes later, from a tab whose copy of the account may
+     * be older than a place the person said meanwhile. It sent `{ place: null, coordinates }` — the
+     * tab's stale blank — and the door replaced "강원 춘천시" with nothing (review of pull request
+     * 91). The device now sends coordinates alone, and a body that does not name the words says
+     * nothing about them.
+     */
+    const { store, places } = whereaboutsStore({
+      ...NO_WHEREABOUTS,
+      place: "강원 춘천시",
+    });
+    const response = await send(surface(store), "/api/me/place", "PUT", {
+      coordinates: { latitude: 37.498_095, longitude: 127.027_61 },
+    });
+    expect(response.status).toBe(200);
+    // The answer handed to the store has no `place` at all — not null, which would clear it.
+    expect(places).toEqual([
+      { coordinates: { latitude: 37.5, longitude: 127.03 } },
+    ]);
+    expect(Object.hasOwn(places[0] ?? {}, "place")).toBe(false);
+    expect((await response.json()).whereabouts).toMatchObject({
+      place: "강원 춘천시",
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+    });
+    // And naming the key still means it: null clears the words, as 내 정보 does when the box is emptied.
+    expect(
+      placeAnswerOf({
+        place: null,
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        place: null,
+        coordinates: { latitude: 37.5, longitude: 127.03 },
+      },
+    });
+    // Nothing at all is still refused: no words named and no coordinates.
+    expect(placeAnswerOf({})).toEqual({ ok: false });
+    expect(placeAnswerOf({ coordinates: null })).toEqual({ ok: false });
+  });
+
   test("refuses coordinates that are not on this planet", async () => {
     const { store, places } = whereaboutsStore();
     const response = await send(surface(store), "/api/me/place", "PUT", {
@@ -229,15 +272,13 @@ describe("DELETE /api/me/place", () => {
 });
 
 describe("a place, as a request offered it", () => {
-  test("a place with no words but the device's coordinates is a place", () => {
+  test("a place with no words but the device's coordinates is a place — and says nothing about the words", () => {
+    // It read `place: null` until 2026-10-05, which the store took as "clear the words".
     expect(
       placeAnswerOf({ coordinates: { latitude: 37.123, longitude: 127.987 } }),
     ).toEqual({
       ok: true,
-      value: {
-        place: null,
-        coordinates: { latitude: 37.12, longitude: 127.99 },
-      },
+      value: { coordinates: { latitude: 37.12, longitude: 127.99 } },
     });
   });
 

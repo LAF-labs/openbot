@@ -11,7 +11,9 @@
  *
  *   PUT    /api/me/device   the app, every time it opens: the device's zone and language.
  *   PUT    /api/me/place    내 가게 → 가게 위치, and the Bot's `remember` with a `place` — the place a
- *                           person said in a conversation, saved through their own session.
+ *                           person said in a conversation, saved through their own session. And
+ *                           the device's own answer, which is coordinates with no `place` key:
+ *                           that one writes the coordinates and never touches the words.
  *   DELETE /api/me/place    내 가게 → 지우기. Place and coordinates both go.
  *
  * NEVER LOGGED. No zone, no place and no coordinate reaches a log line or the audit trail — "the
@@ -42,7 +44,15 @@ import { users } from "../db/schema";
 import { log } from "../log";
 
 export type PlaceAnswer = {
-  place: string | null;
+  /**
+   * The words. `null` clears them. ABSENT IS "NOTHING SAID ABOUT THE WORDS" and leaves what is kept
+   * alone: it is how a device's answer arrives (`app/src/lib/whereabouts/device-place.ts`). A
+   * browser asked where it is answers minutes later, from a tab whose copy of the account may be
+   * older than a place the person said meanwhile — in a conversation, in another tab — and an
+   * answer that carried the tab's `place: null` back would erase it (review of pull request 91).
+   * The device knows coordinates; what the person said is not its to send.
+   */
+  place?: string | null;
   coordinates: Coordinates | null;
 };
 
@@ -54,7 +64,10 @@ export type WhereaboutsStore = {
     userId: string,
     device: { timeZone: string; locale: string | null },
   ) => Promise<boolean>;
-  /** Replace the place whole — words and coordinates together — and hand back what is kept now. */
+  /**
+   * Replace the place — words and coordinates together, or the coordinates alone where the answer
+   * says nothing about the words (`PlaceAnswer`) — and hand back what is kept now.
+   */
   savePlace: (userId: string, answer: PlaceAnswer) => Promise<Whereabouts>;
 };
 
@@ -109,7 +122,8 @@ export function createWhereaboutsStore(
       await database
         .update(users)
         .set({
-          place: answer.place,
+          // One statement either way: the words are written, or the column is not named at all.
+          ...(answer.place === undefined ? {} : { place: answer.place }),
           placeLatitude: answer.coordinates?.latitude ?? null,
           placeLongitude: answer.coordinates?.longitude ?? null,
         })
@@ -127,12 +141,17 @@ export function createWhereaboutsStore(
  * THE WORDS ARE READ INTO EVERY RUN'S PROMPT, so they pass the memory store's two scans as well as
  * the shape `parsePlace` allows: a place that reads as an order, or as a card number, is not a place.
  * Coordinates are coarsened by `coarseCoordinates` before anything else sees them.
+ *
+ * NO `place` KEY IS NOT `place: null`. A body that names the key — words, or null — is an answer
+ * about the words and replaces them; a body with coordinates and no such key is the device's, and
+ * the value it becomes has no `place` either, so the store leaves the words as they are.
  */
 export function placeAnswerOf(
   body: unknown,
 ): { ok: true; value: PlaceAnswer } | { ok: false } {
   if (!body || typeof body !== "object") return { ok: false };
   const offered = body as Record<string, unknown>;
+  const saysTheWords = offered.place !== undefined;
   const place = parsePlace(offered.place);
   if (place === "invalid") return { ok: false };
   if (place && (looksLikeAnInstruction(place) || looksLikeASecret(place))) {
@@ -144,7 +163,10 @@ export function placeAnswerOf(
       : coarseCoordinates(offered.coordinates);
   if (offered.coordinates && !coordinates) return { ok: false };
   if (!place && !coordinates) return { ok: false };
-  return { ok: true, value: { place, coordinates } };
+  return {
+    ok: true,
+    value: saysTheWords ? { place, coordinates } : { coordinates },
+  };
 }
 
 /** `PUT /api/me/device`, `PUT /api/me/place`, `DELETE /api/me/place` — mounted under `/api`. */
@@ -187,7 +209,7 @@ export function createWhereaboutsRoutes(
       parsed.value,
     );
     log.info("place_set", {
-      words: parsed.value.place !== null,
+      words: typeof parsed.value.place === "string",
       coordinates: parsed.value.coordinates !== null,
     });
     return context.json({ whereabouts });
