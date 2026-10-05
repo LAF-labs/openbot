@@ -3,17 +3,18 @@
  * knowing which tool call each one belongs to.
  *
  * One module for all of it because the two halves have to agree. A tool call that met an `ask` rule
- * holds itself open waiting for an answer, and the card a person answers on is drawn on that same
- * tool call's line in the transcript. Those are different components on different render passes, so
- * the id travels through here.
+ * is held open until somebody answers — by the server (`server/src/turns/people.ts`), and until
+ * 2026-10-05 by the window that had made the call, from here — and the card a person answers on is
+ * drawn on that same tool call's line in the transcript. Those are different components on
+ * different render passes, so the id travels through here.
  *
  * A question is held against the tool call that raised it rather than against the Bot. The Bot's
- * list is the wrong key: nothing withdraws a question when the wait around it ends, so pressing
- * Stop, reloading the tab or a turn that errors all leave an unanswered entry sitting in the
- * server's registry until it expires. A card that showed "the oldest thing this Bot is waiting on"
- * would then put a stale question in front of somebody on an unrelated line, record their Allow
- * against an action nobody is waiting for, and leave the action they were actually looking at
- * waiting out the full ten minutes.
+ * list is the wrong key: while a window held the wait (until 2026-10-05) nothing withdrew a
+ * question when that wait ended, so pressing Stop, reloading the tab or a turn that errored all
+ * left an unanswered entry sitting in the server's registry until it expired. A card that showed
+ * "the oldest thing this Bot is waiting on" would then put a stale question in front of somebody on
+ * an unrelated line, record their Allow against an action nobody is waiting for, and leave the
+ * action they were actually looking at waiting out the full ten minutes.
  *
  * IT IS ALSO WHERE THE QUESTION BECOMES A SENTENCE. The server sends what the action is; the words
  * are chosen here, once, for every card that asks. See `describeSubject`.
@@ -57,12 +58,12 @@ export type HighRiskKind =
   | "unrelated_personal_data";
 
 /**
- * The scope out of a pause reply, or undefined if it was not one.
+ * The scope off the server's record of a question, or undefined if it was not one.
  *
- * One parser for both callers — the computer's tools and the plugin call — because a scope that
- * half-validates in one of them is a button offering a widening the server will not perform. Not
- * knowing means offering "this once" alone, which is the safe direction and the behaviour this card
- * had before the wider button existed.
+ * One parser, as it was while two callers each read a pause reply of their own (the computer's
+ * tools and the plugin call, until 2026-10-05), because a scope that half-validates is a button
+ * offering a widening the server will not perform. Not knowing means offering "this once" alone,
+ * which is the safe direction and the behaviour this card had before the wider button existed.
  */
 export function allowanceScopeOf(value: unknown): AllowanceScope | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -133,12 +134,11 @@ export type PendingApproval = {
   taskId?: string;
   /**
    * The conversation step the question holds open: which thread, which of the Bot's tool calls.
-   * What lets every window of that conversation draw the card, and carry the step on once it is
-   * answered if the window that raised it has gone (`lib/copilot/stranded-steps.ts`).
+   * What lets every window of that conversation draw the card — and, while a window carried a step
+   * out (until 2026-10-05), let another carry it on once it was answered if the window that raised
+   * it had gone.
    */
   step?: { threadId: string; toolCallId: string };
-  /** Some window is holding the step and will carry it on. */
-  held?: true;
   requestedAt: string;
   expiresAt: string;
   /** Absent while nobody has answered. False is an answer. */
@@ -149,7 +149,7 @@ export type PendingApproval = {
 };
 
 /**
- * The subject out of a pause reply, or undefined if there was not one.
+ * The subject off the server's record of a question, or undefined if there was not one.
  *
  * Checked rather than cast. It arrives as JSON over HTTP and a card that trusted the shape would
  * render "undefined" into the sentence somebody is being asked to consent to; not knowing what the
@@ -739,9 +739,10 @@ function keepDecisions(held: Map<string, ApprovalDecision>): void {
  *
  * A decision already held for the call is kept rather than replaced, with one exception: a yes
  * held without its width is completed by one that has it. First writer used to win outright, and the
- * wait holding the tool call — which reads "allowed" off the server a second at a time — could write
- * before the "항상 허용" press's own answer came back, so a standing allowance was recorded, and
- * drawn, as a one-time "허용함" with no way back offered (measured 2026-09-25 on toss.im).
+ * wait a window held on the tool call until 2026-10-05 — which read "allowed" off the server a
+ * second at a time — could write before the "항상 허용" press's own answer came back, so a standing
+ * allowance was recorded, and drawn, as a one-time "허용함" with no way back offered (measured
+ * 2026-09-25 on toss.im).
  */
 export function decideQuestion(
   toolCallId: string,
@@ -852,9 +853,10 @@ const watchers = new Set<() => void>();
 /**
  * Say that this tool call is waiting on an answer, so its line can draw the card.
  *
- * Handed over rather than fetched again: the server said all of it in the reply that paused the
- * call, and a card that re-derived its question from a list would be back to guessing which entry
- * in that list was its own.
+ * Handed over rather than fetched by the card: the server's record names the call a question is
+ * on, and whoever reads the record puts it here under that call (`lib/turns/questions.ts`; until
+ * 2026-10-05 it came in the reply that paused the window's own call). A card that re-derived its
+ * question from a list would be back to guessing which entry in that list was its own.
  */
 export function openQuestion(toolCallId: string, question: OpenQuestion): void {
   if (!toolCallId) return;
@@ -1076,9 +1078,10 @@ export function answerProblem(
 }
 
 /**
- * The card for a question this window learned about from the server rather than from its own tool
- * call — raised in another window, or by this conversation before a reload. The same fields the
- * pause reply carries, off the server's record.
+ * The card for a question, off the server's record — which is how a window learns of every
+ * question now. Until 2026-10-05 this was for the ones it had not raised itself (another window's,
+ * or this conversation's before a reload), and a window read its own off the reply that paused its
+ * call: the same fields.
  */
 export function questionFromRecord(approval: PendingApproval): OpenQuestion {
   const preview = callPreviewOf(approval.preview);
