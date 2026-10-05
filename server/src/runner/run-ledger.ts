@@ -189,6 +189,15 @@ const whole = (value: number | null): number | null =>
     ? null
     : Math.min(2_147_483_647, Math.max(0, Math.round(value)));
 
+/** The five columns of a first move on a run that had none: every run but a turn somebody was asked about. */
+const NO_FIRST_MOVE = {
+  firstMoveAsked: null,
+  firstMoveVerdict: null,
+  firstMoveKind: null,
+  firstMoveDecisionMs: null,
+  firstMoveCallMs: null,
+};
+
 /**
  * A first move as columns: kinds and a verdict out of their closed lists, and two numbers.
  *
@@ -196,18 +205,19 @@ const whole = (value: number | null): number | null =>
  * that is not one of the list's, or a verdict that is not one the measure keeps, was never a first
  * move's, and then none of the five is written — the row says nothing rather than half of it. The
  * kinds go down in the list's own order, each once, so the same decision is the same array.
+ *
+ * NOTHING HERE MAY THROW. These are a measurement, and they are written in the statement that
+ * writes the run's ending: a first move that is no list of kinds at all is no first move, not a
+ * turn the roster goes on calling busy. So what is missing or misshapen is turned away before
+ * anything of it is read.
  */
 function firstMoveColumns(move: RunMeasure["firstMove"]) {
-  const asked = FIRST_MOVE_KINDS.filter((kind) => move?.asked.includes(kind));
-  if (!move || asked.length === 0 || !isFirstMoveEnding(move.verdict)) {
-    return {
-      firstMoveAsked: null,
-      firstMoveVerdict: null,
-      firstMoveKind: null,
-      firstMoveDecisionMs: null,
-      firstMoveCallMs: null,
-    };
+  if (!move || !Array.isArray(move.asked) || !isFirstMoveEnding(move.verdict)) {
+    return NO_FIRST_MOVE;
   }
+  const said: readonly unknown[] = move.asked;
+  const asked = FIRST_MOVE_KINDS.filter((kind) => said.includes(kind));
+  if (asked.length === 0) return NO_FIRST_MOVE;
   return {
     firstMoveAsked: asked,
     firstMoveVerdict: move.verdict,
