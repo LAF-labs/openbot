@@ -297,7 +297,7 @@ async function runOnce(
 
 const outcomes: ScenarioOutcome[] = [];
 console.log(
-  `\neval pack · model ${MODEL} · ${SCENARIOS.length} scenarios × ${RUNS} run(s)` +
+  `\neval pack · model ${MODEL} · ${SCENARIOS.filter((scenario) => !scenario.measureOnly).length} scenarios × ${RUNS} run(s)` +
     `\nprompt ${PROMPT_HASH} · catalogue ${CATALOGUE_HASH}\n`,
 );
 
@@ -308,6 +308,8 @@ const ONLY = (process.env.EVAL_ONLY ?? "")
   .filter(Boolean);
 for (const scenario of SCENARIOS) {
   if (ONLY.length > 0 && !ONLY.includes(scenario.id)) continue;
+  // Counted beside another scenario, not held to: run when asked for by name.
+  if (scenario.measureOnly && !ONLY.includes(scenario.id)) continue;
   let passes = 0;
   const notes = new Set<string>();
   const latencies: number[] = [];
@@ -451,6 +453,7 @@ if (process.env.EVAL_DEFERRAL !== "0") {
     "  prompt tokens, without → with the bridge (pass without/with):",
   );
   for (const scenario of SCENARIOS) {
+    if (scenario.measureOnly) continue;
     const withoutBridge = await measureArm(scenario, false);
     const withBridge = await measureArm(scenario, true);
     armRows.push({ id: scenario.id, withoutBridge, withBridge });
