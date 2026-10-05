@@ -14,6 +14,10 @@ import {
   KEEP_ALIVE_CLOSE,
   KEEP_ALIVE_OPEN,
   LANDED_TEXT,
+  LEFT_OWNED_NOTE,
+  LEFT_OWNER_BUTTON,
+  LEFT_TAB,
+  LEFT_TITLE,
   SLOW_NO_CONTENT_MS,
   serveFixture,
   TAKEOVER_BOT_BOX,
@@ -946,6 +950,80 @@ describe.skipIf(!HAS_BROWSER)(
       expect(links).toEqual(Array(25).fill([TYPED_NEAR_LINK]));
       await nowhere(seen, typed);
     }, 120_000);
+
+    /*
+     * A NODE A PERSON TYPED INTO IS ONE FOR AS LONG AS IT LIVES, WHATEVER IT IS NOW. A title or a
+     * tab renamed in place is editable while it has focus and plain again once it loses it; the
+     * node keeps its mark and the words a person typed. For one commit the reader left a marked
+     * node out only while it was still editable, and this title was read out whole; and a marked
+     * control was taken to be named by its own contents only while editable, so the tab was listed
+     * under the name the browser gave it — what was typed.
+     */
+    test("typed into a title and a tab that stop being editable when they lose focus, is still not in the page's text or the tab's name", async () => {
+      const { post, get, snapshot, seen } = asBot("renamed-title-bot");
+      const TITLE = "CANARY-renamed-title-7391";
+      const TAB = "CANARY-renamed-tab-7391";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-left` }))
+          .status,
+      ).toBe(200);
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", LEFT_TITLE);
+      expect((await post("/human/type", { text: TITLE })).status).toBe(200);
+      await post("/human/click", LEFT_TAB);
+      expect((await post("/human/type", { text: TAB })).status).toBe(200);
+      await landedIn({ title: TITLE, tab: TAB });
+      // Focus goes elsewhere, and the page makes the tab plain again as it did the title.
+      await post("/human/click", TYPED_BOX);
+      expect((await post("/control/release")).status).toBe(200);
+
+      const read = await get("/read");
+      // The page was read — the words around the title are there — and the title's are not.
+      expect(String(read.body.text)).toContain(TYPED_NEAR_LINK);
+      await get("/read?whole=1");
+      const after = await snapshot();
+      // The tab is in the list, and is called nothing: all it was ever called is what was typed.
+      expect(
+        after.elements
+          .filter((element) => element.role === "tab")
+          .map((element) => element.name),
+      ).toEqual([""]);
+      await nowhere(seen, [TITLE, TAB]);
+    }, 60_000);
+
+    /*
+     * WHAT AN ELEMENT OWNS BY ID IS FOUND IN ITS OWN TREE WHEN ITS NAME IS COMPUTED — the document,
+     * or the shadow tree it is in. For one commit only the document was looked in, so a button in
+     * a shadow tree that owns the note beside it was not near the note, was not asked about, and
+     * kept the name the browser gave it: its own word and what a person typed.
+     */
+    test("typed into a note a button owns inside a shadow tree, is not in the button's name", async () => {
+      const { post, get, snapshot, seen } = asBot("owned-note-bot");
+      const SECRET = "CANARY-owned-note-7391";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-left` }))
+          .status,
+      ).toBe(200);
+      const before = await snapshot();
+      expect(named(before.elements, LEFT_OWNER_BUTTON).role).toBe("button");
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", LEFT_OWNED_NOTE);
+      expect((await post("/human/type", { text: SECRET })).status).toBe(200);
+      await landedIn({ owned: SECRET });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const after = await snapshot();
+      expect(
+        after.elements
+          .filter((element) => element.role === "button")
+          .map((element) => element.name),
+      ).toEqual([TYPED_FAR_BUTTON, LEFT_OWNER_BUTTON]);
+      await get("/read");
+      await get("/read?whole=1");
+      await nowhere(seen, [SECRET]);
+    }, 60_000);
 
     test("typed into a page read as its article, is not in the article", async () => {
       const { post, get, snapshot, seen } = asBot("article-bot");

@@ -1008,6 +1008,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the tree and the question about it; and followed boxes that are out of the document costing a
  * look no question, counted).
  *
+ * RAISED AGAIN 2026-10-05 with a marked node staying a person's whatever it is now, by exactly what
+ * was added: ten to `agent-computer`. Eight against a real Chromium — through the real door, a
+ * title and a tab that stop being editable when they lose focus, and a note a button owns inside
+ * a shadow tree; at the seams of a look and a read, a page silent before the tree, a region out of
+ * the document when a read asks and back while it reads, a person who starts typing while a page
+ * is being read, and a first key between a look's last scan and its names; the reader and the
+ * names each asked about a marked node that is no longer editable, blind or not. Two without a
+ * browser: a focus question that fails is typed into blind, and a control near before the tree
+ * loses its contents with its name.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1015,7 +1025,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 521, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 531, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

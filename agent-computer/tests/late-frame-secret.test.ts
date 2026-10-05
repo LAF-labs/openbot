@@ -3,7 +3,14 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Browser, chromium, type Page } from "playwright";
+import {
+  type Browser,
+  chromium,
+  type Frame,
+  type Locator,
+  type Page,
+} from "playwright";
+import { readSettledPageText } from "../src/page-text";
 import { followTyping } from "../src/person-typing";
 import { type BotSession, createSessions } from "../src/sessions";
 import { snapshotPage } from "../src/snapshot";
@@ -128,13 +135,39 @@ describe.skipIf(!HAS_BROWSER)(
     async function personTypes(
       session: BotSession,
       page: Page,
-      place: string,
+      place: string | Locator,
       text: string,
     ): Promise<void> {
-      await page.locator(place).click();
+      await (typeof place === "string" ? page.locator(place) : place).click();
       await followTyping(session, page, text);
       await page.keyboard.insertText(text);
     }
+    /**
+     * Stand in front of the questions put to a frame whose source says `words`: `around` is handed
+     * each one, to be asked or not, before or after whatever the test does to the page.
+     */
+    function inFrontOf(
+      frame: Frame,
+      words: string,
+      around: (ask: () => Promise<unknown>, nth: number) => Promise<unknown>,
+    ) {
+      const seen = { asked: 0 };
+      const evaluate = frame.evaluate.bind(frame) as (
+        script: unknown,
+        argument?: unknown,
+      ) => Promise<unknown>;
+      frame.evaluate = ((script: unknown, argument?: unknown) => {
+        if (typeof script !== "string" || !script.includes(words)) {
+          return evaluate(script, argument);
+        }
+        seen.asked += 1;
+        return around(() => evaluate(script, argument), seen.asked);
+      }) as typeof frame.evaluate;
+      return seen;
+    }
+    /** The reader's question (`reader.ts`), and the question of where the marked nodes are. */
+    const THE_READER = "isProbablyReaderable";
+    const THE_SCAN = "function scanTyped";
 
     /*
      * THE TREE'S NAMES ARE ONE MOMENT'S AND THE PAGE WAS ASKED AT ANOTHER — after the late join and
@@ -171,6 +204,186 @@ describe.skipIf(!HAS_BROWSER)(
       ).toEqual([{ name: TYPED_NEAR_LINK, value: undefined }]);
       await page.close();
     }, 30_000);
+
+    /*
+     * THE QUESTION BEFORE THE TREE COUNTS ON ITS OWN, AND SILENCE IS NOT "NOTHING NEAR". The region
+     * leaves the moment the tree comes back, so the question after it finds nothing: all that
+     * stands between the tree's name and the list is the question before — and here the page does
+     * not answer that one. Not knowing is then every control asked about, and none named by the
+     * tree.
+     */
+    test("a page that does not answer before the tree has every control asked about, and none named by the tree", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-typed`);
+      const session = sessionFor("silent-before-bot");
+      const TYPED = "CANARY-silent-before-7391";
+      await personTypes(session, page, '[data-shape="near"]', TYPED);
+
+      // The first question of where the marked nodes are is never answered; the second is.
+      const scans = inFrontOf(page.mainFrame(), THE_SCAN, (ask, nth) =>
+        nth === 1 ? new Promise(() => {}) : ask(),
+      );
+      const tree = page.ariaSnapshot.bind(page);
+      let read = "";
+      page.ariaSnapshot = async (options) => {
+        read = await tree(options);
+        await page.evaluate(() =>
+          document.querySelector('[data-shape="near"]')?.remove(),
+        );
+        return read;
+      };
+      const asked = new Set<string>();
+      const locator = page.locator.bind(page);
+      page.locator = (selector, options) => {
+        if (selector.startsWith("aria-ref=")) asked.add(selector.slice(9));
+        return locator(selector, options);
+      };
+      const shot = await snapshotPage(session, page, async () => []);
+
+      expect(scans.asked).toBe(2);
+      expect(read).toContain(`${TYPED_NEAR_LINK} ${TYPED}`);
+      expect(JSON.stringify(shot)).not.toContain(TYPED);
+      expect(
+        shot.elements
+          .filter((element) => element.role === "link")
+          .map(({ name, value }) => ({ name, value })),
+      ).toEqual([{ name: TYPED_NEAR_LINK, value: undefined }]);
+      // Every control of the list was asked about, the far button and the Bot's own box included.
+      expect(shot.elements.length).toBeGreaterThan(3);
+      expect(shot.elements.filter(({ ref }) => !asked.has(ref))).toEqual([]);
+      await page.close();
+    }, 30_000);
+
+    /*
+     * AND A LOOK'S LAST QUESTION FINDS THE MARK ITSELF. Nobody had typed on this tab when the look
+     * asked, before its tree and after it; the first key lands before the names are asked, in a
+     * link that is itself the place to type and that the tree — taken while it was empty — left
+     * nameless. The page is asked what to call it, and would say what was just typed.
+     */
+    test("a first key that lands between a look's last scan and its names is in no name: the question that names finds the mark", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.setContent(
+        `<!doctype html><html lang="ko"><body><a href="#renamed" contenteditable="true" style="display:block;width:300px;height:30px"></a><button type="button">곁의 버튼</button></body></html>`,
+      );
+      const session = sessionFor("first-key-bot");
+      const TYPED = "CANARY-first-key-7391";
+      const locator = page.locator.bind(page);
+      let asked = 0;
+      page.locator = (selector, options) => {
+        const found = locator(selector, options);
+        if (!selector.startsWith("aria-ref=")) return found;
+        asked += 1;
+        if (asked > 1) return found;
+        // The first element the names are asked of: the person's key arrives just ahead of it.
+        const handle = found.elementHandle.bind(found);
+        found.elementHandle = async (wait) => {
+          await personTypes(session, page, "a", TYPED);
+          return handle(wait);
+        };
+        return found;
+      };
+      const shot = await snapshotPage(session, page, async () => []);
+
+      expect(asked).toBe(1);
+      expect(await page.locator("a").textContent()).toBe(TYPED);
+      expect(JSON.stringify(shot)).not.toContain(TYPED);
+      expect(shot.elements.map(({ role, name }) => ({ role, name }))).toEqual([
+        { role: "link", name: "" },
+        { role: "button", name: "곁의 버튼" },
+      ]);
+      await page.close();
+    }, 30_000);
+
+    /*
+     * A READ IS TOLD WHAT TO LEAVE OUT BY WHETHER THE DOCUMENT WAS TYPED INTO, NOT BY WHAT IS IN IT
+     * WHEN IT IS ASKED. A step that closes takes its region out of the document, as the same node,
+     * and a page puts it back: out at the question, back while the text is made, out again after.
+     * The reader finds the marked nodes itself, so it need only be told to look.
+     */
+    test("a region out of the document when a read asks who typed here, and back while it reads, is not read out", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-typed`);
+      const session = sessionFor("region-back-bot");
+      const TYPED = "CANARY-back-at-the-read-7391";
+      await personTypes(session, page, '[data-shape="near"]', TYPED);
+      type Kept = { kept: Element; home: Element };
+      await page.evaluate(() => {
+        const region = document.querySelector('[data-shape="near"]') as Element;
+        const held = window as unknown as Kept;
+        held.kept = region;
+        held.home = region.parentElement as Element;
+        region.remove();
+      });
+      const reads = inFrontOf(page.mainFrame(), THE_READER, async (ask) => {
+        await page.evaluate(() => {
+          const held = window as unknown as Kept;
+          held.home.append(held.kept);
+        });
+        const answer = await ask();
+        await page.evaluate(() => (window as unknown as Kept).kept.remove());
+        return answer;
+      });
+
+      const read = await readSettledPageText(page, { session });
+      expect(read.text).toContain(TYPED_NEAR_LINK);
+      expect(JSON.stringify(read)).not.toContain(TYPED);
+      // Told from the start: the text was made once.
+      expect(reads.asked).toBe(1);
+      // And the words were there to be read: a read that is told of nobody's typing has them.
+      expect((await readSettledPageText(page)).text).toContain(TYPED);
+      await page.close();
+    }, 30_000);
+
+    /*
+     * A PERSON MAY START TYPING WHILE THE TEXT IS BEING MADE: a read is not refused while they hold
+     * the wheel. What to leave out was asked once, before the main frame — nobody had typed, so
+     * nothing — and the frames were read one after another with that answer: a paste landing in
+     * between was read out. Deterministic: the typing happens after the question and before the
+     * first frame is read. The record is asked again after the text, and the text made once more.
+     */
+    test("a person who starts typing while a page is being read is not read out, in the main frame or in the frame read after it", async () => {
+      const page = await (browser as Browser).newPage();
+      await page.goto(`${fixture?.url}takeover-editable`);
+      const session = sessionFor("typed-during-read-bot");
+      const MAIN = "CANARY-during-main-7391";
+      const FRAMED = "CANARY-during-frame-7391";
+      const bare = page.locator('[data-shape="bare"]');
+      const framed = page
+        .frameLocator("iframe")
+        .locator('[data-shape="framedBare"]');
+      await framed.waitFor();
+
+      let typing = false;
+      const reads = inFrontOf(page.mainFrame(), THE_READER, async (ask) => {
+        if (typing) {
+          typing = false;
+          await personTypes(session, page, bare, MAIN);
+          await personTypes(session, page, framed, FRAMED);
+        }
+        return ask();
+      });
+      // Nobody has typed here: the text is made once.
+      const before = await readSettledPageText(page, { session });
+      expect(before.text).toContain("틀 속 링크");
+      expect(reads.asked).toBe(1);
+
+      typing = true;
+      const read = await readSettledPageText(page, { session });
+      // They did type, in both places, and the page around both was read.
+      expect(await bare.textContent()).toBe(MAIN);
+      expect(await framed.textContent()).toBe(FRAMED);
+      expect(read.text).toContain("이름 없는 영역");
+      expect(read.text).toContain("틀 속 링크");
+      expect(JSON.stringify(read)).not.toContain("CANARY");
+      // Made twice, and no more: as asked, and once again with what the record said afterwards.
+      expect(reads.asked).toBe(3);
+      // From then on a read is told from the start, and makes the text once.
+      expect(
+        JSON.stringify(await readSettledPageText(page, { session })),
+      ).not.toContain("CANARY");
+      expect(reads.asked).toBe(4);
+      await page.close();
+    }, 60_000);
 
     /*
      * A BOX THAT IS OUT OF ITS DOCUMENT STAYS FOLLOWED — a page can put it back — AND IS IN NO TREE.

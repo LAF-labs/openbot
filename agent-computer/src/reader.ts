@@ -119,26 +119,33 @@ function heldIn(hush: Hush | null): Element[] {
   const body = document.body as HTMLElement | null;
   // A document edited whole (`designMode`) is one region, with no attribute to find it by.
   if (hush.every && body?.isContentEditable) return [body];
-  const all = Array.from(document.querySelectorAll("*"));
-  if (hush.every) {
-    // The host of each region: editable, under a parent that is not.
-    return all.filter(
-      (element) =>
-        (element as HTMLElement).isContentEditable === true &&
-        (element.parentElement as HTMLElement | null)?.isContentEditable !==
-          true,
-    );
-  }
-  // A marked box says nothing `innerText` reads; a marked region is the text to leave out.
   const mark = Symbol.for(hush.mark);
-  const marked = all.filter(
-    (element) =>
+  const held = Array.from(document.querySelectorAll("*")).filter((element) => {
+    /*
+     * A MARKED NODE IS LEFT OUT WHATEVER IT IS NOW. A title renamed in place is editable while it
+     * has focus and plain text once it loses it, and a text box a page draws itself (`role`, no
+     * `contenteditable`) never was editable: each keeps its mark and the words a person typed.
+     * For one commit (2026-10-05) a marked node was left out only while it was still editable,
+     * and that title was read out whole. What is not held is told by its tag and nothing else:
+     * an `<input>`, a `<textarea>` and a `<select>` say nothing of their contents to `innerText`,
+     * and holding one would only break up the text around it.
+     */
+    if (
       (element as unknown as Record<symbol, unknown>)[mark] === true &&
-      (element as HTMLElement).isContentEditable === true,
-  );
-  return marked.filter(
+      !/^(input|textarea|select)$/.test(element.localName)
+    ) {
+      return true;
+    }
+    // And, when which node cannot be said, the host of each region: editable, under a parent that is not.
+    return (
+      hush.every &&
+      (element as HTMLElement).isContentEditable === true &&
+      (element.parentElement as HTMLElement | null)?.isContentEditable !== true
+    );
+  });
+  return held.filter(
     (element) =>
-      !marked.some((other) => other !== element && other.contains(element)),
+      !held.some((other) => other !== element && other.contains(element)),
   );
 }
 

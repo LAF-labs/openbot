@@ -329,6 +329,12 @@ export async function snapshotPage(
    * where nothing takes a name from what was typed is asked nothing more than it ever was.
    *
    * Every control is asked about only where which node cannot be said at all (`every`): typed blind.
+   *
+   * THE MARK GOES WITH THE QUESTION ON EVERY TAB, typed into or not as far as the last scan knew.
+   * A person may type their first key here after that scan and before the names are asked, and
+   * a node is marked before its key is sent: so the question that computes a name is the one
+   * that finds the mark, in the same moment, and a control that is itself the region they have
+   * just typed into — the only one whose words the page would say — is named without them.
    */
   const hush = typed.present
     ? { mark: typed.mark, every: typed.every }
@@ -362,7 +368,7 @@ export async function snapshotPage(
       target,
       askedAbout,
       Math.min(PAGE_NAMES_MS, deadline - Date.now()),
-      hush,
+      { mark: typed.mark, every: typed.every },
     ),
     near?.before,
   );

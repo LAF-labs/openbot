@@ -284,7 +284,12 @@ describe.skipIf(!HAS_BROWSER)(
      * The page asked about every control, its `.typed` nodes marked as the ones a person typed into
      * — which is what `quietOn` does to a node this service follows.
      */
-    async function askedOn(page: Page, every: boolean) {
+    async function askedOn(
+      page: Page,
+      every: boolean,
+      // With nothing known about which node, there is no mark to go by either — unless told.
+      mark = every ? "" : MARK,
+    ) {
       await page.evaluate((mark) => {
         for (const node of Array.from(
           document.getElementsByClassName("typed"),
@@ -298,8 +303,7 @@ describe.skipIf(!HAS_BROWSER)(
         page,
         read.elements.map((element) => element.ref),
         2_000,
-        // With nothing known about which node, there is no mark to go by either.
-        { mark: every ? "" : MARK, every },
+        { mark, every },
       );
       // By what the TREE called each: the typed text is in those names, which is the point.
       return read.elements.map((element) => ({
@@ -401,6 +405,55 @@ describe.skipIf(!HAS_BROWSER)(
         expect(names).not.toContain("봇이 쓴");
         expect(called(asked, "봇영역링크").page).toBe("봇영역링크");
         expect(called(asked, "그냥링크").page).toBe("그냥링크");
+      } finally {
+        await page.close();
+      }
+    });
+
+    /*
+     * THE MARK IS WHAT SAYS A PERSON TYPED THERE, NOT WHAT THE NODE IS NOW. A tab or a link renamed
+     * in place is editable only while it is being renamed; plain again, the browser names it by
+     * what was typed, and for one commit this question said such a control held nothing — it
+     * was asked whether it was editable. A box's name is still never its contents, a text box a
+     * page draws itself included. And a tab typed into blind somewhere else keeps what its marked
+     * nodes say out as well: until this was written, blind looked for editable regions only.
+     */
+    test("a control that carries the mark and is no longer editable is named without what was typed, blind or not", async () => {
+      const page = await pageWith(`
+<a href="#renamed" class="typed">${TYPED}</a>
+<div role="tab" tabindex="0" class="typed">${TYPED}</div>
+<a href="#around-left">둘레링크 <b class="typed">${TYPED}</b></a>
+<div role="textbox" tabindex="0" aria-label="그리는칸" class="typed">${TYPED}</div>
+<a href="#plain">그냥링크</a>`);
+      try {
+        const asked = await askedOn(page, false);
+        // The tree does call the link and the tab by what was typed, and nothing else.
+        expect(asked.map((each) => `${each.role} ${each.tree}`)).toEqual([
+          `link ${TYPED}`,
+          `tab ${TYPED}`,
+          `link 둘레링크 ${TYPED}`,
+          "textbox 그리는칸",
+          "link 그냥링크",
+        ]);
+        expect(
+          asked.map(({ page, drawn, holds }) => ({ page, drawn, holds })),
+        ).toEqual([
+          { page: "", drawn: true, holds: true },
+          { page: "", drawn: true, holds: true },
+          { page: "둘레링크", drawn: true, holds: true },
+          // A box: its name is its label, never what it holds.
+          { page: "그리는칸", drawn: false, holds: false },
+          { page: "그냥링크", drawn: false, holds: false },
+        ]);
+        // Blind, with the mark the service always sends: the marked nodes still say nothing.
+        const blind = await askedOn(page, true, MARK);
+        expect(blind.map((each) => each.page)).toEqual([
+          "",
+          "",
+          "둘레링크",
+          "그리는칸",
+          "그냥링크",
+        ]);
       } finally {
         await page.close();
       }
