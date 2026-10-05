@@ -19,6 +19,11 @@ import {
  *     spending nothing never lets an action past unseen.
  *   - a write-up is REFUSED with the same fact a run ends on, so the screen can say the same
  *     sentence rather than "try again" in front of a day that ends at midnight.
+ *   - the mail's second look and the high-risk check's judge are NOT ASKED, and each says so by
+ *     throwing, which its caller reads as a judge that could not answer. The mail's rules then
+ *     stand alone — what they are sure of is withheld and nothing more (`plugins/mail-secrets.ts`)
+ *     — and the check falls back to its own, which ask wherever anything personal was typed
+ *     (`computer/high-risk.ts`).
  *
  * What is asserted is what the model endpoint received — a fake one on a local port.
  */
@@ -136,6 +141,55 @@ describe("a write-up on a spent day", () => {
   test("on a day with room left it writes the recording up", async () => {
     received.length = 0;
     expect(await calls(false).writeUp(recording)).toMatchObject({ ok: true });
+    expect(received).toEqual(["/v1/chat/completions"]);
+  });
+});
+
+/** One yes/no question, the shape either judge is asked in. */
+const QUESTION = { q: { type: "noul" as const, instructions: "Is it so?" } };
+
+/** What an ask ended on: nothing where it was answered, or what it threw. */
+const thrownBy = (asked: Promise<unknown>) =>
+  asked.then(
+    () => null,
+    (error: unknown) => error,
+  );
+
+/*
+ * For both judges below: the day is what stops the question. With room left the same question goes
+ * to the model, and only the asking is read here — what a judge makes of an answer is
+ * `server-model-calls.test.ts`'s, and this provider's answer is a verdict, not a probability.
+ */
+
+describe("the mail's second look on a spent day", () => {
+  test("is not asked, and says so with the fact a run ends on", async () => {
+    const state = { around: "인증번호는 ▢▢▢▢▢▢" };
+    received.length = 0;
+    const thrown = await thrownBy(
+      calls(true).mailSecretJudge.ask(state, QUESTION),
+    );
+    expect(httpRefusalOf(thrown)).toMatchObject({ code: DAILY_BUDGET_REACHED });
+    expect(received).toEqual([]);
+
+    await thrownBy(calls(false).mailSecretJudge.ask(state, QUESTION));
+    expect(received).toEqual(["/v1/chat/completions"]);
+  });
+});
+
+describe("the high-risk check's judge on a spent day", () => {
+  test("is not asked, and throws the word the check files the miss under", async () => {
+    const state = { page: "결제" };
+    received.length = 0;
+    const thrown = await thrownBy(
+      calls(true).highRiskAsker.ask(state, QUESTION),
+    );
+    // `high-risk.ts` reads the word before the colon into the verdict's `failed`, which the trail
+    // keeps: a check nobody judged because the day was spent says `budget`, not `error`.
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message.split(":")[0]).toBe("budget");
+    expect(received).toEqual([]);
+
+    await thrownBy(calls(false).highRiskAsker.ask(state, QUESTION));
     expect(received).toEqual(["/v1/chat/completions"]);
   });
 });
