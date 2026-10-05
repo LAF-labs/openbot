@@ -45,7 +45,7 @@ function surface(stopAll: ReturnType<typeof createStopAll> | undefined) {
     config: loadConfig(testEnvironment()),
     auth: signedIn,
     roleRepository: roles,
-    ...(stopAll ? { stopAll } : {}),
+    stopAll,
   });
 }
 

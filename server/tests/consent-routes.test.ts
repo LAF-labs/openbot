@@ -43,7 +43,7 @@ function surface(store?: ConsentStore) {
     config,
     auth: signedIn,
     roleRepository: roles,
-    ...(store ? { consent: store } : {}),
+    consent: store,
   });
 }
 
