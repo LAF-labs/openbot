@@ -665,7 +665,8 @@ function remoteAgentWithPrompt(
       toolNames: (input.tools ?? []).map((tool) => tool.name),
       /*
        * What this person could still connect, read off the connect card as the turn handed it
-       * on (`turns/chat-tools.ts` writes their accounts there). The context layer says one
+       * on (`turns/chat-tools.ts` writes their accounts there) — less any whose tools this run
+       * holds, the lookup's own definition (`openAccountsIn`). The context layer says one
        * sentence about connecting while there is something left to connect, and nothing once
        * there is not — or where the run has no card, as a routine's has none.
        */
