@@ -7,10 +7,10 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
 import { withShopProfile } from "../src/agents/shop-context";
-import { botPromptMessage } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import { agentProfiles, agents, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
+import { botPromptMessage } from "./support/prompt";
 
 /**
  * The shop answers against a real database: where they are kept, what every Bot's run is composed

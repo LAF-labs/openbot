@@ -106,7 +106,8 @@ export const routineKeys = {
 
 /**
  * The refusals the routines API names, translated here because the code is a fact and this surface
- * owns the words — the same arrangement as MODEL_FAILURES in lib/copilot/stopped-turn.ts.
+ * owns the words — the same arrangement as TURN_FAILURE_SENTENCES in
+ * lib/channels/turn-failure.ts.
  *
  * The screen renders these straight into the create and delete forms, and what it rendered before
  * was the server's own English sentence: "This account holds 20 routines already. Delete one to

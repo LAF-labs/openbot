@@ -1096,13 +1096,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * read the server's record instead (`questionFromRecord`), and two about an answer given in
  * another window read it off the shell's watch.
  *
+ * LOWERED AGAIN 2026-10-06, `app` from 2043 to 2037, by exactly the six tests of
+ * `stopped-turn.test.ts`: the sentence for a turn that stopped (`stoppedReason`, and the table
+ * under it) has had no caller in the product since 2026-09-25, and went. Three were about the
+ * function itself — what ended a turn passed on in its own words, an Error read the same way,
+ * nothing reported said plainly — and have nothing left to describe. Three were about its table —
+ * every code a sentence, each with Korean, a rate limit told from an outage — and
+ * `turn-failure.test.ts` holds those for the table the chat reads.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3586, roots: ["server"] },
-  { name: "app", floor: 2043, roots: ["app"] },
+  { name: "app", floor: 2037, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 655, roots: ["tests", "agent-bot"] },
 ] as const;

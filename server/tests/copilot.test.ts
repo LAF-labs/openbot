@@ -2,13 +2,13 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
 import { BASE_KO, staticPrompt } from "../../shared/prompt";
 import {
-  botPromptMessage,
   buildAgents,
   createRequestAgents,
   promptMessageId,
   registeredAgentFromRow,
   resolveRuntimeAgents,
 } from "../src/copilot";
+import { botPromptMessage } from "./support/prompt";
 
 // Every agent row now joins its profile, so the row a coworker is built from always names it.
 const riskRow = {

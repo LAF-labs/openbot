@@ -10,10 +10,10 @@ import {
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
-import { botPromptMessage } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import { agentMemories, agentProfiles, agents, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
+import { botPromptMessage } from "./support/prompt";
 
 const databaseUrl =
   process.env.DATABASE_URL ??

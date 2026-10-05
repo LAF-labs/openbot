@@ -80,30 +80,6 @@ export function stepDidNotWork(result: string): boolean {
 }
 
 /**
- * What a call that was not carried out is answered with, in a form {@link stepDidNotWork} reads.
- *
- * The window's own handler answered the model with the reason as it came, and a reason is not
- * always one of the forms above: a 403 that carries no fact arrives as whatever sentence the route
- * wrote, or as this app's own fallback in the reader's language. Kept as the step's result, that
- * sentence read back as the service's answer — and a refusal went behind the fold of the step after
- * it (Codex on pull request 44, round 3). So a reason that does not already say so is wrapped in
- * the object this server's own refusals are: `{ ok: false, refused, reason }`. The model reads the
- * same reason; the transcript can tell what it was.
- */
-export function toolFailureText(failure: {
-  refused: boolean;
-  reason: string;
-}): string {
-  if (stepDidNotWork(failure.reason)) return failure.reason;
-  // IN THIS ORDER: `ok`, `refused`, `reason` is the head an object of ours is known by (`OWN_ENVELOPE`).
-  return JSON.stringify({
-    ok: false,
-    refused: failure.refused,
-    reason: failure.reason,
-  });
-}
-
-/**
  * How a step that did not work ended, as far as its stored result says.
  *
  * - `error`: the service answered, with an error of its own; `text` is the service's words.
@@ -144,8 +120,9 @@ const REFUSED_FACTS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * How an object written by THIS APP begins, to the key: the window's wrapper (`toolFailureText`:
- * `ok`, `refused`, `reason`), the server's refusal (`refusal` in `server/src/turns/chat-tools.ts`:
+ * How an object written by THIS APP begins, to the key: the window's wrapper (`ok`, `refused`,
+ * `reason` — written by the window's own handler until 2026-10-05, and still what a conversation
+ * from before then holds), the server's refusal (`refusal` in `server/src/turns/chat-tools.ts`:
  * `ok`, `code` — a `laf:` fact), and its "an approval is being asked" (`ok`, `awaitingApproval`).
  *
  * A SERVICE'S OWN ANSWER CAN SAY `ok: false` TOO. A call that came back with the service's own
