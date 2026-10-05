@@ -1,4 +1,4 @@
-import { type Coordinates, NO_WHEREABOUTS } from "@shared/whereabouts";
+import { NO_WHEREABOUTS } from "@shared/whereabouts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -12,35 +12,46 @@ import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { useSavedFlash } from "@/lib/saved-flash";
 import {
+  chooseThisDevice,
   clearPlaceOnThisDevice,
-  savePickedPlace,
   useCanUseDeviceLocation,
 } from "@/lib/whereabouts/device-place";
-import { readDeviceCoordinates, savePlace } from "@/lib/whereabouts/queries";
+import { savePlace } from "@/lib/whereabouts/queries";
 
 /**
- * 가게 위치 — where the shop is, as a city or district.
+ * 위치 — where the person is, as their Bot goes by it.
  *
  * WHY IT EXISTS. The Bot's browser runs on a cloud VM, and asked for today's weather a Bot reported
- * a site's guess of the VM's place (제주시) as its owner's. The place written here is what every run
- * is told instead (`shared/prompt/person.ko.ts`), and it is what the Bot saves when the person says
- * in a conversation where they are — so this is the one place a person sees it and clears it. Left
- * empty, the weather is Seoul's (the owner, 2026-10-05), and the description says so.
+ * a site's guess of the VM's place (제주시) as its owner's. The place kept here is what every run is
+ * told instead (`shared/prompt/person.ko.ts`), and it is what the Bot saves when the person says in
+ * a conversation where they are — so this is the one place a person sees it and clears it.
  *
- * "가게 위치", NOT "내 위치": the place that decides the weather a shop owner asks about, and the
- * shops nearby, is the shop's — and "내 위치" reads as a device being followed around, which nothing
- * here does. It sits on 내 가게 beside what the shop does and where it works.
+ * ONE SOURCE AT A TIME, SO THE FORM CANNOT CONTRADICT ITSELF. A place is the words in the box, or
+ * this device's location, or neither (Seoul) — in that order everywhere a run reads it. The form
+ * used to draw both: a box holding the place typed before and, under it, where the device had just
+ * said it was. The owner pressed 이 기기 위치 쓰기, allowed it, saw the box unchanged, and asked
+ * whether the place in the box was the server's location (2026-10-06). So saving typed words takes
+ * the device's coordinates away in the same request, as the Bot's own `remember` always has;
+ * choosing the device takes the words away; the device's line is drawn only while the device is
+ * the source; and the one sentence under the title says which of the three is in use.
  *
- * THE DEVICE'S LOCATION ONLY WHERE A PRESS REACHES THE DEVICE (`useCanUseDeviceLocation`): a browser
+ * THE DEVICE'S PLACE BY ITS NAME, NEVER BY ITS NUMBERS. A person reads a place, not a latitude and
+ * a longitude. The server names the cell the coordinates fall in from 기상청's table — the name
+ * the prompt's place line uses — and sends it as a fact (`Whereabouts.near`). Where the table has
+ * no name, abroad, nothing is drawn: the sentence under the title still says the device is used.
+ * THE NAME IS THE FORECAST CELL'S, five kilometres across: its two commonest districts and "등"
+ * where it holds more, so somebody near a border reads their neighbours' 구 first. That is why the
+ * line says 부근 after it, as the prompt's place line does — and says it once: a cell with no row
+ * of its own is already named "서귀포시 부근", by its neighbour (`nameOf`, server).
+ *
+ * THE DEVICE'S BUTTON ONLY WHERE A PRESS REACHES THE DEVICE (`useCanUseDeviceLocation`): a browser
  * tab, and the installed app once its shell has said it can read the device — on macOS, and not in
- * a shell from before it could. On a press, with the system's own permission question, rounded to
- * two decimals before anything keeps it. Anywhere else a button that asks and then says nothing is
- * worse than no button, and the words are the whole of it.
+ * a shell from before it could. Anywhere else a button that asks and then says nothing is worse
+ * than no button, and the words are the whole of it.
  *
- * AND SAVING WHAT THE BUTTON GAVE IS HOW A 지우기 IS TAKEN BACK. Clearing a place that held this
- * device's coordinates stops the device being read by itself. Pressing its button only shows where
- * the device is; saving that is what says it is wanted again (`savePickedPlace`) — somebody who
- * looks and leaves has given nothing back.
+ * ONE PRESS USES THE DEVICE (`chooseThisDevice`): it reads, with the system's own question if it
+ * has to ask, and saves at once. A press that is refused, goes unanswered, or cannot be saved says
+ * why in a sentence and leaves the form as it was.
  */
 export function ShopLocation() {
   const queryClient = useQueryClient();
@@ -51,27 +62,15 @@ export function ShopLocation() {
       ? (user.whereabouts ?? NO_WHEREABOUTS)
       : NO_WHEREABOUTS;
   const [place, setPlace] = useState(saved.place ?? "");
-  /*
-   * THE COORDINATES ARE THE ACCOUNT'S UNTIL THE PERSON PICKS SOME HERE. They used to be copied into
-   * the form when it mounted. The device answers by itself at every open now, so a copy went stale
-   * in front of the person: the line named where the device HAD been, the save button lit with
-   * nothing changed, and saving a typed place sent the older coordinates back over the ones the
-   * device had just given. So only a press of the device's button is held here, until it is saved;
-   * otherwise what is drawn and what is sent is whatever the account holds at that moment.
-   */
-  const [picked, setPicked] = useState<Coordinates | null>(null);
-  const coordinates = picked ?? saved.coordinates;
   const [busy, setBusy] = useState<"saving" | "locating" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [isSaved, flashSaved] = useSavedFlash();
   const canUseDevice = useCanUseDeviceLocation();
 
-  const isChanged =
-    place.trim() !== (saved.place ?? "") ||
-    coordinates?.latitude !== saved.coordinates?.latitude ||
-    coordinates?.longitude !== saved.coordinates?.longitude;
-  const hasAnything = place.trim() !== "" || coordinates !== null;
-  const isKept = saved.place !== null || saved.coordinates !== null;
+  // What a run goes by, read off the account and never off this form: said, else device, else Seoul.
+  const source = saved.place ? "words" : saved.coordinates ? "device" : "none";
+  const words = place.trim();
+  const isChanged = words !== (saved.place ?? "");
 
   const run = async (
     work: () => Promise<unknown>,
@@ -94,37 +93,49 @@ export function ShopLocation() {
 
   const handleSave = () =>
     run(async () => {
-      const words = place.trim() || null;
-      const held = picked
-        ? await savePickedPlace(
-            { place: words, coordinates: picked },
-            queryClient,
-          )
-        : await savePlace({ place: words, coordinates }, queryClient);
+      // The words are the place now. The device's coordinates go in the same request.
+      const held = await savePlace(
+        { place: words, coordinates: null },
+        queryClient,
+      );
       setPlace(held.place ?? "");
-      setPicked(null);
       flashSaved();
     }, "saving");
 
   const handleClear = () =>
     run(async () => {
-      // Cleared for good on this device: its coordinates are not read back at the next open.
+      // Cleared for good on this device: its coordinates are not read back by themselves.
       await clearPlaceOnThisDevice(queryClient);
       setPlace("");
-      setPicked(null);
       flashSaved();
     }, "saving");
 
   const handleUseDevice = () =>
     run(async () => {
-      setPicked(await readDeviceCoordinates());
+      // Read and saved in one press, and the words with it: the box is the account's again.
+      const held = await chooseThisDevice(queryClient);
+      setPlace(held.place ?? "");
+      flashSaved();
     }, "locating");
 
   return (
     <PageSection
-      description={t(
-        "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, it goes by Seoul, and a place you tell your Bot is yours is saved here.",
-      )}
+      className="scroll-mt-4"
+      description={
+        source === "words"
+          ? t(
+              "When your Bot looks up the weather or somewhere nearby, it goes by the place written here.",
+            )
+          : source === "device"
+            ? t(
+                "When your Bot looks up the weather or somewhere nearby, it goes by this device's location.",
+              )
+            : t(
+                "When your Bot looks up the weather or somewhere nearby, it goes by Seoul for now.",
+              )
+      }
+      // The weather card's "위치를 아직 몰라요" links here (`weather-card.tsx`).
+      id="location"
       title={t("Shop location")}
     >
       <div className="mt-4 flex max-w-md flex-col gap-2">
@@ -144,18 +155,19 @@ export function ShopLocation() {
           placeholder={t("e.g. Seoul Gangnam-gu")}
           value={place}
         />
-        {coordinates ? (
-          <p className="text-muted-foreground text-sm">
-            {t("This device's location, around {latitude}, {longitude}", {
-              latitude: coordinates.latitude.toFixed(2),
-              longitude: coordinates.longitude.toFixed(2),
-            })}
+        {source === "device" && saved.near ? (
+          <p className="text-muted-foreground text-sm" data-device-place>
+            {saved.near.endsWith("부근")
+              ? t("This device's location: {name}", { name: saved.near })
+              : t("This device's location: around {name}", {
+                  name: saved.near,
+                })}
           </p>
         ) : null}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Button
-          disabled={busy !== null || !isChanged || !hasAnything}
+          disabled={busy !== null || !isChanged || words === ""}
           onClick={() => void handleSave()}
           type="button"
         >
@@ -175,7 +187,7 @@ export function ShopLocation() {
               : t("Use this device's location")}
           </Button>
         ) : null}
-        {isKept ? (
+        {source === "none" ? null : (
           <Button
             disabled={busy !== null}
             onClick={() => void handleClear()}
@@ -184,7 +196,7 @@ export function ShopLocation() {
           >
             {t("Clear the location")}
           </Button>
-        ) : null}
+        )}
         <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
           {problem}
         </LiveRegion>

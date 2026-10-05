@@ -105,11 +105,14 @@ export function PageSection({
   children,
   className,
   description,
+  id,
   title,
 }: {
   action?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
+  /** For a section that something elsewhere links straight to (`<Link hash>`). */
+  id?: string;
   /**
    * The sentence under a section's title. On the everyday screens it is kept only where it says
    * what a press in the section will do before it is pressed — 수첩's 일하는 방식 says a change
@@ -119,7 +122,7 @@ export function PageSection({
   title?: string;
 }) {
   return (
-    <section className={cn("mt-12", className)}>
+    <section className={cn("mt-12", className)} id={id}>
       {title ? (
         <div className={sectionTitleRowClass}>
           {/* 17px/600 — the scale's section title. See `ui/page-header.ts`. */}

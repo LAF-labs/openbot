@@ -39,7 +39,7 @@ import {
  * keeps them; the page being looked at again; and the installed app, which asks its shell.
  */
 
-/** That this device's person has decided about being asked: `1`. `0` is asked and not answered. */
+/** That this device's once is spent: `1`. `0` is the installed app's question, put and not answered. */
 const MARK = "laf.device-place-asked";
 /** That the person cleared this device's place here: `1`. Absent, they have not. */
 const CLEARED = "laf.device-place-cleared";
@@ -287,6 +287,36 @@ describe("and not when there is nothing to ask for", () => {
     await view.settle(60);
     // Asked what it would say — which shows nothing — and not read.
     expect({ queried, read }).toEqual({ queried: 1, read: 0 });
+    expect(writes).toEqual([]);
+  });
+
+  test("a prompt a browser's person ignores has still been the once: the next load does not ask again", async () => {
+    /*
+     * A browser shows its prompt the moment it is asked and says nothing back if it is ignored.
+     * Spending the once only on an answer — which is right for the installed app, whose question
+     * may never have appeared — made every load of a tab ask again (review of pull request 94).
+     */
+    state = "prompt";
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        // The prompt is up, and nobody answers it.
+        getCurrentPosition: () => {
+          read += 1;
+        },
+      },
+    });
+    const { api, writes } = server({ onboarded: true });
+    const first = await mountApp({ path: "/settings/shop", api });
+    await first.waitFor(() => read === 1, "the prompt");
+    // Spent as the question was put, with no answer to wait for.
+    expect(localStorage.getItem(MARK)).toBe("1");
+    await first.unmount();
+
+    const second = await mountApp({ path: "/settings/shop", api });
+    await second.waitFor(() => queried === 2, "the browser's word on asking");
+    await second.settle(60);
+    expect(read).toBe(1);
     expect(writes).toEqual([]);
   });
 
@@ -564,7 +594,7 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     expect({ queried, read }).toEqual({ queried: 0, read: 0 });
   });
 
-  test("a question the person never answered spends nothing, and the next look asks again", async () => {
+  test("in the installed app a question the person never answered spends nothing, and the next look asks again", async () => {
     /*
      * THE ONE ASK WAS SPENT ON A DIALOG NOBODY SAW (review of pull request 94). The system shows
      * its question only for an app that is in use, and says nothing when it does not: the ask

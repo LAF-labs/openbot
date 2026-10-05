@@ -20,6 +20,7 @@ import {
   type DeviceReading,
   devicePermission,
   readDevice,
+  readDeviceCoordinates,
   saveDeviceCoordinates,
   savePlace,
 } from "./queries";
@@ -54,15 +55,17 @@ import {
  * asked and not read, and the once is not spent: if the words are cleared later, the default is the
  * device again and it is asked then.
  *
- * THE ONCE IS THE PERSON'S ANSWER, NOT OUR QUESTION. A device is asked until its person has
- * decided — allowed, refused, or closed the prompt, which a browser reports as a refusal — and
- * never again after. It used to be spent the moment the question was put, and a question can be
- * put and never seen: the installed app's goes through the system, which shows nothing where the
- * app is not in use, and then nothing ever came back. The one ask was gone on a dialog nobody saw
- * (review of pull request 94). So an ask that comes back saying nobody decided spends nothing, and
- * one that is cut off — the tab closed with the prompt up — is asked again at the next look. And
- * an account that holds coordinates has had its once on every device that sees them: nobody is
- * shown a dialog about a place the account already has.
+ * ONCE PER DEVICE — AND WHAT "ONCE" IS DEPENDS ON WHETHER THE QUESTION IS KNOWN TO HAVE BEEN SEEN.
+ * A browser shows its prompt the moment it is asked, and never says that it went unanswered: an
+ * ignored prompt simply stays there. So in a tab the once is spent when the question is put,
+ * answered or not — asked and ignored must never ask again, or every load would. The installed
+ * app's question goes through the system, which shows nothing where the app is not in use and
+ * says nothing either: there the once was being spent on a dialog nobody saw (review of pull
+ * request 94). The shell can tell — it answers `unanswered` after a minute — so there, and only
+ * there, the once is spent by the person's answer, and an ask that comes back unanswered leaves
+ * the device to be asked again (`tellsWhenUnanswered`). And an account that holds coordinates has
+ * had its once on every device that sees them: nobody is shown a dialog about a place the account
+ * already has.
  *
  * AND THE PLACE FOLLOWS THE DEVICE. Until this, coordinates saved at the first allow were a
  * snapshot: somebody who allowed location in 춘천 and opened the app in 부산 still got 춘천's
@@ -87,8 +90,8 @@ import {
  * edge of a cell the rounded value flips back and forth, and each flip would be a new place line
  * in the prompt and a colder cache, for somebody sitting still.
  *
- * 지우기 IS FINAL ON THE DEVICE IT WAS PRESSED ON, until the person gives this device's place
- * again from 내 정보 and saves it. That is why "asked" and "cleared" are two marks and not one
+ * 지우기 IS FINAL ON THE DEVICE IT WAS PRESSED ON, until the person chooses this device's place
+ * again from 내 정보. That is why "asked" and "cleared" are two marks and not one
  * (`DeviceMark`): every device that follows has been asked, and only one whose person cleared its
  * place must stop following. A place cleared here does not come back by itself, which would make
  * 지우기 a control that does nothing.
@@ -101,8 +104,8 @@ import {
  */
 
 /**
- * Per device, in this browser's storage: that this device's person has decided about being asked
- * — `1`. `0` is a question that was put and not answered, which is nothing decided.
+ * Per device, in this browser's storage: that this device's once is spent — `1`. `0` is the
+ * installed app's question put and not yet answered, which spends nothing.
  */
 const DEVICE_PLACE_ASKED_KEY = "laf.device-place-asked";
 
@@ -130,9 +133,9 @@ const MOVED_HUNDREDTHS = 2;
 /**
  * What this device remembers about being asked.
  *
- *   none      its person has not decided — never asked, or asked and not answered
- *   asked     they decided, or the account's once was spent here
- *   cleared   지우기, here: nothing is read by itself until they give this device's place again
+ *   none      not asked — or, in the installed app, asked and not answered
+ *   asked     the once is spent: they were asked, or the account's once was spent here
+ *   cleared   지우기, here: nothing is read by itself until they choose this device's place again
  */
 export type DeviceMark = "none" | "asked" | "cleared";
 
@@ -141,7 +144,7 @@ export type DevicePlaceMove =
   | "read"
   /** Already allowed, over coordinates the account holds: read it, and keep it only if it moved. */
   | "follow"
-  /** Not decided: the device's own prompt. Spends the once when the person answers it. */
+  /** Not decided: the device's own prompt. Spends the once. */
   | "ask"
   /** The account holds coordinates and the device is not to be read: the once is spent here too. */
   | "spent"
@@ -175,12 +178,12 @@ export function mayAskAboutTheDevice(
  *     otherwise                                               spent — no dialog over a place held
  *   the person has said where they are                        nothing — and the once is kept
  *   the device says yes already                               read
- *   this device's person decided before                       nothing
+ *   this device's once is spent                               nothing
  *   the device has not decided                                ask
  *   the device says no, or cannot say (no Permissions API,    nothing — asking blind is a prompt
  *     a shell that cannot read it)                            nobody chose to risk
  *
- * "Read" comes before "decided before" on purpose: a device that said yes and whose answer never
+ * "Read" comes before "the once is spent" on purpose: a device that said yes and whose answer never
  * arrived — a save that failed, a fix too vague to keep, a dialog answered after the wait ran out
  * — is read at a later look instead of never.
  */
@@ -269,16 +272,16 @@ function keep(key: string, value: string): boolean {
   }
 }
 
-/** The person has decided, or the account's once was spent here. Whether the mark was kept. */
+/** The once is spent on this device. Whether the mark was kept. */
 function markAsked(): boolean {
   return keep(DEVICE_PLACE_ASKED_KEY, "1");
 }
 
 /**
- * Whether this device can keep a mark at all — found out before the person is asked, because the
- * once is spent when they answer and must be keepable then: a device that cannot remember having
- * been answered would ask at every look. What it leaves behind is `0`, asked and not answered,
- * which is nothing decided.
+ * Whether this device can keep a mark at all — found out before the installed app's question is
+ * put, because there the once is spent by the answer and must be keepable then: a device that
+ * cannot remember having been answered would ask at every look. What it leaves behind is `0`,
+ * asked and not answered, which spends nothing.
  */
 function canMark(): boolean {
   return keep(DEVICE_PLACE_ASKED_KEY, "0");
@@ -323,6 +326,12 @@ export type DevicePlaceDoors = {
   /** What the account holds, as this tab knows it. Read again after the device answers. */
   held: () => Pick<Whereabouts, "place" | "coordinates">;
   mark: () => DeviceMark;
+  /**
+   * Whether this surface says when its question went unanswered. The installed app does: its
+   * shell answers `unanswered`, since the system may never have shown the dialog. A browser tab
+   * does not: its prompt is shown when asked and is silent for ever if ignored.
+   */
+  tellsWhenUnanswered: () => boolean;
   /** Whether a mark could be kept here at all: where it cannot, nobody is asked. */
   canMark: () => boolean;
   markAsked: () => boolean;
@@ -345,9 +354,10 @@ export type DevicePlaceDoors = {
  *   same         a device that is followed had not really moved
  *   unsaved      an answer the server did not take
  *
- * THE ONCE IS SPENT BY THE ANSWER, NOT BY THE QUESTION. A device that already said yes is marked
- * before it is read — that yes was the person's decision. One that has to be asked is marked only
- * when the ask comes back decided; `unanswered` leaves it as it was, to be asked again.
+ * WHEN THE ONCE IS SPENT. A device that already said yes is marked before it is read — that yes
+ * was the person's decision. One that has to be asked is marked BEFORE the question in a browser
+ * tab, where a prompt closed with the tab, or ignored for ever, has still been the once; and
+ * AFTER the answer in the installed app, where `unanswered` leaves the device to be asked again.
  *
  * ONLY THE ONE ASK MAY SHOW THE PERSON ANYTHING. Every other read tells the door so, and a shell
  * whose permission was taken back since it was looked at answers without a dialog.
@@ -373,7 +383,11 @@ export async function offerDevicePlace(
     devicePlaceMove({ permission: await doors.permission(), ...facts() });
   if (move === "spent") doors.markAsked();
   if (move !== "read" && move !== "follow" && move !== "ask") return move;
-  if (move === "ask" ? !doors.canMark() : !doors.markAsked()) return "nothing";
+  // Only an ask on a surface that can say "unanswered" waits for the answer before it is the once.
+  const isSpentByTheAnswer = move === "ask" && doors.tellsWhenUnanswered();
+  if (isSpentByTheAnswer ? !doors.canMark() : !doors.markAsked()) {
+    return "nothing";
+  }
   // Noted before the device is read: one that does not answer is tried again in an hour, not at
   // every look.
   if (move !== "ask") doors.markRead();
@@ -383,13 +397,13 @@ export async function offerDevicePlace(
   } catch {
     return "unread";
   }
-  if (move === "ask") {
+  if (isSpentByTheAnswer) {
     if (reading.coordinates === null && reading.refusal === "unanswered") {
       return "unanswered";
     }
     doors.markAsked();
-    doors.markRead();
   }
+  if (move === "ask") doors.markRead();
   if (reading.coordinates === null) return "unread";
   if (
     reading.accuracy === null ||
@@ -458,22 +472,31 @@ function forget(key: string): void {
 }
 
 /**
- * Save from 내 정보 with coordinates the person just took from this device's button — which is how
- * a 지우기 made here is taken back, and the device follows again from then on.
+ * The button on 내 정보: the person chooses this device as where they are. The device is read —
+ * with the system's question if it has to be asked, and however vague the fix, since they are
+ * looking at the answer — and saved at once, in one request that also takes the words away.
  *
- * WHEN THE SAVE SUCCEEDS, AND NOT AT THE PRESS. The press only shows where the device is; it used
- * to lift the mark as well, so somebody who pressed, looked, and left without saving had their
- * cleared place read and saved by itself at the next open (review of pull request 94). Giving the
- * place again is saving it.
+ * ONE PRESS, BECAUSE THE BUTTON SAYS "USE". It used to read the device and wait for a second press
+ * of 저장 — and with a place in words on the account that would have changed nothing either, since
+ * what a person said outranks where a device is. The owner pressed it, allowed their device, saw
+ * the box still holding the place typed before with two numbers under it, pressed seven more
+ * times, and asked whether the place in the box was the server's location (2026-10-06). Choosing
+ * the device is choosing it over the words: `place: null` goes with the coordinates, which the
+ * door reads as an answer about both.
+ *
+ * AND IT IS HOW A 지우기 MADE HERE IS TAKEN BACK — when the save succeeds, not at the press: a
+ * read that is refused, or a save the server does not take, leaves everything as it was and
+ * rejects with the surface's words for why.
  */
-export async function savePickedPlace(
-  answer: { place: string | null; coordinates: Coordinates },
+export async function chooseThisDevice(
   queryClient: QueryClient,
 ): Promise<Whereabouts> {
-  const held = await savePlace(answer, queryClient);
+  const coordinates = await readDeviceCoordinates();
+  const held = await savePlace({ place: null, coordinates }, queryClient);
   forget(DEVICE_PLACE_CLEARED_KEY);
-  // They pressed and the device answered: that was their decision about this device.
+  // They pressed and the device answered: the once is spent, and it has just been read.
   markAsked();
+  markRead();
   return held;
 }
 
@@ -553,6 +576,7 @@ export function useDevicePlace(): void {
         canAsk: canAskDeviceLocation,
         held: () => heldIn(queryClient),
         mark: deviceMark,
+        tellsWhenUnanswered: inShell,
         canMark,
         markAsked,
         isRecent: wasReadWithinTheHour,

@@ -7,6 +7,7 @@ import { createShopRoutes, type ShopStore } from "./account/shop";
 import {
   createWhereaboutsRoutes,
   type WhereaboutsStore,
+  withName,
 } from "./account/whereabouts";
 import { createDayRoutes, type DayReader } from "./agents/day";
 import { createMadeRoutes, type MadeReader } from "./agents/made";
@@ -808,7 +809,7 @@ export function createApp({
         ...(person
           ? { persona: person.persona, personaFollowUp: person.followedUp }
           : {}),
-        ...(where ? { whereabouts: where } : {}),
+        ...(where ? { whereabouts: withName(where) } : {}),
       },
       deployment: { ...(await capabilities()), ...trial },
       ...(consent

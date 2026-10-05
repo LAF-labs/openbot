@@ -2637,7 +2637,7 @@ export const ko: Record<string, string> = {
   // The weather card (`weather-card.tsx`). The source's wording is 기상청's own: 출처: 기상청.
   "Source: {names}": "출처: {names}",
   "Weather for {place}": "{place} 날씨",
-  "{place} · your place isn't known yet": "{place} · 위치를 아직 몰라요",
+  "your place isn't known yet": "위치를 아직 몰라요",
   "Latitude {latitude}, longitude {longitude}":
     "위도 {latitude}, 경도 {longitude}",
   Weather: "날씨",
@@ -2666,12 +2666,17 @@ export const ko: Record<string, string> = {
   "What kind of business this is, where you work every day, and where the shop is. Your Bot reads all of it before it starts. Only the location can also be saved from a conversation.":
     "내가 누구인지, 가게가 있다면 어떤 가게인지, 매일 어디를 쓰는지, 어디에 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 위치만 대화에서도 저장될 수 있어요.",
   "Shop location": "위치",
-  "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, it goes by Seoul, and a place you tell your Bot is yours is saved here.":
-    "가게나 주로 지내는 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 서울을 기준으로 하고, 봇에게 내가 있는 곳을 말하면 여기에 저장돼요.",
+  "When your Bot looks up the weather or somewhere nearby, it goes by the place written here.":
+    "봇이 날씨나 가까운 곳을 찾을 때 여기 적은 곳을 기준으로 해요.",
+  "When your Bot looks up the weather or somewhere nearby, it goes by this device's location.":
+    "봇이 날씨나 가까운 곳을 찾을 때 이 기기 위치를 기준으로 해요.",
+  "When your Bot looks up the weather or somewhere nearby, it goes by Seoul for now.":
+    "봇이 날씨나 가까운 곳을 찾을 때 지금은 서울을 기준으로 해요.",
   "City and district": "시·구",
   "e.g. Seoul Gangnam-gu": "예: 서울 강남구",
-  "This device's location, around {latitude}, {longitude}":
-    "이 기기 위치: 위도 {latitude}, 경도 {longitude} 부근",
+  // The name is a forecast cell's, so 부근 — once: a name that already ends in it is drawn as it is.
+  "This device's location: around {name}": "이 기기 위치: {name} 부근",
+  "This device's location: {name}": "이 기기 위치: {name}",
   "Use this device's location": "이 기기 위치 쓰기",
   "Finding this device…": "이 기기 위치 찾는 중…",
   "Clear the location": "위치 지우기",
