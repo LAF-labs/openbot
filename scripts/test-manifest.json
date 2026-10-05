@@ -552,6 +552,7 @@
   "tests/dockerfiles.test.ts",
   "tests/eval-browse.test.ts",
   "tests/eval-calendar.test.ts",
+  "tests/eval-connect.test.ts",
   "tests/eval-deferral.test.ts",
   "tests/eval-feed.test.ts",
   "tests/eval-first-move.test.ts",

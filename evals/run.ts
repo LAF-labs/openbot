@@ -30,6 +30,7 @@ import {
 } from "../agent-bot/src/provider";
 import { resolveTimeZone } from "../shared/prompt";
 import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
+import { openAccountsIn } from "../shared/tools/gallery";
 import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
@@ -198,6 +199,17 @@ async function runOnce(
           scenario.who,
           // What the middleware knows from the run's tools, and the place line turns on.
           toolsOf(arm?.tools ?? scenario.tools).includes(WEATHER_TOOL_NAME),
+          // The names behind the bridge, drawn in the context layer for a scenario that asks —
+          // and with them the accounts still open to connect, off the card a turn wrote them on.
+          scenario.listed ? toolsOf(arm?.tools ?? scenario.tools) : undefined,
+          scenario.listed
+            ? openAccountsIn(
+                (arm?.tools ?? scenario.tools) as {
+                  name: string;
+                  parameters?: unknown;
+                }[],
+              )
+            : undefined,
         ),
     ...scenario.messages,
   ];
@@ -276,6 +288,12 @@ async function runOnce(
      */
     const answered = resultsOf(events);
     if (!calls.some((call) => !answered.has(call.id))) break;
+    // A question to the person is where the product's turn waits, and where this run ends.
+    if (
+      calls.some((call) => !answered.has(call.id) && scenario.waitsOn?.(call))
+    ) {
+      break;
+    }
 
     /*
      * The run ended on tool calls — continue the client loop with what the client files: each
@@ -466,6 +484,12 @@ if (process.env.EVAL_DEFERRAL !== "0") {
   );
   for (const scenario of SCENARIOS) {
     if (scenario.measureOnly) continue;
+    /*
+     * A scenario that is ABOUT its own list — what is and is not connected, which cards a window
+     * declared — is another scenario under the product's whole schema: everything connected and
+     * no card, where "the card for a calendar nobody connected" has nothing to be about.
+     */
+    if (scenario.listed) continue;
     const withoutBridge = await measureArm(scenario, false);
     const withBridge = await measureArm(scenario, true);
     armRows.push({ id: scenario.id, withoutBridge, withBridge });

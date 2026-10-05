@@ -23,6 +23,7 @@
  * the owner's own 거부. A candidate that does any of those fails here.
  */
 
+import { exposeTools } from "../agent-bot/src/deferral";
 import { snapshotForModel } from "../server/src/computer/snapshot-lines";
 import { PUBLIC_DATA_KEY } from "../server/src/plugins/public-data-rest";
 import { toolNameFor } from "../server/src/plugins/store";
@@ -54,6 +55,24 @@ import { FEED_POST } from "../shared/tools/feed-post";
 import { FILE_CARD, GALLERY_CONFIRMATIONS } from "../shared/tools/gallery";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
 import { SKILL_VIEW } from "../shared/tools/skills";
+import {
+  ACCOUNTS,
+  accountsWith,
+  answeredAtOnce,
+  asksThePerson,
+  claimsNothingThere,
+  DEADLINE_LOOKUP,
+  everythingConnected,
+  judgeCardOffered,
+  judgeNoCard,
+  judgeSaysItCouldNot,
+  nothingConnected,
+  nothingToRead,
+  saysItCouldNot,
+  supportNotices,
+  TALK_CALENDAR,
+  withTheConnectCard,
+} from "./connect";
 import { REALISTIC_TOOLSET } from "./deferral";
 import { FEED_EVAL_INSTRUCTION, feedBackend, judgeFeedRun } from "./feed";
 import { longPage } from "./fixtures";
@@ -206,6 +225,24 @@ export type Scenario = {
   notepad?: readonly RoutineNote[];
   /** Somebody other than the pack's shop owner — a student, for the persona scenarios. */
   who?: EvalWho;
+  /**
+   * The context layer names what stands behind the bridge, as production's does for every run
+   * (`deferredToolsText`, `shared/tools/bridge.ts`: "… 다리 뒤에 있는 것은 아래가 전부다 — 여기 없는
+   * 일을 하려고 tool_search 하지 말고 …", then the names by family).
+   *
+   * Absent is the pack as it has always run: no scenario's Bot was ever told those names, which
+   * went unnoticed until a scenario turned on whether a Bot looks behind the bridge at all
+   * (`evals/connect.ts`, 2026-10-05). Only the scenarios that say so carry the paragraph — putting
+   * it in front of every scenario changes what every recorded verdict was about.
+   */
+  listed?: true;
+  /**
+   * A call the product's turn WAITS on a person for — a card that asks. The run is over when one
+   * is raised: nobody is there to answer it, and what is measured is how long and how many
+   * requests it took to get the question in front of the person. Absent, every call is answered
+   * by a stub and the loop goes on.
+   */
+  waitsOn?: (call: ObservedCall) => boolean;
 };
 
 const user = (content: string) => ({
@@ -800,6 +837,7 @@ export const SCENARIOS: Scenario[] = [
   ...nearbyNeedsWhereThePersonIs(),
   ...firstMoveThreads(),
   ...firstMovesBehindTheBridge(),
+  ...aServiceNobodyConnected(),
   morningBriefing("monday"),
   morningBriefing("tuesday"),
   morningBriefing("monday", "nowhere"),
@@ -2807,6 +2845,478 @@ function firstMovesBehindTheBridge(): Scenario[] {
           answered(turn),
           korean(turn),
         ]),
+    },
+  ];
+}
+
+/**
+ * WHAT IS ASKED NEEDS A SERVICE THE PERSON HAS NOT CONNECTED (2026-10-05, `./connect.ts`).
+ *
+ * Measured on the local stack: "오늘 일정 뭐 있어?" with no calendar connected was two lookups
+ * through the bridge and then prose saying no calendar is connected — and no connect card, though
+ * the Bot holds one. Each scenario is a chat turn as a window hands it over, the connect card with
+ * this person's accounts written on it as a turn writes them, and the context layer naming what
+ * stands behind the bridge (`listed`):
+ *
+ *   `…-not-connected-offers-the-card` ×3   the calendar, the mail, a sheet. Held to the card for
+ *                            that service, after at most one lookup for it and two requests.
+ *                            The run ends at the card, where the product's turn waits for the
+ *                            person (`waitsOn`), so their seconds are the seconds to the card.
+ *   `calendar-connected-…`, `another-calendar-…`   the same question with a calendar connected —
+ *                            Google's, or 톡캘린더 and not Google's: the tool, and no card.
+ *   NO CARD BELONGS          a greeting, the weather, a delivery's schedule, a routine's schedule,
+ *                            a 지원사업's deadline (asked plainly, and from a lookup that says
+ *                            일정), 네이버's mail, 슬랙, a share price, a balance sheet. The words a
+ *                            table of them once took for a service; the model is asked instead.
+ *   `connected-with-no-tools-…`   카카오 on and its toolbox empty: said as that, in one go — the
+ *                            round that looped.
+ *   `declined-then-asked-again`   다음에 was pressed, and the same service is asked for again: one
+ *                            sentence, and no card.
+ *   `routine-…`              nobody is there to press a card, and a routine is handed none: it says
+ *                            what it could not do, and never that there is nothing.
+ */
+function aServiceNobodyConnected(): Scenario[] {
+  const zone = "Asia/Seoul";
+  const person = { timeZone: zone, locale: "ko-KR" };
+  const today = zonedParts(EVAL_NOW, zone).date;
+  // What a window declares beside the product's schema: `skill_view`, and the cards.
+  const everything = [...REALISTIC_TOOLSET, SKILL_VIEW];
+  const nothing = nothingConnected(
+    everything,
+    withTheConnectCard(screenCards()),
+  );
+  /*
+   * FOUR ARE HELD TO, THE REST ARE COUNTED (`docs/laf/eval-pack.md`, "A service that is not
+   * connected"). The card for the calendar, the mail and a sheet, and no card where the calendar is
+   * connected: a candidate that is not led to the card by a lookup's answer fails here, and so does
+   * a change that stops the answer leading there. The others are run by name.
+   */
+  const held = {
+    dimension: "tool-calls" as const,
+    person,
+    listed: true as const,
+    stub: nothingToRead,
+    // Where the product's turn waits for the person, the run ends: nobody is there to answer.
+    waitsOn: asksThePerson,
+  };
+  const base = { ...held, measureOnly: true as const };
+  /* The words a lookup for each thing is written in: a second lookup with them is the repeat. */
+  const CALENDAR = /캘린더|달력|일정|스케[줄쥴]|calendar|schedule|event/i;
+  const MAIL = /메일|편지|mail|inbox/i;
+  const SHEET = /시트|sheet/i;
+  /** The one condition every scenario here that wants no card shares: none was raised. */
+  const raisedNoCard = (turn: Turn): [string, boolean] => {
+    const first = judgeNoCard(turn)[0];
+    return first ?? ["연결 카드를 띄움", true];
+  };
+  /**
+   * What is left where nothing here can be connected for it: a sentence that owns up, or the Bot's
+   * browser handed over at the site's own sign-in wall. An empty approval card is neither.
+   */
+  const ownedUpOrHandedOver = (turn: Turn): [string, boolean] => [
+    "하지 못했다는 말도, 로그인을 넘기는 것도 없음",
+    saysItCouldNot(lastAnswerOf(turn.events)) ||
+      called(turn, "computer_request_help") ||
+      called(turn, "computer_request_secret"),
+  ];
+  const offers = (
+    id: string,
+    service: string,
+    about: RegExp,
+    asked: string,
+  ): Scenario => ({
+    ...held,
+    id,
+    messages: [user(asked)],
+    tools: nothing,
+    check: (turn) => verdict(judgeCardOffered(turn, service, about)),
+  });
+  /**
+   * No connect card: for what needs nothing connected. Held to that alone — what else the Bot
+   * looks up or asks on the way (which shop's delivery?) is its own business here.
+   */
+  const noCard = (
+    id: string,
+    asked: string,
+    more: Partial<Scenario> = {},
+    also: (turn: Turn) => [string, boolean][] = () => [],
+  ): Scenario => ({
+    ...base,
+    id,
+    messages: [user(asked)],
+    tools: nothing,
+    maxTurns: 6,
+    ...more,
+    check: (turn) => verdict([raisedNoCard(turn), ...also(turn)]),
+  });
+  /*
+   * A TURN THAT HAS ALREADY LOOKED, OR ALREADY ASKED: calls and their answers in the history, as
+   * `agent-bot` and the turn file them, and the run goes on from there. For what can only be
+   * measured from a particular place — a lookup the model, left to itself, may never write; a card
+   * the person already put off.
+   */
+  const filed = (
+    id: string,
+    name: string,
+    args: unknown,
+    content: string,
+  ): unknown[] => [
+    {
+      id: `a_${id}`,
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: `call_${id}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
+      ],
+    },
+    { id: `t_${id}`, role: "tool", toolCallId: `call_${id}`, content },
+  ];
+  const lookedUp = (query: string, tools: readonly WireTool[]) => {
+    const { deferred, offered } = exposeTools(tools, true);
+    return filed(
+      "lookup",
+      "tool_search",
+      { query },
+      searchResultText(deferred, query, offered),
+    );
+  };
+  const forecast = weatherBackend({ at: EVAL_NOW, saved: GANGNAM });
+  const kakaoOn = accountsWith(["kakao-playmcp"]);
+  const kakaoEmpty = nothingConnected(
+    everything,
+    withTheConnectCard(screenCards(), kakaoOn),
+  );
+  return [
+    offers(
+      "calendar-not-connected-offers-the-card",
+      "google-calendar",
+      CALENDAR,
+      "오늘 일정 뭐 있어?",
+    ),
+    offers(
+      "mail-not-connected-offers-the-card",
+      "gmail",
+      MAIL,
+      "새 메일 왔어?",
+    ),
+    offers(
+      "sheet-not-connected-offers-the-card",
+      "google-sheets",
+      SHEET,
+      "이번 주 매출이야. 월 120만, 화 95만, 수 130만, 목 88만, 금 150만. 이거 구글 시트에 정리해줘",
+    ),
+    {
+      ...held,
+      id: "calendar-connected-is-read-not-offered",
+      messages: [user("오늘 일정 뭐 있어?")],
+      tools: everythingConnected(
+        everything,
+        withTheConnectCard(screenCards(), accountsWith(ACCOUNTS)),
+      ),
+      maxTurns: 6,
+      stub: (call) =>
+        call.name === CALENDAR_TOOL_NAME
+          ? [
+              `[본 기간: ${today} 00:00 ~ ${dayAfter(today, 1)} 00:00 Asia/Seoul(KST) · 일정 2건]`,
+              `- ${today} 21:00 ~ ${today} 21:30 · 치과 정기검진 · 장소: 연세미소치과 · id: ev_today_1`,
+              `- ${today} 22:30 ~ ${today} 23:00 · 주간 매출 정리 · id: ev_today_2`,
+            ].join("\n")
+          : nothingToRead(call),
+      check: (turn) =>
+        verdict([
+          ...judgeNoCard(turn, CALENDAR),
+          ["캘린더를 부르지 않음", called(turn, CALENDAR_TOOL_NAME)],
+          [
+            "오늘의 두 일정을 말하지 않음",
+            turn.text.includes("치과") && turn.text.includes("매출"),
+          ],
+        ]),
+    },
+    {
+      ...base,
+      /*
+       * A CALENDAR THAT IS NOT GOOGLE'S IS CONNECTED. 톡캘린더 is the one this person has; Google's
+       * is among what could be connected. The lookup that finds the tool they have says nothing
+       * of connecting — the table of words handed Google Calendar's card over ahead of it.
+       */
+      id: "another-calendar-connected-is-used",
+      messages: [user("오늘 일정 뭐 있어?")],
+      tools: [
+        ...nothingConnected(
+          everything,
+          withTheConnectCard(screenCards(), kakaoOn),
+        ),
+        TALK_CALENDAR,
+      ],
+      maxTurns: 6,
+      stub: (call) =>
+        call.name === TALK_CALENDAR.name
+          ? JSON.stringify({
+              events: [
+                {
+                  title: "치과 정기검진",
+                  start: `${today} 21:00`,
+                  end: `${today} 21:30`,
+                  place: "연세미소치과",
+                },
+              ],
+            })
+          : nothingToRead(call),
+      check: (turn) =>
+        verdict([
+          ...judgeNoCard(turn, CALENDAR),
+          [
+            "연결된 캘린더(톡캘린더)를 부르지 않음",
+            called(turn, TALK_CALENDAR.name),
+          ],
+          ["오늘의 일정을 말하지 않음", turn.text.includes("치과")],
+        ]),
+    },
+    noCard("greeting-raises-no-card", "안녕", { maxTurns: 3 }, (turn) => [
+      ["인사에 도구를 찾음", !called(turn, "tool_search")],
+    ]),
+    noCard(
+      "weather-raises-no-card",
+      "오늘 날씨 어때?",
+      {
+        person: { ...person, place: "서울 강남구" },
+        stub: (call) => forecast(call) ?? nothingToRead(call),
+      },
+      (turn) => [
+        ["날씨 도구를 부르지 않음", called(turn, WEATHER_TOOL_NAME)],
+        ["목록에 있는 날씨 도구를 찾음", !called(turn, "tool_search")],
+      ],
+    ),
+    /*
+     * THE WORDS A TABLE TOOK FOR A SERVICE (review, 2026-10-05): 일정 is a delivery's and a
+     * routine's and a deadline's as well as a calendar's, 메일 is 네이버's as well as Google's,
+     * 카카오 is a share, a sheet is a balance sheet. Nothing here needs an account connected.
+     */
+    noCard("delivery-schedule-raises-no-card", "배송 일정 조회해줘"),
+    noCard("routine-schedule-raises-no-card", "루틴 스케줄 바꿔줘"),
+    noCard(
+      "support-deadline-raises-no-card",
+      "지원사업 마감 일정 알려줘",
+      {
+        stub: (call) =>
+          call.name === SUPPORT_SEARCH
+            ? supportNotices(today)
+            : nothingToRead(call),
+      },
+      (turn) => [["기업마당을 부르지 않음", called(turn, SUPPORT_SEARCH)]],
+    ),
+    noCard(
+      "share-price-raises-no-card",
+      "카카오 주가 알려줘",
+      {
+        stub: (call) =>
+          call.name === WEB_SEARCH_TOOL_NAME
+            ? JSON.stringify({
+                source: "웹 검색",
+                queries: ["카카오 주가"],
+                shown: 1,
+                results: [
+                  {
+                    title: "카카오(035720) 주가 - 네이버 증권",
+                    url: "https://finance.naver.com/item/main.naver?code=035720",
+                    date: today,
+                    snippet: "카카오 현재가 41,250원, 전일 대비 350원 상승.",
+                  },
+                ],
+              })
+            : nothingToRead(call),
+      },
+      (turn) => [
+        ["찾은 주가(41,250)를 말하지 않음", saysNumber(turn.text, 41250)],
+      ],
+    ),
+    noCard("balance-sheet-raises-no-card", "balance sheet 설명해줘", {
+      maxTurns: 3,
+    }),
+    {
+      ...base,
+      /*
+       * 네이버's mail is nothing this deployment connects: 지메일 in the list is not an answer to
+       * it. What is left is the Bot's browser, which reaches a sign-in wall — so the turn ends in a
+       * sentence that owns up, or in the browser handed over for the person to sign in.
+       */
+      id: "another-mail-is-not-offered-gmail",
+      messages: [user("네이버 메일 확인해줘")],
+      tools: nothing,
+      maxTurns: 10,
+      check: (turn) => verdict([raisedNoCard(turn), ownedUpOrHandedOver(turn)]),
+    },
+    {
+      ...base,
+      // A service no deployment has a switch for: a card here could only be one for something else.
+      id: "service-nobody-offers-says-so",
+      messages: [user("슬랙 공지 채널에 '내일은 쉽니다'라고 올려줘")],
+      tools: nothing,
+      maxTurns: 6,
+      check: (turn) => verdict([raisedNoCard(turn), ownedUpOrHandedOver(turn)]),
+    },
+    {
+      ...base,
+      /*
+       * 일정 IS ALSO A DEADLINE, AND THIS LOOKUP SAYS IT. Its answer is 기업마당's search and, since
+       * nothing of a connected service was found, what could be connected and the card. Which was
+       * meant is the Bot's to know: the search, and no card.
+       *
+       * In the history because the model does not write it: left to itself with this message it
+       * asked for the search by name in five runs of six (2026-10-05) — the context layer names
+       * 기업마당's tools. A lookup that does say 일정 is what a Bot with a longer history, or another
+       * model, may write.
+       */
+      id: "deadline-is-not-the-calendar",
+      messages: [
+        user("이번 달에 마감하는 소상공인 지원사업 신청 일정 알려줘"),
+        ...lookedUp(DEADLINE_LOOKUP, nothing),
+      ],
+      tools: nothing,
+      maxTurns: 6,
+      stub: (call) =>
+        call.name === SUPPORT_SEARCH
+          ? supportNotices(today)
+          : nothingToRead(call),
+      check: (turn) =>
+        verdict([
+          ...judgeNoCard(turn),
+          ["기업마당을 부르지 않음", called(turn, SUPPORT_SEARCH)],
+          [
+            "찾은 공고(스마트상점)를 말하지 않음",
+            turn.text.includes("스마트상점"),
+          ],
+        ]),
+    },
+    {
+      ...base,
+      /*
+       * ON, AND NOTHING TO WORK THROUGH — the round that looped (review, 2026-10-05). 카카오's
+       * switch is on and its toolbox is empty. Told "not connected" by a lookup, the Bot raised the
+       * card; told "already on, look its tools up" by the card, it looked again; thirty steps. Now
+       * the lookup says it is on with nothing usable, and a card raised all the same is answered
+       * with that fact (`answeredAtOnce`, as the server answers it).
+       */
+      id: "connected-with-no-tools-does-not-loop",
+      messages: [user("카톡 나에게 보내기로 '우유 사기' 메모 남겨줘")],
+      tools: kakaoEmpty,
+      maxTurns: 8,
+      stub: (call) =>
+        answeredAtOnce(kakaoOn, kakaoEmpty)(call) ?? nothingToRead(call),
+      waitsOn: (call) =>
+        asksThePerson(call) &&
+        answeredAtOnce(kakaoOn, kakaoEmpty)(call) === undefined,
+      check: (turn) => {
+        const said = lastAnswerOf(turn.events);
+        const cards = turn.calls.filter(
+          (call) => call.name === "showConnection",
+        );
+        const lookups = turn.calls.filter(
+          (call) => call.name === "tool_search",
+        );
+        return verdict([
+          [`연결 카드를 ${cards.length}번 띄움 (한 번까지)`, cards.length <= 1],
+          [`도구를 ${lookups.length}번 찾음 (두 번까지)`, lookups.length <= 2],
+          [
+            "카카오 말고 다른 것의 카드를 띄움",
+            cards.every((call) =>
+              JSON.stringify(call.arguments ?? {}).includes("kakao-playmcp"),
+            ),
+          ],
+          ["하지 못했다는 말이 없음", saysItCouldNot(said)],
+          [
+            "연결돼 있는데 연결하라고 함",
+            !/연결(을|이)?\s?(해\s?주|하시면|하면|해야|이\s?필요)/.test(said),
+          ],
+          [
+            "연결돼 있는데 연결돼 있지 않다고 함",
+            !/연결(이|은|도)?\s?(없|안\s?돼|안\s?되|(돼|되어)\s?있지\s?않)/.test(
+              said,
+            ),
+          ],
+        ]);
+      },
+    },
+    {
+      ...base,
+      /*
+       * 다음에, THEN ASKED AGAIN. The person put the calendar's card off, and asks for the calendar
+       * once more in the same conversation. One rule (`laf:connection_off`, and the lookup's own
+       * instruction): no card unless they ask to connect — one sentence that it needs connecting.
+       */
+      id: "declined-then-asked-again",
+      messages: [
+        user("오늘 일정 뭐 있어?"),
+        ...lookedUp("캘린더 일정 확인", nothing),
+        ...filed(
+          "card",
+          "showConnection",
+          { services: ["google-calendar"], reason: "오늘 일정을 보려면" },
+          JSON.stringify({
+            code: "laf:connection_off",
+            connected: [],
+            notConnected: ["google-calendar"],
+            reason: toolResultText("laf:connection_off"),
+          }),
+        ),
+        {
+          id: "a_after",
+          role: "assistant",
+          content:
+            "알겠어요. 캘린더가 연결돼 있지 않아서 오늘 일정은 볼 수 없어요.",
+        },
+        user("그럼 내일 일정은 어때?"),
+      ],
+      tools: nothing,
+      maxTurns: 6,
+      check: (turn) => {
+        const said = lastAnswerOf(turn.events);
+        return verdict([
+          ...judgeNoCard(turn, CALENDAR),
+          ["연결이 필요하다는 말이 없음", /연결/.test(said)],
+          ["보지 못한 것을 없다고 말함", !claimsNothingThere(said)],
+        ]);
+      },
+    },
+    {
+      ...base,
+      id: "routine-calendar-not-connected-says-so",
+      mode: "routine",
+      messages: [
+        user(
+          withReminder(
+            "오늘 내 일정을 확인해서 알려줘.",
+            reminderBlock([
+              routineRunLine({
+                startedAt: new Date(
+                  scheduledAt(EVAL_NOW, "07:30", zone).getTime() + 60_000,
+                ),
+                scheduledFor: scheduledAt(EVAL_NOW, "07:30", zone),
+                timeZone: zone,
+              }),
+            ]),
+          ),
+        ),
+      ],
+      // What a routine is handed with nothing connected: no card of any kind, and no 목표 tools.
+      tools: [
+        ...UNATTENDED_COMPUTER_TOOLS,
+        ...nothingConnected(REALISTIC_TOOLSET, []).filter(
+          (tool) =>
+            tool.name.startsWith(toolNameFor(`${PUBLIC_DATA_KEY}/`)) ||
+            tool.name === WEATHER_TOOL_NAME ||
+            tool.name === WEB_SEARCH_TOOL_NAME,
+        ),
+        SKILL_VIEW,
+        ROUTINE_NOTE,
+      ],
+      maxTurns: 6,
+      check: (turn) =>
+        verdict(judgeSaysItCouldNot(turn, lastAnswerOf(turn.events), CALENDAR)),
     },
   ];
 }
