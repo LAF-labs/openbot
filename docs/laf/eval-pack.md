@@ -1608,44 +1608,71 @@ lists, never a word of the message:
 
 | Column | From → to |
 |---|---|
-| `first_word_ms` | The engine handed the message (`turns/engine.ts`, `send`) → the first text delta with something in it going out to the windows. Null: the turn said nothing. |
-| `first_sign_ms` | The same start → the first thing a window can draw: a step's line, a first move's included, or a word. |
+| `first_sign_ms` | The engine handed the message (`turns/engine.ts`, `send`) → the first thing a window can draw: a step's line, a first move's included, or a word. |
+| `first_word_ms` | The same start → the first text delta with something in it going out to the windows. Null: the turn said nothing. **The person's own time is in it**: a turn that asked them something before its first word — an approval, a take-over, a value to type, a card — waited for their answer, up to ten minutes. |
 | `first_token_ms` | As it was: the Bot's service started → the model's first output, a tool call included. |
-| `first_move_asked`, `first_move_verdict`, `first_move_kind` | The kinds the decisions model was asked about; `moved`, `no_answer`, `below_bar` or `ambiguous`; the kind whose call was made. All null when nobody was asked — the same decisions the two rows of the trail are. |
-| `first_move_decision_ms`, `first_move_call_ms` | How long the turn waited to learn whether it opens with a move; the move's call, out and back. |
+| `first_move_asked`, `first_move_verdict`, `first_move_kind` | The kinds the decisions model was asked about; `moved`, `no_answer`, `below_bar` or `ambiguous`; the kind whose call was made. All null when nobody was asked — the decisions the trail has a row for, by the one list both go by (`shared/first-move.ts`). |
+| `first_move_decision_ms` | How long the turn waited to learn whether it opens with a move. |
+| `first_move_call_ms` | The move's call, from leaving to whatever came back: an answer, a refusal, a throw. Null on a `moved` only when the person stopped the turn while the decision was out, so the call never left — `moved` all the same, as the trail's `turn.first_move` row, written with the decision, says. |
 
-`queued_ms` and `total_ms` of a conversation turn start at that same moment from this change on —
-they began after the message had been written, a few milliseconds later — so with no move, and a
-first output that is something to draw, `first_sign_ms` is `queued_ms + first_token_ms` exactly. A
-move's own call is not in `tool_calls`, which stays the calls the model made.
+The two firsts start a little before `queued_ms` and `total_ms` do. Those — and the fleet's
+`firstAnswer`, which is `queued_ms + first_token_ms` — start where they did before this change,
+when the turn's run begins, after the message is written: a series compared from one release to
+the next does not move because a column was added beside it. So `first_sign_ms` is not
+`queued_ms + first_token_ms`, even with no move. A move's own call is not in `tool_calls`, which
+stays the calls the model made.
 
-The newest turns, and a day's median and ninetieth percentile by nearest rank — a wait somebody
-had, never a figure between two. It is the rule `summariseTurns` reads the report's cells by, and
-`turn-wait.integration.test.ts` holds the two to each other:
+A day, by hand. The first sign is read over every conversation turn that drew one. The first word
+is read as the Bot's speed, so it leaves out a turn in which a question was asked about an action
+(`approvals_asked`) — unless that turn's first word was the first thing drawn: a question is asked
+by a step, and no step came before that word. Nearest rank, a wait somebody had and never a figure
+between two; it is the rule `summariseTurns` reads the report's cells by, and
+`turn-wait.integration.test.ts` runs these statements and holds the two to each other:
 
 ```sql
 select started_at, status, queued_ms, first_token_ms, first_sign_ms, first_word_ms,
-       first_move_asked, first_move_verdict, first_move_kind,
+       approvals_asked, first_move_asked, first_move_verdict, first_move_kind,
        first_move_decision_ms, first_move_call_ms, tool_calls, total_ms
 from laf_thread_runs
 where origin = 'chat' and turn_id = run_id
 order by started_at desc
 limit 20;
 
-select count(*) as turns, count(first_word_ms) as said,
-       percentile_disc(0.5) within group (order by first_word_ms) as p50_ms,
-       percentile_disc(0.9) within group (order by first_word_ms) as p90_ms
+select count(*) as turns,
+       percentile_disc(0.5) within group (order by first_sign_ms) as sign_p50_ms,
+       count(first_word_ms)
+         filter (where approvals_asked = 0 or first_sign_ms = first_word_ms) as said,
+       percentile_disc(0.5) within group (order by first_word_ms)
+         filter (where approvals_asked = 0 or first_sign_ms = first_word_ms) as word_p50_ms,
+       percentile_disc(0.9) within group (order by first_word_ms)
+         filter (where approvals_asked = 0 or first_sign_ms = first_word_ms) as word_p90_ms
 from laf_thread_runs
 where origin = 'chat' and turn_id = run_id
   and started_at >= now() - interval '1 day';
+
+-- What a move costs, per kind: deciding, and the call (not one the person was asked about).
+select first_move_kind as kind, count(*) as moved,
+       percentile_disc(0.5) within group (order by first_move_decision_ms) as decision_p50_ms,
+       percentile_disc(0.5) within group (order by first_move_call_ms)
+         filter (where approvals_asked = 0) as call_p50_ms
+from laf_thread_runs
+where origin = 'chat' and turn_id = run_id and first_move_kind is not null
+  and started_at >= now() - interval '1 day'
+group by 1;
 ```
+
+**What the row cannot tell is still counted.** A take-over, a value to type and a card the Bot
+drew leave no `approval.requested`, so a turn that waited on one of those before its first word is
+in the first-word figures with the person's minutes in it. And a turn asked about an action after
+its first word, but behind an earlier step, is left out with the ones asked before it: that loses
+a turn from the figure and puts no wrong one in.
 
 The fleet's read has the same as counts, in its `turns` section (`GET
 /api/admin/metrics/insights?days=1`): `firstWord`, cells of `[tenths of a second, turns]` that add
-across VMs; `chatTurns`, the turns that could have had one; and `firstMoves`, `kind → [asked,
-moved]` for every kind, zeros included. `bun run eval:from-failures --days 1` prints them as two
-lines. Rows from before this release have none of it, and read as not measured rather than as no
-wait.
+across VMs, with the same turns left out; `chatTurns`, the turns that could have had one; and
+`firstMoves`, `kind → [asked, moved]` for every kind, zeros included. `bun run eval:from-failures
+--days 1` prints them as two lines. Rows from before this release have none of it, and read as not
+measured rather than as no wait.
 
 **The switch.** `FIRST_MOVE` unset is every kind; `off` is none; a comma list (`weather,calendar`)
 keeps only what it names, so one kind can be taken out on a deployment without a release; any other

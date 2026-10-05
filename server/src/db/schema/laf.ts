@@ -294,20 +294,37 @@ export const lafThreadRuns = pgTable(
      * move spent its time inside `queuedMs` unnamed. The seven below are milliseconds and words
      * from two closed lists, checked against them before they are written (`run-ledger.ts`). Null
      * on rows from before they were measured, and on a row whose run measured none of it.
+     *
+     * The first two start when the turn was ACCEPTED — the engine handed the person's message,
+     * before it is written — which is a little before `queuedMs` and `totalMs` start: those were
+     * here first, and their origin was left where it was.
      */
     /** Accepted → the first thing a window could draw: a step's line, a first move's included, or a word. */
     firstSignMs: integer("first_sign_ms"),
-    /** Accepted → the first word of the answer. Null when the run said none. */
+    /**
+     * Accepted → the first word of the answer. Null when the run said none.
+     *
+     * THE PERSON'S OWN TIME IS IN IT. A turn that asked them something before it had said a word —
+     * an approval, a take-over, a value to type, a card — waited for their answer, up to ten
+     * minutes of it, and this is still the time to the word. It is what they sat through, and it
+     * is not how fast the Bot was: a reader after the second leaves such turns out, as far as the
+     * row can tell them (`insights/turns.ts`, `firstWord`).
+     */
     firstWordMs: integer("first_word_ms"),
     /** The kinds of first move the decisions model was asked about (`shared/first-move.ts`). */
     firstMoveAsked: text("first_move_asked").array(),
-    /** What came of asking: `moved`, `no_answer`, `below_bar` or `ambiguous`. */
+    /** What came of asking: `moved`, `no_answer`, `below_bar` or `ambiguous` — the trail's own words. */
     firstMoveVerdict: text("first_move_verdict"),
     /** The kind whose call the server made. Null unless the verdict is `moved`. */
     firstMoveKind: text("first_move_kind"),
     /** How long the turn waited to learn whether it opens with a move. */
     firstMoveDecisionMs: integer("first_move_decision_ms"),
-    /** The move's call, from leaving to coming back. Null when none was made. */
+    /**
+     * The move's call, from leaving to whatever came back — an answer, a refusal, a stop that
+     * landed while it was out, a throw. Null on every other verdict, and on a `moved` whose call
+     * never left because the person stopped the turn while the decision was out: `moved` all the
+     * same, as the trail's `turn.first_move` row, written with the decision, says.
+     */
     firstMoveCallMs: integer("first_move_call_ms"),
   },
   (table) => [

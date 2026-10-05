@@ -207,12 +207,15 @@ export type TurnsInsight = {
    */
   /**
    * `(tenths of a second, how many)`: a conversation turn's message accepted → the first WORD of
-   * its answer going out to the windows, on the run that opened it. Only turns that said one.
+   * its answer going out to the windows, on the run that opened it. Only turns that said one, and
+   * not those that asked their person about an action before it — that wait is the person's, not
+   * the Bot's (`insights/turns.ts` says exactly which, and what the row cannot tell).
    */
   firstWord?: Array<[number, number]>;
   /**
    * Conversation turns opened in the window: what `firstWord` could have had a cell for. The rest
-   * said no word — failed, stopped or still at work — or were written before this was measured.
+   * said no word — failed, stopped or still at work — asked their person something first, or were
+   * written before this was measured.
    */
   chatTurns?: number;
   /**

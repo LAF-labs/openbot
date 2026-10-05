@@ -22,7 +22,10 @@
  */
 import { randomUUID } from "node:crypto";
 import { desc, eq, sql } from "drizzle-orm";
-import { FIRST_MOVE_KINDS } from "../../../shared/first-move";
+import {
+  FIRST_MOVE_KINDS,
+  isFirstMoveEnding,
+} from "../../../shared/first-move";
 import type { Database } from "../db/client";
 import { lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
@@ -32,7 +35,7 @@ import {
   endingOf,
   WITH_PERSON,
 } from "../telemetry/run-ending";
-import { isFirstMoveEnding, type RunMeasure } from "../telemetry/run-meter";
+import type { RunMeasure } from "../telemetry/run-meter";
 
 /**
  * What starts a run, of what the enum column accepts.
