@@ -4,6 +4,7 @@ import {
   GOAL_ENTRY_MAX,
   GOAL_TARGET_MAX,
   GOAL_TITLE_MAX,
+  type GoalView,
   goalWords,
   isCategory,
   isEntryKind,
@@ -25,7 +26,6 @@ import {
   GoalNotFound,
   GoalsFull,
   type GoalStore,
-  type GoalView,
 } from "./store";
 
 /**

@@ -1,8 +1,7 @@
 import type {
-  GoalEntryKind,
-  GoalEntrySource,
-  GoalMeasure,
+  GoalEntryView,
   GoalStatus,
+  GoalView,
   Momentum,
 } from "@shared/goals";
 import { CATEGORIES, type Category } from "@shared/persona";
@@ -19,37 +18,8 @@ import { requestOrRefusal } from "@/lib/refusals";
  * the person's and the Bot's own words from the conversation — the same standing as its answers.
  */
 
-export type Goal = {
-  id: string;
-  agentId: string;
-  category: Category;
-  title: string;
-  target: string;
-  measure: GoalMeasure | null;
-  dueOn: string | null;
-  status: GoalStatus;
-  momentum: Momentum | null;
-  createdAt: string;
-  updatedAt: string;
-  lastEntryAt: string | null;
-  entryCount: number;
-  latestValue: number | null;
-  routines: { id: string; name: string }[];
-};
-
-export type GoalEntry = {
-  id: string;
-  at: string;
-  kind: GoalEntryKind;
-  text: string;
-  value: number | null;
-  momentum: Momentum | null;
-  source: GoalEntrySource;
-  runId: string | null;
-};
-
-export type GoalsAnswer = { goals: Goal[]; active: number };
-export type GoalDetail = { goal: Goal; entries: GoalEntry[] };
+export type GoalsAnswer = { goals: GoalView[]; active: number };
+export type GoalDetail = { goal: GoalView; entries: GoalEntryView[] };
 
 export const goalKeys = {
   all: ["goals"] as const,
@@ -156,7 +126,7 @@ export function goalEditDraft(title: string): string {
 }
 
 /** "720 → 800 점" when a goal watches a number; null when it does not. */
-export function measureLine(goal: Goal): string | null {
+export function measureLine(goal: GoalView): string | null {
   const measure = goal.measure;
   if (!measure || measure.goal === undefined) return null;
   const now = goal.latestValue ?? measure.start;

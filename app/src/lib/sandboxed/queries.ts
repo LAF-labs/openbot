@@ -1,3 +1,4 @@
+import type { PublishedSandboxed, SandboxedRecord } from "@shared/sandboxed";
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { polled } from "@/lib/polling";
@@ -15,37 +16,6 @@ export const PLAYGROUND_REFUSALS: Record<string, string> = {
   "laf:sandboxed_name_invalid":
     "A name is 2 to 40 lower-case letters, numbers and underscores.",
   "laf:component_unknown": "That component is no longer there.",
-};
-
-/** A component authored in the browser, as the playground edits it. */
-export type SandboxedRecord = {
-  name: string;
-  title: string;
-  draftDescription: string;
-  draftHtml: string;
-  draftCss: string;
-  draftJsFunctions: string;
-  draftArgumentSchema: Record<string, unknown>;
-  publishedHtml: string | null;
-  publishedCss: string | null;
-  publishedJsFunctions: string | null;
-  publishedArgumentSchema: Record<string, unknown> | null;
-  sampleArguments: Record<string, unknown>;
-  revision: number;
-  published: boolean;
-  publishedAt: string | null;
-  authoredBy: string | null;
-  hasUnpublishedChanges: boolean;
-};
-
-/** What a Bot may actually draw with. The draft never appears here. */
-export type PublishedSandboxed = {
-  name: string;
-  html: string;
-  css: string;
-  jsFunctions: string;
-  /** What the model fills in. A tool with no parameters is called with no arguments. */
-  argumentSchema: Record<string, unknown>;
 };
 
 export const sandboxedKeys = {

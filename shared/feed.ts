@@ -7,6 +7,49 @@
  */
 
 /**
+ * ON THE WIRE, said once for both sides. The server's reads answer these (`server/src/feed/`) and
+ * the page draws them (`app/src/lib/feed/`); each side used to declare its own copy, field for
+ * field, and a field added to one was a field the other silently did not have.
+ */
+
+/** One page a post cites. */
+export type FeedSource = { title: string; url: string };
+
+export type FeedPost = {
+  id: string;
+  agentId: string;
+  routineId: string | null;
+  topic: string;
+  title: string;
+  body: string;
+  sources: FeedSource[];
+  createdAt: string;
+  seen: boolean;
+  liked: boolean;
+};
+
+export type FeedRoutine = {
+  id: string;
+  agentId: string;
+  name: string;
+  summary: string | null;
+  instruction: string;
+  enabled: boolean;
+  pausedReason: string | null;
+  nextRunAt: string;
+  dailyLocal: string | null;
+  dailyTimeZone: string | null;
+};
+
+export type FeedPage = {
+  posts: FeedPost[];
+  next: string | null;
+  unseen: number;
+  /** The person's 소식 routines — one per Bot — for the page's first card. */
+  routines: FeedRoutine[];
+};
+
+/**
  * A URL as a key: no scheme, no `www.`/`m.`, no trailing slash, no fragment, lower-cased host, and
  * the path decoded — so the address a Bot cites and the one its browser landed on compare equal
  * when they are the same page (the judge `evals/grounded.ts` `pageKey` uses for the same question).

@@ -2,6 +2,7 @@ import {
   OpenGenerativeUIActivityRenderer,
   useFrontendTool,
 } from "@copilotkit/react-core/v2";
+import type { PublishedSandboxed } from "@shared/sandboxed";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import * as z from "zod";
@@ -17,10 +18,7 @@ import {
 } from "@/lib/components/queries";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
-import {
-  type PublishedSandboxed,
-  publishedSandboxedQueryOptions,
-} from "@/lib/sandboxed/queries";
+import { publishedSandboxedQueryOptions } from "@/lib/sandboxed/queries";
 
 /**
  * Browser-authored components use the same component grants as compiled gallery components, but

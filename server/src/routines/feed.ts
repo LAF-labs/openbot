@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
-import { feedUrlKey, urlsIn } from "../../../shared/feed";
+import { type FeedSource, feedUrlKey, urlsIn } from "../../../shared/feed";
 import {
   FEED_REACTIONS_CARRIED,
   feedReactionsText,
@@ -15,7 +15,7 @@ import {
   FEED_TOPIC_MAX,
 } from "../../../shared/tools/feed-post";
 import type { Database } from "../db/client";
-import { type FeedSource, lafFeedPosts } from "../db/schema";
+import { lafFeedPosts } from "../db/schema";
 import type { Executor } from "../runner/thread-store";
 import type { ToolOutcome, UnattendedToolkit } from "../runner/unattended";
 

@@ -1,4 +1,9 @@
-import { feedQuotePart } from "@shared/feed";
+import {
+  type FeedPage,
+  type FeedPost,
+  type FeedRoutine,
+  feedQuotePart,
+} from "@shared/feed";
 import { effectivePersona } from "@shared/persona";
 import { IconPencil } from "@tabler/icons-react";
 import {
@@ -22,9 +27,6 @@ import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
-  type FeedPage,
-  type FeedPost,
-  type FeedRoutine,
   feedKeys,
   feedQueryOptions,
   feedTopics,

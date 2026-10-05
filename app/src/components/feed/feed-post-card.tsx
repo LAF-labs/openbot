@@ -1,3 +1,4 @@
+import type { FeedPost } from "@shared/feed";
 import {
   IconHeart,
   IconHeartFilled,
@@ -6,7 +7,6 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
-import type { FeedPost } from "@/lib/feed/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 

@@ -1,3 +1,4 @@
+import type { FeedPage } from "@shared/feed";
 import type { Persona } from "@shared/persona";
 import { BUSINESS_KINDS, type BusinessKindId } from "@shared/shop/catalogue";
 import {
@@ -16,41 +17,6 @@ import { routineKeys, routineRequest } from "@/lib/routines/queries";
  * module's or the component's, through `t()`. The posts' own words are the Bot's, from the pages its
  * run opened — the same standing as its answers in the conversation.
  */
-
-export type FeedSource = { title: string; url: string };
-
-export type FeedPost = {
-  id: string;
-  agentId: string;
-  routineId: string | null;
-  topic: string;
-  title: string;
-  body: string;
-  sources: FeedSource[];
-  createdAt: string;
-  seen: boolean;
-  liked: boolean;
-};
-
-export type FeedRoutine = {
-  id: string;
-  agentId: string;
-  name: string;
-  summary: string | null;
-  instruction: string;
-  enabled: boolean;
-  pausedReason: string | null;
-  nextRunAt: string;
-  dailyLocal: string | null;
-  dailyTimeZone: string | null;
-};
-
-export type FeedPage = {
-  posts: FeedPost[];
-  next: string | null;
-  unseen: number;
-  routines: FeedRoutine[];
-};
 
 export const feedKeys = {
   all: ["feed"] as const,
