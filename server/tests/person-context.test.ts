@@ -175,19 +175,19 @@ describe("the place a run is told", () => {
       person: { place: "제주시" },
     });
     expect(prompt).not.toContain("제주시");
-    expect(prompt).toContain(
-      "이 사람의 위치(가게나 주로 지내는 곳)는 아직 모른다",
-    );
+    expect(prompt).toContain("이 사람의 위치는 아직 모른다");
     expect(prompt).toContain("remember의 place로 저장");
   });
 
-  test("a routine that has no place says it could not, and does not ask a screen nobody is at", async () => {
+  test("a routine that has no place goes by Seoul and says so, and does not ask a screen nobody is at", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const registered = await loadedFor(endpoint.url, NO_WHEREABOUTS);
     const prompt = await systemMessageOf(endpoint, registered, {
       mode: "routine",
     });
     expect(prompt).toContain("이 사람의 위치를 모른다");
+    // Since 2026-10-05 ("fallback은 서울"): it said it could not look, every morning.
+    expect(prompt).toContain("결과에 서울 기준이라고 적는다");
     expect(prompt).not.toContain("여쭤보고");
   });
 
@@ -201,9 +201,7 @@ describe("the place a run is told", () => {
     );
     const registered = await load({ id: "owner", role: "user" });
     const prompt = await systemMessageOf(endpoint, registered);
-    expect(prompt).toContain(
-      "이 사람의 위치(가게나 주로 지내는 곳)는 아직 모른다",
-    );
+    expect(prompt).toContain("이 사람의 위치는 아직 모른다");
     expect(dateLineOf(prompt)).toContain("Asia/Seoul(KST) 기준");
   });
 });

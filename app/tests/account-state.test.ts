@@ -125,6 +125,17 @@ const DEVICE_SCOPED = [
    * they came from once and removed. Nothing a Bot does reads either.
    */
   "lib/build-reload.ts",
+  /*
+   * That this device has been asked where it is, once (`lib/whereabouts/device-place.ts`,
+   * 2026-10-05).
+   *
+   * A DECISION, and the argument is that it is a fact about the DEVICE and not the account: the
+   * permission prompt is this browser's, a dismissal is this browser's, and "never prompt twice"
+   * has to hold here whatever another device did. The answer itself — the coarse coordinates — is
+   * the account's and goes to the server. Missing, the mark costs at most one more prompt; storage
+   * that cannot keep it means the device is not asked at all. Nothing a Bot does reads it.
+   */
+  "lib/whereabouts/device-place.ts",
 ];
 
 /**
