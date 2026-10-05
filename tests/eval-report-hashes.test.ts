@@ -19,7 +19,9 @@ import {
  */
 describe("what an eval report's hashes cover", () => {
   test("the place line, for each kind of person and both modes", () => {
-    expect(PLACE_LINES).toHaveLength(6);
+    // Four people — a said place, a device's with and without a name for it, nobody's — in two modes.
+    expect(PLACE_LINES).toHaveLength(8);
+    expect(new Set(PLACE_LINES).size).toBe(8);
     expect(PLACE_LINES).toContain(placeText({ place: "어느 곳" }, "chat"));
     expect(PLACE_LINES).toContain(placeText(undefined, "routine"));
     // The words, not somebody's place: a fixed input, so the hash moves only when the wording does.

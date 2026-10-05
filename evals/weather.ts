@@ -68,6 +68,12 @@ const SUWON: EvalWeatherPlace = {
   now: 16.1,
   tomorrowMax: 24,
 };
+export const DAEGU: EvalWeatherPlace = {
+  said: "대구",
+  name: "대구광역시",
+  now: 18.1,
+  tomorrowMax: 27,
+};
 export const BUSAN: EvalWeatherPlace = {
   said: "부산",
   name: "부산광역시",
@@ -86,7 +92,7 @@ export const SEOUL: EvalWeatherPlace = {
 };
 
 // The narrower name first: "서울 강남구" is 강남 and "부산 해운대" is 해운대.
-const PLACES = [GANGNAM, MAPO, HAEUNDAE, CHUNCHEON, SUWON, BUSAN, SEOUL];
+const PLACES = [GANGNAM, MAPO, HAEUNDAE, CHUNCHEON, SUWON, DAEGU, BUSAN, SEOUL];
 const DAYS_AHEAD = ["오늘", "내일", "모레", "글피"] as const;
 
 /** The transport's answer for one place at `at`: now, six hours, four days. */
@@ -95,10 +101,28 @@ export function weatherAnswer(
   at: Date,
   /** Where the place came from, as the transport says it. `true` and `false` are "saved" and "named". */
   from: boolean | WeatherPlaceSource,
+  /**
+   * Where the answer will be drawn (`DrawnOn`, the transport's): a card in a conversation, or
+   * nowhere — a routine's run, whose answer reaches the person as the Bot's words alone.
+   *
+   * THE TRANSPORT SAYS `shown` ONLY WHERE A CARD IS DRAWN, and this did not: every answer here
+   * carried it, a routine's too. So from 2026-10-04, when the card and that field went in, the two
+   * morning-briefing scenarios were handed "사용자 화면에 날씨 카드로 이미 표시됨" in a run with no
+   * screen, and wrote "오늘 날씨는 화면의 날씨 카드에 표시되어 있어요" where the figure belongs —
+   * six runs in six, on main, failing "날씨를 기상청이 준 그대로 옮기지 않음" for a reason that was
+   * the fixture's (measured 2026-10-05, the first run of the no-place briefings).
+   */
+  drawnOn: "conversation" | "nowhere" = "conversation",
 ): string {
   const source: WeatherPlaceSource =
     from === true ? "saved" : from === false ? "named" : from;
-  const saved = source === "saved" || source === "device";
+  // The transport's own words for whose place it is, where it is the person's (`BASIS`).
+  const basis =
+    source === "saved"
+      ? "저장된 위치"
+      : source === "device"
+        ? "기기 위치"
+        : null;
   const { date: today, time } = zonedParts(at, "Asia/Seoul");
   const hour = Number(time.slice(0, 2));
   const stamp = (h: number) =>
@@ -108,7 +132,7 @@ export function weatherAnswer(
     place: place.name,
     // The name alone beside the words, as the transport writes it for the card.
     placeName: place.name,
-    ...(saved ? { basis: "저장된 위치" } : {}),
+    ...(basis ? { basis } : {}),
     placeSource: source,
     issued: { now: stamp(hour), hours: stamp(hour), days: stamp(2) },
     units: "기온 ℃, 습도·강수확률 %, 바람 m/s",
@@ -136,8 +160,8 @@ export function weatherAnswer(
         precip: ahead === 3 ? "비 9~18시(5mm)" : "없음",
       };
     }),
-    // The transport's own last field: the forecast is on the screen already.
-    shown: WEATHER_SHOWN,
+    // The transport's own last field, where a card is drawn: the forecast is on the screen already.
+    ...(drawnOn === "conversation" ? { shown: WEATHER_SHOWN } : {}),
   });
 }
 
@@ -152,6 +176,8 @@ export function weatherAnswer(
 export function weatherBackend(input: {
   at: Date;
   saved?: EvalWeatherPlace;
+  /** Where this run's answers are drawn. A chat's card unless a routine says otherwise. */
+  drawnOn?: "conversation" | "nowhere";
 }): (call: ObservedCall) => string | undefined {
   let saved = input.saved ?? null;
   const named = (words: string) =>
@@ -166,12 +192,12 @@ export function weatherBackend(input: {
     if (asked) {
       const place = named(asked);
       return place
-        ? weatherAnswer(place, input.at, false)
+        ? weatherAnswer(place, input.at, false, input.drawnOn)
         : toolResultText("laf:weather_place_not_found");
     }
     return saved
-      ? weatherAnswer(saved, input.at, "saved")
-      : weatherAnswer(SEOUL, input.at, "fallback");
+      ? weatherAnswer(saved, input.at, "saved", input.drawnOn)
+      : weatherAnswer(SEOUL, input.at, "fallback", input.drawnOn);
   };
 }
 

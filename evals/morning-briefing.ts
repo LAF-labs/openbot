@@ -248,18 +248,29 @@ function heading(date: string, weekday: string): string {
 export function previousBriefing(
   monday: string,
   day: "monday" | "tuesday",
+  /**
+   * Whether the person's place was known the morning before. `"nowhere"` is the briefing the skill
+   * wrote until 2026-10-05 for a person with none — it did not look — which is what a routine made
+   * before that day carries into its first run after it, and what that run has to stop repeating.
+   */
+  where: "known" | "nowhere" = "known",
 ): string {
+  const NOT_LOOKED = "**날씨** 위치를 몰라 날씨는 못 봤어요";
   if (day === "monday") {
     return [
       heading(dayAfter(monday, -1), "일"),
-      "**날씨** 서울 마포구 19.5° 맑음, 최저 15° / 최고 23°",
+      where === "known"
+        ? "**날씨** 서울 마포구 19.5° 맑음, 최저 15° / 최고 23°"
+        : NOT_LOOKED,
     ].join("\n");
   }
   const { fresh } = briefingWeek(monday);
   const [district] = fresh;
   return [
     heading(monday, "월"),
-    "**날씨** 서울 마포구 20.1° 흐림, 최저 17° / 최고 24°",
+    where === "known"
+      ? "**날씨** 서울 마포구 20.1° 흐림, 최저 17° / 최고 24°"
+      : NOT_LOOKED,
     "**새 지원사업**",
     `- ${district?.title} · 마감 ${dayAfter(monday, 14)} · ${district?.url}`,
     "특이사항 없음: 메일",

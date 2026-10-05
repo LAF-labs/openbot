@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { answerAfterTheLastCall, type StreamEvent } from "../evals/lib";
+import { SCENARIOS } from "../evals/scenarios";
 import {
   agreesWithTheCard,
   GANGNAM,
   HAEUNDAE,
   leavesItToTheCard,
+  SEOUL,
   weatherAnswer,
+  weatherBackend,
 } from "../evals/weather";
+import { WEATHER_TOOL_NAME } from "../shared/tools/bridge";
+import { WEATHER_SHOWN } from "../shared/weather";
 
 /**
  * THE JUDGE OF THE WEATHER SCENARIOS, JUDGED.
@@ -161,5 +167,140 @@ describe("an answer that agrees with the card", () => {
         false,
       ]);
     }
+  });
+});
+
+/**
+ * WHICH WORDS ARE THE ANSWER (2026-10-05).
+ *
+ * "One sentence under the card" was read over everything a turn said, and a Bot says a short
+ * sentence before it calls the tool — "오늘 날씨 확인해 볼게요." — which is wanted: it gives the wait
+ * a subject. So every weather run read two sentences and failed, on main and on every branch, from
+ * the day that sentence appeared (2026-10-04), with nothing wrong in the answer. The criterion was
+ * the stale thing. The answer is what follows the last call.
+ */
+describe("the answer, apart from the words before the call", () => {
+  const said = (messageId: string, delta: string): StreamEvent => ({
+    type: "TEXT_MESSAGE_CONTENT",
+    messageId,
+    delta,
+  });
+  const call = (toolCallId: string): StreamEvent[] => [
+    { type: "TOOL_CALL_START", toolCallId, toolCallName: WEATHER_TOOL_NAME },
+    { type: "TOOL_CALL_ARGS", toolCallId, delta: "{}" },
+    { type: "TOOL_CALL_END", toolCallId },
+  ];
+  const WAIT = "오늘 날씨 확인해 볼게요.";
+  const ANSWER = "사장님, 서울 기준으로 오늘은 맑고 선선한 하루예요.";
+
+  test("is what follows the last call — the sentence that gives the wait a subject is not counted against it", () => {
+    const turn = [
+      { type: "RUN_STARTED" },
+      said("m1", WAIT),
+      ...call("c1"),
+      { type: "RUN_FINISHED" },
+      { type: "RUN_STARTED" },
+      said("m2", "사장님, 서울 기준으로 "),
+      said("m2", "오늘은 맑고 선선한 하루예요."),
+      { type: "RUN_FINISHED" },
+    ];
+    expect(answerAfterTheLastCall(turn)).toBe(ANSWER);
+    expect(leavesItToTheCard(answerAfterTheLastCall(turn))).toBe(true);
+    // What the criterion read until then: both sentences, and so never one.
+    expect(leavesItToTheCard(`${WAIT}${ANSWER}`)).toBe(false);
+  });
+
+  test("a call the Bot service answered itself is a call too, and a second sentence AFTER the last call still fails", () => {
+    const looked = [
+      said("m1", "도구를 찾아볼게요."),
+      ...call("lookup"),
+      { type: "TOOL_CALL_RESULT", toolCallId: "lookup", content: "{}" },
+      said("m2", WAIT),
+      ...call("c1"),
+      said("m3", `${ANSWER} 자세한 예보는 기상청 자료입니다.`),
+    ];
+    expect(answerAfterTheLastCall(looked)).toBe(
+      `${ANSWER} 자세한 예보는 기상청 자료입니다.`,
+    );
+    expect(leavesItToTheCard(answerAfterTheLastCall(looked))).toBe(false);
+  });
+
+  test("a turn that called nothing is all answer, and one that ended on a call has none", () => {
+    expect(answerAfterTheLastCall([said("m1", ANSWER)])).toBe(ANSWER);
+    const cutOff = [said("m1", WAIT), ...call("c1")];
+    expect(answerAfterTheLastCall(cutOff)).toBe("");
+    expect(leavesItToTheCard(answerAfterTheLastCall(cutOff))).toBe(false);
+  });
+});
+
+/**
+ * THE FIXTURE ANSWERS AS THE TRANSPORT DOES, WHERE IT IS DRAWN AND FOR WHOM.
+ *
+ * Two ways it did not, each of which made a scenario measure the fixture: it told a ROUTINE its
+ * forecast was on a card (the transport says `shown` only in a conversation), so both morning
+ * briefings wrote "날씨는 화면의 카드에 표시되어 있어요" where the figure belongs, six runs in six;
+ * and it refused a person with no place, where the transport answers for Seoul and says whose.
+ */
+describe("the weather the scenarios are handed", () => {
+  const at = new Date("2026-10-04T03:00:00Z");
+  const ask = (
+    backend: ReturnType<typeof weatherBackend>,
+    args: Record<string, unknown> = {},
+  ) =>
+    JSON.parse(
+      backend({
+        id: "c1",
+        name: WEATHER_TOOL_NAME,
+        rawArguments: JSON.stringify(args),
+        arguments: args,
+      }) ?? "{}",
+    ) as Record<string, unknown>;
+
+  test("a routine's answer says nothing of a card; a conversation's does", () => {
+    expect(ask(weatherBackend({ at, saved: GANGNAM })).shown).toBe(
+      WEATHER_SHOWN,
+    );
+    const routine = ask(
+      weatherBackend({ at, saved: GANGNAM, drawnOn: "nowhere" }),
+    );
+    expect(routine.shown).toBeUndefined();
+    expect(routine.placeName).toBe(GANGNAM.name);
+  });
+
+  test("nobody's place known is Seoul's, marked as nobody's; a saved place and a named one say which they are", () => {
+    const nobody = ask(weatherBackend({ at }));
+    expect([nobody.placeName, nobody.placeSource, nobody.basis]).toEqual([
+      SEOUL.name,
+      "fallback",
+      undefined,
+    ]);
+    const saved = ask(weatherBackend({ at, saved: GANGNAM }));
+    expect([saved.placeSource, saved.basis]).toEqual(["saved", "저장된 위치"]);
+    const named = ask(weatherBackend({ at, saved: GANGNAM }), {
+      place: "부산 해운대",
+    });
+    expect([named.placeName, named.placeSource, named.basis]).toEqual([
+      HAEUNDAE.name,
+      "named",
+      undefined,
+    ]);
+    // The device's answer says the device, as the transport's does.
+    expect(
+      (JSON.parse(weatherAnswer(GANGNAM, at, "device")) as { basis?: string })
+        .basis,
+    ).toBe("기기 위치");
+  });
+});
+
+/**
+ * THE PACK LOADS. The scenario list is built while its module is still being evaluated, so a helper
+ * declared below it as a `const` is not there yet: "Cannot access 'backed' before initialization",
+ * found by starting a forty-minute run (2026-10-05). Nothing in the gate imported the list.
+ */
+describe("the scenario pack", () => {
+  test("loads, and every scenario is one of a kind", () => {
+    const ids = SCENARIOS.map((scenario) => scenario.id);
+    expect(ids.length).toBeGreaterThan(70);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

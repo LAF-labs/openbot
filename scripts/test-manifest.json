@@ -119,6 +119,7 @@
   "app/tests/cursor-wheel.test.ts",
   "app/tests/design-tokens.test.ts",
   "app/tests/detail-sheet.test.tsx",
+  "app/tests/device-place-gate.test.tsx",
   "app/tests/device-place.test.ts",
   "app/tests/download-notice.test.tsx",
   "app/tests/draft-to-composer.test.tsx",
