@@ -28,22 +28,9 @@
  * at all, wherever it is met — so a password a person typed never rides out as a label. Where that
  * makes the name differ from the browser's, the hold refuses the click as renamed; a refusal, never a
  * secret on the trail.
- *
- * AND WHAT A PERSON TYPED IS IN NO NAME AT ALL, WHOEVER PRINTED IT. The tree is not asked to leave
- * anything out, and it names a link by the words of the editable region inside it, a button by the
- * box that labels it, and a link inside a region by what was typed around it — each with a name of
- * its own, so none of them was ever asked about here (measured 2026-10-05, `person-typing.ts`).
- * While a tab holds a node a person typed into, the controls that could take their name from it
- * are asked about too (`nearRefs` in marked-refs.ts), the routine says which of them do (`drawn`) and which hold the
- * node (`holds`), and those are listed under the name computed here: the node's own contents left
- * out, and the text inside a region a person typed into said by nothing — not even by a control
- * that is itself inside it. The nodes are known by the mark they carry in the page (`Hush`,
- * `quietOn` in secret-fields.ts), as the reader knows them: no frame has to be matched to a ref,
- * and nothing has to be handed in.
  */
 import type { Page } from "playwright";
 import { fromDocument } from "./page-arrival";
-import type { Hush } from "./reader";
 
 /**
  * How long the names of one look may take. Measured 2026-10-04 on five Korean pages: tens of
@@ -53,45 +40,16 @@ import type { Hush } from "./reader";
 export const PAGE_NAMES_MS = 1_000;
 
 /**
- * Every role ARIA has, as the role engine lists them. An element's role is the FIRST of its `role`
- * words that is one of these (`explicitRole` in {@link namesOf}), which is not the same as any of
- * them: `role="tab textbox"` is a tab. Here for what is sent to a page as source and has to
- * resolve a role the way the list does without the rest of this module (`scanTyped` in
- * secret-fields.ts); `namesOf` carries the same words inside itself for the same reason, and
- * `page-names.test.ts` holds the two to each other.
- */
-export const ARIA_ROLES =
-  "alert alertdialog application article banner blockquote button caption cell checkbox code columnheader combobox complementary contentinfo definition deletion dialog directory document emphasis feed figure form generic grid gridcell group heading img insertion link list listbox listitem log main mark marquee math meter menu menubar menuitem menuitemcheckbox menuitemradio navigation none note option paragraph presentation progressbar radio radiogroup region row rowgroup rowheader scrollbar search searchbox separator slider spinbutton status strong subscript superscript switch tab table tablist tabpanel term textbox time timer toolbar tooltip tree treegrid treeitem";
-
-/**
  * Each element's accessible name, or null where it could not be computed. Runs in the page, called
  * on the first of them (`ElementHandle.evaluate` runs on one element and hands the rest over).
- *
- * Each name is led by one character, in the string so that the answer stays the array of strings it
- * was: `0` when the control takes nothing from a node a person typed into; `1` when its NAME is
- * drawn from one — it is labelled by it, or by something that holds it; and `2` when the control
- * HOLDS one — it is an editable one, is inside one, has one inside it, or owns one (`aria-owns`) —
- * so that what the tree printed as its contents is that node's too, whatever the control is called.
- *
- * ASKED TWO WAYS, BECAUSE A PAGE CAN BREAK THE FIRST. All at once, the elements arrive as a list,
- * and Playwright carries a list into the page with the page's own `Map`: on one that replaces it
- * (고용24, `reader.ts`) the question throws before a line of this runs, and until 2026-10-05 no
- * name ever came back from such a page. So it is also asked of one element — the first argument —
- * with everything else it needs in a string, `0` or `1` for `every` and then the mark, and
- * answered with a string, which such a page leaves alone. And nothing here keeps anything in a
- * `Map` of its own for the same reason.
  *
  * Self-contained, because Playwright sends it to the page as source: nothing from this module's scope
  * is there when it runs.
  */
 export function namesOf(
-  first: Element,
-  asked: { elements: Element[]; mark: string; every: boolean } | string,
-): (string | null)[] | string | null {
-  const alone = typeof asked === "string";
-  const elements = alone ? [first] : asked.elements;
-  const every = alone ? asked.charAt(0) === "1" : asked.every;
-  const markName = alone ? asked.slice(1) : asked.mark;
+  _first: Element,
+  elements: Element[],
+): (string | null)[] {
   type Embedded = { element: Element; hidden: boolean };
   type Options = {
     visited: Set<Element>;
@@ -165,28 +123,24 @@ export function namesOf(
     ["aria-roledescription", ["generic"]],
   ];
 
-  // Kept by element, in `WeakMap`s: a page that replaces `Map` has not replaced these (see above).
-  const styles = {
-    "": new WeakMap<Element, { style: CSSStyleDeclaration | undefined }>(),
-    "::before": new WeakMap<
-      Element,
-      { style: CSSStyleDeclaration | undefined }
-    >(),
-    "::after": new WeakMap<
-      Element,
-      { style: CSSStyleDeclaration | undefined }
-    >(),
-  };
+  const styles = new Map<
+    string,
+    Map<Element, CSSStyleDeclaration | undefined>
+  >();
   const styleOf = (
     element: Element,
     pseudo?: "::before" | "::after",
   ): CSSStyleDeclaration | undefined => {
-    const cache = styles[pseudo ?? ""];
-    const known = cache.get(element);
-    if (known) return known.style;
+    const key = pseudo ?? "";
+    let cache = styles.get(key);
+    if (!cache) {
+      cache = new Map();
+      styles.set(key, cache);
+    }
+    if (cache.has(element)) return cache.get(element);
     const view = element.ownerDocument?.defaultView;
     const style = view ? view.getComputedStyle(element, pseudo) : undefined;
-    cache.set(element, { style });
+    cache.set(element, style);
     return style;
   };
   const tagOf = (element: Element): string =>
@@ -424,88 +378,6 @@ export function namesOf(
     return editable && parent?.isContentEditable !== true;
   };
 
-  /** A node a person typed into: it carries the mark (`quietOn` in secret-fields.ts). */
-  const mark = Symbol.for(markName);
-  /*
-   * AND ITS DOCUMENT CARRIES ONE TOO, which is asked first and once: a document without it holds no
-   * marked node, and nothing below walks anywhere to find that out. For one commit (2026-10-05)
-   * the mark came with this question on every tab and there was no such check: every control
-   * asked about had the tree beneath it walked, and again beneath each element on the way to its
-   * name, on tabs nobody had typed on — measured on 199 nameless links around cards of 325 nodes,
-   * 432 ms where `main` took 348, of the one second all the names have. The mark comes now only
-   * for a tab a person typed on (`snapshot.ts`), and a document of that tab they did not type in —
-   * every frame but one, usually — still costs what it did. The document's mark is the node's
-   * with `.document` after it (`Hush` in reader.ts), set in the same moment as the first node's.
-   */
-  const typedHere =
-    markName !== "" &&
-    typeof (first.ownerDocument as unknown as Record<symbol, unknown>)[
-      Symbol.for(`${markName}.document`)
-    ] === "string";
-  const isTypedInto = (node: Node): boolean =>
-    typedHere && (node as unknown as Record<symbol, unknown>)[mark] === true;
-  /** One step up, out of a shadow tree by its host. */
-  const above = (node: Node): Node | null =>
-    node.parentNode ?? (node as ShadowRoot).host ?? null;
-  /** A typed-into node, or anything inside one. */
-  const insideTyped = (node: Node | null): boolean => {
-    if (!typedHere) return false;
-    for (let at = node; at; at = above(at)) if (isTypedInto(at)) return true;
-    return false;
-  };
-  /**
-   * Whether an element holds a typed-into node: in its own tree, in a shadow tree beneath it, or
-   * in something it or one of those owns by id — which the tree prints as its contents too.
-   */
-  const holdsTyped = (element: Element, seen: Element[] = []): boolean => {
-    if (!typedHere || seen.includes(element)) return false;
-    seen.push(element);
-    /*
-     * What an element owns is looked for in two places, because the browser looks in two: in its
-     * document, whatever tree the owner is in, when it builds the tree's children — and in the
-     * owner's own tree, a shadow tree included, when it computes a name (`idRefs` above). The ids
-     * are apart by any whitespace.
-     */
-    const owned = (owner: Element): boolean =>
-      (owner.getAttribute("aria-owns") ?? "")
-        .split(/\s+/)
-        .filter(Boolean)
-        .some((id) => {
-          const root = owner.getRootNode();
-          return [
-            owner.ownerDocument.getElementById(id),
-            root.nodeType === 11
-              ? (root as ShadowRoot).getElementById(id)
-              : null,
-          ].some(
-            (other) =>
-              !!other && (insideTyped(other) || holdsTyped(other, seen)),
-          );
-        });
-    const beneath = (root: Element | ShadowRoot): boolean =>
-      Array.from(root.querySelectorAll("*")).some(
-        (inner) =>
-          isTypedInto(inner) ||
-          owned(inner) ||
-          (inner.shadowRoot !== null && beneath(inner.shadowRoot)),
-      );
-    return (
-      owned(element) ||
-      beneath(element) ||
-      (element.shadowRoot !== null && beneath(element.shadowRoot))
-    );
-  };
-  /**
-   * Text a person typed: inside a typed-into node — whatever that node is now, a title that was
-   * editable only while it was renamed included — and in any editable region when every one is.
-   */
-  const typedText = (node: Node): boolean =>
-    insideTyped(node) ||
-    (every &&
-      (node.parentElement as HTMLElement | null)?.isContentEditable === true);
-  /** Set while one control is named: its name was drawn, somewhere on the way, from such a node. */
-  let drawn = false;
-
   const visibleText = (node: Text): boolean => {
     const range = node.ownerDocument.createRange();
     range.selectNode(node);
@@ -514,7 +386,7 @@ export function namesOf(
   };
   const ignored = (element: Element): boolean =>
     ["STYLE", "SCRIPT", "NOSCRIPT", "TEMPLATE"].includes(tagOf(element));
-  const hiddenAbove = new WeakMap<Element, boolean>();
+  const hiddenAbove = new Map<Element, boolean>();
   const noneOrAriaHidden = (element: Element): boolean => {
     const known = hiddenAbove.get(element);
     if (known !== undefined) return known;
@@ -717,7 +589,7 @@ export function namesOf(
           token = ` ${token} `;
         tokens.push(token);
       } else if (node.nodeType === 3) {
-        tokens.push(typedText(node) ? "" : (node.textContent ?? ""));
+        tokens.push(node.textContent ?? "");
       }
     };
     tokens.push(cssContent(element, "::before") ?? "");
@@ -758,13 +630,6 @@ export function namesOf(
 
   const alternative = (element: Element, options: Options): string => {
     if (options.visited.has(element)) return "";
-    if (
-      !drawn &&
-      options.within !== "self" &&
-      (insideTyped(element) || holdsTyped(element))
-    ) {
-      drawn = true;
-    }
     const beneath: Options = {
       ...options,
       within: options.within === "self" ? "descendant" : options.within,
@@ -877,41 +742,14 @@ export function namesOf(
       }
       if (
         !named &&
-        [
-          "BUTTON",
-          "OUTPUT",
-          "INPUT",
-          "TEXTAREA",
-          "SELECT",
-          "METER",
-          "PROGRESS",
-        ].includes(tag)
+        ["BUTTON", "OUTPUT", "INPUT", "METER", "PROGRESS"].includes(tag)
       ) {
         options.visited.add(element);
         const found = labels();
         if (found.length) {
           return fromLabels(found as NodeListOf<HTMLLabelElement>, options);
         }
-        if (tag !== "BUTTON") {
-          // A box with no label is called by its title, or by its placeholder where it has no
-          // title and is of a kind that shows one. Boxes are named here since 2026-10-05: one
-          // whose `<label>` holds what a person typed is listed under this name.
-          const title = titleOf();
-          const showsPlaceholder =
-            tag === "TEXTAREA" ||
-            (tag === "INPUT" &&
-              [
-                "text",
-                "password",
-                "number",
-                "search",
-                "tel",
-                "email",
-                "url",
-              ].includes(input.type));
-          if (!showsPlaceholder || title) return title;
-          return element.getAttribute("placeholder") ?? "";
-        }
+        if (tag !== "BUTTON") return titleOf();
       }
       if (!named && (tag === "FIELDSET" || tag === "FIGURE")) {
         options.visited.add(element);
@@ -1007,38 +845,22 @@ export function namesOf(
     return "";
   };
 
-  const names = elements.map((target) => {
+  return elements.map((target) => {
     try {
-      /*
-       * The control itself: around a typed-into node or inside one, its words are that node's. One
-       * that IS such a node says so unless it is a box and nothing more — a box's name is never
-       * its contents; a region's can be, and so can the name of a tab or a link that was editable
-       * only while a person renamed it and carries the mark still.
-       */
-      const holds =
-        every ||
-        (isTypedInto(target) &&
-          ((target as HTMLElement).isContentEditable === true ||
-            !holdsAValue(target))) ||
-        insideTyped(above(target)) ||
-        holdsTyped(target);
-      drawn = holds;
       const text = alternative(target, {
         visited: new Set(),
         includeHidden: hiddenForAria(target),
         within: "self",
       });
       // As the role engine reads a name before comparing it (`normalizeWhiteSpace`).
-      const name = text
+      return text
         .replace(/[\u200b\u00ad]/g, "")
         .trim()
         .replace(/\s+/g, " ");
-      return `${holds ? "2" : drawn ? "1" : "0"}${name}`;
     } catch {
       return null;
     }
   });
-  return alone ? (names[0] ?? null) : names;
 }
 
 /** The document a ref belongs to: `f3e12` is frame 3's, `e12` the page's. */
@@ -1046,20 +868,10 @@ function documentOf(ref: string): string {
   return /^f\d+/.exec(ref)?.[0] ?? "";
 }
 
-/** What the page said of the controls it was asked about. */
-export type PageNames = {
-  /** The name of each ref the page answered for. */
-  names: Map<string, string>;
-  /** The refs, among those, whose name is drawn from a node a person typed into (`Hush`). */
-  drawn: Set<string>;
-  /** And the ones that hold such a node: what the tree printed as their contents is its too. */
-  holds: Set<string>;
-};
-
 /**
  * The page's names for these refs, where the page gave one. A ref that names nothing now, a frame
- * that has lost its document, a look out of time: that ref is left out, and the caller decides what
- * a control the page did not answer for is called (`withNames`).
+ * that has lost its document, a look out of time: that ref is left out, and the list keeps the name
+ * the tree gave it.
  *
  * A ref resolves only through a locator, and only in the world the tree was taken in: measured
  * 2026-10-04 on 1.62.1, `evaluateAll` on `aria-ref=e3` answered an empty list where `count()`
@@ -1068,16 +880,6 @@ export type PageNames = {
  * named in one evaluation. Measured on Naver news's 86 nameless controls, median of three: a handle
  * each and one evaluation took 46 ms, an evaluation per ref 75 ms.
  *
- * WHERE THE ONE EVALUATION FAILS, EACH ELEMENT IS ASKED ON ITS OWN, in what is left of the time. A
- * page that replaces `Map` fails it every time (`namesOf` says how), and such a page used to get
- * no names at all — which, now that a tab a person typed into is asked about every control, would
- * have left every control on it nameless after somebody signed in by hand. Measured 2026-10-05 on
- * the fixture's page with 고용24's `Map`: the list of elements threw `refs.set is not a function`,
- * and an element with a string answered.
- *
- * `hush` is the mark the nodes a person typed into carry in the page, and whether every box and
- * region is to be taken for one; the same mark in every document, so nothing is matched to a frame.
- *
  * Every wait is bounded by `ms` in all, since a frame with no document never answers (`within.ts`),
  * and every handle is let go once it has been asked, late ones included.
  */
@@ -1085,12 +887,9 @@ export async function namesFromThePage(
   target: Page,
   refs: readonly string[],
   ms: number,
-  hush: Hush = { mark: "", every: false },
-): Promise<PageNames> {
+): Promise<Map<string, string>> {
   const names = new Map<string, string>();
-  const drawn = new Set<string>();
-  const holds = new Set<string>();
-  if (refs.length === 0 || ms <= 0) return { names, drawn, holds };
+  if (refs.length === 0 || ms <= 0) return names;
   /*
    * Half the time to find the elements and the rest to name them, so a ref that names nothing — a
    * node the page removed since the tree — waits out its half and does not take its document's
@@ -1127,44 +926,22 @@ export async function namesFromThePage(
       );
       const first = found[0]?.handle;
       if (!first) return;
-      // Its failure kept apart from its silence: one that failed is asked again, element by element.
-      const together = await fromDocument(
+      const answered = await fromDocument(
         target,
         until - Date.now(),
-        first
-          .evaluate(namesOf, {
-            elements: found.map(({ handle }) => handle),
-            mark: hush.mark,
-            every: hush.every,
-          })
-          .catch(() => "failed" as const),
+        first.evaluate(
+          namesOf,
+          found.map(({ handle }) => handle),
+        ),
       );
-      const answered = Array.isArray(together)
-        ? together
-        : together === undefined
-          ? []
-          : await Promise.all(
-              found.map(({ handle }) =>
-                fromDocument(
-                  target,
-                  until - Date.now(),
-                  handle
-                    .evaluate(namesOf, `${hush.every ? "1" : "0"}${hush.mark}`)
-                    .catch(() => null),
-                ),
-              ),
-            );
       void Promise.all(
         found.map(({ handle }) => handle.dispose().catch(() => undefined)),
       );
       found.forEach(({ ref }, index) => {
-        const answer = answered[index];
-        if (typeof answer !== "string") return;
-        names.set(ref, answer.slice(1));
-        if (answer.charAt(0) !== "0") drawn.add(ref);
-        if (answer.charAt(0) === "2") holds.add(ref);
+        const name = answered?.[index];
+        if (typeof name === "string") names.set(ref, name);
       });
     }),
   );
-  return { names, drawn, holds };
+  return names;
 }

@@ -41,7 +41,6 @@ export const readPage: BotRoute = async (
     const extract = await readSettledPageText(target, {
       whole: url.searchParams.get("whole") === "1",
       ...(from ? { from } : {}),
-      session,
     });
     if (extract.arriving) note(session, arrivalNote(extract.arriving));
     if (extract.plain) note(session, { code: PAGE_TEXT_PLAIN });
