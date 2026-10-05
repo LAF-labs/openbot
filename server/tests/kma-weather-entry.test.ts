@@ -24,7 +24,6 @@ import {
 } from "../src/plugins/shared-clients";
 import {
   type GrantedPlugins,
-  PluginRefusedError,
   type ServerRecord,
   toolNameFor,
 } from "../src/plugins/store";
@@ -38,9 +37,9 @@ import { fakeKma, MIDNIGHT, unsaid } from "./support/kma-hub";
  * THE READER IS THE PART WORTH A FILE. The tool's own description says "인자 없이 부르면 이 사람의
  * 저장된 위치 기준", and the transport does that for whoever hands it `coordinatesOf` and
  * `placeOf`. Nothing here did until the runtime was given a reader to hand on: assembled without
- * one, every call that named no place would have been refused `laf:weather_place_unknown`, and a
- * Bot told that asks the person where they are — on every weather question, for a person whose
- * place is on file.
+ * one, every call that named no place was refused `laf:weather_place_unknown` — and since
+ * 2026-10-05, when "nothing known" became Seoul, would be answered for Seoul: for a person whose
+ * place is on file, the wrong town.
  */
 
 const KEY = "kma-test-key-0123456789";
@@ -206,16 +205,26 @@ describe("the weather, as an entry the fleet's key opens", () => {
     expect(new Set(cells)).toEqual(new Set(["61,126"]));
   });
 
-  test("the device's coordinates come before the saved words", async () => {
+  test("the saved words come before the device's coordinates: what a person said outranks where a device is", async () => {
+    /*
+     * It was the other way round (2026-10-02), while the prompt named the words first: a person
+     * holding both read "부산 해운대구" in the place line over a card for the device's 서울. The
+     * owner's order of 2026-10-05 is the place the person said, then the device, then Seoul.
+     */
     const { transport, cells } = runtimeWith({
       place: "부산 해운대구",
       coordinates: { latitude: 37.57, longitude: 126.98 },
     });
     const result = await transport.callTool(connection, "get_weather", {});
-    const facts = JSON.parse(result.text) as { place: string; basis?: string };
-    expect(new Set(cells)).toEqual(new Set(["60,127"]));
-    expect(facts.place).toContain("위도 37.57, 경도 126.98");
+    const facts = JSON.parse(result.text) as {
+      place: string;
+      basis?: string;
+      placeSource?: string;
+    };
+    expect(new Set(cells)).toEqual(new Set(["99,75"]));
+    expect(facts.place).toBe("부산광역시 해운대구");
     expect(facts.basis).toBe("저장된 위치");
+    expect(facts.placeSource).toBe("saved");
   });
 
   test("a place named in the call is that place, and nobody's whereabouts are read", async () => {
@@ -233,29 +242,29 @@ describe("the weather, as an entry the fleet's key opens", () => {
     expect(new Set(cells)).toEqual(new Set(["99,75"]));
   });
 
-  test("a person with nothing saved is told so, and the hub is not asked", async () => {
+  test("a person with nothing saved is answered for Seoul, marked as nobody's place", async () => {
     const { transport, cells } = runtimeWith({
       place: null,
       coordinates: null,
     });
-    const refused = await transport
-      .callTool(connection, "get_weather", {})
-      .catch((error: unknown) => error);
-    expect(refused).toBeInstanceOf(PluginRefusedError);
-    expect((refused as PluginRefusedError).code).toBe(
-      "laf:weather_place_unknown",
-    );
-    expect(cells).toEqual([]);
+    const result = await transport.callTool(connection, "get_weather", {});
+    const facts = JSON.parse(result.text) as {
+      placeName?: string;
+      placeSource?: string;
+      basis?: string;
+    };
+    expect(facts.placeName).toBe("서울특별시");
+    expect(facts.placeSource).toBe("fallback");
+    expect(facts.basis).toBeUndefined();
+    expect(new Set(cells)).toEqual(new Set(["60,127"]));
   });
 
-  test("a runtime handed no reader refuses the same way rather than guessing a place", async () => {
+  test("a runtime handed no reader knows nothing of anybody, and answers the same way", async () => {
     const { transport, cells } = runtimeWith();
-    const refused = await transport
-      .callTool(connection, "get_weather", {})
-      .catch((error: unknown) => error);
-    expect((refused as PluginRefusedError).code).toBe(
-      "laf:weather_place_unknown",
-    );
-    expect(cells).toEqual([]);
+    const result = await transport.callTool(connection, "get_weather", {});
+    expect(
+      (JSON.parse(result.text) as { placeSource?: string }).placeSource,
+    ).toBe("fallback");
+    expect(new Set(cells)).toEqual(new Set(["60,127"]));
   });
 });
