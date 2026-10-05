@@ -90,7 +90,26 @@ export async function savePlace(
   return wordsOf(await send("PUT", answer, queryClient));
 }
 
-/** Forget the place and the coordinates. The weather is Seoul's again until one is said or given. */
+/**
+ * Keep the device's coordinates, and say nothing about the words.
+ *
+ * NO `place` IN THE BODY, on purpose. The device answers minutes after it was asked, and this tab's
+ * copy of the account may be older than a place the person said meanwhile — to their Bot, in
+ * another tab. Sent with the tab's `place: null`, the answer erased it. A body that does not name
+ * the words leaves them as the server holds them (`placeAnswerOf`, server).
+ */
+export async function saveDeviceCoordinates(
+  coordinates: Coordinates,
+  queryClient: QueryClient,
+): Promise<Whereabouts> {
+  return wordsOf(await send("PUT", { coordinates }, queryClient));
+}
+
+/**
+ * Forget the place and the coordinates. The weather is Seoul's again until one is said or given.
+ * The settings screen clears through `clearPlaceOnThisDevice` (`device-place.ts`), which also keeps
+ * this device from being read again by itself.
+ */
 export async function clearPlace(
   queryClient: QueryClient,
 ): Promise<Whereabouts> {
