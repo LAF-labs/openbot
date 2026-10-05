@@ -8,7 +8,7 @@
  * reasoning and the endpoint's queue, not the prompt — while 기상청 itself took 1.2 s and the round
  * that writes the answer two. The first round decides something a much smaller question can decide.
  *
- * So, with the switch on (`FIRST_MOVE`, off unless it names a move): a decisions model — TypeSafe's
+ * So, with the switch on (`FIRST_MOVE`, on unless it says `off`): a decisions model — TypeSafe's
  * Jev, 0.24 s warm — is asked two yes-or-no questions about the person's message, and when both are
  * a clear yes the server makes the call itself, files it in the thread exactly as a call the Bot
  * made, and the Bot's model starts with the result in hand. One round instead of two.
@@ -21,9 +21,11 @@
  * WHAT LEAVES THE MACHINE, AND WHEN. Nothing unless the switch is on and Jev may be asked at all
  * (`JEV_ENABLED`, an OpenRouter endpoint). Then only a message that is short, is the person's one
  * message of the turn, and has a weather word in it — the words below, checked here first — and
- * that message goes redacted (`context/judge-redaction.ts`). The owner's yes to this is recorded
- * with the plan (`~/laf/docs/jev-adoption-review-2026-10-02.md` §3, §6); turning it on for a
- * customer is a separate step, because who is sent what is in the privacy policy.
+ * that message goes redacted (`context/judge-redaction.ts`). The owner's yes to building this is
+ * recorded with the plan (`~/laf/docs/jev-adoption-review-2026-10-02.md` §3, §6), and the yes to
+ * turning it on for customers came on 2026-10-05, with a condition: a move that turns out to be
+ * made seldom comes out again. So every decision asked for leaves a row, moved or not, and the
+ * rate can be read from the trail without a word of anybody's message.
  *
  * IT CAN ONLY ADD A READ. The one call it makes is read-only and goes through the turn's own
  * executor — the Bot's grant, the boundary, the audit row, as for any call. Anything short of a
@@ -179,9 +181,12 @@ export function firstMoveStateOf(text: string): { message: string } {
 export function createFirstMove(deps: FirstMoveDeps) {
   const on = deps.moves.includes("weather") && deps.ask !== null;
 
-  return async function firstMoveFor(
-    input: FirstMoveInput,
-  ): Promise<{ move: FirstMove | null; verdict: FirstMoveVerdict | "off" }> {
+  return async function firstMoveFor(input: FirstMoveInput): Promise<{
+    move: FirstMove | null;
+    verdict: FirstMoveVerdict | "off";
+    /** What the decisions model said when it was asked and the answer fell short. */
+    decided?: Record<string, number>;
+  }> {
     if (!on || !deps.ask) return { move: null, verdict: "off" };
     const started = performance.now();
     const say = (
@@ -237,7 +242,11 @@ export function createFirstMove(deps: FirstMoveDeps) {
       !(forecast >= FIRST_MOVE_BARS.forecast) ||
       !(ownPlace >= FIRST_MOVE_BARS.ownPlace)
     ) {
-      return { move: null, verdict: say("below_bar") };
+      return {
+        move: null,
+        verdict: say("below_bar"),
+        decided: { forecast, ownPlace },
+      };
     }
     say("moved");
     return {
@@ -273,7 +282,7 @@ export function firstMoveForTurns(deps: {
     asked: readonly { role: string; content?: unknown }[];
     tools: readonly { name: string }[];
   }): Promise<FirstMove | null> => {
-    const { move } = await deps.decide({
+    const { move, verdict, decided } = await deps.decide({
       asked: input.asked,
       toolNames: new Set(input.tools.map((tool) => tool.name)),
       hasPlace: async () => {
@@ -295,7 +304,54 @@ export function firstMoveForTurns(deps: {
           decided: move.decided,
         },
       }).catch(auditRowLost("turn.first_move"));
+    } else if (verdict === "below_bar" || verdict === "no_answer") {
+      // The decisions model was asked and the Bot's model went first anyway. Counted beside the
+      // moves, so the trail says how often asking paid: not awaited, and never a word.
+      void recordAuditEvent(deps.auditStore, {
+        eventType: "turn.first_move_left",
+        targetType: "agent",
+        targetId: input.botId,
+        actorUserId: input.owner.id,
+        payload: {
+          bot: input.botId,
+          move: "weather",
+          verdict,
+          ...(decided ? { decided } : {}),
+        },
+      }).catch(auditRowLost("turn.first_move_left"));
     }
     return move;
   };
+}
+
+/** How long the warm-up may take. Nobody waits on it; past this it is simply not warm. */
+export const FIRST_MOVE_WARM_UP_TIMEOUT_MS = 5_000;
+
+/**
+ * One decision asked at boot, of a sentence nobody sent.
+ *
+ * WHY. The first decision a fresh process asks takes longer than every later one — the SDK loaded,
+ * the name resolved, the connection opened: 1.2–4.4 s when the feature was reviewed, against a
+ * bound of {@link FIRST_MOVE_TIMEOUT_MS}. So the first weather question after every restart made no
+ * move, which is the turn it was, and also the saving not had. Asked once here, that cost is paid
+ * before anybody is waiting.
+ *
+ * The sentence is this file's own, so nothing of a person's leaves for it; the answer is not read.
+ * A spent trial day is not judged, here as everywhere. It says how it went and never throws.
+ */
+export async function warmFirstMove(deps: FirstMoveDeps): Promise<void> {
+  if (!deps.moves.includes("weather") || !deps.ask) return;
+  if (await deps.budgetSpent?.().catch(() => false)) return;
+  const started = performance.now();
+  const decided = await deps
+    .ask({
+      state: firstMoveStateOf("오늘 날씨 어때?"),
+      questions: FIRST_MOVE_QUESTIONS,
+      timeoutMs: FIRST_MOVE_WARM_UP_TIMEOUT_MS,
+    })
+    .catch(() => null);
+  log.info("first_move_warmed", {
+    answered: decided?.ok === true,
+    ms: Math.round(performance.now() - started),
+  });
 }

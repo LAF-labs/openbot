@@ -12,6 +12,7 @@ import {
   firstMoveForTurns,
   firstMoveStateOf,
   mentionsWeather,
+  warmFirstMove,
 } from "../src/turns/first-move";
 
 /**
@@ -223,6 +224,7 @@ describe("the first move: when it moves", () => {
       expect(await under(turn(said("부산 날씨 어때?")))).toEqual({
         move: null,
         verdict: "below_bar",
+        decided: answers,
       });
     }
   });
@@ -309,6 +311,51 @@ describe("the first move, as a turn asks for it", () => {
     expect(nowhere.model.asked).toEqual([]);
   });
 
+  test("a decision that left the step to the Bot leaves a row too — why, how sure, never the message; a message never asked about leaves none", async () => {
+    rows.length = 0;
+    const unsure = forTurns(
+      { place: "강원 춘천시", coordinates: null },
+      { forecast: 0.4, ownPlace: 0.9 },
+    );
+    const text = "우산 챙길까 말까 고민이네";
+    expect(await unsure.firstMove(input(text))).toBeNull();
+    const silent = forTurns(
+      { place: "강원 춘천시", coordinates: null },
+      "down",
+    );
+    expect(await silent.firstMove(input(text))).toBeNull();
+    // No weather word: nobody was asked, so there is nothing to count.
+    const unasked = forTurns({ place: "강원 춘천시", coordinates: null });
+    expect(await unasked.firstMove(input("안녕, 잘 지냈어?"))).toBeNull();
+    expect(unasked.model.asked).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rows).toEqual([
+      {
+        eventType: "turn.first_move_left",
+        targetType: "agent",
+        targetId: "bot-1",
+        actorUserId: "person-1",
+        payload: {
+          bot: "bot-1",
+          move: "weather",
+          verdict: "below_bar",
+          decided: { forecast: 0.4, ownPlace: 0.9 },
+        },
+      },
+      {
+        eventType: "turn.first_move_left",
+        targetType: "agent",
+        targetId: "bot-1",
+        actorUserId: "person-1",
+        payload: { bot: "bot-1", move: "weather", verdict: "no_answer" },
+      },
+    ]);
+    const serialised = JSON.stringify(rows);
+    for (const word of ["우산", "챙길까", "고민", "춘천"]) {
+      expect(serialised).not.toContain(word);
+    }
+  });
+
   test("a move leaves a row saying who decided — names and probabilities, never the message", async () => {
     rows.length = 0;
     const made = forTurns({ place: "강원 춘천시", coordinates: null });
@@ -333,16 +380,6 @@ describe("the first move, as a turn asks for it", () => {
     for (const word of ["우리 동네", "우산", "챙길까", "춘천"]) {
       expect(serialised).not.toContain(word);
     }
-
-    // No move, no row.
-    rows.length = 0;
-    const unsure = forTurns(
-      { place: "강원 춘천시", coordinates: null },
-      { forecast: 0.2, ownPlace: 0.9 },
-    );
-    expect(await unsure.firstMove(input("어제 비 엄청 왔지"))).toBeNull();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(rows).toEqual([]);
   });
 });
 
@@ -371,9 +408,14 @@ describe("the first move, said at boot", () => {
 
   test("off says nothing; on and able says which move", () => {
     watching = spies();
-    sayFirstMove({ moves: [], canDecide: true, weather: true });
+    sayFirstMove({ moves: [], canDecide: true, weather: true, named: false });
     expect(said()).toEqual([]);
-    sayFirstMove({ moves: ["weather"], canDecide: true, weather: true });
+    sayFirstMove({
+      moves: ["weather"],
+      canDecide: true,
+      weather: true,
+      named: false,
+    });
     expect(said().map((line) => [line.event, line.level, line.moves])).toEqual([
       ["first_move_on", "info", ["weather"]],
     ]);
@@ -382,8 +424,18 @@ describe("the first move, said at boot", () => {
   test("on where it can do nothing is a warning that says so, and says which half is missing", () => {
     // A switch that is set and makes no move would leave an operator believing it does.
     watching = spies();
-    sayFirstMove({ moves: ["weather"], canDecide: false, weather: true });
-    sayFirstMove({ moves: ["weather"], canDecide: true, weather: false });
+    sayFirstMove({
+      moves: ["weather"],
+      canDecide: false,
+      weather: true,
+      named: true,
+    });
+    sayFirstMove({
+      moves: ["weather"],
+      canDecide: true,
+      weather: false,
+      named: true,
+    });
     expect(
       said().map((line) => [
         line.event,
@@ -394,6 +446,58 @@ describe("the first move, said at boot", () => {
     ).toEqual([
       ["first_move_does_nothing", "warn", false, true],
       ["first_move_does_nothing", "warn", true, false],
+    ]);
+  });
+
+  test("the default on where it can do nothing is said once and is not a warning", () => {
+    // Nobody set anything: a deployment with no weather key must not warn at every boot.
+    watching = spies();
+    sayFirstMove({
+      moves: ["weather"],
+      canDecide: true,
+      weather: false,
+      named: false,
+    });
+    expect(
+      said().map((line) => [
+        line.event,
+        line.level,
+        line.canDecide,
+        line.weather,
+      ]),
+    ).toEqual([["first_move_idle", "info", true, false]]);
+  });
+
+  test("a boot asks once, of a sentence nobody sent, and says how long it took", async () => {
+    watching = spies();
+    const model = jev(SURE);
+    await warmFirstMove({ moves: ["weather"], ask: model.ask });
+    expect(model.asked).toHaveLength(1);
+    expect(model.asked[0]?.state).toEqual(firstMoveStateOf("오늘 날씨 어때?"));
+    expect(model.asked[0]?.questions).toBe(FIRST_MOVE_QUESTIONS);
+    expect(said().map((line) => [line.event, line.answered])).toEqual([
+      ["first_move_warmed", true],
+    ]);
+  });
+
+  test("a boot asks nothing with the move off, with nobody to ask, or on a spent day, and a failure is only said", async () => {
+    watching = spies();
+    const off = jev(SURE);
+    await warmFirstMove({ moves: [], ask: off.ask });
+    await warmFirstMove({ moves: ["weather"], ask: null });
+    const spent = jev(SURE);
+    await warmFirstMove({
+      moves: ["weather"],
+      ask: spent.ask,
+      budgetSpent: async () => true,
+    });
+    expect([off.asked, spent.asked]).toEqual([[], []]);
+    expect(said()).toEqual([]);
+
+    const broken = jev("throws");
+    await warmFirstMove({ moves: ["weather"], ask: broken.ask });
+    expect(said().map((line) => [line.event, line.answered])).toEqual([
+      ["first_move_warmed", false],
     ]);
   });
 });

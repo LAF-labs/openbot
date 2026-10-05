@@ -63,10 +63,11 @@ export function sayConnectors(input: {
 /**
  * Whether a turn's first step may be taken before the Bot's model is asked (`turns/first-move.ts`).
  *
- * Said only when the switch names a move, and said as a warning when it names one this process
+ * Said only when a move is on, and said as a warning when the environment names one this process
  * cannot make: `FIRST_MOVE=weather` on a deployment where Jev may not be asked, or that holds no
  * weather key, is a switch that is on and does nothing — and an operator who set it would go on
- * believing turns are being answered in one round.
+ * believing turns are being answered in one round. The same on the default is not a warning,
+ * since nobody set anything: it says which half is missing and that is all.
  */
 export function sayFirstMove(input: {
   moves: readonly string[];
@@ -74,11 +75,21 @@ export function sayFirstMove(input: {
   canDecide: boolean;
   /** Whether this deployment holds the weather key, so there is a tool to call. */
   weather: boolean;
+  /** Whether the environment named the move, rather than the default being on. */
+  named: boolean;
 }): void {
   if (input.moves.length === 0) return;
   const ready = input.canDecide && input.weather;
   if (ready) {
     log.info("first_move_on", { moves: [...input.moves] });
+    return;
+  }
+  if (!input.named) {
+    log.info("first_move_idle", {
+      moves: [...input.moves],
+      canDecide: input.canDecide,
+      weather: input.weather,
+    });
     return;
   }
   log.warn("first_move_does_nothing", {
