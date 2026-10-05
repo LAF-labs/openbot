@@ -56,7 +56,9 @@ describe("server authorization", () => {
       },
     });
 
-    const response = await app.request("http://laf.local/api/admin/status");
+    const response = await app.request(
+      "http://laf.local/api/admin/audit-events",
+    );
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
@@ -102,7 +104,9 @@ describe("server authorization", () => {
       },
     });
 
-    const response = await app.request("http://laf.local/api/admin/status");
+    const response = await app.request(
+      "http://laf.local/api/admin/audit-events",
+    );
 
     // The session guard's answer, not the administrator guard's: there is no actor to ask about.
     expect(response.status).toBe(403);
@@ -161,12 +165,15 @@ describe("server authorization", () => {
       roleRepository: {
         rolesForUser: async () => ["admin"],
       },
+      auditReader: { list: async () => ({ events: [] }) },
     });
 
-    const response = await app.request("http://laf.local/api/admin/status");
+    const response = await app.request(
+      "http://laf.local/api/admin/audit-events",
+    );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ status: "ok" });
+    await expect(response.json()).resolves.toEqual({ events: [] });
   });
 });
 
@@ -218,7 +225,9 @@ describe("a session whose person the deployment no longer admits", () => {
       struckOff,
     );
 
-    const response = await app.request("http://laf.local/api/admin/status");
+    const response = await app.request(
+      "http://laf.local/api/admin/audit-events",
+    );
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({

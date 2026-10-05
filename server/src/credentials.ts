@@ -491,9 +491,6 @@ export type CredentialInput = {
 
 export type CredentialAdminService = CredentialStatusReader & {
   create: (input: CredentialInput) => Promise<CredentialStatus>;
-  rotate: (
-    input: CredentialInput & { previousCredentialId: string },
-  ) => Promise<CredentialStatus>;
   revoke: (
     credentialId: string,
     actorUserId?: string,
@@ -679,7 +676,6 @@ export function createCredentialAdminService(
   return {
     list: store.list,
     create: (input) => createCredential(service, input),
-    rotate: (input) => rotateCredential(service, input),
     revoke: (credentialId, actorUserId) =>
       revokeCredential(service, credentialId, actorUserId),
   };

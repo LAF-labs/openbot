@@ -1254,12 +1254,35 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * its contents; a card that reads data is drawn when its data may be read too; and it is refused,
  * with the missing grant named in the row, when it may not.
  *
+ * LOWERED 2026-10-06, `server` from 3631 to 3616, by exactly the fifteen tests that held doors
+ * nobody knocks on. The window that carried out a Bot's tool calls left the app on 2026-10-05,
+ * and sixteen doors of the server that nothing else calls went after it: nine of the computer's
+ * (`status`, `type`, `key`, `scroll`, `tabs/switch`, `upload`, and a Bot's three file tools by
+ * request), the plugin call and a skill's view, a component's decision, a Bot's `hide` and
+ * `unhide`, and an administrator's `status` and credential `rotate`. Gone with them: two in
+ * `computer-routes.test.ts` (a file write stopped by a rule at its route; a file call decided
+ * before any page was looked at), two in `computer-routes-codes.test.ts` (a missing file and a
+ * path out of the folder, as the two file doors answered them), one in
+ * `security-middleware.test.ts` (the larger body only the file-write door was allowed), one in
+ * `drawn-on.test.ts` (the call door saying its answer is a line of the conversation), one in
+ * `plugin-call-preview.integration.test.ts` (the call door's reply carrying the preview), three
+ * in `skill-ownership.integration.test.ts` (a skill read, and refused, through the view door; and
+ * the store's own refusal of somebody else's Bot, which the test beside it is now) and five in
+ * `component-decision.test.ts` (what the decision door answered: a card that names no data, one
+ * whose data may be read, one whose data may not, one of several withheld, and a list that is not
+ * names). What the product still does is held where it does it: the four above; and
+ * `computer-gateway.test.ts` holds a file call decided without a page; the person's file doors
+ * and the turn hold the two file failures; the registry's record holds the preview;
+ * `skill-view.integration.test.ts` holds a Bot reading a skill; the turn holds a card that reads
+ * nothing. Every other test that pressed one of the sixteen to state such a fact was moved onto a
+ * door that stays or onto the store, and is counted as before.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3631, roots: ["server"] },
+  { name: "server", floor: 3616, roots: ["server"] },
   { name: "app", floor: 2107, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

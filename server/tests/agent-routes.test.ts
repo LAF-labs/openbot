@@ -85,9 +85,6 @@ function fakeStore(
       calls.push(["update", receivedActor, id, input]);
       return profile({ id, ...input });
     },
-    async setHidden(receivedActor, id, hidden) {
-      calls.push(["setHidden", receivedActor, id, hidden]);
-    },
     async setPreferences(receivedActor, id, patch) {
       calls.push(["setPreferences", receivedActor, id, patch]);
     },
@@ -224,8 +221,10 @@ describe("agent lifecycle routes", () => {
       ["/agent-1"],
       ["/", { method: "POST", body: JSON.stringify(validInput) }],
       ["/agent-1", { method: "PATCH", body: JSON.stringify(validInput) }],
-      ["/agent-1/hide", { method: "POST" }],
-      ["/agent-1/unhide", { method: "POST" }],
+      [
+        "/agent-1/preferences",
+        { method: "POST", body: JSON.stringify({ hidden: true }) },
+      ],
       ["/agent-1", { method: "DELETE" }],
     ];
 
@@ -275,11 +274,15 @@ describe("agent lifecycle routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
-    const hidden = await app.request("http://laf.test/agent-1/hide", {
+    const hidden = await app.request("http://laf.test/agent-1/preferences", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hidden: true }),
     });
-    const unhidden = await app.request("http://laf.test/agent-1/unhide", {
+    const unhidden = await app.request("http://laf.test/agent-1/preferences", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hidden: false }),
     });
     const deleted = await app.request("http://laf.test/agent-1", {
       method: "DELETE",
@@ -297,8 +300,8 @@ describe("agent lifecycle routes", () => {
       ["get", actor, "agent-1"],
       ["create", actor, validInput],
       ["update", actor, "agent-1", validInput],
-      ["setHidden", actor, "agent-1", true],
-      ["setHidden", actor, "agent-1", false],
+      ["setPreferences", actor, "agent-1", { hidden: true }],
+      ["setPreferences", actor, "agent-1", { hidden: false }],
       ["softDelete", actor, "agent-1"],
     ]);
   });
@@ -551,7 +554,7 @@ describe("agent lifecycle routes", () => {
 
   test("rethrows unexpected errors to the outer Hono error handler", async () => {
     const store = fakeStore({
-      setHidden: async () => {
+      setPreferences: async () => {
         throw new Error("database disconnected");
       },
     });
@@ -562,8 +565,10 @@ describe("agent lifecycle routes", () => {
       context.json({ sentinel: error.message }, 599 as UnofficialStatusCode),
     );
 
-    const response = await app.request("http://laf.test/agent-1/hide", {
+    const response = await app.request("http://laf.test/agent-1/preferences", {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hidden: true }),
     });
 
     expect(response.status).toBe(599);

@@ -18,12 +18,12 @@
  * permanent "server down", and the consent window the app opens is one COOP would cut off from the
  * page that opened it.
  *
- * BODY. A megabyte, before any route runs. Bigger only where an honest body is bigger — a Bot's file
- * written into its workspace, and a conversation turn, which carries the thread (see
+ * BODY. A megabyte, before any route runs. Bigger only where an honest body is bigger — a
+ * conversation turn, which carries the thread (see
  * `LARGER_BODIES`) — and only for a body that DECLARES its length: Hono's `bodyLimit` refuses on
  * `Content-Length` without reading a byte, but has to read a chunked body to count it, and a
  * chunked body arrives before the session is checked. So a chunked body is held to the megabyte
- * everywhere, and the larger ceilings are free to be large.
+ * everywhere, and the larger ceiling is free to be large.
  *
  * RATE. In memory, by decision: one API process per VM (docs/laf/deployment-model.md), so a map in
  * this process is the whole picture. Three doors, the three whose cost lands on somebody's model
@@ -48,10 +48,6 @@ export const BODY_LIMIT_BYTES = 1_000_000;
 /**
  * The routes an honest body outgrows the megabyte on, and what they are allowed instead.
  *
- * - A Bot's file write. The workspace refuses more than a megabyte of contents on its own
- *   (agent-computer/src/workspace.ts), and that megabyte arrives here JSON-escaped, where a newline
- *   or a quote is two bytes — two and a half, so the computer's refusal stays the one that names the
- *   real limit.
  * - A conversation turn. CopilotKit posts the whole transcript it holds with every run, tool results
  *   and all, and a person's thread with a Bot is one thread for good (A5 §2) — so the body of a turn
  *   grows with the conversation, and a megabyte here would one day refuse somebody's every message
@@ -63,11 +59,6 @@ export const LARGER_BODIES: ReadonlyArray<{
   matches: (path: string) => boolean;
   maxBytes: number;
 }> = [
-  {
-    name: "workspace-write",
-    matches: (path) => /^\/api\/computers\/[^/]+\/files\/write$/.test(path),
-    maxBytes: 2_500_000,
-  },
   {
     name: "conversation-turn",
     matches: (path) => path.startsWith("/api/copilotkit/"),

@@ -10,9 +10,6 @@ import {
   requireAdmin,
   requireBotAccess,
 } from "../auth/guards";
-import { THREAD_HEADER } from "../computer/gateway";
-import { describeFailure } from "../failure-text";
-import { log } from "../log";
 import {
   authEndpointsFor,
   CATALOGUE,
@@ -21,7 +18,6 @@ import {
   instanceNameOf,
 } from "./catalogue";
 import type { ConnectFailureReason } from "./connected-page";
-import { McpServerError } from "./mcp";
 import {
   authorizationUrlFor,
   type ConnectOrigin,
@@ -47,12 +43,9 @@ import {
   type SharedClientLookup,
 } from "./shared-clients";
 import {
-  BotNotDrivableError,
   CatalogueEntryUnknownError,
   CustomServerRefusedError,
   type OAuthClient,
-  PluginNeedsApprovalError,
-  PluginRefusedError,
   type PluginStore,
   TOOL_UNKNOWN,
 } from "./store";
@@ -89,15 +82,13 @@ export const SKILL_BUILT_IN = "laf:skill_built_in";
 export const SKILL_UNKNOWN = "laf:skill_unknown";
 /** Your skill, on a Bot you may drive and do not own — a shared one this deployment publishes. */
 export const BOT_NOT_OWNED = "laf:bot_not_owned";
-/** `POST /call` without the tool or the Bot it is for. */
-export const CALL_INCOMPLETE = "laf:call_incomplete";
 /**
  * The call went out and the vendor's side failed — not a refusal, and said as its own fact.
  *
  * The body carried the failure's own sentence until 2026-09-14, which for a vendor's 403 was
  * Google's paragraph about an API not enabled for a project, handed to a Bot and printed on the
- * person's tool line in English. The status rides beside the code; the sentence goes to the audit
- * row (`mcp.call_failed`), which is where whoever can fix it reads.
+ * person's tool line in English. The sentence goes to the audit row (`mcp.call_failed`), which is
+ * where whoever can fix it reads.
  */
 export const TOOL_SERVER_FAILED = "laf:tool_server_failed";
 
@@ -153,13 +144,13 @@ export type ConnectConfig = {
  * it, and audit A8 (2026-09-10) measured the gap in that: the person talking to a Bot and the person
  * typing its id into a URL are not the same person. Every door here that takes a Bot id asks the
  * question the rest of the server asks — `requireBotAccess` where the id is in the path,
- * `mayDriveBot` where it is in a body or a query, the store itself for `/call`, which the unattended
- * runner shares — and a Bot that is not yours is answered 404 `laf:bot_not_found`.
+ * `mayDriveBot` where it is in a body or a query — and a Bot that is not yours is answered 404
+ * `laf:bot_not_found`.
  *
- * The call endpoint asks again. The list of tools a run was offered is a snapshot taken when the run
- * started, so a grant revoked a second later is still in the model's hands. Deciding at call time is
- * what makes revocation immediate rather than nearly immediate, and it is where a refusal becomes a
- * row somebody can read.
+ * A call asks again, in the store (`call.ts`). The list of tools a run was offered is a snapshot
+ * taken when the run started, so a grant revoked a second later is still in the model's hands.
+ * Deciding at call time is what makes revocation immediate rather than nearly immediate, and it is
+ * where a refusal becomes a row somebody can read.
  */
 export function createPluginRoutes(
   store: PluginStore,
@@ -1145,33 +1136,6 @@ export function createPluginRoutes(
   );
 
   /**
-   * A Bot reading one of its skills, from the browser's `skill_view` tool.
-   *
-   * The grant is checked and the `skill.viewed` row written inside the store, so this route cannot
-   * satisfy one and skip the other. A refusal is 403 with the code the model reads and the surface
-   * translates — never a sentence. Whose Bot it is comes first, as above: a colleague who could
-   * not list the skills must not be able to read one by guessing its name.
-   */
-  routes.post(
-    "/for/:agentId/skills/:slug/view",
-    requireUser,
-    requireBotAccess("agentId"),
-    async (context) => {
-      const viewed = await store.viewSkill({
-        slug: context.req.param("slug"),
-        agentId: context.req.param("agentId"),
-        actorId: context.var.actor.id,
-      });
-      if (!viewed.allowed) {
-        // The store's refusal is a fact code (`laf:skill_not_granted`), never a sentence.
-        const code = viewed.reason;
-        return context.json({ error: code, code }, 403);
-      }
-      return context.json(viewed.skill);
-    },
-  );
-
-  /**
    * A one-time code or account link withheld from a mail this Bot read, shown to the person the
    * call was made for — the control on that call's line asks here when they press 보기.
    *
@@ -1197,137 +1161,6 @@ export function createPluginRoutes(
       return context.json(shown);
     },
   );
-
-  /**
-   * Call a tool, as a Bot.
-   *
-   * The grant, the policy and the audit row all happen inside the store, so this endpoint cannot
-   * accidentally satisfy one of them and skip another. A refusal comes back as 403 with the code the
-   * trail records; the model's Korean and the person's are both looked up by it on the other side.
-   */
-  routes.post("/call", requireUser, async (context) => {
-    const body = (await context.req.json().catch(() => null)) as {
-      ref?: string;
-      args?: Record<string, unknown>;
-      agentId?: string;
-      approvalId?: unknown;
-    } | null;
-    if (!body?.ref || !body.agentId) {
-      return context.json(
-        { error: CALL_INCOMPLETE, code: CALL_INCOMPLETE },
-        400,
-      );
-    }
-
-    try {
-      const result = await store.callTool({
-        ref: body.ref,
-        args: body.args ?? {},
-        botId: body.agentId,
-        /*
-         * The user id, not the email. A `user-oauth` server is answered with the asker's own
-         * grant, keyed on `users.id`; the email stays what configuration acts are signed with.
-         */
-        actorId: context.var.actor.id,
-        // Which conversation this is happening in, so an answer can be "for this conversation".
-        ...(context.req.header(THREAD_HEADER)?.trim()
-          ? { threadId: context.req.header(THREAD_HEADER)?.trim() }
-          : {}),
-        /*
-         * And whether they govern the deployment, because the store asks whose Bot this is.
-         *
-         * The role is the route's to know — it is on the session — and the store's to spend, which
-         * is why it travels rather than being read again. See `callTool`.
-         */
-        actorIsAdmin: context.var.actor.role === "admin",
-        // Passed through without being looked at. An approval means something only against the call
-        // the store is about to make, and a route that judged it would be a second place deciding.
-        ...(typeof body.approvalId === "string" && body.approvalId
-          ? { approvalId: body.approvalId }
-          : {}),
-        // The app's own call, made from a conversation and drawn on its line there: a code withheld
-        // from a mail is kept to be shown on it (`mail-secrets.ts`). A routine's is `nowhere`.
-        drawnOn: "conversation",
-      });
-      return context.json(result);
-    } catch (error) {
-      /**
-       * A boundary that wants a person, reported as 409 rather than 403.
-       *
-       * 403 already means one thing to everything downstream: a boundary refused you, and that is
-       * final. The surface renders it as a refusal and the model is told to stop and say so. This is
-       * the opposite condition, so reusing 403 would make every ask rule about a tool call read to a
-       * Bot as a deny rule, and the turn would be thrown away on work the deployment was willing to
-       * permit. The same status and the same body shape the computer's acting routes use, because
-       * the surface waits for both in the same way.
-       */
-      if (error instanceof PluginNeedsApprovalError) {
-        return context.json(
-          {
-            // A code rather than a sentence, and the facts beside it: the card is Korean and this
-            // server does not write Korean. See `computer/approvals.ts` AskSubject.
-            error: error.code,
-            code: error.code,
-            awaitingApproval: true,
-            approvalId: error.approvalId,
-            subject: error.subject,
-            // What the call will send, for the card on this call's own line. Absent when it sends
-            // nothing; see `computer/approvals.ts` CallPreview.
-            preview: error.preview,
-            rule: error.rule,
-            scope: error.scope,
-            threadId: error.threadId,
-            taskId: error.taskId,
-            expiresAt: error.expiresAt,
-          },
-          409,
-        );
-      }
-      /*
-       * Not this person's Bot, answered as 404 rather than 403.
-       *
-       * A 403 would confirm the id names something. This endpoint takes the Bot from the request
-       * body, so an answer that told a caller which ids exist would be a way to enumerate somebody
-       * else's Bots by asking about them.
-       */
-      if (error instanceof BotNotDrivableError) {
-        return context.json({ error: error.code, code: error.code }, 404);
-      }
-      if (error instanceof PluginRefusedError) {
-        return context.json(
-          { error: error.code, code: error.code, rule: error.rule },
-          403,
-        );
-      }
-      if (error instanceof CatalogueEntryUnknownError) {
-        return context.json({ error: error.code, code: error.code }, 404);
-      }
-      /*
-       * A server that failed is not a refusal, and saying so matters: one means the deployment
-       * decided against it, the other means somebody else's software did not answer. `failed` says
-       * which, the status is the vendor's where there was one, and what it wrote is on the audit row
-       * the call path left — and in this line, for a failure that happened before any vendor did.
-       */
-      const status =
-        error instanceof McpServerError && error.status !== null
-          ? { status: error.status }
-          : {};
-      log.warn("plugin_call_failed", {
-        ref: body.ref,
-        ...status,
-        reason: describeFailure(error),
-      });
-      return context.json(
-        {
-          error: TOOL_SERVER_FAILED,
-          code: TOOL_SERVER_FAILED,
-          failed: true,
-          ...status,
-        },
-        502,
-      );
-    }
-  });
 
   return routes;
 }

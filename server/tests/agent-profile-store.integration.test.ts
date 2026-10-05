@@ -280,13 +280,13 @@ describe("agent profile store integration", () => {
     expectListed(await store.list(owner, true), source.agentId, false);
     expectListed(await store.list(other), source.agentId, true);
 
-    await store.setHidden(owner, source.agentId, true);
+    await store.setPreferences(owner, source.agentId, { hidden: true });
     expectListed(await store.list(owner), source.agentId, false);
     expectListed(await store.list(owner, true), source.agentId, true);
     expectListed(await store.list(other), source.agentId, true);
     expectListed(await store.list(other, true), source.agentId, false);
 
-    await store.setHidden(owner, source.agentId, false);
+    await store.setPreferences(owner, source.agentId, { hidden: false });
     expectListed(await store.list(owner), source.agentId, true);
     expectListed(await store.list(owner, true), source.agentId, false);
     const [preference] = await database
@@ -397,7 +397,7 @@ describe("agent profile store integration", () => {
       store.update(other, deployments.agentId, input),
     ).rejects.toBeInstanceOf(AgentNotManageableError);
     // Seen, so it can be tidied off their own screen — a preference, not a change to the Bot.
-    await store.setHidden(other, deployments.agentId, true);
+    await store.setPreferences(other, deployments.agentId, { hidden: true });
     expectListed(await store.list(other), deployments.agentId, false);
     expectListed(await store.list(other, true), deployments.agentId, true);
 
@@ -405,7 +405,7 @@ describe("agent profile store integration", () => {
       store.update(other, theirs.agentId, input),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
     await expect(
-      store.setHidden(other, theirs.agentId, true),
+      store.setPreferences(other, theirs.agentId, { hidden: true }),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
   });
 
@@ -540,7 +540,7 @@ describe("agent profile store integration", () => {
     for (const attempt of [
       () => store.update(admin, source.agentId, input),
       () => store.softDelete(admin, source.agentId),
-      () => store.setHidden(admin, source.agentId, true),
+      () => store.setPreferences(admin, source.agentId, { hidden: true }),
       () => store.setPreferences(admin, source.agentId, { notify: false }),
     ]) {
       await expect(attempt()).rejects.toBeInstanceOf(AgentNotFoundError);
@@ -577,7 +577,7 @@ describe("agent profile store integration", () => {
     expect(profile?.agentId).toBe(source.agentId);
     expect(profile?.deletedAt).toBeInstanceOf(Date);
     await expect(
-      store.setHidden(owner, source.agentId, true),
+      store.setPreferences(owner, source.agentId, { hidden: true }),
     ).rejects.toBeInstanceOf(AgentNotFoundError);
   });
 

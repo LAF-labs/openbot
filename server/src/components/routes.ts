@@ -28,7 +28,7 @@ import { ComponentNotFoundError, type ComponentStore } from "./store";
  */
 /** `PUT /catalogue` without a list. The browser announcing its build sends one on every load. */
 export const COMPONENT_LIST_REQUIRED = "laf:component_list_required";
-/** A decision, a call or a grant that names no Bot. */
+/** A call or a grant that names no Bot. */
 export const COMPONENT_BOT_REQUIRED = "laf:component_bot_required";
 /** A data call that names no function. */
 export const COMPONENT_FUNCTION_REQUIRED = "laf:component_function_required";
@@ -43,10 +43,10 @@ export const COMPONENT_DESCRIPTION_REQUIRED =
  * surface in front of that person is built from, and what a Bot may do is not a secret from the
  * person talking to it. Deciding it is an administrator's job.
  *
- * The decision endpoint is the part that matters. The app already knows what it registered, so
- * asking again before every render looks redundant, and is not. The list of tools a run is offered
- * is a snapshot taken when that run started, so a grant revoked one second later is still in the
- * model's hands. Asking at call time is what makes "revoke it and watch it go" true rather than
+ * Deciding at call time is the part that matters: a card's in the Bot's turn, of this store
+ * (`turns/chat-tools.ts`), and a component's own read of its data here. The list of tools a run is
+ * offered is a snapshot taken when that run started, so a grant revoked one second later is still in
+ * the model's hands. Asking at call time is what makes "revoke it and watch it go" true rather than
  * nearly true, and it is where a refusal becomes a row somebody can see.
  */
 export function createComponentRoutes(
@@ -141,7 +141,7 @@ export function createComponentRoutes(
    * is missing would be a list the surface could accidentally register.
    *
    * YOUR BOT, not any Bot. It answered about any id at all (measured 2026-09-10, audit A8), and the
-   * two handlers below took the Bot from the body the same way — so a colleague could name the
+   * handler below took the Bot from the body the same way — so a colleague could name the
    * owner's Bot and read data through a grant an administrator gave to that Bot and not to theirs.
    * The rule is the one every other door a Bot id opens uses (`actorMayDriveBot`): the owner, an
    * administrator, or a Bot nobody made. 404, never 403, for the same reason as everywhere else.
@@ -159,67 +159,6 @@ export function createComponentRoutes(
   /** The body-borne Bot, refused the same way the path-borne one is. */
   const notYourBot = (context: Parameters<typeof mayDriveBot>[0]) =>
     context.json({ error: BOT_NOT_FOUND, code: BOT_NOT_FOUND }, 404);
-
-  /**
-   * May this Bot use this component, right now?
-   *
-   * A POST because it writes: a refusal is recorded. Answering 200 with `allowed: false` rather than
-   * 403 is deliberate, the caller is the app asking a question on the Bot's behalf, and it is not
-   * itself forbidden from asking. The refusal travels in the body, where the handler turns it into
-   * something the model reads.
-   */
-  routes.post("/:name/decision", requireUser, async (context) => {
-    const name = context.req.param("name");
-    const body = (await context.req.json().catch(() => null)) as {
-      agentId?: unknown;
-      functions?: unknown;
-    } | null;
-    const agentId = typeof body?.agentId === "string" ? body.agentId : "";
-    if (!agentId) {
-      return context.json(
-        { error: COMPONENT_BOT_REQUIRED, code: COMPONENT_BOT_REQUIRED },
-        400,
-      );
-    }
-    if (!(await mayDriveBot(context, agentId))) return notYourBot(context);
-    const functions = Array.isArray(body?.functions)
-      ? body.functions.filter(
-          (entry): entry is string => typeof entry === "string",
-        )
-      : [];
-
-    const decision = await store.decide(name, agentId);
-    if (!decision.allowed) {
-      await audit(context, "component.refused", name, {
-        bot: agentId,
-        reason: decision.reason,
-      });
-      return context.json({ allowed: false, reason: decision.reason });
-    }
-
-    /*
-     * The data the component will read, decided here as well.
-     *
-     * Both decisions are enforced at `/call`, but that runs while the component renders, after
-     * whoever asked for it has been answered. A caller that says which functions the component
-     * needs gets one verdict covering what it will do, rather than one covering only its name.
-     */
-    for (const functionName of functions) {
-      if (await store.mayCall(name, functionName)) continue;
-      const reason = FUNCTION_NOT_GRANTED;
-      await audit(context, "component.function_refused", name, {
-        bot: agentId,
-        function: functionName,
-        reason,
-      });
-      // WHICH grant is missing, beside the code rather than spelled into it. It used to be written
-      // into the English sentence, which is how the name and the words became one field a Korean
-      // surface could not take apart.
-      return context.json({ allowed: false, reason, function: functionName });
-    }
-
-    return context.json({ allowed: true });
-  });
 
   /** The data functions this build ships, for an administrator deciding what to grant. */
   routes.get("/functions", requireUser, (context) =>

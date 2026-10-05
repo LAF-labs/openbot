@@ -31,7 +31,7 @@
  * (`copilot-guard.test.ts`).
  *
  * Bodies name A's Bot wherever a body names a Bot, so the colleague column presses on the
- * body-borne doors (`routines`, `components/:name/decision|call`, `plugins/call`, `plugins/grants`,
+ * body-borne doors (`routines`, `components/:name/call`, `plugins/grants`,
  * `channels`) as well as the path-borne ones, and the one query-borne door (`DELETE
  * plugins/grants`) is sent its Bot in the query. Everything else is sent an empty object, which
  * every route refuses without writing anything — and the routes that destroy something are pointed
@@ -486,14 +486,8 @@ function bodyFor(method: string, template: string): unknown {
       // 다시 켜기 on A's Bot: the owner's press resumes what the unread rule paused (nothing, here),
       // and the colleague must be told the Bot is not there.
       return { agentId: BOT_A };
-    case "POST /api/components/:name/decision":
-      return { agentId: BOT_A };
     case "POST /api/components/:name/call":
       return { agentId: BOT_A, function: "botActivity" };
-    case "POST /api/plugins/call":
-      // A well-formed ref (`server/tool`) so the call gets as far as asking whose Bot this is; a
-      // bare word was refused on shape first, and that refusal carries no code.
-      return { ref: `nobody-${run}/nothing`, agentId: BOT_A };
     case "POST /api/plugins/grants":
       // A skill nobody wrote: the owner is told there is no such skill, the administrator grants
       // a name that resolves to nothing, and the colleague must be told the Bot is not there. The
@@ -761,8 +755,8 @@ const KNOWN_500: string[] = [];
  * NONE. Audit A8's last S2 was `GET /api/plugins/for/:agentId`, which answered a colleague naming
  * the owner's Bot with every tool and skill it held; it lived in a tree another change was in at
  * the time, so it was listed here rather than closed. It is closed now — `requireBotAccess` on it
- * and on `for/:agentId/skills/:slug/view` beside it, `mayDriveBot` on the two grant verbs — and B's
- * list below shrank by one.
+ * and on the skill view route that stood beside it until 2026-10-06, `mayDriveBot` on the two grant
+ * verbs — and B's list below shrank by one.
  *
  * Kept, empty, as the one place an open cell would have to be written down. The colleague test
  * counts open cells from the measurement, not from the lists, and asserts the count is zero: a cell
@@ -862,7 +856,6 @@ const A_ALLOWED = [
   "GET /api/computers/:botId/files/info",
   "GET /api/computers/:botId/read",
   "GET /api/computers/:botId/screenshot",
-  "GET /api/computers/:botId/status",
   "GET /api/plugins/for/:agentId",
   "GET /api/routines/:id/notepad",
   "GET /api/routines/:id/runs",
@@ -871,8 +864,6 @@ const A_ALLOWED = [
   // 계속 돌리기 on it, and 다시 켜기 on its Bot's routines the unread rule paused.
   "POST /api/routines/:id/keep-running",
   "POST /api/routines/resume",
-  "POST /api/agents/:agentId/hide",
-  "POST /api/agents/:agentId/unhide",
   // Answering the question their own Bot raised — a No, on a real question. It was an
   // administrator's alone until 2026-09-16, which left a `user`'s Bot asking nobody at all.
   "POST /api/approvals/:botId/:approvalId",
@@ -884,15 +875,12 @@ const A_ALLOWED = [
   "POST /api/approvals/:botId/:approvalId/withdraw",
   "POST /api/channels",
   "POST /api/components/:name/call",
-  "POST /api/components/:name/decision",
   "POST /api/me/first-task",
   "POST /api/computers/:botId/computers/stop",
   "POST /api/computers/:botId/control/release",
   "POST /api/computers/:botId/control/request",
   "POST /api/computers/:botId/control/take",
-  "POST /api/computers/:botId/files/list",
   "POST /api/computers/:botId/human/:kind",
-  "POST /api/computers/:botId/scroll",
   "POST /api/computers/:botId/snapshot",
   "POST /api/routines",
   "POST /api/routines/:id/enabled",
@@ -916,7 +904,7 @@ const A_ALLOWED = [
  * middle of. Closing the roster and leaving that open would have been the smaller half of the job.
  *
  * WHAT IS NOT ON THIS LIST IS THE POINT, and it is what an operator still runs a deployment with:
- * every `/api/admin/*` door, the audit table, the approval metrics, the package and status reads,
+ * every `/api/admin/*` door, the audit table, the approval metrics, the package read,
  * the deployment-wide computer policy (`GET`/`PUT /api/computers/policy`, which names no Bot), and
  * removing a person — which still takes their Bots, their browsers and their logins with them,
  * because `account/deletion.ts` reads `owner_user_id` off the table and asks no predicate at all.
@@ -930,8 +918,6 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "GET /api/agents/:agentId/memories",
   // What A told A's Bot it need not ask about: A's profile, not the operator's boundary page.
   "GET /api/agents/:botId/allowances",
-  "POST /api/agents/:agentId/hide",
-  "POST /api/agents/:agentId/unhide",
   // A conversation made around A's Bot, and the intro chip pressed on it: both take the id in a body.
   "POST /api/channels",
   "POST /api/me/first-task",
@@ -956,15 +942,12 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "GET /api/computers/:botId/files/info",
   "GET /api/computers/:botId/read",
   "GET /api/computers/:botId/screenshot",
-  "GET /api/computers/:botId/status",
   "POST /api/computers/:botId/computers/reset",
   "POST /api/computers/:botId/computers/stop",
   "POST /api/computers/:botId/control/release",
   "POST /api/computers/:botId/control/request",
   "POST /api/computers/:botId/control/take",
-  "POST /api/computers/:botId/files/list",
   "POST /api/computers/:botId/human/:kind",
-  "POST /api/computers/:botId/scroll",
   "POST /api/computers/:botId/snapshot",
   // The questions its boundary raised — reading them and answering them — and what it may spend.
   "GET /api/approvals/:botId",
@@ -978,7 +961,6 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "GET /api/plugins/for/:agentId",
   "GET /api/components/for-agent/:agentId",
   "POST /api/components/:name/call",
-  "POST /api/components/:name/decision",
 ];
 
 /** The administrator: what anybody has on their own Bots, and the deployment's own doors. */
@@ -991,7 +973,6 @@ const ADMIN_ALLOWED = [
   "GET /api/admin/credentials",
   "GET /api/admin/metrics/approvals",
   "GET /api/admin/package",
-  "GET /api/admin/status",
   "GET /api/approvals/standing",
   // The Computers page's list: what the deployment's one browser holds, at an address that names no
   // Bot (2026-09-16 — it was `computers/:botId/computers`, pressed with a Bot id nobody has).
@@ -1121,7 +1102,9 @@ describe("the matrix", () => {
    */
   test("a colleague naming the owner's Bot is told it is not there, on every door", () => {
     const doors = cellsOf("B").filter((cell) => BOT_DOORS(cell.template));
-    expect(doors.length).toBeGreaterThanOrEqual(30);
+    // Thirty until 2026-10-06, when ten of these doors went with the window that pressed them for
+    // the Bot — nine of the computer's and a skill's view. Lowered by exactly those.
+    expect(doors.length).toBeGreaterThanOrEqual(20);
     for (const cell of doors) {
       expect([keyOf(cell), cell.status, cell.code]).toEqual([
         keyOf(cell),
@@ -1133,9 +1116,7 @@ describe("the matrix", () => {
     for (const template of [
       "POST /api/routines",
       "POST /api/routines/resume",
-      "POST /api/components/:name/decision",
       "POST /api/components/:name/call",
-      "POST /api/plugins/call",
       "POST /api/plugins/grants",
       "DELETE /api/plugins/grants",
     ]) {
@@ -1251,7 +1232,6 @@ describe("the matrix", () => {
       "GET /api/admin/credentials",
       "GET /api/admin/metrics/approvals",
       "GET /api/admin/package",
-      "GET /api/admin/status",
       "GET /api/approvals/standing",
       // What the deployment's one browser holds, which the Computers page lists and resets from.
       "GET /api/computers",
@@ -1288,7 +1268,7 @@ describe("the matrix", () => {
     for (const template of [
       "GET /api/computers/:botId/read",
       "GET /api/computers/:botId/screenshot",
-      "POST /api/computers/:botId/scroll",
+      "POST /api/computers/:botId/click",
       "POST /api/computers/:botId/control/take",
       "POST /api/computers/:botId/computers/reset",
       // The file a Bot wrote for its owner, taken out of its folder: not an administrator's.

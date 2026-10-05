@@ -44,7 +44,6 @@ import {
 } from "./gateway";
 import type { HandedFile } from "./gateway/person-files";
 import { type PolicyStore, parseActionPolicy } from "./policy-store";
-import { readFileInputOf } from "./schema";
 import type { ScreenViewAudit } from "./screen-view";
 import { snapshotForModel } from "./snapshot-lines";
 import type { WriteUp } from "./write-up";
@@ -123,14 +122,6 @@ export function createComputerRoutes(
     }
     await next();
   });
-
-  routes.get(
-    "/:botId/status",
-    requireUser,
-    requireBotAccess(),
-    async (context) =>
-      context.json(await client.status(context.req.param("botId"))),
-  );
 
   /*
    * THE TWO ROUTES A PANE READS, AND SO THE TWO WHOSE FAILURE A PERSON SEES.
@@ -215,7 +206,7 @@ export function createComputerRoutes(
             },
             body.url.trim(),
             asApprovalId(body),
-            // The person's Stop, as the acting routes below pass it. Navigation was the one
+            // The person's Stop, as the click route below passes it. Navigation was the one
             // acting call that went on waiting for a page after the person had stopped it.
             context.req.raw.signal,
           ),
@@ -281,104 +272,6 @@ export function createComputerRoutes(
         botId,
         actor,
         ref,
-        signal,
-        asApprovalId(body),
-      );
-    }),
-  );
-
-  routes.post("/:botId/type", requireUser, requireBotAccess(), (context) =>
-    act(context, (botId, actor, body, signal) => {
-      const ref = asRef(body);
-      if (!ref) return ARGUMENTS_INVALID_BODY;
-      if (typeof body?.text !== "string") return ARGUMENTS_INVALID_BODY;
-      return gateway.type(
-        botId,
-        botId,
-        actor,
-        {
-          ...ref,
-          text: body.text,
-          submit: body?.submit === true,
-        },
-        signal,
-        asApprovalId(body),
-      );
-    }),
-  );
-
-  routes.post("/:botId/key", requireUser, requireBotAccess(), (context) =>
-    act(context, (botId, actor, body, signal) => {
-      if (typeof body?.key !== "string" || !body.key) {
-        return ARGUMENTS_INVALID_BODY;
-      }
-      const ref = asRef(body);
-      return gateway.key(
-        botId,
-        botId,
-        actor,
-        {
-          key: body.key,
-          ...(ref ?? {}),
-        },
-        signal,
-        asApprovalId(body),
-      );
-    }),
-  );
-
-  routes.post("/:botId/scroll", requireUser, requireBotAccess(), (context) =>
-    act(context, (botId, actor, body) =>
-      gateway.scroll(
-        botId,
-        botId,
-        actor,
-        {
-          ...(typeof body?.deltaY === "number" ? { deltaY: body.deltaY } : {}),
-        },
-        asApprovalId(body),
-      ),
-    ),
-  );
-
-  /**
-   * Move the Bot to another one of its open tabs.
-   *
-   * An acting route although it changes nothing on any site: it goes through the gateway so the trail
-   * says which page the Bot was on when it pressed the next thing.
-   */
-  routes.post(
-    "/:botId/tabs/switch",
-    requireUser,
-    requireBotAccess(),
-    (context) =>
-      act(context, (botId, actor, body) => {
-        if (typeof body?.index !== "number" || !Number.isInteger(body.index)) {
-          return ARGUMENTS_INVALID_BODY;
-        }
-        return gateway.switchTab(
-          botId,
-          botId,
-          actor,
-          { index: body.index },
-          asApprovalId(body),
-        );
-      }),
-  );
-
-  /** Hand one of the Bot's own files to a file input on the page. */
-  routes.post("/:botId/upload", requireUser, requireBotAccess(), (context) =>
-    act(context, (botId, actor, body, signal) => {
-      const ref = asRef(body);
-      if (!ref) return ARGUMENTS_INVALID_BODY;
-      if (typeof body?.path !== "string" || !body.path.trim()) {
-        return ARGUMENTS_INVALID_BODY;
-      }
-      return gateway.uploadFile(
-        botId,
-        botId,
-        actor,
-        { ...ref, path: body.path.trim() },
         signal,
         asApprovalId(body),
       );
@@ -736,74 +629,17 @@ export function createComputerRoutes(
     },
   );
 
-  /** The Bot's files. Through the gateway, like every other acting call. */
-  routes.post(
-    "/:botId/files/list",
-    requireUser,
-    requireBotAccess(),
-    (context) =>
-      act(context, (botId, actor, body) =>
-        gateway.listFiles(
-          botId,
-          botId,
-          actor,
-          {
-            ...(typeof body?.path === "string" && body.path.trim()
-              ? { path: body.path.trim() }
-              : {}),
-          },
-          asApprovalId(body),
-        ),
-      ),
-  );
-
-  routes.post(
-    "/:botId/files/read",
-    requireUser,
-    requireBotAccess(),
-    (context) =>
-      act(context, (botId, actor, body) => {
-        const input = readFileInputOf(body);
-        if (!input) return ARGUMENTS_INVALID_BODY;
-        return gateway.readFile(botId, botId, actor, input, asApprovalId(body));
-      }),
-  );
-
-  routes.post(
-    "/:botId/files/write",
-    requireUser,
-    requireBotAccess(),
-    (context) =>
-      act(context, (botId, actor, body) => {
-        if (typeof body?.path !== "string" || !body.path.trim()) {
-          return ARGUMENTS_INVALID_BODY;
-        }
-        if (typeof body?.contents !== "string") return ARGUMENTS_INVALID_BODY;
-        return gateway.writeFile(
-          botId,
-          botId,
-          actor,
-          {
-            path: body.path.trim(),
-            contents: body.contents,
-            append: body.append === true,
-          },
-          asApprovalId(body),
-        );
-      }),
-  );
-
   /*
    * THE BOT'S FOLDER, FOR THE PERSON IT WORKS FOR (phase 8, first slice, 2026-10-02).
    *
-   * The three routes above are a Bot's tools, carried out for it: judged by the policy, and
+   * A Bot's own file tools are carried out for it in its turn: judged by the policy, and
    * answered in the terms a tool is answered in. Until these three, that was every door the folder
    * had — a Bot could write `9월 정산.csv` and the person it wrote it for could not open it. These
    * are that person's own: what is in the folder, whether one file is there, and the file itself.
    * So they are GETs a card and a link can ask, they pass no policy (`gateway/person-files.ts` says
    * why), and whose Bot it is is asked in each declaration like everywhere else in this file.
    *
-   * Nothing at a path is a 404 on these and a 400 on the tool routes above. See `fileFailed`.
+   * Nothing at a path is a 404 on these and a 400 to a Bot's tool. See `fileFailed`.
    */
   routes.get(
     "/:botId/files",
@@ -973,7 +809,7 @@ type ComputerContext = Context<{ Variables: AppVariables }>;
 export type BadRequest = { error: `laf:${string}`; code: `laf:${string}` };
 
 /**
- * An acting request missing what its tool requires: a ref and its snapshotId, the text, the key.
+ * An acting request missing what its tool requires: a ref and its snapshotId, the address.
  *
  * ONE FACT FOR ALL OF THEM, and the one the unattended runner answers the same mistake with, so a
  * Bot is told the same thing whether a person's tab or a routine made the call. They were a sentence
@@ -1010,7 +846,7 @@ async function act(
     /**
      * The person's Stop, as an abort.
      *
-     * The surface aborts its request when Stop is pressed; Bun exposes that here, and every acting
+     * The surface aborts its request when Stop is pressed; Bun exposes that here, and the click
      * route passes it on so the abort reaches the Playwright call mid-click. Without it, Stop ended
      * the run in the transcript while the click carried on landing on a live page, harmless most of
      * the time, and not harmless on a Confirm button, which is exactly when Stop gets pressed.
@@ -1110,7 +946,7 @@ function failed(context: ComputerContext, error: unknown) {
 /**
  * A failure on one of a person's own file doors, as `failed` answers it — with one difference.
  *
- * NOTHING AT THAT PATH IS A 404 HERE. The Bot's tool routes say 400 for it, the container's own
+ * NOTHING AT THAT PATH IS A 404 HERE. A Bot's tool is answered 400 for it, the container's own
  * status, because to a tool it is an argument to correct. To a person it is the address of a thing
  * that is not there: the file card draws "gone" on it, a link to it fails as a missing file does,
  * and it is what the other door that hands a person a file answers (`attachments/routes.ts`). The

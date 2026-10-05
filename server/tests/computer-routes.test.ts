@@ -14,8 +14,6 @@ import type {
   HumanInput,
   SecretRequest,
   SnapshotResult,
-  TypeInput,
-  WriteFileInput,
 } from "../src/computer/schema";
 
 /**
@@ -87,7 +85,6 @@ function fakeClient() {
   /** Everything the far side was told, so a secret-absence test can search all of it at once. */
   const sentToComputer: unknown[] = [];
   const client = {
-    status: async (botId: string) => ({ botId, state: "ready" as const }),
     screenshot: async () => ({
       base64: "aGVsbG8=",
       width: 1280,
@@ -97,25 +94,13 @@ function fakeClient() {
     read: async () => ({ url: SNAPSHOT.url, title: SNAPSHOT.title, text: "" }),
     snapshot: async () => SNAPSHOT,
     navigate: async (url: string) => ({ url, title: "Order", elapsedMs: 3 }),
-    click: async () => ({ action: "click", url: SNAPSHOT.url, elapsedMs: 1 }),
-    type: async (input: TypeInput) => {
+    click: async (input: unknown) => {
       sentToComputer.push(input);
-      return { action: "type", url: SNAPSHOT.url, elapsedMs: 1 };
+      return { action: "click", url: SNAPSHOT.url, elapsedMs: 1 };
     },
-    key: async () => ({ action: "key", url: SNAPSHOT.url, elapsedMs: 1 }),
-    scroll: async () => ({ action: "scroll", url: SNAPSHOT.url, elapsedMs: 1 }),
     listFiles: async () => ({ path: ".", entries: [] }),
     statFile: async (path: string) => ({ path, kind: "file", bytes: 2 }),
     downloadFile: async () => new TextEncoder().encode("hi"),
-    readFile: async () => ({
-      path: "notes.md",
-      contents: "",
-      truncated: false,
-    }),
-    writeFile: async (input: WriteFileInput) => {
-      sentToComputer.push(input);
-      return { path: input.path, bytes: input.contents.length };
-    },
     control: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
     requestControl: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
     takeControl: async () => ({ holder: "human" as const, url: SNAPSHOT.url }),
@@ -653,49 +638,52 @@ describe("changing the boundary", () => {
 
 describe("a boundary decided in front of the browser", () => {
   const DENYING: ActionPolicy = {
-    deny: ['intent == "type"'],
+    deny: ['intent == "activate"'],
     ask: [],
     allow: ["true"],
   };
   const ASKING: ActionPolicy = {
     deny: [],
-    ask: ['contains(element.name, "Customer")'],
+    ask: ['contains(element.name, "Submit")'],
     allow: ["true"],
   };
 
-  test("a deny rule refuses typing at the route, and the refusal is a row", async () => {
+  test("a deny rule refuses a click at the route, and the refusal is a row", async () => {
     /*
-     * Typing is the action the shipped policy denies outright — a Bot must not put a value into a
-     * password box — and until this test nothing checked that the route in front of it reports the
+     * Until this test nothing checked that the route in front of a refused action reports the
      * refusal rather than a malfunction. 403 is what the surface renders as Blocked; a 500 would
      * send somebody looking for a broken container.
+     *
+     * It pressed `/type` until that door went with the window that called it (2026-10-06). What a
+     * refusal's row keeps of a value a Bot was typing is held where a Bot types now, in its turn
+     * (`chat-tools.test.ts`, "what a Bot was typing is not in the row its refusal leaves").
      */
     const { app, sentToComputer, rows, seen } = surface(ADMIN, DENYING);
     await seen();
 
-    const response = await app.request("/bot-1/type", {
+    const response = await app.request("/bot-1/click", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref: "e4", snapshotId: 7, text: "Kim" }),
+      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
     });
 
     expect(response.status).toBe(403);
     const body = (await response.json()) as { rule?: string };
-    expect(body.rule).toBe('intent == "type"');
+    expect(body.rule).toBe('intent == "activate"');
     // Nothing reached the browser, which is the only guarantee a boundary makes.
     expect(sentToComputer).toEqual([]);
     const refusal = rows.find(
       (row) => row.eventType === "computer.action_refused",
     );
     expect(refusal?.payload).toMatchObject({
-      action: "computer_type",
+      action: "computer_click",
       bot: "bot-1",
-      decision: { allowed: false, source: "deny", rule: 'intent == "type"' },
+      decision: {
+        allowed: false,
+        source: "deny",
+        rule: 'intent == "activate"',
+      },
     });
-    // WHAT THE BOT WAS TYPING IS NOT IN THE ROW, and this is the route where that matters most: the
-    // shipped policy denies typing into a password box, so the row recording that refusal is written
-    // about a field somebody was about to put a credential into.
-    expect(JSON.stringify(rows)).not.toContain("Kim");
   });
 
   test("an ask rule stops the call and opens a question instead", async () => {
@@ -704,10 +692,10 @@ describe("a boundary decided in front of the browser", () => {
     const { app, sentToComputer, rows, seen } = surface(ADMIN, ASKING);
     await seen();
 
-    const response = await app.request("/bot-1/type", {
+    const response = await app.request("/bot-1/click", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ref: "e4", snapshotId: 7, text: "Kim" }),
+      body: JSON.stringify({ ref: "e9", snapshotId: 7 }),
     });
 
     expect(response.status).toBe(409);
@@ -718,75 +706,9 @@ describe("a boundary decided in front of the browser", () => {
     };
     expect(body.awaitingApproval).toBe(true);
     expect(body.approvalId).toBeTypeOf("string");
-    expect(body.rule).toBe('contains(element.name, "Customer")');
+    expect(body.rule).toBe('contains(element.name, "Submit")');
     expect(sentToComputer).toEqual([]);
     expect(rows.map((row) => row.eventType)).toContain("approval.requested");
-  });
-
-  test("writing a file is governed the same way, and names the file it refused", async () => {
-    /*
-     * The workspace is the other thing a Bot can change that nobody is watching. It goes through the
-     * same gateway as a click, and the rule language reaches it through `file.*` — which is only
-     * true if this route hands the path to the gateway rather than to the client.
-     */
-    const { app, sentToComputer, rows } = surface(ADMIN, {
-      deny: ['file.name == ".env"'],
-      ask: [],
-      allow: ["true"],
-    });
-
-    const refused = await app.request("/bot-1/files/write", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "secrets/.env", contents: "TOKEN=1" }),
-    });
-
-    expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { rule?: string }).rule).toBe(
-      'file.name == ".env"',
-    );
-    expect(sentToComputer).toEqual([]);
-    expect(
-      rows.find((row) => row.eventType === "computer.action_refused")?.payload,
-    ).toMatchObject({
-      action: "computer_write_file",
-      file: "secrets/.env",
-      decision: { allowed: false, source: "deny" },
-    });
-    // The contents are not in the row either. A file a Bot writes is as likely to hold a credential
-    // as anything it types, and the row's job is to say which file, not what was in it.
-    expect(JSON.stringify(rows)).not.toContain("TOKEN=1");
-
-    // And a file the rule does not name goes through, so the assertion above is about the rule
-    // rather than about a route that refuses everything.
-    const allowed = await app.request("/bot-1/files/write", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "notes.md", contents: "hello" }),
-    });
-    expect(allowed.status).toBe(200);
-    expect(sentToComputer).toEqual([
-      { path: "notes.md", contents: "hello", append: false },
-    ]);
-  });
-
-  test("a file call is decidable before the Bot has looked at any page", async () => {
-    // The blind guard refuses an action about the screen when this process has never seen one. A
-    // file has no screen, and refusing it would have made the workspace unusable until somebody
-    // browsed — with a message about a page the Bot was never on.
-    const { app } = surface(ADMIN, {
-      deny: [],
-      ask: ['contains(element.name, "Submit")'],
-      allow: ["true"],
-    });
-
-    const response = await app.request("/bot-1/files/read", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "notes.md" }),
-    });
-
-    expect(response.status).toBe(200);
   });
 });
 
@@ -934,15 +856,11 @@ describe("a secret being asked for and supplied", () => {
  */
 describe("the whole surface", () => {
   const ROUTES: Array<[string, string, unknown?]> = [
-    ["GET", "/bot-1/status"],
     ["GET", "/bot-1/screenshot"],
     ["GET", "/bot-1/read"],
     ["POST", "/bot-1/navigate", { url: "https://example.com" }],
     ["POST", "/bot-1/snapshot"],
     ["POST", "/bot-1/click", { ref: "e9", snapshotId: 7 }],
-    ["POST", "/bot-1/type", { ref: "e4", snapshotId: 7, text: "Kim" }],
-    ["POST", "/bot-1/key", { key: "Enter" }],
-    ["POST", "/bot-1/scroll", { deltaY: 100 }],
     ["GET", "/bot-1/control"],
     ["POST", "/bot-1/control/request", { reason: "stuck" }],
     ["GET", "/"],
@@ -963,10 +881,7 @@ describe("the whole surface", () => {
     ["POST", "/bot-1/human/type", { text: "x" }],
     ["POST", "/bot-1/human/key", { key: "Enter" }],
     ["POST", "/bot-1/human/scroll", { deltaY: 10 }],
-    ["POST", "/bot-1/files/list", { path: "." }],
-    ["POST", "/bot-1/files/read", { path: "notes.md" }],
-    ["POST", "/bot-1/files/write", { path: "notes.md", contents: "hi" }],
-    // The person's own doors into the same folder (`computer-file-handoff.test.ts`).
+    // The person's own doors into the Bot's folder (`computer-file-handoff.test.ts`).
     ["GET", "/bot-1/files"],
     ["GET", "/bot-1/files/info?path=notes.md"],
     ["GET", "/bot-1/files/download?path=notes.md"],

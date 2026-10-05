@@ -44,7 +44,6 @@ export function credentialAdminStub(
   return {
     list: () => unstubbed("list"),
     create: () => unstubbed("create"),
-    rotate: () => unstubbed("rotate"),
     revoke: () => unstubbed("revoke"),
     ...overrides,
   };

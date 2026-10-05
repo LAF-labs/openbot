@@ -136,17 +136,15 @@ function routesAs(person: string) {
 describe("a mail read while the owner watches", () => {
   test("the model reads marks, the owner reads the code, the trail reads neither", async () => {
     const app = routesAs(actorId);
-    const response = await app.request("http://t/api/plugins/call", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ref: REF,
-        args: { messageId: "m1" },
-        agentId: botId,
-      }),
+    // As a chat turn calls (`turns/chat-tools.ts`): a line of the conversation, so the code is kept
+    // to be shown on it. It went through the window's own call door until that went (2026-10-06).
+    const result = await store.callTool({
+      ref: REF,
+      args: { messageId: "m1" },
+      botId,
+      actorId,
+      drawnOn: "conversation",
     });
-    expect(response.status).toBe(200);
-    const result = (await response.json()) as { text: string };
     expect(result.text).not.toContain(CODE);
     expect(result.text).not.toContain("Zx9Qm2Lp7Rt4Vw8Ys1Nb5Kc3");
     // What the owner's mail is for is still there.

@@ -181,7 +181,7 @@ export class PluginRefusedError extends Error {
      * It was optional, on the reasoning that the settle path already put its code in `message`. What
      * that left was a class whose refusals the route answered by `message`, so two sentences with no
      * code at all — "… is not a tool.", "'…' changed its definition since it was approved." — went
-     * to the surface as they were written (2026-09-14). Required now: the route and the unattended
+     * to the surface as they were written (2026-09-14). Required now: the turn and the unattended
      * runner answer by this and nothing else, and a test pins this and not the English.
      */
     readonly code: string,
