@@ -31,6 +31,7 @@ import {
   IDLE_CLOSE_MS,
   STRAY_GRACE_MS,
   TAB_CAP,
+  TAB_CEILING,
   type TabLost,
   TabListError,
 } from "../src/tabs";
@@ -318,13 +319,18 @@ describe("a Bot's tabs, counted without a browser", () => {
     const clock = { now: 0 };
     /** The tabs that can reach the one that opened them, as the browser says of a real one. */
     const reporting = new WeakSet<Page>();
+    /** A browser that does not answer the question at all: short of memory, or wedged. */
+    const silent = { browser: false };
     const tabs = createTabs({
       pages: () => open,
       now: () => clock.now,
       onPage: () => undefined,
       onLost: (botId, how) => lost.push([botId, how]),
       holds: (_botId, page) => holds(page),
-      reportsToOpener: async (page) => reporting.has(page),
+      reportsToOpener: async (page) => {
+        if (silent.browser) throw new Error("Target.getTargetInfo: no answer");
+        return reporting.has(page);
+      },
     });
     /** A Bot's first tab, as `profiles.page` hands one. */
     const first = (botId: string, address: string): FakeTab => {
@@ -366,7 +372,18 @@ describe("a Bot's tabs, counted without a browser", () => {
       }
       return { hub, opened };
     };
-    return { tabs, open, lost, clock, first, opens, opensWindow, full, tab };
+    return {
+      tabs,
+      open,
+      lost,
+      clock,
+      silent,
+      first,
+      opens,
+      opensWindow,
+      full,
+      tab,
+    };
   }
 
   let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
@@ -652,6 +669,150 @@ describe("a Bot's tabs, counted without a browser", () => {
     expect(tabs.owners.has(oldest)).toBe(false);
     expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
     expect(tabs.isSpare(oldest)).toBe(false);
+  });
+
+  /*
+   * A CHAIN OF WINDOWS HAS A CEILING. A window that opens a window that opens a window: every tab
+   * but the newest is reported to, and the Bot is moved onto each as it opens, so the cap finds
+   * nothing to close. On `1b230f33` that was one more tab for every window, with a line saying so
+   * and no end. No Bot presses anything for it — a page's script and each window's `onload` do.
+   */
+  test("a chain of windows, each opened by the last, stops growing at the ceiling: the tab used longest ago goes whatever reports to it — never the one the Bot is on, never a held one", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const held = new Set<Page>();
+    const { tabs, lost, first, opensWindow } = counting((page) =>
+      held.has(page),
+    );
+    const page = first("bot", "https://shop.example/pay?order=7");
+    const chain: FakeTab[] = [];
+    let newest = page;
+    const next = async () => {
+      newest = await opensWindow(
+        newest,
+        `https://pop.example/w/${chain.length + 1}?k=1`,
+      );
+      chain.push(newest);
+      return tabs.pagesOf("bot").length;
+    };
+    for (let nth = 1; nth < TAB_CEILING; nth += 1) await next();
+    // Twelve tabs, each reported to by the next: none went for the cap, and a line says so.
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CEILING);
+    expect(tabs.cappedOf("bot")).toBe(0);
+    expect(linesOf("tab_cap_exceeded")).toHaveLength(1);
+
+    // The thirteenth is past the ceiling: the tab used longest ago goes, though a window
+    // reports to it — the page the chain began on.
+    const counts = [await next()];
+    expect(page.isClosed()).toBe(true);
+    expect(chain.map((opened) => opened.isClosed())).not.toContain(true);
+    // The next oldest is held — a person's hands, an ask standing: it stays, and the one after
+    // it goes in its place.
+    const [kept, second] = chain;
+    if (!kept || !second) throw new Error("no windows were opened");
+    held.add(kept);
+    counts.push(await next());
+    expect([kept.isClosed(), second.isClosed()]).toEqual([false, true]);
+
+    // However many more open, the Bot holds the ceiling and no more.
+    for (let more = 0; more < 10; more += 1) counts.push(await next());
+    expect(Math.max(...counts)).toBe(TAB_CEILING);
+    expect(Math.min(...counts)).toBe(TAB_CEILING);
+    // Never the tab the Bot is on, and so never a loss: it is where the last window put it.
+    expect(tabs.live.get("bot")?.page).toBe(newest);
+    expect(newest.isClosed()).toBe(false);
+    expect(kept.isClosed()).toBe(false);
+    expect(lost).toEqual([]);
+    // Said to the Bot as any tab closed for its number is: how many, and the sites of the last.
+    expect(tabs.listRead("bot", tabs.cappedOf("bot"))).toEqual({
+      closed: 12,
+      origins: ["https://pop.example"],
+    });
+    // And in a line of its own, one a minute, with the ceiling and an origin and nothing else.
+    expect(linesOf("tab_ceiling_closed")).toEqual([
+      expect.objectContaining({
+        bot: "bot",
+        origin: "https://shop.example",
+        tabs: TAB_CEILING + 1,
+        ceiling: TAB_CEILING,
+      }),
+    ]);
+    expect(linesOf("tab_capped")).toEqual([]);
+    expect(JSON.stringify(warned.mock.calls)).not.toMatch(/order|k=1|\/w\//);
+  });
+
+  test("at the ceiling with every other tab held, a tab that opens is not taken: the Bot stays where it was, holds no more than the ceiling, and is told a tab was closed", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const every = { tab: false };
+    const { tabs, lost, first, opens, opensWindow } = counting(() => every.tab);
+    let newest = first("bot", "https://shop.example/pay?order=7");
+    for (let nth = 1; nth < TAB_CEILING; nth += 1) {
+      newest = await opensWindow(newest, `https://pop.example/w/${nth}`);
+    }
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CEILING);
+    const on = newest;
+
+    // Everything held: nothing may go, whatever the number.
+    every.tab = true;
+    const refused = await opens(on, "https://ads.example/promo?id=9");
+    // Closed before it was ever the Bot's: not in its list, and the Bot is where it was.
+    expect(refused.isClosed()).toBe(true);
+    expect(tabs.owners.has(refused)).toBe(false);
+    expect(tabs.live.get("bot")?.page).toBe(on);
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CEILING);
+    expect(lost).toEqual([]);
+    expect(linesOf("tab_open_refused")).toEqual([
+      expect.objectContaining({
+        bot: "bot",
+        origin: "https://ads.example",
+        tabs: TAB_CEILING,
+        ceiling: TAB_CEILING,
+      }),
+    ]);
+    expect(JSON.stringify(warned.mock.calls)).not.toMatch(/promo|id=9/);
+    // The Bot's next list says a tab was closed, and whose site.
+    expect(tabs.listRead("bot", tabs.cappedOf("bot"))).toEqual({
+      closed: 1,
+      origins: ["https://ads.example"],
+    });
+
+    // Let go of: the next tab is taken, and the oldest goes for it.
+    every.tab = false;
+    const taken = await opensWindow(on, "https://pop.example/w/next");
+    expect(taken.isClosed()).toBe(false);
+    expect(tabs.live.get("bot")?.page).toBe(taken);
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CEILING);
+  });
+
+  /*
+   * AN ANSWER THAT NEVER CAME. The browser is asked whether a new tab can reach its opener, and
+   * a browser short of memory — when the cap matters most — is the one that does not answer. On
+   * `1b230f33` no answer kept the opener for the tab's life and was never asked for again: a
+   * chain of plain `_blank` results, which report to nothing, became a chain nothing could be
+   * closed from.
+   */
+  test("a tab the browser never answered about keeps its opener only until it is asked again — each time the Bot is over its number — and never past the ceiling", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { tabs, first, opens, silent } = counting();
+    // Plain links, one page to the next, and a browser that answers nothing about any of them.
+    silent.browser = true;
+    const chain = [first("bot", "https://news.example/story/1")];
+    const next = async () => {
+      const from = chain.at(-1) as FakeTab;
+      chain.push(
+        await opens(from, `https://news.example/story/${chain.length + 1}`),
+      );
+    };
+    for (let story = 2; story <= TAB_CEILING + 2; story += 1) await next();
+    // Unknown, so kept — but not past the ceiling: twelve, and the two oldest gone.
+    expect(tabs.pagesOf("bot")).toEqual(chain.slice(2));
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CEILING);
+
+    // The browser answers again. The next tab that opens has every unanswered tab asked about
+    // once more; none of them reports to anything, and the Bot is back at its number.
+    silent.browser = false;
+    await next();
+    expect(tabs.pagesOf("bot")).toEqual(chain.slice(-TAB_CAP));
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
   });
 
   /*
@@ -999,6 +1160,86 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
     // A plain link's tab cannot reach its page, which is why a list is not kept for its results.
     expect(await two.evaluate(() => window.opener === null)).toBe(true);
   }, 60_000);
+
+  /*
+   * AND A CHAIN OF THEM HAS A CEILING. Each window opens the next, so every tab but the newest is
+   * reported to and none may go for the cap. On `1b230f33` this Bot's tabs went 2, 3, 4 … 19,
+   * one for every window.
+   */
+  describe("whose windows open windows", () => {
+    let warned: ReturnType<typeof spyOn<Console, "warn">> | undefined;
+
+    afterEach(() => {
+      warned?.mockRestore();
+      warned = undefined;
+    });
+
+    test("stops at twice its number: the page furthest back goes, the Bot stays on the newest window and is told on its own list", async () => {
+      const bot = "cap-ceiling-bot";
+      await post("/navigate", bot, { url: `${fixture?.url}other?root=1` });
+      const root = await tabOf(bot);
+      const OPENS = TAB_CEILING + 6;
+      const tabsNow = async () =>
+        ((await computer?.profiles.tabs(bot)) ?? []).length;
+      warned = spyOn(console, "warn").mockImplementation(() => undefined);
+      const counts: number[] = [];
+      const windows: Page[] = [];
+      for (let nth = 1; nth <= OPENS; nth += 1) {
+        const from = await tabOf(bot);
+        await from.evaluate((to) => {
+          window.open(to);
+        }, `/other?window=${nth}`);
+        expect(await until(async () => (await tabOf(bot)) !== from)).toBe(true);
+        // The ceiling is applied a question to the browser behind the adoption.
+        await until(async () => (await tabsNow()) <= TAB_CEILING);
+        windows.push(await tabOf(bot));
+        counts.push(await tabsNow());
+      }
+      console.info(
+        `one Bot, ${OPENS} windows each opened by the last — its tabs after each: ${JSON.stringify(counts)}`,
+      );
+      expect(Math.max(...counts)).toBe(TAB_CEILING);
+      expect(counts.at(-1)).toBe(TAB_CEILING);
+
+      // Trimmed from the root: the page and the six windows nearest it, and nothing newer.
+      expect(root.isClosed()).toBe(true);
+      expect(windows.map((opened) => opened.isClosed())).toEqual([
+        ...Array.from({ length: 6 }, () => true),
+        ...Array.from({ length: TAB_CEILING }, () => false),
+      ]);
+      // Never the tab the Bot is on: it is on the newest, and acts there.
+      expect(await tabOf(bot)).toBe(windows.at(-1) as Page);
+      expect((await post("/scroll", bot, { deltaY: 100 })).status).toBe(200);
+      const look = await post("/snapshot", bot);
+      expect(look.body.notes).toEqual([
+        {
+          code: "laf:old_tab_closed",
+          closed: 7,
+          origins: [new URL(fixture?.url ?? "").origin],
+        },
+      ]);
+      expect(tabsOf(look)).toHaveLength(TAB_CEILING);
+
+      // One line for the seven, saying it was the ceiling, with an origin and nothing else.
+      const lines = warned.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes("tab_ceiling_closed"));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({
+        event: "tab_ceiling_closed",
+        bot,
+        origin: new URL(fixture?.url ?? "").origin,
+        tabs: TAB_CEILING + 1,
+        ceiling: TAB_CEILING,
+      });
+      for (const kept of ["other", "root", "window="]) {
+        expect({ kept, logged: (lines[0] ?? "").includes(kept) }).toEqual({
+          kept,
+          logged: false,
+        });
+      }
+    }, 120_000);
+  });
 
   /*
    * THE TABS THAT MAY NOT GO, THROUGH THE DOOR. `/to-hang` has a link that opens the same page in

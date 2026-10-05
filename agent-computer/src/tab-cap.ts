@@ -61,6 +61,10 @@ const OLD_TAB_CLOSED: NoteCode = "laf:old_tab_closed";
  *  - THE TAB A HAND WAS ASKED FOR ON, OR THE WHEEL TAKEN ON, while the ask stands or the person
  *    holds the wheel: it is the page they were handed, and where the Bot goes on from.
  *
+ * HELD EVEN AT THE CEILING. Past `TAB_CEILING` a tab goes whatever window reports to it, and these
+ * still do not: they are a person's hands and a person's answer. They are three tabs at most, so
+ * the ceiling always has something else to close.
+ *
  * A session this process has not made holds nothing.
  */
 export function holdsTab(session: BotSession | undefined, page: Page): boolean {
