@@ -23,10 +23,7 @@ import {
   ROSTER_RAIL_ROW_CLASS,
   RosterUnreadDot,
 } from "@/components/app-sidebar/bot-row";
-import {
-  type FooterLink as FooterPlace,
-  footerLinksFor,
-} from "@/components/app-sidebar/places";
+import { footerLinksFor } from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
@@ -96,8 +93,9 @@ import { cn } from "@/lib/utils";
  *     each — 대화 · 소식 · 아이디어 · 목표 · 만든 것. These keep their names because they are the
  *     navigation (`LOOK_ROWS`). 대화 no longer carries the last thing said or when
  *     (`ConversationRow`). Under the rows, nothing.
- *  3. THE FOOT, one row pinned under the part that scrolls: the account's picture, and a 메뉴 button
- *     for the places that change how the Bot works (`MenuLinks`). No word beside either.
+ *  3. THE FOOT, one button pinned under the part that scrolls: the account's picture and the
+ *     menu's icon, opening one list — the places that change how the Bot works, and what is about
+ *     the account (`menu` in `BotSidebar`). No word beside it.
  *
  * WHAT WAS MEASURED ON THE WAY HERE AND STILL DECIDES SOMETHING:
  *
@@ -105,7 +103,7 @@ import { cn } from "@/lib/utils";
  *    column until 2026-09-25, and at the PC app's smallest window (1024×640) what was above them
  *    pushed 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
  *  - THOSE PLACES ARE BEHIND ONE CONTROL. Three of them and 더 보기 in sight cut what was above them
- *    at 1024×640 (`MenuLinks` has the numbers).
+ *    at 1024×640 (the note above `menu` in `BotSidebar` has the numbers).
  *  - 오늘 IS NOT HERE. From 2026-09-25 the height under the rows held the Bot's day — what is
  *    waiting on the person, what it did, what is next (`bot-day.tsx`) — and it was the first thing
  *    the owner had taken out, the same day and for the same reason. The day is a row away, on 소식;
@@ -460,80 +458,6 @@ function LookRow({
 }
 
 /**
- * 메뉴: ONE BUTTON FOR THE PLACES THAT CHANGE HOW THE BOT WORKS — 수첩 · 루틴 · 스킬 · 연결 · 도움말,
- * opening upward from it, the same list the phone's 메뉴 page draws (`places.ts`).
- *
- * AN ICON AT THE FOOT'S RIGHT END SINCE 2026-10-04, where it was a row of its own with the word
- * beside it: the owner had the column's words cut to the ones that navigate, and this is not a
- * place but the way to a list of them. 메뉴 is its name and its title. In the rail it is what it
- * was, a row of the rail's width with the same icon.
- *
- * WHY THE PLACES ARE BEHIND ONE CONTROL AT ALL (muse-shape plan §4, settled with phase 9). Measured
- * at 1024×640, the PC app's smallest window, in the Korean app with all four rows above (소식 ·
- * 아이디어 · 목표 · 만든 것 at 170–320): with 수첩 · 루틴 · 연결 · 더 보기 in the footer, the footer
- * began at 420 and the first row of 오늘 — the Bot's day, listed under those rows then — ran
- * 382–426, six pixels under it, so the row that answered "is my employee working?" was cut. Folded
- * into one row the footer began at 534, and 오늘 showed its first rows whole. The price is a second
- * press for 수첩 and 루틴.
- *
- * 오늘 left the column the same day this became an icon, so the room it was folded to make is
- * empty. The places stay folded: four rows of words back in sight is what the owner asked to have
- * less of.
- */
-function MenuLinks({
-  isCompact,
-  links,
-}: {
-  isCompact: boolean;
-  links: readonly FooterPlace[];
-}) {
-  if (links.length === 0) return null;
-  const label = t("Menu");
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            aria-label={label}
-            className={cn(
-              NAV_LINK_CLASS,
-              isCompact
-                ? "w-full justify-center"
-                : "size-9 shrink-0 justify-center",
-            )}
-            data-sidebar-menu
-            title={isCompact ? undefined : label}
-            type="button"
-          />
-        }
-      >
-        <IconMenu2 aria-hidden="true" className="size-4.5 shrink-0" />
-      </DropdownMenuTrigger>
-      {/*
-       * The list is given a width, 192px, about the column's own: by default a menu takes its
-       * button's, and this button is 36px. From the right end it opens leftward, inside the column.
-       */}
-      <DropdownMenuContent
-        align={isCompact ? "start" : "end"}
-        className={isCompact ? "p-1.5" : "w-48 p-1.5"}
-        side="top"
-      >
-        {links.map(({ icon: Icon, label: name, to }) => (
-          <DropdownMenuItem
-            className="gap-2 px-2 py-1.5"
-            key={to}
-            render={<Link to={to} />}
-          >
-            <Icon />
-            {t(name)}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
  * THE CONVERSATION: one row like the four under it — an icon, 대화, and a dot at the right edge
  * when something in it is unread.
  *
@@ -748,19 +672,39 @@ export function BotSidebar() {
     ? currentUser?.name || currentUser?.email || t("Account")
     : signedInAs || t("Account");
 
-  const account = (
+  /*
+   * ONE BUTTON AT THE FOOT, AND ONE LIST UNDER IT, SINCE 2026-10-06. It was two buttons since
+   * 2026-10-04 — the account's picture, opening 모두 멈추기 · 설정 · 로그아웃, and 메뉴 beside it,
+   * opening the places — and the owner, looking for 설정 in the installed app, read the pair as one
+   * thing drawn twice: "각각 별개인 건 아닌 듯. 합쳐야 함." So the picture and the menu's icon are
+   * one button with one name, and everything either opened is in the one list.
+   *
+   * THE PLACES — 수첩 · 루틴 · 스킬 · 연결 · 도움말, the same list the phone's 메뉴 page draws
+   * (`places.ts`) — ARE STILL A PRESS AWAY AND NOT ROWS OF THE COLUMN (muse-shape plan §4, settled
+   * with phase 9). Measured at 1024×640, the PC app's smallest window, in the Korean app with all
+   * four rows above (소식 · 아이디어 · 목표 · 만든 것 at 170–320): with 수첩 · 루틴 · 연결 · 더 보기
+   * as rows the footer began at 420 and cut what stood under those rows, which ran to 426; folded
+   * into one row it began at 534. What stood there (오늘) left the column on 2026-10-04 and the
+   * places stayed folded: four rows of words back in sight is what the owner asked to have less of.
+   *
+   * THE ORDER. 모두 멈추기 first, because it is the one item here somebody reaches for in a hurry:
+   * a conversation and a routine can both be running, and Stop lives inside one conversation at a
+   * time. Then the places, then what is about the account, and leaving last.
+   */
+  const menuName = `${t("Menu")} · ${accountName}`;
+  const menu = (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button
-            aria-label={accountName}
+            aria-label={menuName}
             className={
               isRail
-                ? "h-10 w-full font-normal text-sm hover:bg-accent justify-center px-0"
-                : "size-9 rounded-full p-0 hover:bg-accent"
+                ? "h-10 w-full justify-center px-0 font-normal text-sm hover:bg-accent"
+                : "h-10 w-full justify-between rounded-lg px-1 font-normal hover:bg-accent"
             }
-            data-sidebar-account={isRail ? undefined : ""}
-            title={isRail ? undefined : accountName}
+            data-sidebar-menu
+            title={isRail ? undefined : menuName}
             variant="ghost"
           />
         }
@@ -772,18 +716,23 @@ export function BotSidebar() {
           name={currentUser?.name}
           size="sm"
         />
+        {/* 64px does not seat the picture and the icon side by side: the rail keeps the picture. */}
+        {isRail ? null : (
+          <IconMenu2
+            aria-hidden="true"
+            className="mr-1.5 size-4.5 shrink-0 text-muted-foreground"
+          />
+        )}
       </DropdownMenuTrigger>
-      {/* A width of its own in the full column, for the reason `MenuLinks` gives. */}
+      {/*
+       * A width of its own in the full column, 192px, as both lists had when each opened from a
+       * 36px button and would have taken that width by default.
+       */}
       <DropdownMenuContent
         align="start"
         className={isRail ? "p-1.5" : "w-48 p-1.5"}
         side="top"
       >
-        {/*
-         * FIRST IN THE MENU, because it is the one item here somebody reaches for in a hurry: a
-         * conversation and a routine can both be running, and Stop lives inside one
-         * conversation at a time.
-         */}
         <DropdownMenuItem
           className="gap-2 px-2 py-1.5"
           onClick={() => setStoppingAll(true)}
@@ -792,6 +741,17 @@ export function BotSidebar() {
           {t("Stop everything")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        {links.map(({ icon: Icon, label: name, to }) => (
+          <DropdownMenuItem
+            className="gap-2 px-2 py-1.5"
+            key={to}
+            render={<Link to={to} />}
+          >
+            <Icon />
+            {t(name)}
+          </DropdownMenuItem>
+        ))}
+        {links.length > 0 ? <DropdownMenuSeparator /> : null}
         {currentUser?.role === "admin" ? (
           <DropdownMenuItem
             className="gap-2 px-2 py-1.5"
@@ -979,41 +939,19 @@ export function BotSidebar() {
       </div>
 
       {/*
-       * THE FOOT. In the full column ONE ROW since 2026-10-04: the account's picture on the left,
-       * 메뉴 on the right, and no word beside either. It was two rows, 메뉴 with its word and under
-       * it the picture with the name or the address written out; the owner had the column's words
-       * cut to the ones that navigate ("아이콘으로도 되는 걸 항상 글자로 표시하는 게 문제"), and
-       * neither of these is a place. Both open what they opened. PINNED either way, outside the
-       * part that scrolls: when the places scrolled with the rows above them, the smallest window
-       * put 루틴, 스킬, 연결 and 도움말 below the fold (UX review 0.5.4, item 4).
-       *
-       * The rail keeps its two rows: 64px does not seat two buttons side by side.
+       * THE FOOT: the one button, at either width. PINNED, outside the part that scrolls: when the
+       * places scrolled with the rows above them, the smallest window put 루틴, 스킬, 연결 and
+       * 도움말 below the fold (UX review 0.5.4, item 4). No word is written beside it — the owner
+       * had the column's words cut to the ones that navigate ("아이콘으로도 되는 걸 항상 글자로
+       * 표시하는 게 문제", 2026-10-04), and this is not a place but the way to a list of them.
        */}
-      {isRail ? (
-        <>
-          <div
-            className="flex shrink-0 flex-col gap-0.5 border-border border-t px-2 pt-2 pb-1"
-            data-sidebar-nav
-          >
-            <MenuLinks isCompact links={links} />
-          </div>
-          <div className="shrink-0 border-border border-t px-2 py-2">
-            {account}
-            {underAccount}
-          </div>
-        </>
-      ) : (
-        <div
-          className="shrink-0 border-border border-t px-2 py-2"
-          data-sidebar-nav
-        >
-          <div className="flex items-center justify-between">
-            {account}
-            <MenuLinks isCompact={false} links={links} />
-          </div>
-          {underAccount}
-        </div>
-      )}
+      <div
+        className="shrink-0 border-border border-t px-2 py-2"
+        data-sidebar-nav
+      >
+        {menu}
+        {underAccount}
+      </div>
     </nav>
   );
 }

@@ -307,8 +307,8 @@ async function roster(
           row.getAttribute("aria-label")?.startsWith(name),
       ),
     /**
-     * The foot's controls. In the full column one row of two since 2026-10-04: the account's
-     * picture, then 메뉴. In the rail 메뉴 alone, a row of its own with the account under it.
+     * The foot's controls: one button at either width since 2026-10-06 — the account's picture
+     * and the menu's icon in the full column, the picture alone in the rail.
      */
     footerLinks: () => [
       ...column().querySelectorAll<HTMLAnchorElement>(
@@ -537,19 +537,20 @@ describe("the roster speaks the app's language", () => {
    * is rendered in Korean by `korean-render.test.ts`: this process's locale is English whichever way
    * the call is written, so only a Korean process can tell the two apart.
    */
-  test("the foot's buttons are named at both widths, and every place 메뉴 holds has its Korean", async () => {
-    // Neither has a word beside it since 2026-10-04, so the name is all there is to read aloud.
+  test("the foot's button is named at both widths, and every place it holds has its Korean", async () => {
+    // It has no word beside it, so the name is all there is to read aloud: what it is, and whose.
     const view = await roster();
     expect(
       view.footerLinks().map((link) => link.getAttribute("aria-label")),
-    ).toEqual([ACCOUNT, "Menu"]);
+    ).toEqual([`Menu · ${ACCOUNT}`]);
     expect(ko.Menu).toBe("메뉴");
     await view.unmount();
-    // In the rail 메뉴 is the row of its own it was, with the same name.
+    // In the rail it is the picture alone, and still the one button. `ACCOUNT` is the full
+    // column's name for the person; the rail names them by the name alone.
     const rail = await roster({ wide: false });
     expect(
       rail.footerLinks().map((link) => link.getAttribute("aria-label")),
-    ).toEqual(["Menu"]);
+    ).toEqual([`Menu · ${ACCOUNT.split(" · ")[0]}`]);
     // `t(label)` is invisible to `i18n-coverage.test.ts`, which only sees a literal `t("…")`.
     for (const { label } of footerLinksFor(true)) {
       expect({ label, korean: Boolean(ko[label]) }).toEqual({
@@ -661,23 +662,26 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     }
   });
 
-  test("the foot is one row — the account's picture and 메뉴 — with no name, address or word written out", async () => {
+  test("the foot is one button — the account's picture and the menu's icon — with no name, address or word written out", async () => {
+    /*
+     * TWO BUTTONS UNTIL 2026-10-06, the picture and 메뉴 side by side, each with a list of its own.
+     * The owner, looking for 설정 in the installed app, read them as one thing drawn twice and had
+     * them made one.
+     */
     const view = await roster({ bots: one() });
     const foot = view.column().querySelector("[data-sidebar-nav]");
-    const [account, menu] = view.footerLinks();
-    expect(view.footerLinks()).toHaveLength(2);
-    expect(account?.parentElement).toBe(menu?.parentElement ?? null);
+    const [menu] = view.footerLinks();
+    expect(view.footerLinks()).toHaveLength(1);
+    expect(menu?.hasAttribute("data-sidebar-menu")).toBe(true);
     // Nobody's name or address is drawn: the picture's one letter is all the text the foot has.
     expect(foot?.textContent).toBe("김");
-    // They are the picture's name and its title, for a screen reader and for a pointer.
-    expect(account?.getAttribute("aria-label")).toBe(ACCOUNT);
-    expect(account?.getAttribute("title")).toBe(ACCOUNT);
+    expect(menu?.textContent).toBe("김");
+    // The icon beside the picture is drawn, and is nothing a screen reader stops on.
+    expect(menu?.querySelectorAll('svg[aria-hidden="true"]').length).toBe(1);
+    // What it is and whose, as its name and its title, for a screen reader and for a pointer.
+    expect(menu?.getAttribute("aria-label")).toBe(`Menu · ${ACCOUNT}`);
+    expect(menu?.getAttribute("title")).toBe(`Menu · ${ACCOUNT}`);
     expect(ACCOUNT).toContain("kim@example.com");
-    // And 메뉴 is an icon whose word is its name.
-    expect(menu?.hasAttribute("data-sidebar-menu")).toBe(true);
-    expect(menu?.textContent).toBe("");
-    expect(menu?.getAttribute("aria-label")).toBe("Menu");
-    expect(menu?.getAttribute("title")).toBe("Menu");
   });
 
   test("and under those rows nothing: the column does not list the Bot's day, or ask for it", async () => {
@@ -709,12 +713,12 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
      * the phase-5 footer of 수첩 · 루틴 · 연결 · 더 보기 cut the first row of 오늘, which the column
      * listed under its rows then, at 1024×640 (measured: footer from 420, the row to 426). 오늘 has
      * left the column since (2026-10-04), 메뉴 became an icon beside the account's picture the same
-     * day, and the places stayed folded. Every place is one press under it, the same list as the
-     * 메뉴 page.
+     * day and one button with it on 2026-10-06, and the places stayed folded. Every place is one
+     * press under it, the same list as the 메뉴 page.
      */
     expect(
       view.footerLinks().map((link) => link.getAttribute("aria-label")),
-    ).toEqual([ACCOUNT, "Menu"]);
+    ).toEqual([`Menu · ${ACCOUNT}`]);
     const nav0 = view.column().querySelector("[data-sidebar-nav]");
     expect(nav0?.querySelectorAll("a")).toHaveLength(0);
     /*
@@ -796,30 +800,36 @@ async function renderFoot(): Promise<FootShown> {
   return JSON.parse(line.slice("SIDEBAR_FOOT ".length)) as FootShown;
 }
 
-describe("what the foot's two buttons open", () => {
-  test("메뉴, an icon with no word beside it, opens the places the 메뉴 row did", async () => {
-    const { foot, places } = await footRendered();
-    expect(foot.menu).toEqual({ label: "메뉴", title: "메뉴", text: "" });
-    // The same list, in the same order, to the same addresses: the one the 메뉴 page draws.
-    expect(places).toEqual(
-      footerLinksFor(false).map((link) => [ko[link.label] ?? "", link.to]),
-    );
-    expect(places.map(([name]) => name)).toEqual([
+describe("what the foot's one button opens", () => {
+  test("it is named 메뉴 and for whom, and draws no word: the picture's one letter is all its text", async () => {
+    const { foot } = await footRendered();
+    expect(foot.text).toBe("김");
+    expect(foot.menu).toEqual({
+      label: "메뉴 · 김기범 · kim@example.com",
+      title: "메뉴 · 김기범 · kim@example.com",
+      text: "김",
+    });
+  }, 120_000);
+
+  test("one list: stopping first, then the places the 메뉴 page draws, then the account's, and leaving last", async () => {
+    const { items } = await footRendered();
+    expect(items.map(([name]) => name)).toEqual([
+      "모두 멈추기",
       "수첩",
       "루틴",
       "스킬",
       "연결",
       "도움말",
+      "설정",
+      "로그아웃",
     ]);
-  }, 120_000);
-
-  test("the account's picture, with no name beside it, opens what the account's row did", async () => {
-    const { account, foot } = await footRendered();
-    expect(foot.text).toBe("김");
-    expect(foot.account).toEqual({
-      label: "김기범 · kim@example.com",
-      title: "김기범 · kim@example.com",
-    });
-    expect(account).toEqual(["모두 멈추기", "설정", "로그아웃"]);
+    // The places are the same list, in the same order, to the same addresses as the 메뉴 page's.
+    expect(items.slice(1, 6)).toEqual(
+      footerLinksFor(false).map((link) => [ko[link.label] ?? "", link.to]),
+    );
+    // What goes somewhere says where; what does something here has no address.
+    expect(items[0]).toEqual(["모두 멈추기", null]);
+    expect(items[6]).toEqual(["설정", "/settings"]);
+    expect(items[7]).toEqual(["로그아웃", null]);
   }, 120_000);
 });

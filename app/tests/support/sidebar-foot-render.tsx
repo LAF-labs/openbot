@@ -1,15 +1,12 @@
 /**
- * THE SIDEBAR'S FOOT, IN KOREAN, WITH BOTH OF ITS BUTTONS PRESSED.
+ * THE SIDEBAR'S FOOT, IN KOREAN, WITH ITS BUTTON PRESSED.
  *
- * The foot is two buttons with no word beside either since 2026-10-04 — the account's picture and
- * 메뉴 — so what each one opens is the whole of what it says, and neither menu can be seen from
- * `sidebar-rail.test.tsx`: Base UI decides once, when it is first evaluated, whether there is a DOM
- * to draw a popup into (`confirm-dialog.test.tsx`), and in the shared test process some earlier
- * file has already made that answer no. Here the DOM and the language are settled before any app
- * module is imported, so the menus are the real ones, in the words a person reads.
- *
- * The column is mounted twice, once for each button, so neither menu's items can be read as the
- * other's.
+ * The foot is one button with no word beside it — the account's picture and the menu's icon, one
+ * control since 2026-10-06 — so what it opens is the whole of what it says, and its list cannot be
+ * seen from `sidebar-rail.test.tsx`: Base UI decides once, when it is first evaluated, whether
+ * there is a DOM to draw a popup into (`confirm-dialog.test.tsx`), and in the shared test process
+ * some earlier file has already made that answer no. Here the DOM and the language are settled
+ * before any app module is imported, so the list is the real one, in the words a person reads.
  *
  * Prints one line, `SIDEBAR_FOOT <json>`. Not a test file (no `.test.` in the name), so the runner
  * never collects it on its own — and nothing may import a value from it, which would run it: types
@@ -24,13 +21,10 @@ export type FootShown = {
   foot: {
     /** Every character drawn in it: the picture's one letter, and nothing else. */
     text: string;
-    account: { label: string | null; title: string | null };
     menu: { label: string | null; title: string | null; text: string };
   };
-  /** What 메뉴 opens: each place's name and where it goes, in order. */
-  places: [name: string, to: string | null][];
-  /** What the picture opens, in order. */
-  account: string[];
+  /** What the button opens, in order: each item's words and, for one that goes somewhere, where. */
+  items: [name: string, to: string | null][];
 };
 
 process.env.NODE_ENV = "test";
@@ -154,14 +148,9 @@ const items = () => [
 
 const shown: FootShown = await mounted(async (host) => {
   const foot = host.querySelector("[data-sidebar-nav]");
-  const account = host.querySelector("[data-sidebar-account]");
   const menu = host.querySelector("[data-sidebar-menu]");
   const standing = {
     text: foot?.textContent ?? "",
-    account: {
-      label: account?.getAttribute("aria-label") ?? null,
-      title: account?.getAttribute("title") ?? null,
-    },
     menu: {
       label: menu?.getAttribute("aria-label") ?? null,
       title: menu?.getAttribute("title") ?? null,
@@ -169,16 +158,11 @@ const shown: FootShown = await mounted(async (host) => {
     },
   };
   await press(menu);
-  const places = items().map((item): [string, string | null] => [
+  const opened = items().map((item): [string, string | null] => [
     item.textContent ?? "",
     item.getAttribute("href"),
   ]);
-  return { foot: standing, places, account: [] };
-});
-
-shown.account = await mounted(async (host) => {
-  await press(host.querySelector("[data-sidebar-account]"));
-  return items().map((item) => item.textContent ?? "");
+  return { foot: standing, items: opened };
 });
 
 console.log(`SIDEBAR_FOOT ${JSON.stringify(shown)}`);
