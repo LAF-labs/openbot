@@ -1118,15 +1118,39 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the call still stops on, a refusal or a failure after the yes, a stop while the person decides,
  * and a yes and a stop together.
  *
+ * RAISED 2026-10-06 with the connect card offered for an account nobody connected, by exactly what
+ * was added: twelve to `server` — six in `chat-tools.test.ts` (a person's accounts are written on
+ * the connect card a turn hands on, and nothing else of the window's card is touched; a lookup
+ * that finds nothing then says what could be connected; with no read of them the card is the
+ * window's own; an account that is on and brought no tools is answered as that when its card is
+ * raised, when it lands during the wait, and is not what an account with tools or a site is), three
+ * in `connections-overview.test.ts` (a turn's one-query reading of a person's accounts is the
+ * screen's, needing reconnection included, and asks nothing else), one each in
+ * `tool-exposure.test.ts` (목표 and what runs on the fleet's keys are nobody's connection),
+ * `unattended-bridge.test.ts` (a routine is handed no card and told nothing of connecting) and
+ * `conversation-epochs.test.ts` (the one sentence about connecting rides only while an account is
+ * open, and its going is a reminder) — seven to `app`: four in `typed-answer.test.ts` (the connect
+ * card words are typed under, apart from the choice), two in the new `connect-typed.test.tsx`
+ * (typed under a waiting connect card, words tell it not now and go as the next message; where
+ * the door does not take that, they wait as before) and one in `connection-card.test.tsx` (on with
+ * nothing to use is still drawn 연결됨) — and fifty-five to `root`: thirty-four in the new
+ * `eval-connect.test.ts` (the judges of the connect scenarios judged — a claim that nothing is
+ * there is not owning up — and their fixtures held to what a turn hands a Bot), seventeen in
+ * `tool-bridge.test.ts` (what a lookup says of connecting, from the accounts on the card and
+ * whatever the words; the same bytes for the same accounts; an account that is on with no tools;
+ * the one sentence under the names; the accounts read back off the card) and four in agent-bot's
+ * `deferral.test.ts` (the lookup's answer makes the next call the card; a provider is never sent
+ * anybody's accounts).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3599, roots: ["server"] },
-  { name: "app", floor: 2037, roots: ["app"] },
+  { name: "server", floor: 3611, roots: ["server"] },
+  { name: "app", floor: 2044, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 655, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 710, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
