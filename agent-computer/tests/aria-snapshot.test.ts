@@ -1163,6 +1163,58 @@ describe("the names the page gives the controls the tree left nameless", () => {
     ]);
   });
 
+  /*
+   * A CONTROL THAT WAS NEAR BEFORE THE TREE WAS TAKEN IS DISTRUSTED WHOLE, its contents with its
+   * name: the tree read both at the same moment, and what the page says of it afterwards — that
+   * it holds nothing a person typed, now that the region has left — is about another moment. The
+   * name half is pinned through a browser (`late-frame-secret.test.ts`); a link has no value to
+   * lose there, so the value half is pinned here, on controls that have one.
+   */
+  test("a control that was near before the tree keeps neither the tree's name nor its contents, whatever the page says of it afterwards", () => {
+    const read = readAriaSnapshot(TYPED_INTO);
+    // The page, asked after the tree: nothing was drawn from a typed-into node, and nothing holds one.
+    const answers = {
+      names: new Map([
+        ["e3", "이름 있는 버튼"],
+        ["e4", "라벨 속"],
+        ["e7", "검색"],
+      ]),
+      drawn: new Set<string>(),
+      holds: new Set<string>(),
+    };
+    const asked = ["e3", "e4", "e7"];
+    const trusted = namesToList(read.unnamed, asked, answers);
+    // Taken at its word, the page leaves the tree's own standing: what a person typed, in all three.
+    expect(
+      withNames(read.elements, trusted.names, trusted.asked, trusted.valueless)
+        .filter((element) => asked.includes(element.ref))
+        .map((element) => JSON.stringify(element).includes(TYPED)),
+    ).toEqual([true, true, true]);
+
+    const listed = namesToList(
+      read.unnamed,
+      asked,
+      answers,
+      new Set(["e3", "e4", "e7"]),
+    );
+    expect([...listed.valueless]).toEqual(["e3", "e4", "e7"]);
+    const list = withNames(
+      read.elements,
+      listed.names,
+      listed.asked,
+      listed.valueless,
+    );
+    expect(list.filter((element) => asked.includes(element.ref))).toEqual([
+      // A button's contents are dropped; a box says it holds something, and not what.
+      { ref: "e3", role: "button", name: "이름 있는 버튼" },
+      { ref: "e4", role: "textbox", name: "라벨 속", value: "" },
+      { ref: "e7", role: "combobox", name: "검색", value: "" },
+    ]);
+    // What was not near is the tree's, name and contents, as on any tab.
+    expect(list[0]).toBe(read.elements[0] as (typeof list)[number]);
+    expect(list[5]).toBe(read.elements[5] as (typeof list)[number]);
+  });
+
   test("on a tab nobody typed into, only the nameless are asked about and a control the tree named is untouched", () => {
     const read = readAriaSnapshot(TYPED_INTO);
     const listed = namesToList(read.unnamed, read.unnamed, {

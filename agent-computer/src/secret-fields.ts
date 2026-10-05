@@ -471,16 +471,17 @@ export async function markTypedInto(
  * Runs in one frame, sent as source: where the marked nodes of this document are now, and what could
  * take its name from one.
  *
- * `gone` when the document carries no mark: it is not the one a person typed into. Otherwise the
- * document's own name and, apart by `|`: how many marked nodes are in the document; whether one of
- * them is an editable region; how many controls a look could list are NEAR one that the scan before
- * this one (`also`) had not found; where each near control is drawn; how many marked nodes are
- * boxes a look could list; and where each of those is drawn.
+ * `gone` when the document carries no mark: it is not the one a person typed into — and only then,
+ * however few of its marked nodes are in it at this moment: a page puts a node back. Otherwise the
+ * document's own name and, apart by `|`: how many controls a look could list are NEAR a marked node
+ * that the scan before this one (`also`) had not found; where each near control is drawn; how many
+ * marked nodes are boxes a look could list; and where each of those is drawn.
  *
  * NEAR IS EVERYTHING A NAME COULD REACH A MARKED NODE THROUGH, followed the other way: from the node,
  * and from everything inside it, up to each element above (a parent, a shadow tree's host, the slot
  * it is assigned to), across to whatever is labelled by one of those (`aria-labelledby`, in the
- * same tree) or owns it by id (`aria-owns`, from any tree, as the browser's own tree resolves it),
+ * same tree) or owns it by id (`aria-owns`: from any tree when it is in the document, as the
+ * browser's own tree resolves it, and from its own tree, as a name is computed),
  * and from a `<label>` to the control it is for — and on from each of those, until nothing is
  * added. Those are the paths the role engine computes a name along (`page-names.ts` follows the
  * same ones forward), so a control that is not near cannot be named out of what a person typed,
@@ -560,24 +561,19 @@ function scanTyped(packed: string): string {
     return [box.x, box.y, box.width, box.height].map(Math.round).join(",");
   };
 
-  /** The marked nodes that are boxes a look lists: asked for by this mark, not by a token. */
-  const boxes = marked.filter((node) => {
+  /** A box a look lists as one that holds text. */
+  const isBox = (node: Element): boolean => {
     const tag = node.localName;
     return (
       tag === "textarea" ||
-      tag === "select" ||
       (tag === "input" && (node as HTMLInputElement).type !== "hidden") ||
       roles(node).some((role) => textEntry.test(role))
     );
-  });
+  };
+  /** The marked nodes that are such boxes: asked for by this mark, not by a token. */
+  const boxes = marked.filter(isBox);
   const typedPart = `${boxes.length}|${boxes.map(drawnAt).join(";")}`;
-  let region = 0;
-  for (const node of marked) {
-    if ((node as HTMLElement).isContentEditable) region = 1;
-  }
-  if (!token || marked.length === 0) {
-    return `${named}|${marked.length}|${region}|0||${typedPart}`;
-  }
+  if (!token || marked.length === 0) return `${named}|0||${typedPart}`;
 
   /**
    * The tokens an element carries, with the ones too old to be any look's taken off. By the moment
@@ -615,13 +611,20 @@ function scanTyped(packed: string): string {
     if (!id) return;
     const root = element.getRootNode();
     for (const other of referring) {
-      // A label is looked for in the labelled element's own tree; what is owned, in the document.
-      const labels =
-        other.getRootNode() === root
-          ? (other.getAttribute("aria-labelledby") ?? "")
-          : "";
+      /*
+       * A label is looked for in the labelled element's own tree. What is owned is looked for in
+       * two: in the document, from whatever tree the owner is in, when the browser builds its
+       * tree's children — and in the owner's own tree when it computes a NAME (Playwright's
+       * `getIdRefs`). For one commit (2026-10-05) only the document counted, and a button in a
+       * shadow tree that owns the note beside it kept the name the tree gave it: its own word and
+       * what a person had typed into the note.
+       */
+      const same = other.getRootNode() === root;
+      const labels = same ? (other.getAttribute("aria-labelledby") ?? "") : "";
       const owns =
-        root === document ? (other.getAttribute("aria-owns") ?? "") : "";
+        root === document || same
+          ? (other.getAttribute("aria-owns") ?? "")
+          : "";
       if (`${labels} ${owns}`.split(/\s+/).includes(id)) reach(other);
     }
   };
@@ -629,17 +632,19 @@ function scanTyped(packed: string): string {
     /*
      * A box is not near itself: its name is never its own contents, so it is asked about only if
      * something else it is near says so — and keeps the name the tree gave it when the page says
-     * nothing. An editable region is: its own name can be the words inside it.
+     * nothing. Everything else that carries the mark is: an editable region's own name can be the
+     * words inside it, and so can the name of what was editable only while a person typed — a
+     * tab renamed in place is plain again once it loses focus, and is called what was typed.
      */
-    if ((node as HTMLElement).isContentEditable) reach(node);
-    else spread(node);
+    if (isBox(node) && !(node as HTMLElement).isContentEditable) spread(node);
+    else reach(node);
     everyElement(node, reach);
     if (node.shadowRoot) everyElement(node.shadowRoot, reach);
   }
   for (let at = 0; at < reached.length; at += 1) {
     spread(reached[at] as Element);
   }
-  return `${named}|${marked.length}|${region}|${fresh}|${reached
+  return `${named}|${fresh}|${reached
     .filter(listable)
     .map(drawnAt)
     .join(";")}|${typedPart}`;
@@ -743,7 +748,7 @@ export async function quietOn(
       forgetFrame(session, frame);
       return;
     }
-    const [named, , , fresh, nearAt, boxes, boxesAt] =
+    const [named, fresh, nearAt, boxes, boxesAt] =
       typeof answer === "string" ? answer.split("|") : [];
     said.present = true;
     if (boxesAt === undefined) {
@@ -774,6 +779,11 @@ export async function quietOn(
  * whose tree name is not to be trusted whatever the page says of it afterwards (`before` in
  * `nearRefs`); the count of near controls is the first scan's and whatever the second found that
  * the first had not; and a box that was a typed-into box on either side is looked for.
+ *
+ * KNOWN AND LEFT: what is in the document only BETWEEN the two scans — put in after the first,
+ * read by the tree, taken out before the second — is seen by neither. A region so, and a box so:
+ * the boxes looked for are the larger of the two counts, which is every box either scan saw and
+ * no box that neither did.
  */
 export function bothScans(before: TypedInto, after: TypedInto): TypedInto {
   return {

@@ -434,15 +434,27 @@ export function namesOf(
   const holdsTyped = (element: Element, seen: Element[] = []): boolean => {
     if (markName === "" || seen.includes(element)) return false;
     seen.push(element);
-    // What an element owns is looked for in its document, whatever tree the owner is in, and the
-    // ids are apart by any whitespace: that is how the browser's own tree resolves `aria-owns`.
+    /*
+     * What an element owns is looked for in two places, because the browser looks in two: in its
+     * document, whatever tree the owner is in, when it builds the tree's children — and in the
+     * owner's own tree, a shadow tree included, when it computes a name (`idRefs` above). The ids
+     * are apart by any whitespace.
+     */
     const owned = (owner: Element): boolean =>
       (owner.getAttribute("aria-owns") ?? "")
         .split(/\s+/)
         .filter(Boolean)
         .some((id) => {
-          const other = owner.ownerDocument.getElementById(id);
-          return !!other && (insideTyped(other) || holdsTyped(other, seen));
+          const root = owner.getRootNode();
+          return [
+            owner.ownerDocument.getElementById(id),
+            root.nodeType === 11
+              ? (root as ShadowRoot).getElementById(id)
+              : null,
+          ].some(
+            (other) =>
+              !!other && (insideTyped(other) || holdsTyped(other, seen)),
+          );
         });
     const beneath = (root: Element | ShadowRoot): boolean =>
       Array.from(root.querySelectorAll("*")).some(
@@ -457,11 +469,14 @@ export function namesOf(
       (element.shadowRoot !== null && beneath(element.shadowRoot))
     );
   };
-  /** Text a person typed: inside a typed-into node, or in any editable region when every one is. */
+  /**
+   * Text a person typed: inside a typed-into node — whatever that node is now, a title that was
+   * editable only while it was renamed included — and in any editable region when every one is.
+   */
   const typedText = (node: Node): boolean =>
-    every
-      ? (node.parentElement as HTMLElement | null)?.isContentEditable === true
-      : insideTyped(node);
+    insideTyped(node) ||
+    (every &&
+      (node.parentElement as HTMLElement | null)?.isContentEditable === true);
   /** Set while one control is named: its name was drawn, somewhere on the way, from such a node. */
   let drawn = false;
 
@@ -970,14 +985,15 @@ export function namesOf(
     try {
       /*
        * The control itself: around a typed-into node or inside one, its words are that node's. One
-       * that IS such a node says so only when it is an editable region — a region's own name can
-       * be its contents, and a box's never is.
+       * that IS such a node says so unless it is a box and nothing more — a box's name is never
+       * its contents; a region's can be, and so can the name of a tab or a link that was editable
+       * only while a person renamed it and carries the mark still.
        */
       const holds =
         every ||
-        (isTypedInto(target)
-          ? (target as HTMLElement).isContentEditable === true
-          : false) ||
+        (isTypedInto(target) &&
+          ((target as HTMLElement).isContentEditable === true ||
+            !holdsAValue(target))) ||
         insideTyped(above(target)) ||
         holdsTyped(target);
       drawn = holds;

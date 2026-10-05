@@ -586,6 +586,37 @@ const typedPage = (title: string, head: string, body = "") =>
 const TAKEOVER_TYPED_HTML = typedPage("사람이 친 화면", "");
 
 /**
+ * `/takeover-left`: two places whose typing is still on the page after what made them a place to
+ * type has gone, or was never in the page's own tree.
+ *
+ * - A title a person renames in place: editable while it has focus, and plain text again the
+ *   moment it loses it — the page takes the attribute off on blur.
+ * - A tab renamed the same way: once it is plain again, the browser names it by what was typed.
+ * - A note inside an open shadow tree, owned by the button beside it (`aria-owns`, both in that
+ *   tree): the browser names the button by its own word and the note's.
+ */
+export const LEFT_TITLE = { x: 300, y: 265 } as const;
+export const LEFT_TAB = { x: 440, y: 365 } as const;
+export const LEFT_OWNED_NOTE = { x: 440, y: 315 } as const;
+export const LEFT_OWNER_BUTTON = "메모";
+const TAKEOVER_LEFT_HTML = typedPage(
+  "쓰고 난 화면",
+  "",
+  `<h1 contenteditable="true" data-shape="title" style="${editableRow(0, 0)};top:250px;outline:1px solid #888;font-weight:normal"></h1>
+  <div id="owner-host" style="position:absolute;left:20px;top:300px;width:600px;height:30px"></div>
+  <div role="tablist"><div role="tab" tabindex="0" aria-selected="true" contenteditable="true" data-shape="tab" style="position:absolute;left:280px;top:350px;width:320px;height:28px;outline:1px solid #888"></div></div>
+  <script>
+    ["title", "tab"].forEach(function (shape) {
+      var renamed = document.querySelector('[data-shape="' + shape + '"]');
+      renamed.addEventListener("blur", function () { renamed.removeAttribute("contenteditable"); });
+    });
+    document.getElementById("owner-host").attachShadow({ mode: "open" }).innerHTML =
+      '<button type="button" aria-owns="note" style="position:absolute;left:0;top:0;width:100px;height:28px">${LEFT_OWNER_BUTTON}</button>' +
+      '<div id="note" contenteditable="true" data-shape="owned" style="position:absolute;left:260px;top:0;width:320px;height:28px;outline:1px solid #888"></div>';
+  </script>`,
+);
+
+/**
  * `/takeover-slow`: a page that is busy for a second and a half, starting a moment after its box
  * takes focus — a single-page app rendering under the first key. It answers nothing while it is
  * busy and everything afterwards, which is a slow page and not one that cannot say what has focus.
@@ -888,6 +919,9 @@ export function serveFixture(port = 0) {
       }
       if (path === "/takeover-typed") {
         return new Response(TAKEOVER_TYPED_HTML, { headers: html });
+      }
+      if (path === "/takeover-left") {
+        return new Response(TAKEOVER_LEFT_HTML, { headers: html });
       }
       if (path === "/takeover-slow") {
         return new Response(TAKEOVER_SLOW_HTML, { headers: html });

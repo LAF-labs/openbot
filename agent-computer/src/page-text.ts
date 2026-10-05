@@ -295,6 +295,57 @@ function stillArriving(arrival: Arrival): PageText {
 }
 
 /**
+ * Whether this service's record of the tab says more than a read was made with: a person typed
+ * into it blind, or — when the read was told of nothing — into one of its frames.
+ */
+function typedSince(
+  session: BotSession,
+  target: Page,
+  hush: Hush | undefined,
+): boolean {
+  if (typedIntoBlind(session, target)) return true;
+  if (hush) return false;
+  return [...session.typedFrames].some(
+    (frame) => !frame.isDetached() && frame.page() === target,
+  );
+}
+
+/** Every frame's text, the main frame's first: one making of what {@link readablePageText} hands on. */
+async function framesText(
+  target: Page,
+  deadline: number,
+  whole: boolean,
+  hush: Hush | undefined,
+): Promise<{
+  main: FrameText;
+  others: { frame: Frame; url: string }[];
+  texts: (FrameText | undefined)[];
+}> {
+  // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
+  const main = await fromDocument(
+    target,
+    deadline - Date.now(),
+    frameText(target.mainFrame(), whole, hush).then(
+      (read) => ({ read }),
+      (error: unknown) => ({ error }),
+    ),
+  );
+  if (!main) throw new DocumentSilentError();
+  if ("error" in main) throw main.error;
+
+  const others = target
+    .frames()
+    .filter((frame) => frame !== target.mainFrame())
+    .map((frame) => ({ frame, url: frame.url() }))
+    .filter(({ url }) => url && url !== "about:blank");
+  const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
+  const texts = await Promise.all(
+    others.map(({ frame }) => within(wait, frameText(frame, whole, hush))),
+  );
+  return { main: main.read, others, texts };
+}
+
+/**
  * The page as text, the way a reader sees it.
  *
  * THE LIVE BODY, NOT A COPY OF IT. This used to clone `<body>`, strip script and style nodes and
@@ -319,55 +370,59 @@ async function readablePageText(
 ): Promise<PageText> {
   /*
    * WHAT A PERSON TYPED INTO THIS TAB IS NOT READ OUT OF IT. The reader is told to leave marked
-   * regions out whenever one of this tab's documents is one a person typed into (`quietOn`) —
-   * whether or not a region is in the document at the moment it is asked, since the reader finds
-   * the marked nodes itself, in the same question that makes the text, and one put back a moment
-   * later is then left out too. A tab nobody typed on is read exactly as before. One mark for
-   * every frame — a frame with no marked region in it finds none. No token: a read marks nothing
+   * nodes out whenever one of this tab's documents is one a person typed into (`quietOn`) —
+   * whether or not such a node is in the document at the moment it is asked, since the reader
+   * finds the marked nodes itself, in the same question that makes the text, and one put back a
+   * moment later is then left out too. A tab nobody typed on is read exactly as before. One mark
+   * for every frame — a frame with no marked node in it finds none. No token: a read marks nothing
    * near, so it cannot disturb a look of the same tab that is under way.
    */
-  const typed = session
-    ? await quietOn(
-        session,
-        target,
-        typedIntoBlind(session, target),
-        deadline - Date.now(),
-      )
-    : undefined;
-  const hush = typed?.present
-    ? { mark: typed.mark, every: typed.every }
-    : undefined;
-  // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
-  const main = await fromDocument(
-    target,
-    deadline - Date.now(),
-    frameText(target.mainFrame(), whole, hush).then(
-      (read) => ({ read }),
-      (error: unknown) => ({ error }),
-    ),
-  );
-  if (!main) throw new DocumentSilentError();
-  if ("error" in main) throw main.error;
+  const asked = async (): Promise<Hush | undefined> => {
+    if (!session) return undefined;
+    const typed = await quietOn(
+      session,
+      target,
+      typedIntoBlind(session, target),
+      deadline - Date.now(),
+    );
+    return typed.present ? { mark: typed.mark, every: typed.every } : undefined;
+  };
+  const hush = await asked();
+  const first = await framesText(target, deadline, whole, hush);
+  /*
+   * AND A PERSON MAY START TYPING WHILE THE TEXT IS BEING MADE: a read is not refused while they
+   * hold the wheel. Asked once, before the main frame, a tab nobody had typed on was read with
+   * nothing left out — its frames one after another, a paste into a region of one of them landing
+   * in between. So what was asked before the text is asked again after it, of this service's own
+   * record and of no page: a node is marked and its frame remembered — or the tab is known to be
+   * typed into blind — BEFORE the key is sent (`person-typing.ts`), so a record that says the same
+   * as before means no text made so far holds a key of theirs. One that says more means the text
+   * is made again, leaving out what the record now says: once, since the reader finds the marked
+   * nodes of each frame in the same question that reads it. The first text is not handed on
+   * then, whatever becomes of the second: with the read's time spent, the second making fails as
+   * a silent document does.
+   *
+   * Left, and said in docs/laf/browser-limits.md: a tab that goes blind during that second making;
+   * and the masked card, which marks its field after the value has landed (`control-routes.ts`).
+   */
+  const since =
+    session && !hush?.every && typedSince(session, target, hush)
+      ? await asked()
+      : undefined;
+  const { main, others, texts } =
+    since && (!hush || since.every)
+      ? await framesText(target, deadline, whole, since)
+      : first;
 
-  const others = target
-    .frames()
-    .filter((frame) => frame !== target.mainFrame())
-    .map((frame) => ({ frame, url: frame.url() }))
-    .filter(({ url }) => url && url !== "about:blank");
-  const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
-  const texts = await Promise.all(
-    others.map(({ frame }) => within(wait, frameText(frame, whole, hush))),
-  );
-
-  const pieces = [main.read.text];
-  let reader = main.read.reader;
+  const pieces = [main.text];
+  let reader = main.reader;
   /*
    * The page's own read only. An advertiser's frame that broke the reader is read plainly and merged
    * like any other frame — a frame is read whole unless it is an article anyway — and saying the
    * page could not be read because one of forty ad frames could not is a fact about nothing the
    * Bot asked for. A frame that could not be read even plainly is what it always was: opaque.
    */
-  const plain = main.read.plain === true;
+  const plain = main.plain === true;
   const frames: NonNullable<PageText["frames"]> = [];
   others.forEach(({ url }, index) => {
     const read = texts[index];

@@ -568,6 +568,41 @@ describe.skipIf(!HAS_BROWSER)(
       expect(whole.plain).toBe("0");
     });
 
+    /*
+     * HELD BY THE MARK, WHATEVER THE NODE IS NOW. A title renamed in place is plain text again
+     * once it loses focus, and a text box a page draws itself never was editable. For one commit
+     * a marked node was held only while editable, and both were read out. What is not held is
+     * told by its tag: an `<input>`, a `<textarea>`, a `<select>` — a `<select>`'s chosen word IS
+     * in the page's text, and stays there.
+     */
+    test("a marked node that is no longer editable, or never was, says nothing either; a marked box, by its tag, changes nothing", async () => {
+      const LEFT = `<!doctype html><html lang="ko"><body>
+<p>앞 문단</p>
+<h1 class="typed">${TYPED}</h1>
+<div role="textbox" tabindex="0" class="typed">${TYPED} 따라 그린 칸</div>
+<p>칸 앞 <input class="boxes" value="칸의 값"> 칸 뒤</p>
+<p>고르기 앞 <select class="boxes"><option>서울</option></select> 고르기 뒤</p>
+<p>글상자 앞 <textarea class="boxes">글상자 처음 값</textarea> 글상자 뒤</p>
+<p>뒤 문단</p>
+</body></html>`;
+      const unmarked = await read(LEFT, { followed: "nobody" });
+      // The words are the page's text until the mark says otherwise.
+      expect(unmarked.reader.text.split(TYPED).length - 1).toBe(2);
+      expect(unmarked.reader.text).toContain("서울");
+      for (const every of [false, true]) {
+        const { reader, plain } = await read(LEFT, { every });
+        for (const text of [reader.text, plain]) {
+          expect([every, text.includes("CANARY")]).toEqual([every, false]);
+          expect(text).not.toContain("따라 그린 칸");
+          for (const words of ["앞 문단", "칸 앞", "고르기 뒤", "뒤 문단"]) {
+            expect(text).toContain(words);
+          }
+        }
+      }
+      const boxes = await read(LEFT, { followed: "boxes" });
+      expect(boxes.said).toEqual(unmarked.said);
+    });
+
     test("is left out of the plain read too, and a page that breaks that as well is given no text", async () => {
       const { plain } = await read(PAGE);
       expect(plain.charAt(0)).toBe("0");
