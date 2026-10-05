@@ -123,7 +123,10 @@ export function ConnectionCard(props: Waiting<ConnectionArgs>) {
       action={
         isWaiting ? (
           <Badge tone="caution">{t("Waiting on you")}</Badge>
-        ) : answered?.code === "laf:connection_on" ? (
+        ) : answered?.code === "laf:connection_on" ||
+          // On, with nothing for the Bot to use yet: the switch is on all the same, and what the
+          // Bot cannot do with it is the Bot's to say.
+          answered?.code === "laf:connection_unusable" ? (
           <Badge tone="positive">{t("Connected")}</Badge>
         ) : answered?.code === "laf:connection_off" ? (
           <Badge>{t("Not now")}</Badge>

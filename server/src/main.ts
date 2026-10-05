@@ -114,6 +114,7 @@ import { redirectUriFor } from "./plugins/oauth";
 import { createPartnerRuntime } from "./plugins/partners";
 import {
   connectionSourcesFrom,
+  readAccountStates,
   readConnectionSwitches,
 } from "./plugins/overview-routes";
 import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
@@ -901,6 +902,8 @@ const chatTools = createChatTools({
   // What a waiting connect card asks: 연결's own reading, from the sources the screen is drawn from.
   connections: (userId) =>
     readConnectionSwitches(connectionSwitchSources, userId),
+  // And what a turn writes on the card it hands on: this person's accounts, from the same sources.
+  accounts: (userId) => readAccountStates(connectionSwitchSources, userId),
 });
 const firstMoveDeps = {
   moves: config.harness.firstMoves,

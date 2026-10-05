@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type OpenAI from "openai";
 import { searchResultText } from "../../shared/tools/bridge";
+import { withAccountStates } from "../../shared/tools/gallery";
 import { answerBridgeCall } from "../src/deferral";
 
 /**
@@ -756,5 +757,153 @@ describe("what the bridge leaves alone", () => {
     expect(JSON.stringify((requests[4]?.messages ?? []).slice(0, -3))).toBe(
       before,
     );
+  });
+});
+
+/*
+ * NOTHING OF A CONNECTED SERVICE WAS FOUND: THE LOOKUP'S ANSWER MAKES THE CONNECT CARD CALLABLE
+ * (2026-10-05).
+ *
+ * The run that was measured looked two and three times and then answered in prose. Here the first
+ * lookup is answered with what this person could connect and the card's schema
+ * (`searchResultText`, read off the accounts the turn wrote on the card), so the card may be
+ * called in the very next round — and it leaves the run as the real call, to the surface that
+ * draws it and waits. Two requests of the model from the question to the card.
+ */
+describe("a lookup that finds nothing of a connected service", () => {
+  const DECLARED = {
+    type: "object",
+    properties: {
+      services: {
+        type: "array",
+        items: { type: "string", enum: ["google-calendar", "gmail"] },
+      },
+      reason: { type: "string" },
+    },
+    required: ["services"],
+  };
+  const CONNECT = {
+    name: "showConnection",
+    description:
+      "Put connection switches on screen and WAIT until the person turns one on.",
+    // As a turn hands it on: this person's accounts written on it.
+    parameters: withAccountStates(DECLARED, [
+      { key: "gmail", connected: false },
+      { key: "google-calendar", connected: false },
+    ]),
+  };
+  const GOALS = tool(
+    "mcp__goals__list_goals",
+    "이 사람의 진행 중인 목표를 본다.",
+  );
+  const NOTHING_CONNECTED = [...CORE, GOALS, CONNECT];
+
+  test("is answered with what could be connected and the card, and the card is then the real call", async () => {
+    const card = { services: ["google-calendar"], reason: "일정을 보려면" };
+    const { requests, events } = await runFor(NOTHING_CONNECTED, [
+      calls(
+        [
+          {
+            id: "c1",
+            name: "tool_search",
+            args: { query: "캘린더 일정 확인" },
+          },
+        ],
+        "일정 확인해 볼게요.",
+      ),
+      calls(
+        [
+          {
+            id: "c2",
+            name: "tool_call",
+            args: { name: "showConnection", args: card },
+          },
+        ],
+        "구글 캘린더가 아직 연결돼 있지 않아요.",
+      ),
+    ]);
+
+    // One lookup, then the card: two requests, and the run ends at the card for the surface.
+    expect(requests).toHaveLength(2);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(result?.toolCallId).toBe("c1");
+    const answer = String(result?.content).split("\n");
+    expect(answer).toContain(
+      "다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: 지메일(gmail), 구글 캘린더(google-calendar).",
+    );
+    // The card last, as the window declared it.
+    expect(JSON.parse(answer.at(-1) ?? "null")).toEqual({
+      name: "showConnection",
+      description: CONNECT.description,
+      parameters: DECLARED,
+    });
+    // The second request read that answer, as the tool message of the lookup.
+    const read = (requests[1]?.messages ?? []).find(
+      (message) => message.role === "tool",
+    );
+    expect(String(read?.content)).toBe(String(result?.content));
+
+    // The card went to the wire in its own name, with the Bot's arguments, and was not answered here.
+    const starts = events.filter((event) => event.type === "TOOL_CALL_START");
+    expect(starts.map((event) => event.toolCallName)).toEqual([
+      "tool_search",
+      "showConnection",
+    ]);
+    const cardArgs = events.find(
+      (event) => event.type === "TOOL_CALL_ARGS" && event.toolCallId === "c2",
+    );
+    expect(JSON.parse(String(cardArgs?.delta))).toEqual(card);
+    expect(
+      events.filter((event) => event.type === "TOOL_CALL_RESULT"),
+    ).toHaveLength(1);
+    expect(kinds(events).at(-1)).toBe("RUN_FINISHED");
+  });
+
+  test("the answer is the same bytes for the same list, lookup after lookup", async () => {
+    const lookup = (id: string) =>
+      calls([{ id, name: "tool_search", args: { query: "메일 확인하기" } }]);
+    const { events } = await runFor(NOTHING_CONNECTED, [
+      lookup("c1"),
+      lookup("c2"),
+      said("메일이 연결돼 있지 않아요."),
+    ]);
+    const answers = events
+      .filter((event) => event.type === "TOOL_CALL_RESULT")
+      .map((event) => String(event.content));
+    expect(answers).toHaveLength(2);
+    expect(answers[1]).toBe(answers[0]);
+    expect(answers[0]).toBe(
+      searchResultText([GOALS, CONNECT], "메일 확인하기", CORE),
+    );
+  });
+
+  test("with the bridge off, the card reaches the provider as the window declared it", async () => {
+    // One person's accounts are the bridge's to read, never part of the head of the prompt.
+    const { requests } = await runFor(NOTHING_CONNECTED, [said("네.")], {
+      toolDeferral: "off",
+    });
+    const sent = (requests[0]?.tools ?? []).find(
+      (tool) => tool.function.name === "showConnection",
+    ) as { function: { parameters?: unknown } } | undefined;
+    expect(sent?.function.parameters).toEqual(DECLARED);
+    expect(JSON.stringify(requests[0]?.tools)).not.toContain("x-accounts");
+  });
+
+  test("with the service connected its tool is the answer, and nothing is said of connecting", async () => {
+    const { events } = await runFor(
+      [...NOTHING_CONNECTED, GMAIL_SEARCH],
+      [
+        calls([
+          { id: "c1", name: "tool_search", args: { query: "메일 확인하기" } },
+        ]),
+        said("찾았어요."),
+      ],
+    );
+    const answer = String(
+      events.find((event) => event.type === "TOOL_CALL_RESULT")?.content,
+    );
+    expect(answer).not.toContain("연결하면");
+    expect(answer).not.toContain('"name":"showConnection"');
+    expect(answer).toContain('"name":"mcp__gmail__search_messages"');
   });
 });

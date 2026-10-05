@@ -7,6 +7,7 @@ import {
   test,
 } from "bun:test";
 import type { AuditEventInput, AuditStore } from "../src/audit";
+import { withAccountStates } from "../../shared/tools/gallery";
 import type { AgentStandingProfile } from "../src/copilot";
 import { buildAgents } from "../src/copilot";
 import {
@@ -391,6 +392,56 @@ describe("a new epoch, when the head of the prompt breaks anyway", () => {
     );
     expect(lastUser(connected.request)).toContain(
       "- 화면에 띄우는 카드: showBarChart",
+    );
+  });
+
+  /*
+   * WHAT COULD STILL BE CONNECTED IS IN THE CONTEXT LAYER ONLY WHILE THERE IS SOMETHING (2026-10-05).
+   * The turn writes a person's accounts on the connect card (`turns/chat-tools.ts`); this seam
+   * reads the open ones off it and the layer ends on one sentence about connecting. With the last
+   * account connected the sentence goes — as a reminder, like any change behind the bridge, never
+   * as an epoch — and no provider is ever sent anybody's accounts.
+   */
+  test("the sentence about connecting rides only while an account is open, and its going is a reminder", async () => {
+    const SAYS = "못 본다고 답하기 전에 tool_search로 한 번 찾는다";
+    const withCard = (connected: boolean) =>
+      [
+        ...TOOLS,
+        {
+          name: "showConnection",
+          description: "연결 스위치를 띄운다",
+          parameters: withAccountStates({ type: "object", properties: {} }, [
+            { key: "gmail", connected },
+          ]),
+        },
+      ] as never;
+    const store = createConversationStore();
+    const open = await run(store, conversation("안녕"), {
+      tools: withCard(false),
+    });
+    expect(system(open.request)).toContain(SAYS);
+    expect(JSON.stringify(open.request)).not.toContain("x-accounts");
+
+    const connected = await run(store, conversation("안녕", "그래"), {
+      tools: withCard(true),
+    });
+    expect(JSON.stringify(connected.request.tools)).toBe(
+      JSON.stringify(open.request.tools),
+    );
+    expect(system(connected.request)).toBe(system(open.request));
+    expect(connected.forwarded.epoch).toMatchObject({
+      reason: "conversation_start",
+    });
+    expect(lastUser(connected.request)).toContain("쓸 수 있는 도구가 바뀌었다");
+    expect(lastUser(connected.request)).not.toContain(SAYS);
+
+    // A conversation that begins with nothing left to connect never reads it.
+    const settled = await run(createConversationStore(), conversation("안녕"), {
+      tools: withCard(true),
+    });
+    expect(system(settled.request)).not.toContain(SAYS);
+    expect(system(settled.request)).toContain(
+      "- 화면에 띄우는 카드: showConnection",
     );
   });
 

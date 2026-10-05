@@ -12,6 +12,7 @@ import {
   unwrapToolCall,
   type WireTool,
 } from "../../shared/tools/bridge";
+import { withoutAccountStates } from "../../shared/tools/gallery";
 import { NOW_TOOL, NOW_TOOL_NAME } from "../../shared/tools/now";
 
 /**
@@ -263,7 +264,16 @@ export function toProviderTools(tools: readonly WireTool[]) {
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.parameters as Record<string, unknown>,
+      /*
+       * What a turn wrote on the connect card is the bridge's to read (`searchResultText`), never
+       * a provider's: one person's accounts are not part of the head of the prompt, and a strict
+       * provider refuses a keyword it does not know. The card stands behind the bridge, so this
+       * only matters on a run that turned the bridge off.
+       */
+      parameters: withoutAccountStates(tool.parameters) as Record<
+        string,
+        unknown
+      >,
     },
   }));
 }

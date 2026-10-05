@@ -7,6 +7,8 @@ import {
   type ConnectionsOverview,
   type ConnectionsOverviewSources,
   createConnectionsOverviewRoutes,
+  readAccountStates,
+  readConnectionSwitches,
 } from "../src/plugins/overview-routes";
 
 /**
@@ -326,5 +328,105 @@ describe("the 연결 screen's one read", () => {
 
     const response = await app.request("/api/connections/overview");
     expect(response.status).toBe(401);
+  });
+});
+
+/**
+ * A PERSON'S ACCOUNTS, AS A TURN READS THEM (`readAccountStates`).
+ *
+ * A turn writes these on the connect card it hands the Bot, for every message
+ * (`turns/chat-tools.ts`), from one read of the person's connections instead of the screen's five.
+ * So the two must say the same thing of every account — or a Bot is told an account can be
+ * connected that the card then draws as on, or the other way round.
+ */
+describe("a person's accounts as a turn reads them", () => {
+  const held = (health?: unknown) => ({
+    serverId: "google-sheets",
+    scope: A_SCOPE,
+    connectedAt: "2026-09-01T09:00:00.000Z",
+    ...(health ? { health } : {}),
+  });
+  const sourcesWith = (
+    connections: unknown[],
+    asked: string[] = [],
+    elsewhere: string[] = [],
+  ) =>
+    ({
+      catalogue: () => [sheets, cafe24],
+      store: {
+        connectionsFor: async (userId: string) => {
+          asked.push(userId);
+          return connections;
+        },
+        listServers: async () => {
+          elsewhere.push("servers");
+          return [] as never;
+        },
+      },
+      // A partner this machine holds a key for: a row on the screen, and not an account.
+      partners: {
+        configured: ["kakao-alimtalk"],
+        alimtalk: {
+          status: async () => {
+            elsewhere.push("partner");
+            return { connected: true };
+          },
+        },
+      },
+      sites: {
+        list: async () => {
+          elsewhere.push("sites");
+          return [];
+        },
+      },
+      bots: async () => {
+        elsewhere.push("bots");
+        return [];
+      },
+    }) as unknown as ConnectionsOverviewSources;
+  /** The screen's reading of the same accounts: the ids a turn names, on or off. */
+  const drawnBy = async (sources: ConnectionsOverviewSources) =>
+    (await readConnectionSwitches(sources, OWNER.id))
+      .filter((row) => row.id === "google-sheets" || row.id === "cafe24")
+      .map((row) => ({ key: row.id, connected: row.connected }))
+      .sort((a, b) => (a.key < b.key ? -1 : 1));
+
+  test("are every account this deployment can connect, in key order, on or off as the screen says", async () => {
+    const sources = sourcesWith([held()]);
+    const read = await readAccountStates(sources, OWNER.id);
+    expect(read).toEqual([
+      { key: "cafe24", connected: false },
+      { key: "google-sheets", connected: true },
+    ]);
+    expect(read).toEqual(await drawnBy(sources));
+    // Nobody connected anything: every account, off.
+    expect(await readAccountStates(sourcesWith([]), OWNER.id)).toEqual([
+      { key: "cafe24", connected: false },
+      { key: "google-sheets", connected: false },
+    ]);
+  });
+
+  test("an account that needs reconnecting is not on — the screen's word, and this one's", async () => {
+    const sources = sourcesWith([
+      held({
+        status: "needs_reconnect",
+        lastOkAt: "2026-09-01T09:00:00.000Z",
+        lastFailureAt: "2026-09-04T06:00:00.000Z",
+        failureCode: "refresh_failed",
+      }),
+    ]);
+    const read = await readAccountStates(sources, OWNER.id);
+    expect(read.find((row) => row.key === "google-sheets")?.connected).toBe(
+      false,
+    );
+    expect(read).toEqual(await drawnBy(sources));
+  });
+
+  test("is one read of this person's connections: no server list, no partner, no site, no Bot", async () => {
+    const asked: string[] = [];
+    const elsewhere: string[] = [];
+    await readAccountStates(sourcesWith([held()], asked, elsewhere), OWNER.id);
+    expect(asked).toEqual([OWNER.id]);
+    expect(elsewhere).toEqual([]);
   });
 });

@@ -22,6 +22,7 @@ import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName } from "../../shared/tools/bridge";
+import { openAccountsIn } from "../../shared/tools/gallery";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
@@ -202,10 +203,15 @@ export function composeInputOf(
     person?: PromptPerson;
     /** Every tool the run was handed; the deferred ones are named in the context layer. */
     toolNames?: readonly string[];
+    /** The accounts this person could still connect, off the connect card the turn handed on. */
+    openAccounts?: readonly string[];
   },
 ): ComposePromptInput {
   return {
     ...(options.toolNames ? { toolNames: options.toolNames } : {}),
+    ...(options.openAccounts?.length
+      ? { openAccounts: options.openAccounts }
+      : {}),
     mode: options.mode,
     now: options.now,
     timeZone: options.timeZone,
@@ -658,6 +664,13 @@ function remoteAgentWithPrompt(
        */
       person: { ...agent.profile.person, ...deviceOf(forwarded) },
       toolNames: (input.tools ?? []).map((tool) => tool.name),
+      /*
+       * What this person could still connect, read off the connect card as the turn handed it
+       * on (`turns/chat-tools.ts` writes their accounts there). The context layer says one
+       * sentence about connecting while there is something left to connect, and nothing once
+       * there is not — or where the run has no card, as a routine's has none.
+       */
+      openAccounts: openAccountsIn(input.tools ?? []),
     });
     const facts = contextFactsFor(composing);
     const notepad = notepadLayerText(mode, composing.notepad);
