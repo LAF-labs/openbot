@@ -1712,6 +1712,38 @@ describe("the wait a turn measured", () => {
     });
   });
 
+  test("a decision nobody could read is a first move not measured, and the turn answers all the same", async () => {
+    /*
+     * The measuring happens in the middle of a turn, and a measurement must never be what fails
+     * one: the engine's rule for the first move is that anything going wrong makes no move. What
+     * is handed over here is what a typed decision never is — a verdict, and no list of the kinds
+     * it was about.
+     */
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 50,
+        does: ({ text }) => {
+          time.pass(500);
+          text("우산은 없어도 돼요.");
+        },
+      },
+    ]);
+    const { engine } = engineWith(bot, async () => ({ ok: true }), {
+      now: time.now,
+      decision: async () =>
+        ({ move: null, verdict: "below_bar" }) as unknown as FirstMoveDecision,
+    });
+    const { turnId } = await sentTurn(engine, "우산 챙길까 말까 고민이네");
+    await until(async () => (await statusOf(turnId)) !== "running");
+    expect(await rowOf(turnId)).toMatchObject({
+      status: "done",
+      error: null,
+      ...NO_FIRST_MOVE,
+      firstWordMs: 550,
+    });
+  });
+
   test("a turn that did something and said nothing has a first sign and no first word", async () => {
     const time = handClock();
     const bot = timedBot(time, [

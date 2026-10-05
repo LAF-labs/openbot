@@ -531,17 +531,26 @@ export function createTurnEngine(options: TurnEngineOptions) {
        * kind that is seldom made comes out — is read off the turns themselves now. A move speaks
        * for itself; a decision that left the step to the Bot's model says which kinds it was
        * about and why. A message nobody was asked about is no first move, and measures none.
+       *
+       * AND NEVER WHAT FAILS THE TURN. The rule above holds for the measuring as it does for the
+       * move: a decision this cannot read — one with no list of the kinds it was about, which
+       * nothing typed hands over — is a first move not measured, said once in the log, and the
+       * turn goes on as the turn it would have been.
        */
-      const considered = move
-        ? { asked: move.asked, verdict: "moved" as const, kind: move.kind }
-        : decision &&
-            decision.asked.length > 0 &&
-            decision.verdict !== "moved" &&
-            isFirstMoveEnding(decision.verdict)
-          ? { asked: decision.asked, verdict: decision.verdict, kind: null }
-          : null;
-      if (considered) {
-        meter.firstMove({ ...considered, decisionMs: now() - decidingAt });
+      try {
+        const considered = move
+          ? { asked: move.asked, verdict: "moved" as const, kind: move.kind }
+          : decision &&
+              decision.asked.length > 0 &&
+              decision.verdict !== "moved" &&
+              isFirstMoveEnding(decision.verdict)
+            ? { asked: decision.asked, verdict: decision.verdict, kind: null }
+            : null;
+        if (considered) {
+          meter.firstMove({ ...considered, decisionMs: now() - decidingAt });
+        }
+      } catch (error) {
+        log.warn("first_move_unmeasured", { reason: describeFailure(error) });
       }
       if (move && !signal.aborted) {
         const callId = `call_${randomUUID().replaceAll("-", "")}`;
