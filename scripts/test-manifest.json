@@ -526,6 +526,7 @@
   "server/tests/trial-config.test.ts",
   "server/tests/trial-env-contract.test.ts",
   "server/tests/trial-me.test.ts",
+  "server/tests/turn-doors-scope.integration.test.ts",
   "server/tests/turn-engine.integration.test.ts",
   "server/tests/turn-failures.integration.test.ts",
   "server/tests/turn-hub.test.ts",
