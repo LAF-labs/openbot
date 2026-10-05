@@ -313,6 +313,7 @@
   "server/tests/channel-events.integration.test.ts",
   "server/tests/channel-preview.test.ts",
   "server/tests/channel-routes.test.ts",
+  "server/tests/chat-plugin-call.test.ts",
   "server/tests/chat-stop.integration.test.ts",
   "server/tests/chat-tools.test.ts",
   "server/tests/compaction.test.ts",

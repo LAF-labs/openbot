@@ -1104,12 +1104,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * every code a sentence, each with Korean, a rate limit told from an outage — and
  * `turn-failure.test.ts` holds those for the table the chat reads.
  *
+ * RAISED 2026-10-06 after that change's review, by exactly what was added: thirteen to `server`,
+ * the new `chat-plugin-call.test.ts`. The six tests of the window's plugin call that went above
+ * stated facts the server owns now — what a Bot is told when a call to a connected service is
+ * refused, fails or stops to ask — and nothing held them where the call is carried out
+ * (`turns/chat-tools.ts`). There: a call carried out is the service's answer, and its own error is
+ * marked as one; a refusal is the words for its fact, never the sentence the error carries; a
+ * lapsed connection is the Korean for connecting again; the boundary's no, a server that is gone,
+ * a definition held for review and a Bot that is not this person's are each their own words; a
+ * refusal with no fact of ours says only that the tool is not allowed here; a vendor's failure is
+ * a failure, never the vendor's text and not a refusal; and a call a person is asked about first
+ * — answered yes and sent once more with the answer on it, answered no, nobody answering, a yes
+ * the call still stops on, a refusal or a failure after the yes, a stop while the person decides,
+ * and a yes and a stop together.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3586, roots: ["server"] },
+  { name: "server", floor: 3599, roots: ["server"] },
   { name: "app", floor: 2037, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 655, roots: ["tests", "agent-bot"] },
