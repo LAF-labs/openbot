@@ -582,6 +582,9 @@ const TYPED_ROWS = `
 const typedPage = (title: string, head: string, body = "") =>
   `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title>${head}</head><body style="margin:0">${TYPED_ROWS}${body}${REPORT_TYPING}</body></html>`;
 
+/** `/takeover-typed`: those places and nothing else. */
+const TAKEOVER_TYPED_HTML = typedPage("사람이 친 화면", "");
+
 /**
  * `/takeover-slow`: a page that is busy for a second and a half, starting a moment after its box
  * takes focus — a single-page app rendering under the first key. It answers nothing while it is
@@ -882,6 +885,9 @@ export function serveFixture(port = 0) {
       }
       if (path === "/takeover-editable-frame") {
         return new Response(TAKEOVER_EDITABLE_FRAME_HTML, { headers: html });
+      }
+      if (path === "/takeover-typed") {
+        return new Response(TAKEOVER_TYPED_HTML, { headers: html });
       }
       if (path === "/takeover-slow") {
         return new Response(TAKEOVER_SLOW_HTML, { headers: html });

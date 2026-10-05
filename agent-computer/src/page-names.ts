@@ -34,7 +34,7 @@
  * box that labels it, and a link inside a region by what was typed around it — each with a name of
  * its own, so none of them was ever asked about here (measured 2026-10-05, `person-typing.ts`).
  * While a tab holds a node a person typed into, the controls that could take their name from it
- * are asked about too (`nearRefs`), the routine says which of them do (`drawn`) and which hold the
+ * are asked about too (`nearRefs` in marked-refs.ts), the routine says which of them do (`drawn`) and which hold the
  * node (`holds`), and those are listed under the name computed here: the node's own contents left
  * out, and the text inside a region a person typed into said by nothing — not even by a control
  * that is itself inside it. The nodes are known by the mark they carry in the page (`Hush`,
@@ -434,10 +434,16 @@ export function namesOf(
   const holdsTyped = (element: Element, seen: Element[] = []): boolean => {
     if (markName === "" || seen.includes(element)) return false;
     seen.push(element);
+    // What an element owns is looked for in its document, whatever tree the owner is in, and the
+    // ids are apart by any whitespace: that is how the browser's own tree resolves `aria-owns`.
     const owned = (owner: Element): boolean =>
-      idRefs(owner, owner.getAttribute("aria-owns")).some(
-        (other) => insideTyped(other) || holdsTyped(other, seen),
-      );
+      (owner.getAttribute("aria-owns") ?? "")
+        .split(/\s+/)
+        .filter(Boolean)
+        .some((id) => {
+          const other = owner.ownerDocument.getElementById(id);
+          return !!other && (insideTyped(other) || holdsTyped(other, seen));
+        });
     const beneath = (root: Element | ShadowRoot): boolean =>
       Array.from(root.querySelectorAll("*")).some(
         (inner) =>
@@ -1007,81 +1013,6 @@ export type PageNames = {
   /** And the ones that hold such a node: what the tree printed as their contents is its too. */
   holds: Set<string>;
 };
-
-/** How a control of the list is known to be near a node a person typed into (`quietOn`). */
-type NearMark = {
-  mark: string;
-  token: string;
-  boxes: ReadonlySet<string>;
-  expected: number;
-};
-
-/** Whether an element carries this look's near mark. Runs in the page, on that element. */
-function isNear(node: Element, packed: string): boolean {
-  const at = packed.indexOf("|");
-  return (
-    (node as unknown as Record<symbol, unknown>)[
-      Symbol.for(packed.slice(0, at))
-    ] === packed.slice(at + 1)
-  );
-}
-
-/**
- * The controls of the list that could take their name from a node a person typed into: the ones
- * the page marked as near one for this look (`scanTyped` in secret-fields.ts).
- *
- * THE PAGE KNOWS WHICH ELEMENTS, AND THE LIST KNOWS WHICH REFS; a ref resolves one at a time. So the
- * controls drawn where the page said a near element is are asked first — `kept` carries each
- * control's box as the tree wrote it — and when that finds as many as the page counted, nothing
- * else is asked: on a page where a person typed into a search box and nothing draws on it, that is
- * no question at all. When it finds fewer — a control that moved between the tree and the count,
- * or one the list does not keep — every other control is asked the same thing.
- *
- * A control that does not answer is taken to be one: it is then asked for its name, has none, and
- * is listed without one. That is the whole of what a silent page costs here — the controls that
- * might have been drawn from what a person typed, not the list.
- */
-export async function nearRefs(
-  target: Page,
-  kept: readonly { ref: string; box?: string }[],
-  near: NearMark,
-  ms: number,
-): Promise<Set<string>> {
-  const found = new Set<string>();
-  if (near.expected === 0 || ms <= 0) return found;
-  const until = Date.now() + ms;
-  const packed = `${near.mark}|${near.token}`;
-  const ask = async (controls: readonly { ref: string }[]) => {
-    const answers = await Promise.all(
-      controls.map(({ ref }) =>
-        fromDocument(
-          target,
-          until - Date.now(),
-          target
-            .locator(`aria-ref=${ref}`)
-            .evaluate(isNear, packed, {
-              timeout: Math.max(1, until - Date.now()),
-            })
-            .catch(() => undefined),
-        ),
-      ),
-    );
-    let said = 0;
-    controls.forEach(({ ref }, index) => {
-      if (answers[index] === false) return;
-      found.add(ref);
-      if (answers[index] === true) said += 1;
-    });
-    return said;
-  };
-  const drawnThere = kept.filter(
-    (control) => control.box !== undefined && near.boxes.has(control.box),
-  );
-  if ((await ask(drawnThere)) >= near.expected) return found;
-  const asked = new Set(drawnThere.map((control) => control.ref));
-  await ask(kept.filter((control) => !asked.has(control.ref)));
-  return found;
-}
 
 /**
  * The page's names for these refs, where the page gave one. A ref that names nothing now, a frame

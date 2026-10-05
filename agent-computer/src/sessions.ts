@@ -43,8 +43,6 @@ const MAX_NOTES = 8;
 /** A field a person typed into. See `BotSession.secretFields`. */
 export type SecretField = {
   handle: ElementHandle;
-  /** The ref it was last known by, or empty until a look finds it (`typedIntoRefs`). */
-  ref: string;
   /**
    * The frame it is in, where that is known, so a person's next keystroke can ask that frame alone
    * whether it is landing in the same box.
@@ -57,13 +55,6 @@ export type SecretField = {
    * (`markTypedInto`): the field is let go when its frame holds another document, and not before.
    */
   document?: string;
-  /**
-   * An editable region that is not a text box: a look never lists the region itself, so it is not
-   * searched for among the boxes a look does list (`typedIntoRefs`). What a look lists is what takes
-   * its words from it — the control around it, the one it labels — and what `/read` hands over is
-   * the page's text: both are kept clear of it by this node (`quietOn` in secret-fields.ts).
-   */
-  region?: true;
 };
 
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
@@ -104,12 +95,13 @@ export type BotSession = {
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**
-   * The fields a person typed into: the node itself, and the ref it was last known by.
+   * The fields a person typed into: the node itself.
    *
    * Identity, not description: whatever the page calls the box and whatever its markup says, the
    * value in THIS node is one the model was promised it would never see — typed through
-   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Followed at
-   * every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
+   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Its value is
+   * read at every look, and it is let go when its document is gone (`quietOn`) — not when the node
+   * is merely out of the document, which a page can put back.
    */
   secretFields: SecretField[];
   /**

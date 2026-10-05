@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { type Browser, chromium, type Page } from "playwright";
 import { readAriaSnapshot } from "../src/aria-snapshot";
 import { holdToLabel } from "../src/label-hold";
+import { nearRefs, typedRefs } from "../src/marked-refs";
 import { namesFromThePage } from "../src/page-names";
 import { REPLACED_BUILTINS_SCRIPT } from "./fixture-site";
 
@@ -490,3 +491,157 @@ describe.skipIf(!HAS_BROWSER)(
     });
   },
 );
+
+/**
+ * WHICH CONTROLS OF THE LIST CARRY A MARK THE PAGE PUT ON AN ELEMENT (`marked-refs.ts`), asked with
+ * every default closed. The marks are put on here as `scanTyped` puts them on in a page a person
+ * typed into: under the near mark, the tokens of the scans that found the element near; under the
+ * typed mark, `true`.
+ */
+describe.skipIf(!HAS_BROWSER)("the controls that carry a mark", () => {
+  const NEAR = "laf.quiet.marks-test.near";
+  const TYPED = "laf.quiet.marks-test";
+  const BEFORE = "1000.1";
+  const AFTER = "1000.2";
+
+  /** Four buttons and two boxes, marked by id, and the list's controls by the tree's own name. */
+  async function marked() {
+    const page = await pageWith(`
+<button id="was">전에 가까움</button> <button id="is">지금 가까움</button>
+<button id="both">둘 다</button> <button id="far">멀리</button>
+<input id="typed" aria-label="친 칸"> <input id="other" aria-label="다른 칸">`);
+    await page.evaluate(
+      ([near, typed, before, after]) => {
+        const put = (id: string, mark: string, value: unknown) => {
+          (document.getElementById(id) as unknown as Record<symbol, unknown>)[
+            Symbol.for(mark as string)
+          ] = value;
+        };
+        put("was", near as string, before);
+        put("is", near as string, `old-token ${after}`);
+        put("both", near as string, `${before} ${after}`);
+        put("far", near as string, "somebody-elses-look");
+        put("typed", typed as string, true);
+      },
+      [NEAR, TYPED, BEFORE, AFTER],
+    );
+    const read = readAriaSnapshot(
+      await page.ariaSnapshot({ mode: "ai", boxes: true } as never),
+      {},
+      { width: 1280, height: 800 },
+    );
+    const kept = read.elements.map(({ ref, name }) => ({
+      ref,
+      name,
+      box: read.boxes.get(ref) as string,
+    }));
+    const refOf = (name: string) =>
+      kept.find((control) => control.name === name)?.ref ?? "";
+    const boxOf = (name: string) =>
+      kept.find((control) => control.name === name)?.box ?? "";
+    return { page, kept, refOf, boxOf };
+  }
+  const named = (
+    refs: Set<string>,
+    kept: { ref: string; name: string }[],
+  ): string[] =>
+    kept.filter((control) => refs.has(control.ref)).map(({ name }) => name);
+
+  test("a control near before the tree, one near only after it, and one that is neither are told apart — by this look's tokens and nobody else's", async () => {
+    const { page, kept, boxOf } = await marked();
+    try {
+      const near = {
+        mark: NEAR,
+        tokens: [BEFORE, AFTER],
+        boxes: new Set(["전에 가까움", "지금 가까움", "둘 다"].map(boxOf)),
+        expected: 3,
+      };
+      const found = await nearRefs(page, kept, near, 2_000);
+      expect(named(found.before, kept)).toEqual(["전에 가까움", "둘 다"]);
+      expect(named(found.after, kept)).toEqual(["지금 가까움"]);
+      // Where the page said they are drawn is only where to look first: with every box wrong, the
+      // count is not met and every control is asked — and the same three are found.
+      const moved = await nearRefs(
+        page,
+        kept,
+        { ...near, boxes: new Set(["0,0,1,1"]) },
+        2_000,
+      );
+      expect(named(moved.before, kept)).toEqual(["전에 가까움", "둘 다"]);
+      expect(named(moved.after, kept)).toEqual(["지금 가까움"]);
+      // And with nothing counted near, nothing is asked and nothing is found.
+      const none = await nearRefs(page, kept, { ...near, expected: 0 }, 2_000);
+      expect([...none.before, ...none.after]).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  /*
+   * THE CLOSED DEFAULTS. A look that found nothing near lists every control under the tree's name,
+   * so "nothing near" must never be what is answered when the question was not: with its budget
+   * spent this used to answer exactly that, and a control that could not be asked must not be
+   * read as one that said no.
+   */
+  test("a control that does not answer, a ref that names nothing, and a look with no time left are each taken to be near", async () => {
+    const { page, kept, refOf, boxOf } = await marked();
+    try {
+      const near = {
+        mark: NEAR,
+        tokens: [BEFORE, AFTER],
+        boxes: new Set(["전에 가까움"].map(boxOf)),
+        expected: 1,
+      };
+      const everyRef = kept.map((control) => control.ref).sort();
+      // No time left: every control, since none was asked.
+      for (const spent of [0, -5]) {
+        const closed = await nearRefs(page, kept, near, spent);
+        expect([...closed.before].sort()).toEqual(everyRef);
+        expect([...closed.after]).toEqual([]);
+      }
+      // A ref that names nothing in the page, drawn where a near element is: near, and the count
+      // is still met by the one that answered, so nothing else is asked.
+      const gone = await nearRefs(
+        page,
+        [...kept, { ref: "e9999", name: "없는 것", box: boxOf("전에 가까움") }],
+        near,
+        2_000,
+      );
+      expect([...gone.before].sort()).toEqual(
+        [refOf("전에 가까움"), "e9999"].sort(),
+      );
+
+      // The boxes a person typed into are asked for the same way, with the same defaults.
+      const boxes = kept.filter((control) => control.name.endsWith("칸"));
+      const typed = {
+        mark: TYPED,
+        boxes: new Set([boxOf("친 칸")]),
+        expected: 1,
+      };
+      expect(named(await typedRefs(page, boxes, typed, 2_000), kept)).toEqual([
+        "친 칸",
+      ]);
+      expect([...(await typedRefs(page, boxes, typed, 0))].sort()).toEqual(
+        boxes.map((control) => control.ref).sort(),
+      );
+      expect([
+        ...(await typedRefs(page, boxes, { ...typed, expected: 0 }, 2_000)),
+      ]).toEqual([]);
+
+      // A page that does not answer in the time there is — busy for longer than the question may
+      // wait — answers for none of them: every control asked is taken to be near.
+      await page.evaluate(() => {
+        setTimeout(() => {
+          const until = Date.now() + 700;
+          while (Date.now() < until) {}
+        }, 0);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const silent = await nearRefs(page, kept, near, 200);
+      expect([...silent.before].sort()).toEqual(everyRef);
+      expect([...silent.after]).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+});

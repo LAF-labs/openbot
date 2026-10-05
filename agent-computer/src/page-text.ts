@@ -318,20 +318,24 @@ async function readablePageText(
   session: BotSession | undefined,
 ): Promise<PageText> {
   /*
-   * WHAT A PERSON TYPED INTO THIS TAB IS NOT READ OUT OF IT. Asked at every read, of the nodes this
-   * session follows (`quietOn`), and only then does a frame's read carry anything more than it did:
-   * a tab nobody typed an editable region on is read exactly as before. One mark for every frame —
-   * a frame with no marked node in it finds none.
+   * WHAT A PERSON TYPED INTO THIS TAB IS NOT READ OUT OF IT. The reader is told to leave marked
+   * regions out whenever one of this tab's documents is one a person typed into (`quietOn`) —
+   * whether or not a region is in the document at the moment it is asked, since the reader finds
+   * the marked nodes itself, in the same question that makes the text, and one put back a moment
+   * later is then left out too. A tab nobody typed on is read exactly as before. One mark for
+   * every frame — a frame with no marked region in it finds none. No token: a read marks nothing
+   * near, so it cannot disturb a look of the same tab that is under way.
    */
-  const hush = session
-    ? (
-        await quietOn(
-          session,
-          target,
-          typedIntoBlind(session, target),
-          deadline - Date.now(),
-        )
-      ).text
+  const typed = session
+    ? await quietOn(
+        session,
+        target,
+        typedIntoBlind(session, target),
+        deadline - Date.now(),
+      )
+    : undefined;
+  const hush = typed?.present
+    ? { mark: typed.mark, every: typed.every }
     : undefined;
   // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
   const main = await fromDocument(

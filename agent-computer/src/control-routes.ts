@@ -151,7 +151,7 @@ export const supplySecret: BotRoute = async (
     const frame = handle
       ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
       : null;
-    const followed = rememberSecretField(session, handle, pending.ref, {
+    const followed = rememberSecretField(session, handle, {
       ...(frame ? { frame } : {}),
       digest: digestOf(text),
     });

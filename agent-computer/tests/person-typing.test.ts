@@ -65,11 +65,10 @@ describe("what the page says has focus", () => {
   test("is read from a string: nothing to follow, a frame to enter, the same box with what it holds, another box or region", () => {
     expect(inFocus("n")).toEqual({ kind: "none" });
     expect(inFocus("f")).toEqual({ kind: "frame" });
-    expect(inFocus("o0")).toEqual({ kind: "other", region: false });
-    expect(inFocus("o1")).toEqual({ kind: "other", region: true });
+    expect(inFocus("o")).toEqual({ kind: "other" });
     expect(inFocus("s")).toEqual({ kind: "same", value: "" });
     // What the box holds is everything after the first character, whatever it is.
-    expect(inFocus("so1 | n")).toEqual({ kind: "same", value: "o1 | n" });
+    expect(inFocus("so | n")).toEqual({ kind: "same", value: "o | n" });
   });
 
   test("and anything that is not one of those answers is no answer, not an empty focus", () => {

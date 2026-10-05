@@ -902,6 +902,51 @@ describe.skipIf(!HAS_BROWSER)(
       await nowhere(seen, typed);
     }, 60_000);
 
+    /*
+     * TWO LOOKS AT ONE TAB AT ONCE — a routine running while a person chats, the app's own check
+     * of a site while a turn looks. A read asks where the marked nodes are with the same question
+     * a look does, and the mark that says "near" held only the latest asker's token: a read that
+     * landed between a look's scan and its question wrote over it, the look found nothing near,
+     * and the link around what a person had typed was listed under the tree's name. Each look's
+     * marks are its own now, and a read makes none.
+     */
+    test("a look and reads of the same tab at once each leave what was typed out, every time", async () => {
+      const { post, get, snapshot, seen } = asBot("overlapping-looks-bot");
+      const typed = ["CANARY-overlap-region-7391", "CANARY-overlap-box-7391"];
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-typed` }))
+          .status,
+      ).toBe(200);
+      await snapshot();
+      expect((await post("/control/take")).status).toBe(200);
+      fixture?.forgetTyping();
+      await post("/human/click", TYPED_PLACE);
+      await post("/human/type", { text: typed[0] });
+      await post("/human/click", TYPED_BOX);
+      await post("/human/type", { text: typed[1] });
+      await landedIn({ near: typed[0], box: typed[1] });
+      expect((await post("/control/release")).status).toBe(200);
+
+      const links: string[][] = [];
+      for (let round = 0; round < 25; round += 1) {
+        const [look] = await Promise.all([
+          snapshot(),
+          get("/read"),
+          get("/read?whole=1"),
+          get("/read"),
+          snapshot(),
+        ]);
+        links.push(
+          look.elements
+            .filter((element) => element.role === "link")
+            .map((element) => element.name),
+        );
+      }
+      // Every look named the link by the page's own words, and no answer of any kind said more.
+      expect(links).toEqual(Array(25).fill([TYPED_NEAR_LINK]));
+      await nowhere(seen, typed);
+    }, 120_000);
+
     test("typed into a page read as its article, is not in the article", async () => {
       const { post, get, snapshot, seen } = asBot("article-bot");
       const SECRET = "CANARY-article-7391";

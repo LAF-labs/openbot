@@ -100,7 +100,8 @@ const ARTICLE_LIMITS: ArticleLimits = {
 
 /**
  * What a read is kept clear of: the nodes of the page a person typed into, known by the mark they
- * carry (`QUIET_MARK` in secret-fields.ts), or every editable region when which one cannot be said.
+ * carry (`markTypedInto` in secret-fields.ts), or every editable region when which one cannot be
+ * said.
  *
  * A PERSON'S TYPING IS NOT THE PAGE'S TEXT. A box's value never was — `innerText` does not say what
  * is in an `<input>` — and that is the only reason a read after a takeover used to hand over
@@ -128,9 +129,12 @@ function heldIn(hush: Hush | null): Element[] {
           true,
     );
   }
+  // A marked box says nothing `innerText` reads; a marked region is the text to leave out.
   const mark = Symbol.for(hush.mark);
   const marked = all.filter(
-    (element) => (element as unknown as Record<symbol, unknown>)[mark] === true,
+    (element) =>
+      (element as unknown as Record<symbol, unknown>)[mark] === true &&
+      (element as HTMLElement).isContentEditable === true,
   );
   return marked.filter(
     (element) =>
