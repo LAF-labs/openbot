@@ -1083,13 +1083,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `eval-report-hashes.test.ts` (the eval's prompt is told whether the scenario's Bot holds the
  * weather tool, as the server's is).
  *
+ * LOWERED 2026-10-06, `app` from 2051 to 2043, by exactly the eight tests that held code only
+ * tests called. The window-driven chat left the app on 2026-10-05 and a chain behind it that
+ * nothing in the product reached: the window's own call to a connected service
+ * (`callPluginTool`), its wait on a question (`waitForApproval`, with the hold and the release
+ * under it) and the reader of a pause reply (`pauseFrom`). Gone with them: four in
+ * `connect-outcome.test.ts` and two in `plugin-refusals.test.ts` (what the window made, for the
+ * model, of a refused or failed `/api/plugins/call`), one in `approval-pause.test.ts` (a body
+ * that is not a pause read as none) and one in `approval-decision.test.tsx` (the window's wait
+ * giving up on a question nobody answered). Eight more that state a fact the product still has
+ * were moved onto what the product calls, and are counted as before: six about a pause reply
+ * read the server's record instead (`questionFromRecord`), and two about an answer given in
+ * another window read it off the shell's watch.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3586, roots: ["server"] },
-  { name: "app", floor: 2051, roots: ["app"] },
+  { name: "app", floor: 2043, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 655, roots: ["tests", "agent-bot"] },
 ] as const;

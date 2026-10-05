@@ -1,20 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { ko } from "../src/lib/i18n-ko";
-import {
-  beginConnect,
-  callPluginTool,
-  connectFailureText,
-} from "../src/lib/plugins/queries";
+import { beginConnect, connectFailureText } from "../src/lib/plugins/queries";
 
 /**
- * Three small decisions the connection layer makes on this side, all of which were wrong.
- *
- * A REFUSAL THE BOT READS. `PluginRefusedError` has carried a `laf:` code beside its sentence since
- * the redesign, and `/api/plugins/call` has been sending it — but this file read `body.error`, so
- * only the refusals whose sentence IS the code were ever translated. Every connection refusal
- * carries the code in `code` and an English placeholder in `error`, which is what a Korean-speaking
- * person's Bot was reading out.
+ * Two small decisions the connection layer makes on this side, both of which were wrong.
  *
  * A CONSENT IN THE SHELL. The shell hands the screen to the person's own browser, which has no
  * session for this app, so the callback's ordinary redirect bounced to `/sign` over a connection
@@ -28,7 +17,7 @@ type WindowWithTauri = typeof globalThis & { __TAURI__?: unknown };
 
 const realFetch = globalThis.fetch;
 
-/** One reply from `/api/plugins/call`, with the request recorded. */
+/** One reply, to whatever is asked next, with the request recorded. */
 function answering(status: number, body: unknown) {
   const asked: string[] = [];
   globalThis.fetch = (async (url: unknown) => {
@@ -44,85 +33,6 @@ function answering(status: number, body: unknown) {
 afterEach(() => {
   globalThis.fetch = realFetch;
   (globalThis as WindowWithTauri).__TAURI__ = undefined;
-});
-
-describe("what a refused tool call says to the Bot", () => {
-  test("reads the fact code, not the sentence beside it", async () => {
-    answering(403, {
-      // What the connection layer really sends: the code, and an English placeholder for the words
-      // the surface owns.
-      code: "laf:not_connected",
-      error: "You have not connected your Google Sheets account.",
-      rule: null,
-    });
-
-    const outcome = await callPluginTool(
-      "google-sheets/read_sheet_values",
-      {},
-      "bot-1",
-    );
-
-    expect(outcome).toEqual({
-      ok: false,
-      refused: true,
-      reason: toolResultText("laf:not_connected"),
-      rule: null,
-    });
-    // The English never reaches the Bot, which is the whole regression.
-    expect(outcome).not.toMatchObject({
-      reason: "You have not connected your Google Sheets account.",
-    });
-  });
-
-  test("a lapsed connection reaches the Bot as the Korean for reconnecting", async () => {
-    answering(403, {
-      code: "laf:needs_reconnect",
-      error: "Your Google Sheets connection has stopped working.",
-      rule: null,
-    });
-
-    const outcome = await callPluginTool(
-      "google-sheets/read_sheet_values",
-      {},
-      "bot-1",
-    );
-
-    expect(outcome).toMatchObject({
-      refused: true,
-      reason: toolResultText("laf:needs_reconnect"),
-    });
-    // And that Korean says the one thing that helps.
-    expect((outcome as { reason: string }).reason).toContain("설정 › 연결");
-  });
-
-  /*
-   * The boundary's own refusals put the code in `error` and send no `code` field, because their
-   * message IS the fact. Reading `code` first must not have broken them.
-   */
-  test("a refusal whose message is the code still works", async () => {
-    answering(403, { error: "laf:policy_denied", rule: "deny.write" });
-
-    expect(
-      await callPluginTool("google-sheets/append_sheet_row", {}, "bot-1"),
-    ).toEqual({
-      ok: false,
-      refused: true,
-      reason: toolResultText("laf:policy_denied"),
-      rule: "deny.write",
-    });
-  });
-
-  /*
-   * An English sentence from somewhere upstream is a regression, and it should be visible rather
-   * than swallowed into a generic line.
-   */
-  test("a sentence with no code behind it passes through unchanged", async () => {
-    answering(403, { error: "Something upstream wrote this.", rule: null });
-
-    expect(
-      await callPluginTool("google-sheets/read_sheet_values", {}, "bot-1"),
-    ).toMatchObject({ reason: "Something upstream wrote this." });
-  });
 });
 
 describe("where a consent is told to come back to", () => {

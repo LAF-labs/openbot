@@ -1578,8 +1578,6 @@ export const ko: Record<string, string> = {
     "그 연결을 해제하지 못했어요. 다시 시도해 주세요.",
   "This Bot's connections could not be read. Refresh to try again.":
     "이 봇의 연결을 읽지 못했어요. 새로고침해 주세요.",
-  "That tool is not allowed here.": "이 도구는 여기서 쓸 수 없어요.",
-  "The server did not answer.": "서버가 응답하지 않았어요.",
   // 읽기의 다섯 상태(`lib/reading.ts`) 중 세 줄 — 전에 받은 것을 보여 주는 조용한 줄, 여기서는 가질 수
   // 없는 것(다시 시도를 붙이지 않는다), 그리고 화면마다의 "불러오지 못했습니다".
   "Could not refresh this. What you see is from before.":

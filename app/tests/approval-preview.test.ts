@@ -3,7 +3,8 @@ import { join } from "node:path";
 import {
   type AskSubject,
   describeSubject,
-  pauseFrom,
+  type PendingApproval,
+  questionFromRecord,
 } from "../src/lib/approvals";
 import {
   type CallPreview,
@@ -40,29 +41,25 @@ const SENDING_MAIL: AskSubject = {
   reason: "guard_floor",
 };
 
+/** The server's record of the question about that mail, before a preview is put on it. */
+const ASKED: PendingApproval = {
+  id: "a-1",
+  botId: "bot-1",
+  subject: SENDING_MAIL,
+  rule: "laf:external",
+  requestedAt: "2026-09-16T00:00:00.000Z",
+  expiresAt: "2026-09-16T00:10:00.000Z",
+};
+
 describe("reading a preview off the wire", () => {
-  test("a pause reply carries it to the card", () => {
-    expect(
-      pauseFrom({
-        awaitingApproval: true,
-        approvalId: "a-1",
-        subject: SENDING_MAIL,
-        rule: "laf:external",
-        preview: MAIL,
-        expiresAt: "2026-09-16T00:10:00.000Z",
-      })?.preview,
-    ).toEqual(MAIL);
+  test("the server's record carries it to the card", () => {
+    expect(questionFromRecord({ ...ASKED, preview: MAIL }).preview).toEqual(
+      MAIL,
+    );
   });
 
-  test("a reply with none leaves the card as it was", () => {
-    const pause = pauseFrom({
-      awaitingApproval: true,
-      approvalId: "a-1",
-      subject: SENDING_MAIL,
-      rule: "laf:external",
-    });
-    expect(pause).not.toBeNull();
-    expect(pause && "preview" in pause).toBe(false);
+  test("a record with none leaves the card as it was", () => {
+    expect("preview" in questionFromRecord(ASKED)).toBe(false);
   });
 
   test("keeps what it can vouch for and drops the rest", () => {

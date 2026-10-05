@@ -1,15 +1,13 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { TOOL_RESULT_KO } from "../../shared/prompt/tool-results.ko";
 import { COMPONENT_ADMIN_REFUSALS } from "../src/lib/components/queries";
 import { ko } from "../src/lib/i18n-ko";
-import { callPluginTool } from "../src/lib/plugins/queries";
 import {
   PLUGIN_ADMIN_REFUSALS,
   SKILL_REFUSALS,
 } from "../src/lib/plugins/refusals";
 import { ACCESS_REFUSALS, refusalFrom, refusalText } from "../src/lib/refusals";
 import { PLAYGROUND_REFUSALS } from "../src/lib/sandboxed/queries";
-import { stubFetch } from "./support/fetch";
 
 /**
  * The rest of the server's refusals, on the screens that print them.
@@ -199,55 +197,5 @@ describe("the refusal copy", () => {
         "fallback",
       ),
     ).resolves.toBe("fallback");
-  });
-});
-
-describe("a Bot's tool call that was refused or failed", () => {
-  let realFetch: typeof fetch;
-  let reply: () => Response = () => new Response("{}", { status: 200 });
-
-  beforeEach(() => {
-    realFetch = globalThis.fetch;
-    globalThis.fetch = stubFetch(async () => reply());
-  });
-
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
-  const answered = (status: number, body: Record<string, unknown>) => () =>
-    new Response(JSON.stringify(body), { status });
-
-  test("a vendor's failure is a failure, in the model's words, and not a refusal", async () => {
-    reply = answered(502, {
-      error: "laf:tool_server_failed",
-      code: "laf:tool_server_failed",
-      failed: true,
-      status: 403,
-    });
-
-    const outcome = await callPluginTool("notion/search", {}, "agent_1");
-
-    expect(outcome).toEqual({
-      ok: false,
-      refused: false,
-      reason: TOOL_RESULT_KO["laf:tool_server_failed"] as string,
-    });
-  });
-
-  test("a server that is gone, and a definition waiting for review, are refusals in the model's words", async () => {
-    for (const [status, code] of [
-      [404, "laf:server_unknown"],
-      [403, "laf:tool_needs_review"],
-    ] as const) {
-      reply = answered(status, { error: code, code, rule: null });
-      const outcome = await callPluginTool("notion/search", {}, "agent_1");
-      expect(outcome).toEqual({
-        ok: false,
-        refused: true,
-        reason: TOOL_RESULT_KO[code] as string,
-        rule: null,
-      });
-    }
   });
 });
