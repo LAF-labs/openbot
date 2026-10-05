@@ -106,7 +106,7 @@ describe("what a person is left with", () => {
    * A FACT, NOT A SENTENCE. The message used to be "Risk Analyst stopped responding. Nothing
    * arrived from it for a second, so this turn was ended. Ask again…" — English composed here,
    * reaching a Korean screen and the ledger verbatim. The surface owns the words now
-   * (`app/src/lib/copilot/stopped-turn.ts`), and this sends which fact applies.
+   * (`app/src/lib/channels/turn-failure.ts`), and this sends which fact applies.
    */
   test("is the fact code, with nothing of the deployment's prose or identifiers in it", async () => {
     const guard = createStallGuard({ stallMs: 60 });
