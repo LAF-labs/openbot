@@ -99,6 +99,79 @@ const ARTICLE_LIMITS: ArticleLimits = {
 };
 
 /**
+ * What a read is kept clear of: the nodes of the page a person typed into, known by the mark they
+ * carry (`QUIET_MARK` in secret-fields.ts), or every editable region when which one cannot be said.
+ *
+ * A PERSON'S TYPING IS NOT THE PAGE'S TEXT. A box's value never was — `innerText` does not say what
+ * is in an `<input>` — and that is the only reason a read after a takeover used to hand over
+ * nothing a person typed. An editable region is made of text: measured 2026-10-05 through `/read`,
+ * a canary typed into a chat composer, a rich editor, a region inside a link and one in another
+ * origin's frame each came back in the page's text, the region this service was following and had
+ * blanked in the list included. So the node is left out where the text is made, by identity: not
+ * taken out of the text afterwards, which would have to guess which of the page's words were typed.
+ */
+export type Hush = { mark: string; every: boolean };
+
+/** Runs in the page: the nodes a read leaves out, outermost only. */
+function heldIn(hush: Hush | null): Element[] {
+  if (!hush) return [];
+  const body = document.body as HTMLElement | null;
+  // A document edited whole (`designMode`) is one region, with no attribute to find it by.
+  if (hush.every && body?.isContentEditable) return [body];
+  const all = Array.from(document.querySelectorAll("*"));
+  if (hush.every) {
+    // The host of each region: editable, under a parent that is not.
+    return all.filter(
+      (element) =>
+        (element as HTMLElement).isContentEditable === true &&
+        (element.parentElement as HTMLElement | null)?.isContentEditable !==
+          true,
+    );
+  }
+  const mark = Symbol.for(hush.mark);
+  const marked = all.filter(
+    (element) => (element as unknown as Record<symbol, unknown>)[mark] === true,
+  );
+  return marked.filter(
+    (element) =>
+      !marked.some((other) => other !== element && other.contains(element)),
+  );
+}
+
+/**
+ * Runs in the page: an element's text as a person reads it, the held nodes saying nothing.
+ *
+ * `innerText` is the browser's and takes no exceptions, so it is asked of everything that holds no
+ * held node, and only the elements on the way down to one are walked child by child: a block on a
+ * line of its own, as `innerText` breaks it. An element that is not rendered is skipped there —
+ * asked directly, its `innerText` is its `textContent`, which for a script is its source.
+ */
+function textWithout(root: Element, held: Element[]): string {
+  const said = (element: Element): string => {
+    if (held.some((one) => one.contains(element))) return "";
+    const display = getComputedStyle(element).display;
+    if (display === "none") return "";
+    if (!held.some((one) => element.contains(one))) {
+      return (element as HTMLElement).innerText ?? "";
+    }
+    let text = "";
+    for (const child of Array.from(element.childNodes)) {
+      if (child.nodeType === 3) {
+        text += (child.nodeValue ?? "").replace(/\s+/g, " ");
+      } else if (child.nodeType === 1) {
+        const piece = child.nodeName === "BR" ? "\n" : said(child as Element);
+        const inline = /^(inline|contents)/.test(
+          getComputedStyle(child as Element).display,
+        );
+        text += inline ? piece : `\n${piece}\n`;
+      }
+    }
+    return text;
+  };
+  return said(root);
+}
+
+/**
  * Runs in the page. Written as a function so the type checker reads it, and shipped as its source.
  *
  * The article's blocks become lines by walking its element tree: a detached element has no layout,
@@ -124,10 +197,12 @@ function readInPage(
   ) => boolean,
   whole: boolean,
   limits: ArticleLimits,
+  held: Element[],
+  without: (root: Element, held: Element[]) => string,
 ): string {
   const body = document.body;
   if (!body) return "0";
-  const everything = body.innerText ?? "";
+  const everything = held.length ? without(body, held) : (body.innerText ?? "");
   const plainly = `0${everything}`;
   /*
    * AN ARTICLE ONLY WHERE THE PAGE SAYS IT IS ONE. `isProbablyReaderable` alone said yes to Naver's
@@ -165,7 +240,28 @@ function readInPage(
   }
   let article: { title?: string; content?: unknown } | null = null;
   try {
-    article = new Readability(document.cloneNode(true) as Document, {
+    const copy = document.cloneNode(true) as Document;
+    /*
+     * The held nodes say nothing in the copy either. Each is found there by where it sits — the
+     * same child of the same child, down from the document — and all of them before any is
+     * emptied. One inside a shadow tree has no twin: a copy has no shadow trees.
+     */
+    const twins = held.map((node) => {
+      const path: number[] = [];
+      let at: Node = node;
+      while (at.parentNode) {
+        path.unshift(
+          Array.prototype.indexOf.call(at.parentNode.childNodes, at),
+        );
+        at = at.parentNode;
+      }
+      if (at !== document) return null;
+      let twin: Node | null = copy;
+      for (const index of path) twin = twin?.childNodes[index] ?? null;
+      return twin;
+    });
+    for (const twin of twins) if (twin) twin.textContent = "";
+    article = new Readability(copy, {
       serializer: (element: Element) => element,
     }).parse();
   } catch {
@@ -304,8 +400,8 @@ export function thrownInPage(value: unknown): string | undefined {
  * with (`readInPage`). The closure sits inside the `try`, as a function of its own, so the files
  * stay at the top of a function body as they were written to be.
  */
-export function readerScript(whole: boolean): string {
-  return `(() => { try { return (() => { var module = undefined;\n${READABILITY_SOURCE}\n${READERABLE_SOURCE}\nreturn (${readInPage.toString()})(Readability, isProbablyReaderable, ${whole ? "true" : "false"}, ${JSON.stringify(ARTICLE_LIMITS)}); })(); } ${CAUGHT_IN_PAGE} })()`;
+export function readerScript(whole: boolean, hush?: Hush): string {
+  return `(() => { try { return (() => { var module = undefined;\n${READABILITY_SOURCE}\n${READERABLE_SOURCE}\nreturn (${readInPage.toString()})(Readability, isProbablyReaderable, ${whole ? "true" : "false"}, ${JSON.stringify(ARTICLE_LIMITS)}, (${heldIn.toString()})(${JSON.stringify(hush ?? null)}), ${textWithout.toString()}); })(); } ${CAUGHT_IN_PAGE} })()`;
 }
 
 /**
@@ -314,6 +410,16 @@ export function readerScript(whole: boolean): string {
  * that whatever broke the reader has as little as possible left to break.
  */
 export const PLAIN_TEXT_SCRIPT = `(() => { try { var body = document.body; return "0" + (body ? body.innerText : ""); } ${CAUGHT_IN_PAGE} })()`;
+
+/**
+ * The same for a page a person typed into: its visible text without the nodes they typed into
+ * ({@link Hush}). Larger than the question above, because leaving a node out is more to ask — and a
+ * page that breaks this as well is answered with no text at all, never with the text it would have
+ * left out.
+ */
+export function plainTextScript(hush: Hush): string {
+  return `(() => { try { var body = document.body; if (!body) return "0"; var held = (${heldIn.toString()})(${JSON.stringify(hush)}); return "0" + (held.length ? (${textWithout.toString()})(body, held) : body.innerText); } ${CAUGHT_IN_PAGE} })()`;
+}
 
 /** A line this short is a fragment of the one around it — a label, a unit, a menu item. */
 const SHORT_LINE = 24;

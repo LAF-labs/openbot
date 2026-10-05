@@ -11,14 +11,19 @@ import type { NoteCode } from "./codes";
 import { log } from "./log";
 import { originOf } from "./navigation-guard";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
+import { typedIntoBlind } from "./person-typing";
 import {
   compactText,
   type FrameRead,
+  type Hush,
   PLAIN_TEXT_SCRIPT,
   parseFrameRead,
+  plainTextScript,
   readerScript,
   thrownInPage,
 } from "./reader";
+import { quietOn } from "./secret-fields";
+import type { BotSession } from "./sessions";
 import { within } from "./within";
 import { cutAtCodeUnits } from "../../shared/sound-text";
 
@@ -222,9 +227,16 @@ export const PAGE_TEXT_PLAIN: NoteCode = "laf:page_text_plain";
  * closed, a protocol error, a page that left for another. Those go up as they always did — to
  * `laf:browser_failed`, or to a second read of the page it went to (`readSettledPageText`) — and
  * are never answered as a page whose scripts kept it from being read.
+ *
+ * `hush` is what the text is made without (`reader.ts`), on the plain read too: a page that breaks
+ * the reader is not read with a person's typing put back in.
  */
-async function frameText(frame: Frame, whole: boolean): Promise<FrameText> {
-  const answer = await frame.evaluate(readerScript(whole));
+async function frameText(
+  frame: Frame,
+  whole: boolean,
+  hush: Hush | undefined,
+): Promise<FrameText> {
+  const answer = await frame.evaluate(readerScript(whole, hush));
   const read = parseFrameRead(answer);
   if (read) return read;
   const thrown = thrownInPage(answer);
@@ -245,7 +257,9 @@ async function frameText(frame: Frame, whole: boolean): Promise<FrameText> {
    * with the fact that says it could not be read, which the Bot hears instead of a 502 over a page a
    * person can see.
    */
-  const plain = parseFrameRead(await frame.evaluate(PLAIN_TEXT_SCRIPT));
+  const plain = parseFrameRead(
+    await frame.evaluate(hush ? plainTextScript(hush) : PLAIN_TEXT_SCRIPT),
+  );
   return { text: plain?.text ?? "", reader: false, plain: true };
 }
 
@@ -301,12 +315,29 @@ async function readablePageText(
   deadline: number,
   whole: boolean,
   from: string | undefined,
+  session: BotSession | undefined,
 ): Promise<PageText> {
+  /*
+   * WHAT A PERSON TYPED INTO THIS TAB IS NOT READ OUT OF IT. Asked at every read, of the nodes this
+   * session follows (`quietOn`), and only then does a frame's read carry anything more than it did:
+   * a tab nobody typed an editable region on is read exactly as before. One mark for every frame —
+   * a frame with no marked node in it finds none.
+   */
+  const hush = session
+    ? (
+        await quietOn(
+          session,
+          target,
+          typedIntoBlind(session, target),
+          deadline - Date.now(),
+        )
+      ).text
+    : undefined;
   // Its failure kept apart from its silence: a page that moved is read again, one that is silent is not.
   const main = await fromDocument(
     target,
     deadline - Date.now(),
-    frameText(target.mainFrame(), whole).then(
+    frameText(target.mainFrame(), whole, hush).then(
       (read) => ({ read }),
       (error: unknown) => ({ error }),
     ),
@@ -321,7 +352,7 @@ async function readablePageText(
     .filter(({ url }) => url && url !== "about:blank");
   const wait = Math.min(FRAME_TEXT_WAIT_MS, deadline - Date.now());
   const texts = await Promise.all(
-    others.map(({ frame }) => within(wait, frameText(frame, whole))),
+    others.map(({ frame }) => within(wait, frameText(frame, whole, hush))),
   );
 
   const pieces = [main.read.text];
@@ -370,10 +401,18 @@ async function readablePageText(
 /**
  * The same, once the page has stopped moving, and once more if it moved while being read — or, when
  * the page's document does not answer because the next one is on its way, nothing but that fact.
+ *
+ * `session` is whose read it is. Every route that hands a page's text to a Bot passes it: it is
+ * how the text is made without what a person typed into the page (`readablePageText`).
  */
 export async function readSettledPageText(
   target: Page,
-  options: { settleFirst?: boolean; whole?: boolean; from?: string } = {},
+  options: {
+    settleFirst?: boolean;
+    whole?: boolean;
+    from?: string;
+    session?: BotSession;
+  } = {},
 ): Promise<PageText> {
   const deadline = Date.now() + READ_DEADLINE_MS;
   if (options.settleFirst) await settle(target);
@@ -388,6 +427,7 @@ export async function readSettledPageText(
         deadline,
         options.whole === true,
         options.from,
+        options.session,
       );
     } catch (error) {
       const arrival =

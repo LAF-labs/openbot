@@ -10,7 +10,9 @@
  * path is not enough on its own: the value sits in the page afterwards, where the Bot's next look
  * used to read it back out of any box the page had not marked (audit R3-01, 2026-09-16). So the box
  * a keystroke lands in is followed from that keystroke on (`person-typing.ts`), the way a box
- * `computer_request_secret` filled is. The value is never returned and never logged below.
+ * `computer_request_secret` filled is — a form's box or an editable region alike, and kept out of
+ * every place the page says it again: the names of the controls around it and the page's own text
+ * (2026-10-05). The value is never returned and never logged below.
  */
 import type { Page } from "playwright";
 import { VIEWPORT } from "./browser-identity";

@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import {
+  EDITABLE_BOT_BOX,
+  EDITABLE_BOT_EDITOR,
+  EDITABLE_CARD_EDITOR,
+  EDITABLE_SHAPES,
+  type EditableShape,
   GET_FORM_BOX,
   LANDED_TEXT,
   SLOW_NO_CONTENT_MS,
@@ -530,6 +535,162 @@ describe.skipIf(!HAS_BROWSER)(
       await snapshot();
       await get("/read");
 
+      expect(leaks(seen, [SECRET])).toEqual([]);
+    }, 60_000);
+  },
+);
+
+/**
+ * AND WHERE THE TYPING IS NOT INTO A FORM'S BOX.
+ *
+ * An editable region (`contenteditable`) is what a rich editor, a chat composer and a page title a
+ * person can rename are made of. The tree prints a plain one as `generic`, which a look never lists,
+ * and `person-typing.ts` left them unfollowed for that reason — but what a look lists is the link,
+ * the button or the tab AROUND one, named by its words, and what `/read` hands over is the page's
+ * text, with every region's in it. Each place below gets a canary of its own from a person holding
+ * the wheel, and then everything the Bot is handed is read for each of them.
+ */
+describe.skipIf(!HAS_BROWSER)(
+  "a person's typing into an editable region during a takeover",
+  () => {
+    const canary = (shape: string) => `CANARY-${shape}-7391`;
+    const shapes = Object.keys(EDITABLE_SHAPES) as EditableShape[];
+    /** Where a canary shows in what a look and two reads handed over, said place by place. */
+    const shownIn = (
+      texts: readonly string[],
+      look: { elements: Element[] },
+      reads: Answer[],
+    ) =>
+      texts.flatMap((text) => [
+        ...look.elements
+          .filter((element) => element.name.includes(text))
+          .map((element) => `${text}: the name of a ${element.role}`),
+        ...look.elements
+          .filter((element) => element.value?.includes(text))
+          .map((element) => `${text}: the value of a ${element.role}`),
+        ...reads
+          .filter((read) => read.text.includes(text))
+          .map((read) => `${text}: ${read.path}`),
+      ]);
+
+    test("is in nothing the Bot is handed afterwards: not as the region's own contents, not in the name or value of a control that takes them from it, not in the page's text", async () => {
+      const { post, get, snapshot, seen } = asBot("editable-takeover-bot");
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-editable` }))
+          .status,
+      ).toBe(200);
+      await snapshot();
+
+      expect((await post("/control/take")).status).toBe(200);
+      for (const shape of shapes) {
+        const clicked = await post("/human/click", EDITABLE_SHAPES[shape]);
+        const typed = await post("/human/type", { text: canary(shape) });
+        expect([shape, clicked.status, typed.status]).toEqual([
+          shape,
+          200,
+          200,
+        ]);
+      }
+      // Every canary went where it was meant to: the page says which place took how many characters.
+      await until(() =>
+        shapes.every(
+          (shape) => (fixture?.typedInto()[shape] ?? 0) >= canary(shape).length,
+        ),
+      );
+      const landed = fixture?.typedInto() ?? {};
+      expect(
+        shapes.filter((shape) => (landed[shape] ?? 0) < canary(shape).length),
+      ).toEqual([]);
+      expect((await post("/control/release")).status).toBe(200);
+
+      // The Bot's turn. Where each canary shows, said place by place before the whole is searched.
+      const after = await snapshot();
+      expect(
+        shownIn(shapes.map(canary), after, [
+          await get("/read"),
+          await get("/read?whole=1"),
+        ]),
+      ).toEqual([]);
+
+      // Nothing a person typed made the page unreadable: what the Bot writes itself, into a box and
+      // into a region, it is shown and reads back.
+      for (const [name, text] of [
+        [EDITABLE_BOT_BOX, "봇이 쓴 메모"],
+        [EDITABLE_BOT_EDITOR, "봇이 쓴 글"],
+      ] as const) {
+        const now = await snapshot();
+        expect(
+          (
+            await post("/type", {
+              ref: named(now.elements, name).ref,
+              snapshotId: now.snapshotId,
+              text,
+            })
+          ).status,
+        ).toBe(200);
+      }
+      const own = await snapshot();
+      expect(named(own.elements, EDITABLE_BOT_BOX)).toMatchObject({
+        value: "봇이 쓴 메모",
+      });
+      expect(named(own.elements, EDITABLE_BOT_BOX)).not.toHaveProperty("type");
+      const reread = await get("/read?whole=1");
+      expect(String(reread.body.text)).toContain("봇이 쓴 글");
+      // And the rest of the page is still there to be read.
+      expect(String(reread.body.text)).toContain("글 쓰는 화면");
+      await post("/scroll", { deltaY: 100 });
+      await post("/key", { key: "Tab" });
+      await snapshot();
+
+      expect(leaks(seen, shapes.map(canary))).toEqual([]);
+      expect(
+        leaks(
+          [
+            { path: "the computer's log", text: logged },
+            {
+              path: "the Bot's saved state",
+              text: await everyFile(join(profilesDir, "bot.state")),
+            },
+          ],
+          shapes.map(canary),
+        ),
+      ).toEqual([]);
+    }, 120_000);
+
+    /*
+     * The masked card types for the person (`/human/secret`), into the box the Bot named — and a
+     * region that says it is a text box is a box the Bot can name. Blanked in the list like any
+     * other, it was read out whole by `/read`: the one value the card exists to keep from the model.
+     */
+    test("supplied through the masked card, is not in the page's text either", async () => {
+      const { post, get, snapshot, seen } = asBot("editable-card-bot");
+      const SECRET = canary("card");
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}takeover-editable` }))
+          .status,
+      ).toBe(200);
+      const before = await snapshot();
+      expect(
+        (
+          await post("/control/secret", {
+            label: "편집기에 넣을 값",
+            ref: named(before.elements, EDITABLE_CARD_EDITOR).ref,
+            snapshotId: before.snapshotId,
+          })
+        ).status,
+      ).toBe(200);
+      expect((await post("/human/secret", { text: SECRET })).status).toBe(200);
+
+      const after = await snapshot();
+      expect(named(after.elements, EDITABLE_CARD_EDITOR)).toMatchObject({
+        type: "password",
+      });
+      expect(
+        shownIn([SECRET], after, [
+          await get("/read"),
+          await get("/read?whole=1"),
+        ]),
+      ).toEqual([]);
       expect(leaks(seen, [SECRET])).toEqual([]);
     }, 60_000);
   },

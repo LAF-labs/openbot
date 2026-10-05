@@ -52,6 +52,13 @@ export type SecretField = {
   frame?: Frame;
   /** A keyed digest of what it held when last read, never what it held (`typed-values.ts`). */
   digest?: string;
+  /**
+   * An editable region that is not a text box: a look never lists the region itself, so it is not
+   * searched for among the boxes a look does list (`typedIntoRefs`). What a look lists is what takes
+   * its words from it — the control around it, the one it labels — and what `/read` hands over is
+   * the page's text: both are kept clear of it by this node (`quietOn` in secret-fields.ts).
+   */
+  region?: true;
 };
 
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */

@@ -18,10 +18,25 @@
  * A PAGE THAT WILL NOT SAY is typed into blind: its next document is on its way, or it is too busy to
  * answer. The keystroke still goes — a person is typing, and a screen that eats keys is a broken
  * screen — and that document shows no box's contents to the Bot until it is gone.
+ *
+ * AN EDITABLE REGION IS A BOX TOO. A `contenteditable` — a rich editor, a chat composer, a title a
+ * person can rename — was left unfollowed until 2026-10-05, because the tree prints a plain one as
+ * `generic`, which a look never lists. What a look does list is the control AROUND one, named by
+ * the words inside it, and the page's text has every region's in it. Measured that day through
+ * this service's own doors (`takeover-secret.test.ts`): a canary a person typed into a region came
+ * back as the name of the link, the button, the tab and the option around it, of the button it
+ * labelled and of the box whose `<label>` held it, as the name of a link inside it, and in `/read`
+ * for every shape — a region that says it is a text box included, which was followed and blanked
+ * in the list and read out whole as text. So the region is followed like any box, and it is what a
+ * look and a read are kept clear of (`quietOn` in secret-fields.ts).
  */
 import type { ElementHandle, Frame, Page } from "playwright";
 import { arrivalOf, documentOf } from "./page-arrival";
-import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
+import {
+  heldBy,
+  rememberSecretField,
+  SECRET_JOIN_TIMEOUT_MS,
+} from "./secret-fields";
 import type { BotSession, SecretField } from "./sessions";
 import { digestOf, digestOfBlock, keepTyped } from "./typed-values";
 import { within } from "./within";
@@ -29,22 +44,26 @@ import { within } from "./within";
 /** How deep a focused frame is followed. A payment window inside a checkout inside a portal is three. */
 const FRAME_DEPTH_LIMIT = 5;
 
-/** What the page says about its focus, in one frame. */
+/** What the page says about its focus, in one frame. `region`: see `SecretField.region`. */
 type InFocus =
   | { kind: "none" }
   | { kind: "frame" }
   | { kind: "same"; value: string }
-  | { kind: "other" };
+  | { kind: "other"; region: boolean };
 
 /**
  * The page's own answer, run in one frame: whether the element with focus holds typed text, is a
  * frame to look inside, or is the box the last keystroke landed in — with what that box holds now.
  *
- * TYPED TEXT IS AN INPUT THAT TAKES TEXT, A TEXTAREA, OR A TEXT-ENTRY ROLE. A plain `contenteditable`
- * is left out on purpose: the tree names it `generic`, which a look never lists (measured 2026-09-16),
- * so following it would cost every look a search for a box it could never show. An `<input
- * type="password">` is in: its markup already blanks it, and following it is what keeps its value
- * out of an address.
+ * TYPED TEXT IS AN INPUT THAT TAKES TEXT, A TEXTAREA, A TEXT-ENTRY ROLE, OR AN EDITABLE REGION. An
+ * `<input type="password">` is in: its markup already blanks it, and following it is what keeps its
+ * value out of an address. A region that is not a text box is in too, and said to be one (`region`):
+ * the tree names it `generic`, which a look never lists (measured 2026-09-16), so no look searches
+ * its boxes for it — which is why it used to be left out, and is not the same as nothing showing
+ * what was typed there (the top of this file).
+ *
+ * What a region holds is read as far as a digest reads (`comparableValue` keeps 64 characters): a
+ * document a person is writing is not carried out of the page on every keystroke.
  */
 function focusOf(last: Node | null): InFocus {
   let node = document.activeElement;
@@ -53,7 +72,7 @@ function focusOf(last: Node | null): InFocus {
   const tag = node.localName;
   if (tag === "iframe" || tag === "frame") return { kind: "frame" };
   const role = node.getAttribute("role") ?? "";
-  const takesText =
+  const isBox =
     tag === "textarea" ||
     (tag === "input" &&
       ![
@@ -69,14 +88,15 @@ function focusOf(last: Node | null): InFocus {
         "submit",
       ].includes((node as HTMLInputElement).type)) ||
     ["textbox", "searchbox", "combobox", "spinbutton"].includes(role);
-  if (!takesText) return { kind: "none" };
-  if (node !== last) return { kind: "other" };
+  const editable = (node as HTMLElement).isContentEditable === true;
+  if (!isBox && !editable) return { kind: "none" };
+  if (node !== last) return { kind: "other", region: !isBox };
   return {
     kind: "same",
     value:
       tag === "input" || tag === "textarea"
         ? String((node as HTMLInputElement).value ?? "")
-        : "",
+        : (node.textContent ?? "").slice(0, 512),
   };
 }
 
@@ -99,6 +119,9 @@ const FOCUSED_BOX = [
   '[role="searchbox"]:focus',
   '[role="combobox"]:focus',
   '[role="spinbutton"]:focus',
+  // The host of an editable region. A document edited whole (`designMode`) has no such attribute,
+  // and is typed into blind.
+  "[contenteditable]:focus",
 ].join(", ");
 
 /** Settled or not, kept apart from silence: `within` alone would read a failure as no answer. */
@@ -137,12 +160,7 @@ export function typedIntoBlind(session: BotSession, target: Page): boolean {
 
 /** What a followed box holds now, into its digest — or nothing, if it will not say. */
 async function reread(field: SecretField, ms: number): Promise<void> {
-  const read = await hear(
-    ms,
-    field.handle.evaluate((node) =>
-      node.isConnected ? String((node as HTMLInputElement).value ?? "") : null,
-    ),
-  );
+  const read = await hear(ms, field.handle.evaluate(heldBy));
   if (read && "value" in read && typeof read.value === "string") {
     field.digest = digestOf(read.value) ?? field.digest;
   }
@@ -225,6 +243,7 @@ async function followFocused(
   session: BotSession,
   frame: Frame,
   wait: () => number,
+  region: boolean,
 ): Promise<SecretField | null | undefined> {
   const boxes = frame.locator(FOCUSED_BOX);
   const count = await hear(wait(), boxes.count());
@@ -257,7 +276,7 @@ async function followFocused(
     line && "value" in line
       ? (/\[ref=([^\]\s]+)\]/.exec(line.value)?.[1] ?? "")
       : "";
-  return rememberSecretField(session, handle.value, ref, { frame });
+  return rememberSecretField(session, handle.value, ref, { frame, region });
 }
 
 /**
@@ -306,7 +325,7 @@ export async function followTyping(
       frame = child;
       continue;
     }
-    const followed = await followFocused(session, frame, wait);
+    const followed = await followFocused(session, frame, wait, focus.region);
     if (followed === undefined) break;
     if (followed === null) return;
     // Moving to another box is when the box before it is finished with, for now: read it once more.
