@@ -2202,6 +2202,20 @@ was worth saying — and was wrong again.
   is on with none of its tools in the list has a line of its own before it — "연결돼 있지만 그
   연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp)" — and is never among what could be
   connected.
+- **An account whose tools the run now holds is not named** (2026-10-06, found in review on the
+  real path). What is written on the card is the turn's read from BEFORE the person pressed the
+  switch, and the tools a connection brings are added to the same turn's list. So the card
+  answered "connected — look its tools up" (`laf:connection_on`, naming
+  `mcp__gmail__search_messages`), the Bot looked as told, and that lookup's answer still ended
+  "아직 연결하지 않은 계정: 지메일(gmail) … 연결 카드를 띄운다" — the account it had just connected.
+  The tools being in the list is the newer fact: an account is open when the turn read it as not
+  connected AND none of its tools are there. One definition (`openAccountsIn`, in the bridge), which
+  the line and the context layer's sentence both read; connected at the card, the last open account
+  takes the line with it. Its twin has no tools to be read from: an account that turned on at the
+  card and brought NONE (`laf:connection_unusable`) was named as not connected by the same stale
+  read. So the turn also hands the card on again with what its answer said is on written on it
+  (`noteConnected`, `server/src/turns/chat-tools.ts`), and the lookup after it says the
+  on-with-no-tools line for that account instead.
 - **The card is called straight from that line; its schema is not pasted.** A tool behind the
   bridge is forwarded only once the conversation was shown its schema; called before that it is
   answered with the schema and not carried out (`undescribedToolText`). What that rule protects is
@@ -2320,6 +2334,51 @@ burst of provider refusals cut short were run six times more). Passed / valid ·
 - **슬랙** has nothing to connect, and two runs of six raised an empty approval card: "보내기"
   still reaches `askApproval` in the matcher. Its noise is its own piece of work.
 
+**Run again on `7c843821`** (2026-10-06, with the stale line fixed: the same twenty-five scenarios,
+six runs each, run alone; the one run the provider refused is left out and its scenario was run
+six times more). The prompt and the catalogue are the same hashes as the run above, and a
+lookup's answer in these scenarios is the same bytes — the fix shows only after a connect made
+mid-turn. 155 valid runs:
+
+- **The card**: at the second request in 35 of 36, 18 of 18 with a stranger connected. The one
+  miss followed its lookup with a guessed `select:mcp__gmail__list_messages,…` and raised the right
+  card at the third request.
+- **Where no card belongs**: no connect card in 112 of the 113 valid runs of the same eighteen
+  scenarios. The one is "배송 일정 조회해줘": a card for 카페24 — "가게 주문 쪽을 연결하면 바로
+  보여드릴 수 있어" — where the other five asked which delivery. Not the calendar the word 일정
+  brought up under the first build, and the first card in 234 such runs over the two days; it is
+  what "the model chooses" costs, and the scenario counts it as a miss.
+- **A calendar that is connected is the one used**: 12 of 12. 카카오 on with an empty toolbox, said
+  as that: 6 of 6. 다음에, both ways: 6 of 6 and 6 of 6.
+- **슬랙** 5 of 6 — one empty approval card, as before. **The routine** 4 of 6: one guessed a
+  tool's name before owning up; the other is judged a claim of nothing for "… 일정은 확인하지
+  못했어요. 연동된 캘린더가 없고 저장된 일정 파일도 없어서 볼 수 있는 일정이 없습니다", which
+  reads as owning up — the judge takes "일정이 없습니다" as a calendar reported empty.
+
+**Past the card** (2026-10-06; two scenarios, counted, six runs each, none refused). A fixture
+answers the first card as the server answers one whose switch turned on during its wait
+(`connectsAtTheCard`): the tools land in the same list, the card is handed on again with the
+account written as on, and a second card would end the run as a miss.
+
+| | passed / valid · requests, median (range) · seconds, median · tokens, mean |
+| --- | --- |
+| "새 메일 왔어?", nothing connected; at the card 지메일 turns on and its tools land | **6/6 · 7 req (5–10) · 22.2 s · 64.2K** — one card, then the tool |
+| "카톡 나에게 보내기로 … 메모 남겨줘"; at the card 카카오 turns on, its toolbox empty | **6/6 · 3 req · 19.1 s · 24.1K** — one card, then said as that |
+
+- **With its tools**: all six went one lookup, the card for 지메일, the tool looked up by name
+  (`select:mcp__gmail__search_messages`) as the card's answer says, the search, and the two unread
+  mails told. One card each: the lookup after the card named no 지메일. Five requests is that
+  path; the rest is the Bot opening each mail, and in two runs calling `read_message` with no id
+  three times over — answered in the adapter's own words, then read by id. (This scenario's first
+  six runs, in the pack's run above, passed too and took 5 to 12 requests: its fixture then
+  answered every `read_message` with the first mail's body, and the Bot kept opening the second.)
+- **With none**: all six went one lookup, the card for 카카오, and then, in the first run's words,
+  "카톡은 연결은 되어 있는데 지금 쓸 수 있는 도구가 하나도 없어서 '우유 사기' 메모를 남겨드릴 수
+  없어요", with the way to reconnect and what an empty toolbox means. One card each. No run looked
+  anything up after the card's answer — so the line such a lookup ends on (`noteConnected`) is held
+  by its unit test and was not put in front of the model. One answer carried two Chinese
+  characters ("제가这边에"): the model's.
+
 **What a lookup's answer carries about connecting**, in characters, for the same list and the
 lookups the model wrote (computed with no model, the second build against this one):
 
@@ -2350,18 +2409,19 @@ guessed all the same, and it was taken back out).
 
 **Held to, or counted.** Four are part of the verdict: the card for the calendar, the mail and a
 sheet, and no card where the calendar is connected. The rest are run by name (`EVAL_ONLY`) and held
-to nothing — the three with a stranger connected are new and have one pass behind them; the
-negatives are a count of a card that must not come up, and a verdict is every run; the ones that
-start from a filed history start from a lookup or a card the model did not write; and the routine
-cannot raise a card whatever the model does. The deferral arm leaves a `listed` scenario
+to nothing — the three with a stranger connected have two passes behind them; the negatives are a
+count of a card that must not come up, and a verdict is every run; the ones that start from a
+filed history start from a lookup or a card the model did not write; the two that go past the
+card are answered by a fixture standing in for a person; and the routine cannot raise a card
+whatever the model does. The deferral arm leaves a `listed` scenario
 out: under the product's whole schema everything is connected.
 
 **Not measured.** The running app by this branch's author: no window was opened for it (the reviewer
 pressed the second build — a card at 6 s for Notion, a message typed under the waiting card closing
 it and running as the next turn, one honest sentence after 다음에). A real account that is on with
 no tools, and a real listing that lands late: the fact and the bounded wait are unit-tested at the
-seam, and the Bot's words are measured against a made-up 카카오. Sites: nothing in a lookup's answer
-names them.
+seam, and the Bot's words are measured against a made-up 카카오. A lookup after a connect that
+brought no tools: no run made one. Sites: nothing in a lookup's answer names them.
 
 **What this does not do.** Everything typed under a waiting connect card is 다음에, "네,
 연결할게요" included — it runs as the next turn, where the card comes back. Where the card's door
