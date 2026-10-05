@@ -311,6 +311,19 @@ export async function mountApp(options: {
       "../../src/lib/turns/kept-threads"
     );
     forgetKeptThreads();
+    /*
+     * And so is what this tab was last told of a Bot's computer, which a view mounted next starts
+     * from (`take-the-wheel.ts`). MEASURED 2026-10-06: `conversation-return` leaves the Bot every
+     * conversation test shares waiting on a person. `presence-off-screen`, run after it, mounts that
+     * Bot where there is no computer, so no read ever answers to say otherwise: the pill read "Needs
+     * your help" and all eight of its tests ran out their waits — 46.8 s of failures in the order
+     * `bun test` takes from `app/`. The gate never saw it. Sorted, `polling` runs between the two,
+     * and its computer says nobody is being asked for.
+     */
+    const { forgetControlStates } = await import(
+      "../../src/components/computer/take-the-wheel"
+    );
+    forgetControlStates();
     globalThis.fetch = realFetch;
     // The socket's release is deferred by a turn; wait past it so nothing lands in the next test.
     await settle(10);

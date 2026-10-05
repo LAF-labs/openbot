@@ -46,6 +46,11 @@ export function rememberControlState(
   answered.set(computerId, state);
 }
 
+/** Test seam: back to a tab that has been told nothing. */
+export function forgetControlStates(): void {
+  answered.clear();
+}
+
 /** Hear every take or release answered for one computer. Returns the unsubscribe. */
 export function onControlAnswered(
   computerId: string,

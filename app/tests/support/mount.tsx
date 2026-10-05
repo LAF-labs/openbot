@@ -105,6 +105,11 @@ export async function unmountAll(): Promise<void> {
     "../../src/lib/turns/kept-threads"
   );
   forgetKeptThreads();
+  // Nor is what this tab was last told of a Bot's computer (`app-router.tsx` says what it cost).
+  const { forgetControlStates } = await import(
+    "../../src/components/computer/take-the-wheel"
+  );
+  forgetControlStates();
 }
 
 /**
