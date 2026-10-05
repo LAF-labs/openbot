@@ -87,4 +87,55 @@ describe("eval:from-failures", () => {
     expect(sectionOf({ turns: null })).toBeNull();
     expect(sectionOf({ turns: { endings: {} } })).toBeNull();
   });
+
+  test("the wait to the first word and the first moves are said where the answer measured them, and nowhere else", () => {
+    // The answer above is from before the wait was measured: its four lines say nothing of one.
+    expect(section?.firstWord).toBeUndefined();
+    expect(section?.firstMoves).toBeUndefined();
+    const measured = sectionOf(
+      JSON.parse(
+        JSON.stringify({
+          turns: {
+            ...saved.turns,
+            // Ten turns said a word: the fifth waited 2.1 s and the ninth 8.3 s.
+            firstWord: [
+              [12, 1],
+              [13, 1],
+              [20, 2],
+              [21, 1],
+              [34, 2],
+              [50, 1],
+              [83, 1],
+              [110, 1],
+              [PLANTED, 40],
+              [5, PLANTED],
+            ],
+            chatTurns: 16,
+            firstMoves: {
+              weather: [6, 3],
+              calendar: [2, 0],
+              mail: [4, PLANTED],
+              [PLANTED]: [9, 9],
+            },
+          },
+        }),
+      ),
+    );
+    if (!measured) throw new Error("the section did not read");
+    // By this build's own kinds: a key the file made up is not one, and a count that is not is zero.
+    expect(measured.firstMoves).toEqual({
+      weather: [6, 3],
+      calendar: [2, 0],
+      mail: [4, 0],
+    });
+    const lines = weekLines(measured, 7);
+    expect(lines.slice(1, 4)).toEqual([
+      "// First answer p50 3.1 s, p90 14.0 s. Approvals per turn 0.33.",
+      "// First word p50 2.1 s, p90 8.3 s, over 10 of 16 conversation turns.",
+      "// First moves, made of asked: weather 3/6, calendar 0/2, mail 0/4.",
+    ]);
+    expect(lines).toHaveLength(6);
+    expect(lines.join("\n")).not.toContain("hunter2");
+    expect(lines.join("\n")).not.toContain("010-2233");
+  });
 });

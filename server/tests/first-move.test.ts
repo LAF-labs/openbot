@@ -18,7 +18,7 @@ import {
   FIRST_MOVES,
   FOLLOW_UP_ANAPHORS,
   FOLLOW_UP_OPENERS,
-  firstMoveForTurns,
+  firstMoveForTurns as tellTurns,
   firstMoveStateOf,
   isFollowUp,
   kindsMentioned,
@@ -69,6 +69,16 @@ function jev(answers: Record<string, number> | "down" | "throws") {
   };
   return { ask, asked };
 }
+
+/**
+ * The move alone, which is all most cases here read of what a turn is told (`firstMoveForTurns`).
+ * The whole of it — how the decision ended and which kinds it was about, which the turn's own
+ * measure keeps — is `tellTurns`'s answer, and has its own case below.
+ */
+const firstMoveForTurns = (deps: Parameters<typeof tellTurns>[0]) => {
+  const tell = tellTurns(deps);
+  return async (input: Parameters<typeof tell>[0]) => (await tell(input)).move;
+};
 
 const WEATHER_BARS = FIRST_MOVE_SPECS.weather.bars as {
   forecast: number;
@@ -953,6 +963,74 @@ describe("the first move, as a turn asks for it", () => {
     for (const word of ["치과", "예약", "세무사", "확인"]) {
       expect(logged.join("\n")).not.toContain(word);
     }
+  });
+
+  test("the turn is told what was decided as well as the move: the kinds asked about and how it ended", async () => {
+    /*
+     * `engine.ts` puts these on the turn's own row (`telemetry/run-meter.ts`), so moves made and
+     * moves left can be counted off the turns as well as off the trail. The two counts are of the
+     * same decisions: an answer that names kinds is an answer that left a row.
+     */
+    const trail: AuditEventInput[] = [];
+    const person = {
+      whereaboutsOf: async () => ({ place: "강원 춘천시", coordinates: null }),
+      connectionsOf: async () => [
+        { serverId: CALENDAR_SERVER, health: { status: "ok" } },
+        { serverId: MAIL_SERVER, health: { status: "ok" } },
+      ],
+      auditStore: {
+        insert: async (event: AuditEventInput) => {
+          trail.push(event);
+        },
+      },
+    };
+    const told = (answers: Parameters<typeof jev>[0], text: string) =>
+      tellTurns({
+        decide: createFirstMove({ moves: ALL, ask: jev(answers).ask }),
+        ...person,
+      })(input(text));
+
+    const moved = await told(
+      { ...SURE_OF_ALL, unfiltered: 0.2 },
+      "오늘 치과 예약이랑 세무사 메일 확인",
+    );
+    expect([moved.verdict, moved.move?.kind, moved.asked]).toEqual([
+      "moved",
+      "calendar",
+      ["calendar", "mail"],
+    ]);
+    expect(
+      await told({ forecast: 0.4, ownPlace: 0.9 }, "우산 챙길까 말까 고민이네"),
+    ).toEqual({ move: null, verdict: "below_bar", asked: ["weather"] });
+    expect(await told("down", "오늘 날씨 어때?")).toEqual({
+      move: null,
+      verdict: "no_answer",
+      asked: ["weather"],
+    });
+    expect(await told(SURE_OF_ALL, "오늘 일정이랑 새 메일 알려줘")).toEqual({
+      move: null,
+      verdict: "ambiguous",
+      asked: ["calendar", "mail"],
+    });
+    // Nobody was asked: no kinds, whatever the reason, and so nothing for a measure to keep.
+    expect(await told(SURE, "안녕, 잘 지냈어?")).toEqual({
+      move: null,
+      verdict: "no_word",
+      asked: [],
+    });
+    expect(await told(SURE_OF_ALL, "그럼 일정은?")).toEqual({
+      move: null,
+      verdict: "follow_up",
+      asked: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // A row in the trail for each of the four that name kinds, and none for the two that name none.
+    expect(trail.map((row) => row.eventType)).toEqual([
+      "turn.first_move",
+      "turn.first_move_left",
+      "turn.first_move_left",
+      "turn.first_move_left",
+    ]);
   });
 });
 

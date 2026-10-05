@@ -287,6 +287,28 @@ export const lafThreadRuns = pgTable(
     promptTokens: integer("prompt_tokens").notNull().default(0),
     cachedTokens: integer("cached_tokens").notNull().default(0),
     costUsd: doublePrecision("cost_usd").notNull().default(0),
+    /*
+     * THE WAIT AS THE PERSON HAS IT (2026-10-05, `telemetry/run-meter.ts`). `firstTokenMs` above
+     * runs from the Bot's service starting to the model's first output, a tool call included: it
+     * is neither from the person's message nor to the first word they read, and a turn's first
+     * move spent its time inside `queuedMs` unnamed. The seven below are milliseconds and words
+     * from two closed lists, checked against them before they are written (`run-ledger.ts`). Null
+     * on rows from before they were measured, and on a row whose run measured none of it.
+     */
+    /** Accepted → the first thing a window could draw: a step's line, a first move's included, or a word. */
+    firstSignMs: integer("first_sign_ms"),
+    /** Accepted → the first word of the answer. Null when the run said none. */
+    firstWordMs: integer("first_word_ms"),
+    /** The kinds of first move the decisions model was asked about (`shared/first-move.ts`). */
+    firstMoveAsked: text("first_move_asked").array(),
+    /** What came of asking: `moved`, `no_answer`, `below_bar` or `ambiguous`. */
+    firstMoveVerdict: text("first_move_verdict"),
+    /** The kind whose call the server made. Null unless the verdict is `moved`. */
+    firstMoveKind: text("first_move_kind"),
+    /** How long the turn waited to learn whether it opens with a move. */
+    firstMoveDecisionMs: integer("first_move_decision_ms"),
+    /** The move's call, from leaving to coming back. Null when none was made. */
+    firstMoveCallMs: integer("first_move_call_ms"),
   },
   (table) => [
     /*

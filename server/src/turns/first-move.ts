@@ -681,8 +681,21 @@ export function createFirstMove(deps: FirstMoveDeps) {
 export type FirstMoveFor = ReturnType<typeof createFirstMove>;
 
 /**
+ * What a turn is told of its first move (`engine.ts`): the call to make, when the decision came to
+ * one, and — for the turn's own measure (`telemetry/run-meter.ts`) — which kinds the decisions
+ * model was asked about and how that ended. Words from closed lists, and nothing of the message.
+ */
+export type FirstMoveDecision = {
+  move: FirstMove | null;
+  verdict: FirstMoveVerdict | "off";
+  /** The kinds the decisions model was asked about. Empty when nobody was asked. */
+  asked: readonly FirstMoveKind[];
+};
+
+/**
  * The first move as the turn engine asks for it (`engine.ts`, `firstMove`): the decision, fed the
  * facts it needs about this turn and this person, and a row in the trail for what came of asking.
+ * The turn is handed what was decided as well as the move, so its own row says so too.
  *
  * Beside the decision rather than in `main.ts`, which only hands these things to each other.
  */
@@ -705,7 +718,7 @@ export function firstMoveForTurns(deps: {
     botId: string;
     asked: readonly { role: string; content?: unknown }[];
     tools: readonly { name: string }[];
-  }): Promise<FirstMove | null> => {
+  }): Promise<FirstMoveDecision> => {
     // Read once a turn at most, and only when a kind that needs it got as far as asking.
     let connections: ReturnType<typeof deps.connectionsOf> | null = null;
     const { move, verdict, asked, decided } = await deps.decide({
@@ -757,7 +770,7 @@ export function firstMoveForTurns(deps: {
         },
       }).catch(auditRowLost("turn.first_move_left"));
     }
-    return move;
+    return { move, verdict, asked };
   };
 }
 

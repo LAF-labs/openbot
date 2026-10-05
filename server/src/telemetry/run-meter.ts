@@ -11,25 +11,103 @@
  * The two writers are where the ledger's id and the events meet.
  *
  * NOTHING HERE READS A WORD. An event's type, a tool's name checked against the catalogue's closed
- * list, and the numbers `laf.model.usage` carries — that is the whole input. What leaves is numbers
- * and two flags, so the columns it lands in cannot hold what anybody typed.
+ * list, and the numbers `laf.model.usage` carries — that is the whole input, but for one look: a
+ * text delta is asked whether there is anything in it to draw (`draws`), and nothing of it is
+ * kept. What leaves is numbers, two flags and, for a turn's first move, words from two closed
+ * lists — so the columns it lands in cannot hold what anybody typed.
  */
 import type { BaseEvent } from "@ag-ui/client";
+import type { FirstMoveKind } from "../../../shared/first-move";
 import { COMPUTER_TOOLS } from "../../../shared/tools/computer";
+import type { FirstMoveVerdict } from "../turns/first-move";
 import { modelUsageOf } from "../usage/model-usage";
+
+/**
+ * How a first move ended once the decisions model had been asked about it: the four of
+ * `FirstMoveVerdict` (`turns/first-move.ts`) that leave a row in the trail — `turn.first_move` for
+ * the first, `turn.first_move_left` for the rest. Every other verdict is a turn nobody was asked
+ * about, and its measure says nothing of a first move.
+ *
+ * A closed list and not only a type, because the word is written to a column: the ledger writes one
+ * of these or nothing (`run-ledger.ts`).
+ */
+export const FIRST_MOVE_ENDINGS = [
+  "moved",
+  "no_answer",
+  "below_bar",
+  "ambiguous",
+] as const satisfies readonly FirstMoveVerdict[];
+export type FirstMoveEnding = (typeof FIRST_MOVE_ENDINGS)[number];
+
+/** Whether a verdict is one a measure keeps. */
+export function isFirstMoveEnding(word: string): word is FirstMoveEnding {
+  return (FIRST_MOVE_ENDINGS as readonly string[]).includes(word);
+}
+
+/**
+ * A turn's first move (`turns/first-move.ts`), as its own measure keeps it: which kinds the
+ * decisions model was asked about, what came of asking, and what the two halves cost the person
+ * waiting. Until 2026-10-05 this time was inside `queuedMs` with no name, and whether a move was
+ * made was only in the trail.
+ */
+export type FirstMoveMeasure = {
+  /** The kinds the decisions model was asked about in its one request. Never empty. */
+  asked: readonly FirstMoveKind[];
+  verdict: FirstMoveEnding;
+  /** The kind whose call the server made. Null unless the verdict is `moved`. */
+  kind: FirstMoveKind | null;
+  /**
+   * How long the turn waited to learn whether it opens with a move: the words checked, the
+   * person's connections read, the day's budget asked about and the decisions model's answer —
+   * all of it, since all of it is before the Bot's model is asked.
+   */
+  decisionMs: number;
+  /** The move's call, from leaving to coming back. Null when no call was made. */
+  callMs: number | null;
+};
 
 export type RunMeasure = {
   /** Accepted → the Bot's service said it started (`RUN_STARTED`). Null when it never did. */
   queuedMs: number | null;
   /** Started → the model's first output: text, or a tool call. Null when there was none. */
   firstTokenMs: number | null;
+  /*
+   * THREE FIRSTS, AND THEY ARE THREE NUMBERS (2026-10-05). `firstTokenMs` above was the only one,
+   * and it is neither of the two a person has: timing two products by the window that afternoon
+   * took a stopwatch, because nothing here ran from the message to the first word.
+   *
+   *   firstTokenMs  started → the MODEL's first output, a tool call counting as much as a word.
+   *                 From the Bot's service saying it began, so the queue, the turn's setup and a
+   *                 first move are all before it. What the model's endpoint costs; the fleet's
+   *                 `firstAnswer` adds `queuedMs` to it.
+   *   firstSignMs   accepted → the first thing a window can DRAW for the run at all: a step's
+   *                 line — a call the model made, or the first move the server made for it — or a
+   *                 word. `queuedMs + firstTokenMs` exactly when no move was made and the model's
+   *                 first output was something to draw; with a move it is earlier, since the
+   *                 move's step goes out before the model is asked.
+   *   firstWordMs   accepted → the first WORD of the answer: a text delta with something in it.
+   *                 What somebody holding a stopwatch to the window reads. Later than
+   *                 `firstSignMs` by every step taken before the answer began.
+   *
+   * ACCEPTED is where the meter was made: the engine being handed what the person said
+   * (`turns/engine.ts`, `send`), the runner taking a run, a routine being claimed. Nobody waits on
+   * a routine's first word; its row carries these because they cost nothing to read off the same
+   * events, and the report reads conversations only.
+   */
+  /** Accepted → the first step's line or the first word. Null when the run drew neither. */
+  firstSignMs: number | null;
+  /** Accepted → the first word of the answer. Null when the run said none. */
+  firstWordMs: number | null;
   /** First output → the stream ended. Null when there was no output. */
   streamMs: number | null;
   /** Accepted → the stream ended. */
   totalMs: number;
   /** Requests the model answered: one `laf.model.usage` per request, a retried empty one included. */
   modelRequests: number;
-  /** Tool calls the model made. */
+  /**
+   * Tool calls the model made. A turn's first move is a call the SERVER made for it, and is not
+   * counted here: it is `firstMove`, and the model's own calls stay comparable turn to turn.
+   */
   toolCalls: number;
   /** Requests the Bot's service sent again (`laf.retry`): a dropped connection, an empty answer. */
   retries: number;
@@ -40,6 +118,8 @@ export type RunMeasure = {
   personNeeded: boolean;
   /** The model came back empty even when asked again (`laf.empty_answer`). */
   emptyAnswer: boolean;
+  /** The turn's first move, when the decisions model was asked about one. Null for any other run. */
+  firstMove: FirstMoveMeasure | null;
 };
 
 /** The tools whose step is the person's to take: a login, a password typed where the Bot can't see. */
@@ -57,8 +137,27 @@ const OUTPUT_EVENTS: ReadonlySet<string> = new Set([
   "TOOL_CALL_CHUNK",
 ]);
 
+/**
+ * Whether a text delta has anything in it for a window to draw.
+ *
+ * The one look this module takes at something a person could read, and it keeps none of it. A
+ * model that opens its answer on a blank line has not said a word yet, and the window draws
+ * nothing for one — so `firstWordMs` waits for a delta that is not all white space.
+ */
+const draws = (delta: unknown): boolean =>
+  typeof delta === "string" && /\S/.test(delta);
+
 export type RunMeter = {
   observe(event: BaseEvent): void;
+  /**
+   * A step the server itself put in front of the person went out to the windows: the call of a
+   * turn's first move, which no event of the Bot's carries. The run's first sign, if it had none.
+   */
+  stepSent(): void;
+  /** What came of asking about the turn's first move, and how long the turn waited to know. */
+  firstMove(decided: Omit<FirstMoveMeasure, "callMs">): void;
+  /** The first move's call came back, this long after it left. Nothing without a first move. */
+  firstMoveCalled(ms: number): void;
   /** The stream ended. The first call counts; a later one changes nothing. */
   end(): void;
   read(): RunMeasure;
@@ -76,6 +175,8 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
   const queuedAt = now();
   let startedAt: number | null = null;
   let firstOutputAt: number | null = null;
+  let firstSignAt: number | null = null;
+  let firstWordAt: number | null = null;
   let endedAt: number | null = null;
   let modelRequests = 0;
   let toolCalls = 0;
@@ -85,6 +186,7 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
   let costUsd = 0;
   let personNeeded = false;
   let emptyAnswer = false;
+  let firstMove: FirstMoveMeasure | null = null;
 
   return {
     observe(event) {
@@ -95,7 +197,19 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
         return;
       }
       if (OUTPUT_EVENTS.has(type)) {
-        firstOutputAt ??= now();
+        // One reading of the clock for the event, so the firsts it sets agree to the millisecond.
+        const at = now();
+        firstOutputAt ??= at;
+        if (type === "TOOL_CALL_START" || type === "TOOL_CALL_CHUNK") {
+          // A call's line is drawn from its start, before any of its arguments have arrived.
+          firstSignAt ??= at;
+        } else if (
+          firstWordAt === null &&
+          draws((event as { delta?: unknown }).delta)
+        ) {
+          firstWordAt = at;
+          firstSignAt ??= at;
+        }
         if (type === "TOOL_CALL_START") {
           toolCalls += 1;
           const name = (event as { toolCallName?: unknown }).toolCallName;
@@ -117,6 +231,23 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
       }
     },
 
+    /*
+     * NOT AN OUTPUT OF THE MODEL'S, so `firstOutputAt` is left alone: the Bot's service has not
+     * started yet when a first move's step goes out, and `firstTokenMs` — started → the model's
+     * first output — would read zero, and `streamMs` would count the model's whole wait as stream.
+     */
+    stepSent() {
+      firstSignAt ??= now();
+    },
+
+    firstMove(decided) {
+      firstMove = { ...decided, asked: [...decided.asked], callMs: null };
+    },
+
+    firstMoveCalled(ms) {
+      if (firstMove) firstMove = { ...firstMove, callMs: ms };
+    },
+
     end() {
       endedAt ??= now();
     },
@@ -126,6 +257,8 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
       return {
         queuedMs: elapsed(queuedAt, startedAt),
         firstTokenMs: elapsed(startedAt ?? queuedAt, firstOutputAt),
+        firstSignMs: elapsed(queuedAt, firstSignAt),
+        firstWordMs: elapsed(queuedAt, firstWordAt),
         streamMs: elapsed(firstOutputAt, ended),
         totalMs: elapsed(queuedAt, ended) ?? 0,
         modelRequests,
@@ -136,6 +269,9 @@ export function createRunMeter(now: () => number = Date.now): RunMeter {
         costUsd,
         personNeeded,
         emptyAnswer,
+        firstMove: firstMove
+          ? { ...firstMove, asked: [...firstMove.asked] }
+          : null,
       };
     },
   };

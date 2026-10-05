@@ -1018,15 +1018,31 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and the mail's tool definitions pinned (`plugin-rest-adapters.test.ts`) — a definition that
  * changes is paused for review for everyone who has it connected, so changing one is a line here.
  *
+ * RAISED 2026-10-05 with the wait measured as the person has it, by exactly what was added:
+ * twenty-one to `server` — five in `run-meter.test.ts` (the first word is the first text with
+ * something in it, counted from acceptance; a call before the words is the first sign; a first
+ * move's step is the first sign, and the model's first output is still counted from the Bot's
+ * start; a run that only acted has a sign and no word; a decision left to the Bot is kept without
+ * a kind or a call), seven in `turn-engine.integration.test.ts` (words only; a call first; opened
+ * by a first move; a decision that left the step to the Bot, and a message nobody was asked about;
+ * a turn that said nothing; a turn the person stopped; nothing the row measured holds a word of
+ * the message), the eight of the new `turn-wait.integration.test.ts` (the row holds what the meter
+ * read; an ending written after the fact keeps it; a first move is written from the two closed
+ * lists or not at all; the section's cells; its counts per kind; the median and the ninetieth
+ * percentile by nearest rank, held to the database's own; a section from before reads as not
+ * measured; no word reaches a column or the section) and one in `first-move.test.ts` (the turn is
+ * told what was decided as well as the move) — and one to `root`, in `eval-from-failures.test.ts`
+ * (the week's lines say the wait and the moves where the answer measured them, and nowhere else).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3549, roots: ["server"] },
+  { name: "server", floor: 3570, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 642, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 643, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

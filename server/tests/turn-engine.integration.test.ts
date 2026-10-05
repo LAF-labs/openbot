@@ -21,7 +21,7 @@ import { messagesFor } from "../src/runner/thread-store";
 import type { LoopAgent } from "../src/runner/turn-loop";
 import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
 import { createTurnEngine } from "../src/turns/engine";
-import type { FirstMove } from "../src/turns/first-move";
+import type { FirstMove, FirstMoveDecision } from "../src/turns/first-move";
 import { historyPage } from "../src/turns/history";
 import {
   createTurnHub,
@@ -203,12 +203,28 @@ function engineWith(
     resolveAgents?: () => Promise<Record<string, LoopAgent | undefined>>;
     timeoutMs?: number;
     firstMove?: () => Promise<FirstMove | null>;
+    /** The whole of what a turn is told of its first move, where a case reads the turn's measure. */
+    decision?: () => Promise<FirstMoveDecision>;
+    /** The clock the turn's measure is read off, moved by the case's own hand. */
+    now?: () => number;
     /** The thread's store as the engine reaches it — a test's may refuse a write. */
     store?: typeof database;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
   const announced: string[] = [];
+  // A case that only cares which call is made hands over the move; the turn is told the rest.
+  const made = options.firstMove;
+  const firstMove =
+    options.decision ??
+    (made
+      ? async (): Promise<FirstMoveDecision> => {
+          const move = await made();
+          return move
+            ? { move, verdict: "moved", asked: move.asked }
+            : { move: null, verdict: "no_word", asked: [] };
+        }
+      : undefined);
   const engine = createTurnEngine({
     database: options.store ?? database,
     // A test waits milliseconds for a write to be tried again, not seconds.
@@ -230,7 +246,8 @@ function engineWith(
           : (execute as ChatToolkit["execute"]),
     }),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
-    ...(options.firstMove ? { firstMove: options.firstMove } : {}),
+    ...(firstMove ? { firstMove } : {}),
+    ...(options.now ? { now: options.now } : {}),
     announce: async ({ text }) => {
       announced.push(text);
     },
@@ -1332,5 +1349,496 @@ describe("the turn's first move", () => {
     ]);
     expect(String(stored[2]?.content)).toContain("laf:weather_place_unknown");
     expect(bot.inputs[0]?.at(-1)?.role).toBe("tool");
+  });
+});
+
+/** A clock a case moves by hand: the turn's measure is read off it, so each part took what the case says. */
+function handClock(start = 7_000_000) {
+  let at = start;
+  return {
+    now: () => at,
+    pass: (ms: number) => {
+      at += ms;
+    },
+  };
+}
+
+/** One run of the model as a case tells it: how long the Bot's service took to start, then what it did. */
+type TimedRun = {
+  queued?: number;
+  does?: (say: {
+    /** Some of the answer, as one delta. */
+    text: (words: string) => void;
+    /** A call, announced the way the service streams one. */
+    call: (name: string, id: string) => void;
+  }) => void;
+};
+
+/** A Bot that does what each run is told to, on the case's own clock. */
+function timedBot(time: ReturnType<typeof handClock>, runs: TimedRun[]) {
+  const agent = {
+    messages: [] as Message[],
+    runs: 0,
+    setMessages(messages: Message[]) {
+      agent.messages = [...messages];
+    },
+    addMessage(message: Message) {
+      agent.messages.push(message);
+    },
+    async runAgent(_input: unknown, subscriber?: Subscriber) {
+      const run = runs[agent.runs] ?? {};
+      agent.runs += 1;
+      const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
+      time.pass(run.queued ?? 0);
+      emit(event("RUN_STARTED"));
+      const id = `a-${randomUUID()}`;
+      let content = "";
+      let opened = false;
+      const toolCalls: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }> = [];
+      run.does?.({
+        text(words) {
+          if (!opened) {
+            emit(
+              event("TEXT_MESSAGE_START", { messageId: id, role: "assistant" }),
+            );
+            opened = true;
+          }
+          emit(event("TEXT_MESSAGE_CONTENT", { messageId: id, delta: words }));
+          content += words;
+        },
+        call(name, toolCallId) {
+          emit(
+            event("TOOL_CALL_START", {
+              toolCallId,
+              toolCallName: name,
+              parentMessageId: id,
+            }),
+          );
+          emit(event("TOOL_CALL_ARGS", { toolCallId, delta: "{}" }));
+          emit(event("TOOL_CALL_END", { toolCallId }));
+          toolCalls.push({
+            id: toolCallId,
+            type: "function",
+            function: { name, arguments: "{}" },
+          });
+        },
+      });
+      if (content || toolCalls.length > 0) {
+        agent.messages.push({
+          id,
+          role: "assistant",
+          content,
+          ...(toolCalls.length > 0 ? { toolCalls } : {}),
+        } as Message);
+      }
+      emit(event("RUN_FINISHED"));
+      subscriber?.onRunFinishedEvent?.();
+      return { result: undefined, newMessages: [] };
+    },
+  };
+  return agent as unknown as ReturnType<typeof scriptedBot> & {
+    runs: number;
+  };
+}
+
+/**
+ * THE WAIT AS THE PERSON HAS IT, on the turn's own row (`telemetry/run-meter.ts`).
+ *
+ * The measure used to start in the middle of a turn and stop at the model's first output, a tool
+ * call included, so nothing said how long somebody waited for the first word, and a first move's
+ * time sat inside "queued" with no name. Each case here moves the clock itself — the Bot's service
+ * starting, the model thinking, a tool out, the decisions model answering — and reads what the
+ * ledger wrote when the turn ended.
+ */
+describe("the wait a turn measured", () => {
+  const MAIL = "mcp__gmail__search_messages";
+
+  const sentTurn = async (
+    engine: ReturnType<typeof engineWith>["engine"],
+    text: string,
+  ) => {
+    const { threadId, channelId } = await aConversation();
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked(text)],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    return { threadId, turnId: sent.turnId };
+  };
+
+  const rowOf = async (runId: string) => {
+    const [row] = await database
+      .select()
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, runId));
+    if (!row) throw new Error(`run ${runId} has no row`);
+    return row;
+  };
+
+  /** The five columns of a first move, as a turn nobody was asked about leaves them. */
+  const NO_FIRST_MOVE = {
+    firstMoveAsked: null,
+    firstMoveVerdict: null,
+    firstMoveKind: null,
+    firstMoveDecisionMs: null,
+    firstMoveCallMs: null,
+  };
+
+  test("words only: the first word is the first sign, counted from the message and not from the Bot's start", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 200,
+        does: ({ text }) => {
+          time.pass(1_500);
+          // A blank line is the model's first output, and nothing for anybody to read yet.
+          text("\n");
+          time.pass(40);
+          text("안녕하세요.");
+          time.pass(300);
+        },
+      },
+    ]);
+    const { engine } = engineWith(bot, async () => ({ ok: true }), {
+      now: time.now,
+    });
+    const { turnId } = await sentTurn(engine, "안녕");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(await rowOf(turnId)).toMatchObject({
+      queuedMs: 200,
+      // What it always meant: the Bot's start → the model's first output, the blank line included.
+      firstTokenMs: 1_500,
+      firstSignMs: 1_740,
+      firstWordMs: 1_740,
+      streamMs: 340,
+      totalMs: 2_040,
+      toolCalls: 0,
+      ...NO_FIRST_MOVE,
+    });
+  });
+
+  test("a call first and words after: the step is drawn long before the first word is", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 100,
+        does: ({ call }) => {
+          time.pass(900);
+          call("computer_navigate", "call-wait-1");
+        },
+      },
+      {
+        queued: 150,
+        does: ({ text }) => {
+          time.pass(250);
+          text("찾았어요.");
+        },
+      },
+    ]);
+    const { engine } = engineWith(
+      bot,
+      async () => {
+        time.pass(2_000);
+        return { ok: true };
+      },
+      { now: time.now },
+    );
+    const { turnId } = await sentTurn(engine, "예시 페이지 확인해줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    const row = await rowOf(turnId);
+    expect(row).toMatchObject({
+      queuedMs: 100,
+      firstTokenMs: 900,
+      // No move, and the model's first output was a step to draw: queued + first output, exactly.
+      firstSignMs: 1_000,
+      // The call out for two seconds, the Bot's service starting again, and then the answer.
+      firstWordMs: 3_400,
+      toolCalls: 1,
+      ...NO_FIRST_MOVE,
+    });
+    expect(row.firstSignMs).toBeLessThan(row.firstWordMs ?? 0);
+  });
+
+  test("opened by a first move: its step is the first sign, and what deciding and the call cost has a name", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 80,
+        does: ({ text }) => {
+          time.pass(2_000);
+          text("새 메일이 두 통 있어요.");
+        },
+      },
+    ]);
+    const executed: string[] = [];
+    const { engine, hub } = engineWith(
+      bot,
+      async (name, _args) => {
+        executed.push(name);
+        time.pass(1_100);
+        return '{"messages":2}';
+      },
+      {
+        now: time.now,
+        // The turn's own setup, before anything is decided.
+        resolveAgents: async () => {
+          time.pass(60);
+          return { [BOT]: bot as unknown as LoopAgent };
+        },
+        decision: async () => {
+          time.pass(240);
+          return {
+            move: {
+              kind: "mail",
+              tool: MAIL,
+              args: { query: "is:unread in:inbox" },
+              asked: ["calendar", "mail"],
+              decided: {
+                schedule: 0.2,
+                today: 0.9,
+                mail: 0.97,
+                unfiltered: 0.9,
+              },
+            },
+            verdict: "moved",
+            asked: ["calendar", "mail"],
+          };
+        },
+      },
+    );
+    /** The clock when the move's step went out to a window, and when the first word did. */
+    const drawn: Record<string, number> = {};
+    const { threadId, channelId } = await aConversation();
+    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
+      if (
+        frame.kind === "messages" &&
+        frame.messages.some((message) => isFirstMove(message))
+      ) {
+        drawn.step ??= time.now();
+      }
+      if (
+        frame.kind === "event" &&
+        String(frame.event.type) === "TEXT_MESSAGE_CONTENT"
+      ) {
+        drawn.word ??= time.now();
+      }
+    });
+    const startedAt = time.now();
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("새 메일 왔어?")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(executed).toEqual([MAIL]);
+    const row = await rowOf(sent.turnId);
+    expect(row).toMatchObject({
+      firstMoveAsked: ["calendar", "mail"],
+      firstMoveVerdict: "moved",
+      firstMoveKind: "mail",
+      firstMoveDecisionMs: 240,
+      firstMoveCallMs: 1_100,
+      // Setup and the decision, and the step is out: before the call has come back.
+      firstSignMs: 300,
+      // The call, the Bot's service starting, the model writing: everything the person sat through.
+      firstWordMs: 3_480,
+      // The Bot's service started after the move, so the move's time is still inside "queued"…
+      queuedMs: 1_480,
+      // …and the model's own first output is counted from its own start, as it always was.
+      firstTokenMs: 2_000,
+      // The server's call, not the model's.
+      toolCalls: 0,
+    });
+    // And they are when a window was handed each, not when something else happened.
+    expect(drawn.step).toBe(startedAt + 300);
+    expect(drawn.word).toBe(startedAt + 3_480);
+  });
+
+  test("a decision that left the step to the Bot is on the row too, and a message nobody was asked about is not", async () => {
+    const time = handClock();
+    const answers = (words: string): TimedRun => ({
+      queued: 50,
+      does: ({ text }) => {
+        time.pass(1_000);
+        text(words);
+      },
+    });
+    const bot = timedBot(time, [
+      answers("우산은 없어도 돼요."),
+      answers("네."),
+    ]);
+    let turns = 0;
+    const { engine } = engineWith(bot, async () => ({ ok: true }), {
+      now: time.now,
+      decision: async () => {
+        turns += 1;
+        // The decisions model answered, short of the bar; then a message with no word of any kind.
+        if (turns === 1) {
+          time.pass(180);
+          return { move: null, verdict: "below_bar", asked: ["weather"] };
+        }
+        time.pass(3);
+        return { move: null, verdict: "no_word", asked: [] };
+      },
+    });
+    const left = await sentTurn(engine, "우산 챙길까 말까 고민이네");
+    await until(async () => (await statusOf(left.turnId)) === "done");
+    expect(await rowOf(left.turnId)).toMatchObject({
+      firstMoveAsked: ["weather"],
+      firstMoveVerdict: "below_bar",
+      firstMoveKind: null,
+      firstMoveDecisionMs: 180,
+      firstMoveCallMs: null,
+      firstSignMs: 1_230,
+      firstWordMs: 1_230,
+    });
+    const unasked = await sentTurn(engine, "고마워");
+    await until(async () => (await statusOf(unasked.turnId)) === "done");
+    expect(await rowOf(unasked.turnId)).toMatchObject({
+      ...NO_FIRST_MOVE,
+      firstWordMs: 1_053,
+    });
+  });
+
+  test("a turn that did something and said nothing has a first sign and no first word", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 100,
+        does: ({ call }) => {
+          time.pass(500);
+          call("computer_navigate", "call-wait-2");
+        },
+      },
+      // Asked again with the result in hand, and it has nothing to add.
+      { queued: 100 },
+    ]);
+    const { engine } = engineWith(
+      bot,
+      async () => {
+        time.pass(300);
+        return { ok: true };
+      },
+      { now: time.now },
+    );
+    const { turnId } = await sentTurn(engine, "예시 페이지 열어둬");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(await rowOf(turnId)).toMatchObject({
+      status: "done",
+      firstSignMs: 600,
+      firstWordMs: null,
+      totalMs: 1_000,
+    });
+  });
+
+  test("a turn the person stopped keeps what it measured up to the stop", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 100,
+        does: ({ call }) => {
+          time.pass(400);
+          call("computer_navigate", "call-wait-3");
+        },
+      },
+    ]);
+    const { engine } = engineWith(
+      bot,
+      (_name, _args, call) =>
+        new Promise((resolve) => {
+          call.signal.addEventListener("abort", () =>
+            resolve({ ok: false, code: "laf:stopped", stopped: true }),
+          );
+        }),
+      { now: time.now },
+    );
+    const { threadId, turnId } = await sentTurn(engine, "오래 걸리는 일");
+    await until(async () => bot.runs === 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Five seconds of watching a step that does not come back, and then the person stops it.
+    time.pass(5_000);
+    expect(engine.stop(threadId)).toBe(true);
+    await until(async () => (await statusOf(turnId)) === "stopped");
+    expect(await rowOf(turnId)).toMatchObject({
+      status: "stopped",
+      ending: "stopped",
+      firstSignMs: 500,
+      firstWordMs: null,
+      totalMs: 5_500,
+      toolCalls: 1,
+    });
+  });
+
+  test("nothing the row measured holds a word of what the person said", async () => {
+    const time = handClock();
+    const bot = timedBot(time, [
+      {
+        queued: 70,
+        does: ({ text }) => {
+          time.pass(900);
+          text("김영희 과장님 메일이 한 통 와 있어요.");
+        },
+      },
+    ]);
+    const { engine } = engineWith(
+      bot,
+      async () => {
+        time.pass(800);
+        return '{"from":"김영희 과장","subject":"견적서 7731"}';
+      },
+      {
+        now: time.now,
+        decision: async () => {
+          time.pass(200);
+          return {
+            move: {
+              kind: "mail",
+              tool: MAIL,
+              args: { query: "is:unread in:inbox" },
+              asked: ["mail"],
+              decided: { mail: 0.95, unfiltered: 0.9 },
+            },
+            verdict: "moved",
+            asked: ["mail"],
+          };
+        },
+      },
+    );
+    const said = "김영희 과장 메일 왔는지 봐줘 7731";
+    const { turnId } = await sentTurn(engine, said);
+    await until(async () => (await statusOf(turnId)) === "done");
+    const { label, error, ...measured } = await rowOf(turnId);
+    // Not vacuous: the older column beside these does hold the words, for 오늘 to name the turn by.
+    expect(label).toBe(said);
+    expect(error).toBeNull();
+    expect(measured).toMatchObject({
+      firstMoveAsked: ["mail"],
+      firstMoveVerdict: "moved",
+      firstMoveKind: "mail",
+      firstWordMs: 1_970,
+    });
+    const serialised = JSON.stringify(measured);
+    for (const word of [
+      "김영희",
+      "과장",
+      "메일 왔는지",
+      "봐줘",
+      "7731",
+      "견적서",
+    ]) {
+      expect([word, serialised.includes(word)]).toEqual([word, false]);
+    }
   });
 });

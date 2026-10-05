@@ -165,3 +165,157 @@ describe("the run meter", () => {
     }
   });
 });
+
+/**
+ * The wait as the person has it: from the run being accepted to the first thing a window can draw,
+ * and to the first word. `firstTokenMs` is neither — it starts at the Bot's service and stops at
+ * the model's first output, whatever that was — and it goes on meaning that.
+ */
+describe("the run meter: the first sign and the first word", () => {
+  test("the first word is the first text with something in it, counted from acceptance", () => {
+    const time = clock();
+    const meter = createRunMeter(time.now);
+    time.pass(120);
+    meter.observe(event("RUN_STARTED"));
+    time.pass(2_300);
+    // A message opening says nothing, and neither does a blank line: both are before the word.
+    meter.observe(event("TEXT_MESSAGE_START"));
+    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "\n\n" }));
+    time.pass(60);
+    meter.observe(event("TEXT_MESSAGE_CHUNK", { delta: "" }));
+    meter.observe(event("TEXT_MESSAGE_CHUNK"));
+    time.pass(20);
+    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: " 안" }));
+    time.pass(900);
+    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "녕하세요" }));
+    meter.end();
+    expect(meter.read()).toMatchObject({
+      queuedMs: 120,
+      // The blank line is the model's first output, as it always was.
+      firstTokenMs: 2_300,
+      firstSignMs: 2_500,
+      firstWordMs: 2_500,
+      firstMove: null,
+    });
+  });
+
+  test("a call before the words: the first sign is the call's step, and the first word is later", () => {
+    const time = clock();
+    const meter = createRunMeter(time.now);
+    time.pass(150);
+    meter.observe(event("RUN_STARTED"));
+    time.pass(700);
+    meter.observe(
+      event("TOOL_CALL_START", { toolCallName: "computer_navigate" }),
+    );
+    meter.observe(event("TOOL_CALL_ARGS", { delta: "{}" }));
+    meter.observe(event("TOOL_CALL_END"));
+    time.pass(4_000);
+    // The next step of the same turn: its own start is not the run's.
+    meter.observe(event("RUN_STARTED"));
+    time.pass(1_100);
+    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "찾았어요." }));
+    meter.end();
+    const read = meter.read();
+    expect(read).toMatchObject({
+      queuedMs: 150,
+      firstTokenMs: 700,
+      firstSignMs: 850,
+      firstWordMs: 5_950,
+    });
+    // No first move, and the model's first output was a step to draw: the sum, to the millisecond.
+    expect(read.firstSignMs).toBe(
+      (read.queuedMs ?? 0) + (read.firstTokenMs ?? 0),
+    );
+  });
+
+  test("a first move's step is the first sign, and the model's first output is still counted from the Bot's start", () => {
+    const time = clock();
+    const meter = createRunMeter(time.now);
+    time.pass(260);
+    meter.firstMove({
+      asked: ["weather"],
+      verdict: "moved",
+      kind: "weather",
+      decisionMs: 240,
+    });
+    // The move's step goes out to the windows before its call has come back.
+    meter.stepSent();
+    time.pass(1_200);
+    meter.firstMoveCalled(1_200);
+    // A second step of the server's would not be the first sign.
+    meter.stepSent();
+    time.pass(40);
+    meter.observe(event("RUN_STARTED"));
+    time.pass(2_000);
+    meter.observe(event("TEXT_MESSAGE_CONTENT", { delta: "지금 7.8도예요." }));
+    time.pass(500);
+    meter.end();
+    expect(meter.read()).toEqual({
+      queuedMs: 1_500,
+      firstTokenMs: 2_000,
+      firstSignMs: 260,
+      firstWordMs: 3_500,
+      streamMs: 500,
+      totalMs: 4_000,
+      modelRequests: 0,
+      // The server's call, not one the model made.
+      toolCalls: 0,
+      retries: 0,
+      promptTokens: 0,
+      cachedTokens: 0,
+      costUsd: 0,
+      personNeeded: false,
+      emptyAnswer: false,
+      firstMove: {
+        asked: ["weather"],
+        verdict: "moved",
+        kind: "weather",
+        decisionMs: 240,
+        callMs: 1_200,
+      },
+    });
+  });
+
+  test("a run that only acted has a sign and no word; one that did nothing has neither", () => {
+    const acted = createRunMeter(clock().now);
+    acted.observe(event("RUN_STARTED"));
+    acted.observe(event("TOOL_CALL_START", { toolCallName: "computer_click" }));
+    acted.observe(event("TEXT_MESSAGE_CONTENT", { delta: "  \n" }));
+    acted.end();
+    expect(acted.read()).toMatchObject({ firstSignMs: 0, firstWordMs: null });
+
+    const silent = createRunMeter(clock().now);
+    silent.observe(event("RUN_STARTED"));
+    silent.observe(event("RUN_ERROR", { message: "fetch failed" }));
+    silent.end();
+    expect(silent.read()).toMatchObject({
+      firstSignMs: null,
+      firstWordMs: null,
+    });
+  });
+
+  test("a decision that left the step to the Bot is kept without a kind or a call, and the meter keeps its own copy", () => {
+    const meter = createRunMeter(clock().now);
+    const asked: Array<"calendar" | "mail"> = ["calendar", "mail"];
+    meter.firstMove({
+      asked,
+      verdict: "ambiguous",
+      kind: null,
+      decisionMs: 310,
+    });
+    // What the caller does with its list afterwards is not the measure's.
+    asked.pop();
+    expect(meter.read().firstMove).toEqual({
+      asked: ["calendar", "mail"],
+      verdict: "ambiguous",
+      kind: null,
+      decisionMs: 310,
+      callMs: null,
+    });
+    // A call that came back with no first move to belong to is nobody's.
+    const none = createRunMeter(clock().now);
+    none.firstMoveCalled(900);
+    expect(none.read().firstMove).toBeNull();
+  });
+});

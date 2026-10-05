@@ -1599,6 +1599,54 @@ from rows, jsonb_array_elements_text(asked) as kind
 group by kind;
 ```
 
+**Counting the wait, and the moves, from the turns (2026-10-05).** The trail says a move was made;
+it does not say what the person waited, and "the first chunk of the answer" above was measured by
+nothing — two products were timed against each other that afternoon with a stopwatch on the
+window. A conversation turn's own row (`laf_thread_runs`, written at its end by `run-ledger.ts`
+from what `telemetry/run-meter.ts` read) carries it now, as milliseconds and words from two closed
+lists, never a word of the message:
+
+| Column | From → to |
+|---|---|
+| `first_word_ms` | The engine handed the message (`turns/engine.ts`, `send`) → the first text delta with something in it going out to the windows. Null: the turn said nothing. |
+| `first_sign_ms` | The same start → the first thing a window can draw: a step's line, a first move's included, or a word. |
+| `first_token_ms` | As it was: the Bot's service started → the model's first output, a tool call included. |
+| `first_move_asked`, `first_move_verdict`, `first_move_kind` | The kinds the decisions model was asked about; `moved`, `no_answer`, `below_bar` or `ambiguous`; the kind whose call was made. All null when nobody was asked — the same decisions the two rows of the trail are. |
+| `first_move_decision_ms`, `first_move_call_ms` | How long the turn waited to learn whether it opens with a move; the move's call, out and back. |
+
+`queued_ms` and `total_ms` of a conversation turn start at that same moment from this change on —
+they began after the message had been written, a few milliseconds later — so with no move, and a
+first output that is something to draw, `first_sign_ms` is `queued_ms + first_token_ms` exactly. A
+move's own call is not in `tool_calls`, which stays the calls the model made.
+
+The newest turns, and a day's median and ninetieth percentile by nearest rank — a wait somebody
+had, never a figure between two. It is the rule `summariseTurns` reads the report's cells by, and
+`turn-wait.integration.test.ts` holds the two to each other:
+
+```sql
+select started_at, status, queued_ms, first_token_ms, first_sign_ms, first_word_ms,
+       first_move_asked, first_move_verdict, first_move_kind,
+       first_move_decision_ms, first_move_call_ms, tool_calls, total_ms
+from laf_thread_runs
+where origin = 'chat' and turn_id = run_id
+order by started_at desc
+limit 20;
+
+select count(*) as turns, count(first_word_ms) as said,
+       percentile_disc(0.5) within group (order by first_word_ms) as p50_ms,
+       percentile_disc(0.9) within group (order by first_word_ms) as p90_ms
+from laf_thread_runs
+where origin = 'chat' and turn_id = run_id
+  and started_at >= now() - interval '1 day';
+```
+
+The fleet's read has the same as counts, in its `turns` section (`GET
+/api/admin/metrics/insights?days=1`): `firstWord`, cells of `[tenths of a second, turns]` that add
+across VMs; `chatTurns`, the turns that could have had one; and `firstMoves`, `kind → [asked,
+moved]` for every kind, zeros included. `bun run eval:from-failures --days 1` prints them as two
+lines. Rows from before this release have none of it, and read as not measured rather than as no
+wait.
+
 **The switch.** `FIRST_MOVE` unset is every kind; `off` is none; a comma list (`weather,calendar`)
 keeps only what it names, so one kind can be taken out on a deployment without a release; any other
 word refuses to boot. A boot says which kinds are on and that the calendar's and the mail's are
