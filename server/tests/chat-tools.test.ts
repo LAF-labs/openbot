@@ -37,7 +37,11 @@ import { RoutineError } from "../src/routines/errors";
 import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
-import { searchResultText } from "../../shared/tools/bridge";
+import {
+  describedToolNames,
+  OPEN_ACCOUNTS_HEAD,
+  searchResultText,
+} from "../../shared/tools/bridge";
 import {
   accountStatesIn,
   withoutAccountStates,
@@ -1478,7 +1482,7 @@ describe("a connect card the turn waits on", () => {
       expect(asked).toEqual([context.owner.id]);
     });
 
-    test("so a lookup that finds nothing says what can be connected, by name and key, with the card", async () => {
+    test("so every lookup ends on what can still be connected, by name and key, and how to raise the card", async () => {
       const toolkit = await createChatTools({
         people: createPersonAnswers(),
         components: connectCards,
@@ -1488,16 +1492,20 @@ describe("a connect card the turn waits on", () => {
         behind(toolkit.tools),
         "캘린더 일정 확인",
       );
-      expect(answer).toContain(
+      const line = answer.split("\n").at(-1) ?? "";
+      expect(line.startsWith(OPEN_ACCOUNTS_HEAD)).toBe(true);
+      expect(line).toContain(
         "지메일(gmail), 구글 캘린더(google-calendar), 노션(notion).",
       );
       // 카카오 is on and brought nothing: said as that, and not among what could be connected.
       expect(answer).toContain(
-        "연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: 카카오(kakao-playmcp).",
+        "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp).",
       );
-      // The card as the window declared it: what the turn wrote is the bridge's to read.
-      expect(answer).toContain('{"name":"showConnection"');
+      // No schema pasted, and nothing of what the turn wrote: the line is the whole of it —
+      // and a conversation given the line may call the card.
+      expect(answer).not.toContain('{"name":"showConnection"');
       expect(answer).not.toContain("x-accounts");
+      expect(describedToolNames([answer]).has("showConnection")).toBe(true);
     });
 
     test("where the accounts cannot be read, the card is the window's own and nothing is said of connecting", async () => {
@@ -1516,7 +1524,7 @@ describe("a connect card the turn waits on", () => {
         expect(cardOf(toolkit.tools)?.parameters).toEqual(declared.parameters);
         expect(
           searchResultText(behind(toolkit.tools), "캘린더 일정 확인"),
-        ).not.toContain("연결하면");
+        ).not.toContain(OPEN_ACCOUNTS_HEAD);
       }
     });
 
@@ -1558,19 +1566,29 @@ describe("a connect card the turn waits on", () => {
           "카카오톡 나에게 보내기",
         );
         expect(lookup).toContain(
-          "연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: 카카오(kakao-playmcp).",
+          "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: 카카오(kakao-playmcp).",
         );
-        expect(lookup).not.toContain('"name":"showConnection"');
-        expect(lookup).not.toContain("아직 연결하지 않은");
+        // Nothing is left to connect, so nothing says how to raise the card — and it stays
+        // uncallable from this answer.
+        expect(lookup).not.toContain(OPEN_ACCOUNTS_HEAD);
+        expect(describedToolNames([lookup]).has("showConnection")).toBe(false);
       });
 
-      test("that lands during the wait is said the same way", async () => {
+      /*
+       * NOT SAID TOO SOON (review, 2026-10-05). The connect callback records the connection and
+       * only then lists its tools and grants them, and the card's wait ends on the first: looked at
+       * once, an account connected a second ago had no tools and its person was told there was
+       * nothing to use. One that turned on during the wait is looked at again each poll, for as
+       * long as a listing may take, before that is said.
+       */
+      test("that lands during the wait is said the same way — once its listing has had its time", async () => {
         const board = switchboard({ "kakao-playmcp": false });
         const toolkit = await createChatTools({
           people: createPersonAnswers(),
           components: connectCards,
           connections: board.read,
           connectionPollMs: 5,
+          listingWaitMs: 60,
           accounts: async () => [{ key: "kakao-playmcp", connected: false }],
         })(context, [declaredCard()]);
         const pending = toolkit.execute(
@@ -1579,8 +1597,77 @@ describe("a connect card the turn waits on", () => {
           call("c-lands-empty"),
         );
         await new Promise((resolve) => setTimeout(resolve, 20));
+        const on = Date.now();
         board.state["kakao-playmcp"] = true;
         expect((await answerOf(pending)).code).toBe("laf:connection_unusable");
+        // Not at the first look: the listing was given its bound, and no longer.
+        expect(Date.now() - on).toBeGreaterThanOrEqual(55);
+        expect(Date.now() - on).toBeLessThan(1_000);
+      });
+
+      test("whose tools arrive a poll after the switch is waited for: connected, with their names", async () => {
+        const board = switchboard({ gmail: false });
+        // The listing lands after the connection does, as the connect callback orders them.
+        let isListed = false;
+        const lists: boolean[] = [];
+        const pluginStore = {
+          listForAgent: async () => {
+            lists.push(isListed);
+            return {
+              tools:
+                board.state.gmail && isListed
+                  ? [
+                      {
+                        ref: "gmail/search_messages",
+                        toolName: "mcp__gmail__search_messages",
+                        description: "search",
+                        inputSchema: { type: "object" },
+                      },
+                    ]
+                  : [],
+              skills: [],
+            };
+          },
+          callTool: async () => ({ text: "3 messages", isError: false }),
+          viewSkill: async () => ({
+            allowed: false,
+            reason: "laf:skill_not_granted",
+          }),
+        } as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+        const toolkit = await createChatTools({
+          people: createPersonAnswers(),
+          components: connectCards,
+          pluginStore,
+          connections: board.read,
+          connectionPollMs: 10,
+          listingWaitMs: 2_000,
+          accounts: async () => [{ key: "gmail", connected: false }],
+        })(context, [declaredCard()]);
+        const pending = toolkit.execute(
+          "showConnection",
+          { services: ["gmail"] },
+          call("c-lands-late"),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        board.state.gmail = true;
+        // One look finds the switch on and no tools; the listing lands before the next.
+        setTimeout(() => {
+          isListed = true;
+        }, 25);
+        expect(await answerOf(pending)).toEqual({
+          code: "laf:connection_on",
+          connected: ["gmail"],
+          notConnected: [],
+          tools: ["mcp__gmail__search_messages"],
+          reason: toolResultText("laf:connection_on"),
+        });
+        // It was looked for before it was there, and found once it was: not the whole bound.
+        expect(lists).toContain(false);
+        expect(lists.at(-1)).toBe(true);
+        // And the tool is the turn's from here on.
+        expect(toolkit.tools.map((one) => one.name)).toContain(
+          "mcp__gmail__search_messages",
+        );
       });
 
       test("is not what an account with its tools in the list is, nor a site", async () => {

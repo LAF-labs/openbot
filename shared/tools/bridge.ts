@@ -313,7 +313,7 @@ export function deferredToolsText(
      * 연결할 수 있는 계정이 남아 있을 때만 서는 한 문장 — 위의 "여기 없는 일을 하려고 찾지 말고"에
      * 다는 단서다.
      *
-     * 왜. 찾으면 다리가 무엇을 연결할 수 있는지와 연결 카드를 건넨다(`searchResultText`) — 그런데
+     * 왜. 찾으면 다리가 무엇을 연결할 수 있는지와 카드 부르는 법을 말한다(`searchResultText`) — 그런데
      * 위 문장을 그대로 따른 봇은 찾지 않는다. "오늘 일정 뭐 있어?"에 제 루틴만 보고 "제가 챙기고
      * 있는 일정은 없어요" — 읽지도 않은 캘린더가 비었다는 말이다.
      *
@@ -820,13 +820,28 @@ function namedByKey(keys: readonly string[]): string {
 }
 
 /**
- * 연결된 서비스의 도구를 찾지 못한 검색의 답 끝에 서는 줄들 — 무엇을 연결할 수 있는지, 사실로.
+ * 연결할 수 있는 계정을 말하는 줄의 머리. 이 줄이 대화에 건네졌다는 것을 `describedToolNames`가
+ * 이것으로 알아본다 — 같은 파일이 그 줄을 쓰므로 모양을 아는 곳도 여기 하나다.
+ */
+export const OPEN_ACCOUNTS_HEAD = "이 사람이 아직 연결하지 않은 계정: ";
+
+/**
+ * 모든 검색의 답 끝에 서는 줄 — 이 사람이 연결할 수 있는데 아직 연결하지 않은 계정들, 사실로.
  *
- * 어느 서비스가 필요한 일인지는 다리가 고르지 않는다. 낱말 표로 골랐던 하루가 있었다(2026-10-05,
- * 지금은 지운 표): "배송 일정 조회"와 "루틴 스케줄"에 구글 캘린더를, "카페 24시간"에 카페24를,
- * "balance sheet"에 구글 시트를 권했고, 톡캘린더를 연결한 사람의 "캘린더 일정 확인"에는 연결된
- * 도구보다 구글 캘린더의 카드를 먼저 내밀었다. 그래서 다리는 사실만 말한다 — 이 사람이 연결할 수
- * 있는데 아직 연결하지 않은 계정들, 키와 이름으로 — 그리고 고르는 것은 부탁을 읽은 모델이다.
+ * 어느 서비스가 필요한 일인지도, 이 줄이 지금 쓸모 있는지도 다리가 고르지 않는다. 두 번 골랐고 두
+ * 번 틀렸다(2026-10-05). 낱말 표로 골랐을 때는 "배송 일정 조회"에 구글 캘린더를, "카페 24시간"에
+ * 카페24를 권했다. 그다음엔 "연결된 서비스의 도구가 걸렸으면 말하지 않는다"로 골랐는데, 지메일만
+ * 연결한 사람의 "캘린더 일정 확인"에 지메일의 초안 쓰기가 "확인" 한 낱말로 걸려서 캘린더를 권할
+ * 길이 사라졌다 — 서비스 하나만 연결한 사람의 일정 검색 마흔여덟 가운데 열여덟, 메일 검색 서른
+ * 가운데 열다섯이 그랬다(검토). 그래서 남은 계정이 있는 사람에게는 언제나 같은 한 줄이 서고,
+ * 그것이 지금 필요한지는 부탁을 읽은 모델이 정한다.
+ *
+ * 짧아야 한다: 차트 카드를 찾아도, 목표를 저장하려 해도 따라오는 줄이다. 그래서 연결 카드의
+ * 스키마(천사백 자)는 싣지 않고, 부르는 모양 전부를 이 줄이 말한다 — 이름, 인자 하나와 그 값(괄호
+ * 안의 키), 선택 인자 하나. 이 줄을 받은 대화는 카드를 곧바로 부를 수 있다(`describedToolNames`).
+ * "tool_search 없이 바로"라고 적는 까닭: 맥락 층은 "쓰기 전에 tool_search로 스키마를 받으라"고
+ * 하고, 그 말을 따른 봇은 이 줄을 받고도 `select:showConnection`부터 했다 — 여섯 번에 세 번, 요청
+ * 하나씩을 더 썼다. 이 말이 있으면 쉰여덟 번에 한 번이다(2026-10-06).
  *
  * 사실은 서버가 연결의 상태에서 읽어 연결 카드에 적어 넘긴 것이다(`accountStatesIn`,
  * `./gallery.ts`): 목록에 그 서비스의 도구가 없다는 것으로 짐작하지 않는다. 연결돼 있는데 도구가
@@ -834,15 +849,12 @@ function namedByKey(keys: readonly string[]): string {
  * 띄우고, 카드는 이미 켜져 있다고 답하고, 봇은 다시 찾는다.
  *
  * 이름은 `FAMILY_LABELS_KO` 하나에서 온다. 사이트(배민, 스마트스토어…)는 여기 없다: 연결해도 도구가
- * 생기지 않고 봇은 브라우저로 그 일을 하며, 카드의 스키마에는 그대로 실려 있다.
+ * 생기지 않고 봇은 브라우저로 그 일을 한다.
  *
  * 카드가 목록에 없거나(루틴에는 화면이 없다) 적힌 것이 없으면 빈 배열 — 연결할 사람이 없는
- * 자리에서는 연결 이야기를 하지 않는다. 같은 목록에는 글자 하나까지 같은 줄들이다.
+ * 자리에서는 연결 이야기를 하지 않는다. 같은 계정 상태에는 글자 하나까지 같은 줄이다.
  */
-function connectingLines(
-  deferred: readonly WireTool[],
-  shown: readonly WireTool[],
-): string[] {
+function connectingLines(deferred: readonly WireTool[]): string[] {
   const card = deferred.find((tool) => tool.name === CONNECT_CARD);
   const accounts = card ? accountStatesIn(card.parameters) : null;
   if (!card || !accounts) return [];
@@ -854,15 +866,12 @@ function connectingLines(
   return [
     ...(empty.length > 0
       ? [
-          `연결돼 있지만 그 연결이 가져온 도구가 없는 서비스: ${namedByKey(empty.map((account) => account.key))}. 이미 연결돼 있으니 연결 카드를 띄우지 않는다. 이것이 필요한 일이면, 연결은 돼 있는데 지금 쓸 수 있는 도구가 없다고 사람에게 말한다.`,
+          `연결돼 있지만 그 연결이 가져온 도구가 없는 계정: ${namedByKey(empty.map((account) => account.key))}. 연결 카드를 띄우지 않는다 — 이것이 필요한 일이면 연결은 돼 있는데 지금 쓸 도구가 없다고 사람에게 말한다.`,
         ]
       : []),
     ...(open.length > 0
       ? [
-          `다만 이 사람이 연결하면 쓸 수 있는데 아직 연결하지 않은 서비스가 있다: ${namedByKey(open.map((account) => account.key))}.`,
-          `부탁받은 일에 이 가운데 하나가 꼭 필요하면, 못 한다거나 연결이 필요하다고 말로만 답하지 말고 ${CONNECT_CARD}을 ${TOOL_CALL}로 불러 그 서비스의 연결 카드를 띄운다 — services에 괄호 안의 키를 넣고, 카드 앞에는 연결이 필요하다는 한 문장만 둔다. 이 대화에서 이 사람이 그 연결을 이미 다음으로 미뤘으면 카드를 다시 띄우지 말고, 연결하면 할 수 있다는 것과 연결하겠다고 말하면 카드를 띄우겠다는 것을 한 문장으로 말한다. 이 가운데 필요한 것이 없으면 연결을 권하지 않는다.`,
-          // 위에서 이미 스키마를 실은 카드("연결"로 찾아 걸린 것)는 다시 싣지 않는다.
-          ...(shown.includes(card) ? [] : [schemaLine(card)]),
+          `${OPEN_ACCOUNTS_HEAD}${namedByKey(open.map((account) => account.key))}. 부탁받은 일에 이 가운데 하나가 꼭 필요할 때만, 말로만 답하지 말고 ${TOOL_SEARCH} 없이 바로 ${TOOL_CALL}로 연결 카드를 띄운다 — name은 "${CONNECT_CARD}", args는 {"services":["괄호 안의 키"],"reason":"연결하면 해 줄 일 한 줄"}. 이 대화에서 이미 다음으로 미룬 연결은 다시 띄우지 않는다.`,
         ]
       : []),
   ];
@@ -876,12 +885,8 @@ const foundLine = (query: string, count: number) =>
  * 이 답은 툴 결과로 대화에 남으니, 같은 대화에서 다시 찾을 필요가 없다. 못 찾았을 때는 무엇이
  * 연결돼 있는지를 말한다 — 지어내지 말라고.
  *
- * 찾은 것 가운데 사람이 연결한 서비스의 도구가 없으면, 답의 끝에 무엇을 연결할 수 있는지가 사실로
- * 선다(`connectingLines`) — 찾은 것이 있어도 선다. 다리는 낱말로 찾을 뿐이라 "일정 확인"에 목표의
- * 도구가 걸리는데(2026-10-05의 열일곱 답 중 열다섯), 그것이 찾던 것인지 캘린더가 필요한 것인지는
- * 부탁을 읽은 모델이 안다. 연결된 서비스의 도구를 찾았으면 연결 이야기는 하지 않는다: 톡캘린더를
- * 연결한 사람의 "캘린더 일정 확인"은 그 도구만 받는다. 이름으로 고른 것(`select:`)이 다 있었을
- * 때도 하지 않는다 — 고른 것을 받았다.
+ * 이 사람이 연결할 수 있는 계정이 남아 있으면, 무엇을 찾았든 답의 끝에 그 계정들이 한 줄로 선다
+ * (`connectingLines`). 찾은 것이 그 일에 맞는지, 계정이 필요한 일인지는 부탁을 읽은 모델이 안다.
  *
  * 같은 목록과 같은 검색어에는 글자 하나까지 같은 답이다. 답은 만들어질 때 한 번 정해져 대화에
  * 남는다.
@@ -900,16 +905,7 @@ export function searchResultText(
         .map((hit) => deferred.find((tool) => tool.name === hit.name))
         .filter((tool): tool is WireTool => tool !== undefined);
   const listed = alreadyOffered(deferred, offered, query, selected);
-  const isSettled =
-    connectedFamiliesOf(found.map((tool) => tool.name)).length > 0 ||
-    (selected !== null &&
-      selected.length > 0 &&
-      selected.every(
-        (name) =>
-          resolveDeferred(deferred, name) !== null ||
-          resolveOffered(offered, name) !== null,
-      ));
-  const connecting = isSettled ? [] : connectingLines(deferred, found);
+  const connecting = connectingLines(deferred);
   if (found.length > 0) {
     return [
       foundLine(query, found.length),
@@ -941,11 +937,23 @@ export function searchResultText(
 /**
  * 이 대화에서 스키마가 이미 건네진 미뤄진 툴의 이름들 — `tool_search`의 답이 툴 결과로 남긴
  * `schemaLine` 줄을 읽는다. 같은 파일이 그 줄을 쓰므로 모양을 아는 곳도 여기 하나다.
+ *
+ * 연결 카드는 그 줄 없이도 건네진 것으로 본다 — 남은 계정을 말하는 줄(`OPEN_ACCOUNTS_HEAD`)이
+ * 대화에 있으면. 스키마를 받기 전의 호출을 전달하지 않는 규칙이 막는 것은 짐작한 인자다
+ * (`undescribedToolText`: 알림톡을 이름만 보고 불러 `template` 대신 `templateCode`를 보낸 일). 그
+ * 줄은 카드를 부르는 모양 전부를 말한다 — 이름, 필수 인자 하나, 그 값이 될 키들 — 그러니 그 줄을
+ * 받고 부른 것은 짐작이 아니다. 그리고 카드는 받은 키를 서버가 제 연결 화면과 견줘, 띄울 것이
+ * 없으면 그 자리에서 없다고 답한다(`connectCard`, `server/src/turns/chat-tools.ts`). 규칙은 그대로
+ * 하나다: 모양을 들은 대화만 부른다.
  */
 export function describedToolNames(results: readonly string[]): Set<string> {
   const names = new Set<string>();
   for (const text of results) {
     for (const line of text.split("\n")) {
+      if (line.startsWith(OPEN_ACCOUNTS_HEAD)) {
+        names.add(CONNECT_CARD);
+        continue;
+      }
       if (!line.startsWith('{"name":')) continue;
       try {
         const parsed = JSON.parse(line) as {

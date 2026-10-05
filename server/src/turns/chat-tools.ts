@@ -93,6 +93,7 @@ import { log } from "../log";
 import { McpServerError } from "../plugins/mcp";
 import type { ConnectionSwitch } from "../plugins/overview-routes";
 import { TOOL_SERVER_FAILED } from "../plugins/routes";
+import { TIMEOUT_MS } from "../plugins/timeouts";
 import {
   BotNotDrivableError,
   CatalogueEntryUnknownError,
@@ -153,6 +154,11 @@ export type ChatToolsDeps = {
   accounts?: (userId: string) => Promise<readonly AccountState[]>;
   /** How often a waiting connect card looks at 연결 for itself. */
   connectionPollMs?: number;
+  /**
+   * How long a connection that has just landed is given for its tools to arrive before it is said
+   * to have brought none: as long as a listing may take (`TIMEOUT_MS.mcpList`) by default.
+   */
+  listingWaitMs?: number;
   /** How long a person may take over a help request. The window's own ten minutes by default. */
   personWaitMs?: number;
   /** How often a help request looks at whether the wheel came back. */
@@ -1150,6 +1156,34 @@ export function createChatTools(deps: ChatToolsDeps) {
         return toolResultText("laf:nobody_answered");
       }
       const landedTools = fresh.length > 0 ? await offerLandedTools() : [];
+      /*
+       * A SWITCH THAT TURNED ON A MOMENT AGO MAY NOT HAVE ITS TOOLS YET. The connect callback
+       * records the connection and only then asks the vendor for its tools and grants them
+       * (`plugins/routes.ts`), and this wait ends on the first of those: read at once, an account
+       * connected a second ago had no tools, and its person was told there was nothing to use and
+       * not to look again (review, 2026-10-05). So an account that turned on DURING this wait is
+       * looked at again every poll until its tools are here — for as long as a listing may take
+       * (`TIMEOUT_MS.mcpList`, fifteen seconds: one that has not landed by then timed out or
+       * brought nothing, and "nothing usable" is then true). An adapter of this repository lists
+       * from memory, so its tools are here by the first look or the one after; an account that was
+       * on before this card went up has had its time, and is not waited for.
+       */
+      const hasTools = (id: string) =>
+        [...names].some((name) => serverKeyOf(name) === id);
+      const awaited = fresh.filter((id) =>
+        accounts?.some((account) => account.key === id),
+      );
+      const listingBy = Date.now() + (deps.listingWaitMs ?? TIMEOUT_MS.mcpList);
+      while (
+        awaited.some((id) => !hasTools(id)) &&
+        Date.now() < listingBy &&
+        !call.signal.aborted
+      ) {
+        await sleep(Math.min(pollMs, listingBy - Date.now()), call.signal);
+        if (call.signal.aborted) break;
+        landedTools.push(...(await offerLandedTools()));
+      }
+      if (call.signal.aborted) return toolResultText("laf:stopped");
       return JSON.stringify(
         connectionAnswer({
           offered,
