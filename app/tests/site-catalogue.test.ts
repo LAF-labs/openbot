@@ -1,12 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { type SiteCategory, siteForUrl } from "@shared/sites/catalogue";
 import { WORK_PATTERNS } from "../src/lib/agents/work-patterns";
 import { ko } from "../src/lib/i18n-ko";
-import {
-  BUSINESS_SITES,
-  type SiteCategory,
-  siteById,
-  siteForUrl,
-} from "../src/lib/sites/catalogue";
+import { BUSINESS_SITES, siteById } from "../src/lib/sites/catalogue";
 
 /**
  * The site catalogue is the second table this app calls `t()` on a VARIABLE for.

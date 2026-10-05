@@ -14,7 +14,5 @@
 export {
   BUSINESS_SITES,
   type BusinessSite,
-  type SiteCategory,
   siteById,
-  siteForUrl,
 } from "@shared/sites/catalogue";

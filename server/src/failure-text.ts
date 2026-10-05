@@ -22,7 +22,6 @@
 import { databaseCodeOf } from "../../shared/failure-text";
 
 export {
-  databaseCodeOf,
   describeFailure,
   noAnswerFact,
   providerStatusFact,

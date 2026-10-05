@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { databaseCodeOf } from "../../shared/failure-text";
 import {
-  databaseCodeOf,
   describeFailure,
   isBadValue,
   noAnswerFact,

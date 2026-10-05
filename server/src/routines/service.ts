@@ -64,18 +64,8 @@ import { pauseUnreadRoutines } from "./unread";
  */
 
 export { RoutineError } from "./errors";
-export {
-  CATCH_UP_GRACE_MAX_MS,
-  CATCH_UP_GRACE_MIN_MS,
-  catchUpGraceMs,
-  nextRunAt,
-  type RoutineSchedule,
-} from "./schedule";
-export {
-  MAX_ROUTINES,
-  type RoutineChange,
-  type RoutineInput,
-} from "./store";
+export type { RoutineSchedule } from "./schedule";
+export type { RoutineChange, RoutineInput } from "./store";
 
 /**
  * The shortest gap between two triggered runs of one routine.

@@ -4,14 +4,16 @@ import { join } from "node:path";
 import type { CompletionProvider } from "../../agent-bot/src/index";
 import {
   composePrompt,
+  notepadOf,
+  type RoutineNote,
+} from "../../shared/prompt";
+import {
   NOTEPAD_MAX_BYTES,
   NOTEPAD_MAX_KEYS,
   notepadBytes,
-  notepadOf,
   notepadText,
-  type RoutineNote,
-  TOOL_RESULT_KO,
-} from "../../shared/prompt";
+} from "../../shared/prompt/notepad.ko";
+import { TOOL_RESULT_KO } from "../../shared/prompt/tool-results.ko";
 import { exposureOf } from "../../shared/tools/bridge";
 import { ROUTINE_NOTE } from "../../shared/tools/routine-note";
 import { buildAgents } from "../src/copilot";

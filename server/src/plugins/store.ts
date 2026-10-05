@@ -30,7 +30,7 @@ import {
   createOAuthClients,
   exchangeRefreshTokenOverHttp,
 } from "./oauth-client";
-import { createServers, unlistedAdvertisedTools } from "./servers";
+import { createServers } from "./servers";
 import { NO_SHARED_CLIENTS, type SharedClientLookup } from "./shared-clients";
 import { createSkillsAndGrants } from "./skills-and-grants";
 import { transportFor, type VendorTransport } from "./transport";
@@ -799,4 +799,4 @@ export function createPluginStore(options: PluginStoreOptions) {
 export type PluginStore = ReturnType<typeof createPluginStore>;
 
 export type { CatalogueEntry };
-export { exchangeRefreshTokenOverHttp, unlistedAdvertisedTools };
+export { exchangeRefreshTokenOverHttp };

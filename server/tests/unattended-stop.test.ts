@@ -2,11 +2,11 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
 import { createComputerClient } from "../src/computer/client";
 import { createComputerGateway } from "../src/computer/gateway";
+import { RunStopped } from "../src/runner/turn-loop";
 import {
   createUnattendedTools,
   type LoopAgent,
   RUN_STOPPED,
-  RunStopped,
   runUnattended,
   UnattendedRunError,
 } from "../src/runner/unattended";

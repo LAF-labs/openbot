@@ -59,7 +59,6 @@ import {
 export {
   type LoopAgent,
   RUN_STOPPED,
-  RunStopped,
   type ToolExecutor,
   type ToolOutcome,
   UnattendedRunError,
