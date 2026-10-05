@@ -49,6 +49,42 @@ export const GOALS_ACTIVE_MAX = 20;
 /** A number to watch: where it started, where it should get to, in what unit. All optional. */
 export type GoalMeasure = { unit?: string; start?: number; goal?: number };
 
+/**
+ * A GOAL AND AN ENTRY ON THE WIRE, said once for both sides: what the server's store answers
+ * (`server/src/goals/store.ts`) and what the page draws (`app/src/lib/goals/`). A VIEW, not the
+ * row: the last entry, the count, the latest value and the linked routines are read beside it.
+ */
+export type GoalView = {
+  id: string;
+  agentId: string;
+  category: Category;
+  title: string;
+  target: string;
+  measure: GoalMeasure | null;
+  dueOn: string | null;
+  status: GoalStatus;
+  momentum: Momentum | null;
+  createdAt: string;
+  updatedAt: string;
+  lastEntryAt: string | null;
+  entryCount: number;
+  /** The last value logged, for a goal with a number to watch. */
+  latestValue: number | null;
+  /** The routines linked to it as its check-in (`laf_routines.goal_id`). */
+  routines: { id: string; name: string }[];
+};
+
+export type GoalEntryView = {
+  id: string;
+  at: string;
+  kind: GoalEntryKind;
+  text: string;
+  value: number | null;
+  momentum: Momentum | null;
+  source: GoalEntrySource;
+  runId: string | null;
+};
+
 export const isGoalStatus = (value: unknown): value is GoalStatus =>
   typeof value === "string" &&
   (GOAL_STATUSES as readonly string[]).includes(value);

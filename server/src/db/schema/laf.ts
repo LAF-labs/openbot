@@ -14,6 +14,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 // The entry's shape is the prompt's: one definition, so what is stored is what the next run reads.
+import type { FeedSource } from "../../../../shared/feed";
 import type { RoutineNote } from "../../../../shared/prompt/notepad.ko";
 import { agents, channels, users } from "./core";
 // NOT drizzle's `jsonb`: that one serialises and so does the driver, so a value written through it
@@ -567,9 +568,6 @@ export const lafFeedPosts = pgTable(
     index("laf_feed_posts_routine_idx").on(table.routineId),
   ],
 );
-
-/** One page a post cites. */
-export type FeedSource = { title: string; url: string };
 
 /**
  * 목표: A GOAL THE PERSON SET, REFINED IN THE ONE CONVERSATION (muse-shape plan §3.4, phase 9).

@@ -4,8 +4,10 @@ import {
   GOALS_ACTIVE_MAX,
   type GoalEntryKind,
   type GoalEntrySource,
+  type GoalEntryView,
   type GoalMeasure,
   type GoalStatus,
+  type GoalView,
   goalWords,
   type Momentum,
 } from "../../../shared/goals";
@@ -21,37 +23,6 @@ import { lafGoalEntries, lafGoals, lafRoutines } from "../db/schema";
  * scoped to the person AND the Bot, and can make a goal only after the person's yes, change what
  * the person asked to change, and log progress — never the status.
  */
-
-export type GoalView = {
-  id: string;
-  agentId: string;
-  category: Category;
-  title: string;
-  target: string;
-  measure: GoalMeasure | null;
-  dueOn: string | null;
-  status: GoalStatus;
-  momentum: Momentum | null;
-  createdAt: string;
-  updatedAt: string;
-  lastEntryAt: string | null;
-  entryCount: number;
-  /** The last value logged, for a goal with a number to watch. */
-  latestValue: number | null;
-  /** The routines linked to it as its check-in (`laf_routines.goal_id`). */
-  routines: { id: string; name: string }[];
-};
-
-export type GoalEntryView = {
-  id: string;
-  at: string;
-  kind: GoalEntryKind;
-  text: string;
-  value: number | null;
-  momentum: Momentum | null;
-  source: GoalEntrySource;
-  runId: string | null;
-};
 
 export class GoalNotFound extends Error {
   readonly code = "laf:goal_not_found";

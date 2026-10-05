@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import type { FeedPage } from "../../../shared/feed";
 import type { Database } from "../db/client";
-import { type FeedSource, lafFeedPosts, lafRoutines } from "../db/schema";
+import { lafFeedPosts, lafRoutines } from "../db/schema";
 
 /**
  * 소식's reads and the person's three presses (muse-shape plan §3.2, phase 7).
@@ -8,40 +9,6 @@ import { type FeedSource, lafFeedPosts, lafRoutines } from "../db/schema";
  * Every read and write is the person's own posts: scoped by `user_id`, whatever id arrived. A post
  * that is not theirs is not found — the same answer as one that does not exist.
  */
-
-export type FeedPost = {
-  id: string;
-  agentId: string;
-  routineId: string | null;
-  topic: string;
-  title: string;
-  body: string;
-  sources: FeedSource[];
-  createdAt: string;
-  seen: boolean;
-  liked: boolean;
-};
-
-export type FeedRoutine = {
-  id: string;
-  agentId: string;
-  name: string;
-  summary: string | null;
-  instruction: string;
-  enabled: boolean;
-  pausedReason: string | null;
-  nextRunAt: string;
-  dailyLocal: string | null;
-  dailyTimeZone: string | null;
-};
-
-export type FeedPage = {
-  posts: FeedPost[];
-  next: string | null;
-  unseen: number;
-  /** The person's 소식 routines — one per Bot — for the page's first card. */
-  routines: FeedRoutine[];
-};
 
 export const FEED_PAGE_SIZE = 20;
 

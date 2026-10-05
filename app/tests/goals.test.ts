@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MOMENTUMS, GOAL_STATUSES } from "@shared/goals";
+import { MOMENTUMS, GOAL_STATUSES, type GoalView } from "@shared/goals";
 import { CATEGORIES } from "@shared/persona";
 import {
   COMPOSE_SCREEN_KEY,
@@ -10,7 +10,6 @@ import { CATEGORY_ICONS } from "../src/components/goals/goal-parts";
 import { stepLineOf } from "../src/lib/copilot/step-labels";
 import {
   GOAL_REFUSALS,
-  type Goal,
   MOMENTUM_LABELS,
   measureLine,
   STATUS_LABELS,
@@ -64,7 +63,7 @@ describe("목표's tables", () => {
     const goal = {
       measure: { unit: "점", start: 720, goal: 800 },
       latestValue: null,
-    } as unknown as Goal;
+    } as unknown as GoalView;
     expect(measureLine(goal)).toBe("Now 720 · goal 800점");
     expect(measureLine({ ...goal, latestValue: 760 })).toBe(
       "Now 760 · goal 800점",

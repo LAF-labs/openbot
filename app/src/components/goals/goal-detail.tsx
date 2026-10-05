@@ -1,4 +1,4 @@
-import type { GoalStatus } from "@shared/goals";
+import type { GoalEntryView, GoalStatus } from "@shared/goals";
 import { IconPencil } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -11,7 +11,6 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   categoryName,
-  type GoalEntry,
   goalEditDraft,
   goalQueryOptions,
   MOMENTUM_LABELS,
@@ -213,7 +212,7 @@ export function GoalDetail({
   );
 }
 
-function TimelineEntry({ entry }: { entry: GoalEntry }) {
+function TimelineEntry({ entry }: { entry: GoalEntryView }) {
   const at = new Date(entry.at);
   return (
     <li className="flex gap-3 text-sm" data-goal-entry={entry.source}>

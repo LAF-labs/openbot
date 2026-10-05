@@ -1,4 +1,5 @@
 import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
+import type { SandboxedRecord } from "@shared/sandboxed";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useId, useState } from "react";
@@ -15,7 +16,6 @@ import { playgroundDeleteRecheck } from "@/lib/rechecks";
 import { refusalFrom } from "@/lib/refusals";
 import {
   PLAYGROUND_REFUSALS,
-  type SandboxedRecord,
   sandboxedKeys,
   sandboxedListQueryOptions,
 } from "@/lib/sandboxed/queries";

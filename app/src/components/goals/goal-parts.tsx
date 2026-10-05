@@ -1,4 +1,4 @@
-import type { Momentum } from "@shared/goals";
+import type { GoalView, Momentum } from "@shared/goals";
 import type { Category } from "@shared/persona";
 import {
   IconBriefcase,
@@ -14,7 +14,6 @@ import { focusRing } from "@/components/ui/focus";
 import { activeLocale, t } from "@/lib/i18n";
 import {
   categoryName,
-  type Goal,
   MOMENTUM_LABELS,
   measureLine,
   STATUS_LABELS,
@@ -82,7 +81,7 @@ export function GoalRow({
   isSelected,
   onSelect,
 }: {
-  goal: Goal;
+  goal: GoalView;
   isSelected: boolean;
   onSelect: () => void;
 }) {

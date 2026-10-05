@@ -1,4 +1,8 @@
 import { asc, eq } from "drizzle-orm";
+import type {
+  PublishedSandboxed,
+  SandboxedRecord,
+} from "../../../shared/sandboxed";
 import { type AuditStore, COMPONENT_UNKNOWN, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { components, sandboxedComponents } from "../db/schema";
@@ -23,41 +27,6 @@ import { components, sandboxedComponents } from "../db/schema";
  * every Bot draws in production. A draft absorbs that: edited freely, previewed against sample
  * arguments, and reaching nobody until somebody publishes it.
  */
-
-export type SandboxedRecord = {
-  name: string;
-  title: string;
-  draftDescription: string;
-  draftHtml: string;
-  draftCss: string;
-  draftJsFunctions: string;
-  draftArgumentSchema: Record<string, unknown>;
-  publishedHtml: string | null;
-  publishedCss: string | null;
-  publishedJsFunctions: string | null;
-  publishedArgumentSchema: Record<string, unknown> | null;
-  sampleArguments: Record<string, unknown>;
-  revision: number;
-  published: boolean;
-  publishedAt: string | null;
-  authoredBy: string | null;
-  hasUnpublishedChanges: boolean;
-};
-
-/** What a Bot may actually draw with: the published source, or nothing at all. */
-export type PublishedSandboxed = {
-  name: string;
-  html: string;
-  css: string;
-  jsFunctions: string;
-  /**
-   * The arguments this component takes, as the author described them.
-   *
-   * Without this the tool advertises no parameters, and a model told a tool takes nothing calls it
-   * with nothing.
-   */
-  argumentSchema: Record<string, unknown>;
-};
 
 /**
  * A playground component this deployment has no row for — the same fact as a compiled one's
