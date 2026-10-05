@@ -1997,7 +1997,8 @@ export const ko: Record<string, string> = {
   "Get a briefing every morning at 7:30": "매일 아침 7:30에 브리핑 받기",
   "What it will have: {contents}. It comes to this conversation, and you can change it on Routines.":
     "넣을 것: {contents}. 이 대화로 알려 드리고, 루틴 화면에서 언제든 바꿀 수 있어요.",
-  "Weather needs your shop's location.": "날씨는 위치를 알아야 볼 수 있어요.",
+  "The weather is Seoul's until you add your place.":
+    "위치를 적기 전까지 날씨는 서울 기준이에요.",
   "Add it on My shop": "내 정보에서 위치 적기",
   "Morning briefing": "아침 브리핑",
   "Send this morning's briefing in one message, the way the {skill} skill says:":
@@ -2641,6 +2642,7 @@ export const ko: Record<string, string> = {
   // The weather card (`weather-card.tsx`). The source's wording is 기상청's own: 출처: 기상청.
   "Source: {names}": "출처: {names}",
   "Weather for {place}": "{place} 날씨",
+  "{place} · your place isn't known yet": "{place} · 위치를 아직 몰라요",
   "Latitude {latitude}, longitude {longitude}":
     "위도 {latitude}, 경도 {longitude}",
   Weather: "날씨",
@@ -2669,8 +2671,8 @@ export const ko: Record<string, string> = {
   "What kind of business this is, where you work every day, and where the shop is. Your Bot reads all of it before it starts. Only the location can also be saved from a conversation.":
     "내가 누구인지, 가게가 있다면 어떤 가게인지, 매일 어디를 쓰는지, 어디에 있는지 적어 두는 곳이에요. 봇은 일을 시작하기 전에 이것을 모두 읽어요. 이 중 위치만 대화에서도 저장될 수 있어요.",
   "Shop location": "위치",
-  "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, the Bot asks you once when it needs one and saves your answer here.":
-    "가게나 주로 지내는 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 봇이 필요할 때 한 번 여쭤보고, 들은 답을 여기에 저장해요.",
+  "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, it goes by Seoul, and a place you tell your Bot is yours is saved here.":
+    "가게나 주로 지내는 곳의 시·구예요. 봇이 날씨나 가까운 곳을 찾을 때 이곳을 기준으로 해요. 비워 두면 서울을 기준으로 하고, 봇에게 내가 있는 곳을 말하면 여기에 저장돼요.",
   "City and district": "시·구",
   "e.g. Seoul Gangnam-gu": "예: 서울 강남구",
   "This device's location, around {latitude}, {longitude}":

@@ -23,8 +23,9 @@ import {
  *
  * WHY IT EXISTS. The Bot's browser runs on a cloud VM, and asked for today's weather a Bot reported
  * a site's guess of the VM's place (제주시) as its owner's. The place written here is what every run
- * is told instead (`shared/prompt/person.ko.ts`), and it is what the Bot saves when it asks and hears
- * the answer in a conversation — so this is the one place a person sees it and clears it.
+ * is told instead (`shared/prompt/person.ko.ts`), and it is what the Bot saves when the person says
+ * in a conversation where they are — so this is the one place a person sees it and clears it. Left
+ * empty, the weather is Seoul's (the owner, 2026-10-05), and the description says so.
  *
  * "가게 위치", NOT "내 위치": the place that decides the weather a shop owner asks about, and the
  * shops nearby, is the shop's — and "내 위치" reads as a device being followed around, which nothing
@@ -104,7 +105,7 @@ export function ShopLocation() {
   return (
     <PageSection
       description={t(
-        "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, the Bot asks you once when it needs one and saves your answer here.",
+        "Where the shop is, as a city and district. When your Bot looks up the weather or somewhere nearby, it goes by this place rather than where its server is. Left empty, it goes by Seoul, and a place you tell your Bot is yours is saved here.",
       )}
       title={t("Shop location")}
     >

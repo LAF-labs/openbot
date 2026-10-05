@@ -15,6 +15,7 @@ import { handleShellLinks } from "../lib/notifications/shell-links";
 import { useBotNotifications } from "../lib/notifications/use-bot-notifications";
 import { forgetKeptThreads } from "../lib/turns/kept-threads";
 import { useShellQuestions } from "../lib/turns/use-shell-questions";
+import { useDevicePlaceOnce } from "../lib/whereabouts/device-place";
 import { reportDevice } from "../lib/whereabouts/queries";
 
 export const Route = createFileRoute("/_authed")({
@@ -93,6 +94,8 @@ function AuthedShell() {
   useEffect(() => {
     void reportDevice(queryClient);
   }, [queryClient]);
+  // And its place, asked of the browser once per device — never in the shell, which cannot be asked.
+  useDevicePlaceOnce();
   /*
    * A conversation is kept for a while after its screen leaves (`lib/turns/kept-threads.ts`) — for
    * as long as somebody is signed in, and no longer. However the session ends — signing out, or a

@@ -161,7 +161,8 @@ export const FirstTaskChips = ({
 
   /*
    * The weather is the one section every briefing has, and a routine cannot ask where the shop is
-   * (`placeText`, routine mode): without a place it says every morning that it could not look. Said
+   * (`placeText`, routine mode): without a place it is Seoul's weather every morning (since
+   * 2026-10-05; before, the run said it could not look). Said
    * here, where the place can still be given — BEFORE THE BRIEFING IS MADE AND AFTER. It used to go
    * with the chip, so the press that made the routine also took away the only line saying it would
    * be missing its weather; the first run, pressed on Routines a minute later, said exactly that
@@ -169,7 +170,7 @@ export const FirstTaskChips = ({
    */
   const placeLine = placeKnown ? null : (
     <p className="text-muted-foreground text-xs">
-      {t("Weather needs your shop's location.")}{" "}
+      {t("The weather is Seoul's until you add your place.")}{" "}
       <Link
         className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
         to="/settings/shop"
