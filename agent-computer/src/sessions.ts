@@ -53,6 +53,11 @@ export type SecretField = {
   /** A keyed digest of what it held when last read, never what it held (`typed-values.ts`). */
   digest?: string;
   /**
+   * The name its document was given in the page when the node was marked there
+   * (`markTypedInto`): the field is let go when its frame holds another document, and not before.
+   */
+  document?: string;
+  /**
    * An editable region that is not a text box: a look never lists the region itself, so it is not
    * searched for among the boxes a look does list (`typedIntoRefs`). What a look lists is what takes
    * its words from it — the control around it, the one it labels — and what `/read` hands over is
@@ -126,6 +131,12 @@ export type BotSession = {
    * gone (`person-typing.ts`).
    */
   typedBlind: WeakMap<Page, number | undefined>;
+  /**
+   * The frames a person typed in, each of which carries the document mark in its page
+   * (`secret-fields.ts`). Asked at every look and read where their marked nodes are now, and
+   * forgotten when the document that carried the mark is gone.
+   */
+  typedFrames: Set<Frame>;
   /**
    * A person's input, applied one piece at a time in the order it arrived. Finding the box a
    * keystroke lands in is a question to the page, and two keystrokes whose questions answered out of
@@ -258,6 +269,7 @@ export function createSessions(directories: {
         typedDigests: [],
         ownDigests: [],
         typedBlind: new WeakMap(),
+        typedFrames: new Set(),
         personInput: Promise.resolve(),
       };
       sessions.set(botId, created);

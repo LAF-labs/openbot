@@ -7,10 +7,14 @@
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
-import { inTurn, settleTyping } from "./person-typing";
+import { inTurn, settleTyping, typedBlind } from "./person-typing";
 import { locateRef, onElement, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
-import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
+import {
+  markTypedInto,
+  rememberSecretField,
+  SECRET_JOIN_TIMEOUT_MS,
+} from "./secret-fields";
 import { assertLooked } from "./tab-loss";
 import { digestOf } from "./typed-values";
 import { within } from "./within";
@@ -147,10 +151,21 @@ export const supplySecret: BotRoute = async (
     const frame = handle
       ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
       : null;
-    rememberSecretField(session, handle, pending.ref, {
+    const followed = rememberSecretField(session, handle, pending.ref, {
       ...(frame ? { frame } : {}),
       digest: digestOf(text),
     });
+    /*
+     * AND MARKED IN ITS PAGE, like a box a person typed into by hand, so that what the card put
+     * there is kept out of the names around it and out of the page's text as well as out of the
+     * box (`quietOn`): a box the Bot named can be an editable region, whose text `/read` reads.
+     * A field that could not be marked — its frame would not say which it is, or the page did
+     * not take the mark — is one nothing later can find, and the document is shown as one typed
+     * into blind rather than as one nobody typed into.
+     */
+    if (followed && !(await markTypedInto(session, followed))) {
+      typedBlind(session, target);
+    }
     const characters = text.length;
     // Cleared only after it actually landed.
     session.control.secretSupplied();

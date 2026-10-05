@@ -565,6 +565,12 @@ export function readAriaSnapshot(
   elements: SnapshotElement[];
   truncated: boolean;
   unnamed: string[];
+  /**
+   * Where each kept control is drawn in its own document, as the tree wrote it (`[box=…]`), for a
+   * tree taken with boxes: how a control is matched to an element the page counted
+   * (`nearRefs` in page-names.ts).
+   */
+  boxes: Map<string, string>;
 } {
   const secretLabels = new Set(
     [...(secrets.labels ?? [])]
@@ -582,6 +588,7 @@ export function readAriaSnapshot(
     element: SnapshotElement,
     seen: boolean,
     unnamed: boolean,
+    box: string | undefined,
   ): void => {
     if (TEXT_ENTRY_ROLES.has(element.role)) {
       const label = element.name.replace(/\s+/g, " ").trim();
@@ -608,7 +615,7 @@ export function readAriaSnapshot(
         if (element.value !== undefined) element.value = "";
       }
     }
-    found.push({ element, seen, unnamed });
+    found.push({ element, seen, unnamed, ...(box ? { box } : {}) });
   };
 
   let tree: unknown;
@@ -617,7 +624,7 @@ export function readAriaSnapshot(
   } catch {
     // A snapshot that will not parse yields no elements rather than throwing. The caller's next move is
     // to take another one, and an exception here would reach the Bot as a broken computer.
-    return { elements: [], truncated: false, unnamed: [] };
+    return { elements: [], truncated: false, unnamed: [], boxes: new Map() };
   }
 
   /** One entry: an element if it is one, and then whatever is beneath it. */
@@ -630,6 +637,7 @@ export function readAriaSnapshot(
         element,
         Boolean(box && view && overlap(box, view.clip)),
         leftNameless(descriptor),
+        descriptor.flags.get("box"),
       );
     }
     // Descend regardless of whether this entry was actionable: a `group "Pizza Size"` is not, and
@@ -679,6 +687,9 @@ export function readAriaSnapshot(
     unnamed: kept.flatMap(({ element, unnamed }) =>
       unnamed ? [element.ref] : [],
     ),
+    boxes: new Map(
+      kept.flatMap(({ element, box }) => (box ? [[element.ref, box]] : [])),
+    ),
   };
 }
 
@@ -702,42 +713,61 @@ export function readAriaSnapshot(
  * (`namesToList`). It is the look's own statement of the rule and holds whatever list it is
  * handed: a name already on one of these does not go on unless `names` gives it.
  *
- * AND NO VALUE GOES WITH A NAME THAT IS NOT THE TREE'S, unless the control is a box. What the tree
- * writes after the colon of a link or a button is what is inside it (`toElement`), and a control
- * whose name had to be asked for because of what is inside it is one whose insides are not the
- * Bot's to read: `- button "보내기" [ref=e9]: <what a person typed in the region inside it>`. A
- * box's value is its own, and is blanked by the box (`readAriaSnapshot`), not by its name.
+ * `valueless` is every control whose contents are not the Bot's to read: one that holds a node a
+ * person typed into — is one, is inside one, has one inside it — or that could not be asked. What
+ * the tree writes after such a control's colon is what is inside it (`toElement`):
+ * `- button "보내기" [ref=e9]: <what a person typed in the region inside it>`, and just as much
+ * `- combobox "검색" [ref=e4]: 검색: <what they typed>` for a box that is a wrapper around the
+ * region. So it goes whatever the control's role, where until 2026-10-05 a box kept it: the box a
+ * person typed into is blanked by ref, and the box AROUND it was not a box anybody followed. A box
+ * is left saying that it holds something (`""`), as a secret field is; anything else says nothing.
  */
 export function withNames(
   elements: SnapshotElement[],
   names: ReadonlyMap<string, string>,
   asked: ReadonlySet<string> = new Set(names.keys()),
+  valueless: ReadonlySet<string> = new Set(),
 ): SnapshotElement[] {
   return elements.map((element) => {
     const name = names.get(element.ref);
-    if (name === undefined && !asked.has(element.ref)) return element;
-    const { value: _contents, ...rest } = element;
+    const renamed = name !== undefined || asked.has(element.ref);
+    const emptied = valueless.has(element.ref) && element.value !== undefined;
+    if (!renamed && !emptied) return element;
+    const { value, ...rest } = element;
     return {
-      ...(TEXT_ENTRY_ROLES.has(element.role) ? element : rest),
-      name: name === undefined ? "" : cutAtCodeUnits(name, 200),
+      ...rest,
+      ...(renamed
+        ? { name: name === undefined ? "" : cutAtCodeUnits(name, 200) }
+        : {}),
+      ...(!emptied
+        ? value === undefined
+          ? {}
+          : { value }
+        : TEXT_ENTRY_ROLES.has(element.role)
+          ? { value: "" }
+          : {}),
     };
   });
 }
 
 /**
  * What the page said of the controls it was asked about, as {@link withNames} takes it: the names
- * that go on the list, and every control whose tree name does not stand.
+ * that go on the list, every control whose tree name does not stand, and every control whose
+ * contents do not go on.
  *
  * A control the tree left nameless takes the page's name, as it always did. A control the tree
- * NAMED is asked about only on a tab a person typed into (`snapshotPage`), and then:
+ * NAMED is asked about only where it could be named out of what a person typed (`snapshotPage`),
+ * and then:
  *
  * - drawn from what they typed (`drawn`): the page's name, which leaves that out — the link around
  *   an editable region, the button a box labels, the box whose `<label>` holds a region, the link
  *   inside a region (`page-names.ts`);
+ * - holding what they typed (`holds`): no contents either;
  * - not drawn from it: the tree's own name, untouched — the page's answer for it is not used, so
  *   nothing about an ordinary control changes because somebody typed elsewhere on the page;
- * - not answered for: no name. Whether it was drawn from what they typed is exactly what is not
- *   known, and this is the side to be wrong on: it costs the Bot one look's name for that control.
+ * - not answered for: no name and no contents. Whether it was drawn from what they typed is
+ *   exactly what is not known, and this is the side to be wrong on: it costs the Bot one look's
+ *   name for that control.
  */
 export function namesToList(
   unnamed: readonly string[],
@@ -745,28 +775,40 @@ export function namesToList(
   answers: {
     names: ReadonlyMap<string, string>;
     drawn: ReadonlySet<string>;
+    holds: ReadonlySet<string>;
   },
-): { names: Map<string, string>; asked: Set<string> } {
+): { names: Map<string, string>; asked: Set<string>; valueless: Set<string> } {
   const nameless = new Set(unnamed);
   const names = new Map<string, string>();
   const notTheTrees = new Set(unnamed);
+  const valueless = new Set<string>();
   for (const ref of asked) {
     const name = answers.names.get(ref);
     if (name === undefined) {
       notTheTrees.add(ref);
-    } else if (nameless.has(ref) || answers.drawn.has(ref)) {
+      valueless.add(ref);
+      continue;
+    }
+    if (answers.holds.has(ref)) valueless.add(ref);
+    if (nameless.has(ref) || answers.drawn.has(ref)) {
       names.set(ref, name);
       notTheTrees.add(ref);
     }
   }
-  return { names, asked: notTheTrees };
+  return { names, asked: notTheTrees, valueless };
 }
 
 /**
  * An element, whether any of it was inside the viewport when the tree was taken, and whether the
  * tree printed it without a name.
  */
-type Found = { element: SnapshotElement; seen: boolean; unnamed: boolean };
+type Found = {
+  element: SnapshotElement;
+  seen: boolean;
+  unnamed: boolean;
+  /** Its `[box=…]` as written, in its own document's coordinates. */
+  box?: string;
+};
 
 /**
  * The elements the list keeps: all of them, or — past the limit — every one a person could see,

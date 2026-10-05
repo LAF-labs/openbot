@@ -991,6 +991,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the real door, a canary a person typed into each of nineteen places on a page and one supplied
  * through the masked card, in nothing the Bot is handed).
  *
+ * RAISED AGAIN 2026-10-05 with only the controls near what a person typed asked about, by exactly
+ * what was added: nine to `agent-computer` (four without a browser — a control that was not asked
+ * about untouched whether or not the page answers, the tree's boxes coming out with the list, what
+ * the page says has focus read from a string, and anything else being no answer; and five through
+ * the real door against a real Chromium — a page slow under a key not typed into blind, a page
+ * that gives the names step no answer costing only the control around what was typed its name, a
+ * node taken out of its document and put back still a person's, a canary typed into a page read as
+ * its article, and a page that replaces `Map` followed to the box and the region typed into).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -998,7 +1007,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3519, roots: ["server"] },
   { name: "app", floor: 2028, roots: ["app"] },
-  { name: "agent-computer", floor: 507, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 516, roots: ["agent-computer"] },
   { name: "root", floor: 633, roots: ["tests", "agent-bot"] },
 ] as const;
 

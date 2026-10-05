@@ -145,9 +145,14 @@ export function heldBy(node: Element): string | null {
     : (node.textContent ?? "").slice(0, 512);
 }
 
-/** What a field a person typed into holds, or null once its node or document is gone. */
-function readTypedField(field: SecretField): Promise<string | null> {
-  return field.handle.evaluate(heldBy).catch(() => null);
+/** The answer of a handle that can no longer be asked anything: its document is gone. */
+const UNASKABLE = Symbol("unaskable");
+
+/** What a field a person typed into holds, or null while its node is out of its document. */
+function readTypedField(
+  field: SecretField,
+): Promise<string | null | typeof UNASKABLE> {
+  return field.handle.evaluate(heldBy).catch(() => UNASKABLE);
 }
 
 /** Labels, values and refs, in the shape `parseAriaSnapshot` joins them. */
@@ -195,8 +200,7 @@ export type SecretJoin = SecretMarks & {
  *    nothing (measured 2026-09-10). Resolved now in the order Playwright resolves a name:
  *    `aria-labelledby`, `aria-label`, the `<label>`, the placeholder, the title.
  *
- * The values of the fields a person typed a secret into are read here too, by their handles, and a
- * handle whose node or document is gone is let go.
+ * The values of the fields a person typed a secret into are read here too, by their handles.
  *
  * Every frame and every field is asked at once and waited for {@link SECRET_JOIN_TIMEOUT_MS}; what
  * has not answered by then is `late`'s. Never throws. A page that is navigating under us costs the
@@ -252,11 +256,17 @@ export async function secretSignals(
     });
     fields.forEach(({ field }, index) => {
       const value = fieldAnswers[index];
-      if (value === undefined) return;
-      if (value === null) {
-        // The node left the page, or the page left the browser: the secret went with it — or into
-        // the address the page left for, which is why its digest is kept (`typed-values.ts`).
-        letGo(session, field);
+      /*
+       * A node that is out of its document, or that did not answer, is STILL FOLLOWED. It used to
+       * be let go here, and a node a page takes out and puts back — a tab kept alive behind
+       * another, a dialog closed and reopened — came back holding what a person typed with nobody
+       * following it (measured 2026-10-05). A field is let go when its document is
+       * (`quietOn`), and not before.
+       */
+      if (value === undefined || value === null) return;
+      if (value === UNASKABLE) {
+        // Only a field that was never marked in its page: nothing else will say its document went.
+        if (!field.document) letGo(session, field);
         return;
       }
       if (value) into.values.push(value);
@@ -427,34 +437,224 @@ export function rememberSecretField(
 }
 
 /**
- * The name of the mark a followed node carries in its page, so that names and text can be made
- * without it there (`page-names.ts`, `reader.ts`): a property under `Symbol.for` of this, drawn
- * when this process starts.
+ * The marks this service leaves in a page, each a property under `Symbol.for` of a name drawn when
+ * the process starts: on a node a person typed into, on the document that holds one, and — for one
+ * look at a time — on everything that could take its name from one.
  *
  * A MARK ON THE NODE, NOT AN ARGUMENT TO THE QUESTION. The reader is sent to the page as source and
- * takes no argument, because a page that replaces `Map` breaks the passing of one (`reader.ts`,
+ * takes no argument, because a page that replaces `Map` breaks the passing of a list (`reader.ts`,
  * 고용24) — and a question that has to leave a node out has to be told which. A property under a
  * symbol is not an attribute: no observer of the page's hears it, no style sheet matches it, it
  * goes where the node goes, and it is the same in every frame, so no node has to be matched to the
  * document it is in. A page that looks for it can find it, and learns that somebody typed into a
  * node it has been sending that typing's events to all along.
+ *
+ * AND IT OUTLIVES THE FOLLOWING. This session follows twenty-four nodes and no more, and a page can
+ * take a node out of its document and put it back. The mark stays on the node through both, and
+ * the document's own mark says there is one to look for — so the names around a node and the
+ * page's text are made without every marked node the document holds now, not only the ones still
+ * on a list here. (A box's own value in the list is another matter: that is blanked by the field
+ * that follows it, for as long as one does — `SECRET_FIELD_LIMIT`.)
  */
-const QUIET_MARK = `laf.quiet.${randomBytes(9).toString("base64url")}`;
+const MARKS = `laf.quiet.${randomBytes(9).toString("base64url")}`;
+const TYPED_MARK = MARKS;
+const DOCUMENT_MARK = `${MARKS}.document`;
+const NEAR_MARK = `${MARKS}.near`;
 
-/** Mark a node, and say whether it is still in its document and what kind it is. */
-function markQuiet(node: Element, mark: string): "region" | "box" | null {
-  if (!node.isConnected) return null;
-  (node as unknown as Record<symbol, boolean>)[Symbol.for(mark)] = true;
-  return (node as HTMLElement).isContentEditable ? "region" : "box";
+/**
+ * Mark a node as typed into, and its document as holding one; the document's mark is a name of its
+ * own, kept if it already has one and answered either way. Runs in the page.
+ */
+function markTyped(node: Element, marks: string): string {
+  const [typed = "", holder = "", fresh = ""] = marks.split("|");
+  (node as unknown as Record<symbol, boolean>)[Symbol.for(typed)] = true;
+  const page = node.ownerDocument as unknown as Record<symbol, unknown>;
+  const known = page[Symbol.for(holder)];
+  if (typeof known === "string") return known;
+  page[Symbol.for(holder)] = fresh;
+  return fresh;
 }
+
+/**
+ * Mark a field this session has just begun to follow, in its page, and remember the frame it is in.
+ * False when that could not be done in time — the caller then knows nothing about where the typing
+ * went that a later look could use, which is what typing blind is (`person-typing.ts`).
+ */
+export async function markTypedInto(
+  session: BotSession,
+  field: SecretField,
+  ms: number = SECRET_JOIN_TIMEOUT_MS,
+): Promise<boolean> {
+  const wait = Math.max(1, Math.min(ms, SECRET_JOIN_TIMEOUT_MS));
+  const frame =
+    field.frame ??
+    (await within(
+      wait,
+      field.handle.ownerFrame().catch(() => null),
+    ));
+  if (!frame) return false;
+  field.frame = frame;
+  const named = await within(
+    wait,
+    field.handle
+      .evaluate(
+        markTyped,
+        `${TYPED_MARK}|${DOCUMENT_MARK}|${randomBytes(6).toString("base64url")}`,
+      )
+      .catch(() => undefined),
+  );
+  if (!named) return false;
+  field.document = named;
+  session.typedFrames.add(frame);
+  return true;
+}
+
+/**
+ * Runs in one frame, sent as source: where the marked nodes of this document are now, and what could
+ * take its name from one.
+ *
+ * `gone` when the document carries no mark: it is not the one a person typed into. Otherwise the
+ * document's own name, three numbers and a list — how many marked nodes are in the document,
+ * whether one of them is an editable region, how many controls a look could list that are NEAR
+ * one, and where each of those is drawn.
+ *
+ * NEAR IS EVERYTHING A NAME COULD REACH A MARKED NODE THROUGH, followed the other way: from the node,
+ * and from everything inside it, up to each element above (a parent, a shadow tree's host, the slot
+ * it is assigned to), across to whatever is labelled by one of those or owns it by id
+ * (`aria-labelledby`, `aria-owns`), and from a `<label>` to the control it is for — and on from
+ * each of those, until nothing is added. Those are the paths the role engine computes a name along
+ * (`page-names.ts` follows the same ones forward), so a control that is not near cannot be named
+ * out of what a person typed, and is not asked about. Each near element carries the look's own
+ * token under the near mark, which is how a control of the list is asked whether it is one.
+ *
+ * Its box is said as Playwright says a box in the tree (`getBoundingClientRect`, rounded), so the
+ * look can try the controls drawn at those places first.
+ */
+function scanTyped(packed: string): string {
+  const [typedName = "", holderName = "", nearName = "", token = ""] =
+    packed.split("|");
+  const typed = Symbol.for(typedName);
+  const near = Symbol.for(nearName);
+  type Marked = Record<symbol, unknown>;
+  const named = (document as unknown as Marked)[Symbol.for(holderName)];
+  if (typeof named !== "string") return "gone";
+  const marked: Element[] = [];
+  /** Everything that names or owns something else by id. */
+  const referring: Element[] = [];
+  const everyElement = (
+    root: Document | ShadowRoot | Element,
+    each: (element: Element) => void,
+  ): void => {
+    for (const element of Array.from(root.querySelectorAll("*"))) {
+      each(element);
+      if (element.shadowRoot) everyElement(element.shadowRoot, each);
+    }
+  };
+  everyElement(document, (element) => {
+    if ((element as unknown as Marked)[typed] === true) marked.push(element);
+    if (
+      element.hasAttribute("aria-labelledby") ||
+      element.hasAttribute("aria-owns")
+    ) {
+      referring.push(element);
+    }
+  });
+  if (marked.length === 0) return `${named}|0|0|0|`;
+
+  const reached: Element[] = [];
+  const reach = (node: Node | null | undefined): void => {
+    if (node?.nodeType !== 1) return;
+    const element = node as Element;
+    if ((element as unknown as Marked)[near] === token) return;
+    (element as unknown as Marked)[near] = token;
+    reached.push(element);
+  };
+  /** Reach everything a name could come through to `element`: what is above it, labelled by it, owning it. */
+  const spread = (element: Element): void => {
+    reach((element as HTMLElement).assignedSlot);
+    const above = element.parentNode;
+    reach(above && above.nodeType === 11 ? (above as ShadowRoot).host : above);
+    if (element.localName === "label") {
+      reach((element as HTMLLabelElement).control);
+    }
+    const id = element.id;
+    if (!id) return;
+    const root = element.getRootNode();
+    for (const other of referring) {
+      if (other.getRootNode() !== root) continue;
+      const ids = `${other.getAttribute("aria-labelledby") ?? ""} ${other.getAttribute("aria-owns") ?? ""}`;
+      if (ids.split(/\s+/).includes(id)) reach(other);
+    }
+  };
+  let region = 0;
+  for (const node of marked) {
+    /*
+     * A box is not near itself: its name is never its own contents, so it is asked about only if
+     * something else it is near says so — and keeps the name the tree gave it when the page says
+     * nothing. An editable region is: its own name can be the words inside it.
+     */
+    if ((node as HTMLElement).isContentEditable) {
+      region = 1;
+      reach(node);
+    } else {
+      spread(node);
+    }
+    everyElement(node, reach);
+    if (node.shadowRoot) everyElement(node.shadowRoot, reach);
+  }
+  for (let at = 0; at < reached.length; at += 1) {
+    spread(reached[at] as Element);
+  }
+
+  /** The roles a look lists, and the elements that have one of them without saying so. */
+  const listed =
+    /^(button|checkbox|combobox|link|listbox|menuitem|menuitemcheckbox|menuitemradio|option|radio|searchbox|slider|spinbutton|switch|tab|textbox)$/;
+  const boxes: string[] = [];
+  for (const element of reached) {
+    const tag = element.localName;
+    const byRole = (element.getAttribute("role") ?? "")
+      .split(/\s+/)
+      .some((role) => listed.test(role));
+    const byTag =
+      tag === "button" ||
+      tag === "select" ||
+      tag === "textarea" ||
+      tag === "option" ||
+      tag === "datalist" ||
+      (tag === "input" && (element as HTMLInputElement).type !== "hidden") ||
+      ((tag === "a" || tag === "area") && element.hasAttribute("href"));
+    if (!byRole && !byTag) continue;
+    const box = element.getBoundingClientRect();
+    boxes.push([box.x, box.y, box.width, box.height].map(Math.round).join(","));
+  }
+  return `${named}|${marked.length}|${region}|${boxes.length}|${boxes.join(";")}`;
+}
+
+/** How a page says its own JavaScript threw inside {@link scanTyped}: nothing after it is said. */
+const SCAN_THREW = "!";
+
+/** The controls of one look that could take their name from a node a person typed into. */
+export type Near = {
+  /** The mark they carry, and the token it holds for this look. */
+  mark: string;
+  token: string;
+  /** Where each is drawn, as the tree writes a box, and how many there are. */
+  boxes: ReadonlySet<string>;
+  expected: number;
+};
 
 /** What a tab's names and its text are to be made without, or nothing where there is nothing. */
 export type TypedInto = {
-  /** For the names a look lists: a person typed into a node of this tab, of any kind. */
-  names: Hush | undefined;
+  /**
+   * For the names a look lists: a node a person typed into is in one of this tab's documents.
+   * `near` says which controls could be named out of it, where that is known (not `every`).
+   */
+  names: (Hush & { near?: Near }) | undefined;
   /** For the page's text: one of those nodes is an editable region, whose text is the page's. */
   text: Hush | undefined;
 };
+
+let looks = 0;
 
 /**
  * What a person typed into this tab, for everything that must not draw on it: the names a look
@@ -467,10 +667,15 @@ export type TypedInto = {
  * handed a person's typing to the Bot from a node this session was already following, or from one
  * it had chosen not to follow.
  *
- * Each followed node of the tab is asked whether it is still in its document — one that is not is
- * let go, as a look lets it go — and is marked there (`QUIET_MARK`). `every` is the answer when the
- * question cannot be settled: a person typed where the page would not say (`blind`), or a followed
- * node did not answer in time. Then every box and editable region of the tab is taken for one.
+ * ASKED OF THE DOCUMENT, NOT OF THE LIST OF FIELDS. Each frame a person typed in is asked where its
+ * marked nodes are now ({@link scanTyped}), so a node a page took out while a look went by is
+ * found again when it is put back, and one this session no longer follows still gives no control
+ * its name. A frame whose document is gone answers that, and its fields are let go then: the only
+ * time one is, apart from the limit.
+ *
+ * `every` is the answer when the question cannot be settled: a person typed where the page would
+ * not say (`blind`), or a frame they typed in did not answer in time. Then every box and editable
+ * region of the tab is taken for one, and every name is the page's — which is what blind costs.
  *
  * A box holds nothing the page's text says — `innerText` does not read an `<input>` — so a tab
  * where a person typed only into boxes is read as it always was.
@@ -482,32 +687,67 @@ export async function quietOn(
   ms: number = SECRET_JOIN_TIMEOUT_MS,
 ): Promise<TypedInto> {
   const wait = Math.max(1, Math.min(ms, SECRET_JOIN_TIMEOUT_MS));
-  const kinds = await Promise.all(
-    session.secretFields.map(async (field) => {
-      const frame =
-        field.frame ??
-        (await within(
-          wait,
-          field.handle.ownerFrame().catch(() => null),
-        ));
-      if (frame === undefined) return undefined;
-      // A node with no frame is in no document any more; one in another tab is not this tab's.
-      if (frame === null || frame.page() !== target) return null;
-      field.frame = frame;
-      const kind = await within(
+  looks += 1;
+  const token = `${Date.now().toString(36)}.${looks}`;
+  const source = `(() => { try { return (${scanTyped.toString()})(${JSON.stringify(`${TYPED_MARK}|${DOCUMENT_MARK}|${NEAR_MARK}|${token}`)}); } catch (error) { return ${JSON.stringify(SCAN_THREW)}; } })()`;
+  const frames = [...session.typedFrames].filter((frame) => {
+    if (!frame.isDetached()) return frame.page() === target;
+    forgetFrame(session, frame);
+    return false;
+  });
+  const answers = await Promise.all(
+    frames.map((frame) =>
+      within(
         wait,
-        field.handle.evaluate(markQuiet, QUIET_MARK).catch(() => null),
-      );
-      if (kind === null) letGo(session, field);
-      return kind;
-    }),
+        frame.evaluate(source).catch(() => undefined),
+      ),
+    ),
   );
-  const every = blind || kinds.includes(undefined);
-  const hush = { mark: QUIET_MARK, every };
+  let every = blind;
+  let marked = 0;
+  let region = false;
+  let expected = 0;
+  const boxes = new Set<string>();
+  answers.forEach((answer, index) => {
+    const frame = frames[index] as Frame;
+    if (answer === "gone") {
+      forgetFrame(session, frame);
+      return;
+    }
+    const [named, count, regions, controls, drawnAt] =
+      typeof answer === "string" ? answer.split("|") : [];
+    if (drawnAt === undefined) {
+      // Silent, failed, or thrown inside the page: where the typing is in this frame is not known.
+      every = true;
+      return;
+    }
+    // A field of an earlier document of this frame went with that document.
+    forgetFrame(session, frame, named);
+    marked += Number(count);
+    region ||= regions === "1";
+    expected += Number(controls);
+    for (const box of drawnAt.split(";")) if (box) boxes.add(box);
+  });
+  const hush = { mark: TYPED_MARK, every };
   return {
-    names: every || kinds.some((kind) => kind) ? hush : undefined,
-    text: every || kinds.includes("region") ? hush : undefined,
+    names: every
+      ? hush
+      : marked > 0
+        ? { ...hush, near: { mark: NEAR_MARK, token, boxes, expected } }
+        : undefined,
+    text: every || region ? hush : undefined,
   };
+}
+
+/**
+ * A document of this frame is gone, and what was typed into it with it: its fields are let go.
+ * `now` is the document the frame holds instead, when that one was typed into as well.
+ */
+function forgetFrame(session: BotSession, frame: Frame, now?: string): void {
+  if (now === undefined) session.typedFrames.delete(frame);
+  for (const field of session.secretFields) {
+    if (field.frame === frame && field.document !== now) letGo(session, field);
+  }
 }
 
 /**
@@ -522,4 +762,5 @@ export function forgetSecretFields(session: BotSession): void {
   session.typedDigests = [];
   session.ownDigests = [];
   session.typedBlind = new WeakMap();
+  session.typedFrames = new Set();
 }
