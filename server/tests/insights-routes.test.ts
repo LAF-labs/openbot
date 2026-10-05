@@ -181,7 +181,7 @@ describe("the mount", () => {
       config,
       auth: signedInAdmin,
       roleRepository: adminRoles,
-      ...(options.reader !== false ? { insights: async () => REPORT } : {}),
+      insights: options.reader !== false ? async () => REPORT : undefined,
     });
   }
 

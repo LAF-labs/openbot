@@ -56,7 +56,7 @@ function surface(store?: WhereaboutsStore) {
     config,
     auth: signedIn,
     roleRepository: roles,
-    ...(store ? { whereabouts: store } : {}),
+    whereabouts: store,
   });
 }
 

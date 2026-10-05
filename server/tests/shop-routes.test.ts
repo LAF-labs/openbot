@@ -68,7 +68,7 @@ function surface(
     config,
     auth: session,
     roleRepository: roles,
-    ...(store ? { shop: store } : {}),
+    shop: store,
   });
 }
 

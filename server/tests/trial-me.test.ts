@@ -52,7 +52,7 @@ function surface(environment: Record<string, string>, budget?: DailyBudget) {
     config: loadConfig(testEnvironment(environment)),
     auth: signedIn,
     roleRepository: roles,
-    ...(budget ? { dailyBudget: budget } : {}),
+    dailyBudget: budget,
   });
 }
 
