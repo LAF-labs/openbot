@@ -360,7 +360,7 @@ test("the bundle says why it reads the device's location, and a signed build is 
  * THE SHELL AND THE PAGE SAY THE SAME WORDS ABOUT THE DEVICE.
  *
  * The shell answers "may this device be asked?" with one of five words and "where is it?" with a
- * place or one of six reasons (`location.rs`); the page hears only the words on its own two lists
+ * place or one of seven reasons (`location.rs`); the page hears only the words on its own two lists
  * (`app/src/lib/notifications/shell.ts`) and reads anything else as nothing. Nothing ties a Rust
  * enum to a TypeScript array, so a reason added on one side alone would be a device that silently
  * cannot be read — or a new permission word the page drops, which is a button that is never
@@ -386,8 +386,10 @@ test("the shell's words about the device's place are the page's own lists", () =
       /Self::\w+(?: \{ \.\. \})? => "([a-z_]+)"/g,
     ),
   ].map((match) => match[1] ?? "");
-  expect(kinds).toHaveLength(7);
+  expect(kinds).toHaveLength(8);
   expect(kinds[0]).toBe("place");
+  // The one that is not a decision, on both sides: a question that was put and not answered.
+  expect(kinds).toContain("unanswered");
   expect(listed("DEVICE_REFUSALS")).toEqual(kinds.slice(1));
   expect(page).toContain('if (kind === "place")');
 
@@ -416,6 +418,43 @@ test("the shell's words about the device's place are the page's own lists", () =
   );
   expect(code).not.toMatch(
     /derive\([^)]*Debug[^)]*\)\]\s*(#\[[^\]]*\]\s*)*pub\(crate\) enum DevicePlace\b/,
+  );
+});
+
+/**
+ * NOTHING THE SHELL ASKS OF THE SYSTEM IS WAITED ON FOR EVER.
+ *
+ * It asks two things that can simply never answer: the device for a fix, and the person for a yes
+ * or a no. The second was open-ended until the review of pull request 94: the system shows its
+ * question only for an app that is in use and says nothing when it does not, so the page's one ask
+ * hung with the once already spent, and a press on 내 정보 joined the same dead wait. The waiting
+ * machine itself is the shell's own test (`a_question_nobody_answered_…`); what is held here is
+ * that each of the two requests is followed, in the code, by the bound that ends it — a request
+ * added later without one is the same hang again, and nothing else would say so.
+ */
+test("each thing the shell asks of the system has a bound: the person a minute, the device ten seconds", () => {
+  const code = withoutComments(read("desktop/src-tauri/src/location.rs"));
+  const seconds = (name: string) =>
+    Number(
+      new RegExp(
+        `const ${name}: std::time::Duration = std::time::Duration::from_secs\\((\\d+)\\);`,
+      ).exec(code)?.[1],
+    );
+  expect(seconds("ASK_BOUND")).toBe(60);
+  expect(seconds("READ_BOUND")).toBe(10);
+
+  // Asked for once each, and each time with its bound on the next line of code.
+  expect(code.match(/requestWhenInUseAuthorization\(\)/g)).toHaveLength(1);
+  expect(code).toMatch(
+    /unsafe \{ manager\.requestWhenInUseAuthorization\(\) \};\s*after\(app, ASK_BOUND, move \|\| the_person_did_not_answer\(ask\)\);/,
+  );
+  expect(code.match(/requestLocation\(\)/g)).toHaveLength(1);
+  expect(code).toMatch(
+    /unsafe \{ manager\.requestLocation\(\) \};\s*after\(app, READ_BOUND, move \|\| the_device_did_not_answer\(read\)\);/,
+  );
+  // And a bound that passes with nobody having decided says exactly that — never a refusal.
+  expect(code).toMatch(
+    /DevicePermission::Prompt \| DevicePermission::Unsupported => \{\s*Step::Answer\(DevicePlace::Unanswered\)\s*\}/,
   );
 });
 

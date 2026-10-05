@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Coordinates } from "@shared/whereabouts";
 import {
+  AUTOMATIC_ACCURACY_METRES,
   type DeviceMark,
   type DevicePlaceDoors,
   devicePlaceMove,
@@ -11,7 +12,9 @@ import {
   canAskDeviceLocation,
   canUseDeviceLocation,
   type DevicePermission,
+  type DeviceReading,
   devicePermission,
+  readDevice,
   readDeviceCoordinates,
 } from "../src/lib/whereabouts/queries";
 
@@ -20,20 +23,21 @@ import {
  * 데이터").
  *
  * Until then the device was read only on a press in settings, so the "real location" default was
- * nothing for nearly everybody. It is asked at a signed-in open now — in a browser tab and, through
- * its shell, in the installed app — and these hold the whole of when it may be: never before the
- * person has agreed to anything, never while the person has said where they are, never a dialog
- * over coordinates already held, never twice on one device, never blind where the device cannot
- * say whether a prompt would appear, and never again by itself on a device whose place the person
+ * nothing for nearly everybody. It is asked now — in a browser tab and, through its shell, in the
+ * installed app — and these hold the whole of when it may be: never before the person has agreed
+ * to anything, never while the person has said where they are, never a dialog over coordinates
+ * already held, never again once its person has decided, never blind where the device cannot say
+ * whether a prompt would appear, and never again by itself on a device whose place the person
  * cleared there.
  *
- * And what it does once it may: a device that already said yes is read at every open with nothing
- * shown, and the answer kept only when it has moved — coordinates saved at the first allow were a
- * snapshot, and somebody who allowed location in 춘천 and opened the app in 부산 was still in 춘천.
+ * And what it does once it may: a device that already said yes is read again with nothing shown,
+ * at most once an hour, and the answer kept only when it is good enough and has really moved —
+ * coordinates saved at the first allow were a snapshot, and somebody who allowed location in 춘천
+ * and opened the app in 부산 was still in 춘천.
  *
  * The gate itself — that the first-run screen and the screen that asks again for the agreement do
  * not ask — is held where it lives, on the mounted route tree (`device-place-gate.test.tsx`), and
- * so are the two marks as a browser's storage really keeps them.
+ * so are the marks as a browser's storage really keeps them, and the page being looked at again.
  */
 
 const HERE: Coordinates = { latitude: 37.88, longitude: 127.73 };
@@ -75,12 +79,13 @@ describe("who the device may be asked about", () => {
   });
 });
 
-describe("what to do about the device's place at a signed-in open", () => {
+describe("what to do about the device's place when the page is looked at", () => {
   const base = {
     agreed: true,
     canAsk: true,
     held: NOTHING_HELD,
     mark: "none" as DeviceMark,
+    isRecent: false,
     permission: "prompt" as DevicePermission,
   };
   const EVERY_ANSWER: DevicePermission[] = [
@@ -89,12 +94,18 @@ describe("what to do about the device's place at a signed-in open", () => {
     "denied",
     null,
   ];
-  const EVERY_MARK: DeviceMark[] = ["none", "asked", "cleared", "old"];
+  const EVERY_MARK: DeviceMark[] = ["none", "asked", "cleared"];
+  const EVERYTHING_HELD = [
+    NOTHING_HELD,
+    { place: null, coordinates: THERE },
+    { place: "강원 춘천시", coordinates: null },
+    { place: "강원 춘천시", coordinates: THERE },
+  ];
 
   test("the decision table, with nothing held", () => {
     // Already allowed on this device: read, with nothing shown.
     expect(devicePlaceMove({ ...base, permission: "granted" })).toBe("read");
-    // Not decided, and never asked on this device: the device's own prompt, once.
+    // Not decided, and its person has not decided either: the device's own prompt.
     expect(devicePlaceMove(base)).toBe("ask");
 
     // BEFORE ANYTHING IS AGREED TO: nothing, however willing the device is.
@@ -102,7 +113,7 @@ describe("what to do about the device's place at a signed-in open", () => {
     expect(
       devicePlaceMove({ ...base, agreed: false, permission: "granted" }),
     ).toBe("nothing");
-    // …and nothing is spent by it, even over coordinates: a later open decides.
+    // …and nothing is spent by it, even over coordinates: a later look decides.
     expect(
       devicePlaceMove({
         ...base,
@@ -133,7 +144,8 @@ describe("what to do about the device's place at a signed-in open", () => {
       devicePlaceMove({ ...base, held: { place: "  ", coordinates: null } }),
     ).toBe("ask");
 
-    // Asked before, and not allowed since — dismissed or refused: never a second dialog.
+    // Its person decided before, and it is not allowed — refused, or the prompt closed: never a
+    // second dialog.
     expect(devicePlaceMove({ ...base, mark: "asked" })).toBe("nothing");
     // The person said no in the device's settings.
     expect(devicePlaceMove({ ...base, permission: "denied" })).toBe("nothing");
@@ -141,8 +153,8 @@ describe("what to do about the device's place at a signed-in open", () => {
     // read the device: none is risked.
     expect(devicePlaceMove({ ...base, permission: null })).toBe("nothing");
 
-    // ASKED BEFORE, AND ALLOWED: read. The device said yes and its first answer never arrived — a
-    // save that failed, a dialog answered after the wait ran out. Nothing is shown for it.
+    // DECIDED BEFORE, AND ALLOWED: read. The device said yes and its answer never arrived — a
+    // save that failed, a fix too vague to keep. Nothing is shown for it.
     expect(
       devicePlaceMove({ ...base, mark: "asked", permission: "granted" }),
     ).toBe("read");
@@ -151,7 +163,7 @@ describe("what to do about the device's place at a signed-in open", () => {
   test("the place follows a device that already said yes, and no other", () => {
     const held = { place: null, coordinates: THERE };
     // Allowed, over coordinates the account holds: read again, with nothing shown.
-    for (const mark of ["none", "asked", "old"] as const) {
+    for (const mark of ["none", "asked"] as const) {
       expect(
         devicePlaceMove({ ...base, held, mark, permission: "granted" }),
       ).toBe("follow");
@@ -159,7 +171,7 @@ describe("what to do about the device's place at a signed-in open", () => {
     // NOT ALLOWED: the once is spent on this device — nobody is shown a dialog about a place the
     // account already has — and nothing is read.
     for (const permission of ["prompt", "denied", null] as const) {
-      for (const mark of ["none", "asked", "old"] as const) {
+      for (const mark of ["none", "asked"] as const) {
         expect(devicePlaceMove({ ...base, held, mark, permission })).toBe(
           "spent",
         );
@@ -181,13 +193,9 @@ describe("what to do about the device's place at a signed-in open", () => {
 
   test("a place cleared on this device is never read by itself, whatever the device and the account say", () => {
     for (const permission of EVERY_ANSWER) {
-      for (const held of [
-        NOTHING_HELD,
-        // Another device gave the account a place since: this one still does not follow.
-        { place: null, coordinates: THERE },
-        { place: "강원 춘천시", coordinates: null },
-        { place: "강원 춘천시", coordinates: THERE },
-      ]) {
+      // Nothing held; or another device gave the account a place since: this one still does not
+      // follow.
+      for (const held of EVERYTHING_HELD) {
         expect(
           devicePlaceMove({ ...base, held, permission, mark: "cleared" }),
         ).toBe("nothing");
@@ -195,48 +203,53 @@ describe("what to do about the device's place at a signed-in open", () => {
     }
   });
 
-  test("a mark from before 'cleared' existed is read by what the account holds", () => {
+  test("a device read by itself within the hour is left alone, whatever it and the account say", () => {
     /*
-     * One key used to be written when a device was asked and when its place was cleared alike, and
-     * it is on people's devices. Coordinates held: it was not a 지우기 — that would have emptied
-     * them — and the device follows. Nothing held: it may have been, so nothing is read, however
-     * willing the device is. A place cleared before this change stays cleared.
+     * The page is looked at many times an hour — a window uncovered, a tab switched back to — and
+     * each look runs this table. One read an hour is the bound, and it is the same bound for the
+     * read that follows and the one that would ask.
      */
-    for (const permission of EVERY_ANSWER) {
-      expect(devicePlaceMove({ ...base, permission, mark: "old" })).toBe(
-        "nothing",
-      );
+    for (const mark of ["none", "asked"] as const) {
+      for (const permission of EVERY_ANSWER) {
+        for (const held of EVERYTHING_HELD) {
+          expect(
+            devicePlaceMove({
+              ...base,
+              mark,
+              permission,
+              held,
+              isRecent: true,
+            }),
+          ).toBe("nothing");
+        }
+      }
     }
-    expect(
-      devicePlaceMove({
-        ...base,
-        permission: "granted",
-        mark: "old",
-        held: { place: null, coordinates: THERE },
-      }),
-    ).toBe("follow");
   });
 
-  test("nobody is shown anything except by the one ask, and that only on a device never asked", () => {
+  test("nobody is shown anything except by the one ask, and that only where nobody has decided", () => {
     // Every row of the table: "ask" comes out of exactly one.
     const asks: string[] = [];
     for (const mark of EVERY_MARK) {
-      for (const permission of EVERY_ANSWER) {
-        for (const held of [
-          NOTHING_HELD,
-          { place: null, coordinates: THERE },
-          { place: "강원 춘천시", coordinates: null },
-          { place: "강원 춘천시", coordinates: THERE },
-        ]) {
-          if (devicePlaceMove({ ...base, mark, permission, held }) === "ask") {
-            asks.push(
-              `${mark}/${permission}/${held.place}/${!!held.coordinates}`,
-            );
+      for (const isRecent of [false, true]) {
+        for (const permission of EVERY_ANSWER) {
+          for (const held of EVERYTHING_HELD) {
+            const move = devicePlaceMove({
+              ...base,
+              mark,
+              isRecent,
+              permission,
+              held,
+            });
+            if (move === "ask") {
+              asks.push(
+                `${mark}/${isRecent}/${permission}/${held.place}/${!!held.coordinates}`,
+              );
+            }
           }
         }
       }
     }
-    expect(asks).toEqual(["none/prompt/null/false"]);
+    expect(asks).toEqual(["none/false/prompt/null/false"]);
   });
 });
 
@@ -247,43 +260,66 @@ describe("the move, carried out", () => {
       coordinates?: Coordinates | null;
       marked?: DeviceMark;
       device?: Coordinates;
+      accuracy?: number | null;
       allowed?: DevicePermission;
+      answers?: "yes" | "no" | "nothing";
     } = {},
   ) {
     const did: string[] = [];
     const saved: Coordinates[] = [];
-    // The account, the device's mark and the device's word on being asked, as they change.
+    // The account, the device's marks and the device's word on being asked, as they change.
     const world = {
       place: over.place ?? null,
       coordinates: over.coordinates ?? null,
       mark: over.marked ?? ("none" as DeviceMark),
+      // Whether this device was read by itself within the hour: an hour passing clears it.
+      isRecent: false,
       permission:
         over.allowed === undefined
           ? ("prompt" as DevicePermission)
           : over.allowed,
       device: over.device ?? HERE,
+      // Good to a street or two unless a test says otherwise.
+      accuracy: over.accuracy === undefined ? 65 : over.accuracy,
+      // What the person does with the device's own question.
+      answers: over.answers ?? "yes",
     };
     const made: DevicePlaceDoors = {
       agreed: () => true,
       canAsk: () => true,
       held: () => ({ place: world.place, coordinates: world.coordinates }),
       mark: () => world.mark,
+      canMark: () => {
+        did.push("can mark");
+        return true;
+      },
       markAsked: () => {
         did.push("marked");
         if (world.mark !== "cleared") world.mark = "asked";
         return true;
       },
+      isRecent: () => world.isRecent,
+      markRead: () => {
+        did.push("noted");
+        world.isRecent = true;
+      },
       permission: async () => {
         did.push("permission");
         return world.permission;
       },
-      read: async (mayPrompt) => {
+      read: async (mayPrompt): Promise<DeviceReading> => {
         did.push(mayPrompt ? "read, may prompt" : "read, silently");
-        // The person answers the device's own question with a yes.
-        if (mayPrompt && world.permission === "prompt") {
-          world.permission = "granted";
+        if (world.permission === "prompt") {
+          // Only the ask may put the question up; what comes of it is the person's.
+          if (!mayPrompt || world.answers === "nothing") {
+            return { coordinates: null, refusal: "unanswered" };
+          }
+          world.permission = world.answers === "yes" ? "granted" : "denied";
         }
-        return world.device;
+        if (world.permission !== "granted") {
+          return { coordinates: null, refusal: "denied" };
+        }
+        return { coordinates: world.device, accuracy: world.accuracy };
       },
       save: async (coordinates) => {
         did.push("saved");
@@ -295,33 +331,82 @@ describe("the move, carried out", () => {
     return { made, did, saved, world };
   }
 
-  test("a device that has not decided is prompted once: marked before it is asked, and the coordinates saved alone", async () => {
+  test("a device that has not decided is asked, and the once is spent when its person answers — not when the question is put", async () => {
     const first = doors();
     expect(await offerDevicePlace(first.made)).toBe("ask");
-    // Marked BEFORE the read: a prompt closed with the tab has still been the once. And this read
-    // is the only one told it may show the person anything.
+    // Whether a mark can be kept is found out BEFORE the question; the mark is written AFTER the
+    // answer. And this read is the only one told it may show the person anything.
     expect(first.did).toEqual([
       "permission",
-      "marked",
+      "can mark",
       "read, may prompt",
+      "marked",
+      "noted",
       "saved",
     ]);
     // The coordinates and nothing else: the door is handed no word about the place.
     expect(first.saved).toEqual([HERE]);
-    // The next open on this device: allowed now, so it is read with nothing shown — and it has
-    // not moved, so nothing is written.
+    // Looked at again within the hour: the device is not even asked what it would say.
     first.did.length = 0;
+    expect(await offerDevicePlace(first.made)).toBe("nothing");
+    expect(first.did).toEqual([]);
+    // And an hour on: allowed now, so it is read with nothing shown — and it has not moved, so
+    // nothing is written.
+    first.world.isRecent = false;
     expect(await offerDevicePlace(first.made)).toBe("same");
-    expect(first.did).toEqual(["permission", "marked", "read, silently"]);
+    expect(first.did).toEqual([
+      "permission",
+      "marked",
+      "noted",
+      "read, silently",
+    ]);
     expect(first.saved).toHaveLength(1);
+  });
+
+  test("a question nobody answered spends nothing: the device is asked again at the next look", async () => {
+    /*
+     * THE ONE ASK WAS SPENT ON A DIALOG NOBODY SAW (review of pull request 94). The installed app's
+     * question goes through the system, which shows nothing where the app is not in use and then
+     * says nothing either: the ask never came back, and it had been marked the moment it was put.
+     * The shell answers `unanswered` after a minute now, and that is not a decision.
+     */
+    const ignored = doors({ answers: "nothing" });
+    expect(await offerDevicePlace(ignored.made)).toBe("unanswered");
+    expect(ignored.did).toEqual(["permission", "can mark", "read, may prompt"]);
+    expect(ignored.world.mark).toBe("none");
+    expect(ignored.saved).toEqual([]);
+    // Not noted as a read either, so the next look does not wait an hour: it asks again.
+    expect(ignored.world.isRecent).toBe(false);
+    ignored.did.length = 0;
+    ignored.world.answers = "yes";
+    expect(await offerDevicePlace(ignored.made)).toBe("ask");
+    expect(ignored.world.mark).toBe("asked");
+    expect(ignored.saved).toEqual([HERE]);
+  });
+
+  test("a no — or a prompt closed without a yes — is the person's answer: never asked again", async () => {
+    const refused = doors({ answers: "no" });
+    expect(await offerDevicePlace(refused.made)).toBe("unread");
+    expect(refused.world.mark).toBe("asked");
+    expect(refused.saved).toEqual([]);
+    // Whatever the device says afterwards about being asked, and however long it has been.
+    for (const allowed of ["prompt", "denied", null] as const) {
+      refused.world.permission = allowed;
+      refused.world.isRecent = false;
+      refused.did.length = 0;
+      expect(await offerDevicePlace(refused.made)).toBe("nothing");
+      expect(refused.did.join()).not.toContain("read");
+    }
   });
 
   test("a device that already said yes is read with nothing shown", async () => {
     const allowed = doors({ allowed: "granted" });
     expect(await offerDevicePlace(allowed.made)).toBe("read");
+    // That yes was the person's decision: marked, and noted as read, before the device answers.
     expect(allowed.did).toEqual([
       "permission",
       "marked",
+      "noted",
       "read, silently",
       "saved",
     ]);
@@ -366,28 +451,98 @@ describe("the move, carried out", () => {
     expect(moved.did).toEqual([
       "permission",
       "marked",
+      "noted",
       "read, silently",
       "saved",
     ]);
     expect(moved.saved).toEqual([HERE]);
-    // A device opened for the first time over a place another device gave follows too, and is
-    // marked: it has had its once.
+    // A device seeing the account's place for the first time follows too, and its once is spent.
     expect(moved.world.mark).toBe("asked");
   });
 
-  test("allowed, held, and the device has not moved: nothing is written", async () => {
+  test("allowed, held, and the device has not really moved: nothing is written — not for the same cell, and not for the one beside it", async () => {
     const still = doors({ allowed: "granted", coordinates: HERE });
     expect(await offerDevicePlace(still.made)).toBe("same");
-    expect(still.did).toEqual(["permission", "marked", "read, silently"]);
     expect(still.saved).toEqual([]);
-    // One hundredth of a degree is a move; less than that cannot reach here — the door rounds.
-    const nudged = doors({
-      allowed: "granted",
-      coordinates: HERE,
-      device: { latitude: 37.88, longitude: 127.74 },
-    });
-    expect(await offerDevicePlace(nudged.made)).toBe("follow");
-    expect(nudged.saved).toEqual([{ latitude: 37.88, longitude: 127.74 }]);
+    /*
+     * AT THE EDGE OF A CELL THE ROUNDED VALUE FLIPS. Somebody sitting still on a line between two
+     * hundredths is 127.73 at one read and 127.74 at the next, and each write is a new place line
+     * in the prompt and a colder cache. One hundredth, on either axis or both, is not a move.
+     */
+    for (const [latitude, longitude] of [
+      [37.88, 127.74],
+      [37.88, 127.72],
+      [37.89, 127.73],
+      [37.87, 127.73],
+      [37.89, 127.74],
+      [37.87, 127.72],
+    ]) {
+      const jitter = doors({
+        allowed: "granted",
+        coordinates: HERE,
+        device: { latitude, longitude },
+      });
+      expect(await offerDevicePlace(jitter.made)).toBe("same");
+      expect(jitter.saved).toEqual([]);
+    }
+    // Two hundredths, either way, is: the device's own value is what is kept.
+    for (const [latitude, longitude] of [
+      [37.88, 127.75],
+      [37.88, 127.71],
+      [37.9, 127.73],
+      [37.86, 127.74],
+    ]) {
+      const moved = doors({
+        allowed: "granted",
+        coordinates: HERE,
+        device: { latitude, longitude },
+      });
+      expect(await offerDevicePlace(moved.made)).toBe("follow");
+      expect(moved.saved).toEqual([{ latitude, longitude }]);
+    }
+  });
+
+  test("a fix too vague to name the town is not kept for somebody who pressed nothing", async () => {
+    /*
+     * "LAST LOOKED AT WINS" LET AN ADDRESS OVERWRITE A PLACE. A desktop on a cable is placed by
+     * its network address, to within a city or two, and it would have written that over the good
+     * fix a laptop gave at every open; and a first read that names the wrong city is worse than
+     * the Seoul that says it does not know. Three kilometres, as the device itself reports it.
+     */
+    expect(AUTOMATIC_ACCURACY_METRES).toBe(3000);
+    for (const accuracy of [3000.5, 5000, 48_000, null]) {
+      // A follow: the account keeps the place it had.
+      const followed = doors({
+        allowed: "granted",
+        coordinates: THERE,
+        accuracy,
+      });
+      expect(await offerDevicePlace(followed.made)).toBe("vague");
+      expect(followed.saved).toEqual([]);
+      // The first read of a device that already said yes: the account stays empty, which is Seoul.
+      const first = doors({ allowed: "granted", accuracy });
+      expect(await offerDevicePlace(first.made)).toBe("vague");
+      expect(first.saved).toEqual([]);
+      // And the ask: the person did answer, so the once is spent — but nothing vague is kept.
+      const asked = doors({ accuracy });
+      expect(await offerDevicePlace(asked.made)).toBe("vague");
+      expect(asked.saved).toEqual([]);
+      expect(asked.world.mark).toBe("asked");
+    }
+    // Exactly three kilometres is good enough, and so is anything better.
+    for (const accuracy of [3000, 1200, 65, 0]) {
+      const kept = doors({ allowed: "granted", coordinates: THERE, accuracy });
+      expect(await offerDevicePlace(kept.made)).toBe("follow");
+      expect(kept.saved).toEqual([HERE]);
+    }
+    // A vague fix is still a read: the device is not asked again for an hour, and then it is.
+    const later = doors({ allowed: "granted", accuracy: 48_000 });
+    expect(await offerDevicePlace(later.made)).toBe("vague");
+    expect(await offerDevicePlace(later.made)).toBe("nothing");
+    later.world.isRecent = false;
+    later.world.accuracy = 65;
+    expect(await offerDevicePlace(later.made)).toBe("read");
+    expect(later.saved).toEqual([HERE]);
   });
 
   test("a place cleared on this device: the device is not asked even what it would say", async () => {
@@ -425,7 +580,7 @@ describe("the move, carried out", () => {
       const held = doors({ allowed, coordinates: THERE });
       expect(await offerDevicePlace(held.made)).toBe("spent");
       expect(held.did).toEqual(["permission", "marked"]);
-      // The place is cleared on another device, and this one is opened again: no dialog.
+      // The place is cleared on another device, and this one is looked at again: no dialog.
       held.world.coordinates = null;
       held.did.length = 0;
       expect(await offerDevicePlace(held.made)).toBe("nothing");
@@ -449,30 +604,26 @@ describe("the move, carried out", () => {
     }
   });
 
-  test("storage that cannot keep the once means the device is not read at all", async () => {
-    for (const over of [
-      {},
-      { allowed: "granted" as const, coordinates: THERE },
-    ]) {
-      const forgetful = doors({ ...over, markAsked: () => false });
-      expect(await offerDevicePlace(forgetful.made)).toBe("nothing");
-      expect(forgetful.did.join()).not.toContain("read");
-      expect(forgetful.saved).toEqual([]);
+  test("storage that cannot keep a mark means the device is neither asked nor read", async () => {
+    // To be asked: found out before the question is put, since the mark comes after the answer.
+    const forgetful = doors({ canMark: () => false });
+    expect(await offerDevicePlace(forgetful.made)).toBe("nothing");
+    expect(forgetful.did.join()).not.toContain("read");
+    // Already allowed, over a place held or over none.
+    for (const coordinates of [null, THERE]) {
+      const silent = doors({
+        allowed: "granted",
+        coordinates,
+        markAsked: () => false,
+      });
+      expect(await offerDevicePlace(silent.made)).toBe("nothing");
+      expect(silent.did.join()).not.toContain("read");
+      expect(silent.saved).toEqual([]);
     }
   });
 
-  test("a dismissed prompt is never shown again; a device that said yes and was not heard is read at the next open", async () => {
-    const dismissed = doors({
-      read: async () => {
-        throw new Error("denied at the prompt");
-      },
-    });
-    expect(await offerDevicePlace(dismissed.made)).toBe("unread");
-    expect(dismissed.saved).toEqual([]);
-    // Still not decided, as far as the device says: asked before, so nothing.
-    expect(await offerDevicePlace(dismissed.made)).toBe("nothing");
-
-    // Allowed, and the save did not land.
+  test("a device that said yes and was not heard is read at a later look", async () => {
+    // Allowed at the prompt, and the save did not land.
     let isOffline = true;
     const offline = doors();
     const save = offline.made.save;
@@ -482,17 +633,30 @@ describe("the move, carried out", () => {
     };
     expect(await offerDevicePlace(offline.made)).toBe("unsaved");
     expect(offline.saved).toEqual([]);
-    // The next open, back online: the device said yes, so it is read — with nothing shown.
+    expect(offline.world.mark).toBe("asked");
+    // An hour on, back online: the device said yes, so it is read — with nothing shown.
     isOffline = false;
+    offline.world.isRecent = false;
     offline.did.length = 0;
     expect(await offerDevicePlace(offline.made)).toBe("read");
     expect(offline.did).toEqual([
       "permission",
       "marked",
+      "noted",
       "read, silently",
       "saved",
     ]);
     expect(offline.saved).toEqual([HERE]);
+
+    // A door that fails outright is quiet too, and nothing is saved.
+    const broken = doors({
+      allowed: "granted",
+      read: async () => {
+        throw new Error("no device");
+      },
+    });
+    expect(await offerDevicePlace(broken.made)).toBe("unread");
+    expect(broken.saved).toEqual([]);
   });
 
   test("coordinates given another way while the prompt was up stand", async () => {
@@ -500,7 +664,7 @@ describe("the move, carried out", () => {
     const raced = doors();
     raced.made.read = async () => {
       raced.world.coordinates = THERE;
-      return HERE;
+      return { coordinates: HERE, accuracy: 65 };
     };
     expect(await offerDevicePlace(raced.made)).toBe("spent");
     expect(raced.saved).toEqual([]);
@@ -516,7 +680,7 @@ describe("the move, carried out", () => {
     const meanwhile = doors();
     meanwhile.made.read = async () => {
       meanwhile.world.place = "강원 춘천시";
-      return HERE;
+      return { coordinates: HERE, accuracy: 65 };
     };
     expect(await offerDevicePlace(meanwhile.made)).toBe("ask");
     expect(meanwhile.saved).toEqual([HERE]);
@@ -525,9 +689,9 @@ describe("the move, carried out", () => {
   test("지우기, or a place said, while a following device was answering: theirs stands", async () => {
     const cleared = doors({ allowed: "granted", coordinates: THERE });
     cleared.made.read = async () => {
+      // 지우기 marks before its request goes, so a follow in the air sees it when it lands.
       cleared.world.mark = "cleared";
-      cleared.world.coordinates = null;
-      return HERE;
+      return { coordinates: HERE, accuracy: 65 };
     };
     expect(await offerDevicePlace(cleared.made)).toBe("nothing");
     expect(cleared.saved).toEqual([]);
@@ -537,7 +701,7 @@ describe("the move, carried out", () => {
       // `remember` replaces the place whole: the words in, the coordinates out.
       said.world.place = "부산 해운대구";
       said.world.coordinates = null;
-      return HERE;
+      return { coordinates: HERE, accuracy: 65 };
     };
     expect(await offerDevicePlace(said.made)).toBe("nothing");
     expect(said.saved).toEqual([]);
@@ -595,12 +759,13 @@ describe("in the installed app, the device is asked through the shell", () => {
       // Asked of the shell, with nothing that could show the person anything.
       expect(calls).toEqual([["device_place_permission", undefined]]);
     }
-    // Each of them is a row the table already has: read, asked once, or left alone.
+    // Each of them is a row the table already has: read, asked, or left alone.
     const facts = {
       agreed: true,
       canAsk: true,
       held: NOTHING_HELD,
       mark: "none" as const,
+      isRecent: false,
     };
     expect(devicePlaceMove({ ...facts, permission: "granted" })).toBe("read");
     expect(devicePlaceMove({ ...facts, permission: "prompt" })).toBe("ask");
@@ -636,54 +801,178 @@ describe("in the installed app, the device is asked through the shell", () => {
     }
   });
 
-  test("where the shell says the device is, is rounded again here and told whether it may show anything", async () => {
+  test("where the shell says the device is, is rounded again here, carries how far off it may be, and is told whether it may show anything", async () => {
     // The shell rounds before it answers. This side rounds too: nothing here holds a finer value
     // because the other side promised.
     shell({
-      place: { kind: "place", latitude: 37.498_095, longitude: 127.027_61 },
+      place: {
+        kind: "place",
+        latitude: 37.498_095,
+        longitude: 127.027_61,
+        accuracy: 65,
+      },
     });
-    expect(await readDeviceCoordinates(false)).toEqual({
-      latitude: 37.5,
-      longitude: 127.03,
+    expect(await readDevice(false)).toEqual({
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+      accuracy: 65,
     });
     expect(calls).toEqual([["device_place", { prompt: false }]]);
-    // A press, and the one ask, may put the system's question up; that is the default.
-    shell({ place: { kind: "place", latitude: 35.16, longitude: 129.16 } });
+    // A fix that does not say how far off it is has not said it is good.
+    for (const accuracy of [undefined, null, "65", -1, Number.NaN]) {
+      shell({
+        place: { kind: "place", latitude: 35.16, longitude: 129.16, accuracy },
+      });
+      expect(await readDevice(false)).toEqual({
+        coordinates: THERE,
+        accuracy: null,
+      });
+    }
+    // A press, and the one ask, may put the system's question up — and a person who pressed is
+    // given whatever the device has, however vague: they are looking at it.
+    shell({
+      place: {
+        kind: "place",
+        latitude: 35.16,
+        longitude: 129.16,
+        accuracy: 48_000,
+      },
+    });
     expect(await readDeviceCoordinates()).toEqual(THERE);
     expect(calls).toEqual([["device_place", { prompt: true }]]);
   });
 
-  test("every reason the shell has no place is said in this surface's words, and never as a place", async () => {
-    const refusals: Array<[unknown, string]> = [
-      [{ kind: "denied" }, "Location was not allowed on this device."],
-      [{ kind: "restricted" }, "Location was not allowed on this device."],
-      // Not decided, and the read was told to show nothing.
+  test("every reason the shell has no place is one of three, and only two of them are the person's answer", async () => {
+    const refusals: Array<[unknown, "denied" | "unavailable" | "unanswered"]> =
       [
-        { kind: "undetermined_no_prompt" },
-        "This device did not say where it is.",
-      ],
-      [{ kind: "unavailable" }, "This device did not say where it is."],
-      [{ kind: "timeout" }, "This device did not say where it is."],
-      [{ kind: "unsupported" }, "This device did not say where it is."],
-      // Not a place on this planet, not two numbers, not a kind this page knows, nothing at all.
-      [
-        { kind: "place", latitude: 91, longitude: 127.03 },
-        "This device did not say where it is.",
-      ],
-      [
-        { kind: "place", latitude: "37.5", longitude: 127.03 },
-        "This device did not say where it is.",
-      ],
-      [{ kind: "somewhere" }, "This device did not say where it is."],
-      [
-        { latitude: 37.5, longitude: 127.03 },
-        "This device did not say where it is.",
-      ],
-      [null, "This device did not say where it is."],
-    ];
-    for (const [place, words] of refusals) {
+        [{ kind: "denied" }, "denied"],
+        [{ kind: "restricted" }, "denied"],
+        // Allowed, and the device could not say, or not in time.
+        [{ kind: "unavailable" }, "unavailable"],
+        [{ kind: "timeout" }, "unavailable"],
+        // NOBODY DECIDED: the minute passed, or the read was told to show nothing, or the shell
+        // does not read this platform — or said nothing this page knows.
+        [{ kind: "unanswered" }, "unanswered"],
+        [{ kind: "undetermined_no_prompt" }, "unanswered"],
+        [{ kind: "unsupported" }, "unanswered"],
+        [{ kind: "somewhere" }, "unanswered"],
+        [{ latitude: 37.5, longitude: 127.03 }, "unanswered"],
+        [{ kind: "place", latitude: "37.5", longitude: 127.03 }, "unanswered"],
+        [null, "unanswered"],
+        // A place that is not on this planet is a device that could not say.
+        [{ kind: "place", latitude: 91, longitude: 127.03 }, "unavailable"],
+      ];
+    const words = {
+      denied: "Location was not allowed on this device.",
+      unavailable: "This device did not say where it is.",
+      unanswered:
+        "The question about this device's location has not been answered. If you do not see it, press again.",
+    };
+    for (const [place, refusal] of refusals) {
       shell({ place });
-      await expect(readDeviceCoordinates(false)).rejects.toThrow(words);
+      expect(await readDevice(false)).toEqual({ coordinates: null, refusal });
+      // A press says it in this surface's words, and never as a place.
+      await expect(readDeviceCoordinates()).rejects.toThrow(words[refusal]);
     }
+  });
+});
+
+/**
+ * AND A BROWSER TAB ASKS ITS OWN API, through the same door: a fix with how far off it may be, or
+ * why there is none. A browser has no word for "nobody decided" — a prompt closed without a yes
+ * is reported as a no, and its clock for the device does not run while it asks — so every failure
+ * it reports is the person's answer.
+ */
+describe("in a browser tab, the device is asked through the browser", () => {
+  const real = Object.getOwnPropertyDescriptor(navigator, "geolocation");
+  const asked: unknown[] = [];
+
+  function browser(
+    answer: (
+      resolve: (position: unknown) => void,
+      reject: (failure: unknown) => void,
+    ) => void,
+  ) {
+    asked.length = 0;
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: (
+          resolve: (position: unknown) => void,
+          reject: (failure: unknown) => void,
+          options: unknown,
+        ) => {
+          asked.push(options);
+          answer(resolve, reject);
+        },
+      },
+    });
+  }
+
+  afterEach(() => {
+    if (real) Object.defineProperty(navigator, "geolocation", real);
+    else delete (navigator as unknown as Record<string, unknown>).geolocation;
+  });
+
+  test("a fix is rounded before anything holds it, and carries how far off the browser says it may be", async () => {
+    browser((resolve) =>
+      resolve({
+        coords: { latitude: 37.498_095, longitude: 127.027_61, accuracy: 40 },
+      }),
+    );
+    expect(await readDevice(false)).toEqual({
+      coordinates: { latitude: 37.5, longitude: 127.03 },
+      accuracy: 40,
+    });
+    // Coarse, an answer up to an hour old, and ten seconds for the device once it may be read.
+    expect(asked).toEqual([
+      { enableHighAccuracy: false, maximumAge: 3_600_000, timeout: 10_000 },
+    ]);
+    // A browser that does not say how far off it is has not said it is good.
+    browser((resolve) =>
+      resolve({ coords: { latitude: 35.16, longitude: 129.16 } }),
+    );
+    expect(await readDevice(false)).toEqual({
+      coordinates: THERE,
+      accuracy: null,
+    });
+    // And a press is given what the device has.
+    expect(await readDeviceCoordinates()).toEqual(THERE);
+  });
+
+  test("a no and a closed prompt are the person's answer; no fix comes only after a yes; and a browser that will not be asked has asked nobody", async () => {
+    const failure = (code: number) => ({ code, PERMISSION_DENIED: 1 });
+    browser((_resolve, reject) => reject(failure(1)));
+    expect(await readDevice(true)).toEqual({
+      coordinates: null,
+      refusal: "denied",
+    });
+    await expect(readDeviceCoordinates()).rejects.toThrow(
+      "Location was not allowed on this device.",
+    );
+    // POSITION_UNAVAILABLE and TIMEOUT.
+    for (const code of [2, 3]) {
+      browser((_resolve, reject) => reject(failure(code)));
+      expect(await readDevice(true)).toEqual({
+        coordinates: null,
+        refusal: "unavailable",
+      });
+    }
+    // Not a place on this planet.
+    browser((resolve) => resolve({ coords: { latitude: 91, longitude: 0 } }));
+    expect(await readDevice(true)).toEqual({
+      coordinates: null,
+      refusal: "unavailable",
+    });
+    await expect(readDeviceCoordinates()).rejects.toThrow(
+      "This device did not say where it is.",
+    );
+    // The API itself refuses the call: nothing was put in front of anybody.
+    browser(() => {
+      throw new Error("not in a secure context");
+    });
+    expect(await readDevice(true)).toEqual({
+      coordinates: null,
+      refusal: "unanswered",
+    });
   });
 });

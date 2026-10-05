@@ -453,11 +453,18 @@ export async function shellDevicePermission(): Promise<ShellDevicePermission | n
   return shellDevicePermissionOf(await ask<unknown>("device_place_permission"));
 }
 
-/** Why the shell has no place to give. The words for each are this page's. */
+/**
+ * Why the shell has no place to give. The words for each are this page's.
+ *
+ * `unanswered` IS NOT A NO: the person was asked — or the system was asked to ask them — and a
+ * minute passed with no yes and no no. The question may never have appeared at all, so nothing is
+ * decided by it and it may be asked again.
+ */
 export type ShellDeviceRefusal =
   | "denied"
   | "restricted"
   | "undetermined_no_prompt"
+  | "unanswered"
   | "unavailable"
   | "timeout"
   | "unsupported";
@@ -466,28 +473,48 @@ const DEVICE_REFUSALS: readonly ShellDeviceRefusal[] = [
   "denied",
   "restricted",
   "undetermined_no_prompt",
+  "unanswered",
   "unavailable",
   "timeout",
   "unsupported",
 ];
 
-/** Where the device is, already rounded by the shell to two decimals — or the one reason not. */
+/**
+ * Where the device is, already rounded by the shell to two decimals — or the one reason not.
+ *
+ * `accuracy` is how far off the device says the fix may be, in metres, or null where the shell did
+ * not say: a radius, not a position, so the place is no finer for it.
+ */
 export type ShellDevicePlace =
-  | { kind: "place"; latitude: number; longitude: number }
+  | {
+      kind: "place";
+      latitude: number;
+      longitude: number;
+      accuracy: number | null;
+    }
   | { kind: ShellDeviceRefusal };
 
 /**
  * What the shell said, or nothing when it is not that shape. A place without two numbers is no
  * place: the caller rounds and range-checks again (`coarseCoordinates`), but only what is a number
- * gets that far.
+ * gets that far. An accuracy that is not a number of metres is no accuracy, which the caller reads
+ * as "not known to be good".
  */
 function shellDevicePlaceOf(value: unknown): ShellDevicePlace | null {
   if (!value || typeof value !== "object") return null;
-  const { kind, latitude, longitude } = value as Record<string, unknown>;
+  const { kind, latitude, longitude, accuracy } = value as Record<
+    string,
+    unknown
+  >;
   if (kind === "place") {
-    return typeof latitude === "number" && typeof longitude === "number"
-      ? { kind, latitude, longitude }
-      : null;
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
+      return null;
+    }
+    const isMetres =
+      typeof accuracy === "number" &&
+      Number.isFinite(accuracy) &&
+      accuracy >= 0;
+    return { kind, latitude, longitude, accuracy: isMetres ? accuracy : null };
   }
   const refusal = DEVICE_REFUSALS.find((known) => known === kind);
   return refusal ? { kind: refusal } : null;
@@ -497,8 +524,9 @@ function shellDevicePlaceOf(value: unknown): ShellDevicePlace | null {
  * Ask the shell where the device is.
  *
  * `prompt` IS WHETHER THE PERSON MAY BE SHOWN ANYTHING. True, a device that has not decided puts
- * the system's own question up and this waits for the answer. False, nothing is ever shown: an
- * allowed device is read and an undecided one answers `undetermined_no_prompt`.
+ * the system's own question up and this waits for the answer — for a minute, and then is told
+ * `unanswered`. False, nothing is ever shown: an allowed device is read and an undecided one
+ * answers `undetermined_no_prompt`.
  */
 export async function shellDevicePlace(options: {
   prompt: boolean;

@@ -126,18 +126,20 @@ const DEVICE_SCOPED = [
    */
   "lib/build-reload.ts",
   /*
-   * That this device has been asked where it is, once, and whether its place was cleared here
-   * (`lib/whereabouts/device-place.ts`, 2026-10-05).
+   * What this device knows about being asked where it is (`lib/whereabouts/device-place.ts`,
+   * 2026-10-05): that its person has decided, that they cleared its place here, and when it was
+   * last read by itself.
    *
-   * A DECISION, and the argument is that both are facts about the DEVICE and not the account: the
-   * permission prompt is this browser's, a dismissal is this browser's, and "never prompt twice"
-   * has to hold here whatever another device did. And 지우기 is final on the device it was pressed
-   * on — the place follows a device that said yes, so the account cannot say which of a person's
-   * devices is to stop being read; only the device can. The answer itself — the coarse
-   * coordinates — is the account's and goes to the server. Missing, the first mark costs at most
-   * one more prompt and the second one more silent read of a device that already said yes;
-   * storage that cannot keep them means the device is not asked at all. Nothing a Bot does reads
-   * either.
+   * A DECISION, and the argument is that all three are facts about the DEVICE and not the account.
+   * The permission prompt is this browser's, a refusal is this browser's, and "never ask again
+   * once they have decided" has to hold here whatever another device did. 지우기 is final on the
+   * device it was pressed on — the place follows a device that said yes, so the account cannot say
+   * which of a person's devices is to stop being read; only the device can. And "once an hour" is
+   * about how often THIS device is read, which is nothing the account could count. The answer
+   * itself — the coarse coordinates — is the account's and goes to the server. Missing, the first
+   * costs at most one more prompt, the second one more silent read of a device that already said
+   * yes, the third one read sooner than an hour; storage that cannot keep them means the device is
+   * not asked at all. Nothing a Bot does reads any of them.
    */
   "lib/whereabouts/device-place.ts",
 ];

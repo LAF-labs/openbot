@@ -18,6 +18,10 @@
 //! it, before it is a value anything else can hold, so the page cannot be handed a finer one by a
 //! mistake further on; and `DevicePlace` prints as its kind alone, so no log line written here or
 //! later can carry where somebody is.
+//!
+//! AND NOBODY WAITS FOR EVER. Both things this asks of the system can simply never answer — the
+//! device for a fix, and the person for a yes or a no — so each wait has a bound, and what the page
+//! is told when one passes is a kind of its own (`Waiting`, at the foot of the shared half).
 
 #[cfg(not(target_os = "macos"))]
 use tauri::async_runtime::Sender;
@@ -33,7 +37,16 @@ use tauri::async_runtime::Sender;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) enum DevicePlace {
     /// Degrees at two decimals, about a kilometre: which town, never which door.
-    Place { latitude: f64, longitude: f64 },
+    ///
+    /// `accuracy` is how far off the device says the fix may be, in metres. It is a radius and not
+    /// a position, so it makes the place no finer — and the page needs it: a fix good to three
+    /// kilometres and one good to fifty are both "a place", and only one of them is worth saving
+    /// for somebody who did not press anything (`AUTOMATIC_ACCURACY_METRES`, on the page).
+    Place {
+        latitude: f64,
+        longitude: f64,
+        accuracy: f64,
+    },
     /// The person said no — or Location Services is off for the whole machine, which the system
     /// reports as the same thing.
     Denied,
@@ -41,6 +54,9 @@ pub(crate) enum DevicePlace {
     Restricted,
     /// Nobody has been asked yet, and this call was told not to ask.
     UndeterminedNoPrompt,
+    /// The person was asked — or the system was asked to ask them — and `ASK_BOUND` passed with no
+    /// yes and no no. NOT A DECISION: the page spends nothing on it and may ask again.
+    Unanswered,
     /// Allowed, and the device could not say where it is.
     Unavailable,
     /// Allowed, and the device did not say within `READ_BOUND`.
@@ -57,6 +73,7 @@ impl DevicePlace {
             Self::Denied => "denied",
             Self::Restricted => "restricted",
             Self::UndeterminedNoPrompt => "undetermined_no_prompt",
+            Self::Unanswered => "unanswered",
             Self::Unavailable => "unavailable",
             Self::Timeout => "timeout",
             Self::Unsupported => "unsupported",
@@ -115,6 +132,22 @@ impl DevicePermission {
 #[cfg(target_os = "macos")]
 const READ_BOUND: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// How long the person has to answer the system's question before the page stops waiting.
+///
+/// THE QUESTION CAN FAIL TO APPEAR, AND NOTHING SAYS SO. CoreLocation is asked to put it up and
+/// answers nothing either way: where the app is not in use — started hidden, at login — or the
+/// system cannot name the bundle, no dialog comes, and so no callback ever does. Until this bound
+/// the wait was open-ended: the page's one ask hung with the once already spent, and a press of the
+/// button on 내 정보 joined the same dead wait and sat at "찾는 중…" until the app was quit.
+///
+/// A MINUTE, BECAUSE A LATE ANSWER IS NOT LOST. The dialog is one sentence and two buttons; a
+/// minute is long enough to read it and decide, and about as long as anybody watches a button say
+/// it is looking. Whoever answers after it has still answered — the system keeps the yes, and the
+/// next time the page looks the device is simply allowed and is read with nothing shown — so the
+/// bound decides only how long a screen may wait, never whether an answer counts.
+#[cfg(target_os = "macos")]
+const ASK_BOUND: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// How old a fix CoreLocation already holds may be and still be the answer, in seconds.
 ///
 /// The browser's `maximumAge` (`readDeviceCoordinates` passes an hour), and what bounds this shell
@@ -135,10 +168,12 @@ fn coarse(degrees: f64) -> f64 {
 ///
 /// CoreLocation marks a fix it cannot stand behind with a negative accuracy, and the range is
 /// checked as the page checks it (`coarseCoordinates`, shared/whereabouts.ts): the server refuses
-/// anything off the planet, and an answer it would refuse is not worth handing over.
+/// anything off the planet, and an answer it would refuse is not worth handing over. The accuracy
+/// goes with the place as whole metres, rounded up: how far off, never claimed to be better.
 #[cfg(any(target_os = "macos", test))]
 fn coarse_place(latitude: f64, longitude: f64, accuracy: f64) -> DevicePlace {
     let is_a_place = accuracy >= 0.0
+        && accuracy.is_finite()
         && latitude.is_finite()
         && longitude.is_finite()
         && latitude.abs() <= 90.0
@@ -149,6 +184,7 @@ fn coarse_place(latitude: f64, longitude: f64, accuracy: f64) -> DevicePlace {
     DevicePlace::Place {
         latitude: coarse(latitude),
         longitude: coarse(longitude),
+        accuracy: accuracy.ceil(),
     }
 }
 
@@ -198,6 +234,114 @@ fn first_step(permission: DevicePermission, prompt: bool) -> Step {
     }
 }
 
+/// What happens when `ASK_BOUND` passes: nothing if that asking is already over, and otherwise
+/// whatever the system holds NOW decides — a callback that was missed is as possible as a dialog
+/// that never appeared, so the bound looks rather than assumes.
+///
+/// STILL NOT DECIDED IS `unanswered`, AND IT IS NOT A NO. The person may never have been shown the
+/// question at all; telling the page "denied" would spend its one ask on a refusal nobody made.
+#[cfg(any(target_os = "macos", test))]
+fn when_the_ask_bound_passes(is_still_asking: bool, permission: DevicePermission) -> Option<Step> {
+    if !is_still_asking {
+        return None;
+    }
+    Some(match permission {
+        DevicePermission::Granted => Step::Read,
+        DevicePermission::Denied => Step::Answer(DevicePlace::Denied),
+        DevicePermission::Restricted => Step::Answer(DevicePlace::Restricted),
+        DevicePermission::Prompt | DevicePermission::Unsupported => {
+            Step::Answer(DevicePlace::Unanswered)
+        }
+    })
+}
+
+/// Everybody waiting for the device, and what they are waiting on: the person's answer, or a fix.
+///
+/// ONE QUESTION AT A TIME, WHOEVER ASKS. The page asks when it is opened and again when somebody
+/// presses the button on 내 정보; the second joins the first and both are given the one answer,
+/// rather than two dialogs or two fixes.
+///
+/// EACH WAIT IS NUMBERED, AND ITS BOUND NAMES THE NUMBER. A bound is a thread that sleeps and then
+/// comes back: by then the wait it was started for may be long over and another under way, and a
+/// late bound must end only its own. That is the whole reason for the counters.
+///
+/// Held apart from CoreLocation, with `A` for whatever an answer is sent through, so that the part
+/// that can go wrong without a sound — a wait that nothing ever ends — is tested where there is no
+/// device and no person.
+#[cfg(any(target_os = "macos", test))]
+struct Waiting<A> {
+    answers: Vec<A>,
+    /// Which asking of the person is open, if one is: the system's question has been asked for,
+    /// and nothing has come back.
+    asking: Option<u64>,
+    /// Which read of the device is under way, if one is.
+    reading: Option<u64>,
+    asks: u64,
+    reads: u64,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl<A> Waiting<A> {
+    const fn new() -> Self {
+        Self {
+            answers: Vec::new(),
+            asking: None,
+            reading: None,
+            asks: 0,
+            reads: 0,
+        }
+    }
+
+    /// Wait on the person. Says which asking this is when it is a NEW one — the system's question
+    /// has to be asked for, and bounded — and nothing when one is already open, or a read already
+    /// under way: the newcomer joins it.
+    fn wait_for_the_person(&mut self, answer: A) -> Option<u64> {
+        self.answers.push(answer);
+        if self.asking.is_some() || self.reading.is_some() {
+            return None;
+        }
+        self.asks += 1;
+        self.asking = Some(self.asks);
+        self.asking
+    }
+
+    /// Wait on the device, with `answer` when somebody new is asking and without when the person
+    /// has just said yes to those already waiting. Says which read this is when it is a new one.
+    /// The asking is over either way: a device being read is a person who answered.
+    fn wait_for_the_device(&mut self, answer: Option<A>) -> Option<u64> {
+        self.answers.extend(answer);
+        self.asking = None;
+        if self.reading.is_some() {
+            return None;
+        }
+        self.reads += 1;
+        self.reading = Some(self.reads);
+        self.reading
+    }
+
+    fn is_asking(&self, ask: u64) -> bool {
+        self.asking == Some(ask)
+    }
+
+    fn is_reading(&self, read: u64) -> bool {
+        self.reading == Some(read)
+    }
+
+    /// Somebody is waiting and the device is not being read: once the person says yes, it must be.
+    fn is_owed_a_read(&self) -> bool {
+        !self.answers.is_empty() && self.reading.is_none()
+    }
+
+    /// Everybody waiting, to be given the one answer. Nothing is open afterwards, so the next
+    /// question starts a wait of its own — and a person who was never shown the first question
+    /// can be asked again.
+    fn finish(&mut self) -> Vec<A> {
+        self.asking = None;
+        self.reading = None;
+        std::mem::take(&mut self.answers)
+    }
+}
+
 /// Say whether this device may be asked. ON THE MAIN THREAD — `run_on_main_thread` is how the
 /// commands in `lib.rs` get here. Reads one property; shows nothing, reads no location.
 #[cfg(not(target_os = "macos"))]
@@ -222,6 +366,7 @@ pub(crate) use core_location::{permission, place};
 mod core_location {
     use std::cell::{OnceCell, RefCell};
     use std::thread;
+    use std::time::Duration;
 
     use objc2::rc::Retained;
     use objc2::runtime::{NSObject, NSObjectProtocol, ProtocolObject};
@@ -233,8 +378,8 @@ mod core_location {
     use tauri::async_runtime::Sender;
 
     use super::{
-        coarse_place, failure, first_step, is_recent, DevicePermission, DevicePlace, Step,
-        READ_BOUND,
+        coarse_place, failure, first_step, is_recent, when_the_ask_bound_passes, DevicePermission,
+        DevicePlace, Step, Waiting, ASK_BOUND, READ_BOUND,
     };
 
     define_class!(
@@ -272,7 +417,7 @@ mod core_location {
     );
 
     /// The one manager this process makes, the delegate it calls, and the way back to the main
-    /// thread for the bound on a read.
+    /// thread for the bounds.
     ///
     /// MADE ONCE AND KEPT, the first time the page asks. A manager per question would have to be
     /// let go of inside its own callback, which is the manager being freed by the code it is in the
@@ -286,31 +431,9 @@ mod core_location {
         _delegate: Retained<PlaceDelegate>,
     }
 
-    /// Everybody waiting for the device, and what they are waiting on.
-    ///
-    /// ONE QUESTION AT A TIME, WHOEVER ASKS. The page asks at an open and again when somebody
-    /// presses the button on 내 정보; the second joins the first and both are given the one answer,
-    /// rather than two dialogs or two fixes.
-    struct Waiting {
-        answers: Vec<Sender<DevicePlace>>,
-        /// The system's question is up, and has not been answered.
-        is_asking_the_person: bool,
-        /// Which read is under way, if one is. Counted so a bound that fires late cannot end the
-        /// read after the one it was started for.
-        reading: Option<u64>,
-        reads: u64,
-    }
-
     thread_local! {
         static DEVICE: OnceCell<Device> = const { OnceCell::new() };
-        static WAITING: RefCell<Waiting> = const {
-            RefCell::new(Waiting {
-                answers: Vec::new(),
-                is_asking_the_person: false,
-                reading: None,
-                reads: 0,
-            })
-        };
+        static WAITING: RefCell<Waiting<Sender<DevicePlace>>> = const { RefCell::new(Waiting::new()) };
     }
 
     /// The manager, made on first use. Nothing off the main thread: there is no manager there, and
@@ -348,6 +471,15 @@ mod core_location {
         })
     }
 
+    /// The manager and the app, once the manager exists: what a callback or a bound works with.
+    fn device() -> Option<(tauri::AppHandle, Retained<CLLocationManager>)> {
+        DEVICE.with(|device| {
+            device
+                .get()
+                .map(|device| (device.app.clone(), device.manager.clone()))
+        })
+    }
+
     fn permission_of(manager: &CLLocationManager) -> DevicePermission {
         // SAFETY: a property read, on the thread the manager was made on. It asks nobody anything.
         DevicePermission::of_status(unsafe { manager.authorizationStatus() }.0)
@@ -366,6 +498,16 @@ mod core_location {
         let age_seconds = -unsafe { fix.timestamp() }.timeIntervalSinceNow();
         let held = place_of(&fix);
         (is_recent(age_seconds) && matches!(held, DevicePlace::Place { .. })).then_some(held)
+    }
+
+    /// Come back to the main thread when `bound` has passed. A thread that only sleeps: everything
+    /// about a wait is on the main thread, and that is where the bound is settled.
+    fn after(app: &tauri::AppHandle, bound: Duration, then: impl FnOnce() + Send + 'static) {
+        let app = app.clone();
+        thread::spawn(move || {
+            thread::sleep(bound);
+            let _ = app.run_on_main_thread(then);
+        });
     }
 
     pub(crate) fn permission(app: &tauri::AppHandle, answer: Sender<DevicePermission>) {
@@ -393,15 +535,16 @@ mod core_location {
                 }
             }
             Step::AskThePerson => {
-                let is_first = WAITING.with_borrow_mut(|waiting| {
-                    waiting.answers.push(answer);
-                    !std::mem::replace(&mut waiting.is_asking_the_person, true)
-                });
-                if is_first {
-                    log::info!("asking the person whether this device may be read");
-                    // SAFETY: on the main thread. The answer arrives at `permission_changed`.
-                    unsafe { manager.requestWhenInUseAuthorization() };
-                }
+                let asking = WAITING.with_borrow_mut(|waiting| waiting.wait_for_the_person(answer));
+                let Some(ask) = asking else {
+                    // The question is already out: this one waits on the same answer.
+                    return;
+                };
+                log::info!("asking the person whether this device may be read");
+                // SAFETY: on the main thread. The answer arrives at `permission_changed` — or does
+                // not arrive at all, which is what the bound is for.
+                unsafe { manager.requestWhenInUseAuthorization() };
+                after(app, ASK_BOUND, move || the_person_did_not_answer(ask));
             }
             Step::Read => read(app, &manager, Some(answer)),
         }
@@ -420,47 +563,25 @@ mod core_location {
             finish(held);
             return;
         }
-        let started = WAITING.with_borrow_mut(|waiting| {
-            waiting.answers.extend(answer);
-            waiting.is_asking_the_person = false;
-            if waiting.reading.is_some() {
-                return None;
-            }
-            waiting.reads += 1;
-            waiting.reading = Some(waiting.reads);
-            waiting.reading
-        });
-        let Some(read) = started else {
+        let reading = WAITING.with_borrow_mut(|waiting| waiting.wait_for_the_device(answer));
+        let Some(read) = reading else {
             return;
         };
         // SAFETY: on the main thread. One fix, to `located` or `failed`, and the manager stops.
         unsafe { manager.requestLocation() };
-        let app = app.clone();
-        // The bound, kept by a thread that only sleeps: it does nothing but come back to the main
-        // thread, where everything about the read is.
-        thread::spawn(move || {
-            thread::sleep(READ_BOUND);
-            let _ = app.run_on_main_thread(move || expire(read));
-        });
+        after(app, READ_BOUND, move || the_device_did_not_answer(read));
     }
 
     /// The system's word on asking changed — and it calls this once when the delegate is set, too,
     /// with whatever the word already was.
     fn permission_changed() {
-        let Some((app, manager)) = DEVICE.with(|device| {
-            device
-                .get()
-                .map(|device| (device.app.clone(), device.manager.clone()))
-        }) else {
+        let Some((app, manager)) = device() else {
             return;
         };
         match permission_of(&manager) {
             DevicePermission::Granted => {
                 // Somebody was waiting on the person, and the person said yes: now the device.
-                let is_owed = WAITING.with_borrow(|waiting| {
-                    !waiting.answers.is_empty() && waiting.reading.is_none()
-                });
-                if is_owed {
+                if WAITING.with_borrow(Waiting::is_owed_a_read) {
                     read(&app, &manager, None);
                 }
             }
@@ -472,12 +593,25 @@ mod core_location {
         }
     }
 
-    /// The read took too long. Stopping is what cancels a fix the manager is still looking for.
-    fn expire(read: u64) {
-        if WAITING.with_borrow(|waiting| waiting.reading != Some(read)) {
+    /// `ASK_BOUND` passed for the asking numbered `ask` (`when_the_ask_bound_passes`).
+    fn the_person_did_not_answer(ask: u64) {
+        let Some((app, manager)) = device() else {
+            return;
+        };
+        let is_still_asking = WAITING.with_borrow(|waiting| waiting.is_asking(ask));
+        match when_the_ask_bound_passes(is_still_asking, permission_of(&manager)) {
+            None | Some(Step::AskThePerson) => {}
+            Some(Step::Read) => read(&app, &manager, None),
+            Some(Step::Answer(said)) => finish(said),
+        }
+    }
+
+    /// `READ_BOUND` passed. Stopping is what cancels a fix the manager is still looking for.
+    fn the_device_did_not_answer(read: u64) {
+        if WAITING.with_borrow(|waiting| !waiting.is_reading(read)) {
             return;
         }
-        if let Some(manager) = DEVICE.with(|device| device.get().map(|it| it.manager.clone())) {
+        if let Some((_, manager)) = device() {
             // SAFETY: on the main thread.
             unsafe { manager.stopUpdatingLocation() };
         }
@@ -487,11 +621,7 @@ mod core_location {
     /// Give everybody waiting the one answer. A callback that arrives with nobody waiting — a fix
     /// after its bound, a change made in System Settings — answers nobody and is kept nowhere.
     fn finish(said: DevicePlace) {
-        let answers = WAITING.with_borrow_mut(|waiting| {
-            waiting.is_asking_the_person = false;
-            waiting.reading = None;
-            std::mem::take(&mut waiting.answers)
-        });
+        let answers = WAITING.with_borrow_mut(Waiting::finish);
         if answers.is_empty() {
             return;
         }
@@ -546,7 +676,8 @@ mod core_location {
 #[cfg(test)]
 mod tests {
     use super::{
-        coarse, coarse_place, failure, first_step, is_recent, DevicePermission, DevicePlace, Step,
+        coarse, coarse_place, failure, first_step, is_recent, when_the_ask_bound_passes,
+        DevicePermission, DevicePlace, Step, Waiting,
     };
 
     /// Two decimals, and nothing finer ever: the whole of what makes this safe to hand a page.
@@ -556,7 +687,8 @@ mod tests {
             coarse_place(37.498_095, 127.027_61, 65.0),
             DevicePlace::Place {
                 latitude: 37.5,
-                longitude: 127.03
+                longitude: 127.03,
+                accuracy: 65.0
             }
         );
         // South and west of zero round the same way, toward the nearest hundredth.
@@ -564,7 +696,8 @@ mod tests {
             coarse_place(-33.868_82, -151.209_3, 1000.0),
             DevicePlace::Place {
                 latitude: -33.87,
-                longitude: -151.21
+                longitude: -151.21,
+                accuracy: 1000.0
             }
         );
         // Already coarse stays put: rounding twice is rounding once.
@@ -577,8 +710,29 @@ mod tests {
             .expect("a place is serialisable");
         assert_eq!(
             said,
-            r#"{"kind":"place","latitude":35.18,"longitude":129.08}"#
+            r#"{"kind":"place","latitude":35.18,"longitude":129.08,"accuracy":30.0}"#
         );
+    }
+
+    /// How far off the device says it may be goes with the place: whole metres, never rounded to
+    /// look better than it was. The page decides what is good enough — this only reports it.
+    #[test]
+    fn the_accuracy_goes_with_the_place_and_is_never_flattered() {
+        for (reported, carried) in [
+            (0.0, 0.0),
+            (64.2, 65.0),
+            (2999.01, 3000.0),
+            (48_211.7, 48_212.0),
+        ] {
+            assert_eq!(
+                coarse_place(37.5, 127.03, reported),
+                DevicePlace::Place {
+                    latitude: 37.5,
+                    longitude: 127.03,
+                    accuracy: carried
+                }
+            );
+        }
     }
 
     /// A fix the device cannot stand behind, or one that is not on this planet, is no place.
@@ -588,6 +742,7 @@ mod tests {
             // CoreLocation's own mark for an invalid fix.
             (37.5, 127.03, -1.0),
             (37.5, 127.03, f64::NAN),
+            (37.5, 127.03, f64::INFINITY),
             (90.01, 127.03, 10.0),
             (37.5, -180.01, 10.0),
             (f64::NAN, 127.03, 10.0),
@@ -652,6 +807,111 @@ mod tests {
         );
     }
 
+    /// THE CALLBACK THAT NEVER COMES. The system was asked to put its question up and no dialog
+    /// appeared — the app not in use, a bundle the system cannot name — so nothing ever calls back.
+    /// The wait used to be open-ended: everybody who asked afterwards joined it, and a button sat
+    /// at "찾는 중…" until the app was quit.
+    #[test]
+    fn a_question_nobody_answered_ends_at_its_bound_and_can_be_asked_again() {
+        let mut waiting = Waiting::<&str>::new();
+        // The page's own ask at an open: the question is asked for, and bounded as asking 1.
+        assert_eq!(waiting.wait_for_the_person("the open"), Some(1));
+        // A press on 내 정보 while it is out joins it: one question, not two.
+        assert_eq!(waiting.wait_for_the_person("a press"), None);
+        assert!(waiting.is_asking(1));
+
+        // The bound passes and nothing came back. Everybody waiting is owed the one answer…
+        assert_eq!(waiting.finish(), vec!["the open", "a press"]);
+        // …and nothing is left open, so the wait is over rather than latched.
+        assert!(!waiting.is_asking(1));
+        assert!(!waiting.is_owed_a_read());
+
+        // A later press is a NEW asking: the system is asked again, with a bound of its own.
+        assert_eq!(waiting.wait_for_the_person("a later press"), Some(2));
+        // The first bound, were it to fire late, is not this asking's and must not end it.
+        assert!(!waiting.is_asking(1));
+        assert!(waiting.is_asking(2));
+        assert_eq!(waiting.finish(), vec!["a later press"]);
+    }
+
+    /// When the bound passes, what the system holds at that moment is what everybody is told —
+    /// and "still not decided" is its own answer, never a refusal: the person may not have been
+    /// shown the question at all, and a "denied" they never gave would spend the page's one ask.
+    #[test]
+    fn the_bound_on_asking_says_unanswered_and_never_a_no_nobody_gave() {
+        assert_eq!(
+            when_the_ask_bound_passes(true, DevicePermission::Prompt),
+            Some(Step::Answer(DevicePlace::Unanswered))
+        );
+        // A callback that was missed: the system holds an answer, and that is the answer.
+        assert_eq!(
+            when_the_ask_bound_passes(true, DevicePermission::Granted),
+            Some(Step::Read)
+        );
+        assert_eq!(
+            when_the_ask_bound_passes(true, DevicePermission::Denied),
+            Some(Step::Answer(DevicePlace::Denied))
+        );
+        assert_eq!(
+            when_the_ask_bound_passes(true, DevicePermission::Restricted),
+            Some(Step::Answer(DevicePlace::Restricted))
+        );
+        // An asking that is already over — answered, or ended by an earlier bound — is left alone
+        // whatever the system says now.
+        for permission in [
+            DevicePermission::Prompt,
+            DevicePermission::Granted,
+            DevicePermission::Denied,
+            DevicePermission::Restricted,
+            DevicePermission::Unsupported,
+        ] {
+            assert_eq!(when_the_ask_bound_passes(false, permission), None);
+        }
+    }
+
+    /// A person who answers in time moves the wait on to the device, and the asking's bound —
+    /// which still fires, a minute later — finds nothing of its own to end.
+    #[test]
+    fn a_yes_in_time_moves_on_to_the_device_and_leaves_the_bound_nothing_to_end() {
+        let mut waiting = Waiting::<&str>::new();
+        assert_eq!(waiting.wait_for_the_person("the open"), Some(1));
+        // The person said yes: those already waiting are owed a read, and it starts as read 1.
+        assert!(waiting.is_owed_a_read());
+        assert_eq!(waiting.wait_for_the_device(None), Some(1));
+        assert!(
+            !waiting.is_asking(1),
+            "the asking is over once the device is read"
+        );
+        assert!(waiting.is_reading(1));
+        assert!(!waiting.is_owed_a_read());
+        // Somebody else asking now joins the read, and one asking for the person does too —
+        // nobody is asked a question the device is already answering.
+        assert_eq!(waiting.wait_for_the_device(Some("a press")), None);
+        assert_eq!(waiting.wait_for_the_person("another"), None);
+        // The fix arrives: one answer for all three.
+        assert_eq!(waiting.finish(), vec!["the open", "a press", "another"]);
+        assert!(!waiting.is_reading(1));
+    }
+
+    /// The device has a bound too, and a bound that fires after its own read is over ends nothing:
+    /// not the read that has since started, and nobody's wait.
+    #[test]
+    fn a_read_that_never_answers_ends_at_its_bound_and_only_its_own() {
+        let mut waiting = Waiting::<&str>::new();
+        assert_eq!(waiting.wait_for_the_device(Some("first")), Some(1));
+        assert!(waiting.is_reading(1));
+        // The bound passes: everybody waiting is told, and nothing is left under way.
+        assert_eq!(waiting.finish(), vec!["first"]);
+
+        // A second read; the first read's bound, firing late, is not its.
+        assert_eq!(waiting.wait_for_the_device(Some("second")), Some(2));
+        assert!(!waiting.is_reading(1));
+        assert!(waiting.is_reading(2));
+        // And a fix that arrives when nobody is waiting answers nobody.
+        assert_eq!(waiting.finish(), vec!["second"]);
+        assert_eq!(waiting.finish(), Vec::<&str>::new());
+    }
+
     /// A refusal at the device is the person's no; anything else is a device that could not say.
     #[test]
     fn a_failed_read_is_denied_or_unavailable() {
@@ -684,6 +944,7 @@ mod tests {
             kind(DevicePlace::UndeterminedNoPrompt),
             r#"{"kind":"undetermined_no_prompt"}"#
         );
+        assert_eq!(kind(DevicePlace::Unanswered), r#"{"kind":"unanswered"}"#);
         assert_eq!(kind(DevicePlace::Unavailable), r#"{"kind":"unavailable"}"#);
         assert_eq!(kind(DevicePlace::Timeout), r#"{"kind":"timeout"}"#);
         assert_eq!(kind(DevicePlace::Unsupported), r#"{"kind":"unsupported"}"#);
@@ -692,10 +953,12 @@ mod tests {
             DevicePlace::Place {
                 latitude: 37.5,
                 longitude: 127.03,
+                accuracy: 65.0,
             },
             DevicePlace::Denied,
             DevicePlace::Restricted,
             DevicePlace::UndeterminedNoPrompt,
+            DevicePlace::Unanswered,
             DevicePlace::Unavailable,
             DevicePlace::Timeout,
             DevicePlace::Unsupported,
@@ -718,6 +981,7 @@ mod tests {
         let here = DevicePlace::Place {
             latitude: 37.5,
             longitude: 127.03,
+            accuracy: 65.0,
         };
         for printed in [format!("{here:?}"), format!("{here:#?}")] {
             assert_eq!(printed, "place");

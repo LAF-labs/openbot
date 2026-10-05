@@ -197,23 +197,34 @@ shell reads the device itself now, on macOS, through CoreLocation
   location. `prompt` is "not decided": asking would put the system's question
   up. `restricted` is a machine whose person may not decide; `unsupported` is a
   platform that is not read — Windows.
-- **`device_place({ prompt })`** → `{ kind: "place", latitude, longitude }`, or
-  `{ kind }` with one of `denied`, `restricted`, `undetermined_no_prompt`,
-  `unavailable`, `timeout`, `unsupported`. With `prompt: true` a device that
-  has not decided shows the system's own question and the call waits for the
-  answer; with `prompt: false` nothing is ever shown — allowed is read, and
-  not-decided answers `undetermined_no_prompt`.
+- **`device_place({ prompt })`** → `{ kind: "place", latitude, longitude,
+  accuracy }`, or `{ kind }` with one of `denied`, `restricted`,
+  `undetermined_no_prompt`, `unanswered`, `unavailable`, `timeout`,
+  `unsupported`. With `prompt: true` a device that has not decided shows the
+  system's own question and the call waits for the answer, for a minute; with
+  `prompt: false` nothing is ever shown — allowed is read, and not-decided
+  answers `undetermined_no_prompt`. `accuracy` is how far off the device says
+  the fix may be, in whole metres: a radius, not a position.
 
 Both are read-only and take nothing a page could choose but that one boolean.
-What crosses is a kind and two numbers, never words: the page owns the
+What crosses is a kind and three numbers, never words: the page owns the
 sentences.
+
+**What a script on the origin gets from them, said plainly.** A page running
+somebody else's script can call both as the app does. It can put the system's
+own question in front of the person, as often as the system will show it; and
+on a device that has said yes it can read where that device is, to two
+decimals, whenever it likes — whether or not the account keeps a place. It
+gets nothing finer, and nothing from a device that said no.
 
 **Still no product logic.** The shell reads and rounds. Whether to ask, when,
 how often and what the answer is for are the page's, in the same table a
 browser tab goes through (`app/src/lib/whereabouts/device-place.ts`): asked
-once per device after the person has agreed to the terms, read silently at
-every open after that so the place follows the device, never while the person
-has said where they are, never again by itself once they cleared it there.
+until the person has decided, after they have agreed to the terms; read again
+with nothing shown each time the page is looked at, at most once an hour, so
+the place follows the device; kept only when the fix is good to three
+kilometres and has moved two hundredths of a degree; never while the person
+has said where they are, and never again by itself once they cleared it there.
 
 What the shell does hold to, because only it can:
 
@@ -231,10 +242,22 @@ What the shell does hold to, because only it can:
   process's, so each launch may cost one fix of its own.
 - **A kilometre.** `desiredAccuracy` is `kCLLocationAccuracyKilometer`: the
   coarsest fix that still names the town, and the cheapest to find.
-- **Ten seconds, counted from the device and not from the person.** The bound
-  starts when the fix is asked for. While the system's question is up the call
-  simply waits — somebody reading a dialog has not made their device slow, and
-  a bound that ran out under their eyes would spend the one ask on nothing.
+- **Nobody waits for ever.** Both things asked of the system can simply never
+  answer, so each has a bound, and a bound that passes is a kind of its own.
+  The device has **ten seconds**, counted from the fix being asked for — the
+  browser's `timeout` — and then the answer is `timeout`. The person has **a
+  minute**, and then the answer is `unanswered`. That second bound did not
+  exist until the review of pull request 94: CoreLocation shows its question
+  only for an app that is in use and says nothing when it does not, so no
+  callback ever came, the page's one ask hung, and a press of the button on 내
+  정보 joined the same wait and sat at 찾는 중… until the app was quit. A minute
+  because the dialog is one sentence and two buttons, and because a late answer
+  is not lost: the system keeps it, and the next time the page looks the device
+  is simply allowed and is read with nothing shown. `unanswered` is not a
+  refusal — the person may never have seen the question — so the page spends
+  nothing on it and may ask again. When the bound passes the shell looks at
+  what the system holds NOW rather than assuming: a callback that was missed is
+  as possible as a dialog that never appeared.
 - **Never on the window's thread, always on the main one.** CoreLocation's
   manager calls back on the run loop of the thread that made it, so the one
   manager this process makes lives on the main thread and is never let go of —
@@ -259,14 +282,21 @@ no hardened runtime and nothing to be entitled to. It is there so that the day
 Developer ID signing is switched on, the same commit can still read the
 device. `tests/desktop-shell.test.ts` holds all three.
 
-**Measured 2026-10-05**, macOS 26.6.2, a debug bundle built as under Running
-with a temporary line at launch that called both commands (removed before the
-change was pushed), started with `open -g`, **no dialog shown and none
-answered**:
+**A development build says what the system holds, when asked to.**
+`LAF_SHELL_DEVICE_STATUS` in its environment (any value; `open -g --env
+LAF_SHELL_DEVICE_STATUS=1 "<bundle>"`) makes it log two lines at launch:
+whether the device may be asked, and what a read that must show nothing
+answers. It looks and reads with `prompt: false`, so it never shows anybody
+anything, and of a read the log holds the kind and never the place. It exists
+because nothing outside the page can call a command.
 
-- `device_place_permission` → `prompt`; `device_place({ prompt: false })` →
-  `undetermined_no_prompt`; the permission again → `prompt`. The shell's log
-  held no warning and no error.
+**Measured 2026-10-05 and -06**, macOS 26.6.2, debug bundles built as under
+Running and started with `open -g`, **no dialog shown and none answered**:
+
+- With that switch: `this device may be asked where it is: Prompt`, then `the
+  page asked where this device is: permission=Prompt prompt=false` and `asked
+  where it is with nothing shown, this device answers:
+  undetermined_no_prompt`. No warning and no error in the shell's log.
 - The system log, for the same second: `setDesiredAccuracy: 1000.000000`,
   `setDelegate:`, `CLInternalGetAuthorizationStatus`, and CoreLocation
   `invoking #delegate … locationManagerDidChangeAuthorization:` with
@@ -281,30 +311,52 @@ answered**:
   `codesign -dvvv` → `flags=0x20002(adhoc,linker-signed)`, `Info.plist=not
   bound`, `Sealed Resources=none`, no entitlements — the bundler signed
   nothing, as its source says.
+- **What the page is told when the window is put away and brought back, with
+  the screen LOCKED** (a temporary line in the shell hid the window as closing
+  does, called `present()`, twice, and had the page report every
+  `visibilitychange`, `focus`, `blur` and the shell's own `tauri://focus`): the
+  page was alive, said `visibilityState=hidden hasFocus=false` throughout, and
+  was told nothing at all — no event of any kind. So a page behind a lock is
+  not a page being looked at, and nothing is read for it. With the screen
+  unlocked it was not measured; see below.
 - The half that every other platform compiles was compiled once on this Mac
   with its condition flipped: no error and no warning. Not built on Windows.
 
-**Not measured, because each needs a person at the dialog:** the system's
-question itself and its wording; a fix arriving, rounded; a refusal; the
-ten-second bound; that a second question within the hour is answered from
-`CLLocationManager.location` (read from Apple's documentation); and anything
-at all under the hardened runtime, which no build has. Whoever next has the
-development app open with this change served at `localhost:3010`:
+**Not measured, because each needs a person at the screen:** the system's
+question itself and its wording; a fix arriving, rounded, with its accuracy; a
+refusal; both bounds; that a second question within the hour is answered from
+`CLLocationManager.location` (read from Apple's documentation); anything at all
+under the hardened runtime, which no build has; and **that bringing the window
+back from the tray with the screen unlocked tells the page so**. That last is
+read, not measured: the page listens for `visibilitychange` and the window's
+`focus`, the same two the socket has listened to for "looked at again" since
+before this (`app/src/lib/channels/use-channel-events.ts`); and a notice about
+the conversation on screen is withheld wherever the page says it is visible
+(`decideNotice`), while this shell was measured posting notices with its
+window in the tray (2026-09-26, above) — which is the page saying, there, that
+it was not. Whoever next has the development app open with this change served
+at `localhost:3010`:
 
-1. An account with no place at all is asked by the open itself; one that
-   holds words, or coordinates, is not — by the table — and is asked by the
-   press of 설정 → 내 정보 → 위치 → 이 기기 위치 쓰기. That the button is drawn
-   at all is the first proof: it is drawn only when the shell has answered
-   `device_place_permission`.
+1. An account with no place at all is asked when the window is first looked
+   at; one that holds words, or coordinates, is not — by the table — and is
+   asked by the press of 설정 → 내 정보 → 위치 → 이 기기 위치 쓰기. That the
+   button is drawn at all is the first proof: it is drawn only when the shell
+   has answered `device_place_permission`.
 2. The system's question appears with the sentence above under it. The log
    reads `the page asked where this device is: permission=Prompt prompt=true`
    and `asking the person whether this device may be read`.
 3. Allowed: `this device answered: place`, and the screen says 이 기기 위치:
    위도 …, 경도 … 부근 with two decimals. Refused: `this device answered:
-   denied`, and the screen says so in words.
-4. With coordinates saved and no words, the NEXT launch follows: `permission=
-   Granted prompt=false`, `this device answered: place`, and no write unless
-   the rounded value moved.
+   denied`, and the screen says so in words. Left alone for a minute: `this
+   device answered: unanswered`, the button comes back with a sentence saying
+   the question was not answered, and pressing again asks again.
+4. With coordinates saved and no words, close the window to the tray and
+   bring it back: the first time, `permission=Granted prompt=false` and `this
+   device answered: place`, and no write unless the device is two hundredths
+   of a degree from what is saved. Do it again within the hour and the log
+   says nothing — the page did not ask.
+5. 위치 지우기, then the tray and back: nothing about the device in the log,
+   now or an hour on.
 
 If no question appears at 2, read what `locationd` said about the app
 (`log show --last 2m --predicate 'process == "locationd" AND eventMessage
@@ -312,7 +364,8 @@ CONTAINS "lafagent"'`): at the dry run it logged that Launch Services knew the
 client "as a plugin or app" under neither name, and then that it "will now
 show up in settings" — for a bundle run from under `target/`. A bundle the
 system cannot name may not be asked about; `lsregister -f` on the bundle, or a
-copy in `~/Applications`, is the thing to try.
+copy in `~/Applications`, is the thing to try. The button comes back after a
+minute either way.
 
 **Windows answers `unsupported`**, and the page there is what it was: Seoul,
 or the place the person says. Reading it would be WinRT's

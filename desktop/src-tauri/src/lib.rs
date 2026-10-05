@@ -1103,15 +1103,23 @@ async fn device_place_permission(app: tauri::AppHandle) -> location::DevicePermi
 /// Where this device is, to two decimals of a degree, or the one reason it cannot be said.
 ///
 /// `prompt` IS THE PAGE'S WORD ON WHETHER A PERSON MAY BE SHOWN ANYTHING. With it, a device that
-/// has not decided puts the system's own question up and the call waits for the answer. Without
-/// it nothing is ever shown: allowed is read, and not-decided answers `undetermined_no_prompt`.
-/// The page passes it for the one ask per device and for the press of a button, and never for the
-/// read that keeps a place following its device.
+/// has not decided puts the system's own question up and the call waits for the answer — for a
+/// minute, and then answers `unanswered`, which is not a decision. Without it nothing is ever
+/// shown: allowed is read, and not-decided answers `undetermined_no_prompt`. The page passes it
+/// for the one ask per device and for the press of a button, and never for the read that keeps a
+/// place following its device.
 ///
 /// ROUNDED BEFORE IT IS A VALUE (`location.rs`), so there is no finer one to hand over, and never
-/// logged. Read-only like the command above: neither writes anything anywhere. A page running
-/// somebody else's script can show nothing with them but the system's own question, and learns
-/// nothing finer than the two decimals the account already keeps and `/api/me` already answers.
+/// logged. Read-only like the command above: neither writes anything anywhere.
+///
+/// WHAT A SCRIPT ON THE ORIGIN GETS FROM THIS, SAID PLAINLY. A page running somebody else's script
+/// can call both commands as the app does. It can put the system's own question in front of the
+/// person, as often as the system will show it. And on a device that has said yes it can read where
+/// that device is, to two decimals of a degree, whenever it likes — whether or not the account
+/// keeps a place, and even where the person cleared one or only ever said where they are in words.
+/// What it cannot get is anything finer than those two decimals, or anything at all from a device
+/// that said no. That is the grant, and `capabilities/default.json` makes it to the fleet's
+/// origins and to no other.
 #[tauri::command]
 async fn device_place(app: tauri::AppHandle, prompt: bool) -> location::DevicePlace {
     let (answer, mut answered) = tauri::async_runtime::channel(1);
@@ -1142,6 +1150,30 @@ fn pretend_update(app: &tauri::AppHandle) {
         thread::sleep(Duration::from_secs(8));
         log::info!("pretending update {version} is ready (development build)");
         mark_update_ready(&handle, ReadyUpdate { version });
+    });
+}
+
+/// A development build says what the system holds about asking this device, when it is asked to:
+/// `LAF_SHELL_DEVICE_STATUS` in the environment, with any value. Two lines in the log — whether the
+/// device may be asked, and what a read that must show nothing answers.
+///
+/// IT NEVER SHOWS ANYBODY ANYTHING. It looks at the permission and reads with `prompt: false`, so
+/// on a device nobody has decided for it is told `undetermined_no_prompt`, and only one that
+/// already said yes is read — and of that read the log holds the kind, never the place. It is here
+/// because nothing outside the page can call a command, and whether CoreLocation, the usage string
+/// and the main-thread hop all work in a bundle is worth knowing before a person is put in front
+/// of the dialog. Absent from a release build, like `DEV_ORIGIN`.
+#[cfg(debug_assertions)]
+fn say_device_status(app: &tauri::AppHandle) {
+    if std::env::var_os("LAF_SHELL_DEVICE_STATUS").is_none() {
+        return;
+    }
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let permission = device_place_permission(handle.clone()).await;
+        log::info!("this device may be asked where it is: {permission:?} (development build)");
+        let silent = device_place(handle, false).await;
+        log::info!("asked where it is with nothing shown, this device answers: {silent:?}");
     });
 }
 
@@ -1548,6 +1580,8 @@ pub fn run() {
             apply_summon(app.handle(), &summon_choice(app.handle()));
             #[cfg(debug_assertions)]
             pretend_update(app.handle());
+            #[cfg(debug_assertions)]
+            say_device_status(app.handle());
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {

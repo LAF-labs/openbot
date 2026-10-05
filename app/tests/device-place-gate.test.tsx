@@ -23,25 +23,28 @@ import {
 /**
  * WHEN THE DEVICE IS ASKED WHERE IT IS — held on the mounted route tree, where the gate lives.
  *
- * `_authed` mounts the device's once (`useDevicePlaceOnce`) above every signed-in screen, and two
- * of those screens exist to ask for something first: `/welcome`, the first run, whose button
- * records the agreement to the terms, and `/consent`, which asks again when the text has changed.
- * The first cut ran for anybody signed in: a new person met the browser's location dialog on the
+ * `_authed` mounts the device's place (`useDevicePlace`) above every signed-in screen, and two of
+ * those screens exist to ask for something first: `/welcome`, the first run, whose button records
+ * the agreement to the terms, and `/consent`, which asks again when the text has changed. The
+ * first cut ran for anybody signed in: a new person met the browser's location dialog on the
  * first-run screen, and a browser that had already said yes was read and its coordinates saved
  * before any agreement was recorded (review of pull request 91).
  *
  * So these mount the real routes with a browser that says yes to everything — the worst case, where
  * nothing would be shown — and count what was asked of it and what reached the server.
  *
- * And, further down, what an open does once the person may be asked: a device that already said
- * yes is read again and its place follows it; a place cleared on this device is left alone; the
- * two marks as a browser's storage really keeps them; and the installed app, which asks its shell.
+ * And, further down, what a look does once the person may be asked: a device that already said
+ * yes is read again and its place follows it, at most once an hour and only for a fix worth
+ * keeping; a place cleared on this device is left alone; the marks as a browser's storage really
+ * keeps them; the page being looked at again; and the installed app, which asks its shell.
  */
 
-/** That this device's once is spent — the one key from before the place followed the device. */
+/** That this device's person has decided about being asked: `1`. `0` is asked and not answered. */
 const MARK = "laf.device-place-asked";
-/** Whether the person cleared this device's place here: `1`, or `0` from a build that knows. */
+/** That the person cleared this device's place here: `1`. Absent, they have not. */
 const CLEARED = "laf.device-place-cleared";
+/** When this device was last read by itself, in milliseconds. */
+const READ_AT = "laf.device-place-read-at";
 const DEVICE = { latitude: 37.498_095, longitude: 127.027_61 };
 /** `DEVICE`, as anything is ever allowed to hold it. */
 const DEVICE_COARSE = { latitude: 37.5, longitude: 127.03 };
@@ -50,10 +53,31 @@ const ELSEWHERE = { latitude: 35.16, longitude: 129.16 };
 let queried = 0;
 let read = 0;
 let state: "granted" | "prompt" | "denied" = "granted";
+/** Where the browser says the device is, and how far off it says that may be, in metres. */
+let device = DEVICE;
+let accuracy: number | undefined = 65;
+/** What the page is told about being looked at. */
+let visibility: "visible" | "hidden" = "visible";
 const real = {
   permissions: undefined as PropertyDescriptor | undefined,
   geolocation: undefined as PropertyDescriptor | undefined,
 };
+
+/** The page is put away, or looked at again: what a tab switched back to and a window uncovered say. */
+function look(next: "visible" | "hidden") {
+  visibility = next;
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+/** The window is clicked into, or brought to the front, while it was on screen all along. */
+function comeBack() {
+  window.dispatchEvent(new Event("focus"));
+}
+
+/** An hour and a minute have passed since this device was last read by itself. */
+function anHourPasses() {
+  localStorage.setItem(READ_AT, String(Date.now() - 61 * 60_000));
+}
 
 beforeAll(async () => {
   await installAppDom();
@@ -64,8 +88,14 @@ beforeEach(() => {
   queried = 0;
   read = 0;
   state = "granted";
-  localStorage.removeItem(MARK);
-  localStorage.removeItem(CLEARED);
+  device = DEVICE;
+  accuracy = 65;
+  visibility = "visible";
+  for (const key of [MARK, CLEARED, READ_AT]) localStorage.removeItem(key);
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => visibility,
+  });
   Object.defineProperty(navigator, "permissions", {
     configurable: true,
     value: {
@@ -80,16 +110,16 @@ beforeEach(() => {
     value: {
       getCurrentPosition: (resolve: (position: unknown) => void) => {
         read += 1;
-        resolve({ coords: DEVICE });
+        resolve({ coords: { ...device, accuracy } });
       },
     },
   });
 });
 afterEach(async () => {
   await unmountApps();
-  localStorage.removeItem(MARK);
-  localStorage.removeItem(CLEARED);
+  for (const key of [MARK, CLEARED, READ_AT]) localStorage.removeItem(key);
   delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
+  delete (document as unknown as Record<string, unknown>).visibilityState;
   for (const name of ["permissions", "geolocation"] as const) {
     const descriptor = real[name];
     if (descriptor) Object.defineProperty(navigator, name, descriptor);
@@ -224,9 +254,9 @@ describe("the browser is asked where it is only once the person has agreed", () 
     expect(owed.writes).toEqual([
       { method: "PUT", body: { coordinates: DEVICE_COARSE } },
     ]);
-    // Asked, and not cleared: the old key as it always was, and the new one beside it.
+    // Decided, and not cleared: nothing is written about a 지우기 that was not pressed.
     expect(localStorage.getItem(MARK)).toBe("1");
-    expect(localStorage.getItem(CLEARED)).toBe("0");
+    expect(localStorage.getItem(CLEARED)).toBeNull();
   });
 });
 
@@ -258,7 +288,6 @@ describe("and not when there is nothing to ask for", () => {
     // Asked what it would say — which shows nothing — and not read.
     expect({ queried, read }).toEqual({ queried: 1, read: 0 });
     expect(writes).toEqual([]);
-    expect(localStorage.getItem(CLEARED)).toBe("0");
   });
 
   test("a browser that has not decided is asked, and one that said no is left alone", async () => {
@@ -269,7 +298,7 @@ describe("and not when there is nothing to ask for", () => {
     expect({ queried, read }).toEqual({ queried: 1, read: 1 });
     await first.unmount();
 
-    localStorage.removeItem(MARK);
+    for (const key of [MARK, READ_AT]) localStorage.removeItem(key);
     queried = 0;
     read = 0;
     state = "denied";
@@ -290,7 +319,7 @@ describe("and not when there is nothing to ask for", () => {
  * holding 춘천: the device was marked and never read. Coordinates saved at the first allow were a
  * snapshot, and the "real location" default was wherever the person had been that day.
  */
-describe("a device that already said yes is read again at every open", () => {
+describe("a device that already said yes is read again when the page is looked at", () => {
   test("over a place the account holds, the place moves with the device — and nothing is shown for it", async () => {
     const { api, writes } = server({
       onboarded: true,
@@ -304,7 +333,11 @@ describe("a device that already said yes is read again at every open", () => {
     ]);
     // A device seeing the account's place for the first time has had its once, and follows.
     expect(localStorage.getItem(MARK)).toBe("1");
-    expect(localStorage.getItem(CLEARED)).toBe("0");
+    expect(localStorage.getItem(CLEARED)).toBeNull();
+    // And when it was read is kept on the device: that is what makes it once an hour.
+    expect(Date.now() - Number(localStorage.getItem(READ_AT))).toBeLessThan(
+      60_000,
+    );
   });
 
   test("a device that has not moved is read and writes nothing", async () => {
@@ -316,6 +349,95 @@ describe("a device that already said yes is read again at every open", () => {
     await view.waitFor(() => read === 1, "the device to be read");
     await view.settle(60);
     expect(writes).toEqual([]);
+  });
+
+  test("the page looked at again follows the device — and looking twice in an hour reads it once", async () => {
+    /*
+     * THE INSTALLED APP IS NOT OPENED TWICE. Closing its window puts it away and the page behind
+     * it lives for days, so a hook that ran once per mount ran once per install: somebody who
+     * travelled with the app in the tray stayed where they had been until they quit it (review of
+     * pull request 94). The page is told when it is seen again, and that is a look too.
+     */
+    const { api, writes } = server({
+      onboarded: true,
+      whereabouts: { place: null, coordinates: DEVICE_COARSE },
+    });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => read === 1, "the device to be read at the open");
+    await view.settle(60);
+    expect(writes).toEqual([]);
+
+    // Put away and looked at again a moment later, in another town: within the hour the device
+    // is not read — it is not even asked what it would say.
+    device = ELSEWHERE;
+    look("hidden");
+    look("visible");
+    await view.settle(60);
+    expect({ queried, read }).toEqual({ queried: 1, read: 1 });
+    expect(writes).toEqual([]);
+
+    // An hour on, the same look reads it, and the place moves.
+    anHourPasses();
+    look("hidden");
+    await view.settle(30);
+    expect(read).toBe(1);
+    look("visible");
+    await view.waitFor(() => writes.length === 1, "the new place");
+    expect({ queried, read }).toEqual({ queried: 2, read: 2 });
+    expect(writes).toEqual([
+      { method: "PUT", body: { coordinates: ELSEWHERE } },
+    ]);
+  });
+
+  test("a page that is not being looked at asks nothing until it is", async () => {
+    // A tab opened behind another; an app started at login with its window put away.
+    visibility = "hidden";
+    const { api, writes } = server({
+      onboarded: true,
+      whereabouts: { place: null, coordinates: ELSEWHERE },
+    });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.settle(60);
+    expect({ queried, read }).toEqual({ queried: 0, read: 0 });
+    expect(writes).toEqual([]);
+    expect(localStorage.getItem(MARK)).toBeNull();
+
+    look("visible");
+    await view.waitFor(() => writes.length === 1, "the device's place");
+    expect({ queried, read }).toEqual({ queried: 1, read: 1 });
+  });
+
+  test("a fix too vague to name the town is not kept by itself, and the place the account has stays", async () => {
+    /*
+     * A desktop on a cable is placed by its address, to within a city or two. "Last looked at
+     * wins" would have let that overwrite the good place a laptop gave, at every open.
+     */
+    accuracy = 48_000;
+    const { api, writes } = server({
+      onboarded: true,
+      whereabouts: { place: null, coordinates: ELSEWHERE },
+    });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => read === 1, "the device to be read");
+    await view.settle(60);
+    expect(writes).toEqual([]);
+
+    // A browser that does not say how far off it is has not said it is good.
+    accuracy = undefined;
+    anHourPasses();
+    look("visible");
+    await view.waitFor(() => read === 2, "the device to be read again");
+    await view.settle(60);
+    expect(writes).toEqual([]);
+
+    // Good to a few streets: now it is kept.
+    accuracy = 800;
+    anHourPasses();
+    look("visible");
+    await view.waitFor(() => writes.length === 1, "the device's place");
+    expect(writes).toEqual([
+      { method: "PUT", body: { coordinates: DEVICE_COARSE } },
+    ]);
   });
 
   test("a person who has said where they are is not followed, whatever the account also holds", async () => {
@@ -343,6 +465,10 @@ describe("a device that already said yes is read again at every open", () => {
       });
       const view = await mountApp({ path: "/settings/shop", api });
       await view.settle(60);
+      // Not at the open, and not when the page is looked at again.
+      look("hidden");
+      look("visible");
+      await view.settle(60);
       expect({ queried, read }).toEqual({ queried: 0, read: 0 });
       expect(writes).toEqual([]);
       await view.unmount();
@@ -350,33 +476,17 @@ describe("a device that already said yes is read again at every open", () => {
     expect(localStorage.getItem(CLEARED)).toBe("1");
   });
 
-  test("a mark from before 'cleared' existed stays quiet over nothing, and follows over coordinates", async () => {
-    /*
-     * `laf.device-place-asked=1` was written when a device was asked and when its place was cleared
-     * alike, and it is on people's devices with no second key beside it. Over nothing held it may
-     * have been a 지우기, so nothing is read; over coordinates it was not, and the device follows —
-     * and is marked the way this build marks, so the next open need not guess.
-     */
+  test("a device whose person decided before, and that says yes, is read: the two marks are read plainly", async () => {
+    // Decided, nothing held, allowed: the answer that never arrived is fetched with nothing shown.
     localStorage.setItem(MARK, "1");
-    const quiet = server({ onboarded: true });
-    const first = await mountApp({ path: "/settings/shop", api: quiet.api });
-    await first.settle(60);
-    expect({ queried, read }).toEqual({ queried: 0, read: 0 });
-    expect(quiet.writes).toEqual([]);
-    expect(localStorage.getItem(CLEARED)).toBeNull();
-    await first.unmount();
-
-    const held = server({
-      onboarded: true,
-      whereabouts: { place: null, coordinates: ELSEWHERE },
-    });
-    const second = await mountApp({ path: "/settings/shop", api: held.api });
-    await second.waitFor(() => held.writes.length === 1, "the device's place");
-    expect(held.writes).toEqual([
+    const { api, writes } = server({ onboarded: true });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => writes.length === 1, "the device's place");
+    expect(writes).toEqual([
       { method: "PUT", body: { coordinates: DEVICE_COARSE } },
     ]);
-    expect(localStorage.getItem(MARK)).toBe("1");
-    expect(localStorage.getItem(CLEARED)).toBe("0");
+    // No key about clearing appears because one about asking was there.
+    expect(localStorage.getItem(CLEARED)).toBeNull();
   });
 });
 
@@ -393,6 +503,7 @@ describe("in the installed app the shell is asked, by the same rules", () => {
    * A shell that answers the two questions about the device. What it was asked is kept apart:
    * `looks` — what it would say, which shows nobody anything and which this screen's own button
    * asks as well as the open — and `reads`, each of which is the device really being read.
+   * `answers` may be changed between looks: the device moves, the person decides.
    */
   function shell(answers: { permission: unknown; place?: unknown }) {
     const asked = { looks: [] as unknown[], reads: [] as unknown[] };
@@ -415,10 +526,10 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     return asked;
   }
 
-  test("a device that has not decided is asked once, and one that already said yes is read with nothing shown", async () => {
+  test("a device that has not decided is asked, and one that already said yes is read with nothing shown", async () => {
     const asked = shell({
       permission: "prompt",
-      place: { kind: "place", ...DEVICE },
+      place: { kind: "place", ...DEVICE, accuracy: 65 },
     });
     const first = server({ onboarded: true });
     const once = await mountApp({ path: "/settings/shop", api: first.api });
@@ -433,10 +544,11 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     expect(localStorage.getItem(MARK)).toBe("1");
     await once.unmount();
 
-    // The next open, somewhere else: allowed now, so read again — told to show nothing.
+    // An hour on, somewhere else: allowed now, so read again — told to show nothing.
+    anHourPasses();
     const followed = shell({
       permission: "granted",
-      place: { kind: "place", ...ELSEWHERE },
+      place: { kind: "place", ...ELSEWHERE, accuracy: 65 },
     });
     const second = server({
       onboarded: true,
@@ -450,6 +562,118 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     ]);
     // The browser's own APIs were never part of it.
     expect({ queried, read }).toEqual({ queried: 0, read: 0 });
+  });
+
+  test("a question the person never answered spends nothing, and the next look asks again", async () => {
+    /*
+     * THE ONE ASK WAS SPENT ON A DIALOG NOBODY SAW (review of pull request 94). The system shows
+     * its question only for an app that is in use, and says nothing when it does not: the ask
+     * hung, already marked. The shell answers `unanswered` after a minute now.
+     */
+    const asked = shell({
+      permission: "prompt",
+      place: { kind: "unanswered" },
+    });
+    const { api, writes } = server({ onboarded: true });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => asked.reads.length === 1, "the ask");
+    await view.settle(60);
+    expect(asked.reads).toEqual([{ prompt: true }]);
+    expect(writes).toEqual([]);
+    // Asked, and not answered: nothing decided, and nothing noted as a read.
+    expect(localStorage.getItem(MARK)).toBe("0");
+    expect(localStorage.getItem(READ_AT)).toBeNull();
+
+    // The window is brought to the front again: that is a look, and the person is asked again.
+    comeBack();
+    await view.waitFor(() => asked.reads.length === 2, "the second ask");
+    expect(asked.reads).toEqual([{ prompt: true }, { prompt: true }]);
+    expect(localStorage.getItem(MARK)).toBe("0");
+  });
+
+  test("a second look while the person is still being asked starts nothing: one question, one answer", async () => {
+    // The system's question is up and the person is reading it. However often the window is
+    // looked at meanwhile, the shell is asked nothing more — not even what it would say.
+    let answer: (place: unknown) => void = () => {};
+    const asked = shell({
+      permission: "prompt",
+      place: new Promise((resolve) => {
+        answer = resolve;
+      }),
+    });
+    const { api, writes } = server({ onboarded: true });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => asked.reads.length === 1, "the ask");
+    await view.settle(60);
+    const looks = asked.looks.length;
+    comeBack();
+    look("hidden");
+    look("visible");
+    comeBack();
+    await view.settle(60);
+    expect(asked.reads).toEqual([{ prompt: true }]);
+    expect(asked.looks).toHaveLength(looks);
+
+    // They say yes: one place, saved once.
+    answer({ kind: "place", ...DEVICE, accuracy: 65 });
+    await view.waitFor(() => writes.length === 1, "the device's place");
+    await view.settle(60);
+    expect(writes).toEqual([
+      { method: "PUT", body: { coordinates: DEVICE_COARSE } },
+    ]);
+    expect(localStorage.getItem(MARK)).toBe("1");
+  });
+
+  test("bringing the window back is a look: put away and shown again, or clicked into, the device is followed", async () => {
+    /*
+     * Closing the installed app only puts its window away, and bringing it back reloads nothing.
+     * What the page is told is what a tab is told — it is seen again, or its window has the
+     * keyboard again — and both are a look.
+     */
+    const answers = {
+      permission: "granted",
+      place: { kind: "place", ...DEVICE, accuracy: 65 } as unknown,
+    };
+    const asked = shell(answers);
+    const { api, writes } = server({
+      onboarded: true,
+      whereabouts: { place: null, coordinates: DEVICE_COARSE },
+    });
+    const view = await mountApp({ path: "/settings/shop", api });
+    await view.waitFor(() => asked.reads.length === 1, "the read at the open");
+    await view.settle(60);
+    expect(writes).toEqual([]);
+
+    // Away in the tray and back within the hour, in another town: nothing.
+    answers.place = { kind: "place", ...ELSEWHERE, accuracy: 65 };
+    look("hidden");
+    look("visible");
+    comeBack();
+    await view.settle(60);
+    expect(asked.reads).toHaveLength(1);
+
+    // An hour on, the window is brought back from the tray: read, with nothing shown, and moved.
+    anHourPasses();
+    look("hidden");
+    look("visible");
+    await view.waitFor(() => writes.length === 1, "the new place");
+    expect(asked.reads).toEqual([{ prompt: false }, { prompt: false }]);
+    expect(writes).toEqual([
+      { method: "PUT", body: { coordinates: ELSEWHERE } },
+    ]);
+
+    // And another hour on, it was on screen all along and is clicked into: the same.
+    answers.place = { kind: "place", ...DEVICE, accuracy: 65 };
+    anHourPasses();
+    comeBack();
+    await view.waitFor(() => writes.length === 2, "the place, back again");
+    expect(asked.reads).toHaveLength(3);
+    // A window that is not on screen is not a look, whatever has the keyboard.
+    anHourPasses();
+    look("hidden");
+    comeBack();
+    await view.settle(60);
+    expect(asked.reads).toHaveLength(3);
   });
 
   test("the first-run screen and the screen that asks again for the agreement ask the shell nothing either", async () => {
@@ -466,13 +690,20 @@ describe("in the installed app the shell is asked, by the same rules", () => {
     ] as const) {
       const asked = shell({
         permission: "granted",
-        place: { kind: "place", ...DEVICE },
+        place: { kind: "place", ...DEVICE, accuracy: 65 },
       });
       const { api, writes } = server(me);
       const view = await mountApp({ path, api });
       await view.settle(60);
-      // Not even what it would say.
-      expect(asked).toEqual({ looks: [], reads: [] });
+      // Not even what it would say — at the open, or when the window is brought back.
+      look("hidden");
+      look("visible");
+      comeBack();
+      await view.settle(60);
+      expect({ looks: asked.looks, reads: asked.reads }).toEqual({
+        looks: [],
+        reads: [],
+      });
       expect(writes).toEqual([]);
       expect(localStorage.getItem(MARK)).toBeNull();
       await view.unmount();
@@ -481,11 +712,10 @@ describe("in the installed app the shell is asked, by the same rules", () => {
 
   test("a shell that cannot read the device — from before it could, or on Windows — is asked and left alone", async () => {
     for (const permission of [undefined, "unsupported", "denied"]) {
-      localStorage.removeItem(MARK);
-      localStorage.removeItem(CLEARED);
+      for (const key of [MARK, CLEARED, READ_AT]) localStorage.removeItem(key);
       const asked = shell({
         permission,
-        place: { kind: "place", ...DEVICE },
+        place: { kind: "place", ...DEVICE, accuracy: 65 },
       });
       const { api, writes } = server({ onboarded: true });
       const view = await mountApp({ path: "/settings/shop", api });
