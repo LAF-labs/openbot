@@ -1636,15 +1636,28 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * What none of them can show — the walls, and the sweep itself — is the rehearsal's
  * (`scripts/workbench-probe.ts`), in the service's own container on Linux.
  *
+ * RAISED AGAIN 2026-10-06 after that change's independent read, by exactly what was added: `root`
+ * from 788 to 799 and `server` from 3656 to 3661. Each is the reproduction of a finding, written
+ * before its fix. Five to `server` in `workbench-client.test.ts`: an answer that never ends let go
+ * of at its bound (counting what the fake served, not what the client kept), the same for a
+ * refusal and for `/health`, a redirect followed nowhere, a signal's name held to its shape, and a
+ * caller that gives up while waiting its turn. Six to `root` in `workbench-daemon.test.ts`: a
+ * directory where the socket belongs, a daemon starting with nothing beside its socket, a daemon
+ * told to leave, a caller that gives up while files are being placed, a path sixteen folders deep
+ * at most, and no room as the request's fault. Two in `workbench-sweep.test.ts`: a state read
+ * after a name's last bracket, and — made for real where there is a `/proc` — a process whose
+ * leader has exited seen as running. Three in `workbench-probe.test.ts`: every script the probe
+ * sends parsed, a signal mask read as names, and the probe's own floor.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3656, roots: ["server"] },
+  { name: "server", floor: 3661, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
-  { name: "root", floor: 788, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 799, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
