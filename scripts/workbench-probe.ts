@@ -24,10 +24,17 @@
  *
  * The second half is never started anywhere but there. Its first act is to ask a script where it
  * is, and when the answer is not the sandbox it stops, having sent nothing else.
+ *
+ * AND A THIRD CONTAINER, FOR THE ACT (since 2026-10-07). Once the walls have been tried, the
+ * gateway's own act for a script's run is driven against the same service from
+ * `scripts/workbench-act-probe.ts`, in a container like the second. That file is apart from this
+ * one because it imports the gateway, and this file is also the half that runs on the machine
+ * running the rehearsal — which installs nothing, and must go on importing nothing that needs
+ * installing. What the two share is here: the lines the act's probe prints, the scripts it sends.
  */
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   createWorkbench,
   type WorkbenchAnswer,
@@ -40,6 +47,28 @@ export type ProbeCheck = { name: string; ok: boolean | null; detail: string };
 
 /** What the line the inner half prints starts with, so it is found among anything else printed. */
 export const PROBE_RESULT = "WORKBENCH_PROBE_RESULT ";
+
+/** The same, for the act's probe (`workbench-act-probe.ts`): what it found, as checks. */
+export const ACT_RESULT = "WORKBENCH_ACT_RESULT ";
+/**
+ * And one line for each thing the act's probe drove: what came of it, and the rows the gateway
+ * handed a store for it, whole. Printed by the rehearsal as they are, because they are the point —
+ * what a run's trail holds, for runs that really ran.
+ */
+export const ACT_ROWS = "WORKBENCH_ACT_ROWS ";
+
+/**
+ * Four strings, each put in one place content lives during the act's first run, and then looked
+ * for in every row that run left: the script's own text, what it printed, the file it read, the
+ * file it made. Two are written here as halves and joined by the script, so that what the script
+ * PRINTS and what it WRITES are not also lines of the script.
+ */
+export const ACT_SENTINELS = {
+  script: "SCRIPT-SENTINEL-9f1c",
+  stdout: "STDOUT-SENTINEL",
+  input: "INPUT-SENTINEL-27ab",
+  product: "PRODUCT-SENTINEL",
+} as const;
 
 const SOCKET_DIRECTORY = "/run/laf-workbench";
 const SOCKET = `${SOCKET_DIRECTORY}/workbench.sock`;
@@ -156,6 +185,33 @@ XLSX.utils.book_append_sheet(made, XLSX.utils.aoa_to_sheet([["total"], [total]])
 await Bun.write("out/total.xlsx", XLSX.write(made, { type: "buffer", bookType: "xlsx" }));
 console.log("total " + total);
 `;
+
+/** The scripts the act's probe sends through the gateway (`workbench-act-probe.ts`). */
+export const ACT_SCRIPTS = {
+  /** Where a script is, in three facts: enough to stop before anything else is sent. */
+  where: `
+import { networkInterfaces } from "node:os";
+console.log(JSON.stringify({
+  uid: process.getuid(), parent: process.ppid,
+  interfaces: Object.entries(networkInterfaces())
+    .filter(([, addresses]) => (addresses ?? []).some((address) => !address.internal)).map(([name]) => name),
+}));
+`,
+  /** Sum a column of the one file it was handed, print the total, and leave a file saying it. */
+  total: String.raw`
+// ${ACT_SENTINELS.script}: a line of the script, which no row may hold.
+const rows = (await Bun.file("uploads/sales.csv").text()).trim().split("\n").slice(1);
+const total = rows.reduce((sum, row) => sum + Number(row.split(",")[1]), 0);
+await Bun.write("out/totals.csv", "total\n" + total + "\n" + ["PRODUCT", "SENTINEL"].join("-") + "\n");
+console.log(["STDOUT", "SENTINEL"].join("-") + " total " + total);
+`,
+  /** Longer than anybody waits: ended only by its caller's Stop. */
+  long: `
+await Bun.sleep(30_000);
+console.log("never said");
+`,
+  after: `console.log("after the stop");`,
+} as const;
 
 type Seen = {
   pid: number;
@@ -1199,12 +1255,12 @@ export function probeOverride(input: {
   serverImage: string;
   /** This file, on the machine running the rehearsal. */
   probePath: string;
+  /** The act's probe beside it (`workbench-act-probe.ts`). */
+  actProbePath: string;
 }): string {
-  return [
-    "# scripts/workbench-probe.ts: the container the workbench is driven from. Not part of any",
-    "# deployment; written by the rehearsal into its own directory and removed with it.",
-    "services:",
-    "  workbench-probe:",
+  /** A container on the socket's volume: the server's image, the key, no network, one command. */
+  const service = (name: string, files: string[], program: string) => [
+    `  ${name}:`,
     `    image: ${input.serverImage}`,
     "    profiles:",
     "      - workbench",
@@ -1217,22 +1273,41 @@ export function probeOverride(input: {
     `      ${KEY_VARIABLE}: \${${KEY_VARIABLE}:?the rehearsal sets it}`,
     "    volumes:",
     `      - workbench-socket:${SOCKET_DIRECTORY}`,
-    `      - ${input.probePath}:/app/scripts/workbench-probe.ts:ro`,
+    ...files.map((file) => `      - ${file}:/app/scripts/${basename(file)}:ro`),
     "    command:",
-    `      ["bun", "--no-env-file", "/app/scripts/workbench-probe.ts", "${SOCKET}"]`,
+    `      ["bun", "--no-env-file", "/app/scripts/${program}", "${SOCKET}"]`,
+  ];
+  return [
+    "# scripts/workbench-probe.ts: the containers the workbench is driven from. Not part of any",
+    "# deployment; written by the rehearsal into its own directory and removed with it.",
+    "services:",
+    ...service("workbench-probe", [input.probePath], "workbench-probe.ts"),
+    "  # The gateway's act for a script's run, against the same service. It imports this file's",
+    "  # constants, so both are mounted; the gateway itself is the image's own source.",
+    ...service(
+      "workbench-act-probe",
+      [input.probePath, input.actProbePath],
+      "workbench-act-probe.ts",
+    ),
     "",
   ].join("\n");
 }
 
-/** The inner half's line, out of everything a container printed. Null when it printed none. */
-export function probeResultFrom(output: string): ProbeCheck[] | null {
+/**
+ * The inner half's line, out of everything a container printed. Null when it printed none. The
+ * act's probe prints the same kind of line under its own first word (`ACT_RESULT`).
+ */
+export function probeResultFrom(
+  output: string,
+  prefix: string = PROBE_RESULT,
+): ProbeCheck[] | null {
   const line = output
     .split("\n")
-    .filter((candidate) => candidate.startsWith(PROBE_RESULT))
+    .filter((candidate) => candidate.startsWith(prefix))
     .at(-1);
   if (!line) return null;
   try {
-    const parsed: unknown = JSON.parse(line.slice(PROBE_RESULT.length));
+    const parsed: unknown = JSON.parse(line.slice(prefix.length));
     if (!Array.isArray(parsed)) return null;
     return parsed.filter(
       (check): check is ProbeCheck =>
@@ -1273,6 +1348,9 @@ export function megabytesHeld(usage: string): number | null {
  * matters here: fewer is a probe that stopped, and a stopped probe has not found the walls sound.
  */
 export const PROBE_CHECKS = 32;
+
+/** The same floor for the act's probe: how many things it reports when it runs to its end. */
+export const ACT_CHECKS = 9;
 
 /** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
 export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
@@ -1404,6 +1482,7 @@ export async function rehearseWorkbench(tools: {
     probeOverride({
       serverImage: tools.serverImage,
       probePath: import.meta.path,
+      actProbePath: join(dirname(import.meta.path), "workbench-act-probe.ts"),
     }),
   );
   tools.environment.COMPOSE_FILE = `${tools.environment.COMPOSE_FILE ?? "docker-compose.yml"}:${PROBE_COMPOSE_FILE}`;
@@ -1550,6 +1629,42 @@ export async function rehearseWorkbench(tools: {
     console.log(
       (await compose(["logs", "--no-color", "--tail", "80", "workbench"]))
         .stdout,
+    );
+
+    /*
+     * THE ACT, AGAINST THE SAME SERVICE (`workbench-act-probe.ts`): the gateway's own method for
+     * a script's run — its decisions, its rows, the server's client — with this daemon on the
+     * other end. After the walls, so that a wall that did not hold is what a failed run is read
+     * as; before the daemon is asked to start as root. What each drive left on the trail is
+     * printed whole: that is what is being shown.
+     */
+    const acted = await compose([
+      "run",
+      "--rm",
+      "--no-TTY",
+      "--no-deps",
+      "workbench-act-probe",
+    ]);
+    for (const line of acted.stdout.split("\n")) {
+      if (line.startsWith(ACT_ROWS)) console.log(line);
+    }
+    const act = probeResultFrom(acted.stdout, ACT_RESULT);
+    if (!act) {
+      check(
+        "the act's probe ran to its end inside the deployment",
+        false,
+        `exit ${acted.code}: ${(acted.stderr.trim() || acted.stdout.trim()).slice(-900)}`,
+      );
+    }
+    for (const result of act ?? []) {
+      if (result.ok === null) {
+        finding(`not measured — ${result.name}: ${result.detail}`);
+      } else check(result.name, result.ok, result.detail);
+    }
+    check(
+      `the act's probe said all of what it tries (${ACT_CHECKS} things)`,
+      (act?.length ?? 0) === ACT_CHECKS,
+      `${act?.length ?? 0} reported`,
     );
 
     // OUTSIDE ITS WALLS IT DOES NOT START. The same service, the same command, as root.
