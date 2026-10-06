@@ -1359,12 +1359,36 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * runs beside it — and one gone from `public-data-rest.test.ts`, which held the same acceptance
  * where it used to be written, in the deployment keys' own reconciliation.
  *
+ * LOWERED 2026-10-06, `server` from 3600 to 3553, by exactly the forty-seven tests that held a door
+ * no deployment ever opened: `GET /api/admin/metrics/insights`, the fleet's read of a VM's counts
+ * over HTTPS, mounted only where `LAF_FLEET_METRICS_TOKEN` was set — and the provisioner never
+ * wrote that line, so it was mounted nowhere; the fleet reads the same counts over SSH with its own
+ * statements. The door went with what only it used (`insights/routes.ts`, `insights/read.ts`, nine
+ * of the report's ten section shapes, the token in the configuration). Gone with them: the
+ * thirty-one of `insights-routes.test.ts` (ten for the bearer — the token in the Bearer scheme,
+ * and nine headers that are not it; ten for `?days=` — the default and the bounds, and nine
+ * values refused rather than clamped; three for the door — the report for the window asked and
+ * `no-store`, 401 with a code before anything is read, 400 with the bounds; three for the mount —
+ * 404 without a token, 404 without a reader, the bearer and not an administrator's session; five
+ * for the token in the configuration — unset, carried as written, and three shapes that refused to
+ * start), the fifteen of `insights-read.integration.test.ts` (thirteen for the ten statements on
+ * the real schema — every section over its window, each section's counts, the prompt cache by
+ * provider, none of the content planted beside a counted row coming back, a wider window — and two
+ * for how a section was read: one failing read as null beside the others, in a transaction that
+ * cannot write) and one in `authorization-matrix.integration.test.ts` (the door answering 401 to
+ * every session, an administrator's included — the matrix enumerates the routes the app mounts,
+ * and this one is no longer among them). What stays is held where it is: the turns statement and
+ * its reading, kept for `eval:from-failures` and for the fleet to copy, by
+ * `turns.integration.test.ts` and `turn-wait.integration.test.ts` — both plant a sentence beside
+ * the measured columns and search the section for it — and the shape of a catalogue key by
+ * `help-opened-route.test.ts`, on the one route that still asks it.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3600, roots: ["server"] },
+  { name: "server", floor: 3553, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

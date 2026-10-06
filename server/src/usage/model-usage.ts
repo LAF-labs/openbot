@@ -41,8 +41,11 @@ export type ModelUsage = {
   provider?: string;
 };
 
-/** The shape a provider's name may take to be kept. The fleet read matches the same source. */
-export const PROVIDER_NAME_SOURCE = "^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,39}$";
+/**
+ * The shape a provider's name may take to be kept. The fleet read on this VM matched the same
+ * source, which is why it is a string apart, until that read went (`insights/read.ts`, 2026-10-06).
+ */
+const PROVIDER_NAME_SOURCE = "^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,39}$";
 const PROVIDER_NAME = new RegExp(PROVIDER_NAME_SOURCE);
 
 /**

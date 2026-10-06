@@ -81,8 +81,6 @@ import {
 } from "./health";
 import { createIdeaRoutes } from "./ideas/routes";
 import { createIdeaService } from "./ideas/service";
-import type { InsightsReport } from "./insights/report";
-import { createInsightsRoutes } from "./insights/routes";
 import { log } from "./log";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
@@ -377,13 +375,6 @@ export type CreateAppOptions = {
    */
   support?: SupportService;
   /**
-   * The fleet's read of this VM's counts (`insights/read.ts`).
-   *
-   * Mounted only with `config.fleetMetricsToken` as well: a reader with no token to guard it is not
-   * a door this deployment opens, and a path nothing is mounted on answers 404 like any other.
-   */
-  insights?: (days: number) => Promise<InsightsReport>;
-  /**
    * Whether a session's person is still let in, asked by `requireUser` on every request.
    *
    * Absent, a removal decides who may sign in again and nothing about who is already inside — the
@@ -509,7 +500,6 @@ export function createApp({
   consent,
   screenViews,
   support,
-  insights,
   sessionAdmission,
   dailyBudget,
   stopAll,
@@ -1053,17 +1043,6 @@ export function createApp({
         notifications.outbox,
         notifications.approvalMetrics,
       ),
-    );
-  }
-
-  /*
-   * The fleet's counts, beside the operator's one metric but not behind the operator's session:
-   * the fleet has no session here and is given a bearer token instead. See insights/routes.ts.
-   */
-  if (config.fleetMetricsToken && insights) {
-    app.route(
-      "/api/admin/metrics",
-      createInsightsRoutes({ token: config.fleetMetricsToken, read: insights }),
     );
   }
 

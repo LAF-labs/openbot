@@ -1,7 +1,9 @@
 /**
- * The `turns` section of the fleet's read (`read.ts`), and the one reading of it into the numbers
- * the weekly report is for: how often the Bot got the owner's errand done, how long the first
- * answer took, how often it had to ask, why it did not finish, and what a day of it cost.
+ * The `turns` section of the fleet's read, and the one reading of it into the numbers the weekly
+ * report is for: how often the Bot got the owner's errand done, how long the first answer took,
+ * how often it had to ask, why it did not finish, and what a day of it cost. (This VM answered
+ * with it too, beside nine other sections, until `read.ts` and its door went on 2026-10-06; the
+ * readers left are laf-control's copy and `scripts/eval-from-failures.ts`.)
  *
  * THE STATEMENT READS ONLY WHAT `run-ledger.ts` WROTE FOR IT — numbers, the ending enum and codes
  * already matched to their shape — plus the run's origin, its person's id (counted, never returned)
@@ -23,7 +25,7 @@
  * `approval.requested`, so no fact here.
  *
  * It is written to be pasted into laf-control's `core/insights-sql.ts` with the two bound instants
- * swapped for `now() - interval 'N days'` and `now()`, the way the other nine travel.
+ * swapped for `now() - interval 'N days'` and `now()`, the way the other nine are written there.
  */
 import { type SQL, sql } from "drizzle-orm";
 import { FIRST_MOVE_KINDS } from "../../../shared/first-move";

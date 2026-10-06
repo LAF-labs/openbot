@@ -8,7 +8,7 @@
  * And the shape is what keeps a sentence out: no spaces, no `@`, no dots — a value that passes it
  * cannot be somebody's words or somebody's address, whatever a client sent.
  */
-export const CATALOGUE_KEY_SOURCE = "^[a-z0-9][a-z0-9-]{0,39}$";
+const CATALOGUE_KEY_SOURCE = "^[a-z0-9][a-z0-9-]{0,39}$";
 
 const CATALOGUE_KEY = new RegExp(CATALOGUE_KEY_SOURCE);
 

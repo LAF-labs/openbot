@@ -395,8 +395,6 @@
   "server/tests/high-risk.test.ts",
   "server/tests/history-page.test.ts",
   "server/tests/ideas.test.ts",
-  "server/tests/insights-read.integration.test.ts",
-  "server/tests/insights-routes.test.ts",
   "server/tests/jev-decisions.test.ts",
   "server/tests/jsonb-encoding.integration.test.ts",
   "server/tests/jsonb-storable.integration.test.ts",
