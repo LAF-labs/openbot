@@ -32,6 +32,7 @@ import {
   ScriptNotRunError,
 } from "../src/computer/gateway/script-run";
 import type { ActionPolicy } from "../src/computer/policy";
+import { fingerprintOf as countedAs } from "../src/computer/repeat";
 import {
   allowanceFor,
   createStandingApprovalStore,
@@ -2246,6 +2247,14 @@ describe("a run and a tool of the same name on somebody else's server", () => {
       callFingerprintOf({ botId: BOT, ref: "one/send", args: { to: "a" } }),
     ).not.toBe(
       callFingerprintOf({ botId: BOT, ref: "other/send", args: { to: "a" } }),
+    );
+    // Nor are the two COUNTED as one call coming round again: a call to another server is
+    // counted by its reference (`plugins/call.ts`), a run by its script, and neither has both.
+    expect(countedAs({ tool: toolNameFor(REF), ref: REF })).toBe(
+      `${RUN_SCRIPT_TOOL} ref=${REF}`,
+    );
+    expect(countedAs({ tool: RUN_SCRIPT_TOOL, script: args.script })).toBe(
+      `${RUN_SCRIPT_TOOL} script=${args.script}`,
     );
   });
 
