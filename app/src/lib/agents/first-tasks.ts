@@ -245,10 +245,11 @@ export const NO_CONNECTION_TASKS: readonly Sentence[] = [
  * the padding every row draws from, and a shop owner's padding should not turn into a quiz. These
  * are offered to everyone who is not an owner, the persona deciding which table goes first.
  *
- * `pattern` is the nearest of the eight kinds of work, because the press route and the fleet's
- * insights count presses by it (`server/src/agents/first-task.ts`) — so a study plan counts as
- * schedule work. With these, `pattern` + `via` no longer names one sentence exactly; it names the
- * kind of work, which is what the insights ask.
+ * `pattern` is the nearest of the eight kinds of work, because the press route records presses by
+ * it (`server/src/agents/first-task.ts`) — so a study plan counts as schedule work. With these,
+ * `pattern` + `via` no longer names one sentence exactly; it names the kind of work, which is what
+ * a count of presses would ask. (Nothing counts them at present: the statement that did sat behind
+ * the fleet's insights door, removed on 2026-10-06, and laf-control's own SQL has not learned it.)
  */
 export const PERSONA_TASKS: Readonly<
   Record<"student" | "worker", readonly Sentence[]>
@@ -633,11 +634,12 @@ export function isFirstConversation(
  *
  * The event came first, on the reasoning that "did the chips shorten the first ten minutes" could
  * be answered from a console. It cannot be answered from the fleet that way, and the fleet is who
- * asks — laf-control's `insights` counts which of the eight kinds of work people pick, VM by VM —
- * so the press is also posted to `POST /api/me/first-task` (`server/src/agents/first-task.ts`).
+ * asks — which of the eight kinds of work people pick, VM by VM — so the press is also posted to
+ * `POST /api/me/first-task` (`server/src/agents/first-task.ts`) and kept as a row. The row is
+ * there to be counted; since the insights door went (2026-10-06) nothing counts it yet.
  *
  * THE EVENT CARRIES THE SENTENCE'S KEY; THE REQUEST DOES NOT. `kind`, `pattern` and `via` name the
- * kind of work the chip asked for — which is what the fleet counts — so the server is given those
+ * kind of work the chip asked for — which is what a count would be of — so the server is given those
  * and never a sentence, and a field that could someday hold somebody's own words does not exist on
  * the wire to hold them. (They named the sentence exactly until `PERSONA_TASKS` put a second
  * connection-free sentence under some patterns.)

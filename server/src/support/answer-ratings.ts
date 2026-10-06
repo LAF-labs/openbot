@@ -50,7 +50,7 @@ export type AnswerRating = (typeof ANSWER_RATINGS)[number];
  * hands back against that shape and files anything else as `other`, so a key written as
  * `wrong_facts` would be counted under the wrong name without anybody being told.
  */
-export const ANSWER_RATING_REASONS = [
+const ANSWER_RATING_REASONS = [
   "not-as-asked",
   "wrong-facts",
   "too-slow",

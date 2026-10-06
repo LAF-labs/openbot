@@ -132,8 +132,8 @@ export const FirstTaskChips = ({
       onClick={() =>
         /*
          * Reported as the connect chip it has always been. Which place it named is not on the wire:
-         * the fleet counts presses by catalogue keys it already validates, and a new field there is
-         * a contract change for a fact the insights do not ask about.
+         * the press is recorded by catalogue keys the server already validates, and a new field
+         * there is a contract change for a fact no count of presses would ask about.
          */
         reportFirstTaskPressed({
           agentId: agent.id,
