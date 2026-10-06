@@ -1468,15 +1468,44 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a stand-in's line counting as the schema only while the tool still stands in. One in
  * `owner-words-prompt.test.ts`: the line's words, pinned whole around their one slot.
  *
+ * RAISED AGAIN 2026-10-06 from the independent read of that change and a press of it on the real
+ * stack, `server` from 3571 to 3575 and `root` from 725 to 728, by exactly the seven added. The
+ * press found that the line above was never read: it stood at the end of a lookup's answer, the
+ * paragraph naming what is behind the bridge tells a Bot not to look for anything it does not
+ * name, and a Bot asked for a tool in a toolbox whose tools all waited made no lookup at all. So
+ * the line stands in that paragraph now — the context layer, which a Bot reads without doing
+ * anything — and a lookup says nothing of it. Several of the tests in the paragraph above hold
+ * that instead of what they held, in place and under new names: in `tool-bridge.test.ts` the
+ * paragraph ending on the count (alone where nothing is behind the bridge) and a lookup's answer
+ * being the bytes it is with nothing waiting; in `chat-tools.test.ts` and
+ * `plugin-paused-text.integration.test.ts` the paragraph drawn for each toolkit, and the run over
+ * the wire now made through the prompt middleware, where the provider's system message is a
+ * control's with that one line and its tools and static layer are the control's bytes; in
+ * `copilot.test.ts` the same for a chat and a routine, and a forged count drawn as nothing. Four
+ * new for `server`: in `conversation-epochs.test.ts`, a count that appears or changes is a
+ * reminder on the person's next message with the epoch, the tools and the frozen layer as they
+ * were, and a conversation or a routine that begins while tools wait reads the line in its layer;
+ * in `plugin-paused-text.integration.test.ts`, three messages and two definitions of one tool — a
+ * schema handed over before the vendor changed it is not the schema it has after a review, so the
+ * call made while it waits is refused with its row and the next is handed the reviewed schema
+ * first; in `chat-tools.test.ts`, a window still declaring the stand-in for a tool that has been
+ * reviewed is offered the server's reviewed definition; in `plugin-consent.integration.test.ts`,
+ * the trail's note for a vendor's withdrawn tool says it waits for review if it comes back, and it
+ * does. Three for `root`: two in `tool-bridge.test.ts` (the lookup's silence, split from the
+ * paragraph's test; the older definition's line not counting, with the connect card's line still
+ * counting whatever accounts are written on it) and one in agent-bot's `deferral.test.ts` (through
+ * the service itself, the forwarded count keeps a lookup from saying an account whose tools wait
+ * "brought none", with the provider sent the same tools either way).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3571, roots: ["server"] },
+  { name: "server", floor: 3575, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 725, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 728, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
