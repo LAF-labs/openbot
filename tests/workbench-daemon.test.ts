@@ -565,16 +565,9 @@ test("one script at a time: a second run meanwhile is refused, and health says w
   const second = await rawRun(socketPath, { files: [] });
   expect(second.status).toBe(503);
   expect(await second.json()).toMatchObject({ code: "laf:workbench_busy" });
-  // Another caller entirely — this process's own client would have queued behind the first. It
-  // asks who is there before it sends, is told (and shown) that the daemon is busy, and says so
-  // once the little time it was given here has gone.
-  const other = await createWorkbench({
-    socketPath,
-    key: KEY,
-    log: quiet,
-    marginMs: 100,
-  }).run({ script: "console.log(2)", files: [] });
-  expect(other).toEqual({ ok: false, failure: "busy" });
+  // And there is no other caller in this process to be refused: a second client for the same
+  // socket IS the first, so whatever asks through it waits its turn in the one queue.
+  expect(createWorkbench({ socketPath, key: KEY, log: quiet })).toBe(workbench);
   expect(ran(await long).run.stdout).toBe("done\n");
   expect(await workbench.health()).toMatchObject({ busy: false });
 });

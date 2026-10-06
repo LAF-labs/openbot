@@ -475,21 +475,23 @@ for (const [name, lie] of lies) {
 }
 
 test("files that fit one by one and not together are not passed on either", async () => {
-  const { socketPath } = fakeDaemon(() =>
-    honest(
-      {
-        products: [
-          { name: "a.txt", bytes: 6, part: "product0" },
-          { name: "b.txt", bytes: 6, part: "product1" },
-        ],
-      },
-      { product0: "aaaaaa", product1: "bbbbbb" },
-    ),
-  );
+  // A daemon for each client: a path has one client, with the bounds it was first made with.
+  const twelveBytes = () =>
+    fakeDaemon(() =>
+      honest(
+        {
+          products: [
+            { name: "a.txt", bytes: 6, part: "product0" },
+            { name: "b.txt", bytes: 6, part: "product1" },
+          ],
+        },
+        { product0: "aaaaaa", product1: "bbbbbb" },
+      ),
+    );
   const run = (productsBytes: number) =>
     createWorkbench({
       key: KEY,
-      socketPath,
+      socketPath: twelveBytes().socketPath,
       log: quiet,
       limits: { ...WORKBENCH_LIMITS, productBytes: 6, productsBytes },
     }).run({ script, files: [] });
@@ -1504,35 +1506,110 @@ test("an unproven voice saying it has cleared up lets nothing go", async () => {
 });
 
 test("a daemon still busy is waited for as long as it is given to clear up, and no longer", async () => {
-  let busyUntil = performance.now() + 150;
-  const { socketPath, asked } = fakeDaemon(
-    () => honest(),
-    () =>
-      Response.json({
-        status: "ok",
-        busy: performance.now() < busyUntil,
-        boot: "fake",
-      }),
-  );
+  const busyFor = (ms: number) => {
+    const until = performance.now() + ms;
+    return fakeDaemon(
+      () => honest(),
+      () =>
+        Response.json({
+          status: "ok",
+          busy: performance.now() < until,
+          boot: "fake",
+        }),
+    );
+  };
+  const soon = busyFor(150);
   const began = performance.now();
   expect(
     (
-      await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
-        script,
-        files: [],
-      })
+      await createWorkbench({
+        key: KEY,
+        socketPath: soon.socketPath,
+        log: quiet,
+      }).run({ script, files: [] })
     ).ok,
   ).toBe(true);
   expect(performance.now() - began).toBeGreaterThanOrEqual(140);
-  // One that stays busy past that: `busy`, and the run was never sent.
-  busyUntil = Number.POSITIVE_INFINITY;
+  // One that stays busy past what it is given: `busy`, and the run was never sent.
+  const never = busyFor(Number.POSITIVE_INFINITY);
   expect(
     await createWorkbench({
       key: KEY,
-      socketPath,
+      socketPath: never.socketPath,
       log: quiet,
       marginMs: 100,
     }).run({ script, files: [] }),
   ).toEqual({ ok: false, failure: "busy" });
-  expect(asked()).toBe(1);
+  expect(never.asked()).toBe(0);
+});
+
+/*
+ * ONE SENDER, HELD BY SOMETHING (the third read of 2026-10-07). A proof is of the ANSWER. It says
+ * neither who read the request nor that the daemon was sent it — so what keeps a run's bytes from
+ * a script is that nothing a script started is at the path when they leave, and that rests on a
+ * proven "idle" being still true when the run is sent. With two senders it need not be: one is
+ * told "idle", the other's script starts and sits at the path, and the first then sends. The
+ * reader showed the end of that with a listener standing for the second sender's script: it kept
+ * a run's script and a 2 MB file, passed on only the number, and handed back the daemon's own
+ * proven `busy` — and the client said `busy`, as of any other refusal.
+ *
+ * One process is the deployment's (one API server per VM). One client per path in it is this
+ * file's to hold: `createWorkbench` was a factory, each client with a queue of its own.
+ */
+test("two callers in one process are one client: neither sends while the other's run is in flight", async () => {
+  let inFlight = 0;
+  let sentMeanwhile = 0;
+  let asked = 0;
+  // The first "who is there" is answered as of when it was asked — idle — and the answer is a
+  // moment on its way: until the other caller's run has arrived, or a fifth of a second.
+  let arrived: () => void = () => {};
+  const otherArrived = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  const { socketPath } = fakeDaemon(
+    async (request) => {
+      if (inFlight > 0) sentMeanwhile += 1;
+      inFlight += 1;
+      arrived();
+      await request.arrayBuffer();
+      await Bun.sleep(150);
+      inFlight -= 1;
+      return honest();
+    },
+    async () => {
+      asked += 1;
+      const said = Response.json({
+        status: "ok",
+        busy: inFlight > 0,
+        boot: "fake",
+      });
+      if (asked === 1) await Promise.race([otherArrived, Bun.sleep(200)]);
+      return said;
+    },
+  );
+  const one = createWorkbench({ key: KEY, socketPath, log: quiet });
+  const other = createWorkbench({ key: KEY, socketPath, log: quiet });
+  // By construction, and then by what the far side saw.
+  expect(other).toBe(one);
+  const first = one.run({ script, files: [next] });
+  const second = other.run({ script, files: [next] });
+  expect([(await first).ok, (await second).ok]).toEqual([true, true]);
+  // It was 1: the first caller, told "idle" a moment before, sent into the second's run.
+  expect(sentMeanwhile).toBe(0);
+});
+
+test("one path has one key: a second client for it with another is a mistake, said at once", () => {
+  const { socketPath } = fakeDaemon(() => honest());
+  const one = createWorkbench({ key: KEY, socketPath, log: quiet });
+  // The same path written another way is the same path.
+  expect(
+    createWorkbench({
+      key: KEY,
+      socketPath: join(socketPath, "..", "w.sock"),
+      log: quiet,
+    }),
+  ).toBe(one);
+  expect(() =>
+    createWorkbench({ key: `${KEY}-another`, socketPath, log: quiet }),
+  ).toThrow("one key");
 });

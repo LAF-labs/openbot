@@ -713,20 +713,32 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
   );
   const long = run("await Bun.sleep(3000); console.log('done')");
   await Bun.sleep(1_000);
-  // Another caller entirely: this client would have queued behind its own run. It asks who is
-  // there before it sends, is shown a daemon that is busy, and — given half a second here, where a
-  // server gives ten — says so without having sent its script at all.
-  const meanwhile = await createWorkbench({
-    socketPath,
-    key,
-    log,
-    marginMs: 500,
-  }).run({ script: "console.log(2)", files: [] });
+  // A second run meanwhile, asked by hand as nothing of ours asks: another caller in this process
+  // is the same client (there is one for a socket's path) and would wait its turn in its queue.
+  const second = new FormData();
+  second.set("job", JSON.stringify({ files: [] }));
+  second.set("script", new Blob(["console.log(2)"]));
+  const meanwhile = await fetch("http://workbench/run", {
+    unix: socketPath,
+    method: "POST",
+    body: second,
+    signal: AbortSignal.timeout(5_000),
+  })
+    .then(async (response) => ({
+      status: response.status,
+      code: String(((await response.json()) as { code?: unknown }).code),
+    }))
+    .catch((error: unknown) => ({
+      status: 0,
+      code: error instanceof Error ? error.name : "unknown",
+    }));
   const finished = await long;
   check(
-    "one script at a time: a second caller meanwhile is told it is busy",
-    !meanwhile.ok && meanwhile.failure === "busy" && said(finished) === "done",
-    `the second caller: ${meanwhile.ok ? "ran" : meanwhile.failure}; the first: ${said(finished)}`,
+    "one script at a time: a second run meanwhile is refused",
+    meanwhile.status === 503 &&
+      meanwhile.code === "laf:workbench_busy" &&
+      said(finished) === "done",
+    `the second: ${meanwhile.status} ${meanwhile.code}; the first: ${said(finished)}`,
   );
   const gaveUp = new AbortController();
   const abandoned = workbench.run(
