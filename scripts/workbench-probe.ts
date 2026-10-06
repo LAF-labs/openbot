@@ -307,6 +307,114 @@ try {
 console.log(JSON.stringify({ n, stoppedBy }));
 `;
 
+/** What a script can read of the daemon that is not the daemon's memory: how it was started. */
+const SECRETS = `
+import { readFileSync } from "node:fs";
+const read = {};
+for (const path of ["/proc/1/environ", "/proc/1/cmdline"]) {
+  try { read[path] = readFileSync(path).length + " bytes"; } catch (error) { read[path] = error.code; }
+}
+console.log(JSON.stringify({ read, env: Object.keys(process.env).sort() }));
+`;
+
+/** What answers at the socket's path when a script has put itself there. */
+const AS_A_SCRIPT = "a script";
+
+/**
+ * A listener of a script's own, saying what an idle daemon says, and answering a run as a run is
+ * answered — with what it was SENT where a script's output would be.
+ */
+const IMPOSTOR = `
+Bun.serve({
+  unix: "/run/laf-workbench/workbench.sock",
+  async fetch(request) {
+    if (new URL(request.url).pathname === "/health") {
+      return Response.json({ status: "ok", busy: false, boot: "${AS_A_SCRIPT}" });
+    }
+    const form = await request.formData();
+    const script = await form.get("script").text();
+    const files = [];
+    for (const [name, part] of form) {
+      if (name.startsWith("file")) files.push(new TextDecoder().decode(await part.arrayBuffer()).slice(0, 80));
+    }
+    const stdout = "A SCRIPT ANSWERED, having been sent " + JSON.stringify({ script: script.slice(0, 60), files });
+    const answer = new FormData();
+    answer.set("report", JSON.stringify({ ending: "exited", exitCode: 0, signal: null, ms: 1, stdout, stderr: "", stdoutBytes: stdout.length, stderrBytes: 0, products: [], skipped: 0 }));
+    return new Response(answer);
+  },
+});
+`;
+
+/** A script that takes the socket's place itself, and stays there a while. */
+const TAKE = `
+import { unlinkSync } from "node:fs";
+const tried = {};
+try { unlinkSync("/run/laf-workbench/workbench.sock"); tried.unlink = "removed"; } catch (error) { tried.unlink = error.code; }
+try {
+${IMPOSTOR}
+  tried.bind = "bound";
+} catch (error) { tried.bind = error.code ?? String(error); }
+console.log(JSON.stringify(tried));
+await Bun.sleep(5000);
+`;
+
+/** The same, as a program of its own: what a script leaves running when its own process is ended. */
+const TAKER = `
+import { unlinkSync } from "node:fs";
+try { unlinkSync("/run/laf-workbench/workbench.sock"); } catch {}
+${IMPOSTOR}
+setInterval(() => {}, 1000);
+`;
+
+/** A script that starts that program and waits to be given up on. */
+const LEAVE_TAKER = `
+import { writeFileSync } from "node:fs";
+writeFileSync("taker.ts", ${JSON.stringify(TAKER)});
+Bun.spawn([process.execPath, "--no-install", "taker.ts"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).unref();
+await Bun.sleep(50_000);
+`;
+
+/**
+ * Names that are not text — a byte no encoding of a character holds — left everywhere a script can
+ * write, and first what this runtime does with a path given as bytes, tried on names of the run's own.
+ */
+const UNTEXT = `
+import { chmodSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+const name = Buffer.from([0x6e, 0xff]);
+const under = (directory, leaf = name) => Buffer.concat([Buffer.from(directory + "/"), leaf]);
+const has = (directory, leaf = name) => readdirSync(directory, { encoding: "buffer" }).some((entry) => entry.equals(leaf));
+const bun = {};
+const attempt = (what, act) => { try { bun[what] = String(act()); } catch (error) { bun[what] = error.code ?? String(error); } };
+const own = Buffer.from([0x61, 0xff]);
+attempt("write by bytes", () => { writeFileSync(under(".", own), "x"); return has(".", own); });
+attempt("listed as text", () => JSON.stringify(readdirSync(".").filter((entry) => entry.startsWith("a"))));
+attempt("lstat by bytes", () => lstatSync(under(".", own)).isFile());
+attempt("unlink by bytes", () => { unlinkSync(under(".", own)); return !has(".", own); });
+const folder = Buffer.from([0x62, 0xff]);
+attempt("rm -r by bytes", () => { mkdirSync(under(".", folder)); writeFileSync(Buffer.concat([under(".", folder), Buffer.from("/"), name]), "x"); rmSync(under(".", folder), { recursive: true, force: true }); return !has(".", folder); });
+attempt("chmod and rmdir by bytes", () => { if (!has(".", folder)) mkdirSync(under(".", folder)); chmodSync(under(".", folder), 0o700); rmdirSync(under(".", folder)); return !has(".", folder); });
+const made = {};
+for (const directory of ["/work", "/dev/shm", "/run/laf-workbench", "."]) {
+  try { writeFileSync(under(directory), "left"); made[directory] = has(directory) ? "written" : "written under another name"; } catch (error) { made[directory] = error.code ?? String(error); }
+}
+// A folder of such a name with such a name in it, closed to its own user, left in the work root.
+try {
+  const closed = under("/work", Buffer.from([0x64, 0xfe]));
+  mkdirSync(closed);
+  writeFileSync(Buffer.concat([closed, Buffer.from("/"), name]), "left");
+  chmodSync(closed, 0o000);
+  made["a closed folder in /work"] = "made";
+} catch (error) { made["a closed folder in /work"] = error.code ?? String(error); }
+console.log(JSON.stringify({ made, bun }));
+`;
+
+/** What is in each place a script can write, by the bytes of its name. */
+const BYTES = `
+import { readdirSync } from "node:fs";
+const hex = (directory) => readdirSync(directory, { encoding: "buffer" }).map((entry) => entry.toString("hex"));
+console.log(JSON.stringify({ work: hex("/work"), shm: hex("/dev/shm"), socket: hex("/run/laf-workbench") }));
+`;
+
 /**
  * The inner half: what happens to each script, from the far side of the socket. Each thing
  * measured is added to `checks` as it is, so that a probe which cannot go on still says what it
@@ -347,7 +455,13 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     const deadline = Date.now() + ms;
     for (;;) {
       const now = await health();
-      if (now?.busy === false && typeof now.boot === "string") return now.boot;
+      if (
+        now?.busy === false &&
+        typeof now.boot === "string" &&
+        now.boot !== AS_A_SCRIPT
+      ) {
+        return now.boot;
+      }
       if (Date.now() > deadline) {
         throw new Error(`no idle daemon answered within ${ms / 1000} s`);
       }
@@ -359,7 +473,11 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     const deadline = Date.now() + ms;
     for (;;) {
       const now = await health();
-      if (now?.busy === false && typeof now.boot === "string") {
+      if (
+        now?.busy === false &&
+        typeof now.boot === "string" &&
+        now.boot !== AS_A_SCRIPT
+      ) {
         if (now.boot !== was) return now.boot;
       }
       if (Date.now() > deadline) {
@@ -854,6 +972,114 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
     measured.length >= 5 && measured.every((gap) => gap < 180_000),
     `ms until a new daemon answered, in the order they went (ended by SIGTERM, a directory at its socket, a System V segment, then SIGTERM three times running): ${measured.join(", ")}`,
   );
+
+  // WHAT THE SECOND INDEPENDENT READ OF 2026-10-06 SAID A SCRIPT COULD DO, TRIED.
+  await Bun.sleep(11_000);
+  boot = await settled(180_000);
+  const secrets = json<{ read: Record<string, string>; env: string[] }>(
+    await run(SECRETS),
+  );
+  check(
+    "a script cannot read how the daemon was started, and is handed nothing of it",
+    secrets !== null &&
+      secrets.read["/proc/1/environ"] !== undefined &&
+      !secrets.read["/proc/1/environ"].endsWith("bytes") &&
+      secrets.env.every((name) =>
+        [
+          "BUN_RUNTIME_TRANSPILER_CACHE_PATH",
+          "DO_NOT_TRACK",
+          "HOME",
+          "NO_COLOR",
+          "TMPDIR",
+        ].includes(name),
+      ),
+    JSON.stringify(secrets),
+  );
+
+  // NAMES THAT ARE NOT TEXT. Left everywhere a script can write; the next run reads what is there
+  // by the bytes of each name.
+  const untext = json<{
+    made: Record<string, string>;
+    bun: Record<string, string>;
+  }>(await run(UNTEXT));
+  await Bun.sleep(1_000);
+  const afterUntext = await settled(180_000);
+  const byBytes = json<{ work: string[]; shm: string[]; socket: string[] }>(
+    await run(BYTES),
+  );
+  check(
+    "a name that is not text is gone before the next run, wherever a script left it",
+    untext !== null &&
+      untext.made["/work"] === "written" &&
+      byBytes !== null &&
+      byBytes.work.length === 1 &&
+      byBytes.shm.length === 0 &&
+      byBytes.socket.join() === Buffer.from("workbench.sock").toString("hex"),
+    `the script left: ${JSON.stringify(untext?.made)}; what the runtime does with a path of bytes: ${JSON.stringify(untext?.bun)}; ${afterUntext === boot ? "the same daemon" : "a new daemon"} answered afterwards, and the next run found, by the bytes of each name, /work ${JSON.stringify(byBytes?.work)}, /dev/shm ${JSON.stringify(byBytes?.shm)}, the socket's directory ${JSON.stringify(byBytes?.socket)}`,
+  );
+  boot = afterUntext;
+
+  // A SCRIPT WHERE THE SOCKET WAS. While it runs, whoever asks at the path is answered by it.
+  await Bun.sleep(11_000);
+  boot = await settled(180_000);
+  const taking = run(TAKE, { timeoutMs: 20_000 });
+  await Bun.sleep(2_500);
+  const atThePath = await health();
+  const believed = await workbench.health();
+  const took = await taking;
+  await Bun.sleep(1_000);
+  boot = await settled(180_000);
+  check(
+    "what a script puts where the socket was is believed by nobody",
+    atThePath?.boot === AS_A_SCRIPT && believed === null,
+    `the script: ${said(took)}; while it ran, the path answered as ${JSON.stringify(atThePath)} and the client's health() said ${JSON.stringify(believed)}`,
+  );
+
+  // AND WHAT AN ABANDONED RUN LEFT RUNNING THERE, while the run behind it is on its way.
+  const handed: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await Bun.sleep(11_000);
+    boot = await settled(180_000);
+    const leaving = new AbortController();
+    const given = workbench.run(
+      { script: LEAVE_TAKER, files: [], timeoutMs: 60_000 },
+      leaving.signal,
+    );
+    let taken = false;
+    for (const until = Date.now() + 15_000; Date.now() < until; ) {
+      if ((await health())?.boot === AS_A_SCRIPT) {
+        taken = true;
+        break;
+      }
+      await Bun.sleep(100);
+    }
+    const behind = workbench.run({
+      script: 'console.log("the daemon ran this")',
+      files: [
+        {
+          path: "uploads/next.csv",
+          bytes: new TextEncoder().encode("the next run's workbook"),
+        },
+      ],
+    });
+    leaving.abort();
+    const [, got] = await Promise.all([given, behind]);
+    handed.push(
+      taken
+        ? got.ok
+          ? got.run.stdout.trim().slice(0, 200)
+          : `no run: ${got.failure}`
+        : "what the script left never answered at the path",
+    );
+    await Bun.sleep(1_000);
+  }
+  boot = await settled(180_000);
+  check(
+    "the run behind an abandoned one is not handed to what that one left running",
+    handed.some((outcome) => !outcome.startsWith("what the script left")) &&
+      handed.every((outcome) => !outcome.startsWith("A SCRIPT ANSWERED")),
+    `three times a run was given up on with its child at the socket's path and another run waiting behind it; that run came back as: ${handed.map((outcome) => JSON.stringify(outcome)).join(" · ")}`,
+  );
 }
 
 // --- the outer half ------------------------------------------------------------------------------
@@ -943,7 +1169,7 @@ export function megabytesHeld(usage: string): number | null {
  * How many things the inner half reports when it runs to its end. A floor in the only sense that
  * matters here: fewer is a probe that stopped, and a stopped probe has not found the walls sound.
  */
-export const PROBE_CHECKS = 27;
+export const PROBE_CHECKS = 31;
 
 /** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
 export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
@@ -955,6 +1181,12 @@ export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
   NAMES,
   CALL,
   FORK,
+  SECRETS,
+  TAKE,
+  TAKER,
+  LEAVE_TAKER,
+  UNTEXT,
+  BYTES,
   ledSmall: ledByTheDead(16),
   ledLarge: ledByTheDead(576),
 };
