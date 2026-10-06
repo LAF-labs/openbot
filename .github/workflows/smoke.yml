@@ -113,6 +113,11 @@ jobs:
             echo "TRUSTED_ORIGINS=http://localhost:$SERVER_PORT"
             echo "MANAGED_AGENT_AG_UI_URL=http://localhost:$BOT_PORT/ag-ui"
             echo "KEY_ENCRYPTION_KEY=$(head -c 32 /dev/urandom | base64)"
+            # The server refuses to start without it (`LAF_TOKEN_ENCRYPTION_KEY is required`), sign-in
+            # or no sign-in. This file predates the requirement and nothing told it: the job had
+            # been skipping before it got this far. Reproduced on a laptop with this file's lines
+            # 2026-10-06 — the API crashed without the line and answered with it.
+            echo "LAF_TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)"
             echo "COMPUTER_TOKEN=$COMPUTER_TOKEN"
             # A runner has no fleet to lay the browser's egress rules on its host (docs/laf/deploying.md,
             # the host firewall), so the computer's check for them is off here, as on a laptop.
