@@ -1173,6 +1173,27 @@ describe("what a Bot is told of tools that wait for review under no name", () =>
     );
   });
 
+  test("a service somebody named `constructor` is called that, not what every object answers to that name with", () => {
+    // An administrator's own word for a server they added by address: it has a key's shape, and
+    // the table of names was read as `TABLE[key]`, which is a function for this one key.
+    const waiting = deferredToolsText(
+      [],
+      [],
+      crossed([{ server: "constructor", count: 2 }]),
+    );
+    expect(waiting).toBe(withheldToolsText("constructor 2개"));
+    expect(waiting).not.toContain("function");
+    // The two other places a key is turned into a name.
+    expect(familiesOf(["mcp__constructor__list"])).toEqual(["constructor"]);
+    const named = deferredToolsText(["mcp__constructor__list"]);
+    expect(named).toContain("constructor");
+    expect(named).not.toContain("native code");
+    // A key the table does hold still gets its name beside it.
+    expect(
+      deferredToolsText([], [], crossed([{ server: "gmail", count: 1 }])),
+    ).toBe(withheldToolsText("지메일(gmail) 1개"));
+  });
+
   test("a lookup says nothing of it: found, missed or already in the schema, its answer is the bytes it would be with nothing waiting", () => {
     const offered = [wire("mcp__web-search__search", "웹을 검색한다.")];
     for (const [deferred, query] of [
