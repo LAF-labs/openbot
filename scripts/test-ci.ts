@@ -1577,13 +1577,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and `POST /api/agents/test-connection` left the matrix's list of what a colleague reaches,
  * since on the matrix's deployment it answers everybody 400 with a code.
  *
- * AND AGAIN THE SAME DAY from the independent read of that change, by exactly the nine added,
- * each written before its fix: `server` from 3611 to 3618 and `app` from 2156 to 2158. Seven to
- * `server`.
- * Four in the new `private-hosts-refusal.test.ts`: the switch that marks a developer's stack was
- * only read, and production refuses to start with it now, by name — with a computer configured,
+ * AND AGAIN THE SAME DAY from the independent read of that change, by exactly the ten added,
+ * each written before its fix: `server` from 3611 to 3619 and `app` from 2156 to 2158. Eight to
+ * `server`. Five in the new `private-hosts-refusal.test.ts`: the switch that marks a stack as a
+ * developer's was only read, and production refuses to start with it now, by name — with a
+ * computer configured,
  * and with none, where the line opens nothing yet; everywhere that is not production it is
- * allowed; and only the word turns it on, so only the word is refused. Two more in
+ * allowed; only the word turns it on, so only the word is refused; and the refusal's sentence is
+ * whole in the one line a crash writes — started as production through the real entry point, the
+ * first wording was cut off at 200 characters, before what to do about it. Two more in
  * `boot-line.test.ts`, which holds four things where it held two: the switch itself said on
  * every boot by the name the app is told; the count on a hosted boot, zero included; a count
  * that could not be read said as `null` — there, and not a number; and no count at all on a
@@ -1602,7 +1604,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3618, roots: ["server"] },
+  { name: "server", floor: 3619, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 737, roots: ["tests", "agent-bot"] },

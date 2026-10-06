@@ -850,8 +850,10 @@ function privateHostsAllowed(environment: Environment): boolean {
   const allowed =
     optional(environment, "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS") === "true";
   if (allowed && environment.NODE_ENV === "production") {
+    // Kept under the 200 characters a crash line keeps of its reason (`shared/failure-text.ts`):
+    // the first wording was longer, and the log cut it off before what to do.
     throw new Error(
-      "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true cannot be used with NODE_ENV=production: it marks a developer's stack, where a Bot may be pointed at a server of somebody's own and this server may reach addresses inside its own network. Refusing to start — take the line out of this server's environment.",
+      "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true cannot be used with NODE_ENV=production: it marks a developer's stack, where a Bot can be pointed at any server. Take it out of this server's environment.",
     );
   }
   return allowed;
