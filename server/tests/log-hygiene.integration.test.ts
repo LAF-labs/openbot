@@ -551,8 +551,10 @@ describe("a running deployment's log", () => {
      * No computer, so no private-host opt-in to read: a hosted deployment in the one sense that
      * decides where a Bot runs (`main.ts`, `botsRunAt`). Every Bot is dialled at this process's own
      * agent whatever its row holds, and the boot says how many rows said otherwise — a count read
-     * off the database as the port opened, and never an address.
+     * off the database as the port opened, and never an address. And it says which kind it is in
+     * so many words, as every boot does: the count alone was missing for two reasons.
      */
+    expect(serverBoot.botEndpoints).toBe(false);
     expect(typeof serverBoot.botsBroughtHome).toBe("number");
     expect(serverBoot.raw).not.toContain("/ag-ui");
 
