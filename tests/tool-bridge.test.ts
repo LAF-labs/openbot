@@ -34,6 +34,8 @@ import {
 } from "../shared/tools/gallery";
 import { GOALS_FAMILY } from "../shared/tools/goals";
 import {
+  PAUSED_TOOL_DESCRIPTION,
+  PAUSED_TOOL_PARAMETERS,
   type WithheldTools,
   withheldToolsForwarded,
   withheldToolsIn,
@@ -1265,5 +1267,71 @@ describe("what a lookup says of tools that wait for review under no name", () =>
     }));
     expect(read(many)).toHaveLength(24);
     expect(read(many)[0]).toEqual({ server: "server-00", count: 1 });
+  });
+
+  /*
+   * THE STAND-IN IS NOT THE SCHEMA (the same review). A tool whose definition changed is offered
+   * under its name with this deployment's description and no parameters, and a lookup hands that
+   * line over like any schema. Once a person has reviewed the tool the list holds its real
+   * definition, and the conversation still holds the stand-in — which counted as "this
+   * conversation was shown the schema", so the next call went through on arguments the model had
+   * never seen a field for. Not counting the stand-in at all is no cure: while the tool still
+   * waits, a call that is answered here never reaches the server, and the server's refusal is
+   * what leaves the audit row and says the table's sentence.
+   */
+  test("a stand-in's line counts as the schema only while the tool still stands in: paused, the call is forwarded to be refused; reviewed, the real schema is handed over first", async () => {
+    const { settleDeferredCall } = await import("../agent-bot/src/deferral");
+    const NAME = "mcp__acme-desk__orders_list";
+    const paused: WireTool[] = [
+      {
+        name: NAME,
+        description: PAUSED_TOOL_DESCRIPTION,
+        parameters: PAUSED_TOOL_PARAMETERS,
+      },
+    ];
+    const reviewed: WireTool[] = [
+      wire(NAME, "주문을 나열한다. (acme-desk)", {
+        status: { type: "string" },
+      }),
+    ];
+    const lookedUpWhilePaused = searchResultText(paused, `select:${NAME}`);
+    expect(lookedUpWhilePaused).toContain(PAUSED_TOOL_DESCRIPTION);
+
+    // Still paused: shown, so the call goes to the server — which refuses it and writes its row.
+    const whilePaused = describedToolNames([lookedUpWhilePaused], paused);
+    expect([...whilePaused]).toEqual([NAME]);
+    expect(settleDeferredCall(NAME, {}, paused, whilePaused)).toEqual({
+      kind: "forward",
+      name: NAME,
+      args: {},
+    });
+
+    // Reviewed: the same conversation has not been shown this tool's schema.
+    const afterReview = describedToolNames([lookedUpWhilePaused], reviewed);
+    expect([...afterReview]).toEqual([]);
+    const answered = settleDeferredCall(
+      NAME,
+      { status: "open" },
+      reviewed,
+      afterReview,
+    );
+    expect(answered.kind).toBe("answer");
+    const handedOver = answered.kind === "answer" ? answered.text : "";
+    expect(handedOver).toContain('"status":{"type":"string"}');
+    expect(handedOver).not.toContain(PAUSED_TOOL_DESCRIPTION);
+    // And with that answer in the conversation, the call the model makes next is the real one.
+    const shown = describedToolNames(
+      [lookedUpWhilePaused, handedOver],
+      reviewed,
+    );
+    expect(
+      settleDeferredCall(NAME, { status: "open" }, reviewed, shown),
+    ).toEqual({ kind: "forward", name: NAME, args: { status: "open" } });
+
+    // A real schema seen before the tool was paused still counts while it is: the call is the
+    // server's to refuse. And asked of the text alone — no list — every line counts, as it did.
+    const seenBefore = searchResultText(reviewed, `select:${NAME}`);
+    expect(describedToolNames([seenBefore], paused).has(NAME)).toBe(true);
+    expect(describedToolNames([lookedUpWhilePaused]).has(NAME)).toBe(true);
   });
 });

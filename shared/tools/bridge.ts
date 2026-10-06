@@ -45,7 +45,11 @@ import {
   withoutAccountStates,
 } from "./gallery";
 import { NOW_TOOL_NAME } from "./now";
-import { type WithheldTools, withheldToolsText } from "./paused";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  type WithheldTools,
+  withheldToolsText,
+} from "./paused";
 import { ROUTINE_NOTE } from "./routine-note";
 import { SELF_TOOLS } from "./self";
 import { SKILL_VIEW } from "./skills";
@@ -1019,8 +1023,29 @@ export function searchResultText(
  * 받고 부른 것은 짐작이 아니다. 그리고 카드는 받은 키를 서버가 제 연결 화면과 견줘, 띄울 것이
  * 없으면 그 자리에서 없다고 답한다(`connectCard`, `server/src/turns/chat-tools.ts`). 규칙은 그대로
  * 하나다: 모양을 들은 대화만 부른다.
+ *
+ * 검토를 기다리는 툴의 줄은 그 툴이 **지금도 그 모습으로 서 있는 동안만** 건네진 것으로 센다
+ * (`deferred` — 이 실행이 받은 다리 뒤의 목록). 멈춘 툴을 찾으면 답에 남는 것은 이 배포의 설명과 빈
+ * 스키마다(`PAUSED_TOOL_DESCRIPTION`). 사람이 검토를 마치면 목록에는 진짜 정의가 서는데, 대화에는
+ * 그 빈 줄이 그대로 남아 있어서 봇의 다음 호출은 "스키마를 받은 툴"로 통과했다 — 한 번도 본 적 없는
+ * 스키마에 짐작한 인자로(#116의 리뷰). 이 규칙이 막으려던 바로 그 호출이다. 그렇다고 그 줄을 아예
+ * 세지 않으면 멈춰 있는 동안의 호출이 여기서 되돌려져(`undescribedToolText`가 같은 빈 줄을 다시
+ * 건네고, 봇은 다시 부르고) 서버에 닿지 않는다: 서버가 거절하며 남기는 감사 행
+ * (`mcp.call_rejected`)과 봇이 듣는 문장(`laf:tool_needs_review`)이 사라진다. 그래서 멈춰 있는
+ * 동안은 세고, 검토가 끝나면 세지 않는다 — 그러면 다음 호출은 진짜 스키마를 먼저 받는다.
+ *
+ * `deferred`를 주지 않으면 줄마다 전부 센다: 대화의 글만 가지고 "무엇을 건넸는가"를 묻는 쪽(테스트,
+ * 평가)의 답이다. 호출을 넘길지 정하는 쪽은 반드시 준다(`agent-bot/src/run.ts`).
  */
-export function describedToolNames(results: readonly string[]): Set<string> {
+export function describedToolNames(
+  results: readonly string[],
+  deferred?: readonly WireTool[],
+): Set<string> {
+  const stillPaused = new Set(
+    (deferred ?? [])
+      .filter((tool) => tool.description === PAUSED_TOOL_DESCRIPTION)
+      .map((tool) => tool.name),
+  );
   const names = new Set<string>();
   for (const text of results) {
     for (const line of text.split("\n")) {
@@ -1032,14 +1057,23 @@ export function describedToolNames(results: readonly string[]): Set<string> {
       try {
         const parsed = JSON.parse(line) as {
           name?: unknown;
+          description?: unknown;
           parameters?: unknown;
         };
         if (
-          typeof parsed.name === "string" &&
-          parsed.parameters !== undefined
+          typeof parsed.name !== "string" ||
+          parsed.parameters === undefined
         ) {
-          names.add(parsed.name);
+          continue;
         }
+        if (
+          deferred !== undefined &&
+          parsed.description === PAUSED_TOOL_DESCRIPTION &&
+          !stillPaused.has(parsed.name)
+        ) {
+          continue;
+        }
+        names.add(parsed.name);
       } catch {
         // 스키마 줄이 아니다.
       }
