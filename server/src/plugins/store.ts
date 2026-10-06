@@ -167,6 +167,18 @@ export type GrantedPlugins = {
   }[];
 };
 
+/**
+ * Why a tool waits for review, as its row says it (`mcp_tools.review_reason`).
+ *
+ * The two are different promises. CHANGED: the name was consented to at registration or at an
+ * earlier review, and what changed is behind it. APPEARED: the vendor added the tool afterwards and
+ * nobody has consented to anything about it, its name included — and it stays that, however many
+ * times its definition changes again, until somebody approves it (`refreshTools`). The
+ * administrator's screen reads the same two strings (`app/src/routes/_authed/admin/plugins.tsx`).
+ */
+export const REVIEW_APPEARED = "appeared after registration";
+export const REVIEW_CHANGED = "definition changed";
+
 export type PluginDecision =
   | { allowed: true }
   | { allowed: false; reason: string };

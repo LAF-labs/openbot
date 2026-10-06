@@ -1417,6 +1417,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * waiting on the person does not hold the control; and the new `build-watch-starts.test.tsx`,
  * which mounts the real route tree and holds the one line that starts the watch at all.
  *
+ * RAISED 2026-10-06 with a tool nobody consented to staying one, `server` from 3600 to 3601, by
+ * exactly the one written in `plugin-consent.integration.test.ts`: a vendor's tool that appeared
+ * after registration and changes again before anybody reviewed it still waits as "appeared after
+ * registration" — the refresh had rewritten it to "definition changed", the reason that means its
+ * name was consented to.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.

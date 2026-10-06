@@ -249,6 +249,39 @@ describeDb("plugin definition consent", () => {
   });
 
   /*
+   * NOBODY CONSENTED TO THAT TOOL, AND A SECOND CHANGE DOES NOT MAKE IT ONE SOMEBODY DID. The
+   * refresh wrote "definition changed" over "appeared after registration" when a tool still waiting
+   * for its first review changed again — and the two are different promises (`REVIEW_APPEARED`,
+   * `store.ts`): a changed tool's NAME was consented to, a tool that appeared has had nothing
+   * consented to, its name included. What a model is given of each is held in
+   * `plugin-paused-text.integration.test.ts`; this holds the row.
+   */
+  test("and it still waits as one nobody consented to when its vendor changes it again", async () => {
+    toolsOnServer = [
+      { ...readOnly, annotations: { readOnlyHint: false } },
+      payout,
+      {
+        name: "orders.export",
+        description: "Export everything",
+        inputSchema: {},
+        annotations: { readOnlyHint: true },
+      },
+    ];
+    // A change is counted, and trailed, as one — the reason it waits for is what does not move.
+    const result = await store.refreshTools(serverId);
+    expect(result.paused).toBe(1);
+    const [row] = await database
+      .select()
+      .from(mcpTools)
+      .where(eq(mcpTools.serverId, serverId))
+      .then((rows) => rows.filter((r) => r.name === "orders.export"));
+    expect(row?.needsReview).toBe(true);
+    expect(row?.reviewReason).toBe("appeared after registration");
+    // The row holds the definition as it now is: that is what an administrator reviews.
+    expect(row?.description).toBe("Export everything");
+  });
+
+  /*
    * A DEFINITION THAT SHIPS WITH THIS BUILD IS NOT A VENDOR'S (the owner, 2026-10-06). The two
    * tests above are somebody else's server, and stay as they are. Here the server is one whose tool
    * list is this repository's own code — a catalogue adapter, no vendor asked — standing as a
