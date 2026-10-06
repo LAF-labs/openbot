@@ -1790,3 +1790,29 @@ test("a socket in a directory that is not there has no client: where it really i
     }),
   ).toThrow("directory");
 });
+
+/*
+ * THE CLIENT TOOK ANY STRING AS ITS KEY, while the daemon holds its own to what a key is and does
+ * not start without one. A client made with an empty or a short one would have asked a daemon it
+ * could never believe, and the mistake would have shown only as a service that proves nothing.
+ */
+test("a client's key is held to what a key is, as the daemon's is — and is never said back", () => {
+  const { socketPath } = fakeDaemon(() => honest());
+  for (const key of ["", "short", "x".repeat(31)]) {
+    let said = "";
+    try {
+      createWorkbench({ key, socketPath, log: quiet });
+    } catch (error) {
+      said = error instanceof Error ? error.message : String(error);
+    }
+    expect({ key: key.length, refused: said.includes("key") }).toEqual({
+      key: key.length,
+      refused: true,
+    });
+    if (key) expect(said).not.toContain(key);
+  }
+  // Thirty-two characters is one.
+  expect(() =>
+    createWorkbench({ key: "x".repeat(32), socketPath, log: quiet }),
+  ).not.toThrow();
+});

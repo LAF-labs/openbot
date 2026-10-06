@@ -75,6 +75,7 @@ import type { Logger } from "../../../shared/log";
 import {
   filePart,
   type InvalidField,
+  isKey,
   isProductName,
   isProven,
   isRunPath,
@@ -523,7 +524,8 @@ type WorkbenchOptions = {
   socketPath: string;
   /**
    * What the daemon proves its answers under: the deployment's `WORKBENCH_KEY`, the same value the
-   * service was started with. It is never sent, and never logged.
+   * service was started with. It is never sent, and never logged. Held to what a key is
+   * (`isKey`), as the daemon holds its own: no client is made with anything less.
    */
   key: string;
   /**
@@ -583,6 +585,18 @@ function socketAt(socketPath: string): string {
  * would otherwise only show as a service that proves nothing, so it throws.
  */
 export function createWorkbench(options: WorkbenchOptions): Workbench {
+  /*
+   * NOT A KEY, NOT A CLIENT. The daemon does not start without a key that is one
+   * (`shared/workbench/main.ts`); this took any string, the empty one included, and a client made
+   * with it would have asked a daemon it could never believe — a mistake that shows only as a
+   * service that proves nothing. Said at once instead, and without the value: what was handed in
+   * may be most of a real key.
+   */
+  if (!isKey(options.key)) {
+    throw new Error(
+      "a workbench's key is the deployment's WORKBENCH_KEY, thirty-two characters or more: what this client was handed is not one",
+    );
+  }
   const path = socketAt(options.socketPath);
   const there = CLIENTS.get(path);
   if (there) {
