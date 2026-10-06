@@ -1709,7 +1709,9 @@ already happened included. The zone is the person's device's (kept by `account/w
 else the deployment's `BOT_TIME_ZONE`, handed to the transport with the call (`timeZoneOf`,
 `call.ts`). Every listing, whoever asked, begins with the stretch it covers on that clock —
 `[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 0건]` — event times are
-local, and an empty stretch says "이 기간에 캘린더에 잡힌 일정이 없습니다". A mail search likewise
+local, and an empty stretch says "이 기간에 캘린더에 잡힌 일정이 없습니다" — and, since 2026-10-07,
+what comes next: the nearest event of the seven days after, or that those have nothing either
+("An empty day says what comes next", below). A mail search likewise
 begins with what was searched for (`[검색어 "is:unread in:inbox" · 3통]`), since the Bot's model
 did not choose the query.
 
@@ -1751,11 +1753,12 @@ from a move's thread.
 - A move takes two of three requests and more than half the tokens where the list has something in
   it. **The seconds are the calendar's only**: the mail's one request took as long as the three
   without it on this endpoint (6–29 s a run), which is the endpoint's spread and not the move's.
-- **An empty day is where the move pays least.** Half the runs did not believe a list with nothing
+- **An empty day is where the move paid least.** Half the runs did not believe a list with nothing
   in it and looked again, which is the three requests the turn takes without a move, or five. The
-  answer was right every time; the saving was not had. Nothing was changed for it — the fix would
-  be words in the prompt, which is a rung this change does not take — and for a person whose
-  calendar is mostly empty this is most of their days.
+  answer was right every time; the saving was not had. Nothing was changed for it in that change —
+  the fix named then was words in the prompt, a rung it did not take — and for a person whose
+  calendar is mostly empty this is most of their days. **Changed on 2026-10-07, a rung lower than
+  the prompt: the result's own text** ("An empty day says what comes next", below).
 - A wrong move was put right every time and cost what the turn costs without a move — the call
   nobody asked for, drawn as a step, is the whole of it. After a move the Bot has not been shown
   the tool's schema, so its own second call goes through `tool_search` first, as its first would.
@@ -1947,7 +1950,141 @@ should); more runs that did not take a move's list late in the day and asked the
 (five of six against three); a cold prompt on most of those turns; and a second effort inside one
 conversation that the profile's card does not show. The larger saving is still where the section
 above left it: an empty or late day, where a move is not believed and its round is spent again at
-either effort — words in the prompt, measured both ways, before anything else here.
+either effort — words in the prompt, measured both ways, before anything else here. (Part of the
+empty day's was had the next day without them, from the result's own text: where there is an
+event after it to tell — the section below. An empty week and a late day are where they were.)
+
+### An empty day says what comes next (2026-10-07)
+
+**What was left.** An empty day was where the calendar's move paid least (the table above): handed
+`일정 0건` and "이 기간에 캘린더에 잡힌 일정이 없습니다", about half the runs did not take it. They
+looked the tool up and asked the calendar again — up to three times, until `laf:tool_loop` — and
+only then said the day was empty. Right every time, at 3–5 requests and 10–73 s a run where the
+runs that took it needed one request and 5–14 s (twelve runs on 2026-10-07 before anything was
+changed: 18.8K tokens a run on average). The fix named then was words in the prompt.
+
+**The rung below the prompt was tried first: the result's own text.** Before any code, by the
+session that briefed this change, with the scenario's fixture changed by hand
+(`first-move-calendar-empty-day`, `meta/muse-spark-1.3-contributor`, `EVAL_DEFERRAL=0`, twelve
+runs a row and eighteen in the first). Counted is a run that took ONE request of the Bot's model,
+of the runs the provider answered at all:
+
+| What the empty day's result said | One request |
+|---|---|
+| What it had said since 2026-10-05 | 9 of 18 |
+| … and that the lookup had succeeded, and that asking again returns the same | 7 of 12 |
+| The empty day written as a row of the list | 7 of 10 — one of them a lookup and no answer |
+| … and the nearest event of the seven days after | **11 of 12** — 9.1 s, 8.2K tokens a run |
+| … and "그 뒤 7일 안에도 잡힌 일정이 없습니다." | **6 of 7** |
+| A WRONG move: the fourth row's result under "내일 일정 뭐 있어?" | asked the calendar again for tomorrow and answered with it, 12 of 12 — 3 requests each |
+
+Three ways of saying "nothing" changed nothing. What moved it in these rows was something besides
+nothing — an event to tell, or a second and wider statement; the second did not hold when it was
+measured again, below — and with an event the answer is the better one for it: "오늘은 없어요.
+다음 일정은 내일 밤 11시 한빛상사 납품 미팅이에요."
+
+**What ships** (`google-calendar-rest.ts`, `list_events`; nothing else, and no byte of a
+definition — the six hashes are where they were):
+
+- **One request, made wider — not a second one.** Without a `query`, Google is asked for the
+  stretch and the seven of the person's days after it: `timeMax` moves; `timeMin`, `maxResults`
+  and the order are what they were. Seven of the person's days is the same reading of their clock
+  seven midnights on, so a day a clock change made 23 or 25 hours long is one day (New York's two
+  changes are in the tests). The move's call is what a person waits through before the Bot's model
+  is first asked, and a second round trip would be made on exactly the days with nothing on them.
+- **What comes back is split by where each event starts**, as Google's own `timeMax` is: before
+  the stretch's end is the stretch's — an event that began yesterday and is still running is on
+  today — and at its end or after comes after. An all-day event starts when its date does on the
+  person's clock, so tomorrow's comes after today. An event whose start cannot be read stays in
+  the listing: it cannot be shown to come after.
+- **A stretch with something on it reads to the byte as it did.** The first line still names the
+  stretch that was asked for and counts its events; what comes after is dropped unsaid. The
+  stretch's own events come first in Google's order, so a full page of them is the page it was.
+- **An empty stretch, and something after it:**
+
+  ```
+  [본 기간: 2026-10-07 00:00 ~ 2026-10-08 00:00 Asia/Seoul(KST) · 일정 0건]
+  이 기간에 캘린더에 잡힌 일정이 없습니다.
+  [그 뒤 7일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]
+  - 2026-10-08 23:00 ~ 2026-10-08 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: …
+  ```
+
+  One event, and said to be one: under a wrong move this line is the first thing of tomorrow's
+  the model holds, and tomorrow may hold more.
+- **An empty stretch, and nothing after it:** the sentence, then "그 뒤 7일 안에도 잡힌 일정이
+  없습니다." — said only of an answer Google finished. A page with no event on it and a token for
+  the next one says nothing of the days after (its reference for `maxResults`: "or none at all,
+  even if there are more events matching the query"), and then the sentence is left out.
+- **With `query`, nothing changes** — the request or the text. "No match" is a different statement
+  from "an empty day".
+
+**Measured again from the transport's own text** (three `measureOnly` scenarios whose fixtures
+`tests/eval-calendar.test.ts` holds to what the transport writes; twelve runs each, as two sixes,
+`EVAL_DEFERRAL=0`, `balanced`, the same model; every one of the 36 was answered):
+
+| Scenario | One request of the Bot's model | The rest | The briefing's row |
+|---|---|---|---|
+| `first-move-calendar-empty-day` — nothing today, the nearest event after | **11 of 12** — 6.2 s and 7.0K tokens at the median; seven told the next event, each as tomorrow's | 1 looked the tool up and asked the calendar twice: 4 requests, 11.8 s, 30.2K tokens | 11 of 12 |
+| `first-move-calendar-empty-week` — nothing today, nothing for a week | **8 of 12** — 4.9 s, 7.0K tokens | 4 asked again: 3, 3, 5 and 5 requests, 7.5–20.3 s, 21–40K tokens | 6 of 7 |
+| `first-move-calendar-empty-day-for-tomorrow-is-put-right` — a WRONG move: the first row's result under "내일 일정 뭐 있어?", with two events on tomorrow | — | 12 of 12 asked the calendar for tomorrow (`days: 2`) and named both events: 3 requests (one took 4), 14.2 s, 22.9K tokens | 12 of 12, with one event on tomorrow |
+
+- **An event to tell holds: 11 of 12, as it was before any code.** Every answer said today has
+  nothing; none told the next event as today's.
+- **The second sentence is not shown to do anything.** 8 of 12 here, 6 of 7 in the briefing's row —
+  14 of 19 together — against 9 of 18 for the result as it was. Eight of twelve is what a true
+  half gives one time in five. It costs nothing: the same one request, a true sentence, and the
+  answers that took the result said it ("앞으로 7일 동안도 비어 있어요"). But **a person whose week
+  is empty is, on this measurement, about where they were** — a turn in three still spends the
+  round — and that is the person for whom, as the section above said, an empty day is most days.
+  What might give those turns something to tell was not tried: the next event however far off,
+  out of the same request.
+- The runs that asked again were right too, as before: they asked with `days: 1`, were told the
+  same, and the five-request ones ran into `laf:tool_loop`.
+- **A wrong move was put right every time**, with a second event on tomorrow that the one line of
+  look-ahead does not show: every run asked for two days from now and named both.
+- These are a second go. The first twelve of each, half an hour earlier, met the endpoint failing —
+  503s and sixty-second stalls from 20:18 to 20:48 UTC: 35 of 36 got no answer, and the one that
+  did took one request. Of every `empty-day` run the endpoint answered that night, a two-run probe
+  included, 13 of 14 took one request.
+- **The briefing's rows and these are not shown to be of the same bytes.** Its fixtures were edits
+  in another checkout and were not kept; the fourth and fifth rows are in the words the brief gave,
+  which are the words that ship. From this change on the scenarios' fixtures are held to the
+  transport's text by a test.
+
+**The judge was wrong before the model was.** The scenario's check failed any answer that named a
+미팅 or an hour, which was right while an empty day's result held nothing to tell. With the nearest
+event in it, seven of the twelve runs in the briefing's fourth row said "오늘은 없어요. 다음 일정은
+내일 …" and were marked down: by the scenario's own verdict that row read 4 of 12. The check now
+reads each word that tells an event — its name, a 미팅, an hour — with the day it is told under:
+the day word nearest to it in its own sentence, or the last one before it where its sentence has
+none (a line of a list under a heading). Tomorrow's, or 다음, passes; today's, or none, fails, and
+so does 치과 or 매출, which are on no day of that calendar. A 미팅 said not to be there is not an
+event told. It is narrower than the old check on one side, on purpose: an event made up for
+tomorrow under a name of its own passes it. `tests/eval-calendar.test.ts` holds it to those runs'
+own sentences and to eight answers that tell an event wrongly; in the 24 runs above its verdicts
+were the ones a reading of the answers gives.
+
+**Not measured, and what is not known.**
+
+- **Nothing on the real stack**, as for the move itself: no Google account is connected on the
+  machine this was built on, and the calendar's address is the catalogue's constant
+  (`effectiveUrl`), so the real call path cannot be pointed at a fake without loosening that. The
+  transport was pressed against a fake of the events endpoint — the registry's own `callTool`, the
+  real clock, one request a case — and the model against fixtures equal to what it wrote there.
+- **Where Google begins an all-day event's date for `timeMin` and `timeMax`.** Its reference does
+  not say. The listing places it on the person's clock. Old listing against new over 60,000 random
+  calendars, on a fake that filters as the reference describes: where the date begins in the
+  person's own zone, every stretch with something on it was identical (15,780 of 15,780), every
+  empty one began as it did and went on to one of the two sentences, and every search was
+  identical (11,958). Where the date begins in UTC and the person is elsewhere, 634 of 13,982
+  stretches with something on them differed and 51 of 6,632 empty ones were no longer empty —
+  each by an all-day event within hours of the stretch's end, which the old listing took as Google
+  placed it and the new one places by the person's clock (west of Greenwich, tomorrow's all-day
+  event is no longer in today's list). For a day asked about in Seoul the two agree either way.
+- The first chunk of the answer, which is what a person waits for; and how many real days are
+  empty ones.
+- **A late day is where it was**: a list that is all behind the person is still asked about again
+  in some runs, and nothing here changes what that result says.
 
 ## Page facts — whether a page is what its address was opened for (2026-10-04)
 
