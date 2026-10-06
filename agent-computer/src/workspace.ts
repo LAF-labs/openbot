@@ -55,6 +55,9 @@ export class WorkspacePathError extends Error {
  * the note `laf:download_failed` where the download is watched (page-watch.ts): the workspace says
  * what is on disk, and the page's watcher says what that means for the click that started it.
  */
+/** The most bytes one name of a path may be, on every filesystem this runs on. */
+const NAME_MAX_BYTES = 255;
+
 export type WorkspaceFileCode =
   | "laf:file_not_found"
   | "laf:file_wrong_kind"
@@ -200,6 +203,25 @@ export function createWorkspace(
       throw new WorkspacePathError("A file path is required.");
     }
     const wanted = requested.trim();
+
+    /*
+     * A NAME THAT CANNOT BE A FILE'S IS REFUSED HERE, BY NAME. The runtime refuses a NUL in a path
+     * as a bad argument and the filesystem refuses a name over 255 bytes as an errno, and neither
+     * is a failing disk: until 2026-10-06 both came back from `put` as `laf:file_failed` — "try
+     * once more" — for a request that can never work (the independent read).
+     */
+    if (wanted.includes("\0")) {
+      throw new WorkspacePathError("A file path may not contain a NUL.");
+    }
+    if (
+      wanted
+        .split(/[\\/]/)
+        .some((segment) => Buffer.byteLength(segment) > NAME_MAX_BYTES)
+    ) {
+      throw new WorkspacePathError(
+        `A name in a file path may be at most ${NAME_MAX_BYTES} bytes.`,
+      );
+    }
 
     if (isAbsolute(wanted)) {
       throw new WorkspacePathError(
@@ -433,6 +455,9 @@ export function createWorkspace(
             `Something is already at ${requested}.`,
             "laf:file_exists",
           );
+        } else if (["ENAMETOOLONG", "ELOOP"].includes(errnoOf(error) ?? "")) {
+          // The whole path too long, or links that lead round: the request's, like a name too long.
+          throw new WorkspacePathError("That file path cannot be a file's.");
         }
         throw error;
       }
