@@ -9,7 +9,7 @@ import {
   agentAllowancesQueryOptions,
   agentKeys,
 } from "@/lib/agents/queries";
-import { describeSubject } from "@/lib/approvals";
+import { coversRuns, describeSubject } from "@/lib/approvals";
 import { ensure } from "@/lib/ensure";
 import { activeLocale, t } from "@/lib/i18n";
 import { readLineOf } from "@/lib/read-line";
@@ -154,6 +154,17 @@ function scopeText(allowance: AgentAllowance): string {
   }
   if (allowance.scopeKind === "file") {
     return t("The file {path}", { path: allowance.scopeValue });
+  }
+  /*
+   * A RUN, IN THE WORD ITS CARD ASKED IN — its name is an identifier (`coversRuns`).
+   *
+   * "Any", because that is how wide the press was: the allowance is for the tool, so for every
+   * program the Bot writes and whichever files it names, and the line under this one says only
+   * the one it happened to be asked about. What a rule says about a file still holds for each
+   * file a run is handed; this is about the running.
+   */
+  if (coversRuns(allowance.scopeKind, allowance.scopeValue)) {
+    return t("Running any small program it wrote");
   }
   return t("The tool {tool}", { tool: allowance.scopeValue });
 }
