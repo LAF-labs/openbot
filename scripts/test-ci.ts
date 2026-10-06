@@ -1649,15 +1649,36 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * leader has exited seen as running. Three in `workbench-probe.test.ts`: every script the probe
  * sends parsed, a signal mask read as names, and the probe's own floor.
  *
+ * RAISED A THIRD TIME 2026-10-07 after the second independent read, by exactly what was added:
+ * `root` from 799 to 804 and `server` from 3661 to 3673. What that read found was measured on the
+ * service first (the rehearsal, red: a script at the socket's path believed by the client, the run
+ * behind an abandoned one handed to its child three times of three, and four names that are not
+ * text outliving their run). Twelve to `server` in `workbench-client.test.ts`, eleven of them
+ * failing before their fix. Six about what the far side says its answer is: three encodings each
+ * held to what this process GREW by — it was 0.5 to 1.2 GB — and refused by name unread, no
+ * encoding asked for, a refusal and a health answer that name one (which passed already, and is
+ * there to stay so), only a form read as a run and only JSON as a refusal or as health, ten
+ * thousand parts or one nobody named, and a megabyte of headers on a part. Six about who answers:
+ * a stranger with no key or another's believed about nothing and sent nothing, eight proofs of the
+ * wrong thing, a number used once on every request, the run behind an abandoned one not sent until
+ * a proven "idle" (counting what the fake was sent meanwhile), an unproven "idle" letting nothing
+ * go, and a busy daemon waited for as long as it is given. Four to `root` in
+ * `workbench-daemon.test.ts`: the real daemon proving a health answer, two refusals and a run; a
+ * script sitting where the socket was, believed by nobody; the run behind an abandoned one not
+ * handed to the child that one left at the path; and — where a filesystem takes such a name, which
+ * is CI's machine and not a laptop — names that are not text removed like any other. One in
+ * `workbench-sweep.test.ts`: only the daemon's own closing of itself counts as its memory being
+ * kept, now that its key arrives where the host's rule does not reach.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3661, roots: ["server"] },
+  { name: "server", floor: 3673, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
-  { name: "root", floor: 799, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 804, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
