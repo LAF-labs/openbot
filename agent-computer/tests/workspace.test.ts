@@ -768,3 +768,46 @@ describe("emptying the workspace when the account leaves", () => {
     );
   });
 });
+
+/*
+ * WHAT `put` DID NOT FORESEE WAS A DISK THAT FAILED, AND SAID NOTHING (the independent read of
+ * 2026-10-06). A name the runtime or the filesystem refuses is the request's mistake, and was
+ * answered as `laf:file_failed` — "try once more" — with no line anywhere saying what had happened:
+ * the same silence that hid a body that could not be iterated.
+ */
+describe("a name that cannot be a file's is refused as a name", () => {
+  async function* one() {
+    yield new Uint8Array([1]);
+  }
+
+  test("a NUL in a path is refused before the filesystem sees it, whichever way a file is reached", async () => {
+    const ws = workspace();
+    const attempts: Array<[string, () => Promise<unknown>]> = [
+      ["put", () => ws.put("a\0b.bin", one())],
+      ["put under a folder", () => ws.put("made/a\0b.bin", one())],
+      ["read", () => ws.read("a\0b")],
+      ["whole", () => ws.whole("a\0b")],
+      ["write", () => ws.write("a\0b", "x")],
+    ];
+    for (const [how, attempt] of attempts) {
+      const refused = await attempt().catch((error: unknown) => error);
+      expect(refused instanceof WorkspacePathError, how).toBe(true);
+    }
+  });
+
+  test("a name longer than a name may be is the request's mistake, not the disk's failing", async () => {
+    const ws = workspace();
+    // Three hundred bytes in one segment: every filesystem this runs on stops at 255.
+    for (const path of [
+      `${"가".repeat(100)}.bin`,
+      `${"a".repeat(300)}/b.bin`,
+    ]) {
+      const refused = await ws
+        .put(path, one())
+        .catch((error: unknown) => error);
+      expect(refused instanceof WorkspacePathError, path.slice(0, 8)).toBe(
+        true,
+      );
+    }
+  });
+});

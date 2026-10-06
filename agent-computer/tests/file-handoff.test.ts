@@ -462,3 +462,48 @@ describe("bytes put where nothing is, over the wire", () => {
     expect(await readdir(root)).toEqual([]);
   });
 });
+
+describe("a file failure nobody foresaw", () => {
+  test("is answered `laf:file_failed` and LOGGED by its kind — never by the name it happened to", async () => {
+    const { fileFailure } = await import("../src/failures");
+    const lines: string[] = [];
+    const original = { warn: console.warn, error: console.error };
+    console.warn = (line: unknown) => void lines.push(String(line));
+    console.error = (line: unknown) => void lines.push(String(line));
+    try {
+      const response = fileFailure(
+        Object.assign(
+          new Error(
+            "ENOSPC: no space left on device, write '/workspace/bot-1/uploads/급여명세.xlsx'",
+          ),
+          { code: "ENOSPC", syscall: "write" },
+        ),
+      );
+      expect(((await response.json()) as { code: string }).code).toBe(
+        "laf:file_failed",
+      );
+      fileFailure(
+        new TypeError(
+          "The argument 'path' must be a string without null bytes. Received 'a\\u0000b'",
+        ),
+      );
+    } finally {
+      console.warn = original.warn;
+      console.error = original.error;
+    }
+    const said = lines.join("\n");
+    expect(said).toContain('"event":"file_failed"');
+    expect(said).toContain('"errno":"ENOSPC"');
+    expect(said).toContain('"failure":"TypeError"');
+    // A name is a person's: neither the path nor the message that quotes it is in the line.
+    for (const kept of [
+      "급여명세",
+      "uploads",
+      "/workspace",
+      "no space left",
+      "a\\u0000b",
+    ]) {
+      expect(said).not.toContain(kept);
+    }
+  });
+});

@@ -21,6 +21,7 @@ import {
   RequestInvalidError,
   saysRendererDied,
 } from "./respond";
+import { log } from "./log";
 import { WorkspaceFileError, WorkspacePathError } from "./workspace";
 
 /**
@@ -34,6 +35,27 @@ export function fileFailure(error: unknown): Response {
   if (error instanceof WorkspaceFileError) {
     return fact(error.code, error.facts);
   }
+  /*
+   * WHAT NOBODY FORESAW IS SAID ONCE, HERE, BY ITS KIND. Until 2026-10-06 this line answered and
+   * wrote nothing, so a failure that was really a bug read, to whoever looked, as a disk having a
+   * bad moment — a request body that could not be iterated hid behind it for an afternoon (the
+   * independent read). The errno and the error's class, and nothing else: a filesystem error's
+   * message is the path it failed on, and a file's name is a person's.
+   */
+  const errno =
+    error instanceof Error &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    /^[A-Z][A-Z0-9_]{1,31}$/.test(error.code)
+      ? error.code
+      : null;
+  log.warn("file_failed", {
+    ...(errno ? { errno } : {}),
+    failure:
+      error instanceof Error && /^[A-Za-z]{1,40}$/.test(error.name)
+        ? error.name
+        : typeof error,
+  });
   return fact("laf:file_failed");
 }
 
