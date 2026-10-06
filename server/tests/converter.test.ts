@@ -8,10 +8,8 @@ import {
   converterSettingFor,
   createConverter,
 } from "../src/attachments/converter-client";
-import {
-  isolationProblems,
-  startConverterDaemon,
-} from "../src/attachments/converter-daemon";
+import { isolationProblems } from "../../shared/isolation";
+import { startConverterDaemon } from "../src/attachments/converter-daemon";
 import {
   convertInFreshProcess,
   jobCommandFor,
