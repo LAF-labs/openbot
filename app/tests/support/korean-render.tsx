@@ -211,9 +211,26 @@ for (const [index, bot] of bots.entries()) {
  * `activeLocale` prints "2:15 AM", "Sat" and "9/3" here, and only one that was handed it prints
  * Korean. That difference is what a Korean app on an English machine showed.
  */
+/*
+ * THE CLOCK ROW HAS TO BE TODAY'S WHEN IT IS DRAWN. It was "a minute ago", which in the first
+ * minute of a day is yesterday: the roster wrote that row's weekday, and the gate failed on a pull
+ * request that had touched nothing here (CI, 2026-10-06 at 00:00 UTC; reproduced with the clock set
+ * to 00:00:20 — "월" where "오전 12:00" was expected). So the row is a minute ago or the start of
+ * today, whichever is later. And a render about to begin in the last half minute of a day waits for
+ * the next one, because a row made at 23:59:59 is yesterday's by the time it is drawn; that wait is
+ * at most thirty seconds, in thirty seconds of a day.
+ */
+const startOfToday = (at: number) => new Date(at).setHours(0, 0, 0, 0);
+const leftOfToday = new Date().setHours(24, 0, 0, 0) - Date.now();
+if (leftOfToday < 30_000) {
+  await new Promise((resolve) => setTimeout(resolve, leftOfToday + 50));
+}
 const now = Date.now();
 const hoursAgo = (hours: number) =>
   new Date(now - hours * 3_600_000).toISOString();
+const aMinuteAgoToday = new Date(
+  Math.max(now - 60_000, startOfToday(now)),
+).toISOString();
 const rosterView = await mountApp({
   // Not "/": that opens the Bot's conversation, which needs a runtime this render has not got.
   path: "/help",
@@ -242,7 +259,7 @@ const rosterView = await mountApp({
       });
       return json({
         channels: [
-          row("c-1", "t-1", "초롱", new Date(now - 60_000).toISOString()),
+          row("c-1", "t-1", "초롱", aMinuteAgoToday),
           row("c-2", "t-2", "두리", hoursAgo(24 * 2 + 1)),
           row("c-3", "t-3", "세모", hoursAgo(24 * 10)),
         ],
