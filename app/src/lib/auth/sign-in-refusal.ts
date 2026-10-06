@@ -1,4 +1,5 @@
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * WHY A SIGN-IN WAS REFUSED, IN THE WORDS OF THE SCREEN AND NEVER IN BETTER-AUTH'S.
@@ -190,7 +191,7 @@ const REFUSAL_BY_KEY: Readonly<
 /** What a code means for the person, or `unknown` for a code nobody wrote words for. */
 export function refusalForCode(code: string | null | undefined): SignInRefusal {
   if (!code) return "unknown";
-  return REFUSAL_BY_KEY[refusalKey(code)] ?? "unknown";
+  return own(REFUSAL_BY_KEY, refusalKey(code)) ?? "unknown";
 }
 
 /** Every code this screen has its own words for, spelled as `refusalKey` spells them. */

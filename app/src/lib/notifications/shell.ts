@@ -31,6 +31,7 @@
  */
 
 import type { PresenceKind } from "@/lib/agents/presence";
+import { own } from "@/lib/own";
 
 type TauriGlobal = {
   core?: {
@@ -400,12 +401,12 @@ const PC_MODIFIERS: Readonly<Record<string, string>> = {
  * `off` and for an id this build does not know; the caller has its own word for off.
  */
 export function summonKeysOf(id: string, isMac: boolean): string | null {
-  const found = SUMMON_KEYS[id];
+  const found = own(SUMMON_KEYS, id);
   if (!found) return null;
   const [modifiers, key] = found;
   return isMac
-    ? `${modifiers.map((name) => MAC_MODIFIERS[name]).join("")}${key}`
-    : [...modifiers.map((name) => PC_MODIFIERS[name]), key].join("+");
+    ? `${modifiers.map((name) => own(MAC_MODIFIERS, name)).join("")}${key}`
+    : [...modifiers.map((name) => own(PC_MODIFIERS, name)), key].join("+");
 }
 
 /*

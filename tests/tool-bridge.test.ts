@@ -1173,6 +1173,27 @@ describe("what a Bot is told of tools that wait for review under no name", () =>
     );
   });
 
+  test("a search whose words include `constructor` is a search, not a throw", () => {
+    // The table of other words for a word was read as `ALIASES[token]`: for this one token that is
+    // a function, and `for … of` a function throws. A model's query is the model's words.
+    const tools = [
+      {
+        name: "mcp__acme__make_constructor",
+        description: "Builds a constructor for a class.",
+        parameters: { type: "object", properties: {} },
+      },
+    ];
+    expect(() => searchTools(tools, "constructor")).not.toThrow();
+    expect(searchTools(tools, "constructor")[0]?.name).toBe(
+      "mcp__acme__make_constructor",
+    );
+    expect(() =>
+      searchTools(tools, "tostring valueof __proto__"),
+    ).not.toThrow();
+    // A word the table does hold still brings its other words.
+    expect(first("email")).toBe(first("메일"));
+  });
+
   test("a service somebody named `constructor` is called that, not what every object answers to that name with", () => {
     // An administrator's own word for a server they added by address: it has a key's shape, and
     // the table of names was read as `TABLE[key]`, which is a function for this one key.

@@ -20,6 +20,7 @@ import {
 } from "@/lib/connections/queries";
 import { t } from "@/lib/i18n";
 import { pluginKeys } from "@/lib/plugins/queries";
+import { own } from "@/lib/own";
 
 /**
  * A few of 연결's switches, drawn inside the conversation.
@@ -156,7 +157,7 @@ export function ConnectionChoices({
   const nowCan = isWatched
     ? []
     : landed
-        .map((id) => ACCOUNT_FIRST_TASKS[id]?.sentence)
+        .map((id) => own(ACCOUNT_FIRST_TASKS, id)?.sentence)
         .filter((sentence): sentence is string => Boolean(sentence));
 
   // Null until the overview has been read: "nothing is offered" is a fact only after that.

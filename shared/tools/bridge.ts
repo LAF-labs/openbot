@@ -694,7 +694,8 @@ function scoreOf(tool: WireTool, tokens: readonly string[]): number {
       // 활용형: "보내"는 "보낸다"에, "읽"은 "읽는다"에.
       if (descriptionJamo.includes(jamo(token))) hit += 2;
     }
-    for (const alias of ALIASES[token] ?? []) {
+    // Own keys only: a query's word is a model's, and `constructor` is a word (see `labelOf`).
+    for (const alias of Object.hasOwn(ALIASES, token) ? ALIASES[token] : []) {
       if (inName.includes(alias)) hit += 3;
       if (inDescription.includes(alias)) hit += 1;
     }

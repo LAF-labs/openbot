@@ -1,6 +1,7 @@
 import { bareNameOf, serverKeyOf } from "@shared/tools/bridge";
 import { t } from "@/lib/i18n";
 import { serviceLabel, toolLabel } from "@/lib/plugins/tool-labels";
+import { own } from "@/lib/own";
 
 /**
  * What a step line says a Bot did, in the owner's words, for any tool it can call.
@@ -112,14 +113,15 @@ export function stepLineOf(
   /** The step has its result: say what was done, not what is being done. */
   isDone = false,
 ): { label: string; detail?: string } {
-  const own =
-    (isDone ? STEP_DONE_LABELS[name] : undefined) ?? STEP_LABELS[name];
-  if (own) return { label: t(own) };
+  const said =
+    (isDone ? own(STEP_DONE_LABELS, name) : undefined) ??
+    own(STEP_LABELS, name);
+  if (said) return { label: t(said) };
   const server = serverKeyOf(name);
   if (!server) return { label: t("Used a tool") };
   const ref = `${server}/${bareNameOf(name)}`;
   const service = serviceLabel(server);
-  const known = SERVICE_STEP_LABELS[ref];
+  const known = own(SERVICE_STEP_LABELS, ref);
   const label = known ? t(known) : toolLabel(ref);
   if (label) {
     return service && !SAID_BY_ITS_OWN_STEP.has(server)

@@ -27,6 +27,7 @@ import {
   suggestionKeys,
   suggestionRequest,
 } from "@/lib/routines/suggestions";
+import { own } from "@/lib/own";
 
 /**
  * 이런 루틴은 어떠세요 — the cards above the routines list.
@@ -112,7 +113,7 @@ const SuggestionCard = ({
       void queryClient.invalidateQueries({ queryKey: suggestionKeys.all }),
   });
 
-  const why = SUGGESTION_WHY[suggestion.key];
+  const why = own(SUGGESTION_WHY, suggestion.key);
   // Said as a reason, never as the browser's "Failed to fetch" (UI/UX audit 0.5.3, item 15).
   const failed = accept.error ?? dismiss.error;
   const problem = failed ? savingFailure(failed) : null;

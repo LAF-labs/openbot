@@ -11,6 +11,7 @@
  * hundred call sites bearable.
  */
 import { ko } from "./i18n-ko";
+import { own } from "./own";
 
 export type Locale = "system" | "en" | "ko";
 
@@ -60,6 +61,18 @@ export function setLocaleSetting(locale: Locale): void {
 }
 
 /**
+ * The Korean for a source string, where the dictionary itself holds one.
+ *
+ * By its own keys (`./own`): `ko["constructor"]` is a function, and a string from outside does
+ * reach `t()` as its key — `?connected=constructor` on the connections screen said
+ * "function Object() { [native code] }에 연결했어요", and a custom server's title is drawn the
+ * same way. Apart from `t()` so that a test can ask it in a runner whose language is English.
+ */
+export function koreanFor(source: string): string | undefined {
+  return own(ko, source);
+}
+
+/**
  * Translate an English source string, with optional `{name}` substitutions.
  * A missing entry falls back to the English source — untranslated is a to-do,
  * never a crash and never a blank.
@@ -68,7 +81,7 @@ export function t(
   source: string,
   params?: Record<string, string | number>,
 ): string {
-  let text = activeLocale === "ko" ? (ko[source] ?? source) : source;
+  let text = activeLocale === "ko" ? (koreanFor(source) ?? source) : source;
   if (params) {
     for (const [name, value] of Object.entries(params)) {
       /*
