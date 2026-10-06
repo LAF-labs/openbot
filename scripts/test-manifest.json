@@ -235,6 +235,7 @@
   "app/tests/sidebar-rail.test.tsx",
   "app/tests/sign-in-providers.test.ts",
   "app/tests/sign-in-refusals.test.ts",
+  "app/tests/sign-out-failure.test.tsx",
   "app/tests/sign-via.test.ts",
   "app/tests/site-catalogue.test.ts",
   "app/tests/skill-chip.test.tsx",

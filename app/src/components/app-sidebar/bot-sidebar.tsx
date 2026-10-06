@@ -60,10 +60,10 @@ import { rosterNotice } from "@/lib/agents/roster-state";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
-import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
-import { goalKeys, goalsQueryOptions } from "@/lib/goals/queries";
 import { setChannelReadMutationOptions } from "@/lib/channels/mutations";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
+import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
+import { goalKeys, goalsQueryOptions } from "@/lib/goals/queries";
 import { activeLocale, t } from "@/lib/i18n";
 import { settledOf, useReading } from "@/lib/reading";
 import { useNow } from "@/lib/use-now";
@@ -612,10 +612,9 @@ export function BotSidebar() {
     setSignOutError(null);
     try {
       await signOut.mutateAsync();
-    } catch (caught) {
-      setSignOutError(
-        caught instanceof Error ? caught.message : t("Could not log out."),
-      );
+    } catch {
+      // The surface's own words, never what was thrown (`settings/index.tsx` says what that drew).
+      setSignOutError(t("Could not log out."));
       return;
     }
     await navigate({ to: "/sign" });

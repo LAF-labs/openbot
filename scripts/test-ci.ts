@@ -1285,13 +1285,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * length, the megabyte for its neighbours and for a body that does not say how long it is. Until
  * then each side was asked alone, and a person's every file over a megabyte was refused in the app.
  *
+ * RAISED AGAIN 2026-10-06 with a sign-out that failed, by exactly what was added: two to `app`, in
+ * the new `sign-out-failure.test.tsx`, mounted on the settings screen (refused by the server, and
+ * the request never arriving, are each told in the app's own sentence, with no status and none of
+ * the thrown English on the page, and nobody is sent to the door as though it had worked).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3618, roots: ["server"] },
-  { name: "app", floor: 2107, roots: ["app"] },
+  { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
 ] as const;
