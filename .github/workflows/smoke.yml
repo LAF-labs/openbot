@@ -122,6 +122,12 @@ jobs:
             # A runner has no fleet to lay the browser's egress rules on its host (docs/laf/deploying.md,
             # the host firewall), so the computer's check for them is off here, as on a laptop.
             echo "AGENT_COMPUTER_EGRESS_FIREWALL=off"
+            # The page this journey serves is on the runner, which is a private address, and the
+            # browser's own floor refuses one as the server's does (audit A3, 2026-09-10). Said
+            # here, in the one file both read: compose hands the computer its word from `.env`,
+            # and while only the API's command line carried it every navigation of the journey was
+            # refused by the container (`laf:navigation_refused`, run 37440334508).
+            echo "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true"
             echo "OPENAI_API_KEY=$OPENAI_API_KEY"
             # `if`, not `[ … ] && echo`: a test that is false is the group's last status, and the step
             # then fails for the variable that is ALLOWED to be absent. It did, on 2026-10-06, the
@@ -155,7 +161,8 @@ jobs:
       # The API on the host, the way `scripts/start.sh` runs it, so the test process and the server
       # share a machine and the fixture page below is reachable from both sides.
       #
-      # ALLOW_PRIVATE_HOSTS, and only here. Docker on Linux gives no `host.docker.internal`, so the
+      # ALLOW_PRIVATE_HOSTS, and only in this job (the environment step writes it, for the API and
+      # for the computer alike). Docker on Linux gives no `host.docker.internal`, so the
       # container reaches this runner at the bridge gateway — a private address, which the
       # navigation guard refuses by default and should. Opting in is what makes a locally served
       # fixture possible; a hosted deployment must never set it.
@@ -165,7 +172,6 @@ jobs:
           (cd server && PORT="$SERVER_PORT" \
             AGENT_COMPUTER_URL="http://localhost:$COMPUTER_PORT" \
             COMPUTER_TOKEN="$COMPUTER_TOKEN" \
-            AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true \
             bun --env-file=../.env src/index.ts > "$RUNNER_TEMP/server.log" 2>&1 &)
           for _ in $(seq 1 60); do
             curl -fsS --max-time 3 "http://localhost:$SERVER_PORT/api/capabilities" >/dev/null 2>&1 && exit 0
