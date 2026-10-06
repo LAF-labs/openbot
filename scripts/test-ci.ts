@@ -1548,13 +1548,42 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * argument, typed and unchecked). One for `root`, in `tool-bridge.test.ts`: a search whose words
  * include `constructor` is a search, where it was a throw.
  *
+ * RAISED AGAIN 2026-10-07 with a hosted deployment taking no endpoint of a person's own for a
+ * Bot, by exactly what was added: `server` from 3582 to 3611 and `app` from 2151 to 2156.
+ * Twenty-nine to `server`. Seventeen in `agent-routes.test.ts`: the form refused by a code of its
+ * own with an address, a key for one, or both — eight shapes of it — and read as it always was
+ * with neither, or with an empty one — four; a developer's stack taking both, checked as they
+ * were; create and the edit form's save refused before the store is asked; the ordinary save
+ * going through; the connection test dialling nothing; and the app told no address and no key of
+ * a Bot there. Eight in `runtime-agents.integration.test.ts`: a Bot whose row holds another
+ * address dialled at the deployment's own agent with no key of the person's, the vault never
+ * asked and the row left as it was; the same Bot dialled where its row says, with its key, on a
+ * developer's stack; a Bot nobody pointed anywhere dialled at home either way; three shapes of a
+ * row that names nothing a run could dial — nothing, something that is no address, an address
+ * nothing dials — running at home on a hosted deployment and skipped on a developer's stack as
+ * they always were; a rename leaving the row's configuration as it was; and the Bots held
+ * elsewhere found by id, the live ones only. Two in the new `boot-line.test.ts`: the count said
+ * at boot, zero included, and nothing said where no Bot is brought anywhere. One in
+ * `guards.test.ts`: the fact the app reads, under both settings. And one in
+ * `log-hygiene.integration.test.ts`, through the real `main.ts`: a Bot whose row was pointed at
+ * a name that resolves nowhere is answered by this deployment's own Bot service, its row
+ * unchanged and the address in neither process's log — the one argument that every test of the
+ * loader passes without. Five to `app`, in the new `admin-bot-endpoints.test.tsx`: the page
+ * listed by none of the rail, the row that stands in for it and the index where the server takes
+ * no endpoint, and where it does not say; the page itself a title and one sentence, with no
+ * field and no button; that sentence the refusal's own, said in Korean; and a developer's stack
+ * as it was. Nothing was deleted: the tests that took an endpoint on the default setting take it
+ * on the developer's now, in place (`agent-endpoint.test.ts`, two in `agent-routes.test.ts`),
+ * and `POST /api/agents/test-connection` left the matrix's list of what a colleague reaches,
+ * since on the matrix's deployment it answers everybody 400 with a code.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3582, roots: ["server"] },
-  { name: "app", floor: 2151, roots: ["app"] },
+  { name: "server", floor: 3611, roots: ["server"] },
+  { name: "app", floor: 2156, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 737, roots: ["tests", "agent-bot"] },
 ] as const;
