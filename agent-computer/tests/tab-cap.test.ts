@@ -862,9 +862,15 @@ describe("a Bot's tabs, counted without a browser", () => {
       expect.objectContaining({ origin: "https://ads.example", pages: 4 }),
     ]);
     expect(linesOf("tab_stray_closed")[0]).not.toHaveProperty("bot");
-    expect(JSON.stringify(warned.mock.calls)).not.toMatch(
-      /landing|campaign|77|more|x=1/,
-    );
+    // Read with each line's timestamp taken out: `77` is two digits a stamp can hold, and read
+    // whole this failed on a pull request that changed only a document (CI run 37446578184,
+    // 2026-10-06) — the same thing `crashed-tab.test.ts` had, found the same afternoon.
+    expect(
+      JSON.stringify(warned.mock.calls).replace(
+        /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g,
+        "",
+      ),
+    ).not.toMatch(/landing|campaign|77|more|x=1/);
 
     // THE LAST TAB IS THE SPARE. Every Bot's tab gone and one tab left that is nobody's: it is
     // what the next Bot with no tab is handed, and the sweep does not take it.
