@@ -773,6 +773,7 @@ try { made = Bun.spawnSync(["/usr/bin/ipcmk", "-M", "4096"]); } catch { console.
 console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().trim());
 `);
   if (said(segment) === "made") {
+    const was = boot;
     fresh = await next(boot);
     boot = fresh;
     const listed = await run(
@@ -780,7 +781,7 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
     );
     check(
       "a System V segment a script left costs the daemon its container, and the next run finds none",
-      fresh !== boot && said(listed) === "0",
+      fresh !== was && said(listed) === "0",
       `a new daemon answered; the next run counted ${said(listed)} segment(s)`,
     );
   } else {
@@ -790,6 +791,42 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
       `no segment could be made to try it with (${said(segment)})`,
     );
   }
+
+  /*
+   * EVERY SIGNAL PROCESS 1 CATCHES, SENT TO IT BY A SCRIPT. One it does not catch is dropped by the
+   * kernel; one it catches runs a handler, and what that handler does is the runtime's business —
+   * a crash handler, or something its collector uses between its own threads. A handler that ENDS
+   * the daemon is the container ending, which is safe. The one outcome that is not is a daemon
+   * left neither running nor ended. Ten seconds between them, so the engine's doubling wait is
+   * not what is being measured.
+   */
+  const sent: string[] = [];
+  let stuck = false;
+  for (const signal of signalsIn(one.caught).filter(
+    (name) => name !== "SIGTERM",
+  )) {
+    await Bun.sleep(11_000);
+    const was = boot;
+    const went = await run(
+      `process.kill(1, "${signal}"); await Bun.sleep(1500); console.log("went on");`,
+    );
+    const now = await settled(90_000).catch(() => null);
+    if (now === null) {
+      stuck = true;
+      sent.push(`${signal}: NOBODY ANSWERED for 90 s`);
+      break;
+    }
+    sent.push(
+      `${signal}: ${now === was ? "the same daemon went on" : "ended it, and a new daemon answered"}${went.ok ? "" : ` (the run: ${went.failure})`}`,
+    );
+    boot = now;
+  }
+  check(
+    "no signal a script can send leaves the daemon neither running nor ended",
+    !stuck && sent.length > 0,
+    sent.join("; "),
+  );
+  await Bun.sleep(11_000);
 
   // CHILDREN UNTIL THE ENGINE REFUSES ONE. Each is ended by the sweep and then held, dead, by a
   // process 1 that waits for nobody — so this run also costs the daemon its container.
@@ -906,7 +943,7 @@ export function megabytesHeld(usage: string): number | null {
  * How many things the inner half reports when it runs to its end. A floor in the only sense that
  * matters here: fewer is a probe that stopped, and a stopped probe has not found the walls sound.
  */
-export const PROBE_CHECKS = 26;
+export const PROBE_CHECKS = 27;
 
 /** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
 export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
