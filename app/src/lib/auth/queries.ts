@@ -75,6 +75,15 @@ export type Deployment = {
   attachments?: boolean;
   images?: boolean;
   /**
+   * Whether a Bot may be pointed at an agent somebody hosts themselves (`/admin/bots`). True only
+   * on a developer's stack: a hosted deployment takes no endpoint of a person's own for a Bot
+   * (2026-10-06), its server refuses one, and so the page that sends one is not listed there and
+   * draws no field. Absent reads as NO, like the two above: a server that does not say may be one
+   * that refuses, and guessing wrong that way is a page that is missing — the other way it is a
+   * 저장 button that can only ever answer no.
+   */
+  botEndpoints?: boolean;
+  /**
    * A free trial, as the server described it — absent on every deployment that is not one, and then
    * no banner exists to draw. See `components/layout/trial-banner.tsx`.
    */
@@ -263,6 +272,7 @@ async function currentUser(): Promise<CurrentUserResult> {
       autoReview: body.deployment?.autoReview !== false,
       attachments: body.deployment?.attachments === true,
       images: body.deployment?.images === true,
+      botEndpoints: body.deployment?.botEndpoints === true,
       ...(trial ? { trial } : {}),
     },
   };

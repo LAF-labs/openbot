@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  *
  * The rail is the whole navigation of both screens, so it cannot simply be hidden. Below `lg` it
  * is drawn here instead: one horizontal row at the top of the pane, the way back to the app first,
- * scrolling sideways when there are more links than fit — which is Admin, at nine.
+ * scrolling sideways when there are more links than fit — which is Admin, at eight or nine.
  *
  * Pure CSS, no width hook. The choice is a media query in the class list, so it is right on the
  * first frame at any width and it survives a window somebody drags. A `useIsMobile` here would

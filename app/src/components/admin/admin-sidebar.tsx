@@ -9,6 +9,7 @@ import {
   IconPuzzle,
   IconShieldCheck,
 } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, type LinkOptions } from "@tanstack/react-router";
 import type * as React from "react";
 import type { RailNavItem } from "@/components/layout/rail-nav";
@@ -23,6 +24,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
@@ -101,7 +103,8 @@ const GROUPS: {
 ];
 
 /**
- * The same nine links, flat, for the row that replaces the rail below `lg`.
+ * The same nine links, flat, for the row that replaces the rail below `lg` — drawn through
+ * `adminPagesOffered`, as the rail's are, so eight where the endpoints page is not offered.
  *
  * Flat rather than grouped because a horizontal strip has nowhere to put a group label, and the
  * order is the rail's order, so the two never disagree about where 감사 is.
@@ -117,9 +120,45 @@ export const ADMIN_NAV: RailNavItem[] = [
   ),
 ];
 
+/**
+ * Whether this deployment takes an endpoint of a person's own for a Bot — the one fact that decides
+ * which pages the admin screens list (`adminPagesOffered`) and whether `/admin/bots` draws its form.
+ *
+ * The server's word (`deployment.botEndpoints` on `/api/me`), read from the answer the admin route
+ * already loaded before it drew anything, so it is settled on the first frame. Not known reads as
+ * no: see `Deployment.botEndpoints`.
+ */
+export function useTakesBotEndpoints(): boolean {
+  const { data: user } = useQuery(currentUserQueryOptions());
+  return user?.deployment.botEndpoints === true;
+}
+
+/**
+ * The pages out of `items` that this deployment offers.
+ *
+ * ONE PAGE IS NOT OFFERED EVERYWHERE: `/admin/bots`, which points a Bot at an agent somebody hosts
+ * themselves. A hosted deployment takes no such endpoint (2026-10-06) and its server refuses one, so
+ * a link to the page there leads an administrator — who on a one-VM-per-person deployment is the
+ * person — to a form that can only be refused. "If a deployment cannot do the thing, do not draw the
+ * control" starts with the link to it.
+ *
+ * ASKED BY ALL THREE LISTS — this rail, the row that replaces it on a narrow window, and the admin
+ * index — which is why it takes any table of links: the three already had to agree on an order,
+ * and a page listed in one and absent from another is the same disagreement.
+ */
+export function adminPagesOffered<Page extends { linkOptions: LinkOptions }>(
+  items: Page[],
+  takesBotEndpoints: boolean,
+): Page[] {
+  return takesBotEndpoints
+    ? items
+    : items.filter((item) => item.linkOptions.to !== "/admin/bots");
+}
+
 export function AdminSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const takesBotEndpoints = useTakesBotEndpoints();
   return (
     <Sidebar {...props}>
       <SidebarHeader>
@@ -168,7 +207,7 @@ export function AdminSidebar({
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarMenu>
-              {group.items.map((item) => (
+              {adminPagesOffered(group.items, takesBotEndpoints).map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     // One rhythm with the app sidebar, and it was only ever a claim: the shared row is

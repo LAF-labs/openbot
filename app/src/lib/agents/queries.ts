@@ -39,9 +39,12 @@ export type AgentProfile = {
    * rule deciding whether it gets asked about has no boundary at all.
    */
   autoReview: string;
-  /** Where this coworker runs. Null for the Bot in the box. */
+  /**
+   * Where this coworker runs. Null for the Bot in the box — and for every Bot on a hosted
+   * deployment, whose server says no address at all (`deployment.botEndpoints`).
+   */
   endpoint: string | null;
-  /** Whether a key is set for it. Never the key itself. */
+  /** Whether a key is set for it. Never the key itself. False wherever `endpoint` is not said. */
   hasAuth: boolean;
   hidden: boolean;
   /** Whether this person wants to hear from the Bot. Per-person, like `hidden`. */

@@ -15,6 +15,10 @@ import {
   type LinkOptions,
 } from "@tanstack/react-router";
 import {
+  adminPagesOffered,
+  useTakesBotEndpoints,
+} from "@/components/admin/admin-sidebar";
+import {
   PageRows,
   PageSection,
   PageShell,
@@ -120,6 +124,12 @@ const SECTIONS: {
 ];
 
 function RouteComponent() {
+  const takesBotEndpoints = useTakesBotEndpoints();
+  // The rail's own answer to which pages there are: a page it does not list is not listed here.
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    items: adminPagesOffered(section.items, takesBotEndpoints),
+  }));
   return (
     <PageShell
       description={t(
@@ -127,7 +137,7 @@ function RouteComponent() {
       )}
       title={t("Admin")}
     >
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <PageSection
           description={section.description ? t(section.description) : undefined}
           key={section.title}

@@ -51,6 +51,7 @@
   "app/tests/accent-contrast.test.ts",
   "app/tests/account-copy.test.ts",
   "app/tests/account-state.test.ts",
+  "app/tests/admin-bot-endpoints.test.tsx",
   "app/tests/admin-computers.test.tsx",
   "app/tests/admin-toggles.test.tsx",
   "app/tests/agent-refusals.test.ts",
