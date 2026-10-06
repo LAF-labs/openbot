@@ -1788,7 +1788,7 @@ test("a socket in a directory that is not there has no client: where it really i
       socketPath: join(root, "not-made", "w.sock"),
       log: quiet,
     }),
-  ).toThrow("directory");
+  ).toThrow("cannot (ENOENT)");
 });
 
 /*
@@ -1815,4 +1815,52 @@ test("a client's key is held to what a key is, as the daemon's is — and is nev
   expect(() =>
     createWorkbench({ key: "x".repeat(32), socketPath, log: quiet }),
   ).not.toThrow();
+});
+
+/*
+ * A SECOND CALLER'S BOUNDS, WAITS AND LOG WERE DROPPED WITHOUT A WORD. It was handed the first
+ * caller's client — rightly — and what it had asked for besides the path was not looked at: a
+ * caller that meant its runs to be held to smaller bounds, or to be written to its own log, got
+ * neither and was not told. Like another key, it is a mistake said at once.
+ */
+test("a second caller that asks for other bounds, other waits or another log is refused, as for another key", () => {
+  const { socketPath } = fakeDaemon(() => honest());
+  const first = {
+    key: KEY,
+    socketPath,
+    log: quiet,
+    limits: { ...WORKBENCH_LIMITS, files: 2 },
+    marginMs: 500,
+    absentMs: 300,
+  };
+  const one = createWorkbench(first);
+  // The same again — written out again, not the same object — is the same client.
+  expect(
+    createWorkbench({ ...first, limits: { ...WORKBENCH_LIMITS, files: 2 } }),
+  ).toBe(one);
+
+  const other: Logger = { svc: "other", info() {}, warn() {}, error() {} };
+  const differing: [string, Parameters<typeof createWorkbench>[0]][] = [
+    ["other bounds", { ...first, limits: { ...WORKBENCH_LIMITS, files: 3 } }],
+    [
+      "the bounds it would have by default",
+      { key: KEY, socketPath, log: quiet, marginMs: 500, absentMs: 300 },
+    ],
+    ["another margin", { ...first, marginMs: 501 }],
+    [
+      "the margin it would have by default",
+      { key: KEY, socketPath, log: quiet, limits: first.limits, absentMs: 300 },
+    ],
+    ["another wait for an absent daemon", { ...first, absentMs: 301 }],
+    ["another log", { ...first, log: other }],
+  ];
+  for (const [what, options] of differing) {
+    let said = "";
+    try {
+      createWorkbench(options);
+    } catch (error) {
+      said = error instanceof Error ? error.message : String(error);
+    }
+    expect({ what, refused: said !== "" }).toEqual({ what, refused: true });
+  }
 });

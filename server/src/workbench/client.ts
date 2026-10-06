@@ -542,8 +542,30 @@ type WorkbenchOptions = {
   absentMs?: number;
 };
 
-/** The one client there is for each socket in this process, and the key it was made with. */
-const CLIENTS = new Map<string, { key: string; workbench: Workbench }>();
+/** What a client is made with, once every default has been filled in: what it is in fact held to. */
+type Made = {
+  key: string;
+  log: Logger;
+  limits: Limits;
+  marginMs: number;
+  absentMs: number;
+};
+
+/** The one client there is for each socket in this process, and what it was made with. */
+const CLIENTS = new Map<string, { made: Made; workbench: Workbench }>();
+
+/** The name of what a second caller asked for that the client there is was not made with. */
+function differenceOf(there: Made, asked: Made): string | null {
+  if (there.key !== asked.key) return "key";
+  if (there.log !== asked.log) return "log";
+  if (there.marginMs !== asked.marginMs) return "marginMs";
+  if (there.absentMs !== asked.absentMs) return "absentMs";
+  const bounds = Object.keys(there.limits) as (keyof Limits)[];
+  return bounds.some((bound) => there.limits[bound] !== asked.limits[bound]) ||
+    Object.keys(asked.limits).length !== bounds.length
+    ? "limits"
+    : null;
+}
 
 /**
  * Where a socket really is: its directory as the filesystem resolves it, and its own name there.
@@ -557,9 +579,10 @@ const CLIENTS = new Map<string, { key: string; workbench: Workbench }>();
  * this path too, so a name that is later pointed somewhere else does not take the client with it
  * while its place in the table stays where it was.
  *
- * A DIRECTORY THAT IS NOT THERE HAS NO REAL PATH, and so no client: this throws. Falling back to
- * the path as written would keep a client under a name that may turn out to be one of two for the
- * same place once the directory exists — the very thing this is for. In a deployment the directory
+ * A DIRECTORY THAT CANNOT BE RESOLVED HAS NO REAL PATH, and so no client: this throws — for one
+ * that is not there, and for one this process may not look into. Falling back to the path as
+ * written would keep a client under a name that may turn out to be one of two for the same place
+ * once the directory can be resolved — the very thing this is for. In a deployment the directory
  * is a mounted volume and is there before the server is; whoever makes a client where it may not
  * be is the one to decide what a missing directory means.
  */
@@ -568,9 +591,14 @@ function socketAt(socketPath: string): string {
   let directory: string;
   try {
     directory = realpathSync(dirname(written));
-  } catch {
+  } catch (error) {
+    // Why, by the system's own short name for it (`ENOENT`, `EACCES`) and never by the path.
+    const why =
+      error instanceof Error && "code" in error
+        ? String(error.code)
+        : "unknown";
     throw new Error(
-      "a workbench's socket is in a directory that exists: this one's does not, so where it really is cannot be said",
+      `a workbench's socket is in a directory that can be resolved: this one's cannot (${why}), so where the socket really is cannot be said`,
     );
   }
   return join(directory, basename(written));
@@ -578,11 +606,18 @@ function socketAt(socketPath: string): string {
 
 /**
  * The client for a socket: THE one. A second call for the same socket — by whatever path it is
- * written (`socketAt`) — is handed the first's: its queue, its bounds, its log; what the second
- * call asked for besides the path is not looked at — because two clients are two queues, and with
- * two queues one caller is told "idle" and sends while the other's script is running (the header,
- * "WHAT KEEPS A RUN'S BYTES FROM A SCRIPT"). A second call with ANOTHER KEY is a mistake that
- * would otherwise only show as a service that proves nothing, so it throws.
+ * written (`socketAt`) — is handed the first's, queue and all, because two clients are two queues,
+ * and with two queues one caller is told "idle" and sends while the other's script is running
+ * (the header, "WHAT KEEPS A RUN'S BYTES FROM A SCRIPT").
+ *
+ * AND A SECOND CALL THAT ASKS FOR A DIFFERENT CLIENT THROWS. It cannot be given one, and until
+ * 2026-10-07 it was handed the first's without a word about what it had asked for besides the
+ * path: a caller that meant its runs held to smaller bounds, waited for differently or written to
+ * a log of its own got none of that and was not told. Another key was already a mistake said at
+ * once — it would otherwise show only as a service that proves nothing — and so now is another
+ * log, another bound or another wait, each compared as what the client is in fact held to: a call
+ * that leaves one out is asking for the default, and that is a difference from a client made
+ * with something else.
  */
 export function createWorkbench(options: WorkbenchOptions): Workbench {
   /*
@@ -598,25 +633,36 @@ export function createWorkbench(options: WorkbenchOptions): Workbench {
     );
   }
   const path = socketAt(options.socketPath);
+  const made: Made = {
+    key: options.key,
+    log: options.log,
+    limits: options.limits ?? WORKBENCH_LIMITS,
+    marginMs: options.marginMs ?? MARGIN_MS,
+    absentMs: options.absentMs ?? ABSENT_MS,
+  };
   const there = CLIENTS.get(path);
   if (there) {
-    if (there.key !== options.key) {
+    const difference = differenceOf(there.made, made);
+    if (difference === "key") {
       throw new Error(
         "a workbench's socket has one key: this path already has a client made with another",
       );
     }
+    if (difference) {
+      // Which option, by its name: never a value of one.
+      throw new Error(
+        `a workbench's socket has one client: the one this path already has was made with another ${difference}`,
+      );
+    }
     return there.workbench;
   }
-  const workbench = clientFor({ ...options, socketPath: path });
-  CLIENTS.set(path, { key: options.key, workbench });
+  const workbench = clientFor(path, made);
+  CLIENTS.set(path, { made, workbench });
   return workbench;
 }
 
-function clientFor(options: WorkbenchOptions): Workbench {
-  const { socketPath, key, log } = options;
-  const limits = options.limits ?? WORKBENCH_LIMITS;
-  const marginMs = options.marginMs ?? MARGIN_MS;
-  const absentMs = options.absentMs ?? ABSENT_MS;
+function clientFor(socketPath: string, made: Made): Workbench {
+  const { key, log, limits, marginMs, absentMs } = made;
 
   /** Ask the path who is there. Believed only with a proof, like everything else it answers. */
   const knock = async (signal?: AbortSignal): Promise<Knocked> => {

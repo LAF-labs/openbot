@@ -76,6 +76,11 @@ const runner = bunTypeScript({
 
 type Bench = {
   workbench: Workbench;
+  /**
+   * What that client was made with. A socket has one client, and a second caller is handed it only
+   * when it asks for the same one (`server/src/workbench/client.ts`, `createWorkbench`).
+   */
+  asked: Parameters<typeof createWorkbench>[0];
   daemon: WorkbenchDaemon;
   socketPath: string;
   workRoot: string;
@@ -137,16 +142,12 @@ function bench(
     },
   });
   started.push({ daemon, root });
+  // Nothing at the path is waited for a quarter of a second here, where a server waits four.
+  const asked = { socketPath, key: KEY, limits, log: quiet, absentMs: 250 };
   return {
     daemon,
-    // Nothing at the path is waited for a quarter of a second here, where a server waits four.
-    workbench: createWorkbench({
-      socketPath,
-      key: KEY,
-      limits,
-      log: quiet,
-      absentMs: 250,
-    }),
+    workbench: createWorkbench(asked),
+    asked,
     socketPath,
     workRoot,
     scratch,
@@ -624,7 +625,7 @@ test("the daemon holds a request to every bound itself, whatever sent it", async
 });
 
 test("one script at a time: a second run meanwhile is refused, and health says why", async () => {
-  const { workbench, socketPath } = bench();
+  const { workbench, socketPath, asked } = bench();
   const long = workbench.run({
     script: "await Bun.sleep(700); console.log('done')",
     files: [],
@@ -636,7 +637,7 @@ test("one script at a time: a second run meanwhile is refused, and health says w
   expect(await second.json()).toMatchObject({ code: "laf:workbench_busy" });
   // And there is no other caller in this process to be refused: a second client for the same
   // socket IS the first, so whatever asks through it waits its turn in the one queue.
-  expect(createWorkbench({ socketPath, key: KEY, log: quiet })).toBe(workbench);
+  expect(createWorkbench({ ...asked })).toBe(workbench);
   expect(ran(await long).run.stdout).toBe("done\n");
   expect(await workbench.health()).toMatchObject({ busy: false });
 });
@@ -923,7 +924,12 @@ test("a stale socket from a daemon that was killed does not stop the next one bi
  */
 
 /** A daemon on a socket and a work root that are already there — as compose starts one on a volume that outlived the last. */
-function daemonOn(socketPath: string, workRoot: string) {
+function daemonOn(
+  socketPath: string,
+  workRoot: string,
+  /** The client this process already has for that socket, when a daemon was there before. */
+  already?: Workbench,
+) {
   const quits: QuitReason[] = [];
   const daemon = startWorkbenchDaemon({
     socketPath,
@@ -941,7 +947,9 @@ function daemonOn(socketPath: string, workRoot: string) {
   return {
     daemon,
     quits,
-    workbench: createWorkbench({ socketPath, key: KEY, log: quiet }),
+    // Made once the daemon is up: a client is of a socket whose directory can be resolved, and
+    // the daemon may have had to open that directory up first.
+    workbench: already ?? createWorkbench({ socketPath, key: KEY, log: quiet }),
   };
 }
 
@@ -966,7 +974,8 @@ test("a DIRECTORY a script left where the socket belongs does not keep the next 
   // The container ends; compose starts another. The socket's volume is the server's too by then,
   // so it is the same directory — and until 2026-10-06 the new daemon threw on the first line that
   // touched it, every time it was started: a loop only removing the volume by hand would end.
-  const second = daemonOn(socketPath, first.workRoot);
+  // The server is the same process it was, and its client for that socket is the same client.
+  const second = daemonOn(socketPath, first.workRoot, first.workbench);
   expect(await second.workbench.health()).toMatchObject({ busy: false });
   expect(readdirSync(dirname(socketPath))).toEqual(["w.sock"]);
   expect(
