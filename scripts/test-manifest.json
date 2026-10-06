@@ -550,6 +550,7 @@
   "server/tests/whereabouts-routes.test.ts",
   "server/tests/whereabouts.integration.test.ts",
   "server/tests/work-in-flight.test.ts",
+  "server/tests/workbench-client.test.ts",
   "server/tests/write-up.test.ts",
   "tests/caddyfile.test.ts",
   "tests/clean-checkout.test.ts",
@@ -596,5 +597,8 @@
   "tests/tool-notes.test.ts",
   "tests/upgrade-e2e.test.ts",
   "tests/upgrade-script.test.ts",
+  "tests/workbench-daemon.test.ts",
+  "tests/workbench-probe.test.ts",
+  "tests/workbench-sweep.test.ts",
   "tests/workspace.test.ts"
 ]
