@@ -465,7 +465,18 @@ describe("a Bot's tabs, kept without a browser", () => {
     expect(crashLines()).toHaveLength(3);
     // The line is bounded; what the Bot is told is not. Every one of them was the tab it was on.
     expect(lost.filter(([botId]) => botId === "loop-bot")).toHaveLength(5);
-    expect(JSON.stringify(warned.mock.calls)).not.toMatch(/cart|item|77/);
+    /*
+     * Nothing of the page's path or query is in any line — read with each line's own timestamp
+     * taken out first. The lines are stamped by the real clock, and `77` is two digits a stamp
+     * can hold: read whole, this failed on a pull request that touched nothing here (CI run
+     * 37447177984, 2026-10-06), and would again whenever a line's stamp happened to hold them.
+     */
+    expect(
+      JSON.stringify(warned.mock.calls).replace(
+        /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g,
+        "",
+      ),
+    ).not.toMatch(/cart|item|77/);
   });
 
   test("a Bot is told its tab is gone only when it was the tab the Bot was on, and never for a tab this process closed", async () => {
