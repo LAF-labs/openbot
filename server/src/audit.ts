@@ -449,10 +449,11 @@ export const auditEventTypes = [
 
   /*
    * What a person did with the two things the product put in front of them to get started, and
-   * whether anybody opens the guide — counted by laf-control's `insights` (README §3.13), which
-   * listed them as the questions no row could answer. Neither is something a Bot did on anybody's
-   * behalf, which is why they stayed out of this trail until the launch plan needed them counted on
-   * the fleet rather than guessed at.
+   * whether anybody opens the guide — rows for the fleet to count, which laf-control's `insights`
+   * (README §3.13) listed as the questions no row could answer. Neither is something a Bot did on
+   * anybody's behalf, which is why they stayed out of this trail until the launch plan needed them
+   * counted on the fleet rather than guessed at. (Kept, and counted by nothing at present: the one
+   * statement that read them sat behind the fleet's insights door, removed on 2026-10-06.)
    *
    * `onboarding.first_task_pressed`: one of the chips on a new Bot's empty conversation. The payload
    * is catalogue keys and nothing else — which kind of chip, which of the eight work patterns, which
