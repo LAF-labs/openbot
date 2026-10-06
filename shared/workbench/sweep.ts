@@ -172,45 +172,107 @@ export async function sweepWith(parts: SweepParts): Promise<void> {
   }
 }
 
-/** Every other process in this process's view, with the one-letter state `/proc` gives it. */
-function othersWithState(): { pid: number; state: string }[] {
+/**
+ * The one-letter state in a line of `/proc/<pid>/stat` or `/proc/<pid>/task/<tid>/stat`:
+ * `pid (name) state …`. A name may hold spaces and brackets of its own, so the state is the first
+ * field after the LAST closing bracket.
+ */
+export function stateIn(stat: string): string {
+  const after = stat.lastIndexOf(")") + 2;
+  return stat.slice(after, after + 1);
+}
+
+const isOver = (state: string): boolean => state === "Z" || state === "X";
+
+/**
+ * Whether any THREAD of a process can still run.
+ *
+ * A PROCESS IS AS ALIVE AS ITS LIVELIEST THREAD, AND ITS OWN LINE DOES NOT SAY SO. `/proc/<pid>/stat`
+ * is the thread-group leader's: when the main thread has exited and others run on, it reads `Z` —
+ * a dead letter on a process that is working, and `/proc/<pid>/status` reports no memory for it.
+ * Until 2026-10-06 that letter was all this file read, so such a process was unseen by the check
+ * that nothing survived a sweep and by the watch on a run's memory (the independent read; the
+ * rehearsal on Linux has the kernel's own account of one). The threads are under `task/`.
+ */
+function hasLiveThread(pid: number): boolean {
+  let threads: string[];
+  try {
+    threads = readdirSync(`/proc/${pid}/task`);
+  } catch {
+    // Gone, or not ours to list: its own line is all there is.
+    try {
+      return !isOver(stateIn(readFileSync(`/proc/${pid}/stat`, "utf8")));
+    } catch {
+      return false;
+    }
+  }
+  for (const thread of threads) {
+    try {
+      const stat = readFileSync(`/proc/${pid}/task/${thread}/stat`, "utf8");
+      if (!isOver(stateIn(stat))) return true;
+    } catch {
+      // That thread went between the listing and the read.
+    }
+  }
+  return false;
+}
+
+/** Every other process in this process's view, and whether anything of it can still run. */
+function others(): { pid: number; running: boolean }[] {
   let names: string[];
   try {
     names = readdirSync("/proc");
   } catch {
     return [];
   }
-  const found: { pid: number; state: string }[] = [];
-  for (const name of names) {
-    if (!/^\d+$/.test(name)) continue;
-    const pid = Number(name);
-    if (pid === process.pid) continue;
-    try {
-      // `pid (name) state …`, and a name may hold spaces and brackets of its own: the state is the
-      // first field after the LAST closing bracket.
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      const after = stat.lastIndexOf(")") + 2;
-      found.push({ pid, state: stat.slice(after, after + 1) });
-    } catch {
-      // Gone between the listing and the read.
-    }
-  }
-  return found;
+  return names
+    .filter((name) => /^\d+$/.test(name))
+    .map(Number)
+    .filter((pid) => pid !== process.pid)
+    .map((pid) => ({ pid, running: hasLiveThread(pid) }));
 }
 
-/**
- * Every other process that can still run: every pid under `/proc` but this one, less the ones that
- * have already died and only hold their entry.
- */
+/** Every other process that can still run: one with a thread that is neither dead nor being buried. */
 export function otherProcesses(): number[] {
-  return othersWithState()
-    .filter(({ state }) => state !== "Z" && state !== "X")
+  return others()
+    .filter(({ running }) => running)
     .map(({ pid }) => pid);
 }
 
 /** How many have died and still hold an entry, because process 1 here waits for nobody. */
 function deadProcesses(): number {
-  return othersWithState().filter(({ state }) => state === "Z").length;
+  return others().filter(({ running }) => !running).length;
+}
+
+/**
+ * What a process holds resident, in bytes — read off its own line, and off a thread's when the
+ * leader has exited and its line reports none. Zero when nothing of it can be read.
+ */
+export function residentBytesOf(pid: number): number {
+  const read = (path: string): number | null => {
+    try {
+      const kilobytes = readFileSync(path, "utf8").match(
+        /^VmRSS:\s+(\d+)\s+kB/m,
+      )?.[1];
+      return kilobytes ? Number(kilobytes) * 1024 : null;
+    } catch {
+      return null;
+    }
+  };
+  const own = read(`/proc/${pid}/status`);
+  if (own !== null) return own;
+  let threads: string[];
+  try {
+    threads = readdirSync(`/proc/${pid}/task`);
+  } catch {
+    return 0;
+  }
+  // One address space, whichever thread says it.
+  for (const thread of threads) {
+    const held = read(`/proc/${pid}/task/${thread}/status`);
+    if (held !== null) return held;
+  }
+  return 0;
 }
 
 /**
