@@ -595,6 +595,19 @@ provisioner ever wrote the line, so it is only there if somebody added it by
 hand. Missed, the new server never answers `/health`, and the script prints
 NOT HEALTHY with the rollback.
 
+**After the first upgrade to a release in which every Bot runs on the
+deployment's own agent, read `botsBroughtHome` on the server's `boot` line**
+(`docker compose logs server | grep '"event":"boot"'`). From that release a
+hosted deployment takes no endpoint of a person's own for a Bot and dials every
+Bot at its own agent whatever its row holds (CLAUDE.md, "Every Bot a person
+creates is remote"). `0` is nothing to do. Any other number is that many Bots
+somebody had pointed at a server of their own and that run here from this
+restart on — nothing failed and no screen says so, so that person should be
+told. `null` is a count that could not be read: read the line of the next
+restart. The same line's `botEndpoints` is `false` on every deployment compose
+started; `true` there would mean the server was started some other way, as a
+developer's stack.
+
 **A version is chosen in `.env`, and only there.** To move a deployment to
 another release — or from `stable` to a pinned `vX.Y.Z`, or back — set the
 `IMAGE_TAG` line of `.env` first, then run the script. An `IMAGE_TAG` in the
