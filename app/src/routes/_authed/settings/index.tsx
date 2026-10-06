@@ -107,10 +107,14 @@ function RouteComponent() {
     setSignOutError(null);
     try {
       await signOut.mutateAsync();
-    } catch (caught) {
-      setSignOutError(
-        caught instanceof Error ? caught.message : t("Could not log out."),
-      );
+    } catch {
+      /*
+       * THE SURFACE'S OWN WORDS, WHATEVER WAS THROWN. This drew `caught.message` until 2026-10-06,
+       * and what is thrown here is always an Error — "Could not sign out (500)" from `signOut()`, or
+       * the engine's own "Failed to fetch" — so a Korean reader got an English sentence with a
+       * status in it, and the Korean one written for this moment was never drawn.
+       */
+      setSignOutError(t("Could not log out."));
       return;
     }
     await navigate({ to: "/sign" });
