@@ -66,6 +66,7 @@ import {
   says,
   startFakeProvider,
 } from "../agent-bot/tests/fake-provider";
+import { rehearseWorkbench } from "./workbench-probe";
 
 const repositoryRoot = resolve(import.meta.dir, "..");
 
@@ -2165,6 +2166,29 @@ async function main(): Promise<number> {
       "a chat turn streams through the front door",
       chat.ok,
       chat.detail,
+    );
+
+    /*
+     * THE WORKBENCH, LAST, because it is not part of the upgrade: no deployment runs it yet. Held
+     * to exactly that first — the upgrade above must have started none — and then started by hand
+     * and driven from a second container, which is the only place its walls and its sweep can be
+     * measured at all (`scripts/workbench-probe.ts`). It touches no service the checks above read.
+     */
+    say("The workbench: not started by an upgrade; started by hand, and tried");
+    await rehearseWorkbench({
+      compose: (args) => compose(args),
+      docker: (args) => run(["docker", ...args], { log: logFile }),
+      check: (name, ok, detail) => report.check(name, ok, detail),
+      finding: (text) => report.finding(text),
+      deployment,
+      environment: composeEnv,
+      serverImage: imageRef("server", toTag),
+    }).catch((error) =>
+      report.check(
+        "the workbench's rehearsal ran to its end",
+        false,
+        error instanceof Error ? error.message : String(error),
+      ),
     );
 
     report.time("everything, first command to last check", total());
