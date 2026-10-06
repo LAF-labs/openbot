@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import {
   ComputerUnavailableError,
   ControlHeldError,
@@ -1346,5 +1348,199 @@ describe("a file's bytes", () => {
       kind: "file",
       bytes: 9,
     });
+  });
+});
+
+/*
+ * THE SERVER'S OWN TWO FILE CALLS (2026-10-06): a file taken whole, and bytes put where nothing is.
+ * Neither is a Bot's tool or a person's door — they are what the server uses when it has to hold
+ * all of a file, or leave a new one in the folder — and each is the computer's route as it is: the
+ * same path in the same place, the same Bot named, the container's own fact on a refusal.
+ */
+describe("a file taken whole, and bytes put where nothing is", () => {
+  const BINARY = Uint8Array.from({ length: 512 }, (_, index) => index % 256);
+
+  const file = (bytes: Uint8Array<ArrayBuffer>) =>
+    new Response(bytes, {
+      status: 200,
+      headers: { "content-type": "application/octet-stream" },
+    });
+
+  const failureOf = (promise: Promise<unknown>) =>
+    promise.then(
+      () => {
+        throw new Error("expected the call to fail");
+      },
+      (error: Error) => error,
+    );
+
+  test("a whole file is asked for by path, as the Bot whose folder it is, and comes back exactly", async () => {
+    const sent: Array<{ url: string; bot: string | null; body: unknown }> = [];
+    const client = clientWith((url, init) => {
+      sent.push({
+        url,
+        bot: new Headers(init?.headers as HeadersInit).get("x-openbot-bot-id"),
+        body: JSON.parse(String(init?.body)),
+      });
+      return file(BINARY);
+    });
+
+    const bytes = await client
+      .forBot("bot-7")
+      .fileBytes("uploads/2026-10-06-1a2b3c4d-매출.xlsx");
+
+    expect(bytes).toEqual(BINARY);
+    expect(sent).toEqual([
+      {
+        url: "http://agent-computer:4100/files/bytes",
+        bot: "bot-7",
+        body: { path: "uploads/2026-10-06-1a2b3c4d-매출.xlsx" },
+      },
+    ]);
+  });
+
+  test("a whole file is held to the largest a person may attach, past what a download hands over", async () => {
+    // Six megabytes: more than a download may be, and a file somebody could have attached.
+    const attached = new Uint8Array(6_000_000).fill(3);
+    const taking = clientWith(() => file(attached));
+    expect((await taking.fileBytes("uploads/big.xlsx")).byteLength).toBe(
+      6_000_000,
+    );
+    expect(
+      (await failureOf(taking.downloadFile("uploads/big.xlsx"))).message,
+    ).toBe("laf:file_too_large");
+
+    // And an answer that runs past that bound is let go of, not held to its end.
+    const PIECE = new Uint8Array(1_000_000);
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(PIECE);
+      },
+    });
+    const flooded = clientWith(() => new Response(endless, { status: 200 }));
+    const failure = await failureOf(flooded.fileBytes("huge.bin"));
+    expect(failure).toBeInstanceOf(WorkspaceRequestError);
+    expect(failure.message).toBe("laf:file_too_large");
+    expect(pulled).toBeLessThanOrEqual(ATTACHMENT_MAX_BYTES / 1_000_000 + 3);
+  });
+
+  test("a put sends the file as the body and its path in a header, encoded, as the Bot whose folder it is", async () => {
+    const sent: Array<{
+      url: string;
+      method: string | undefined;
+      type: string | null;
+      path: string | null;
+      bot: string | null;
+      body: Uint8Array;
+    }> = [];
+    const client = clientWith((url, init) => {
+      const headers = new Headers(init?.headers as HeadersInit);
+      sent.push({
+        url,
+        method: init?.method,
+        type: headers.get("content-type"),
+        path: headers.get(FILE_PATH_HEADER),
+        bot: headers.get("x-openbot-bot-id"),
+        body: init?.body as Uint8Array,
+      });
+      return ok({
+        path: "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx",
+        kind: "file",
+        bytes: 512,
+      });
+    });
+
+    const facts = await client
+      .forBot("bot-7")
+      .putFile("made/2026-10-06-1a2b3c4d/요일별 매출.xlsx", BINARY);
+
+    expect(facts).toEqual({
+      path: "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx",
+      kind: "file",
+      bytes: 512,
+    });
+    expect(sent).toHaveLength(1);
+    expect({ ...sent[0], body: undefined }).toEqual({
+      url: "http://agent-computer:4100/files/put",
+      method: "POST",
+      type: "application/octet-stream",
+      // A header is ASCII: the Korean name and its space travel encoded, the slashes with them.
+      path: "made%2F2026-10-06-1a2b3c4d%2F%EC%9A%94%EC%9D%BC%EB%B3%84%20%EB%A7%A4%EC%B6%9C.xlsx",
+      bot: "bot-7",
+      body: undefined,
+    });
+    expect(new Uint8Array(sent[0]?.body ?? [])).toEqual(BINARY);
+  });
+
+  test("a refusal on either route is still the container's own fact", async () => {
+    const CASES: Array<[number, string, new (reason: string) => Error]> = [
+      [400, "laf:file_exists", WorkspaceRequestError],
+      [400, "laf:file_not_found", WorkspaceRequestError],
+      [400, "laf:file_wrong_kind", WorkspaceRequestError],
+      [400, "laf:file_too_large", WorkspaceRequestError],
+      [400, "laf:request_invalid", WorkspaceRequestError],
+      [403, "laf:file_path_refused", WorkspaceRefusedError],
+      // An image from before these routes existed: said as the version mismatch it is.
+      [404, "laf:computer_route_unknown", ComputerUnavailableError],
+    ];
+    for (const [status, code, kind] of CASES) {
+      const client = clientWith(
+        () =>
+          new Response(JSON.stringify({ error: code, code }), {
+            status,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      // Each asked when it is awaited, as the download's refusals are above.
+      for (const ask of [
+        () => client.fileBytes("../secrets"),
+        () => client.putFile("../secrets", BINARY),
+      ]) {
+        const failure = await failureOf(ask());
+        expect({ code, kind: failure.name, message: failure.message }).toEqual({
+          code,
+          kind: kind.name,
+          message: code,
+        });
+      }
+    }
+  });
+
+  test("a put over what the computer takes is refused here, and nothing is sent", async () => {
+    let asked = 0;
+    const client = clientWith(() => {
+      asked += 1;
+      return ok({ path: "made/huge.bin", kind: "file", bytes: 0 });
+    });
+
+    const failure = await failureOf(
+      client.putFile("made/huge.bin", new Uint8Array(5_000_001)),
+    );
+
+    expect(failure).toBeInstanceOf(WorkspaceRequestError);
+    expect(failure.message).toBe("laf:file_too_large");
+    expect(asked).toBe(0);
+    // At the bound is not over it.
+    await client.putFile("made/big.bin", new Uint8Array(5_000_000));
+    expect(asked).toBe(1);
+  });
+
+  test("a whole file that breaks off is the computer not answering, never half a file", async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      },
+      pull(controller) {
+        controller.error(new Error("socket closed"));
+      },
+    });
+    const client = clientWith(() => new Response(broken, { status: 200 }));
+
+    const failure = await failureOf(client.fileBytes("notes.md"));
+
+    expect(failure).toBeInstanceOf(ComputerUnavailableError);
+    expect(failure.message).toBe("laf:computer_unreachable");
   });
 });
