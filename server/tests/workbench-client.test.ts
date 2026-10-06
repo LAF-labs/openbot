@@ -1628,19 +1628,29 @@ test("one path has one key: a second client for it with another is a mistake, sa
  * daemon that retired, or stopped because a script had been at its socket, is back in a quarter of
  * a second to a second; "nobody there" used to be `unavailable` at once, which is what the run
  * behind an abandoned one was told every time, and any run that met a restart.
+ *
+ * A DAEMON THAT WAS THERE, since 2026-10-07: the wait is for one that has been seen at this path
+ * (the tests at the end of this file — where none ever was, there is nothing to wait for). The
+ * one that does not come back, and the end of its wait, are held there too.
  */
-test("a daemon back within a few seconds is used; one that is not is `unavailable`, and the wait has an end", async () => {
-  const root = mkdtempSync(join(tmpdir(), "wc-"));
-  opened.push({ stop: () => {}, root });
-  const socketPath = join(root, "back.sock");
-  // A socket's file with nobody behind it: what a daemon that has just gone leaves at its path.
-  writeFileSync(socketPath, "");
+test("a daemon that was there and is back within a few seconds is used", async () => {
+  const first = fakeDaemon(() =>
+    honest({ stdout: "the daemon that was there" }),
+  );
+  const { socketPath } = first;
   const workbench = createWorkbench({
     key: KEY,
     socketPath,
     log: quiet,
     absentMs: 2_000,
   });
+  // Seen: one proven answer at this path.
+  expect(await workbench.health()).toEqual({ busy: false, boot: "fake" });
+  // It goes, and leaves what a daemon that has just gone leaves at its path: a socket's file
+  // with nobody behind it.
+  await first.server.stop(true);
+  rmSync(socketPath, { force: true });
+  writeFileSync(socketPath, "");
   const began = performance.now();
   const waiting = workbench.run({ script, files: [next] });
   await Bun.sleep(300);
@@ -1657,25 +1667,6 @@ test("a daemon back within a few seconds is used; one that is not is `unavailabl
   expect(answer.ok && answer.run.stdout).toBe("the daemon that came back");
   expect(performance.now() - began).toBeGreaterThanOrEqual(290);
   expect(back.asked()).toBe(1);
-
-  // And one that does not come back: `unavailable`, when the few seconds are up and not before.
-  const gone = join(root, "gone.sock");
-  const { log, events } = recorded();
-  const at = performance.now();
-  expect(
-    await createWorkbench({
-      key: KEY,
-      socketPath: gone,
-      log,
-      absentMs: 250,
-    }).run({ script, files: [next] }),
-  ).toEqual({ ok: false, failure: "unavailable" });
-  const waited = performance.now() - at;
-  expect(waited).toBeGreaterThanOrEqual(240);
-  expect(waited).toBeLessThan(1_500);
-  expect(events).toEqual([
-    ["workbench_unreachable", { failure: "unavailable", reason: "nobody" }],
-  ]);
 });
 
 test("whatever is at the path, and however it changes, a caller is answered within the two waits together", async () => {
@@ -1863,4 +1854,68 @@ test("a second caller that asks for other bounds, other waits or another log is 
     }
     expect({ what, refused: said !== "" }).toEqual({ what, refused: true });
   }
+});
+
+/*
+ * THE WAIT FOR A DAEMON BETWEEN TWO LIVES WAS PAID WHERE NO DAEMON HAD EVER LIVED. Nothing at the
+ * path is waited for a few seconds, because a daemon that has just gone is back within that — and
+ * on a deployment that has no such service every run paid those seconds, and each run waiting
+ * behind it paid them again in turn. So the wait is for a daemon that HAS been there: one proven
+ * answer at this path, in this process — `health()`, or any run's own knock. Before that, nobody
+ * there is `unavailable` at once.
+ */
+test("where the daemon has never answered, nothing at the path costs a run no wait — nor the runs queued behind it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wc-"));
+  opened.push({ stop: () => {}, root });
+  const { log, events } = recorded();
+  const workbench = createWorkbench({
+    key: KEY,
+    socketPath: join(root, "never.sock"),
+    log,
+    absentMs: 1_500,
+  });
+  const began = performance.now();
+  const answers = await Promise.all(
+    [1, 2, 3].map(() => workbench.run({ script, files: [next] })),
+  );
+  const waited = performance.now() - began;
+
+  expect(answers).toEqual([
+    { ok: false, failure: "unavailable" },
+    { ok: false, failure: "unavailable" },
+    { ok: false, failure: "unavailable" },
+  ]);
+  // It was three waits, one after another: four and a half seconds here, twelve on a server.
+  expect(waited).toBeLessThan(700);
+  expect(events).toEqual([
+    ["workbench_unreachable", { failure: "unavailable", reason: "never_seen" }],
+    ["workbench_unreachable", { failure: "unavailable", reason: "never_seen" }],
+    ["workbench_unreachable", { failure: "unavailable", reason: "never_seen" }],
+  ]);
+});
+
+test("where the daemon has answered once, by `health()` alone, nothing at the path is waited for as before", async () => {
+  const daemon = fakeDaemon(() => honest());
+  const { log, events } = recorded();
+  const workbench = createWorkbench({
+    key: KEY,
+    socketPath: daemon.socketPath,
+    log,
+    absentMs: 250,
+  });
+  // Seen, and never asked to run anything.
+  expect(await workbench.health()).toEqual({ busy: false, boot: "fake" });
+  await daemon.server.stop(true);
+
+  const at = performance.now();
+  expect(await workbench.run({ script, files: [next] })).toEqual({
+    ok: false,
+    failure: "unavailable",
+  });
+  const waited = performance.now() - at;
+  expect(waited).toBeGreaterThanOrEqual(240);
+  expect(waited).toBeLessThan(1_500);
+  expect(events).toEqual([
+    ["workbench_unreachable", { failure: "unavailable", reason: "nobody" }],
+  ]);
 });
