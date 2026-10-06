@@ -49,15 +49,26 @@
  * and whether it is running anything: only a proven "idle" lets the script and the files go. The
  * daemon says busy until everything the run before started has been ended and cleared up after,
  * so that one answer is also what keeps the run behind an abandoned one from leaving while what
- * the abandoned one left is still alive to receive it. Between that answer and the run it lets go
- * nothing else can start a script: a script cannot — the daemon runs one at a time and they are
- * all ended — and this process is the deployment's one sender (one API server process per
- * deployment, `docs/laf/deployment-model.md`). A second sender would have to be told of the first.
+ * the abandoned one left is still alive to receive it.
+ *
+ * WHAT KEEPS A RUN'S BYTES FROM A SCRIPT, AND WHAT THAT RESTS ON. A proof is of the ANSWER: it
+ * says neither who read the request nor that the daemon was sent it. A listener at the path can
+ * keep a run's script and files, pass only the number on, and hand back the daemon's own proven
+ * refusal — the third read showed it, and the client said `busy` as of any other. So the bytes are
+ * safe only while nothing a script started is at the path when they leave, and four things put
+ * nothing there, each resting on the one before: THE SWEEP ends everything a run started before
+ * the daemon says "idle" (`shared/workbench/sweep.ts`); a PROVEN IDLE is asked for before every
+ * send; ONE CLIENT per socket's path in this process — `createWorkbench` hands back the one there
+ * is, so every caller is in one queue and "idle" is still true when the run it was asked for
+ * leaves; and ONE PROCESS per deployment sends at all (`docs/laf/deployment-model.md`: one API
+ * server per VM). The first three are held here and by tests; the fourth is the deployment's, and
+ * a second process that sent runs would have to be told of the first.
  *
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
  * refusal.
  */
+import { resolve } from "node:path";
 import type { Logger } from "../../../shared/log";
 import {
   filePart,
@@ -495,7 +506,8 @@ function neverConnected(error: unknown): boolean {
   return /FailedToOpenSocket|ConnectionRefused|ECONNREFUSED|ENOENT/.test(said);
 }
 
-export function createWorkbench(options: {
+/** What a client is made with. */
+type WorkbenchOptions = {
   /** The service's socket (`/run/laf-workbench/workbench.sock` in a deployment). */
   socketPath: string;
   /**
@@ -513,7 +525,36 @@ export function createWorkbench(options: {
   limits?: Limits;
   /** See `MARGIN_MS`. A test shortens it. */
   marginMs?: number;
-}): Workbench {
+};
+
+/** The one client there is for each socket's path in this process, and the key it was made with. */
+const CLIENTS = new Map<string, { key: string; workbench: Workbench }>();
+
+/**
+ * The client for a socket's path: THE one. A second call for the same path is handed the first's —
+ * its queue, its bounds, its log; what the second call asked for besides the path is not looked at
+ * — because two clients are two queues, and with two queues one caller is told "idle" and sends
+ * while the other's script is running (the header, "WHAT KEEPS A RUN'S BYTES FROM A SCRIPT"). A
+ * second call with ANOTHER KEY is a mistake that would otherwise only show as a service that
+ * proves nothing, so it throws.
+ */
+export function createWorkbench(options: WorkbenchOptions): Workbench {
+  const path = resolve(options.socketPath);
+  const there = CLIENTS.get(path);
+  if (there) {
+    if (there.key !== options.key) {
+      throw new Error(
+        "a workbench's socket has one key: this path already has a client made with another",
+      );
+    }
+    return there.workbench;
+  }
+  const workbench = clientFor({ ...options, socketPath: path });
+  CLIENTS.set(path, { key: options.key, workbench });
+  return workbench;
+}
+
+function clientFor(options: WorkbenchOptions): Workbench {
   const { socketPath, key, log } = options;
   const limits = options.limits ?? WORKBENCH_LIMITS;
   const marginMs = options.marginMs ?? MARGIN_MS;
