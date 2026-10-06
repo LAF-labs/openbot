@@ -3,6 +3,7 @@ import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { t } from "@/lib/i18n";
 import { Badge, GalleryFrame, type Tone } from "./frame";
 import { GALLERY_CONFIRMATIONS } from "@shared/tools/gallery";
+import { own } from "@/lib/own";
 
 const tone = z
   .enum(["neutral", "positive", "caution", "negative"])
@@ -212,11 +213,14 @@ export function NoticeCard({
   tone: noticeTone,
   points,
 }: Partial<z.infer<typeof NoticeCardProps>>) {
+  // The tone is a model's argument, typed as one of four and not checked to be: drawn only when it
+  // is a tone this table itself holds (`@/lib/own` — `"constructor"` drew an empty badge).
+  const toneWord = own(TONE_WORD, noticeTone);
   return (
     <GalleryFrame
       action={
-        noticeTone && noticeTone !== "neutral" ? (
-          <Badge tone={noticeTone}>{TONE_WORD[noticeTone]}</Badge>
+        noticeTone && toneWord ? (
+          <Badge tone={noticeTone}>{toneWord}</Badge>
         ) : undefined
       }
       title={title}

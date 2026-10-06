@@ -1535,17 +1535,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * code] }" and called a picture by its name), and a code with no sentence said as itself whatever
  * it is called.
  *
- * RAISED 2026-10-07, `app` from 2146 to 2150 and `root` from 736 to 737: the same hole in the
+ * RAISED 2026-10-07, `app` from 2146 to 2151 and `root` from 736 to 737: the same hole in the
  * app, where the second read of the byte routes found it live — a connected service's answer can
  * carry any `code`, and four readers indexed a table of sentences with it bare. The first sweep
  * took the lookups whose key was called `code`; a reader who had not written it found the same
  * answer under seven other names and in `t()` itself, so the rule is by type: a table declared
- * with `string` keys is read through `own()` — 54 reads in 33 files. Four for `app`, in
- * `own-keys.test.ts`: what `own()` answers; every reader saying an inherited name as it says a
- * word it has never heard of; `t()` finding Korean only where the dictionary holds it; and a walk
- * of `src/` that finds every string-keyed table by its declaration and fails on a bare read. One
- * for `root`, in `tool-bridge.test.ts`: a search whose words include `constructor` is a search,
- * where it was a throw.
+ * with `string` keys is read through `own()` — 63 reads in 39 files with the few the walk cannot
+ * see. Five for `app`, in `own-keys.test.ts`: what `own()` answers; every reader saying an
+ * inherited name as it says a word it has never heard of; `t()` finding Korean only where the
+ * dictionary holds it; a walk of `src/` that finds every string-keyed table by its declaration
+ * and fails on a bare read; and a card's badge drawn plain for a tone no table holds (a model's
+ * argument, typed and unchecked). One for `root`, in `tool-bridge.test.ts`: a search whose words
+ * include `constructor` is a search, where it was a throw.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -1553,7 +1554,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3582, roots: ["server"] },
-  { name: "app", floor: 2150, roots: ["app"] },
+  { name: "app", floor: 2151, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 737, roots: ["tests", "agent-bot"] },
 ] as const;
