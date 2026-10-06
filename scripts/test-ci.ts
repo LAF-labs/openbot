@@ -1670,15 +1670,28 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `workbench-sweep.test.ts`: only the daemon's own closing of itself counts as its memory being
  * kept, now that its key arrives where the host's rule does not reach.
  *
+ * RAISED A FOURTH TIME 2026-10-07 after the third read, by exactly what was added: `root` from 804
+ * to 807 and `server` from 3673 to 3677. Four to `server` in `workbench-client.test.ts`: two
+ * callers in one process are one client and neither sends while the other's run is in flight (the
+ * fake was sent a run during another, once of once, with two clients); one path has one key; a
+ * daemon back within a few seconds is used and one that is not is `unavailable` when its time is
+ * up; and — passing before and after, there for the end and not for the wait — a stranger that
+ * comes and goes at the path for ever is answered within the two waits together. Three to `root`
+ * in `workbench-daemon.test.ts`: a tree deeper than a path may be long, closed at the bottom,
+ * emptied all the same (on the service it kept every daemon from starting again); a script that
+ * builds one beside the socket, in the work root and in shared memory leaving none of it; and a
+ * script handed nothing of what its daemon was STARTED with, the key least of all — which passed
+ * already and says why: the environment a script is given, not the key's deleting.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3673, roots: ["server"] },
+  { name: "server", floor: 3677, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
-  { name: "root", floor: 804, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
