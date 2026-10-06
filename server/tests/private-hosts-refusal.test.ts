@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { describeFailure } from "../../shared/failure-text";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
 
@@ -53,6 +54,30 @@ describe("the private-host opt-in in production", () => {
     // loads is hosted in the one sense that decides where a Bot runs.
     expect(loadConfig(production(COMPUTER)).computer?.allowPrivateHosts).toBe(
       false,
+    );
+  });
+
+  /*
+   * MEASURED BY STARTING IT. The process that refuses writes one line — `crashed`, with the
+   * failure's text as its `reason` — and that text is kept to 200 characters
+   * (`shared/failure-text.ts`). The first sentence written for this was 295: the real entry
+   * point, started as production with the line, logged the variable's name and why, and cut off
+   * before what to do about it. An operator reads that line and nothing else.
+   */
+  test("says what to do within what the crash line keeps", () => {
+    let refusal: unknown;
+    try {
+      loadConfig(production({ ...COMPUTER, ...OPT_IN }));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(Error);
+    const sentence = (refusal as Error).message;
+    // Whole in the log: not shortened, so its last words are the ones written here.
+    expect(describeFailure(refusal)).toBe(sentence);
+    expect(sentence.startsWith(REFUSAL)).toBe(true);
+    expect(sentence.endsWith("Take it out of this server's environment.")).toBe(
+      true,
     );
   });
 
