@@ -293,7 +293,14 @@ export type FactCode =
    */
   | "laf:key_is_text"
   /** `computer_request_secret` named a ref that is not a field a value can go into. */
-  | "laf:secret_target_not_a_field";
+  | "laf:secret_target_not_a_field"
+  /**
+   * A file path the computer does not read one way: a backslash, or white space at the edge of
+   * its first or last name (`gateway/addresses.ts`, `hasNoOneReading`). The computer's own fact
+   * for a path a Bot may not name, said here before anything is sent, because no rule can be
+   * asked about a path with two readings.
+   */
+  | "laf:file_path_refused";
 
 /**
  * String helpers, registered as CEL globals.

@@ -1684,28 +1684,34 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * already and says why: the environment a script is given, not the key's deleting.
  *
  * RAISED 2026-10-07 FOR THE PATH A RULE JUDGES, by exactly what was added: `server` from 3677 to
- * 3694. Seventeen in the new `gateway-file-paths.test.ts`, every one in front of the REAL
- * workspace through the computer's own route handlers — the first twelve asserted on what a
- * computer that echoes was sent, and a second independent read deleted the line that reads the
- * path and watched all twelve pass. A path's one spelling as a table, what has none, and the mark
- * a name with white space at an edge keeps; a spelling being its own spelling; the computer giving
- * the same answer for a string as written and for its spelling, over some thirteen hundred
- * spellings; no spelling reading a denied file or handing it to a site, and none writing over one,
- * for a rule on the path (two ways), the name and the extension; a dotfile not read as `.env/`; a
- * denied folder not listed; the whole folder not listed by a blank; the boundaries screen's preset
- * never walked past (by what landed on the disk); an allowance for one file not spent on a write
- * beside it; the row naming the string that was sent, for every spelling; what is no path going
- * on as written with its two rows; a download recorded under the file's one name; and a routine's
- * own door. Twelve mutations of the change each fail at least one.
+ * 3700 and `agent-computer` from 529 to 530. Twenty-three in the new `gateway-file-paths.test.ts`,
+ * every one in front of the REAL workspace through the computer's own route handlers, each file
+ * in the folder with contents of its own so that what was read says which file was read — the
+ * first twelve asserted on what a computer that echoes was sent, and a second independent read
+ * deleted the line that reads the path and watched all twelve pass. A path's one spelling as a
+ * table; what the computer refuses; what has no one reading (a backslash, white space at the edge
+ * of a first or last name); a spelling being its own spelling; the computer giving the same
+ * answer for a string as written and for its spelling, and refusing a backslash itself; no
+ * spelling reading a denied file, handing it to a site or writing over it, for a rule on the path
+ * (two ways), the name and the extension, over some twenty-five hundred spellings; a path with no
+ * one reading refused with a row and never sent; a dotfile, a denied folder (by its name and by
+ * what is under it), the whole folder by a blank; the boundaries screen's preset by what landed
+ * on the disk; an allowance not spent beside the file it names; five spellings of one file being
+ * one call five times under the shipped policy; a yes found and a no standing under another
+ * spelling; a refusal's row and the row of what was sent; what is no path keeping its two rows;
+ * a person's download, of a file a Bot cannot name too; and a routine's own door. Fifteen
+ * mutations of the change each fail at least one. One in `agent-computer`'s `workspace.test.ts`:
+ * a backslash refused for a read, a listing and a write, where a read had taken it for a
+ * separator and a write for a letter.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3694, roots: ["server"] },
+  { name: "server", floor: 3700, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
-  { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
 ] as const;
 

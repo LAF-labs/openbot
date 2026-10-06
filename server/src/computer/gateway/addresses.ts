@@ -72,7 +72,7 @@ export function pathOf(url: string): string {
 }
 
 /**
- * A path in the Bot's folder in its ONE spelling, or null when it is not a path there at all.
+ * A path in the Bot's folder in its ONE spelling, or null where it has none.
  *
  * WHAT A RULE JUDGES HAS TO BE WHAT THE COMPUTER ACTS ON. The computer does not act on the string
  * it is sent: it trims it and resolves it (`agent-computer/src/workspace.ts`, `resolvePath`), so
@@ -82,53 +82,76 @@ export function pathOf(url: string): string {
  * see `.env/`, `file.extension == "exe"` did not see `tool.exe/.` or `tool.exe ` — and the row said
  * "allowed" under a path that is not the one that was read. The chat's door trimmed; a routine's
  * did not even do that (found by an independent read of the script act, 2026-10-07, in the reads a
- * script names, and then here in the Bot's own). The shipped policy has no rule about a file's
- * path, so nothing shipped was walked past; a deployment that wrote one was.
+ * script names, and then here in the Bot's own). Pressed on v0.5.17 in front of the real computer
+ * with `deny: file.name == "pay.csv"`: three spellings read the file and one wrote over it.
  *
  * So `govern` reads every path this way, ONCE, before anything is decided, and hands the act the
  * same string to send: the policy, the question, an allowance's scope, the count of "the same
- * call again", the row and the computer all get one reading.
+ * call again", the row and the computer all get one reading — the ends trimmed, `.` and empty
+ * segments and a trailing slash gone.
  *
- * THE SPELLING IS A STRING THE COMPUTER READS BACK AS ITSELF, AND AS THE SAME FILE. The ends
- * trimmed, then `.` and empty segments and a trailing slash gone. The first version of this
- * function stopped there, and was wrong: to the computer `"./ private/pay.csv"` is a file in a
- * folder called `" private"`, and with the `./` dropped what was left — `" private/pay.csv"` —
- * is a string the computer trims and reads as the payroll. The rule was asked about a path
- * beginning with a space and the file read was the one it guards (the second independent read,
- * which also deleted the line in `govern` and watched every test pass). The second version called
- * such a string "no spelling" and left it as written — and `" private/pay.csv /"`, left as
- * written, is judged with its leading space and read without it.
+ * NULL IS ONE OF TWO THINGS, AND `govern` TELLS THEM APART.
  *
- * So a name with white space at an edge keeps the one mark that makes it itself to the computer:
- * `./` in front of a first part that begins with white space, `/.` behind a last part that ends
- * with it. `"./ private/pay.csv"` stays that; `" private/pay.csv /"` is `"private/pay.csv /."`.
- * Every spelling of one file comes out as one string, that string trimmed and resolved is the
- * same file, and reading it again here changes nothing (`gateway-file-paths.test.ts` holds all
- * three against the real workspace, over some thirteen hundred spellings).
+ * What the computer refuses as a path — blank, a NUL, an absolute path, a `..` segment. It has no
+ * file behind it whatever a rule says, so it goes on exactly as it was written: judged as
+ * written, sent as written, refused there (`laf:file_path_refused`), and on the trail as an act
+ * that was allowed and did not happen, which is what it always was.
  *
- * NULL IS EXACTLY WHAT THE COMPUTER REFUSES AS A PATH: blank, a NUL, an absolute path, a `..`
- * segment. Such a string has no file behind it whatever a rule says of it, so it is left as it was
- * written — judged as written, sent as written, refused by the computer
- * (`laf:file_path_refused`), and on the trail as an act that was allowed and did not happen,
- * which is what it was before. (A blank LISTING is the one thing the computer does not refuse: it
- * lists the whole folder. `listFiles` reads a blank as no path before it gets here.)
+ * And what the computer does NOT read one way ({@link hasNoOneReading}). That is refused here.
  */
 export function workspacePathOf(requested: string): string | null {
+  if (hasNoOneReading(requested)) return null;
   const wanted = requested.trim();
   if (wanted === "" || wanted.includes("\0") || wanted.startsWith("/")) {
     return null;
   }
-  const segments = wanted
-    .split("/")
-    .filter((segment) => segment !== "" && segment !== ".");
+  const segments = partsOf(wanted);
   if (segments.includes("..")) return null;
   // Nothing left is the folder itself, which is how a listing of the whole of it is asked for.
-  const [first] = segments;
-  const last = segments.at(-1);
-  if (first === undefined || last === undefined) return ".";
-  const ahead = first === first.trimStart() ? "" : "./";
-  const behind = last === last.trimEnd() ? "" : "/.";
-  return `${ahead}${segments.join("/")}${behind}`;
+  return segments.length === 0 ? "." : segments.join("/");
+}
+
+/** The parts of a path that are names: what is left once `.` and empty segments are gone. */
+function partsOf(trimmed: string): string[] {
+  return trimmed.split("/").filter((part) => part !== "" && part !== ".");
+}
+
+/**
+ * Whether a path is one the computer does not read one way — which no rule can be asked about,
+ * so the gateway refuses it itself, with a row, before anything is sent (`govern`, beside the
+ * floor for a page it has not seen: a rule that cannot be evaluated is not a rule that did not
+ * fire).
+ *
+ * A BACKSLASH. The computer writes it as a letter of a name and READS it as a separator: its
+ * read resolves the path with `realpath`, and Bun's reads `\` as `/`. Measured on the real
+ * computer (Bun 1.3.14, 2026-10-07): with the payroll at `private/pay.csv`, `private\pay.csv`,
+ * `\private/pay.csv` and `private/pay.csv\` each read it, a listing of `\` listed the whole
+ * folder, and a write to `a\b.txt` made one file called that. A deny on `^private/` was walked
+ * past by the first three on main and by every version of this change that read a backslash
+ * either way (the third independent read). There is no reading of such a string that is the
+ * computer's, because the computer has two. No name anybody means has one: an attachment's and a
+ * download's are stripped of them (`safeAttachmentName`, `safeDownloadName`), and the computer
+ * refuses one itself from the release this shipped in.
+ *
+ * WHITE SPACE AT THE EDGE OF A PATH'S FIRST OR LAST NAME. `"./ private/pay.csv"` is, to the
+ * computer, a file in a folder called `" private"`; with the `./` gone it is a string the
+ * computer trims into the payroll's own path. The first version of this change spelled it that
+ * way and read the guarded file; the second left it as written and was walked past by
+ * `" private/pay.csv /"`; the third kept a `./` or a `/.` as a mark and then had to trim names
+ * for a rule, which stopped a rule about a name with a space in it from matching. A name like
+ * that can only be written to the computer behind a mark, so a Bot does not name it at all. A
+ * person's own door still reaches it (`person-files.ts`).
+ */
+export function hasNoOneReading(requested: string): boolean {
+  if (requested.includes("\\")) return true;
+  const parts = partsOf(requested.trim());
+  const [first] = parts;
+  const last = parts.at(-1);
+  return (
+    first !== undefined &&
+    last !== undefined &&
+    (first !== first.trimStart() || last !== last.trimEnd())
+  );
 }
 
 /**
@@ -136,14 +159,7 @@ export function workspacePathOf(requested: string): string | null {
  *
  * Handed a path in its one spelling ({@link workspacePathOf}) by `govern`, whoever named the file.
  *
- * THE NAME IS THE LAST PART THAT IS A NAME, WITH ITS EDGES TRIMMED. Not whatever follows the last
- * slash: a spelling may end in the `/.` that keeps a name with a trailing space itself, and the
- * part after that slash is `.`. And trimmed, so that a file called `tool.exe ` is `tool.exe` to a
- * rule about names and `exe` to a rule about extensions: it is another file on this disk and the
- * same file on the next one it is copied to (a name's trailing space does not survive Windows), so
- * a rule about what a file is called errs towards the name it would be read as.
- *
- * The extension is lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
+ * Lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
  * operator should have anticipated. Same reasoning as the case-insensitive `contains` in policy.ts.
  */
 export function describeFile(path: string): {
@@ -151,10 +167,7 @@ export function describeFile(path: string): {
   name: string;
   extension: string;
 } {
-  const parts = path
-    .split(/[\\/]/)
-    .filter((part) => part !== "" && part !== ".");
-  const name = (parts.pop() ?? path).trim();
+  const name = path.split(/[\\/]/).pop() ?? path;
   const dot = name.lastIndexOf(".");
   return {
     path,

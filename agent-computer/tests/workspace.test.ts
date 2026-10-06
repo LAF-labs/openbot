@@ -274,6 +274,37 @@ describe("escaping the workspace", () => {
     );
   });
 
+  test("refuses a backslash, which a read took for a separator and a write for a letter", async () => {
+    // Measured on the real computer (Bun 1.3.14, 2026-10-07): with a file at `private/pay.csv`, a
+    // read of `private\\pay.csv` returned it — `realpath` reads a backslash as a separator —
+    // a listing of `\\` listed the whole folder, and a write to `a\\b.txt` made one file
+    // called that. A rule about which files a Bot may read is asked about a string, and that one
+    // named two files (`server/src/computer/gateway/addresses.ts`, `hasNoOneReading`).
+    await mkdir(join(root, "private"), { recursive: true });
+    await writeFile(join(root, "private", "pay.csv"), "the payroll");
+    for (const path of [
+      "private\\pay.csv",
+      "\\private/pay.csv",
+      "private/pay.csv\\",
+      "private\\.\\pay.csv",
+      "\\",
+      "a\\b.txt",
+    ]) {
+      await expect(workspace().read(path)).rejects.toThrow(WorkspacePathError);
+      await expect(workspace().list(path)).rejects.toThrow(WorkspacePathError);
+      await expect(workspace().write(path, "x")).rejects.toThrow(
+        WorkspacePathError,
+      );
+    }
+    // Nothing was made under a name with a backslash in it, and the payroll is as it was.
+    expect((await readdir(root)).filter((name) => name.includes("\\"))).toEqual(
+      [],
+    );
+    expect((await workspace().read("private/pay.csv")).text).toBe(
+      "the payroll",
+    );
+  });
+
   test("refuses to read THROUGH a symlink that points outside", async () => {
     // The layer people miss. This path contains no "..", is not absolute, and resolves inside the
     // workspace lexically. Only following the link reveals where it goes.

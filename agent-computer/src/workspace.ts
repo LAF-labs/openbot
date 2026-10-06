@@ -213,6 +213,18 @@ export function createWorkspace(
     if (wanted.includes("\0")) {
       throw new WorkspacePathError("A file path may not contain a NUL.");
     }
+    /*
+     * A BACKSLASH IS REFUSED, BECAUSE THIS FILE READ IT TWO WAYS. A write resolves the path as
+     * text and a backslash is a letter of a name; a read goes on to `realpath`, and Bun's reads a
+     * backslash as a separator. Measured here, Bun 1.3.14, 2026-10-07: with a file at
+     * `private/pay.csv`, a read of `private\pay.csv` returned it, a listing of `\` listed the
+     * whole folder, and a write to `a\b.txt` made one file called that. Whoever decides which
+     * files a Bot may read is deciding about a string, and this one named two files. No name
+     * anybody means has one (`safeDownloadName` takes them out of a download's).
+     */
+    if (wanted.includes("\\")) {
+      throw new WorkspacePathError("A file path may not contain a backslash.");
+    }
     if (
       wanted
         .split(/[\\/]/)
