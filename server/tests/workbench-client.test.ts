@@ -8,9 +8,9 @@
  * as untrusted as that code.
  */
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { Transform } from "node:stream";
 import {
   createBrotliCompress,
@@ -1720,4 +1720,73 @@ test("whatever is at the path, and however it changes, a caller is answered with
     stopped = true;
     await flapping;
   }
+});
+
+/*
+ * WHAT THE FOURTH READ LEFT FOR THE CHANGE THAT ADDS A CALLER (2026-10-07; none of it was reachable
+ * while nothing called this). That change is the gateway's act (`computer/gateway/acts.ts`,
+ * `runScript`), and each test below failed on the client as that read found it.
+ */
+
+/*
+ * "ONE CLIENT PER PATH" WAS LEXICAL. The registry was keyed by `resolve()`, which makes `./` and
+ * `//` one spelling and knows nothing of the filesystem: the same socket reached through a link to
+ * its directory — on Debian `/var/run/…` is that spelling of `/run/…` — was a second client with a
+ * queue of its own, and two queues are one caller told "idle" while the other's script runs. And
+ * the test that meant to try "written another way" passed a string `join` had already made
+ * identical. Written here as strings nothing has tidied.
+ */
+test("one socket has one client, however the path to it is written: `./`, `//`, relative, or through a link to its directory", async () => {
+  const { socketPath } = fakeDaemon(() => honest());
+  const directory = join(socketPath, "..");
+  const one = createWorkbench({ key: KEY, socketPath, log: quiet });
+
+  expect(
+    createWorkbench({
+      key: KEY,
+      socketPath: `${directory}/./w.sock`,
+      log: quiet,
+    }),
+  ).toBe(one);
+  expect(
+    createWorkbench({
+      key: KEY,
+      socketPath: `${directory}//w.sock`,
+      log: quiet,
+    }),
+  ).toBe(one);
+  expect(
+    createWorkbench({
+      key: KEY,
+      socketPath: relative(process.cwd(), socketPath),
+      log: quiet,
+    }),
+  ).toBe(one);
+  // Another name for the same directory. It was a second client: `toBe` failed here.
+  const link = `${directory}-link`;
+  symlinkSync(directory, link);
+  opened.push({ stop: () => {}, root: link });
+  const through = createWorkbench({
+    key: KEY,
+    socketPath: `${link}/w.sock`,
+    log: quiet,
+  });
+  expect(through).toBe(one);
+  // And it is the socket's own path that is one client's — another socket beside it is another's.
+  expect(
+    createWorkbench({ key: KEY, socketPath: `${link}/other.sock`, log: quiet }),
+  ).not.toBe(one);
+  expect((await through.run({ script, files: [] })).ok).toBe(true);
+});
+
+test("a socket in a directory that is not there has no client: where it really is cannot be said", () => {
+  const root = mkdtempSync(join(tmpdir(), "wc-"));
+  opened.push({ stop: () => {}, root });
+  expect(() =>
+    createWorkbench({
+      key: KEY,
+      socketPath: join(root, "not-made", "w.sock"),
+      log: quiet,
+    }),
+  ).toThrow("directory");
 });

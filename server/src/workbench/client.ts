@@ -58,17 +58,19 @@
  * safe only while nothing a script started is at the path when they leave, and four things put
  * nothing there, each resting on the one before: THE SWEEP ends everything a run started before
  * the daemon says "idle" (`shared/workbench/sweep.ts`); a PROVEN IDLE is asked for before every
- * send; ONE CLIENT per socket's path in this process — `createWorkbench` hands back the one there
- * is, so every caller is in one queue and "idle" is still true when the run it was asked for
- * leaves; and ONE PROCESS per deployment sends at all (`docs/laf/deployment-model.md`: one API
- * server per VM). The first three are held here and by tests; the fourth is the deployment's, and
- * a second process that sent runs would have to be told of the first.
+ * send; ONE CLIENT per socket in this process, by where the socket really is and not by how its
+ * path was written — `createWorkbench` hands back the one there is, so every caller is in one
+ * queue and "idle" is still true when the run it was asked for leaves; and ONE PROCESS per
+ * deployment sends at all (`docs/laf/deployment-model.md`: one API server per VM). The first
+ * three are held here and by tests; the fourth is the deployment's, and a second process that
+ * sent runs would have to be told of the first.
  *
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
  * refusal.
  */
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Logger } from "../../../shared/log";
 import {
   filePart,
@@ -538,19 +540,50 @@ type WorkbenchOptions = {
   absentMs?: number;
 };
 
-/** The one client there is for each socket's path in this process, and the key it was made with. */
+/** The one client there is for each socket in this process, and the key it was made with. */
 const CLIENTS = new Map<string, { key: string; workbench: Workbench }>();
 
 /**
- * The client for a socket's path: THE one. A second call for the same path is handed the first's —
- * its queue, its bounds, its log; what the second call asked for besides the path is not looked at
- * — because two clients are two queues, and with two queues one caller is told "idle" and sends
- * while the other's script is running (the header, "WHAT KEEPS A RUN'S BYTES FROM A SCRIPT"). A
- * second call with ANOTHER KEY is a mistake that would otherwise only show as a service that
- * proves nothing, so it throws.
+ * Where a socket really is: its directory as the filesystem resolves it, and its own name there.
+ *
+ * WHAT ONE CLIENT IS ONE CLIENT OF. Until 2026-10-07 the clients were kept by the path as written,
+ * tidied (`resolve`) — which makes `./` and `//` one spelling and knows nothing of links: the same
+ * socket reached through another name for its directory was a second client, with a queue of its
+ * own (on Debian `/var/run/…` is exactly that for `/run/…`). The DIRECTORY is resolved and not the
+ * socket, because the socket is not always there to resolve: a daemon between two lives has none,
+ * and that is when a client is most likely to be made. And the client then goes to the socket by
+ * this path too, so a name that is later pointed somewhere else does not take the client with it
+ * while its place in the table stays where it was.
+ *
+ * A DIRECTORY THAT IS NOT THERE HAS NO REAL PATH, and so no client: this throws. Falling back to
+ * the path as written would keep a client under a name that may turn out to be one of two for the
+ * same place once the directory exists — the very thing this is for. In a deployment the directory
+ * is a mounted volume and is there before the server is; whoever makes a client where it may not
+ * be is the one to decide what a missing directory means.
+ */
+function socketAt(socketPath: string): string {
+  const written = resolve(socketPath);
+  let directory: string;
+  try {
+    directory = realpathSync(dirname(written));
+  } catch {
+    throw new Error(
+      "a workbench's socket is in a directory that exists: this one's does not, so where it really is cannot be said",
+    );
+  }
+  return join(directory, basename(written));
+}
+
+/**
+ * The client for a socket: THE one. A second call for the same socket — by whatever path it is
+ * written (`socketAt`) — is handed the first's: its queue, its bounds, its log; what the second
+ * call asked for besides the path is not looked at — because two clients are two queues, and with
+ * two queues one caller is told "idle" and sends while the other's script is running (the header,
+ * "WHAT KEEPS A RUN'S BYTES FROM A SCRIPT"). A second call with ANOTHER KEY is a mistake that
+ * would otherwise only show as a service that proves nothing, so it throws.
  */
 export function createWorkbench(options: WorkbenchOptions): Workbench {
-  const path = resolve(options.socketPath);
+  const path = socketAt(options.socketPath);
   const there = CLIENTS.get(path);
   if (there) {
     if (there.key !== options.key) {
