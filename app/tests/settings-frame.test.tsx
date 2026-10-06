@@ -13,6 +13,7 @@ import type { ReactElement } from "react";
 import { ADMIN_NAV } from "../src/components/admin/admin-sidebar";
 import type { RailNavItem } from "../src/components/layout/rail-nav";
 import { SETTINGS_NAV } from "../src/components/settings/settings-sidebar";
+import { authKeys, type CurrentUser } from "../src/lib/auth/queries";
 import { ko } from "../src/lib/i18n-ko";
 import { mount, routerAt, unmountAll } from "./support/mount";
 
@@ -115,10 +116,37 @@ async function settingsScreenAt(at: string) {
   return drawnAt(at, SETTINGS_PATHS, () => <Screen />);
 }
 
+/**
+ * The Admin screen asks who is signed in, which Settings' does not: which pages it lists is the
+ * deployment's to say (`useTakesBotEndpoints`, the endpoints page). In the app the answer is in the
+ * client before the route draws — its `beforeLoad` put it there — so it is put there here, and
+ * nothing is fetched. Which pages that makes is `admin-bot-endpoints.test.tsx`'s; this file is
+ * about the frame.
+ */
+const ADMINISTRATOR: CurrentUser = {
+  id: "user-1",
+  email: "owner@laf.test",
+  role: "admin",
+  onboarded: true,
+  consentRequired: false,
+  deployment: { effort: true, autoReview: true },
+};
+
 async function adminScreenAt(at: string) {
   const { Route } = await import("../src/routes/_authed/admin/route");
+  const { QueryClient, QueryClientProvider } = await import(
+    "@tanstack/react-query"
+  );
   const Screen = Route.options.component as () => ReactElement;
-  return drawnAt(at, ADMIN_PATHS, () => <Screen />);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(authKeys.currentUser(), ADMINISTRATOR);
+  return drawnAt(at, ADMIN_PATHS, () => (
+    <QueryClientProvider client={queryClient}>
+      <Screen />
+    </QueryClientProvider>
+  ));
 }
 
 describe("which link is lit", () => {

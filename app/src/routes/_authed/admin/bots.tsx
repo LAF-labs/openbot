@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTakesBotEndpoints } from "@/components/admin/admin-sidebar";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import { Mascot } from "@/components/agents/mascot";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -34,6 +35,13 @@ import { refusalText } from "@/lib/refusals";
  * The capability is real and it stays, here, on a screen whose reader is an operator: pointing an
  * existing Bot at something somebody else hosts. `/admin` is behind a role check of its own, so
  * this is the only place the words 엔드포인트 and 토큰 are allowed to appear.
+ *
+ * ON A DEVELOPER'S STACK, SINCE 2026-10-06. A hosted deployment takes no endpoint of a person's own
+ * for a Bot: whatever that endpoint says is filed as fact — what a turn cost, how a run ended — and
+ * the administrator of a one-VM-per-person deployment is the person. The server refuses one there
+ * (`laf:agent_endpoint_not_taken`) and says so beforehand (`deployment.botEndpoints`), and then this
+ * page is listed nowhere and, reached by its address, draws its title and that sentence: no Bot, no
+ * field, no button. A form that can only be refused is the control CLAUDE.md says not to draw.
  */
 export const Route = createFileRoute("/_authed/admin/bots")({
   component: RouteComponent,
@@ -89,46 +97,61 @@ async function testEndpoint(
 }
 
 function RouteComponent() {
+  const takesBotEndpoints = useTakesBotEndpoints();
+  return (
+    <PageShell
+      description={
+        takesBotEndpoints
+          ? t(
+              "Point a Bot at an agent you host yourself. Left alone, every Bot runs on this deployment.",
+            )
+          : // The refusal's own sentence (`AGENT_REFUSALS`), said before anybody has to be refused.
+            t(
+              "Every Bot runs on this deployment. It cannot be pointed at another server here.",
+            )
+      }
+      title={t("Bot endpoints")}
+    >
+      {/* Its own component, so the Bots are not even read where none of them will be drawn. */}
+      {takesBotEndpoints ? <BotEndpoints /> : null}
+    </PageShell>
+  );
+}
+
+function BotEndpoints() {
   const agents = useQuery(agentListQueryOptions());
   const bots = agents.data ?? [];
 
   return (
-    <PageShell
-      description={t(
-        "Point a Bot at an agent you host yourself. Left alone, every Bot runs on this deployment.",
+    <PageSection title={t("Bots")}>
+      {/*
+       * THREE ANSWERS, WHERE THERE WAS ONE AND A BLANK. The list drew "Loading Bots…" and then
+       * whatever `data` held — so a read that FAILED and a deployment with no Bots on it both
+       * rendered a heading over an empty div, with `isError` sitting in the query unread. An
+       * operator arriving on this page to fix a Bot's endpoint was shown nothing, twice, for two
+       * unrelated reasons.
+       */}
+      {agents.isPending ? (
+        <RowsSkeleton height="h-11" />
+      ) : agents.isError ? (
+        <LoadFailed
+          message={t("The Bots could not be loaded.")}
+          onRetry={() => void agents.refetch()}
+        />
+      ) : bots.length === 0 ? (
+        <PageEmpty>
+          {t(
+            "No Bots yet. Make one in the app, and it will be listed here with the endpoint it answers on.",
+          )}
+        </PageEmpty>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {bots.map((agent) => (
+            <BotEndpoint agent={agent} key={agent.id} />
+          ))}
+        </div>
       )}
-      title={t("Bot endpoints")}
-    >
-      <PageSection title={t("Bots")}>
-        {/*
-         * THREE ANSWERS, WHERE THERE WAS ONE AND A BLANK. The list drew "Loading Bots…" and then
-         * whatever `data` held — so a read that FAILED and a deployment with no Bots on it both
-         * rendered a heading over an empty div, with `isError` sitting in the query unread. An
-         * operator arriving on this page to fix a Bot's endpoint was shown nothing, twice, for two
-         * unrelated reasons.
-         */}
-        {agents.isPending ? (
-          <RowsSkeleton height="h-11" />
-        ) : agents.isError ? (
-          <LoadFailed
-            message={t("The Bots could not be loaded.")}
-            onRetry={() => void agents.refetch()}
-          />
-        ) : bots.length === 0 ? (
-          <PageEmpty>
-            {t(
-              "No Bots yet. Make one in the app, and it will be listed here with the endpoint it answers on.",
-            )}
-          </PageEmpty>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {bots.map((agent) => (
-              <BotEndpoint agent={agent} key={agent.id} />
-            ))}
-          </div>
-        )}
-      </PageSection>
-    </PageShell>
+    </PageSection>
   );
 }
 
