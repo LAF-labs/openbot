@@ -84,7 +84,7 @@ architecture, kept and still running.
 | **Files in, files out** | Attach a sheet, a PDF or a photo up to 10 MB and the Bot reads it; what it makes is handed back on a card and kept on 만든 것. |
 | **Looked up, not browsed** | The web, the weather (기상청, with its source said) and public notices come back in a second through tools on the deployment's own keys, instead of minutes in a browser. Where it is sure what a message wants — today's weather, schedule or new mail — the server fetches it before the model is asked. |
 | **Connected as the person asking** | Notion, Canva, Google Drive, Google Sheets, Gmail, Google Calendar, Google Business Profile, Cafe24 and Kakao's PlayMCP, each person consenting for themselves, so the answers are the ones their own account can see. |
-| **A tool's words are consented to** | A vendor's tool whose description changes is paused until a person has read it. The adapters that ship in this repository are not a vendor's: their definitions arrive with the release and are recorded as that. |
+| **A tool's words are consented to** | A vendor's tool that was added after the service was connected, or whose description changed, is held back until a person has read it on 관리 → 플러그인 — and the Bot says a tool is waiting there, rather than that it does not exist. The adapters that ship in this repository are not a vendor's: their definitions arrive with the release and are recorded as that. |
 | **Where you are** | The place you said, else your device's (rounded to about a kilometre), else Seoul without asking — and the Bot's browser is told the same, so a site does not take the VM's address for yours. |
 | **It tells you when it is out of date** | An open window notices a newer build on the server and offers one press, never mid-turn. |
 | **Effort** | The one model setting, per Bot, carried into every run — chat and routines. |
@@ -93,7 +93,7 @@ architecture, kept and still running.
 
 ## Built on AG-UI
 
-A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, so LAF Agent is not tied to a framework and neither are you. Agents built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand all arrive the same way, and the governance rides the protocol rather than the framework.
+A Bot is an endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, and the governance rides the protocol rather than a framework. Every Bot a person makes is answered by this repository's own endpoint, `agent-bot`, and on a hosted deployment that is the only one there is. On a developer's stack an agent built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand can be put in its place and arrives the same way — see [Bring your own agent](#bring-your-own-agent).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
@@ -182,7 +182,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent, on a developer's stack**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only. A hosted deployment takes none.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
-- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, Canva and Kakao's PlayMCP (hosted MCP), plus 카카오 알림톡, 나라장터·기업마당, web search and the weather (기상청) on an account or key the fleet holds. For the ones a person connects, each person consents for themselves and calls run on their own grant, so the answers are the ones their own account can see. A vendor's tool whose definition changes is paused until a person has read it; the adapters in this repository are taken as the release ships them and recorded as that. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
+- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, Canva and Kakao's PlayMCP (hosted MCP), plus 카카오 알림톡, 나라장터·기업마당, web search and the weather (기상청) on an account or key the fleet holds. For the ones a person connects, each person consents for themselves and calls run on their own grant, so the answers are the ones their own account can see. A vendor's tool that is added after the service was connected, or whose definition changes, is paused until a person has read it on `/admin/plugins`. Until then the Bot is not given the vendor's new text — only that a tool is waiting for review, and where — so it says that rather than that there is none. The adapters in this repository are taken as the release ships them and recorded as that. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
 - **Show it once**: drive the Bot's browser through a task yourself and the demonstration is written up as a procedure you edit, name and invoke with `/`. The recorder keeps that typing happened and into which field — never a value, passwords included, and a test serialises the whole record to prove it.
 - **Turns and routines run on the server**: a conversation's turn belongs to the server and every window watches it; a routine fires on its clock with the Bot's tools underneath the same gateway. Closing the window ends neither.
@@ -194,11 +194,11 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Bring your own agent
 
-Any AG-UI endpoint can be a Bot — on a developer's stack, which is one whose API runs with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`.
+Any AG-UI endpoint can be a Bot — on a developer's stack, which is one whose API runs with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` and has a computer configured. The quick start above is not one until you set that line: `.env.example` ships it commented out, and without it `/admin/bots` is not listed and the server refuses an address for a Bot.
 
 The server validates agent endpoints with the same target checks used for browser navigation. The Bot a person makes runs on `MANAGED_AGENT_AG_UI_URL` (`agent-bot`); there, an administrator can point one at an endpoint of their own from `/admin/bots`.
 
-A hosted deployment takes no endpoint for a Bot. The rule is in [CLAUDE.md](CLAUDE.md), under "Every Bot a person creates is remote".
+A hosted deployment takes no endpoint for a Bot, and a server run with `NODE_ENV=production` refuses to start with that line set. Each boot says which kind it is (`botEndpoints` on the `boot` line). The rule is in [CLAUDE.md](CLAUDE.md), under "Every Bot a person creates is remote".
 
 See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](docs/laf/coworkers.md).
 
@@ -208,6 +208,7 @@ See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](d
 
 - `DATABASE_URL`
 - `KEY_ENCRYPTION_KEY`
+- `LAF_TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`; the example in `.env.example` is public, and production refuses it)
 - `MANAGED_AGENT_AG_UI_URL`
 
 Durable threads and memory live in this deployment's own PostgreSQL, and there
@@ -224,7 +225,7 @@ Settings worth knowing:
 | `BOT_MODEL`                          | The model, read by `agent-bot` and substituted into the tenant package. Sent verbatim.              |
 | `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.               |
 | `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                                            |
-| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services, and marks a developer's stack: only there may a Bot be pointed at your own agent. |
+| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services, and marks a developer's stack: only there may a Bot be pointed at your own agent. Local only: with `NODE_ENV=production` the server refuses to start with it. `.env.example` ships it off. |
 | `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.                                       |
 | `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                               |
 
@@ -281,7 +282,7 @@ A partial set is refused rather than ignored: the server will not start with `BE
 
 - `agent-computer` drives a browser holding real logins. `docker-compose.yml` binds it to loopback; leave it there.
 - Store credentials through `/admin/credentials`, which encrypts them. Do not put credential values in tenant YAML or in committed files.
-- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` lets a Bot reach services on this machine. Unset it if you would rather it could not.
+- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` is off unless you set it. Set, it lets a Bot reach services on this machine and lets a Bot be pointed at an agent of your own; leave it off unless you need one of the two.
 
 ## Development
 
