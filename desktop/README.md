@@ -121,7 +121,10 @@ added to `generate_handler!` and not to those two lists behaves the same way.
 opener plugin is NOT granted to the origin. Neither is the updater, the process
 plugin, nor the global-shortcut plugin. The shell checks for updates from Rust,
 on release builds only, and never restarts an app somebody is using on its own:
-the page shows one quiet 새 버전이 준비됐어요 card with 지금 다시 시작, withheld
+the page shows one quiet control, 다시 시작해서 업데이트, at the foot of the Bot's
+column (a card in the corner, 새 버전이 준비됐어요 with 지금 다시 시작, until
+2026-10-06 — the same control now also says when the page itself is behind the
+server), withheld
 while the Bot is working or waiting on the person. That rule was made while the
 window drove the Bot's turn and a restart ended it; the server runs the turn now
 and it goes on through a restart, and the rule was kept — a restart still takes
@@ -136,7 +139,7 @@ The updater's Windows `install()` launches the NSIS installer and then calls
 `std::process::exit(0)` (tauri-plugin-updater 2.10.1, `updater.rs`), so the
 `download_and_install` the shell ran at launch ended the app a minute after
 somebody opened it whenever there was an update. Now Windows downloads and
-verifies at launch and installs only on 지금 다시 시작; macOS installs at once
+verifies at launch and installs only on that press; macOS installs at once
 (`install()` there replaces the bundle and the process runs on), so it applies
 on the next launch whether or not the person presses anything. A development
 build never checks; `LAF_SHELL_PRETEND_UPDATE=<version>` makes it hold a pretend

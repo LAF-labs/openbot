@@ -253,7 +253,8 @@ impl BotStatus {
 /// (tauri-plugin-updater 2.10.1, `updater.rs`), so the `download_and_install` this shell used to
 /// call at launch ended the app a minute after somebody opened it — mid-task, the thing it promised
 /// never to do. On macOS `install()` replaces the bundle in place and the process runs on, so there
-/// the update is installed at once and waits only for the next launch or 지금 다시 시작.
+/// the update is installed at once and waits only for the next launch or the press of
+/// 다시 시작해서 업데이트 (지금 다시 시작, on the card the page drew until 2026-10-06).
 struct ReadyUpdate {
     version: String,
     #[cfg(all(windows, not(debug_assertions)))]
@@ -1051,7 +1052,7 @@ fn take_ready_update(held: &Mutex<Option<ReadyUpdate>>) -> Result<ReadyUpdate, S
 /// The process plugin is still not granted to the page, and this is not a way round that: with no
 /// verified update in hand it refuses, so a page running somebody else's script can at most restart
 /// the app into the signed version the shell itself downloaded, which is what the person's own
-/// press of 지금 다시 시작 would do. It is never called by anything but that press; the notice
+/// press of 다시 시작해서 업데이트 would do. It is never called by anything but that press; the notice
 /// withholds the button while the Bot is working. That was because the window drove the turn and a
 /// restart ended it; the server runs the turn now and it goes on through a restart, and the notice
 /// still withholds — a restart takes the answer off the screen somebody is watching.
@@ -1188,7 +1189,7 @@ fn say_device_status(app: &tauri::AppHandle) {
 /// change they did not ask for, is the behaviour that teaches people to dread updates. (It used to
 /// end whatever the Bot was doing as well, while the window drove the turn; the server runs the
 /// turn now, and it goes on through a restart.) So the update is
-/// fetched and verified, the page is told, and it shows one quiet notice with 지금 다시 시작. On
+/// fetched and verified, the page is told, and it shows one quiet control, 다시 시작해서 업데이트. On
 /// macOS it is also installed at once, so it applies on the next launch whether or not they press
 /// it; on Windows installing IS exiting (see `ReadyUpdate`), so it waits for the press.
 #[cfg(not(debug_assertions))]
