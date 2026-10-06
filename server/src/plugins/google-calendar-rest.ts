@@ -134,6 +134,70 @@ function localEdge(edge: CalendarEvent["start"], timeZone: string): string {
   return edge?.date ? `${edge.date} (종일)` : "?";
 }
 
+/** An event as one line of a listing: when, what, where, and the id a later call names it by. */
+function eventLine(event: CalendarEvent, timeZone: string): string {
+  return [
+    `- ${localEdge(event.start, timeZone)} ~ ${localEdge(event.end, timeZone)}`,
+    event.summary ?? "(제목 없음)",
+    event.location ? `장소: ${event.location}` : null,
+    event.id ? `id: ${event.id}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * When an event starts, on the person's clock — or null where its start cannot be read.
+ *
+ * An all-day event carries a date and no zone: it starts when that date does where the person is,
+ * which is the reading {@link localEdge} leaves it in. One that is tomorrow's therefore starts at
+ * tomorrow's own midnight, at the end of today and not inside it.
+ *
+ * WHERE GOOGLE ITSELF BEGINS THAT DATE IS NOT WRITTEN DOWN, AND WAS NOT MEASURED. Its reference
+ * for `events.list` says nothing of an all-day event under `timeMin` and `timeMax`, and no
+ * account was at hand to ask (2026-10-07). If it is the calendar's own zone, and that is the
+ * person's, this reading and Google's filter agree event for event. Where they do not — a calendar
+ * kept in another zone, a date begun in UTC — an all-day event within hours of a stretch's end is
+ * placed here by the person's clock and not by Google's: west of that zone a day's listing no
+ * longer carries tomorrow's all-day event, which Google's filter let into it; east of it, a
+ * stretch that ends partway through a day now lists that day's.
+ */
+function startOf(event: CalendarEvent, timeZone: string): Date | null {
+  const edge = event.start;
+  if (edge?.dateTime) {
+    const at = new Date(edge.dateTime);
+    return Number.isNaN(at.getTime()) ? null : at;
+  }
+  const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(edge?.date ?? "");
+  if (!date) return null;
+  return instantOf(
+    { year: Number(date[1]), month: Number(date[2]), day: Number(date[3]) },
+    0,
+    0,
+    timeZone,
+  );
+}
+
+/** How far past the stretch it was asked for a listing also looks, in the person's own days. */
+const AHEAD_DAYS = 7;
+
+/**
+ * The same reading of the person's clock, `days` of their days on: a local midnight stays a local
+ * midnight. Calendar days rather than 24 hours each, for the reason {@link listingWindow} gives — a
+ * day a clock change made 23 or 25 hours long is one day.
+ */
+function daysOn(at: Date, days: number, timeZone: string): Date {
+  const clock = wallClockAt(at, timeZone);
+  const on = instantOf(
+    dayAfter(at, days, timeZone),
+    clock.hour,
+    clock.minute,
+    timeZone,
+  );
+  // The clock above reads to the minute; "from this minute on" ends on a second, and keeps it.
+  return new Date(on.getTime() + (at.getTime() % 60_000));
+}
+
 /**
  * The stretch of time a listing covers.
  *
@@ -222,52 +286,120 @@ export async function callTool(
   if (toolName === "list_events") {
     const timeZone = resolveTimeZone(connection.timeZone);
     const { from, until } = listingWindow(args, clock(), timeZone);
+    const query = stringArg(args, "query");
+    /*
+     * AN EMPTY STRETCH IS ANSWERED WITH WHAT COMES NEXT, AND THE SAME REQUEST FETCHES IT
+     * (2026-10-07). Handed "nothing on today" by the server's first move, the fleet's model did
+     * not take it in half its runs: it looked the tool up and asked again, up to three times, and
+     * only then said the day was empty — 3 to 5 requests where the move had left 1
+     * (`docs/laf/eval-pack.md`, "An empty day says what comes next"). Three wordings of "nothing"
+     * changed nothing. What did was something to tell: with the nearest event of the days after
+     * in the result, 11 runs of 12 answered in the one request, measured twice. Where those days
+     * are empty too the result says so, which is true and costs nothing — and was NOT shown to
+     * do the same: 8 of 12, against 9 of 18 before.
+     *
+     * ONE REQUEST, WIDENED, NOT A SECOND ONE. This call is the wait between a person's message
+     * and the first request of the Bot's model whenever the server made it (`turns/engine.ts`),
+     * and that wait is what a first move is held to: its decision is given
+     * `FIRST_MOVE_TIMEOUT_MS`, because past that "the wait would be the saving". A second round
+     * trip, made on exactly the days with nothing on them, would put a whole request to Google
+     * back into it. So Google is asked once, for the stretch and `AHEAD_DAYS` after it, with the
+     * same `maxResults` and the same order — the stretch's own events come first in that order, so
+     * a stretch with a full page of them reads exactly as it did — and what came back is split
+     * here by where each event starts.
+     *
+     * NOT UNDER A SEARCH. "No event matches 치과 this week" is a different statement from "the
+     * week is empty", and an event that merely comes next answers neither: with `query` the
+     * request and the answer are what they were.
+     */
+    const looksAhead = query === null;
+    const lookedUntil = looksAhead
+      ? daysOn(until, AHEAD_DAYS, timeZone)
+      : until;
 
     const result = await vendorRequest("Google Calendar", connection, {
       url: events,
       query: {
         timeMin: from.toISOString(),
-        timeMax: until.toISOString(),
+        timeMax: lookedUntil.toISOString(),
         maxResults: String(countArg(args, "max", DEFAULT_EVENTS, MAX_EVENTS)),
         // Both are needed together: without `singleEvents` a repeating meeting comes back as one
         // rule rather than as the occurrences a person means, and Calendar refuses to order by
         // start time unless it is expanding them.
         singleEvents: "true",
         orderBy: "startTime",
-        q: stringArg(args, "query") ?? undefined,
+        q: query ?? undefined,
       },
     });
     if (!result.ok) return failure(result.message, result.status);
 
-    const body = await readJson<{ items?: CalendarEvent[] }>(result.response);
+    const body = await readJson<{
+      items?: CalendarEvent[];
+      nextPageToken?: string;
+    }>(result.response);
     if (!body) return failure("구글 캘린더가 읽을 수 없는 답을 보냈습니다.");
 
-    const items = body.items ?? [];
+    /*
+     * BY ITS START, AS GOOGLE'S OWN `timeMax` IS: an event that starts before the stretch ends is
+     * the stretch's — one that began yesterday and is still running is on today — and one that
+     * starts at its end or later comes after. AN EVENT WHOSE START CANNOT BE READ STAYS IN THE
+     * LISTING: it cannot be shown to come after, and until this change everything Google answered
+     * with was listed. Shown with a `?` for its time, never dropped.
+     */
+    const items: CalendarEvent[] = [];
+    const after: CalendarEvent[] = [];
+    for (const event of body.items ?? []) {
+      const startsAt = looksAhead ? startOf(event, timeZone) : null;
+      if (startsAt !== null && startsAt.getTime() >= until.getTime()) {
+        after.push(event);
+      } else {
+        items.push(event);
+      }
+    }
     /*
      * THE FIRST LINE SAYS WHAT WAS LOOKED AT, on the person's clock. A list is only an answer to
      * "오늘 일정" if the reader knows it is today's: a call the server made as a turn's first step
      * (`turns/first-move.ts`) hands the Bot's model a result it did not choose the arguments of,
      * and a listing with nothing in it must read as "nothing between these two times", which is a
-     * different sentence from "nothing was found". Times are local for the same reader.
+     * different sentence from "nothing was found". Times are local for the same reader. It is the
+     * stretch that was ASKED for and it counts that stretch's events: the days looked at beyond it
+     * are named only where something is said of them, below.
      */
     const covered = `[본 기간: ${localStamp(from, timeZone)} ~ ${localStamp(until, timeZone)} ${zoneLabel(timeZone)} · 일정 ${items.length}건]`;
-    if (items.length === 0) {
-      return asResult(`${covered}\n이 기간에 캘린더에 잡힌 일정이 없습니다.`);
-    }
-    return asResult(
-      [
-        covered,
-        ...items.map((event) =>
-          [
-            `- ${localEdge(event.start, timeZone)} ~ ${localEdge(event.end, timeZone)}`,
-            event.summary ?? "(제목 없음)",
-            event.location ? `장소: ${event.location}` : null,
-            event.id ? `id: ${event.id}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · "),
+    if (items.length > 0) {
+      // A stretch with something on it says only that: what comes after was not asked for.
+      return asResult(
+        [covered, ...items.map((event) => eventLine(event, timeZone))].join(
+          "\n",
         ),
-      ].join("\n"),
+      );
+    }
+    const nothing = `${covered}\n이 기간에 캘린더에 잡힌 일정이 없습니다.`;
+    if (!looksAhead) return asResult(nothing);
+
+    // The first of them in the order Google answered in, which is by start — the order the
+    // listing itself is printed in.
+    const [next] = after;
+    if (next) {
+      /*
+       * ONE EVENT, AND SAID TO BE ONE. Under "내일 일정 뭐 있어?" — a move that was wrong — this
+       * line is all of tomorrow the model holds, and tomorrow may hold more. So the line says it
+       * is not that day's list, and the model is left to ask the calendar for the day.
+       */
+      return asResult(
+        `${nothing}\n[그 뒤 ${AHEAD_DAYS}일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]\n${eventLine(next, timeZone)}`,
+      );
+    }
+    /*
+     * "NOTHING IN THE DAYS AFTER" ONLY OF AN ANSWER THAT WAS WHOLE. Google may send a page with
+     * no event on it and a token for the next one ("or none at all, even if there are more events
+     * matching the query" — `maxResults`, in its reference for `events.list`). The days after
+     * were not seen then, and the sentence about them is left out rather than guessed.
+     */
+    return asResult(
+      body.nextPageToken
+        ? nothing
+        : `${nothing}\n그 뒤 ${AHEAD_DAYS}일 안에도 잡힌 일정이 없습니다.`,
     );
   }
 

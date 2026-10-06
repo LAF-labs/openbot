@@ -904,6 +904,35 @@ describe("Google Calendar", () => {
    */
   const NINE_PM_SEOUL = () => new Date("2026-10-05T12:00:00Z");
   const seoul = { ...connection, timeZone: "Asia/Seoul" };
+  /** What Google was asked, of the listing's last call: the four things a stretch is made of. */
+  const sent = () => {
+    const params = asked.at(-1)?.url.searchParams;
+    return {
+      timeMin: params?.get("timeMin") ?? null,
+      timeMax: params?.get("timeMax") ?? null,
+      maxResults: params?.get("maxResults") ?? null,
+      q: params?.get("q") ?? null,
+    };
+  };
+  const timed = (
+    id: string,
+    summary: string,
+    start: string,
+    end: string,
+    location?: string,
+  ) => ({
+    id,
+    summary,
+    ...(location ? { location } : {}),
+    start: { dateTime: start },
+    end: { dateTime: end },
+  });
+  const allDay = (id: string, summary: string, start: string, end: string) => ({
+    id,
+    summary,
+    start: { date: start },
+    end: { date: end },
+  });
 
   test("day: today at nine in the evening is the whole local day — the morning in, tomorrow out", async () => {
     reply = () =>
@@ -931,12 +960,14 @@ describe("Google Calendar", () => {
       NINE_PM_SEOUL,
     );
 
-    // Midnight to midnight on the person's clock, which is 15:00 UTC the day before.
+    // Midnight on the person's clock, which is 15:00 UTC the day before. The day ends at the next
+    // one, 2026-10-05T15:00Z, and that is still what the first line says and what is listed: since
+    // 2026-10-07 the same request looks seven of the person's days past it (below).
     expect(asked[0]?.url.searchParams.get("timeMin")).toBe(
       "2026-10-04T15:00:00.000Z",
     );
     expect(asked[0]?.url.searchParams.get("timeMax")).toBe(
-      "2026-10-05T15:00:00.000Z",
+      "2026-10-12T15:00:00.000Z",
     );
     expect(result.text.split("\n")).toEqual([
       "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 2건]",
@@ -970,8 +1001,9 @@ describe("Google Calendar", () => {
     expect(asked[0]?.url.searchParams.get("timeMin")).toBe(
       "2026-10-05T12:00:00.000Z",
     );
+    // The same minute tomorrow is where the stretch ends, and seven days past it is looked at.
     expect(asked[0]?.url.searchParams.get("timeMax")).toBe(
-      "2026-10-06T12:00:00.000Z",
+      "2026-10-13T12:00:00.000Z",
     );
     expect(result.text.split("\n")).toEqual([
       "[본 기간: 2026-10-05 21:00 ~ 2026-10-06 21:00 Asia/Seoul(KST) · 일정 1건]",
@@ -979,7 +1011,37 @@ describe("Google Calendar", () => {
     ]);
   });
 
-  test("a day with nothing on it says which day had nothing, not that nothing was found", async () => {
+  /*
+   * AN EMPTY STRETCH SAYS WHAT COMES NEXT (2026-10-07). Handed a day with nothing on it by the
+   * server's first move, the fleet's model looked the tool up and asked the calendar again in
+   * half its runs, and three ways of wording "nothing" changed that not at all
+   * (`docs/laf/eval-pack.md`, "An empty day says what comes next"). What it took was something
+   * to tell: the nearest event of the seven days after — and, where there is none, the statement
+   * that those are empty too, which is true and was not shown to do as much. Fetched by the SAME
+   * request, made wider — so each test below reads what Google was asked as well as what came of
+   * the answer: the stretch, the page's size and whether it was a search.
+   */
+  const TODAY = "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST)";
+  const NOTHING = "이 기간에 캘린더에 잡힌 일정이 없습니다.";
+  const THE_NEAREST =
+    "[그 뒤 7일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]";
+  const NOTHING_AFTER = "그 뒤 7일 안에도 잡힌 일정이 없습니다.";
+  /** The person's whole day at nine in the evening, and seven of their days past its end. */
+  const THE_DAY_AND_A_WEEK = {
+    timeMin: "2026-10-04T15:00:00.000Z",
+    timeMax: "2026-10-12T15:00:00.000Z",
+    maxResults: "10",
+    q: null,
+  };
+  const TOMORROW_NIGHT = timed(
+    "e9",
+    "한빛상사 납품 미팅",
+    "2026-10-06T23:00:00+09:00",
+    "2026-10-06T23:30:00+09:00",
+    "성수동 사무실",
+  );
+
+  test("a day with nothing on it says which day had nothing, not that nothing was found — and that the seven days after have nothing either", async () => {
     reply = () => json({ items: [] });
 
     const result = await calendar.callTool(
@@ -990,9 +1052,407 @@ describe("Google Calendar", () => {
     );
 
     expect(result.isError).toBe(false);
-    expect(result.text).toBe(
-      "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST) · 일정 0건]\n이 기간에 캘린더에 잡힌 일정이 없습니다.",
+    expect(sent()).toEqual(THE_DAY_AND_A_WEEK);
+    // The first line is the day that was asked about, not the stretch that was looked at.
+    expect(result.text.split("\n")).toEqual([
+      `${TODAY} · 일정 0건]`,
+      NOTHING,
+      NOTHING_AFTER,
+    ]);
+    // One request: a second would be made on exactly the days the first move saves the most on.
+    expect(asked).toHaveLength(1);
+  });
+
+  test("an empty stretch with something after it names the nearest one, and says it is not that day's list", async () => {
+    reply = () =>
+      json({
+        items: [
+          TOMORROW_NIGHT,
+          timed(
+            "e10",
+            "세무사 상담",
+            "2026-10-08T10:00:00+09:00",
+            "2026-10-08T11:00:00+09:00",
+          ),
+        ],
+      });
+
+    const today = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
     );
+
+    expect(sent()).toEqual(THE_DAY_AND_A_WEEK);
+    expect(asked).toHaveLength(1);
+    expect(today.text.split("\n")).toEqual([
+      `${TODAY} · 일정 0건]`,
+      NOTHING,
+      THE_NEAREST,
+      // One event, in the line a listing writes — the id included, so it can be acted on.
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ]);
+
+    // And "from this minute on", which is how the Bot's own model asks: nine to nine is empty too.
+    const fromNow = await calendar.callTool(
+      seoul,
+      "list_events",
+      { days: 1 },
+      NINE_PM_SEOUL,
+    );
+    expect(sent()).toEqual({
+      timeMin: "2026-10-05T12:00:00.000Z",
+      timeMax: "2026-10-13T12:00:00.000Z",
+      maxResults: "10",
+      q: null,
+    });
+    expect(fromNow.text.split("\n")).toEqual([
+      "[본 기간: 2026-10-05 21:00 ~ 2026-10-06 21:00 Asia/Seoul(KST) · 일정 0건]",
+      NOTHING,
+      THE_NEAREST,
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ]);
+  });
+
+  test("a day with something on it reads exactly as it did, whatever came back for the days after", async () => {
+    const todays = [
+      timed(
+        "e1",
+        "치과",
+        "2026-10-05T09:30:00+09:00",
+        "2026-10-05T10:00:00+09:00",
+      ),
+      allDay("e2", "창립기념일", "2026-10-05", "2026-10-06"),
+    ];
+    const ask = async (items: unknown[]) => {
+      reply = () => json({ items });
+      const result = await calendar.callTool(
+        seoul,
+        "list_events",
+        { day: "today" },
+        NINE_PM_SEOUL,
+      );
+      return { text: result.text, sent: sent() };
+    };
+
+    const alone = await ask(todays);
+    const withLater = await ask([
+      ...todays,
+      TOMORROW_NIGHT,
+      allDay("e11", "부가세 신고 마감", "2026-10-07", "2026-10-08"),
+    ]);
+
+    // The lines the day's own test has pinned since 2026-10-05, to the byte: the count is the
+    // day's, and nothing of tomorrow is in it — not as an event, not as a line about it.
+    expect(alone.text.split("\n")).toEqual([
+      `${TODAY} · 일정 2건]`,
+      "- 2026-10-05 09:30 ~ 2026-10-05 10:00 · 치과 · id: e1",
+      "- 2026-10-05 (종일) ~ 2026-10-06 (종일) · 창립기념일 · id: e2",
+    ]);
+    expect(withLater.text).toBe(alone.text);
+    expect(withLater.sent).toEqual(THE_DAY_AND_A_WEEK);
+  });
+
+  test("the page asked for is the size it was: a full day lists what it listed, and a later event takes no place in it", async () => {
+    const first = timed(
+      "m1",
+      "오전 회의",
+      "2026-10-05T10:00:00+09:00",
+      "2026-10-05T11:00:00+09:00",
+    );
+    const second = timed(
+      "m2",
+      "점심 약속",
+      "2026-10-05T12:00:00+09:00",
+      "2026-10-05T13:00:00+09:00",
+    );
+
+    // Two asked for and the day holds two or more: Google's page is the day's first two, as it
+    // was — they start first, and the order is by start.
+    reply = () => json({ items: [first, second] });
+    const full = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", max: 2 },
+      NINE_PM_SEOUL,
+    );
+    // Not three, to have one to spare for the days after.
+    expect(sent()).toEqual({ ...THE_DAY_AND_A_WEEK, maxResults: "2" });
+    expect(full.text.split("\n")).toEqual([
+      `${TODAY} · 일정 2건]`,
+      "- 2026-10-05 10:00 ~ 2026-10-05 11:00 · 오전 회의 · id: m1",
+      "- 2026-10-05 12:00 ~ 2026-10-05 13:00 · 점심 약속 · id: m2",
+    ]);
+
+    // The day holds one: the page's other place went to tomorrow's, which is counted nowhere.
+    reply = () => json({ items: [first, TOMORROW_NIGHT] });
+    const one = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", max: 2 },
+      NINE_PM_SEOUL,
+    );
+    expect(one.text.split("\n")).toEqual([
+      `${TODAY} · 일정 1건]`,
+      "- 2026-10-05 10:00 ~ 2026-10-05 11:00 · 오전 회의 · id: m1",
+    ]);
+  });
+
+  test("a search is asked and answered as it was: no match is not an empty day", async () => {
+    reply = () => json({ items: [] });
+
+    const none = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", query: "치과" },
+      NINE_PM_SEOUL,
+    );
+
+    // The day and no further.
+    expect(sent()).toEqual({
+      timeMin: "2026-10-04T15:00:00.000Z",
+      timeMax: "2026-10-05T15:00:00.000Z",
+      maxResults: "10",
+      q: "치과",
+    });
+    // Nothing matched: that says nothing of what is on the day, or of what comes after it.
+    expect(none.text.split("\n")).toEqual([`${TODAY} · 일정 0건]`, NOTHING]);
+
+    // And nothing Google answers a search with is set aside as "after": the stretch was Google's
+    // to judge, as it was before. (It would not answer a day's search with tomorrow's event; this
+    // is what is done with it if it does — listed, where without `query` it would come after.)
+    reply = () =>
+      json({
+        items: [allDay("q1", "치과 검진", "2026-10-06", "2026-10-07")],
+      });
+    const matched = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", query: "치과" },
+      NINE_PM_SEOUL,
+    );
+    expect(matched.text.split("\n")).toEqual([
+      `${TODAY} · 일정 1건]`,
+      "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 치과 검진 · id: q1",
+    ]);
+
+    // "From this minute on" under a search ends where it did, too: three days, to the minute.
+    await calendar.callTool(
+      seoul,
+      "list_events",
+      { days: 3, query: "치과" },
+      NINE_PM_SEOUL,
+    );
+    expect(sent()).toEqual({
+      timeMin: "2026-10-05T12:00:00.000Z",
+      timeMax: "2026-10-08T12:00:00.000Z",
+      maxResults: "10",
+      q: "치과",
+    });
+  });
+
+  test("an all-day event tomorrow comes after today, and one today is today's — on the person's clock", async () => {
+    const todays = allDay("a1", "창립기념일", "2026-10-05", "2026-10-06");
+    const tomorrows = allDay(
+      "a2",
+      "부가세 신고 마감",
+      "2026-10-06",
+      "2026-10-07",
+    );
+
+    // Tomorrow's alone: the day is empty. Its date begins where the day ends, not inside it.
+    reply = () => json({ items: [tomorrows] });
+    const empty = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+    expect(sent()).toEqual(THE_DAY_AND_A_WEEK);
+    expect(empty.text.split("\n")).toEqual([
+      `${TODAY} · 일정 0건]`,
+      NOTHING,
+      THE_NEAREST,
+      "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: a2",
+    ]);
+
+    // Both: today's is the day's one event, and tomorrow's is not a second.
+    reply = () => json({ items: [todays, tomorrows] });
+    const one = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+    expect(one.text.split("\n")).toEqual([
+      `${TODAY} · 일정 1건]`,
+      "- 2026-10-05 (종일) ~ 2026-10-06 (종일) · 창립기념일 · id: a1",
+    ]);
+
+    // West of Greenwich a date begins hours AFTER the same date does in UTC: read as UTC's,
+    // tomorrow's all-day event would begin at eight this evening in New York and be today's.
+    reply = () => json({ items: [tomorrows] });
+    const newYork = await calendar.callTool(
+      { ...connection, timeZone: "America/New_York" },
+      "list_events",
+      { day: "today" },
+      // Noon on the 5th there.
+      () => new Date("2026-10-05T16:00:00Z"),
+    );
+    expect(sent()).toEqual({
+      timeMin: "2026-10-05T04:00:00.000Z",
+      timeMax: "2026-10-13T04:00:00.000Z",
+      maxResults: "10",
+      q: null,
+    });
+    expect(newYork.text.split("\n")).toEqual([
+      "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 America/New_York · 일정 0건]",
+      NOTHING,
+      THE_NEAREST,
+      "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: a2",
+    ]);
+  });
+
+  test("an event that began before today and is still running is today's", async () => {
+    reply = () =>
+      json({
+        items: [
+          // Three nights away, all-day: began the day before yesterday, ends after tomorrow.
+          allDay("r1", "제주 출장", "2026-10-03", "2026-10-08"),
+          // And one with hours on it, from last night into tomorrow's small hours.
+          timed(
+            "r2",
+            "야간 재고 실사",
+            "2026-10-04T22:00:00+09:00",
+            "2026-10-06T02:00:00+09:00",
+          ),
+          TOMORROW_NIGHT,
+        ],
+      });
+
+    const result = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+
+    expect(sent()).toEqual(THE_DAY_AND_A_WEEK);
+    // Two, and no line about what comes next: the day is not empty.
+    expect(result.text.split("\n")).toEqual([
+      `${TODAY} · 일정 2건]`,
+      "- 2026-10-03 (종일) ~ 2026-10-08 (종일) · 제주 출장 · id: r1",
+      "- 2026-10-04 22:00 ~ 2026-10-06 02:00 · 야간 재고 실사 · id: r2",
+    ]);
+  });
+
+  test("the days looked at past the stretch are the person's days: seven midnights on, across a clock change", async () => {
+    reply = () => json({ items: [] });
+    const newYork = { ...connection, timeZone: "America/New_York" };
+    const stretch = async (args: Record<string, unknown>, now: string) => {
+      const result = await calendar.callTool(
+        newYork,
+        "list_events",
+        args,
+        () => new Date(now),
+      );
+      return { ...sent(), first: result.text.split("\n")[0] };
+    };
+
+    // Clocks go back on 2026-11-01. The 28th is on summer time (04:00Z is its midnight) and the
+    // midnight seven days past the day's end is on winter time: 05:00Z, where seven times
+    // twenty-four hours would stop at 04:00Z — an hour short of the seventh day's end.
+    expect(await stretch({ day: "today" }, "2026-10-28T16:00:00Z")).toEqual({
+      timeMin: "2026-10-28T04:00:00.000Z",
+      timeMax: "2026-11-05T05:00:00.000Z",
+      maxResults: "10",
+      q: null,
+      first:
+        "[본 기간: 2026-10-28 00:00 ~ 2026-10-29 00:00 America/New_York · 일정 0건]",
+    });
+    // And forward on 2026-03-08, a day of 23 hours: the other way round.
+    expect(await stretch({ day: "today" }, "2026-03-04T17:00:00Z")).toEqual({
+      timeMin: "2026-03-04T05:00:00.000Z",
+      timeMax: "2026-03-12T04:00:00.000Z",
+      maxResults: "10",
+      q: null,
+      first:
+        "[본 기간: 2026-03-04 00:00 ~ 2026-03-05 00:00 America/New_York · 일정 0건]",
+    });
+    // "From this minute on" ends on a minute and not a midnight: noon stays noon on the person's
+    // clock seven days on (17:00Z, no longer 16:00Z), to the second.
+    expect(await stretch({ days: 1 }, "2026-10-28T16:00:37.250Z")).toEqual({
+      timeMin: "2026-10-28T16:00:37.250Z",
+      timeMax: "2026-11-05T17:00:37.250Z",
+      maxResults: "10",
+      q: null,
+      first:
+        "[본 기간: 2026-10-28 12:00 ~ 2026-10-29 12:00 America/New_York · 일정 0건]",
+    });
+  });
+
+  test("an event whose start cannot be read stays in the listing: it cannot be shown to come after", async () => {
+    reply = () =>
+      json({
+        items: [
+          // Neither a time nor a date.
+          { id: "u1", summary: "시작 없음" },
+          // A time that is not one, and a date that is not one.
+          timed("u2", "깨진 시각", "not-a-time", "not-a-time"),
+          allDay("u3", "깨진 날짜", "10/06", "10/07"),
+          TOMORROW_NIGHT,
+        ],
+      });
+
+    const result = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+
+    // Listed as they always were, a `?` where there is nothing to read. Set aside, the day would
+    // have read as empty with an event nobody could place said to come after it.
+    expect(result.text.split("\n")).toEqual([
+      `${TODAY} · 일정 3건]`,
+      "- ? ~ ? · 시작 없음 · id: u1",
+      "- not-a-time ~ not-a-time · 깨진 시각 · id: u2",
+      "- 10/06 (종일) ~ 10/07 (종일) · 깨진 날짜 · id: u3",
+    ]);
+  });
+
+  test("a page Google did not finish is not called an empty week", async () => {
+    // "…or none at all, even if there are more events matching the query" (`maxResults`, in
+    // Google's reference): no event on the page, and a token for the next one.
+    reply = () => json({ items: [], nextPageToken: "the-next-page" });
+
+    const unfinished = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+
+    // What it said before, and nothing about days nobody saw.
+    expect(unfinished.text.split("\n")).toEqual([
+      `${TODAY} · 일정 0건]`,
+      NOTHING,
+    ]);
+
+    // An unfinished page with an event on it is in order all the same: what is first is nearest.
+    reply = () =>
+      json({ items: [TOMORROW_NIGHT], nextPageToken: "the-next-page" });
+    const nearest = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+    expect(nearest.text.split("\n").slice(2)).toEqual([
+      THE_NEAREST,
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ]);
   });
 
   test("the day is the person's zone's, a clock change is still one day, and only today is a day", async () => {
