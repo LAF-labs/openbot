@@ -185,8 +185,14 @@ function UpdateControl({
       className={cn("flex flex-col", className)}
       data-update-notice={offer.kind}
     >
+      {/*
+       * ROOM FOR BOTH WORDS AT 216px, by arithmetic and not yet by eye: the column leaves the row
+       * 183px, and the icon, 새 버전이 있어요 at 13px and 새로고침 at 12px come to 174 at their
+       * widest (a Hangul glyph taken as its full em). At 13px and the wider gap it was 182 — one
+       * rounding from an ellipsis. The phrase still truncates rather than push the press out.
+       */}
       <Button
-        className="h-9 w-full justify-start gap-2 rounded-lg px-2 font-normal text-sm"
+        className="h-9 w-full justify-start gap-1.5 rounded-lg px-2 font-normal text-sm"
         disabled={isWithheld}
         onClick={handlePress}
         variant="ghost"
@@ -199,7 +205,9 @@ function UpdateControl({
           )}
         />
         <span className="min-w-0 flex-1 truncate text-left">{phrase}</span>
-        {action ? <span className="shrink-0 font-medium">{action}</span> : null}
+        {action ? (
+          <span className="shrink-0 font-medium text-xs">{action}</span>
+        ) : null}
       </Button>
       {/* Said in words, not left to a tooltip: a phone has no hover, and neither does a disabled button. */}
       {reason ? (
