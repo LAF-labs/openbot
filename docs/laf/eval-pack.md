@@ -1886,6 +1886,69 @@ connected what — and when a named kind cannot be made it says which, why, and 
 deployment is short messages with a schedule or a mail word in them, redacted, as they are sent,
 and only from a person who has that service connected.
 
+### A lower effort on a turn that opened with a move — measured, and left as it is (2026-10-06)
+
+The owner allowed it ("미리 조회된 턴은 낮은 추론 허용"): where the server has already made the
+turn's first call, the Bot's model only has to write the answer, so it could be asked at `quick`
+(`low`) instead of the Bot's own `balanced` (`medium`). Two things were measured before any code.
+Nothing was changed.
+
+**The provider's cache is kept per effort value.** One conversation of 20.7K prompt tokens growing
+by a line a turn, requests three seconds apart, the request agent-bot sends (`reasoning_effort`,
+`user`, `prompt_cache_key`), `meta/muse-spark-1.3-contributor`, two sequences:
+
+| # | effort | cached of ~20.7K | | # | effort | cached of ~20.7K |
+|---|---|---|---|---|---|---|
+| 0 | medium | 0 (cold) | | 0 | low | 0 (cold) |
+| 1 | medium | 20,593 | | 1 | low | 20,593 |
+| 2 | medium | 20,593 | | 2 | medium | **0** |
+| 3 | low | **0** | | 3 | low | 20,593 |
+| 4 | medium | 20,721 | | 4 | medium | 20,721 |
+| 5 | low | 20,721 | | 5 | high | **0** |
+| 6 | low | 20,721 | | 6 | medium | 20,721 |
+| 7 | medium | 20,721 | | 7 | high | 20,721 |
+| | | | | 8 | low | 20,721 |
+
+The first request at each value read nothing from the cache, five times of five; every later
+request hit, whatever value came between. So each value has a cache line of its own, kept side by
+side: a switch does not destroy the other's, and it does not share it either. (The figures step by
+128 tokens: the cache is written in blocks.) This is the same effect the harness review measured on
+GLM for `high` and `max` (§4.4 there), found here for every value. A first-moved turn is a few a
+day, so its `low` line would usually be cold: the whole prompt billed at $0.10 a million instead of
+$0.002 — $0.002 to $0.006 a turn on a 20–60K conversation, against a few hundred reasoning tokens
+saved at $0.20 a million. And `copilot.ts` opens a new epoch when a Bot's effort changes, so a
+per-turn value would have to travel as a run's own override that the epoch does not see: the
+profile would say one effort and a turn would run at another.
+
+**The answers** (`EVAL_ONLY` the nine `first-move-*` scenarios, `EVAL_DEFERRAL=0`, `EVAL_RUNS=3`,
+the two efforts interleaved twice — six runs each; three of balanced's runs ended in the
+provider's `laf:model_unavailable`, which is the endpoint and not the effort):
+
+| Scenario | `quick` | `balanced` |
+|---|---|---|
+| weather, answered from the move | 6/6 · 5.2 s | 6/6 · 8.1 s |
+| weather, nobody's place is said to be Seoul's | **5/6** · 5.9 s | 6/6 · 9.5 s |
+| weather for the wrong place, put right | 6/6 · 11.2 s | 6/6 · 20.0 s |
+| calendar, answered from the move | 6/6 · 6.5 s | 6/6 · 7.6 s |
+| calendar, asked late in the day | 1/6 | 3/6 |
+| calendar, an empty day | 3/6 | 4/6 |
+| calendar for tomorrow, put right | 6/6 | 5/6 (one provider error) |
+| mail, answered from the move | 6/6 · 7.7 s | 5/6 · 8.8 s |
+| mail for a sender, put right | 6/6 | 4/6 (two provider errors) |
+| **all** | **45/54** | **45/54** |
+
+Seconds are medians. Over the runs that took one request of the Bot's model — the turns a move is
+for — `quick` was 6.6 s at the median (27 runs) and `balanced` 8.2 s (29): 1.6 s, a fifth, which is
+what the pack found for `quick` on 2026-10-02.
+
+**Left at the Bot's own effort.** A fifth of eight seconds, for: the one sentence a person is owed
+when the weather is Seoul's by default, dropped once in six (the card says it too; the answer
+should); more runs that did not take a move's list late in the day and asked the calendar again
+(five of six against three); a cold prompt on most of those turns; and a second effort inside one
+conversation that the profile's card does not show. The larger saving is still where the section
+above left it: an empty or late day, where a move is not believed and its round is spent again at
+either effort — words in the prompt, measured both ways, before anything else here.
+
 ## Page facts — whether a page is what its address was opened for (2026-10-04)
 
 A Bot opens an address, the site answers 200 with "페이지를 찾을 수 없습니다", and the Bot answers from
