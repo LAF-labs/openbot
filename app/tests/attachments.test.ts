@@ -137,6 +137,7 @@ describe("what the composer says before anything is sent", () => {
   test("every refusal the server can send has Korean words, and an unknown one has a fallback", () => {
     for (const code of [
       "laf:attachment_too_large",
+      "laf:body_too_large",
       "laf:attachment_type_unsupported",
       "laf:attachment_image_unsupported",
       "laf:attachment_empty",
@@ -148,5 +149,13 @@ describe("what the composer says before anything is sent", () => {
       expect(said).not.toContain("laf:");
       expect(isTranslated(said)).toBe(true);
     }
+    // Refused for its size by the server's own body limit or by the upload door: the same words,
+    // and never the fallback's "try again", which for a file too large could never work.
+    expect(uploadRefusalText("laf:body_too_large")).toBe(
+      uploadRefusalText("laf:attachment_too_large"),
+    );
+    expect(uploadRefusalText("laf:body_too_large")).not.toBe(
+      uploadRefusalText("laf:something_else"),
+    );
   });
 });

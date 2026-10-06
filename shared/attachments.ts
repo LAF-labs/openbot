@@ -16,6 +16,15 @@
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
+ * The most the upload's BODY may be: the largest file, and room for the multipart envelope around
+ * it. Said here because two places on the server have to agree on it — the upload door's own
+ * ceiling (`attachments/routes.ts`) and the server's table of doors allowed a body past its
+ * megabyte (`middleware/security.ts`). Until 2026-10-06 the table did not name the door at all, so
+ * the megabyte refused every file over a megabyte before the door's ten were ever asked.
+ */
+export const ATTACHMENT_UPLOAD_MAX_BYTES = ATTACHMENT_MAX_BYTES + 256 * 1024;
+
+/**
  * The most a photo may be once it reaches the server. The surface shrinks every photo it can decode
  * to a JPEG of at most `IMAGE_LONG_EDGE` pixels first — typically a few hundred kilobytes — because
  * a photo rides along in every later turn of the conversation, and a phone's 12 MB original would be

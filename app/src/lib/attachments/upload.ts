@@ -84,6 +84,9 @@ export function refusalBeforeUpload(
 export function uploadRefusalText(code: unknown): string {
   switch (code) {
     case "laf:attachment_too_large":
+    // The server's own body limit, in front of the upload door: on this door a body too large is a
+    // file too large. Without it the person was told to try again, which could never work.
+    case "laf:body_too_large":
       return t("This file is too large. Files up to 10 MB can be attached.");
     case "laf:attachment_type_unsupported":
       return t(

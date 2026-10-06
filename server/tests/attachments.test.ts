@@ -1,18 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import type { MiddlewareHandler } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import * as XLSX from "xlsx";
-import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
-import { documentAttachmentText } from "../../shared/prompt/attachments.ko";
 import {
-  expandAttachments,
-  withAttachments,
-} from "../src/attachments/for-model";
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_UPLOAD_MAX_BYTES,
+} from "../../shared/attachments";
+import { documentAttachmentText } from "../../shared/prompt/attachments.ko";
 import { readPdf, readSheets, SUMMARY_CHARS } from "../src/attachments/extract";
 import {
   detectAttachmentType,
   safeAttachmentName,
   workspacePathFor,
 } from "../src/attachments/files";
+import {
+  expandAttachments,
+  withAttachments,
+} from "../src/attachments/for-model";
 import { createAttachmentRoutes } from "../src/attachments/routes";
 import type {
   AttachmentForModel,
@@ -20,6 +23,10 @@ import type {
 } from "../src/attachments/service";
 import type { AppVariables } from "../src/auth/guards";
 import type { AgentChannel } from "../src/channels/types";
+import {
+  BODY_LIMIT_BYTES,
+  createSecurityMiddleware,
+} from "../src/middleware/security";
 
 /**
  * Files the owner hands their Bot: what they are, what they may be called, what the model reads for
@@ -458,6 +465,68 @@ describe("the two doors", () => {
     );
     expect(response.status).toBe(413);
     expect(kept.length).toBe(before);
+  });
+
+  /*
+   * THE DOOR WHERE IT STANDS: BEHIND THE SERVER'S OWN BODY LIMIT (`app.ts` mounts the security
+   * middleware first). MEASURED 2026-10-06, in the app: a 1.6 MB sheet was refused with
+   * `laf:body_too_large` — the megabyte every door has unless the middleware's table names it — and
+   * the composer said "다시 시도해 주세요" under a picker that says ten megabytes. Every test above
+   * asks the door alone, and the middleware's tests ask the middleware alone.
+   */
+  test("behind the server's body limit, a sheet over a megabyte lands — and one over the door's ceiling is stopped before the service sees it", async () => {
+    const behind = new Hono();
+    behind.use("*", createSecurityMiddleware());
+    behind.route("/api/channels", routes);
+    // As a browser sends it: a multipart body that declares its length.
+    const send = async (fileBytes: number) => {
+      const form = new FormData();
+      form.append(
+        "file",
+        new File([new Uint8Array(fileBytes).fill(0x61)], "매출.csv", {
+          type: "text/csv",
+        }),
+      );
+      const built = new Request("http://laf.local/", {
+        method: "POST",
+        body: form,
+      });
+      // The type is read BEFORE the body: read after it, Bun writes the header with a boundary the
+      // body does not have, and the door finds no file in what it was sent.
+      const type = built.headers.get("content-type") ?? "";
+      const body = new Uint8Array(await built.arrayBuffer());
+      const response = await behind.request(
+        "/api/channels/channel-1/attachments",
+        {
+          method: "POST",
+          headers: {
+            "content-type": type,
+            "content-length": String(body.byteLength),
+          },
+          body,
+        },
+      );
+      return { response, sent: body.byteLength };
+    };
+
+    const before = kept.length;
+    const over = BODY_LIMIT_BYTES + 600_000;
+    const landed = await send(over);
+    expect(landed.sent).toBeGreaterThan(BODY_LIMIT_BYTES);
+    expect(landed.response.status).toBe(201);
+    expect(kept.length).toBe(before + 1);
+    expect(
+      (await landed.response.json()) as { attachment: { bytes: number } },
+    ).toMatchObject({ attachment: { bytes: over } });
+
+    // The largest file the picker allows still fits, envelope and all.
+    const largest = await send(ATTACHMENT_MAX_BYTES);
+    expect(largest.sent).toBeLessThanOrEqual(ATTACHMENT_UPLOAD_MAX_BYTES);
+    expect(largest.response.status).toBe(201);
+
+    const tooLarge = await send(ATTACHMENT_MAX_BYTES + 512 * 1024);
+    expect(tooLarge.response.status).toBe(413);
+    expect(kept.length).toBe(before + 2);
   });
 
   test("a document goes back as a download that cannot run, under its Korean name", async () => {
