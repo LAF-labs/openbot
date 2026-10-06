@@ -44,10 +44,16 @@ jobs:
         with:
           persist-credentials: false
 
-      # THE KEY DECIDES WHETHER THIS RUNS AT ALL, and it is checked first so a fork or a repository
-      # that has not been given one reports "not configured" in one green step rather than fifteen
+      # THE KEY DECIDES WHETHER THIS RUNS AT ALL, and it is checked first so a FORK, which has no
+      # key and cannot be given one, reports "not configured" in one green step rather than fifteen
       # minutes of container builds ending in a red cross nobody can act on. The secret is
       # referenced, never created here.
+      #
+      # IN THIS REPOSITORY A MISSING KEY IS A FAILURE. Measured 2026-10-06: the secret had been
+      # absent since 2026-09-28, and for eight nights this job skipped every step below and
+      # reported success — the one end-to-end check of a deployment, green by not running, which is
+      # exactly what it exists to prevent ("say only what you measured"). Nobody was told, because
+      # nothing was red. Where the job is meant to run, not being able to run is the news.
       - name: Is a model key configured
         id: key
         env:
@@ -55,6 +61,9 @@ jobs:
         run: |
           if [ -n "$OPENAI_API_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REPOSITORY" = "LAF-labs/openbot" ]; then
+            echo "::error title=Smoke did not run::No OPENAI_API_KEY secret is set in this repository, so the nightly journey ran nothing. Add the secret (Settings, Secrets and variables, Actions) and run this workflow again."
+            exit 1
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Smoke skipped::No OPENAI_API_KEY secret is set, so the model half of the journey cannot run and the rest is not worth the build. Add the secret to enable this job."
