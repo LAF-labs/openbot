@@ -30,6 +30,8 @@ import {
   CustomServerRefusedError,
   iso,
   type PluginContext,
+  REVIEW_APPEARED,
+  REVIEW_CHANGED,
   type ServerRecord,
 } from "./store";
 import { definitionsShipWithThisBuild } from "./transport";
@@ -385,7 +387,7 @@ export function createServers(
             annotations: tool.annotations,
             definitionHash: hash,
             needsReview,
-            reviewReason: needsReview ? "appeared after registration" : null,
+            reviewReason: needsReview ? REVIEW_APPEARED : null,
           });
           if (needsReview) {
             await recordAuditEvent(auditStore, {
@@ -446,8 +448,23 @@ export function createServers(
             inputSchema: tool.inputSchema,
             annotations: tool.annotations,
             definitionHash: hash,
+            /*
+             * A TOOL NOBODY CONSENTED TO STAYS ONE, HOWEVER OFTEN IT CHANGES. This wrote "definition
+             * changed" over "appeared after registration" the second time a vendor touched a tool
+             * still waiting for its first review — and the two reasons are different promises
+             * (`REVIEW_APPEARED`, `store.ts`): a changed tool's NAME was consented to and is still
+             * offered to a model, a tool that appeared has had nothing consented to and is not. So
+             * a vendor could have had a never-reviewed name put in front of the model by changing
+             * its description once. The reason is given up only by an approval.
+             */
             ...(changed
-              ? { needsReview: true, reviewReason: "definition changed" }
+              ? {
+                  needsReview: true,
+                  reviewReason:
+                    known.needsReview && known.reviewReason === REVIEW_APPEARED
+                      ? REVIEW_APPEARED
+                      : REVIEW_CHANGED,
+                }
               : {}),
           })
           .where(
