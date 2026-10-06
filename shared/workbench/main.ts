@@ -17,7 +17,6 @@
  */
 import { dirname } from "node:path";
 import { createLogger, reportCrashes } from "../log";
-import { residentBytes } from "../resident-bytes";
 import {
   DaemonStartError,
   type QuitReason,
@@ -33,6 +32,7 @@ import {
   otherProcesses,
   ptraceScope,
   readSandboxFacts,
+  residentBytesOf,
   sandboxProblems,
 } from "./sweep";
 import { makeUndumpable } from "./undumpable";
@@ -53,7 +53,7 @@ const SCRATCH = ["/dev/shm", "/dev/mqueue"];
  */
 async function residentBytesOfTheRun(): Promise<number> {
   let total = 0;
-  for (const pid of otherProcesses()) total += (await residentBytes(pid)) ?? 0;
+  for (const pid of otherProcesses()) total += residentBytesOf(pid);
   return total;
 }
 

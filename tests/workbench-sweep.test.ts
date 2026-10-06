@@ -17,17 +17,26 @@
  * make it: in the service's container on Linux (`scripts/workbench-probe.ts`).
  */
 import { expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { Glob } from "bun";
 import {
+  otherProcesses,
   readSandboxFacts,
+  residentBytesOf,
   SANDBOX_UID,
   type SandboxFacts,
   SweepIncompleteError,
   SweepRefusedError,
   sandboxProblems,
+  stateIn,
   sweepWith,
 } from "../shared/workbench/sweep";
 
@@ -321,3 +330,63 @@ test("the daemon closes its own memory where there is a kernel to ask, and says 
     expect(measured).toMatchObject({ before: false, said: true, after: true });
   }
 });
+
+test("a state is the field after the LAST closing bracket: a name may hold brackets and spaces of its own", () => {
+  expect(stateIn("42 (bun) S 1 42 42 0 -1")).toBe("S");
+  expect(stateIn("42 (a) b) c) Z 1 42")).toBe("Z");
+  expect(stateIn("7 (sleep 600 (x)) R 1")).toBe("R");
+  expect(stateIn("")).toBe("");
+});
+
+/*
+ * A PROCESS WHOSE LEADER HAS EXITED WHILE A THREAD RUNS ON. Its own line in `/proc` reads `Z` and
+ * reports no memory; it is alive and holding whatever its threads hold. Read by its leader's
+ * letter alone, as it was until 2026-10-06, it was unseen by the check that nothing survived a
+ * sweep and by the watch on a run's memory — measured on the service itself: 623 MB held, the run
+ * never ended for it (the rehearsal's log has both the kernel's account and that run).
+ *
+ * Made here for real where there is a `/proc` to make it in: a child of this test whose main
+ * thread leaves by the THREAD's exit call with a worker still running. Only read after that, and
+ * ended by its own pid. Elsewhere there is nothing to read, and the test says so by its name.
+ */
+test.skipIf(process.platform !== "linux")(
+  "a process whose leader has exited but whose thread runs on is seen as running, and its memory is read",
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wb-led-"));
+    writeFileSync(
+      join(directory, "held.ts"),
+      "const held = new Uint8Array(48 * 1024 * 1024).fill(1); setInterval(() => held[0], 1000);",
+    );
+    writeFileSync(
+      join(directory, "leader.ts"),
+      [
+        'import { dlopen } from "bun:ffi";',
+        'new Worker(new URL("./held.ts", import.meta.url).href);',
+        "await Bun.sleep(500);",
+        // The exit of the calling THREAD, not of the process: 93 on arm64, 60 on x86-64.
+        'dlopen("libc.so.6", { syscall: { args: ["i64", "i64"], returns: "i64" } }).symbols.syscall(process.arch === "arm64" ? 93 : 60, 0);',
+      ].join("\n"),
+    );
+    const child = Bun.spawn(
+      [process.execPath, "--no-env-file", join(directory, "leader.ts")],
+      { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
+    );
+    try {
+      const leader = () =>
+        stateIn(readFileSync(`/proc/${child.pid}/stat`, "utf8"));
+      const deadline = Date.now() + 10_000;
+      while (leader() !== "Z" && Date.now() < deadline) await Bun.sleep(50);
+      // The kernel's own word for it: dead, by its leader's line.
+      expect(leader()).toBe("Z");
+      expect(readFileSync(`/proc/${child.pid}/status`, "utf8")).not.toContain(
+        "VmRSS",
+      );
+      // And what this file now says of it: running, and holding what its worker holds.
+      expect(otherProcesses()).toContain(child.pid);
+      expect(residentBytesOf(child.pid)).toBeGreaterThan(48 * 1024 * 1024);
+    } finally {
+      process.kill(child.pid, "SIGKILL");
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
