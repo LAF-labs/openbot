@@ -2,7 +2,7 @@
 
 # LAF Agent
 
-**Bots you can hand real work to, and actually trust with the access.** Each one starts knowing nothing and becomes whatever you tell it. It works on a real browser with your logins, and every action it takes is decided before it happens and recorded after.
+**A Bot you can hand real work to, and actually trust with the access.** It starts knowing nothing and becomes whatever you tell it. It works on a real browser with your logins, and every action it takes is decided before it happens and recorded after.
 
 [**Quick start**](#quick-start) · [**What we changed**](#what-we-changed) · [**Features**](#features) · [**Architecture**](#architecture) · [**Docs**](docs/README.md)
 
@@ -14,12 +14,13 @@
 
 <div align="center">
 
-Make a Bot with nothing but a name, tell it what you want, and it writes down
-what it is for. Watch it work on its own screen, take the wheel when it reaches
-something it should not do alone, then hand it back — or show it how the task is
-done once, and keep that as something you can ask for by name.
+Give your Bot a name, tell it what you want, and it writes down what it is for.
+Watch it work on its own screen, take the wheel when it reaches something it
+should not do alone, then hand it back — or show it how the task is done once,
+and keep that as something you can ask for by name.
 
-Korean first, for the people who run a shop rather than a codebase.
+Korean first, for people who do not write software: students, office workers,
+people who run a small business, and anyone else.
 
 </div>
 
@@ -30,14 +31,16 @@ Korean first, for the people who run a shop rather than a codebase.
 ## What it is
 
 A Bot is a colleague you can hand a job to. It drives a real browser with your
-logins in it, and it can read and write files.
+logins in it, reads the files you give it, looks things up, and keeps a notebook
+of what you told it.
 
-**One VM per person, one computer on it.** However many Bots you make, they share
-that computer — its files, its logins, its browser sessions — and nobody else's
-Bots are on it. The Bots share one browser profile inside it, and the thing
-that keeps a Bot in bounds is the gateway in front of the computer, not a
-separate computer. That decision shapes the code, and it is written down in
-[`docs/laf/deployment-model.md`](docs/laf/deployment-model.md).
+**One VM per person, and one Bot on it.** The Bot's profile is a name and a
+face; everything else — what it is for included — is settled by talking to it.
+The computer, its files, its logins and its browser sessions are that person's
+and nobody else's, and the thing that keeps the Bot in bounds is the gateway in
+front of the computer. That decision shapes the code, and it is written down in
+[`docs/laf/deployment-model.md`](docs/laf/deployment-model.md). (An account made
+before 2026-09-24 that had several Bots keeps them, sharing that one computer.)
 
 **It is an app you install.** The engine runs on the VM and
 [`desktop/`](desktop/) is a Tauri window onto it, holding no product logic of its
@@ -45,14 +48,20 @@ own. The order is the PC app first, then mobile, then the browser as a bonus on
 top — the SPA being same-origin is how one codebase reaches all three, not
 evidence that the browser comes first.
 
-**A Bot starts blank.** No personas ship in the box. You make one with a name,
-and either say what it is for or leave it to ask you itself. Up to five.
+**One conversation, and the server runs it.** A turn belongs to the server, not
+to the window: close the app mid-answer and the Bot goes on, and every window
+you open only watches. The conversation is one for life; at the end of each day
+the request behind it is cut to a summary, so it stays about a day long.
+
+**It asks who you are, once, and treats the answer as a hint.** 학생, 직장인,
+사장님 or 기타 orders the suggestions and sets how the Bot addresses you. It
+never hides a screen or a feature.
 
 **You do not choose a model.** The deployment serves one. What you choose is how
-hard a Bot thinks before it answers — quick, balanced or thorough — because how
+hard the Bot thinks before it answers — quick, balanced or thorough — because how
 long you are willing to wait is a question only you can answer.
 
-Anything a Bot does to a browser, a file, an MCP server or a component goes
+Anything the Bot does to a browser, a file, an MCP server or a component goes
 through one gateway that decides it and records it. That is the difference
 between an agent that can use your tools and an agent you can let near them.
 
@@ -63,15 +72,21 @@ architecture, kept and still running.
 
 | | |
 | --- | --- |
-| **Blank Bots, and onboarding** | No shipped personas. A first run that ends with one Bot of your own. Five per person. |
+| **A blank Bot, and onboarding** | No shipped personas. A first run that ends with one Bot of your own, and one question about who you are that only ever orders things. |
 | **A Bot shapes itself** | `update_profile` and `manage_routine` — it writes its own name, its job, how hard it thinks and the routines it runs, from inside the conversation. It cannot reach the rule that decides whether it gets asked about. |
-| **Suggestions, not a catalogue** | Thirty-two jobs to start from, dealt a handful at a time, one per kind of work. |
+| **The server owns the turn** | A conversation's turn runs on the server and every window watches it: a stop, a reload, a second device and a restart all find the same turn. |
+| **Suggestions, not a catalogue** | Jobs to start from, dealt a handful at a time and ordered by who you said you are. |
 | **Answering a boundary for good** | `Always allow`, scoped to a site, a file or a tool — and the scope is on the button, so what you agree to is what happens. |
 | **"Do not ask me about…"** | A sentence you write once; a model applies it to each stopped action. Everything it lets through is recorded as seen by nobody. |
 | **One switch over both** | A deployment can refuse to have its boundary settled without a person, and it covers both of the above. |
 | **Teaching by demonstration** | Do the task once in the Bot's browser. It is written up as a procedure you edit, name, and invoke with `/`. It never records what you typed. |
-| **Routines** | An instruction, a Bot and a clock. It runs with its tools, through the same gateway, and reports back into its own conversation. |
-| **Connected as the person asking** | Notion, Google Drive, Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, each person consenting for themselves, so two people asking the same question get the answers their own accounts can see. |
+| **Routines, 소식 and 목표** | An instruction and a clock. A routine runs with the Bot's tools, through the same gateway, and reports into the conversation or onto 소식; a goal is something a routine keeps checking. |
+| **Files in, files out** | Attach a sheet, a PDF or a photo up to 10 MB and the Bot reads it; what it makes is handed back on a card and kept on 만든 것. |
+| **Looked up, not browsed** | The web, the weather (기상청, with its source said) and public notices come back in a second through tools on the deployment's own keys, instead of minutes in a browser. Where it is sure what a message wants — today's weather, schedule or new mail — the server fetches it before the model is asked. |
+| **Connected as the person asking** | Notion, Canva, Google Drive, Google Sheets, Gmail, Google Calendar, Google Business Profile, Cafe24 and Kakao's PlayMCP, each person consenting for themselves, so the answers are the ones their own account can see. |
+| **A tool's words are consented to** | A vendor's tool whose description changes is paused until a person has read it. The adapters that ship in this repository are not a vendor's: their definitions arrive with the release and are recorded as that. |
+| **Where you are** | The place you said, else your device's (rounded to about a kilometre), else Seoul without asking — and the Bot's browser is told the same, so a site does not take the VM's address for yours. |
+| **It tells you when it is out of date** | An open window notices a newer build on the server and offers one press, never mid-turn. |
 | **Effort** | The one model setting, per Bot, carried into every run — chat and routines. |
 | **Korean first** | Every user-facing string, enforced by a test. |
 | **One VM per person** | The deployment decides the architecture, not the other way round. |
@@ -124,29 +139,35 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Try it
 
-- Make a Bot, then ask it: `Open news.ycombinator.com and tell me the top story.`
+- Ask your Bot: `Open news.ycombinator.com and tell me the top story.`
 - Ask it to fill out <https://httpbin.org/forms/post>, then inspect `/admin/audit`.
 - Open `/admin/boundaries`, add a deny rule or preset, and retry the same browser action.
+- Attach a spreadsheet and ask what is in it.
 - Give it a routine on `/routines` and press Run now.
 
 ## Main surfaces
 
 | Route                         | Purpose                                                                                |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `/welcome`                    | First run: it ends with one Bot of your own.                                            |
-| `/`                           | The roster, and the composer that starts a conversation with any of them.               |
-| `/agents`                     | Your Bots, and the button that makes a new one.                                         |
-| `/channel/new`                | Start a conversation, with one Bot or several.                                          |
-| `/channel/:id`                | Talk to a Bot, watch its screen, take the wheel, answer what it asks.                   |
-| `/skills`                     | Skills — including the ones recorded by showing a Bot how a task is done.               |
-| `/routines`                   | An instruction, a Bot and a clock. Create, enable, run now, and read what happened.     |
-| `/settings`                   | Your preferences.                                                                       |
-| `/settings/connected-accounts`| Connections: every service and site a Bot works with, switched on and off in one list.  |
+| `/welcome`                    | First run: who you are, and one Bot of your own.                                        |
+| `/`, `/channel/:id`           | The conversation: talk to the Bot, watch its screen, take the wheel, answer what it asks. |
+| `/feed`                       | 소식 — what the Bot's routines found worth telling you.                                  |
+| `/ideas`                      | 아이디어 — jobs to start from.                                                            |
+| `/goals`                      | 목표 — what you are working towards, and how it is going.                                 |
+| `/made`                       | 만든 것 — every file, chart and card the Bot has handed you.                              |
+| `/notebook`                   | 수첩 — what the Bot remembers about you, to read, correct and forget.                    |
+| `/skills`                     | Skills — including the ones recorded by showing the Bot how a task is done.             |
+| `/routines`                   | An instruction and a clock. Create, enable, run now, and read what happened.            |
+| `/approve/:id`                | One question from the Bot, answered from a notification.                                |
+| `/settings`                   | Your preferences, your account, your data (download it, delete it).                     |
+| `/settings/connected-accounts`| Connections: every service and site the Bot works with, switched on and off in one list. |
+| `/help`                       | Help, and a box that reaches the people who run the product.                            |
 | `/admin`                      | Where the operator surfaces below are listed.                                           |
 | `/admin/boundaries`           | Configure browser/file/MCP action policy.                                               |
 | `/admin/audit`                | Review permitted, refused, and failed actions.                                          |
 | `/admin/computers`            | View, stop, and reset computers.                                                        |
 | `/admin/credentials`          | Store write-only encrypted credentials.                                                 |
+| `/admin/bots`                 | A Bot answered by your own AG-UI endpoint.                                              |
 | `/admin/components`           | Publish components and govern which Bots may use them.                                  |
 | `/admin/playground`           | Draft and publish sandboxed components in the browser.                                  |
 | `/admin/plugins`              | Configure MCP servers, MCP grants, and deployment skills.                                |
@@ -154,17 +175,18 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Features
 
-- **One computer per account**: every Bot you make shares your computer — files, logins and browser sessions carry from one Bot to the next. Bots are not a security boundary; the gateway in front of the computer is.
+- **One computer per account**: the Bot works on your computer — its files, its logins, its browser sessions. On an older account with several Bots they all share it; Bots are not a security boundary, the gateway in front of the computer is.
 - **The gateway is the only way in**: it resolves the target from a server-held snapshot, evaluates the policy, writes the audit row, and only then calls the computer. There is no path that acts without the record existing first.
 - **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `submit`, `file.*`, `mcp.*` and `repeat.count`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
 - **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
-- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, plus 카카오 알림톡 and 나라장터·기업마당 on an account or key the fleet holds. For the first seven, each person consents for themselves and calls run on their own grant, so two people asking the same question get the answers their own accounts can see. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
+- **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, Canva and Kakao's PlayMCP (hosted MCP), plus 카카오 알림톡, 나라장터·기업마당, web search and the weather (기상청) on an account or key the fleet holds. For the ones a person connects, each person consents for themselves and calls run on their own grant, so the answers are the ones their own account can see. A vendor's tool whose definition changes is paused until a person has read it; the adapters in this repository are taken as the release ships them and recorded as that. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
 - **Show it once**: drive the Bot's browser through a task yourself and the demonstration is written up as a procedure you edit, name and invoke with `/`. The recorder keeps that typing happened and into which field — never a value, passwords included, and a test serialises the whole record to prove it.
-- **Routines run on the server**: a routine fires on its clock with the Bot's tools underneath the same gateway, so closing the window does not end it.
+- **Turns and routines run on the server**: a conversation's turn belongs to the server and every window watches it; a routine fires on its clock with the Bot's tools underneath the same gateway. Closing the window ends neither.
+- **Files**: a sheet, a PDF or a photo up to 10 MB is read once when it arrives and kept with the conversation; what the Bot makes is handed back on a card.
 - **An audit trail you can read**: `/admin/audit` lists what was permitted, what was refused and what failed, and every refusal carries the rule that caused it.
 - **Credentials encrypted at rest**: stored through `/admin/credentials`, never returned by an API, and redacted from audit events.
 - **Loopback by default**: computers bind to `127.0.0.1` and require a per-container token, so nothing reaches a logged-in browser by knowing its port.
@@ -174,7 +196,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 Any AG-UI endpoint can be a Bot.
 
-The server validates agent endpoints with the same target checks used for browser navigation. If no custom endpoint is set, product-created coworkers use `MANAGED_AGENT_AG_UI_URL`.
+The server validates agent endpoints with the same target checks used for browser navigation. The Bot a person makes runs on `MANAGED_AGENT_AG_UI_URL` (`agent-bot`); an administrator can point one at an endpoint of their own from `/admin/bots`.
 
 See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](docs/laf/coworkers.md).
 
@@ -212,7 +234,7 @@ Full reference — every variable the code actually reads, and nothing it does n
 | Service                  | Port                       | Purpose                                                                                          |
 | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------ |
 | `app`                    | 3010                       | React/Vite UI.                                                                                   |
-| `server`                 | 3001                       | Hono API, CopilotKit runtime, auth, policy, audit, plugins, components, coworkers, and channels. |
+| `server`                 | 3001                       | Hono API, the turn engine, auth, policy, audit, plugins, components, Bots and conversations.     |
 | `agent-computer`         | 4100                       | Chromium plus `/workspace` and browser profile.                                                  |
 | `agent-bot`              | 4200                       | The AG-UI endpoint every Bot a person creates runs on.                                           |
 | PostgreSQL 17            | 5432                       | Product data, threads, memory, policy, audit, credentials, grants, channels, and routines.      |
@@ -298,14 +320,13 @@ fork keeps: AG-UI Bots, one governed gateway, an audit row for everything.
 Two other products were read closely and are credited where they were followed, in the commits and
 in the comments:
 
-- **xAI's Grok Bot** — the one-VM-per-account shape, and the shape of group rooms. A room's turn
-  running on the server rather than in the browser, with a Bot answering out of its own
-  conversation, is ported from Grok Bot 0.24 rather than invented; so are the notification rules,
-  which were read out of its shipped bundle and copied rather than re-derived, so that mute, hidden
-  and throttle are written once and cannot drift apart.
-- **Nous Research's Hermes Bot Mode** (`hermes-agent` 0.21.0) — a handoff landing in the answering
-  Bot's own conversation, "durable and inspectable, not fire-and-forget", rather than only in the
-  caller's window and one audit row. And the unhide affordance on the roster.
+- **xAI's Grok Bot** — the one-VM-per-account shape, and the notification rules, which were read
+  out of its shipped bundle and copied rather than re-derived, so that mute, hidden and throttle are
+  written once and cannot drift apart. (Group rooms, whose turn ran on the server the way its did,
+  were removed on 2026-09-24; a one-to-one turn runs on the server now for reasons of its own.)
+- **Nous Research's Hermes Agent** — one chat for life with the session behind it cut each day
+  (`server/src/context/day-close.ts`), and the shape of a routine's prompt. (A handoff between Bots
+  that landed in the answering Bot's own conversation followed its Bot Mode, and went with the rooms.)
 
 No code was taken from either. What was taken was a decision each of them had already made well,
 measured against what was here before it was adopted. Bot avatars used to be third-party character
