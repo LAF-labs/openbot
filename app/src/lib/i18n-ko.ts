@@ -1787,6 +1787,8 @@ export const ko: Record<string, string> = {
   // 자격증명
   retired: "폐기됨",
   "in use": "사용 중",
+  // A key kept for a Bot's own server, on a deployment where every Bot runs on this one.
+  "not used here": "여기서는 쓰지 않음",
   // 플레이그라운드
   "Publishing…": "게시하는 중…",
   "What is saved here could not be read.": "여기 저장된 것을 읽지 못했어요.",

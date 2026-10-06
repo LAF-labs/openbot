@@ -74,8 +74,42 @@ const serverThat =
         ],
       });
     }
+    if (pathname === "/api/admin/credentials") {
+      return json({ credentials: KEYS });
+    }
     return undefined;
   };
+
+/**
+ * What the vault holds, as the credentials page is told: a key somebody stored for a Bot's own
+ * server while that was taken, one for a Bot's server that was since retired, and a model's key.
+ */
+const KEYS = [
+  {
+    id: "credential-agent",
+    kind: "agent",
+    provider: "ag-ui",
+    keyId: BOT,
+    metadata: { header: "Authorization" },
+    revokedAt: null,
+  },
+  {
+    id: "credential-agent-retired",
+    kind: "agent",
+    provider: "ag-ui",
+    keyId: "agent_retired",
+    metadata: { header: "Authorization" },
+    revokedAt: "2026-10-01T00:00:00.000Z",
+  },
+  {
+    id: "credential-model",
+    kind: "model",
+    provider: "openrouter",
+    keyId: "default",
+    metadata: {},
+    revokedAt: null,
+  },
+];
 
 /**
  * Where the links on screen that lead to a page go — as strings. Never the elements themselves: a
@@ -194,6 +228,72 @@ describe("the endpoints page, on a developer's stack", () => {
           button.textContent?.trim(),
         ),
       ).toEqual(["Test", "Save"]);
+    } finally {
+      await view.unmount();
+    }
+  });
+});
+
+/*
+ * THE ONE PLACE A STORED KEY CAN STILL BE REMOVED, AND IT SAID "IN USE" (the independent read of
+ * #121). `/admin/credentials` lists a key stored for a Bot's own server as `agent · <bot id> · in
+ * use`, with Revoke. On a hosted deployment nothing reads that key: the Bot is dialled at the
+ * deployment's own agent and the vault is not asked. The row has to stay — it is how the person
+ * takes the key back — so the words are made true instead: not used here.
+ */
+describe("a key stored for a Bot's own server, on the credentials page", () => {
+  /** Each row as a person reads it: the line under the provider, and whether Revoke can be pressed. */
+  const rowsOf = (main: Element | null) =>
+    [...(main?.querySelectorAll('[data-slot="item-content"]') ?? [])].map(
+      (content) => ({
+        line: content
+          .querySelector('[data-slot="item-description"]')
+          ?.textContent?.replace(/\s+/g, " ")
+          .trim(),
+        revocable:
+          content.parentElement?.querySelector("button")?.disabled === false,
+      }),
+    );
+  const drawn = async (botEndpoints: boolean | undefined) => {
+    const view = await mountApp({
+      path: "/admin/credentials",
+      role: "admin",
+      api: serverThat(botEndpoints),
+    });
+    await view.waitFor(
+      () => rowsOf(view.main()).length === KEYS.length,
+      "the three keys",
+    );
+    return view;
+  };
+
+  test("is not said to be in use where nothing reads it — and can still be revoked there", async () => {
+    for (const botEndpoints of [false, undefined]) {
+      const view = await drawn(botEndpoints);
+      try {
+        expect(rowsOf(view.main())).toEqual([
+          { line: `agent · ${BOT} · not used here`, revocable: true },
+          // A retired key is retired, whatever it was for.
+          { line: "agent · agent_retired · retired", revocable: false },
+          // And every other kind of key is what it was: this deployment does read those.
+          { line: "model · default · in use", revocable: true },
+        ]);
+      } finally {
+        await view.unmount();
+      }
+    }
+    // Said in Korean, beside 사용 중 and 폐기됨.
+    expect(ko["not used here"]).toBe("여기서는 쓰지 않음");
+  });
+
+  test("is in use on a developer's stack, where a Bot is dialled with it", async () => {
+    const view = await drawn(true);
+    try {
+      expect(rowsOf(view.main())).toEqual([
+        { line: `agent · ${BOT} · in use`, revocable: true },
+        { line: "agent · agent_retired · retired", revocable: false },
+        { line: "model · default · in use", revocable: true },
+      ]);
     } finally {
       await view.unmount();
     }
