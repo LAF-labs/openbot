@@ -328,6 +328,12 @@ test("sets Postgres for a 6GB VM on SSD, and logs the slow statements", () => {
 test("gives every healthcheck a way to go red", () => {
   for (const [name, service] of Object.entries(parsedCompose.services)) {
     if (!service.healthcheck) continue;
+    // A check that is switched OFF has no dial to go red: the workbench has no process in its
+    // container but the daemon's and a script's, an image's healthcheck included.
+    if ((service.healthcheck as { disable?: boolean }).disable === true) {
+      expect(name).toBe("workbench");
+      continue;
+    }
     const command = service.healthcheck.test?.join(" ") ?? "";
     expect(
       /process\.exit\(r\.ok \? 0 : 1\)|^CMD-SHELL wget |^CMD-SHELL pg_isready /.test(
@@ -455,16 +461,34 @@ test("the workbench is behind a profile, walled, process 1 of a container that k
   // Everything a script writes is memory of this container's own, not executable, and few.
   expect(workbench.tmpfs).toEqual([
     "/work:size=96m,nr_inodes=4096,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev",
+    "/dev/shm:size=1m,nr_inodes=64,mode=1777,noexec,nosuid,nodev",
   ]);
-  expect(workbench.shm_size).toBe("1m");
+  // Its own /dev/shm above, so the engine's — sized by this key, with no bound on names — is not made.
+  expect(workbench.shm_size).toBeUndefined();
   expect(parsedCompose.volumes["workbench-socket"]).toEqual({
     driver: "local",
     driver_opts: {
       type: "tmpfs",
       device: "tmpfs",
-      o: "size=1m,mode=0700,uid=65534,gid=65534",
+      o: "size=1m,nr_inodes=64,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev",
     },
   });
+  // EVERY PLACE A SCRIPT CAN WRITE IS HELD THE SAME WAY (the independent read, 2026-10-06: the two
+  // small ones were a size and nothing else, so a program ran from them and names were unbounded).
+  for (const mount of [
+    ...(workbench.tmpfs as string[]),
+    (
+      parsedCompose.volumes["workbench-socket"] as {
+        driver_opts: { o: string };
+      }
+    ).driver_opts.o,
+  ]) {
+    for (const held of ["noexec", "nosuid", "nodev", "size=", "nr_inodes="]) {
+      expect(mount, mount).toContain(held);
+    }
+  }
+  // No process but the daemon's and a script's: whatever image this is, its healthcheck is off.
+  expect(workbench.healthcheck).toEqual({ disable: true });
   // No swap: the daemon bounds a run by what it holds resident, and cannot see what was swapped out.
   expect(workbench.memswap_limit).toBe(workbench.mem_limit);
   expect(workbench.mem_limit).toBe("768m");

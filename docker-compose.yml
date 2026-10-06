@@ -660,7 +660,9 @@ services:
   #     server handed over and hands back the bytes it made (shared/workbench/protocol.ts). The Bot's
   #     folder is not mounted, so there is nothing here to damage and nowhere for a file to go.
   #   - EVERYTHING IT WRITES IS MEMORY. /work is a tmpfs of this container's own, gone with it; the
-  #     socket's volume and /dev/shm are a megabyte each and emptied after every run.
+  #     socket's volume and /dev/shm are a megabyte and sixty-four names each. None of the three is
+  #     executable, and all are emptied after every run — and the socket's, which outlives the
+  #     container, again before a daemon binds.
   #   - THE DAEMON IS PROCESS 1 — no `init:` here, on purpose. A script runs as the daemon's own
   #     user and may signal it; process 1 is the one process its own namespace cannot stop or kill.
   #     After every run the daemon ends every other process in the container (shared/workbench/sweep.ts).
@@ -701,7 +703,15 @@ services:
       # may not start it. 4,096 names is thousands more than a run needs and far fewer than it
       # takes to hold the daemon up clearing them.
       - /work:size=96m,nr_inodes=4096,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev
-    shm_size: 1m
+      # /dev/shm, in place of the one the engine would mount: a megabyte, and sixty-four names. The
+      # engine's own has no bound on names, and an empty name costs nothing against a size — a
+      # script could leave half a million of them for the daemon to remove one by one.
+      - /dev/shm:size=1m,nr_inodes=64,mode=1777,noexec,nosuid,nodev
+    # Whatever image this runs from, no check of that image's runs in here: a healthcheck is a
+    # process the engine starts inside the container on a timer, and the sweep ends every process
+    # there is. The server's image has none; the computer's has one.
+    healthcheck:
+      disable: true
     volumes:
       - workbench-socket:/run/laf-workbench
     logging: *logging
@@ -733,7 +743,7 @@ volumes:
     driver_opts:
       type: tmpfs
       device: tmpfs
-      o: "size=1m,mode=0700,uid=65534,gid=65534"
+      o: "size=1m,nr_inodes=64,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev"
 
 networks:
   # Every service but the computer, as it always was.
