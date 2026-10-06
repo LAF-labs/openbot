@@ -460,14 +460,25 @@ export function createSkillsAndGrants(context: PluginContext) {
      *    of the pause today; a call is still refused by `call.ts`, with its row and its sentence.
      *  - It APPEARED after registration, or waits for any reason this build does not know: it is
      *    not offered at all. Nobody consented to its name, and a name is a vendor's text too — it
-     *    stands in every turn's context and is what a lookup matches first.
+     *    stands in every turn's context and is what a lookup matches first. It is COUNTED, by its
+     *    server, so the Bot can say that something waits and where a person reviews it
+     *    (`OfferedPlugins.withheld`) — a number of this deployment's, off the same rows.
      *
      * The description and the schema are the whole of what a row gives a model: this shape has
      * never carried a vendor's annotations.
      */
     async offeredToModel(agentId: string): Promise<OfferedPlugins> {
       const { toolRows, skills: held } = await heldBy(agentId);
+      const unoffered = new Map<string, number>();
+      for (const row of toolRows) {
+        if (!row.needsReview || row.reviewReason === REVIEW_CHANGED) continue;
+        unoffered.set(row.serverId, (unoffered.get(row.serverId) ?? 0) + 1);
+      }
+      const withheld = [...unoffered.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([server, count]) => ({ server, count }));
       return {
+        ...(withheld.length > 0 ? { withheld } : {}),
         tools: toolRows.flatMap((row) => {
           const ref = `${row.serverId}/${row.name}`;
           if (!row.needsReview) {

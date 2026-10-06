@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { BASE_KO } from "../shared/prompt";
 import { TOOL_RESULT_KO } from "../shared/prompt/tool-results.ko";
-import { PAUSED_TOOL_DESCRIPTION } from "../shared/tools/paused";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  withheldToolsText,
+} from "../shared/tools/paused";
 
 /**
  * THE BOT'S WORDS TO A SHOP OWNER — what the prompt says about them.
@@ -139,5 +142,36 @@ describe("the description a tool waiting for review is offered under", () => {
     }
     // And no slot for anybody else's text: no brace, no quote, nothing interpolated.
     expect(PAUSED_TOOL_DESCRIPTION).not.toMatch(/[{}$`"'<>]/);
+  });
+
+  /*
+   * THE OTHER HALF (the review of that change). A tool that appeared after registration is offered
+   * under no name at all, so there is no description to stand in — and nothing told the Bot it
+   * existed. A lookup now ends on this line: how many wait, by service, and where a person reviews
+   * them. The one slot is the bridge's own list of services and counts (`withheldLines`,
+   * `shared/tools/bridge.ts`); a tool's name and a vendor's word have no way into it.
+   */
+  test("and the line a lookup says of the tools offered under no name: how many, that looking or connecting again will not bring them, and where they are reviewed", () => {
+    const line = withheldToolsText("카카오(kakao-playmcp) 2개");
+    // Pinned whole, around the one slot: a change to what a Bot is told to say is a decision.
+    expect(line).toBe(
+      "다만 검토를 기다리고 있어 어느 목록에도 없는 도구: 카카오(kakao-playmcp) 2개. 다시 찾아도, 다시 연결해도 나오지 않는다 — " +
+        "이 가운데 하나가 필요한 일이면 그 서비스의 도구가 검토를 기다리는 중이라고 알리고, 관리 메뉴의 플러그인 화면에서 검토해 달라고 말한다.",
+    );
+    // The same screen, in the same words, as the description above names it.
+    expect(line).toContain("관리 메뉴의 플러그인 화면에서");
+    expect(PAUSED_TOOL_DESCRIPTION).toContain("관리 메뉴의 플러그인 화면에서");
+    // Around the slot it is the same sentence whatever is counted, and it names nobody.
+    const around = withheldToolsText("");
+    expect(withheldToolsText("acme-desk 1개")).toBe(
+      line.replace("카카오(kakao-playmcp) 2개", "acme-desk 1개"),
+    );
+    expect(around).not.toContain("사람");
+    expect(around).not.toContain("사장님");
+    expect(around).not.toContain("가게");
+    for (const word of ["ref", "스냅샷", "요소", "작업 공간", "배포"]) {
+      expect([word, around.includes(word)]).toEqual([word, false]);
+    }
+    expect(around).not.toMatch(/[{}$`"'<>]/);
   });
 });

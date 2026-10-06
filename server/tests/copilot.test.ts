@@ -764,6 +764,12 @@ describe("a remote Bot's run", () => {
   async function bodySentBy(
     supportsEffort: boolean,
     props: Record<string, unknown> = {},
+    /** The run's tools, where a case reads what the prompt says of them. */
+    tools?: readonly {
+      name: string;
+      description: string;
+      parameters: object;
+    }[],
   ): Promise<Record<string, unknown>> {
     let sent: Record<string, unknown> = {};
     const recordingFetch = async (_url: unknown, init?: { body?: unknown }) => {
@@ -792,6 +798,7 @@ describe("a remote Bot's run", () => {
           // Not the Bot's own effort: what a caller forwarded, which must survive.
           forwardedProps: props,
           messages: [{ id: "m1", role: "user", content: "안녕" }],
+          ...(tools ? { tools } : {}),
         } as never)
         .catch(() => {});
     } finally {
@@ -814,6 +821,47 @@ describe("a remote Bot's run", () => {
       .forwardedProps as Record<string, unknown>;
     expect(forwarded.threadName).toBe("Q3");
     expect(forwarded.effort).toBe("thorough");
+  });
+
+  /*
+   * WHAT A LISTING COUNTED AND COULD NOT LIST (`OfferedPlugins.withheld`) RIDES THROUGH HERE AS A
+   * FORWARDED PROP, AND IS NOT PART OF THE HEAD. A tool waiting for review under no name is in no
+   * list, so the count travels beside the list for a lookup to say (`shared/tools/paused.ts`). The
+   * tools and the prompt are the head of every request — a byte of either moving re-bills the
+   * conversation — so this holds that the prop reaches the endpoint and that neither moved.
+   */
+  test("the count of tools waiting for review reaches the endpoint as it was forwarded, and the prompt and the tools are the same bytes with it or without", async () => {
+    const tools = [
+      {
+        name: "computer_navigate",
+        description: "go",
+        parameters: { type: "object", properties: {} },
+      },
+      {
+        name: "mcp__gmail__search_messages",
+        description: "메일을 찾는다",
+        parameters: { type: "object", properties: {} },
+      },
+    ];
+    const waiting = [{ server: "kakao-playmcp", count: 2 }];
+    const withIt = await bodySentBy(true, { toolsWithheld: waiting }, tools);
+    const without = await bodySentBy(true, {}, tools);
+    expect(
+      (withIt.forwardedProps as Record<string, unknown>).toolsWithheld,
+    ).toEqual(waiting);
+    expect(
+      (without.forwardedProps as Record<string, unknown>).toolsWithheld,
+    ).toBeUndefined();
+    expect(JSON.stringify(withIt.messages)).toBe(
+      JSON.stringify(without.messages),
+    );
+    expect(JSON.stringify(withIt.tools)).toBe(JSON.stringify(without.tools));
+    // Not vacuous: the prompt is there and names what stands behind the bridge — and holds
+    // nothing of what was counted.
+    const prompt = JSON.stringify(withIt.messages);
+    expect(prompt).toContain("mcp__gmail__search_messages");
+    expect(prompt).not.toContain("kakao-playmcp");
+    expect(prompt).not.toContain("검토를 기다리고");
   });
 
   test("sends none where the deployment's model takes none", async () => {

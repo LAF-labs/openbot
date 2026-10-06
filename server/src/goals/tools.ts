@@ -346,6 +346,8 @@ export function withGoal(
   });
   const offered = goals.tools.find((tool) => tool.name === LOG_PROGRESS);
   return {
+    // Whatever else the toolkit says of itself goes on as it came (`UnattendedToolkit.withheld`).
+    ...toolkit,
     tools: offered ? [...toolkit.tools, offered] : toolkit.tools,
     execute: async (name, args, call) =>
       name === LOG_PROGRESS

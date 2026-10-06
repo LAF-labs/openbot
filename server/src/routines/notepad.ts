@@ -255,6 +255,8 @@ export function withNotepad(
   draft: NotepadDraft,
 ): UnattendedToolkit {
   return {
+    // Whatever else the toolkit says of itself goes on as it came (`UnattendedToolkit.withheld`).
+    ...toolkit,
     tools: [
       ...toolkit.tools,
       {

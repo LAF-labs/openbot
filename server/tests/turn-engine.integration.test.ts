@@ -122,6 +122,8 @@ function scriptedBot(answer = "다 됐어요.") {
     runs: 0,
     inputs: [] as Message[][],
     runIds: [] as Array<string | undefined>,
+    /** What rode on each run beside the conversation and the tools. */
+    forwarded: [] as unknown[],
     setMessages(messages: Message[]) {
       agent.messages = [...messages];
     },
@@ -129,11 +131,12 @@ function scriptedBot(answer = "다 됐어요.") {
       agent.messages.push(message);
     },
     async runAgent(
-      input: { runId?: string } | undefined,
+      input: { runId?: string; forwardedProps?: unknown } | undefined,
       subscriber?: Subscriber,
     ) {
       agent.inputs.push([...agent.messages]);
       agent.runIds.push(input?.runId);
+      agent.forwarded.push(input?.forwardedProps);
       agent.runs += 1;
       const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
       emit(event("RUN_STARTED"));
@@ -211,6 +214,8 @@ function engineWith(
     now?: () => number;
     /** The thread's store as the engine reaches it — a test's may refuse a write. */
     store?: typeof database;
+    /** What the turn's listing counted and could not list (`ChatToolkit.withheld`). */
+    withheld?: NonNullable<ChatToolkit["withheld"]>;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -246,6 +251,7 @@ function engineWith(
               context,
             )
           : (execute as ChatToolkit["execute"]),
+      ...(options.withheld ? { withheld: options.withheld } : {}),
     }),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     ...(firstMove ? { firstMove } : {}),
@@ -1052,6 +1058,51 @@ describe("how a turn ends", () => {
     await until(async () => (await statusOf(sent.turnId)) === "done");
     expect(bot.runIds).toEqual([sent.turnId, `${sent.turnId}.1`]);
     expect(engine.working(OWNER)).toEqual([]);
+  });
+
+  /*
+   * WHAT THE LISTING COUNTED AND COULD NOT LIST RIDES ON THE RUN (the review of #116). A tool that
+   * waits for review under no name is in no tool list, and a lookup is answered by the Bot's
+   * service from the list alone — so the count goes beside the list, as a forwarded prop, on every
+   * request of the turn. A turn with nothing waiting forwards what it always did.
+   */
+  test("what a turn's listing counted as waiting for review is forwarded on every request, beside the device — and nothing where nothing waits", async () => {
+    const send = async (
+      withheld: NonNullable<ChatToolkit["withheld"]> | undefined,
+      device: unknown,
+    ) => {
+      const { threadId, channelId } = await aConversation();
+      const bot = scriptedBot();
+      const { engine } = engineWith(bot, async () => ({ ok: true }), {
+        ...(withheld ? { withheld } : {}),
+      });
+      const sent = await engine.send({
+        threadId,
+        channelId,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked("카카오로 길 찾아줘")],
+        tools: null,
+        ...(device === undefined ? {} : { device }),
+      });
+      if (!sent.ok) throw new Error("not sent");
+      await until(async () => (await statusOf(sent.turnId)) === "done");
+      return bot.forwarded;
+    };
+    const waiting = [{ server: "kakao-playmcp", count: 2 }];
+    const device = { timeZone: "Asia/Seoul" };
+    // Two requests of the model in the turn, and both carry it.
+    expect(await send(waiting, device)).toEqual([
+      { device, toolsWithheld: waiting },
+      { device, toolsWithheld: waiting },
+    ]);
+    expect(await send(waiting, undefined)).toEqual([
+      { toolsWithheld: waiting },
+      { toolsWithheld: waiting },
+    ]);
+    // Nothing counted: the same props as before there was anything to count.
+    expect(await send(undefined, device)).toEqual([{ device }, { device }]);
+    expect(await send([], undefined)).toEqual([{}, {}]);
   });
 
   test("an account's deletion stops its turns and waits for them to end", async () => {

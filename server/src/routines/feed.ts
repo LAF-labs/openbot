@@ -260,6 +260,8 @@ export function withFeed(
   draft: FeedDraft,
 ): UnattendedToolkit {
   return {
+    // Whatever else the toolkit says of itself goes on as it came (`UnattendedToolkit.withheld`).
+    ...toolkit,
     tools: [
       ...toolkit.tools,
       {
