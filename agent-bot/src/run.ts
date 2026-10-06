@@ -6,6 +6,7 @@ import { textOf } from "../../shared/message-content";
 import { STREAM_CUT, streamCutResult } from "../../shared/stream-cut";
 import { describedToolNames } from "../../shared/tools/bridge";
 import { nowResultText } from "../../shared/tools/now";
+import { withheldToolsIn } from "../../shared/tools/paused";
 import {
   answerBridgeCall,
   answerDeferredCall,
@@ -279,6 +280,13 @@ async function runRounds(context: RunContext): Promise<void> {
    */
   const exposed = exposeTools(input.tools, toolDeferralOf(input));
   const known = knownToolNames(input.tools, exposed);
+  /*
+   * What the server counted and could not list: tools this Bot holds that wait for review and are
+   * offered under no name. Read once, in the closed shape, and handed to nothing but a lookup's
+   * answer — never to the schema or the prompt, so the head of the request is the same bytes
+   * whether anything waits or not.
+   */
+  const withheld = withheldToolsIn(input.forwardedProps);
   /**
    * What this run added on its own — lookups, facts, and the calls they answer — after the
    * conversation as it arrived. In the transcript's own shape rather than the provider's, so
@@ -695,6 +703,7 @@ async function runRounds(context: RunContext): Promise<void> {
                 exposed.deferred,
                 described,
                 exposed.offered,
+                withheld,
               )
             : answerDeferredCall(
                 call.name,

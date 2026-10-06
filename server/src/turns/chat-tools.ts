@@ -52,6 +52,7 @@ import {
   withAccountStates,
 } from "../../../shared/tools/gallery";
 import { isGoalToolName } from "../../../shared/tools/goals";
+import type { WithheldTools } from "../../../shared/tools/paused";
 import {
   MANAGE_ROUTINE,
   REMEMBER,
@@ -187,7 +188,17 @@ export type ChatTurnContext = {
   ) => Promise<{ value: T; moved: boolean }>;
 };
 
-export type ChatToolkit = { tools: Tool[]; execute: LoopExecutor };
+export type ChatToolkit = {
+  tools: Tool[];
+  execute: LoopExecutor;
+  /**
+   * What this Bot holds and the list above cannot show: tools waiting for review that are offered
+   * under no name, counted per server (`OfferedPlugins.withheld`). The turn forwards it beside the
+   * list (`engine.ts`), and a lookup says it. Read when the person's message arrives, like the
+   * list — a reconnect in the middle of a turn shows from the next message on.
+   */
+  withheld?: WithheldTools;
+};
 
 const CONTROL_POLL_MS = 1_000;
 /**
@@ -279,6 +290,8 @@ function computerReply(result: unknown): ComputerOutcome {
  */
 type Listing = {
   plugins: Awaited<ReturnType<PluginStore["offeredToModel"]>>["tools"];
+  /** Kept with the tools it was counted beside: a failed listing reuses both or neither. */
+  withheld: WithheldTools;
   components: string[];
 };
 
@@ -293,6 +306,8 @@ async function executableNames(
   pluginTools: Tool[];
   /** The plugin tools that wait for review: worded by this server, whoever else has a copy. */
   waiting: Set<string>;
+  /** The ones that wait and are offered under no name at all, counted per server. */
+  withheld: WithheldTools;
 }> {
   const names = new Set<string>();
   if (deps.gateway) {
@@ -307,7 +322,7 @@ async function executableNames(
   const pluginTools: Tool[] = [];
   const waiting = new Set<string>();
   const last = lastListed.get(botId);
-  const listing: Listing = { plugins: [], components: [] };
+  const listing: Listing = { plugins: [], withheld: [], components: [] };
   if (deps.pluginStore) {
     names.add(SKILL_VIEW.name);
     const granted = await deps.pluginStore.offeredToModel(botId).catch(() => {
@@ -315,6 +330,9 @@ async function executableNames(
       return null;
     });
     listing.plugins = granted?.tools ?? last?.plugins ?? [];
+    listing.withheld = granted
+      ? (granted.withheld ?? [])
+      : (last?.withheld ?? []);
     for (const tool of listing.plugins) {
       names.add(tool.toolName);
       pluginRefs.set(tool.toolName, tool.ref);
@@ -342,7 +360,13 @@ async function executableNames(
     }
   }
   lastListed.set(botId, listing);
-  return { names, pluginRefs, pluginTools, waiting };
+  return {
+    names,
+    pluginRefs,
+    pluginTools,
+    waiting,
+    withheld: listing.withheld,
+  };
 }
 
 /**
@@ -411,11 +435,8 @@ export function createChatTools(deps: ChatToolsDeps) {
     options: { effort?: boolean } = {},
   ): Promise<ChatToolkit> => {
     const { botId, owner, threadId, runId } = context;
-    const { names, pluginRefs, pluginTools, waiting } = await executableNames(
-      deps,
-      botId,
-      lastListed,
-    );
+    const { names, pluginRefs, pluginTools, waiting, withheld } =
+      await executableNames(deps, botId, lastListed);
     /*
      * 목표's tools, added here rather than declared by a window: they are this server's own and sit
      * behind the bridge, so they cost the head of the prompt nothing (`shared/tools/goals.ts`). The
@@ -1435,7 +1456,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
     };
 
-    return { tools, execute };
+    return { tools, execute, ...(withheld.length > 0 ? { withheld } : {}) };
   };
 }
 

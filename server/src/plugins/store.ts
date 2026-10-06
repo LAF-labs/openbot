@@ -1,4 +1,5 @@
 import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
+import type { WithheldTools } from "../../../shared/tools/paused";
 import type { AuditStore } from "../audit";
 import type {
   ApprovalRegistry,
@@ -197,6 +198,22 @@ export type OfferedPlugins = {
     waitsForReview?: true;
   })[];
   skills: GrantedPlugins["skills"];
+  /**
+   * How many tools this Bot holds that wait for review and are NOT in `tools`, per server. Present
+   * only where there is one.
+   *
+   * WHY A COUNT, AND WHY HERE. Leaving a tool that appeared after registration off the list was
+   * right, and it made the tool silent: nothing a model is given said it existed, so a person who
+   * added a tool to 카카오's toolbox and asked the Bot for it was told the connection had brought
+   * nothing — and the Bot's word is the one way a person learns that something waits (review of
+   * #116). The number is this deployment's own; the server's id is a catalogue key or the name an
+   * administrator typed; no name of a tool and no word of a vendor's is in it. It rides beside the
+   * list rather than on it (`WithheldTools`, `shared/tools/paused.ts`) and is said by a lookup.
+   *
+   * OF WHAT THIS BOT HOLDS, from the same read as `tools`: a tool it was never granted would not
+   * be offered once reviewed either, and is the administrator's screen's to show.
+   */
+  withheld?: WithheldTools;
 };
 
 /**

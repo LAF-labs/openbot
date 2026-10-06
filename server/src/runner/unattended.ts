@@ -30,6 +30,10 @@ import {
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
 import { UNATTENDED_COMPUTER_TOOLS } from "../../../shared/tools/computer";
+import {
+  type WithheldTools,
+  withheldToolsForwarded,
+} from "../../../shared/tools/paused";
 import { SKILL_VIEW } from "../../../shared/tools/skills";
 import {
   type ActionActor,
@@ -68,6 +72,16 @@ export {
 export type UnattendedToolkit = {
   tools: Tool[];
   execute: ToolExecutor;
+  /**
+   * What this Bot holds and the list above cannot show: tools waiting for review that are offered
+   * under no name, counted per server (`OfferedPlugins.withheld`). {@link runUnattended} forwards it
+   * beside the list and a lookup says it — in a run nobody watches, the Bot's own report is where
+   * "two tools are waiting for you" gets written down at all.
+   *
+   * WHOEVER WRAPS A TOOLKIT KEEPS IT: `withNotepad`, `withFeed` and `withGoal` add a tool and spread
+   * the rest, because a wrapper that rebuilt `{ tools, execute }` would drop this without a sound.
+   */
+  withheld?: WithheldTools;
 };
 
 export type UnattendedRunOptions = {
@@ -154,9 +168,11 @@ export async function runUnattended(
     execute: options.toolkit.execute,
     timeoutMs: options.timeoutMs,
     maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
-    // The mode travels as a forwarded prop, which is where the prompt middleware reads it.
+    // The mode travels as a forwarded prop, which is where the prompt middleware reads it. What
+    // the listing counted and could not list rides beside it, for the lookup (`withheld`, above).
     forwardedProps: {
       mode: options.mode,
+      ...withheldToolsForwarded(options.toolkit.withheld),
       ...(options.notepad?.length ? { notepad: options.notepad } : {}),
       ...(options.routineRun
         ? { routine: routineForwarded(options.routineRun) }
@@ -644,6 +660,10 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
       }
     };
 
-    return { tools, execute };
+    return {
+      tools,
+      execute,
+      ...(granted.withheld?.length ? { withheld: granted.withheld } : {}),
+    };
   };
 }

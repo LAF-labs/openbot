@@ -45,6 +45,7 @@ import {
   withoutAccountStates,
 } from "./gallery";
 import { NOW_TOOL_NAME } from "./now";
+import { type WithheldTools, withheldToolsText } from "./paused";
 import { ROUTINE_NOTE } from "./routine-note";
 import { SELF_TOOLS } from "./self";
 import { SKILL_VIEW } from "./skills";
@@ -879,14 +880,29 @@ export function openAccountsIn(
  * 카드가 목록에 없거나(루틴에는 화면이 없다) 적힌 것이 없으면 빈 배열 — 연결할 사람이 없는
  * 자리에서는 연결 이야기를 하지 않는다. 같은 계정 상태에는 글자 하나까지 같은 줄이다.
  */
-function connectingLines(deferred: readonly WireTool[]): string[] {
+function connectingLines(
+  deferred: readonly WireTool[],
+  withheld: WithheldTools,
+): string[] {
   const card = deferred.find((tool) => tool.name === CONNECT_CARD);
   const accounts = card ? accountStatesIn(card.parameters) : null;
   if (!card || !accounts) return [];
   const held = new Set(deferred.map((tool) => serverKeyOf(tool.name)));
   const open = openAccountsIn(deferred);
+  /*
+   * 도구가 검토를 기다리는 계정은 "가져온 도구가 없는 계정"이 아니다. 그렇게 말하던 것이 #116의
+   * 리뷰가 찾은 것이다: 카카오의 도구함에 담은 도구가 전부 검토를 기다리는 사람에게 봇은 "연결은
+   * 돼 있는데 쓸 도구가 없다"고 했고, 사람은 검토할 것이 있다는 말을 어디서도 듣지 못했다. 그
+   * 계정은 `withheldLines`가 말한다 — 몇 개가 기다리는지, 어디서 검토하는지.
+   */
+  const waiting = new Set(withheld.map((entry) => entry.server));
   const empty = accounts
-    .filter((account) => account.connected && !held.has(account.key))
+    .filter(
+      (account) =>
+        account.connected &&
+        !held.has(account.key) &&
+        !waiting.has(account.key),
+    )
     .map((account) => account.key);
   return [
     ...(empty.length > 0
@@ -902,6 +918,31 @@ function connectingLines(deferred: readonly WireTool[]): string[] {
   ];
 }
 
+/**
+ * 검토를 기다리느라 내주지 않은 도구를 말하는 줄 — 어느 서비스에 몇 개인지만. 없으면 빈 배열.
+ *
+ * `connectingLines`와 따로 선다. 그 줄들은 연결 카드가 목록에 있을 때만 서는데(연결할 사람이 있는
+ * 자리), 이 줄은 루틴에서도 서야 한다: 아무도 보고 있지 않은 실행이 "그 도구가 없다"고만 적고
+ * 끝나면, 검토할 것이 있다는 말은 그 실행의 기록 어디에도 남지 않는다. 그리고 연결 줄들보다 앞에
+ * 선다 — 찾은 것, 없는 것, 기다리는 것, 그다음에 연결할 수 있는 것.
+ *
+ * 찾은 것이 있든 없든 선다. 서비스의 다른 도구는 내주고 있을 때(방금 담은 하나만 기다릴 때) 그
+ * 서비스 이름으로 찾으면 다른 도구들이 걸리고, 봇은 찾던 것이 없다고 결론짓는다 — 빈손일 때만
+ * 말하면 그 사람은 듣지 못한다. 이 줄이 지금 쓸모 있는지는 다리가 고르지 않는다
+ * (`connectingLines`가 두 번 골랐고 두 번 틀렸다).
+ *
+ * 서비스의 이름은 `FAMILY_LABELS_KO`에서, 없으면 키 그대로 — 관리자가 정한 이름이다. 개수는 서버가
+ * 센 것이다(`WithheldTools`, `./paused.ts`). 키 순이라 같은 상태에는 글자 하나까지 같은 줄이다.
+ */
+function withheldLines(withheld: WithheldTools): string[] {
+  if (withheld.length === 0) return [];
+  const named = [...withheld]
+    .sort((a, b) => (a.server < b.server ? -1 : a.server > b.server ? 1 : 0))
+    .map(({ server, count }) => `${namedByKey([server])} ${count}개`)
+    .join(", ");
+  return [withheldToolsText(named)];
+}
+
 const foundLine = (query: string, count: number) =>
   `'${query}'에 맞는 도구 ${count}개, 스키마 전부. 이 스키마대로 tool_call로 부른다.`;
 
@@ -913,13 +954,18 @@ const foundLine = (query: string, count: number) =>
  * 이 사람이 연결할 수 있는 계정이 남아 있으면, 무엇을 찾았든 답의 끝에 그 계정들이 한 줄로 선다
  * (`connectingLines`). 찾은 것이 그 일에 맞는지, 계정이 필요한 일인지는 부탁을 읽은 모델이 안다.
  *
- * 같은 목록과 같은 검색어에는 글자 하나까지 같은 답이다. 답은 만들어질 때 한 번 정해져 대화에
- * 남는다.
+ * 봇이 쥐고 있지만 검토를 기다리느라 어느 목록에도 없는 도구가 있으면, 그것도 무엇을 찾았든 한
+ * 줄로 선다(`withheldLines`) — 이 답이 그 도구가 있다는 것을 봇이 듣는 단 하나의 자리다.
+ *
+ * 같은 목록과 같은 검색어에는 — 그리고 같은 기다리는 개수에는 — 글자 하나까지 같은 답이다. 답은
+ * 만들어질 때 한 번 정해져 대화에 남는다.
  */
 export function searchResultText(
   deferred: readonly WireTool[],
   query: string,
   offered: readonly WireTool[] = [],
+  /** 내주지 않은 도구의 수, 서버가 센 대로(`withheldToolsIn`). 없으면 그 줄도 없다. */
+  withheld: WithheldTools = [],
 ): string {
   const selected = selectedNames(query);
   const found = selected
@@ -930,17 +976,19 @@ export function searchResultText(
         .map((hit) => deferred.find((tool) => tool.name === hit.name))
         .filter((tool): tool is WireTool => tool !== undefined);
   const listed = alreadyOffered(deferred, offered, query, selected);
-  const connecting = connectingLines(deferred);
+  const waiting = withheldLines(withheld);
+  const connecting = connectingLines(deferred, withheld);
   if (found.length > 0) {
     return [
       foundLine(query, found.length),
       ...found.map(schemaLine),
       ...offeredLines(listed),
+      ...waiting,
       ...connecting,
     ].join("\n");
   }
   if (listed.length > 0) {
-    return [...offeredLines(listed), ...connecting].join("\n");
+    return [...offeredLines(listed), ...waiting, ...connecting].join("\n");
   }
   /*
    * 다시 찾으라는 말은 사람이 연결한 서비스가 있을 때만 한다. 연결한 것이 없으면 다리 뒤에는 맥락에
@@ -955,6 +1003,7 @@ export function searchResultText(
     again
       ? "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다."
       : "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+    ...waiting,
     ...connecting,
   ].join("\n");
 }

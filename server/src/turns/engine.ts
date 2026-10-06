@@ -22,6 +22,7 @@ import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
+import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import type { AgentActor } from "../agents/profile-types";
 import {
   classifyTurnFailure,
@@ -604,9 +605,16 @@ export function createTurnEngine(options: TurnEngineOptions) {
         execute: toolkit.execute,
         timeoutMs,
         maxSteps,
-        // What the window's CopilotKit properties carried: the device's clock and language.
-        forwardedProps:
-          input.device === undefined ? {} : { device: input.device },
+        /*
+         * What the window's CopilotKit properties carried: the device's clock and language. And
+         * what this turn's listing counted and could not list — the tools that wait for review and
+         * are offered under no name (`ChatToolkit.withheld`), for a lookup to say. Beside the
+         * tools, never among them: the tool list is the head of the prompt.
+         */
+        forwardedProps: {
+          ...(input.device === undefined ? {} : { device: input.device }),
+          ...withheldToolsForwarded(toolkit.withheld),
+        },
         /*
          * Each run of the model under the turn's own id, so the `model.usage` rows it writes are
          * the ledger's turn's (a reader joins on the part before the dot, as `insights/read.ts`

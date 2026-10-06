@@ -14,6 +14,7 @@ import {
 } from "../../shared/tools/bridge";
 import { withoutAccountStates } from "../../shared/tools/gallery";
 import { NOW_TOOL, NOW_TOOL_NAME } from "../../shared/tools/now";
+import type { WithheldTools } from "../../shared/tools/paused";
 
 /**
  * Which of the tools this service was handed actually go to the model, and how a call to one of
@@ -218,6 +219,14 @@ export function answerBridgeCall(
    * `alreadyOffered` in `shared/tools/bridge.ts` for the turn that cost.
    */
   offered: readonly WireTool[] = [],
+  /**
+   * How many tools this Bot holds that wait for review and are in NO list, per server, as the
+   * server counted them (`withheldToolsIn`, `shared/tools/paused.ts`). A lookup is answered from the
+   * list this run was handed, and a tool nobody may be shown yet is by definition not on it — so
+   * the one thing a lookup can say about such a tool arrives beside the list, and is said at the
+   * end of every lookup's answer.
+   */
+  withheld: WithheldTools = [],
 ): BridgeAnswer {
   const args = parseArguments(rawArguments);
   const field = (key: string): string => {
@@ -229,7 +238,7 @@ export function answerBridgeCall(
   if (name === TOOL_SEARCH) {
     return {
       kind: "answer",
-      text: searchResultText(deferred, field("query"), offered),
+      text: searchResultText(deferred, field("query"), offered, withheld),
     };
   }
   if (name === TOOL_CALL) {

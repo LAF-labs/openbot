@@ -47,6 +47,10 @@ import {
   withoutAccountStates,
 } from "../../shared/tools/gallery";
 import { LIST_GOALS } from "../../shared/tools/goals";
+import {
+  withheldToolsForwarded,
+  withheldToolsIn,
+} from "../../shared/tools/paused";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };
@@ -765,6 +769,33 @@ describe("a Bot's grants that could not be read", () => {
     expect(first.tools.map((offered) => offered.name)).toEqual(["mail_send"]);
     expect(second.tools.map((offered) => offered.name)).toEqual(["mail_send"]);
     expect(await second.execute("mail_send", {}, call())).toBe("sent");
+  });
+
+  test("keep what the last turn counted beside them: tools waiting for review are not forgotten for a turn", async () => {
+    // Counted off the same read as the tools (`OfferedPlugins.withheld`), so kept with them: a
+    // turn that reused the list and dropped the count would say the connection had brought none.
+    let fail = false;
+    const waiting = [{ server: "kakao-playmcp", count: 2 }];
+    const pluginStore = {
+      offeredToModel: async () => {
+        if (fail) throw new Error("the database blinked");
+        return { tools: [], skills: [], withheld: waiting };
+      },
+      callTool: async () => ({ text: "", isError: false }),
+      viewSkill: async () => ({
+        allowed: false,
+        reason: "laf:skill_not_granted",
+      }),
+    } as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+    const tools = createChatTools({
+      pluginStore,
+      people: createPersonAnswers(),
+    });
+    const first = await tools(context, null);
+    fail = true;
+    const second = await tools(context, null);
+    expect(first.withheld).toEqual(waiting);
+    expect(second.withheld).toEqual(waiting);
   });
 });
 
@@ -1506,6 +1537,65 @@ describe("a connect card the turn waits on", () => {
       expect(answer).not.toContain('{"name":"showConnection"');
       expect(answer).not.toContain("x-accounts");
       expect(describedToolNames([answer]).has("showConnection")).toBe(true);
+    });
+
+    /*
+     * ON, AND WHAT IT BROUGHT WAITS FOR REVIEW (the review of #116, 2026-10-06). 카카오's toolbox is
+     * filled after the account is connected, so every tool in it appeared after registration and
+     * is offered under no name until a person reviews it. This turn then read 카카오 as on with no
+     * tools, and its lookup said the connection had brought none. The listing counts what it could
+     * not list, the turn carries the count for its run to forward (`engine.ts`), and the lookup
+     * says the count and where a person reviews — in place of "brought none", which was not true.
+     */
+    test("an account whose tools wait for review: the turn carries how many, and its lookup says that — not that the connection brought none", async () => {
+      const waiting = [{ server: "kakao-playmcp", count: 2 }];
+      const pluginStore = {
+        offeredToModel: async () => ({
+          tools: [],
+          skills: [],
+          withheld: waiting,
+        }),
+        callTool: async () => ({ text: "", isError: false }),
+        viewSkill: async () => ({
+          allowed: false,
+          reason: "laf:skill_not_granted",
+        }),
+      } as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+      const toolkit = await createChatTools({
+        pluginStore,
+        people: createPersonAnswers(),
+        components: connectCards,
+        accounts: async () => ACCOUNTS,
+      })(context, [declaredCard()]);
+      expect(toolkit.withheld).toEqual(waiting);
+      // Not a tool, and not on the card: the list a model is given is what it was.
+      expect(toolkit.tools.map((one) => one.name)).toEqual(["showConnection"]);
+      expect(JSON.stringify(toolkit.tools)).not.toContain("withheld");
+
+      // As the Bot's service is handed it: the run's forwarded props, read back in their shape.
+      const answer = searchResultText(
+        behind(toolkit.tools),
+        "카카오 길찾기",
+        [],
+        withheldToolsIn(withheldToolsForwarded(toolkit.withheld)),
+      );
+      expect(answer).toContain(
+        "어느 목록에도 없는 도구: 카카오(kakao-playmcp) 2개.",
+      );
+      expect(answer).toContain("관리 메뉴의 플러그인 화면에서");
+      expect(answer).not.toContain("가져온 도구가 없는 계정");
+      // What can still be connected is said as before, and 카카오 is not among it.
+      expect(answer.split("\n").at(-1)).toContain(
+        "지메일(gmail), 구글 캘린더(google-calendar), 노션(notion).",
+      );
+
+      // Nothing counted, nothing carried: the turn's toolkit is the two fields it always was.
+      const none = await createChatTools({
+        people: createPersonAnswers(),
+        components: connectCards,
+        accounts: async () => ACCOUNTS,
+      })(context, [declaredCard()]);
+      expect(Object.keys(none).sort()).toEqual(["execute", "tools"]);
     });
 
     test("where the accounts cannot be read, the card is the window's own and nothing is said of connecting", async () => {
