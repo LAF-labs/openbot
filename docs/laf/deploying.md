@@ -1140,7 +1140,8 @@ shell for Linux or moves Tauri off `gtk` 0.18.
 - `images.yml`: 22회(`main` 15, 태그 7) × (Linux 13분 + arm64 5분).
 - `release.yml`: 8회(`main` 1, 태그 7) × (macOS 10–13분 ×10 + Windows 13–16분
   ×2) ≈ 회당 130–160 가중 분. **태그 하나가 한 달치의 7%다.**
-- `smoke.yml` 매일 1분(모델 키가 없어 여정을 건너뜀 — 키를 넣으면 회당 15분쯤),
+- `smoke.yml` 매일 1분(당시에는 모델 키가 없어 여정을 건너뛰었다. 2026-10-06에 키를 넣었고,
+  여정까지 도는 실행은 회당 2분쯤이다),
   `security_zizmor.yml` 회당 1분.
 
 2026-09-10부터 각 워크플로가 도는 조건:
