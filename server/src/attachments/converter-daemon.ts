@@ -14,11 +14,15 @@
  * meant to put it: not root, no network interface but loopback, no capability left to gain, no new
  * privileges, a read-only root. A deployment where one of those quietly stopped being true — a
  * compose file edited by hand, a runtime that ignores a key — refuses to start and says which,
- * rather than reading hostile files with the protection only on paper.
+ * rather than reading hostile files with the protection only on paper. The reading and the
+ * judgement are `shared/isolation.ts`, since the workbench came to need the same ones.
  */
-import { readFileSync, rmSync } from "node:fs";
-import { networkInterfaces } from "node:os";
+import { rmSync } from "node:fs";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/attachments";
+import {
+  isolationProblems,
+  readIsolationFacts,
+} from "../../../shared/isolation";
 import { createLogger, type Logger, reportCrashes } from "../../../shared/log";
 import { FILE_NAME_HEADER } from "./conversion";
 import {
@@ -31,69 +35,6 @@ import {
 /** Files read at once, and files waiting behind them. */
 const RUNNING = 2;
 const WAITING = 8;
-
-/** What the checks read, gathered once so the judgement below is a pure function a test can drive. */
-export type IsolationFacts = {
-  uid: number | null;
-  /** Interfaces with an address that is not loopback. */
-  externalInterfaces: string[];
-  /** The capability bounding set, as the hex `/proc/self/status` prints. Null off Linux. */
-  capabilityBounding: string | null;
-  noNewPrivileges: boolean | null;
-  rootReadOnly: boolean | null;
-};
-
-export function readIsolationFacts(): IsolationFacts {
-  const status = (() => {
-    try {
-      return readFileSync("/proc/self/status", "utf8");
-    } catch {
-      return null;
-    }
-  })();
-  const field = (name: string) =>
-    status?.match(new RegExp(`^${name}:\\s*(\\S+)`, "m"))?.[1] ?? null;
-  const rootReadOnly = (() => {
-    try {
-      const root = readFileSync("/proc/self/mounts", "utf8")
-        .split("\n")
-        .map((line) => line.split(" "))
-        .filter((fields) => fields[1] === "/")
-        .at(-1);
-      return root ? (root[3] ?? "").split(",").includes("ro") : null;
-    } catch {
-      return null;
-    }
-  })();
-  const noNewPrivileges = field("NoNewPrivs");
-  return {
-    uid: process.getuid?.() ?? null,
-    externalInterfaces: Object.entries(networkInterfaces())
-      .filter(([, addresses]) =>
-        (addresses ?? []).some((address) => !address.internal),
-      )
-      .map(([name]) => name),
-    capabilityBounding: field("CapBnd"),
-    noNewPrivileges: noNewPrivileges === null ? null : noNewPrivileges === "1",
-    rootReadOnly,
-  };
-}
-
-/** What is not as compose says it should be. Empty is isolated. */
-export function isolationProblems(facts: IsolationFacts): string[] {
-  const problems: string[] = [];
-  if (facts.uid === null || facts.uid === 0) problems.push("runs_as_root");
-  if (facts.externalInterfaces.length > 0) problems.push("has_network");
-  if (
-    facts.capabilityBounding === null ||
-    !/^0+$/.test(facts.capabilityBounding)
-  ) {
-    problems.push("holds_capabilities");
-  }
-  if (facts.noNewPrivileges !== true) problems.push("may_gain_privileges");
-  if (facts.rootReadOnly !== true) problems.push("root_writable");
-  return problems;
-}
 
 /** A counting gate: `RUNNING` through, `WAITING` behind, the rest refused. */
 function createGate(running: number, waiting: number) {

@@ -12,13 +12,15 @@
  * bound is the child's resident set, read every few tens of milliseconds and killed past
  * `memoryBytes`. Not an rlimit: JavaScriptCore reserves tens of gigabytes of address space at start,
  * so `RLIMIT_AS` stops bun before it runs a line, and the container's cgroup is the backstop.
+ * The reading itself is `shared/resident-bytes.ts`, since the workbench came to bound a child the
+ * same way.
  *
  * The child is handed NOTHING of this process: an empty environment (a development server holds every
  * key in its own), `/` as its directory and `--no-env-file`, because bun reads a `.env` from where it
  * starts. Its stdout and stderr go nowhere — pdf.js prints warnings there, and they can quote the
  * file — and the answer comes back over the IPC channel, which only this parent reads.
  */
-import { readFile } from "node:fs/promises";
+import { residentBytes, WATCH_EVERY_MS } from "../../../shared/resident-bytes";
 import {
   type Conversion,
   type ConversionJob,
@@ -92,31 +94,6 @@ function childEnvironment(): Record<string, string> {
  */
 export function jobCommandFor(entry: string): string[] {
   return [process.execPath, "--no-env-file", "--no-install", entry, "--job"];
-}
-
-/** How often the child's memory is read. `ps` on a laptop costs more than `/proc` does. */
-const WATCH_EVERY_MS = process.platform === "linux" ? 25 : 100;
-
-/** The child's resident set in bytes, or null when it cannot be read (it has exited). */
-async function residentBytes(pid: number): Promise<number | null> {
-  try {
-    if (process.platform === "linux") {
-      const status = await readFile(`/proc/${pid}/status`, "utf8");
-      const kilobytes = status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1];
-      return kilobytes ? Number(kilobytes) * 1024 : null;
-    }
-    const ps = Bun.spawn(["ps", "-o", "rss=", "-p", String(pid)], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const kilobytes = Number.parseInt(
-      (await new Response(ps.stdout).text()).trim(),
-      10,
-    );
-    return Number.isFinite(kilobytes) ? kilobytes * 1024 : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
