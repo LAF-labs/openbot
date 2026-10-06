@@ -1417,14 +1417,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * waiting on the person does not hold the control; and the new `build-watch-starts.test.tsx`,
  * which mounts the real route tree and holds the one line that starts the watch at all.
  *
- * RAISED 2026-10-06 with a tool nobody consented to staying one, `server` from 3600 to 3601, by
+ * RAISED 2026-10-06 with a tool nobody consented to staying one, `server` from 3553 to 3554, by
  * exactly the one written in `plugin-consent.integration.test.ts`: a vendor's tool that appeared
  * after registration and changes again before anybody reviewed it still waits as "appeared after
  * registration" — the refresh had rewritten it to "definition changed", the reason that means its
  * name was consented to.
  *
- * RAISED 2026-10-06 with a paused tool that says nothing of its own, `server` from 3601 to 3611
- * and `root` from 718 to 719, by exactly the eleven written for it. A vendor's tool waiting for
+ * RAISED 2026-10-06 with a paused tool that says nothing of its own, `server` from 3554 to 3564
+ * and `root` from 719 to 720, by exactly the eleven written for it. A vendor's tool waiting for
  * review could not be called, and its changed description and schema were still handed to the
  * model, which also found tools by those words (the review of #110). Ten in the new
  * `plugin-paused-text.integration.test.ts`, against a real database with a sentinel planted in a
@@ -1449,10 +1449,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3553, roots: ["server"] },
+  { name: "server", floor: 3564, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 719, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 720, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
