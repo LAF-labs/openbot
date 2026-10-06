@@ -53,8 +53,9 @@ A deployment belongs to one account (`docs/laf/deployment-model.md`, 2026-09-16)
 is also the one who uses the 관리 menu. What the menu reaches is the deployment rather than a Bot —
 every door that names no Bot:
 
-- the audit trail (`GET /api/admin/audit-events`), `/api/admin/metrics/approvals` and insights —
-  Bot **ids**, never a title or a transcript;
+- the audit trail (`GET /api/admin/audit-events`) and `/api/admin/metrics/approvals` — Bot
+  **ids**, never a title or a transcript (the fleet's insights door, which no session opened, went
+  on 2026-10-06);
 - the gateway's deployment-wide rules (`GET`/`PUT /api/computers/policy`);
 - what the deployment's one browser holds (`GET /api/computers`, the Computers page). Resetting it
   is still pressed from a row and goes through that row's Bot, so it needs a row whose Bot is theirs;

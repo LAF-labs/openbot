@@ -92,7 +92,8 @@ export const NOTIFICATION_KINDS = [
    * The same odd one out as `support.feedback`, for the same two reasons: it is addressed to the
    * operator, so it goes through the support door alone, and it is the person's own words, so it
    * never appears in their list. Only a 아쉬워요 that carries a note is written here — a press with
-   * nothing written is a count, and the fleet reads counts from the ratings table, not from alerts.
+   * nothing written is a count, and counts are the fleet's to read from the ratings table, not
+   * from alerts.
    */
   "support.answer_rating",
   /**

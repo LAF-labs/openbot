@@ -101,8 +101,9 @@ export function createDailyBudget(input: {
     const { start, end } = seoulDayOf(now());
     /*
      * A count that crossed a service boundary is not trusted to be a number: anything that is not
-     * digits reads as nothing, the same rule `insights/read.ts` sums these rows by, so a malformed
-     * row can neither fail the read nor subtract from the day.
+     * digits reads as nothing, the same rule the fleet's read sums these rows by (laf-control
+     * `core/insights-sql.ts`), so a malformed row can neither fail the read nor subtract from the
+     * day.
      */
     const [row] = await input.database
       .select({

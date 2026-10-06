@@ -609,8 +609,9 @@ export function createTurnEngine(options: TurnEngineOptions) {
           input.device === undefined ? {} : { device: input.device },
         /*
          * Each run of the model under the turn's own id, so the `model.usage` rows it writes are
-         * the ledger's turn's (`insights/read.ts` joins on the part before the dot). The first run
-         * is the turn's id itself; the rest are numbered after it.
+         * the ledger's turn's (a reader joins on the part before the dot, as `insights/read.ts`
+         * did until it went on 2026-10-06). The first run is the turn's id itself; the rest are
+         * numbered after it.
          */
         runIdFor: (n) => (n === 0 ? turn.id : `${turn.id}.${n}`),
         signal,

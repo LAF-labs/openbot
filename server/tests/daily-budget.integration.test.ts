@@ -24,8 +24,9 @@ import { testEnvironment } from "./support/environment";
  * WHY THE ROWS LIVE IN JUNE 2003, AND WHY NOTHING HERE IS DELETED. `audit_events` is append-only and
  * shared by every suite, so no count over a day can be asserted exactly. Each reading is taken before
  * and after the rows this file writes and the difference is asserted, in days nothing else writes to:
- * after the insights suite's era (before 2000) and far behind today's rows. The retention sweep other
- * files run removes them in time; nothing here needs to.
+ * after the era the insights suite had (before 2000, until it went with its door on 2026-10-06) and
+ * far behind today's rows. The retention sweep other files run removes them in time; nothing here
+ * needs to.
  */
 
 const database = createDatabase(

@@ -406,22 +406,30 @@ payload의 `own`이 그것을 가른다 — 주인의 계정 id(`ownerUserId`), 
 
 **함대가 읽어 가는 수치 (2026-09-14).** 출시 계획의 "고객만 가르쳐 줄 수 있는" 질문 — 어떤
 일 종류를 고르는지, 밤에 승인에 답하는지, 봇이 어디서 막히는지, 도움말을 여는지 — 에 답하려고
-함대(`laf insights`)가 `GET /api/admin/metrics/insights?days=N`을 읽는다. **수와 카탈로그 코드뿐이다**:
-메시지·답·지시문·봇의 직무·이메일·사람 id는 문장에 이름조차 나오지 않고, 실패 문구는 `laf:` 코드
-모양만, 페이지 주소는 카탈로그 사이트 id(아니면 `other`)로만 나간다. 세션이 아니라 함대의 토큰
-(`LAF_FLEET_METRICS_TOKEN`, 상수 시간 비교)으로만 열리고, 토큰이 없는 배포에는 라우트가 없다.
+함대(`laf insights`)가 VM의 DB를 SSH와 psql로 읽는다(laf-control `core/insights-sql.ts`). **수와
+카탈로그 코드뿐이다**: 메시지·답·지시문·봇의 직무·이메일·사람 id는 문장에 이름조차 나오지 않고, 실패
+문구는 `laf:` 코드 모양만, 페이지 주소는 카탈로그 사이트 id(아니면 `other`)로만 나간다.
 이를 위해 남기는 것은 둘이다 — 첫 일 칩을 누른 것(`onboarding.first_task_pressed`, 문장이 아니라
 칩의 키), 도움말을 연 것(`support.help_opened`, 방문당 한 줄). 둘 다 감사 기록이라 1년 보존과 가명
 처리를 그대로 따른다. 봇이 어느 프리셋에서 만들어졌는지(`agent_profiles.preset_id`)가 셋째였는데,
 프리셋이 없어진 뒤(2026-09-24) 마이그레이션 0047이 그 칸을 지웠고 `fromPreset` 수치도 함께
-없어졌다. 코드는 `server/src/insights/read.ts`, 내용이
-새지 않음은 `server/tests/insights-read.integration.test.ts`가 심어 둔 이메일·문장으로 확인한다.
+없어졌다.
 
-**답 평가의 수 (2026-09-18).** 같은 `support` 절에 기간 안에 **마지막으로** 좋아요였던 답의 수
+**VM이 직접 내주던 문은 없앴다 (2026-10-06).** 같은 수치를 SSH 없이 HTTPS로 읽게 하려던
+`GET /api/admin/metrics/insights?days=N`은 세션이 아니라 함대의 토큰(`LAF_FLEET_METRICS_TOKEN`)으로만
+열렸고, 토큰이 없는 배포에는 라우트가 없었다 — 그 토큰을 받은 배포가 하나도 없어, 어느 VM에서도
+열린 적이 없다. 문과 그 뒤의 문장들(`server/src/insights/read.ts`)을 함께 지웠다. `.env`에 그 줄이
+남아 있어도 서버는 읽지 않고 그대로 뜬다. 남은 것은 턴 절의 문장과 모양
+(`server/src/insights/turns.ts`, `report.ts` — `scripts/eval-from-failures.ts`가 읽고 함대가 베껴 간다)이고,
+내용이 새지 않음은 `server/tests/turns.integration.test.ts`·`turn-wait.integration.test.ts`가 심어 둔
+문장으로 확인한다. **첫 일 칩·도움말·답 평가를 세는 문장은 그 문 뒤에만 있었다**: 함대의 SQL이
+가져가기 전까지 그 기록은 쌓이기만 하고 세는 곳이 없다.
+
+**답 평가의 수 (2026-09-18).** 그 문의 `support` 절에는 기간 안에 **마지막으로** 좋아요였던 답의 수
 (`answersUp`), 아쉬워요였던 답의 수(`answersDown`), 아쉬워요 가운데 이유를 고른 것의 이유별
-수(`downReasons`, 목록에 있는 키만)가 붙는다. `laf_answer_ratings`에서 평가·이유·시각 세 칸만
-읽고, 적은 글(`note`)은 읽지 않는다. 마음을 바꾸면 행이 바뀌므로 누른 횟수가 아니라 답마다의
-마지막 평가를 센다.
+수(`downReasons`, 목록에 있는 키만)가 붙어 있었다. `laf_answer_ratings`에서 평가·이유·시각 세 칸만
+읽고, 적은 글(`note`)은 읽지 않았다. 마음을 바꾸면 행이 바뀌므로 누른 횟수가 아니라 답마다의
+마지막 평가를 세는 것 — 다음에 세는 문장도 그래야 한다.
 
 ---
 
@@ -516,7 +524,7 @@ VM이 아니라 정문이 답한다. CI가 `app/scripts/render-legal.ts`로 두 
 | 보존 기간 청소 | `server/src/account/retention.ts` |
 | 세 개의 라우트 | `server/src/account/routes.ts` |
 | 탈퇴·가입을 함대에 알리는 웹훅 | `server/src/fleet/notify.ts` |
-| 함대가 읽는 수치(수와 코드뿐)와 그 토큰 | `server/src/insights/read.ts`, `server/src/insights/routes.ts` |
+| 함대가 읽는 수치(수와 코드뿐) 가운데 여기 남은 턴 절 — 문과 토큰은 2026-10-06에 없앴다 | `server/src/insights/turns.ts`, `server/src/insights/report.ts` |
 | 답에 누른 좋아요·아쉬워요, 운영자에게 가는 줄 | `server/src/support/answer-ratings.ts`, `server/src/support/rating-routes.ts`, `server/tests/answer-ratings.integration.test.ts` |
 | append-only 트리거와 그 두 통로 | `server/drizzle/0028_pipa_lifecycle.sql` |
 | 화면 | `app/src/routes/_authed/settings/account.tsx` |

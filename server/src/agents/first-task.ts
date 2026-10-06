@@ -6,14 +6,16 @@
  * grounds that "did the chips get used" could be read off a console. The launch plan's first
  * question — which of the eight kinds of work people actually pick — is asked of the fleet, and a
  * console on somebody's laptop in Seoul is not a thing the fleet can read. So the press leaves one
- * audit row, which laf-control's `insights` counts (`GET /api/admin/metrics/insights`).
+ * audit row, for laf-control's `insights` to count. (The statement that counted it sat behind
+ * `GET /api/admin/metrics/insights`, a door no deployment was handed the token for; both went on
+ * 2026-10-06, and the fleet's own SQL is where the next one goes.)
  *
  * CATALOGUE KEYS, CHECKED AGAINST THE CATALOGUES. What is recorded is which kind of chip, which
  * work pattern, which site or account made the sentence answerable, and what the Bot's card
  * suggested — each one checked against the table it comes from, so nothing that reaches the row
  * can be anything but a key this product ships. The SENTENCE is never read: it is an English key
  * today, but `kind`, `pattern` and `via` already name the kind of work it asked for — which is what
- * the insights count — and a field that carries a sentence is a field one change away from carrying
+ * the insights ask — and a field that carries a sentence is a field one change away from carrying
  * what somebody typed. (They named it exactly until 2026-09-27, when a 학생's and a 직장인's
  * sentences joined the connection-free ones under the same eight patterns: `PERSONA_TASKS`.)
  *
