@@ -85,15 +85,33 @@ export function pathOf(url: string): string {
  * script names, and then here in the Bot's own). The shipped policy has no rule about a file's
  * path, so nothing shipped was walked past; a deployment that wrote one was.
  *
- * So `govern` reads every path this way before anything is decided, and the policy, the question,
- * an allowance's scope, the count of "the same call again" and the row all get the computer's own
- * reading: the ends trimmed, `.` and empty segments and a trailing slash gone. It is that reading
- * and nothing stricter — a name with a space or a backslash inside it is a name there, and here.
+ * So `govern` reads every path this way, ONCE, before anything is decided, and hands the act the
+ * same string to send: the policy, the question, an allowance's scope, the count of "the same
+ * call again", the row and the computer all get one reading.
+ *
+ * THE SPELLING IS A STRING THE COMPUTER READS BACK AS ITSELF, AND AS THE SAME FILE. The ends
+ * trimmed, then `.` and empty segments and a trailing slash gone. The first version of this
+ * function stopped there, and was wrong: to the computer `"./ private/pay.csv"` is a file in a
+ * folder called `" private"`, and with the `./` dropped what was left — `" private/pay.csv"` —
+ * is a string the computer trims and reads as the payroll. The rule was asked about a path
+ * beginning with a space and the file read was the one it guards (the second independent read,
+ * which also deleted the line in `govern` and watched every test pass). The second version called
+ * such a string "no spelling" and left it as written — and `" private/pay.csv /"`, left as
+ * written, is judged with its leading space and read without it.
+ *
+ * So a name with white space at an edge keeps the one mark that makes it itself to the computer:
+ * `./` in front of a first part that begins with white space, `/.` behind a last part that ends
+ * with it. `"./ private/pay.csv"` stays that; `" private/pay.csv /"` is `"private/pay.csv /."`.
+ * Every spelling of one file comes out as one string, that string trimmed and resolved is the
+ * same file, and reading it again here changes nothing (`gateway-file-paths.test.ts` holds all
+ * three against the real workspace, over some thirteen hundred spellings).
  *
  * NULL IS EXACTLY WHAT THE COMPUTER REFUSES AS A PATH: blank, a NUL, an absolute path, a `..`
  * segment. Such a string has no file behind it whatever a rule says of it, so it is left as it was
- * written — judged as written, refused by the computer (`laf:file_path_refused`), and on the trail
- * as an act that was allowed and did not happen, which is what it was before.
+ * written — judged as written, sent as written, refused by the computer
+ * (`laf:file_path_refused`), and on the trail as an act that was allowed and did not happen,
+ * which is what it was before. (A blank LISTING is the one thing the computer does not refuse: it
+ * lists the whole folder. `listFiles` reads a blank as no path before it gets here.)
  */
 export function workspacePathOf(requested: string): string | null {
   const wanted = requested.trim();
@@ -105,7 +123,12 @@ export function workspacePathOf(requested: string): string | null {
     .filter((segment) => segment !== "" && segment !== ".");
   if (segments.includes("..")) return null;
   // Nothing left is the folder itself, which is how a listing of the whole of it is asked for.
-  return segments.length === 0 ? "." : segments.join("/");
+  const [first] = segments;
+  const last = segments.at(-1);
+  if (first === undefined || last === undefined) return ".";
+  const ahead = first === first.trimStart() ? "" : "./";
+  const behind = last === last.trimEnd() ? "" : "/.";
+  return `${ahead}${segments.join("/")}${behind}`;
 }
 
 /**
@@ -113,7 +136,14 @@ export function workspacePathOf(requested: string): string | null {
  *
  * Handed a path in its one spelling ({@link workspacePathOf}) by `govern`, whoever named the file.
  *
- * Lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
+ * THE NAME IS THE LAST PART THAT IS A NAME, WITH ITS EDGES TRIMMED. Not whatever follows the last
+ * slash: a spelling may end in the `/.` that keeps a name with a trailing space itself, and the
+ * part after that slash is `.`. And trimmed, so that a file called `tool.exe ` is `tool.exe` to a
+ * rule about names and `exe` to a rule about extensions: it is another file on this disk and the
+ * same file on the next one it is copied to (a name's trailing space does not survive Windows), so
+ * a rule about what a file is called errs towards the name it would be read as.
+ *
+ * The extension is lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
  * operator should have anticipated. Same reasoning as the case-insensitive `contains` in policy.ts.
  */
 export function describeFile(path: string): {
@@ -121,7 +151,10 @@ export function describeFile(path: string): {
   name: string;
   extension: string;
 } {
-  const name = path.split(/[\\/]/).pop() ?? path;
+  const parts = path
+    .split(/[\\/]/)
+    .filter((part) => part !== "" && part !== ".");
+  const name = (parts.pop() ?? path).trim();
   const dot = name.lastIndexOf(".");
   return {
     path,

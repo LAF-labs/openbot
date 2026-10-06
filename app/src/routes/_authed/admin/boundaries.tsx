@@ -220,7 +220,7 @@ const ASK_PRESETS: Preset[] = [
   {
     label: "Ask before writing a file outside notes/",
     rule: 'intent == "write_file" && !matches(file.path, "^notes/")',
-    cost: "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.",
+    cost: "Matches on the file's path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.",
   },
 ];
 

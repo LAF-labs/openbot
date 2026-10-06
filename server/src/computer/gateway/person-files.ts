@@ -19,6 +19,7 @@ import {
 import type { AuditStore } from "../../audit";
 import type { ComputerClient } from "../client";
 import type { FileFacts, ListFilesResult } from "../schema";
+import { workspacePathOf } from "./addresses";
 import type { ActionActor } from "./caller";
 import { writeFileDownloaded } from "./trail";
 
@@ -89,15 +90,22 @@ export function createPersonFiles(deps: {
       path: string,
       options: { preview?: boolean } = {},
     ): Promise<HandedFile> {
-      const bytes = await as(botId).downloadFile(path);
-      const name = fileNameOf(path) || "file";
+      /*
+       * THE ROW NAMES THE FILE AS EVERY OTHER ROW ABOUT IT DOES. Nothing is decided here — this is
+       * the person's own door — but the trail's rows about one file are found by its path, and a
+       * Bot's rows carry the path in its one spelling since 2026-10-07 (`addresses.ts`,
+       * `workspacePathOf`). So the download is asked for, named and recorded in that spelling too.
+       */
+      const file = workspacePathOf(path) ?? path;
+      const bytes = await as(botId).downloadFile(file);
+      const name = fileNameOf(file) || "file";
       const drawnAs = options.preview ? inlineImageTypeOf(name, bytes) : null;
       if (!drawnAs) {
         await writeFileDownloaded(auditStore, {
           botId,
           actor,
           computerId,
-          filePath: path,
+          filePath: file,
           bytes: bytes.byteLength,
         });
       }
