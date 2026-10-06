@@ -78,6 +78,23 @@ async function api(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/**
+ * A page as the snapshot route answers it: one line per thing that can be acted on, `e3 button
+ * 결제하기` (`server/src/computer/snapshot-lines.ts`, since 2026-09-25).
+ *
+ * This journey went on reading a list of objects for eleven days after that, and nothing said so:
+ * the job that runs it skipped the journey every night until 2026-10-06, and reported success.
+ */
+type Snapshot = { snapshotId: number; elements: string };
+
+/** The ref of the first element whose line carries `name`: a line's first word. */
+function refOf(snapshot: Snapshot, name: string): string | undefined {
+  return snapshot.elements
+    .split("\n")
+    .find((line) => line.includes(name))
+    ?.split(" ")[0];
+}
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await api(path, init);
   if (!response.ok) {
@@ -227,22 +244,19 @@ describe.skipIf(!asked)("a Bot acting on its computer", () => {
         body: JSON.stringify({ url: fixtureUrl }),
       });
 
-      const snapshot = await json<{
-        snapshotId: number;
-        elements: { ref: string; name?: string; role: string }[];
-      }>(`/api/computers/${BOT}/snapshot`, { method: "POST" });
-      const pay = snapshot.elements.find((element) =>
-        (element.name ?? "").includes("결제하기"),
-      );
+      const snapshot = await json<Snapshot>(`/api/computers/${BOT}/snapshot`, {
+        method: "POST",
+      });
+      const pay = refOf(snapshot, "결제하기");
       if (!pay) {
         throw new Error(
-          `The fixture's 결제하기 button was not in the snapshot: ${JSON.stringify(snapshot.elements).slice(0, 300)}`,
+          `The fixture's 결제하기 button was not in the snapshot: ${snapshot.elements.slice(0, 300)}`,
         );
       }
 
       const asking = await api(`/api/computers/${BOT}/click`, {
         method: "POST",
-        body: JSON.stringify({ ref: pay.ref, snapshotId: snapshot.snapshotId }),
+        body: JSON.stringify({ ref: pay, snapshotId: snapshot.snapshotId }),
       });
       // 409 and not 403: a question, not a refusal. A deployment that collapsed the two would turn
       // every ask rule into a deny rule, which is the failure the ask list exists to prevent.
@@ -275,7 +289,7 @@ describe.skipIf(!asked)("a Bot acting on its computer", () => {
         {
           method: "POST",
           body: JSON.stringify({
-            ref: pay.ref,
+            ref: pay,
             snapshotId: snapshot.snapshotId,
             approvalId,
           }),
@@ -321,13 +335,10 @@ describe.skipIf(!asked)("a Bot acting on its computer", () => {
         method: "POST",
         body: JSON.stringify({ url: fixtureUrl }),
       });
-      const snapshot = await json<{
-        snapshotId: number;
-        elements: { ref: string; name?: string }[];
-      }>(`/api/computers/${BOT}/snapshot`, { method: "POST" });
-      const pay = snapshot.elements.find((element) =>
-        (element.name ?? "").includes("결제하기"),
-      );
+      const snapshot = await json<Snapshot>(`/api/computers/${BOT}/snapshot`, {
+        method: "POST",
+      });
+      const pay = refOf(snapshot, "결제하기");
       const click = (body: object) =>
         api(`/api/computers/${BOT}/click`, {
           method: "POST",
@@ -335,7 +346,7 @@ describe.skipIf(!asked)("a Bot acting on its computer", () => {
         });
 
       const asking = await click({
-        ref: pay?.ref,
+        ref: pay,
         snapshotId: snapshot.snapshotId,
       });
       expect(asking.status).toBe(409);
@@ -347,7 +358,7 @@ describe.skipIf(!asked)("a Bot acting on its computer", () => {
       });
 
       const again = await click({
-        ref: pay?.ref,
+        ref: pay,
         snapshotId: snapshot.snapshotId,
       });
       // Refused outright rather than asked again: a model told no cannot wear somebody down by

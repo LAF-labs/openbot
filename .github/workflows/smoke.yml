@@ -49,11 +49,14 @@ jobs:
       # minutes of container builds ending in a red cross nobody can act on. The secret is
       # referenced, never created here.
       #
-      # IN THIS REPOSITORY A MISSING KEY IS A FAILURE. Measured 2026-10-06: the secret had been
-      # absent since 2026-09-28, and for eight nights this job skipped every step below and
-      # reported success — the one end-to-end check of a deployment, green by not running, which is
-      # exactly what it exists to prevent ("say only what you measured"). Nobody was told, because
-      # nothing was red. Where the job is meant to run, not being able to run is the news.
+      # IN THIS REPOSITORY A MISSING KEY IS A FAILURE. Read from the run history on 2026-10-06: the
+      # secret had never been set, and on every scheduled night since this workflow was added on
+      # 2026-09-03 — thirty-four of them — the job skipped every step below and reported success.
+      # The one end-to-end check of a deployment, green by not running, which is exactly what it
+      # exists to prevent ("say only what you measured"). Nobody was told, because nothing was red;
+      # and behind the skip four things had gone stale that the first real runs then found one at
+      # a time (this file's notes on the model, the token key and private hosts, and the journey's
+      # on the snapshot). Where the job is meant to run, not being able to run is the news.
       - name: Is a model key configured
         id: key
         env:
@@ -131,7 +134,7 @@ jobs:
             echo "OPENAI_API_KEY=$OPENAI_API_KEY"
             # `if`, not `[ … ] && echo`: a test that is false is the group's last status, and the step
             # then fails for the variable that is ALLOWED to be absent. It did, on 2026-10-06, the
-            # first time this ran in eight nights.
+            # first time this job got as far as writing the file.
             if [ -n "$OPENAI_BASE_URL" ]; then echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"; fi
             echo "BOT_MODEL=$model"
           } > .env
