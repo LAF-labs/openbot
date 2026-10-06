@@ -56,6 +56,7 @@
   "app/tests/admin-toggles.test.tsx",
   "app/tests/agent-refusals.test.ts",
   "app/tests/agents.test.ts",
+  "app/tests/allowance-words.test.tsx",
   "app/tests/answer-rating-render.test.ts",
   "app/tests/answer-rating.test.ts",
   "app/tests/answer-sources.test.ts",
