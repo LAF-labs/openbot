@@ -1898,8 +1898,8 @@ export const ko: Record<string, string> = {
   "The program was longer than one may be": "프로그램이 허용된 길이보다 김",
   "The files or the time it asked for were not ones a run takes":
     "함께 넘긴 파일이나 요청한 시간이 받을 수 없는 것이었음",
-  "The folder for files that programs make is full, so the file was not kept":
-    "프로그램이 만든 파일을 두는 폴더가 가득 차서 파일을 보관하지 못함",
+  "The folder for files that programs make holds all it may, so the file was not kept":
+    "프로그램이 만든 파일을 두는 폴더가 한도에 이르러 파일을 보관하지 못함",
 
   /*
    * 카드 자리에 뜨는 거절. 같은 코드를 사람이 읽는 문장이고, 위의 감사 칸보다 길다 —

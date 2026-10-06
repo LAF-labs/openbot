@@ -1651,6 +1651,112 @@ describe("the files a script made", () => {
   });
 });
 
+/*
+ * WHAT `made/` MAY HOLD, AS IT IS REALLY BOUNDED (the independent read of 2026-10-07). Two things
+ * the comment beside the bound did not say, each measured here rather than argued.
+ */
+describe("what made/ may hold", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /*
+   * THE BOUND THAT BITES FIRST IS NOT THE BYTES. What `made/` holds is read off the computer's
+   * own listing of it, which describes a folder in so many entries and says when there was more;
+   * a folder it cannot describe whole has no total anybody can state, and reads as full. Each run
+   * is a folder and its files — so over the computer's REAL workspace a folder of one-file runs
+   * stops being countable long before it is large.
+   */
+  test("over the computer's own workspace, a folder of one-file runs takes 251 of them and no more — at a few kilobytes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "wg-"));
+    roots.push(root);
+    const computer = realComputer(root);
+    const bench = fakeWorkbench(() => made(["total.csv", "total\n42\n"]));
+    const gateway = createComputerGateway({
+      client: computer.client,
+      auditStore: fakeAudit().store,
+      policy: () => PERMISSIVE,
+      workbench: bench.workbench,
+      now: () => AT,
+    });
+    const outcomes: string[] = [];
+    for (let run = 1; run <= 253; run += 1) {
+      const ended = await gateway.runScript(
+        COMPUTER,
+        BOT,
+        { ...ACTOR, toolCallId: `call-${run}` },
+        { script: SCRIPT, files: [] },
+      );
+      outcomes.push(ended.products[0]?.unfiled ?? "filed");
+    }
+    // Two hundred and fifty folders and their files are five hundred entries, the whole of what
+    // the computer lists, and the 251st run still finds a folder it can count. The 252nd finds
+    // five hundred and two: "truncated", no total, and so no room — for good, since nothing
+    // empties this folder.
+    expect(outcomes.indexOf("laf:made_full") + 1).toBe(252);
+    expect(outcomes.slice(251)).toEqual(["laf:made_full", "laf:made_full"]);
+    const folders = readdirSync(join(root, "made"));
+    expect(folders).toHaveLength(251);
+    const held = folders.reduce(
+      (sum, folder) =>
+        sum + statSync(join(root, "made", folder, "total.csv")).size,
+      0,
+    );
+    // Nine bytes a run: 2,259 bytes in a folder that may hold two hundred megabytes.
+    expect(held).toBe(251 * 9);
+    expect(held).toBeLessThan(MADE_MAX_BYTES / 10_000);
+  });
+
+  /*
+   * AND IT WAS READ ONCE A CALL, so two calls filing at once each saw what was there before the
+   * other and both filed past it. One call files at a time now.
+   */
+  test("two runs ending together cannot both file past what made/ may hold", async () => {
+    const computer = fakeComputer();
+    // A put that takes a moment, as one over a socket does: both calls have looked by then.
+    const client = {
+      ...computer.client,
+      forBot: () => client,
+      putFile: async (path: string, body: Uint8Array) => {
+        await Bun.sleep(5);
+        return computer.client.putFile(path, body);
+      },
+    } as typeof computer.client;
+    const bench = fakeWorkbench(() => made(["six.csv", "123456"]));
+    const gateway = createComputerGateway({
+      client,
+      auditStore: fakeAudit().store,
+      policy: () => PERMISSIVE,
+      workbench: bench.workbench,
+      now: () => AT,
+      // Room for one six-byte file and not for two.
+      madeMaxBytes: 10,
+    });
+    const run = (call: string) =>
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        { ...ACTOR, toolCallId: call },
+        { script: SCRIPT, files: [] },
+      );
+
+    const [one, other] = await Promise.all([run("call-a"), run("call-b")]);
+
+    expect(
+      [one, other].map((ended) => ended.products[0]?.unfiled ?? "filed").sort(),
+    ).toEqual(["filed", "laf:made_full"]);
+    const kept = [...computer.files.values()].reduce(
+      (sum, file) => sum + file.byteLength,
+      0,
+    );
+    // It was twelve: both filed.
+    expect(kept).toBe(6);
+  });
+});
+
 describe("a script's run, again and again", () => {
   const circling = () =>
     stack({

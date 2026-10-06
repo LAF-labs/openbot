@@ -156,6 +156,8 @@ export type ComputerGatewayOptions = {
   workbench?: Workbench;
   /** The clock a script run's folder is dated by. Absent, the wall clock. */
   now?: () => Date;
+  /** The most `made/` may hold (`gateway/script-run.ts`, `MADE_MAX_BYTES`). A test makes it small. */
+  madeMaxBytes?: number;
 };
 
 export function createComputerGateway(options: ComputerGatewayOptions) {
@@ -210,6 +212,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       auditStore,
       ...(options.workbench ? { workbench: options.workbench } : {}),
       ...(options.now ? { now: options.now } : {}),
+      ...(options.madeMaxBytes === undefined
+        ? {}
+        : { madeMaxBytes: options.madeMaxBytes }),
     }),
   };
 }
