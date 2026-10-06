@@ -1126,8 +1126,9 @@ export function createPluginRoutes(
    * AS A MODEL IS OFFERED IT (`offeredToModel`), since 2026-10-06: what the window reads here it
    * declares back as the Bot's tools, so this is a model's list by one more hop. A tool waiting for
    * review is here under its name with this deployment's own description, or — if it appeared after
-   * registration — not here. The vendor's new definition is on the administrator's screen
-   * (`GET /servers`), where it is reviewed, and nowhere else.
+   * registration — not here. The vendor's new definition is on the administrator's screen (the
+   * listing above, `GET /`), where it is reviewed, and nowhere else. What is counted beside the
+   * list (`withheld`) is a number per server and holds none of it.
    *
    * YOUR BOT, not any Bot. Audit A8's last open cell: it answered a colleague naming the owner's Bot
    * with all of that, because "no secret from the person talking to it" had been read as "no secret

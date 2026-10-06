@@ -42,7 +42,8 @@ function withTools(
  * (`server/src/turns/chat-tools.ts`).
  */
 export function PluginTools() {
-  // The registration stays; the fifteen-second grant poll only runs once a surface names a Bot.
+  // The registration stays; the grant poll — a minute between reads, and none while the window is
+  // hidden (`polled`, `agentPluginsQueryOptions`) — only runs once a surface names a Bot.
   const declared = useDeclaredBotId();
   const { data } = useQuery(agentPluginsQueryOptions(declared));
   const granted: GrantedPlugins = data ?? { tools: [], skills: [] };
