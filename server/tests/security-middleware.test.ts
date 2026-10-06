@@ -285,51 +285,63 @@ describe("a body has a ceiling", () => {
     expect(undeclared.status).toBe(413);
   });
 
-  test("a conversation turn carries its thread, so it is allowed more — and an anonymous one is still refused unread", async () => {
-    // The shape app.ts has: this middleware, then the session guard on the runtime, then the runtime.
+  test("a file somebody signed in attaches is read whole — and an anonymous one is refused without a byte of it read", async () => {
+    // The shape app.ts has: this middleware, then the door's own session guard, then the door.
     const door = new Hono();
     door.use("*", createSecurityMiddleware());
-    door.use("/api/copilotkit/*", async (context, next) => {
-      if (!context.req.header("cookie")) {
-        return context.json({ error: "laf:unauthenticated" }, 401);
-      }
-      return next();
-    });
     let read = 0;
-    door.post("/api/copilotkit/agent/:agentId/run", async (context) => {
-      read = (await context.req.text()).length;
-      return context.json({ ok: true });
-    });
-    const history = JSON.stringify({ messages: "m".repeat(5_000_000) });
+    door.post(
+      "/api/channels/:channelId/attachments",
+      async (context, next) => {
+        if (!context.req.header("cookie")) {
+          return context.json({ error: "laf:unauthenticated" }, 401);
+        }
+        return next();
+      },
+      async (context) => {
+        read = (await context.req.arrayBuffer()).byteLength;
+        return context.json({ ok: true });
+      },
+    );
+    const file = "f".repeat(5_000_000);
 
-    const signedInTurn = await door.request("/api/copilotkit/agent/bot-1/run", {
+    const signedInUpload = await door.request("/api/channels/c-1/attachments", {
       method: "POST",
-      ...declaring(history, {
-        "content-type": "application/json",
+      ...declaring(file, {
+        "content-type": "multipart/form-data; boundary=x",
         cookie: "better-auth.session_token=S",
       }),
     });
-    expect(signedInTurn.status).toBe(200);
-    expect(read).toBe(history.length);
+    expect(signedInUpload.status).toBe(200);
+    expect(read).toBe(file.length);
 
     read = 0;
-    const anonymous = await door.request("/api/copilotkit/agent/bot-1/run", {
+    const anonymous = await door.request("/api/channels/c-1/attachments", {
       method: "POST",
-      ...declaring(history, { "content-type": "application/json" }),
+      ...declaring(file, { "content-type": "multipart/form-data; boundary=x" }),
     });
     // 401, not 413, and not a byte of it read to find that out.
     expect(anonymous.status).toBe(401);
     expect(read).toBe(0);
+  });
 
-    // The same size without a declared length is a megabyte like anywhere else: it would have to be
-    // read to be counted, and nobody has been asked who is sending it.
-    const undeclared = await door.request("/api/copilotkit/agent/bot-1/run", {
-      method: "POST",
-      headers: { cookie: "better-auth.session_token=S" },
-      body: chunked(1_500_000),
-      duplex: "half",
-    } as RequestInit);
-    expect(undeclared.status).toBe(413);
+  test("the runtime's doors closed, and their 32 MB went with them: a megabyte there like anywhere", async () => {
+    // A window posted its whole thread to `agent/:id/run` until 2026-10-06, and was allowed 32 MB
+    // for it. Nothing is read there now, so nothing is allowed there.
+    for (const path of [
+      "/api/copilotkit/agent/bot-1/run",
+      "/api/copilotkit/agent/bot-1/connect",
+      "/api/copilotkit/info",
+    ]) {
+      const response = await app().request(`${ORIGIN}${path}`, {
+        method: "POST",
+        ...declaring(JSON.stringify({ messages: "m".repeat(1_500_000) }), {
+          origin: ORIGIN,
+          "content-type": "application/json",
+        }),
+      });
+      expect({ path, status: response.status }).toEqual({ path, status: 413 });
+    }
   });
 });
 
@@ -337,14 +349,8 @@ describe("three doors have a rate", () => {
   test("the doors are the ones the routers answer, however the path is spelled", () => {
     expect(doorFor("POST", "/api/auth/sign-in/social")).toBe("signIn");
     expect(doorFor("POST", "/api/auth/sign-in/oauth2")).toBe("signIn");
-    expect(doorFor("POST", "/api/copilotkit/agent/bot-1/run")).toBe("message");
-    // CopilotKit's router reads the last three segments, so these reach a run too.
-    expect(doorFor("POST", "/api/copilotkit//agent/bot-1/run")).toBe("message");
-    expect(doorFor("POST", "/api/copilotkit/x/agent/bot-1/run/")).toBe(
-      "message",
-    );
     expect(doorFor("POST", "/api/routines/r1/trigger")).toBe("trigger");
-    // The door a turn the server owns is handed over by is the same message door.
+    // A message is the door a turn the server owns is handed over by.
     expect(doorFor("POST", "/api/turns/thread-1")).toBe("message");
     expect(doorFor("POST", "/api/turns//thread-1/")).toBe("message");
     expect(doorFor("POST", "/api/turns/thread-1/stop")).toBeUndefined();
@@ -353,11 +359,21 @@ describe("three doors have a rate", () => {
     ).toBeUndefined();
     expect(doorFor("POST", "/api/turns/skips")).toBeUndefined();
     expect(doorFor("GET", "/api/turns/thread-1")).toBeUndefined();
-    // Not doors: a read, a stop, a connect, and the routes beside them.
-    expect(doorFor("GET", "/api/copilotkit/agent/bot-1/run")).toBeUndefined();
-    expect(
-      doorFor("POST", "/api/copilotkit/agent/bot-1/connect"),
-    ).toBeUndefined();
+    // Not a message any more: the runtime's run door, however its router would have read the
+    // path. It was one until 2026-10-06; the runtime starts nothing now, so a knock is not counted.
+    for (const path of [
+      "/api/copilotkit/agent/bot-1/run",
+      "/api/copilotkit//agent/bot-1/run",
+      "/api/copilotkit/x/agent/bot-1/run/",
+      "/api/copilotkit/agent/bot-1/suggest",
+      "/api/copilotkit/agent/bot-1/connect",
+    ]) {
+      expect({ path, door: doorFor("POST", path) }).toEqual({
+        path,
+        door: undefined,
+      });
+    }
+    // Nor the routes beside the doors that are.
     expect(doorFor("POST", "/api/routines/r1/run")).toBeUndefined();
     expect(doorFor("POST", "/api/auth/sign-out")).toBeUndefined();
   });
@@ -391,7 +407,7 @@ describe("three doors have a rate", () => {
   test("sending a message: per session, whatever else rides in the cookie, and per address", async () => {
     const application = app();
     const send = (cookie: string, address = "203.0.113.9") =>
-      application.request(`${ORIGIN}/api/copilotkit/agent/bot-1/run`, {
+      application.request(`${ORIGIN}/api/turns/thread-1`, {
         method: "POST",
         headers: from(address, { cookie }),
       });
@@ -416,9 +432,9 @@ describe("three doors have a rate", () => {
     );
   });
 
-  test("a turn the server owns is counted as the message it is, on the same count", async () => {
-    // Review M1: `POST /api/turns/:threadId` starts a turn exactly as a CopilotKit run did, and was
-    // outside every limit. One session's messages through either door share one count.
+  test("a turn the server owns is the message that is counted — and a knock on the closed runtime is not", async () => {
+    // Review M1: `POST /api/turns/:threadId` starts a turn, and was once outside every limit. The
+    // runtime's run door shared this count until it closed; a knock there spends none of it now.
     const application = app();
     const cookie = "better-auth.session_token=T.sig";
     const send = (path: string) =>
@@ -431,17 +447,22 @@ describe("three doors have a rate", () => {
       attempt < RATE_LIMITS.message.perSession;
       attempt += 1
     ) {
-      const path =
-        attempt % 2 === 0
-          ? "/api/turns/thread-1"
-          : "/api/copilotkit/agent/bot-1/run";
-      expect((await send(path)).status).not.toBe(429);
+      // Between every two messages, a knock on the closed door: were it counted, the limit would
+      // be met at half the messages.
+      expect((await send("/api/copilotkit/agent/bot-1/run")).status).not.toBe(
+        429,
+      );
+      expect((await send("/api/turns/thread-1")).status).not.toBe(429);
     }
     const refused = await send("/api/turns/thread-1");
     expect(refused.status).toBe(429);
     await expect(refused.json()).resolves.toEqual(RATE_LIMITED);
     // Stopping is never counted: a person past the limit can still stop what is running.
     expect((await send("/api/turns/thread-1/stop")).status).not.toBe(429);
+    // And the closed door is still not a door.
+    expect((await send("/api/copilotkit/agent/bot-1/run")).status).not.toBe(
+      429,
+    );
   });
 
   test("the anonymous trigger: per token, and per address", async () => {

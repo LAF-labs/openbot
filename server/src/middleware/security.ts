@@ -18,12 +18,11 @@
  * permanent "server down", and the consent window the app opens is one COOP would cut off from the
  * page that opened it.
  *
- * BODY. A megabyte, before any route runs. Bigger only where an honest body is bigger — a
- * conversation turn, which carries the thread (see
- * `LARGER_BODIES`) — and only for a body that DECLARES its length: Hono's `bodyLimit` refuses on
- * `Content-Length` without reading a byte, but has to read a chunked body to count it, and a
- * chunked body arrives before the session is checked. So a chunked body is held to the megabyte
- * everywhere, and the larger ceiling is free to be large.
+ * BODY. A megabyte, before any route runs. Bigger only where an honest body is bigger — a file a
+ * person hands their Bot (see `LARGER_BODIES`) — and only for a body that DECLARES its length:
+ * Hono's `bodyLimit` refuses on `Content-Length` without reading a byte, but has to read a chunked
+ * body to count it, and a chunked body arrives before the session is checked. So a chunked body is
+ * held to the megabyte everywhere, and the larger ceiling is free to be large.
  *
  * RATE. In memory, by decision: one API process per VM (docs/laf/deployment-model.md), so a map in
  * this process is the whole picture. Three doors, the three whose cost lands on somebody's model
@@ -49,29 +48,27 @@ export const BODY_LIMIT_BYTES = 1_000_000;
 /**
  * The routes an honest body outgrows the megabyte on, and what they are allowed instead.
  *
- * - A conversation turn. CopilotKit posts the whole transcript it holds with every run, tool results
- *   and all, and a person's thread with a Bot is one thread for good (A5 §2) — so the body of a turn
- *   grows with the conversation, and a megabyte here would one day refuse somebody's every message
- *   to a Bot they had talked to for months. Behind the session guard, and only for a declared
- *   length, so an anonymous caller is refused before a byte of it is read.
  * - A file a person hands their Bot. The upload door has a ceiling of its own — ten megabytes and
  *   the envelope around them, the number the composer's picker says — and stands behind the session
- *   guard like the turn. MEASURED 2026-10-06, in the app: this table did not name it, so the
+ *   guard, so an anonymous caller is refused before a byte of the body is read; and the allowance
+ *   is only for a declared length. MEASURED 2026-10-06, in the app: this table did not name it, so the
  *   megabyte above refused every sheet and PDF over a megabyte with `laf:body_too_large`, a code the
  *   composer had no words for but "다시 시도해 주세요". So it had been in every release since the
  *   door was built: the door's tests asked the door alone and this file's tests asked the
  *   middleware alone, and nothing sent a large file through both (`attachments.test.ts` does now).
+ *
+ * WHAT IS NOT HERE ANY MORE, so nobody puts it back. A conversation turn had 32 MB until
+ * 2026-10-06, because a window drove the turn then and CopilotKit posted the whole transcript it
+ * held with every run — a thread is one thread for good (A5 §2), so that body grew with the
+ * conversation. A turn the server owns is handed one message and references to its files, and
+ * reads the thread from its own store: its body is small, the run door is closed, and the
+ * megabyte is right for it. A Bot's file write had 2.5 MB for a door that closed the same week.
  */
 export const LARGER_BODIES: ReadonlyArray<{
   name: string;
   matches: (path: string) => boolean;
   maxBytes: number;
 }> = [
-  {
-    name: "conversation-turn",
-    matches: (path) => path.startsWith("/api/copilotkit/"),
-    maxBytes: 32_000_000,
-  },
   {
     name: "attachment",
     matches: (path) => /^\/api\/channels\/[^/]+\/attachments\/?$/.test(path),
@@ -82,8 +79,10 @@ export const LARGER_BODIES: ReadonlyArray<{
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 export const RATE_LIMITS = {
   signIn: { perIp: 20 },
-  // A Bot working through a task sends one run per step, and a step is a model call and an action:
-  // sixty a minute is a Bot no model can outpace, and a script that can.
+  // SIZED FOR A WINDOW THAT SENT ONE RUN PER STEP of a task, a step being a model call and an
+  // action: sixty a minute was a Bot no model could outpace, and a script that could. A turn the
+  // server owns is one message whatever its steps, so sixty is now far more than a person sends
+  // and still what stops a script. The number is unchanged; lowering it is a decision of its own.
   message: { perSession: 60, perIp: 240 },
   trigger: { perToken: 30, perIp: 60 },
 } as const;
@@ -102,30 +101,18 @@ export const BODY_TOO_LARGE = {
 /**
  * Which door a request is knocking on, if any. POST only; every one of them is a POST.
  *
- * The conversation turn is matched the way CopilotKit's own router matches it — the last three
- * non-empty segments `agent/<id>/run` under the runtime's base path (`fetch-router.mjs`,
- * @copilotkit/runtime 1.67.1) — because a pattern stricter than the router it guards is a door with
- * a second entrance: `/api/copilotkit//x/agent/bot/run` reaches the same run.
+ * A message is the door a turn the server owns is handed over by, and no other. Until 2026-10-06
+ * it was also the CopilotKit runtime's `agent/<id>/run` and `suggest`, matched the way that
+ * router matches — by a path's last three segments — because a pattern stricter than the router
+ * it guards is a door with a second entrance. The runtime answers `info` and nothing else now
+ * (`copilot.ts`), so a knock there starts nothing and is not counted.
  */
 export function doorFor(method: string, pathname: string): Door | undefined {
   if (method !== "POST") return undefined;
   const path = pathname.replace(/\/{2,}/g, "/");
   if (path.startsWith("/api/auth/sign-in/")) return "signIn";
-  if (path.startsWith("/api/copilotkit/")) {
-    const segments = path.split("/").filter(Boolean);
-    const verb = segments.at(-1);
-    if (
-      segments.length >= 3 &&
-      segments.at(-3) === "agent" &&
-      (verb === "run" || verb === "suggest")
-    ) {
-      return "message";
-    }
-    return undefined;
-  }
   /*
-   * The same message, through the door a turn the server owns is handed over by
-   * (`turns/routes.ts`, `POST /api/turns/:threadId`). It was outside every limit (review M1): a
+   * `turns/routes.ts`, `POST /api/turns/:threadId`. It was outside every limit once (review M1): a
    * script could start turns as fast as it could post. Its neighbours — stop, a card's answer, a
    * skip — are not messages.
    */

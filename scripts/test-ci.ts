@@ -1339,12 +1339,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * there, answer alike and skip nothing; the owner's own is skipped. The three raised first hold
  * the six doors that name a conversation, and the file's header said "every door".
  *
+ * RAISED AGAIN 2026-10-06 with the limits of doors that exist, by exactly one to `server`, in
+ * `security-middleware.test.ts`. The test of the 32 MB a window's run was allowed became two: the
+ * property it held — somebody signed in is read whole, an anonymous caller is refused without a
+ * byte read — is held for the upload door, which is the larger body there is now; and the closed
+ * runtime's doors are held to the megabyte like any other. The rate tests knock where a message
+ * goes, and hold that a knock on the closed run door spends none of the count.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3591, roots: ["server"] },
+  { name: "server", floor: 3592, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
