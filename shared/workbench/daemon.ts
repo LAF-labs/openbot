@@ -12,9 +12,12 @@
  *    any signal that does land ends it, and the container with it (`./sweep.ts`).
  *  - The daemon's memory. Closed (`./undumpable.ts`), or the daemon does not start.
  *  - The socket. A script can connect to it — and is refused, because a run is in progress — and
- *    it can remove the file or put its own in its place. So after every run the daemon asks
- *    ITSELF, through the path, who answers there: if it is not this process, it stops, and compose
- *    starts a fresh one that binds again.
+ *    it can remove the file or put a LISTENER OF ITS OWN in its place, which whoever asks at the
+ *    path then reaches: no directory keeps one's own user out. So the daemon proves every answer
+ *    it gives, under a key a script cannot read (`./protocol.ts`), and says `busy` in that answer
+ *    until everything a run started has been ended and cleared up after. And after every run it
+ *    asks ITSELF, through the path, who answers there: if it is not this process, it stops, and
+ *    compose starts a fresh one that binds again.
  *  - The few places besides its own directory that it can write to: the rest of the work root,
  *    the socket's directory, shared memory (`scratch`). Emptied after every run, so that one run
  *    cannot leave the next one a note.
@@ -37,10 +40,17 @@ import { basename, dirname } from "node:path";
 import { createLogger, type Logger } from "../log";
 import {
   type InvalidField,
+  isNonce,
+  isProven,
   isRunPath,
   JOB_PART,
+  NONCE_HEADER,
+  newNonce,
+  PROOF_HEADER,
   productPart,
+  proofOf,
   REPORT_PART,
+  routeOf,
   SCRIPT_PART,
   WORKBENCH_LIMITS,
   type WorkbenchRefusal,
@@ -185,6 +195,11 @@ async function readJob(
 /** Listen on `socketPath` and run what arrives. Returned so a test can stop it. */
 export function startWorkbenchDaemon(options: {
   socketPath: string;
+  /**
+   * What every answer is proven under (`./protocol.ts`). The service reads it from its environment
+   * and does not start without one; nothing here writes it anywhere, a log included.
+   */
+  key: string;
   /** Where each run's directory is made. A tmpfs of the container's own, in the service. */
   workRoot: string;
   runner: Runner;
@@ -246,14 +261,62 @@ export function startWorkbenchDaemon(options: {
       });
   };
 
-  /** Whether a request to the socket's path still reaches this process. */
+  /**
+   * An answer with its proof: the number the request brought, the route, the status, the type and
+   * the bytes of the body, under the key. A request that brought no number gets the answer bare —
+   * there is nothing to prove it to — and whoever sends one believes nothing bare.
+   */
+  const proven = async (
+    request: Request,
+    response: Response,
+  ): Promise<Response> => {
+    const nonce = request.headers.get(NONCE_HEADER);
+    if (!isNonce(nonce)) return response;
+    // The type FIRST. A form's type names the line between its parts, and the runtime makes that
+    // up when it is asked — once the body has been read, it answers that there is no type at all
+    // (measured, Bun 1.3.11), and what was proven would be a form with no boundary to read it by.
+    const type = response.headers.get("content-type") ?? "";
+    // The body as the bytes that will be sent: a form is written out here, once, with its lines.
+    const body = new Uint8Array(await response.arrayBuffer());
+    const headers = new Headers({
+      [PROOF_HEADER]: proofOf(options.key, {
+        route: routeOf(request),
+        nonce,
+        status: response.status,
+        type,
+        body,
+      }),
+    });
+    if (type) headers.set("content-type", type);
+    return new Response(body, { status: response.status, headers });
+  };
+
+  /** Whether a request to the socket's path still reaches this process: asked, and proven. */
   const answersAtItsPath = async () => {
     try {
+      const nonce = newNonce();
       const response = await fetch("http://workbench/health", {
         unix: options.socketPath,
+        headers: { [NONCE_HEADER]: nonce },
         signal: AbortSignal.timeout(2_000),
       });
-      const body: unknown = await response.json();
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (
+        !isProven(
+          options.key,
+          {
+            route: "GET /health",
+            nonce,
+            status: response.status,
+            type: response.headers.get("content-type") ?? "",
+            body: bytes,
+          },
+          response.headers.get(PROOF_HEADER),
+        )
+      ) {
+        return false;
+      }
+      const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
       return isRecord(body) && body.boot === boot;
     } catch {
       return false;
@@ -380,25 +443,30 @@ export function startWorkbenchDaemon(options: {
       throw new DaemonStartError(reason);
     }
   }
+  const answer = async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    if (url.pathname === "/health" && request.method === "GET") {
+      // Busy until a run's answer is on its way — which is after the sweep and the clearing up —
+      // and for good once this daemon is on its way out: what it could not vouch for may be alive.
+      return Response.json({ status: "ok", busy: busy || quitting, boot });
+    }
+    if (url.pathname !== "/run" || request.method !== "POST") {
+      return refusal("laf:workbench_route_unknown", 404);
+    }
+    if (busy || quitting) return refusal("laf:workbench_busy", 503);
+    busy = true;
+    try {
+      return await run(request);
+    } finally {
+      busy = false;
+    }
+  };
   const server = Bun.serve({
     unix: options.socketPath,
     // The files, the script, and room for the form around them. Bun refuses more by itself.
     maxRequestBodySize: limits.filesBytes + limits.scriptBytes + 64 * 1024,
     async fetch(request) {
-      const url = new URL(request.url);
-      if (url.pathname === "/health" && request.method === "GET") {
-        return Response.json({ status: "ok", busy, boot });
-      }
-      if (url.pathname !== "/run" || request.method !== "POST") {
-        return refusal("laf:workbench_route_unknown", 404);
-      }
-      if (busy || quitting) return refusal("laf:workbench_busy", 503);
-      busy = true;
-      try {
-        return await run(request);
-      } finally {
-        busy = false;
-      }
+      return proven(request, await answer(request));
     },
     error() {
       return refusal("laf:workbench_failed", 500);

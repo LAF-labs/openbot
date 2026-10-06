@@ -653,7 +653,7 @@ services:
   # would hold a process in memory for nothing. The profile comes off with the change that gives a
   # Bot the tool.
   #
-  # The converter's walls, and five more, because what runs here is not a parser over a stranger's
+  # The converter's walls, and six more, because what runs here is not a parser over a stranger's
   # file but the stranger's code itself:
   #
   #   - A FUNCTION OF WHAT IT IS SENT. No volume but its socket's: a script reads the bytes the
@@ -670,6 +670,9 @@ services:
   #     and memory swapped out is memory it cannot see.
   #   - A QUARTER OF A SHARE OF THE PROCESSOR when something else wants it: a script in a loop for a
   #     minute must not be what the person's own turn waits behind.
+  #   - EVERY ANSWER PROVEN. The one thing a script can reach that the server reaches too is the
+  #     socket's path, and it can sit there itself; the daemon proves each answer under a key the
+  #     script cannot read (`WORKBENCH_KEY`, below), and the server believes nothing without one.
   #
   # The daemon checks all of it before it listens and before every run, and there is no flag that
   # skips the check (shared/workbench/main.ts). It runs from SOURCE, out of `shared/`, which both
@@ -698,6 +701,15 @@ services:
     environment:
       # Nowhere to keep a transpiled copy of its own source: the root is read-only.
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0"
+      # WHAT THE DAEMON PROVES EVERY ANSWER UNDER (shared/workbench/protocol.ts). A script runs as
+      # the daemon's own user, so it can put a listener of its own where the socket was, and no
+      # owner or mode keeps one's own user out of a directory: what answers at the path is believed
+      # only with a proof under this key. Thirty-two characters or more (`openssl rand -hex 32`),
+      # the same value the server is given in the change that gives a Bot the tool; the daemon
+      # does not start without it. In the environment and never on the command line: a script can
+      # read /proc/1/cmdline, and cannot read the environment of a daemon that has closed itself
+      # (shared/workbench/undumpable.ts) — both measured by the rehearsal.
+      WORKBENCH_KEY: ${WORKBENCH_KEY:-}
     tmpfs:
       # Where each run's directory is made. Not executable: a script may write a program here, and
       # may not start it. 4,096 names is thousands more than a run needs and far fewer than it

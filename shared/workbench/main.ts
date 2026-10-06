@@ -9,6 +9,10 @@
  * and the computer's. Which of them it runs in is then one line of compose, and the language a
  * script is written in is `./runner.ts`.
  *
+ * AND IT DOES NOT START WITHOUT A KEY (`WORKBENCH_KEY`, thirty-two characters or more): what
+ * answers at its socket's path is believed only with a proof under it, so a daemon without one
+ * would be a service nobody may believe.
+ *
  * THERE IS NO FLAG THAT SKIPS THE CHECK. The converter's `--require-isolation` is a switch because
  * a laptop reads files in a child process without it; nothing here is worth running outside its
  * walls, and the sweep would refuse there whatever a flag said (`./sweep.ts`). So this file is
@@ -23,7 +27,7 @@ import {
   startWorkbenchDaemon,
   type WorkbenchDaemon,
 } from "./daemon";
-import { WORKBENCH_LIMITS } from "./protocol";
+import { isKey, KEY_VARIABLE, WORKBENCH_LIMITS } from "./protocol";
 import { RUNNER } from "./runner";
 import {
   createSweep,
@@ -66,6 +70,20 @@ async function main(): Promise<void> {
     log.error("workbench_refused", { reason: "no_socket" });
     process.exit(1);
   }
+  /*
+   * The key every answer is proven under (`./protocol.ts`), from the environment and nowhere else:
+   * a command line is world-readable under `/proc`, and a file this user can read is a file a
+   * script can read. Taken out of `process.env` at once, so nothing started from here can be
+   * handed it by an oversight; what the kernel keeps of the environment this process was started
+   * with is closed two lines down, or the daemon does not start.
+   */
+  const key = process.env[KEY_VARIABLE];
+  delete process.env[KEY_VARIABLE];
+  if (!isKey(key)) {
+    // Not a value, and not how long it was: only that there was none to use.
+    log.error("workbench_refused", { reason: "no_key" });
+    process.exit(1);
+  }
   const closed = await makeUndumpable();
   const facts = readSandboxFacts(WORK_ROOT);
   const problems = sandboxProblems(facts);
@@ -88,6 +106,7 @@ async function main(): Promise<void> {
   try {
     daemon = startWorkbenchDaemon({
       socketPath,
+      key,
       workRoot: WORK_ROOT,
       runner: RUNNER,
       problems: () => sandboxProblems(readSandboxFacts(WORK_ROOT)),
@@ -117,7 +136,8 @@ async function main(): Promise<void> {
     process.exit(0);
   });
   log.info("workbench_listening", {
-    // Which of the two keeps a script out of this process's memory, for whoever reads the log.
+    // That this process closed itself — it does not get here otherwise — and what the host's own
+    // rule about tracing is, for whoever reads the log.
     undumpable: closed && isUndumpable() === true,
     ptraceScope: ptraceScope(),
     timeoutMs: WORKBENCH_LIMITS.timeoutMs,
