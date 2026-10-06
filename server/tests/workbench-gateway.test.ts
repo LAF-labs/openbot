@@ -349,6 +349,26 @@ describe("a script's run, before anything is decided", () => {
     expect(computer.addressedAs).toEqual([]);
   });
 
+  test("a run for something that is not a Bot's id is refused first: no row names it, and nothing runs", async () => {
+    for (const botId of ["", "../../etc", "bot one", "봇"]) {
+      // No file and no product: the one run that would never have reached the computer's own check.
+      const { gateway, rows, sent, computer } = stack();
+      const error = await failure(
+        gateway.runScript(COMPUTER, botId, ACTOR, {
+          script: SCRIPT,
+          files: [],
+        }),
+      );
+      expect({ botId, said: (error as Error).message }).toEqual({
+        botId,
+        said: "laf:bot_id_invalid",
+      });
+      expect(rows).toEqual([]);
+      expect(sent).toEqual([]);
+      expect(computer.addressedAs).toEqual([]);
+    }
+  });
+
   test("a request that could only be refused costs no read, opens no question and leaves no row", async () => {
     const tooLong = "x".repeat(WORKBENCH_LIMITS.scriptBytes + 1);
     const wrong: [

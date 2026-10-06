@@ -18,6 +18,7 @@ import {
   WORKBENCH_UNAVAILABLE,
 } from "../../audit";
 import type { Workbench, WorkbenchFile } from "../../workbench/client";
+import { BotIdRefusedError, isBotId } from "../bot-id";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -371,6 +372,13 @@ export function createActs(deps: {
       signal?: AbortSignal,
       approvalId?: string,
     ): Promise<ScriptRun> {
+      /*
+       * WHOSE RUN IT IS, HELD TO THE SHAPE A BOT'S ID HAS. Every other act reaches the computer's
+       * client, which is the last place that refuses an id that is not one (`client.ts`, `send`);
+       * a run that names no file and makes none never does. So it is checked here, first: every
+       * row a run leaves, and every file it reads or files, is one Bot's by an id of that shape.
+       */
+      if (!isBotId(botId)) throw new BotIdRefusedError();
       /*
        * NOWHERE TO RUN IT: said at once, before a file is read or anything is decided. Reading a
        * person's files in order to run something that cannot run would be a read for nothing, and
