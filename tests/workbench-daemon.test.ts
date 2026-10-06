@@ -40,11 +40,17 @@ import {
 } from "../shared/workbench/daemon";
 import {
   filePart,
+  isRunPath,
   JOB_PART,
+  RUN_PATH_SEGMENTS,
   SCRIPT_PART,
   WORKBENCH_LIMITS,
 } from "../shared/workbench/protocol";
-import { runScript, type WorkbenchLimits } from "../shared/workbench/run";
+import {
+  isRequestsFault,
+  runScript,
+  type WorkbenchLimits,
+} from "../shared/workbench/run";
 import { bunTypeScript, type Runner } from "../shared/workbench/runner";
 
 const repository = join(import.meta.dir, "..");
@@ -923,4 +929,48 @@ test("a caller that gives up while a run's files are being placed ends the run t
   // Nothing was started, so there was nothing to sweep — and nothing is left where it would have run.
   expect(swept).toBe(0);
   expect(readdirSync(workRoot)).toEqual([]);
+});
+
+test("a path is at most sixteen folders deep, so the files of one request cannot use up the work root's names", async () => {
+  expect(RUN_PATH_SEGMENTS).toBe(16);
+  const deep = (segments: number) =>
+    Array.from({ length: segments }, () => "d").join("/");
+  expect(isRunPath(deep(16))).toBe(true);
+  expect(isRunPath(deep(17))).toBe(false);
+  // Eight files, five hundred folders each: four thousand names of the 4,096 the work root has.
+  // Taken, as it was, the ninth `mkdir` failed for want of one and the daemon QUIT — a request's
+  // mistake answered by ending the service.
+  const { socketPath, quits, swept } = bench();
+  const response = await rawRun(
+    socketPath,
+    { files: [{ path: `${deep(500)}/a.csv`, part: filePart(0) }] },
+    { file0: "x" },
+  );
+  expect([response.status, await response.json()]).toEqual([
+    400,
+    {
+      error: "laf:workbench_request_invalid",
+      code: "laf:workbench_request_invalid",
+      field: "files",
+    },
+  ]);
+  expect(swept()).toBe(0);
+  expect(quits).toEqual([]);
+});
+
+test("a file that cannot be placed for want of room is the request's fault; a disk that fails is not", () => {
+  for (const code of [
+    "EEXIST",
+    "ENOTDIR",
+    "EISDIR",
+    "ENAMETOOLONG",
+    "ENOSPC",
+    "EDQUOT",
+    "EMLINK",
+  ]) {
+    expect(isRequestsFault(code), code).toBe(true);
+  }
+  for (const code of ["EACCES", "EIO", "EROFS", "EPERM", ""]) {
+    expect(isRequestsFault(code), code).toBe(false);
+  }
 });

@@ -145,6 +145,17 @@ export const filePart = (index: number) => `file${index}`;
 export const productPart = (index: number) => `product${index}`;
 
 /**
+ * How many folders deep a file's path may be, the file's own name included.
+ *
+ * The Bot's folder is two or three deep (`uploads/…`, `made/<day>/…`). Unbounded, a path's length
+ * was the only limit, and 1,024 characters are five hundred folders: eight such files are four
+ * thousand names of the 4,096 the work root has (`docker-compose.yml`), the next `mkdir` failed for
+ * want of one, and the daemon took a failure it could not explain as its cue to stop — a
+ * request's mistake answered by ending the service (the independent read, 2026-10-06).
+ */
+export const RUN_PATH_SEGMENTS = 16;
+
+/**
  * Whether a path may name a file inside a run's directory: relative, made of real segments, and
  * going nowhere but down.
  *
@@ -160,9 +171,13 @@ export function isRunPath(path: unknown): path is string {
   // A NUL ends a path in a C library; a backslash is a separator to some reader, somewhere.
   if (path.includes("\0") || path.includes("\\")) return false;
   if (path.startsWith("/")) return false;
-  return path
-    .split("/")
-    .every((segment) => segment !== "" && segment !== "." && segment !== "..");
+  const segments = path.split("/");
+  return (
+    segments.length <= RUN_PATH_SEGMENTS &&
+    segments.every(
+      (segment) => segment !== "" && segment !== "." && segment !== "..",
+    )
+  );
 }
 
 /**

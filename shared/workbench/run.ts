@@ -116,6 +116,27 @@ function capture(stream: ReadableStream<Uint8Array>, keep: number) {
 const errnoOf = (error: unknown) =>
   error instanceof Error && "code" in error ? String(error.code) : "";
 
+/**
+ * Whether a file that could not be placed is the REQUEST's doing: two files under one path, a file
+ * where a folder has to be, a name too long — or no room left for it, in bytes or in names. Those
+ * are answered as a request that is not one this service takes, and nothing was run. Anything else
+ * (a disk that fails, a directory this user may not write) is the service's own trouble, and is
+ * thrown as it is.
+ *
+ * "No room" was not here until 2026-10-06, and a request that ran the work root out of names made
+ * the daemon quit.
+ */
+export const isRequestsFault = (code: string): boolean =>
+  [
+    "EEXIST",
+    "ENOTDIR",
+    "EISDIR",
+    "ENAMETOOLONG",
+    "ENOSPC",
+    "EDQUOT",
+    "EMLINK",
+  ].includes(code);
+
 /** Put each file where its path says, under `files`, and nowhere else. */
 async function place(
   files: string,
@@ -135,11 +156,7 @@ async function place(
       // contradicts itself, not a file to overwrite.
       await writeFile(full, input.bytes, { flag: "wx" });
     } catch (error) {
-      if (
-        ["EEXIST", "ENOTDIR", "EISDIR", "ENAMETOOLONG"].includes(errnoOf(error))
-      ) {
-        throw new UnplaceableInputError();
-      }
+      if (isRequestsFault(errnoOf(error))) throw new UnplaceableInputError();
       throw error;
     }
   }
