@@ -504,6 +504,7 @@
   "server/tests/solo-append.integration.test.ts",
   "server/tests/stall-guard.test.ts",
   "server/tests/standing-approvals.integration.test.ts",
+  "server/tests/stop-all-turn.integration.test.ts",
   "server/tests/stop-all.test.ts",
   "server/tests/stream-access.test.ts",
   "server/tests/support-door.test.ts",
