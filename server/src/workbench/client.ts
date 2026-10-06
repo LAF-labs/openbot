@@ -587,6 +587,16 @@ function differenceOf(there: Made, asked: Made): string | null {
  * this path too, so a name that is later pointed somewhere else does not take the client with it
  * while its place in the table stays where it was.
  *
+ * THE SOCKET'S OWN NAME IS NOT FOLLOWED WHERE IT IS A LINK, ON PURPOSE. A link to the socket file,
+ * from somewhere else, is therefore another client (probed by the independent read of #123, and
+ * left so). The directory a socket is in is the server's own mount; what is IN it is written by
+ * the sandbox's user, and a script can leave a link where the socket was — the daemon stops when
+ * it does, and for the moment before the next one binds, that link is what the name is. A client
+ * made in that moment, having followed it, would be a client of wherever a script pointed for the
+ * life of this process; and with two sockets, of the wrong one. What a script can write is not
+ * what says which socket this is. One caller makes the client, from the one path it is
+ * configured with.
+ *
  * A DIRECTORY THAT CANNOT BE RESOLVED HAS NO REAL PATH, and so no client: this throws — for one
  * that is not there, and for one this process may not look into. Falling back to the path as
  * written would keep a client under a name that may turn out to be one of two for the same place
