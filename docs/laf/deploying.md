@@ -831,7 +831,13 @@ outside. What it holds the upgrade to:
   their memory, by stopping the daemon, by taking the socket's place. Each is a
   check with what was measured beside it; the first run of it found that the
   sweep's call answers "nobody was there" as an error, which no test on a
-  laptop could have.
+  laptop could have. Then a third container drives the gateway's own act for a
+  script's run against the same service (`scripts/workbench-act-probe.ts`) —
+  a run that reads one file and makes one, a run whose file is refused, a run
+  stopped mid-way and the run after it, a deployment with no service — and
+  prints the rows each left on the trail, whole. The Bot's computer is a folder
+  in memory there and the trail a list; the gateway, the client, the daemon and
+  the scripts are the real ones.
 
 Then it takes away every container, volume and network it made and every image
 it pulled or built, and puts back a tag a pull moved.
