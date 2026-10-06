@@ -1503,15 +1503,35 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `TABLE[key]`, which every object answers for that one key with a function, and the function's
  * text stood in the paragraph a Bot reads.
  *
+ * RAISED 2026-10-06 with the server's own two file calls on the Bot's computer — a file taken
+ * whole (`/files/bytes`) and bytes put where nothing is (`/files/put`) — by exactly what was added:
+ * `agent-computer` from 495 to 526, `server` from 3575 to 3582, `root` from 729 to 733.
+ * Thirty-one to `agent-computer`: eighteen in `workspace.test.ts` (a whole read under a bound of
+ * its own, the largest file a person may attach by default, and refused as every reading is; a put
+ * that lands bytes as given in folders made on the way, a body of nothing, never over a file, a
+ * folder or a link, refused unread by what was declared and one piece past the bound otherwise,
+ * its default bound, six escapes and a linked folder, a file where a folder has to be, and a body
+ * that breaks off leaving nothing) and thirteen in `file-handoff.test.ts` (the four refusals every
+ * file route answers, now for `/files/bytes` too; three for a whole file on the wire; six for a
+ * put on the wire — the path in its header, a taken path, both ways of being too large, a header
+ * that names nothing, a path out, and the door). Seven to `server`: six in
+ * `computer-client.test.ts` (each call as the computer's route is, the Bot named; the whole
+ * read's bound and a flood let go of; a refusal on either as the container's own fact; a put over
+ * the bound never sent; a whole file that breaks off) and the one `computer-routes-codes.test.ts`
+ * writes for every answer the container can send, for the new `laf:file_exists`. Four to `root`,
+ * in `tests/file-handoff.test.ts`: the server's real client against the container's real routes
+ * over a real socket — which is where a put first failed, on a request body the pinned Bun would
+ * not iterate once it had come off a socket, while every test that built its own request passed.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3575, roots: ["server"] },
+  { name: "server", floor: 3582, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
-  { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 729, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 526, roots: ["agent-computer"] },
+  { name: "root", floor: 733, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
