@@ -21,11 +21,16 @@ import {
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ComputerClient } from "../src/computer/client";
+import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
 import {
   ActionNeedsApprovalError,
+  ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
-import { workspacePathOf } from "../src/computer/gateway/addresses";
+import {
+  hasNoOneReading,
+  workspacePathOf,
+} from "../src/computer/gateway/addresses";
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
@@ -39,12 +44,14 @@ import { createUnattendedTools } from "../src/runner/unattended";
  * a file past with a trailing space, and the same was true of the Bot's own file tools.
  *
  * EVERY TEST HERE IS IN FRONT OF THE REAL WORKSPACE, reached through the computer's own route
- * handlers with the body the server's client posts — and what is asserted is what happened on
- * the disk: was the guarded file read, was it written over. The first version of this file used a
- * computer that echoed what it was sent and asserted on strings; a second independent read then
- * found a spelling (`"./ private/pay.csv"`) for which this function's answer was a DIFFERENT
- * file to the computer, deleted the line in `govern` that reads the path, and watched all twelve
- * tests pass. A fake that echoes cannot see either, so there is none here.
+ * handlers with the body the server's client posts — and what is asserted is what happened: which
+ * file was read, what is on the disk. The first version of this file used a computer that echoed
+ * what it was sent and asserted on strings; a second independent read found a spelling for which
+ * the fix's own answer was a DIFFERENT file to the computer, deleted the line in `govern` that
+ * reads the path, and watched all twelve tests pass. A third found that the computer reads a
+ * backslash as a separator and writes it as a letter, which no test here knew. So: no fake that
+ * echoes, every file with contents of its own, and spellings by the thousand rather than by
+ * example.
  */
 
 const SNAPSHOT: SnapshotResult = {
@@ -55,6 +62,7 @@ const SNAPSHOT: SnapshotResult = {
   elements: [{ ref: "e9", role: "button", name: "Submit order" }],
 };
 const ACTOR = { id: "dev-local-user" };
+const OWNER = "owner-user";
 /** The control an upload names: the snapshot's button, at the snapshot the server holds. */
 const TARGET = { ref: "e9", snapshotId: SNAPSHOT.snapshotId };
 
@@ -65,24 +73,45 @@ const IN_A_SPACED_FOLDER =
 const A_SPACED_NAME = "[a file whose name ends with a space, in private/]";
 const SECRET = "[the secret]";
 const NOTE = "[a note]";
+/** Every file the folder starts with, by where it is. */
+const FILES = [
+  [join("private", "pay.csv"), PAYROLL],
+  [join(" private", "pay.csv"), IN_A_SPACED_FOLDER],
+  [join("private", "pay.csv "), A_SPACED_NAME],
+  [".env", SECRET],
+  [join("notes", "a.md"), NOTE],
+] as const;
 
 let root = "";
 let workspace: Workspace;
+async function folderAsItWas() {
+  for (const [file, contents] of FILES) {
+    await mkdir(join(root, file, ".."), { recursive: true });
+    await writeFile(join(root, file), contents);
+  }
+}
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "laf-one-spelling-"));
-  await mkdir(join(root, "private"), { recursive: true });
-  await mkdir(join(root, " private"), { recursive: true });
-  await mkdir(join(root, "notes"), { recursive: true });
-  await writeFile(join(root, "private", "pay.csv"), PAYROLL);
-  await writeFile(join(root, " private", "pay.csv"), IN_A_SPACED_FOLDER);
-  await writeFile(join(root, "private", "pay.csv "), A_SPACED_NAME);
-  await writeFile(join(root, ".env"), SECRET);
-  await writeFile(join(root, "notes", "a.md"), NOTE);
+  await folderAsItWas();
   workspace = createWorkspace(root);
 });
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
+
+/** Every file under the folder, by its path from the folder's top. */
+async function everything(dir = root, under = ""): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const at = `${under}${entry.name}`;
+    if (entry.isDirectory()) {
+      found.push(...(await everything(join(dir, entry.name), `${at}/`)));
+    } else {
+      found.push(at);
+    }
+  }
+  return found;
+}
 
 type Route = (asked: never, computer: never) => Promise<Response> | Response;
 
@@ -148,16 +177,17 @@ async function gatewayUnder(
   const auditStore: AuditStore = {
     insert: async (event) => void rows.push(event),
   };
+  const approvals = createApprovalRegistry();
   const gateway = createComputerGateway({
     client,
     auditStore,
     policy: () => policy,
-    approvals: createApprovalRegistry(),
+    approvals,
     standing,
   });
   // An upload names a control, so the server holds a snapshot first, as the real flow does.
   await gateway.snapshot("default");
-  return { gateway, sent, rows };
+  return { gateway, approvals, sent, rows };
 }
 
 const allowingAllBut = (...deny: string[]): ActionPolicy => ({
@@ -177,6 +207,7 @@ async function cameOf(work: () => Promise<unknown>): Promise<string> {
     }
     return "done";
   } catch (error) {
+    if (error instanceof ActionNeedsApprovalError) return "asked";
     return error instanceof Error ? error.message : String(error);
   }
 }
@@ -188,25 +219,32 @@ function spellingsOf(core: string): string[] {
     " ",
     "\t",
     "\n",
-    " ",
+    "\u00a0",
     "./",
     "./ ",
+    "./\n",
+    "./\u3000",
     " ./",
     ".//",
     "./ ./ ",
+    "\\",
+    ".\\",
   ];
   const after = [
     "",
     " ",
     "\n",
-    "　",
+    "\u3000",
     "/",
     "/.",
     "/./",
     " /",
     " /.",
+    "\n/.",
     "/ ",
     "/. ",
+    "\\",
+    "\\.",
   ];
   return before.flatMap((head) => after.map((tail) => `${head}${core}${tail}`));
 }
@@ -215,6 +253,8 @@ const CORES = [
   "private/pay.csv",
   "private//pay.csv",
   "private/./pay.csv",
+  "private\\pay.csv",
+  "private\\.\\pay.csv",
   " private/pay.csv",
   "private/pay.csv ",
   "private / pay.csv",
@@ -241,7 +281,7 @@ describe("a path in the Bot's folder has one spelling", () => {
       "private/pay.csv ",
       " private/pay.csv",
       "private/pay.csv\n",
-      " private/pay.csv　",
+      "\u00a0private/pay.csv\u3000",
       "./private/pay.csv",
       "private/./pay.csv",
       "private//pay.csv",
@@ -254,51 +294,57 @@ describe("a path in the Bot's folder has one spelling", () => {
     for (const spelling of [".env/", ".env/.", " .env", "./.env", ".env\n"]) {
       expect(workspacePathOf(spelling)).toBe(".env");
     }
-    // Already in its one spelling: handed back as it is. A space or a backslash INSIDE a name is
-    // a letter of that name to the computer, so it is one here.
+    // Already in its one spelling: handed back as it is, a space INSIDE the path included.
     for (const kept of [
       "notes.md",
       "notes/2026 10/a b.md",
       "가게/매출 정리.csv",
-      "private\\pay.csv",
-      "a / b",
+      "a/ b /c",
     ]) {
       expect(workspacePathOf(kept)).toBe(kept);
+      expect(hasNoOneReading(kept)).toBe(false);
     }
     for (const whole of [".", "./", " . ", ".//."]) {
       expect(workspacePathOf(whole)).toBe(".");
     }
   });
 
-  test("what the computer refuses as a path has none", () => {
+  test("what the computer refuses as a path has none, and is not what the gateway refuses", () => {
     for (const refused of ["", "   ", "\n", ...NOT_A_PATH]) {
       expect(workspacePathOf(refused)).toBeNull();
+      expect(hasNoOneReading(refused)).toBe(false);
     }
   });
 
-  test("a name with white space at an edge keeps the one mark that makes it itself", () => {
-    // To the computer these are a folder called " private" and a file called "pay.csv ": sent
-    // without the `./` or the `/.`, it would trim them into the payroll's own path.
-    for (const [written, spelling] of [
-      ["./ private/pay.csv", "./ private/pay.csv"],
-      [" .//./ private//pay.csv/ ", "./ private/pay.csv"],
-      ["./\tprivate/pay.csv", "./\tprivate/pay.csv"],
-      ["private/pay.csv /", "private/pay.csv /."],
-      ["private/pay.csv /.", "private/pay.csv /."],
-      [" private/pay.csv /", "private/pay.csv /."],
-      // A part that is a space and a dot is a NAME to the computer, not the folder itself.
-      ["./ ./ notes/a.md", "./ ./ notes/a.md"],
-      ["./ /./ notes/a.md", "./ / notes/a.md"],
-      ["./ /.", "./ /."],
-    ] as const) {
-      expect(workspacePathOf(written)).toBe(spelling);
+  test("a backslash, or white space at the edge of a first or last name, has no one reading", () => {
+    for (const two of [
+      // The computer reads a backslash as a separator and writes it as a letter.
+      "private\\pay.csv",
+      "\\private/pay.csv",
+      "private/pay.csv\\",
+      "\\",
+      // To the computer: a folder called " private", a file called "pay.csv ".
+      "./ private/pay.csv",
+      "./\tprivate/pay.csv",
+      "./\nprivate/pay.csv",
+      "./\u3000private/pay.csv",
+      "private/pay.csv /",
+      "private/pay.csv /.",
+      " private/pay.csv /",
+      "./ ./ notes/a.md",
+      "./ /.",
+    ]) {
+      expect(hasNoOneReading(two)).toBe(true);
+      expect(workspacePathOf(two)).toBeNull();
     }
   });
 
   test("a spelling is its own spelling: reading it again changes nothing", () => {
     for (const written of EVERY_SPELLING) {
       const once = workspacePathOf(written);
-      if (once !== null) expect(workspacePathOf(once)).toBe(once);
+      if (once === null) continue;
+      expect(workspacePathOf(once)).toBe(once);
+      expect(hasNoOneReading(once)).toBe(false);
     }
   });
 
@@ -322,24 +368,41 @@ describe("a path in the Bot's folder has one spelling", () => {
     // A corpus that quietly became empty would pass everything above.
     expect(compared).toBeGreaterThan(600);
   });
+
+  test("the computer refuses a backslash itself, so a spelling it never sees is one it would not read", async () => {
+    // The root of the third read's finding, closed where it is: `resolvePath` read a backslash as
+    // a separator through `realpath` and wrote it as a letter.
+    for (const path of [
+      "private\\pay.csv",
+      "\\private/pay.csv",
+      "private/pay.csv\\",
+      "\\",
+    ]) {
+      for (const route of [readRoute, listRoute] as Route[]) {
+        expect(await cameOf(() => through(route, { path }))).toBe(
+          "laf:file_path_refused",
+        );
+      }
+      expect(
+        await cameOf(() =>
+          through(writeRoute as Route, { path, contents: "x" }),
+        ),
+      ).toBe("laf:file_path_refused");
+    }
+  });
 });
 
-/**
- * A rule about the payroll, and every file in the folder that the rule is about. A rule about a
- * NAME or an EXTENSION is about the file with a space at the edge of its name too: `describeFile`
- * reads a name trimmed, so a look-alike is judged as the name it would be read as.
- */
-const RULES: readonly (readonly [rule: string, guarded: readonly string[]])[] =
-  [
-    ['matches(file.path, "^private/")', [PAYROLL, A_SPACED_NAME]],
-    ['file.path == "private/pay.csv"', [PAYROLL]],
-    ['file.name == "pay.csv"', [PAYROLL, IN_A_SPACED_FOLDER, A_SPACED_NAME]],
-    ['file.extension == "csv"', [PAYROLL, IN_A_SPACED_FOLDER, A_SPACED_NAME]],
-  ];
+/** The four ways a rule about the payroll gets written. */
+const RULES = [
+  'matches(file.path, "^private/")',
+  'file.path == "private/pay.csv"',
+  'file.name == "pay.csv"',
+  'file.extension == "csv"',
+] as const;
 
 describe("a rule about a file holds however the path is written", () => {
   test("no spelling reads a file a rule denies, or hands it to a site", async () => {
-    for (const [rule, guarded] of RULES) {
+    for (const rule of RULES) {
       const { gateway } = await gatewayUnder(allowingAllBut(rule));
       for (const path of EVERY_SPELLING) {
         const read = await cameOf(() =>
@@ -348,30 +411,20 @@ describe("a rule about a file holds however the path is written", () => {
         const upload = await cameOf(() =>
           gateway.uploadFile("default", "bot-1", ACTOR, { ...TARGET, path }),
         );
-        for (const contents of guarded) {
-          expect(`${rule} · ${JSON.stringify(path)} · ${read}`).not.toContain(
-            contents,
-          );
-          expect(`${rule} · ${JSON.stringify(path)} · ${upload}`).not.toContain(
-            contents,
-          );
-        }
+        expect(`${rule} · ${JSON.stringify(path)} · ${read}`).not.toContain(
+          PAYROLL,
+        );
+        expect(`${rule} · ${JSON.stringify(path)} · ${upload}`).not.toContain(
+          PAYROLL,
+        );
       }
     }
   });
 
   test("no spelling writes over a file a rule denies", async () => {
-    const guardedFiles = [
-      [join("private", "pay.csv"), PAYROLL],
-      [join(" private", "pay.csv"), IN_A_SPACED_FOLDER],
-      [join("private", "pay.csv "), A_SPACED_NAME],
-    ] as const;
-    for (const [rule, guarded] of RULES) {
-      // Each rule starts from the folder as it was: what one rule does not guard, the rule before
-      // it was free to write over.
-      for (const [file, contents] of guardedFiles) {
-        await writeFile(join(root, file), contents);
-      }
+    for (const rule of RULES) {
+      // Each rule starts from the folder as it was.
+      await folderAsItWas();
       const { gateway } = await gatewayUnder(allowingAllBut(rule));
       for (const path of EVERY_SPELLING) {
         await cameOf(() =>
@@ -380,14 +433,52 @@ describe("a rule about a file holds however the path is written", () => {
             contents: "written over",
           }),
         );
-        for (const [file, contents] of guardedFiles) {
-          if (!guarded.includes(contents)) continue;
-          expect(
-            `${rule} · ${JSON.stringify(path)} · ${await readDisk(join(root, file), "utf8")}`,
-          ).toBe(`${rule} · ${JSON.stringify(path)} · ${contents}`);
-        }
+        expect(
+          `${rule} · ${JSON.stringify(path)} · ${await readDisk(join(root, "private", "pay.csv"), "utf8")}`,
+        ).toBe(`${rule} · ${JSON.stringify(path)} · ${PAYROLL}`);
       }
     }
+  });
+
+  test("a path with no one reading is refused with a row and never sent, whatever the policy allows", async () => {
+    const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
+    const before = await everything();
+    let refused = 0;
+    for (const path of EVERY_SPELLING.filter(hasNoOneReading)) {
+      for (const came of [
+        await cameOf(() =>
+          gateway.readFile("default", "bot-1", ACTOR, { path }),
+        ),
+        await cameOf(() =>
+          gateway.writeFile("default", "bot-1", ACTOR, { path, contents: "x" }),
+        ),
+        await cameOf(() =>
+          gateway.listFiles("default", "bot-1", ACTOR, { path }),
+        ),
+        await cameOf(() =>
+          gateway.uploadFile("default", "bot-1", ACTOR, { ...TARGET, path }),
+        ),
+      ]) {
+        expect(`${JSON.stringify(path)} · ${came}`).toBe(
+          `${JSON.stringify(path)} · laf:file_path_refused`,
+        );
+        refused++;
+      }
+    }
+    expect(refused).toBeGreaterThan(1000);
+    // Nothing reached the computer, nothing changed on the disk, and every attempt has its row:
+    // a refusal, by the fact, under the string as it was written — there is no other to give it.
+    expect(sent).toEqual([]);
+    expect(await everything()).toEqual(before);
+    const refusals = rows.filter(
+      (row) => row.eventType === "computer.action_refused",
+    );
+    expect(refusals.length).toBe(refused);
+    expect(
+      new Set(
+        refusals.map((row) => (row.payload.decision as { code?: string }).code),
+      ),
+    ).toEqual(new Set(["laf:file_path_refused"]));
   });
 
   test("a dotfile denied by name is not read as `.env/`", async () => {
@@ -402,19 +493,21 @@ describe("a rule about a file holds however the path is written", () => {
     }
   });
 
-  test("a denied folder is not listed under any spelling of it", async () => {
-    const { gateway } = await gatewayUnder(
-      allowingAllBut('file.path == "private"'),
-    );
-    for (const path of spellingsOf("private")) {
-      const listed = await cameOf(() =>
-        gateway.listFiles("default", "bot-1", ACTOR, { path }),
-      );
-      // The denied folder's own listing names the payroll's path, to the letter; the folder
-      // beside it whose name begins with a space is another folder, and is not denied.
-      expect(listed.replace("listed: ", "").split(" | ")).not.toContain(
-        "private/pay.csv",
-      );
+  test("a denied folder is not listed, whether the rule names the folder or what is under it", async () => {
+    for (const rule of [
+      'file.path == "private"',
+      'matches(file.path, "^private/")',
+    ]) {
+      const { gateway } = await gatewayUnder(allowingAllBut(rule));
+      for (const path of spellingsOf("private")) {
+        const listed = await cameOf(() =>
+          gateway.listFiles("default", "bot-1", ACTOR, { path }),
+        );
+        // The denied folder's own listing names the payroll's path, to the letter.
+        expect(
+          `${rule} · ${JSON.stringify(path)} · ${listed.replace("listed: ", "").split(" | ").includes("private/pay.csv")}`,
+        ).toBe(`${rule} · ${JSON.stringify(path)} · false`);
+      }
     }
   });
 
@@ -459,18 +552,6 @@ describe("a rule about a file holds however the path is written", () => {
       allow: ["true"],
     };
     const { gateway } = await gatewayUnder(policy);
-    const everything = async (dir = root, under = ""): Promise<string[]> => {
-      const found: string[] = [];
-      for (const entry of await readdir(dir, { withFileTypes: true })) {
-        const at = `${under}${entry.name}`;
-        if (entry.isDirectory()) {
-          found.push(...(await everything(join(dir, entry.name), `${at}/`)));
-        } else {
-          found.push(at);
-        }
-      }
-      return found;
-    };
     const before = new Set(await everything());
     let unasked = 0;
     for (const path of [
@@ -479,16 +560,10 @@ describe("a rule about a file holds however the path is written", () => {
       ...spellingsOf("private/report.md"),
       ...spellingsOf("report.md"),
     ]) {
-      const came = await gateway
-        .writeFile("default", "bot-1", ACTOR, { path, contents: "x" })
-        .then(
-          () => "written",
-          (error: unknown) =>
-            error instanceof ActionNeedsApprovalError
-              ? "asked"
-              : (error as Error).message,
-        );
-      if (came === "written") unasked++;
+      const came = await cameOf(() =>
+        gateway.writeFile("default", "bot-1", ACTOR, { path, contents: "x" }),
+      );
+      if (came === "done") unasked++;
     }
     // What was written without a question is inside `notes/`, to the letter — and something was,
     // or this would pass with every write asked about.
@@ -501,8 +576,7 @@ describe("a rule about a file holds however the path is written", () => {
   test("an allowance for one file is not spent on a write that lands beside it", async () => {
     // The second read's case: the preset, an allowance somebody gave for `private/report.md`, and
     // a path that is a folder called " private" to the computer. An allowance's scope trims its
-    // path once more (`standing-approvals.ts`, `allowanceFor`), so a reading with a space at its
-    // edge matched the allowance while the file landed elsewhere.
+    // path once more (`standing-approvals.ts`, `allowanceFor`).
     const rule = 'intent == "write_file" && !matches(file.path, "^notes/")';
     const standing = createStandingApprovalStore();
     await standing.grant({
@@ -515,7 +589,7 @@ describe("a rule about a file holds however the path is written", () => {
         file: { path: "private/report.md" },
         reason: "policy_ask",
       },
-      grantedBy: "owner",
+      grantedBy: OWNER,
     });
     const { gateway } = await gatewayUnder(
       { deny: [], ask: [rule], allow: ["true"] },
@@ -532,34 +606,126 @@ describe("a rule about a file holds however the path is written", () => {
         ),
       ).toBe("done");
     }
+    const before = await everything();
     for (const beside of [
       "./ ./ private/report.md",
       "./ private/report.md",
       "private/report.md /./ /",
       "private/report.md /.",
+      "private\\report.md",
     ]) {
-      await expect(
+      const came = await cameOf(() =>
         gateway.writeFile("default", "bot-1", ACTOR, {
           path: beside,
           contents: "x",
         }),
-      ).rejects.toThrow(ActionNeedsApprovalError);
+      );
+      expect(`${JSON.stringify(beside)} · ${came}`).not.toContain("done");
     }
+    expect(await everything()).toEqual(before);
   });
 });
 
-describe("what was judged is what the computer is handed", () => {
-  test("for every spelling, the row names the string the computer was sent", async () => {
+describe("everything about one file is about its one spelling", () => {
+  test("the same file under five spellings is the same call five times, and the shipped policy asks", async () => {
+    // The shipped policy has one rule a file's path reaches: the same call again
+    // (`repeat.count >= 5`). On main, five spellings of one file were five different calls.
+    const { gateway } = await gatewayUnder(DEFAULT_ACTION_POLICY);
+    const came: string[] = [];
+    for (const path of [
+      "notes/a.md",
+      " notes/a.md",
+      "./notes/a.md",
+      "notes//a.md",
+      "notes/a.md/.",
+    ]) {
+      came.push(
+        await cameOf(() =>
+          gateway.readFile("default", "bot-1", ACTOR, { path }),
+        ),
+      );
+    }
+    expect(came).toEqual([
+      `read: ${NOTE}`,
+      `read: ${NOTE}`,
+      `read: ${NOTE}`,
+      `read: ${NOTE}`,
+      "asked",
+    ]);
+  });
+
+  test("a person's yes for a file is found under another spelling of it, and a no stands under every one", async () => {
+    const policy: ActionPolicy = {
+      deny: [],
+      ask: ['file.name == "a.md"'],
+      allow: ["true"],
+    };
+    {
+      const { gateway, approvals, rows } = await gatewayUnder(policy);
+      const asked = (await gateway
+        .readFile("default", "bot-1", ACTOR, { path: "./notes/a.md" })
+        .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+      expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+      // The question is about the file's one name, whatever was written.
+      const subject = rows[0]?.payload.subject as
+        | { file?: { path?: string } }
+        | undefined;
+      expect(subject?.file?.path).toBe("notes/a.md");
+      await approvals.answer(asked.approvalId, "bot-1", OWNER, true);
+      expect(
+        await cameOf(() =>
+          gateway.readFile(
+            "default",
+            "bot-1",
+            ACTOR,
+            { path: " notes//a.md " },
+            asked.approvalId,
+          ),
+        ),
+      ).toBe(`read: ${NOTE}`);
+    }
+    {
+      const { gateway, approvals } = await gatewayUnder(policy);
+      const asked = (await gateway
+        .readFile("default", "bot-1", ACTOR, { path: "notes/a.md" })
+        .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+      await approvals.answer(asked.approvalId, "bot-1", OWNER, false);
+      for (const path of ["notes/a.md", "./notes/a.md", "notes/a.md/. "]) {
+        const refused = await gateway
+          .readFile("default", "bot-1", ACTOR, { path })
+          .catch((caught: unknown) => caught);
+        expect(refused).toBeInstanceOf(ActionRefusedError);
+        expect((refused as ActionRefusedError).code).toBe(
+          "laf:declined_recently",
+        );
+      }
+    }
+  });
+
+  test("a refusal's row names the file's one spelling", async () => {
+    const { gateway, rows } = await gatewayUnder(
+      allowingAllBut('file.name == "pay.csv"'),
+    );
+    for (const path of ["private/pay.csv ", "./private//pay.csv/."]) {
+      await cameOf(() => gateway.readFile("default", "bot-1", ACTOR, { path }));
+    }
+    expect(rows.map((row) => [row.eventType, row.payload.file])).toEqual([
+      ["computer.action_refused", "private/pay.csv"],
+      ["computer.action_refused", "private/pay.csv"],
+    ]);
+  });
+
+  test("for every spelling that is sent, the row names the string the computer was sent", async () => {
     const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
     for (const path of EVERY_SPELLING) {
       await cameOf(() => gateway.readFile("default", "bot-1", ACTOR, { path }));
     }
     const judged = rows
       .filter((row) => row.eventType === "computer.action_allowed")
-      .map((row) => row.payload.file);
+      .map((row) => row.payload.file ?? "");
     // One reading, made once: what a rule was asked about, what the row says, what was sent.
     expect(judged).toEqual(sent);
-    expect(sent.length).toBe(EVERY_SPELLING.length);
+    expect(sent.length).toBeGreaterThan(300);
   });
 
   test("an allowed act reaches the computer under the path's one spelling", async () => {
@@ -595,7 +761,7 @@ describe("what was judged is what the computer is handed", () => {
     ]);
   });
 
-  test("what is no path at all goes on as it was written, and the trail has the attempt", async () => {
+  test("what the computer refuses as a path goes on as it was written, and the trail has the attempt", async () => {
     for (const path of NOT_A_PATH) {
       const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
       expect(
@@ -633,6 +799,17 @@ describe("the person's own door", () => {
       ["computer.file_downloaded", "notes/a.md"],
     ]);
   });
+
+  test("a person still reaches a file a Bot cannot name, under its own name", async () => {
+    const { gateway } = await gatewayUnder(allowingAllBut());
+    const handed = await gateway.downloadFile(
+      "default",
+      "bot-1",
+      ACTOR,
+      "private/pay.csv /.",
+    );
+    expect(new TextDecoder().decode(handed.bytes)).toBe(A_SPACED_NAME);
+  });
 });
 
 describe("a routine's door", () => {
@@ -648,8 +825,15 @@ describe("a routine's door", () => {
       contents: "written over by a routine",
     });
     const listed = await toolkit.execute("computer_list_files", { path: "" });
+    const backslash = await toolkit.execute("computer_read_file", {
+      path: "private\\pay.csv",
+    });
     expect(written).toMatchObject({ ok: false, code: "laf:policy_denied" });
     expect(listed).toMatchObject({ ok: false, code: "laf:policy_denied" });
+    expect(backslash).toMatchObject({
+      ok: false,
+      code: "laf:file_path_refused",
+    });
     expect(await readDisk(join(root, "private", "pay.csv"), "utf8")).toBe(
       PAYROLL,
     );

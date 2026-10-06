@@ -34,7 +34,13 @@ import {
   allowanceFor,
   type StandingApprovalStore,
 } from "../standing-approvals";
-import { describeFile, hostOf, pathOf, workspacePathOf } from "./addresses";
+import {
+  describeFile,
+  hasNoOneReading,
+  hostOf,
+  pathOf,
+  workspacePathOf,
+} from "./addresses";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -149,6 +155,13 @@ export function createGovern(options: {
       subject.filePath === undefined
         ? undefined
         : (workspacePathOf(subject.filePath) ?? subject.filePath);
+    /*
+     * A path the computer does not read one way is not decided at all: it is refused below, as
+     * the floor for a page this server has not seen is, and nothing is sent. Its row carries the
+     * string as it was written — there is no other — so the attempt is on the trail.
+     */
+    const unreadable =
+      subject.filePath !== undefined && hasNoOneReading(subject.filePath);
     const element = resolve(computerId, ref);
     const cached = snapshots.get(computerId);
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
@@ -284,6 +297,27 @@ export function createGovern(options: {
     // A floor under the policy, like the blind check: no rule an operator writes can make a
     // character pressed as a key into something other than typing. See `isTextKey`.
     const textKey = toolName === "computer_key" && isTextKey(subject.key ?? "");
+    /*
+     * A FOLDER IS NAMED BOTH WAYS, AND THE STRICTER ANSWER STANDS. A listing's path is a folder,
+     * and a rule about a folder is written either as the folder (`file.path == "private"`) or as
+     * what is under it (`matches(file.path, "^private/")`). Judged as written, `private/` met the
+     * second kind and `private` the first; with one spelling, `private`, the second kind would
+     * stop holding for a listing it refused on main. So a listing is asked about under both
+     * names, and refused or asked about if either is.
+     */
+    const folderToo = (asNamed: PolicyDecision): PolicyDecision => {
+      if (intent !== "list_files" || !filePath || filePath === ".") {
+        return asNamed;
+      }
+      const asFolder = evaluateActionPolicy(policy, {
+        ...context,
+        // The folder's own name and extension; only its path is said the other way.
+        file: { ...describeFile(filePath), path: `${filePath}/` },
+      });
+      const weight = (one: PolicyDecision) =>
+        one.allowed ? 0 : one.source === "ask" ? 1 : 2;
+      return weight(asFolder) > weight(asNamed) ? asFolder : asNamed;
+    };
     const decision = textKey
       ? ({
           allowed: false,
@@ -292,15 +326,23 @@ export function createGovern(options: {
           forward: false,
           code: "laf:key_is_text",
         } satisfies PolicyDecision)
-      : blind && policyDecidesOnSnapshot(policy)
+      : unreadable
         ? ({
             allowed: false,
             matched: null,
             source: "deny",
             forward: false,
-            code: "laf:blind_action",
+            code: "laf:file_path_refused",
           } satisfies PolicyDecision)
-        : evaluateActionPolicy(policy, context);
+        : blind && policyDecidesOnSnapshot(policy)
+          ? ({
+              allowed: false,
+              matched: null,
+              source: "deny",
+              forward: false,
+              code: "laf:blind_action",
+            } satisfies PolicyDecision)
+          : folderToo(evaluateActionPolicy(policy, context));
 
     /**
      * A DECISION THAT WANTS A PERSON, SETTLED IN THE ONE PLACE THAT SETTLES THEM.

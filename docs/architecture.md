@@ -77,8 +77,10 @@ Policy rules can inspect:
 - `file.path`, `file.name`, `file.extension` — of the path as the Bot's computer reads it, not as
   it was written: the ends trimmed, and `.` segments, doubled slashes and a trailing slash gone, so
   `./private/pay.csv `, `private//pay.csv` and `private/pay.csv/.` are all `private/pay.csv` to a
-  rule, as they are one file to the computer. `file.name` and `file.extension` are read with the
-  name's own edges trimmed, so a file called `tool.exe ` is `tool.exe` and `exe` to a rule
+  rule, as they are one file to the computer. A path the computer does not read one way — one with
+  a backslash in it, or white space at the edge of its first or last name — is refused before any
+  rule is asked (`laf:file_path_refused`). A listing's folder is asked about both as `private`
+  and as `private/`, and the stricter answer stands
 - `mcp.server`, `mcp.tool`, `mcp.effect`
 - `repeat.count`
 
