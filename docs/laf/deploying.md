@@ -55,7 +55,7 @@ mode of each is the whole deployment stopping, not one service misbehaving.
   | `agent-bot` | 512m | 31–45MB |
   | `migrate` | 512m | one-shot, under 200MB |
   | `web` | 256m | 13–14MB |
-  | `workbench` | 768m, no swap (+ `shm_size: 1m`) | **not started** — behind a profile; 17–18MiB when started by hand (measured 2026-10-06, the rehearsal's arm64 runner) |
+  | `workbench` | 768m, no swap (+ a 1 MB `/dev/shm`, its own `tmpfs` line: there is no `shm_size`) | **not started** — behind a profile; 17–18MiB when started by hand (measured 2026-10-06, the rehearsal's arm64 runner) |
 
   Ceilings, not reservations: the long-lived five sum to 6.25g and the box has
   6g, and that is fine because a service is killed at *its* ceiling long before

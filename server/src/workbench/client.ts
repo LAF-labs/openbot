@@ -2,14 +2,18 @@
  * The API server's side of the workbench: hand it a script and the bytes it may read, get back how
  * the script ended, what it printed and the bytes of the files it made.
  *
- * NOTHING CALLS THIS YET. No tool, no gateway act, no turn: it is the pipe, laid before anything
+ * NO BOT REACHES THIS YET. One thing calls it — the gateway's act for a script's run
+ * (`computer/gateway/acts.ts`, `runScript`) — and nothing calls that: no tool, no turn, and the
+ * server makes no client (`main.ts` hands the gateway none). It is the pipe, laid before anything
  * is connected to it, so that the walls on the other end can be read and measured alone
  * (`shared/workbench/`, the `workbench` service in `docker-compose.yml`). What uses it today is its
- * own tests and the rehearsal that drives the real service (`scripts/workbench-probe.ts`).
+ * own tests, the gateway's, and the rehearsal that drives the real service
+ * (`scripts/workbench-probe.ts`).
  *
  * WHAT A CALLER OWES, since nothing here can check it: the bytes in `files` are whatever the caller
- * read, and reading a Bot's file for a Bot is the gateway's to judge and record. This sends what it
- * is given to a place with no network and brings back what that place answers.
+ * read, and reading a Bot's file for a Bot is the gateway's to judge and record — which is what
+ * `runScript` does, one decision a file. This sends what it is given to a place with no network
+ * and brings back what that place answers.
  *
  * THE ANSWER IS READ AS UNTRUSTED AS THE SCRIPT. The daemon is on the far side of the wall, in the
  * one container where a stranger's code runs as the daemon's own user. So every field of its
