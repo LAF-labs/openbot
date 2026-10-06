@@ -857,6 +857,24 @@ function privateHostsAllowed(environment: Environment): boolean {
   return allowed;
 }
 
+/**
+ * Whether this deployment takes an endpoint of a person's own for a Bot: a developer's stack, and
+ * nowhere else (the owner, 2026-10-06).
+ *
+ * ONE READING OF THE SWITCH, for everything that has to agree about it: the agent routes and the
+ * fact `/api/me` gives the app (`app.ts`), where a Bot is dialled (`main.ts`), and the boot line
+ * (`boot/announce.ts`), which says it by the name the app is told — `botEndpoints`. Written out in
+ * each of those, it was three expressions that agreed only because nobody had changed one.
+ *
+ * It is the private-host opt-in, which is read under the computer's configuration: a stack with no
+ * computer is hosted in this sense whatever the variable says.
+ */
+export function botEndpointsTaken(
+  config: Pick<DeploymentConfig, "computer">,
+): boolean {
+  return config.computer?.allowPrivateHosts ?? false;
+}
+
 function computerConfig(
   environment: Environment,
 ): DeploymentConfig["computer"] {

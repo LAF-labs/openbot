@@ -58,7 +58,7 @@ import type { SiteConnectionStore } from "./computer/site-connections";
 import { createSiteRoutes } from "./computer/site-routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
 import type { WriteUp } from "./computer/write-up";
-import type { DeploymentConfig } from "./config";
+import { botEndpointsTaken, type DeploymentConfig } from "./config";
 import {
   type CredentialAdminService,
   type CredentialInput,
@@ -569,10 +569,10 @@ export function createApp({
    * is — a laptop legitimately talks to its own services, a hosted deployment must not — and which
    * compose never hands this process. Read once, here, for the two places below that must agree:
    * the agent routes, which refuse an endpoint where this is false, and what the app is told, so
-   * that it does not draw the screen for one. `main.ts` reads the same switch for the third: where
-   * a Bot is dialled.
+   * that it does not draw the screen for one. `main.ts` asks the same function for the third,
+   * where a Bot is dialled, and the boot line for the fourth.
    */
-  const takesBotEndpoints = config.computer?.allowPrivateHosts ?? false;
+  const takesBotEndpoints = botEndpointsTaken(config);
 
   /**
    * What the deployment can do, asked per request and answered from a cache.

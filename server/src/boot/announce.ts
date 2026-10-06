@@ -18,7 +18,7 @@ import {
 } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionPolicy } from "../computer/policy";
-import type { DeploymentConfig } from "../config";
+import { botEndpointsTaken, type DeploymentConfig } from "../config";
 import { log } from "../log";
 import type { TenantPackage } from "../tenant-package";
 
@@ -235,12 +235,14 @@ export function sayBooted(input: {
    * too. A NUMBER, NEVER THE ADDRESS: that is something a person once typed, and a log is read
    * by whoever runs the fleet.
    *
-   * Absent on a developer's stack, where a Bot runs where its row says and none is brought
-   * anywhere — and where the rows could not be read, since a boot does not fail over a count.
+   * `null`, or not handed over at all, where the rows could not be read: a boot does not fail
+   * over a count, and the line says `null` rather than nothing. On a developer's stack whatever
+   * is handed here is not said — see `botEndpoints` below, which decides.
    */
-  botsBroughtHome?: number;
+  botsBroughtHome?: number | null;
 }): void {
   const { config } = input;
+  const botEndpoints = botEndpointsTaken(config);
   if (config.devNoAuth) {
     log.warn("dev_no_auth", {
       actor: DEV_ACTOR.email,
@@ -266,8 +268,17 @@ export function sayBooted(input: {
           conversations: input.harness.conversations,
         }
       : {}),
-    ...(input.botsBroughtHome === undefined
-      ? {}
-      : { botsBroughtHome: input.botsBroughtHome }),
+    /*
+     * WHICH KIND OF DEPLOYMENT THIS IS, ON EVERY BOOT, by the name `/api/me` tells the app and from
+     * the same reading (`botEndpointsTaken`). False is a hosted deployment: no endpoint of a
+     * person's own is taken for a Bot and every Bot is dialled at this deployment's agent. True is
+     * a developer's stack — and on anything an operator did not start as one, the line to act on.
+     *
+     * AND THE COUNT IS THERE EXACTLY WHEN THIS IS FALSE: a number, or `null` for a read that
+     * failed. It was absent on a developer's stack and absent when the read failed, and a field
+     * that is missing for two reasons says neither (the independent read of #121).
+     */
+    botEndpoints,
+    ...(botEndpoints ? {} : { botsBroughtHome: input.botsBroughtHome ?? null }),
   });
 }

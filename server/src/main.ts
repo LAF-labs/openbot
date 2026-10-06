@@ -77,7 +77,7 @@ import {
   ownerTaskTextIn,
 } from "./computer/standing-approvals";
 import { createHighRiskCheck } from "./computer/high-risk";
-import { loadConfig } from "./config";
+import { botEndpointsTaken, loadConfig } from "./config";
 import type { Compactor } from "./context/compaction";
 import { createSummaryScrubber } from "./context/forget-scrub";
 import {
@@ -487,7 +487,7 @@ const shopStore = createShopStore(database);
  * dial it cannot disagree. It lives under the computer's configuration, so a stack with no
  * computer configured is hosted in this sense too — as it already was for the form.
  */
-const botsRunAt = config.computer?.allowPrivateHosts
+const botsRunAt = botEndpointsTaken(config)
   ? undefined
   : { home: config.managedAgentAgUiUrl };
 // What each Bot IS, then what skills it holds — by name and one line, for the prompt's index — then
@@ -1199,12 +1199,13 @@ const server = serve<SocketData>({
 
 /*
  * How many Bots this restart brought home (`sayBooted`): read off their rows, on a hosted
- * deployment only. Never fatal — a count that cannot be read is a field the line does not have.
+ * deployment only. Never fatal — a count that cannot be read is said as `null`, which is not the
+ * same line as a developer's stack, where there is no count to read and the field is not there.
  */
-const botsBroughtHome = botsRunAt
+const botsBroughtHome: number | null | undefined = botsRunAt
   ? await botsHeldElsewhere(database, botsRunAt.home).then(
-      (held) => held.length,
-      () => undefined,
+      (held): number | null => held.length,
+      (): number | null => null,
     )
   : undefined;
 sayBooted({
