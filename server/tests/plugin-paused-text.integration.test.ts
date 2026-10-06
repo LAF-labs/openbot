@@ -199,6 +199,16 @@ const NOTE_CHANGED: McpTool = {
   },
 };
 
+/** The orders tool as its vendor changes it a second time: a field renamed, a sentence added. */
+const LIST_AGAIN: McpTool = {
+  ...LIST,
+  description: "List the shop's orders, newest first.",
+  inputSchema: {
+    type: "object",
+    properties: { state: { type: "string", description: "open or shipped" } },
+  },
+};
+
 /** One request as the provider was sent it: the head (`tools`) and the conversation. */
 type Sent = {
   tools?: unknown;
@@ -1293,5 +1303,74 @@ describeDb("what a model is given of a tool that waits for review", () => {
     expect(namesOf(result.reviewed.steps)).toEqual([TOOL_CALL, nameOf(NOTE)]);
     // The guess never reached the store: one refusal, the one made while the tool waited.
     expect(await rejections()).toHaveLength(1);
+  });
+
+  /*
+   * AND NEITHER IS THE DEFINITION IT HAD BEFORE (the review of the fix above, which told the
+   * stand-in's line apart and left every other line counting). Three messages, and two definitions
+   * of one tool: the conversation is handed the real schema; the vendor changes the tool — a field
+   * renamed — and it waits; a person reviews the new definition and approves it. The line in the
+   * conversation is the OLD definition's. Counted as "shown", it let the next call out on the old
+   * field, and the definition the person had just read was never handed over at all.
+   */
+  test("handed the real schema, then the vendor changes the tool and a person reviews it: the call made while it waits is refused with its row, and the next is handed the REVIEWED schema before one goes through", async () => {
+    const before = await rejectionsOf(LIST);
+    const asBefore = { status: "open" };
+    const asReviewed = { state: "open" };
+    const { result, sent, agent } = await withTheBotsService(
+      [
+        // The first message: the tool is as a person last approved it.
+        calling("seen", TOOL_SEARCH, { query: `select:${nameOf(LIST)}` }),
+        said("주문 목록 도구를 찾았어요."),
+        // The second, after the vendor changed it: it waits.
+        calling("waiting", TOOL_CALL, { name: nameOf(LIST), args: asBefore }),
+        said("주문 목록 도구가 검토를 기다리고 있어요."),
+        // The third, after the person reviewed the change.
+        calling("old", TOOL_CALL, { name: nameOf(LIST), args: asBefore }),
+        calling("new", TOOL_CALL, { name: nameOf(LIST), args: asReviewed }),
+        said("주문을 불러왔어요."),
+      ],
+      async (agent) => {
+        const first = await message(agent, "주문 목록 도구가 있어?");
+        toolsOnServer = [LIST_AGAIN, NOTE_CHANGED, APPEARED_AGAIN];
+        expect((await store.refreshTools(serverId)).paused).toBe(1);
+        const whileItWaits = await message(agent, "열린 주문을 보여 줘.");
+        const rowsWhileItWaits = await rejectionsOf(LIST);
+        expect(
+          await store.approveToolDefinition(serverId, LIST.name, actorId),
+        ).toBe(true);
+        const reviewed = await message(agent, "검토했어. 다시 해 줘.");
+        return { first, whileItWaits, rowsWhileItWaits, reviewed };
+      },
+    );
+    expect(sent).toHaveLength(7);
+    const namesOf = (steps: typeof result.first.steps) =>
+      steps.flatMap((step) => step.calls.map((call) => call.name));
+
+    // Handed the real schema — the definition as it stood then, the field it had then.
+    expect(answerTo(agent, "seen")).toContain(LIST_CHANGED.description);
+    expect(answerTo(agent, "seen")).toContain('"status"');
+    // While it waits, the call on that schema still goes to the store, and is refused there.
+    expect(answerTo(agent, "waiting")).toBe(
+      toolResultText("laf:tool_needs_review"),
+    );
+    expect(namesOf(result.whileItWaits.steps)).toEqual([nameOf(LIST)]);
+    expect(result.rowsWhileItWaits).toHaveLength(before.length + 1);
+
+    // Reviewed. The conversation still holds the old definition's line and nothing of the new —
+    const atTheThird = JSON.stringify(sent[4]?.messages);
+    expect(atTheThird).toContain('\\"status\\"');
+    expect(atTheThird).not.toContain("newest first");
+    // — so the call on the old field is answered with the definition the person approved,
+    const handedOver = answerTo(agent, "old");
+    expect(handedOver).toContain("스키마를 이 대화에서 아직 받지 않아서");
+    expect(handedOver).toContain(LIST_AGAIN.description);
+    expect(handedOver).toContain('"state"');
+    expect(handedOver).not.toContain('"status"');
+    // and only the call made from that goes through, to the vendor.
+    expect(answerTo(agent, "new")).toBe("ok");
+    expect(namesOf(result.reviewed.steps)).toEqual([TOOL_CALL, nameOf(LIST)]);
+    // One refusal in all of it: the old call after the review never reached the store.
+    expect(await rejectionsOf(LIST)).toHaveLength(before.length + 1);
   });
 });
