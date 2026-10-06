@@ -659,10 +659,10 @@ services:
   #   - A FUNCTION OF WHAT IT IS SENT. No volume but its socket's: a script reads the bytes the
   #     server handed over and hands back the bytes it made (shared/workbench/protocol.ts). The Bot's
   #     folder is not mounted, so there is nothing here to damage and nowhere for a file to go.
-  #   - EVERYTHING IT WRITES IS MEMORY. /work is a tmpfs of this container's own, gone with it; the
-  #     socket's volume and /dev/shm are a megabyte and sixty-four names each. None of the three is
-  #     executable, and all are emptied after every run — and the socket's, which outlives the
-  #     container, again before a daemon binds.
+  #   - EVERYTHING IT WRITES IS MEMORY. /work is a tmpfs of this container's own, gone with it;
+  #     /dev/shm is a megabyte and sixty-four names, and the socket's volume a megabyte and
+  #     sixteen. None of the three is executable, and all are emptied after every run — and the
+  #     socket's, which outlives the container, again before a daemon binds.
   #   - THE DAEMON IS PROCESS 1 — no `init:` here, on purpose. A script runs as the daemon's own
   #     user and may signal it; process 1 is the one process its own namespace cannot stop or kill.
   #     After every run the daemon ends every other process in the container (shared/workbench/sweep.ts).
@@ -750,12 +750,21 @@ volumes:
   # run, and gone with the last container that mounts it. The mount's own options give it to 65534,
   # so no image has to carry a directory for it. It holds nothing, and is mounted nowhere, until a
   # container that names it runs — which no service outside the `workbench` profile does.
+  #
+  # SIXTEEN NAMES, AND THE NUMBER IS A LENGTH. This is the one place a script can write that
+  # outlives its container, so what a script leaves here must always be removable by the NEXT
+  # daemon, before it binds. Sixteen folders of 255 bytes are longer than a path may be (4,096),
+  # and a script built exactly that here with sixty-four names to spend: no daemon could open it
+  # up to remove it, and none started again (the rehearsal, 2026-10-07 — `socket_directory_unclean`
+  # for as long as anything held the volume). The mount's own folder is one of the sixteen and the
+  # socket another: fifteen folders at the very most are 3,858 bytes, a path. The cleanup no longer
+  # goes by a long path anywhere (shared/workbench/run.ts); this is so that it never has to here.
   workbench-socket:
     driver: local
     driver_opts:
       type: tmpfs
       device: tmpfs
-      o: "size=1m,nr_inodes=64,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev"
+      o: "size=1m,nr_inodes=16,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev"
 
 networks:
   # Every service but the computer, as it always was.

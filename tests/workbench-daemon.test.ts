@@ -52,6 +52,8 @@ import {
   WORKBENCH_LIMITS,
 } from "../shared/workbench/protocol";
 import {
+  emptyDirectory,
+  emptyDirectorySync,
   isRequestsFault,
   runScript,
   type WorkbenchLimits,
@@ -1248,4 +1250,90 @@ test("the run behind one that was given up on is not handed to what that one lef
   } finally {
     endWhatWasLeft();
   }
+});
+
+/*
+ * A TREE DEEPER THAN A PATH MAY BE LONG, AND CLOSED AT THE BOTTOM (the third read of 2026-10-07).
+ * Removing a tree walks down it however deep it goes; opening up a folder a script closed went by
+ * its path, and a path has a longest — 1,024 bytes on a laptop, 4,096 on Linux. A script can build
+ * past it without ever naming it: two halves, and one moved under the other. Before the fix the
+ * cleanup threw (EACCES; ENAMETOOLONG from its synchronous twin) and the tree stayed — which
+ * beside the socket, the one place that outlives the container, is a daemon that cannot start
+ * again for as long as anything holds that volume.
+ */
+
+/** Folders of 255 bytes in each half: enough, together, to pass the limit of the machine this is. */
+const HALVES = process.platform === "linux" ? [8, 8] : [2, 3];
+
+/** The builder as source: what a script would write, and what the tests that need no daemon run. */
+const deepClosedTrees = (places: readonly string[]) => `
+  import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+  const name = (letter) => letter.repeat(255);
+  const chain = (root, letter, levels) => { let path = root; for (let n = 0; n < levels; n += 1) path += "/" + name(letter); return path; };
+  for (const place of ${JSON.stringify(places)}) {
+    mkdirSync(chain(place, "a", ${HALVES[0]}), { recursive: true });
+    // The lower half beside it under a short name; its last folder holds a file and is closed.
+    const lower = chain(place + "/b", "b", ${(HALVES[1] ?? 1) - 1});
+    mkdirSync(lower, { recursive: true });
+    writeFileSync(lower + "/held", "x");
+    chmodSync(lower, 0o000);
+    renameSync(place + "/b", chain(place, "a", ${HALVES[0]}) + "/" + name("b"));
+  }
+  console.log("built");
+`;
+
+const buildDeepClosedTree = (place: string) => {
+  const built = Bun.spawnSync([
+    process.execPath,
+    "-e",
+    deepClosedTrees([place]),
+  ]);
+  if (built.exitCode !== 0) throw new Error(built.stderr.toString());
+};
+
+test("a tree deeper than a path may be long, closed at the bottom, is emptied all the same", async () => {
+  const levels = (HALVES[0] ?? 0) + (HALVES[1] ?? 0);
+  for (const empty of [
+    emptyDirectory,
+    async (directory: string) => emptyDirectorySync(directory),
+  ]) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "wd-")));
+    started.push({ daemon: { stop: async () => {} }, root });
+    buildDeepClosedTree(root);
+    // Past what a path may be: nothing here could have named the bottom of it.
+    expect(root.length + levels * 256).toBeGreaterThan(
+      process.platform === "linux" ? 4096 : 1024,
+    );
+    expect(readdirSync(root)).toHaveLength(1);
+    await empty(root);
+    expect(readdirSync(root)).toEqual([]);
+  }
+});
+
+test("a script that builds such a tree beside the socket, in the work root and in shared memory leaves none of it", async () => {
+  const { workbench, socketPath, scratch, workRoot, quits } = bench();
+  const socketDirectory = realpathSync(join(socketPath, ".."));
+  const places = [
+    socketDirectory,
+    realpathSync(workRoot),
+    realpathSync(scratch),
+  ];
+  const answer = ran(
+    await workbench.run({
+      script: deepClosedTrees(places),
+      files: [],
+      timeoutMs: 30_000,
+    }),
+  );
+  expect(answer.run.stdout).toBe("built\n");
+  expect(readdirSync(socketDirectory)).toEqual(["w.sock"]);
+  expect(readdirSync(workRoot)).toEqual([]);
+  expect(readdirSync(scratch)).toEqual([]);
+  // Cleared without the daemon having had to stop — and a daemon that starts on the same socket
+  // afterwards finds nothing in its way.
+  expect(quits).toEqual([]);
+  expect(
+    ran(await workbench.run({ script: "console.log('next')", files: [] })).run
+      .stdout,
+  ).toBe("next\n");
 });

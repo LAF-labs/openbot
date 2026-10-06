@@ -751,13 +751,15 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     one.caught !== null,
     `caught: ${signalsIn(one.caught).join(" ") || "none"}; ignored: ${signalsIn(one.ignored).join(" ") || "none"}; blocked: ${signalsIn(one.blocked).join(" ") || "none"} — of the caught, SIGTERM is sent below and the others are not tried`,
   );
-  const small = (mount: string) =>
+  const small = (mount: string, names: number) =>
     /^tmpfs \S*noexec/.test(mount) &&
     /nr_inodes=(\d+)/.test(mount) &&
-    Number(/nr_inodes=(\d+)/.exec(mount)?.[1]) <= 64;
+    Number(/nr_inodes=(\d+)/.exec(mount)?.[1]) <= names;
+  // Sixteen beside the socket, the one place that outlives the container: fewer names than it
+  // takes to build a path longer than a path may be.
   check(
     "the two small mounts are held as /work is: not executable, and a handful of names",
-    small(where.socket) && small(where.shm ?? ""),
+    small(where.socket, 16) && small(where.shm ?? "", 64),
     JSON.stringify({ socket: where.socket, shm: where.shm ?? null }),
   );
   const ranFrom = json<Record<string, string>>(await run(EXEC));
@@ -863,7 +865,7 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     "empty names are capped where a script can write, and clearing them takes no time to speak of",
     named !== null &&
       (named.made["/work"] ?? Number.POSITIVE_INFINITY) <= 4096 &&
-      (named.made[SOCKET_DIRECTORY] ?? Number.POSITIVE_INFINITY) <= 64 &&
+      (named.made[SOCKET_DIRECTORY] ?? Number.POSITIVE_INFINITY) <= 16 &&
       (named.made["/dev/shm"] ?? Number.POSITIVE_INFINITY) <= 64 &&
       clearing !== null &&
       clearing < 5_000,
