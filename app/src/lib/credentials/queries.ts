@@ -3,7 +3,13 @@ import { t } from "@/lib/i18n";
 
 export type CredentialStatus = {
   id: string;
-  kind: "model" | "connector";
+  /**
+   * What the key is for, as the vault files it. The form on this page makes the first two; the
+   * other two are written elsewhere and listed here all the same — `agent` is a key stored for a
+   * Bot's own server from `/admin/bots`, `mcp` a token for a connected service. It said only the
+   * first two, and the page needs to tell an `agent` key apart (`credentials.tsx`).
+   */
+  kind: "model" | "connector" | "agent" | "mcp";
   provider: string;
   keyId: string;
   metadata: Record<string, unknown>;

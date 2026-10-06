@@ -3,6 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useTakesBotEndpoints } from "@/components/admin/admin-sidebar";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
 import { LiveRegion } from "@/components/layout/live-region";
 import {
@@ -65,6 +66,7 @@ function CredentialsPage() {
   const [adding, setAdding] = useState(false);
   const queryClient = useQueryClient();
   const credentials = useQuery(credentialListQueryOptions());
+  const takesBotEndpoints = useTakesBotEndpoints();
   const createCredential = useMutation(
     createCredentialMutationOptions(queryClient),
   );
@@ -339,9 +341,20 @@ function CredentialsPage() {
                      * The last third of this line was two bare English words on a Korean screen —
                      * the one part of the row that says whether the key still works.
                      */}
+                    {/*
+                     * AND "IN USE" IS SAID ONLY OF A KEY SOMETHING READS. A key stored for a Bot's
+                     * own server is read by nothing on a hosted deployment: the Bot is dialled at
+                     * the deployment's own agent and the vault is not asked (2026-10-06). This row
+                     * is the one place the person can take that key back, so it stays, with its
+                     * button — and says what is true of it.
+                     */}
                     <ItemDescription>
                       {credential.kind} · {credential.keyId} ·{" "}
-                      {credential.revokedAt ? t("retired") : t("in use")}
+                      {credential.revokedAt
+                        ? t("retired")
+                        : credential.kind === "agent" && !takesBotEndpoints
+                          ? t("not used here")
+                          : t("in use")}
                     </ItemDescription>
                   </ItemContent>
                   <ItemActions>
