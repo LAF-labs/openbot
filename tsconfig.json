@@ -15,6 +15,10 @@
    * `scripts/` and `evals/` sit there too. With `tests` alone they were checked only where a test
    * happened to import them, which left eight files checked by nothing — among them the gate's own
    * runner, `scripts/test-ci.ts`, and the model eval, `evals/run.ts`.
+   *
+   * `shared/workbench` is the one directory under `shared/` named here. The rest of `shared/` is
+   * checked from the workspaces that import it; the workbench's entry (`main.ts`) is imported by
+   * nothing — compose starts it — so without this line it was checked by nothing.
    */
-  "include": ["tests", "scripts", "evals"]
+  "include": ["tests", "scripts", "evals", "shared/workbench"]
 }
