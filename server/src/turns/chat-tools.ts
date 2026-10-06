@@ -1299,6 +1299,15 @@ export function createChatTools(deps: ChatToolsDeps) {
       if (!decision.allowed) {
         return refuse(String(decision.reason ?? ""), {});
       }
+      /*
+       * THE DATA THE CARD WILL READ, DECIDED BEFORE IT IS DRAWN. A card's own data call
+       * (`components/routes.ts`, `/call`) enforces the same grant, but that runs while the card
+       * renders — after the Bot has been told its card is on screen. Decided here, the Bot gets one
+       * verdict covering what the card will do rather than only its name, and a card that would be
+       * drawn empty is refused, with the missing grant named in the row. The door a window asked
+       * this of before it drew a card closed on 2026-10-06, and its reason with it: this is where
+       * the rule lives now.
+       */
       for (const functionName of galleryReads(name, args)) {
         if (await store.mayCall(name, functionName)) continue;
         return refuse(FUNCTION_NOT_GRANTED, { function: functionName });
