@@ -138,12 +138,12 @@ export const DATA_FUNCTION_COPY: Readonly<
 
 /** The English key to hand `t()` for what this function does, or the server's own line. */
 export function dataFunctionDescriptionKey(fn: DataFunctionSummary): string {
-  return DATA_FUNCTION_COPY[fn.name]?.description ?? fn.description;
+  return own(DATA_FUNCTION_COPY, fn.name)?.description ?? fn.description;
 }
 
 /** The English key for what it reads. */
 export function dataFunctionReadsKey(fn: DataFunctionSummary): string {
-  return DATA_FUNCTION_COPY[fn.name]?.reads ?? fn.reads;
+  return own(DATA_FUNCTION_COPY, fn.name)?.reads ?? fn.reads;
 }
 
 export function dataFunctionsQueryOptions() {

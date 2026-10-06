@@ -304,8 +304,8 @@ function Row({
           }
           label={
             typeof payload.action === "string"
-              ? TOOLS[payload.action]
-              : EVENTS[event.eventType]
+              ? own(TOOLS, payload.action)
+              : own(EVENTS, event.eventType)
           }
         />
         {count > 1 ? (
@@ -397,9 +397,9 @@ function Row({
         {/* Which of the three ways this access ended. See DISCONNECT_REASONS. */}
         {event.eventType === "mcp.account_disconnected" &&
         typeof payload.reason === "string" &&
-        DISCONNECT_REASONS[payload.reason] ? (
+        own(DISCONNECT_REASONS, payload.reason) ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {t(DISCONNECT_REASONS[payload.reason] as string)}
+            {t(own(DISCONNECT_REASONS, payload.reason) as string)}
           </div>
         ) : null}
         {(event.eventType === "computer.action_repeated" ||
@@ -563,7 +563,7 @@ export function decisionOf(
   refused: boolean,
   failed: boolean,
 ): string | undefined {
-  const labelled = DECISIONS[eventType];
+  const labelled = own(DECISIONS, eventType);
   if (labelled) return labelled;
   if (!OUTCOME_EVENT_TYPES.has(eventType)) return undefined;
   return refused

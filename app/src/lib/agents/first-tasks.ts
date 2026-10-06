@@ -15,6 +15,7 @@ import {
   type ShopProfile,
 } from "@/lib/shop/catalogue";
 import { BUSINESS_SITES } from "@/lib/sites/catalogue";
+import { own } from "@/lib/own";
 
 /**
  * The first things worth asking a Bot that has never been asked anything.
@@ -396,7 +397,7 @@ function connectedCandidates(
   }
   for (const account of overview.accounts) {
     if (account.kind !== "oauth" || account.status !== "connected") continue;
-    const known = ACCOUNT_FIRST_TASKS[account.id];
+    const known = own(ACCOUNT_FIRST_TASKS, account.id);
     if (!known) continue;
     candidates.push({ ...known, via: { kind: "account", id: account.id } });
   }

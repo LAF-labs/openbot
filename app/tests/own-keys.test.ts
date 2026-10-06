@@ -1,16 +1,21 @@
 /**
- * A TABLE OF SENTENCES IS READ BY ITS OWN KEYS (the second read of #114, 2026-10-06).
+ * A TABLE WITH STRING KEYS IS READ BY ITS OWN KEYS (the second read of #114, 2026-10-06).
  *
- * The app keeps its words in tables and finds them by the code a response, a tool's result or a
- * connected service's answer carries. `TABLE[code]` answers for more names than the table was
- * given — `constructor` with a function — so a code from outside "had a sentence", `t()` handed the
- * function back, and a component was given a function to draw. Twenty-one lookups read that way.
+ * The app keeps its words in tables and finds them by a word that arrives from somewhere else: the
+ * code a response or a tool's result carries, the name a model gave a tool call, an event's name,
+ * a word in the address. `TABLE[word]` answers for more names than the table was given —
+ * `constructor` with a function — so that word "had a sentence", and a component was given a
+ * function to draw; `t()` read its own dictionary the same way.
  *
- * Two halves: the words every reader answers a hostile code with, and a walk of `src/` so that the
- * next table indexed bare by a code fails here rather than in somebody's console.
+ * The first version of this change swept the lookups whose key was called `code` and its test
+ * walked for those names. A reader who had not written it found the same hole under seven other
+ * names, and in `t()`. So the rule is by TYPE, and has no list of names: a table declared with
+ * `string` keys is never read bare. A table keyed by one of this app's own unions is typed by that
+ * union, and the compiler holds what may index it.
  */
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
+import { refusalForCode } from "@/lib/auth/sign-in-refusal";
 import { turnFailureSentence } from "@/lib/channels/turn-failure";
 import { refusalSaid } from "@/lib/components/queries";
 import { labelForCode } from "@/lib/computer/browsing";
@@ -18,7 +23,12 @@ import { fileCardSaid } from "@/lib/computer/files";
 import { outcomeLabel } from "@/lib/computer/outcome-labels";
 import { screenProblemText } from "@/lib/computer/screen-problems";
 import { failureReason } from "@/lib/computer/task-state";
-import { t } from "@/lib/i18n";
+import { stepLineOf } from "@/lib/copilot/step-labels";
+import { turnNotice } from "@/lib/copilot/stopped-turn";
+import { koreanFor, t } from "@/lib/i18n";
+import { ko } from "@/lib/i18n-ko";
+import { kindLabel } from "@/lib/made/queries";
+import { summonKeysOf } from "@/lib/notifications/shell";
 import { own } from "@/lib/own";
 import {
   catalogueCanKey,
@@ -74,37 +84,85 @@ describe("a code from outside finds only what the table was given", () => {
       expect(catalogueMark(code)).toBe(catalogueMark("nobody-has-this-key"));
       expect(catalogueSummaryKey(code, "theirs")).toBe("theirs");
       expect(catalogueCanKey(code, "theirs")).toBe("theirs");
+      // The same under the other names a word from outside goes by (the second read of #120):
+      // a tool call the model named this, an event of this name, a word in the sign-in address,
+      // a made thing's tool, a shortcut's id.
+      expect(typeof stepLineOf(code).label).toBe("string");
+      expect(stepLineOf(code)).toEqual(stepLineOf("a_tool_nobody_has"));
+      expect(stepLineOf(code, true)).toEqual(stepLineOf("a_tool_nobody_has"));
+      expect(turnNotice(code)).toBeNull();
+      expect(refusalForCode(code)).toBe("unknown");
+      expect(kindLabel(code)).toBe("");
+      expect(summonKeysOf(code, true)).toBeNull();
     }
     // And a code the tables do hold is still said.
     expect(outcomeLabel("laf:stopped")).toBe("Stopped");
     expect(failureReason("laf:person_declined")).toBe(t("You said no"));
   });
 
-  test("no table in src/ is indexed bare by a code that arrived from outside", async () => {
+  test("t() finds Korean only where the dictionary holds it: a word from outside is said as it came", () => {
+    // What made `?connected=constructor` say "function Object() { [native code] }에 연결했어요".
+    expect(typeof (ko as Record<string, unknown>).constructor).toBe("function");
+    for (const word of INHERITED) {
+      // The Korean path's one read, asked directly: this runner's language is English, where
+      // `t()` never opens the dictionary and would pass whatever it did.
+      expect(koreanFor(word)).toBeUndefined();
+      expect(t(word)).toBe(word);
+    }
+    // A sentence the dictionary holds is still found.
+    const known = Object.keys(ko)[0] ?? "";
+    expect(known).not.toBe("");
+    expect(koreanFor(known)).toBe(ko[known]);
+  });
+
+  test("no table declared with string keys is read bare anywhere in src/", async () => {
     const root = `${import.meta.dir}/../src`;
-    /*
-     * An UPPER_CASE table (or the generic `table` / `said` / `unavailable` a helper is handed)
-     * indexed by one of the names a code from outside goes by here. A lookup by a closed union
-     * of this app's own (`ICONS[kind]`, `WORK_LINES[kind]`, `PRESENCE_LABELS[kind]`) is not this.
-     */
-    const bare =
-      /\b(?:[A-Z][A-Z0-9_]{3,}|table|said|unavailable\??\.?)\[(?:code|body\??\.code|failure\.code|reason|key)\]/;
-    const allowed = new Set([
-      // The helper itself, which is where `table[key]` is said once, behind `Object.hasOwn`.
-      "lib/own.ts",
-      // The shelf's own four keys, a closed list this file iterates.
-      "routes/_authed/_app/made.tsx",
-    ]);
-    const found: string[] = [];
+    const files: Array<[string, string]> = [];
     for await (const file of new Glob("**/*.{ts,tsx}").scan(root)) {
-      if (allowed.has(file) || file.startsWith("lib/i18n")) continue;
-      const lines = (await Bun.file(`${root}/${file}`).text()).split("\n");
-      lines.forEach((line, index) => {
+      files.push([file, await Bun.file(`${root}/${file}`).text()]);
+    }
+    /*
+     * Every `const NAME: Record<string, …>` (Readonly, Partial, or an index signature) — module
+     * tables and local ones alike. The annotation is the criterion: it is what lets TypeScript
+     * index the table with any string at all.
+     */
+    const tables = new Map<string, string>();
+    for (const [file, text] of files) {
+      for (const pattern of [
+        /\bconst\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:Readonly<\s*)?(?:Partial<\s*)?Record<\s*string\s*,/g,
+        /\bconst\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\{\s*(?:readonly\s+)?\[[A-Za-z]+:\s*string\]/g,
+      ]) {
+        for (const match of text.matchAll(pattern)) {
+          tables.set(match[1] ?? "", file);
+        }
+      }
+    }
+    // The walk is looking at something: the dictionary, the labels, the refusals.
+    expect(tables.size).toBeGreaterThan(40);
+    for (const name of [
+      "ko",
+      "OUTCOME_LABELS",
+      "STEP_LABELS",
+      "TURN_NOTICES",
+    ]) {
+      expect(tables.has(name)).toBe(true);
+    }
+    const bare: string[] = [];
+    for (const [file, text] of files) {
+      // The helper is where `table[key]` is said once, behind the check.
+      if (file === "lib/own.ts") continue;
+      text.split("\n").forEach((line, index) => {
         const code = line.replace(/\/\/.*$/, "");
         if (/^\s*\*/.test(code)) return;
-        if (bare.test(code)) found.push(`${file}:${index + 1}`);
+        for (const name of tables.keys()) {
+          // NAME[…] with anything but a literal inside, and not a write (`NAME[key] = value`).
+          const read = new RegExp(
+            `(?<![A-Za-z0-9_.])${name}\\??\\.?\\[(?!["'\`0-9])[^\\]]*\\](?!\\s*=(?!=))`,
+          );
+          if (read.test(code)) bare.push(`${file}:${index + 1} ${name}`);
+        }
       });
     }
-    expect(found).toEqual([]);
+    expect(bare).toEqual([]);
   });
 });

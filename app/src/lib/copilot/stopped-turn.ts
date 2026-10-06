@@ -1,4 +1,5 @@
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * A turn that ARRIVED and is still not the whole answer.
@@ -29,6 +30,6 @@ export const TURN_NOTICES: Record<string, string> = {
  * (`turn-notice.test.tsx`).
  */
 export function turnNotice(name: unknown): string | null {
-  const known = typeof name === "string" ? TURN_NOTICES[name] : undefined;
+  const known = typeof name === "string" ? own(TURN_NOTICES, name) : undefined;
   return known ? t(known) : null;
 }

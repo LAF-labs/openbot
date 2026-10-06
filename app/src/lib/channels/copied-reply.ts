@@ -31,6 +31,8 @@
  * none gets through that is not on it.
  */
 
+import { own } from "@/lib/own";
+
 /** What the renderer and this app put beside the words that is not the answer. */
 export const NOT_THE_ANSWER = [
   "button",
@@ -426,7 +428,7 @@ export function copiedHtml(body: Element | null | undefined): string | null {
     }
   }
   for (const element of copy.querySelectorAll("*")) {
-    const kept = KEPT_ATTRIBUTES[tagOf(element)] ?? [];
+    const kept = own(KEPT_ATTRIBUTES, tagOf(element)) ?? [];
     for (const name of element.getAttributeNames()) {
       if (!kept.includes(name)) element.removeAttribute(name);
     }

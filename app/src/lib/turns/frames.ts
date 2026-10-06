@@ -13,6 +13,7 @@
  * component keeps what it drew while its inputs are the same objects.
  */
 import type { Message } from "@ag-ui/core";
+import { own } from "@/lib/own";
 
 export type TurnStatus = "queued" | "running" | "done" | "error" | "stopped";
 
@@ -298,7 +299,7 @@ function applyEvent(held: Held, event: Event): Held {
             {
               id,
               role: "assistant",
-              content: (behind[key] ?? "") + delta,
+              content: (own(behind, key) ?? "") + delta,
             } as Message,
           ],
           behind: caughtUp(behind, [key]),
@@ -306,7 +307,7 @@ function applyEvent(held: Held, event: Event): Held {
       }
       const message = messages[at] as Message;
       const words = textOf(message);
-      const said = (behind[key] ?? words) + delta;
+      const said = (own(behind, key) ?? words) + delta;
       // Still the start of what is held: the held words stand.
       if (key in behind && words.startsWith(said) && words !== said) {
         return { ...held, behind: { ...behind, [key]: said } };
@@ -381,7 +382,7 @@ function applyEvent(held: Held, event: Event): Held {
         if (which === -1) continue;
         const known = calls[which] as ToolCall;
         const args = known.function.arguments;
-        const said = (behind[key] ?? args) + delta;
+        const said = (own(behind, key) ?? args) + delta;
         if (key in behind && args.startsWith(said) && args !== said) {
           return { ...held, behind: { ...behind, [key]: said } };
         }

@@ -17,6 +17,7 @@
 import { siteForUrl } from "@shared/sites/catalogue";
 import { t } from "@/lib/i18n";
 import { ko } from "@/lib/i18n-ko";
+import { own } from "@/lib/own";
 
 /**
  * Everyday sites a Bot is asked to look things up on, by the name people use for them.
@@ -85,7 +86,7 @@ export function siteNameOf(host: string): string {
 function everyNameOf(host: string): string[] {
   const key = siteKeyOf(host);
   if (key === null) return [siteNameOf(host)];
-  return [key, ko[key], t(key)].filter(
+  return [key, own(ko, key), t(key)].filter(
     (name): name is string => typeof name === "string" && name !== "",
   );
 }

@@ -94,7 +94,7 @@ export const MADE_STARTERS: readonly { label: string; draft: string }[] = [
 
 /** A made thing's kind, in the person's language. */
 export function kindLabel(tool: string): string {
-  const key = KIND_LABELS[tool];
+  const key = own(KIND_LABELS, tool);
   return key ? t(key) : "";
 }
 

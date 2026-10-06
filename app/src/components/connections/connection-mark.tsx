@@ -28,6 +28,8 @@
  * floor they are not text for.
  */
 
+import { own } from "@/lib/own";
+
 /** The generic mark, for a service with no family of its own. */
 export const GENERIC_MARK = "site";
 
@@ -87,7 +89,7 @@ export const MARKS: Readonly<Record<string, Mark>> = {
  * "N" before "네이버 스마트스토어 판매자센터" is noise.
  */
 export const ConnectionMark = ({ mark }: { mark?: string }) => {
-  const found = MARKS[mark ?? GENERIC_MARK] ?? MARKS[GENERIC_MARK];
+  const found = own(MARKS, mark ?? GENERIC_MARK) ?? own(MARKS, GENERIC_MARK);
   // Never undefined in practice; the fallback keeps a bad id from throwing on a screen about trust.
   const spec = found ?? { ink: "currentColor", glyph: "globe" as const };
 

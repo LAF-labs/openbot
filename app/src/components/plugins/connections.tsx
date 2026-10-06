@@ -16,6 +16,7 @@ import {
   pluginKeys,
   saveOauthClient,
 } from "@/lib/plugins/queries";
+import { own } from "@/lib/own";
 
 /**
  * What a refused connect means, in this deployment's own words.
@@ -61,7 +62,7 @@ export const refusalText = (thrown: Error): string => {
       "The connection could not be started. Please try again.",
     ),
   };
-  const said = refused?.code ? byCode[refused.code] : undefined;
+  const said = own(byCode, refused?.code);
   if (said) return said;
 
   if (status === 503) {
